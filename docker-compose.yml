@@ -10,6 +10,9 @@ services:
     # "No such container".
     container_name: ejc_db
     restart: unless-stopped
+    # Teto de memória — ver a nota em `backend` abaixo. Folga generosa: um
+    # Postgres morto por OOM é pior que um container lento.
+    mem_limit: ${EJC_DB_MEM_LIMIT:-3g}
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -27,6 +30,8 @@ services:
     image: redis:7-alpine
     container_name: ejc_redis
     restart: unless-stopped
+    # Teto de memória — ver a nota em `backend` abaixo.
+    mem_limit: ${EJC_REDIS_MEM_LIMIT:-512m}
     # AOF ligado: tasks enfileiradas sobrevivem a restart do container.
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
@@ -42,6 +47,16 @@ services:
       context: ./backend
     container_name: ejc_backend
     restart: unless-stopped
+    # Teto DURO de memória. Esta VPS não é dedicada ao EJC: hospeda também
+    # Verde Limp, sistema-s2, Evolution API (WhatsApp) e o Woodpecker. Até
+    # 2026-08-27 nenhum container do EJC declarava limite — só o `ollama` —
+    # enquanto os containers dos outros sistemas já tinham teto. Naquele dia a
+    # reindexação do RAG cresceu até 10 GB dentro deste container e disparou o
+    # OOM-killer GLOBAL, que reiniciou o `verdelimp-erp`: um trabalho do EJC
+    # derrubou o sistema de OUTRA empresa. Com o teto, o estouro fica contido
+    # neste container e os vizinhos seguem no ar.
+    # Ver docs/auditoria/relatorios/2026-08-27-verificacao-e-novos-achados.md §9.
+    mem_limit: ${EJC_BACKEND_MEM_LIMIT:-6g}
     ports:
       # Publica só no loopback do host; o Nginx do host faz proxy_pass para 127.0.0.1:8000.
       - "127.0.0.1:8000:8000"
@@ -128,6 +143,9 @@ services:
       context: ./backend
     container_name: ejc_worker
     restart: unless-stopped
+    # Teto de memória — ver a nota em `backend`. O worker roda o MESMO código
+    # (indexação incluída), então precisa do mesmo tipo de contenção.
+    mem_limit: ${EJC_WORKER_MEM_LIMIT:-2g}
     networks: [default, ia]
     command: celery -A app.core.celery_app.celery_app worker --loglevel=INFO --concurrency=2
     env_file:
@@ -174,6 +192,8 @@ services:
       context: ./frontend
     container_name: ejc_frontend
     restart: unless-stopped
+    # Teto de memória — ver a nota em `backend`. Nginx servindo estáticos.
+    mem_limit: ${EJC_FRONTEND_MEM_LIMIT:-256m}
     ports:
       # Publica SÓ no loopback do host, atrás do Nginx do host (nginx/ejc.conf
       # faz o TLS/HSTS/CSP e o proxy_pass para 127.0.0.1:8080). Expor 0.0.0.0:80
@@ -200,6 +220,9 @@ services:
     container_name: ejc_langfuse_db
     profiles: ["observability"]
     restart: unless-stopped
+    # Teto de memória — ver a nota em `backend`. Opt-in por profile, mas
+    # nenhum container do EJC fica sem teto nesta VPS compartilhada.
+    mem_limit: ${LANGFUSE_DB_MEM_LIMIT:-1g}
     environment:
       POSTGRES_USER: langfuse
       # Fail-closed em RUNTIME: sem senha no .env o postgres se recusa a subir
@@ -221,6 +244,8 @@ services:
     container_name: ejc_langfuse
     profiles: ["observability"]
     restart: unless-stopped
+    # Teto de memória — ver a nota em `backend`.
+    mem_limit: ${LANGFUSE_MEM_LIMIT:-1g}
     depends_on:
       langfuse-db:
         condition: service_healthy

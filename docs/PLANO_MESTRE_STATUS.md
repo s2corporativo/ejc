@@ -101,10 +101,13 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | AUD27-P0-1 | Kill-switch `AI_ENABLED` não protege os endpoints oficiais do Núcleo Único (`/ai/core/*`) `[CRÍTICO]` | F1 | — | pendente | — | 2026-08-27 |
 | AUD27-P1-1 | `POST /cases/` usa RBAC hierárquico antigo (não `require_roles_exact`) — mesma classe de bug do #694, não migrada por `#1305`/`4ab8618` | F1 | — | pendente | — | 2026-08-27 |
 | AUD27-P1-2 | `ai_skills.py` (609 linhas, OCR/transcrição/skills) sem nenhum teste | F3 | — | pendente | — | 2026-08-27 |
+| AUD27-P1-3 | Indexação do RAG sem teto de lote no encode — 10,1 GB de anon-rss medidos, disparou OOM-killer global na VPS em 27/08 `[INCIDENTE]` | F1 | #1308 | em-andamento | #1309 | 2026-08-27 |
+| AUD27-P1-4 | Containers do EJC sem `mem_limit` num host com 6 sistemas — um trabalho do EJC reiniciou o `verdelimp-erp` em 27/08 `[INCIDENTE]` | F1 | #1308 | em-andamento | #1309 | 2026-08-27 |
+| AUD27-P1-5 | Titular: religar `RAG_AUTO_REEMBED_ENABLED=true` no `.env` do VPS após o deploy da #1309 (desligado como contenção do incidente de 27/08) | F1 (gate) | #1308 | pendente | — | 2026-08-27 |
 | AUD27-P2-1 | `/ia-governanca/guardrails` conta peças de casos excluídos (reincidência pontual de V2-3.3) | F1 | — | pendente | — | 2026-08-27 |
 | AUD27-P2-2 | `qualidade.py` (verificar-citações/consistência/simular-adversário) com piso RBAC hierárquico sem intenção documentada | F1 | — | pendente | — | 2026-08-27 |
 | AUD27-P2-3 | `cerebro.py` sem teste funcional (só existência de rota no snapshot OpenAPI) | F3 | — | pendente | — | 2026-08-27 |
-| AUD27-P2-4 | Ativar Sentry (`SENTRY_DSN`) — código pronto, recomendado por 3 relatórios de auditoria, sem item de backlog até agora | F5 | — | pendente | — | 2026-08-27 |
+| AUD27-P2-4 | Sentry (`SENTRY_DSN`) ativado em produção pelo titular em 27/08 14:32; log confirma `Sentry inicializado (environment=production)` — resta só conferência pós-deploy | F5 | — | mesclado | #1309 | 2026-08-27 |
 | AUD27-P2-5 | `AREAS_FALLBACK` do frontend com 24 áreas, faltando `licitacoes` (enum backend tem 25) | F5 | — | pendente | — | 2026-08-27 |
 | AUD27-P2-6 | 4ª manifestação de taxonomia de área (`areasWorkspace.ts::AREAS_CANONICAS`) diverge de `AREAS_FALLBACK` | F5 | — | pendente | — | 2026-08-27 |
 | AUD27-P2-7 | Cobertura de RAG ainda insuficiente após lotes 001/002: ~21/29 áreas sem fonte; as 8 novas seguem `rag_status=pendente` | T5 | — | pendente | — | 2026-08-27 |

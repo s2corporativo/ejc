@@ -21,7 +21,16 @@ sozinha define o estado real do sistema em produção. Toda vez que um número
 de produção (contagem de embeddings, proporção de documentos sem `case_id`
 etc.) é citado abaixo sem confirmação, está marcado NÃO CONFIRMADO.
 
-**Nenhuma correção foi aplicada.** Este é só o mapeamento. Achados que
+**Atualização de 27/08, 15h — leia a §9 antes das demais seções.** As seções
+1 a 8 foram escritas como mapeamento puro, sem nenhuma correção aplicada. Na
+mesma tarde, ao ativar em produção dois itens que este relatório apontava
+como pendentes de ação do titular, um incidente real de memória derrubou
+containers de outro sistema hospedado na mesma VPS. A §9 registra o incidente,
+os **dois achados P1 que só apareceram por operar a máquina** (AUD27-P1-3 e
+AUD27-P1-4) e as correções que a PR desta auditoria passou a carregar por
+causa disso. Nada além dessas duas correções foi alterado no código.
+
+**Fora a §9, nenhuma correção foi aplicada.** Achados que
 pareçam simples de corrigir permanecem como estão até uma tarefa própria de
 correção — inclusive porque `docs/PLANO_MESTRE_STATUS.md` estabelece que o
 flip de status de um item acontece **na mesma PR que o corrige**, nunca numa
@@ -267,3 +276,123 @@ Achados novos: 21 (1 P0, 2 P1, 7 P2, 11 P3)
 rodada. Os dois já registrados no backlog canônico continuam de pé:
 V2-4.3 (qual norma citar no lugar de "OAB Prov. 205/2021" — precisa de
 advogado real) e V2-5.2/T5 (curadoria contínua da base de conhecimento).
+
+---
+
+## 9. Adendo — incidente de produção durante a própria auditoria
+
+**Data:** 2026-08-27, 15:00:31 (horário do VPS).
+**Origem:** ao ativar em produção dois itens que a auditoria apontava como
+pendentes de ação do titular — `SENTRY_DSN` (AUD27-P2-4) e
+`EMBEDDINGS_ENABLED=true` (V2-2.2 / T4) — a reindexação do RAG derrubou
+containers de **outro sistema** hospedado na mesma VPS.
+
+Este adendo existe porque o incidente **é ele próprio um achado**: dois
+defeitos que nenhuma leitura estática de código encontraria, e que só
+apareceram porque a máquina foi operada de verdade. Vale como correção de
+método: as seções 1-8 deste relatório são análise estática, e a seção 6
+declara explicitamente que "estado real de produção" não era verificável.
+Era — bastava rodar.
+
+### Linha do tempo
+
+| Hora (VPS) | Evento |
+|---|---|
+| 14:21 | Estado inicial: carga 2,2; memória 43%; 152 processos zumbi |
+| ~14:25 | `EMBEDDINGS_ENABLED=true`; reindexação manual iniciada (`scripts.reembedar_chunks_orfaos`) |
+| 14:32 | Backend recriado para carregar `SENTRY_DSN`; Sentry confirmado ativo no log |
+| 14:54 | Carga 10,11; memória 62%; só 190 MB livres; swap em 2,2 GB. 686 de 82.441 trechos indexados, `erro=0` |
+| 14:56 | `renice 19` + `oom_score_adj=1000` aplicados ao processo de reindexação |
+| **15:00:31** | **OOM-killer global dispara.** Mata o processo de reindexação (PID 3092358, **anon-rss 10,1 GB**). `verdelimp-erp` reinicia |
+| 15:05 | Tetos de memória aplicados a quente (`docker update`) em `ejc_backend` (6 GB) e `ejc_worker` (2 GB) |
+| 15:1x | `RAG_AUTO_REEMBED_ENABLED=false` — ver "Risco derivado" abaixo |
+
+Evidência primária (`dmesg -T`):
+
+```
+python invoked oom-killer: ... oom_score_adj=1000
+Out of memory: Killed process 3092358 (python)
+  total-vm:19222656kB, anon-rss:10120280kB ... oom_score_adj:1000
+```
+
+### Achado 1 — a indexação consome memória sem teto (AUD27-P1-3)
+
+`embedding_service._embed_sync` entregava ao fastembed **todos** os chunks
+órfãos de um documento numa única chamada de `model.embed(entradas)`, sem
+`batch_size`. O default da biblioteca é 256 e o arena allocator do ONNX cresce
+até o maior lote já visto sem devolver a memória ao SO. Resultado medido:
+**10,1 GB de anon-rss** (19,2 GB de VM) depois de ~686 chunks — cerca de 15 MB
+por chunk, ordens de grandeza acima do tamanho do dado.
+
+O script `reembedar_chunks_orfaos.py` em si está correto: abre e fecha sessão
+por lote, usa SAVEPOINT por documento, pagina por chave estável e é idempotente
+(`erro=0` em todos os lotes até morrer). O vazamento não é dele.
+
+**Correção aplicada nesta PR:** `EMBEDDINGS_BATCH` (default 16), passado
+explicitamente em `model.embed(..., batch_size=EMBED_BATCH)`, com teste de
+regressão que falha se alguém remover o parâmetro.
+
+### Achado 2 — containers do EJC sem teto de memória num host compartilhado (AUD27-P1-4)
+
+Esta VPS **não é dedicada ao EJC**. `docker ps` no momento do incidente:
+15 containers de 6 sistemas — EJC (5), Verde Limp (2), sistema-s2 (2),
+Woodpecker CI (2), Evolution API/WhatsApp (1), graphiti/deployment (3).
+
+Os containers dos outros sistemas já declaravam teto (`sistema-s2-app` 2 GB,
+`sistema-s2-db` 1 GB, `deployment-*` 1-2 GB, `graphiti` 1 GB). No EJC,
+**apenas o `ollama`** tinha `mem_limit`. Os demais apareciam como
+`LIMIT: 11.68GiB` — a máquina inteira. Foi isso que transformou um defeito
+interno do EJC em indisponibilidade de outro negócio: sem teto, o estouro
+escalou de "container morre" para "kernel escolhe uma vítima na máquina toda".
+
+**Correção aplicada nesta PR:** `mem_limit` em todos os serviços do
+`docker-compose.yml` (backend 6g, db 3g, worker 2g, langfuse 1g, redis 512m,
+frontend 256m), todos sobrescrevíveis por env.
+
+### O que funcionou
+
+`oom_score_adj=1000`, aplicado ~4 minutos antes do estouro, **determinou a
+vítima**: o kernel matou a reindexação em vez do Postgres ou da API. A linha
+do `dmesg` registra o valor. Sem essa marcação, o candidato natural do
+heurístico seria outro processo — possivelmente o banco do EJC.
+
+Nenhum dado foi perdido: os 686 trechos indexados estão commitados, o script é
+retomável e o `verdelimp-erp` voltou sozinho (`restart: unless-stopped`).
+
+### Risco derivado, e por que o job automático foi desligado
+
+`scheduler._reembedar_rag_orfaos` roda **dentro do processo do backend**
+(APScheduler in-process), de hora em hora no minuto :20. Com o teto de 6 GB
+recém-aplicado e a causa raiz ainda não corrigida em produção, a próxima
+execução inflaria dentro do cgroup limitado e o kernel mataria a **própria
+API** — reiniciando o EJC de hora em hora. Por isso
+`RAG_AUTO_REEMBED_ENABLED=false` foi definido no `.env` do VPS como contenção
+temporária.
+
+**Esse `false` é dívida aberta**, não configuração final: deve voltar a `true`
+depois que esta PR for implantada, e a reversão precisa ser verificada
+(ver "Pendências").
+
+### Pendências deste incidente
+
+1. **Deploy desta PR em produção.** Enquanto ela não for implantada, o VPS
+   segue rodando o commit `eb65e63e`, sem a correção de lote e com os tetos
+   aplicados apenas a quente — `docker update` **não sobrevive a um
+   `docker compose up --force-recreate`**.
+2. **Religar `RAG_AUTO_REEMBED_ENABLED=true`** no `.env` do VPS após o deploy,
+   e confirmar uma execução do job sem crescimento anormal de memória.
+3. **Concluir a indexação**: 81.755 de 82.441 trechos seguem sem embedding.
+4. **Investigar os 153 processos zumbi** — preexistentes ao incidente, causa
+   não determinada, fora do escopo desta PR.
+5. **Reavaliar a co-hospedagem.** Seis sistemas de negócios distintos numa VPS
+   de 11 GB sem isolamento por cgroup foi a condição que permitiu o incidente.
+   Os tetos contêm o sintoma; a decisão de arquitetura é do titular.
+
+### Correção de método para as próximas auditorias
+
+Este relatório declarou oito áreas "não verificáveis" (§6) por falta de acesso
+a produção. Duas delas eram verificáveis com um terminal e dez minutos, e uma
+terceira — o consumo real de memória da indexação — só era observável em
+execução. Auditoria estática e operação real não são substitutas; a estática
+encontrou 21 achados em código, a operação encontrou 2 achados que a estática
+não tinha como ver, e ambos eram P1.

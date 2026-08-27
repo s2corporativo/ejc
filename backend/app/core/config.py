@@ -575,6 +575,15 @@ class Settings(BaseSettings):
     # migration de downgrade + reindex). ⚠️ EMBEDDINGS_DIM DEVE casar com a coluna.
     EMBEDDINGS_MODEL: str = "intfloat/multilingual-e5-large"
     EMBEDDINGS_DIM: int = 1024
+    # Tamanho do lote enviado ao modelo em UMA chamada de encode. Existe por
+    # causa do incidente de 2026-08-27 (ver docs/auditoria/relatorios/
+    # 2026-08-27-verificacao-e-novos-achados.md, §9): `_embed_sync` mandava
+    # TODOS os chunks órfãos de um documento numa chamada só. O arena allocator
+    # do ONNX cresce com o maior lote já visto e não devolve a memória ao SO —
+    # o processo de reindexação chegou a 10 GB de anon-rss e disparou o
+    # OOM-killer GLOBAL da VPS, que hospeda outros sistemas além do EJC.
+    # Lote pequeno e fixo mantém o pico limitado e previsível.
+    EMBEDDINGS_BATCH: int = 16
     # Auto-reindex do RAG (O-2): job periódico do scheduler reembeda chunks órfãos
     # (embedding IS NULL) — assim a troca de modelo/dimensão (migration 096) se
     # AUTO-CURA sem passo manual no deploy. No-op rápido quando não há órfãos.
