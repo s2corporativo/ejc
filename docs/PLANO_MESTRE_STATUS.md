@@ -104,6 +104,10 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | AUD27-P1-3 | Indexação do RAG sem teto de lote no encode — 10,1 GB de anon-rss medidos, disparou OOM-killer global na VPS em 27/08 `[INCIDENTE]` | F1 | #1308 | em-andamento | #1309 | 2026-08-27 |
 | AUD27-P1-4 | Containers do EJC sem `mem_limit` num host com 6 sistemas — um trabalho do EJC reiniciou o `verdelimp-erp` em 27/08 `[INCIDENTE]` | F1 | #1308 | em-andamento | #1309 | 2026-08-27 |
 | AUD27-P1-5 | Titular: religar `RAG_AUTO_REEMBED_ENABLED=true` no `.env` do VPS após o deploy da #1309 (desligado como contenção do incidente de 27/08) | F1 (gate) | #1308 | pendente | — | 2026-08-27 |
+| AUD27-P1-6 | `secrets/` (credenciais OAuth do Google Drive), `backups/` e `data/` não estavam no `.gitignore` no checkout de produção — um `git add -A` publicaria credencial `[SEGURANÇA]` | F1 | #1310 | em-andamento | #1311 | 2026-08-27 |
+| AUD27-P1-7 | Correção de risco de prazo (2ª OAB no DJEN) vivia só como edição manual no `/opt/ejc`, fora do Git — seria destruída pelo próximo `checkout --force` | F1 | #1310 | em-andamento | #1311 | 2026-08-27 |
+| AUD27-P2-8 | `secrets/ejc-backup-drive.json` tem 1 byte no VPS — credencial do backup para Google Drive provavelmente inoperante; backup offsite não confirmado | F5 | #1310 | pendente | — | 2026-08-27 |
+| AUD27-P2-9 | Checkout de produção (`d40d0083`, 24/08) diverge do container em execução (`eb65e63e`, 14/08) — deploy interrompido no meio deixou disco e runtime dessincronizados | F5 | #1310 | pendente | — | 2026-08-27 |
 | AUD27-P2-1 | `/ia-governanca/guardrails` conta peças de casos excluídos (reincidência pontual de V2-3.3) | F1 | — | pendente | — | 2026-08-27 |
 | AUD27-P2-2 | `qualidade.py` (verificar-citações/consistência/simular-adversário) com piso RBAC hierárquico sem intenção documentada | F1 | — | pendente | — | 2026-08-27 |
 | AUD27-P2-3 | `cerebro.py` sem teste funcional (só existência de rota no snapshot OpenAPI) | F3 | — | pendente | — | 2026-08-27 |

@@ -76,3 +76,13 @@ backend/graphify-out/
 
 # Backups gravados em runtime pelo seed de skills — podem conter dados.
 backend/app/seeds/backups/
+
+# Diretórios criados em RUNTIME na raiz do checkout de produção (/opt/ejc).
+# Até 2026-08-27 nenhum deles era ignorado: `git status` no VPS listava
+# `secrets/` como não rastreado, com credenciais OAuth reais do Google Drive
+# dentro (permissão 600, mas a um `git add -A` de distância do repositório
+# remoto). Ignorar não é cosmético — é a barreira que impede um comando
+# distraído de publicar credencial. NUNCA versione o conteúdo destes.
+secrets/
+backups/
+data/
