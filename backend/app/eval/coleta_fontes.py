@@ -48,11 +48,14 @@ SAIDA = BASE / "fontes_oficiais.json"
 
 # Mesma política que `gold_governance._host_oficial` aceita — sufixo OU host
 # exato. Coletar de domínio que o validador vai recusar depois é trabalho
-# perdido, então a recusa acontece aqui, na coleta. Achado do Codex: a versão
-# anterior só checava sufixo, então recusava `oab.org.br` — `.org.br`, não
-# `.gov.br` — que o validador aceita como exceção explícita de host exato.
+# perdido, então a recusa acontece aqui, na coleta.
 SUFIXOS_OFICIAIS = (".gov.br", ".jus.br", ".leg.br", ".mp.br", ".def.br")
-HOSTS_OFICIAIS = {"planalto.gov.br", "www.planalto.gov.br", "oab.org.br", "www.oab.org.br"}
+HOSTS_OFICIAIS = {
+    "planalto.gov.br",
+    "www.planalto.gov.br",
+    "oab.org.br",
+    "www.oab.org.br",
+}
 
 TIMEOUT_PADRAO = 30
 UA = "EJC-curadoria-gold-set/1.0 (+https://github.com/s2corporativo/ejc)"
@@ -69,10 +72,6 @@ class Fonte:
     url: str
     artigos: list[str] = field(default_factory=list)
     observacao: str = ""
-    # Trechos que precisam aparecer no documento para que ele seja aceito como
-    # a norma que o registro diz ser. Sem isto, uma URL que responde 200 mas
-    # serve outra lei entra no acervo em silêncio — e o registro passa a
-    # depender da disciplina de quem editou o JSON, não do código.
     verificar_texto: list[str] = field(default_factory=list)
 
 
@@ -89,14 +88,7 @@ def _host_oficial(url: str) -> bool:
 
 
 def baixar(url: str, *, timeout: int = TIMEOUT_PADRAO) -> bytes:
-    """Baixa e exige que o host FINAL, após redirecionamentos, siga oficial.
-
-    `urlopen` segue redirecionamento sozinho. Sem conferir `geturl()`, uma URL
-    oficial que redirecione para host externo faria o registro atribuir o
-    conteúdo e o hash desse host à URL oficial — a proveniência viraria ficção,
-    e os marcadores de `verificar_texto` não salvam: a página externa pode
-    reproduzir o texto da lei e casar todos eles.
-    """
+    """Baixa e exige que o host FINAL, após redirecionamentos, siga oficial."""
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - URL validada acima
         final = resp.geturl()
@@ -108,11 +100,23 @@ def baixar(url: str, *, timeout: int = TIMEOUT_PADRAO) -> bytes:
 
 
 def html_para_texto(bruto: bytes) -> str:
-    """HTML → texto corrido, preservando o que importa para transcrever artigo."""
+    """HTML → texto preservando limites de blocos relevantes.
+
+    Cabeçalhos de artigos só contam no início de linha para não confundir uma
+    remissão interna ("nos termos do Art. 20") com o dispositivo seguinte.
+    Portanto tags de bloco precisam virar quebras de linha antes da remoção da
+    marcação. Isso cobre páginas oficiais que estruturam o texto com `div`,
+    listas ou tabelas em vez de apenas `p`/`br`.
+    """
     txt = bruto.decode("utf-8", errors="replace")
     txt = re.sub(r"(?is)<(script|style).*?</\1>", " ", txt)
     txt = re.sub(r"(?i)<br\s*/?>", "\n", txt)
-    txt = re.sub(r"(?i)</p>", "\n", txt)
+    txt = re.sub(
+        r"(?i)</?(?:p|div|li|tr|td|th|h[1-6]|section|article|blockquote|pre)"
+        r"(?:\s[^>]*)?>",
+        "\n",
+        txt,
+    )
     txt = re.sub(r"<[^>]+>", " ", txt)
     txt = _html.unescape(txt)
     txt = txt.replace("\xa0", " ")
@@ -122,40 +126,15 @@ def html_para_texto(bruto: bytes) -> str:
 
 
 def _normalizar_id_artigo(bruto: str) -> str:
-    """`1.022` e `1022` são o mesmo artigo; `170-A` não é `170`.
-
-    Também descarta o sinal ordinal (º/ª/o/°) do lado do PEDIDO, para
-    `--artigo "6º-A"` normalizar igual ao que `_marcadores_de_artigo` produz
-    do documento — o sinal nunca é parte do identificador, só decoração.
-    """
+    """`1.022` e `1022` são o mesmo artigo; `170-A` não é `170`."""
     ident = bruto.strip().upper().replace(".", "").replace(" ", "")
     ident = re.sub(r"[ºª°]|(?<=\d)O(?=-)", "", ident)
     return re.sub(r"[-–—]+", "-", ident)
 
 
 def _marcadores_de_artigo(texto: str) -> list[tuple[int, str]]:
-    """Posições de todo 'Art. N' do texto, com o identificador COMPLETO.
-
-    Capturar só os dígitos iniciais quebrava nos dois sentidos: pedir `170-A`
-    nunca encontrava nada, e pedir `170` podia devolver o `170-A`. Artigo com
-    sufixo (`11-A`) e com milhar pontuado (`1.022`) são corriqueiros na
-    legislação brasileira, então o identificador é capturado inteiro e
-    normalizado antes da comparação.
-    """
+    """Posições de todo cabeçalho `Art. N`, com identificador completo."""
     achados = []
-    # O sinal ordinal (º/ª/o/°) fica ENTRE o número e o sufixo em cabeçalhos
-    # como "Art. 6º-A" — casado fora do grupo de captura porque não faz parte
-    # do identificador. Sem isto, "6º-A" só capturava "6": pedir "6-A" nunca
-    # encontrava nada, e pedir "6" podia devolver o corpo do "6º-A" (achado do
-    # Codex).
-    #
-    # `(?m)^\s*` exige que o marcador comece uma LINHA — `html_para_texto`
-    # transforma cada `<p>`/`<br>` em quebra de linha, e no legin cada artigo
-    # é seu próprio parágrafo. Sem essa âncora, uma citação cruzada no meio da
-    # frase ("nos termos do Art. 20 desta lei") era tratada como o próximo
-    # cabeçalho de artigo e cortava o corpo do artigo pedido antes da hora —
-    # silenciosamente, reportando "encontrado" com texto incompleto (achado do
-    # Codex).
     padrao = r"(?m)^\s*Art\.?\s*(\d[\d.]*)\s*(?:[ºªo°]\s*)?(-\s*[A-Za-z])?"
     for m in re.finditer(padrao, texto):
         ident = m.group(1) + (m.group(2) or "")
@@ -164,16 +143,9 @@ def _marcadores_de_artigo(texto: str) -> list[tuple[int, str]]:
 
 
 def extrair_artigos(texto: str, numeros: Iterable[str]) -> dict[str, str]:
-    """Texto literal de cada artigo pedido, do marcador até o artigo seguinte.
-
-    Casa o número exato: pedir o 14 não pode devolver o 140. O corte é no
-    próximo marcador de artigo, sem tentar entender parágrafo ou inciso — o
-    objetivo é transcrição fiel para conferência humana, não parsing jurídico.
-    """
+    """Texto literal de cada artigo pedido, do marcador até o artigo seguinte."""
     marcadores = _marcadores_de_artigo(texto)
     saida: dict[str, str] = {}
-    # A chave de saída é o identificador como o registro o pediu, para o JSON
-    # continuar legível; a comparação é feita sobre a forma normalizada.
     rotulo = {_normalizar_id_artigo(str(x)): str(x).strip() for x in numeros}
     for numero in numeros:
         alvo = _normalizar_id_artigo(str(numero))
@@ -182,9 +154,6 @@ def extrair_artigos(texto: str, numeros: Iterable[str]) -> dict[str, str]:
                 continue
             fim = marcadores[i + 1][0] if i + 1 < len(marcadores) else len(texto)
             trecho = texto[pos:fim].strip()
-            # Um "Art. 14" citado de passagem no meio de outro dispositivo
-            # produziria um trecho curto e sem corpo; o primeiro casamento que
-            # tem corpo é o dispositivo em si.
             if len(trecho) < 40 and saida.get(rotulo.get(alvo, alvo)):
                 continue
             saida[rotulo.get(alvo, alvo)] = trecho
@@ -194,29 +163,46 @@ def extrair_artigos(texto: str, numeros: Iterable[str]) -> dict[str, str]:
 
 
 def natureza_do_documento(url: str, texto: str) -> str:
-    """Distingue o que prova vigência do que só prova o texto publicado.
-
-    Decide pela URL, não pelo corpo da página. A primeira versão desta função
-    varria os primeiros 4 mil caracteres do texto e classificou como
-    `texto_compilado` duas páginas de **publicação original** do portal da
-    Câmara: a palavra "compilado" aparece no menu de navegação do portal, não
-    no documento. O efeito seria `prova_vigencia=true` numa fonte que não prova
-    vigência nenhuma — o oposto do que este campo existe para fazer.
-
-    Que o risco é concreto, o próprio acervo mostra: a publicação original do
-    Código Penal traz, no art. 155, pena de multa "de quinhentos mil réis a dez
-    contos de réis", substituída pela reforma de 1984. Texto autêntico, fonte
-    oficial, e ainda assim gabarito errado.
-
-    Por isso a classificação falha fechada: sem sinal inequívoco na URL, o
-    retorno é `indeterminada` e `prova_vigencia` fica falso.
-    """
+    """Distingue o que prova vigência do que só prova o texto publicado."""
     alvo = url.lower()
     if "publicacaooriginal" in alvo or "publicacao-original" in alvo:
         return "publicacao_original"
     if "compilado" in alvo or "consolidado" in alvo:
         return "texto_compilado"
     return "indeterminada"
+
+
+def _linha_titulo_identificada(texto: str, marcadores: Iterable[str]) -> str | None:
+    """Confirma a identidade na linha estrutural que DECLARA o ato.
+
+    Não basta número/data aparecerem nos primeiros caracteres: uma lei
+    alteradora normalmente cita a norma-alvo na ementa. O primeiro marcador do
+    registro (`LEI N`, `DECRETO-LEI N` etc.) precisa iniciar a própria linha e
+    todos os demais marcadores precisam coexistir nessa mesma linha-título.
+    Assim uma ementa "Altera a Lei nº X..." não pode se passar pela Lei X.
+    """
+    esperados = [
+        re.sub(r"\s+", " ", str(m).strip()).casefold()
+        for m in marcadores
+        if str(m).strip()
+    ]
+    if not esperados:
+        return None
+    primeiro = esperados[0]
+    linhas = [
+        re.sub(r"\s+", " ", linha).strip()
+        for linha in texto.splitlines()
+        if linha.strip()
+    ]
+    # O título oficial aparece no início do documento útil. Limitar a janela de
+    # linhas impede que uma citação tardia seja promovida a identidade.
+    for linha in linhas[:40]:
+        norm = linha.casefold()
+        if not norm.startswith(primeiro):
+            continue
+        if all(marcador in norm for marcador in esperados):
+            return linha
+    return None
 
 
 def coletar_fonte(
@@ -235,26 +221,15 @@ def coletar_fonte(
         raise ErroDeColeta(f"{fonte.apelido}: resposta vazia.")
 
     texto = html_para_texto(bruto)
-
-    # Só o CABEÇALHO precisa conter os marcadores, não a página inteira. Um ato
-    # que meramente EMENDA a norma declarada ("Lei X altera a Lei 8.078/1990")
-    # cita o número e a data dela em algum parágrafo do corpo — e casaria os
-    # marcadores mesmo sem ser a norma em si, aceitando e fixando o hash do
-    # documento errado (achado do Codex). Nas páginas do legin o título oficial
-    # vem nos primeiros parágrafos (confirmado nas 7 fontes já coletadas: "LEI
-    # Nº X, DE ... — Publicação Original" aparece nos primeiros ~150
-    # caracteres); ancorar num prefixo generoso rejeita a citação enterrada no
-    # corpo sem depender de parsing de HTML.
-    JANELA_CABECALHO = 4000
-    cabecalho = texto[:JANELA_CABECALHO].lower()
-    ausentes = [t for t in fonte.verificar_texto if t.lower() not in cabecalho]
-    if ausentes:
-        raise ErroDeColeta(
-            f"{fonte.apelido}: o cabeçalho do documento em {fonte.url} "
-            f"(primeiros {JANELA_CABECALHO} caracteres) não contém {ausentes!r} — "
-            "não é a norma que o registro declara (pode ser um ato que só a cita), "
-            "ou a página mudou. Confira a URL antes de registrar."
-        )
+    if fonte.verificar_texto:
+        linha_titulo = _linha_titulo_identificada(texto, fonte.verificar_texto)
+        if linha_titulo is None:
+            raise ErroDeColeta(
+                f"{fonte.apelido}: o documento em {fonte.url} não contém uma "
+                "linha-título compatível com todos os marcadores de identidade "
+                f"{fonte.verificar_texto!r}. Pode ser outro ato que apenas cita "
+                "a norma-alvo, ou a página mudou. Confira a URL antes de registrar."
+            )
 
     artigos = extrair_artigos(texto, fonte.artigos)
     faltando = [a for a in fonte.artigos if a not in artigos]
@@ -273,24 +248,16 @@ def coletar_fonte(
         "artigos_nao_encontrados": faltando,
         "observacao": fonte.observacao,
         "verificado_contem": list(fonte.verificar_texto),
-        # Preenchimento humano. A ferramenta não atesta vigência nem assina
-        # curadoria — ver docstring do módulo.
         "vigencia_conferida_em": None,
         "conferida_por": None,
     }
 
 
 def carregar_registro(caminho: Path = REGISTRO) -> list[Fonte]:
-    """Carrega o registro, recusando entrada sem marcador de identidade.
-
-    `verificar_texto` ausente ou vazio fazia `coletar_fonte` não verificar nada
-    e aceitar qualquer página não vazia de domínio permitido — e como muitos
-    diplomas compartilham os mesmos números de artigo, uma URL oficial errada
-    povoaria o registro com artigos de outra norma, exatamente o que a
-    documentação promete que falha fechado. Garantia que depende de quem edita
-    o JSON lembrar de um campo opcional não é garantia.
-    """
+    """Carrega o registro, recusando entrada sem marcador de identidade."""
     dados = json.loads(caminho.read_text(encoding="utf-8"))
+    if not isinstance(dados, dict) or not isinstance(dados.get("fontes"), list):
+        raise ErroDeColeta("registro de fontes inválido: `fontes` deve ser lista")
     sem_marcador = [
         d.get("apelido", "?")
         for d in dados["fontes"]
@@ -299,8 +266,7 @@ def carregar_registro(caminho: Path = REGISTRO) -> list[Fonte]:
     if sem_marcador:
         raise ErroDeColeta(
             f"fontes sem `verificar_texto` não vazio: {', '.join(sem_marcador)}. "
-            "Declare trechos que identifiquem a norma (número e data) — sem eles "
-            "a coleta aceitaria qualquer página do domínio."
+            "Declare trechos que identifiquem a norma (tipo do ato, número e data)."
         )
     return [
         Fonte(
@@ -315,8 +281,29 @@ def carregar_registro(caminho: Path = REGISTRO) -> list[Fonte]:
     ]
 
 
+def _carregar_saida_incremental(caminho: Path) -> list[dict]:
+    """Lê a saída existente sem permitir perda silenciosa no modo seletivo."""
+    try:
+        payload = json.loads(caminho.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        raise ErroDeColeta(
+            f"saída existente inválida/ilegível em {caminho}: {exc}"
+        ) from exc
+    fontes = payload.get("fontes") if isinstance(payload, dict) else None
+    if not isinstance(fontes, list) or any(
+        not isinstance(item, dict) or not str(item.get("apelido") or "").strip()
+        for item in fontes
+    ):
+        raise ErroDeColeta(
+            f"saída existente inválida em {caminho}: `fontes` deve ser lista de objetos com apelido"
+        )
+    return fontes
+
+
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--registro", type=Path, default=REGISTRO)
     ap.add_argument("--saida", type=Path, default=SAIDA)
     ap.add_argument("--apelido", action="append", help="coletar só estas fontes")
@@ -351,12 +338,11 @@ def main(argv: list[str] | None = None) -> int:
             f"arts={len(registro['artigos'])}/{len(f.artigos)} [{marca}]"
         )
         if registro["artigos_nao_encontrados"]:
-            print(f"      artigos não localizados: {', '.join(registro['artigos_nao_encontrados'])}")
+            print(
+                "      artigos não localizados: "
+                + ", ".join(registro["artigos_nao_encontrados"])
+            )
 
-    # Publicar o que deu certo enquanto outra fonte falhou substituiria um
-    # registro completo por um truncado, e o comando ainda sairia 0 — automação
-    # ou curador leriam o arquivo como se estivesse inteiro. Falha de rede
-    # durante coleta é esperada, então o caso precisa ser tratado, não torcido.
     if falhas:
         print(
             f"\n{len(falhas)} fonte(s) falharam: {', '.join(ap for ap, _ in falhas)}.\n"
@@ -366,31 +352,39 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    if coletadas:
-        # Em coleta SELETIVA (`--apelido`) a saída é incremental: fontes já
-        # coletadas permanecem e apenas os apelidos pedidos são substituídos.
-        # Em coleta COMPLETA, a fonte da verdade é o registro atual: a saída é
-        # reconstruída só com o que acabou de ser coletado. Isso impede que uma
-        # fonte removida/renomeada em `fontes_registro.json` sobreviva para
-        # sempre em `fontes_oficiais.json` e seja reutilizada na curadoria.
-        existentes = []
+    # Coleta completa SEM fontes também precisa publicar o estado vazio. Senão
+    # uma retirada total do registro deixaria fontes antigas sobrevivendo na
+    # saída com exit code 0.
+    if coletadas or not args.apelido:
+        existentes: list[dict] = []
         if args.apelido and args.saida.exists():
             try:
-                existentes = json.loads(args.saida.read_text(encoding="utf-8")).get("fontes", [])
-            except (json.JSONDecodeError, OSError):
-                existentes = []
+                existentes = _carregar_saida_incremental(args.saida)
+            except ErroDeColeta as exc:
+                print(
+                    f"FALHA: {exc}. {args.saida} NÃO foi alterado.",
+                    file=sys.stderr,
+                )
+                return 1
+
         por_apelido = {f["apelido"]: f for f in existentes}
         por_apelido.update({f["apelido"]: f for f in coletadas})
         args.saida.write_text(
             json.dumps(
-                {"gerado_em": date.today().isoformat(), "fontes": list(por_apelido.values())},
+                {
+                    "gerado_em": date.today().isoformat(),
+                    "fontes": list(por_apelido.values()),
+                },
                 ensure_ascii=False,
                 indent=2,
             )
             + "\n",
             encoding="utf-8",
         )
-        print(f"\n{len(coletadas)} fonte(s) coletadas; {len(por_apelido)} no total em {args.saida}")
+        print(
+            f"\n{len(coletadas)} fonte(s) coletadas; "
+            f"{len(por_apelido)} no total em {args.saida}"
+        )
 
     sem_vigencia = [c["apelido"] for c in coletadas if not c["prova_vigencia"]]
     if sem_vigencia:
