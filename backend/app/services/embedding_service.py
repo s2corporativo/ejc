@@ -28,6 +28,14 @@ settings = get_settings()
 MODEL_NAME = settings.EMBEDDINGS_MODEL or "intfloat/multilingual-e5-large"
 EMBED_DIM  = int(settings.EMBEDDINGS_DIM or 1024)
 
+# Teto de textos por chamada de encode. NÃO é ajuste de desempenho: é contenção
+# de memória. Sem ele, `_embed_sync` entrega ao ONNX um lote do tamanho do
+# documento (ilimitado), o arena allocator cresce até o maior lote já visto e
+# não devolve a memória — em 2026-08-27 a reindexação chegou a 10 GB de
+# anon-rss e o OOM-killer global da VPS derrubou containers de OUTROS sistemas
+# hospedados na mesma máquina. Ver config.EMBEDDINGS_BATCH.
+EMBED_BATCH = max(1, int(settings.EMBEDDINGS_BATCH or 16))
+
 # Pooling FIXO por REPRODUTIBILIDADE do RAG. Os modelos E5 (intfloat/*-e5-*) são
 # treinados com pooling por MÉDIA (mean) das últimas hidden states — NÃO CLS. O
 # fastembed PINADO (==0.8.0, ver requirements.txt) já aplica o pooling correto
@@ -107,7 +115,9 @@ def _prefixo(modo: str) -> str:
 def _embed_sync(textos: list[str], prefix: str) -> list[list[float]]:
     model = _get_model()
     entradas = [prefix + t for t in textos]
-    return [vec.tolist() for vec in model.embed(entradas)]
+    # batch_size EXPLÍCITO: o default do fastembed (256) somado a documentos com
+    # centenas de chunks foi o que estourou a memória da VPS em 2026-08-27.
+    return [vec.tolist() for vec in model.embed(entradas, batch_size=EMBED_BATCH)]
 
 
 def _validar_dimensao(vetores: list[list[float]] | None) -> list[list[float]] | None:

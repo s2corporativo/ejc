@@ -26,7 +26,8 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 - `ID` é estável e nunca reaproveitado. Prefixos: `V2-` (achados de
   `plano-correcao-v2.md`), `V3-B` (blocos de `plano-lancamento-v3.md`), `CL-` (classes de
   inconsistência estrutural, Eixo 2), `CORTE-` (remoção de módulo, Eixo 3), `INFRA-`
-  (esteira/deploy/processo).
+  (esteira/deploy/processo), `AUD27-` (achados novos de
+  `docs/auditoria/relatorios/2026-08-27-verificacao-e-novos-achados.md`).
 
 ## Tabela
 
@@ -97,6 +98,30 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | CORTE-5 | Cortar módulo sociedade / retiradas de sócio | F5 | — | pendente | — | — |
 | CORTE-6 | Arquivar skills de IA sem uso registrado em log | F5 | — | pendente | — | — |
 | CORTE-7 | Desmontar `UI.tsx` (1437 linhas) em `components/ui/*` + consolidar 8 CSS globais | F5 | — | pendente | — | — |
+| AUD27-P0-1 | Kill-switch `AI_ENABLED` não protege os endpoints oficiais do Núcleo Único (`/ai/core/*`) `[CRÍTICO]` | F1 | — | pendente | — | 2026-08-27 |
+| AUD27-P1-1 | `POST /cases/` usa RBAC hierárquico antigo (não `require_roles_exact`) — mesma classe de bug do #694, não migrada por `#1305`/`4ab8618` | F1 | — | pendente | — | 2026-08-27 |
+| AUD27-P1-2 | `ai_skills.py` (609 linhas, OCR/transcrição/skills) sem nenhum teste | F3 | — | pendente | — | 2026-08-27 |
+| AUD27-P1-3 | Indexação do RAG sem teto de lote no encode — 10,1 GB de anon-rss medidos, disparou OOM-killer global na VPS em 27/08 `[INCIDENTE]` | F1 | #1308 | em-andamento | #1309 | 2026-08-27 |
+| AUD27-P1-4 | Containers do EJC sem `mem_limit` num host com 6 sistemas — um trabalho do EJC reiniciou o `verdelimp-erp` em 27/08 `[INCIDENTE]` | F1 | #1308 | em-andamento | #1309 | 2026-08-27 |
+| AUD27-P1-5 | Titular: religar `RAG_AUTO_REEMBED_ENABLED=true` no `.env` do VPS após o deploy da #1309 (desligado como contenção do incidente de 27/08) | F1 (gate) | #1308 | pendente | — | 2026-08-27 |
+| AUD27-P2-1 | `/ia-governanca/guardrails` conta peças de casos excluídos (reincidência pontual de V2-3.3) | F1 | — | pendente | — | 2026-08-27 |
+| AUD27-P2-2 | `qualidade.py` (verificar-citações/consistência/simular-adversário) com piso RBAC hierárquico sem intenção documentada | F1 | — | pendente | — | 2026-08-27 |
+| AUD27-P2-3 | `cerebro.py` sem teste funcional (só existência de rota no snapshot OpenAPI) | F3 | — | pendente | — | 2026-08-27 |
+| AUD27-P2-4 | Sentry (`SENTRY_DSN`) ativado em produção pelo titular em 27/08 14:32; log confirma `Sentry inicializado (environment=production)` — resta só conferência pós-deploy | F5 | — | mesclado | #1309 | 2026-08-27 |
+| AUD27-P2-5 | `AREAS_FALLBACK` do frontend com 24 áreas, faltando `licitacoes` (enum backend tem 25) | F5 | — | pendente | — | 2026-08-27 |
+| AUD27-P2-6 | 4ª manifestação de taxonomia de área (`areasWorkspace.ts::AREAS_CANONICAS`) diverge de `AREAS_FALLBACK` | F5 | — | pendente | — | 2026-08-27 |
+| AUD27-P2-7 | Cobertura de RAG ainda insuficiente após lotes 001/002: ~21/29 áreas sem fonte; as 8 novas seguem `rag_status=pendente` | T5 | — | pendente | — | 2026-08-27 |
+| AUD27-P3-1 | `governanca.yml`/`auto-integracao.yml` seguem armados no YAML — podem reativar merge automático sem revisão se o Actions voltar | F6 (gate) | — | pendente | — | 2026-08-27 |
+| AUD27-P3-2 | CORTE-2/CORTE-3: camada de router já cortada (12/08), services (`diplomacia_digital.py`, `victory_vault.py`) seguem ativos — status do plano não reflete a nuance | F5 | — | pendente | — | 2026-08-27 |
+| AUD27-P3-3 | Aba morta inalcançável `"ia_cliente"` em `DossieCliente.tsx` | F5 | — | pendente | — | 2026-08-27 |
+| AUD27-P3-4 | `components/Layout.tsx` (669 linhas) código morto, substituído por `LayoutReference.tsx` | F5 | — | pendente | — | 2026-08-27 |
+| AUD27-P3-5 | `DashboardLegalTechPremium.tsx` (480 linhas) componente de demonstração morto | F5 | — | pendente | — | 2026-08-27 |
+| AUD27-P3-6 | CORTE-7 subestimado: `UI.tsx` com 1484 linhas (era 1437); CSS global são 12 arquivos/7815 linhas (título diz 8) | F5 | — | pendente | — | 2026-08-27 |
+| AUD27-P3-7 | Referências de migration desatualizadas em CL-A2 (diz 149, real 152) e CL-B3 (diz 148, real 151) | F2 | — | pendente | — | 2026-08-27 |
+| AUD27-P3-8 | Padrão de `UPDATE` dinâmico via f-string com allowlist estática (seguro hoje, frágil a regressão) em 5+ routers | F5 | — | pendente | — | 2026-08-27 |
+| AUD27-P3-9 | `oab_number`/`djen_oab_numero` sem reconciliação (subitem aberto de V2-3.5) | F5 | — | pendente | — | 2026-08-27 |
+| AUD27-P3-10 | `DELETE /cases/{id}` não bloqueia/cascateia peças em status não-terminal | F5 | — | pendente | — | 2026-08-27 |
+| AUD27-P3-11 | Possível índice ausente em `deleted_at` nas tabelas espinha (`cases`/`documents`/`deadlines`/`clients`) — não confirmado por `EXPLAIN` | F5 | — | pendente | — | 2026-08-27 |
 
 ## Placar por fase (derivado — não editar à mão, `status_check.sh` recalcula na saída)
 
