@@ -118,6 +118,9 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | AUD27-P2-5 | `AREAS_FALLBACK` do frontend com 24 áreas, faltando `licitacoes` (enum backend tem 25) | F5 | — | pendente | — | 2026-08-27 |
 | AUD27-P2-6 | 4ª manifestação de taxonomia de área (`areasWorkspace.ts::AREAS_CANONICAS`) diverge de `AREAS_FALLBACK` | F5 | — | pendente | — | 2026-08-27 |
 | AUD27-P2-7 | Cobertura de RAG ainda insuficiente após lotes 001/002: ~21/29 áreas sem fonte; as 8 novas seguem `rag_status=pendente` | T5 | — | pendente | — | 2026-08-27 |
+| AUD27-P2-10 | Base de conhecimento com o mesmo texto legal em 4-6 cópias (CPC 6x, CLT 4x, CC 4x, CF 4x) — duplicata ocupa as vagas do contexto do RAG e degrada a resposta; ferramenta pronta em `scripts/deduplicar_base_conhecimento.py` (rebaixa, não apaga), execução é ato do titular | F3 | #1313 | em-andamento | #1314 | 2026-08-27 |
+| AUD27-P2-11 | Cópia do CPP com `categoria=peca_escritorio` (restrita por cliente) e `client_id` nulo — irrecuperável pela busca; há 4 cópias corretas, então o caminho é remover, não recategorizar | F3 | #1313 | pendente | — | 2026-08-27 |
+| AUD27-P3-14 | Zumbis do host: 158 processos (`node`/`chromium`/`chrome_crashpad`) sob um único pai no container do **s2licit** (puppeteer-extra-stealth) — não é o EJC; raspagem travando em laço há 24h sugere coleta de editais quebrada | F5 | #1313 | pendente | — | 2026-08-27 |
 | AUD27-P3-1 | `governanca.yml`/`auto-integracao.yml` seguem armados no YAML — podem reativar merge automático sem revisão se o Actions voltar | F6 (gate) | — | pendente | — | 2026-08-27 |
 | AUD27-P3-2 | CORTE-2/CORTE-3: camada de router já cortada (12/08), services (`diplomacia_digital.py`, `victory_vault.py`) seguem ativos — status do plano não reflete a nuance | F5 | — | pendente | — | 2026-08-27 |
 | AUD27-P3-3 | Aba morta inalcançável `"ia_cliente"` em `DossieCliente.tsx` | F5 | — | pendente | — | 2026-08-27 |
