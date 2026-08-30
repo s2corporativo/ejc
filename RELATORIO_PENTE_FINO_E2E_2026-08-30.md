@@ -112,3 +112,22 @@ O titular mandou aplicar e executar todas as melhorias. Status por item, no pró
 | §7.5 Consolidação de menu 34→10 | ⏸️ NÃO executada: decisão arquitetural do titular com plano próprio (parecer arquitetural / V3) |
 
 Review do PR (Codex, 4×P1): probe DataJud → capacidade explícita `datajud`; cleanup por rodada na homologação (validado: zero resíduo); probe de sociedade reapontado para as APIs reais da rota; remoção deste relatório **declinada com fundamento** (laudo de auditoria ≠ relatório de entrega; precedente `docs/arquivo/relatorios/RELATORIO_PENTE_FINO_EJC_2026-07-18.md`).
+
+---
+
+## Adendo 2 (30/08, mesma sessão) — limpeza, padronização e consolidação total
+
+Ordem do titular: "limpeza/higienização/sanitização/padronização/consolidação total" + "o que tiver obsoleto e redundante deve ser excluído; simplifique ao máximo para usabilidade". Executado no commit `f7bca95` (113 arquivos, **−5.442 linhas líquidas**), com prova de zero referência viva antes de cada remoção:
+
+| Frente | Entrega |
+|---|---|
+| Padronização | 6 arquivos fora do Prettier corrigidos; `format:check` limpo; npm audit e pip-audit sem vulnerabilidades |
+| Raiz | 43 arquivos históricos → `docs/arquivo/{relatorios,planos,scripts_legado,auditoria-grafo}/`; raiz volta a conter só o vivo (README, CLAUDE, AGENTS, RUNBOOKs, laudo corrente); `.gitignore` endurecido (`.ruff_cache/`, `audit/quality/`, `/var/`, `*.orig` etc.) |
+| Rotas redundantes | 23 pares de shims 308 excluídos (7 famílias); canônicos e gates intactos; `REMOCOES_INTENCIONAIS` no teste de registro; legados agora respondem 404 (verificado ao vivo) |
+| Fluxos/usabilidade | 4 páginas `/legado/*` (1.959 linhas paralelas) consolidadas na Central de Atividades via redirect `?tipo=`; menu já estava em 18 entradas/5 grupos de tarefa — a simplificação foi eliminar duplicidade, não redesenhar |
+| Código morto | Clusters `_dead_code` backend (routers+testes), template engine e pin órfão de `jinja2`, 7 componentes/utilitários frontend órfãos, 3 exports mortos e `cn()` duplicado no `UI.tsx` (~3.300 linhas) |
+| Mantido de propósito | `victory_vault`/`veredito_ia` core (testes vivos), seeds manuais, subsistema dormente de ingestão de documentos, `wiki.py` (anti-drop Alembic), registries por string da IA — documentados no inventário |
+
+Validação do estado final (HEAD `f7bca95`): suíte backend completa **6.630 passed** em worktree limpo · tsc/vitest/build/format verdes · gate P0 · smoke E2E **933/933, 6 papéis** · navegação **84 rotas** sem tela branca/pageerror/5xx · shims legados 404 e canônicos 200 ao vivo.
+
+Pendências estruturais que permanecem propostas (dependem do titular): poda das rotas sem consumidor via telemetria de produção; consolidação dos diretórios `docs/audit`×`auditoria`×`auditorias`; regeneração de `MATRIZ_DE_ROTAS.md`/`ARQUITETURA_ATUAL.md` (drift próprio); dedup das guardas RBAC repetidas (`_pode_editar` em 9 routers — toca autorização, exige rodada própria); wiring ou corte do subsistema dormente de ingestão.
