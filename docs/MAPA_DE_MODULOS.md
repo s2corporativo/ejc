@@ -1,6 +1,6 @@
 # MAPA DE MODULOS — EJC
 
-> Gerado por `scripts/governanca/inventario-repo.sh` em 2026-08-30, commit `dc04f8fc`.
+> Gerado por `scripts/governanca/inventario-repo.sh` em 2026-08-30, commit `9fe3642d`.
 > Regenerar apos alteracao estrutural. Nao editar as secoes automaticas a mao.
 
 ## 1. Estrutura de primeiro e segundo nivel
@@ -13,6 +13,7 @@
 backend
 backend/alembic
 backend/app
+backend/graphify-out
 backend/scripts
 backend/seeds
 backend/tests
@@ -58,8 +59,8 @@ vps-tools
 | `backend` | 1 | 124 |
 | `backend/alembic` | 1 | 194 |
 | `backend/alembic/versions` | 144 | 10659 |
-| `backend/app` | 2 | 614 |
-| `backend/app/core` | 30 | 4679 |
+| `backend/app` | 2 | 604 |
+| `backend/app/core` | 29 | 4643 |
 | `backend/app/eval` | 6 | 1868 |
 | `backend/app/integrations` | 14 | 1964 |
 | `backend/app/models` | 68 | 5546 |
@@ -67,12 +68,11 @@ vps-tools
 | `backend/app/modules/auditoria` | 2 | 60 |
 | `backend/app/modules/dpt360` | 13 | 2561 |
 | `backend/app/repositories` | 2 | 98 |
-| `backend/app/routers` | 163 | 50221 |
-| `backend/app/routers/_dead_code` | 6 | 574 |
+| `backend/app/routers` | 160 | 50087 |
 | `backend/app/schemas` | 31 | 2812 |
 | `backend/app/seeds` | 10 | 3918 |
-| `backend/app/services` | 180 | 54574 |
-| `backend/app/services/ai` | 13 | 2861 |
+| `backend/app/services` | 179 | 54545 |
+| `backend/app/services/ai` | 13 | 2875 |
 | `backend/app/services/ai/agent` | 4 | 772 |
 | `backend/app/services/ai/agent/tools` | 6 | 893 |
 | `backend/app/services/ai/core` | 12 | 2553 |
@@ -90,35 +90,34 @@ vps-tools
 | `backend/app/utils` | 4 | 272 |
 | `backend/scripts` | 22 | 3926 |
 | `backend/seeds` | 3 | 679 |
-| `backend/tests` | 548 | 101537 |
-| `backend/tests/_dead_code` | 6 | 421 |
+| `backend/tests` | 550 | 101944 |
 
 ## 3. Frontend — estrutura de src
 
 | Caminho | Arquivos .ts/.tsx | Linhas |
 |---|---|---|
 | `frontend/src` | 5 | 288 |
-| `frontend/src/components` | 97 | 37013 |
+| `frontend/src/components` | 90 | 35129 |
 | `frontend/src/components/__tests__` | 4 | 579 |
 | `frontend/src/components/base` | 1 | 97 |
 | `frontend/src/components/visual` | 4 | 1640 |
 | `frontend/src/components/visual/__tests__` | 1 | 96 |
-| `frontend/src/config` | 8 | 2082 |
+| `frontend/src/config` | 8 | 2059 |
 | `frontend/src/config/__tests__` | 1 | 21 |
 | `frontend/src/content` | 1 | 820 |
 | `frontend/src/contexts` | 2 | 157 |
 | `frontend/src/lib` | 34 | 2910 |
-| `frontend/src/pages` | 103 | 41396 |
+| `frontend/src/pages` | 99 | 39437 |
 | `frontend/src/pages/CasoDetalhe` | 19 | 5101 |
-| `frontend/src/pages/CentralAtividades` | 2 | 527 |
+| `frontend/src/pages/CentralAtividades` | 2 | 528 |
 | `frontend/src/pages/EntradaUnica` | 4 | 1208 |
 | `frontend/src/pages/__tests__` | 6 | 381 |
-| `frontend/src/pages/dpt360` | 28 | 4064 |
+| `frontend/src/pages/dpt360` | 26 | 3824 |
 | `frontend/src/pages/portal` | 7 | 1740 |
 | `frontend/src/pages/ramos` | 22 | 7118 |
 | `frontend/src/stores` | 8 | 1314 |
 | `frontend/src/types` | 4 | 530 |
-| `frontend/src/utils` | 7 | 431 |
+| `frontend/src/utils` | 5 | 315 |
 
 ## 4. Modelos de dados detectados
 
@@ -498,8 +497,6 @@ RevisaoRequest
 RiscoExtraido
 RouteUsageMetric
 SaidaAlternativaRequest
-SalaCreate
-SalaResponse
 SancoesIn
 SchedulerHeartbeat
 SensibilidadeUpdate
@@ -550,7 +547,6 @@ TemplateIn
 TemplateItemIn
 Tese
 TeseCasoLink
-TeseCreate
 TeseIn
 TeseJuridica
 TeseOut
