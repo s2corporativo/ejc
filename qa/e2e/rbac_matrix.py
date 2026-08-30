@@ -925,6 +925,78 @@ def discover_gates(routers_dir: Path, main_py: Path | None = None) -> list[Route
     return gates
 
 
+# ── Query mínima VÁLIDA por rota (pente fino 2026-08-30 §5.5) ────────────────
+# GET com query param OBRIGATÓRIO responde 422 quando sondado sem parâmetros —
+# o 422 até prova autorização quando o gate é via Depends() (ver via_depends),
+# mas NUNCA exercita o handler. Este mapa dá a cada rota dessas uma query
+# mínima VÁLIDA (valores fictícios inofensivos, conferidos ao vivo contra um
+# backend local com token admin em 30/08/2026) para a sonda enviar. Para rota
+# COBERTA pelo mapa, `run_fictitious_smoke.py` deixa de aceitar 422 em
+# silêncio: um 422 ali significa mapa desatualizado (parâmetro renomeado/novo
+# obrigatório) e REPROVA, em vez de virar "inconclusivo".
+
+
+@dataclass(frozen=True)
+class QueryMinima:
+    """Query string mínima que faz o handler EXECUTAR (não só validar).
+
+    `aceitos_alem_de_200`: códigos que, para papel PERMITIDO, também contam
+    como handler exercitado — usados quando o handler exige um RECURSO
+    existente que a sonda não tem como forjar (o motivo fica documentado em
+    `motivo`, nunca implícito). Rotas de IA/fontes externas que degradam
+    graciosamente (ex.: provedor ausente → 200 com aviso, ou 503 explícito do
+    handler) também entram por aqui — nunca um 5xx genérico."""
+
+    params: tuple[tuple[str, str], ...]
+    aceitos_alem_de_200: tuple[int, ...] = ()
+    motivo: str = ""
+
+    def query_string(self) -> str:
+        from urllib.parse import urlencode
+
+        return urlencode(list(self.params))
+
+
+QUERY_MINIMA_POR_ROTA: dict[str, QueryMinima] = {
+    # calculadoras.py — Query(..., gt=0); qualquer valor positivo executa.
+    "/api/calculadoras/inss": QueryMinima((("salario", "3000"),)),
+    "/api/calculadoras/irrf": QueryMinima((("rendimento", "5000"),)),
+    # jurisprudencia_externa.py — q: min_length=3. As buscas externas degradam
+    # graciosamente DENTRO do serviço (exceções viram lista vazia → 200),
+    # então 200 é o único código de sucesso mesmo sem rede.
+    "/api/jurisprudencia-externa/buscar": QueryMinima((("q", "dano moral"),)),
+    "/api/jurisprudencia-externa/buscar/lexml": QueryMinima((("q", "dano moral"),)),
+    "/api/jurisprudencia-externa/buscar/tjmg": QueryMinima((("q", "dano moral"),)),
+    # ficha_triagem.py — o handler exige caso EXISTENTE (verificar_acesso_caso
+    # roda DEPOIS do gate `_exigir_piso`): com um case_id fictício o papel
+    # permitido chega ao handler e recebe 404 "caso não encontrado" — isso JÁ
+    # exercita gate + handler; a sonda não tem como forjar um caso real por
+    # papel (mesma limitação documentada para paths com parâmetro).
+    "/api/triagem/ficha": QueryMinima(
+        (("case_id", "00000000-0000-0000-0000-000000000000"),),
+        aceitos_alem_de_200=(404,),
+        motivo=(
+            "handler exige caso existente (verificar_acesso_caso); 404 com "
+            "case_id fictício prova que gate e handler executaram"
+        ),
+    ),
+    # ai.py::roteamento_preview — task_type é texto livre normalizado pelo
+    # gateway; sem provedor a rota degrada graciosamente respondendo 200 com
+    # `provider_elegivel=false` (nunca 5xx), conferido ao vivo.
+    "/api/ai/roteamento/preview": QueryMinima((("task_type", "chat_juridico"),)),
+    # consumidor_monitor.py — empresa é texto livre; fora da base interna o
+    # handler responde 200 com avaliação genérica.
+    "/api/consumidor-monitor/triagem-jec": QueryMinima(
+        (("empresa", "Empresa Ficticia Exemplo"),)
+    ),
+    # previdenciario_beneficio.py — simulação stateless; idade/tempo dentro
+    # dos ranges validados (ge/le) executam o cálculo completo.
+    "/api/previdenciario/ferramentas/regras-transicao": QueryMinima(
+        (("idade", "58"), ("tempo_contribuicao_anos", "30"))
+    ),
+}
+
+
 # ── Seleção da amostra segura para sondagem ao vivo ──────────────────────────
 
 # Paths com parâmetro de path (`{algo}`) exigem um ID real — sem ele o 404 de

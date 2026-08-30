@@ -693,8 +693,14 @@ def _sondar_papel(
     headers = {"Authorization": f"Bearer {token}"}
     for gate in gates:
         esperado = gate.resultado_esperado(actual_role)
+        # Pente fino §5.5: rota com query obrigatória ganha a query mínima
+        # VÁLIDA do mapa — o 422 deixava a sonda "inconclusiva" e o handler
+        # nunca era exercitado; com a query, papel permitido executa o handler
+        # de verdade e papel negado prova o 403 mesmo em gate de corpo.
+        qm = rbac_matrix.QUERY_MINIMA_POR_ROTA.get(gate.path)
+        url = gate.path if qm is None else f"{gate.path}?{qm.query_string()}"
         try:
-            resp = rc.get(gate.path, headers=headers, timeout=30)
+            resp = rc.get(url, headers=headers, timeout=30)
             status = resp.status_code
         except Exception as exc:
             _record(state, StepResult(
@@ -706,6 +712,25 @@ def _sondar_papel(
         degraded = False
         if status == esperado:
             ok, detail = True, ""
+        elif qm is not None and esperado == 200 and status in qm.aceitos_alem_de_200:
+            # Código documentado no mapa (ex.: 404 de recurso fictício em rota
+            # que exige recurso existente) — o handler EXECUTOU depois do gate,
+            # que é o que a sonda com query mínima quer provar.
+            ok = True
+            detail = f"aceito {status} com query mínima: {qm.motivo}"
+        elif qm is not None and status == 422:
+            # §5.5: rota COBERTA pelo mapa de query mínima nunca mais aceita
+            # 422 em silêncio — se a query do mapa deixou de validar, o mapa
+            # envelheceu (parâmetro renomeado/novo obrigatório) e precisa ser
+            # atualizado; tratar como inconclusivo esconderia a regressão.
+            ok = False
+            detail = (
+                f"QUERY MÍNIMA DESATUALIZADA: GET {gate.path} respondeu 422 MESMO "
+                f"com a query mínima do mapa ({url.split('?', 1)[1] if '?' in url else ''}) — "
+                "atualize rbac_matrix.QUERY_MINIMA_POR_ROTA para os parâmetros "
+                "atuais da rota; 422 não é aceito para rotas cobertas pelo mapa "
+                f"(esperado sem a validação de query: {esperado})."
+            )
         elif status in DEGRADADOS:
             # Rota ausente/indisponível NESTE ambiente — não é achado de RBAC
             # (mesma semântica de DEGRADADOS no resto da suíte).
@@ -754,8 +779,7 @@ def _sondar_papel(
             )
         elif status == 422:
             # Limitação CONHECIDA e documentada: um GET com query param
-            # OBRIGATÓRIO (ex.: calculadoras jurídicas em ramos.py, `/ai/
-            # roteamento/preview`) responde 422 ANTES do gate rodar — mas só
+            # OBRIGATÓRIO responde 422 ANTES do gate rodar — mas só
             # quando o gate é verificado no CORPO do handler (requer_advogado /
             # local_level / local_membership / "nenhum", ou seja
             # `gate.via_depends is False`): o FastAPI resolve e valida
@@ -770,7 +794,9 @@ def _sondar_papel(
             # sem nunca provar nada sobre RBAC. Fica inconclusivo (não
             # reprova), nunca desaparece do relatório (degraded=True). Quando
             # `esperado == 403` e `gate.via_depends` é True, o ramo ACIMA já
-            # tratou o caso como falha real, não chega aqui.
+            # tratou o caso como falha real, não chega aqui. Rota coberta por
+            # QUERY_MINIMA_POR_ROTA (§5.5) também nunca chega aqui: o ramo do
+            # mapa reprova o 422 em vez de aceitá-lo como inconclusivo.
             ok, degraded = True, True
             detail = (f"422 (validação de query — rota provavelmente exige parâmetros "
                       f"que esta sonda não envia): inconclusivo para RBAC, gate={gate.gate_kind} "
@@ -783,6 +809,7 @@ def _sondar_papel(
             "papel": role_key, "role_no_token": actual_role, "method": "GET",
             "path": gate.path, "gate_kind": gate.gate_kind, "min_level_exigido": gate.min_level,
             "esperado": esperado, "obtido": status, "ok": ok,
+            "query_minima_aplicada": qm is not None,
         })
         _record(state, StepResult(
             name=f"rbac.{role_key}", method="GET", path=gate.path,

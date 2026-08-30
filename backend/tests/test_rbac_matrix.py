@@ -485,6 +485,45 @@ def test_router_gate_via_dependencies_append_e_reconhecido():
     assert len(deps) == 1
 
 
+# ── Pente fino 2026-08-30 §5.5: query mínima por rota ───────────────────────
+
+
+def test_query_minima_cobre_apenas_rotas_get_reais():
+    """Cada chave de QUERY_MINIMA_POR_ROTA precisa ser uma rota GET que o
+    parser deriva dos routers REAIS — um path renomeado no backend sem
+    atualizar o mapa deixaria a query mínima órfã (a sonda voltaria a mandar
+    a rota nova sem query e a aceitar 422 como inconclusivo, o defeito que o
+    §5.5 corrige). Quebrar aqui avisa no CI, não no relatório do E2E."""
+    gates = rm.discover_gates(ROUTERS_DIR, MAIN_PY)
+    get_paths = {g.path for g in gates if g.method == "GET"}
+    orfaos = set(rm.QUERY_MINIMA_POR_ROTA) - get_paths
+    assert not orfaos, f"query mínima aponta para rota GET inexistente: {sorted(orfaos)}"
+
+
+def test_query_minima_gera_query_string_valida():
+    """A query string sai urlencoded (espaços etc.) e os casos com código
+    extra aceito documentam o motivo — aceitar um código a mais sem motivo
+    escrito seria afrouxamento silencioso."""
+    qm = rm.QUERY_MINIMA_POR_ROTA["/api/consumidor-monitor/triagem-jec"]
+    assert "empresa=" in qm.query_string() and " " not in qm.query_string()
+    for path, entry in rm.QUERY_MINIMA_POR_ROTA.items():
+        assert entry.params, f"{path}: query mínima vazia não exercita nada"
+        if entry.aceitos_alem_de_200:
+            assert entry.motivo, (
+                f"{path}: aceita códigos extras {entry.aceitos_alem_de_200} "
+                "sem motivo documentado"
+            )
+
+
+def test_query_minima_do_triagem_ficha_documenta_recurso_existente():
+    """`/api/triagem/ficha` exige caso EXISTENTE (verificar_acesso_caso) — a
+    sonda não tem como forjar um caso por papel, então o 404 com case_id
+    fictício é o resultado DOCUMENTADO de handler exercitado."""
+    qm = rm.QUERY_MINIMA_POR_ROTA["/api/triagem/ficha"]
+    assert 404 in qm.aceitos_alem_de_200
+    assert "caso existente" in qm.motivo
+
+
 def test_jurimetria_ext_stats_deriva_gate_de_staff_juridico():
     """No repo real, o gate derivado de GET /api/jurimetria/ext/stats não
     pode permitir `financeiro`/`secretaria` — o app nega com 403."""

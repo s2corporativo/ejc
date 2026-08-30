@@ -332,7 +332,14 @@
       "api_checks": [
         {
           "method": "GET",
-          "path": "/api/empresarial/sociedades",
+          "path": "/api/sociedade/socios",
+          "expected": [
+            200
+          ]
+        },
+        {
+          "method": "GET",
+          "path": "/api/partner-withdrawals",
           "expected": [
             200
           ]
