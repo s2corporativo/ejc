@@ -471,7 +471,7 @@
           "tipo": "resiliencia",
           "actor": "staff",
           "method": "GET",
-          "path": "/api/ia-saude/status",
+          "path": "/api/ai/core/status",
           "expected": [
             200,
             503
@@ -480,7 +480,7 @@
             "stack",
             "ai"
           ],
-          "prova": "Núcleo de IA responde ou declara indisponibilidade controlada."
+          "prova": "Núcleo de IA responde ou declara indisponibilidade controlada, na rota REAL do Núcleo Único (GET /api/ai/core/status, gate staff). Antes o probe apontava /api/ia-saude/status, que não existe: devolvia 404 e só não reprovava porque a capacidade `ai` costuma estar desligada na rodada."
         },
         {
           "nome": "portal_nao_usa_rag",
@@ -624,7 +624,7 @@
           "tipo": "resiliencia",
           "actor": "staff",
           "method": "GET",
-          "path": "/api/ia-saude/status",
+          "path": "/api/ai/core/status",
           "expected": [
             200,
             503
@@ -633,7 +633,7 @@
             "stack",
             "ai"
           ],
-          "prova": "Dependência de IA é explícita."
+          "prova": "Dependência de IA é explícita e verificada na rota REAL do Núcleo Único (GET /api/ai/core/status). Antes: /api/ia-saude/status, rota inexistente."
         },
         {
           "nome": "portal_nao_usa_raio_x",
@@ -682,7 +682,7 @@
           "tipo": "negativo",
           "actor": "portal",
           "method": "GET",
-          "path": "/api/datajud/health",
+          "path": "/api/datajud/process/00008323520188130024",
           "expected": [
             403
           ],
@@ -690,7 +690,7 @@
             "stack",
             "portal"
           ],
-          "prova": "Portal não aciona integração interna."
+          "prova": "Portal barrado na rota CANÔNICA e existente do DataJud (GET /api/datajud/process/{numero_cnj}, gate _ADVOGADO_MAIS). Antes o probe apontava /api/datajud/health, que NÃO existe no app: o 403 vinha do middleware sobre um caminho inexistente e não provava bloqueio de endpoint nenhum. O CNJ é literal de propósito — o gate barra antes de chamar o DataJud, então o probe não depende da capacidade `datajud`."
         }
       ],
       "manual": "Validar deduplicação e vedação de prazo fatal automático."
