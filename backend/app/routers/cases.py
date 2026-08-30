@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.core.security import (get_current_user, require_roles, ROLE_LEVEL,
+                                 EQUIPE_JURIDICA, require_roles_exact,
                                  requer_equipe_juridica)
 from app.models.user import User
 from app.models.case import Case, CaseMovimento, CaseStatus
@@ -50,6 +51,15 @@ from app.schemas.common import MsgResponse
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/cases", tags=["Casos"])
+
+# M16 (auditoria 2026-06-30): criar caso = equipe jurídica + intake da
+# secretaria. AUD27-P1-1: era `require_roles(...)`, cujo piso HIERÁRQUICO
+# tomava o menor nível da lista (secretaria, 2) e promovia qualquer papel
+# acima dele — inclusive `financeiro` (4), que não está na lista e não abre
+# caso. Allowlist EXATA (mesma migração de `4ab8618` nos routers irmãos):
+# quem podia criar continua criando (estagiário incluído, já criava pelo
+# piso e é equipe jurídica); só a promoção acidental do financeiro cai.
+_PODE_CRIAR_CASO: frozenset[str] = EQUIPE_JURIDICA | {"secretaria"}
 _ARQUIVAMENTO_ROLES = ["superadmin", "admin", "socio", "advogado"]
 
 # Status que exigem proxima_acao preenchido (G1 — caso sempre tem "o que fazer agora").
@@ -220,9 +230,7 @@ async def criar(
     payload: CaseCreate,
     background: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(require_roles(
-        ["superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "secretaria"]
-    )),  # M16 (auditoria 2026-06-30): criar caso = equipe jurídica/gestão/intake
+    cu: User = Depends(require_roles_exact(_PODE_CRIAR_CASO)),
 ):
     # BUG-03: rejeita título que é JSON/código cru de IA não parseado.
     if titulo_e_json_bruto(payload.titulo):
