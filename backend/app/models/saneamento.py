@@ -15,6 +15,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     Column,
+    Date,
     DateTime,
     Integer,
     SmallInteger,
@@ -61,7 +62,10 @@ class DatajudSnapshot(Base):
     tribunal = Column(Text, nullable=True)
     classe_codigo = Column(Integer, nullable=True)
     orgao_codigo = Column(Integer, nullable=True)
-    data_ajuizamento = Column(DateTime(timezone=False), nullable=True)
+    # DATE na migration (154_saneamento_schema.py) — não DateTime: o driver
+    # devolve datetime.date, e um bind de datetime.datetime aqui seria
+    # rejeitado pelo asyncpg (achado de revisão: os dois tipos divergiam).
+    data_ajuizamento = Column(Date, nullable=True)
     nivel_sigilo = Column(SmallInteger, nullable=False, server_default="0")
     payload = Column(JSONB, nullable=False)
     coletado_em = Column(DateTime(timezone=True), nullable=False, server_default=func.now())

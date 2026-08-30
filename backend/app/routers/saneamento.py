@@ -87,17 +87,22 @@ async def _resolver_caso_do_numero(db: AsyncSession, numero_cnj: str) -> Case | 
 
 
 def _pode_agir_no_caso(cu: User, case: Case | None) -> bool:
-    """Gate de ESCRITA (decidir/aplicar): gestão sempre passa. Equipe só se
-    vinculada ao caso, ou caso órfão (escape-hatch de gestão continua
-    disponível — não é lockout). numero_cnj sem caso correspondente no
-    sistema é negado à equipe: só gestão decide nesse caso."""
+    """Gate de ESCRITA (decidir/aplicar): mesma regra de
+    app/core/ownership.py::verificar_acesso_caso — gestão sempre passa;
+    equipe só se vinculada ao caso. Caso ÓRFÃO (sem responsável nem
+    auxiliar) e numero_cnj sem caso correspondente no sistema são NEGADOS à
+    equipe: só gestão decide (escape-hatch legítimo, pode assumir/
+    reatribuir o caso). Achado de revisão: uma versão anterior liberava
+    caso órfão para qualquer advogado, reabrindo a brecha que
+    verificar_acesso_caso já fechou para o resto do EJC — decidir
+    encerramento de processo é irreversível na prática, então aqui a regra
+    é a mesma da escrita, não a do escopo de leitura (que sim mantém caso
+    órfão visível à equipe, ver _filtro_escopo_caso)."""
     if is_gestao(cu):
         return True
     if case is None:
         return False
-    if case.advogado_responsavel_id == cu.id or case.advogado_auxiliar_id == cu.id:
-        return True
-    return case.advogado_responsavel_id is None and case.advogado_auxiliar_id is None
+    return case.advogado_responsavel_id == cu.id or case.advogado_auxiliar_id == cu.id
 
 
 @router.get("/excecoes")

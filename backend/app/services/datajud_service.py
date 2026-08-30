@@ -204,7 +204,11 @@ async def buscar_lote_paginado(
     coletados: list[dict] = []
     search_after = None
     while len(coletados) < maximo:
-        pagina = dict(payload)
+        # Última página pode pedir menos que tamanho_pagina: evita puxar (e
+        # descartar) itens de mais de uma API externa rate-limited (achado
+        # de revisão — antes sempre pedia a página cheia e truncava no fim).
+        restante = maximo - len(coletados)
+        pagina = dict(payload, size=min(tamanho_pagina, restante))
         if search_after is not None:
             pagina["search_after"] = search_after
         data = await _datajud_search(alias, pagina, headers)
@@ -212,7 +216,7 @@ async def buscar_lote_paginado(
         if not hits:
             break
         coletados.extend(hits)
-        if len(hits) < tamanho_pagina:
+        if len(hits) < pagina["size"]:
             break
         search_after = hits[-1].get("sort")
         if not search_after:

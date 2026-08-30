@@ -235,6 +235,50 @@ async def test_advogado_sem_vinculo_ao_caso_nao_pode_decidir():
 
 
 @_pg
+async def test_advogado_nao_pode_decidir_caso_orfao():
+    """Achado de revisão de código: caso ÓRFÃO (sem responsável nem
+    auxiliar) é escrita restrita à gestão — mesma regra de
+    app/core/ownership.py::verificar_acesso_caso. Uma versão anterior deste
+    router liberava caso órfão para qualquer advogado, reabrindo a brecha
+    que aquele gate já fecha para o resto do EJC."""
+    from app.core.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        qualquer_advogado = await _criar_user(db, "advogado")
+        socio = await _criar_user(db, "socio")
+        cli = await _criar_cliente(db)
+        caso = await _criar_caso(db, cli, NUM_CNJ_OFICIAL, resp_id=None)  # órfão
+        await db.execute(
+            text("INSERT INTO saneamento_indicativo_encerramento "
+                 "(numero_cnj, candidato, confianca) VALUES (:n, true, 'alta')"),
+            {"n": NUM_CNJ_OFICIAL},
+        )
+        await db.commit()
+        ind_id = (await db.execute(
+            text("SELECT id FROM saneamento_indicativo_encerramento WHERE numero_cnj = :n"),
+            {"n": NUM_CNJ_OFICIAL},
+        )).scalar_one()
+
+    try:
+        negado = _client().post(
+            f"{API}/indicativos/{ind_id}/decidir",
+            json={"decisao": "encerrar", "justificativa": "teste"},
+            headers=_token_para(qualquer_advogado, "advogado"),
+        )
+        assert negado.status_code == 403
+
+        permitido = _client().post(
+            f"{API}/indicativos/{ind_id}/decidir",
+            json={"decisao": "encerrar", "justificativa": "gestão assume o caso órfão"},
+            headers=_token_para(socio, "socio"),
+        )
+        assert permitido.status_code == 200, permitido.text
+    finally:
+        async with AsyncSessionLocal() as db:
+            await _limpar(db, case_ids=[caso], client_ids=[cli])
+
+
+@_pg
 async def test_socio_decide_qualquer_caso_mesmo_sem_vinculo():
     """Gestão (socio+) tem visão/ação firm-wide — não é restrita a vínculo."""
     from app.core.database import AsyncSessionLocal
