@@ -466,3 +466,34 @@ def test_combinar_gates_router_vence_e_e_sempre_via_depends():
     combinado, via_depends = rm._combinar_gates(nenhum, False, router_admin)
     assert combinado == router_admin
     assert via_depends is True
+
+
+def test_router_gate_via_dependencies_append_e_reconhecido():
+    """`router.dependencies.append(Depends(_req_staff))` fora do construtor
+    (padrão da consolidação de jurimetria_extra.py) tem que ser lido como
+    gate do router inteiro. Antes o parser só via `dependencies=[...]` do
+    `APIRouter(...)`: a matriz derivava "permitido" para financeiro/
+    secretaria em `/jurimetria/ext/stats` e o E2E acusava DIVERGÊNCIA contra
+    o 403 real do app (pente fino de 29/08/2026)."""
+    fonte = textwrap.dedent(
+        """
+        router = APIRouter(prefix="/jurimetria")
+        router.dependencies.append(Depends(_req_staff))
+        """
+    )
+    deps = rm._extract_router_level_deps(ast.parse(fonte))
+    assert len(deps) == 1
+
+
+def test_jurimetria_ext_stats_deriva_gate_de_staff_juridico():
+    """No repo real, o gate derivado de GET /api/jurimetria/ext/stats não
+    pode permitir `financeiro`/`secretaria` — o app nega com 403."""
+    gates = rm.discover_gates(ROUTERS_DIR, MAIN_PY)
+    alvo = next(
+        (g for g in gates if g.method == "GET" and g.path == "/api/jurimetria/ext/stats"),
+        None,
+    )
+    assert alvo is not None
+    assert alvo.gate_kind != "nenhum"
+    assert "financeiro" not in alvo.allowed_roles
+    assert "secretaria" not in alvo.allowed_roles

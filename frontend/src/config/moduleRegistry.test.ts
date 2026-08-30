@@ -20,6 +20,17 @@ describe("moduleRegistry", () => {
     expect(new Set(paths).size).toBe(paths.length);
   });
 
+  it("declara backendPrefixes só com o prefixo canônico /api (nunca /api/v1)", () => {
+    // /api/v1 é alias de compatibilidade reescrito por middleware; o metadado
+    // descreve endereços canônicos — resíduo já induziu auditoria a erro.
+    for (const route of STAFF_ROUTES) {
+      for (const prefix of route.backendPrefixes ?? []) {
+        expect(prefix, `${route.key}: ${prefix}`).toMatch(/^\/api\//);
+        expect(prefix, `${route.key}: ${prefix}`).not.toMatch(/^\/api\/v1\//);
+      }
+    }
+  });
+
   it("expõe o módulo jurídico como Áreas de Atuação", () => {
     const areas = STAFF_ROUTES.find((route) => route.key === "ramos");
     expect(areas?.label).toBe("Áreas de Atuação");

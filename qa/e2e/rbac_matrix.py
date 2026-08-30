@@ -224,16 +224,32 @@ def _extract_router_level_deps(tree: ast.Module) -> list[ast.expr]:
     real rodando a suíte localmente — `/jurimetria/ext/stats` não tinha
     NENHUM gate por função, só o do router inteiro). Cru; resolvido depois
     de `dep_registry` existir, em `discover_gates`."""
+    deps: list[ast.expr] = []
     for node in tree.body:
-        if not isinstance(node, ast.Assign):
+        # Forma 1: APIRouter(..., dependencies=[Depends(...)]).
+        if isinstance(node, ast.Assign):
+            if not any(isinstance(t, ast.Name) and t.id == "router" for t in node.targets):
+                continue
+            if isinstance(node.value, ast.Call):
+                for kw in node.value.keywords:
+                    if kw.arg == "dependencies" and isinstance(kw.value, ast.List):
+                        deps.extend(kw.value.elts)
             continue
-        if not any(isinstance(t, ast.Name) and t.id == "router" for t in node.targets):
-            continue
-        if isinstance(node.value, ast.Call):
-            for kw in node.value.keywords:
-                if kw.arg == "dependencies" and isinstance(kw.value, ast.List):
-                    return kw.value.elts
-    return []
+        # Forma 2: router.dependencies.append(Depends(...)) fora do construtor
+        # (padrão da consolidação de jurimetria_extra.py em jurimetria.py:441
+        # — sem isto a matriz derivava "permitido" onde o app aplica 403).
+        if (
+            isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Attribute)
+            and node.value.func.attr == "append"
+            and isinstance(node.value.func.value, ast.Attribute)
+            and node.value.func.value.attr == "dependencies"
+            and isinstance(node.value.func.value.value, ast.Name)
+            and node.value.func.value.value.id == "router"
+        ):
+            deps.extend(node.value.args)
+    return deps
 
 
 def _resolver_gate_de_dependencia(
@@ -486,13 +502,19 @@ def _import_aliases(tree: ast.Module) -> dict[str, str]:
     """`from app.core.security import require_roles as _rr` -> {"_rr":
     "require_roles"} — achado real (`dashboard.py`): sem isto, `Depends(_rr([
     ...]))` fica invisível ao parser porque `_rr` não é `require_roles`
-    textualmente. Cobre só os dois nomes que importam para o gate."""
+    textualmente. Cobre os nomes de gate reconhecidos pelo parser, incluindo
+    os compartilhados de `_GATES_COMPARTILHADOS` (`requer_equipe_juridica as
+    _je_requer_equipe_juridica` em jurimetria.py — sem isto o gate do router
+    inteiro ficava invisível e a matriz derivava "permitido" onde o app nega
+    com 403)."""
+    reconhecidos = ("require_roles", "require_roles_exact", "require_admin",
+                    *_GATES_COMPARTILHADOS)
     aliases: dict[str, str] = {}
     for node in ast.walk(tree):
         if not isinstance(node, ast.ImportFrom):
             continue
         for alias in node.names:
-            if alias.name in ("require_roles", "require_roles_exact", "require_admin") and alias.asname:
+            if alias.name in reconhecidos and alias.asname:
                 aliases[alias.asname] = alias.name
     return aliases
 
@@ -529,15 +551,23 @@ def _find_role_equality_check(body: list[ast.stmt]) -> list[str] | None:
     return None
 
 
-def _find_helper_call_gate(body: list[ast.stmt], helper_gates: dict[str, GateInfo]) -> GateInfo | None:
+def _find_helper_call_gate(
+    body: list[ast.stmt],
+    helper_gates: dict[str, GateInfo],
+    aliases: dict[str, str] | None = None,
+) -> GateInfo | None:
     """Acha chamada a um helper JÁ conhecido como gate (`requer_advogado(cu)`,
     ou um helper local tipo `_require_admin_socio(cu)` resolvido por
-    `_analisar_helpers_locais`) em qualquer ponto do corpo."""
+    `_analisar_helpers_locais`) em qualquer ponto do corpo. `aliases` resolve
+    import renomeado (`requer_equipe_juridica as _je_requer_equipe_juridica`,
+    achado real em jurimetria.py) para o nome canônico antes de comparar."""
+    aliases = aliases or {}
     for stmt in body:
         for node in ast.walk(stmt):
-            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                    and node.func.id in helper_gates):
-                return helper_gates[node.func.id]
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                nome = aliases.get(node.func.id, node.func.id)
+                if nome in helper_gates:
+                    return helper_gates[nome]
     return None
 
 
@@ -582,7 +612,7 @@ def _module_dep_aliases(
 
 
 def _analisar_helpers_locais(
-    tree: ast.Module, constants: dict[str, list[str]]
+    tree: ast.Module, constants: dict[str, list[str]], aliases: dict[str, str] | None = None
 ) -> dict[str, GateInfo]:
     """Analisa TODA função de nível de módulo (não só as decoradas como rota)
     em busca de um gate no PRÓPRIO corpo — cobre tanto helpers dedicados
@@ -613,7 +643,7 @@ def _analisar_helpers_locais(
         # (`_req_staff` em jurimetria_extra.py chama requer_equipe_juridica).
         # O `raise 403` está na função importada, não neste arquivo, então
         # nenhuma das varreduras acima o encontra.
-        compartilhado = _find_helper_call_gate(fn.body, _GATES_COMPARTILHADOS)
+        compartilhado = _find_helper_call_gate(fn.body, _GATES_COMPARTILHADOS, aliases)
         if compartilhado:
             helper_gates[fn.name] = compartilhado
             continue
@@ -707,7 +737,7 @@ def _gate_from_function(
         return auto, False
 
     chamada = _find_helper_call_gate(
-        fn.body, {**dep_registry, **_GATES_COMPARTILHADOS}
+        fn.body, {**dep_registry, **_GATES_COMPARTILHADOS}, aliases
     )
     if chamada:
         return chamada, False
@@ -854,7 +884,7 @@ def discover_gates(routers_dir: Path, main_py: Path | None = None) -> list[Route
         # Helpers locais (`_req_clientes`, `_require_admin_socio`, checagem
         # inline em handlers) resolvidos por ÚLTIMO: um alias de módulo com o
         # MESMO nome (raro) prevalece, mantendo a fonte mais explícita.
-        for nome, gate in _analisar_helpers_locais(tree, constants).items():
+        for nome, gate in _analisar_helpers_locais(tree, constants, aliases).items():
             dep_registry.setdefault(nome, gate)
 
         # Gate do ROUTER INTEIRO (`APIRouter(..., dependencies=[Depends(x)])`)

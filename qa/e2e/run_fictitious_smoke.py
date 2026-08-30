@@ -457,14 +457,19 @@ def _upload_document(client: httpx.Client, state: SuiteState, matrix: dict[str, 
         state.document_id = resp.json().get("id")
         if state.document_id:
             state.criados_nesta_execucao.add(str(state.document_id))
+        # Não existe GET /api/documents/{id} (só list/download/patch/delete —
+        # 405 na releitura direta, pente fino de 29/08/2026). O efeito é
+        # conferido pela LISTA filtrada por caso: o doc aparecer ali prova o
+        # vínculo — mesmo assert, rota que existe.
         rel = _request(client, state, name="documentos.reler",
-                       method="GET", path=f"/api/documents/{state.document_id}",
+                       method="GET",
+                       path=f"/api/documents/?case_id={state.case_id}&page_size=100",
                        expected=[200])
         if rel is not None and rel.status_code == 200:
-            corpo = rel.json()
+            itens = (rel.json() or {}).get("data") or []
             _afirmar(state, "documentos.efeito_vinculo_caso",
-                     str(corpo.get("case_id") or "") == str(state.case_id),
-                     f"case_id relido={corpo.get('case_id')!r} != {state.case_id!r}")
+                     any(str(d.get("id")) == str(state.document_id) for d in itens),
+                     f"doc {state.document_id} não aparece na lista do caso {state.case_id}")
 
 
 def _case_followups(client: httpx.Client, state: SuiteState, matrix: dict[str, Any]) -> None:
@@ -910,12 +915,16 @@ def _cleanup(client: httpx.Client, state: SuiteState) -> None:
     # DELETE /api/cases/{id} EXIGE `motivo` (min 5 chars, body ou query) e
     # responde 422 sem ele — routers/cases.py:589. Sem o motivo, o cleanup do
     # caso falhava em toda execução e o caso fictício ficava no ambiente.
+    # 4º campo: molde da CONFIRMAÇÃO pós-DELETE. Documents não tem GET por id
+    # (405) — a confirmação usa o download, que 404 depois do soft-delete.
     alvos = [
-        ("documentos", state.document_id, "/api/documents/{}"),
-        ("casos", state.case_id, f"/api/cases/{{}}?motivo={MOTIVO_CLEANUP}"),
-        ("clientes", state.client_id, "/api/clients/{}"),
+        ("documentos", state.document_id, "/api/documents/{}",
+         "/api/documents/{}/download"),
+        ("casos", state.case_id, f"/api/cases/{{}}?motivo={MOTIVO_CLEANUP}",
+         "/api/cases/{}"),
+        ("clientes", state.client_id, "/api/clients/{}", "/api/clients/{}"),
     ]
-    for rotulo, ident, molde in alvos:
+    for rotulo, ident, molde, molde_confirmacao in alvos:
         if not ident:
             continue
         if str(ident) not in state.criados_nesta_execucao:
@@ -936,7 +945,7 @@ def _cleanup(client: httpx.Client, state: SuiteState) -> None:
         # o relatório afirma que foi limpo. A releitura desfaz a ambiguidade.
         verificacao = _request(
             client, state, name=f"{rotulo}.cleanup_confirmado", method="GET",
-            path=molde.format(ident).split("?")[0],
+            path=molde_confirmacao.format(ident).split("?")[0],
             expected=[404, 410], degradado_ok=True,
         )
         if verificacao is not None and verificacao.status_code < 300:

@@ -432,13 +432,13 @@ async def cofre_relatorio(
     if cu.role not in ("admin", "superadmin", "socio"):
         raise HTTPException(403, "Acesso restrito a sócios e administradores")
     r = await db.execute(text("""
-        SELECT d.id, d.title, d.sensitivity_level, d.download_count,
+        SELECT d.id, d.titulo, d.sensitivity_level, d.download_count,
                d.last_accessed_at,
                COUNT(l.id) AS total_acessos
         FROM documents d
         LEFT JOIN document_access_log l ON l.document_id = d.id
         WHERE d.deleted_at IS NULL
-        GROUP BY d.id, d.title, d.sensitivity_level, d.download_count, d.last_accessed_at
+        GROUP BY d.id, d.titulo, d.sensitivity_level, d.download_count, d.last_accessed_at
         ORDER BY d.last_accessed_at DESC NULLS LAST
         LIMIT :lim
     """), {"lim": limit})
