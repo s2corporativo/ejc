@@ -1,6 +1,6 @@
 # MAPA DE MODULOS — EJC
 
-> Gerado por `scripts/governanca/inventario-repo.sh` em 2026-07-29, commit `eb1ebfb4`.
+> Gerado por `scripts/governanca/inventario-repo.sh` em 2026-08-30, commit `dc04f8fc`.
 > Regenerar apos alteracao estrutural. Nao editar as secoes automaticas a mao.
 
 ## 1. Estrutura de primeiro e segundo nivel
@@ -8,10 +8,8 @@
 ```
 .claude
 .claude/agents
+.claude/hooks
 .claude/skills
-audit
-audit/quality
-auditoria-grafo
 backend
 backend/alembic
 backend/app
@@ -22,12 +20,22 @@ config
 docs
 docs/ai
 docs/analises
+docs/arquivo
 docs/audit
+docs/auditoria
 docs/auditorias
+docs/biblioteca_juridica
+docs/consolidacao
+docs/decisoes
+docs/engineering
+docs/estrategia
+docs/operacao
 frontend
 frontend/public
 frontend/src
 frontend/tests
+infra
+infra/woodpecker
 nginx
 qa
 qa/e2e
@@ -37,6 +45,8 @@ scripts
 scripts/audit_2026-07-01
 scripts/backup
 scripts/governanca
+scripts/inventory
+scripts/rag
 scripts/tests
 vps-tools
 ```
@@ -45,69 +55,70 @@ vps-tools
 
 | Caminho | Arquivos .py | Linhas |
 |---|---|---|
-| `backend` | 1 | 42 |
-| `backend/alembic` | 1 | 129 |
-| `backend/alembic/versions` | 117 | 8246 |
-| `backend/app` | 2 | 565 |
-| `backend/app/core` | 27 | 3900 |
-| `backend/app/eval` | 4 | 1107 |
-| `backend/app/integrations` | 5 | 458 |
-| `backend/app/models` | 62 | 4611 |
+| `backend` | 1 | 124 |
+| `backend/alembic` | 1 | 194 |
+| `backend/alembic/versions` | 144 | 10659 |
+| `backend/app` | 2 | 614 |
+| `backend/app/core` | 30 | 4679 |
+| `backend/app/eval` | 6 | 1868 |
+| `backend/app/integrations` | 14 | 1964 |
+| `backend/app/models` | 68 | 5546 |
 | `backend/app/modules` | 1 | 0 |
 | `backend/app/modules/auditoria` | 2 | 60 |
-| `backend/app/modules/case_partes` | 1 | 0 |
-| `backend/app/modules/indice_risco` | 1 | 0 |
-| `backend/app/modules/score_juridico` | 1 | 0 |
+| `backend/app/modules/dpt360` | 13 | 2561 |
 | `backend/app/repositories` | 2 | 98 |
-| `backend/app/routers` | 163 | 46698 |
-| `backend/app/schemas` | 30 | 2459 |
-| `backend/app/seeds` | 10 | 3793 |
-| `backend/app/services` | 138 | 43878 |
-| `backend/app/services/ai` | 12 | 2218 |
-| `backend/app/services/ai/agent` | 4 | 769 |
-| `backend/app/services/ai/agent/tools` | 6 | 886 |
-| `backend/app/services/ai/core` | 10 | 2233 |
+| `backend/app/routers` | 163 | 50221 |
+| `backend/app/routers/_dead_code` | 6 | 574 |
+| `backend/app/schemas` | 31 | 2812 |
+| `backend/app/seeds` | 10 | 3918 |
+| `backend/app/services` | 180 | 54574 |
+| `backend/app/services/ai` | 13 | 2861 |
+| `backend/app/services/ai/agent` | 4 | 772 |
+| `backend/app/services/ai/agent/tools` | 6 | 893 |
+| `backend/app/services/ai/core` | 12 | 2553 |
 | `backend/app/services/ambiental` | 2 | 338 |
-| `backend/app/services/calc` | 8 | 1540 |
-| `backend/app/services/conhecimento_ingest` | 4 | 592 |
+| `backend/app/services/calc` | 8 | 1722 |
+| `backend/app/services/conhecimento_ingest` | 4 | 666 |
 | `backend/app/services/fiscal` | 3 | 605 |
-| `backend/app/services/ingestors` | 8 | 1512 |
-| `backend/app/services/juris_import` | 6 | 836 |
-| `backend/app/services/nfse` | 3 | 510 |
+| `backend/app/services/ingestors` | 8 | 1818 |
+| `backend/app/services/juris_import` | 7 | 1017 |
+| `backend/app/services/nfse` | 3 | 617 |
 | `backend/app/services/observability` | 2 | 270 |
-| `backend/app/services/providers` | 5 | 765 |
-| `backend/app/services/system_prompts` | 35 | 2066 |
-| `backend/app/tasks` | 4 | 206 |
-| `backend/app/utils` | 4 | 250 |
-| `backend/scripts` | 13 | 1869 |
-| `backend/seeds` | 2 | 340 |
-| `backend/tests` | 324 | 61204 |
+| `backend/app/services/providers` | 5 | 868 |
+| `backend/app/services/system_prompts` | 40 | 2498 |
+| `backend/app/tasks` | 7 | 1061 |
+| `backend/app/utils` | 4 | 272 |
+| `backend/scripts` | 22 | 3926 |
+| `backend/seeds` | 3 | 679 |
+| `backend/tests` | 548 | 101537 |
+| `backend/tests/_dead_code` | 6 | 421 |
 
 ## 3. Frontend — estrutura de src
 
 | Caminho | Arquivos .ts/.tsx | Linhas |
 |---|---|---|
-| `frontend/src` | 4 | 234 |
-| `frontend/src/components` | 84 | 34169 |
+| `frontend/src` | 5 | 288 |
+| `frontend/src/components` | 97 | 37013 |
 | `frontend/src/components/__tests__` | 4 | 579 |
 | `frontend/src/components/base` | 1 | 97 |
-| `frontend/src/components/ui` | 6 | 389 |
-| `frontend/src/components/visual` | 4 | 1815 |
+| `frontend/src/components/visual` | 4 | 1640 |
 | `frontend/src/components/visual/__tests__` | 1 | 96 |
-| `frontend/src/config` | 7 | 1736 |
+| `frontend/src/config` | 8 | 2082 |
 | `frontend/src/config/__tests__` | 1 | 21 |
 | `frontend/src/content` | 1 | 820 |
-| `frontend/src/contexts` | 1 | 69 |
-| `frontend/src/lib` | 27 | 2366 |
-| `frontend/src/pages` | 76 | 35914 |
-| `frontend/src/pages/CasoDetalhe` | 8 | 3086 |
+| `frontend/src/contexts` | 2 | 157 |
+| `frontend/src/lib` | 34 | 2910 |
+| `frontend/src/pages` | 103 | 41396 |
+| `frontend/src/pages/CasoDetalhe` | 19 | 5101 |
 | `frontend/src/pages/CentralAtividades` | 2 | 527 |
+| `frontend/src/pages/EntradaUnica` | 4 | 1208 |
 | `frontend/src/pages/__tests__` | 6 | 381 |
-| `frontend/src/pages/portal` | 7 | 1733 |
-| `frontend/src/pages/ramos` | 9 | 5275 |
-| `frontend/src/stores` | 8 | 1288 |
-| `frontend/src/types` | 2 | 379 |
-| `frontend/src/utils` | 7 | 376 |
+| `frontend/src/pages/dpt360` | 28 | 4064 |
+| `frontend/src/pages/portal` | 7 | 1740 |
+| `frontend/src/pages/ramos` | 22 | 7118 |
+| `frontend/src/stores` | 8 | 1314 |
+| `frontend/src/types` | 4 | 530 |
+| `frontend/src/utils` | 7 | 431 |
 
 ## 4. Modelos de dados detectados
 
@@ -128,7 +139,6 @@ AlterarSenhaRequest
 AmbientalCreate
 AnalisarCasoRequest
 AnalisarIn
-AnalisarMagistradoRequest
 AnalisarUrlRequest
 AnaliseCompletaIn
 AnaliseTeseRequest
@@ -198,12 +208,14 @@ Client
 ClientBase
 ClientUpdate
 ClienteConversao
+ClienteEntrada
 ClienteExtraido
 ConfiguracaoMolde
 ConflitoCheckRequest
 ConflitoRequest
 ConsistenciaReq
 ConsolidacaoOut
+ConsultaIaEspecializadaReq
 ContextualActionItem
 ContextualActionsResponse
 ContratoHistorico
@@ -220,7 +232,11 @@ CoreReportRequest
 CoreTaskRequest
 CorrecaoIn
 CorrecaoOut
+CredencialCreateReq
 CredencialMeta
+CredencialMetaResp
+CredencialProcessoEletronico
+CriarCasoEntradaRequest
 CriarSolicitacaoReq
 CriticaAdversarial
 CriticaAdversarialRequest
@@ -238,6 +254,7 @@ DeadlineResponse
 DeadlineUpdate
 DeepResearchRequest
 DemonstrativoRequest
+DespesaCreate
 DiarioOficialAlerta
 DiarioOficialKeyword
 DistribuicaoIn
@@ -245,15 +262,39 @@ DistribuicaoLucro
 DjenComunicacao
 DocTemplate
 Document
+DocumentHashRescanBatch
+DocumentHashRescanItem
 DocumentIntakeBatch
 DocumentIntakeItem
 DocumentPatchRequest
+DocumentPublicacaoPortalRequest
 DocumentTestRequest
 DocumentTypeMaster
 DocumentoChunk
 DocumentoIntakeResult
+DocumentoProcessoEletronicoDedup
 DocxExportPayload
 DossieEstrategico
+DptActionRequest
+DptActionResponse
+DptCaseSummary
+DptCicloVidaMudarEstadoRequest
+DptCicloVidaMudarEstadoResponse
+DptCompanyProfile
+DptCompanySummary
+DptDashboardMetrics
+DptDashboardResponse
+DptDeadlineSummary
+DptDiagnosticAreaReadiness
+DptDiagnosticEvidence
+DptDiagnosticReadiness
+DptDiagnosticRun
+DptHealthArea
+DptInboundOpportunity
+DptInboundOpportunityOut
+DptOpportunityQueueItem
+DptPriorityItem
+DptTwinDimension
 EjcSkill
 EmitirIn
 EmpresarialCase
@@ -269,7 +310,6 @@ EnvironmentalCase
 EstadoUpdate
 EstimativaIn
 EtapaIn
-EtapaJornada
 EtapaPlanoAgente
 EtiquetaIn
 EventoCreate
@@ -298,6 +338,7 @@ FichaIn
 FichaTriagem
 FonteIngestao
 FrontendError
+GerarDocsClienteIn
 GerarDossieReq
 GerarIAReq
 GerarIn
@@ -310,7 +351,6 @@ GoogleDriveSyncRequest
 GovernanceMetadataPatch
 HITLRevisaoRequest
 HonorariosCreate
-HonorariosIn
 HonorariosOut
 IaDefensivaRequest
 IaDefensivaStatusRequest
@@ -325,7 +365,6 @@ IntegrationCredential
 ItemIn
 ItemLote
 ItemOABIn
-JornadaCasoOut
 JulgadoNormalizado
 JuriIn
 JuriPatch
@@ -358,13 +397,13 @@ MelhorRegraOut
 MemoriaCreate
 MemoriaUpdate
 MensagemCreate
-MinutaIn
 ModeloDocumentoCreate
 ModuleHelp
 ModuleHelpCreate
 ModuleHelpUpdate
 MontarMatrizIn
 MovimentoCreate
+MovimentoUpdate
 MsgIn
 MsgResponse
 NFSePedidoEmissao
@@ -382,6 +421,7 @@ ParcelaIn
 ParcelamentoIn
 ParteCreate
 ParteExtraida
+ParteUpdate
 PasswordChange
 PasswordResetToken
 PecaConversaoIn
@@ -389,11 +429,17 @@ PedidoExtraido
 PenalCase
 PenalIn
 PendenciaRevisao
+PendingItemCreate
+PendingItemUpdate
 PeriodoOut
-PesquisaIn
+PrazoEntrada
 PrazoExtraido
 PrePreencherIn
 PrecificacaoCreate
+Preliminar
+PreliminarDocumento
+PreliminarEstado
+PreliminarMensagem
 PrepararPacoteRequest
 PrescricaoIn
 Process
@@ -406,6 +452,7 @@ ProcuracaoCreate
 ProcuracaoResponse
 ProducaoModoPreparada
 ProducaoModoRequest
+ProdutividadeExportEvent
 PromptCreate
 PromptIn
 PromptJuridico
@@ -416,6 +463,8 @@ ProvaCreate
 ProvaExtraida
 ProvaUpdate
 ProviderStatus
+PublicarArquivoReq
+PurgarRequest
 PushSubIn
 PushSubscription
 PushSubscriptionList
@@ -425,6 +474,7 @@ RaioXAnalise
 RaioXConverterRequest
 RaioXCreate
 RaioXDocumento
+RaioXIdentificacaoRevisada
 RaioXUpdate
 ReauthReq
 ReceitaCNPJIn
@@ -444,7 +494,6 @@ ResetConfirmarRequest
 ResetSolicitarRequest
 ResolverAlerta
 ResumirDocRequest
-ResumirIn
 RevisaoRequest
 RiscoExtraido
 RouteUsageMetric
@@ -461,6 +510,9 @@ SignatureRequest
 SimulacaoPrevidOut
 SimularIn
 SinaisDocumento
+SincronizacaoProcessoEletronico
+SincronizarProcessoReq
+SincronizarProcessoResp
 SkillExecuteRequest
 SkillExecuteResponse
 SkillListItem
@@ -476,6 +528,7 @@ SocioUpdate
 SolicitacaoDocumento
 SolicitacaoDocumentoItem
 SolicitacaoIn
+StatusSincronizacaoResp
 SugerirPropostaIn
 SugerirTipoRequest
 SugestaoContextualizada
@@ -506,6 +559,7 @@ TeseRenomada
 TeseSugerida
 TeseVitoriosaCreate
 TeseVitoriosaSimilar
+TestarCredencialResp
 TesteResultado
 ThesisCandidate
 TimeEntry
@@ -513,8 +567,8 @@ TokenResponse
 TomadorIn
 TrabalhistaCase
 TrabalhistaIn
-TraduzirIn
 TransicaoReq
+Tribunal
 TributoOut
 URLImportResult
 User
@@ -542,26 +596,26 @@ _ResolverClienteReq
 
 ## 5. Migrations
 
-Total de arquivos: 117
+Total de arquivos: 144
 
 Ultimas 15 por ordem de numeracao:
 
 ```
-backend/alembic/versions/108_credential_vault.py
-backend/alembic/versions/109_rag_chave_origem_por_cliente.py
-backend/alembic/versions/110_datajud_cognitive_feed.py
-backend/alembic/versions/111_ai_provider_metrics.py
-backend/alembic/versions/112_client_pii_drop_plaintext.py
-backend/alembic/versions/113_calendar_feed_revocation.py
-backend/alembic/versions/114_consolidar_dataroom_teses_v4.py
-backend/alembic/versions/115_case_proxima_acao.py
-backend/alembic/versions/116_ai_log_risco_ia.py
-backend/alembic/versions/117_knowledge_revisao.py
-backend/alembic/versions/118_doc_versionamento.py
-backend/alembic/versions/119_base_rag_enum.py
-backend/alembic/versions/120_chunk_pagina.py
-backend/alembic/versions/121_sala_juridica_chat.py
-backend/alembic/versions/122_route_usage_metrics.py
+backend/alembic/versions/138_consolida_fontes_ingestao.py
+backend/alembic/versions/139_dpt360_ciclo_vida_lgpd.py
+backend/alembic/versions/140_preliminares_fundacao_schema.py
+backend/alembic/versions/141_dpt360_diagnostico.py
+backend/alembic/versions/142_document_hash_rescan.py
+backend/alembic/versions/143_signature_documento_visualizado.py
+backend/alembic/versions/144_alembic_version_varchar128.py
+backend/alembic/versions/145_drop_orphan_db_only_columns.py
+backend/alembic/versions/146_case_sigilo_reforcado.py
+backend/alembic/versions/147_pendencia_impacto_providencia.py
+backend/alembic/versions/149_documents_sha256_integridade.py
+backend/alembic/versions/150_indices_fk_espinha_dominio.py
+backend/alembic/versions/151_case_status_anterior.py
+backend/alembic/versions/152_thesis_candidate_tese_banco.py
+backend/alembic/versions/153_legal_doc_client_id.py
 ```
 
 Reserva de numeracao: `backend/alembic/MIGRATION_RESERVATIONS.md`.

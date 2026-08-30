@@ -1,5 +1,6 @@
 # ── tests/test_migracao_gateway_fase1b.py ────────────────────────────────────
-# FASE 1b — Orquestrador Jurídico (MAPA_PROMPTS_IA03 §5 Passo 2): a camada
+# FASE 1b — Orquestrador Jurídico (docs/arquivo/planos/MAPA_PROMPTS_IA03.md §5
+# Passo 2): a camada
 # legada de IA (ai_service 6 funções vivas + ia_extra 5 fluxos + case_intel)
 # passa INTEIRAMENTE pelo gateway central com task_type coberto pela barreira
 # anti-alucinação (legal_base):

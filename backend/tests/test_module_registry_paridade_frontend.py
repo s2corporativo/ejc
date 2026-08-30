@@ -62,6 +62,12 @@ BACKEND_SEM_KEY_NO_FRONTEND: set[str] = {
     "victory-vault",     # consolidado na aba Conhecimento de /inteligencia
     "radar-regulatorio", # modo de /radar (?modo=digest)
     "portal",            # superfície do cliente externo (ver exceção acima)
+    # Consolidação 30/08/2026: as páginas /legado/* viraram LEGACY_REDIRECTS
+    # para /atividades?tipo=... — os módulos seguem catalogados no backend
+    # como filtros da Central de Atividades, sem key própria no frontend.
+    "prazos",            # filtro de /atividades (?tipo=prazo)
+    "tarefas",           # filtro de /atividades (?tipo=tarefa)
+    "intimacoes",        # filtro de /atividades (?tipo=intimacao)
 }
 
 # (c) `key`s de STAFF_ROUTES sem módulo homônimo no catálogo backend.
@@ -77,11 +83,6 @@ FRONTEND_SEM_MODULO_NO_BACKEND: set[str] = {
     # Telas utilitárias/administrativas sem módulo de negócio próprio
     "configuracoes", "ajuda", "lixeira", "ferramentas", "prompts",
     "governanca-ia", "banco-teses", "raio-x-processo",
-    # Rota /legado/suspensoes mantida para transição (status legacy). As
-    # demais keys de /legado/* (prazos/tarefas/intimacoes) coincidem com
-    # module_keys do backend e por isso não geram drift de key — a paridade
-    # de ROTA delas é garantida pelo teste (a).
-    "suspensoes",
 }
 
 

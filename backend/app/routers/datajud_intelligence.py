@@ -77,23 +77,3 @@ async def reconstruir_feed_lote(
     )
     await db.commit()
     return resultado
-
-
-# ── Compatibilidade P3 (20/08/2026): /casos/inteligencia/datajud/reconstruir-lote
-#    -> /datajud/intelligence/reconstruir-lote (redirect 308 permanente). ─────
-from fastapi.responses import RedirectResponse as _RR
-_compat = APIRouter(prefix="/inteligencia/datajud", tags=["DataJud — Compatibilidade"])
-
-@_compat.post("/reconstruir-lote")
-def _redirect_reconstruir_lote():
-    return _RR(url="/api/datajud/intelligence/reconstruir-lote", status_code=308)
-
-
-# Mini-router dedicado: o prefix agrupador do _compat principal
-# ("/casos/inteligencia/datajud") não permite reconstruir o endereço antigo
-# /api/casos/{case_id}/andamentos/alimentar-ia — ele vive aqui sem prefixo.
-_compat_casos = APIRouter(prefix="", tags=["DataJud — Compatibilidade Casos"])
-
-@_compat_casos.post("/casos/{case_id}/andamentos/alimentar-ia")
-def _redirect_alimentar_ia(case_id: str):
-    return _RR(url=f"/api/datajud/intelligence/{case_id}/andamentos/alimentar-ia", status_code=308)

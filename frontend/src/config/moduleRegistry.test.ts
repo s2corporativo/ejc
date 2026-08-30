@@ -193,6 +193,12 @@ describe("moduleRegistry", () => {
     expect(map.get("/tarefas")).toBe("/atividades?tipo=tarefa");
     expect(map.get("/intimacoes")).toBe("/atividades?tipo=intimacao");
     expect(map.get("/suspensoes")).toBe("/atividades?tipo=suspensao");
+    // Consolidação 2026-08: as telas /legado/* foram aposentadas e viraram
+    // redirects diretos para o destino final (nunca redirect → redirect).
+    expect(map.get("/legado/prazos")).toBe("/atividades?tipo=prazo");
+    expect(map.get("/legado/tarefas")).toBe("/atividades?tipo=tarefa");
+    expect(map.get("/legado/intimacoes")).toBe("/atividades?tipo=intimacao");
+    expect(map.get("/legado/suspensoes")).toBe("/atividades?tipo=suspensao");
     expect(map.get("/ramos")).toBe("/areas-de-atuacao");
     expect(map.get("/central-relacionamento")).toBe(
       "/atividades?tab=relacionamento",
@@ -228,10 +234,6 @@ describe("moduleRegistry", () => {
 
     const canonical = new Set(STAFF_ROUTES.map((route) => route.path));
     for (const path of [
-      "/legado/prazos",
-      "/legado/intimacoes",
-      "/legado/tarefas",
-      "/legado/suspensoes",
       "/crm-leads",
       "/assinaturas",
       "/workflow",

@@ -222,7 +222,7 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         "Honorários",
         "Financeiro",
         "/financeiro?tab=honorarios",
-        ["/api/honorarios-calc", "/api/honorarios-oab", "/api/honorarios-exito"],
+        ["/api/honorarios-oab"],
         perfis=PERFIS_FINANCEIRO + ["advogado"],
         dependencias=["cases", "clients", "financeiro"],
         usa_ia=True,

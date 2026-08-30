@@ -1,5 +1,5 @@
 # ── app/services/pdf_service.py ───────────────────────────────────────────────
-# Geração de PDF usando weasyprint (HTML→PDF) + Jinja2.
+# Geração de PDF usando weasyprint (HTML→PDF).
 # Dois usos:
 #   1. relatorio_mensal_pdf   — relatório gerencial mensal (scheduler dia 1)
 #   2. gerar_caso_pdf         — dossiê resumido de um caso específico

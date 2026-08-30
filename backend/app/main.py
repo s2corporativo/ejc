@@ -143,7 +143,6 @@ from app.routers import processes
 from app.routers import procuracoes
 from app.routers import produtividade
 from app.routers import prompts_juridicos
-from app.routers import prompts, honorarios_calc, exito_rateio
 from app.routers import qualidade
 from app.routers import rag
 from app.routers import rag_governance
@@ -411,7 +410,6 @@ app.include_router(jurisprudencia_externa.router, prefix=API)
 app.include_router(jurisprudencia_interna.router, prefix=API)
 app.include_router(kanban.router, prefix=API)  # P3: prefixo /kanban no router
 app.include_router(kanban.casos_router, prefix=API)
-app.include_router(kanban._compat, prefix=API)  # P3: redirect GET /api/kanban-columns (endereço antigo)
 app.include_router(kit_documental.router, prefix=API)  # POST /api/cases/{id}/kit-documental (P0.3)
 app.include_router(legal_docs.router, prefix=API)
 app.include_router(matriz_teses.router, prefix=API)  # FASE 3 Orquestrador — Matriz de Teses (migração 102)
@@ -434,7 +432,6 @@ app.include_router(defesas_revisoes.router, prefix=API)
 app.include_router(defesas_revisoes_pacote_seguro.router, prefix=API)
 app.include_router(defesas_revisoes_avancado.router, prefix=API)
 app.include_router(novos_modulos.casos_router, prefix=API)
-app.include_router(novos_modulos._compat, prefix=API)
 app.include_router(observabilidade.router, prefix=API)
 app.include_router(office_contracts.router, prefix=API)
 app.include_router(partner_withdrawals.router, prefix=API)
@@ -449,9 +446,6 @@ app.include_router(processes.casos_router, prefix=API)
 app.include_router(procuracoes.router, prefix=API)
 app.include_router(produtividade.router, prefix=API)
 app.include_router(prompts_juridicos.router, prefix=API)
-app.include_router(prompts.router, prefix=API)  # shim compat. /prompts-biblioteca (redirect 308)
-app.include_router(honorarios_calc.router, prefix=API)  # shim compat. /honorarios-calc (redirect 308 -> /honorarios-oab)
-app.include_router(exito_rateio.router, prefix=API)  # shim compat. /honorarios-exito (redirect 308 -> /honorarios-oab)
 app.include_router(qualidade.router, prefix=API)
 app.include_router(rag.router, prefix=API)
 app.include_router(rag_public.router, prefix=API)      # API pública (X-API-Key)
@@ -474,9 +468,6 @@ app.include_router(                       # P3: prefixo canônico /datajud/intel
     datajud_intelligence.router, prefix=API)  # P3: prefixo /datajud/intelligence no router
 app.include_router(                       # P3: rotas de caso /{case_id}/andamentos/* mantidas sob /casos
     datajud_intelligence.casos_router, prefix=API + "/casos")
-app.include_router(                       # P3: compatibilidade /casos/inteligencia/datajud/reconstruir-lote (308)
-    datajud_intelligence._compat, prefix=API + "/casos")
-app.include_router(datajud_intelligence._compat_casos, prefix=API)  # P3: redirect /casos/{case_id}/andamentos/alimentar-ia
 app.include_router(api_keys_router.router, prefix=API) # admin de chaves (JWT admin)
 app.include_router(regulatorio.router, prefix=API)
 app.include_router(radar_legislativo.router, prefix=API)  # Câmara+Senado+ALMG
@@ -493,7 +484,6 @@ app.include_router(processo_eletronico.router, prefix=API)  # Processo Eletrôni
 app.include_router(lgpd_registros.router, prefix=API)  # vertical LGPD — ROPA (art. 37) por cliente + RIPD (art. 38)
 app.include_router(sumulas.router, prefix=API)  # P3: prefixo /sumulas no router
 app.include_router(sumulas.casos_router, prefix=API)
-app.include_router(sumulas._compat, prefix=API)
 app.include_router(suspensoes.router, prefix=API)
 app.include_router(system_modules.router, prefix=API)  # Mapa de Módulos — governança modular
 app.include_router(diagnostico.router, prefix=API)  # Central Eletrônica de Diagnóstico

@@ -111,4 +111,4 @@ O titular mandou aplicar e executar todas as melhorias. Status por item, no pró
 | §7.2 Poda das ~354 rotas sem consumidor | ⏸️ NÃO executada de propósito: exige janela de telemetria de produção (`/uso-rotas`, 90 dias) — poda cega seria destrutiva. Mecanismo e critério ficam propostos |
 | §7.5 Consolidação de menu 34→10 | ⏸️ NÃO executada: decisão arquitetural do titular com plano próprio (parecer arquitetural / V3) |
 
-Review do PR (Codex, 4×P1): probe DataJud → capacidade explícita `datajud`; cleanup por rodada na homologação (validado: zero resíduo); probe de sociedade reapontado para as APIs reais da rota; remoção deste relatório **declinada com fundamento** (laudo de auditoria ≠ relatório de entrega; precedente `RELATORIO_PENTE_FINO_EJC_2026-07-18.md`).
+Review do PR (Codex, 4×P1): probe DataJud → capacidade explícita `datajud`; cleanup por rodada na homologação (validado: zero resíduo); probe de sociedade reapontado para as APIs reais da rota; remoção deste relatório **declinada com fundamento** (laudo de auditoria ≠ relatório de entrega; precedente `docs/arquivo/relatorios/RELATORIO_PENTE_FINO_EJC_2026-07-18.md`).

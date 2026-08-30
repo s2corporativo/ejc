@@ -23,7 +23,7 @@
     "ai": "Provedor de IA configurado e autorizado para a rodada.",
     "portal": "Login cliente_externo fictício para os testes positivos e negativos do portal.",
     "ops": "Procedimento operacional de backup, restauração, deploy e rollback executado por runbook.",
-    "datajud": "Integração DataJud habilitada para a rodada (EJC_HAS_DATAJUD=true) com CNJ de teste do operador (EJC_DATAJUD_CNJ_TESTE)."
+    "datajud": "Integração DataJud habilitada para a rodada (EJC_HAS_DATAJUD=true) com CNJ de teste de um processo EXISTENTE fornecido pelo operador (EJC_DATAJUD_CNJ_TESTE) — 404 é falha, não degradação."
   },
   "fixtures": {
     "cliente_pf": {
@@ -669,14 +669,13 @@
           "path": "/api/datajud/process/{cnj_teste}",
           "expected": [
             200,
-            404,
             503
           ],
           "requires": [
             "stack",
             "datajud"
           ],
-          "prova": "Consulta real atravessa o serviço DataJud e responde disponibilidade (200/404 do processo) ou degradação declarada (503) — nunca 5xx genérico. Sem a capacidade datajud o cenário fica BLOQUEADO declarado, não PASS vazio."
+          "prova": "Consulta real atravessa o serviço DataJud com CNJ de processo existente: 200 (disponível) ou 503 (degradação declarada). 404 reprova — distingue rota/processo ausente de degradação (review CodeRabbit/Codex do PR #1316)."
         },
         {
           "nome": "portal_nao_usa_datajud",
