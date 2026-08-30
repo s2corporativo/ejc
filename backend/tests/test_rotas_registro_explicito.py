@@ -190,6 +190,11 @@ ADICOES_INTENCIONAIS = {
     # avulsas de admissão, sempre em rascunho e filtradas por client_id.
     ("/api/clients/{client_id}/gerar-documentos", "POST"),
     ("/api/clients/{client_id}/pecas-geradas", "GET"),
+    # Pente fino E2E 30/08/2026 (§5.1): detalhe de documento por ID — a
+    # releitura direta respondia 405 (só havia list/download/PATCH/DELETE).
+    # Mesmo gate de autorização do download (_verificar_acesso_documento +
+    # cofre); devolve o shape do item da listagem, sem paths de storage.
+    ("/api/documents/{doc_id}", "GET"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
