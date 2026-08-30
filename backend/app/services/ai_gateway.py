@@ -463,7 +463,8 @@ async def chat(
         # local disponível. Falha honesta, sem tocar em rede externa.
         raise RuntimeError(
             f"Nenhum provedor de IA elegível para task={task_type}. "
-            "Verifique AI_EXTERNAL_PROVIDERS_ALLOWED e a disponibilidade do Ollama."
+            "Verifique AI_ENABLED (kill-switch global), "
+            "AI_EXTERNAL_PROVIDERS_ALLOWED e a disponibilidade do Ollama."
         )
 
     # ── Modo 1 (LOCAL_COMPLETO) — sigilo reforçado: a tarefa NUNCA pode ir a
