@@ -94,9 +94,7 @@ describe("Dpt360Workspace — Empresa 360 fora do teto do dashboard", () => {
       ).toBeTruthy(),
     );
     // Orientação de enquadramento + saída para o cadastro canônico.
-    expect(
-      screen.getByText(/clientes pessoa jurídica ativos/i),
-    ).toBeTruthy();
+    expect(screen.getByText(/clientes pessoa jurídica ativos/i)).toBeTruthy();
     const link = screen.getByRole("link", {
       name: /Abrir cadastro do cliente/i,
     });
