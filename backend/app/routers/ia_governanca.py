@@ -552,11 +552,32 @@ async def coletar_tjmg_agora(
     }
 
 
+def _peca_de_caso_vivo():
+    """Condição: peça não excluída E cujo caso também não foi excluído.
+
+    AUD27-P2-1 (reincidência de V2-3.3): os contadores olhavam só o
+    `deleted_at` da própria peça, então uma peça de caso EXCLUÍDO seguia
+    contando nas métricas de guardrail — o painel de governança relatava
+    pendência de revisão humana sobre trabalho que já não existe. Peça
+    avulsa (`case_id` nulo, vínculo por cliente) é legítima e continua
+    contando; só o filho de caso excluído sai.
+    """
+    from app.models.case import Case
+
+    caso_excluido = (
+        select(Case.id)
+        .where(Case.id == LegalDoc.case_id, Case.deleted_at.isnot(None))
+        .exists()
+    )
+    return (LegalDoc.deleted_at.is_(None), ~caso_excluido)
+
+
 @router.get("/guardrails")
 async def guardrails(db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     _require_admin_socio(cu)
-    total_pecas = (await db.execute(select(sqlfunc.count()).select_from(LegalDoc).where(LegalDoc.deleted_at.is_(None)))).scalar() or 0
-    ia_sem_revisao = (await db.execute(select(sqlfunc.count()).select_from(LegalDoc).where(LegalDoc.deleted_at.is_(None), LegalDoc.ai_generated.is_(True), LegalDoc.human_reviewed.is_(False)))).scalar() or 0
+    _viva = _peca_de_caso_vivo()
+    total_pecas = (await db.execute(select(sqlfunc.count()).select_from(LegalDoc).where(*_viva))).scalar() or 0
+    ia_sem_revisao = (await db.execute(select(sqlfunc.count()).select_from(LegalDoc).where(*_viva, LegalDoc.ai_generated.is_(True), LegalDoc.human_reviewed.is_(False)))).scalar() or 0
     logs_pendentes = (await db.execute(select(sqlfunc.count()).select_from(AILog).where(AILog.status_hitl == "gerado"))).scalar() or 0
     return {
         "regras_ativas": [
