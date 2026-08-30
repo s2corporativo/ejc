@@ -109,7 +109,7 @@ _CHAVES_PASSO = {"nome", "tipo", "actor", "method", "path", "expected", "require
 _ESPERADO_IDS = [f"H{n:02d}" for n in range(1, 16)]
 _ACTORS = {"anon", "staff", "portal"}
 _TIPOS = {"happy", "negativo", "idempotencia", "resiliencia"}
-_CAPS = {"stack", "ai", "portal", "ops"}
+_CAPS = {"stack", "ai", "portal", "ops", "datajud"}
 
 
 def carregar_matriz() -> dict[str, Any]:
@@ -308,6 +308,52 @@ class Executor:
                 self.caps.add("portal")
         if os.getenv("EJC_HAS_AI", "").lower() == "true":
             self.caps.add("ai")
+        # DataJud: só com opt-in explícito + CNJ de teste do operador — o probe
+        # atravessa o serviço de verdade; sem isso o cenário fica BLOQUEADO
+        # declarado, nunca PASS vazio (review do PR #1316).
+        if (
+            os.getenv("EJC_HAS_DATAJUD", "").lower() == "true"
+            and os.getenv("EJC_DATAJUD_CNJ_TESTE")
+        ):
+            self.caps.add("datajud")
+
+    def limpar(self) -> None:
+        """Remove (soft-delete) SOMENTE os recursos criados por ESTA rodada.
+
+        As fixtures têm sufixo único por execução, então tudo em `self.state`
+        pertence a esta rodada — sem cleanup, cada homologação acumulava
+        cliente/caso/documento sintéticos no staging (review do PR #1316).
+        Espelha o cleanup do runner E2E: DELETE + releitura para confirmar.
+        """
+        alvos = [
+            ("documento", self.state.get("document_id"),
+             "/api/documents/{}", "/api/documents/{}/download"),
+            ("caso", self.state.get("case_id"),
+             "/api/cases/{}?motivo=Limpeza da rodada de homologacao " + self.marker,
+             "/api/cases/{}"),
+            ("cliente", self.state.get("client_id"),
+             "/api/clients/{}", "/api/clients/{}"),
+        ]
+        for rotulo, ident, molde, molde_confirmacao in alvos:
+            if not ident:
+                continue
+            try:
+                resp = self.client.request(
+                    "DELETE", molde.format(ident), headers=self._headers("staff")
+                )
+                confirm = self.client.get(
+                    molde_confirmacao.format(ident), headers=self._headers("staff")
+                )
+                if confirm.status_code in (404, 410):
+                    print(f"[cleanup] {rotulo} {ident}: removido e confirmado")
+                else:
+                    print(
+                        f"[cleanup] ATENÇÃO — {rotulo} {ident}: DELETE respondeu "
+                        f"{resp.status_code} e a releitura {confirm.status_code}; "
+                        "resíduo fictício pode ter ficado no ambiente"
+                    )
+            except Exception as exc:  # noqa: BLE001
+                print(f"[cleanup] {rotulo} {ident}: falha {type(exc).__name__}: {exc}")
 
     def _headers(self, actor: str) -> dict[str, str]:
         token = self.tokens.get(actor)
@@ -386,6 +432,7 @@ class Executor:
             "{document_id}": self.state.get("document_id"),
             "{case_id}": self.state.get("case_id"),
             "{client_id}": self.state.get("client_id"),
+            "{cnj_teste}": os.getenv("EJC_DATAJUD_CNJ_TESTE"),
         }
         for placeholder, value in placeholders.items():
             if placeholder in path:
@@ -550,7 +597,11 @@ def main() -> None:
     executor = Executor(base_url, marker)
     executor.detectar_capacidades()
     print(f"Capacidades detectadas: {sorted(executor.caps) or ['(nenhuma)']}")
-    resultados = executor.executar(runtime_matrix)
+    try:
+        resultados = executor.executar(runtime_matrix)
+    finally:
+        # Mesmo numa rodada interrompida, o que já foi criado é removido.
+        executor.limpar()
     _imprimir_resultados(resultados)
     raise SystemExit(_escrever_report(base_url, marker, resultados))
 

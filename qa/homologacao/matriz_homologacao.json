@@ -22,7 +22,8 @@
     "stack": "Backend e banco alcançáveis; login staff funciona.",
     "ai": "Provedor de IA configurado e autorizado para a rodada.",
     "portal": "Login cliente_externo fictício para os testes positivos e negativos do portal.",
-    "ops": "Procedimento operacional de backup, restauração, deploy e rollback executado por runbook."
+    "ops": "Procedimento operacional de backup, restauração, deploy e rollback executado por runbook.",
+    "datajud": "Integração DataJud habilitada para a rodada (EJC_HAS_DATAJUD=true) com CNJ de teste do operador (EJC_DATAJUD_CNJ_TESTE)."
   },
   "fixtures": {
     "cliente_pf": {
@@ -665,14 +666,17 @@
           "tipo": "resiliencia",
           "actor": "staff",
           "method": "GET",
-          "path": "/api/movimentos/recentes",
+          "path": "/api/datajud/process/{cnj_teste}",
           "expected": [
-            200
+            200,
+            404,
+            503
           ],
           "requires": [
-            "stack"
+            "stack",
+            "datajud"
           ],
-          "prova": "Dados alimentados pelo DataJud respondem mesmo com a integração desligada (degradação graciosa; /api/datajud/health não existe — pente fino 30/08)."
+          "prova": "Consulta real atravessa o serviço DataJud e responde disponibilidade (200/404 do processo) ou degradação declarada (503) — nunca 5xx genérico. Sem a capacidade datajud o cenário fica BLOQUEADO declarado, não PASS vazio."
         },
         {
           "nome": "portal_nao_usa_datajud",
