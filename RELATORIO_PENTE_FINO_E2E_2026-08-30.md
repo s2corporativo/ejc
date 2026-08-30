@@ -131,3 +131,35 @@ Ordem do titular: "limpeza/higienização/sanitização/padronização/consolida
 Validação do estado final (HEAD `f7bca95`): suíte backend completa **6.630 passed** em worktree limpo · tsc/vitest/build/format verdes · gate P0 · smoke E2E **933/933, 6 papéis** · navegação **84 rotas** sem tela branca/pageerror/5xx · shims legados 404 e canônicos 200 ao vivo.
 
 Pendências estruturais que permanecem propostas (dependem do titular): poda das rotas sem consumidor via telemetria de produção; consolidação dos diretórios `docs/audit`×`auditoria`×`auditorias`; regeneração de `MATRIZ_DE_ROTAS.md`/`ARQUITETURA_ATUAL.md` (drift próprio); dedup das guardas RBAC repetidas (`_pode_editar` em 9 routers — toca autorização, exige rodada própria); wiring ou corte do subsistema dormente de ingestão.
+
+---
+
+## Adendo 3 (30/08) — pendências do plano mestre executadas
+
+Ordem do titular: "execute tudo que falta com as suas próprias decisões". Ataquei a fila de itens ABERTOS de `docs/PLANO_MESTRE_STATUS.md`, **reproduzindo cada um antes de corrigir** — regra que se provou essencial: **metade dos itens "pendentes" já estava corrigida**, com o status apenas desatualizado.
+
+### Defeitos REAIS reproduzidos e corrigidos
+
+| Item | Reprodução | Correção |
+|---|---|---|
+| `AUD27-P0-1` **[CRÍTICO]** | A tabela de elegibilidade (`_requisitos`, fonte única do kill-switch) checava flags por provedor e a de externos, **nunca `AI_ENABLED`**. Com Ollama ligado, `/ai/core/*` gerava com a IA "desligada" | Kill-switch global vira requisito de todo provedor. Cascata: nenhum elegível → cadeia vazia → falha antes da rede; `motivo_inelegivel` passa a distinguir kill-switch de chave ausente. Testes provados anti-vácuo (sem o fix, 3 falham) |
+| `AUD27-P1-1` | `POST /cases/` como financeiro: **404 do handler**, não 403 — o gate deixou entrar; quem barrou foi o sigilo do cliente | `require_roles_exact(EQUIPE_JURIDICA ∪ {secretaria})`. Estagiário preservado (já criava pelo piso) |
+| `AUD27-P2-2` | `/qualidade/*` como financeiro: **422**, não 403 — passou do gate | `require_roles_exact(EQUIPE_JURIDICA)` nos 3 endpoints |
+| `AUD27-P2-1` | Contadores de guardrails filtravam só o `deleted_at` da peça, nunca o do caso pai | `_peca_de_caso_vivo()`; peça avulsa segue contando. Teste dblevel com prova anti-vácuo embutida |
+| `AUD27-P3-10` / `V2-3.3` | No banco: caso excluído, peça em rascunho com `deleted_at` **nulo** — órfã viva. Prova lado a lado (antes/depois na mesma tabela) | Cascata de soft-delete às peças não-terminais (protocolada continua bloqueando com 422). Corrige a classe na origem em vez de remendar consulta a consulta |
+
+### Itens "pendentes" que já estavam corrigidos (status obsoleto, não código)
+
+Verificados um a um, com evidência — **nenhuma linha alterada**:
+
+- **IDOR de agenda (3 residuais de 18/07)**: a listagem já escopa evento pessoal ao criador/responsável (secretaria não vê o do advogado); atribuir `responsavel_id` de terceiro já dá **403**; `protocolo_comprovante_doc_id` já valida existência, exclusão e pertencimento ao caso (patches B3/B4/N3). Os testes que o relatório dizia faltar **também já existem** (`test_agenda_eventos_gates_dblevel`, `test_legal_doc_protocolo`, entre outros).
+- **`AUD27-P1-8` `[RISCO DE PRAZO]`**: provado empiricamente que **não** há mais falha silenciosa — com 0 OABs elegíveis, o "ok" nominal do job vira `erro` no heartbeat, com `{"erros":{"nenhuma_oab_configurada":1}}` visível no diagnóstico (corrigido por #1310).
+
+Proponho a reverificação desses itens no plano mestre; não editei a tabela canônica (o flip de status é da PR que corrige, e aqui não havia o que corrigir).
+
+### Fora do meu alcance (registrado, não executado)
+
+- **Merge do PR, re-run do Woodpecker e deploy** — exigem acesso/decisão que não tenho.
+- **`AUD27-P3-11` (índice de `deleted_at`)** — o item exige confirmação por `EXPLAIN`; medir exige gerar volume realista e comparar planos, e a decisão certa provavelmente é índice **parcial** sobre as colunas realmente filtradas, não um índice solto numa coluna quase toda nula. Fica proposto com o método definido — não criei índice sem medida.
+- **`H-1` (gold set) e `V2-4.3` (citação do Provimento OAB)** — dependem de autoria jurídica humana.
+- **`AUD27-P2-10`/`P2-11` (dedup do RAG)** — atos do titular sobre dados de produção.
