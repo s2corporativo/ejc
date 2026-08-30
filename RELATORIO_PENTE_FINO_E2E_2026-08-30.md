@@ -88,3 +88,27 @@ O flip de status é da PR que corrige (regra do plano mestre) — aqui apenas *p
 ## 8. Dados fictícios e LGPD
 
 Tudo criado com marcador `E2E-FICTICIO`/e-mails `*.teste@ejc.adv.br`; cleanup do harness confirmado pós-DELETE (releitura 404). Permanecem no ambiente local desta sessão (descartável): admin fictício, 4 contas por papel, 1 cliente/caso de navegação e resíduos declarados pelo próprio relatório do smoke (`checks_nao_cobertos` listados em `qa/e2e/reports/e2e_fictitious_report.json`). Nenhum dado real foi usado; nada disso toca produção.
+
+---
+
+## Adendo (30/08, mesma sessão) — melhorias EXECUTADAS por ordem do titular
+
+O titular mandou aplicar e executar todas as melhorias. Status por item, no próprio PR [#1316](https://github.com/s2corporativo/ejc/pull/1316):
+
+| Item | Status |
+|---|---|
+| §5.1 `GET /documents/{id}` ausente | ✅ Implementado (detalhe protegido, shape da listagem, testes) |
+| §5.2 Chaves React duplicadas em /diagnostico | ✅ Corrigido (key composta; payload real repete chave até no mesmo grupo) |
+| §5.3 Estado vazio DPT360 | ✅ Implementado (`ClienteNaoAcompanhado`, 404 vira estado de negócio) |
+| §5.4 OCR síncrono bloqueando o event loop | ✅ Corrigido (`asyncio.to_thread` em `documento_service.extrair_e_analisar`) |
+| §5.5 Probes RBAC com 422 | ✅ Mapa `QUERY_MINIMA_POR_ROTA` (9 rotas conclusivas; 422 vira reprovação) |
+| §5.6 Cobertura `cliente_externo` | ✅ Conta de portal fictícia via fluxo canônico `criar-acesso`; confinamento provado (200 no portal, 403 fora, 401 anônimo); homologação com capacidade `portal`: 9 PASS/0 FALHA |
+| §7.1 Paridade de catálogo 34×47 | ✅ Teste estático de paridade (rotas válidas, sem alias legado, drift declarado em allowlist) |
+| §7.3 Padrão de probes fiéis | ✅ Já aplicado no corpo do PR |
+| §7.4 Seed de demonstração | ✅ `seeds/seed_demo.py` dev-only, idempotente, PII cifrada, aborta em produção |
+| §7.6 Playwright versionado | ✅ `frontend/tests/navegacao-registry.mjs` (84 rotas, provado ao vivo) |
+| §7.7 `auditoria_e2e/` obsoleto | ✅ Arquivado em `docs/arquivo/auditoria_e2e/` com nota |
+| §7.2 Poda das ~354 rotas sem consumidor | ⏸️ NÃO executada de propósito: exige janela de telemetria de produção (`/uso-rotas`, 90 dias) — poda cega seria destrutiva. Mecanismo e critério ficam propostos |
+| §7.5 Consolidação de menu 34→10 | ⏸️ NÃO executada: decisão arquitetural do titular com plano próprio (parecer arquitetural / V3) |
+
+Review do PR (Codex, 4×P1): probe DataJud → capacidade explícita `datajud`; cleanup por rodada na homologação (validado: zero resíduo); probe de sociedade reapontado para as APIs reais da rota; remoção deste relatório **declinada com fundamento** (laudo de auditoria ≠ relatório de entrega; precedente `RELATORIO_PENTE_FINO_EJC_2026-07-18.md`).
