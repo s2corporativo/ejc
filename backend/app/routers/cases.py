@@ -708,10 +708,29 @@ async def excluir(
             "pendencias": pendencias,
         })
 
-    c.deleted_at = datetime.now(timezone.utc)
+    agora = datetime.now(timezone.utc)
+    c.deleted_at = agora
+
+    # AUD27-P3-10 / V2-3.3: peça em status NÃO-TERMINAL é trabalho em curso do
+    # caso e não tem vida própria. Sem cascata ela ficava ÓRFÃ: some da tela do
+    # caso (que não existe mais) mas continua em listagens e contadores — foi
+    # exatamente assim que AUD27-P2-1 nasceu no painel de guardrails. A peça
+    # protocolada nunca chega aqui: ela BLOQUEIA a exclusão na checagem acima,
+    # então tudo que resta é rascunho/revisão. Vai junto para a lixeira, de
+    # onde é restaurável depois do caso (a restauração exige o pai vivo).
+    pecas_cascata = (await db.execute(
+        select(LegalDoc).where(
+            LegalDoc.case_id == case_id,
+            LegalDoc.deleted_at.is_(None),
+        )
+    )).scalars().all()
+    for peca in pecas_cascata:
+        peca.deleted_at = agora
+
     await criar_audit_log(
         db, cu.id, cu.role.value, "DELETE", "cases", case_id,
-        detalhes=f"Exclusão (soft delete). Motivo: {motivo_final}",
+        detalhes=(f"Exclusão (soft delete). Motivo: {motivo_final}. "
+                  f"Peças em curso excluídas junto: {len(pecas_cascata)}"),
     )
     await db.commit()
     return MsgResponse(detail="Caso excluído (soft delete — restaurável pela lixeira)")
