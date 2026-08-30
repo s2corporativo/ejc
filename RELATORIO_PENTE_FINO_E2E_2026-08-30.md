@@ -163,3 +163,40 @@ Proponho a reverificação desses itens no plano mestre; não editei a tabela ca
 - **`AUD27-P3-11` (índice de `deleted_at`)** — o item exige confirmação por `EXPLAIN`; medir exige gerar volume realista e comparar planos, e a decisão certa provavelmente é índice **parcial** sobre as colunas realmente filtradas, não um índice solto numa coluna quase toda nula. Fica proposto com o método definido — não criei índice sem medida.
 - **`H-1` (gold set) e `V2-4.3` (citação do Provimento OAB)** — dependem de autoria jurídica humana.
 - **`AUD27-P2-10`/`P2-11` (dedup do RAG)** — atos do titular sobre dados de produção.
+
+## Adendo 4 (30/08) — auditoria de segurança do próprio diff e fechamento
+
+Rodei o `security-auditor` sobre o diff do Adendo 3 (regra 8 do `CLAUDE.md`:
+mudança em permissões exige revisão de segurança). **Nenhum achado bloqueante** —
+os gates endurecidos e a cascata de exclusão passaram. Os quatro apontamentos
+não bloqueantes foram todos executados no commit `9fb387f`:
+
+| Apontamento | Por que importava | O que foi feito |
+|---|---|---|
+| `_peca_de_caso_vivo()` não chegou ao `/ia-governanca/dashboard` | O `/guardrails` já ignorava peça de caso excluído; o dashboard não. Dois painéis do **mesmo** controle HITL com filtros diferentes dão duas verdades sobre a mesma cobertura de revisão — exatamente a armadilha de fonte divergente que o `CLAUDE.md` já registra para os endpoints de provedores de IA | Mesma condição nos dois. Teste por AST trava a divergência sem precisar de Postgres |
+| Mensagem de bloqueio da `provider_policy` desatualizada | Depois do kill-switch global (`AUD27-P0-1`) existe uma **terceira** causa de cadeia vazia, e é a única em que nenhuma chave de provedor resolve. A mensagem mandava configurar `ANTHROPIC_API_KEY`: o operador perseguiria a causa errada com a IA simplesmente desligada | Mensagem específica para `AI_ENABLED=false`, sem citar chave nenhuma |
+| `POST /api/cases/` caía como `indeterminado` na matriz RBAC derivada | Gate indeterminado faz a matriz esperar **200 para todo papel**, `financeiro` inclusive. O gate endurecido pelo `AUD27-P1-1` não estava sendo vigiado ao vivo por ninguém — ponto cego criado pela própria correção | Corrigido **no parser**, não no router: `_module_role_constants` lia só `ast.Assign`, e a allowlist é anotada (`ast.AnnAssign`). O ponto cego valia para toda allowlist explícita exportada para teste — 87 → 86 indeterminados. A rota agora deriva como `local_membership` e nega `financeiro` e `cliente_externo` |
+| Cascata de exclusão não registrava **quais** peças levou junto | Ao restaurar um caso da lixeira, o operador não tinha como saber quais peças restaurar (não há cascata de restauração, por desenho) | `dados_antes={"pecas_cascata": [ids]}` na trilha de auditoria |
+
+**Verificação**: 5 testes novos, **todos verificados anti-vácuo** (removi a
+correção e confirmei a falha, uma a uma, antes de restaurar). `ruff check app`
+limpo. Suíte completa com banco: **6659 passed, 23 skipped, 0 failed**.
+
+> Nota de ambiente, não de código: `test_schema_dr_parity` e
+> `test_preliminares_fundacao_schema_140` reprovam se a
+> `SCHEMA_CHECK_DATABASE_URL` usar socket via *query string* — eles reparseiam
+> a URL com `urlsplit` e descartam a query, caindo no 5432 default. Com URL
+> TCP normal, passam. Fica registrado para quem for reproduzir o portão.
+
+### Um ponto de decisão humana (não bloqueia o PR)
+
+`_PODE_CRIAR_CASO` agora lista `estagiario` **explicitamente**. Ele nunca esteve
+na lista original do M16: criava caso por **acidente da hierarquia** (o piso da
+lista antiga era `secretaria`, nível 2, e o estagiário está acima). Ao migrar
+para allowlist exata eu tinha duas opções, e escolhi **preservar o acesso de
+quem hoje o exerce** — tirar uma permissão em uso é quebra de contrato e não era
+o que o achado pedia (o achado era `financeiro` entrando, não estagiário
+sobrando). Mas o efeito colateral é que uma permissão acidental virou permissão
+**deliberada e escrita**. Se a intenção do escritório for que estagiário **não**
+abra caso sozinho, é uma linha a remover — e aí precisa ser decisão do titular,
+não minha.
