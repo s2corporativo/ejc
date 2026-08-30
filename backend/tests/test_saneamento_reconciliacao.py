@@ -46,6 +46,21 @@ def test_sigilo_e_sinalizado():
     assert any(d.tipo is TipoDivergencia.SIGILO for d in rel.divergencias)
 
 
+def test_sigilo_nao_gera_outras_divergencias_do_mesmo_documento():
+    """Achado de revisão de código: sem o `continue` após SIGILO, as
+    comparações de classe/órgão/data ainda rodavam para o documento
+    sigiloso e vazavam `valor_datajud` por outra linha — mesmo com o router
+    filtrando só tipo==SIGILO."""
+    interno = {NUM_CNJ_OFICIAL: {"classe": {"codigo": 1}, "orgao_julgador": {"codigo": 1}}}
+    datajud = {NUM_CNJ_OFICIAL: [{
+        "grau": "G1", "nivelSigilo": 1,
+        "classe": {"codigo": 999}, "orgaoJulgador": {"codigo": 999},
+    }]}
+    rel = reconciliar(interno, datajud)
+    tipos = {d.tipo for d in rel.divergencias}
+    assert tipos == {TipoDivergencia.SIGILO}
+
+
 def test_sem_divergencia_quando_tudo_confere():
     interno = {NUM_CNJ_OFICIAL: {
         "classe": {"codigo": 9}, "orgao_julgador": {"codigo": 1},

@@ -106,6 +106,14 @@ def reconciliar(
                     observacao="tratamento restrito — não incluir em relatório amplo",
                 )
             )
+            # Acha de revisão de código: sem este `continue`, as comparações
+            # de classe/órgão/data abaixo ainda rodavam para o MESMO
+            # documento sob segredo de justiça e geravam outras linhas de
+            # Divergencia com `valor_datajud` — o router só filtra
+            # tipo==SIGILO, então esses metadados do processo sigiloso
+            # vazavam de qualquer forma. Um processo sob segredo de justiça
+            # não entra na reconciliação amplamente visível de jeito nenhum.
+            continue
 
         classe_dj = _codigo(doc.get("classe"))
         classe_int = _codigo(reg.get("classe"))

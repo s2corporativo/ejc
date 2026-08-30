@@ -5,14 +5,20 @@
 # advogado ou superior — regra de negócio inegociável do PROMPT 1 (passo 5):
 # o módulo SINALIZA, quem decide é sempre um advogado, nunca um job.
 #
-# ESCOPO POR TITULARIDADE DE CASO (achado ALTO da auditoria de segurança):
-# o resto do EJC trata advogado/advogado_auxiliar como papéis NÃO-gestão,
-# restritos aos casos em que atuam (responsável/auxiliar) — ver
-# app/core/ownership.py::verificar_acesso_caso e o mesmo filtro em
-# app/routers/movimentos.py. Este módulo replica esse gate: as tabelas de
+# ESCOPO POR TITULARIDADE DE CASO (achado ALTO da auditoria de segurança +
+# revisão de código): o resto do EJC trata advogado/advogado_auxiliar como
+# papéis NÃO-gestão, restritos aos casos em que atuam. As tabelas de
 # saneamento só guardam `numero_cnj` (não `case_id`), então o vínculo é
-# resolvido comparando os dígitos de `Case.numero_processo` (tolerante à
-# máscara) contra o `numero_cnj` normalizado.
+# resolvido via `Process.numero_cnj` (fonte canônica — 1 Caso : N Processos,
+# principal + acessórios) com fallback em `Case.numero_processo` (espelho
+# legado, só do processo principal — ver processo_service.py). Resolver só
+# por `Case.numero_processo` (versão anterior) deixava processo acessório
+# invisível/inacionável para o advogado do caso.
+#
+# Leitura (`_filtro_escopo_caso`) e visão firm-wide de RELATÓRIO usam
+# `pode_ver_todos` (admin+) — o limiar mais alto que `is_gestao` (socio+)
+# reservado à ESCRITA em sub-recurso de caso (mesma distinção de
+# app/core/ownership.py, usada por rentabilidade.py/case_health.py).
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -23,10 +29,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import ColumnElement
 
 from app.core.database import get_db
-from app.core.ownership import is_gestao
+from app.core.ownership import is_gestao, pode_ver_todos
 from app.core.security import require_roles
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case
+from app.models.process import Process
 from app.models.saneamento import (
     Divergencia,
     ExcecaoNumero,
@@ -44,25 +51,37 @@ _LEITURA = require_roles(["advogado_auxiliar", "advogado", "socio", "admin", "su
 _DECISAO = require_roles(["advogado", "socio", "admin", "superadmin"])
 
 
-def _numero_cnj_do_caso() -> ColumnElement[str]:
-    """Dígitos de Case.numero_processo, para comparar com numero_cnj (já
-    normalizado a 20 dígitos nas tabelas de saneamento) — tolerante à
-    máscara (NNNNNNN-DD.AAAA.J.TR.OOOO) que numero_processo pode carregar."""
-    return func.regexp_replace(Case.numero_processo, r"\D", "", "g")
+def _digitos(coluna) -> ColumnElement[str]:
+    return func.regexp_replace(coluna, r"\D", "", "g")
+
+
+def _match_numero_cnj(coluna_numero_cnj: ColumnElement[str]):
+    """Casa numero_cnj (já normalizado a 20 dígitos) contra QUALQUER
+    Processo do caso (principal ou acessório — fonte canônica) OU, se não
+    houver Process cadastrado (dado legado), contra o espelho
+    `Case.numero_processo` do processo principal."""
+    return or_(
+        exists().where(
+            Process.case_id == Case.id, _digitos(Process.numero_cnj) == coluna_numero_cnj
+        ),
+        _digitos(Case.numero_processo) == coluna_numero_cnj,
+    )
 
 
 def _filtro_escopo_caso(query, coluna_numero_cnj: ColumnElement[str], cu: User):
     """Restringe a consulta aos registros cujo numero_cnj está ligado a um
-    caso que o usuário pode ver. Gestão (socio+) não é filtrada — visão
-    firm-wide. Equipe só vê caso em que é responsável/auxiliar, ou caso
-    ÓRFÃO (mesma salvaguarda anti-lockout de movimentos.py/ownership.py —
-    sem isso um caso sem dono ficaria invisível a todo mundo). numero_cnj
-    sem NENHUM caso correspondente no sistema fica invisível à equipe
-    (nega por padrão)."""
-    if is_gestao(cu):
+    caso que o usuário pode ver. Visão de RELATÓRIO/firm-wide exige admin+
+    (`pode_ver_todos`), não só gestão (`socio+`) — mesma distinção do resto
+    do EJC entre escopo de leitura e gate de escrita em sub-recurso. Equipe
+    só vê caso em que é responsável/auxiliar, ou caso ÓRFÃO (mesma
+    salvaguarda anti-lockout de movimentos.py — sem isso um caso sem dono
+    ficaria invisível a todo mundo; a leitura é bem menos arriscada que
+    decidir, então mantém o órfão visível aqui). numero_cnj sem NENHUM caso
+    correspondente no sistema fica invisível à equipe (nega por padrão)."""
+    if pode_ver_todos(cu):
         return query
     vinculo = exists().where(
-        _numero_cnj_do_caso() == coluna_numero_cnj,
+        _match_numero_cnj(coluna_numero_cnj),
         Case.deleted_at.is_(None),
         or_(
             Case.advogado_responsavel_id == cu.id,
@@ -74,35 +93,41 @@ def _filtro_escopo_caso(query, coluna_numero_cnj: ColumnElement[str], cu: User):
     return query.where(vinculo)
 
 
-async def _resolver_caso_do_numero(db: AsyncSession, numero_cnj: str) -> Case | None:
-    """Caso vinculado a um numero_cnj — primeiro que casar (numeração é
-    única na prática; join tolerante à máscara de numero_processo)."""
+async def _resolver_casos_do_numero(db: AsyncSession, numero_cnj: str) -> list[Case]:
+    """TODOS os casos vinculados a um numero_cnj — pode haver mais de um
+    exatamente no cenário que este módulo existe para tratar: duplicata real
+    ainda não fundida, com o mesmo CNJ em mais de um registro interno
+    (achado de revisão de código: `.first()` escolhia um caso arbitrário,
+    podendo autorizar com base no dono errado quando há mais de um)."""
     return (
         await db.execute(
-            select(Case).where(
-                _numero_cnj_do_caso() == numero_cnj, Case.deleted_at.is_(None)
-            )
+            select(Case)
+            .distinct()
+            .where(_match_numero_cnj(numero_cnj), Case.deleted_at.is_(None))
         )
-    ).scalars().first()
+    ).scalars().all()
 
 
-def _pode_agir_no_caso(cu: User, case: Case | None) -> bool:
+def _pode_agir_no_numero(cu: User, casos: list[Case]) -> bool:
     """Gate de ESCRITA (decidir/aplicar): mesma regra de
-    app/core/ownership.py::verificar_acesso_caso — gestão sempre passa;
-    equipe só se vinculada ao caso. Caso ÓRFÃO (sem responsável nem
-    auxiliar) e numero_cnj sem caso correspondente no sistema são NEGADOS à
+    app/core/ownership.py::verificar_acesso_caso — gestão (socio+) sempre
+    passa; equipe só se vinculada a TODOS os casos que casam com o
+    numero_cnj (ver _resolver_casos_do_numero — mais de um é o próprio
+    cenário de duplicata que o módulo trata; exigir vínculo com todos evita
+    que o dono de UM dos registros decida sozinho por um caso alheio).
+    Caso ÓRFÃO e numero_cnj sem caso correspondente no sistema são NEGADOS à
     equipe: só gestão decide (escape-hatch legítimo, pode assumir/
-    reatribuir o caso). Achado de revisão: uma versão anterior liberava
-    caso órfão para qualquer advogado, reabrindo a brecha que
-    verificar_acesso_caso já fechou para o resto do EJC — decidir
-    encerramento de processo é irreversível na prática, então aqui a regra
-    é a mesma da escrita, não a do escopo de leitura (que sim mantém caso
-    órfão visível à equipe, ver _filtro_escopo_caso)."""
+    reatribuir o caso) — decidir encerramento de processo é irreversível na
+    prática, então aqui a regra é a da escrita, não a do escopo de leitura
+    (que mantém caso órfão visível à equipe, ver _filtro_escopo_caso)."""
     if is_gestao(cu):
         return True
-    if case is None:
+    if not casos:
         return False
-    return case.advogado_responsavel_id == cu.id or case.advogado_auxiliar_id == cu.id
+    return all(
+        c.advogado_responsavel_id == cu.id or c.advogado_auxiliar_id == cu.id
+        for c in casos
+    )
 
 
 @router.get("/excecoes")
@@ -111,18 +136,17 @@ async def listar_excecoes(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    _cu: User = Depends(_LEITURA),
+    _cu: User = Depends(require_roles(["socio", "admin", "superadmin"])),
 ):
     """Fila de números que falharam na validação do dígito verificador —
     ERRO DE DIGITAÇÃO, nunca duplicata (regra de negócio inegociável).
 
-    Sem escopo por titularidade de caso: por definição, um número aqui AINDA
-    não foi validado (nem normalizado) o bastante para ser comparado com
-    segurança contra `Case.numero_processo` — `numero_corrigido` só existe
-    depois de resolvido, e a maioria das linhas pendentes tem esse campo
-    NULL. Filtrar por caso esconderia a fila inteira da equipe sem ganho de
-    segurança real: o conteúdo exposto é só "este número não bate o dígito
-    verificador", não dado de mérito do processo."""
+    Restrita à gestão (achado de revisão de código): `numero_bruto` e
+    `numero_corrigido` (quando já resolvido) identificam processo mesmo
+    antes de validados, e a coluna `numero_corrigido` não dá para escopar
+    por caso com segurança (nula na maior parte das linhas pendentes,
+    exatamente o caso comum) — restringir o endpoint é mais simples e mais
+    seguro do que um filtro parcial que só cobriria parte das linhas."""
     q = (
         select(ExcecaoNumero)
         .where(ExcecaoNumero.resolvido == resolvido)
@@ -179,12 +203,15 @@ async def aplicar_duplicata(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(_DECISAO),
 ):
-    """Marca um item do plano de deduplicação como aplicado.
+    """Marca um item do plano de deduplicação como aplicado (aprovado para
+    fusão).
 
-    Esta rota registra a decisão (quem/quando); a fusão efetiva dos registros
-    da base interna (cases/processos) é responsabilidade do chamador —
-    `tipo='multi_grau'` ou `'conexo_sugerido'` NUNCA devem ser fundidos
-    (regra de negócio inegociável), só relacionados/sugeridos.
+    Esta rota registra a DECISÃO (quem/quando) — a fusão efetiva dos
+    registros da base interna (cases/processos) permanece responsabilidade
+    de um processo separado (nenhum handler de fusão existe hoje no EJC;
+    fora do escopo desta PR — ver Issue #1317). `tipo='multi_grau'` ou
+    `'conexo_sugerido'` NUNCA devem ser fundidos (regra de negócio
+    inegociável), só relacionados/sugeridos.
     """
     if not body.confirmar:
         raise HTTPException(status_code=422, detail="Confirmação explícita exigida (confirmar=true).")
@@ -195,9 +222,9 @@ async def aplicar_duplicata(
     if plano is None:
         raise HTTPException(status_code=404, detail="Plano de deduplicação não encontrado.")
 
-    caso = await _resolver_caso_do_numero(db, plano.numero_cnj)
-    if not _pode_agir_no_caso(cu, caso):
-        raise HTTPException(status_code=403, detail="Sem acesso ao caso deste número CNJ.")
+    casos = await _resolver_casos_do_numero(db, plano.numero_cnj)
+    if not _pode_agir_no_numero(cu, casos):
+        raise HTTPException(status_code=403, detail="Sem acesso a todos os casos deste número CNJ.")
 
     if plano.tipo != "duplicata":
         raise HTTPException(
@@ -280,18 +307,37 @@ async def decidir_indicativo(
     if indicativo is None:
         raise HTTPException(status_code=404, detail="Indicativo não encontrado.")
 
-    caso = await _resolver_caso_do_numero(db, indicativo.numero_cnj)
-    if not _pode_agir_no_caso(cu, caso):
-        raise HTTPException(status_code=403, detail="Sem acesso ao caso deste número CNJ.")
+    casos = await _resolver_casos_do_numero(db, indicativo.numero_cnj)
+    if not _pode_agir_no_numero(cu, casos):
+        raise HTTPException(status_code=403, detail="Sem acesso a todos os casos deste número CNJ.")
+
+    # Achado de revisão de código: sem esta checagem, quem soubesse o ID
+    # podia registrar "encerrar" mesmo quando o avaliador NÃO sinalizou o
+    # processo como candidato (ex.: reativador posterior, suspensivo
+    # vigente, silêncio insuficiente) — exatamente os casos em que
+    # avaliar_encerramento() deliberadamente NÃO recomenda encerramento.
+    # Checada DEPOIS do acesso: 403 (autorização) nunca vaza atrás de um
+    # 422 (regra de negócio) para quem não tem acesso ao caso.
+    if body.decisao == "encerrar" and not indicativo.candidato:
+        raise HTTPException(
+            status_code=422,
+            detail="Este indicativo não é candidato a encerramento — a avaliação automática não recomenda 'encerrar'.",
+        )
 
     agora = datetime.now(timezone.utc)
     # UPDATE condicionado a decisao IS NULL: mesma correção de corrida do
     # aplicar_duplicata — a decisão sobre encerrar um processo é irreversível
     # na prática, então a garantia de "só decide uma vez" tem que vir do
     # próprio UPDATE, não de um SELECT anterior que pode ter ficado obsoleto.
+    # A checagem de `candidato` acima também entra no WHERE — corrida não
+    # pode contornar a regra de negócio.
     resultado = await db.execute(
         update(IndicativoEncerramento)
-        .where(IndicativoEncerramento.id == indicativo_id, IndicativoEncerramento.decisao.is_(None))
+        .where(
+            IndicativoEncerramento.id == indicativo_id,
+            IndicativoEncerramento.decisao.is_(None),
+            or_(body.decisao != "encerrar", IndicativoEncerramento.candidato.is_(True)),
+        )
         .values(
             decisao=body.decisao,
             decidido_por=cu.id,
@@ -328,15 +374,16 @@ async def listar_divergencias(
     — nenhuma correção automática é aplicada pela reconciliação.
 
     `SIGILO` (nivelSigilo>0) é tratamento restrito por definição
-    (reconciliacao.py) — fica de fora do relatório amplo para quem não é
-    gestão (achado da auditoria de segurança)."""
+    (reconciliacao.py — que também para de gerar QUALQUER outra divergência
+    para o mesmo documento sigiloso) — fica de fora do relatório amplo para
+    quem não tem visão de relatório firm-wide."""
     q = (
         select(Divergencia)
         .where(Divergencia.tratada == tratada)
         .order_by(Divergencia.criado_em.desc())
     )
     q = _filtro_escopo_caso(q, Divergencia.numero_cnj, cu)
-    if not is_gestao(cu):
+    if not pode_ver_todos(cu):
         q = q.where(Divergencia.tipo != TipoDivergencia.SIGILO.value)
     rows = (
         await db.execute(q.offset((page - 1) * page_size).limit(page_size))

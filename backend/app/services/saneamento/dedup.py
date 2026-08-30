@@ -101,35 +101,40 @@ def deduplicar(registros: Iterable[RegistroProcesso]) -> ResultadoDedup:
     por_numero: dict[str, list[RegistroProcesso]] = defaultdict(list)
 
     for reg in registros:
-        bruto = normalizar_cnj(reg.numero) if reg.numero else ""
-        if not bruto:
+        # Validação sobre o valor BRUTO (achado de revisão de código):
+        # normalizar antes de validar deixa passar lixo com dígitos válidos
+        # embutidos — "abc" + 20 dígitos corretos vira, após normalizar_cnj,
+        # exatamente os 20 dígitos certos, e validar_cnj(bruto_já_normalizado)
+        # aprova porque a essa altura já é puro dígito. validar_cnj recebe o
+        # valor como o usuário digitou (aceita dígitos OU máscara oficial —
+        # nunca pontuação arbitrária) e só então normalizamos para a chave
+        # canônica de agrupamento.
+        if not reg.numero:
             resultado.excecoes.append(Excecao(registro=reg, motivo="número vazio"))
             continue
-        if len(bruto) != 20:
+        if not validar_cnj(reg.numero):
             resultado.excecoes.append(
-                Excecao(
-                    registro=reg,
-                    motivo=f"esperados 20 dígitos, recebidos {len(bruto)}: {reg.numero!r}",
-                )
+                Excecao(registro=reg, motivo=f"número CNJ inválido (formato ou dígito verificador): {reg.numero!r}")
             )
             continue
-        if not validar_cnj(bruto):
-            resultado.excecoes.append(
-                Excecao(registro=reg, motivo=f"dígito verificador inválido: {reg.numero!r}")
-            )
-            continue
-        por_numero[bruto].append(reg)
+        por_numero[normalizar_cnj(reg.numero)].append(reg)
 
     for numero, grupo in por_numero.items():
         if len(grupo) == 1:
             resultado.unicos.append(grupo[0])
             continue
 
+        # Grau desconhecido (vazio/None) NÃO é descartado do conjunto: um
+        # registro sem grau informado ao lado de um com grau conhecido pode
+        # ser, precisamente, o grau que falta descobrir — tratar como
+        # duplicata fundível aqui violaria "multi-grau nunca funde" (achado
+        # de revisão de código). Só {grau único} OU {"" sozinho, ambos sem
+        # informação} colapsa como duplicata real.
         graus = {(r.grau or "").strip() for r in grupo}
-        graus.discard("")
 
         if len(graus) > 1:
-            # Mesmo processo, graus distintos: relacionar, não fundir.
+            # Mesmo processo, graus distintos (ou grau desconhecido ao lado
+            # de um grau conhecido): relacionar, não fundir.
             resultado.graus_relacionados[numero] = list(grupo)
             continue
 

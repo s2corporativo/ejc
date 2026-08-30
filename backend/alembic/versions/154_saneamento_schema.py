@@ -232,9 +232,12 @@ def upgrade() -> None:
     # depender do nome de uma constraint (mesmo idioma de 132).
     op.execute(
         """
-        INSERT INTO saneamento_tpu_movimento (codigo, nome, classe, fonte)
+        INSERT INTO saneamento_tpu_movimento
+            (codigo, nome, classe, fonte, revisado_por, revisado_em)
         SELECT 246, 'Arquivado definitivamente', 'terminativo',
-               'TJDFT - significado dos andamentos, codigo 246 (verificado 30/08/2026)'
+               'TJDFT - significado dos andamentos, codigo 246 (verificado 30/08/2026)',
+               'migration 154_saneamento_schema (fonte oficial TJDFT, sem revisor humano individual)',
+               now()
         WHERE NOT EXISTS (
             SELECT 1 FROM saneamento_tpu_movimento WHERE codigo = 246
         )

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class AplicarDedupIn(BaseModel):
@@ -26,3 +26,15 @@ class DecidirIndicativoIn(BaseModel):
 
     decisao: Literal["encerrar", "manter_ativo"]
     justificativa: str = Field(..., min_length=3, max_length=2000)
+
+    @field_validator("justificativa")
+    @classmethod
+    def _justificativa_nao_pode_ser_so_espaco(cls, v: str) -> str:
+        """Pydantic não apara string por padrão — "   " passa no
+        min_length=3 sem conter nenhuma justificativa de verdade (achado de
+        revisão de código). Esta é a razão registrada de uma decisão
+        efetivamente irreversível sobre um processo."""
+        limpo = v.strip()
+        if len(limpo) < 3:
+            raise ValueError("justificativa não pode ser vazia ou só espaços")
+        return limpo
