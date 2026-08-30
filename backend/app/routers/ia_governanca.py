@@ -747,7 +747,10 @@ async def listar_jurisprudencia_mg(
 # ── IA — Provedores (incorporado de ia_provider_metrics.py, D2 19/08/2026) ──
 
 def _require_gestao(user: User) -> None:
-    if _role(user) not in ("admin", "socio"):
+    # superadmin está ACIMA de admin (ROLE_LEVEL) e é o mesmo conjunto do
+    # _require_admin_socio deste arquivo — a omissão barrava o superadmin da
+    # fonte canônica de provedores (403 no pente fino de 29/08/2026).
+    if _role(user) not in ("superadmin", "admin", "socio"):
         raise HTTPException(status_code=403, detail="Somente admin/sócio")
 
 def _modelo_configurado(provider: str) -> str | None:

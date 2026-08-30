@@ -222,7 +222,9 @@ def preparar_fixtures(matrix: dict[str, Any]) -> tuple[dict[str, Any], str]:
         {
             "nome": f"{marker} João da Silva Teste",
             "cpf": _cpf_com_dv(int(suffix)),
-            "email": f"homolog.{suffix}@example.test",
+            # example.com, não example.test: TLD reservado é rejeitado pelo
+            # EmailStr de ClientCreate (422 antes do handler) — pente fino 30/08.
+            "email": f"homolog.{suffix}@example.com",
             "telefone": f"319{suffix[-8:]}",
             "observacoes": f"Cliente fictício da rodada {marker}.",
         }

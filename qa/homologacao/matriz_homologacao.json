@@ -5,8 +5,16 @@
   "descricao": "Matriz declarativa dos 15 fluxos obrigatórios. Happy paths aceitam exclusivamente 2xx; conflitos, negações e indisponibilidades ficam em passos próprios. As fixtures são substituídas por valores fictícios únicos em cada execução.",
   "safety": {
     "production_guard": true,
-    "required_env": ["EJC_BASE_URL", "EJC_TEST_EMAIL", "EJC_TEST_PASSWORD"],
-    "optional_env": ["EJC_PORTAL_EMAIL", "EJC_PORTAL_PASSWORD", "EJC_HAS_AI"],
+    "required_env": [
+      "EJC_BASE_URL",
+      "EJC_TEST_EMAIL",
+      "EJC_TEST_PASSWORD"
+    ],
+    "optional_env": [
+      "EJC_PORTAL_EMAIL",
+      "EJC_PORTAL_PASSWORD",
+      "EJC_HAS_AI"
+    ],
     "marker": "HOMOLOG-FICTICIO",
     "nota": "Rode em staging, homologação ou localhost. Nunca use documentos ou PII reais."
   },
@@ -21,7 +29,7 @@
       "tipo": "PF",
       "nome": "HOMOLOG-FICTICIO PLACEHOLDER",
       "cpf": "39053344705",
-      "email": "placeholder@example.test",
+      "email": "placeholder@example.com",
       "telefone": "31900000000",
       "cidade": "Sete Lagoas",
       "estado": "MG",
@@ -36,7 +44,8 @@
       "comarca": "Sete Lagoas",
       "parte_contraria": "Empresa Fictícia Ltda",
       "valor_causa": "8200.00",
-      "descricao_fatos": "Substituída em runtime por fixture fictícia única."
+      "descricao_fatos": "Substituída em runtime por fixture fictícia única.",
+      "proxima_acao": "HOMOLOG-FICTICIO Revisar documentos da rodada"
     },
     "prazo": {
       "titulo": "HOMOLOG-FICTICIO Contestação",
@@ -55,12 +64,73 @@
       "id": "H01",
       "titulo": "Login, 2FA e sessão",
       "dimensao": "Segurança / Acesso",
-      "requisitos": ["stack"],
+      "requisitos": [
+        "stack"
+      ],
       "passos": [
-        {"nome": "sessao_valida_me", "tipo": "happy", "actor": "staff", "method": "GET", "path": "/api/users/me", "expected": [200], "requires": ["stack"], "prova": "JWT válido abre a sessão."},
-        {"nome": "login_senha_incorreta", "tipo": "negativo", "actor": "anon", "method": "POST", "path": "/api/auth/login", "body": {"email": "homolog-naoexiste@example.test", "password": "senha-ERRADA"}, "expected": [401], "requires": ["stack"], "prova": "Credencial inválida não vaza existência."},
-        {"nome": "me_sem_token", "tipo": "negativo", "actor": "anon", "method": "GET", "path": "/api/users/me", "expected": [401], "requires": ["stack"], "prova": "Rota protegida rejeita acesso anônimo."},
-        {"nome": "setup_2fa_nao_publico", "tipo": "resiliencia", "actor": "anon", "method": "POST", "path": "/api/auth/totp/setup", "expected": [401, 403, 409, 422], "requires": ["stack"], "prova": "Setup TOTP não é público."}
+        {
+          "nome": "sessao_valida_me",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/users/me",
+          "expected": [
+            200
+          ],
+          "requires": [
+            "stack"
+          ],
+          "prova": "JWT válido abre a sessão."
+        },
+        {
+          "nome": "login_senha_incorreta",
+          "tipo": "negativo",
+          "actor": "anon",
+          "method": "POST",
+          "path": "/api/auth/login",
+          "body": {
+            "email": "homolog-naoexiste@example.com",
+            "password": "senha-ERRADA"
+          },
+          "expected": [
+            401
+          ],
+          "requires": [
+            "stack"
+          ],
+          "prova": "Credencial inválida não vaza existência."
+        },
+        {
+          "nome": "me_sem_token",
+          "tipo": "negativo",
+          "actor": "anon",
+          "method": "GET",
+          "path": "/api/users/me",
+          "expected": [
+            401
+          ],
+          "requires": [
+            "stack"
+          ],
+          "prova": "Rota protegida rejeita acesso anônimo."
+        },
+        {
+          "nome": "setup_2fa_nao_publico",
+          "tipo": "resiliencia",
+          "actor": "anon",
+          "method": "POST",
+          "path": "/api/auth/totp/setup",
+          "expected": [
+            401,
+            403,
+            409,
+            422
+          ],
+          "requires": [
+            "stack"
+          ],
+          "prova": "Setup TOTP não é público."
+        }
       ],
       "manual": "Confirmar no navegador a política temporária vigente, troca obrigatória de senha e refresh/expiração da sessão."
     },
@@ -68,13 +138,83 @@
       "id": "H02",
       "titulo": "Cliente, conflito e carteira",
       "dimensao": "Cadastro / LGPD",
-      "requisitos": ["stack"],
+      "requisitos": [
+        "stack"
+      ],
       "passos": [
-        {"nome": "criar_cliente_pf", "tipo": "happy", "actor": "staff", "method": "POST", "path": "/api/clients/", "body_ref": "cliente_pf", "expected": [201], "requires": ["stack"], "prova": "Cria cliente fictício único com PII cifrada."},
-        {"nome": "listar_clientes", "tipo": "happy", "actor": "staff", "method": "GET", "path": "/api/clients/", "expected": [200], "requires": ["stack"], "prova": "Carteira responde ao staff."},
-        {"nome": "idempotencia_cpf", "tipo": "idempotencia", "actor": "staff", "method": "POST", "path": "/api/clients/", "body_ref": "cliente_pf", "expected": [409], "requires": ["stack"], "prova": "O mesmo CPF não gera segundo cliente."},
-        {"nome": "portal_nao_le_clientes", "tipo": "negativo", "actor": "portal", "method": "GET", "path": "/api/clients/", "expected": [403], "requires": ["stack", "portal"], "prova": "Cliente externo não acessa a carteira."},
-        {"nome": "anon_nao_le_clientes", "tipo": "negativo", "actor": "anon", "method": "GET", "path": "/api/clients/", "expected": [401], "requires": ["stack"], "prova": "Sem token não há leitura."}
+        {
+          "nome": "criar_cliente_pf",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "POST",
+          "path": "/api/clients/",
+          "body_ref": "cliente_pf",
+          "expected": [
+            201
+          ],
+          "requires": [
+            "stack"
+          ],
+          "prova": "Cria cliente fictício único com PII cifrada."
+        },
+        {
+          "nome": "listar_clientes",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/clients/",
+          "expected": [
+            200
+          ],
+          "requires": [
+            "stack"
+          ],
+          "prova": "Carteira responde ao staff."
+        },
+        {
+          "nome": "idempotencia_cpf",
+          "tipo": "idempotencia",
+          "actor": "staff",
+          "method": "POST",
+          "path": "/api/clients/",
+          "body_ref": "cliente_pf",
+          "expected": [
+            409
+          ],
+          "requires": [
+            "stack"
+          ],
+          "prova": "O mesmo CPF não gera segundo cliente."
+        },
+        {
+          "nome": "portal_nao_le_clientes",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/clients/",
+          "expected": [
+            403
+          ],
+          "requires": [
+            "stack",
+            "portal"
+          ],
+          "prova": "Cliente externo não acessa a carteira."
+        },
+        {
+          "nome": "anon_nao_le_clientes",
+          "tipo": "negativo",
+          "actor": "anon",
+          "method": "GET",
+          "path": "/api/clients/",
+          "expected": [
+            401
+          ],
+          "requires": [
+            "stack"
+          ],
+          "prova": "Sem token não há leitura."
+        }
       ],
       "manual": "Validar conflito de interesses e segregação entre carteiras de advogados."
     },
@@ -82,11 +222,58 @@
       "id": "H03",
       "titulo": "Documento → caso assistido",
       "dimensao": "IA / Intake",
-      "requisitos": ["stack", "ai"],
+      "requisitos": [
+        "stack",
+        "ai"
+      ],
       "passos": [
-        {"nome": "upload_documento", "tipo": "happy", "actor": "staff", "method": "POST", "path": "/api/documents/upload", "upload_ref": "documento_texto", "expected": [201], "requires": ["stack"], "prova": "Documento fictício entra no GED."},
-        {"nome": "classificar_por_ia", "tipo": "resiliencia", "actor": "staff", "method": "POST", "path": "/api/documents/{document_id}/classificar", "expected": [200, 422, 503], "requires": ["stack", "ai"], "prova": "Classificação responde ou degrada de modo controlado."},
-        {"nome": "portal_nao_le_documentos", "tipo": "negativo", "actor": "portal", "method": "GET", "path": "/api/documents", "expected": [403], "requires": ["stack", "portal"], "prova": "Portal não acessa o GED interno."}
+        {
+          "nome": "upload_documento",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "POST",
+          "path": "/api/documents/upload",
+          "upload_ref": "documento_texto",
+          "expected": [
+            201
+          ],
+          "requires": [
+            "stack"
+          ],
+          "prova": "Documento fictício entra no GED."
+        },
+        {
+          "nome": "classificar_por_ia",
+          "tipo": "resiliencia",
+          "actor": "staff",
+          "method": "POST",
+          "path": "/api/documents/{document_id}/classificar",
+          "expected": [
+            200,
+            422,
+            503
+          ],
+          "requires": [
+            "stack",
+            "ai"
+          ],
+          "prova": "Classificação responde ou degrada de modo controlado."
+        },
+        {
+          "nome": "portal_nao_le_documentos",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/documents",
+          "expected": [
+            403
+          ],
+          "requires": [
+            "stack",
+            "portal"
+          ],
+          "prova": "Portal não acessa o GED interno."
+        }
       ],
       "manual": "Validar retomada após falha da extração e não duplicidade no reprocessamento."
     },
@@ -94,21 +281,96 @@
       "id": "H04",
       "titulo": "Cadastro manual sem IA",
       "dimensao": "Operacional",
-      "requisitos": ["stack"],
+      "requisitos": [
+        "stack"
+      ],
       "passos": [
-        {"nome": "criar_caso_manual", "tipo": "happy", "actor": "staff", "method": "POST", "path": "/api/cases/", "body_ref": "caso_manual", "needs_client": true, "expected": [201], "requires": ["stack"], "prova": "Abre caso fictício vinculado ao cliente da rodada."},
-        {"nome": "idempotencia_numero_processo", "tipo": "idempotencia", "actor": "staff", "method": "POST", "path": "/api/cases/", "body_ref": "caso_manual", "needs_client": true, "expected": [409], "requires": ["stack"], "prova": "O mesmo cliente e número processual não geram segundo caso."},
-        {"nome": "portal_nao_cria_caso", "tipo": "negativo", "actor": "portal", "method": "GET", "path": "/api/cases", "expected": [403], "requires": ["stack", "portal"], "prova": "Portal não alcança o CRUD interno de casos."}
+        {
+          "nome": "criar_caso_manual",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "POST",
+          "path": "/api/cases/",
+          "body_ref": "caso_manual",
+          "needs_client": true,
+          "expected": [
+            201
+          ],
+          "requires": [
+            "stack"
+          ],
+          "prova": "Abre caso fictício vinculado ao cliente da rodada."
+        },
+        {
+          "nome": "idempotencia_numero_processo",
+          "tipo": "idempotencia",
+          "actor": "staff",
+          "method": "POST",
+          "path": "/api/cases/",
+          "body_ref": "caso_manual",
+          "needs_client": true,
+          "expected": [
+            409
+          ],
+          "requires": [
+            "stack"
+          ],
+          "prova": "O mesmo cliente e número processual não geram segundo caso."
+        },
+        {
+          "nome": "portal_nao_cria_caso",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/cases",
+          "expected": [
+            403
+          ],
+          "requires": [
+            "stack",
+            "portal"
+          ],
+          "prova": "Portal não alcança o CRUD interno de casos."
+        }
       ]
     },
     {
       "id": "H05",
       "titulo": "Processo principal e acessórios",
       "dimensao": "Processual",
-      "requisitos": ["stack"],
+      "requisitos": [
+        "stack"
+      ],
       "passos": [
-        {"nome": "listar_processos_do_caso", "tipo": "happy", "actor": "staff", "method": "GET", "path": "/api/cases/{case_id}/processes", "expected": [200], "requires": ["stack"], "prova": "Rota canônica lista processos do caso criado."},
-        {"nome": "portal_nao_le_processos", "tipo": "negativo", "actor": "portal", "method": "GET", "path": "/api/cases/{case_id}/processes", "expected": [403], "requires": ["stack", "portal"], "prova": "Portal não alcança processos internos."}
+        {
+          "nome": "listar_processos_do_caso",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/cases/{case_id}/processes",
+          "expected": [
+            200
+          ],
+          "requires": [
+            "stack"
+          ],
+          "prova": "Rota canônica lista processos do caso criado."
+        },
+        {
+          "nome": "portal_nao_le_processos",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/cases/{case_id}/processes",
+          "expected": [
+            403
+          ],
+          "requires": [
+            "stack",
+            "portal"
+          ],
+          "prova": "Portal não alcança processos internos."
+        }
       ],
       "manual": "Validar promoção do principal, acessórios e ausência de drift Case×Process."
     },
@@ -116,12 +378,67 @@
       "id": "H06",
       "titulo": "Intimação, prazo, tarefa e agenda",
       "dimensao": "Prazos / Agenda",
-      "requisitos": ["stack"],
+      "requisitos": [
+        "stack"
+      ],
       "passos": [
-        {"nome": "listar_prazos", "tipo": "happy", "actor": "staff", "method": "GET", "path": "/api/deadlines/", "expected": [200], "requires": ["stack"], "prova": "Central de prazos responde."},
-        {"nome": "listar_intimacoes", "tipo": "happy", "actor": "staff", "method": "GET", "path": "/api/intimacoes/", "expected": [200], "requires": ["stack"], "prova": "Central de intimações responde."},
-        {"nome": "listar_tarefas", "tipo": "happy", "actor": "staff", "method": "GET", "path": "/api/tasks/", "expected": [200], "requires": ["stack"], "prova": "Central de tarefas responde."},
-        {"nome": "portal_nao_le_prazos", "tipo": "negativo", "actor": "portal", "method": "GET", "path": "/api/deadlines", "expected": [403], "requires": ["stack", "portal"], "prova": "Portal não acessa prazos internos."}
+        {
+          "nome": "listar_prazos",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/deadlines/",
+          "expected": [
+            200
+          ],
+          "requires": [
+            "stack"
+          ],
+          "prova": "Central de prazos responde."
+        },
+        {
+          "nome": "listar_intimacoes",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/intimacoes/",
+          "expected": [
+            200
+          ],
+          "requires": [
+            "stack"
+          ],
+          "prova": "Central de intimações responde."
+        },
+        {
+          "nome": "listar_tarefas",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/tasks/",
+          "expected": [
+            200
+          ],
+          "requires": [
+            "stack"
+          ],
+          "prova": "Central de tarefas responde."
+        },
+        {
+          "nome": "portal_nao_le_prazos",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/deadlines",
+          "expected": [
+            403
+          ],
+          "requires": [
+            "stack",
+            "portal"
+          ],
+          "prova": "Portal não acessa prazos internos."
+        }
       ],
       "manual": "Validar cálculo auditável, conferência e próxima ação."
     },
@@ -129,11 +446,56 @@
       "id": "H07",
       "titulo": "Prova, estratégia, tese e peça",
       "dimensao": "IA jurídica / Protocolo",
-      "requisitos": ["stack", "ai"],
+      "requisitos": [
+        "stack",
+        "ai"
+      ],
       "passos": [
-        {"nome": "listar_templates", "tipo": "happy", "actor": "staff", "method": "GET", "path": "/api/templates/", "expected": [200], "requires": ["stack"], "prova": "Biblioteca de modelos responde."},
-        {"nome": "saude_ia_para_peca", "tipo": "resiliencia", "actor": "staff", "method": "GET", "path": "/api/ia-saude/status", "expected": [200, 503], "requires": ["stack", "ai"], "prova": "Núcleo de IA responde ou declara indisponibilidade controlada."},
-        {"nome": "portal_nao_usa_rag", "tipo": "negativo", "actor": "portal", "method": "GET", "path": "/api/rag/buscar", "expected": [403], "requires": ["stack", "portal"], "prova": "Portal não usa RAG interno."}
+        {
+          "nome": "listar_templates",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/templates/",
+          "expected": [
+            200
+          ],
+          "requires": [
+            "stack"
+          ],
+          "prova": "Biblioteca de modelos responde."
+        },
+        {
+          "nome": "saude_ia_para_peca",
+          "tipo": "resiliencia",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/ia-saude/status",
+          "expected": [
+            200,
+            503
+          ],
+          "requires": [
+            "stack",
+            "ai"
+          ],
+          "prova": "Núcleo de IA responde ou declara indisponibilidade controlada."
+        },
+        {
+          "nome": "portal_nao_usa_rag",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/rag/buscar",
+          "expected": [
+            403
+          ],
+          "requires": [
+            "stack",
+            "portal"
+          ],
+          "prova": "Portal não usa RAG interno."
+        }
       ],
       "manual": "Executar benchmark jurídico real e confirmar gate de citações, revisão humana e bloqueio de protocolo."
     },
@@ -141,10 +503,39 @@
       "id": "H08",
       "titulo": "Audiência e atendimento",
       "dimensao": "Relacionamento",
-      "requisitos": ["stack"],
+      "requisitos": [
+        "stack"
+      ],
       "passos": [
-        {"nome": "listar_atendimentos", "tipo": "happy", "actor": "staff", "method": "GET", "path": "/api/atendimentos/", "expected": [200], "requires": ["stack"], "prova": "Atendimentos respondem ao staff."},
-        {"nome": "portal_nao_le_atendimentos_internos", "tipo": "negativo", "actor": "portal", "method": "GET", "path": "/api/atendimentos", "expected": [403], "requires": ["stack", "portal"], "prova": "Portal não acessa notas internas."}
+        {
+          "nome": "listar_atendimentos",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/atendimentos/",
+          "expected": [
+            200
+          ],
+          "requires": [
+            "stack"
+          ],
+          "prova": "Atendimentos respondem ao staff."
+        },
+        {
+          "nome": "portal_nao_le_atendimentos_internos",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/atendimentos",
+          "expected": [
+            403
+          ],
+          "requires": [
+            "stack",
+            "portal"
+          ],
+          "prova": "Portal não acessa notas internas."
+        }
       ],
       "manual": "Validar continuidade ata → providências → timeline."
     },
@@ -152,11 +543,55 @@
       "id": "H09",
       "titulo": "Honorários e pagamentos",
       "dimensao": "Financeiro",
-      "requisitos": ["stack", "portal"],
+      "requisitos": [
+        "stack",
+        "portal"
+      ],
       "passos": [
-        {"nome": "listar_honorarios", "tipo": "happy", "actor": "staff", "method": "GET", "path": "/api/fees/", "expected": [200], "requires": ["stack"], "prova": "Honorários listam ao staff autorizado."},
-        {"nome": "portal_ve_proprio_financeiro", "tipo": "happy", "actor": "portal", "method": "GET", "path": "/api/portal/financeiro", "expected": [200], "requires": ["stack", "portal"], "prova": "Cliente vê exclusivamente o próprio financeiro."},
-        {"nome": "portal_nao_le_fees_globais", "tipo": "negativo", "actor": "portal", "method": "GET", "path": "/api/fees", "expected": [403], "requires": ["stack", "portal"], "prova": "Cliente não acessa honorários globais."}
+        {
+          "nome": "listar_honorarios",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/fees/",
+          "expected": [
+            200
+          ],
+          "requires": [
+            "stack"
+          ],
+          "prova": "Honorários listam ao staff autorizado."
+        },
+        {
+          "nome": "portal_ve_proprio_financeiro",
+          "tipo": "happy",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/portal/financeiro",
+          "expected": [
+            200
+          ],
+          "requires": [
+            "stack",
+            "portal"
+          ],
+          "prova": "Cliente vê exclusivamente o próprio financeiro."
+        },
+        {
+          "nome": "portal_nao_le_fees_globais",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/fees",
+          "expected": [
+            403
+          ],
+          "requires": [
+            "stack",
+            "portal"
+          ],
+          "prova": "Cliente não acessa honorários globais."
+        }
       ],
       "manual": "Validar baixa idempotente, conciliação e cancelamento."
     },
@@ -164,11 +599,56 @@
       "id": "H10",
       "titulo": "Raio-X e conversão",
       "dimensao": "IA / Pré-caso",
-      "requisitos": ["stack", "ai"],
+      "requisitos": [
+        "stack",
+        "ai"
+      ],
       "passos": [
-        {"nome": "raio_x_disponivel", "tipo": "happy", "actor": "staff", "method": "GET", "path": "/api/raio-x/", "expected": [200], "requires": ["stack"], "prova": "Módulo Raio-X responde."},
-        {"nome": "ia_disponivel_para_conversao", "tipo": "resiliencia", "actor": "staff", "method": "GET", "path": "/api/ia-saude/status", "expected": [200, 503], "requires": ["stack", "ai"], "prova": "Dependência de IA é explícita."},
-        {"nome": "portal_nao_usa_raio_x", "tipo": "negativo", "actor": "portal", "method": "GET", "path": "/api/raio-x/", "expected": [403], "requires": ["stack", "portal"], "prova": "Portal não usa Raio-X interno."}
+        {
+          "nome": "raio_x_disponivel",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/raio-x/",
+          "expected": [
+            200
+          ],
+          "requires": [
+            "stack"
+          ],
+          "prova": "Módulo Raio-X responde."
+        },
+        {
+          "nome": "ia_disponivel_para_conversao",
+          "tipo": "resiliencia",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/ia-saude/status",
+          "expected": [
+            200,
+            503
+          ],
+          "requires": [
+            "stack",
+            "ai"
+          ],
+          "prova": "Dependência de IA é explícita."
+        },
+        {
+          "nome": "portal_nao_usa_raio_x",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/raio-x/",
+          "expected": [
+            403
+          ],
+          "requires": [
+            "stack",
+            "portal"
+          ],
+          "prova": "Portal não usa Raio-X interno."
+        }
       ],
       "manual": "Executar conversão real e repetir a operação; a segunda tentativa não pode duplicar caso, documentos ou prazos."
     },
@@ -176,10 +656,39 @@
       "id": "H11",
       "titulo": "DataJud e impacto cognitivo",
       "dimensao": "Integração externa",
-      "requisitos": ["stack"],
+      "requisitos": [
+        "stack"
+      ],
       "passos": [
-        {"nome": "datajud_degrada_gracioso", "tipo": "resiliencia", "actor": "staff", "method": "GET", "path": "/api/datajud/health", "expected": [200, 503], "requires": ["stack"], "prova": "Health existe e declara disponibilidade ou degradação."},
-        {"nome": "portal_nao_usa_datajud", "tipo": "negativo", "actor": "portal", "method": "GET", "path": "/api/datajud/health", "expected": [403], "requires": ["stack", "portal"], "prova": "Portal não aciona integração interna."}
+        {
+          "nome": "datajud_degrada_gracioso",
+          "tipo": "resiliencia",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/movimentos/recentes",
+          "expected": [
+            200
+          ],
+          "requires": [
+            "stack"
+          ],
+          "prova": "Dados alimentados pelo DataJud respondem mesmo com a integração desligada (degradação graciosa; /api/datajud/health não existe — pente fino 30/08)."
+        },
+        {
+          "nome": "portal_nao_usa_datajud",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/datajud/health",
+          "expected": [
+            403
+          ],
+          "requires": [
+            "stack",
+            "portal"
+          ],
+          "prova": "Portal não aciona integração interna."
+        }
       ],
       "manual": "Validar deduplicação e vedação de prazo fatal automático."
     },
@@ -187,12 +696,70 @@
       "id": "H12",
       "titulo": "Portal do cliente — IDOR e segregação",
       "dimensao": "Segurança / Portal",
-      "requisitos": ["stack", "portal"],
+      "requisitos": [
+        "stack",
+        "portal"
+      ],
       "passos": [
-        {"nome": "portal_ve_proprios_casos", "tipo": "happy", "actor": "portal", "method": "GET", "path": "/api/portal/meus-casos", "expected": [200], "requires": ["stack", "portal"], "prova": "Cliente vê apenas os próprios casos."},
-        {"nome": "portal_bloqueado_em_cases", "tipo": "negativo", "actor": "portal", "method": "GET", "path": "/api/cases", "expected": [403], "requires": ["stack", "portal"], "prova": "Cliente não alcança CRUD de casos."},
-        {"nome": "portal_bloqueado_em_clients", "tipo": "negativo", "actor": "portal", "method": "GET", "path": "/api/clients", "expected": [403], "requires": ["stack", "portal"], "prova": "Cliente não alcança carteira."},
-        {"nome": "anon_nao_entra_no_portal", "tipo": "negativo", "actor": "anon", "method": "GET", "path": "/api/portal/meus-casos", "expected": [401], "requires": ["stack"], "prova": "Portal exige autenticação."}
+        {
+          "nome": "portal_ve_proprios_casos",
+          "tipo": "happy",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/portal/meus-casos",
+          "expected": [
+            200
+          ],
+          "requires": [
+            "stack",
+            "portal"
+          ],
+          "prova": "Cliente vê apenas os próprios casos."
+        },
+        {
+          "nome": "portal_bloqueado_em_cases",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/cases",
+          "expected": [
+            403
+          ],
+          "requires": [
+            "stack",
+            "portal"
+          ],
+          "prova": "Cliente não alcança CRUD de casos."
+        },
+        {
+          "nome": "portal_bloqueado_em_clients",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/clients",
+          "expected": [
+            403
+          ],
+          "requires": [
+            "stack",
+            "portal"
+          ],
+          "prova": "Cliente não alcança carteira."
+        },
+        {
+          "nome": "anon_nao_entra_no_portal",
+          "tipo": "negativo",
+          "actor": "anon",
+          "method": "GET",
+          "path": "/api/portal/meus-casos",
+          "expected": [
+            401
+          ],
+          "requires": [
+            "stack"
+          ],
+          "prova": "Portal exige autenticação."
+        }
       ],
       "cobertura_automatizada": "Matrizes row-level e allowlist estão em test_portal_idor_matrix*.py."
     },
@@ -200,7 +767,9 @@
       "id": "H13",
       "titulo": "Backup e restauração",
       "dimensao": "Continuidade",
-      "requisitos": ["ops"],
+      "requisitos": [
+        "ops"
+      ],
       "passos": [],
       "manual": "Executar backup cifrado de banco e uploads, baixar, descriptografar, restaurar em ambiente isolado, iniciar a aplicação e medir RPO/RTO."
     },
@@ -208,7 +777,9 @@
       "id": "H14",
       "titulo": "Deploy e rollback",
       "dimensao": "Continuidade",
-      "requisitos": ["ops"],
+      "requisitos": [
+        "ops"
+      ],
       "passos": [],
       "manual": "Executar deploy controlado e rollback real de imagens, banco compatível e arquivos persistidos, preservando evidências."
     },
@@ -216,11 +787,55 @@
       "id": "H15",
       "titulo": "Usabilidade e desempenho",
       "dimensao": "UX / Performance",
-      "requisitos": ["stack"],
+      "requisitos": [
+        "stack"
+      ],
       "passos": [
-        {"nome": "health_rapido", "tipo": "happy", "actor": "anon", "method": "GET", "path": "/api/health", "expected": [200], "max_ms": 2000, "requires": ["stack"], "prova": "Health responde em menos de 2s."},
-        {"nome": "listagem_clientes_rapida", "tipo": "happy", "actor": "staff", "method": "GET", "path": "/api/clients/", "expected": [200], "max_ms": 3000, "requires": ["stack"], "prova": "Listagem principal responde em menos de 3s."},
-        {"nome": "protegido_rejeita_rapido", "tipo": "negativo", "actor": "anon", "method": "GET", "path": "/api/clients/", "expected": [401], "max_ms": 2000, "requires": ["stack"], "prova": "Rota protegida rejeita anônimo rapidamente."}
+        {
+          "nome": "health_rapido",
+          "tipo": "happy",
+          "actor": "anon",
+          "method": "GET",
+          "path": "/api/health",
+          "expected": [
+            200
+          ],
+          "max_ms": 2000,
+          "requires": [
+            "stack"
+          ],
+          "prova": "Health responde em menos de 2s."
+        },
+        {
+          "nome": "listagem_clientes_rapida",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/clients/",
+          "expected": [
+            200
+          ],
+          "max_ms": 3000,
+          "requires": [
+            "stack"
+          ],
+          "prova": "Listagem principal responde em menos de 3s."
+        },
+        {
+          "nome": "protegido_rejeita_rapido",
+          "tipo": "negativo",
+          "actor": "anon",
+          "method": "GET",
+          "path": "/api/clients/",
+          "expected": [
+            401
+          ],
+          "max_ms": 2000,
+          "requires": [
+            "stack"
+          ],
+          "prova": "Rota protegida rejeita anônimo rapidamente."
+        }
       ],
       "manual": "Validar navegação real, acessibilidade, responsividade e carga concorrente."
     }
