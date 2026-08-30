@@ -4,10 +4,17 @@ Contrato coberto:
   - RBAC: `advogado_auxiliar` lê, mas não decide nem aplica dedup — só
     `advogado`/`socio`/`admin`/`superadmin` (regra inegociável: sinaliza,
     quem decide é sempre um advogado, nunca um job/estagiário).
+  - ESCOPO POR TITULARIDADE DE CASO (achado ALTO da auditoria de segurança):
+    `advogado`/`advogado_auxiliar` só decide/aplica/lista o que pertence a um
+    caso em que atua (responsável/auxiliar) ou caso órfão; `socio`+ vê e age
+    em qualquer caso. numero_cnj sem caso correspondente no sistema é negado
+    à equipe.
   - `POST /indicativos/{id}/decidir`: grava decisao+decidido_por+decidido_em
-    e recusa decidir de novo o mesmo indicativo (409).
+    e recusa decidir de novo o mesmo indicativo (409) — mesmo sob corrida
+    (UPDATE condicionado ao estado, não um SELECT solto antes).
   - `POST /duplicatas/{id}/aplicar`: recusa aplicar `multi_grau`/
     `conexo_sugerido` (essas nunca são fundidas) e exige `confirmar=true`.
+  - `GET /divergencias`: esconde o tipo `SIGILO` de quem não é gestão.
   - `GET /tpu/cobertura`: reflete a semente da migration (código 246).
 
 O `AuthMiddleware` global do EJC decodifica o JWT ele mesmo, ANTES da injeção
@@ -33,6 +40,7 @@ _pg = pytest.mark.skipif(
 )
 
 NUM_CNJ_OFICIAL = "00008323520184013202"
+NUM_CNJ_OUTRO = "00009995220184013202"
 API = "/api/saneamento"
 
 
@@ -47,20 +55,55 @@ async def _criar_user(db, role: str) -> str:
     return uid
 
 
+async def _criar_cliente(db) -> str:
+    cid = str(uuid4())
+    await db.execute(
+        text("INSERT INTO clients (id, tipo, nome, email, status) "
+             "VALUES (:id, 'PF', 'Cliente Saneamento Teste', :email, 'ativo')"),
+        {"id": cid, "email": f"{cid[:8]}@teste.local"},
+    )
+    return cid
+
+
+async def _criar_caso(db, client_id: str, numero_processo: str, resp_id: str | None) -> str:
+    """Caso com `numero_processo` = numero_cnj mascarado (formato que
+    Case.numero_processo aceita) — o router compara por dígitos."""
+    case_id = str(uuid4())
+    mascarado = (
+        f"{numero_processo[0:7]}-{numero_processo[7:9]}.{numero_processo[9:13]}."
+        f"{numero_processo[13:14]}.{numero_processo[14:16]}.{numero_processo[16:20]}"
+    )
+    await db.execute(
+        text("INSERT INTO cases (id, titulo, area, status, client_id, numero_processo, "
+             "advogado_responsavel_id) VALUES "
+             "(:id, 'Caso saneamento teste', 'civil', 'em_instrucao', :cid, :np, :resp)"),
+        {"id": case_id, "cid": client_id, "np": mascarado, "resp": resp_id},
+    )
+    return case_id
+
+
 def _token_para(uid: str, role: str) -> dict[str, str]:
     from app.core.security import create_access_token
     return {"Authorization": f"Bearer {create_access_token(uid, role)}"}
 
 
-async def _limpar(db):
-    """Limpa só as tabelas do módulo. `audit_logs` é WORM (Issue #582) — não
-    apagável por teste — e `users` referenciado por FK de audit_logs criado
-    nesta rodada; deixar as linhas de teste (usuário/log) no banco descartável
-    local é inofensivo e evita violar a imutabilidade ou a FK."""
-    await db.execute(text("DELETE FROM saneamento_indicativo_encerramento WHERE numero_cnj = :n"),
-                      {"n": NUM_CNJ_OFICIAL})
-    await db.execute(text("DELETE FROM saneamento_plano_dedup WHERE numero_cnj = :n"),
-                      {"n": NUM_CNJ_OFICIAL})
+async def _limpar(db, *, case_ids=(), client_ids=()):
+    """Limpa as tabelas do módulo + casos/clientes de teste. `audit_logs` é
+    WORM (Issue #582) — não apagável por teste — e `users` referenciado por
+    FK de audit_logs criado nesta rodada; deixar as linhas de teste (usuário/
+    log) no banco descartável local é inofensivo e evita violar a
+    imutabilidade ou a FK."""
+    for numero in (NUM_CNJ_OFICIAL, NUM_CNJ_OUTRO):
+        await db.execute(text("DELETE FROM saneamento_indicativo_encerramento WHERE numero_cnj = :n"),
+                          {"n": numero})
+        await db.execute(text("DELETE FROM saneamento_plano_dedup WHERE numero_cnj = :n"),
+                          {"n": numero})
+        await db.execute(text("DELETE FROM saneamento_divergencia WHERE numero_cnj = :n"),
+                          {"n": numero})
+    for cid in case_ids:
+        await db.execute(text("DELETE FROM cases WHERE id = :id"), {"id": cid})
+    for cid in client_ids:
+        await db.execute(text("DELETE FROM clients WHERE id = :id"), {"id": cid})
     await db.commit()
 
 
@@ -107,11 +150,13 @@ async def test_leitor_nao_pode_decidir_indicativo():
 
 
 @_pg
-async def test_advogado_decide_e_segunda_decisao_e_recusada():
+async def test_advogado_responsavel_decide_e_segunda_decisao_e_recusada():
     from app.core.database import AsyncSessionLocal
 
     async with AsyncSessionLocal() as db:
         uid = await _criar_user(db, "advogado")
+        cli = await _criar_cliente(db)
+        caso = await _criar_caso(db, cli, NUM_CNJ_OFICIAL, resp_id=uid)
         await db.execute(
             text("INSERT INTO saneamento_indicativo_encerramento "
                  "(numero_cnj, candidato, confianca) VALUES (:n, true, 'alta')"),
@@ -143,6 +188,145 @@ async def test_advogado_decide_e_segunda_decisao_e_recusada():
         assert resp2.status_code == 409
     finally:
         async with AsyncSessionLocal() as db:
+            await _limpar(db, case_ids=[caso], client_ids=[cli])
+
+
+@_pg
+async def test_advogado_sem_vinculo_ao_caso_nao_pode_decidir():
+    """Achado ALTO da auditoria: advogado sem vínculo com o caso não pode
+    decidir encerramento de processo alheio."""
+    from app.core.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        responsavel = await _criar_user(db, "advogado")
+        estranho = await _criar_user(db, "advogado")
+        cli = await _criar_cliente(db)
+        caso = await _criar_caso(db, cli, NUM_CNJ_OFICIAL, resp_id=responsavel)
+        await db.execute(
+            text("INSERT INTO saneamento_indicativo_encerramento "
+                 "(numero_cnj, candidato, confianca) VALUES (:n, true, 'alta')"),
+            {"n": NUM_CNJ_OFICIAL},
+        )
+        await db.commit()
+        ind_id = (await db.execute(
+            text("SELECT id FROM saneamento_indicativo_encerramento WHERE numero_cnj = :n"),
+            {"n": NUM_CNJ_OFICIAL},
+        )).scalar_one()
+
+    try:
+        resp = _client().post(
+            f"{API}/indicativos/{ind_id}/decidir",
+            json={"decisao": "encerrar", "justificativa": "teste"},
+            headers=_token_para(estranho, "advogado"),
+        )
+        assert resp.status_code == 403
+
+        # Confirma que o indicativo NÃO foi decidido (a tentativa negada não
+        # deixou rastro na coluna decisao).
+        ainda_pendente = _client().post(
+            f"{API}/indicativos/{ind_id}/decidir",
+            json={"decisao": "encerrar", "justificativa": "responsável de verdade"},
+            headers=_token_para(responsavel, "advogado"),
+        )
+        assert ainda_pendente.status_code == 200, ainda_pendente.text
+    finally:
+        async with AsyncSessionLocal() as db:
+            await _limpar(db, case_ids=[caso], client_ids=[cli])
+
+
+@_pg
+async def test_socio_decide_qualquer_caso_mesmo_sem_vinculo():
+    """Gestão (socio+) tem visão/ação firm-wide — não é restrita a vínculo."""
+    from app.core.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        responsavel = await _criar_user(db, "advogado")
+        socio = await _criar_user(db, "socio")
+        cli = await _criar_cliente(db)
+        caso = await _criar_caso(db, cli, NUM_CNJ_OFICIAL, resp_id=responsavel)
+        await db.execute(
+            text("INSERT INTO saneamento_indicativo_encerramento "
+                 "(numero_cnj, candidato, confianca) VALUES (:n, true, 'alta')"),
+            {"n": NUM_CNJ_OFICIAL},
+        )
+        await db.commit()
+        ind_id = (await db.execute(
+            text("SELECT id FROM saneamento_indicativo_encerramento WHERE numero_cnj = :n"),
+            {"n": NUM_CNJ_OFICIAL},
+        )).scalar_one()
+
+    try:
+        resp = _client().post(
+            f"{API}/indicativos/{ind_id}/decidir",
+            json={"decisao": "encerrar", "justificativa": "teste"},
+            headers=_token_para(socio, "socio"),
+        )
+        assert resp.status_code == 200, resp.text
+    finally:
+        async with AsyncSessionLocal() as db:
+            await _limpar(db, case_ids=[caso], client_ids=[cli])
+
+
+@_pg
+async def test_listagem_de_indicativos_filtra_por_titularidade_do_caso():
+    """Achado ALTO: as rotas GET também escopam por caso — advogado sem
+    vínculo não vê o indicativo de um processo alheio na listagem."""
+    from app.core.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        responsavel = await _criar_user(db, "advogado")
+        estranho = await _criar_user(db, "advogado")
+        cli = await _criar_cliente(db)
+        caso = await _criar_caso(db, cli, NUM_CNJ_OFICIAL, resp_id=responsavel)
+        await db.execute(
+            text("INSERT INTO saneamento_indicativo_encerramento "
+                 "(numero_cnj, candidato, confianca) VALUES (:n, true, 'alta')"),
+            {"n": NUM_CNJ_OFICIAL},
+        )
+        await db.commit()
+
+    try:
+        vista_responsavel = _client().get(
+            f"{API}/indicativos", headers=_token_para(responsavel, "advogado"),
+        )
+        assert vista_responsavel.status_code == 200
+        assert any(i["numero_cnj"] == NUM_CNJ_OFICIAL for i in vista_responsavel.json())
+
+        vista_estranho = _client().get(
+            f"{API}/indicativos", headers=_token_para(estranho, "advogado"),
+        )
+        assert vista_estranho.status_code == 200
+        assert not any(i["numero_cnj"] == NUM_CNJ_OFICIAL for i in vista_estranho.json())
+    finally:
+        async with AsyncSessionLocal() as db:
+            await _limpar(db, case_ids=[caso], client_ids=[cli])
+
+
+@_pg
+async def test_divergencia_sigilo_e_escondida_de_quem_nao_e_gestao():
+    """Achado MÉDIO: nivelSigilo>0 é tratamento restrito — não deve aparecer
+    no relatório amplo de quem não é gestão (socio+)."""
+    from app.core.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        adv = await _criar_user(db, "advogado")
+        socio = await _criar_user(db, "socio")
+        await db.execute(
+            text("INSERT INTO saneamento_divergencia (numero_cnj, tipo) VALUES (:n, 'sigilo')"),
+            {"n": NUM_CNJ_OFICIAL},
+        )
+        await db.commit()
+
+    try:
+        vista_advogado = _client().get(f"{API}/divergencias", headers=_token_para(adv, "advogado"))
+        assert vista_advogado.status_code == 200
+        assert not any(d["tipo"] == "sigilo" for d in vista_advogado.json())
+
+        vista_socio = _client().get(f"{API}/divergencias", headers=_token_para(socio, "socio"))
+        assert vista_socio.status_code == 200
+        assert any(d["tipo"] == "sigilo" for d in vista_socio.json())
+    finally:
+        async with AsyncSessionLocal() as db:
             await _limpar(db)
 
 
@@ -152,6 +336,8 @@ async def test_aplicar_dedup_recusa_multi_grau_e_exige_confirmacao():
 
     async with AsyncSessionLocal() as db:
         uid = await _criar_user(db, "advogado")
+        cli = await _criar_cliente(db)
+        caso = await _criar_caso(db, cli, NUM_CNJ_OFICIAL, resp_id=uid)
         await db.execute(
             text("INSERT INTO saneamento_plano_dedup "
                  "(numero_cnj, id_interno_principal, ids_absorvidos, tipo) "
@@ -178,7 +364,7 @@ async def test_aplicar_dedup_recusa_multi_grau_e_exige_confirmacao():
         assert "multi_grau" in multi_grau.text or "nunca" in multi_grau.text
     finally:
         async with AsyncSessionLocal() as db:
-            await _limpar(db)
+            await _limpar(db, case_ids=[caso], client_ids=[cli])
 
 
 @_pg

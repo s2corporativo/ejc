@@ -4,17 +4,29 @@
 # partir de advogado_auxiliar; escrita de decisão/aplicação de plano exige
 # advogado ou superior — regra de negócio inegociável do PROMPT 1 (passo 5):
 # o módulo SINALIZA, quem decide é sempre um advogado, nunca um job.
+#
+# ESCOPO POR TITULARIDADE DE CASO (achado ALTO da auditoria de segurança):
+# o resto do EJC trata advogado/advogado_auxiliar como papéis NÃO-gestão,
+# restritos aos casos em que atuam (responsável/auxiliar) — ver
+# app/core/ownership.py::verificar_acesso_caso e o mesmo filtro em
+# app/routers/movimentos.py. Este módulo replica esse gate: as tabelas de
+# saneamento só guardam `numero_cnj` (não `case_id`), então o vínculo é
+# resolvido comparando os dígitos de `Case.numero_processo` (tolerante à
+# máscara) contra o `numero_cnj` normalizado.
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, update
+from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import ColumnElement
 
 from app.core.database import get_db
+from app.core.ownership import is_gestao
 from app.core.security import require_roles
 from app.models.audit_log import criar_audit_log
+from app.models.case import Case
 from app.models.saneamento import (
     Divergencia,
     ExcecaoNumero,
@@ -23,12 +35,69 @@ from app.models.saneamento import (
 )
 from app.models.user import User
 from app.schemas.saneamento import AplicarDedupIn, DecidirIndicativoIn
+from app.services.saneamento.reconciliacao import TipoDivergencia
 from app.services.saneamento.tpu import carregar_catalogo
 
 router = APIRouter(prefix="/saneamento", tags=["Saneamento processual"])
 
 _LEITURA = require_roles(["advogado_auxiliar", "advogado", "socio", "admin", "superadmin"])
 _DECISAO = require_roles(["advogado", "socio", "admin", "superadmin"])
+
+
+def _numero_cnj_do_caso() -> ColumnElement[str]:
+    """Dígitos de Case.numero_processo, para comparar com numero_cnj (já
+    normalizado a 20 dígitos nas tabelas de saneamento) — tolerante à
+    máscara (NNNNNNN-DD.AAAA.J.TR.OOOO) que numero_processo pode carregar."""
+    return func.regexp_replace(Case.numero_processo, r"\D", "", "g")
+
+
+def _filtro_escopo_caso(query, coluna_numero_cnj: ColumnElement[str], cu: User):
+    """Restringe a consulta aos registros cujo numero_cnj está ligado a um
+    caso que o usuário pode ver. Gestão (socio+) não é filtrada — visão
+    firm-wide. Equipe só vê caso em que é responsável/auxiliar, ou caso
+    ÓRFÃO (mesma salvaguarda anti-lockout de movimentos.py/ownership.py —
+    sem isso um caso sem dono ficaria invisível a todo mundo). numero_cnj
+    sem NENHUM caso correspondente no sistema fica invisível à equipe
+    (nega por padrão)."""
+    if is_gestao(cu):
+        return query
+    vinculo = exists().where(
+        _numero_cnj_do_caso() == coluna_numero_cnj,
+        Case.deleted_at.is_(None),
+        or_(
+            Case.advogado_responsavel_id == cu.id,
+            Case.advogado_auxiliar_id == cu.id,
+            (Case.advogado_responsavel_id.is_(None))
+            & (Case.advogado_auxiliar_id.is_(None)),
+        ),
+    )
+    return query.where(vinculo)
+
+
+async def _resolver_caso_do_numero(db: AsyncSession, numero_cnj: str) -> Case | None:
+    """Caso vinculado a um numero_cnj — primeiro que casar (numeração é
+    única na prática; join tolerante à máscara de numero_processo)."""
+    return (
+        await db.execute(
+            select(Case).where(
+                _numero_cnj_do_caso() == numero_cnj, Case.deleted_at.is_(None)
+            )
+        )
+    ).scalars().first()
+
+
+def _pode_agir_no_caso(cu: User, case: Case | None) -> bool:
+    """Gate de ESCRITA (decidir/aplicar): gestão sempre passa. Equipe só se
+    vinculada ao caso, ou caso órfão (escape-hatch de gestão continua
+    disponível — não é lockout). numero_cnj sem caso correspondente no
+    sistema é negado à equipe: só gestão decide nesse caso."""
+    if is_gestao(cu):
+        return True
+    if case is None:
+        return False
+    if case.advogado_responsavel_id == cu.id or case.advogado_auxiliar_id == cu.id:
+        return True
+    return case.advogado_responsavel_id is None and case.advogado_auxiliar_id is None
 
 
 @router.get("/excecoes")
@@ -40,7 +109,15 @@ async def listar_excecoes(
     _cu: User = Depends(_LEITURA),
 ):
     """Fila de números que falharam na validação do dígito verificador —
-    ERRO DE DIGITAÇÃO, nunca duplicata (regra de negócio inegociável)."""
+    ERRO DE DIGITAÇÃO, nunca duplicata (regra de negócio inegociável).
+
+    Sem escopo por titularidade de caso: por definição, um número aqui AINDA
+    não foi validado (nem normalizado) o bastante para ser comparado com
+    segurança contra `Case.numero_processo` — `numero_corrigido` só existe
+    depois de resolvido, e a maioria das linhas pendentes tem esse campo
+    NULL. Filtrar por caso esconderia a fila inteira da equipe sem ganho de
+    segurança real: o conteúdo exposto é só "este número não bate o dígito
+    verificador", não dado de mérito do processo."""
     q = (
         select(ExcecaoNumero)
         .where(ExcecaoNumero.resolvido == resolvido)
@@ -66,7 +143,7 @@ async def listar_duplicatas(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    _cu: User = Depends(_LEITURA),
+    cu: User = Depends(_LEITURA),
 ):
     """Plano de deduplicação pendente. Nada aqui já foi aplicado à base."""
     q = (
@@ -74,6 +151,7 @@ async def listar_duplicatas(
         .where(PlanoDedup.aplicado == aplicado)
         .order_by(PlanoDedup.criado_em.desc())
     )
+    q = _filtro_escopo_caso(q, PlanoDedup.numero_cnj, cu)
     rows = (
         await db.execute(q.offset((page - 1) * page_size).limit(page_size))
     ).scalars().all()
@@ -111,8 +189,11 @@ async def aplicar_duplicata(
     ).scalar_one_or_none()
     if plano is None:
         raise HTTPException(status_code=404, detail="Plano de deduplicação não encontrado.")
-    if plano.aplicado:
-        raise HTTPException(status_code=409, detail="Este item já foi aplicado.")
+
+    caso = await _resolver_caso_do_numero(db, plano.numero_cnj)
+    if not _pode_agir_no_caso(cu, caso):
+        raise HTTPException(status_code=403, detail="Sem acesso ao caso deste número CNJ.")
+
     if plano.tipo != "duplicata":
         raise HTTPException(
             status_code=422,
@@ -123,11 +204,19 @@ async def aplicar_duplicata(
             ),
         )
 
-    await db.execute(
+    # UPDATE condicionado ao estado (aplicado=False) em vez de checar antes e
+    # escrever depois: fecha a corrida entre duas requisições concorrentes
+    # decidindo o mesmo plano (achado da auditoria de segurança) — rowcount
+    # 0 significa que outra requisição já aplicou entre o SELECT e aqui.
+    resultado = await db.execute(
         update(PlanoDedup)
-        .where(PlanoDedup.id == plano_id)
+        .where(PlanoDedup.id == plano_id, PlanoDedup.aplicado.is_(False))
         .values(aplicado=True, aplicado_por=cu.id, aplicado_em=datetime.now(timezone.utc))
     )
+    if resultado.rowcount == 0:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Este item já foi aplicado.")
+
     await criar_audit_log(
         db, cu.id, cu.role.value,
         "APLICAR", "saneamento.plano_dedup", str(plano_id),
@@ -143,12 +232,13 @@ async def listar_indicativos(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    _cu: User = Depends(_LEITURA),
+    cu: User = Depends(_LEITURA),
 ):
     """Candidatos a encerramento — sinalização automática, nunca decisão."""
     q = select(IndicativoEncerramento).where(IndicativoEncerramento.candidato.is_(True))
     if somente_pendentes:
         q = q.where(IndicativoEncerramento.decisao.is_(None))
+    q = _filtro_escopo_caso(q, IndicativoEncerramento.numero_cnj, cu)
     q = q.order_by(IndicativoEncerramento.avaliado_em.desc())
     rows = (
         await db.execute(q.offset((page - 1) * page_size).limit(page_size))
@@ -184,16 +274,19 @@ async def decidir_indicativo(
     ).scalar_one_or_none()
     if indicativo is None:
         raise HTTPException(status_code=404, detail="Indicativo não encontrado.")
-    if indicativo.decisao is not None:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Indicativo já decidido ({indicativo.decisao}) por {indicativo.decidido_por}.",
-        )
+
+    caso = await _resolver_caso_do_numero(db, indicativo.numero_cnj)
+    if not _pode_agir_no_caso(cu, caso):
+        raise HTTPException(status_code=403, detail="Sem acesso ao caso deste número CNJ.")
 
     agora = datetime.now(timezone.utc)
-    await db.execute(
+    # UPDATE condicionado a decisao IS NULL: mesma correção de corrida do
+    # aplicar_duplicata — a decisão sobre encerrar um processo é irreversível
+    # na prática, então a garantia de "só decide uma vez" tem que vir do
+    # próprio UPDATE, não de um SELECT anterior que pode ter ficado obsoleto.
+    resultado = await db.execute(
         update(IndicativoEncerramento)
-        .where(IndicativoEncerramento.id == indicativo_id)
+        .where(IndicativoEncerramento.id == indicativo_id, IndicativoEncerramento.decisao.is_(None))
         .values(
             decisao=body.decisao,
             decidido_por=cu.id,
@@ -201,6 +294,14 @@ async def decidir_indicativo(
             justificativa=body.justificativa,
         )
     )
+    if resultado.rowcount == 0:
+        await db.rollback()
+        await db.refresh(indicativo)
+        raise HTTPException(
+            status_code=409,
+            detail=f"Indicativo já decidido ({indicativo.decisao}) por {indicativo.decidido_por}.",
+        )
+
     await criar_audit_log(
         db, cu.id, cu.role.value,
         "DECIDIR", "saneamento.indicativo_encerramento", str(indicativo_id),
@@ -216,15 +317,22 @@ async def listar_divergencias(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    _cu: User = Depends(_LEITURA),
+    cu: User = Depends(_LEITURA),
 ):
     """Painel de divergências base interna × DataJud. Todo item é apontamento
-    — nenhuma correção automática é aplicada pela reconciliação."""
+    — nenhuma correção automática é aplicada pela reconciliação.
+
+    `SIGILO` (nivelSigilo>0) é tratamento restrito por definição
+    (reconciliacao.py) — fica de fora do relatório amplo para quem não é
+    gestão (achado da auditoria de segurança)."""
     q = (
         select(Divergencia)
         .where(Divergencia.tratada == tratada)
         .order_by(Divergencia.criado_em.desc())
     )
+    q = _filtro_escopo_caso(q, Divergencia.numero_cnj, cu)
+    if not is_gestao(cu):
+        q = q.where(Divergencia.tipo != TipoDivergencia.SIGILO.value)
     rows = (
         await db.execute(q.offset((page - 1) * page_size).limit(page_size))
     ).scalars().all()
@@ -247,8 +355,10 @@ async def cobertura_tpu(
 ):
     """Diagnóstico: quantos códigos TPU já receberam revisão jurídica.
 
-    Enquanto a cobertura estiver baixa, o indicativo de encerramento opera em
-    modo degradado (menos sinalização, nunca sinalização a mais).
+    Agregado sobre o catálogo TPU (não há numero_cnj/caso aqui — nada a
+    escopar por titularidade). Enquanto a cobertura estiver baixa, o
+    indicativo de encerramento opera em modo degradado (menos sinalização,
+    nunca sinalização a mais).
     """
     catalogo = await carregar_catalogo(db)
     return catalogo.cobertura
