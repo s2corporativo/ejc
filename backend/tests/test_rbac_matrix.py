@@ -536,3 +536,45 @@ def test_jurimetria_ext_stats_deriva_gate_de_staff_juridico():
     assert alvo.gate_kind != "nenhum"
     assert "financeiro" not in alvo.allowed_roles
     assert "secretaria" not in alvo.allowed_roles
+
+
+def test_constante_de_papel_anotada_e_resolvida():
+    """`NOME: frozenset[str] = frozenset({...})` também é constante de papel.
+
+    O parser lia só `ast.Assign`; a forma ANOTADA — a que o repo usa quando a
+    allowlist é exportada para teste — caía fora, o gate virava
+    `indeterminado` e a rota SAÍA da amostra ao vivo. Ponto cego pior que o
+    óbvio: some justamente onde a allowlist é mais explícita.
+    """
+    tree = ast.parse(textwrap.dedent("""
+        SEM_ANOTACAO = {"socio"}
+        COM_ANOTACAO: frozenset[str] = frozenset({"admin", "secretaria"})
+        SO_DECLARADA: frozenset[str]
+    """))
+    consts = rm._module_role_constants(tree)
+    assert sorted(consts["COM_ANOTACAO"]) == ["admin", "secretaria"]
+    assert consts["SEM_ANOTACAO"] == ["socio"]          # não regrediu
+    assert "SO_DECLARADA" not in consts                 # sem valor, sem papéis
+
+
+def test_criar_caso_nao_fica_indeterminado_na_matriz():
+    """Rota real: `POST /api/cases/` usa allowlist EXATA anotada.
+
+    Enquanto ela era `indeterminado`, a matriz devolvia 200 esperado para
+    TODO papel — inclusive `financeiro` —, ou seja, o gate endurecido pelo
+    AUD27-P1-1 não era vigiado por ninguém ao vivo.
+    """
+    gates = rm.discover_gates(ROUTERS_DIR, MAIN_PY)
+    alvo = next(
+        (g for g in gates if g.method == "POST" and g.path.rstrip("/") == "/api/cases"),
+        None,
+    )
+    assert alvo is not None
+    assert alvo.gate_kind == "local_membership", (
+        "allowlist exata tem que virar pertencimento ESTRITO — com hierarquia, "
+        "financeiro (nível 4) volta a ser promovido para dentro"
+    )
+    assert alvo.resultado_esperado("financeiro") == 403
+    assert alvo.resultado_esperado("cliente_externo") == 403
+    for papel in ("socio", "advogado", "estagiario", "secretaria"):
+        assert alvo.resultado_esperado(papel) == 200

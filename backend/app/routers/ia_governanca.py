@@ -256,16 +256,21 @@ async def dashboard_governanca(
     # LegalDoc.human_reviewed (controle realmente imposto por código em
     # legal_docs.py), nunca em AILog.status_hitl. A métrica que reflete o
     # controle HITL efetivo é a cobertura de revisão das PEÇAS geradas por IA.
+    # `_peca_de_caso_vivo()` (não só `deleted_at IS NULL`): peça de caso
+    # EXCLUÍDO não é trabalho pendente. Mesma condição do `/guardrails` de
+    # propósito — dois painéis do mesmo controle HITL com filtros diferentes
+    # dariam duas verdades sobre a mesma cobertura de revisão.
+    _viva_dash = _peca_de_caso_vivo()
     pecas_ia_total = (await db.execute(
         select(sqlfunc.count()).select_from(LegalDoc).where(
-            LegalDoc.deleted_at.is_(None),
+            *_viva_dash,
             LegalDoc.ai_generated.is_(True),
             LegalDoc.created_at >= desde,
         )
     )).scalar() or 0
     pecas_ia_revisadas = (await db.execute(
         select(sqlfunc.count()).select_from(LegalDoc).where(
-            LegalDoc.deleted_at.is_(None),
+            *_viva_dash,
             LegalDoc.ai_generated.is_(True),
             LegalDoc.human_reviewed.is_(True),
             LegalDoc.created_at >= desde,

@@ -372,13 +372,24 @@ def _module_role_constants(tree: ast.Module) -> dict[str, list[str]]:
     para resolver referências por nome (ver `_extract_roles_from_expr`)."""
     out: dict[str, list[str]] = dict(_CONSTANTES_DE_PAPEL_IMPORTADAS)
     for node in tree.body:
-        if not isinstance(node, ast.Assign):
+        # `NOME = ...` e também `NOME: frozenset[str] = ...` (AnnAssign): a
+        # forma anotada é a que o repo usa quando a constante é exportada para
+        # teste, e ficava de fora — o gate caía como `indeterminado` e SAÍA da
+        # amostra ao vivo, virando ponto cego justamente nas allowlists mais
+        # explícitas (foi o caso de `_PODE_CRIAR_CASO` em cases.py).
+        if isinstance(node, ast.Assign):
+            if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+                continue
+            alvo, valor = node.targets[0].id, node.value
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            if node.value is None:      # só declaração de tipo, sem valor
+                continue
+            alvo, valor = node.target.id, node.value
+        else:
             continue
-        if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
-            continue
-        roles = _extract_roles_from_expr(node.value, {})
+        roles = _extract_roles_from_expr(valor, {})
         if roles:
-            out[node.targets[0].id] = roles
+            out[alvo] = roles
     return out
 
 

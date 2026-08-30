@@ -33,3 +33,46 @@ def test_require_gestao_nega_demais_papeis(role):
     with pytest.raises(HTTPException) as exc:
         _require_gestao(_user(role))
     assert exc.value.status_code == 403
+
+
+# ── AUD27-P2-1 (extensão) — os dois painéis contam a MESMA coisa ─────────────
+
+
+def test_dashboard_e_guardrails_usam_o_mesmo_filtro_de_peca_viva():
+    """`/dashboard` e `/guardrails` medem a mesma cobertura HITL.
+
+    O `/guardrails` foi corrigido para ignorar peça de caso EXCLUÍDO
+    (`_peca_de_caso_vivo`), mas o `/dashboard` seguia com o filtro ingênuo
+    (`LegalDoc.deleted_at IS NULL`). Dois painéis do mesmo controle com
+    filtros diferentes dão duas verdades sobre a mesma cobertura de revisão —
+    a armadilha de "fonte de verdade divergente" que o CLAUDE.md já registra
+    para os endpoints de provedores de IA.
+
+    O teste lê a FONTE porque o defeito é da condição da consulta, e checá-la
+    por AST pega a divergência sem precisar de Postgres.
+    """
+    import ast
+    import inspect
+
+    from app.routers import ia_governanca
+
+    fonte = inspect.getsource(ia_governanca.dashboard_governanca)
+    corpo = ast.parse(inspect.cleandoc(fonte).replace("@router.get", "# @router.get"))
+
+    contadores = [
+        n for n in ast.walk(corpo)
+        if isinstance(n, ast.Assign)
+        and any(getattr(t, "id", "").startswith("pecas_ia_") for t in n.targets)
+    ]
+    assert len(contadores) == 2, "os contadores de peça de IA do dashboard mudaram de forma"
+
+    for node in contadores:
+        trecho = ast.dump(node)
+        assert "_viva_dash" in trecho or "_peca_de_caso_vivo" in trecho, (
+            "contador de peça de IA do /dashboard voltou ao filtro ingênuo — "
+            "vai divergir do /guardrails contando peça de caso excluído"
+        )
+        assert "deleted_at" not in trecho, (
+            "filtro ingênuo remanescente: use só `_peca_de_caso_vivo()`, que já "
+            "cobre o deleted_at da própria peça"
+        )

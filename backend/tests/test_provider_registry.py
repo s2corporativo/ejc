@@ -104,3 +104,28 @@ def test_motivo_inelegivel_nomeia_o_kill_switch_global(monkeypatch):
     monkeypatch.setattr(settings, "OLLAMA_ENABLED", True)
 
     assert "AI_ENABLED=false" in (motivo_inelegivel("ollama") or "")
+
+
+def test_mensagem_de_bloqueio_da_policy_aponta_o_kill_switch(monkeypatch):
+    """Com `AI_ENABLED=false` a cadeia esvazia — e a mensagem tem que dizer POR QUÊ.
+
+    A `provider_policy` só sabia duas causas de cadeia vazia (PII residual ou
+    deploy sem provedor) e, na dúvida, mandava configurar `ANTHROPIC_API_KEY`.
+    Depois do AUD27-P0-1 existe uma terceira, e ela é a única em que nenhuma
+    chave resolve: o operador perseguiria a causa errada.
+    """
+    from app.core.config import get_settings
+    from app.services.ai.provider_policy import AIProviderPolicy
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "AI_ENABLED", False)
+    monkeypatch.setattr(settings, "OLLAMA_ENABLED", True)
+    monkeypatch.setattr(settings, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
+    monkeypatch.setattr(settings, "ANTHROPIC_ENABLED", True)
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "x")
+
+    d = AIProviderPolicy().avaliar("texto sem dado pessoal", "analise_juridica")
+
+    assert d.permitido is False
+    assert "AI_ENABLED" in (d.bloqueio_motivo or "")
+    assert "ANTHROPIC_API_KEY" not in (d.bloqueio_motivo or "")
