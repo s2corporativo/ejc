@@ -412,6 +412,13 @@ class Settings(BaseSettings):
     # no CNJ a cada request repetida. Em memória (premissa de worker único).
     # 0 desliga o cache. Erro do CNJ nunca entra no cache.
     DATAJUD_CACHE_TTL_SEGUNDOS: int = 900
+    # Limitador de requisições ao DataJud (req/s), aplicado em `_datajud_search`.
+    # A VERIFICAR: nenhuma fonte oficial do CNJ declara rate limit da API
+    # Pública. Valor conservador até confirmação; ajustável sem deploy de
+    # código. Usado pelo módulo de saneamento (backend/app/services/saneamento)
+    # ao varrer lotes de processos — a consulta avulsa de um único número
+    # (consultar_processo/consultar_movimentos) raramente o encosta.
+    DATAJUD_RATE_LIMIT_RPS: float = 5.0
 
     # ── Infosimples — consultas PAGAS a sites públicos (TJMG, Receita…) ──
     # Agregador comercial (https://infosimples.com/consultas/): cada consulta

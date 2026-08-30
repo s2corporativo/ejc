@@ -122,6 +122,7 @@ from app.routers import module_help
 from app.routers import motor_peca
 from app.routers import movimentos
 from app.routers import noticias
+from app.routers import saneamento
 from app.routers import notifications
 from app.routers import novos_modulos
 from app.routers import entrada_universal  # P3: registro explícito
@@ -427,6 +428,7 @@ app.include_router(module_help.router, prefix=API)  # frontend: /api/module-help
 app.include_router(motor_peca.router, prefix=API)  # P1: Motor de Peça — /api/cases/{id}/motor-peca/*
 app.include_router(movimentos.router, prefix=API)
 app.include_router(noticias.router, prefix=API)
+app.include_router(saneamento.router, prefix=API)  # PROMPT 1: saneamento de base processual
 app.include_router(notifications.router, prefix=API)
 app.include_router(novos_modulos.router, prefix=API)  # P3: prefixo /modulos no router
 app.include_router(entrada_universal.router, prefix=API) # P3: registro explícito (antes: routers/__init__.py montava dentro de novos_modulos)

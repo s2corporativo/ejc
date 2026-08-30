@@ -190,6 +190,16 @@ ADICOES_INTENCIONAIS = {
     # avulsas de admissão, sempre em rascunho e filtradas por client_id.
     ("/api/clients/{client_id}/gerar-documentos", "POST"),
     ("/api/clients/{client_id}/pecas-geradas", "GET"),
+    # Migration 154 / PROMPT 1: módulo de saneamento de base processual.
+    # Todas exigem RBAC (advogado_auxiliar+ para leitura, advogado+ para
+    # decidir/aplicar) — sinaliza, nunca decide sozinho.
+    ("/api/saneamento/excecoes", "GET"),
+    ("/api/saneamento/duplicatas", "GET"),
+    ("/api/saneamento/duplicatas/{plano_id}/aplicar", "POST"),
+    ("/api/saneamento/indicativos", "GET"),
+    ("/api/saneamento/indicativos/{indicativo_id}/decidir", "POST"),
+    ("/api/saneamento/divergencias", "GET"),
+    ("/api/saneamento/tpu/cobertura", "GET"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
