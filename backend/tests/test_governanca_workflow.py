@@ -21,14 +21,19 @@ WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "governanca.yml"
 
 # O GitHub Actions foi ARQUIVADO em 31/08 (commit `b77ff4c`): os workflows saíram
 # para `docs/arquivo/ci/github-actions-legacy/` e o Woodpecker virou o CI oficial.
-# Este módulo inteiro assertava sobre um YAML que já não é executado por ninguém —
-# guarda sem objeto. Fica DORMENTE em vez de deletado: se o Actions voltar, o
-# arquivo reaparece e as travas voltam a valer sozinhas, sem depender de alguém
-# lembrar. Não aponto para a cópia arquivada de propósito: workflow arquivado não
-# roda, e guarda sobre arquivo que não roda é decorativo.
-pytestmark = pytest.mark.skipif(
+#
+# Skip por TESTE, não do módulo. A primeira versão desta correção usava
+# `pytestmark` e derrubava junto dois testes que NÃO leem o `governanca.yml`:
+# eles conferem os DOCUMENTOS de governança, que continuam valendo. Sem eles, a
+# allowlist canônica do Dependabot podia ser corrompida e o `GOVERNANCA_FASE2.md`
+# voltar a ser fonte concorrente do `GOVERNANCA_IA.md` — tudo com o CI verde
+# (achado do review do Codex no PR #1328).
+#
+# DORMENTE, não deletado: se o Actions voltar, as travas de YAML revivem.
+sem_workflow = pytest.mark.skipif(
     not WORKFLOW_PATH.is_file(),
-    reason="GitHub Actions arquivado em 31/08 (b77ff4c) — workflows movidos para docs/arquivo/ci/github-actions-legacy/; Woodpecker é o CI oficial",
+    reason=("GitHub Actions arquivado em 31/08 (b77ff4c) — workflows movidos "
+            "para docs/arquivo/ci/github-actions-legacy/; Woodpecker é o CI oficial"),
 )
 DOC_PATH = REPO_ROOT / "docs" / "GOVERNANCA_IA.md"
 
@@ -108,6 +113,7 @@ def _allowlist_doc() -> list[str]:
     return json.loads(m.group(1))
 
 
+@sem_workflow
 def test_workflow_tem_todos_os_steps_esperados():
     passos = _steps()
     esperados = set(STEPS_SEM_EXCECAO) | set(STEPS_COM_EXCECAO_DEPENDABOT) | {"Autor do PR"}
@@ -115,6 +121,7 @@ def test_workflow_tem_todos_os_steps_esperados():
     assert not faltando, f"steps ausentes em governanca.yml: {faltando}"
 
 
+@sem_workflow
 def test_steps_humanos_usam_a_mesma_excecao_fechada_do_dependabot():
     for nome in STEPS_COM_EXCECAO_DEPENDABOT:
         condicao = _condicao_if(nome)
@@ -132,6 +139,7 @@ def test_steps_humanos_usam_a_mesma_excecao_fechada_do_dependabot():
         assert _allowlist_workflow(nome) == ["dependabot[bot]"]
 
 
+@sem_workflow
 def test_isencao_nao_vaza_para_travas_incondicionais():
     passos = _steps()
     for nome in STEPS_SEM_EXCECAO:
@@ -151,12 +159,14 @@ def test_allowlist_do_documento_e_a_esperada():
     assert _allowlist_doc() == ["dependabot[bot]"]
 
 
+@sem_workflow
 def test_allowlists_do_workflow_e_do_documento_coincidem():
     esperada = _allowlist_doc()
     for nome in STEPS_COM_EXCECAO_DEPENDABOT:
         assert _allowlist_workflow(nome) == esperada
 
 
+@sem_workflow
 def test_definition_of_done_minima_e_bloqueante():
     bloco = _steps()["Definition of Done minima marcada"]
     itens = (
@@ -172,6 +182,7 @@ def test_definition_of_done_minima_e_bloqueante():
     assert "exit 1" in bloco
 
 
+@sem_workflow
 def test_classificacao_governanca_cobre_workflow_documentos_e_engineering():
     bloco = _steps()["Alteracao de governanca isolada"]
     m = re.search(r"PADRAO_GOV='([^']+)'", bloco)
@@ -192,6 +203,7 @@ def test_classificacao_governanca_cobre_workflow_documentos_e_engineering():
     assert "COD=$(grep -Ec '^(backend/app/|frontend/src/)'" in bloco
 
 
+@sem_workflow
 def test_mistura_governanca_codigo_emite_aviso_acionavel():
     bloco = _steps()["Alteracao de governanca isolada"]
     assert "PR mistura governança e código funcional" in bloco
@@ -200,6 +212,7 @@ def test_mistura_governanca_codigo_emite_aviso_acionavel():
     assert "revise escopo, testes e rollback" in bloco
 
 
+@sem_workflow
 def test_alteracao_sensivel_exige_revisao_documentada_sem_marcador_ficticio():
     bloco = _steps()["Revisao de seguranca documentada para superficie sensivel"]
     assert "PADRAO_SENSIVEL=" in bloco

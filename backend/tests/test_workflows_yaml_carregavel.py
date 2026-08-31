@@ -54,9 +54,15 @@ WORKFLOWS = sorted(
     p for p in _DIR_WORKFLOWS.iterdir() if p.suffix in (".yml", ".yaml")
 ) if _DIR_WORKFLOWS.is_dir() else []
 
+# O piso é "NÃO VAZIO", não um número: o README do arquivamento
+# (docs/arquivo/ci/github-actions-legacy/2026-08-31/) manda restaurar "apenas um
+# workflow mínimo" e depois migrar os demais "um a um". Um piso de 10 reprovaria
+# a suíte exatamente durante esse experimento — o guarda bloquearia a
+# recuperação que ele deveria acompanhar (achado do review do Codex no PR #1328).
 pytestmark = pytest.mark.skipif(
-    not _DIR_WORKFLOWS.is_dir(),
-    reason="GitHub Actions arquivado em 31/08 (b77ff4c); Woodpecker é o CI oficial",
+    not WORKFLOWS,
+    reason=("GitHub Actions arquivado em 31/08 (b77ff4c); Woodpecker é o CI "
+            "oficial. Restaurado ao menos um workflow, estes testes revivem."),
 )
 
 # Uma linha `chave: valor` cujo valor NÃO começa por aspas, `|`, `>` ou `&`/`*`
@@ -69,8 +75,13 @@ def _valor_e_escalar_simples(valor: str) -> bool:
 
 
 def test_ha_workflows_para_conferir():
-    """Sem isto, um glob vazio faria os dois testes abaixo passarem sozinhos."""
-    assert len(WORKFLOWS) >= 10, f"esperava a pasta de workflows povoada, vi {len(WORKFLOWS)}"
+    """Sem isto, um glob vazio faria os dois testes abaixo passarem sozinhos.
+
+    O propósito é anti-vácuo, e para isso basta NÃO ESTAR VAZIO — o piso de 10
+    que existia aqui media outra coisa (o tamanho da pasta) e colidia com a
+    restauração gradual prevista no README do arquivamento.
+    """
+    assert WORKFLOWS, "pasta de workflows existe mas está vazia"
 
 
 def test_nenhum_escalar_simples_com_dois_pontos():
@@ -115,6 +126,11 @@ def test_todo_workflow_carrega():
     assert not falhas, "workflow que não carrega:\n" + "\n".join(falhas)
 
 
+@pytest.mark.skipif(
+    not (_DIR_WORKFLOWS / "governanca.yml").is_file(),
+    reason=("governanca.yml ainda não restaurado — a recuperação prevê voltar "
+            "um workflow por vez, e este teste espera especificamente este"),
+)
 def test_governanca_declara_nome_e_gatilho_de_pull_request():
     """O sintoma pelo qual o defeito apareceu: o GitHub exibia o CAMINHO como
     nome do workflow, sinal de que não lia a chave `name:`."""
