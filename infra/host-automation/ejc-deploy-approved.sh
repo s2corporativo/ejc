@@ -45,6 +45,25 @@ log "exigindo pipeline Woodpecker push/main verde para $TARGET_SHA"
 [ -f "$SOURCE_DIR/scripts/deploy_lock.sh" ] || fail "deploy_lock.sh ausente no SHA aprovado"
 [ -f "$SOURCE_DIR/scripts/deploy_vps_safe.sh" ] || fail "deploy_vps_safe.sh ausente no SHA aprovado"
 
+# A partir daqui, decisao de migration, sincronizacao e cutover compartilham o
+# mesmo mutex. Isso impede que outro deploy altere schema/runtime entre a leitura
+# de alembic_version e a aplicacao da decisao calculada.
+# shellcheck source=/dev/null
+source "$SOURCE_DIR/scripts/deploy_lock.sh"
+lock_rc=0
+ejc_deploy_lock_acquire_production || lock_rc=$?
+case "$lock_rc" in
+  0) ;;
+  75) fail "outro deploy EJC esta em andamento" ;;
+  *) fail "nao foi possivel adquirir mutex host-level" ;;
+esac
+
+# Revalida o SHA depois de adquirir o mutex. Se main avancou enquanto esperava,
+# o novo commit precisa passar pelo Woodpecker e esta execucao nao toca producao.
+git -C "$SOURCE_DIR" fetch --prune origin main
+LATEST_SHA="$(git -C "$SOURCE_DIR" rev-parse origin/main)"
+[ "$LATEST_SHA" = "$TARGET_SHA" ] || fail "main mudou antes da decisao de migration; deploy abortado"
+
 current_revisions="$({
   docker exec ejc_db sh -lc \
     'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atq -c "SELECT version_num FROM alembic_version ORDER BY version_num"'
@@ -82,25 +101,7 @@ if [ "$pending_count" -gt 0 ]; then
   RUN_MIGRATIONS=1
   MIGRATIONS_BACKWARD_COMPATIBLE=1
 fi
-log "migration gate aprovado: atual=$current_revision pendentes=$pending_count"
-
-# Fecha a janela entre gate e mutacao: se main avancar, o novo SHA precisa
-# passar pelo Woodpecker antes de qualquer rsync para producao.
-git -C "$SOURCE_DIR" fetch --prune origin main
-LATEST_SHA="$(git -C "$SOURCE_DIR" rev-parse origin/main)"
-[ "$LATEST_SHA" = "$TARGET_SHA" ] || fail "main mudou apos a aprovacao; deploy abortado"
-
-# O mutex canonico existente foi feito para ser herdado pelo filho. Adquirimos
-# antes do rsync e exportamos FD 9; deploy_vps_safe.sh revalida o mesmo FD.
-# shellcheck source=/dev/null
-source "$SOURCE_DIR/scripts/deploy_lock.sh"
-lock_rc=0
-ejc_deploy_lock_acquire_production || lock_rc=$?
-case "$lock_rc" in
-  0) ;;
-  75) fail "outro deploy EJC esta em andamento" ;;
-  *) fail "nao foi possivel adquirir mutex host-level" ;;
-esac
+log "migration gate aprovado sob mutex: atual=$current_revision pendentes=$pending_count"
 
 log "sincronizando somente o SHA aprovado sob mutex"
 rsync -a --delete \
