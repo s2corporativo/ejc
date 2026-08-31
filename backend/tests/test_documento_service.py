@@ -272,3 +272,33 @@ async def test_ailog_da_chamada_principal_do_intake(monkeypatch):
     assert "987.654.321-00" not in log.prompt_sanitizado
     assert "[CPF]" in log.prompt_sanitizado
     assert log.pii_removida is True
+
+
+async def test_ocr_roda_fora_da_thread_do_event_loop(monkeypatch):
+    """Pente fino E2E 30/08 §5.4: a extração de texto (PyMuPDF/pytesseract,
+    CPU-bound) NÃO pode rodar na thread do event loop — com worker único ela
+    congelava o sistema inteiro durante uma análise. O contrato aqui é que
+    `extrair_e_analisar` despacha o OCR via thread (asyncio.to_thread)."""
+    import threading
+
+    visto = {}
+
+    def fake_ocr(*a, **k):
+        visto["thread"] = threading.current_thread()
+        return _DOC
+
+    monkeypatch.setattr("app.services.ocr_service.extrair_texto", fake_ocr)
+
+    async def fake_chat(**kw):
+        return _R('{"classificacao": {"area": "civil"}}')
+
+    monkeypatch.setattr("app.services.ai_gateway.chat", fake_chat)
+
+    from app.services.documento_service import extrair_e_analisar
+    r = await extrair_e_analisar("/fake.pdf", "application/pdf", db=None, enriquecer_rag=False)
+
+    assert r["ok"] is True
+    assert visto["thread"] is not threading.main_thread(), (
+        "extração de texto executou na thread do event loop — deve ir para "
+        "thread worker (asyncio.to_thread)"
+    )

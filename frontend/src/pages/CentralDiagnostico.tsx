@@ -495,11 +495,16 @@ function SubsistemaExtras({ sub }: { sub: Subsistema }) {
   if (sub.itens?.length) {
     blocos.push(
       <ul key="integracoes" className="space-y-1">
-        {sub.itens.map((it) => {
+        {sub.itens.map((it, idx) => {
           const m = STATUS_META[it.status] ?? STATUS_META.desligado;
           return (
             <li
-              key={it.chave}
+              // A lista é plana e a mesma chave (ex.: "infosimples",
+              // "indices_bcb") repete até dentro do mesmo grupo — o backend
+              // concatena registries distintos. Compõe grupo + chave + índice
+              // para manter a key única entre irmãos (lista somente-leitura,
+              // recarregada por inteiro: o índice é estável o bastante).
+              key={`${it.grupo}-${it.chave}-${idx}`}
               className="flex items-center justify-between gap-2 text-xs"
             >
               <span className="flex min-w-0 items-center gap-2">

@@ -178,10 +178,11 @@ ADICOES_INTENCIONAIS = {
     ("/api/ia-governanca/prompts-sistema", "GET"),
     # PR #1215 (Bloco P1+P2, D4 — 20/08/2026): consolidação dos roteadores de
     # honorários (honorarios_calc/exito_rateio → honorarios_oab.py). Os quatro
-    # endpoints já EXISTIAM nos prefixos /honorarios-calc e /honorarios-exito
-    # (mantidos como redirect 308 nos shims) — em /honorarios-oab são a mesma
-    # implementação consolidada sob o prefixo canônico, sem alteração de
-    # contrato. Registro nominal conforme padrão do §4.1.
+    # endpoints já EXISTIAM nos prefixos /honorarios-calc e /honorarios-exito —
+    # em /honorarios-oab são a mesma implementação consolidada sob o prefixo
+    # canônico, sem alteração de contrato. Registro nominal conforme padrão do
+    # §4.1. (Os shims 308 dos endereços antigos foram removidos em 30/08/2026 —
+    # ver REMOCOES_INTENCIONAIS.)
     ("/api/honorarios-oab/cases/{case_id}/provisionamento", "GET"),
     ("/api/honorarios-oab/cases/{case_id}/teto-etico", "GET"),
     ("/api/honorarios-oab/{fee_id}/rateio", "GET"),
@@ -190,6 +191,11 @@ ADICOES_INTENCIONAIS = {
     # avulsas de admissão, sempre em rascunho e filtradas por client_id.
     ("/api/clients/{client_id}/gerar-documentos", "POST"),
     ("/api/clients/{client_id}/pecas-geradas", "GET"),
+    # Pente fino E2E 30/08/2026 (§5.1): detalhe de documento por ID — a
+    # releitura direta respondia 405 (só havia list/download/PATCH/DELETE).
+    # Mesmo gate de autorização do download (_verificar_acesso_documento +
+    # cofre); devolve o shape do item da listagem, sem paths de storage.
+    ("/api/documents/{doc_id}", "GET"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
@@ -255,6 +261,43 @@ REMOCOES_INTENCIONAIS = {
     # GET /search). Nenhum consumer (frontend ou backend) chama /search/ com
     # trailing slash; a rota duplicada não tem contrato de consumo.
     ("/api/search/", "GET"),
+    # Saneamento 30/08/2026 (ordem do titular: "o que tiver obsoleto e
+    # redundante deve ser excluído"): remoção dos redirects 308 de
+    # compatibilidade criados nas consolidações D4/P3 (PRs #1215/#1218/#1224).
+    # Nenhum consumidor vivo em frontend/src nem qa/ (grep confirmado antes da
+    # remoção); os endereços canônicos (/honorarios-oab, /prompts-juridicos,
+    # /kanban/columns, /modulos/*, /datajud/intelligence,
+    # /sumulas/verificar-conflito) permanecem intactos, com o mesmo auth.
+    # Os endereços antigos passam a responder 404.
+    ("/api/honorarios-calc/cases/{case_id}/provisionamento", "GET"),
+    ("/api/honorarios-calc/cases/{case_id}/teto-etico", "GET"),
+    ("/api/honorarios-exito/{fee_id}/rateio", "GET"),
+    ("/api/honorarios-exito/{fee_id}/rateio", "POST"),
+    ("/api/prompts-biblioteca/", "GET"),
+    ("/api/prompts-biblioteca/", "POST"),
+    ("/api/prompts-biblioteca/{prompt_id}/executar", "POST"),
+    # kanban._compat: o endereço antigo veio de /api/v1/kanban-columns (Onda 2)
+    # e por isso NÃO está no baseline como /api/kanban-columns — entra aqui
+    # para o par movido (test_movimentacao_onda2) reconhecer a retirada.
+    ("/api/kanban-columns", "GET"),
+    # novos_modulos._compat (domínios migrados para /modulos/* no P3):
+    ("/api/precificacao/tabela", "GET"),
+    ("/api/precificacao/calcular/{rule_id}", "GET"),
+    ("/api/precificacao/regras", "POST"),
+    ("/api/inadimplencia/alertas", "GET"),
+    ("/api/inadimplencia/varrer", "POST"),
+    ("/api/inadimplencia/alertas/{alert_id}/resolver", "PATCH"),
+    ("/api/due-diligence/templates", "GET"),
+    ("/api/due-diligence/templates", "POST"),
+    ("/api/cofre/documentos/{document_id}/logs", "GET"),
+    ("/api/cofre/documentos/{document_id}/registrar-acesso", "POST"),
+    ("/api/cofre/documentos/{document_id}/sensibilidade", "PATCH"),
+    ("/api/cofre/relatorio", "GET"),
+    # datajud_intelligence._compat / ._compat_casos:
+    ("/api/casos/inteligencia/datajud/reconstruir-lote", "POST"),
+    ("/api/casos/{case_id}/andamentos/alimentar-ia", "POST"),
+    # sumulas._compat:
+    ("/api/casos/verificar-conflito", "POST"),
     # Issue #716 revertida — /timeline e /operational-health (case_timeline.py)
     # eram fachadas de leitura sem nenhum consumidor (mesma varredura acima);
     # a saúde do caso segue exposta em Analytics via case_health.py, que
@@ -400,44 +443,11 @@ def test_paridade_openapi_com_snapshot_anterior():
          ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
         (("/api/ia-defensiva/analisar", "POST"),
          ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
-        # PR #1215 (Bloco P1+P2, D4 — 20/08/2026): consolidação dos routers de
-        # prompts e honorários. Os sete endpoints abaixo viraram REDIRECTS 308
-        # (shims de compatibilidade) apontando para os endereços canônicos
-        # /prompts-juridicos/* e /honorarios-oab/* — que mantêm a autenticação
-        # intacta. O redirect em si é público porque o destino reautentica
-        # (HTTPBearer); o contrato público permanece exigindo credencial.
-        (("/api/prompts-biblioteca/", "GET"), []),
-        (("/api/prompts-biblioteca/", "POST"), []),
-        (("/api/prompts-biblioteca/{prompt_id}/executar", "POST"), []),
-        (("/api/honorarios-calc/cases/{case_id}/provisionamento", "GET"), []),
-        (("/api/honorarios-calc/cases/{case_id}/teto-etico", "GET"), []),
-        (("/api/honorarios-exito/{fee_id}/rateio", "GET"), []),
-        (("/api/honorarios-exito/{fee_id}/rateio", "POST"), []),
-        # PR #1218 (P3 — 20/08/2026): 308 permanentes dos endereços
-        # antigos dos 6 routers sem prefixo — o destino canônico
-        # preserva o auth; o alias legado vira redirect anônimo.
-        (("/api/casos/inteligencia/datajud/reconstruir-lote", "POST"), []),  # PR #1218 (P3): redirect 308 anônimo
-        (("/api/casos/verificar-conflito", "POST"), []),  # PR #1218 (P3): redirect 308 anônimo
-        (("/api/casos/{case_id}/andamentos/alimentar-ia", "POST"), []),  # PR #1218 (P3): redirect 308 anônimo
-        (("/api/cofre/documentos/{document_id}/logs", "GET"), []),  # PR #1218 (P3): redirect 308 anônimo
-        (("/api/cofre/documentos/{document_id}/registrar-acesso", "POST"), []),  # PR #1218 (P3): redirect 308 anônimo
-        (("/api/cofre/documentos/{document_id}/sensibilidade", "PATCH"), []),  # PR #1218 (P3): redirect 308 anônimo
-        (("/api/cofre/relatorio", "GET"), []),  # PR #1218 (P3): redirect 308 anônimo
-        (("/api/due-diligence/templates", "GET"), []),  # PR #1218 (P3): redirect 308 anônimo
-        (("/api/due-diligence/templates", "POST"), []),  # PR #1218 (P3): redirect 308 anônimo
-        (("/api/honorarios-calc/cases/{case_id}/provisionamento", "GET"), []),  # PR #1218 (P3): redirect 308 anônimo
-        (("/api/honorarios-calc/cases/{case_id}/teto-etico", "GET"), []),  # PR #1218 (P3): redirect 308 anônimo
-        (("/api/honorarios-exito/{fee_id}/rateio", "GET"), []),  # PR #1218 (P3): redirect 308 anônimo
-        (("/api/honorarios-exito/{fee_id}/rateio", "POST"), []),  # PR #1218 (P3): redirect 308 anônimo
-        (("/api/inadimplencia/alertas", "GET"), []),  # PR #1218 (P3): redirect 308 anônimo
-        (("/api/inadimplencia/alertas/{alert_id}/resolver", "PATCH"), []),  # PR #1218 (P3): redirect 308 anônimo
-        (("/api/inadimplencia/varrer", "POST"), []),  # PR #1218 (P3): redirect 308 anônimo
-        (("/api/precificacao/calcular/{rule_id}", "GET"), []),  # PR #1218 (P3): redirect 308 anônimo
-        (("/api/precificacao/regras", "POST"), []),  # PR #1218 (P3): redirect 308 anônimo
-        (("/api/precificacao/tabela", "GET"), []),  # PR #1218 (P3): redirect 308 anônimo
-        (("/api/prompts-biblioteca/", "GET"), []),  # PR #1218 (P3): redirect 308 anônimo
-        (("/api/prompts-biblioteca/", "POST"), []),  # PR #1218 (P3): redirect 308 anônimo
-        (("/api/prompts-biblioteca/{prompt_id}/executar", "POST"), []),  # PR #1218 (P3): redirect 308 anônimo
+        # Saneamento 30/08/2026: as entradas dos redirects 308 anônimos dos
+        # PRs #1215/#1218 saíram desta lista junto com os próprios shims —
+        # os endereços antigos agora estão em REMOCOES_INTENCIONAIS e não
+        # existem mais na superfície (a comparação de auth só olha rotas
+        # presentes no baseline E na superfície atual).
     )
 
     divergentes = [
@@ -583,6 +593,12 @@ def test_movimentacao_onda2_preservou_as_dependencias_de_auth():
         if not antigo.startswith("/api/v1/"):
             continue
         novo = "/api" + antigo[len("/api/v1") :]
+        if (novo, r["method"]) in REMOCOES_INTENCIONAIS:
+            # Endereço movido na Onda 2 e depois RETIRADO por decisão
+            # registrada em REMOCOES_INTENCIONAIS (com justificativa) — ex.:
+            # /api/kanban-columns, cujo canônico é /api/kanban/columns.
+            # Se a rota reaparecer, a trava `ressuscitadas` acusa.
+            continue
         destino = atual.get((novo, r["method"]))
         assert destino is not None, f"{antigo} {r['method']} não reapareceu em {novo}"
         if destino["auth_deps"] != r["auth_deps"]:

@@ -328,7 +328,9 @@ function IntakeAnaliseInner({ caseId }: { caseId: string }) {
                   {(dados.teses ?? []).map((t) => (
                     <TR key={t.id}>
                       <TD className="font-medium text-slate-800">{t.titulo}</TD>
-                      <TD className="font-mono">{fmtTaxaSucesso(t.taxa_sucesso)}</TD>
+                      <TD className="font-mono">
+                        {fmtTaxaSucesso(t.taxa_sucesso)}
+                      </TD>
                       <TD>{t.tribunal || "—"}</TD>
                       <TD className="font-mono">{t.vezes_usada ?? "—"}</TD>
                     </TR>

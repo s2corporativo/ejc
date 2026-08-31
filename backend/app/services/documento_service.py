@@ -11,6 +11,7 @@ REGRAS INVIOLÁVEIS (CLAUDE.md): nunca inventa lei/súmula/jurisprudência/nº d
 processo; nunca promete resultado; toda saída é MINUTA — revisão obrigatória do
 advogado (OAB).
 """
+import asyncio
 import json
 import logging
 import re
@@ -451,8 +452,11 @@ async def extrair_e_analisar(
     principal de interpretação — trilha "qual provedor viu qual documento"
     (art. 37 LGPD).
     """
-    # 1) OCR / extração de texto
-    texto = ocr_service.extrair_texto(filepath, mimetype)
+    # 1) OCR / extração de texto — CPU-bound (PyMuPDF/pytesseract), roda em
+    # thread para não congelar o event loop do worker único (pente fino E2E
+    # 30/08 §5.4: GET /documents/ de 17ms estourava 30s durante uma análise).
+    # Mesmo padrão do upload em routers/documents.py.
+    texto = await asyncio.to_thread(ocr_service.extrair_texto, filepath, mimetype)
     if not texto or len(texto.strip()) < 40:
         return {
             "ok": False,

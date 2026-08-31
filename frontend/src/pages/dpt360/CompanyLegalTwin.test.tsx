@@ -151,4 +151,23 @@ describe("CompanyLegalTwin", () => {
       ),
     );
   });
+
+  it("trata 404 como cliente fora do programa DPT 360, não como erro", async () => {
+    mockProfile.mockRejectedValue({ response: { status: 404 } });
+    await act(async () =>
+      render(
+        <MemoryRouter>
+          <CompanyLegalTwin clientId="c1" />
+        </MemoryRouter>,
+      ),
+    );
+    await waitFor(() =>
+      screen.getByText(/Cliente não acompanhado no DPT Empresarial 360/i),
+    );
+    expect(
+      screen.queryByText(
+        /Não foi possível carregar o Perfil Jurídico Vivo desta empresa/,
+      ),
+    ).toBeNull();
+  });
 });
