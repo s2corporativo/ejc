@@ -1,47 +1,8 @@
-name: CodeQL Security Analysis
-
-on:
-  push:
-    branches: ["main"]
-  pull_request:
-    branches: ["main"]
-  schedule:
-    - cron: "17 9 * * 1"
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  security-events: write
-  packages: read
-
-concurrency:
-  group: codeql-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-jobs:
-  analyze:
-    name: Analyze (${{ matrix.language }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        language:
-          - python
-          - javascript-typescript
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
-        with:
-          languages: ${{ matrix.language }}
-          build-mode: none
-          queries: security-extended
-
-      - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v4
-        with:
-          category: "/language:${{ matrix.language }}"
+# APOSENTADO — GitHub Actions não é utilizado neste projeto.
+#
+# A análise de segurança foi migrada para o Woodpecker CI self-hosted em
+# `.woodpecker.yml`, usando Semgrep Community Edition, Trivy e Gitleaks.
+# Este arquivo é mantido temporariamente apenas para tornar a migração
+# auditável e evitar reativação acidental do workflow antigo.
+#
+# Não há `on:` nem `jobs:`; portanto este arquivo não dispara GitHub Actions.
