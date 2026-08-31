@@ -42,7 +42,8 @@ pipelines="$(curl --fail --silent --show-error --connect-timeout 10 --max-time 3
   "$api/repos/$repo_id/pipelines?branch=main&event=push&status=success&perPage=50")" \
   || fail "falha ao consultar pipelines aprovados"
 
-approval="$(printf '%s' "$pipelines" | python3 - "$TARGET_SHA" <<'PY'
+rc=0
+approval="$(printf '%s' "$pipelines" | python3 -c '
 import json, sys
 sha = sys.argv[1].lower()
 try:
@@ -51,17 +52,15 @@ except Exception:
     raise SystemExit(2)
 if not isinstance(rows, list):
     raise SystemExit(2)
-matches = [p for p in rows if str(p.get('commit', '')).lower() == sha
-           and p.get('branch') == 'main'
-           and p.get('event') == 'push'
-           and p.get('status') == 'success']
+matches = [p for p in rows if str(p.get("commit", "")).lower() == sha
+           and p.get("branch") == "main"
+           and p.get("event") == "push"
+           and p.get("status") == "success"]
 if not matches:
     raise SystemExit(1)
-p = sorted(matches, key=lambda x: (x.get('finished', 0), x.get('number', 0)), reverse=True)[0]
-print(f"{p.get('number','')}|{p.get('finished','')}")
-PY
-)" || rc=$?
-rc="${rc:-0}"
+p = sorted(matches, key=lambda x: (x.get("finished", 0), x.get("number", 0)), reverse=True)[0]
+print(f"{p.get(chr(110)+chr(117)+chr(109)+chr(98)+chr(101)+chr(114), "")}|{p.get(chr(102)+chr(105)+chr(110)+chr(105)+chr(115)+chr(104)+chr(101)+chr(100), "")}")
+' "$TARGET_SHA")" || rc=$?
 case "$rc" in
   0) ;;
   1) fail "SHA $TARGET_SHA nao possui pipeline push/main com status success" ;;
