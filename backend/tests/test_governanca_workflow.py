@@ -14,8 +14,22 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "governanca.yml"
+
+# O GitHub Actions foi ARQUIVADO em 31/08 (commit `b77ff4c`): os workflows saíram
+# para `docs/arquivo/ci/github-actions-legacy/` e o Woodpecker virou o CI oficial.
+# Este módulo inteiro assertava sobre um YAML que já não é executado por ninguém —
+# guarda sem objeto. Fica DORMENTE em vez de deletado: se o Actions voltar, o
+# arquivo reaparece e as travas voltam a valer sozinhas, sem depender de alguém
+# lembrar. Não aponto para a cópia arquivada de propósito: workflow arquivado não
+# roda, e guarda sobre arquivo que não roda é decorativo.
+pytestmark = pytest.mark.skipif(
+    not WORKFLOW_PATH.is_file(),
+    reason="GitHub Actions arquivado em 31/08 (b77ff4c) — workflows movidos para docs/arquivo/ci/github-actions-legacy/; Woodpecker é o CI oficial",
+)
 DOC_PATH = REPO_ROOT / "docs" / "GOVERNANCA_IA.md"
 
 # Travas que precisam continuar valendo para qualquer PR, inclusive Dependabot.
