@@ -1,5 +1,6 @@
 # CI oficial self-hosted (Woodpecker — infra/woodpecker/). Não depende de GitHub Actions.
-# Replica os portões locais e adiciona SAST, vulnerabilidades e secret scanning.
+# Replica os portões locais e adiciona SAST, vulnerabilidades, secret scanning
+# e validação determinística dos contratos operacionais de backup/deploy.
 when:
   - event: push
     branch: main
@@ -40,6 +41,14 @@ steps:
       - npm run lint
       - npm test
       - npm run build
+
+  ops-contracts:
+    image: python:3.11-bookworm
+    commands:
+      - bash -n scripts/backup.sh scripts/backup/ativar_backup.sh scripts/deploy_vps_safe.sh scripts/deploy_workflow_transaction.sh scripts/tests/test_backup_wrapper.sh scripts/tests/test_deploy_rollback.sh
+      - python -m py_compile scripts/check_migration_compatibility.py
+      - bash scripts/tests/test_backup_wrapper.sh
+      - bash scripts/tests/test_deploy_rollback.sh
 
   security-sast:
     image: semgrep/semgrep
