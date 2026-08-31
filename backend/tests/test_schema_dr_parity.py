@@ -35,6 +35,12 @@ FALSOS_POSITIVOS_SQL = {
     # CTE recursiva do versionamento documental (``WITH RECURSIVE cadeia``),
     # não é tabela real — introduzida no GED (#1134).
     "cadeia",
+    # Views de catálogo do information_schema (não tabelas da aplicação) —
+    # introspecção dinâmica de FK/UNIQUE em app/services/saneamento/fusao.py
+    # (Issue #1319, fusão real de casos duplicados): o schema muda com o
+    # tempo, então a lista de tabelas com FK para cases.id é calculada em
+    # runtime via estas views, nunca hardcoded.
+    "table_constraints", "key_column_usage", "constraint_column_usage",
 }
 _RUIDO_SQL = {
     "information_schema", "unnest", "generate_series", "jsonb_each",

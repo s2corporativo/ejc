@@ -38,3 +38,14 @@ class DecidirIndicativoIn(BaseModel):
         if len(limpo) < 3:
             raise ValueError("justificativa não pode ser vazia ou só espaços")
         return limpo
+
+
+class VarreduraIn(BaseModel):
+    """Aciona o produtor do módulo (Issue #1319) — sem isso as tabelas de
+    saneamento ficam vazias para sempre."""
+
+    tipo: Literal["dedup", "datajud", "completa"] = "dedup"
+    limite_datajud: int = Field(
+        50, ge=1, le=500,
+        description="Máximo de numero_cnj consultados ao DataJud nesta execução (tipo=datajud/completa).",
+    )

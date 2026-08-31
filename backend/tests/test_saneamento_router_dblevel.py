@@ -651,3 +651,107 @@ async def test_aplicar_dedup_exige_vinculo_com_todos_os_casos_do_numero():
     finally:
         async with AsyncSessionLocal() as db:
             await _limpar(db, case_ids=[caso_a, caso_b], client_ids=[cli])
+
+
+@_pg
+async def test_varredura_restrita_a_admin_e_aciona_o_produtor():
+    """POST /saneamento/varredura (Issue #1319, achado de revisão de código:
+    sem produtor as tabelas ficam vazias para sempre) — só admin+ aciona;
+    tipo=dedup roda sem depender de DataJud."""
+    from app.core.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        socio = await _criar_user(db, "socio")
+        admin = await _criar_user(db, "admin")
+
+    try:
+        negado = _client().post(
+            f"{API}/varredura", json={"tipo": "dedup"},
+            headers=_token_para(socio, "socio"),
+        )
+        assert negado.status_code == 403
+
+        permitido = _client().post(
+            f"{API}/varredura", json={"tipo": "dedup"},
+            headers=_token_para(admin, "admin"),
+        )
+        assert permitido.status_code == 200, permitido.text
+        body = permitido.json()
+        assert len(body["execucoes"]) == 1
+        assert body["execucoes"][0]["tipo"] == "dedup"
+        assert body["execucoes"][0]["status"] == "sucesso"
+    finally:
+        async with AsyncSessionLocal() as db:
+            await db.execute(text("DELETE FROM saneamento_execucao"))
+            await db.commit()
+
+
+@_pg
+async def test_aplicar_duplicata_funde_de_verdade_e_arquiva_absorvido():
+    """Ponta a ponta via API real (não chamando fundir_casos direto):
+    tipo='duplicata' com id_interno_principal/ids_absorvidos apontando pra
+    Case.id de verdade — depois de aplicar, o documento do caso absorvido
+    aparece sob o principal e o absorvido vira status=arquivado."""
+    from app.core.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        uid = await _criar_user(db, "advogado")
+        cli = await _criar_cliente(db)
+        principal = await _criar_caso(db, cli, None, resp_id=uid)
+        absorvido = await _criar_caso(db, cli, None, resp_id=uid)
+        await _criar_processo(db, principal, NUM_CNJ_OFICIAL)
+        await _criar_processo(db, absorvido, NUM_CNJ_OFICIAL)
+        doc_id = str(uuid4())
+        await db.execute(
+            text("INSERT INTO documents (id, titulo, filename, filepath, case_id) "
+                 "VALUES (:id, 'Doc do absorvido', 'a.pdf', '/tmp/a.pdf', :cid)"),
+            {"id": doc_id, "cid": absorvido},
+        )
+        await db.execute(
+            text("INSERT INTO saneamento_plano_dedup "
+                 "(numero_cnj, id_interno_principal, ids_absorvidos, tipo) "
+                 "VALUES (:n, :p, ARRAY[:a], 'duplicata')"),
+            {"n": NUM_CNJ_OFICIAL, "p": principal, "a": absorvido},
+        )
+        await db.commit()
+        plano_id = (await db.execute(
+            text("SELECT id FROM saneamento_plano_dedup WHERE numero_cnj = :n"),
+            {"n": NUM_CNJ_OFICIAL},
+        )).scalar_one()
+
+    try:
+        resp = _client().post(
+            f"{API}/duplicatas/{plano_id}/aplicar",
+            json={"confirmar": True},
+            headers=_token_para(uid, "advogado"),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["aplicado"] is True
+        assert body["fusao"][absorvido]["reatribuidas"].get("documents.case_id") == 1
+
+        async with AsyncSessionLocal() as db:
+            doc = (await db.execute(
+                text("SELECT case_id FROM documents WHERE id = :id"), {"id": doc_id},
+            )).mappings().one()
+            caso_absorvido = (await db.execute(
+                text("SELECT status FROM cases WHERE id = :id"), {"id": absorvido},
+            )).mappings().one()
+        assert doc["case_id"] == principal
+        assert caso_absorvido["status"] == "arquivado"
+
+        # Segunda aplicação é recusada (já aplicado) — mesmo comportamento
+        # de antes da fusão real ser wireada.
+        repetido = _client().post(
+            f"{API}/duplicatas/{plano_id}/aplicar",
+            json={"confirmar": True},
+            headers=_token_para(uid, "advogado"),
+        )
+        assert repetido.status_code == 409
+    finally:
+        async with AsyncSessionLocal() as db:
+            await db.execute(text("DELETE FROM documents WHERE case_id IN (:p, :a)"),
+                              {"p": principal, "a": absorvido})
+            await db.execute(text("DELETE FROM case_movimentos WHERE case_id IN (:p, :a)"),
+                              {"p": principal, "a": absorvido})
+            await _limpar(db, case_ids=[principal, absorvido], client_ids=[cli])

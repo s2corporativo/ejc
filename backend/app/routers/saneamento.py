@@ -41,7 +41,9 @@ from app.models.saneamento import (
     PlanoDedup,
 )
 from app.models.user import User
-from app.schemas.saneamento import AplicarDedupIn, DecidirIndicativoIn
+from app.schemas.saneamento import AplicarDedupIn, DecidirIndicativoIn, VarreduraIn
+from app.services.saneamento.fusao import fundir_casos
+from app.services.saneamento.produtor import executar_varredura_datajud, executar_varredura_dedup
 from app.services.saneamento.reconciliacao import TipoDivergencia
 from app.services.saneamento.tpu import carregar_catalogo
 
@@ -49,6 +51,11 @@ router = APIRouter(prefix="/saneamento", tags=["Saneamento processual"])
 
 _LEITURA = require_roles(["advogado_auxiliar", "advogado", "socio", "admin", "superadmin"])
 _DECISAO = require_roles(["advogado", "socio", "admin", "superadmin"])
+# Produtor (achado de revisão de código — Issue #1319): operação de
+# infraestrutura do módulo (varredura/ingestão), não decisão sobre um caso
+# específico — mesmo limiar de `pode_ver_todos` (admin+) usado para visão
+# de relatório firm-wide, não o `is_gestao` (socio+) de escrita por caso.
+_ADMIN = require_roles(["admin", "superadmin"])
 
 
 def _digitos(coluna) -> ColumnElement[str]:
@@ -203,15 +210,12 @@ async def aplicar_duplicata(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(_DECISAO),
 ):
-    """Marca um item do plano de deduplicação como aplicado (aprovado para
-    fusão).
-
-    Esta rota registra a DECISÃO (quem/quando) — a fusão efetiva dos
-    registros da base interna (cases/processos) permanece responsabilidade
-    de um processo separado (nenhum handler de fusão existe hoje no EJC;
-    fora do escopo desta PR — ver Issue #1317). `tipo='multi_grau'` ou
-    `'conexo_sugerido'` NUNCA devem ser fundidos (regra de negócio
-    inegociável), só relacionados/sugeridos.
+    """Aplica o plano de deduplicação: funde de verdade os casos absorvidos
+    no principal (app/services/saneamento/fusao.py — Issue #1319) e marca
+    o plano como aplicado, na MESMA transação (erro na fusão desfaz o
+    aplicado=true também). `tipo='multi_grau'` ou `'conexo_sugerido'`
+    NUNCA devem ser fundidos (regra de negócio inegociável), só
+    relacionados/sugeridos — únicos que passam daqui são `'duplicata'`.
     """
     if not body.confirmar:
         raise HTTPException(status_code=422, detail="Confirmação explícita exigida (confirmar=true).")
@@ -249,13 +253,25 @@ async def aplicar_duplicata(
         await db.rollback()
         raise HTTPException(status_code=409, detail="Este item já foi aplicado.")
 
+    relatorios_fusao = {}
+    for absorvido_id in plano.ids_absorvidos:
+        relatorio = await fundir_casos(
+            db, principal_id=plano.id_interno_principal, absorvido_id=absorvido_id,
+            numero_cnj_gatilho=plano.numero_cnj, ator_id=cu.id,
+        )
+        relatorios_fusao[absorvido_id] = {
+            "reatribuidas": relatorio.reatribuidas, "descartadas": relatorio.descartadas,
+            "processos_colapsados": relatorio.processos_colapsados,
+            "ja_arquivado": relatorio.absorvido_ja_arquivado,
+        }
+
     await criar_audit_log(
         db, cu.id, cu.role.value,
         "APLICAR", "saneamento.plano_dedup", str(plano_id),
-        dados_depois={"numero_cnj": plano.numero_cnj, "tipo": plano.tipo},
+        dados_depois={"numero_cnj": plano.numero_cnj, "tipo": plano.tipo, "fusao": relatorios_fusao},
     )
     await db.commit()
-    return {"id": plano_id, "aplicado": True}
+    return {"id": plano_id, "aplicado": True, "fusao": relatorios_fusao}
 
 
 @router.get("/indicativos")
@@ -414,3 +430,45 @@ async def cobertura_tpu(
     """
     catalogo = await carregar_catalogo(db)
     return catalogo.cobertura
+
+
+@router.post("/varredura")
+async def acionar_varredura(
+    body: VarreduraIn,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_ADMIN),
+):
+    """Produtor do módulo (Issue #1319): aciona deduplicar()/
+    avaliar_encerramento()/reconciliar() sobre a base real e persiste os
+    resultados nas filas que as rotas GET acima leem. Sem chamar esta rota
+    (ou um job agendado que a substitua), o módulo fica permanentemente
+    vazio. `tipo=dedup` não depende de rede; `datajud`/`completa` fazem
+    chamadas externas (rate-limited, com `limite_datajud` por execução) e
+    são no-op gracioso se DATAJUD_ENABLED/DATAJUD_API_KEY não estiverem
+    configurados."""
+    execucoes = []
+    if body.tipo in ("dedup", "completa"):
+        execucoes.append(await executar_varredura_dedup(db))
+    if body.tipo in ("datajud", "completa"):
+        execucoes.append(await executar_varredura_datajud(db, limite=body.limite_datajud))
+
+    await criar_audit_log(
+        db, cu.id, cu.role.value,
+        "VARREDURA", "saneamento.execucao", ",".join(str(e.id) for e in execucoes),
+        dados_depois={"tipo": body.tipo, "resultados": [
+            {"id": e.id, "tipo": e.tipo, "status": e.status, "processados": e.processados, "falhas": e.falhas}
+            for e in execucoes
+        ]},
+    )
+    await db.commit()
+    return {
+        "execucoes": [
+            {
+                "id": e.id, "tipo": e.tipo, "status": e.status,
+                "processados": e.processados, "falhas": e.falhas,
+                "iniciado_em": e.iniciado_em, "finalizado_em": e.finalizado_em,
+                "detalhe": e.detalhe,
+            }
+            for e in execucoes
+        ],
+    }

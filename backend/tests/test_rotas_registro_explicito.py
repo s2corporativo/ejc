@@ -200,6 +200,8 @@ ADICOES_INTENCIONAIS = {
     ("/api/saneamento/indicativos/{indicativo_id}/decidir", "POST"),
     ("/api/saneamento/divergencias", "GET"),
     ("/api/saneamento/tpu/cobertura", "GET"),
+    # Issue #1319: produtor do módulo (varredura/ingestão) — admin+.
+    ("/api/saneamento/varredura", "POST"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
