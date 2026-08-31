@@ -59,7 +59,7 @@ matches = [p for p in rows if str(p.get("commit", "")).lower() == sha
 if not matches:
     raise SystemExit(1)
 p = sorted(matches, key=lambda x: (x.get("finished", 0), x.get("number", 0)), reverse=True)[0]
-print(f"{p.get(chr(110)+chr(117)+chr(109)+chr(98)+chr(101)+chr(114), "")}|{p.get(chr(102)+chr(105)+chr(110)+chr(105)+chr(115)+chr(104)+chr(101)+chr(100), "")}")
+print("{}|{}".format(p.get("number", ""), p.get("finished", "")))
 ' "$TARGET_SHA")" || rc=$?
 case "$rc" in
   0) ;;
