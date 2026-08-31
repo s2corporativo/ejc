@@ -56,8 +56,9 @@ export type SugestaoAberta = {
 };
 
 /**
- * Modal do prazo assistido: mesmo fluxo de dois passos da tela legada
- * (`pages/Intimacoes.tsx`) — a sugestão vem do GET em modo leitura e só então
+ * Modal do prazo assistido: mesmo fluxo de dois passos da tela legada de
+ * Intimações (removida na consolidação de 2026-08; ver histórico no git) —
+ * a sugestão vem do GET em modo leitura e só então
  * o advogado aceita (cria o Deadline) ou recusa (não cria nada).
  *
  * A recusa NÃO pede motivo: o endpoint `POST /intimacoes/{id}/recusar-prazo`

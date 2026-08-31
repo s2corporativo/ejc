@@ -31,6 +31,9 @@ import {
   type DptCompany,
   type DptDashboard,
 } from "./api";
+import ClienteNaoAcompanhado, {
+  isClienteForaDoPrograma,
+} from "./ClienteNaoAcompanhado";
 import CompanyLegalTwin from "./CompanyLegalTwin";
 import DptFeatureRouter from "./DptFeatureRouter";
 
@@ -573,9 +576,7 @@ function CompanyDetailByIdFallback({
       })
       .catch((err: unknown) => {
         if (!active) return;
-        const status = (err as { response?: { status?: number } } | undefined)
-          ?.response?.status;
-        if (status === 404) {
+        if (isClienteForaDoPrograma(err)) {
           setNotFound(true);
         } else {
           setLoadError(true);
@@ -587,9 +588,9 @@ function CompanyDetailByIdFallback({
   }, [clientId, attempt]);
 
   if (notFound) {
-    return (
-      <ErrorState message="Empresa não encontrada na carteira empresarial visível." />
-    );
+    // 404 aqui é estado de negócio: o cliente existe no EJC, mas está fora
+    // do programa DPT 360 — comunica o enquadramento em vez de erro genérico.
+    return <ClienteNaoAcompanhado clientId={clientId} />;
   }
   if (loadError) {
     return (

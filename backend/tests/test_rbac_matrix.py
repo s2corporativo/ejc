@@ -466,3 +466,115 @@ def test_combinar_gates_router_vence_e_e_sempre_via_depends():
     combinado, via_depends = rm._combinar_gates(nenhum, False, router_admin)
     assert combinado == router_admin
     assert via_depends is True
+
+
+def test_router_gate_via_dependencies_append_e_reconhecido():
+    """`router.dependencies.append(Depends(_req_staff))` fora do construtor
+    (padrão da consolidação de jurimetria_extra.py) tem que ser lido como
+    gate do router inteiro. Antes o parser só via `dependencies=[...]` do
+    `APIRouter(...)`: a matriz derivava "permitido" para financeiro/
+    secretaria em `/jurimetria/ext/stats` e o E2E acusava DIVERGÊNCIA contra
+    o 403 real do app (pente fino de 29/08/2026)."""
+    fonte = textwrap.dedent(
+        """
+        router = APIRouter(prefix="/jurimetria")
+        router.dependencies.append(Depends(_req_staff))
+        """
+    )
+    deps = rm._extract_router_level_deps(ast.parse(fonte))
+    assert len(deps) == 1
+
+
+# ── Pente fino 2026-08-30 §5.5: query mínima por rota ───────────────────────
+
+
+def test_query_minima_cobre_apenas_rotas_get_reais():
+    """Cada chave de QUERY_MINIMA_POR_ROTA precisa ser uma rota GET que o
+    parser deriva dos routers REAIS — um path renomeado no backend sem
+    atualizar o mapa deixaria a query mínima órfã (a sonda voltaria a mandar
+    a rota nova sem query e a aceitar 422 como inconclusivo, o defeito que o
+    §5.5 corrige). Quebrar aqui avisa no CI, não no relatório do E2E."""
+    gates = rm.discover_gates(ROUTERS_DIR, MAIN_PY)
+    get_paths = {g.path for g in gates if g.method == "GET"}
+    orfaos = set(rm.QUERY_MINIMA_POR_ROTA) - get_paths
+    assert not orfaos, f"query mínima aponta para rota GET inexistente: {sorted(orfaos)}"
+
+
+def test_query_minima_gera_query_string_valida():
+    """A query string sai urlencoded (espaços etc.) e os casos com código
+    extra aceito documentam o motivo — aceitar um código a mais sem motivo
+    escrito seria afrouxamento silencioso."""
+    qm = rm.QUERY_MINIMA_POR_ROTA["/api/consumidor-monitor/triagem-jec"]
+    assert "empresa=" in qm.query_string() and " " not in qm.query_string()
+    for path, entry in rm.QUERY_MINIMA_POR_ROTA.items():
+        assert entry.params, f"{path}: query mínima vazia não exercita nada"
+        if entry.aceitos_alem_de_200:
+            assert entry.motivo, (
+                f"{path}: aceita códigos extras {entry.aceitos_alem_de_200} "
+                "sem motivo documentado"
+            )
+
+
+def test_query_minima_do_triagem_ficha_documenta_recurso_existente():
+    """`/api/triagem/ficha` exige caso EXISTENTE (verificar_acesso_caso) — a
+    sonda não tem como forjar um caso por papel, então o 404 com case_id
+    fictício é o resultado DOCUMENTADO de handler exercitado."""
+    qm = rm.QUERY_MINIMA_POR_ROTA["/api/triagem/ficha"]
+    assert 404 in qm.aceitos_alem_de_200
+    assert "caso existente" in qm.motivo
+
+
+def test_jurimetria_ext_stats_deriva_gate_de_staff_juridico():
+    """No repo real, o gate derivado de GET /api/jurimetria/ext/stats não
+    pode permitir `financeiro`/`secretaria` — o app nega com 403."""
+    gates = rm.discover_gates(ROUTERS_DIR, MAIN_PY)
+    alvo = next(
+        (g for g in gates if g.method == "GET" and g.path == "/api/jurimetria/ext/stats"),
+        None,
+    )
+    assert alvo is not None
+    assert alvo.gate_kind != "nenhum"
+    assert "financeiro" not in alvo.allowed_roles
+    assert "secretaria" not in alvo.allowed_roles
+
+
+def test_constante_de_papel_anotada_e_resolvida():
+    """`NOME: frozenset[str] = frozenset({...})` também é constante de papel.
+
+    O parser lia só `ast.Assign`; a forma ANOTADA — a que o repo usa quando a
+    allowlist é exportada para teste — caía fora, o gate virava
+    `indeterminado` e a rota SAÍA da amostra ao vivo. Ponto cego pior que o
+    óbvio: some justamente onde a allowlist é mais explícita.
+    """
+    tree = ast.parse(textwrap.dedent("""
+        SEM_ANOTACAO = {"socio"}
+        COM_ANOTACAO: frozenset[str] = frozenset({"admin", "secretaria"})
+        SO_DECLARADA: frozenset[str]
+    """))
+    consts = rm._module_role_constants(tree)
+    assert sorted(consts["COM_ANOTACAO"]) == ["admin", "secretaria"]
+    assert consts["SEM_ANOTACAO"] == ["socio"]          # não regrediu
+    assert "SO_DECLARADA" not in consts                 # sem valor, sem papéis
+
+
+def test_criar_caso_nao_fica_indeterminado_na_matriz():
+    """Rota real: `POST /api/cases/` usa allowlist EXATA anotada.
+
+    Enquanto ela era `indeterminado`, a matriz devolvia 200 esperado para
+    TODO papel — inclusive `financeiro` —, ou seja, o gate endurecido pelo
+    AUD27-P1-1 não era vigiado por ninguém ao vivo.
+    """
+    gates = rm.discover_gates(ROUTERS_DIR, MAIN_PY)
+    alvo = next(
+        (g for g in gates if g.method == "POST" and g.path.rstrip("/") == "/api/cases"),
+        None,
+    )
+    assert alvo is not None
+    assert alvo.gate_kind == "local_membership", (
+        "allowlist exata tem que virar pertencimento ESTRITO — com hierarquia, "
+        "financeiro (nível 4) volta a ser promovido para dentro"
+    )
+    assert alvo.resultado_esperado("financeiro") == 403
+    assert alvo.resultado_esperado("cliente_externo") == 403
+    for papel in ("socio", "advogado", "estagiario", "secretaria"):
+        assert alvo.resultado_esperado(papel) == 200

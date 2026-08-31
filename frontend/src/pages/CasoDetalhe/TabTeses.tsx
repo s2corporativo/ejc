@@ -117,7 +117,9 @@ export default function TabTeses({ caso }: { caso: Case }) {
                   </p>
                 )}
                 <div className="flex flex-wrap items-center gap-2 mt-3">
-                  <Badge tone="green">Êxito {fmtTaxaSucesso(t.taxa_sucesso)}</Badge>
+                  <Badge tone="green">
+                    Êxito {fmtTaxaSucesso(t.taxa_sucesso)}
+                  </Badge>
                   <Badge tone="slate">{t.vezes_venceu ?? 0} vitória(s)</Badge>
                   {typeof t.vezes_usada === "number" && (
                     <Badge tone="slate">{t.vezes_usada} uso(s)</Badge>

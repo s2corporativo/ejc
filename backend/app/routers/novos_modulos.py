@@ -432,68 +432,14 @@ async def cofre_relatorio(
     if cu.role not in ("admin", "superadmin", "socio"):
         raise HTTPException(403, "Acesso restrito a sócios e administradores")
     r = await db.execute(text("""
-        SELECT d.id, d.title, d.sensitivity_level, d.download_count,
+        SELECT d.id, d.titulo, d.sensitivity_level, d.download_count,
                d.last_accessed_at,
                COUNT(l.id) AS total_acessos
         FROM documents d
         LEFT JOIN document_access_log l ON l.document_id = d.id
         WHERE d.deleted_at IS NULL
-        GROUP BY d.id, d.title, d.sensitivity_level, d.download_count, d.last_accessed_at
+        GROUP BY d.id, d.titulo, d.sensitivity_level, d.download_count, d.last_accessed_at
         ORDER BY d.last_accessed_at DESC NULLS LAST
         LIMIT :lim
     """), {"lim": limit})
     return [dict(row._mapping) for row in r.fetchall()]
-
-
-# ── Compatibilidade P3 (20/08/2026): domínios /precificacao, /inadimplencia,
-#    /due-diligence e /cofre migrados para /modulos/* (redirect 308). ────────
-from fastapi.responses import RedirectResponse as _RR
-_compat = APIRouter(tags=["Novos Módulos — Compatibilidade"])
-
-@_compat.get("/precificacao/tabela")
-def _redirect_get_precificacao_tabela():
-    return _RR(url="/api/modulos/precificacao/tabela", status_code=308)
-
-@_compat.get("/precificacao/calcular/{rule_id}")
-def _redirect_get_precificacao_calcular_rule_id(rule_id: str):
-    return _RR(url=f"/api/modulos/precificacao/calcular/{rule_id}", status_code=308)
-
-@_compat.post("/precificacao/regras")
-def _redirect_post_precificacao_regras():
-    return _RR(url="/api/modulos/precificacao/regras", status_code=308)
-
-@_compat.get("/inadimplencia/alertas")
-def _redirect_get_inadimplencia_alertas():
-    return _RR(url="/api/modulos/inadimplencia/alertas", status_code=308)
-
-@_compat.post("/inadimplencia/varrer")
-def _redirect_post_inadimplencia_varrer():
-    return _RR(url="/api/modulos/inadimplencia/varrer", status_code=308)
-
-@_compat.patch("/inadimplencia/alertas/{alert_id}/resolver")
-def _redirect_patch_inadimplencia_alertas_alert_id_resolver(alert_id: str):
-    return _RR(url=f"/api/modulos/inadimplencia/alertas/{alert_id}/resolver", status_code=308)
-
-@_compat.get("/due-diligence/templates")
-def _redirect_get_due_diligence_templates():
-    return _RR(url="/api/modulos/due-diligence/templates", status_code=308)
-
-@_compat.post("/due-diligence/templates")
-def _redirect_post_due_diligence_templates():
-    return _RR(url="/api/modulos/due-diligence/templates", status_code=308)
-
-@_compat.get("/cofre/documentos/{document_id}/logs")
-def _redirect_get_cofre_documentos_document_id_logs(document_id: str):
-    return _RR(url=f"/api/modulos/cofre/documentos/{document_id}/logs", status_code=308)
-
-@_compat.post("/cofre/documentos/{document_id}/registrar-acesso")
-def _redirect_post_cofre_documentos_document_id_registrar_acesso(document_id: str):
-    return _RR(url=f"/api/modulos/cofre/documentos/{document_id}/registrar-acesso", status_code=308)
-
-@_compat.patch("/cofre/documentos/{document_id}/sensibilidade")
-def _redirect_patch_cofre_documentos_document_id_sensibilidade(document_id: str):
-    return _RR(url=f"/api/modulos/cofre/documentos/{document_id}/sensibilidade", status_code=308)
-
-@_compat.get("/cofre/relatorio")
-def _redirect_get_cofre_relatorio():
-    return _RR(url="/api/modulos/cofre/relatorio", status_code=308)

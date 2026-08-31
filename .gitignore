@@ -40,6 +40,12 @@ build/
 *.swo
 *.tmp
 
+# Sobras de merge/patch e backups de editor
+*.orig
+*.rej
+*.bak
+*~
+
 # OS generated
 .DS_Store
 Thumbs.db
@@ -51,6 +57,10 @@ htmlcov/
 .cache
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
+
+# Relatórios de lint gerados pelo CI — artefato, não fonte
+audit/quality/
 
 # Compressed files
 *.zip
@@ -98,3 +108,5 @@ backend/app/seeds/backups/
 /secrets/
 /backups/
 /data/
+# Cópia transitória do inventário (scripts/governanca/inventario-repo.sh)
+/var/

@@ -2,28 +2,36 @@ import { useEffect, useState } from "react";
 import { ArrowRight, Building2, FileSearch, ShieldCheck } from "lucide-react";
 import { Link } from "react-router";
 import { ErrorState, Spinner } from "../../components/UI";
+import ClienteNaoAcompanhado, {
+  isClienteForaDoPrograma,
+} from "./ClienteNaoAcompanhado";
 import { getDptCompanyProfile, type DptCompanyProfile } from "./api";
 
 export default function CompanyLegalTwin({ clientId }: { clientId: string }) {
   const [profile, setProfile] = useState<DptCompanyProfile | null>(null);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<"fora_do_programa" | "falha" | null>(null);
 
   useEffect(() => {
     let active = true;
-    setError(false);
+    setError(null);
     setProfile(null);
     void getDptCompanyProfile(clientId)
       .then((data) => {
         if (active) setProfile(data);
       })
-      .catch(() => {
-        if (active) setError(true);
+      .catch((err: unknown) => {
+        if (active)
+          setError(isClienteForaDoPrograma(err) ? "fora_do_programa" : "falha");
       });
     return () => {
       active = false;
     };
   }, [clientId]);
 
+  if (error === "fora_do_programa") {
+    // 404 é estado de negócio: cliente fora do programa DPT 360.
+    return <ClienteNaoAcompanhado clientId={clientId} />;
+  }
   if (error) {
     return (
       <ErrorState message="Não foi possível carregar o Perfil Jurídico Vivo desta empresa." />

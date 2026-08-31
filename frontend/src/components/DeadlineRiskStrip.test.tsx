@@ -341,7 +341,10 @@ describe("DeadlineRiskStrip — zero só quando é zero de verdade", () => {
     // fallback contava só os pendentes com data passada, então, sem a
     // agregação, exibia "0 vencido(s)" com três vencidos carregados na mão —
     // o Achado 7 reaparecendo dentro do caminho de degradação.
-    responder({ pendente: [PENDENTE], vencido: [VENCIDO, VENCIDO, VENCIDO] }, null);
+    responder(
+      { pendente: [PENDENTE], vencido: [VENCIDO, VENCIDO, VENCIDO] },
+      null,
+    );
     render(
       <MemoryRouter>
         <DeadlineRiskStrip />

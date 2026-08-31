@@ -115,15 +115,3 @@ async def verificar_conflito(
         user_id=cu.id,
         case_id=req.case_id,
     )
-
-
-# ── Compatibilidade P3 (20/08/2026): /casos/verificar-conflito ->
-#    /sumulas/verificar-conflito (redirect 308 permanente). ──────────────────
-from fastapi.responses import RedirectResponse
-_compat = APIRouter(prefix="/casos", tags=["Súmulas — Compatibilidade"])
-
-@_compat.post("/verificar-conflito")
-def _redirect_verificar_conflito():
-    return RedirectResponse(url="/api/sumulas/verificar-conflito", status_code=308)
-
-casos_router = casos_router  # noqa (compat) — ver casos_router acima
