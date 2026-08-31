@@ -45,10 +45,11 @@ steps:
   ops-contracts:
     image: python:3.11-bookworm
     commands:
-      - bash -n scripts/backup.sh scripts/backup/ativar_backup.sh scripts/deploy_vps_safe.sh scripts/deploy_workflow_transaction.sh scripts/tests/test_backup_wrapper.sh scripts/tests/test_deploy_rollback.sh
+      - bash -n scripts/backup.sh scripts/backup/ativar_backup.sh scripts/deploy_vps_safe.sh scripts/deploy_workflow_transaction.sh scripts/tests/test_backup_wrapper.sh scripts/tests/test_deploy_rollback.sh infra/host-automation/woodpecker-approved-sha.sh infra/host-automation/tests/test_gate.sh
       - python -m py_compile scripts/check_migration_compatibility.py
       - bash scripts/tests/test_backup_wrapper.sh
       - bash scripts/tests/test_deploy_rollback.sh
+      - bash infra/host-automation/tests/test_gate.sh
 
   security-sast:
     image: semgrep/semgrep
