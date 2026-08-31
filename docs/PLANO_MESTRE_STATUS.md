@@ -131,7 +131,7 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | AUD27-P3-8 | Padrão de `UPDATE` dinâmico via f-string com allowlist estática (seguro hoje, frágil a regressão) em 5+ routers | F5 | — | pendente | — | 2026-08-27 |
 | AUD27-P3-9 | `oab_number`/`djen_oab_numero` sem reconciliação (subitem aberto de V2-3.5) | F5 | — | pendente | — | 2026-08-27 |
 | AUD27-P3-10 | `DELETE /cases/{id}` não bloqueia/cascateia peças em status não-terminal | F5 | — | pendente | — | 2026-08-27 |
-| AUD27-P3-11 | Possível índice ausente em `deleted_at` nas tabelas espinha (`cases`/`documents`/`deadlines`/`clients`) — não confirmado por `EXPLAIN` | F5 | — | pendente | — | 2026-08-27 |
+| AUD27-P3-11 | MEDIDO e corrigido — a hipótese errou o remédio: índice em `deleted_at` não muda nada (401ms → 380ms em 1M de linhas; o filtro casa com 96% das linhas). O custo era a ORDENAÇÃO: índice PARCIAL `(created_at DESC) WHERE deleted_at IS NULL` leva a listagem a 0,30ms e faz o tempo parar de crescer com a tabela. Aplicado a `cases`/`clients`/`documents`; `deadlines` fica de fora, medida como já coberta por `ix_deadlines_data_prazo` | F5 | — | mesclado | migration 154 | 2026-08-31 |
 
 ## Placar por fase (derivado — não editar à mão, `status_check.sh` recalcula na saída)
 

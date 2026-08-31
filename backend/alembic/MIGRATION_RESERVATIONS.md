@@ -2,8 +2,8 @@
 
 Este arquivo é o ledger canônico de **reservas futuras** e do trecho recente da cadeia Alembic. O histórico detalhado de reservas antigas permanece preservado no Git.
 
-**Head canônico atual da `main`:** `153_legal_doc_client_id`
-**Próximo prefixo livre:** `154`
+**Head canônico atual da `main`:** `154_indices_listagem_espinha`
+**Próximo prefixo livre:** `155`
 Após o merge desta PR, o próximo prefixo livre continuará sendo `154`.
 
 > Nunca reutilize um número menor ou igual ao head atual, mesmo quando houver lacuna histórica. A ordem numérica precisa crescer junto com `down_revision`.
@@ -45,7 +45,8 @@ gh pr list --state open
 | `150_indices_fk_espinha_dominio` | `149_documents_sha256_integridade` | Mesclada | Índices da espinha do domínio. |
 | `151_case_status_anterior` | `150_indices_fk_espinha_dominio` | Mesclada | Histórico de status de caso. |
 | `152_thesis_candidate_tese_banco` | `151_case_status_anterior` | Mesclada | Ponte Matriz de Teses → Banco de Teses canônico. |
-| `153_legal_doc_client_id` | `152_thesis_candidate_tese_banco` | **Em PR — HEAD desta branch** | Isolamento estável cliente → peça avulsa, reconstruído a partir do #1231 sem reutilizar a antiga migration 147. |
+| `153_legal_doc_client_id` | `152_thesis_candidate_tese_banco` | Mesclada | Isolamento estável cliente → peça avulsa, reconstruído a partir do #1231 sem reutilizar a antiga migration 147. |
+| `154_indices_listagem_espinha` | `153_legal_doc_client_id` | **Em PR — HEAD desta branch** | Índices parciais de listagem em `cases`/`clients`/`documents` (AUD27-P3-11). `deadlines` fora de propósito: já coberta por `ix_deadlines_data_prazo`, medido. |
 
 ## Banco de Teses — decisão canônica
 
