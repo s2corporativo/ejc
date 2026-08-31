@@ -4,7 +4,7 @@ Este arquivo é o ledger canônico de **reservas futuras** e do trecho recente d
 
 **Head canônico atual da `main`:** `154_indices_listagem_espinha`
 **Próximo prefixo livre:** `155`
-Após o merge desta PR, o próximo prefixo livre continuará sendo `154`.
+Após o merge desta PR, o próximo prefixo livre será `155` — a `154` está aplicada e **não pode ser reutilizada**.
 
 > Nunca reutilize um número menor ou igual ao head atual, mesmo quando houver lacuna histórica. A ordem numérica precisa crescer junto com `down_revision`.
 

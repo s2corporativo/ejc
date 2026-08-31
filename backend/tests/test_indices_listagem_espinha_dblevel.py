@@ -86,3 +86,4 @@ def test_deadlines_nao_ganhou_indice_redundante(conn):
         "índice parcial redundante em deadlines: o simples já cobre a "
         "ordenação por data_prazo (medido em 1M de linhas)"
     )
+

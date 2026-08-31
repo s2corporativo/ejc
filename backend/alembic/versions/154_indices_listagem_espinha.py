@@ -22,15 +22,30 @@ em `created_at` obriga a ordenar a tabela inteira para devolver 20 linhas:
 
     índice PARCIAL (created_at DESC) WHERE deleted_at IS NULL .... 0,30 ms
 
-E o ganho não é uma constante, é uma mudança de forma: com o índice o tempo
-para de crescer com a tabela (0,16 ms com mil linhas, 0,18 ms com um milhão),
-porque a varredura para no vigésimo registro em vez de percorrer tudo.
+E o ganho não é uma constante, é uma mudança de forma: para ESTA CONSULTA o
+tempo deixa de crescer com a tabela (0,16 ms com mil linhas, 0,18 ms com um
+milhão), porque a varredura para no vigésimo registro em vez de percorrer tudo.
 
     linhas        hoje      com índice parcial
      1.000      1,31 ms          0,16 ms
     10.000     11,17 ms          0,24 ms
    100.000     61,05 ms          0,25 ms
  1.000.000    364,00 ms          0,18 ms
+
+O ENDPOINT, PORÉM, NÃO PARA DE CRESCER — e é honesto dizer onde este índice
+não chega. Antes da consulta paginada, os três handlers executam uma CONTAGEM
+exata sobre todo o conjunto vivo (`select(count()).select_from(q.subquery())`
+em cases.py, clients.py e documents.py). Essa contagem varre tudo por
+definição, e medi que o índice praticamente não a toca: 109,23 ms sem índice
+contra 99,00 ms com ele, no mesmo milhão de linhas. Ou seja: a listagem sai de
+364 ms para 0,18 ms, mas a resposta inteira continua limitada pelos ~100 ms da
+contagem, que seguem O(n).
+
+Isso NÃO é corrigível por índice, e não cabe aqui: as saídas são trocar o total
+exato por estimativa (`reltuples`), servir o total sob demanda, ou paginar por
+cursor — todas mudam o contrato da paginação e a UX, e são decisão do titular.
+Fica registrado como item próprio no plano mestre em vez de escondido atrás de
+um "corrigido" (achado do review do Codex no PR #1324).
 
 Cobre as TRÊS tabelas cuja listagem ordena por `created_at` sem índice nessa
 coluna. `deadlines`, citada no achado, fica DE FORA de propósito: ela ordena

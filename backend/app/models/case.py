@@ -78,6 +78,13 @@ class Case(Base):
     __table_args__ = (
         Index("uq_cases_numero_interno_active", "numero_interno", unique=True,
               postgresql_where=text("deleted_at IS NULL")),
+        # Índice PARCIAL da LISTAGEM (migration 154, AUD27-P3-11). Declarado
+        # aqui porque o autogenerate compara índices: sem esta linha ele emite
+        # DROP INDEX e uma migration futura desfaz a correção de desempenho em
+        # silêncio — nada quebra, só volta a ordenar a tabela inteira para
+        # devolver uma página (mesmo modo de falha do #11 em responsavel_id).
+        Index("ix_cases_listagem_ativa", text("created_at DESC"),
+              postgresql_where=text("deleted_at IS NULL")),
     )
 
     id        = Column(String(36), primary_key=True)

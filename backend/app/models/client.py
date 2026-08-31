@@ -48,6 +48,13 @@ class Client(Base):
               postgresql_where=text("cpf_hash IS NOT NULL AND deleted_at IS NULL")),
         Index("ux_clients_cnpj_hash", "cnpj_hash", unique=True,
               postgresql_where=text("cnpj_hash IS NOT NULL AND deleted_at IS NULL")),
+        # Índice PARCIAL da LISTAGEM (migration 154, AUD27-P3-11). Declarado
+        # aqui porque o autogenerate compara índices: sem esta linha ele emite
+        # DROP INDEX e uma migration futura desfaz a correção de desempenho em
+        # silêncio — nada quebra, só volta a ordenar a tabela inteira para
+        # devolver uma página (mesmo modo de falha do #11 em responsavel_id).
+        Index("ix_clients_listagem_ativa", text("created_at DESC"),
+              postgresql_where=text("deleted_at IS NULL")),
     )
 
     id             = Column(String(36), primary_key=True)

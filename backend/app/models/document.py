@@ -1,6 +1,6 @@
 # ── app/models/document.py ───────────────────────────────────────────────────
 from __future__ import annotations
-from sqlalchemy import Column, String, DateTime, Enum as SAEnum, func, Text, Integer, ForeignKey, Boolean
+from sqlalchemy import Column, String, DateTime, Enum as SAEnum, func, Text, Integer, ForeignKey, Boolean, Index, text
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 import enum
@@ -17,6 +17,16 @@ class DocConfidencialidade(str, enum.Enum):
 class Document(Base):
     """GED — documentos enviados (uploads). Cofre = confidencialidade >= restrito."""
     __tablename__ = "documents"
+
+    __table_args__ = (
+        # Índice PARCIAL da LISTAGEM (migration 154, AUD27-P3-11). Declarado
+        # aqui porque o autogenerate compara índices: sem esta linha ele emite
+        # DROP INDEX e uma migration futura desfaz a correção de desempenho em
+        # silêncio — nada quebra, só volta a ordenar a tabela inteira para
+        # devolver uma página (mesmo modo de falha do #11 em responsavel_id).
+        Index("ix_documents_listagem_ativa", text("created_at DESC"),
+              postgresql_where=text("deleted_at IS NULL")),
+    )
 
     id        = Column(String(36), primary_key=True)
     titulo    = Column(String(255), nullable=False)
