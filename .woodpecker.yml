@@ -52,9 +52,9 @@ steps:
       - bash infra/host-automation/tests/test_gate.sh
 
   security-sast:
-    image: semgrep/semgrep
+    image: semgrep/semgrep:1.172.0
     commands:
-      - semgrep scan --config=auto --error backend/app frontend/src
+      - semgrep scan --config=auto --error .
 
   security-vulnerabilities:
     image: aquasec/trivy:0.74.0
