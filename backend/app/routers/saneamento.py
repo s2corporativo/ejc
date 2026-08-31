@@ -240,6 +240,23 @@ async def aplicar_duplicata(
             ),
         )
 
+    # Hardening da auditoria de segurança: os ids gravados no plano (criados
+    # pela varredura, num momento anterior) precisam ainda pertencer ao
+    # conjunto de casos resolvido AGORA por numero_cnj — a autorização acima
+    # (_pode_agir_no_numero) só vale para ESSE conjunto. Hoje os dois sempre
+    # deveriam coincidir (mesmo critério de casamento em ambos os lados),
+    # mas nada no código reforçava isso; sem esta checagem, uma divergência
+    # de dados entre a varredura e a aplicação (ex.: caso reatribuído entre
+    # os dois momentos) fundiria um id fora do que foi autorizado.
+    ids_do_plano = {plano.id_interno_principal, *plano.ids_absorvidos}
+    ids_autorizados = {c.id for c in casos}
+    if not ids_do_plano.issubset(ids_autorizados):
+        raise HTTPException(
+            status_code=409,
+            detail="Plano desatualizado: os casos registrados não batem mais com os "
+                   "casos vinculados a este número CNJ. Rode a varredura de novo.",
+        )
+
     # UPDATE condicionado ao estado (aplicado=False) em vez de checar antes e
     # escrever depois: fecha a corrida entre duas requisições concorrentes
     # decidindo o mesmo plano (achado da auditoria de segurança) — rowcount
