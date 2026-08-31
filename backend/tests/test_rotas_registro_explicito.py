@@ -191,6 +191,18 @@ ADICOES_INTENCIONAIS = {
     # avulsas de admissão, sempre em rascunho e filtradas por client_id.
     ("/api/clients/{client_id}/gerar-documentos", "POST"),
     ("/api/clients/{client_id}/pecas-geradas", "GET"),
+    # Migration 154 / PROMPT 1: módulo de saneamento de base processual.
+    # Todas exigem RBAC (advogado_auxiliar+ para leitura, advogado+ para
+    # decidir/aplicar) — sinaliza, nunca decide sozinho.
+    ("/api/saneamento/excecoes", "GET"),
+    ("/api/saneamento/duplicatas", "GET"),
+    ("/api/saneamento/duplicatas/{plano_id}/aplicar", "POST"),
+    ("/api/saneamento/indicativos", "GET"),
+    ("/api/saneamento/indicativos/{indicativo_id}/decidir", "POST"),
+    ("/api/saneamento/divergencias", "GET"),
+    ("/api/saneamento/tpu/cobertura", "GET"),
+    # Issue #1319: produtor do módulo (varredura/ingestão) — admin+.
+    ("/api/saneamento/varredura", "POST"),
     # Pente fino E2E 30/08/2026 (§5.1): detalhe de documento por ID — a
     # releitura direta respondia 405 (só havia list/download/PATCH/DELETE).
     # Mesmo gate de autorização do download (_verificar_acesso_documento +

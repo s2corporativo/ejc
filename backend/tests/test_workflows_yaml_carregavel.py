@@ -37,10 +37,26 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+_DIR_WORKFLOWS = REPO_ROOT / ".github" / "workflows"
+
+# O GitHub Actions foi ARQUIVADO em 31/08 (commit `b77ff4c`): os workflows saíram
+# para `docs/arquivo/ci/github-actions-legacy/` e o Woodpecker virou o CI oficial.
+# O `.iterdir()` acima rodava no IMPORT do módulo, então a pasta ausente virava
+# FileNotFoundError na COLETA — e erro de coleta aborta a suíte inteira, não só
+# este arquivo. Era a `main` reprovando por um guarda cujo objeto o próprio
+# repositório removeu de propósito.
+#
+# Não aponto para a pasta arquivada: workflow arquivado não é executado pelo
+# GitHub, então "carrega ou não" deixou de ser uma pergunta com consequência.
+# O guarda fica DORMENTE, não deletado — se o Actions voltar, a pasta reaparece
+# e os três testes voltam a valer sozinhos, sem ninguém precisar lembrar.
 WORKFLOWS = sorted(
-    p
-    for p in (REPO_ROOT / ".github" / "workflows").iterdir()
-    if p.suffix in (".yml", ".yaml")
+    p for p in _DIR_WORKFLOWS.iterdir() if p.suffix in (".yml", ".yaml")
+) if _DIR_WORKFLOWS.is_dir() else []
+
+pytestmark = pytest.mark.skipif(
+    not _DIR_WORKFLOWS.is_dir(),
+    reason="GitHub Actions arquivado em 31/08 (b77ff4c); Woodpecker é o CI oficial",
 )
 
 # Uma linha `chave: valor` cujo valor NÃO começa por aspas, `|`, `>` ou `&`/`*`

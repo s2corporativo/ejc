@@ -1,7 +1,7 @@
 """Índices parciais para a listagem das tabelas espinha
 
-Revision ID: 154_indices_listagem_espinha
-Revises: 153_legal_doc_client_id
+Revision ID: 155_indices_listagem_espinha
+Revises: 154_saneamento_schema
 Create Date: 2026-08-31
 
 Fecha `AUD27-P3-11`, que estava aberto desde 27/08 esperando exatamente isto:
@@ -67,6 +67,11 @@ o registro excluído — que ninguém lista — não ocupa espaço.
 ADITIVA E REVERSÍVEL: só cria índice, não toca em dado nem em coluna. O
 `downgrade` remove os três.
 
+Renumerada de 154 para 155 ao mesclar a `main` em 2026-08-31: o #1318
+(saneamento de base processual) chegou primeiro e ocupou a 154. Mesma
+colisão que renumerou a migration 150 (era 148) — numeração de migration
+envelhece até dentro de PR aberto, e o head real é o do `alembic heads`.
+
 NOTA DE OPERAÇÃO: `CREATE INDEX` comum toma lock de escrita na tabela pelo
 tempo da construção. Nas tabelas do EJC hoje isso é instantâneo (volume de
 escritório pequeno), e é assim que as migrations 115 e 150 já criaram índice
@@ -77,8 +82,8 @@ formato conferível que o gate deste repositório exige.
 import sqlalchemy as sa
 from alembic import op
 
-revision = "154_indices_listagem_espinha"
-down_revision = "153_legal_doc_client_id"
+revision = "155_indices_listagem_espinha"
+down_revision = "154_saneamento_schema"
 branch_labels = None
 depends_on = None
 

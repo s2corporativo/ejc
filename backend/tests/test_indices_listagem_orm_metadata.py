@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Os índices da migration 154 estão declarados no METADATA do ORM.
+"""Os índices da migration 155 estão declarados no METADATA do ORM.
 
 Achado do review do Codex no PR #1324, comprovado ao vivo antes de corrigir:
 com os índices existindo só na migration, `alembic revision --autogenerate`
@@ -39,7 +39,7 @@ def _indices_declarados(tabela: str) -> dict:
 def test_indice_de_listagem_declarado_no_orm(tabela):
     esperado = _ESPERADO[tabela]
     assert esperado in _indices_declarados(tabela), (
-        f"{esperado} existe no banco (migration 154) mas NÃO está declarado no "
+        f"{esperado} existe no banco (migration 155) mas NÃO está declarado no "
         f"model de {tabela}: o próximo `alembic revision --autogenerate` vai "
         f"propor op.drop_index() e desfazer a correção de desempenho"
     )

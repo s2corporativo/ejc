@@ -48,7 +48,7 @@ class Client(Base):
               postgresql_where=text("cpf_hash IS NOT NULL AND deleted_at IS NULL")),
         Index("ux_clients_cnpj_hash", "cnpj_hash", unique=True,
               postgresql_where=text("cnpj_hash IS NOT NULL AND deleted_at IS NULL")),
-        # Índice PARCIAL da LISTAGEM (migration 154, AUD27-P3-11). Declarado
+        # Índice PARCIAL da LISTAGEM (migration 155, AUD27-P3-11). Declarado
         # aqui porque o autogenerate compara índices: sem esta linha ele emite
         # DROP INDEX e uma migration futura desfaz a correção de desempenho em
         # silêncio — nada quebra, só volta a ordenar a tabela inteira para
