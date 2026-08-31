@@ -1,10 +1,10 @@
-# CI oficial fora do GitHub Actions (Woodpecker self-hosted — infra/woodpecker/).
-# Replica o portão local obrigatório do CLAUDE.md; divergência entre os dois é
-# bug deste arquivo.
+# CI oficial self-hosted (Woodpecker — infra/woodpecker/). Não depende de GitHub Actions.
+# Replica os portões locais e adiciona SAST, vulnerabilidades e secret scanning.
 when:
   - event: push
     branch: main
   - event: pull_request
+  - event: manual
 
 services:
   db:
@@ -22,7 +22,6 @@ steps:
       DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@db:5432/ejc_db
       SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user:ejc_pass@db:5432/ejc_db
     commands:
-      # Deps nativas de OCR/PDF exigidas pela suíte (mesma lista do ci.yml).
       - apt-get update -qq
       - apt-get install -y -qq --no-install-recommends jq libmagic1 poppler-utils tesseract-ocr libpango-1.0-0 libpangocairo-1.0-0 libcairo2 postgresql-client
       - cd backend
@@ -41,3 +40,18 @@ steps:
       - npm run lint
       - npm test
       - npm run build
+
+  security-sast:
+    image: semgrep/semgrep
+    commands:
+      - semgrep scan --config=auto --error backend/app frontend/src
+
+  security-vulnerabilities:
+    image: aquasec/trivy:0.74.0
+    commands:
+      - trivy fs --scanners vuln,misconfig --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 .
+
+  security-secrets:
+    image: ghcr.io/gitleaks/gitleaks:v8.30.1
+    commands:
+      - gitleaks git . --redact --verbose --exit-code 1
