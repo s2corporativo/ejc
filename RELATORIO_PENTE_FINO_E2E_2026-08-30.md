@@ -200,3 +200,60 @@ sobrando). Mas o efeito colateral é que uma permissão acidental virou permiss�
 **deliberada e escrita**. Se a intenção do escritório for que estagiário **não**
 abra caso sozinho, é uma linha a remover — e aí precisa ser decisão do titular,
 não minha.
+
+## Adendo 5 (30/08) — review do CodeRabbit: probes apontando para rotas inexistentes
+
+O CodeRabbit marcou como risco de merge que "o passo de homologação do DataJud
+ainda pode passar com um 404 de rota, sem provar que o endpoint protegido foi
+exercitado". Fui conferir. **A parte apontada já estava corrigida** — o verdict
+veio marcado `up to dc04f`, e o commit `42719db` já tinha trocado o `expected`
+para `[200, 503]`, com a prova dizendo em letras que 404 reprova; o path também
+já era o canônico. Mas ao conferir o probe **vizinho** apareceu o defeito de
+verdade, e ele não era só do DataJud:
+
+| Passo | Path | O que acontecia |
+|---|---|---|
+| `H11/portal_nao_usa_datajud` | `/api/datajud/health` | Esperava 403 e **passava** — mas o 403 vinha do `AuthMiddleware` sobre um caminho que **não existe**. Não provava bloqueio de endpoint nenhum |
+| `H07/saude_ia_para_peca` | `/api/ia-saude/status` | Esperava `[200, 503]`; a rota devolve **404**. Só não reprovava porque a capacidade `ai` costuma estar desligada na rodada — probe morto e invisível |
+| `H10/ia_disponivel_para_conversao` | `/api/ia-saude/status` | Idem |
+
+Probe que passa sem exercitar endpoint é pior que probe ausente: dá impressão de
+cobertura que não existe. É a mesma classe que a Fase 1 já tinha corrigido no
+harness E2E (17 probes mortos com 404 aceito) — faltava fechar a porta.
+
+**Correções, verificadas ao vivo contra o app de pé:**
+
+```text
+portal GET /api/datajud/health                        -> 403   (rota inexistente)
+portal GET /api/datajud/process/00008323520188130024  -> 403   ← novo path do probe
+staff  GET /api/ia-saude/status                       -> 404   (rota inexistente)
+staff  GET /api/ai/core/status                        -> 200   ← novo path dos probes
+```
+
+O CNJ do probe do portal é literal de propósito: o gate barra antes de chamar o
+DataJud, então o passo não passa a depender da capacidade `datajud` para provar
+o bloqueio.
+
+**E o portão que faltava.** `validar_matriz()` checa estrutura e semântica
+(tipos, actors, `expected`, negativo obrigatório) mas nunca conferiu se o path
+corresponde a uma rota real — é essa lacuna que deixou os três passarem. O teste
+novo (`backend/tests/test_homologacao_paths_reais.py`) casa **todo** path da
+matriz contra a tabela de rotas do app, com guarda do próprio comparador para
+ele não virar permissivo demais e passar a aceitar justamente o que existe para
+pegar. Anti-vácuo confirmado: sem a correção da matriz, o teste nomeia os três
+órfãos.
+
+Portão: `ruff check app` limpo · `RUN_DB_TESTS=1 pytest` → **6662 passed,
+23 skipped, 0 failed** · `run_homologacao.py --validate` íntegro.
+
+Depois deste push o CodeRabbit reavaliou e baixou o risco de merge de
+🔵 *Low* para ⚪ **Minimal** — "no actionable merge-blocking risk remaining".
+
+### Estado do CI ao fechar
+
+O `ci/woodpecker` foi re-disparado a cada push e ficou **`pending` (enfileirado,
+nunca iniciado) por ~50 minutos** no pipeline 90. Não é vermelho: é o mesmo
+padrão de runner self-hosted degradado já diagnosticado — nenhum runner assume o
+job. Sem acesso ao `ci.depaulateixeira.adv.br` não há como re-disparar ou drenar
+a fila. A evidência local portão a portão deste relatório é o que substitui o
+verde do CI, como manda o `CLAUDE.md` enquanto a esteira estiver parada.
