@@ -88,17 +88,38 @@ async def test_consulta_exata_descarta_hit_errado(monkeypatch):
     numero = "00000010220208130000"
 
     async def fake_search(alias, payload, headers):
-        return {"hits": {"hits": [
-            {"_source": {"numeroProcesso": "99999999999999999999", "movimentos": []}},
-            {"_source": {
-                "numeroProcesso": numero,
-                "movimentos": [{"codigo": 26, "nome": "Distribuição", "dataHora": "2020-03-01"}],
-            }},
-        ]}}
+        return {
+            "hits": {
+                "hits": [
+                    {
+                        "_source": {
+                            "numeroProcesso": "99999999999999999999",
+                            "movimentos": [],
+                        }
+                    },
+                    {
+                        "_source": {
+                            "numeroProcesso": numero,
+                            "movimentos": [
+                                {
+                                    "codigo": 26,
+                                    "nome": "Distribuição",
+                                    "dataHora": "2020-03-01",
+                                }
+                            ],
+                        }
+                    },
+                ]
+            }
+        }
 
     monkeypatch.setattr(datajud_service, "_datajud_search", fake_search)
-    resultado = await _consultar_movimentos_exatos("0000001-02.2020.8.13.0000")
-    assert resultado == [{"data": "2020-03-01", "codigo": 26, "descricao": "Distribuição"}]
+    resultado = await _consultar_movimentos_exatos(
+        "0000001-02.2020.8.13.0000"
+    )
+    assert resultado == [
+        {"data": "2020-03-01", "codigo": 26, "descricao": "Distribuição"}
+    ]
 
 
 def test_startup_registra_rotas_e_bloqueia_prazo_automatico():
@@ -106,15 +127,47 @@ def test_startup_registra_rotas_e_bloqueia_prazo_automatico():
     from app.services import datajud_service
 
     paths = {getattr(route, "path", "") for route in app.routes}
-    assert any(path.endswith("/casos/{case_id}/andamentos/inteligencia") for path in paths)
+    assert any(
+        path.endswith("/casos/{case_id}/andamentos/inteligencia")
+        for path in paths
+    )
     # Saneamento 30/08/2026: o endereço antigo /casos/{case_id}/andamentos/
     # alimentar-ia (redirect 308) foi removido — o canônico é o registrado
     # explicitamente em app/main.py sob /datajud/intelligence.
     assert any(
-        path.endswith("/datajud/intelligence/{case_id}/andamentos/alimentar-ia")
+        path.endswith(
+            "/datajud/intelligence/{case_id}/andamentos/alimentar-ia"
+        )
         for path in paths
     )
     assert datajud_service._detectar_prazos_criticos(
         "Intimação para manifestação",
         datetime(2026, 7, 18, tzinfo=timezone.utc),
     ) == []
+
+
+@pytest.mark.asyncio
+async def test_startup_bloqueia_tambem_criador_e_sync_de_prazos():
+    """Anti-vácuo #1336: não basta o detector retornar []; os dois caminhos de
+    escrita precisam estar explicitamente bloqueados no runtime.
+    """
+    from app.main import app  # noqa: F401 — força instalação dos subscribers
+    from app.services import datajud_service
+
+    # O criador legado vira no-op, mesmo se for chamado diretamente por código
+    # que contorne o detector.
+    assert await datajud_service._criar_deadline_automatico(
+        None,
+        None,
+        {"titulo": "x", "data_prazo": "2026-09-10"},
+        "movimento",
+    ) is None
+
+    resultado = await datajud_service.sincronizar_prazos_datajud(
+        "caso-1",
+        "0000001-02.2020.8.13.0000",
+        None,
+    )
+    assert resultado["criados"] == 0
+    assert resultado["bloqueado"] is True
+    assert resultado["motivo"] == "revisao_humana_obrigatoria_ate_motor_auditavel"
