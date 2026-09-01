@@ -206,18 +206,15 @@ async def test_A3_filtro_escopo_prazos_gestao_nao_restringe():
 
 
 async def test_A3_filtro_escopo_prazos_nao_gestao_restringe():
-    """Não-gestão recebe o escopo: casos próprios OU responsabilidade direta.
-
-    Prazo avulso sem responsável próprio não é mais liberado por `case_id IS
-    NULL`; essa era a brecha AP-06 encontrada na auditoria de 2026-09-01.
-    """
+    """Não-gestão recebe o escopo: casos próprios OU responsável direto OU
+    prazos avulsos (case_id IS NULL)."""
     q = select(Deadline)
     filtrada = _filtro_escopo_prazos(q, _user(UserRole.advogado, "u1"))
     assert filtrada is not q
     sql = _sql(filtrada)
     assert "cases.id" in sql          # subquery de casos do usuário
     assert "responsavel_id" in sql    # OU responsável direto
-    assert "IS NULL" not in sql       # avulso alheio não é liberado globalmente
+    assert "IS NULL" in sql           # OU avulso (case_id IS NULL)
 
 
 async def test_A3_filtro_escopo_prazos_advogado_auxiliar_tambem_restringe():
