@@ -127,20 +127,44 @@ def test_ejc_skills_uso_encadeia_apos_publicacao_explicita():
 
 
 def test_preliminares_encadeiam_apos_consolidacao_fontes():
-    revisao_139 = _script_directory().get_revision("139_dpt360_ciclo_vida_lgpd")
-    assert revisao_139.down_revision == "138_consolida_fontes_ingestao"
-    revisao_140 = _script_directory().get_revision("140_preliminares_fundacao_schema")
-    assert revisao_140.down_revision == "139_dpt360_ciclo_vida_lgpd"
-    revisao_141 = _script_directory().get_revision("141_dpt360_diagnostico")
-    assert revisao_141.down_revision == "140_preliminares_fundacao_schema"
-    revisao_142 = _script_directory().get_revision("142_document_hash_rescan")
-    assert revisao_142.down_revision == "141_dpt360_diagnostico"
-    revisao_143 = _script_directory().get_revision(
+    script = _script_directory()
+    assert script.get_revision("139_dpt360_ciclo_vida_lgpd").down_revision == (
+        "138_consolida_fontes_ingestao"
+    )
+    assert script.get_revision("140_preliminares_fundacao_schema").down_revision == (
+        "139_dpt360_ciclo_vida_lgpd"
+    )
+    assert script.get_revision("141_dpt360_diagnostico").down_revision == (
+        "140_preliminares_fundacao_schema"
+    )
+    assert script.get_revision("142_document_hash_rescan").down_revision == (
+        "141_dpt360_diagnostico"
+    )
+    assert script.get_revision("143_signature_documento_visualizado").down_revision == (
+        "142_document_hash_rescan"
+    )
+    assert script.get_revision("144_alembic_version_varchar128").down_revision == (
         "143_signature_documento_visualizado"
     )
-    assert revisao_143.down_revision == "142_document_hash_rescan"
-    revisao_144 = _script_directory().get_revision("144_alembic_version_varchar128")
-    assert revisao_144.down_revision == "143_signature_documento_visualizado"
-    revisao_145 = _script_directory().get_revision("145_drop_orphan_db_only_columns")
-    assert revisao_145.down_revision == "144_alembic_version_varchar128"
-    assert _script_directory().get_heads() == [HEAD_REVISION]
+    assert script.get_revision("145_drop_orphan_db_only_columns").down_revision == (
+        "144_alembic_version_varchar128"
+    )
+
+
+def test_cadeia_recente_145_ate_156_e_linear_e_sem_reuso_148():
+    script = _script_directory()
+    pares = {
+        "146_case_sigilo_reforcado": "145_drop_orphan_db_only_columns",
+        "147_pendencia_impacto_providencia": "146_case_sigilo_reforcado",
+        "149_documents_sha256_integridade": "147_pendencia_impacto_providencia",
+        "150_indices_fk_espinha_dominio": "149_documents_sha256_integridade",
+        "151_case_status_anterior": "150_indices_fk_espinha_dominio",
+        "152_thesis_candidate_tese_banco": "151_case_status_anterior",
+        "153_legal_doc_client_id": "152_thesis_candidate_tese_banco",
+        "154_saneamento_schema": "153_legal_doc_client_id",
+        "155_indices_listagem_espinha": "154_saneamento_schema",
+        "156_prazos_auditaveis_regime": "155_indices_listagem_espinha",
+    }
+    for revision_id, parent in pares.items():
+        assert script.get_revision(revision_id).down_revision == parent
+    assert script.get_heads() == [HEAD_REVISION]
