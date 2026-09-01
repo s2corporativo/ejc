@@ -61,13 +61,25 @@ def _install_ai_core_hardening() -> None:
 
 
 def _install_datajud_cognitive_feed() -> None:
-    """Ativa DataJud → RAG nativo sem tornar o conector requisito de boot."""
+    """Ativa DataJud → RAG e a barreira crítica contra prazo automático.
+
+    O feed em si poderia degradar sem derrubar a aplicação, mas desde #1336 o
+    mesmo instalador contém o fail-safe que impede movimentos DataJud de
+    materializarem prazo sem publicação/termo inicial/regime confirmados. Se o
+    instalador falhar, iniciar o backend reativaria silenciosamente o caminho
+    legado perigoso; por isso a falha de instalação agora bloqueia o boot.
+    """
     try:
         from app.services.datajud_cognitive_patch import instalar
 
         instalar()
     except Exception as exc:
-        logger.error("Feed cognitivo DataJud indisponível: %s", exc, exc_info=True)
+        logger.critical(
+            "Barreira crítica DataJud/Prazos não pôde ser instalada: %s",
+            exc,
+            exc_info=True,
+        )
+        raise RuntimeError("Barreira crítica DataJud/Prazos indisponível") from exc
 
 
 # Routers são registrados explicitamente em app/main.py. Aqui permanecem apenas
