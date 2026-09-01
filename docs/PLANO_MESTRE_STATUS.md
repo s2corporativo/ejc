@@ -52,7 +52,7 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | V2-2.4 | Consolidar aprovação da peça em um único ato | F1 | — | mesclado | #1153 | 2026-08-18 |
 | V2-3.1 | Monitorar resultado, não apenas execução — já generalizado (`ingestao_saude.py`, não só DOU/DJEN) | F3 | — | mesclado | #1015 | 2026-08-14 |
 | V2-3.2 | Falso-ausente (2026-08-24) — já resolvido: `ingestao_saude.py` classifica `nunca_produziu`/`parou_de_produzir` por RESULTADO (não confia no `status="sucesso"` do job), `executar_ingestao`/`conhecimento_ingest` garantem `ultimo_erro` nunca vazio (caso `anpd` citado no próprio código), slugs duplicados `juris_import_*` consolidados (migration 138); 27 testes passam | F3 | — | mesclado | #1015 | 2026-08-14 |
-| V2-3.3 | Exclusão de caso não cascateia | F5 | — | pendente | — | — |
+| V2-3.3 | CORRIGIDO — mesmo defeito que `AUD27-P3-10`, registrado em duplicidade sob dois IDs. Fechado pela mesma cascata de soft-delete | F5 | — | mesclado | #1316 | 2026-08-31 |
 | V2-3.4 | Vínculos ausentes entre registros relacionados | F5 | — | pendente | — | — |
 | V2-3.5 | Padrão de gravação não transacional (agregado do Caso) | F5 | — | pendente | — | — |
 | V2-3.6 | Conversão Sala Jurídica → Caso perde `descricao_fatos` | F5 | — | pendente | — | — |
@@ -98,8 +98,8 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | CORTE-5 | Cortar módulo sociedade / retiradas de sócio | F5 | — | pendente | — | — |
 | CORTE-6 | Arquivar skills de IA sem uso registrado em log | F5 | — | pendente | — | — |
 | CORTE-7 | Desmontar `UI.tsx` (1437 linhas) em `components/ui/*` + consolidar 8 CSS globais | F5 | — | pendente | — | — |
-| AUD27-P0-1 | Kill-switch `AI_ENABLED` não protege os endpoints oficiais do Núcleo Único (`/ai/core/*`) `[CRÍTICO]` | F1 | — | pendente | — | 2026-08-27 |
-| AUD27-P1-1 | `POST /cases/` usa RBAC hierárquico antigo (não `require_roles_exact`) — mesma classe de bug do #694, não migrada por `#1305`/`4ab8618` | F1 | — | pendente | — | 2026-08-27 |
+| AUD27-P0-1 | CORRIGIDO — `_requisitos()`, a fonte única de elegibilidade, checava as flags por provedor e a de externos mas **nunca `AI_ENABLED`**: com Ollama ligado, `/ai/core/*` gerava com a IA "desligada". O kill-switch global virou requisito de todo provedor; cadeia vazia falha antes de tocar rede, e `motivo_inelegivel` distingue kill-switch de chave ausente `[era CRÍTICO]` | F1 | — | mesclado | #1316 | 2026-08-31 |
+| AUD27-P1-1 | CORRIGIDO — reproduzido: `POST /cases/` como `financeiro` devolvia 404 do handler, não 403; o gate deixava entrar e quem barrava era o sigilo do cliente. Migrado para `require_roles_exact` com allowlist exata (equipe jurídica + secretaria). Ver nota sobre `estagiario` abaixo da tabela | F1 | — | mesclado | #1316 | 2026-08-31 |
 | AUD27-P1-2 | `ai_skills.py` (609 linhas, OCR/transcrição/skills) sem nenhum teste | F3 | — | pendente | — | 2026-08-27 |
 | AUD27-P1-3 | Indexação do RAG sem teto de lote no encode — 10,1 GB de anon-rss medidos, disparou OOM-killer global na VPS em 27/08 `[INCIDENTE]` | F1 | #1308 | em-prod | #1309 | 2026-08-27 |
 | AUD27-P1-4 | Containers do EJC sem `mem_limit` num host com 6 sistemas — um trabalho do EJC reiniciou o `verdelimp-erp` em 27/08 `[INCIDENTE]` | F1 | #1308 | em-prod | #1309 | 2026-08-27 |
@@ -111,8 +111,8 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | AUD27-P3-12 | `ingestors/djen.py:234` loga número CNJ de processo de terceiro em INFO a cada descarte; volume dobra com a 2ª OAB — avaliar DEBUG ou contagem por OAB (security-auditor B5, não bloqueante) | F5 | #1310 | pendente | — | 2026-08-27 |
 | AUD27-P3-13 | Sem varredura de segredo no caminho de commit (`.githooks/` só tem `pre-push`) nem push protection confirmada no GitHub — `.gitignore` é barreira, não fronteira (security-auditor B6/C4) | F5 | #1310 | pendente | — | 2026-08-27 |
 | AUD27-P2-9 | Checkout de produção (`d40d0083`, 24/08) diverge do container em execução (`eb65e63e`, 14/08) — deploy interrompido no meio deixou disco e runtime dessincronizados | F5 | #1310 | pendente | — | 2026-08-27 |
-| AUD27-P2-1 | `/ia-governanca/guardrails` conta peças de casos excluídos (reincidência pontual de V2-3.3) | F1 | — | pendente | — | 2026-08-27 |
-| AUD27-P2-2 | `qualidade.py` (verificar-citações/consistência/simular-adversário) com piso RBAC hierárquico sem intenção documentada | F1 | — | pendente | — | 2026-08-27 |
+| AUD27-P2-1 | CORRIGIDO — os contadores filtravam só o `deleted_at` da própria peça, nunca o do caso pai. `_peca_de_caso_vivo()` nos guardrails E no `/dashboard` (dois painéis do mesmo controle HITL com filtros diferentes dariam duas verdades). Peça avulsa segue contando | F1 | — | mesclado | #1316 | 2026-08-31 |
+| AUD27-P2-2 | CORRIGIDO — reproduzido: `/qualidade/*` como `financeiro` devolvia 422 (corpo lido), não 403 — passava do gate. `require_roles_exact(EQUIPE_JURIDICA)` nos 3 endpoints | F1 | — | mesclado | #1316 | 2026-08-31 |
 | AUD27-P2-3 | `cerebro.py` sem teste funcional (só existência de rota no snapshot OpenAPI) | F3 | — | pendente | — | 2026-08-27 |
 | AUD27-P2-4 | Sentry (`SENTRY_DSN`) ativado em produção pelo titular em 27/08 14:32; log confirma `Sentry inicializado (environment=production)` — resta só conferência pós-deploy | F5 | — | mesclado | #1309 | 2026-08-27 |
 | AUD27-P2-5 | `AREAS_FALLBACK` do frontend com 24 áreas, faltando `licitacoes` (enum backend tem 25) | F5 | — | pendente | — | 2026-08-27 |
@@ -130,8 +130,47 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | AUD27-P3-7 | Referências de migration desatualizadas em CL-A2 (diz 149, real 152) e CL-B3 (diz 148, real 151) | F2 | — | pendente | — | 2026-08-27 |
 | AUD27-P3-8 | Padrão de `UPDATE` dinâmico via f-string com allowlist estática (seguro hoje, frágil a regressão) em 5+ routers | F5 | — | pendente | — | 2026-08-27 |
 | AUD27-P3-9 | `oab_number`/`djen_oab_numero` sem reconciliação (subitem aberto de V2-3.5) | F5 | — | pendente | — | 2026-08-27 |
-| AUD27-P3-10 | `DELETE /cases/{id}` não bloqueia/cascateia peças em status não-terminal | F5 | — | pendente | — | 2026-08-27 |
-| AUD27-P3-11 | Possível índice ausente em `deleted_at` nas tabelas espinha (`cases`/`documents`/`deadlines`/`clients`) — não confirmado por `EXPLAIN` | F5 | — | pendente | — | 2026-08-27 |
+| AUD27-P3-10 | CORRIGIDO — provado no banco: caso excluído com peça em rascunho de `deleted_at` nulo, órfã viva. Exclusão passa a cascatear o soft-delete às peças não protocoladas, com os IDs na trilha; a protocolada segue bloqueando a exclusão com 422 | F5 | — | mesclado | #1316 | 2026-08-31 |
+| AUD27-P3-11 | MEDIDO e corrigido **quanto à ordenação** — a hipótese errou o remédio: índice em `deleted_at` não muda nada (401ms → 380ms em 1M de linhas; o filtro casa com 96% das linhas). O custo era a ORDENAÇÃO: índice PARCIAL `(created_at DESC) WHERE deleted_at IS NULL` leva a listagem a 0,30ms e faz o tempo parar de crescer com a tabela. Aplicado a `cases`/`clients`/`documents`; `deadlines` fica de fora, medida como já coberta por `ix_deadlines_data_prazo`. A CONTAGEM do endpoint segue O(n) — resíduo em AUD27-P3-15 | F5 | — | mesclado | migration 155 | 2026-08-31 |
+| AUD27-P3-15 | Listagens de `cases`/`clients`/`documents` fazem contagem EXATA sobre todo o conjunto vivo antes de paginar (`select(count()).select_from(q.subquery())`) — O(n) por definição, e medido como praticamente imune ao índice parcial da 155 (109,23 ms → 99,00 ms em 1M de linhas). Com a ordenação resolvida, é o que sobra limitando a resposta. Saídas: total estimado por `reltuples`, total sob demanda, ou paginação por cursor — todas mudam contrato de paginação/UX, logo decisão do titular | F5 | — | pendente | — | 2026-08-31 |
+
+## Notas dos itens fechados em 31/08 (PR #1316)
+
+### `AUD27-P1-1` — ponto de decisão do titular, ainda aberto
+
+A allowlist exata de `POST /cases/` (`_PODE_CRIAR_CASO`) lista **`estagiario`
+explicitamente**. Ele nunca esteve na lista original do M16: criava caso por
+**acidente da hierarquia** — o piso da lista antiga era `secretaria` (nível 2) e o
+estagiário está acima. Ao migrar para allowlist exata, a escolha foi **preservar o
+acesso de quem hoje o exerce**, porque tirar permissão em uso é quebra de contrato e o
+achado era `financeiro` entrando, não estagiário sobrando.
+
+O efeito colateral é que uma permissão acidental virou permissão **deliberada e
+escrita**. Se a intenção do escritório for que estagiário não abra caso sozinho, é uma
+linha a remover — decisão do titular, não do implementador.
+
+### Itens que já estavam corrigidos — status obsoleto, não código
+
+Verificados empiricamente em 30-31/08, **sem alterar uma linha**. Ficam aqui para
+ninguém refazer o trabalho; o flip de status cabe a quem os corrigiu, não a mim:
+
+- **IDOR de agenda (3 residuais de 18/07)** — a listagem já escopa evento pessoal ao
+  criador/responsável (secretaria não vê o do advogado); atribuir `responsavel_id` de
+  terceiro já devolve 403; `protocolo_comprovante_doc_id` já valida existência, exclusão
+  e pertencimento ao caso. Os testes que o relatório dava como ausentes **também já
+  existem** (`test_agenda_eventos_gates_dblevel`, `test_legal_doc_protocolo`).
+- **`AUD27-P1-8`** `[RISCO DE PRAZO]` — provado ao vivo que **não** há falha silenciosa:
+  com 0 OABs elegíveis, o "ok" nominal do job vira `erro` no heartbeat, com
+  `{"erros":{"nenhuma_oab_configurada":1}}` visível no diagnóstico (corrigido por #1310).
+
+### Por que seis itens ficaram com status obsoleto por um dia
+
+Os seis acima foram corrigidos e mesclados pelo #1316 em 31/08, mas seguiram marcados
+`pendente` até serem virados neste PR. A causa foi um raciocínio mal aplicado: a regra
+"o flip de status é da PR que corrige o item" vale para itens que **outra** PR
+corrigiu — e foi estendida indevidamente aos que a própria #1316 corrigia. É a mesma
+armadilha de status obsoleto que esta auditoria gastou tempo desfazendo: metade dos
+itens que ela encontrou como "pendentes" já estava resolvida.
 
 ## Placar por fase (derivado — não editar à mão, `status_check.sh` recalcula na saída)
 
