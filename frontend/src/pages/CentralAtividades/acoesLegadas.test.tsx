@@ -86,10 +86,10 @@ describe("PrazoSugeridoModal", () => {
     });
   });
 
-  it("permite cadastrar vencimento manual somente após conferência humana", async () => {
+  it("só aceita DJEN após informar os quatro marcos e regime", async () => {
     const onClose = vi.fn();
     const onResolvido = vi.fn();
-    const { container } = render(
+    render(
       <PrazoSugeridoModal
         sugestao={{
           id: "com-1",
@@ -112,18 +112,34 @@ describe("PrazoSugeridoModal", () => {
     }) as HTMLButtonElement;
     expect(aceitar.disabled).toBe(true);
 
-    const data = container.querySelector('input[type="date"]') as HTMLInputElement;
-    fireEvent.change(data, { target: { value: "2026-09-22" } });
+    fireEvent.change(screen.getByLabelText("Data de publicação"), {
+      target: { value: "2026-09-02" },
+    });
+    fireEvent.change(screen.getByLabelText("Termo inicial"), {
+      target: { value: "2026-09-03" },
+    });
+    fireEvent.change(screen.getByLabelText("Regime processual"), {
+      target: { value: "civel" },
+    });
+    fireEvent.change(screen.getByLabelText("Vencimento final"), {
+      target: { value: "2026-09-22" },
+    });
     expect(aceitar.disabled).toBe(true);
 
-    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByLabelText("Confirmei a fonte oficial"));
     expect(aceitar.disabled).toBe(false);
     fireEvent.click(aceitar);
 
     await waitFor(() =>
       expect(post).toHaveBeenCalledWith(
         "/intimacoes/com-1/aceitar-prazo",
-        { data_prazo: "2026-09-22" },
+        {
+          data_publicacao: "2026-09-02",
+          termo_inicial: "2026-09-03",
+          regime_calculo: "civel",
+          data_prazo: "2026-09-22",
+          confirmacao_fonte_oficial: true,
+        },
       ),
     );
     await waitFor(() => expect(onResolvido).toHaveBeenCalledTimes(1));
@@ -151,5 +167,43 @@ describe("PrazoSugeridoModal", () => {
       name: "Cadastrar prazo revisado",
     }) as HTMLButtonElement;
     expect(aceitar.disabled).toBe(true);
+  });
+
+  it("não envia quando a cronologia dos marcos é inválida", async () => {
+    render(
+      <PrazoSugeridoModal
+        sugestao={{
+          id: "com-crono",
+          titulo: "Intimação cronologia",
+          dados: {
+            disponivel: false,
+            case_id: "case-1",
+            data_disponibilizacao: "2026-09-05",
+            prazo_sugerido_status: "nenhum",
+          },
+        }}
+        onClose={vi.fn()}
+        onResolvido={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Data de publicação"), {
+      target: { value: "2026-09-04" },
+    });
+    fireEvent.change(screen.getByLabelText("Termo inicial"), {
+      target: { value: "2026-09-06" },
+    });
+    fireEvent.change(screen.getByLabelText("Regime processual"), {
+      target: { value: "civel" },
+    });
+    fireEvent.change(screen.getByLabelText("Vencimento final"), {
+      target: { value: "2026-09-20" },
+    });
+    fireEvent.click(screen.getByLabelText("Confirmei a fonte oficial"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cadastrar prazo revisado" }),
+    );
+
+    await waitFor(() => expect(post).not.toHaveBeenCalled());
   });
 });
