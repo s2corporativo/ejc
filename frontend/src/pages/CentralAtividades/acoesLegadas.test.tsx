@@ -109,15 +109,15 @@ describe("PrazoSugeridoModal", () => {
 
     const aceitar = screen.getByRole("button", {
       name: "Cadastrar prazo revisado",
-    });
-    expect(aceitar).toBeDisabled();
+    }) as HTMLButtonElement;
+    expect(aceitar.disabled).toBe(true);
 
     const data = container.querySelector('input[type="date"]') as HTMLInputElement;
     fireEvent.change(data, { target: { value: "2026-09-22" } });
-    expect(aceitar).toBeDisabled();
+    expect(aceitar.disabled).toBe(true);
 
     fireEvent.click(screen.getByRole("checkbox"));
-    expect(aceitar).not.toBeDisabled();
+    expect(aceitar.disabled).toBe(false);
     fireEvent.click(aceitar);
 
     await waitFor(() =>
@@ -147,8 +147,9 @@ describe("PrazoSugeridoModal", () => {
       />,
     );
     expect(screen.getByText(/ainda não está vinculada a um caso/i)).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Cadastrar prazo revisado" }),
-    ).toBeDisabled();
+    const aceitar = screen.getByRole("button", {
+      name: "Cadastrar prazo revisado",
+    }) as HTMLButtonElement;
+    expect(aceitar.disabled).toBe(true);
   });
 });
