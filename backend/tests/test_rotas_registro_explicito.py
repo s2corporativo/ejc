@@ -208,6 +208,12 @@ ADICOES_INTENCIONAIS = {
     # Mesmo gate de autorização do download (_verificar_acesso_documento +
     # cofre); devolve o shape do item da listagem, sem paths de storage.
     ("/api/documents/{doc_id}", "GET"),
+    # Issue #809: despesas processuais do caso, separadas de office_expenses.
+    # Quatro contratos explícitos; ownership/auditoria ficam no router.
+    ("/api/despesas-processuais/casos/{case_id}", "GET"),
+    ("/api/despesas-processuais/", "POST"),
+    ("/api/despesas-processuais/caso/{case_id}/faturar", "POST"),
+    ("/api/despesas-processuais/{entry_id}", "DELETE"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
@@ -352,24 +358,23 @@ ADICOES_INTENCIONAIS |= {
 }
 # PR #1218 (P3 — 20/08/2026): prefixos canônicos nos 6 routers
 ADICOES_INTENCIONAIS |= {
-    ("/api/datajud/intelligence/reconstruir-lote", "POST"),  # PR #1218 (P3): rota canônica pós-prefixo
-    ("/api/datajud/intelligence/{case_id}/andamentos/alimentar-ia", "POST"),  # PR #1218 (P3): rota canônica pós-prefixo
-    ("/api/kanban/columns", "GET"),  # PR #1218 (P3): rota canônica pós-prefixo
-    ("/api/modulos/cofre/documentos/{document_id}/logs", "GET"),  # PR #1218 (P3): rota canônica pós-prefixo
-    ("/api/modulos/cofre/documentos/{document_id}/registrar-acesso", "POST"),  # PR #1218 (P3): rota canônica pós-prefixo
-    ("/api/modulos/cofre/documentos/{document_id}/sensibilidade", "PATCH"),  # PR #1218 (P3): rota canônica pós-prefixo
-    ("/api/modulos/cofre/relatorio", "GET"),  # PR #1218 (P3): rota canônica pós-prefixo
-    ("/api/modulos/due-diligence/templates", "GET"),  # PR #1218 (P3): rota canônica pós-prefixo
-    ("/api/modulos/due-diligence/templates", "POST"),  # PR #1218 (P3): rota canônica pós-prefixo
-    ("/api/modulos/inadimplencia/alertas", "GET"),  # PR #1218 (P3): rota canônica pós-prefixo
-    ("/api/modulos/inadimplencia/alertas/{alert_id}/resolver", "PATCH"),  # PR #1218 (P3): rota canônica pós-prefixo
-    ("/api/modulos/inadimplencia/varrer", "POST"),  # PR #1218 (P3): rota canônica pós-prefixo
-    ("/api/modulos/precificacao/calcular/{rule_id}", "GET"),  # PR #1218 (P3): rota canônica pós-prefixo
-    ("/api/modulos/precificacao/regras", "POST"),  # PR #1218 (P3): rota canônica pós-prefixo
-    ("/api/modulos/precificacao/tabela", "GET"),  # PR #1218 (P3): rota canônica pós-prefixo
-    ("/api/sumulas/verificar-conflito", "POST"),  # PR #1218 (P3): rota canônica pós-prefixo
+    ("/api/datajud/intelligence/reconstruir-lote", "POST"),
+    ("/api/datajud/intelligence/{case_id}/andamentos/alimentar-ia", "POST"),
+    ("/api/kanban/columns", "GET"),
+    ("/api/modulos/cofre/documentos/{document_id}/logs", "GET"),
+    ("/api/modulos/cofre/documentos/{document_id}/registrar-acesso", "POST"),
+    ("/api/modulos/cofre/documentos/{document_id}/sensibilidade", "PATCH"),
+    ("/api/modulos/cofre/relatorio", "GET"),
+    ("/api/modulos/due-diligence/templates", "GET"),
+    ("/api/modulos/due-diligence/templates", "POST"),
+    ("/api/modulos/inadimplencia/alertas", "GET"),
+    ("/api/modulos/inadimplencia/alertas/{alert_id}/resolver", "PATCH"),
+    ("/api/modulos/inadimplencia/varrer", "POST"),
+    ("/api/modulos/precificacao/calcular/{rule_id}", "GET"),
+    ("/api/modulos/precificacao/regras", "POST"),
+    ("/api/modulos/precificacao/tabela", "GET"),
+    ("/api/sumulas/verificar-conflito", "POST"),
 }
-
 
 
 def test_paridade_openapi_com_snapshot_anterior():
@@ -399,18 +404,7 @@ def test_paridade_openapi_com_snapshot_anterior():
     # deps não é hashável. Divergência diferente da declarada continua
     # reprovando.
     AUTH_ALTERACOES_INTENCIONAIS = (
-        # Homologação M20 (16/08/2026): correção crítica — o endpoint
-        # substituto _listar_docs_escopado (GET /api/rag/docs) perdia os
-        # Depends de db e cu na substituição por side effect, derrubando a
-        # listagem com 500. Declarou get_db/get_current_user no topo:
-        # a rota deixa de ser anônima e passa a exigir autenticação com
-        # escopo de ownership (gestão vê tudo; demais usuários veem público,
-        # do próprio cliente e de casos sem atribuição ou nos quais atuam).
-        # Decisão deliberada, não achado — a listagem expunha títulos de
-        # documentos internos de qualquer caso.
         (("/api/rag/docs", "GET"), ["HTTPBearer", "get_current_user", "get_db"]),
-        # PR cliente-documento 153: dependência transversal de escopo por
-        # client_id; a consulta usa 404 anti-enumeração e não amplia o acesso.
         (("/api/legal-docs/", "GET"), ["HTTPBearer", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),
         (("/api/legal-docs/", "POST"), ["HTTPBearer", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),
         (("/api/legal-docs/{doc_id}", "DELETE"), ["HTTPBearer", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),
@@ -425,41 +419,18 @@ def test_paridade_openapi_com_snapshot_anterior():
         (("/api/legal-docs/{doc_id}/revisar", "POST"), ["HTTPBearer", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),
         (("/api/legal-docs/{doc_id}/validacao", "GET"), ["HTTPBearer", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),
         (("/api/legal-docs/{doc_id}/validar", "POST"), ["HTTPBearer", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),
-        # Auditoria de segurança de IA (18/08): 12 endpoints que chamam
-        # provedor de IA (custo real por chamada) não tinham @rate_limit —
-        # o único determinístico sem LLM da vizinhança (/citacoes/verificar)
-        # tinha. `_dep` é o fechamento devolvido por rate_limit(); entra como
-        # sub-dependency ANTES de get_current_user na ordem de extração porque
-        # está em `dependencies=` do decorator, não na assinatura do handler.
-        (("/api/ai/analisar-caso", "POST"),
-         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
-        (("/api/ai/resumir-documento", "POST"),
-         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
-        (("/api/ai/teses-ocultas", "POST"),
-         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
-        (("/api/ai/auditar-peca", "POST"),
-         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
-        (("/api/ai/preparar-audiencia", "POST"),
-         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
-        (("/api/ai/casos/{case_id}/assistente", "POST"),
-         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
-        (("/api/ai/casos/{case_id}/dual", "POST"),
-         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
-        (("/api/ai/caso/{case_id}/visual-law", "POST"),
-         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
-        (("/api/ai/caso/{case_id}/estrategia", "POST"),
-         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
-        (("/api/ai/analisar-contrato", "POST"),
-         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
-        (("/api/ai/detectar-prazos", "POST"),
-         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
-        (("/api/ia-defensiva/analisar", "POST"),
-         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
-        # Saneamento 30/08/2026: as entradas dos redirects 308 anônimos dos
-        # PRs #1215/#1218 saíram desta lista junto com os próprios shims —
-        # os endereços antigos agora estão em REMOCOES_INTENCIONAIS e não
-        # existem mais na superfície (a comparação de auth só olha rotas
-        # presentes no baseline E na superfície atual).
+        (("/api/ai/analisar-caso", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ai/resumir-documento", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ai/teses-ocultas", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ai/auditar-peca", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ai/preparar-audiencia", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ai/casos/{case_id}/assistente", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ai/casos/{case_id}/dual", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ai/caso/{case_id}/visual-law", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ai/caso/{case_id}/estrategia", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ai/analisar-contrato", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ai/detectar-prazos", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ia-defensiva/analisar", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
     )
 
     divergentes = [
@@ -567,9 +538,6 @@ def test_efeitos_colaterais_nao_de_rota_preservados():
     from app.services.ai import provider_metrics_runtime
 
     fonte_ev = inspect.getsource(event_subscribers)
-    # O adapter legado do hook documental foi renomeado para
-    # `_install_document_analysis_hook()` (mesma responsabilidade: instalar a
-    # função única de document_analysis_hook no router de documentos).
     assert (
         "_install_document_analysis_hook()" in fonte_ev
         or "_patch_documents_background_analysis()" in fonte_ev
@@ -606,10 +574,6 @@ def test_movimentacao_onda2_preservou_as_dependencias_de_auth():
             continue
         novo = "/api" + antigo[len("/api/v1") :]
         if (novo, r["method"]) in REMOCOES_INTENCIONAIS:
-            # Endereço movido na Onda 2 e depois RETIRADO por decisão
-            # registrada em REMOCOES_INTENCIONAIS (com justificativa) — ex.:
-            # /api/kanban-columns, cujo canônico é /api/kanban/columns.
-            # Se a rota reaparecer, a trava `ressuscitadas` acusa.
             continue
         destino = atual.get((novo, r["method"]))
         assert destino is not None, f"{antigo} {r['method']} não reapareceu em {novo}"
