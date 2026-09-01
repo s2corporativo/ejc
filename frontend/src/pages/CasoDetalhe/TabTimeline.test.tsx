@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Tela C (Bloco 3) — composer inline de andamentos + contrato do timesheet.
+// Tela C — composer inline de andamentos, timesheet e despesas processuais.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
@@ -25,15 +25,18 @@ vi.mock("../../components/Toast", () => ({
 
 import { toast } from "../../components/Toast";
 import api from "../../lib/api";
+import { useAuth } from "../../stores/auth";
 import TabTimeline from "./TabTimeline";
 
-describe("TabTimeline — composer de andamentos e timesheet", () => {
+describe("TabTimeline — andamentos, timesheet e despesas processuais", () => {
   beforeEach(() => {
+    useAuth.setState({ user: null, status: "unauthenticated" });
     vi.spyOn(api, "get").mockResolvedValue({ data: [] });
   });
 
   afterEach(() => {
     cleanup();
+    useAuth.setState({ user: null, status: "unauthenticated" });
     vi.restoreAllMocks();
   });
 
@@ -117,7 +120,7 @@ describe("TabTimeline — composer de andamentos e timesheet", () => {
     );
   });
 
-  it("mantém o formulário aberto e informa erro quando o lançamento falha", async () => {
+  it("mantém o formulário de horas aberto quando o lançamento falha", async () => {
     vi.spyOn(api, "post").mockRejectedValue({
       response: { data: { detail: "Falha fictícia de validação" } },
     });
@@ -137,5 +140,88 @@ describe("TabTimeline — composer de andamentos e timesheet", () => {
     );
     expect(screen.getByRole("button", { name: "Salvar" })).toBeTruthy();
     expect(atividade.value).toBe("Atividade fictícia");
+  });
+
+  it("lança despesa processual sem sair do caso", async () => {
+    const post = vi
+      .spyOn(api, "post")
+      .mockResolvedValue({ data: { id: "desp-1" } });
+    render(<TabTimeline caseId="case-1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Lançar despesa/ }));
+    fireEvent.change(
+      screen.getByPlaceholderText(/custas de distribuição, diligência/),
+      { target: { value: "Custas de distribuição" } },
+    );
+    fireEvent.change(screen.getByPlaceholderText("0,00"), {
+      target: { value: "125,50" },
+    });
+    const selects = screen.getAllByRole("combobox") as HTMLSelectElement[];
+    fireEvent.change(selects[selects.length - 1], {
+      target: { value: "custas" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar despesa" }));
+
+    await waitFor(() => {
+      expect(post).toHaveBeenCalledWith(
+        "/despesas-processuais/",
+        expect.objectContaining({
+          case_id: "case-1",
+          valor: 125.5,
+          descricao: "Custas de distribuição",
+          categoria: "custas",
+        }),
+      );
+    });
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
+      "Despesa processual lançada.",
+    );
+  });
+
+  it("advogado pode gerar reembolso das despesas pendentes", async () => {
+    useAuth.setState({
+      user: { id: "adv-1", role: "advogado", email: "adv@teste.local" } as any,
+      status: "authenticated",
+    });
+    vi.mocked(api.get).mockImplementation(async (url) => {
+      if (String(url).includes("/despesas-processuais/casos/")) {
+        return {
+          data: {
+            data: [
+              {
+                id: "desp-1",
+                data: "2026-09-01",
+                valor: 100,
+                descricao: "Diligência",
+                categoria: "diligencia",
+                faturada: false,
+              },
+            ],
+            total: 100,
+            pendente_de_faturar: 100,
+          },
+        } as any;
+      }
+      return { data: [] } as any;
+    });
+    const post = vi.spyOn(api, "post").mockResolvedValue({
+      data: { fee_id: "fee-1", valor: 100, lancamentos: 1 },
+    });
+
+    render(<TabTimeline caseId="case-1" />);
+    const botao = await screen.findByRole("button", {
+      name: "Gerar reembolso",
+    });
+    fireEvent.click(botao);
+
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/despesas-processuais/caso/case-1/faturar",
+        {},
+      ),
+    );
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
+      expect.stringContaining("Reembolso gerado"),
+    );
   });
 });
