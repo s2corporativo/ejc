@@ -116,7 +116,22 @@ def test_run_migrations_vem_da_classificacao_e_nao_e_fixo(manual):
 
 
 def test_idempotencia_por_sha_preservada_no_manual(manual):
-    assert ".deploy_last_sha" in manual
+    # `.deploy_last_sha` nunca foi escrito por ninguem: quem grava e o
+    # `deploy_vps_safe.sh`, em `.deployed_sha`. Ler o arquivo fantasma fazia
+    # a comparacao ser sempre falsa — a trava anunciada no runbook nao
+    # existia e um deploy repetido refazia tudo em silencio.
+    assert ".deployed_sha" in manual
+    assert ".deploy_last_sha" not in manual
+
+
+def test_sha_alvo_chega_a_quem_carimba_o_release(manual):
+    """Sem propagar TARGET_SHA, o `deploy_vps_safe.sh` cai no fallback
+    `git rev-parse HEAD` dentro de /opt/ejc — cujo `.git` e excluido do rsync
+    e fica congelado no commit anterior. O deploy publica o codigo certo com
+    a identidade errada: em 2026-09-01 o /api/health declarou
+    `commit: 0189b277` com o `c22de08` no ar, e a transacao registrou
+    `sha-indisponivel`."""
+    assert "TARGET_SHA=\"$TARGET_SHA\"" in manual
 
 
 @sem_workflow

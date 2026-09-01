@@ -20,7 +20,7 @@
 #     com o mesmo bloqueio quando a migration pendente não é expand-only;
 #   • mesma transação sob mutex host-level, com backup pré-deploy OBRIGATÓRIO,
 #     health-poll e rollback automático;
-#   • mesma idempotência por SHA (`/opt/ejc/.deploy_last_sha`).
+#   • mesma idempotência por SHA (`/opt/ejc/.deployed_sha`).
 #
 # QUANDO USAR: cota do Actions esgotada, incidente na plataforma, ou qualquer
 # situação em que a esteira não aloca runner. NÃO é atalho para pular revisão:
@@ -116,7 +116,7 @@ log "Pré-voo aprovado — HEAD $TARGET_SHA, $APP_DIR e runtime presentes."
 
 # ── 2. Idempotência por SHA ─────────────────────────────────────────────────
 ultimo=""
-sudo -n test -f "$APP_DIR/.deploy_last_sha" && ultimo="$(sudo -n cat "$APP_DIR/.deploy_last_sha")" || true
+sudo -n test -f "$APP_DIR/.deployed_sha" && ultimo="$(sudo -n cat "$APP_DIR/.deployed_sha")" || true
 if [ "$ultimo" = "$TARGET_SHA" ]; then
   log "SHA $TARGET_SHA já implantado no último deploy bem-sucedido; nada a fazer."
   exit 0
@@ -166,6 +166,7 @@ if [ -z "${RUNNER_TEMP:-}" ]; then
 fi
 
 log "Iniciando transação sob mutex host-level (backup obrigatório, health e rollback ativos)."
+TARGET_SHA="$TARGET_SHA" \
 RUNNER_TEMP="$RUNNER_TEMP" \
 RUN_MIGRATIONS="$RUN_MIGRATIONS" \
 MIGRATIONS_BACKWARD_COMPATIBLE="$MIGRATIONS_BACKWARD_COMPATIBLE" \
