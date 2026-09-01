@@ -1,6 +1,7 @@
 # ── app/models/case.py ────────────────────────────────────────────────────────
 from __future__ import annotations
 from sqlalchemy import Column, String, DateTime, Enum as SAEnum, func, Text, Numeric, ForeignKey, Boolean, Integer, Index, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 import enum
@@ -80,7 +81,18 @@ class Case(Base):
     status    = Column(SAEnum(CaseStatus), nullable=False, default=CaseStatus.triagem, index=True)
     fase      = Column(SAEnum(CaseFase), nullable=False, default=CaseFase.pre_processual)
     prioridade = Column(SAEnum(CasePrioridade), nullable=False, default=CasePrioridade.media)
-    risco     = Column(String(20), nullable=True)   # baixo | medio | alto
+    risco     = Column(String(20), nullable=True)   # baixo | medio | alto (manual)
+
+    # Risco CALCULADO pelo módulo Índice de Risco. As colunas existem desde a
+    # migration 032 e são lidas/escritas por routers/indice_risco.py em SQL cru,
+    # mas não estavam declaradas aqui — logo não saíam em nenhuma resposta da
+    # API, enquanto o frontend (CasoDetalhe / TabResumo) já lia `caso.risco_nivel`
+    # do payload de /cases/{id}. O ramo do badge de risco calculado era, na
+    # prática, código morto. Declarar aqui não altera o schema do banco.
+    indice_risco       = Column(Integer, nullable=True, server_default=text("0"))
+    risco_nivel        = Column(String(10), nullable=True)   # baixo|medio|alto|critico
+    risco_fatores      = Column(JSONB, nullable=True)
+    risco_atualizado_em = Column(DateTime(timezone=True), nullable=True)
 
     # Processo judicial
     numero_processo = Column(String(30), nullable=True, index=True)

@@ -20,6 +20,7 @@ from app.models.audit_log import criar_audit_log
 # (fonte única com a conversão da Sala Jurídica). Alias fino preserva os
 # chamadores internos deste router.
 from app.services.case_numeracao import proximo_numero_interno as _proximo_numero_interno
+from app.services.datajud_service import sincronizar_caso as _dj_sync
 from app.services.deadline_calculator import calcular_prescricao
 from app.services.case_intel import triagem_caso, aprendizado_encerramento
 from app.services.case_automacao import automacao_caso, gerar_documentos_iniciais_auto
@@ -90,6 +91,14 @@ async def listar(
     status_f: Optional[str] = Query(None, alias="status"),
     arquivo: str = Query("ativos", pattern="^(ativos|arquivados|todos)$"),
     advogado_id: Optional[str] = None,
+    # Filtro por tipo de caso. Existia SÓ no cliente (Casos.tsx filtrava o array
+    # da página corrente), então com paginação server-side o usuário via apenas
+    # os casos daquele tipo dentro da página atual e o total continuava sendo o
+    # não filtrado. Filtrar aqui torna o resultado e o total corretos.
+    case_type: Optional[str] = Query(
+        None, pattern="^(judicial|extrajudicial|consultoria)$",
+        description="judicial | extrajudicial | consultoria (vocabulário de services/case_automacao.py e do CASE_TYPES do frontend)",
+    ),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -103,6 +112,14 @@ async def listar(
             Case.advogado_responsavel_id == advogado_id,
             Case.advogado_auxiliar_id == advogado_id,
         ))
+    if case_type:
+        # `judicial` é o default histórico da coluna e existe registro legado com
+        # NULL — por isso o filtro por judicial também aceita o nulo, senão esses
+        # casos sumiriam da listagem filtrada.
+        if case_type == "judicial":
+            q = q.where(or_(Case.case_type == "judicial", Case.case_type.is_(None)))
+        else:
+            q = q.where(Case.case_type == case_type)
     if arquivo == "ativos":
         q = q.where(Case.status != CaseStatus.arquivado)
     elif arquivo == "arquivados":
@@ -356,62 +373,75 @@ async def resumo_caso(
     """
     c = await verificar_acesso_caso(db, cu, case_id)
 
-    # Contagens paralelas via COUNTs
-    counts = {}
-    for label, model_class, fk_col in [
-        ("processos", __import__("app.models.process", fromlist=["Process"]).Process, "case_id"),
-        ("prazos", Deadline, "case_id"),
-        ("documentos", __import__("app.models.document", fromlist=["Document"]).Document, "case_id"),
-        ("pecas", __import__("app.models.legal_doc", fromlist=["LegalDoc"]).LegalDoc, "case_id"),
-        ("honorarios", __import__("app.models.fee", fromlist=["Fee"]).Fee, "case_id"),
-        ("tarefas", __import__("app.models.task", fromlist=["Task"]).Task, "case_id"),
-        ("partes", CaseParte, "case_id"),
-        ("areas", CasoArea, "case_id"),
-        ("checklists", __import__("app.models.checklist", fromlist=["CaseChecklist"]).CaseChecklist, "case_id"),
-        ("movimentos", CaseMovimento, "case_id"),
-        ("provas", __import__("app.models.prova", fromlist=["Prova"]).Prova, "case_id"),
-        ("teses_vinculadas", __import__("app.models.tese", fromlist=["TeseCasoLink"]).TeseCasoLink, "case_id"),
-    ]:
-        try:
-            col = getattr(model_class, fk_col, None)
-            if col is not None:
-                q = select(sqlfunc.count()).select_from(model_class).where(
-                    col == case_id, model_class.deleted_at.is_(None)
-                    if hasattr(model_class, "deleted_at") else True
-                )
-                counts[label] = (await db.execute(q)).scalar() or 0
-            else:
-                counts[label] = 0
-        except Exception:
+    # Imports locais (evitam ciclo de import a nível de módulo). Antes eram
+    # `__import__(...)` dinâmicos dentro do laço — ilegíveis, não verificáveis
+    # por lint/type-checker e re-executados a cada iteração.
+    from app.models.checklist import CaseChecklist
+    from app.models.document import Document
+    from app.models.fee import Fee
+    from app.models.legal_doc import LegalDoc
+    from app.models.process import Process
+    from app.models.prova import Prova
+    from app.models.task import Task
+    from app.models.tese import TeseCasoLink
+
+    # Contagens por entidade vinculada ao caso.
+    counts: dict[str, float] = {}
+    for label, model_class in (
+        ("processos", Process),
+        ("prazos", Deadline),
+        ("documentos", Document),
+        ("pecas", LegalDoc),
+        ("honorarios", Fee),
+        ("tarefas", Task),
+        ("partes", CaseParte),
+        ("areas", CasoArea),
+        ("checklists", CaseChecklist),
+        ("movimentos", CaseMovimento),
+        ("provas", Prova),
+        ("teses_vinculadas", TeseCasoLink),
+    ):
+        col = getattr(model_class, "case_id", None)
+        if col is None:
             counts[label] = 0
+            continue
+        q = select(sqlfunc.count()).select_from(model_class).where(col == case_id)
+        # Só filtra exclusão lógica quando a entidade a possui (Prova/CasoArea
+        # não têm `deleted_at`). Antes, o `else True` era passado ao .where()
+        # como literal Python e o filtro simplesmente não existia.
+        soft = getattr(model_class, "deleted_at", None)
+        if soft is not None:
+            q = q.where(soft.is_(None))
+        counts[label] = (await db.execute(q)).scalar() or 0
 
-    # Honorários: total financeiro
-    try:
-        q_valor = select(sqlfunc.coalesce(sqlfunc.sum(
-            __import__("app.models.fee", fromlist=["Fee"]).Fee.valor
-        ), 0)).where(
-            __import__("app.models.fee", fromlist=["Fee"]).Fee.case_id == case_id
-        )
-        counts["honorarios_valor_total"] = float((await db.execute(q_valor)).scalar() or 0)
-    except Exception:
-        counts["honorarios_valor_total"] = 0.0
+    # Honorários: total financeiro (ignora honorário excluído logicamente —
+    # antes o somatório contava registros da lixeira).
+    q_valor = select(
+        sqlfunc.coalesce(sqlfunc.sum(Fee.valor), 0)
+    ).where(Fee.case_id == case_id, Fee.deleted_at.is_(None))
+    counts["honorarios_valor_total"] = float((await db.execute(q_valor)).scalar() or 0)
 
-    # Prazos pendentes
-    try:
-        q_pend = select(sqlfunc.count()).select_from(Deadline).where(
-            Deadline.case_id == case_id,
-            DeadlineStatus(Deadline.status) == DeadlineStatus.pendente,
-        )
-        counts["prazos_pendentes"] = (await db.execute(q_pend)).scalar() or 0
-    except Exception:
-        counts["prazos_pendentes"] = 0
+    # Prazos pendentes.
+    # BUG CORRIGIDO: a forma anterior era
+    #     DeadlineStatus(Deadline.status) == DeadlineStatus.pendente
+    # que CHAMA o Enum passando um objeto de coluna do SQLAlchemy. Isso levanta
+    # ValueError SEMPRE (a coluna não é um valor do enum); a exceção era engolida
+    # pelo `except Exception` e o contador devolvia 0 em 100% das requisições —
+    # inclusive para casos com prazos pendentes de verdade. A comparação correta
+    # é feita na COLUNA, traduzida para SQL.
+    q_pend = select(sqlfunc.count()).select_from(Deadline).where(
+        Deadline.case_id == case_id,
+        Deadline.deleted_at.is_(None),
+        Deadline.status == DeadlineStatus.pendente,
+    )
+    counts["prazos_pendentes"] = (await db.execute(q_pend)).scalar() or 0
 
     return {
         "case_id": case_id,
         "titulo": c.titulo,
         "status": c.status.value if c.status else None,
         "fase": c.fase.value if hasattr(c, "fase") and c.fase else None,
-        "area": c.area,
+        "area": c.area.value if hasattr(c.area, "value") else c.area,
         "prioridade": c.prioridade.value if hasattr(c, "prioridade") and c.prioridade else None,
         "advogado_responsavel_id": c.advogado_responsavel_id,
         "proxima_acao": c.proxima_acao,
@@ -444,6 +474,19 @@ async def atualizar(
             detail="Campo 'proxima_acao' é obrigatório para casos com status triagem/ativo/suspenso/acordo",
         )
 
+    # RBAC: encerrar e arquivar são ATOS DE GESTÃO do caso. Os endpoints
+    # canônicos (POST /encerrar, POST /arquivar) exigem advogado+ via
+    # require_roles(_ARQUIVAMENTO_ROLES); este PATCH aceitava QUALQUER usuário
+    # autenticado (secretaria, estagiário, advogado_auxiliar) e permitia o mesmo
+    # efeito por caminho lateral — a restrição precisa valer nos dois caminhos.
+    if mudancas.get("status") in ("encerrado", "arquivado"):
+        _role_atual = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
+        if _role_atual not in _ARQUIVAMENTO_ROLES:
+            raise HTTPException(
+                status_code=403,
+                detail="Sem permissão para encerrar ou arquivar o caso",
+            )
+
     for k, v in mudancas.items():
         setattr(c, k, v)
     if mudancas.get("status") == "encerrado":
@@ -453,6 +496,15 @@ async def atualizar(
     elif mudancas.get("status") and mudancas.get("status") != "arquivado":
         c.archived_at = None
         c.archive_reason = None
+    # REABERTURA: voltar a um status ABERTO precisa limpar a data de
+    # encerramento, senão o caso fica "ativo" carregando `data_encerramento`
+    # preenchida — estado impossível que contamina relatório de produtividade e
+    # a própria tela do caso. O `desarquivar` já limpava `archived_at`; este
+    # caminho (PATCH status=ativo, usado por CasoDetalhe/TabResumo::reabrir)
+    # não limpava nada. O pós-mortem (resultado/motivo/lições) é PRESERVADO de
+    # propósito: é histórico e já foi ingerido na base institucional.
+    if mudancas.get("status") in [s.value for s in STATUS_ABERTOS]:
+        c.data_encerramento = None
     # Sincroniza coluna Kanban quando o status muda para um estado terminal
     _status_para_coluna = {"acordo": "Acordo", "encerrado": "Encerrado", "arquivado": "Encerrado"}
     _alvo = _status_para_coluna.get(mudancas.get("status"))
@@ -471,7 +523,6 @@ async def atualizar(
     # Fase 3 write-through: sincroniza processes quando numero_processo muda
     if "numero_processo" in mudancas and mudancas["numero_processo"]:
         novo_cnj = (mudancas["numero_processo"] or "").strip()[:30]
-        from uuid import uuid4
         await db.execute(text("""
             INSERT INTO processes (id, case_id, numero_cnj, instancia, is_principal, status, created_at, updated_at)
             VALUES (:id, :cid, :ncnj, '1', TRUE, 'ativo', now(), now())
@@ -638,7 +689,6 @@ async def excluir(
         raise HTTPException(status_code=404, detail="Caso não encontrado")
 
     # ── Bloqueios condicionais (R2): pendências impedem exclusão ─────────────
-    from app.models.deadline import Deadline, DeadlineStatus
     from app.models.fee import Fee, FeeStatus
     from app.models.legal_doc import LegalDoc, PecaStatus
 
@@ -795,7 +845,6 @@ async def assistente_estrategico_caso(
     Acesso automático a todos os dados do processo e documentos.
     """
     from app.core.ai_brain import ai_gateway
-    from app.models.case_parte import CaseParte
     
     q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
     q = _filtro_visibilidade(q, cu)
@@ -846,9 +895,6 @@ async def assistente_estrategico_caso(
 
 
 # ═══ DataJud: sincronização de movimentos oficiais ═══
-from app.services.datajud_service import sincronizar_caso as _dj_sync
-
-
 @router.post("/{case_id}/sincronizar-processo")
 async def sincronizar_processo(
     case_id: str,
@@ -876,20 +922,17 @@ async def sincronizar_processo(
 
 
 # ═══ Pós-Mortem Jurídico (ECJ): encerrar caso com aprendizado ═══
-from pydantic import BaseModel as _BM2, Field as _F2
-
-
-class EncerrarCasoReq(_BM2):
-    resultado: str = _F2(
+class EncerrarCasoReq(BaseModel):
+    resultado: str = Field(
         # \A/\z (não ^/$): a validação por regex aceitaria "exito\n" com "$",
         # que passaria aqui mas nunca casaria o vocabulário da jurimetria.
         pattern=r"\A(exito|exito_parcial|acordo|derrota|desistencia|arquivado)\z",
         description="exito|exito_parcial|acordo|derrota|desistencia|arquivado",
     )
-    motivo_resultado: str = _F2(min_length=20,
+    motivo_resultado: str = Field(min_length=20,
         description="Por que esse resultado? Fundamentos aceitos/rejeitados.")
-    provas_determinantes: str = _F2(min_length=10)
-    licoes_aprendidas: str = _F2(min_length=20)
+    provas_determinantes: str = Field(min_length=10)
+    licoes_aprendidas: str = Field(min_length=20)
     alimentar_rag: bool = True
 
 
@@ -1028,7 +1071,7 @@ def _map_deadline_tipo(tipo_txt: Optional[str]) -> DeadlineTipo:
     return DeadlineTipo.processual
 
 
-class AplicarExtracaoReq(_BM2):
+class AplicarExtracaoReq(BaseModel):
     """JSON de /documentos-ia/analisar materializado no caso: partes
     (case_partes), área (caso_areas), campos processuais vazios e prazos
     (deadlines rascunho, #83 Gap C)."""
@@ -1297,7 +1340,8 @@ async def teses_sugeridas(
     keywords = _tokens_relevantes(
         case.titulo,
         getattr(case, "tese_principal", None),
-        getattr(case, "descricao", None),
+        # NB: o model Case NÃO tem coluna `descricao` (só `descricao_fatos`).
+        # O antigo `getattr(case, "descricao", None)` era sempre None.
         getattr(case, "descricao_fatos", None),
         getattr(case, "parte_contraria", None),
     )
@@ -1386,7 +1430,6 @@ async def analisar_caso_ia(
 ):
     import json as _json
     from app.services.analise_estrategica import analisar_caso
-    from app.core.ownership import verificar_acesso_caso
 
     # Ownership (IDOR): só quem tem o caso pode disparar a análise estratégica.
     case = await verificar_acesso_caso(db, current_user, case_id)
@@ -1411,7 +1454,10 @@ async def analisar_caso_ia(
 
     analise = await analisar_caso(
         titulo=getattr(case, 'titulo', '') or '',
-        objeto=getattr(case, 'descricao', '') or '',
+        # `objeto` não tem coluna correspondente em Case (o antigo
+        # getattr(case, 'descricao', '') resolvia sempre para ''). Mantido
+        # explicitamente vazio para não alterar o comportamento da análise.
+        objeto='',
         fatos=getattr(case, 'descricao_fatos', '') or '',
         texto_documento=(payload.get('texto_documento', '') if isinstance(payload, dict) else ''),
         partes_existentes=partes_str,

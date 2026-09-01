@@ -47,7 +47,12 @@ export interface Case {
   fase: string;
   prioridade: string;
   risco?: string;
+  // Risco CALCULADO (módulo Índice de Risco). Passou a ser devolvido por
+  // /cases/{id} e /cases/ — antes o campo existia só neste type e o badge de
+  // risco calculado nunca era exibido.
   risco_nivel?: string;
+  indice_risco?: number;
+  risco_atualizado_em?: string;
   numero_processo?: string;
   tribunal?: string;
   comarca?: string;
@@ -75,6 +80,16 @@ export interface Case {
   kanban_column?: string;
   kanban_position?: number;
   processo_principal?: ProcessoPrincipal;
+  // Sincronização DataJud/PJe — já devolvidos por CaseResponse no backend.
+  last_synced_at?: string;
+  sync_pending?: boolean;
+  sync_error?: string;
+  // Desfecho e pós-mortem (CaseDetail) — gravados por POST /cases/{id}/encerrar.
+  resultado?: string;
+  data_encerramento?: string;
+  motivo_resultado?: string;
+  provas_determinantes?: string;
+  licoes_aprendidas?: string;
 }
 /**
  * Mini-formulário OPCIONAL de honorários enviado na abertura do caso

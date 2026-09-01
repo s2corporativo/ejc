@@ -12,6 +12,7 @@ import {
   FileText,
   ChevronDown,
   Filter,
+  Handshake,
   Inbox,
   Info,
   Loader2,
@@ -245,6 +246,11 @@ const STATUS_REGISTRY: Record<
   protocolado: { tone: "teal", icon: Send, label: "Protocolado" },
   concluido: { tone: "green", icon: CheckCircle2, label: "Concluído" },
   suspenso: { tone: "slate", icon: PauseCircle, label: "Suspenso" },
+  // `acordo` é um dos SEIS status de caso (types/caseStatus.ts) e não constava
+  // nem aqui nem em LEGACY_STATUS_TONE: caía no fallback e era renderizado como
+  // texto cru cinza, sem ícone — justamente o que a regra WCAG deste arquivo
+  // ("nunca só cor") existe para evitar.
+  acordo: { tone: "teal", icon: Handshake, label: "Acordo" },
   critico: { tone: "red", icon: AlertTriangle, label: "Crítico" },
 };
 

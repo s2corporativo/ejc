@@ -435,6 +435,12 @@ export default function Casos() {
           search: search || undefined,
           area: areaF || undefined,
           advogado_id: advogadoF || undefined,
+          // Filtro de tipo agora é SERVER-SIDE (GET /cases/?case_type=...).
+          // Antes era aplicado só no array da página corrente: com paginação
+          // no servidor, o usuário via apenas os casos daquele tipo que por
+          // acaso estivessem na página carregada, e o total continuava o total
+          // sem filtro.
+          case_type: tipoF || undefined,
           arquivo: arquivoF,
           page_size: 50,
         },
@@ -513,7 +519,7 @@ export default function Casos() {
   useEffect(() => {
     const t = setTimeout(load, 350);
     return () => clearTimeout(t);
-  }, [search, areaF, advogadoF, arquivoF]);
+  }, [search, areaF, advogadoF, arquivoF, tipoF]);
 
   // Passo 3 do fluxograma documental: abre a REVISÃO antes de qualquer escrita.
   // Só depois de "Confirmar criação" é que salvar() cria o caso e anexa o doc.
@@ -1028,12 +1034,7 @@ export default function Casos() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-bronze-pale/40">
-                  {(tipoF
-                    ? data.data.filter(
-                        (c: any) => (c.case_type || "judicial") === tipoF,
-                      )
-                    : data.data
-                  ).map((c) => (
+                  {data.data.map((c) => (
                     <tr
                       key={c.id}
                       className="hover:bg-bronze-50/40 transition-colors"
@@ -1050,15 +1051,15 @@ export default function Casos() {
                         </Link>
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-500 capitalize">
-                        {areaLabel((c as any).area) || c.area}
+                        {areaLabel(c.area) || c.area}
                       </td>
                       <td className="px-4 py-3">
                         <span
-                          className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${CASE_TYPE_COLOR[(c as any).case_type || "judicial"]}`}
+                          className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${CASE_TYPE_COLOR[c.case_type || "judicial"]}`}
                         >
-                          {CASE_TYPE_LABEL[(c as any).case_type || "judicial"]}
-                          {(c as any).extrajudicial_type
-                            ? ` · ${EXTRAJ_TYPES.find((e) => e.k === (c as any).extrajudicial_type)?.l || ""}`
+                          {CASE_TYPE_LABEL[c.case_type || "judicial"]}
+                          {c.extrajudicial_type
+                            ? ` · ${EXTRAJ_TYPES.find((e) => e.k === c.extrajudicial_type)?.l || ""}`
                             : ""}
                         </span>
                       </td>

@@ -21,6 +21,7 @@ const STATUS: Record<string, [string, string]> = {
   triagem: ["Em análise", "bg-warn-100 text-warn-700"],
   ativo: ["Em andamento", "bg-primary-100 text-primary-700"],
   suspenso: ["Suspenso", "bg-slate-100 text-slate-600"],
+  acordo: ["Acordo", "bg-teal-100 text-teal-700"],
   encerrado: ["Encerrado", "bg-success-100 text-success-700"],
   arquivado: ["Arquivado", "bg-slate-100 text-slate-500"],
 };

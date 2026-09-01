@@ -14,6 +14,32 @@ from app.models.user import User
 from app.models.case import Case, CaseStatus
 
 # Resultados conhecidos (Case.resultado). Valores fora desta lista entram em "outro".
+#
+# DIVERGÊNCIA DE VOCABULÁRIO CORRIGIDA AQUI (sem migração de dados):
+# o ÚNICO ponto que grava `cases.resultado` é POST /cases/{id}/encerrar
+# (routers/cases.py :: EncerrarCasoReq), cujo regex aceita
+#     exito | exito_parcial | acordo | derrota | desistencia | arquivado
+# enquanto este módulo classificava por
+#     exito_total | exito_parcial | acordo | improcedente
+# Ou seja: `exito_total` e `improcedente` NUNCA são gravados. Todo caso ganho
+# integralmente (`exito`) e todo caso perdido (`derrota`) caía no balde "outro",
+# deixando `taxa_exito` subestimada e `taxa_improcedencia` fixa em 0.
+# A normalização abaixo mapeia os sinônimos realmente persistidos para as
+# categorias canônicas do relatório — mesmo critério já adotado em
+# services/case_intel.py (`_EXITO`). A unificação definitiva do vocabulário
+# (schema + dados históricos) é decisão de produto, registrada no relatório de
+# auditoria do módulo Casos.
+_SINONIMOS_RESULTADO = {
+    "exito": "exito_total",         # gravado por /encerrar
+    "exito_total": "exito_total",
+    "exito_parcial": "exito_parcial",
+    "acordo": "acordo",
+    "derrota": "improcedente",      # gravado por /encerrar
+    "improcedente": "improcedente",
+    # `desistencia` e `arquivado` são desfechos sem mérito: não entram nem em
+    # êxito nem em improcedência — permanecem em "outro", de propósito.
+}
+
 FAVORAVEIS = {"exito_total", "exito_parcial"}
 CONSENSUAL = {"acordo"}
 DESFAVORAVEIS = {"improcedente"}
@@ -28,7 +54,12 @@ def pode_ver_todos(user: User) -> bool:
 
 
 def _bucket(resultado: str | None) -> str:
-    r = (resultado or "").strip().lower()
+    """Normaliza o valor persistido em `cases.resultado` numa das CATEGORIAS.
+
+    Passa antes pelo mapa de sinônimos: sem isso, os valores efetivamente
+    gravados pelo endpoint de encerramento não casavam com nenhuma categoria.
+    """
+    r = _SINONIMOS_RESULTADO.get((resultado or "").strip().lower(), "")
     return r if r in (FAVORAVEIS | CONSENSUAL | DESFAVORAVEIS) else "outro"
 
 

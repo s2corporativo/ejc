@@ -123,12 +123,32 @@ class CaseCreate(BaseModel):
     def _numero_processo_valido(cls, v: Optional[str]) -> Optional[str]:
         return _validar_numero_processo_cnj(v)
 
+    @field_validator("prioridade")
+    @classmethod
+    def _prioridade_valida(cls, v: str) -> str:
+        # Assimetria corrigida: CaseUpdate já validava `prioridade`, CaseCreate
+        # não. Como a coluna é ENUM nativo (caseprioridade), qualquer valor fora
+        # do enum chegava cru ao Postgres e virava InvalidTextRepresentation →
+        # HTTP 500 na CRIAÇÃO do caso. Aqui vira 422 com a lista de aceitos.
+        from app.models.case import CasePrioridade
+        validos = {m.value for m in CasePrioridade}
+        if v not in validos:
+            raise ValueError(f"prioridade inválida: use um de {sorted(validos)}")
+        return v
+
+
 class CaseUpdate(BaseModel):
     titulo: Optional[str] = None
     status: Optional[str] = None
     fase: Optional[str] = None
     prioridade: Optional[str] = None
     risco: Optional[str] = None
+    # Risco CALCULADO (módulo Índice de Risco, colunas da migration 032). Sem
+    # estes campos a API nunca devolvia `risco_nivel`, embora o frontend já o
+    # lesse do payload do caso.
+    indice_risco: Optional[int] = None
+    risco_nivel: Optional[str] = None
+    risco_atualizado_em: Optional[datetime] = None
     proxima_acao: Optional[str] = None
     proxima_acao_prazo: Optional[datetime] = None
     numero_processo: Optional[str] = None
@@ -246,6 +266,14 @@ class CaseResponse(BaseModel):
 class CaseDetail(CaseResponse):
     comarca: Optional[str] = None
     vara: Optional[str] = None
+    # Desfecho e pós-mortem: gravados por POST /cases/{id}/encerrar e nunca
+    # devolvidos por nenhuma rota — a tela do caso encerrado não conseguia
+    # exibir resultado nem lições aprendidas.
+    resultado: Optional[str] = None
+    data_encerramento: Optional[datetime] = None
+    motivo_resultado: Optional[str] = None
+    provas_determinantes: Optional[str] = None
+    licoes_aprendidas: Optional[str] = None
     descricao_fatos: Optional[str] = None
     tese_principal: Optional[str] = None
     pontos_fortes: Optional[str] = None
