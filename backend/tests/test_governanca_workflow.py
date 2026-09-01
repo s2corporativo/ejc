@@ -9,6 +9,8 @@ Estes testes protegem a arquitetura atual e evitam que regras legadas de
 """
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -91,3 +93,40 @@ def test_governanca_de_pr_e_registro_de_agente_estao_restritos():
 def test_documentacao_de_governanca_permanece_versionada():
     texto = _texto(GOV_DOC)
     assert texto.strip(), "docs/GOVERNANCA_IA.md não pode ficar vazio"
+
+
+# --- Travas de DOCUMENTO, independentes do executor de CI -------------------
+#
+# A reescrita destes testes para o Woodpecker (commit `b4ffe9e`) trocou as
+# travas do `governanca.yml` — legítimo, o workflow não é mais executado — mas
+# levou junto duas que NÃO liam o YAML: elas conferem os documentos de
+# governança, que continuam valendo com Actions ou sem ele. Sem elas, a
+# allowlist canônica do Dependabot pode ser corrompida e o `GOVERNANCA_FASE2.md`
+# voltar a ser fonte concorrente do `GOVERNANCA_IA.md` — tudo com o CI verde.
+# (`test_documentacao_de_governanca_permanece_versionada`, acima, só garante que
+# o arquivo não está vazio.) Achado do review do Codex no PR #1328.
+
+
+def _allowlist_doc() -> list[str]:
+    texto = _texto(GOV_DOC)
+    assert "## 12. Exceção de bot de manutenção de dependências" in texto, (
+        "docs/GOVERNANCA_IA.md não tem a seção 12 com a exceção de bot"
+    )
+    secao = texto.split("## 12. Exceção de bot de manutenção de dependências", 1)[1]
+    secao = secao.split("\n## 13.", 1)[0]
+    m = re.search(r"```json\s*(\[.*?\])\s*```", secao, re.S)
+    assert m, "seção 12 de docs/GOVERNANCA_IA.md não tem bloco ```json``` com a allowlist"
+    return json.loads(m.group(1))
+
+
+def test_allowlist_do_documento_e_a_esperada():
+    assert _allowlist_doc() == ["dependabot[bot]"]
+
+
+def test_fase2_referencia_o_canonico_em_vez_de_ser_fonte_propria():
+    fase2 = _texto(REPO_ROOT / "docs" / "GOVERNANCA_FASE2.md")
+    assert "GOVERNANCA_IA.md" in fase2 and "seção 12" in fase2, (
+        "docs/GOVERNANCA_FASE2.md precisa apontar para docs/GOVERNANCA_IA.md, "
+        "seção 12, em vez de tentar ser fonte própria da exceção de bot"
+    )
+    assert "endswith" not in fase2
