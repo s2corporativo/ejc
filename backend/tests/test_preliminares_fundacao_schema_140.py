@@ -65,15 +65,8 @@ def _script_directory() -> ScriptDirectory:
 
 
 def test_migration_139_encadeia_em_138_e_e_o_head():
-    # Consolidado em 2026-08-12: bifurcação 138 → {139, 140} linearizada em
-    # 138 → 139 → 140 (frete independente: 139 altera document_intake_batches,
-    # 140 cria/dropa apenas tabelas preliminares).
     script = _script_directory()
-    # Issue #1272 (24/08/2026): 148/149 do plano-mestre renumeradas para
-    # 151/152 ao mesclar a main (149/150 ocupadas pelo #1238). A migration
-    # 153 (isolamento cliente-documento), 154 (módulo de saneamento processual,
-    # PROMPT 1) e 155 (índices parciais de listagem) são as extensões aditivas.
-    assert script.get_heads() == ["155_indices_listagem_espinha"]
+    assert script.get_heads() == ["156_prazos_auditaveis_regime"]
     revisao = script.get_revision("140_preliminares_fundacao_schema")
     assert revisao.down_revision == "139_dpt360_ciclo_vida_lgpd"
     assert (
@@ -84,10 +77,6 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
         script.get_revision("142_document_hash_rescan").down_revision
         == "141_dpt360_diagnostico"
     )
-    # Consolidado na homologação M02/M11 (16/08/2026): o widening
-    # varchar(32)->128 (antiga migration ``144a``) foi fundido no upgrade da
-    # 143 — o guard ``test_migration_numbering_guard.py`` rejeita prefixo
-    # não numérico.
     assert (
         script.get_revision("143_signature_documento_visualizado").down_revision
         == "142_document_hash_rescan"
@@ -111,6 +100,10 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
     assert (
         script.get_revision("139_dpt360_ciclo_vida_lgpd").down_revision
         == "138_consolida_fontes_ingestao"
+    )
+    assert (
+        script.get_revision("156_prazos_auditaveis_regime").down_revision
+        == "155_indices_listagem_espinha"
     )
 
 
@@ -140,11 +133,6 @@ def test_models_preliminar_estao_registrados_no_metadata():
         )
 
 
-# O guard precisa cobrir as DUAS variáveis que o teste consome. Só
-# `RUN_DB_TESTS` deixava `os.environ["SCHEMA_CHECK_DATABASE_URL"]` estourar
-# KeyError: o teste FALHAVA por configuração ausente em vez de pular, e um
-# erro de ambiente ficava indistinguível de uma quebra real de schema no log.
-# No CI (ci.yml define ambas) o teste segue rodando exatamente como antes.
 @pytest.mark.skipif(
     not (os.getenv("RUN_DB_TESTS") and os.getenv("SCHEMA_CHECK_DATABASE_URL")),
     reason="requer PostgreSQL (RUN_DB_TESTS=1 e SCHEMA_CHECK_DATABASE_URL)",
@@ -205,8 +193,6 @@ def test_upgrade_139_e_downgrade_138_preservam_tabelas_legadas():
         finally:
             engine.dispose()
 
-        # Cadeia linearizada: aplica primeiro 139 (ciclo de vida LGPD) e depois
-        # 140 (fundação preliminares), validando a ordem real da migração.
         rodar_alembic("upgrade", "139_dpt360_ciclo_vida_lgpd")
         rodar_alembic("upgrade", "140_preliminares_fundacao_schema")
         engine = create_engine(sync_url)
