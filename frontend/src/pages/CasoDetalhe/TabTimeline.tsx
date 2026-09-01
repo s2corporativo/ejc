@@ -1,13 +1,14 @@
 // ── Aba Timeline/Andamentos do caso (extraída de CasoDetalhe.tsx — Tela C) ───
 // Composer inline no topo (Bloco 3): registra andamento via
 // POST /cases/{id}/movimentos (schema MovimentoCreate: tipo + descricao) e
-// recarrega a linha do tempo. O timesheet existente permanece abaixo.
+// recarrega a linha do tempo. Timesheet e despesas processuais ficam abaixo.
 import { useEffect, useState } from "react";
 import api from "../../lib/api";
 import { asList } from "../../lib/list";
 import { toast } from "../../components/Toast";
 import { Empty, fmtDate } from "../../components/UI";
 import LinhaDoTempoProcessual from "../../components/visual/LinhaDoTempoProcessual";
+import { useAuth } from "../../stores/auth";
 
 function errDetail(e: any, fallback: string): string {
   const d = e?.response?.data?.detail;
@@ -25,6 +26,13 @@ function hojeLocalISO(): string {
   return `${ano}-${mes}-${dia}`;
 }
 
+function moeda(value: unknown): string {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n)
+    ? n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+    : "R$ 0,00";
+}
+
 // Valores aceitos por case_movimentos.tipo (models/case.py: CaseMovimento).
 const TIPOS_MOVIMENTO = [
   { value: "nota", label: "Nota" },
@@ -33,11 +41,61 @@ const TIPOS_MOVIMENTO = [
   { value: "audiencia", label: "Audiência" },
 ];
 
+const CATEGORIAS_DESPESA = [
+  { value: "custas", label: "Custas" },
+  { value: "diligencia", label: "Diligência" },
+  { value: "copias", label: "Cópias" },
+  { value: "deslocamento", label: "Deslocamento" },
+  { value: "pericia", label: "Perícia" },
+  { value: "correios", label: "Correios" },
+  { value: "outro", label: "Outro" },
+];
+
+const PAPEIS_FATURAMENTO = new Set([
+  "superadmin",
+  "admin",
+  "socio",
+  "advogado",
+  "financeiro",
+]);
+
+type DespesaProcessual = {
+  id: string;
+  data: string;
+  valor: number | string;
+  descricao: string;
+  categoria: string;
+  faturada: boolean;
+  fee_id?: string | null;
+};
+
+type DespesasResponse = {
+  data?: DespesaProcessual[];
+  total?: number | string;
+  pendente_de_faturar?: number | string;
+};
+
 export default function TabTimeline({ caseId }: { caseId: string }) {
+  const user = useAuth((state) => state.user);
+  const podeFaturar = PAPEIS_FATURAMENTO.has(user?.role || "");
   const [ts, setTs] = useState<any[]>([]);
   const [tsForm, setTsForm] = useState({ descricao: "", horas: 1 });
   const [showTsForm, setShowTsForm] = useState(false);
   const [salvandoHoras, setSalvandoHoras] = useState(false);
+
+  const [despesas, setDespesas] = useState<DespesaProcessual[]>([]);
+  const [despesasTotal, setDespesasTotal] = useState(0);
+  const [despesasPendentes, setDespesasPendentes] = useState(0);
+  const [showDespesaForm, setShowDespesaForm] = useState(false);
+  const [salvandoDespesa, setSalvandoDespesa] = useState(false);
+  const [faturandoDespesas, setFaturandoDespesas] = useState(false);
+  const [despesaForm, setDespesaForm] = useState({
+    descricao: "",
+    valor: "",
+    categoria: "outro",
+    data: hojeLocalISO(),
+  });
+
   // Composer de andamentos
   const [movTipo, setMovTipo] = useState("nota");
   const [movDescricao, setMovDescricao] = useState("");
@@ -51,9 +109,25 @@ export default function TabTimeline({ caseId }: { caseId: string }) {
       .then((r) => setTs(asList(r.data)))
       .catch(() => setTs([]));
 
+  const recarregarDespesas = () =>
+    api
+      .get(`/despesas-processuais/casos/${caseId}`)
+      .then((r) => {
+        const payload = (r.data || {}) as DespesasResponse;
+        setDespesas(asList<DespesaProcessual>(payload));
+        setDespesasTotal(Number(payload.total || 0));
+        setDespesasPendentes(Number(payload.pendente_de_faturar || 0));
+      })
+      .catch(() => {
+        setDespesas([]);
+        setDespesasTotal(0);
+        setDespesasPendentes(0);
+      });
+
   useEffect(() => {
     void recarregarTimesheet();
-    // caseId é o gatilho canônico da releitura; a função apenas encapsula a chamada.
+    void recarregarDespesas();
+    // caseId é o gatilho canônico da releitura; funções apenas encapsulam chamadas.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId]);
 
@@ -105,6 +179,54 @@ export default function TabTimeline({ caseId }: { caseId: string }) {
       toast.error(errDetail(err, "Não foi possível lançar as horas."));
     } finally {
       setSalvandoHoras(false);
+    }
+  };
+
+  const addDespesa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const valor = Number(despesaForm.valor.replace(",", "."));
+    if (!despesaForm.descricao.trim() || !Number.isFinite(valor) || valor <= 0) {
+      toast.error("Informe descrição e valor válido para a despesa.");
+      return;
+    }
+    setSalvandoDespesa(true);
+    try {
+      await api.post("/despesas-processuais/", {
+        case_id: caseId,
+        data: despesaForm.data,
+        valor,
+        descricao: despesaForm.descricao.trim(),
+        categoria: despesaForm.categoria,
+      });
+      toast.success("Despesa processual lançada.");
+      setDespesaForm({
+        descricao: "",
+        valor: "",
+        categoria: "outro",
+        data: hojeLocalISO(),
+      });
+      setShowDespesaForm(false);
+      await recarregarDespesas();
+    } catch (err: any) {
+      toast.error(errDetail(err, "Não foi possível lançar a despesa."));
+    } finally {
+      setSalvandoDespesa(false);
+    }
+  };
+
+  const faturarDespesas = async () => {
+    if (!podeFaturar || despesasPendentes <= 0) return;
+    setFaturandoDespesas(true);
+    try {
+      const r = await api.post(`/despesas-processuais/caso/${caseId}/faturar`, {});
+      toast.success(
+        `Reembolso gerado: ${moeda(r.data?.valor)} em ${r.data?.lancamentos || 0} lançamento(s).`,
+      );
+      await recarregarDespesas();
+    } catch (err: any) {
+      toast.error(errDetail(err, "Não foi possível faturar as despesas."));
+    } finally {
+      setFaturandoDespesas(false);
     }
   };
 
@@ -233,6 +355,139 @@ export default function TabTimeline({ caseId }: { caseId: string }) {
           ))}
           {ts.length === 0 && !showTsForm && (
             <Empty message="Nenhuma hora lançada" />
+          )}
+        </div>
+      </div>
+
+      <div>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div>
+            <h3 className="font-semibold text-sm text-gray-500 uppercase">
+              Despesas processuais ({moeda(despesasTotal)})
+            </h3>
+            <p className="text-xs text-slate-500">
+              Pendente de reembolso: {moeda(despesasPendentes)}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {podeFaturar && despesasPendentes > 0 && (
+              <button
+                type="button"
+                onClick={() => void faturarDespesas()}
+                disabled={faturandoDespesas}
+                className="btn-secondary text-xs disabled:opacity-50"
+              >
+                {faturandoDespesas ? "Gerando reembolso…" : "Gerar reembolso"}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowDespesaForm(!showDespesaForm)}
+              className="btn-secondary text-xs"
+            >
+              + Lançar despesa
+            </button>
+          </div>
+        </div>
+
+        {showDespesaForm && (
+          <form onSubmit={addDespesa} className="card p-4 space-y-3 mb-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <label className="label">Descrição</label>
+                <input
+                  required
+                  maxLength={500}
+                  value={despesaForm.descricao}
+                  onChange={(e) =>
+                    setDespesaForm((f) => ({ ...f, descricao: e.target.value }))
+                  }
+                  placeholder="Ex.: custas de distribuição, diligência, cópias…"
+                  className="input w-full text-sm"
+                />
+              </div>
+              <div>
+                <label className="label">Valor (R$)</label>
+                <input
+                  required
+                  inputMode="decimal"
+                  value={despesaForm.valor}
+                  onChange={(e) =>
+                    setDespesaForm((f) => ({ ...f, valor: e.target.value }))
+                  }
+                  placeholder="0,00"
+                  className="input w-full text-sm"
+                />
+              </div>
+              <div>
+                <label className="label">Data</label>
+                <input
+                  required
+                  type="date"
+                  value={despesaForm.data}
+                  onChange={(e) =>
+                    setDespesaForm((f) => ({ ...f, data: e.target.value }))
+                  }
+                  className="input w-full text-sm"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="label">Categoria</label>
+                <select
+                  value={despesaForm.categoria}
+                  onChange={(e) =>
+                    setDespesaForm((f) => ({ ...f, categoria: e.target.value }))
+                  }
+                  className="input w-full text-sm"
+                >
+                  {CATEGORIAS_DESPESA.map((categoria) => (
+                    <option key={categoria.value} value={categoria.value}>
+                      {categoria.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={salvandoDespesa}
+                className="btn-primary text-sm disabled:opacity-50"
+              >
+                {salvandoDespesa ? "Salvando…" : "Salvar despesa"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowDespesaForm(false)}
+                disabled={salvandoDespesa}
+                className="btn-secondary text-sm disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        )}
+
+        <div className="space-y-2">
+          {despesas.map((despesa) => (
+            <div
+              key={despesa.id}
+              className="card p-3 flex flex-wrap justify-between items-center gap-2 text-sm"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="break-words text-gray-700">{despesa.descricao}</p>
+                <p className="text-xs text-gray-400">
+                  {fmtDate(despesa.data)} • {despesa.categoria}
+                  {despesa.faturada ? " • reembolso gerado" : " • pendente"}
+                </p>
+              </div>
+              <span className="font-mono font-semibold text-primary-600">
+                {moeda(despesa.valor)}
+              </span>
+            </div>
+          ))}
+          {despesas.length === 0 && !showDespesaForm && (
+            <Empty message="Nenhuma despesa processual lançada" />
           )}
         </div>
       </div>
