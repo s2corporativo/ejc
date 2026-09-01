@@ -19,7 +19,7 @@ vi.mock("../../components/Toast", () => ({
   },
 }));
 
-import { SimularPrazoModal } from "./acoesLegadas";
+import { PrazoSugeridoModal, SimularPrazoModal } from "./acoesLegadas";
 
 
 describe("SimularPrazoModal", () => {
@@ -71,5 +71,84 @@ describe("SimularPrazoModal", () => {
     expect(
       screen.getByText(/Tribunal não informado: feriados e suspensões locais/),
     ).toBeTruthy();
+  });
+});
+
+
+describe("PrazoSugeridoModal", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    post.mockResolvedValue({
+      data: {
+        criado: true,
+        data_prazo: "2026-09-22",
+      },
+    });
+  });
+
+  it("permite cadastrar vencimento manual somente após conferência humana", async () => {
+    const onClose = vi.fn();
+    const onResolvido = vi.fn();
+    const { container } = render(
+      <PrazoSugeridoModal
+        sugestao={{
+          id: "com-1",
+          titulo: "Intimação de teste",
+          dados: {
+            disponivel: false,
+            case_id: "case-1",
+            data_disponibilizacao: "2026-09-01",
+            aviso: "Revisão necessária",
+            prazo_sugerido_status: "nenhum",
+          },
+        }}
+        onClose={onClose}
+        onResolvido={onResolvido}
+      />,
+    );
+
+    const aceitar = screen.getByRole("button", {
+      name: "Cadastrar prazo revisado",
+    });
+    expect(aceitar).toBeDisabled();
+
+    const data = container.querySelector('input[type="date"]') as HTMLInputElement;
+    fireEvent.change(data, { target: { value: "2026-09-22" } });
+    expect(aceitar).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(aceitar).not.toBeDisabled();
+    fireEvent.click(aceitar);
+
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/intimacoes/com-1/aceitar-prazo",
+        { data_prazo: "2026-09-22" },
+      ),
+    );
+    await waitFor(() => expect(onResolvido).toHaveBeenCalledTimes(1));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("mantém bloqueio quando intimação não está vinculada a caso", () => {
+    render(
+      <PrazoSugeridoModal
+        sugestao={{
+          id: "com-sem-caso",
+          titulo: "Intimação sem caso",
+          dados: {
+            disponivel: false,
+            case_id: null,
+            prazo_sugerido_status: "nenhum",
+          },
+        }}
+        onClose={vi.fn()}
+        onResolvido={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/ainda não está vinculada a um caso/i)).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Cadastrar prazo revisado" }),
+    ).toBeDisabled();
   });
 });
