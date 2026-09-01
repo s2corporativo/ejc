@@ -42,6 +42,9 @@ type PrazoSugerido = {
   disponivel?: boolean;
   dias?: number | null;
   data_sugerida?: string | null;
+  data_disponibilizacao?: string | null;
+  case_id?: string | null;
+  aviso?: string | null;
   base_legal?: string | null;
   base_calculo?: string | null;
   motivo?: string | null;
@@ -56,13 +59,11 @@ export type SugestaoAberta = {
 };
 
 /**
- * Modal do prazo assistido: mesmo fluxo de dois passos da tela legada de
- * Intimações (removida na consolidação de 2026-08; ver histórico no git) —
- * a sugestão vem do GET em modo leitura e só então
- * o advogado aceita (cria o Deadline) ou recusa (não cria nada).
- *
- * A recusa NÃO pede motivo: o endpoint `POST /intimacoes/{id}/recusar-prazo`
- * não recebe corpo. O próprio modal é a confirmação, como no legado.
+ * Prazo DJEN é HITL. Quando o backend não dispõe de motor auditável para a
+ * comunicação, a Central não bloqueia o advogado: oferece um caminho MANUAL,
+ * mas exige vencimento final e confirmação expressa de conferência da fonte.
+ * A disponibilização capturada nunca é convertida automaticamente em publicação
+ * ou termo inicial.
  */
 export function PrazoSugeridoModal({
   sugestao,
@@ -74,17 +75,32 @@ export function PrazoSugeridoModal({
   onResolvido: () => void;
 }) {
   const [salvando, setSalvando] = useState<"aceitar" | "recusar" | null>(null);
+  const [vencimentoConferido, setVencimentoConferido] = useState("");
+  const [fonteConferida, setFonteConferida] = useState(false);
   const dados = sugestao?.dados;
   const status = dados?.prazo_sugerido_status ?? "nenhum";
   const jaResolvido = status === "aceito" || status === "recusado";
   const semBase = dados?.disponivel === false;
 
+  useEffect(() => {
+    setVencimentoConferido("");
+    setFonteConferida(false);
+  }, [sugestao?.id]);
+
   const aceitar = async () => {
     if (!sugestao) return;
+    if (semBase && (!vencimentoConferido || !fonteConferida)) {
+      toast.error(
+        "Informe o vencimento final e confirme a conferência da publicação oficial, termo inicial, regime e calendário.",
+      );
+      return;
+    }
     setSalvando("aceitar");
     try {
+      const body = semBase ? { data_prazo: vencimentoConferido } : undefined;
       const { data } = await api.post(
         `/intimacoes/${sugestao.id}/aceitar-prazo`,
+        body,
       );
       toast.success(
         data.criado === false
@@ -94,12 +110,11 @@ export function PrazoSugeridoModal({
       onResolvido();
       onClose();
     } catch (e: any) {
-      // 422 = intimação sem caso vinculado (ou sem base para calcular).
       toast.error(
         e?.response?.status === 422
           ? erroDetalhe(
               e,
-              "Intimação sem caso vinculado — vincule um caso antes de gerar o prazo.",
+              "Revise o vínculo do caso e os marcos processuais antes de gerar o prazo.",
             )
           : erroDetalhe(e, "Não foi possível cadastrar o prazo."),
       );
@@ -138,9 +153,50 @@ export function PrazoSugeridoModal({
           </p>
 
           {semBase ? (
-            <div className="rounded-lg border border-warn-200 bg-warn-50 p-3 text-xs text-warn-800">
-              {dados?.motivo ||
-                "Sem data de disponibilização não é possível sugerir prazo para esta intimação."}
+            <div className="space-y-3">
+              <div className="rounded-lg border border-warn-200 bg-warn-50 p-3 text-xs text-warn-800">
+                {dados?.aviso ||
+                  "Cálculo automático indisponível. Confira a comunicação oficial antes de informar o vencimento."}
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800">
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-500">Disponibilização capturada</span>
+                  <span className="font-medium text-slate-700 dark:text-slate-200">
+                    {fmtData(dados?.data_disponibilizacao)}
+                  </span>
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Este dado é apenas o fato capturado da fonte. Não é tratado como
+                  publicação nem como termo inicial.
+                </p>
+              </div>
+              {!dados?.case_id && (
+                <div className="rounded-lg border border-danger-200 bg-danger-50 p-2 text-xs text-danger-700">
+                  A intimação ainda não está vinculada a um caso. Vincule o caso
+                  antes de aceitar o prazo.
+                </div>
+              )}
+              <div>
+                <label className="label text-xs">Vencimento final conferido *</label>
+                <input
+                  className="input"
+                  type="date"
+                  value={vencimentoConferido}
+                  onChange={(e) => setVencimentoConferido(e.target.value)}
+                />
+              </div>
+              <label className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={fonteConferida}
+                  onChange={(e) => setFonteConferida(e.target.checked)}
+                />
+                <span>
+                  Conferi a comunicação/publicação oficial, o termo inicial, o
+                  regime processual e o calendário aplicável. A data acima é o
+                  vencimento final que desejo cadastrar.
+                </span>
+              </label>
             </div>
           ) : (
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800">
@@ -167,7 +223,7 @@ export function PrazoSugeridoModal({
           )}
 
           <p className="text-[11px] text-slate-500 italic">
-            Sugestão automática — o prazo só é criado depois que você aceita.
+            O prazo só é criado após uma ação humana explícita.
           </p>
 
           {jaResolvido && (
@@ -190,12 +246,19 @@ export function PrazoSugeridoModal({
             </button>
             <button
               onClick={aceitar}
-              disabled={salvando !== null || semBase || status === "aceito"}
+              disabled={
+                salvando !== null ||
+                status === "aceito" ||
+                (semBase &&
+                  (!vencimentoConferido || !fonteConferida || !dados?.case_id))
+              }
               className="px-4 py-2 bg-success-600 text-white text-sm rounded-lg hover:bg-success-700 disabled:opacity-60"
             >
               {salvando === "aceitar"
                 ? "Aceitando..."
-                : "Aceitar e criar prazo"}
+                : semBase
+                  ? "Cadastrar prazo revisado"
+                  : "Aceitar e criar prazo"}
             </button>
           </div>
         </div>
@@ -231,7 +294,6 @@ export function SuspensaoFormModal({
   useEffect(() => {
     if (!open) return;
     setErro("");
-    // Lista de tribunais é conveniência: se falhar, o campo vira texto livre.
     api
       .get("/suspensoes/tribunais")
       .then((r) =>
