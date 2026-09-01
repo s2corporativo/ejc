@@ -3,7 +3,7 @@
 # + movimentos (timeline) + endpoint de análise IA integrado.
 from __future__ import annotations
 from datetime import datetime, timezone
-from uuid import uuid4
+from uuid import UUID, uuid4
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, BackgroundTasks
@@ -25,6 +25,11 @@ from app.services.deadline_calculator import calcular_prescricao
 from app.services.case_intel import triagem_caso, aprendizado_encerramento
 from app.services.case_automacao import automacao_caso, gerar_documentos_iniciais_auto
 from app.services.fee_proposal_service import seed_proposta_honorarios_cadastro
+from app.services.case_integrity_service import (
+    garantir_numero_processo_unico,
+    resolver_responsavel_juridico,
+    sincronizar_processo_principal_do_caso,
+)
 from app.services import event_bus
 from app.services.documental import gerar_documentos_iniciais
 # Mesmo vocabulário/contrato de poderes do kit documental (fonte única do
@@ -71,6 +76,7 @@ _PODE_CRIAR_CASO: frozenset[str] = frozenset({
     "secretaria",   # intake
 })
 _ARQUIVAMENTO_ROLES = ["superadmin", "admin", "socio", "advogado"]
+_CASE_TYPES = {"judicial", "extrajudicial", "consultoria"}
 
 # Status que exigem proxima_acao preenchido (G1 — caso sempre tem "o que fazer agora").
 # Todo caso ABERTO exige próxima ação — inclusive protocolado (ex.: "aguardar
@@ -113,6 +119,7 @@ async def listar(
     status_f: Optional[str] = Query(None, alias="status"),
     arquivo: str = Query("ativos", pattern="^(ativos|arquivados|todos)$"),
     advogado_id: Optional[str] = None,
+    case_type: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -141,6 +148,13 @@ async def listar(
             Case.numero_interno.ilike(f"%{search}%"),
             Case.parte_contraria.ilike(f"%{search}%"),
         ))
+    if case_type:
+        if case_type not in _CASE_TYPES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Tipo de caso inválido. Use um de {sorted(_CASE_TYPES)}",
+            )
+        q = q.where(Case.case_type == case_type)
     # `area` e `status` são ENUM NATIVO no Postgres: string fora do enum não é
     # rejeitada pelo bind do SQLAlchemy, chega crua ao banco e estoura
     # InvalidTextRepresentation -> HTTP 500 (era o caso de `?status=all`).
@@ -177,7 +191,6 @@ async def stats_casos(
     cu: User = Depends(get_current_user),
 ):
     """BUG-06/BUG-10: fonte ÚNICA de contagem de casos p/ o dashboard.
-
     TODAS as agregações (total, ativos, encerrados e por_area) filtram
     `deleted_at IS NULL` sobre o MESMO conjunto e respeitam a visibilidade do
     usuário — elimina divergência entre header/cards e o gráfico por área.
@@ -253,58 +266,29 @@ async def criar(
     _validar_proxima_acao(payload)
 
     # Validar cliente — com GATE DE CARTEIRA (404 uniforme).
-    # Só existência não basta: `advogado_responsavel_id` abaixo cai em `cu.id`
-    # quando omitido, então criar caso com client_id de outra carteira fabricava
-    # o vínculo que faz `pode_ver_cliente` liberar aquele cliente para sempre
-    # (dossiê, CPF/CNPJ, procurações, data room). É a porta da frente da mesma
-    # classe já fechada no Raio-X (`_resolver_cliente`) e na Sala Jurídica.
     from app.core.client_ownership import obter_cliente_autorizado
     await obter_cliente_autorizado(db, cu, payload.client_id)
 
-    # Idempotência concorrente: o mesmo cliente e número processual não
-    # podem criar dois casos ativos. O advisory lock serializa requisições
-    # simultâneas; a comparação normaliza CNJ mascarado e texto administrativo.
-    if payload.numero_processo:
-        from app.services.validators_service import normalizar_cnj
+    # Responsabilidade jurídica é regra de domínio, não mero FK. Usuários de
+    # intake continuam criando, mas precisam indicar advogado quando não têm
+    # papel apto a assumir o caso.
+    responsavel_id = await resolver_responsavel_juridico(
+        db, cu, payload.advogado_responsavel_id
+    )
 
-        numero = payload.numero_processo.strip()
-        digitos_cnj = normalizar_cnj(numero)
-        numero_chave = digitos_cnj if len(digitos_cnj) == 20 else numero.casefold()
-        await db.execute(
-            text("SELECT pg_advisory_xact_lock(hashtext(:chave))"),
-            {"chave": f"case_duplicate:{payload.client_id}:{numero_chave}"},
-        )
-        if len(digitos_cnj) == 20:
-            numero_igual = (
-                sqlfunc.regexp_replace(Case.numero_processo, r"\D", "", "g")
-                == digitos_cnj
-            )
-        else:
-            numero_igual = (
-                sqlfunc.lower(sqlfunc.trim(Case.numero_processo))
-                == numero.casefold()
-            )
-        caso_existente = (
-            await db.execute(
-                select(Case.id).where(
-                    Case.client_id == payload.client_id,
-                    Case.deleted_at.is_(None),
-                    numero_igual,
-                ).limit(1)
-            )
-        ).scalar_one_or_none()
-        if caso_existente:
-            raise HTTPException(
-                status_code=409,
-                detail="Já existe caso ativo para este cliente e número processual",
-            )
+    await garantir_numero_processo_unico(
+        db,
+        client_id=payload.client_id,
+        numero_processo=payload.numero_processo,
+    )
 
     # `honorarios` (FASE 2) NÃO é coluna de Case — vira proposta vigente abaixo.
     data = payload.model_dump(exclude={"data_fato_prescricao", "honorarios"})
+    data.pop("advogado_responsavel_id", None)
     c = Case(
         id=str(uuid4()),
         numero_interno=await _proximo_numero_interno(db),
-        advogado_responsavel_id=data.pop("advogado_responsavel_id") or cu.id,
+        advogado_responsavel_id=responsavel_id,
         **data,
     )
 
@@ -319,6 +303,20 @@ async def criar(
             )
 
     db.add(c)
+    # O processo é a fonte canônica; o Case permanece espelho temporário. O
+    # flush garante que a FK de processes encontre o caso na mesma transação.
+    await db.flush()
+    if any((payload.numero_processo, payload.tribunal, payload.comarca, payload.vara)):
+        await sincronizar_processo_principal_do_caso(
+            db,
+            case_id=c.id,
+            numero_processo=payload.numero_processo,
+            tribunal=payload.tribunal,
+            comarca=payload.comarca,
+            vara=payload.vara,
+            valor_causa=payload.valor_causa,
+            tipo="judicial",
+        )
     db.add(CaseMovimento(
         id=str(uuid4()), case_id=c.id, tipo="nota",
         descricao=f"Caso aberto por {cu.full_name}", created_by=cu.id,
@@ -351,10 +349,11 @@ async def criar(
 
 @router.get("/{case_id}", response_model=CaseDetail)
 async def detalhe(
-    case_id: str,
+    case_id: UUID,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    case_id = str(case_id)
     q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
     q = _filtro_visibilidade(q, cu)
     c = (await db.execute(q)).scalar_one_or_none()
@@ -404,9 +403,6 @@ async def atualizar(
     # para o mesmo destino. Sair deles (reabertura) continua livre por PATCH.
     if mudancas.get("status") in ("arquivado", "encerrado") and \
             mudancas["status"] != status_anterior:
-        # F-12 (auditoria funcional 16/08/2026): a mensagem anterior expunha a
-        # rota interna da API ("Use POST /cases/{id}/arquivar") ao usuário.
-        # Texto de negócio visível; o caminho técnico permanece só neste código.
         raise HTTPException(
             status_code=422,
             detail=(
@@ -431,6 +427,19 @@ async def atualizar(
         raise HTTPException(
             status_code=403,
             detail="Alterar o sigilo reforçado de IA exige papel de advogado, sócio ou administrador.",
+        )
+
+    if "advogado_responsavel_id" in mudancas:
+        mudancas["advogado_responsavel_id"] = await resolver_responsavel_juridico(
+            db, cu, mudancas["advogado_responsavel_id"]
+        )
+
+    if "numero_processo" in mudancas and mudancas["numero_processo"]:
+        await garantir_numero_processo_unico(
+            db,
+            client_id=c.client_id,
+            numero_processo=mudancas["numero_processo"],
+            excluir_case_id=case_id,
         )
 
     for k, v in mudancas.items():
@@ -458,23 +467,27 @@ async def atualizar(
         c.provas_determinantes = None
         c.licoes_aprendidas = None
 
+    # Fonte única: qualquer alteração dos campos processuais passa pelo service
+    # de Process. Inclusive limpar numero_processo agora limpa o canônico.
+    process_kwargs = {}
+    for legacy, canonical in (
+        ("numero_processo", "numero_processo"),
+        ("tribunal", "tribunal"),
+        ("comarca", "comarca"),
+        ("vara", "vara"),
+        ("valor_causa", "valor_causa"),
+    ):
+        if legacy in mudancas:
+            process_kwargs[canonical] = mudancas[legacy]
+    if process_kwargs:
+        await sincronizar_processo_principal_do_caso(
+            db, case_id=case_id, **process_kwargs
+        )
+
     await criar_audit_log(
         db, cu.id, cu.role.value, "UPDATE", "cases", case_id,
         dados_depois={k: str(v) for k, v in mudancas.items()},
     )
-    # Fase 3 write-through: sincroniza processes quando numero_processo muda
-    if "numero_processo" in mudancas and mudancas["numero_processo"]:
-        novo_cnj = (mudancas["numero_processo"] or "").strip()[:30]
-        from uuid import uuid4
-        await db.execute(text("""
-            INSERT INTO processes (id, case_id, numero_cnj, instancia, is_principal, status, created_at, updated_at)
-            VALUES (:id, :cid, :ncnj, '1', TRUE, 'ativo', now(), now())
-            ON CONFLICT DO NOTHING
-        """), {"id": str(uuid4()), "cid": case_id, "ncnj": novo_cnj})
-        await db.execute(text("""
-            UPDATE processes SET numero_cnj=:ncnj, updated_at=now()
-            WHERE case_id=:cid AND is_principal=TRUE AND deleted_at IS NULL
-        """), {"ncnj": novo_cnj, "cid": case_id})
     await db.commit()
     await db.refresh(c)
     # Event bus: notifica módulos interessados que o caso mudou (fail-safe).
@@ -835,8 +848,7 @@ async def criar_movimento(
         data_evento=payload.data_evento, created_by=cu.id,
     )
     db.add(m)
-    await db.commit()
-    # M12 (homologação 2026-08-16): auditoria CREATE do movimento.
+    # Movimento e trilha precisam sobreviver ou falhar juntos.
     _role_c = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
     await criar_audit_log(
         db, cu.id, _role_c, "CREATE", "case_movimentos", case_id,
@@ -874,18 +886,25 @@ async def editar_movimento(
     m = (await db.execute(q)).scalars().first()
     if not m:
         raise HTTPException(status_code=404, detail="Movimento não encontrado")
+    dados_antes = {
+        "movimento_id": movimento_id,
+        "tipo": m.tipo,
+        "descricao": (m.descricao or "")[:100],
+        "data_evento": str(m.data_evento),
+    }
     if payload.tipo is not None:
         m.tipo = payload.tipo
     if payload.descricao is not None:
         m.descricao = payload.descricao
     if payload.data_evento is not None:
         m.data_evento = payload.data_evento
-    await db.commit()
     _role = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
     await criar_audit_log(
         db, cu.id, _role, "UPDATE", "case_movimentos", case_id,
+        dados_antes=dados_antes,
         dados_depois={"movimento_id": movimento_id, "tipo": m.tipo,
-                      "descricao": m.descricao[:100]},
+                      "descricao": (m.descricao or "")[:100],
+                      "data_evento": str(m.data_evento)},
     )
     await db.commit()
     return {"id": m.id, "detail": "Movimento atualizado"}
@@ -911,11 +930,18 @@ async def excluir_movimento(
     m = (await db.execute(q)).scalars().first()
     if not m:
         raise HTTPException(status_code=404, detail="Movimento não encontrado")
+    dados_antes = {
+        "movimento_id": movimento_id,
+        "tipo": m.tipo,
+        "descricao": (m.descricao or "")[:100],
+        "data_evento": str(m.data_evento),
+        "created_by": m.created_by,
+    }
     await db.delete(m)
     _role = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
     await criar_audit_log(
         db, cu.id, _role, "DELETE", "case_movimentos", case_id,
-        dados_depois={"movimento_id": movimento_id},
+        dados_antes=dados_antes,
     )
     await db.commit()
     return {"detail": "Movimento removido"}
@@ -925,7 +951,10 @@ async def excluir_movimento(
 from app.services.datajud_service import sincronizar_caso as _dj_sync
 
 
-@router.post("/{case_id}/sincronizar-processo")
+@router.post(
+    "/{case_id}/sincronizar-processo",
+    dependencies=[Depends(rate_limit("case-datajud-sync", 5))],
+)
 async def sincronizar_processo(
     case_id: str,
     db: AsyncSession = Depends(get_db),
@@ -1139,6 +1168,23 @@ async def aplicar_extracao(
         if val and not getattr(case, campo, None):
             setattr(case, campo, val[:mx])
             preenchidos.append(campo)
+
+    if "numero_processo" in preenchidos:
+        await garantir_numero_processo_unico(
+            db,
+            client_id=case.client_id,
+            numero_processo=case.numero_processo,
+            excluir_case_id=case_id,
+        )
+
+    process_kwargs = {}
+    for campo in ("numero_processo", "tribunal", "comarca", "vara"):
+        if campo in preenchidos:
+            process_kwargs[campo] = getattr(case, campo)
+    if process_kwargs:
+        await sincronizar_processo_principal_do_caso(
+            db, case_id=case_id, **process_kwargs
+        )
 
     # 2) Partes (dedup por tipo+nome já existentes)
     existentes = {
@@ -1417,10 +1463,14 @@ async def teses_sugeridas(
     }
 
 
+class CaseAnalysisRequest(_BM2):
+    texto_documento: str = _F2(default="", max_length=100_000)
+
+
 @router.post('/{case_id}/analisar', summary='Analise estrategica com IA')
 async def analisar_caso_ia(
     case_id: str,
-    payload: dict = Body(default={}),
+    payload: CaseAnalysisRequest = Body(default_factory=CaseAnalysisRequest),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -1453,7 +1503,7 @@ async def analisar_caso_ia(
         titulo=getattr(case, 'titulo', '') or '',
         objeto=getattr(case, 'descricao', '') or '',
         fatos=getattr(case, 'descricao_fatos', '') or '',
-        texto_documento=(payload.get('texto_documento', '') if isinstance(payload, dict) else ''),
+        texto_documento=payload.texto_documento,
         partes_existentes=partes_str,
         numero_processo=getattr(case, 'numero_processo', '') or '',
         area=area_val,
@@ -1478,8 +1528,20 @@ async def analisar_caso_ia(
         db.add(log)
         await db.commit()
     except Exception as e:
+        await db.rollback()
         import logging
-        logging.getLogger(__name__).warning(f'AILog nao salvo: {e}')
+        logging.getLogger(__name__).error(
+            "AILog da análise de caso não pôde ser persistido (%s)",
+            type(e).__name__,
+        )
+        # Fail-closed de governança: a geração pode ter ocorrido no provider,
+        # mas não liberamos resultado jurídico estratégico sem trilha auditável.
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "A análise não foi liberada porque a trilha de auditoria da IA "
+                "não pôde ser registrada. Tente novamente."
+            ),
+        ) from None
 
     return analise
-
