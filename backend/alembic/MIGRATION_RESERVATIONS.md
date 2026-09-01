@@ -2,9 +2,9 @@
 
 Este arquivo é o ledger canônico de **reservas futuras** e do trecho recente da cadeia Alembic. O histórico detalhado de reservas antigas permanece preservado no Git.
 
-**Head canônico atual desta branch:** `156_case_despesas_processuais`
-**Próximo prefixo livre após o merge:** `157`
-Base da branch: `main` em `155_indices_listagem_espinha`. A `156` está reservada por esta PR e **não pode ser reutilizada enquanto a PR estiver aberta**.
+**Head canônico atual da `main`:** `156_case_despesas_processuais`
+**Próximo prefixo livre:** `157`
+Base desta PR: `main` em `155_indices_listagem_espinha`. A declaração acima representa o head canônico **que esta PR propõe à main**, conforme o contrato dos gates `test_migration_reservations_head.py`; enquanto a PR não for mesclada, a `main` publicada permanece em 155. A `156` está reservada por esta PR e **não pode ser reutilizada enquanto a PR estiver aberta**.
 
 > Nunca reutilize um número menor ou igual ao head atual, mesmo quando houver lacuna histórica. A ordem numérica precisa crescer junto com `down_revision`.
 
