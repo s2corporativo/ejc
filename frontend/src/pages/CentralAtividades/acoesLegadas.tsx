@@ -1,7 +1,7 @@
 // ── Ações que só existiam nas telas legadas, trazidas para a Central ─────────
 // Fluxos de intimação (prazo assistido, captura manual) e de suspensão de
-// tribunal (criar, excluir, simular). Os endpoints são os mesmos das telas
-// legadas — nada foi criado no backend e nenhuma tela legada foi removida.
+// tribunal (criar, excluir). O simulador jurídico usa o motor canônico de
+// deadlines para não manter duas regras de cálculo processual.
 import { useEffect, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import api from "../../lib/api";
@@ -338,7 +338,9 @@ export function SuspensaoFormModal({
   );
 }
 
-// ── 3. Simulador de prazo (leitura — não grava nada) ─────────────────────────
+// ── 3. Simulador processual canônico (leitura — não grava nada) ──────────────
+
+type RegimeProcessual = "civel" | "trabalhista" | "penal";
 
 export function SimularPrazoModal({
   open,
@@ -350,8 +352,10 @@ export function SimularPrazoModal({
   const [sim, setSim] = useState({
     data_inicio: "",
     dias: 15,
-    contagem: "uteis",
+    regime_calculo: "civel" as RegimeProcessual,
     tribunal: "",
+    dobro: false,
+    excecao_recesso_penal: false,
   });
   const [res, setRes] = useState<any>(null);
   const [erro, setErro] = useState("");
@@ -362,15 +366,23 @@ export function SimularPrazoModal({
       setErro("Informe a data inicial.");
       return;
     }
+    if (!Number.isFinite(Number(sim.dias)) || Number(sim.dias) < 1) {
+      setErro("Informe uma quantidade de dias maior que zero.");
+      return;
+    }
     setCarregando(true);
     setErro("");
     setRes(null);
     try {
-      // POST /suspensoes/simular NÃO persiste — é cálculo de apoio.
-      const { data } = await api.post("/suspensoes/simular", {
-        ...sim,
+      const { data } = await api.post("/deadlines/calcular", {
+        data_inicio: sim.data_inicio,
         dias: Number(sim.dias),
-        tribunal: sim.tribunal || null,
+        tipo: "processual",
+        regime_calculo: sim.regime_calculo,
+        tribunal: sim.tribunal.trim() || null,
+        dobro: sim.regime_calculo === "penal" ? false : sim.dobro,
+        excecao_recesso_penal:
+          sim.regime_calculo === "penal" && sim.excecao_recesso_penal,
       });
       setRes(data);
     } catch (e) {
@@ -381,11 +393,12 @@ export function SimularPrazoModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Simular vencimento de prazo">
+    <Modal open={open} onClose={onClose} title="Simular vencimento processual">
       <div className="space-y-3">
         <p className="text-xs text-slate-500">
-          Considera feriados e, se o tribunal for informado, as suspensões dele.
-          Simulação de apoio — nada é gravado.
+          Usa o motor processual canônico do EJC. Informe o regime jurídico e
+          confira tribunal, termo inicial, feriados e suspensões antes de usar o
+          resultado em um caso real. A simulação não grava prazo.
         </p>
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -398,7 +411,7 @@ export function SimularPrazoModal({
             />
           </div>
           <div>
-            <label className="label text-xs">Dias</label>
+            <label className="label text-xs">Dias *</label>
             <input
               className="input"
               type="number"
@@ -408,14 +421,25 @@ export function SimularPrazoModal({
             />
           </div>
           <div>
-            <label className="label text-xs">Contagem</label>
+            <label className="label text-xs">Regime processual *</label>
             <select
               className="input"
-              value={sim.contagem}
-              onChange={(e) => setSim({ ...sim, contagem: e.target.value })}
+              value={sim.regime_calculo}
+              onChange={(e) =>
+                setSim({
+                  ...sim,
+                  regime_calculo: e.target.value as RegimeProcessual,
+                  dobro: e.target.value === "penal" ? false : sim.dobro,
+                  excecao_recesso_penal:
+                    e.target.value === "penal"
+                      ? sim.excecao_recesso_penal
+                      : false,
+                })
+              }
             >
-              <option value="uteis">Dias úteis</option>
-              <option value="corridos">Dias corridos</option>
+              <option value="civel">Cível — CPC</option>
+              <option value="trabalhista">Trabalhista — CLT</option>
+              <option value="penal">Penal — CPP</option>
             </select>
           </div>
           <div>
@@ -423,30 +447,79 @@ export function SimularPrazoModal({
             <input
               className="input"
               value={sim.tribunal}
-              placeholder="Opcional"
+              placeholder="TJMG, TRT3, STJ…"
               onChange={(e) => setSim({ ...sim, tribunal: e.target.value })}
             />
           </div>
         </div>
+
+        {sim.regime_calculo !== "penal" && (
+          <label className="flex items-start gap-2 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={sim.dobro}
+              onChange={(e) => setSim({ ...sim, dobro: e.target.checked })}
+            />
+            <span>
+              Aplicar prazo em dobro. Marque somente depois de conferir a hipótese
+              legal aplicável ao caso.
+            </span>
+          </label>
+        )}
+
+        {sim.regime_calculo === "penal" && (
+          <label className="flex items-start gap-2 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={sim.excecao_recesso_penal}
+              onChange={(e) =>
+                setSim({ ...sim, excecao_recesso_penal: e.target.checked })
+              }
+            />
+            <span>
+              Exceção legal ao recesso do CPP art. 798-A confirmada pelo operador.
+            </span>
+          </label>
+        )}
+
+        {!sim.tribunal.trim() && (
+          <div className="rounded-lg border border-warn-200 bg-warn-50 p-2 text-[11px] text-warn-800">
+            Tribunal não informado: feriados e suspensões locais podem alterar o
+            vencimento. Trate o resultado como preliminar até a conferência.
+          </div>
+        )}
+
         {erro && <p className="text-xs text-danger-600">{erro}</p>}
         {res && (
           <div className="rounded-lg border border-gold-200 bg-gold-50 p-3 text-sm">
             <div className="flex justify-between gap-2">
               <span className="text-slate-500">Vencimento</span>
               <span className="font-semibold text-navy">
-                {fmtData(res.vencimento ?? res.data_vencimento)}
+                {fmtData(res.data_vencimento)}
               </span>
             </div>
-            {res.base && (
-              <p className="text-[11px] text-slate-500 mt-2">{res.base}</p>
+            {res.regime_calculo && (
+              <p className="text-[11px] text-slate-600 mt-1">
+                Regime: {res.regime_calculo}
+              </p>
             )}
-            {Array.isArray(res.suspensoes_aplicadas) &&
-              res.suspensoes_aplicadas.length > 0 && (
-                <p className="text-[11px] text-slate-600 mt-1">
-                  {res.suspensoes_aplicadas.length} suspensão(ões)
-                  considerada(s).
-                </p>
-              )}
+            {res.modo && (
+              <p className="text-[11px] text-slate-500 mt-1">{res.modo}</p>
+            )}
+            {res.calendario_status && (
+              <p className="text-[11px] text-slate-500 mt-1">
+                Calendário: {res.calendario_status}
+              </p>
+            )}
+            {(res.resultado_preliminar || res.revisao_obrigatoria) && (
+              <div className="mt-2 rounded border border-warn-200 bg-warn-50 p-2 text-[11px] text-warn-800">
+                Resultado preliminar — revisão humana obrigatória antes de
+                confirmar o prazo.
+              </div>
+            )}
+            {res.aviso && (
+              <p className="text-[11px] text-warn-800 mt-2">{res.aviso}</p>
+            )}
           </div>
         )}
         <div className="flex gap-2 justify-end">
