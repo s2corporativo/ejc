@@ -216,12 +216,29 @@ class TestWiringNosDeploys:
         conteudo = (RAIZ / "scripts" / "deploy-vps.sh").read_text(encoding="utf-8")
         assert "migrar_env_obsoletos.sh" in conteudo
 
-    def test_workflow_de_deploy_usa_o_script_seguro(self):
-        # A cadeia de produção é: workflow → deploy_workflow_transaction.sh
-        # (mutex + estado transacional) → deploy_vps_safe.sh (publicação).
-        wf = (RAIZ / ".github" / "workflows" / "deploy-vps.yml").read_text(encoding="utf-8")
-        assert "scripts/deploy_workflow_transaction.sh" in wf
+    def test_transacao_de_deploy_usa_o_script_seguro(self):
+        """Elo VIVO da cadeia: transaction.sh (mutex + estado) → deploy_vps_safe.sh.
+
+        Era a segunda metade de um teste que começava no workflow do Actions.
+        Com o Actions arquivado em 31/08 (`b77ff4c`) a primeira metade perdeu o
+        objeto, mas ESTA não: o deploy manual entra exatamente por aqui, e a
+        publicação continua tendo que passar pelo script seguro. Separado para
+        que o elo vivo não adormeça junto com o que morreu.
+        """
         tx = (
             RAIZ / "scripts" / "deploy_workflow_transaction.sh"
         ).read_text(encoding="utf-8")
         assert "bash scripts/deploy_vps_safe.sh" in tx
+
+    @pytest.mark.skipif(
+        not (RAIZ / ".github" / "workflows" / "deploy-vps.yml").is_file(),
+        reason=("GitHub Actions arquivado em 31/08 (b77ff4c) — workflows movidos "
+                "para docs/arquivo/ci/github-actions-legacy/; Woodpecker é o CI oficial"),
+    )
+    def test_workflow_de_deploy_usa_o_script_seguro(self):
+        """Primeiro elo, DORMENTE: workflow → deploy_workflow_transaction.sh.
+
+        Volta a valer sozinho se o Actions for restaurado.
+        """
+        wf = (RAIZ / ".github" / "workflows" / "deploy-vps.yml").read_text(encoding="utf-8")
+        assert "scripts/deploy_workflow_transaction.sh" in wf

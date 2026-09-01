@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "deploy-vps.yml"
 TX_SCRIPT = ROOT / "scripts" / "deploy_workflow_transaction.sh"
@@ -10,6 +12,12 @@ DEPLOY_SCRIPT = ROOT / "scripts" / "deploy_vps_safe.sh"
 
 
 def _texto() -> str:
+    # Skip CIRÚRGICO, não do módulo: o Actions foi arquivado em 31/08
+    # (`b77ff4c`), mas o deploy real nunca morou nele — mora nos scripts, que
+    # este arquivo também testa. Adormecer só quem lê o YAML mantém vivas as
+    # garantias que ainda têm objeto (lock, SHA implantado, travas do manual).
+    if not WORKFLOW.is_file():
+        pytest.skip("GitHub Actions arquivado em 31/08 (b77ff4c) — workflows movidos para docs/arquivo/ci/github-actions-legacy/; Woodpecker é o CI oficial")
     return WORKFLOW.read_text(encoding="utf-8")
 
 
