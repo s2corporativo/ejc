@@ -28,8 +28,8 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
   inconsistência estrutural, Eixo 2), `CORTE-` (remoção de módulo, Eixo 3), `INFRA-`
   (esteira/deploy/processo), `AUD27-` (achados novos de
   `docs/auditoria/relatorios/2026-08-27-verificacao-e-novos-achados.md`), `VARR-`
-  (achados da varredura de conferência dos pendentes, 2026-09-01 — prefixo próprio
-  porque não vêm de nenhum dos relatórios acima, e sim de reler o código à procura
+  (achado da varredura de conferência dos pendentes, 2026-09-01 — prefixo próprio
+  porque não vem de nenhum dos relatórios acima, e sim de reler o código à procura
   de status envelhecido).
 
 ## Tabela
@@ -48,7 +48,7 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | V2-1.2 | Contador de casos ativos conta o arquivado (bug em `dossie_cliente.py:140`) | F1 | #1272 | em-andamento | #1259 | 2026-08-24 |
 | V2-1.3 | Filtro de status quebra o servidor ou retorna vazio | F1 | #1272 | em-andamento | #1259 | 2026-08-24 |
 | V2-1.4 | Mensagem falsa "A equipe foi notificada" | F1 | — | mesclado | #1015 | 2026-08-14 |
-| V2-1.5 | Rotas retornando 404 — **as seis conferidas contra a tabela de rotas real em 01/09, e o enunciado agrupa três coisas distintas**: (a) `/crm/leads`, `/assinaturas` e `/procuracoes` não têm NENHUMA rota registrada — é funcionalidade ausente, não rota quebrada; (b) `/workflow/` e `/anexos` têm 7 e 4 sub-rotas mas nenhum endpoint de coleção raiz — o 404 está correto, quem chama a raiz é que erra; (c) `/agenda-eventos` existe COM barra final, então é só o redirect 307 do FastAPI — **único conserto barato dos seis** | F1 | — | pendente | — | 2026-09-01 |
+| V2-1.5 | Rotas retornando 404/307 — **as seis conferidas contra a tabela de rotas real; classificação CORRIGIDA em 01/09 após achado do Codex**: (a) **307 de barra final**, o conserto barato — `/procuracoes` e `/agenda-eventos` existem COM barra (`/api/procuracoes/`, `/api/agenda-eventos/`) e o redirect custa um round-trip por chamada; padronizar `redirect_slashes` ou o path no frontend. (b) **sem endpoint de coleção raiz** — `/workflow/` e `/anexos` têm 7 e 3 sub-rotas próprias mas nenhum `GET` de raiz, então o 404 está correto e quem chama a raiz é que erra. (c) **funcionalidade ausente** — só `/crm/leads` e `/assinaturas` não têm rota nenhuma registrada; não é rota quebrada, é módulo inexistente | F1 | — | pendente | — | 2026-09-01 |
 | V2-2.1 | Vínculo de validação (`ai_log_id`) que trava as peças antes do protocolo `[CRÍTICO]` | F1 | — | mesclado | #1015 | 2026-08-14 |
 | V2-2.2 | Embeddings 0/47.359 — investigado (2026-08-24): NÃO é pipeline quebrado; código (self-heal `reembed_rag_orfaos` + script idempotente) já mesclado desde #1015, default `EMBEDDINGS_ENABLED=true`; produção sobrescreve a flag para `false` no `.env` do VPS. Execução é ação do titular (T4 na pauta) `[CRÍTICO]` | F3 | — | mesclado | #1015 | 2026-08-14 |
 | V2-2.3 | Modelo local para dados pessoais — já resolvido (`sanitization_policy.py`, modo LOCAL_COMPLETO bloqueia provedor externo); 305 testes passam | F3 | — | mesclado | #1195 | 2026-08-18 |
@@ -57,8 +57,8 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | V2-3.2 | Falso-ausente (2026-08-24) — já resolvido: `ingestao_saude.py` classifica `nunca_produziu`/`parou_de_produzir` por RESULTADO (não confia no `status="sucesso"` do job), `executar_ingestao`/`conhecimento_ingest` garantem `ultimo_erro` nunca vazio (caso `anpd` citado no próprio código), slugs duplicados `juris_import_*` consolidados (migration 138); 27 testes passam | F3 | — | mesclado | #1015 | 2026-08-14 |
 | V2-3.3 | CORRIGIDO — mesmo defeito que `AUD27-P3-10`, registrado em duplicidade sob dois IDs. Fechado pela mesma cascata de soft-delete | F5 | — | mesclado | #1316 | 2026-08-31 |
 | V2-3.4 | Vínculos ausentes entre registros relacionados | F5 | — | pendente | — | — |
-| V2-3.5 | Padrão de gravação não transacional (agregado do Caso) | F5 | — | pendente | — | — |
-| V2-3.6 | Conversão Sala Jurídica → Caso perde `descricao_fatos` | F5 | — | pendente | — | — |
+| V2-3.5 | Padrão de gravação não transacional (agregado do Caso) — classe de defeito com CINCO vínculos. **Um deles caiu**: `Caso.descricao_fatos` na conversão da Sala Jurídica (V2-3.6, #1238). Seguem quatro: `LegalDoc.validacao_juridica.ai_log_id`, `Caso.jurimetria`, cascata de peças na exclusão de caso, e `oab_number` × `djen_oab_numero` (AUD27-P3-9) | F5 | — | pendente | — | 2026-09-01 |
+| V2-3.6 | Conversão Sala Jurídica → Caso perde `descricao_fatos`. **JÁ CORRIGIDO** pelo #1238 (`c1a060e`), achado do Codex na revisão desta varredura — eu não tinha examinado este item. Cadeia completa hoje: `SalaJuridica.tsx:564` preenche `convFatos` com o primeiro que existir entre `estado.resumo`, `workspace_texto` e `fatosDasMensagens(...)`, a linha 661 posta como `descricao`, e `legal_chat_service.py:941` grava em `descricao_fatos=`. O próprio código descreve o defeito no PASSADO ("a caixa abria VAZIA e o caso nascia com `descricao_fatos = NULL`") e há teste de regressão | F5 | — | mesclado | #1238 | 2026-09-01 |
 | V2-4.1 | Código já pronto e testado (guard de produção em `run_fictitious_smoke.py`, script `purga_dados_homologacao.py` com desativação de conta); execução em produção é ação do titular (governança §9 me veda acesso) | F3 | — | mesclado | #1015 | 2026-08-14 |
 | V2-4.2 | Métrica de "chance de êxito" — decisão D4 (Opção 1): removida da UI da Entrevista Inteligente; API mantém o campo, tipado com nota de não-reintrodução; confirmado que nenhuma rota `/portal/*` a serializa `[CRÍTICO]` | F3 | #1272 | em-andamento | #1259 | 2026-08-24 |
 | V2-4.3 | Investigado (2026-08-24, decisão D5): "OAB Prov. 205/2021" citado como base do HITL em ~25 arquivos (prompts de IA + testes), confirmado incorreto (é sobre publicidade); substituição sugerida pela auditoria (CNJ 615/2025) também não se sustenta (regula o Judiciário, não a advocacia) — precisa de advogado real antes de aplicar | F3 | — | pendente | — | — |
@@ -73,7 +73,7 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | V2-6.3 | Painéis de diagnóstico divergentes | F5 | — | pendente | — | — |
 | V2-6.4 | Superfície de API duplicada | F5 | — | pendente | — | — |
 | V2-6.5 | Rotas órfãs e mapa incompleto (211 de 453 rotas nunca chamadas) | F5 | — | pendente | — | — |
-| V2-6.6 | Taxonomia de áreas duplicada (4 manifestações) | F5 | — | pendente | — | — |
+| V2-6.6 | Taxonomia de áreas duplicada (4 manifestações). **Refinado em 01/09**: os 5 módulos com lista local citados na origem são na verdade **6** — `components/PecaGeneratorModal.tsx:84` tem a sua, com apenas 8 áreas, contra 24 do `areaCatalog.ts` e 25 do enum do backend (`case.py`) e de `AREAS_CANONICAS`. É fallback usado só se `GET /pecas/meta` falhar, e nesse caso o advogado vê 8 áreas sem saber que a lista encolheu. Uma consolidação de catálogo resolve tudo isto de uma vez — por isso não vira item próprio (achado do Codex) | F5 | — | pendente | — | 2026-09-01 |
 | V2-6.7 | Itens menores (9 subitens: acessibilidade, paletas, i18n, cadastros vazios etc.) | F5 | — | pendente | — | — |
 | V3-B1 | Bloco 1 — Fazer o sistema dizer a verdade | F1 | — | em-andamento | — | — |
 | V3-B2 | Bloco 2 — Desobstruir o caminho (pipeline da peça) | F1 | — | pendente | — | — |
@@ -137,7 +137,6 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | AUD27-P3-11 | MEDIDO e corrigido **quanto à ordenação** — a hipótese errou o remédio: índice em `deleted_at` não muda nada (401ms → 380ms em 1M de linhas; o filtro casa com 96% das linhas). O custo era a ORDENAÇÃO: índice PARCIAL `(created_at DESC) WHERE deleted_at IS NULL` leva a listagem a 0,30ms e faz o tempo parar de crescer com a tabela. Aplicado a `cases`/`clients`/`documents`; `deadlines` fica de fora, medida como já coberta por `ix_deadlines_data_prazo`. A CONTAGEM do endpoint segue O(n) — resíduo em AUD27-P3-15 | F5 | — | mesclado | migration 155 | 2026-08-31 |
 | AUD27-P3-15 | Listagens de `cases`/`clients`/`documents` fazem contagem EXATA sobre todo o conjunto vivo antes de paginar (`select(count()).select_from(q.subquery())`) — O(n) por definição, e medido como praticamente imune ao índice parcial da 155 (109,23 ms → 99,00 ms em 1M de linhas). Com a ordenação resolvida, é o que sobra limitando a resposta. Saídas: total estimado por `reltuples`, total sob demanda, ou paginação por cursor — todas mudam contrato de paginação/UX, logo decisão do titular | F5 | — | pendente | — | 2026-08-31 |
 | VARR-1 | `ramos_vitrine.py:1146` mantém cópia **byte a byte** de `_LIMIARES_TAXA_MEDIA`, que outros seis routers de ramo importam de `ramos_comum.py:604`. Duas fontes para o mesmo limiar jurisprudencial (REsp 1.061.530/RS) — divergem no primeiro que alguém editar, e o valor sai em resposta de API (`limiares_classificacao`) | F5 | — | pendente | — | 2026-09-01 |
-| VARR-2 | `V2-6.6` lista 5 módulos que redefinem a lista de áreas localmente; `components/PecaGeneratorModal.tsx:84` é um **sexto**, com apenas 8 áreas (contra 24 do `areaCatalog.ts` e 25 do enum do backend). É fallback usado só se `GET /pecas/meta` falhar — mas nesse caso o advogado vê 8 áreas e não sabe que a lista encolheu | F5 | — | pendente | — | 2026-09-01 |
 
 ## Notas dos itens fechados em 31/08 (PR #1316)
 
@@ -221,6 +220,44 @@ Registrados porque o descarte é parte do resultado:
 - **`PecaGeneratorModal` como 4ª manifestação de taxonomia** estava errado: o `V2-6.6` já
   conta 5 módulos com lista local. Ele é um **sexto**, e virou `VARR-2` com esse
   enquadramento — não um achado inédito.
+
+### Correções após a revisão do Codex (01/09)
+
+A revisão automática deste PR apontou três defeitos P2 **na própria varredura**.
+Conferi os três, os três procedem, e estão corrigidos acima. Ficam registrados
+porque um erro dentro de um PR que se apresenta como "conferência" pesa mais que
+um erro comum — ele entra no registro canônico com aparência de fato apurado.
+
+**1. `/procuracoes` estava no balde errado — erro meu, e o pior dos três.**
+Classifiquei como "nenhuma rota registrada" algo que tem três rotas e um
+`GET /api/procuracoes/`. A causa foi trivial e instrutiva: busquei pela substring
+`procuracao`, que **não ocorre** em `procuracoes`. O `grep` devolveu zero e eu li
+zero como inexistência, em vez de suspeitar da busca. E o documento de origem
+(`plano-correcao-v2.md`) já registrava `GET /procuracoes → 307` — contrariei a
+evidência que estava na minha frente. Como o Codex observa, sendo este o backlog
+canônico, a redação anterior mandaria alguém **reconstruir funcionalidade que já
+existe**.
+
+**2. `VARR-2` virou refinamento do `V2-6.6`, não item próprio.** Eu mesmo o
+descrevi como "um sexto módulo" da mesma duplicação que o `V2-6.6` já rastreia:
+uma única consolidação de catálogo resolve os dois. Dois IDs para um defeito
+inflam a contagem e deixam os status divergirem depois.
+
+**3. `V2-3.6` já estava corrigido** pelo #1238 — e eu **não tinha examinado este
+item**. É o quinto status obsoleto desta rodada, e o único encontrado por outra
+pessoa.
+
+### A limitação real desta varredura
+
+O achado 3 expõe o que estava fraco, e não é um item: é a **cobertura**. Conferi
+29 dos 57 e a redação deu a entender que os 28 restantes eram inverificáveis por
+código. **Não eram** — o `V2-3.6` estava entre eles e bastava ler três arquivos.
+
+Então o número continua sem ser plenamente confiável, agora com uma estimativa
+honesta: dos 29 conferidos, 5 estavam obsoletos (17%). Se a taxa se mantiver nos
+28 não conferidos, ainda há uns 4 ou 5 itens resolvidos marcados como pendentes.
+Fechar isso exige conferir os 28 restantes um a um — trabalho legítimo, mas que
+não cabe neste PR.
 
 ## Placar por fase (derivado — não editar à mão, `status_check.sh` recalcula na saída)
 
