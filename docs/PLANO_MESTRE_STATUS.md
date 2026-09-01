@@ -27,7 +27,10 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
   `plano-correcao-v2.md`), `V3-B` (blocos de `plano-lancamento-v3.md`), `CL-` (classes de
   inconsistência estrutural, Eixo 2), `CORTE-` (remoção de módulo, Eixo 3), `INFRA-`
   (esteira/deploy/processo), `AUD27-` (achados novos de
-  `docs/auditoria/relatorios/2026-08-27-verificacao-e-novos-achados.md`).
+  `docs/auditoria/relatorios/2026-08-27-verificacao-e-novos-achados.md`), `VARR-`
+  (achados da varredura de conferência dos pendentes, 2026-09-01 — prefixo próprio
+  porque não vêm de nenhum dos relatórios acima, e sim de reler o código à procura
+  de status envelhecido).
 
 ## Tabela
 
@@ -37,7 +40,7 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | INFRA-2 | Banner de descontinuação de status nos docs legados + correção final ✅/🟡 (frentes 2, 11, 12) | F0 | #1272 | em-andamento | #1259 | 2026-08-24 |
 | INFRA-3 | Pauta de decisões do titular (`docs/PAUTA_DECISOES_TITULAR.md`) | F0 | #1272 | em-andamento | #1259 | 2026-08-24 |
 | INFRA-4 | Ensaio `--dry-run` do deploy manual + backup/downgrade verificados em staging | F0 | — | pendente | — | — |
-| INFRA-T1 | Titular: revisar/mesclar PR #1259 e autorizar 1º deploy manual (migrations 127–147) | F0 (gate) | #1258 | pendente | #1259 | — |
+| INFRA-T1 | Titular: autorizar o 1º deploy manual. **Metade já feita**: o #1259 foi mesclado em 24/08. Sobra só disparar o deploy, hoje contra a `main` em `8a43c5a` (migrations 127–155), pelo `RUNBOOK_DEPLOY_MANUAL.md` — `deploy_manual.sh --sha <SHA> --dry-run` antes | F0 (gate) | #1258 | pendente | #1259 | 2026-09-01 |
 | INFRA-T2 | Titular: regularizar cota GitHub Actions + reativar `auto-integracao.yml`, `continuity-ui-gates.yml`, `architecture-inventory.yml` | F6 (gate) | — | pendente | — | — |
 | V2-0.1 | Prazo vencendo hoje, sem ciência confirmada | F1 | — | pendente | — | — |
 | V2-0.2 | Captura DJEN — código verificado OK (por advogado, monitorado por resultado, autoatendimento de OAB); resta só cadastro real das OABs (ver V3-B6) | F1 | — | mesclado | #1015 | 2026-08-14 |
@@ -45,7 +48,7 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | V2-1.2 | Contador de casos ativos conta o arquivado (bug em `dossie_cliente.py:140`) | F1 | #1272 | em-andamento | #1259 | 2026-08-24 |
 | V2-1.3 | Filtro de status quebra o servidor ou retorna vazio | F1 | #1272 | em-andamento | #1259 | 2026-08-24 |
 | V2-1.4 | Mensagem falsa "A equipe foi notificada" | F1 | — | mesclado | #1015 | 2026-08-14 |
-| V2-1.5 | Rotas retornando 404 | F1 | — | pendente | — | — |
+| V2-1.5 | Rotas retornando 404 — **as seis conferidas contra a tabela de rotas real em 01/09, e o enunciado agrupa três coisas distintas**: (a) `/crm/leads`, `/assinaturas` e `/procuracoes` não têm NENHUMA rota registrada — é funcionalidade ausente, não rota quebrada; (b) `/workflow/` e `/anexos` têm 7 e 4 sub-rotas mas nenhum endpoint de coleção raiz — o 404 está correto, quem chama a raiz é que erra; (c) `/agenda-eventos` existe COM barra final, então é só o redirect 307 do FastAPI — **único conserto barato dos seis** | F1 | — | pendente | — | 2026-09-01 |
 | V2-2.1 | Vínculo de validação (`ai_log_id`) que trava as peças antes do protocolo `[CRÍTICO]` | F1 | — | mesclado | #1015 | 2026-08-14 |
 | V2-2.2 | Embeddings 0/47.359 — investigado (2026-08-24): NÃO é pipeline quebrado; código (self-heal `reembed_rag_orfaos` + script idempotente) já mesclado desde #1015, default `EMBEDDINGS_ENABLED=true`; produção sobrescreve a flag para `false` no `.env` do VPS. Execução é ação do titular (T4 na pauta) `[CRÍTICO]` | F3 | — | mesclado | #1015 | 2026-08-14 |
 | V2-2.3 | Modelo local para dados pessoais — já resolvido (`sanitization_policy.py`, modo LOCAL_COMPLETO bloqueia provedor externo); 305 testes passam | F3 | — | mesclado | #1195 | 2026-08-18 |
@@ -87,8 +90,8 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | CL-B1 | Classe B — correção do plano: `STATUS_REGISTRY` é multiuso (peças, honorários, clientes, prazos) — chaves não são "fantasma", servem outros domínios; nenhuma ação | F2 | #1272 | verificado | #1259 | 2026-08-24 |
 | CL-B2 | Classe B — guard-rail de paridade já existe (`test_status_caso_paridade_frontend.py`) | F2 | #1272 | verificado | #1259 | 2026-08-24 |
 | CL-B3 | Classe B — preservar estado real ao desarquivar/reabrir (`status_anterior`, migration 148, endpoint `/reabrir`) | F2 | #1272 | em-andamento | #1259 | 2026-08-24 |
-| CL-C1 | Classe C — deprecar/remover campo `saudavel` do contrato de `case_health.py` | F2 | — | pendente | — | — |
-| CL-C2 | Classe C — unificar limiares (`health_thresholds.py`, par com `visual_law_core.py`) | F2 | — | pendente | — | — |
+| CL-C1 | Classe C — deprecar/remover campo `saudavel` do contrato de `case_health.py`. **Já feito**: o campo saiu do contrato e o próprio código registra o porquê (`case_health.py:44-48` — *"Era lido em 0 lugares do frontend; removido do contrato em vez de consertado"*). O que resta com esse nome é o VALOR de `classificacao`, que é correto | F2 | — | mesclado | #1272 | 2026-09-01 |
+| CL-C2 | Classe C — unificar limiares. **Resolvido por DECISÃO, no sentido inverso do enunciado**: `case_health.py:31-36` documenta que os limiares de saúde do caso (4 faixas) e os de probabilidade de êxito (`visual_law_core.py`, 3 faixas) respondem PERGUNTAS diferentes sobre o mesmo score — unificá-los seria a abstração errada. O único ponto único é a FONTE do score, que já é única. O `health_thresholds.py` do enunciado nunca existiu | F2 | — | mesclado | #1272 | 2026-09-01 |
 | CL-D1 | Classe D — rótulo corrigido para "Base fática registrada" (a checagem aceitar descrição digitada é deliberada, não bug) | F2 | #1272 | em-andamento | #1259 | 2026-08-24 |
 | CL-D2 | Classe D — golden test das 16 etapas + cenário caso-recém-criado documentado; ponte `case_checklists`→`checklist_criado` fica para depois (refinamento, não bug) | F2 | #1272 | em-andamento | #1259 | 2026-08-24 |
 | CORTE-1 | Cortar jurimetria / predição de êxito | F5 | — | pendente | — | — |
@@ -105,9 +108,9 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | AUD27-P1-4 | Containers do EJC sem `mem_limit` num host com 6 sistemas — um trabalho do EJC reiniciou o `verdelimp-erp` em 27/08 `[INCIDENTE]` | F1 | #1308 | em-prod | #1309 | 2026-08-27 |
 | AUD27-P1-5 | Titular: religar `RAG_AUTO_REEMBED_ENABLED=true` no `.env` do VPS após o deploy da #1309 (desligado como contenção do incidente de 27/08) | F1 (gate) | #1308 | pendente | — | 2026-08-27 |
 | AUD27-P1-6 | `secrets/` (credenciais OAuth do Google Drive), `backups/` e `data/` não estavam no `.gitignore` no checkout de produção — um `git add -A` publicaria credencial `[SEGURANÇA]` | F1 | #1310 | em-andamento | #1311 | 2026-08-27 |
-| AUD27-P1-8 | Alerta de prazo do DJEN não depende de `DJEN_OABS_MONITORADAS`: o job das 06h30 itera `users.djen_oab_numero`, vazio nos cadastros dos advogados (auditoria de julho) — captura alimenta o RAG mas ninguém é avisado `[RISCO DE PRAZO]` | F4 | #1310 | pendente | — | 2026-08-27 |
+| AUD27-P1-8 | Alerta de prazo do DJEN não depende de `DJEN_OABS_MONITORADAS`: a CAPTURA lê a env var (`ingestors/djen.py:204`), o ALERTA itera `users.djen_oab_numero` (`scheduler.py:1637`) — fontes diferentes, confirmado em 01/09. **A metade silenciosa já foi corrigida** pelos #1311/#1312: com 0 OABs elegíveis o job vira `erro` no heartbeat com `{"erros":{"nenhuma_oab_configurada":1}}` (`djen_service.py:194`), então a falha aparece no diagnóstico. Fica aberta a metade substantiva — se os cadastros dos advogados têm `djen_oab_numero` preenchido em PRODUÇÃO (vazio na auditoria de julho); é tarefa de cadastro, não de código, e só se confere no ar `[RISCO DE PRAZO]` | F4 | #1310 | pendente | — | 2026-09-01 |
 | AUD27-P1-7 | Correção de risco de prazo (2ª OAB no DJEN) vivia só como edição manual no `/opt/ejc`, fora do Git — seria destruída pelo próximo `checkout --force` | F1 | #1310 | em-andamento | #1311 | 2026-08-27 |
-| AUD27-P2-8 | RETIFICADO — o achado estava errado. O deploy de 27/08 16:31 provou o backup offsite FUNCIONANDO (`offsite_ok: true`, db 30,7 MB + uploads 15,1 MB cifrados e enviados via rclone, `auth_mode: service_account`, `credencial_dedicada: true`). O arquivo de 1 byte não é a credencial ativa — a ativa vem de `BACKUP_GOOGLE_DRIVE_*`. Resta só remover o arquivo morto | F5 | #1310 | pendente | — | 2026-08-27 |
+| AUD27-P2-8 | RETIFICADO — **não é achado de segurança nem pendência de código**. O deploy de 27/08 16:31 provou o backup offsite FUNCIONANDO (`offsite_ok: true`, db 30,7 MB + uploads 15,1 MB cifrados e enviados via rclone, `auth_mode: service_account`, `credencial_dedicada: true`). O arquivo de 1 byte não é a credencial ativa — a ativa vem de `BACKUP_GOOGLE_DRIVE_*`. Resta só remover o arquivo morto, que está **na VPS e não no repositório** — logo é limpeza operacional do titular, fora do meu alcance (governança §9) | F5 | #1310 | pendente | — | 2026-08-27 |
 | AUD27-P3-12 | `ingestors/djen.py:234` loga número CNJ de processo de terceiro em INFO a cada descarte; volume dobra com a 2ª OAB — avaliar DEBUG ou contagem por OAB (security-auditor B5, não bloqueante) | F5 | #1310 | pendente | — | 2026-08-27 |
 | AUD27-P3-13 | Sem varredura de segredo no caminho de commit (`.githooks/` só tem `pre-push`) nem push protection confirmada no GitHub — `.gitignore` é barreira, não fronteira (security-auditor B6/C4) | F5 | #1310 | pendente | — | 2026-08-27 |
 | AUD27-P2-9 | Checkout de produção (`d40d0083`, 24/08) diverge do container em execução (`eb65e63e`, 14/08) — deploy interrompido no meio deixou disco e runtime dessincronizados | F5 | #1310 | pendente | — | 2026-08-27 |
@@ -121,18 +124,20 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | AUD27-P2-10 | Base de conhecimento com o mesmo texto legal em 4-6 cópias (CPC 6x, CLT 4x, CC 4x, CF 4x) — duplicata ocupa as vagas do contexto do RAG e degrada a resposta; ferramenta pronta em `scripts/deduplicar_base_conhecimento.py` (rebaixa, não apaga), execução é ato do titular | F3 | #1313 | em-andamento | #1314 | 2026-08-27 |
 | AUD27-P2-11 | Cópia do CPP com `categoria=peca_escritorio` (restrita por cliente) e `client_id` nulo — irrecuperável pela busca; há 4 cópias corretas, então o caminho é remover, não recategorizar | F3 | #1313 | pendente | — | 2026-08-27 |
 | AUD27-P3-14 | Zumbis do host: 158 processos (`node`/`chromium`/`chrome_crashpad`) sob um único pai no container do **s2licit** (puppeteer-extra-stealth) — não é o EJC; raspagem travando em laço há 24h sugere coleta de editais quebrada | F5 | #1313 | pendente | — | 2026-08-27 |
-| AUD27-P3-1 | `governanca.yml`/`auto-integracao.yml` seguem armados no YAML — podem reativar merge automático sem revisão se o Actions voltar | F6 (gate) | — | pendente | — | 2026-08-27 |
+| AUD27-P3-1 | REENQUADRADO em 01/09: o `b77ff4c` arquivou o Actions e `.github/workflows` **não existe mais**, então nada pode disparar sozinho — o risco imediato acabou. O latente permanece na cópia arquivada (`docs/arquivo/ci/github-actions-legacy/2026-08-31/`): restaurar a pasta traz os dois gatilhos armados junto. Desarmar na cópia, ou exigir desarme no procedimento de restauração | F6 (gate) | — | pendente | — | 2026-09-01 |
 | AUD27-P3-2 | CORTE-2/CORTE-3: camada de router já cortada (12/08), services (`diplomacia_digital.py`, `victory_vault.py`) seguem ativos — status do plano não reflete a nuance | F5 | — | pendente | — | 2026-08-27 |
 | AUD27-P3-3 | Aba morta inalcançável `"ia_cliente"` em `DossieCliente.tsx` | F5 | — | pendente | — | 2026-08-27 |
-| AUD27-P3-4 | `components/Layout.tsx` (669 linhas) código morto, substituído por `LayoutReference.tsx` | F5 | — | pendente | — | 2026-08-27 |
-| AUD27-P3-5 | `DashboardLegalTechPremium.tsx` (480 linhas) componente de demonstração morto | F5 | — | pendente | — | 2026-08-27 |
-| AUD27-P3-6 | CORTE-7 subestimado: `UI.tsx` com 1484 linhas (era 1437); CSS global são 12 arquivos/7815 linhas (título diz 8) | F5 | — | pendente | — | 2026-08-27 |
+| AUD27-P3-4 | `components/Layout.tsx` (669 linhas) código morto, substituído por `LayoutReference.tsx`. **Já removido**: o arquivo não existe mais na árvore desde o `bbc6944`. Status obsoleto, não código — corrigido na varredura de 01/09 | F5 | — | mesclado | #1316 | 2026-09-01 |
+| AUD27-P3-5 | `DashboardLegalTechPremium.tsx` (480 linhas) componente de demonstração morto. **Já removido** no `bbc6944`; nenhum arquivo com esse nome existe na árvore. Status obsoleto, não código — corrigido na varredura de 01/09 | F5 | — | mesclado | #1316 | 2026-09-01 |
+| AUD27-P3-6 | CORTE-7 subestimado: CSS global são 12 arquivos/7815 linhas (o título do CORTE-7 diz 8) — reconferido em 01/09. `UI.tsx` está em **1400 linhas** (o item dizia 1484, e o CORTE-7 diz 1437): encolheu, mas segue muito acima do limiar que motivou o corte | F5 | — | pendente | — | 2026-09-01 |
 | AUD27-P3-7 | Referências de migration desatualizadas em CL-A2 (diz 149, real 152) e CL-B3 (diz 148, real 151) | F2 | — | pendente | — | 2026-08-27 |
 | AUD27-P3-8 | Padrão de `UPDATE` dinâmico via f-string com allowlist estática (seguro hoje, frágil a regressão) em 5+ routers | F5 | — | pendente | — | 2026-08-27 |
 | AUD27-P3-9 | `oab_number`/`djen_oab_numero` sem reconciliação (subitem aberto de V2-3.5) | F5 | — | pendente | — | 2026-08-27 |
 | AUD27-P3-10 | CORRIGIDO — provado no banco: caso excluído com peça em rascunho de `deleted_at` nulo, órfã viva. Exclusão passa a cascatear o soft-delete às peças não protocoladas, com os IDs na trilha; a protocolada segue bloqueando a exclusão com 422 | F5 | — | mesclado | #1316 | 2026-08-31 |
 | AUD27-P3-11 | MEDIDO e corrigido **quanto à ordenação** — a hipótese errou o remédio: índice em `deleted_at` não muda nada (401ms → 380ms em 1M de linhas; o filtro casa com 96% das linhas). O custo era a ORDENAÇÃO: índice PARCIAL `(created_at DESC) WHERE deleted_at IS NULL` leva a listagem a 0,30ms e faz o tempo parar de crescer com a tabela. Aplicado a `cases`/`clients`/`documents`; `deadlines` fica de fora, medida como já coberta por `ix_deadlines_data_prazo`. A CONTAGEM do endpoint segue O(n) — resíduo em AUD27-P3-15 | F5 | — | mesclado | migration 155 | 2026-08-31 |
 | AUD27-P3-15 | Listagens de `cases`/`clients`/`documents` fazem contagem EXATA sobre todo o conjunto vivo antes de paginar (`select(count()).select_from(q.subquery())`) — O(n) por definição, e medido como praticamente imune ao índice parcial da 155 (109,23 ms → 99,00 ms em 1M de linhas). Com a ordenação resolvida, é o que sobra limitando a resposta. Saídas: total estimado por `reltuples`, total sob demanda, ou paginação por cursor — todas mudam contrato de paginação/UX, logo decisão do titular | F5 | — | pendente | — | 2026-08-31 |
+| VARR-1 | `ramos_vitrine.py:1146` mantém cópia **byte a byte** de `_LIMIARES_TAXA_MEDIA`, que outros seis routers de ramo importam de `ramos_comum.py:604`. Duas fontes para o mesmo limiar jurisprudencial (REsp 1.061.530/RS) — divergem no primeiro que alguém editar, e o valor sai em resposta de API (`limiares_classificacao`) | F5 | — | pendente | — | 2026-09-01 |
+| VARR-2 | `V2-6.6` lista 5 módulos que redefinem a lista de áreas localmente; `components/PecaGeneratorModal.tsx:84` é um **sexto**, com apenas 8 áreas (contra 24 do `areaCatalog.ts` e 25 do enum do backend). É fallback usado só se `GET /pecas/meta` falhar — mas nesse caso o advogado vê 8 áreas e não sabe que a lista encolheu | F5 | — | pendente | — | 2026-09-01 |
 
 ## Notas dos itens fechados em 31/08 (PR #1316)
 
@@ -171,6 +176,51 @@ Os seis acima foram corrigidos e mesclados pelo #1316 em 31/08, mas seguiram mar
 corrigiu — e foi estendida indevidamente aos que a própria #1316 corrigia. É a mesma
 armadilha de status obsoleto que esta auditoria gastou tempo desfazendo: metade dos
 itens que ela encontrou como "pendentes" já estava resolvida.
+
+## Notas da varredura de conferência (01/09)
+
+Varredura dos 57 itens marcados `pendente`, para separar o que ainda é real do que já
+fora resolvido sem ninguém virar o status. **29 conferidos direto no código**; os outros
+28 dependem de produção, telemetria ou decisão de produto e não se resolvem lendo o
+repositório. Nenhuma linha de código de produção foi alterada aqui — só este arquivo.
+
+### Por que este PR flipa status de itens que outras PRs corrigiram
+
+A regra da seção "Como este arquivo é mantido" diz que o flip cabe à PR que fecha o
+item, nunca a uma PR separada. Ela existe para impedir que quem corrige empurre o
+registro para depois — **não** para congelar um status errado quando a PR que corrigiu
+já foi mesclada há semanas e ninguém vai voltar. Aplicá-la ao pé da letra aqui
+preservaria exatamente o vício que ela combate: foi assim que seis itens do #1316
+ficaram obsoletos por um dia, e é o que a nota anterior já registra.
+
+Cada linha virada aponta a PR que efetivamente corrigiu, para a rastreabilidade não se
+perder: `AUD27-P3-4` e `AUD27-P3-5` → #1316 (`bbc6944`); `CL-C1` e `CL-C2` → #1272
+(`aca9842`), localizadas por `git log -S` no código, não por memória.
+
+### `mesclado`, não `verificado`
+
+Os quatro itens virados foram para `mesclado`. `verificado` exigiria conferência
+pós-deploy, e **nada disso está em produção**: o container em execução é de 14/08
+(`AUD27-P2-9`), anterior às duas PRs. Marcar `verificado` seria repetir o erro que este
+arquivo existe para evitar.
+
+### Quatro enunciados reescritos, não virados
+
+`INFRA-T1`, `AUD27-P3-1`, `V2-1.5` e `AUD27-P1-8` continuam abertos, mas descreviam
+errado o que falta — o de `V2-1.5` agrupava três problemas distintos sob "404", e só um
+dos seis casos tem conserto barato. Um item mal descrito custa mais caro que um item
+fechado errado: alguém vai orçar o trabalho pela descrição.
+
+### Dois achados que eu levantei e a própria conferência derrubou
+
+Registrados porque o descarte é parte do resultado:
+
+- **Dois testes para `Sociedade`** pareciam duplicata. Não são: `pages/Sociedade.test.ts`
+  cobre deep links (13 linhas) e `pages/__tests__/Sociedade.test.tsx` é regressão de tela
+  branca (68 linhas). Só a pasta é inconsistente — cosmético, não vira item.
+- **`PecaGeneratorModal` como 4ª manifestação de taxonomia** estava errado: o `V2-6.6` já
+  conta 5 módulos com lista local. Ele é um **sexto**, e virou `VARR-2` com esse
+  enquadramento — não um achado inédito.
 
 ## Placar por fase (derivado — não editar à mão, `status_check.sh` recalcula na saída)
 
