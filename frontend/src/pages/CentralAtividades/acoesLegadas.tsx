@@ -38,11 +38,16 @@ function fmtData(d?: string | null): string {
 
 // ── 1. Prazo assistido da intimação (aceitar / recusar) ──────────────────────
 
+type RegimeProcessual = "civel" | "trabalhista" | "penal";
+
 type PrazoSugerido = {
   disponivel?: boolean;
   dias?: number | null;
   data_sugerida?: string | null;
   data_disponibilizacao?: string | null;
+  data_publicacao?: string | null;
+  termo_inicial?: string | null;
+  regime_calculo?: RegimeProcessual | null;
   case_id?: string | null;
   aviso?: string | null;
   base_legal?: string | null;
@@ -59,11 +64,10 @@ export type SugestaoAberta = {
 };
 
 /**
- * Prazo DJEN é HITL. Quando o backend não dispõe de motor auditável para a
- * comunicação, a Central não bloqueia o advogado: oferece um caminho MANUAL,
- * mas exige vencimento final e confirmação expressa de conferência da fonte.
- * A disponibilização capturada nunca é convertida automaticamente em publicação
- * ou termo inicial.
+ * Prazo DJEN é HITL. Os quatro marcos ficam visíveis e distintos:
+ * disponibilização (fato capturado), publicação, termo inicial e vencimento.
+ * Nenhum deles é preenchido a partir de outro. O regime processual também é
+ * informado explicitamente antes da materialização do Deadline.
  */
 export function PrazoSugeridoModal({
   sugestao,
@@ -75,6 +79,9 @@ export function PrazoSugeridoModal({
   onResolvido: () => void;
 }) {
   const [salvando, setSalvando] = useState<"aceitar" | "recusar" | null>(null);
+  const [dataPublicacao, setDataPublicacao] = useState("");
+  const [termoInicial, setTermoInicial] = useState("");
+  const [regimeCalculo, setRegimeCalculo] = useState<RegimeProcessual | "">("");
   const [vencimentoConferido, setVencimentoConferido] = useState("");
   const [fonteConferida, setFonteConferida] = useState(false);
   const dados = sugestao?.dados;
@@ -83,21 +90,54 @@ export function PrazoSugeridoModal({
   const semBase = dados?.disponivel === false;
 
   useEffect(() => {
+    setDataPublicacao(dados?.data_publicacao?.slice(0, 10) ?? "");
+    setTermoInicial(dados?.termo_inicial?.slice(0, 10) ?? "");
+    setRegimeCalculo(dados?.regime_calculo ?? "");
     setVencimentoConferido("");
     setFonteConferida(false);
-  }, [sugestao?.id]);
+  }, [sugestao?.id, dados?.data_publicacao, dados?.termo_inicial, dados?.regime_calculo]);
+
+  const revisaoCompleta =
+    !!dados?.case_id &&
+    !!dataPublicacao &&
+    !!termoInicial &&
+    !!regimeCalculo &&
+    !!vencimentoConferido &&
+    fonteConferida;
+
+  const cronologiaValida = (): boolean => {
+    const disponibilidade = dados?.data_disponibilizacao?.slice(0, 10) ?? "";
+    if (disponibilidade && dataPublicacao < disponibilidade) return false;
+    if (termoInicial < dataPublicacao) return false;
+    if (vencimentoConferido < termoInicial) return false;
+    return true;
+  };
 
   const aceitar = async () => {
     if (!sugestao) return;
-    if (semBase && (!vencimentoConferido || !fonteConferida)) {
+    if (semBase && !revisaoCompleta) {
       toast.error(
-        "Informe o vencimento final e confirme a conferência da publicação oficial, termo inicial, regime e calendário.",
+        "Informe publicação, termo inicial, regime, vencimento final e confirme a conferência da fonte oficial.",
+      );
+      return;
+    }
+    if (semBase && !cronologiaValida()) {
+      toast.error(
+        "Revise a cronologia: disponibilização ≤ publicação ≤ termo inicial ≤ vencimento.",
       );
       return;
     }
     setSalvando("aceitar");
     try {
-      const body = semBase ? { data_prazo: vencimentoConferido } : undefined;
+      const body = semBase
+        ? {
+            data_publicacao: dataPublicacao,
+            termo_inicial: termoInicial,
+            regime_calculo: regimeCalculo,
+            data_prazo: vencimentoConferido,
+            confirmacao_fonte_oficial: true,
+          }
+        : undefined;
       const { data } = await api.post(
         `/intimacoes/${sugestao.id}/aceitar-prazo`,
         body,
@@ -156,7 +196,7 @@ export function PrazoSugeridoModal({
             <div className="space-y-3">
               <div className="rounded-lg border border-warn-200 bg-warn-50 p-3 text-xs text-warn-800">
                 {dados?.aviso ||
-                  "Cálculo automático indisponível. Confira a comunicação oficial antes de informar o vencimento."}
+                  "Cálculo automático indisponível. Confira a comunicação oficial antes de informar os marcos processuais."}
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800">
                 <div className="flex justify-between gap-2">
@@ -166,8 +206,8 @@ export function PrazoSugeridoModal({
                   </span>
                 </div>
                 <p className="mt-1 text-[11px] text-slate-500">
-                  Este dado é apenas o fato capturado da fonte. Não é tratado como
-                  publicação nem como termo inicial.
+                  Disponibilização ≠ publicação ≠ termo inicial ≠ vencimento. O
+                  EJC não converte um marco no outro por inferência.
                 </p>
               </div>
               {!dados?.case_id && (
@@ -176,25 +216,65 @@ export function PrazoSugeridoModal({
                   antes de aceitar o prazo.
                 </div>
               )}
-              <div>
-                <label className="label text-xs">Vencimento final conferido *</label>
-                <input
-                  className="input"
-                  type="date"
-                  value={vencimentoConferido}
-                  onChange={(e) => setVencimentoConferido(e.target.value)}
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label text-xs">Data de publicação *</label>
+                  <input
+                    className="input"
+                    aria-label="Data de publicação"
+                    type="date"
+                    value={dataPublicacao}
+                    onChange={(e) => setDataPublicacao(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="label text-xs">Termo inicial *</label>
+                  <input
+                    className="input"
+                    aria-label="Termo inicial"
+                    type="date"
+                    value={termoInicial}
+                    onChange={(e) => setTermoInicial(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="label text-xs">Regime processual *</label>
+                  <select
+                    className="input"
+                    aria-label="Regime processual"
+                    value={regimeCalculo}
+                    onChange={(e) =>
+                      setRegimeCalculo(e.target.value as RegimeProcessual | "")
+                    }
+                  >
+                    <option value="">Selecione…</option>
+                    <option value="civel">Cível — CPC</option>
+                    <option value="trabalhista">Trabalhista — CLT</option>
+                    <option value="penal">Penal — CPP</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label text-xs">Vencimento final *</label>
+                  <input
+                    className="input"
+                    aria-label="Vencimento final"
+                    type="date"
+                    value={vencimentoConferido}
+                    onChange={(e) => setVencimentoConferido(e.target.value)}
+                  />
+                </div>
               </div>
               <label className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300">
                 <input
                   type="checkbox"
+                  aria-label="Confirmei a fonte oficial"
                   checked={fonteConferida}
                   onChange={(e) => setFonteConferida(e.target.checked)}
                 />
                 <span>
-                  Conferi a comunicação/publicação oficial, o termo inicial, o
-                  regime processual e o calendário aplicável. A data acima é o
-                  vencimento final que desejo cadastrar.
+                  Conferi na fonte oficial a publicação, o termo inicial, o regime
+                  processual e o calendário aplicável, e confirmo o vencimento
+                  final informado acima.
                 </span>
               </label>
             </div>
@@ -249,8 +329,7 @@ export function PrazoSugeridoModal({
               disabled={
                 salvando !== null ||
                 status === "aceito" ||
-                (semBase &&
-                  (!vencimentoConferido || !fonteConferida || !dados?.case_id))
+                (semBase && !revisaoCompleta)
               }
               className="px-4 py-2 bg-success-600 text-white text-sm rounded-lg hover:bg-success-700 disabled:opacity-60"
             >
@@ -401,8 +480,6 @@ export function SuspensaoFormModal({
 }
 
 // ── 3. Simulador processual canônico (leitura — não grava nada) ──────────────
-
-type RegimeProcessual = "civel" | "trabalhista" | "penal";
 
 export function SimularPrazoModal({
   open,
