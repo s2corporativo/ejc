@@ -1,5 +1,5 @@
 # ── app/routers/deadlines.py ─────────────────────────────────────────────────
-# Prazos: CRUD + cálculo automático por regime + confirmação de ciência
+# Prazos: CRUD + cálculo automático por regime + confirmação de ciência.
 from __future__ import annotations
 
 import csv
@@ -19,8 +19,8 @@ from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.core.security import get_current_user, requer_advogado
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case
-from app.models.deadline import Deadline
-from app.models.user import User
+from app.models.deadline import Deadline, DeadlineStatus
+from app.models.user import User, UserRole
 from app.schemas.common import MsgResponse
 from app.schemas.deadline import (
     CalcularPrazoRequest,
@@ -39,6 +39,15 @@ router = APIRouter(prefix="/deadlines", tags=["Prazos"])
 logger = logging.getLogger("ejc.deadlines")
 
 _MAX_EXPORT = 5000
+_ROLES_RESPONSAVEIS = {
+    UserRole.superadmin,
+    UserRole.admin,
+    UserRole.socio,
+    UserRole.advogado,
+    UserRole.advogado_auxiliar,
+    UserRole.estagiario,
+    UserRole.secretaria,
+}
 
 
 def _ids_casos_do_usuario(user: User):
@@ -56,40 +65,123 @@ def _ids_casos_do_usuario(user: User):
 
 
 def _filtro_escopo_prazos(q, cu: User):
+    """Escopo de leitura: prazo avulso é pessoal; prazo de caso herda o caso.
+
+    Antes, `Deadline.case_id.is_(None)` liberava TODO prazo avulso a qualquer
+    usuário interno. Agora gestão mantém visão global e não-gestão só vê prazo
+    do próprio caso ou prazo pelo qual é responsável.
+    """
     if is_gestao(cu):
         return q
     return q.where(
         or_(
             Deadline.case_id.in_(_ids_casos_do_usuario(cu)),
             Deadline.responsavel_id == cu.id,
-            Deadline.case_id.is_(None),
         )
     )
 
 
-def _resolver_regime_processual(regime: str | None, dias_uteis: bool) -> tuple[str, bool]:
-    """Resolve o regime sem permitir que contagem corrida ambígua vire CPC.
+def _normalizar_status_filtro(status_f: str | None) -> str | None:
+    """`all`, vazio ou ausência significam sem filtro; desconhecido => 422."""
+    valor = (status_f or "").strip().lower()
+    if not valor or valor == "all":
+        return None
+    validos = {status.value for status in DeadlineStatus}
+    if valor not in validos:
+        raise HTTPException(
+            status_code=422,
+            detail=f"status inválido: use um de {sorted(validos)} ou all",
+        )
+    return valor
 
-    Compatibilidade: clientes antigos que enviavam `tipo=processual` e
-    `dias_uteis=true` continuam como cível. O frontend atual sempre manda o
-    regime explicitamente. `dias_uteis=false` sem regime é bloqueado, pois pode
-    ser penal e não deve receber um algoritmo administrativo por acidente.
+
+async def _verificar_acesso_prazo(
+    db: AsyncSession,
+    cu: User,
+    prazo: Deadline,
+) -> None:
+    if prazo.case_id:
+        await verificar_acesso_caso(db, cu, prazo.case_id)
+        return
+    if is_gestao(cu) or prazo.responsavel_id == cu.id:
+        return
+    # 404 uniforme para não transformar ID de prazo avulso em oráculo.
+    raise HTTPException(status_code=404, detail="Prazo não encontrado")
+
+
+async def _validar_responsavel_prazo(
+    db: AsyncSession,
+    cu: User,
+    responsavel_id: str,
+    *,
+    case_id: str | None,
+) -> User:
+    alvo = (
+        await db.execute(
+            select(User).where(
+                User.id == responsavel_id,
+                User.deleted_at.is_(None),
+                User.is_active.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    if alvo is None or alvo.role not in _ROLES_RESPONSAVEIS:
+        raise HTTPException(
+            status_code=422,
+            detail="responsavel_id inválido: informe usuário interno ativo e elegível",
+        )
+
+    if is_gestao(cu) or alvo.id == cu.id:
+        return alvo
+
+    if not case_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Sem permissão para atribuir prazo avulso a outro usuário",
+        )
+
+    caso = await verificar_acesso_caso(db, cu, case_id)
+    if alvo.id not in (
+        caso.advogado_responsavel_id,
+        caso.advogado_auxiliar_id,
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Responsável informado não pertence à equipe jurídica do caso",
+        )
+    return alvo
+
+
+def _resolver_regime_processual(
+    regime: str | None,
+    dias_uteis: bool,
+) -> tuple[str, bool]:
+    """Prazo processual exige regime explícito; nunca presume CPC.
+
+    `dias_uteis` permanece no schema por compatibilidade de transporte, mas não
+    substitui a escolha jurídica do regime. Isso fecha o modo de falha em que
+    ausência de regime era convertida silenciosamente em cível.
     """
+    del dias_uteis
     if regime:
         return regime, False
-    if dias_uteis:
-        return "civel", True
     raise HTTPException(
         status_code=422,
         detail=(
-            "Prazo processual com contagem não útil exige regime_calculo explícito. "
-            "Use civel, trabalhista ou penal; o sistema não presume regime penal."
+            "Prazo processual exige regime_calculo explícito. "
+            "Use civel, trabalhista ou penal."
         ),
     )
 
 
-def _base_processual(regime: str, dias: int, dobro: bool, *, legado: bool,
-                     excecao_recesso_penal: bool) -> str:
+def _base_processual(
+    regime: str,
+    dias: int,
+    dobro: bool,
+    *,
+    legado: bool,
+    excecao_recesso_penal: bool,
+) -> str:
     if regime == "penal":
         base = f"{dias} dias — CPP art. 798 c/c art. 798-A"
         if excecao_recesso_penal:
@@ -104,19 +196,25 @@ def _base_processual(regime: str, dias: int, dobro: bool, *, legado: bool,
         )
         base += " + recesso forense integral (CPC art. 220)"
     if legado:
-        base += " · regime cível assumido por compatibilidade; conferir"
+        base += " · regime assumido por compatibilidade; conferir"
     return base
 
 
 @router.post("/calcular")
-async def calcular(req: CalcularPrazoRequest, cu: User = Depends(get_current_user)):
+async def calcular(
+    req: CalcularPrazoRequest,
+    cu: User = Depends(get_current_user),
+):
     """Calculadora rápida, sem persistir, com regime processual explícito."""
     del cu
     if req.dias < 1:
         raise HTTPException(status_code=422, detail="dias deve ser maior que zero")
 
     if req.tipo == "processual":
-        regime, legado = _resolver_regime_processual(req.regime_calculo, req.dias_uteis)
+        regime, legado = _resolver_regime_processual(
+            req.regime_calculo,
+            req.dias_uteis,
+        )
         if req.excecao_recesso_penal and regime != "penal":
             raise HTTPException(
                 status_code=422,
@@ -157,13 +255,17 @@ async def calcular(req: CalcularPrazoRequest, cu: User = Depends(get_current_use
         modo = "dias úteis sem recesso processual"
     else:
         vencimento = prazo_dias_corridos(
-            req.data_inicio, req.dias, tribunal=req.tribunal
+            req.data_inicio,
+            req.dias,
+            tribunal=req.tribunal,
         )
         modo = "dias corridos c/ prorrogação do termo final (Lei 9.784 art. 66 §1º)"
     return {
         "data_vencimento": vencimento,
         "modo": modo,
-        "regime_calculo": "administrativo" if req.tipo == "administrativo" else None,
+        "regime_calculo": (
+            "administrativo" if req.tipo == "administrativo" else None
+        ),
         "resultado_preliminar": False,
         "revisao_obrigatoria": False,
         "aviso": None,
@@ -173,7 +275,8 @@ async def calcular(req: CalcularPrazoRequest, cu: User = Depends(get_current_use
 
 @router.get("/")
 async def listar(
-    page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
     status_f: Optional[str] = Query("pendente", alias="status"),
     case_id: Optional[str] = None,
     tipo: Optional[str] = None,
@@ -182,8 +285,9 @@ async def listar(
     cu: User = Depends(get_current_user),
 ):
     q = select(Deadline).where(Deadline.deleted_at.is_(None))
-    if status_f:
-        q = q.where(Deadline.status == status_f)
+    status_normalizado = _normalizar_status_filtro(status_f)
+    if status_normalizado:
+        q = q.where(Deadline.status == status_normalizado)
     if case_id:
         q = q.where(Deadline.case_id == case_id)
     if tipo:
@@ -193,12 +297,12 @@ async def listar(
         q = q.where(Deadline.responsavel_id == cu.id)
     q = q.order_by(Deadline.data_prazo.asc())
 
-    total = (await db.execute(
-        select(sqlfunc.count()).select_from(q.subquery())
-    )).scalar()
-    rows = (await db.execute(
-        q.offset((page - 1) * page_size).limit(page_size)
-    )).scalars().all()
+    total = (
+        await db.execute(select(sqlfunc.count()).select_from(q.subquery()))
+    ).scalar()
+    rows = (
+        await db.execute(q.offset((page - 1) * page_size).limit(page_size))
+    ).scalars().all()
 
     hoje = date.today()
     data = []
@@ -207,12 +311,21 @@ async def listar(
         dias = (d.data_prazo - hoje).days
         item["dias_restantes"] = dias
         item["urgencia"] = (
-            "vencido" if dias < 0 else
-            "critico" if dias <= 3 else
-            "atencao" if dias <= 7 else "normal"
+            "vencido"
+            if dias < 0
+            else "critico"
+            if dias <= 3
+            else "atencao"
+            if dias <= 7
+            else "normal"
         )
         data.append(item)
-    return {"data": data, "total": total, "page": page, "page_size": page_size}
+    return {
+        "data": data,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 @router.get("/export.csv")
@@ -224,8 +337,9 @@ async def exportar_csv(
     cu: User = Depends(get_current_user),
 ):
     q = select(Deadline).where(Deadline.deleted_at.is_(None))
-    if status_f:
-        q = q.where(Deadline.status == status_f)
+    status_normalizado = _normalizar_status_filtro(status_f)
+    if status_normalizado:
+        q = q.where(Deadline.status == status_normalizado)
     if case_id:
         q = q.where(Deadline.case_id == case_id)
     if tipo:
@@ -247,16 +361,36 @@ async def exportar_csv(
 def _prazos_para_csv(rows, hoje: date) -> str:
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";")
-    w.writerow(["Titulo", "Tipo", "Prioridade", "Status", "Data do prazo",
-                "Data da intimacao", "Dias restantes", "Base legal"])
+    w.writerow(
+        [
+            "Titulo",
+            "Tipo",
+            "Prioridade",
+            "Status",
+            "Data do prazo",
+            "Data da intimacao",
+            "Dias restantes",
+            "Base legal",
+        ]
+    )
     for d in rows:
         dias = (d.data_prazo - hoje).days if d.data_prazo else ""
-        w.writerow([
-            d.titulo or "", d.tipo or "", d.prioridade or "", d.status or "",
-            d.data_prazo.isoformat() if d.data_prazo else "",
-            d.data_intimacao.isoformat() if getattr(d, "data_intimacao", None) else "",
-            dias, getattr(d, "base_legal", "") or "",
-        ])
+        w.writerow(
+            [
+                d.titulo or "",
+                d.tipo or "",
+                d.prioridade or "",
+                d.status or "",
+                d.data_prazo.isoformat() if d.data_prazo else "",
+                (
+                    d.data_intimacao.isoformat()
+                    if getattr(d, "data_intimacao", None)
+                    else ""
+                ),
+                dias,
+                getattr(d, "base_legal", "") or "",
+            ]
+        )
     return "﻿" + buf.getvalue()
 
 
@@ -274,7 +408,8 @@ async def criar(
     if not data_prazo and payload.dias_prazo and payload.data_intimacao:
         if payload.tipo == "processual":
             regime, legado = _resolver_regime_processual(
-                payload.regime_calculo, payload.dias_uteis
+                payload.regime_calculo,
+                payload.dias_uteis,
             )
             if payload.excecao_recesso_penal and regime != "penal":
                 raise HTTPException(
@@ -312,7 +447,9 @@ async def criar(
                 aplicar_recesso=False,
                 forense=False,
             )
-            base = base or f"{payload.dias_prazo} dias úteis (sem recesso processual)"
+            base = base or (
+                f"{payload.dias_prazo} dias úteis (sem recesso processual)"
+            )
         else:
             data_prazo = prazo_dias_corridos(
                 payload.data_intimacao,
@@ -327,8 +464,25 @@ async def criar(
             detail="Informe data_prazo OU (data_intimacao + dias_prazo)",
         )
 
+    caso = None
     if payload.case_id:
-        await verificar_acesso_caso(db, cu, payload.case_id)
+        caso = await verificar_acesso_caso(db, cu, payload.case_id)
+
+    responsavel_id = payload.responsavel_id or cu.id
+    await _validar_responsavel_prazo(
+        db,
+        cu,
+        responsavel_id,
+        case_id=payload.case_id,
+    )
+    if caso is not None and not is_gestao(cu) and responsavel_id not in (
+        caso.advogado_responsavel_id,
+        caso.advogado_auxiliar_id,
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Responsável informado não pertence à equipe jurídica do caso",
+        )
 
     d = Deadline(
         id=str(uuid4()),
@@ -340,7 +494,7 @@ async def criar(
         data_intimacao=payload.data_intimacao,
         base_legal=base,
         case_id=payload.case_id,
-        responsavel_id=payload.responsavel_id or cu.id,
+        responsavel_id=responsavel_id,
         confirmado=confirmado,
     )
     db.add(d)
@@ -358,7 +512,8 @@ async def criar(
                 "calendario_status": calculo_audit.get("calendario_status"),
                 "resultado_preliminar": calculo_audit.get("resultado_preliminar"),
             }
-            if calculo_audit else {"calculo_automatico": False}
+            if calculo_audit
+            else {"calculo_automatico": False}
         ),
     )
     await db.commit()
@@ -368,44 +523,81 @@ async def criar(
 
 @router.patch("/{deadline_id}")
 async def atualizar(
-    deadline_id: str, payload: DeadlineUpdate,
+    deadline_id: str,
+    payload: DeadlineUpdate,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    d = (await db.execute(
-        select(Deadline).where(
-            Deadline.id == deadline_id, Deadline.deleted_at.is_(None)
+    d = (
+        await db.execute(
+            select(Deadline).where(
+                Deadline.id == deadline_id,
+                Deadline.deleted_at.is_(None),
+            )
         )
-    )).scalar_one_or_none()
+    ).scalar_one_or_none()
     if not d:
         raise HTTPException(status_code=404, detail="Prazo não encontrado")
-    if d.case_id:
-        await verificar_acesso_caso(db, cu, d.case_id)
+    await _verificar_acesso_prazo(db, cu, d)
 
     mudancas = payload.model_dump(exclude_unset=True)
     status_antes = getattr(d.status, "value", d.status)
+    data_antes = d.data_prazo
+    responsavel_antes = d.responsavel_id
+
+    if "responsavel_id" in mudancas:
+        novo_responsavel = mudancas["responsavel_id"]
+        if not novo_responsavel:
+            raise HTTPException(
+                status_code=422,
+                detail="responsavel_id não pode ser vazio",
+            )
+        await _validar_responsavel_prazo(
+            db,
+            cu,
+            novo_responsavel,
+            case_id=d.case_id,
+        )
+
     if "data_prazo" in mudancas and mudancas["data_prazo"] != d.data_prazo:
         await criar_audit_log(
-            db, cu.id, cu.role.value, "PRAZO_ALTERADO", "deadlines", deadline_id,
+            db,
+            cu.id,
+            cu.role.value,
+            "PRAZO_ALTERADO",
+            "deadlines",
+            deadline_id,
             dados_antes={"data_prazo": str(d.data_prazo)},
             dados_depois={"data_prazo": str(mudancas["data_prazo"])},
         )
+
     for k, v in mudancas.items():
         setattr(d, k, v)
 
-    # Reagendar para o futuro devolve o prazo a 'pendente' (achado 29, 22/08).
-    # `exclude_unset` faz o PATCH aplicar só o que veio: `CentralAtividades`
-    # reagenda mandando SÓ `data_prazo`, então o status 'vencido' escrito pelo
-    # job das 07:10 (`scheduler._marcar_prazos_vencidos`) sobrevivia à mudança e
-    # o prazo aparecia como vencido com data futura. É a regra inversa do job —
-    # ele faz pendente→vencido quando a data passa; aqui é vencido→pendente
-    # quando a data volta para frente. Sem isso, a aba "Vencidos" mostrava
-    # prazo que não venceu, e o painel (que conta por DATA) discordava da
-    # listagem (que filtra por STATUS) sobre o mesmo prazo.
-    #
-    # Só toca o par (vencido → data futura): status definido explicitamente
-    # nesta chamada manda, e 'concluido'/'cancelado' nunca são reabertos por
-    # uma troca de data.
+    mudou_data = d.data_prazo != data_antes
+    mudou_responsavel = d.responsavel_id != responsavel_antes
+    if mudou_data or mudou_responsavel:
+        d.alerta_7d_enviado = False
+        d.alerta_3d_enviado = False
+        d.alerta_1d_enviado = False
+        await criar_audit_log(
+            db,
+            cu.id,
+            cu.role.value,
+            "PRAZO_ALERTAS_REINICIADOS",
+            "deadlines",
+            deadline_id,
+            dados_depois={
+                "motivo": (
+                    "data_e_responsavel"
+                    if mudou_data and mudou_responsavel
+                    else "data_prazo"
+                    if mudou_data
+                    else "responsavel"
+                )
+            },
+        )
+
     if (
         "data_prazo" in mudancas
         and "status" not in mudancas
@@ -414,17 +606,29 @@ async def atualizar(
     ):
         d.status = "pendente"
         await criar_audit_log(
-            db, cu.id, cu.role.value, "PRAZO_REABERTO", "deadlines", deadline_id,
+            db,
+            cu.id,
+            cu.role.value,
+            "PRAZO_REABERTO",
+            "deadlines",
+            deadline_id,
             dados_antes={"status": "vencido"},
-            dados_depois={"status": "pendente",
-                          "motivo": "reagendado para data futura"},
+            dados_depois={
+                "status": "pendente",
+                "motivo": "reagendado para data futura",
+            },
         )
 
     if mudancas.get("status") == "concluido" and status_antes != "concluido":
         d.data_conclusao = datetime.now(timezone.utc)
         d.concluido_por = cu.id
         await criar_audit_log(
-            db, cu.id, cu.role.value, "PRAZO_CONCLUIDO", "deadlines", deadline_id,
+            db,
+            cu.id,
+            cu.role.value,
+            "PRAZO_CONCLUIDO",
+            "deadlines",
+            deadline_id,
             dados_antes={"status": status_antes},
             dados_depois={
                 "status": "concluido",
@@ -443,20 +647,27 @@ async def confirmar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    d = (await db.execute(
-        select(Deadline).where(
-            Deadline.id == deadline_id, Deadline.deleted_at.is_(None)
+    d = (
+        await db.execute(
+            select(Deadline).where(
+                Deadline.id == deadline_id,
+                Deadline.deleted_at.is_(None),
+            )
         )
-    )).scalar_one_or_none()
+    ).scalar_one_or_none()
     if not d:
         raise HTTPException(status_code=404, detail="Prazo não encontrado")
-    if d.case_id:
-        await verificar_acesso_caso(db, cu, d.case_id)
+    await _verificar_acesso_prazo(db, cu, d)
 
     if not d.confirmado:
         d.confirmado = True
         await criar_audit_log(
-            db, cu.id, cu.role.value, "PRAZO_CONFIRMADO", "deadlines", deadline_id,
+            db,
+            cu.id,
+            cu.role.value,
+            "PRAZO_CONFIRMADO",
+            "deadlines",
+            deadline_id,
         )
         await db.commit()
         await db.refresh(d)
@@ -469,21 +680,28 @@ async def confirmar_ciencia(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    d = (await db.execute(
-        select(Deadline).where(
-            Deadline.id == deadline_id, Deadline.deleted_at.is_(None)
+    d = (
+        await db.execute(
+            select(Deadline).where(
+                Deadline.id == deadline_id,
+                Deadline.deleted_at.is_(None),
+            )
         )
-    )).scalar_one_or_none()
+    ).scalar_one_or_none()
     if not d:
         raise HTTPException(status_code=404, detail="Prazo não encontrado")
-    if d.case_id:
-        await verificar_acesso_caso(db, cu, d.case_id)
+    await _verificar_acesso_prazo(db, cu, d)
 
     d.ciencia_confirmada = True
     d.ciencia_confirmada_em = datetime.now(timezone.utc)
     d.ciencia_confirmada_por = cu.id
     await criar_audit_log(
-        db, cu.id, cu.role.value, "CIENCIA_PRAZO", "deadlines", deadline_id,
+        db,
+        cu.id,
+        cu.role.value,
+        "CIENCIA_PRAZO",
+        "deadlines",
+        deadline_id,
     )
     await db.commit()
     return MsgResponse(detail="Ciência confirmada")
@@ -496,17 +714,26 @@ async def cancelar(
     cu: User = Depends(get_current_user),
 ):
     requer_advogado(cu, detail="Sem permissão para cancelar prazos")
-    d = (await db.execute(
-        select(Deadline).where(
-            Deadline.id == deadline_id, Deadline.deleted_at.is_(None)
+    d = (
+        await db.execute(
+            select(Deadline).where(
+                Deadline.id == deadline_id,
+                Deadline.deleted_at.is_(None),
+            )
         )
-    )).scalar_one_or_none()
+    ).scalar_one_or_none()
     if not d:
         raise HTTPException(status_code=404, detail="Prazo não encontrado")
-    if d.case_id:
-        await verificar_acesso_caso(db, cu, d.case_id)
+    await _verificar_acesso_prazo(db, cu, d)
     d.deleted_at = datetime.now(timezone.utc)
     d.status = "cancelado"
-    await criar_audit_log(db, cu.id, cu.role.value, "DELETE", "deadlines", deadline_id)
+    await criar_audit_log(
+        db,
+        cu.id,
+        cu.role.value,
+        "DELETE",
+        "deadlines",
+        deadline_id,
+    )
     await db.commit()
     return MsgResponse(detail="Prazo cancelado")
