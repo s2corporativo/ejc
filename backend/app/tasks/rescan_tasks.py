@@ -1,14 +1,17 @@
-"""Tarefa de rescan/backfill de SHA-256 (Épico #1019 A3.2).
+"""Tarefa de rescan/backfill de SHA-256 do GED.
 
-Disparo pelo padrão do repositório: Celery quando disponível e
-alcancável, ``BackgroundTasks`` do FastAPI como caminho padrão.
-``executar_rescan_task`` mantém a sessão, o batch e a auditoria em um
-único ponto; a rota apenas aceita e retorna o ``batch_id``.
+Disparo pelo padrão do repositório: Celery quando disponível e alcançável,
+BackgroundTasks como fallback. A task Celery é própria do rescan; nunca reutiliza
+a task de indexação RAG.
 """
+from __future__ import annotations
+
+import asyncio
 import logging
 import os
 from pathlib import Path
 
+from app.core.celery_app import celery_app
 from app.services import document_rescan_service
 from app.services.document_rescan_service import RescanResultado
 
@@ -20,21 +23,17 @@ def agendar_rescan(
     background_tasks=None,
     settings=None,
 ) -> str:
-    """Agenda ``executar_rescan_task``. Retorna o mecanismo usado
-    (``celery`` | ``background``)."""
     from app.core.config import get_settings
 
     cfg = settings or get_settings()
     if cfg.CELERY_ENABLED and _redis_alcancavel(cfg.REDIS_URL):
         try:
-            indexador = _obter_task_celery()
-            indexador.delay(batch_id)
+            rescan_documentos_task.delay(batch_id)
             return "celery"
-        except Exception as excecao:  # nunca derruba a aceitação do lote
+        except Exception as excecao:
             logger.warning(
-                "[rescan] enfileirar no Celery falhou (%s: %s) — "
-                "caindo para BackgroundTasks",
-                type(excecao).__name__, str(excecao)[:200],
+                "[rescan] Celery indisponível; exception_type=%s",
+                type(excecao).__name__,
             )
     if background_tasks is not None:
         background_tasks.add_task(executar_rescan_task, batch_id)
@@ -55,18 +54,31 @@ def _redis_alcancavel(url: str, timeout: float = 1.0) -> bool:
         return False
 
 
-def _obter_task_celery():
+async def _com_engine_limpo(coro):
+    from app.core.database import engine
     try:
-        from app.tasks.rag_tasks import indexar_documento_task
-        return indexar_documento_task
+        return await coro
+    finally:
+        await engine.dispose()
+
+
+@celery_app.task(
+    name="app.tasks.document_rescan",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=120,
+)
+def rescan_documentos_task(self, batch_id: str) -> str:
+    """Wrapper Celery real do rescan; recebe somente o ID opaco do lote."""
+    try:
+        asyncio.run(_com_engine_limpo(executar_rescan_task(batch_id)))
+        return batch_id
     except Exception:
-        raise RuntimeError("task Celery indisponível")
+        logger.warning("[rescan] task falhou; batch_id=%s", batch_id)
+        raise self.retry(exc=RuntimeError("document_rescan_failed"))
 
 
 async def executar_rescan_task(batch_id: str) -> None:
-    """Executa o rescan do batch: seleciona documentos vigentes, calcula
-    os SHA-256 (local ou remoto via rclone), compara com o intake e grava
-    os itens + a conclusão do batch."""
     from app.core.config import get_settings
 
     cfg = get_settings()
@@ -85,7 +97,8 @@ async def executar_rescan_task(batch_id: str) -> None:
                 case_id=batch.caso_id,
             )
             batch.iniciado_em = _agora()
-            await db.flush()
+            batch.status = "processando"
+            await db.commit()
 
             resultado = await document_rescan_service.executar_rescan(
                 upload_root=upload_root,
@@ -95,28 +108,30 @@ async def executar_rescan_task(batch_id: str) -> None:
                 batch_id=batch_id,
             )
             await _concluir_batch(db, batch_id, resultado)
-        except Exception as excecao:  # lote não derruba o worker
+        except Exception as excecao:
             await db.rollback()
-            logger.exception(
-                "[rescan] execução do batch %s falhou (%s: %s)",
-                batch_id, type(excecao).__name__, str(excecao)[:200],
+            await _marcar_batch_falhou(db, batch_id)
+            logger.warning(
+                "[rescan] execução falhou; batch_id=%s exception_type=%s",
+                batch_id,
+                type(excecao).__name__,
             )
             raise
 
 
 def _configuracao_rclone(cfg) -> dict | None:
-    """Retorna a configuração rclone quando os caminhos existem;
-    ``None`` mantém o comportamento seguro (sem fonte remota) do serviço.
-    Nenhum segredo é registrado em log."""
     config_path = getattr(cfg, "RCLONE_CONFIG_PATH", "") or ""
     work_dir = getattr(cfg, "RCLONE_WORK_DIR", "") or ""
     if not config_path or not os.path.isfile(config_path):
         return None
     if not work_dir or not os.path.isdir(work_dir):
         return None
+    remote = str(getattr(cfg, "RCLONE_REMOTE", "")).strip()
+    if not remote:
+        return None
     return {
         "config_path": Path(config_path),
-        "remote": str(getattr(cfg, "RCLONE_REMOTE", "")).strip(),
+        "remote": remote,
         "work_dir": Path(work_dir),
     }
 
@@ -133,8 +148,8 @@ def _agora():
 
 async def _buscar_batch(db, batch_id: str):
     from sqlalchemy import select
-
     from app.models import DocumentHashRescanBatch
+
     query = (
         select(DocumentHashRescanBatch)
         .where(DocumentHashRescanBatch.id == batch_id)
@@ -155,16 +170,22 @@ def _documentos_do_batch(batch) -> list[str] | None:
     return [str(item) for item in ids if isinstance(item, str) and item]
 
 
-async def _concluir_batch(
-    db, batch_id: str, resultado: RescanResultado,
-) -> None:
+async def _marcar_batch_falhou(db, batch_id: str) -> None:
     from sqlalchemy import update
-
     from app.models import DocumentHashRescanBatch
 
-    divergencias = [
-        d for d in resultado.divergencias if d.get("motivo")
-    ]
+    await db.execute(
+        update(DocumentHashRescanBatch)
+        .where(DocumentHashRescanBatch.id == batch_id)
+        .values(status="falhou", concluido_em=_agora())
+    )
+    await db.commit()
+
+
+async def _concluir_batch(db, batch_id: str, resultado: RescanResultado) -> None:
+    from sqlalchemy import update
+    from app.models import DocumentHashRescanBatch
+
     await db.execute(
         update(DocumentHashRescanBatch)
         .where(DocumentHashRescanBatch.id == batch_id)
@@ -179,12 +200,10 @@ async def _concluir_batch(
     )
     await db.commit()
     logger.info(
-        "[rescan] batch %s concluído: processados=%s concluidos=%s "
-        "erros=%s indisponiveis=%s divergencias=%s",
+        "[rescan] batch concluído; batch_id=%s processados=%s concluidos=%s erros=%s indisponiveis=%s",
         batch_id,
         resultado.itens_processados,
         resultado.itens_concluidos,
         resultado.itens_erro,
         resultado.itens_nao_disponiveis,
-        len(divergencias),
     )
