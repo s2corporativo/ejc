@@ -20,6 +20,7 @@ import Sociedade from "./Sociedade";
 import EstimadorHonorarios from "../components/EstimadorHonorarios";
 import ErrorBoundary from "../components/ErrorBoundary";
 import { PageHeader } from "../components/UI";
+import { useAuth } from "../stores/auth";
 
 const TABS = [
   { k: "visao", label: "Visão geral", icon: BarChart3 },
@@ -29,8 +30,10 @@ const TABS = [
   { k: "recorrentes", label: "Despesas recorrentes", icon: Repeat },
   { k: "contratos", label: "Contratos do escritório", icon: FileText },
   { k: "societaria", label: "Sociedade", icon: Building2 },
-  { k: "estimador", label: "Estimador OAB", icon: Calculator },
+  { k: "estimador", label: "Estimador de honorários", icon: Calculator },
 ] as const;
+
+const SOCIEDADE_ROLES = new Set(["superadmin", "admin", "socio"]);
 
 export type FinanceTab = (typeof TABS)[number]["k"];
 
@@ -61,7 +64,6 @@ export function nextFinanceParams(
   return params;
 }
 
-// Só as telas que efetivamente consultam lançamentos por mês exibem o filtro.
 const TABS_COM_COMPETENCIA: ReadonlySet<FinanceTab> = new Set([
   "visao",
   "despesas",
@@ -69,8 +71,21 @@ const TABS_COM_COMPETENCIA: ReadonlySet<FinanceTab> = new Set([
 
 export default function FinanceiroWorkspace() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const user = useAuth((s) => s.user);
+  const podeSociedade = SOCIEDADE_ROLES.has(user?.role ?? "");
+  const tabsVisiveis = podeSociedade
+    ? TABS
+    : TABS.filter((item) => item.k !== "societaria");
+
   const raw = searchParams.get("tab");
-  const tab: FinanceTab = isFinanceTab(raw) ? raw : "visao";
+  const tabSolicitada: FinanceTab = isFinanceTab(raw) ? raw : "visao";
+  // `financeiro` pode acessar o workspace, mas não dados societários. O
+  // backend já devolve 403; esta guarda elimina uma aba/deep-link sem função e
+  // mantém o frontend coerente com o RBAC autoritativo.
+  const tab: FinanceTab =
+    tabSolicitada === "societaria" && !podeSociedade
+      ? "visao"
+      : tabSolicitada;
   const rawComp = searchParams.get("comp");
   const competencia = isCompetencia(rawComp) ? rawComp : competenciaAtual();
   const mostraCompetencia = TABS_COM_COMPETENCIA.has(tab);
@@ -113,7 +128,7 @@ export default function FinanceiroWorkspace() {
       />
       <div className="overflow-x-auto">
         <div className="flex w-fit gap-1 rounded-xl bg-slate-900/[0.05] p-1 dark:bg-white/[0.07]">
-          {TABS.map(({ k, label, icon: Icon }) => (
+          {tabsVisiveis.map(({ k, label, icon: Icon }) => (
             <button
               key={k}
               onClick={() => setTab(k)}
@@ -143,7 +158,7 @@ export default function FinanceiroWorkspace() {
           {tab === "despesas" && <Despesas competencia={competencia} />}
           {tab === "recorrentes" && <DespesasRecorrentes />}
           {tab === "contratos" && <OfficeContracts />}
-          {tab === "societaria" && <Sociedade />}
+          {tab === "societaria" && podeSociedade && <Sociedade />}
           {tab === "estimador" && <EstimadorHonorarios />}
         </ErrorBoundary>
       </div>
