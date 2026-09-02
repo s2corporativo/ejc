@@ -5,8 +5,8 @@ prazo) não entre entre o diagnóstico e o commit do encerramento. O advisory lo
 é transacional e usa uma chave estável por caso; não exige migration e é liberado
 automaticamente em commit/rollback.
 
-Este módulo não substitui RBAC/ownership. ``verificar_caso_editavel`` combina o
-lock com o gate canônico de ownership apenas para rotas que já dependem dele.
+Este módulo não substitui RBAC/ownership. ``verificar_caso_editavel`` valida o
+acesso antes de obter o lock e o revalida depois dele, junto ao estado do caso.
 """
 from __future__ import annotations
 
@@ -46,7 +46,11 @@ async def verificar_caso_editavel(
     cu: User,
     case_id: str,
 ) -> Case:
-    """Ownership + lock transacional + estado não terminal, nesta ordem lógica."""
+    """Ownership → lock → revalidação de ownership/estado na mesma transação."""
+    # Não deixa usuário sem acesso obter lock de caso arbitrário.
+    await verificar_acesso_caso(db, cu, case_id)
     await serializar_mutacao_caso(db, case_id)
+    # Reconsulta após eventual espera no lock: responsabilidade e status podem
+    # ter mudado enquanto este request aguardava outra mutação do mesmo caso.
     caso = await verificar_acesso_caso(db, cu, case_id)
     return garantir_caso_editavel(caso)
