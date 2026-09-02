@@ -1,20 +1,24 @@
 # ── app/routers/documents.py ─────────────────────────────────────────────────
-# GED: upload/download com controle de confidencialidade (cofre).
-# Acesso a docs restritos: audit log obrigatório (LGPD art. 37).
+"""GED jurídico: intake, lifecycle, governança, integridade e ponte RAG.
+
+O router mantém somente autorização/contrato HTTP e delega ingestão física,
+versionamento, antimalware, análise assíncrona e purge a services/tasks.
+"""
+from __future__ import annotations
+
 import asyncio
+import json
 import logging
-import hashlib
 import os
 from datetime import date, datetime, time as dtime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 from uuid import uuid4
 
-import aiofiles
-import magic  # python-magic — validação por magic bytes (server-side)
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func as sqlfunc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,85 +32,70 @@ from app.models.audit_log import criar_audit_log
 from app.models.case import Case
 from app.models.client import Client
 from app.models.document import DocConfidencialidade, Document
+from app.models.document_rescan import DocumentHashRescanBatch, DocumentHashRescanItem
 from app.models.redesign import DocumentTypeMaster
 from app.models.user import User
 from app.schemas.common import MsgResponse
 from app.services import google_drive as gd
-from app.services.document_analysis_hook import analisar_documento_bg
+from app.services.document_content_policy import EXTENSOES_PERMITIDAS
+from app.services.document_extraction_adapter import extrair_texto_compatibilidade
 from app.services.document_format import ascii_seguro
+from app.services.document_ingestion_orchestrator import ingerir_documento_local
+from app.services.document_ingestion_service import (
+    MalwareDetectadoError,
+    preparar_ingestao_documento_local,
+)
+from app.services.document_malware_factory import (
+    malware_scan_habilitado,
+    obter_scanner_documentos,
+)
+from app.services.document_persistence_service import (
+    DadosPersistenciaDocumento,
+    PersistenciaDocumentoInvalidaError,
+)
+from app.services.document_rag_bridge import (
+    DocumentRagBridgeError,
+    desativar_rag_documento,
+    indexar_documento_no_caso,
+)
 from app.services.document_reference_guard import exigir_documento_sem_referencias_bloqueantes
-from app.services.ocr_service import extrair_texto, extrair_xml
+from app.services.document_upload_stream import UploadExcedeLimiteError, UploadVazioError
+from app.services.document_version_service import (
+    DocumentoAnteriorNaoEncontradoError,
+    DocumentoAnteriorObsoletoError,
+    DocumentoContextoDivergenteError,
+    DocumentoGrupoInconsistenteError,
+    DocumentoVersaoError,
+    configurar_documento_raiz,
+    preparar_nova_versao,
+)
+from app.services.malware_scan_service import MalwareScanIndisponivelError
+from app.tasks.dispatcher import (
+    agendar_analise_documento,
+    agendar_indexacao,
+)
+from app.tasks.rescan_tasks import agendar_rescan
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/documents", tags=["Documentos / GED"])
 
-EXTENSOES_PERMITIDAS = {".pdf", ".docx", ".doc", ".jpg", ".jpeg", ".png", ".xlsx", ".xls", ".txt", ".md", ".xml"}
-# Markdown entra como texto plano: aceito na ingestão universal e no GED
-# (auditoria 12/08/2026: .md era rejeitado com "Formato não suportado").
-# Legados sem extrator de texto (sem lib p/ binário OLE): upload aceito, mas o
-# response avisa que o conteúdo não é indexável (ver bloco final do upload()).
 FORMATOS_SEM_INDEXACAO = {".doc", ".xls"}
-
-# Tipos legados do campo Document.tipo — continuam aceitos no upload mesmo que
-# não existam no master (compatibilidade com o frontend atual). Os que existem
-# no master (procuracao/contrato/peticao/outro) são validados por lá também.
 TIPOS_LEGADOS = {"procuracao", "contrato", "decisao", "peticao", "prova", "outro"}
-
-# Magic bytes esperados por extensão. O valor é o conjunto de MIME types
-# aceitáveis que `magic.from_buffer` pode retornar para aquele formato.
-# .txt fica de fora da exigência estrita (texto puro tem detecção ambígua).
-MIME_POR_EXTENSAO: dict[str, set[str]] = {
-    ".pdf": {"application/pdf"},
-    ".docx": {
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/zip",
-    },
-    ".doc": {"application/msword", "application/x-ole-storage"},
-    ".xlsx": {
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "application/zip",
-    },
-    ".xls": {"application/vnd.ms-excel", "application/x-ole-storage"},
-    ".jpg": {"image/jpeg"},
-    ".jpeg": {"image/jpeg"},
-    ".png": {"image/png"},
-    # NF-e/XML: libmagic pode reportar application/xml, text/xml ou text/plain
-    ".xml": {"application/xml", "text/xml", "text/plain"},
-    # Markdown: libmagic pode reportar text/plain (texto puro) ou text/markdown
-    ".md": {"text/plain", "text/markdown"},
-}
-
-
-def _validar_conteudo(ext: str, conteudo: bytes) -> str:
-    """Valida magic bytes e retorna MIME derivado do conteúdo."""
-    mime_real = magic.from_buffer(conteudo[:2048], mime=True)
-    esperados = MIME_POR_EXTENSAO.get(ext)
-    if esperados is None:
-        return mime_real or "text/plain"
-    if mime_real not in esperados:
-        raise HTTPException(
-            status_code=415,
-            detail=(
-                f"Conteúdo do arquivo ({mime_real}) não corresponde à extensão {ext}."
-            ),
-        )
-    return mime_real
 
 
 def _pode_acessar_confidencial(user: User, conf: str) -> bool:
-    """Cofre: restrito+ exige perfil socio ou superior."""
     if conf in ("restrito", "confidencial", "segredo_justica"):
         return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["socio"]
     return True
 
 
-async def _verificar_acesso_cliente_sem_caso(
-    db: AsyncSession,
-    user: User,
-    client_id: str,
-) -> None:
-    """Autoriza cliente avulso por gestão, titular externo ou caso atribuído."""
+def _exigir_papel(cu: User, minimo: str, detalhe: str) -> None:
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL[minimo]:
+        raise HTTPException(status_code=403, detail=detalhe)
+
+
+async def _verificar_acesso_cliente_sem_caso(db: AsyncSession, user: User, client_id: str) -> None:
     if is_gestao(user):
         return
     if user.role.value == "cliente_externo":
@@ -131,30 +120,39 @@ async def _verificar_acesso_cliente_sem_caso(
         raise HTTPException(status_code=403, detail="Sem permissão para este cliente")
 
 
-async def _verificar_acesso_documento(
-    db: AsyncSession,
-    user: User,
-    document: Document,
-) -> None:
-    """Gate único para documento vinculado a caso, cliente ou apenas uploader."""
+async def _verificar_acesso_documento(db: AsyncSession, user: User, document: Document) -> None:
     if document.case_id:
         await verificar_acesso_caso(db, user, document.case_id)
         return
     if is_gestao(user) or document.uploaded_by == user.id:
         return
     if document.client_id:
-        if (
-            user.role.value == "cliente_externo"
-            and document.confidencialidade.value != "normal"
-        ):
+        if user.role.value == "cliente_externo" and document.confidencialidade.value != "normal":
             raise HTTPException(status_code=403, detail="Documento interno ou restrito")
         await _verificar_acesso_cliente_sem_caso(db, user, document.client_id)
         return
     raise HTTPException(status_code=403, detail="Sem permissão para este documento")
 
 
+async def _documento_ativo(db: AsyncSession, doc_id: str) -> Document:
+    document = (
+        await db.execute(
+            select(Document).where(Document.id == doc_id, Document.deleted_at.is_(None))
+        )
+    ).scalar_one_or_none()
+    if not document:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+    return document
+
+
+async def _documento_para_governanca(db: AsyncSession, doc_id: str) -> Document:
+    document = await db.scalar(select(Document).where(Document.id == doc_id))
+    if not document:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+    return document
+
+
 async def _tipos_master_ativos(db: AsyncSession) -> list[DocumentTypeMaster]:
-    """Tipos ativos do master (document_types_master), ordenados para o seletor."""
     rows = (
         await db.execute(
             select(DocumentTypeMaster)
@@ -166,13 +164,11 @@ async def _tipos_master_ativos(db: AsyncSession) -> list[DocumentTypeMaster]:
 
 
 def _nome_original_seguro(filename: str | None, fallback: str) -> str:
-    """Normaliza somente para metadado; o nome nunca participa do path físico."""
     nome = (filename or fallback).replace("\\", "/").rsplit("/", 1)[-1].strip()
     return (nome or fallback)[:255]
 
 
 def _remote_path_documento(document: Document) -> str | None:
-    """Extrai path remoto novo; marcador legado ``drive://<file_id>`` cai em fallback."""
     filepath = str(document.filepath or "")
     if not filepath.startswith("drive://"):
         return None
@@ -183,10 +179,6 @@ def _remote_path_documento(document: Document) -> str | None:
 
 
 def _serializar_documento(document: Document) -> dict:
-    """Shape público de item de documento (mesmo da listagem).
-
-    Nunca inclui `filepath`/paths internos de storage — download tem rota própria.
-    """
     return {
         "id": document.id,
         "titulo": document.titulo,
@@ -195,8 +187,39 @@ def _serializar_documento(document: Document) -> dict:
         "size_bytes": document.size_bytes,
         "confidencialidade": document.confidencialidade.value,
         "case_id": document.case_id,
+        "client_id": document.client_id,
+        "versao": document.versao,
+        "integrity_status": document.integrity_status,
+        "analysis_status": document.analysis_status,
+        "rag_status": document.rag_status,
+        "legal_hold": bool(document.legal_hold),
+        "retention_until": document.retention_until,
         "created_at": document.created_at,
     }
+
+
+def _serializar_detalhe(document: Document) -> dict:
+    item = _serializar_documento(document)
+    item.update({
+        "descricao": document.descricao,
+        "mimetype": document.mimetype,
+        "sha256": document.sha256,
+        "versao_grupo_id": document.versao_grupo_id,
+        "versao_anterior_id": document.versao_anterior_id,
+        "malware_scan_status": document.malware_scan_status,
+        "malware_scanned_at": document.malware_scanned_at,
+        "integrity_verified_at": document.integrity_verified_at,
+        "analysis_updated_at": document.analysis_updated_at,
+        "analysis_error_code": document.analysis_error_code,
+        "analysis_source_sha256": document.analysis_source_sha256,
+        "rag_knowledge_doc_id": document.rag_knowledge_doc_id,
+        "rag_indexed_at": document.rag_indexed_at,
+        "rag_source_sha256": document.rag_source_sha256,
+        "publicado_portal": bool(document.publicado_portal),
+        "publicado_em": document.publicado_em,
+        "updated_at": document.updated_at,
+    })
+    return item
 
 
 def _content_disposition(filename: str) -> str:
@@ -205,21 +228,79 @@ def _content_disposition(filename: str) -> str:
     for char in ('"', ";", "\\", "/"):
         nome_ascii = nome_ascii.replace(char, "")
     nome_ascii = " ".join(nome_ascii.split()) or "documento"
-    return (
-        f'attachment; filename="{nome_ascii}"; '
-        f"filename*=UTF-8''{quote(nome, safe='')}"
-    )
+    return f'attachment; filename="{nome_ascii}"; filename*=UTF-8\'\'{quote(nome, safe="")}'
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# TIPOS DE DOCUMENTO (master) — R3
-# ─────────────────────────────────────────────────────────────────────────────
+def _full_path_local(document: Document) -> Path:
+    raiz = Path(settings.UPLOAD_DIR).resolve()
+    caminho = (raiz / str(document.filepath or "")).resolve()
+    try:
+        caminho.relative_to(raiz)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail="Referência de storage inválida") from exc
+    return caminho
+
+
+async def _validar_tipo(db: AsyncSession, tipo: str | None) -> str | None:
+    if not tipo:
+        return None
+    tipos_validos = set(TIPOS_LEGADOS)
+    try:
+        tipos_validos |= {t.tipo_key for t in await _tipos_master_ativos(db)}
+    except Exception as exc:
+        logger.warning("Catálogo de tipos indisponível; exception_type=%s", type(exc).__name__)
+    if tipo not in tipos_validos:
+        raise HTTPException(status_code=422, detail="Tipo de documento inválido. Use GET /documents/tipos.")
+    return tipo
+
+
+async def _resolver_contexto_upload(
+    db: AsyncSession,
+    cu: User,
+    *,
+    case_id: str | None,
+    client_id: str | None,
+    documento_anterior_id: str | None,
+) -> tuple[str | None, str | None, Document | None]:
+    predecessor = None
+    if documento_anterior_id:
+        predecessor = await _documento_ativo(db, documento_anterior_id)
+        await _verificar_acesso_documento(db, cu, predecessor)
+        if not _pode_acessar_confidencial(cu, predecessor.confidencialidade.value):
+            raise HTTPException(status_code=403, detail="Documento predecessor restrito — acesso negado")
+        if case_id is None:
+            case_id = predecessor.case_id
+        if client_id is None:
+            client_id = predecessor.client_id
+        if case_id != predecessor.case_id or client_id != predecessor.client_id:
+            raise HTTPException(status_code=422, detail="Nova versão deve manter o mesmo caso/cliente do predecessor")
+
+    if case_id:
+        case = await verificar_acesso_caso(db, cu, case_id)
+        if client_id and case.client_id and client_id != case.client_id:
+            raise HTTPException(status_code=422, detail="client_id não corresponde ao cliente do caso")
+        client_id = case.client_id
+    elif client_id:
+        await _verificar_acesso_cliente_sem_caso(db, cu, client_id)
+        cliente = await db.scalar(select(Client.id).where(Client.id == client_id, Client.deleted_at.is_(None)))
+        if not cliente:
+            raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    return case_id, client_id, predecessor
+
+
+@router.get("/policy")
+async def politica_upload(cu: User = Depends(get_current_user)):
+    del cu
+    return {
+        "extensions": sorted(EXTENSOES_PERMITIDAS),
+        "max_upload_mb": settings.MAX_UPLOAD_MB,
+        "confidentiality": [c.value for c in DocConfidencialidade],
+        "malware_scan_enabled": malware_scan_habilitado(),
+    }
+
+
 @router.get("/tipos")
-async def listar_tipos(
-    db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
-):
-    """Lista os tipos de documento ativos do master para o seletor do frontend."""
+async def listar_tipos(db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     del cu
     tipos = await _tipos_master_ativos(db)
     return {
@@ -251,64 +332,36 @@ async def sugerir_tipo_documento(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Classifica em tipo_key do master como sugestão sujeita a HITL."""
     if not req.doc_id and not (req.texto and req.texto.strip()):
         raise HTTPException(status_code=422, detail="Informe doc_id ou texto")
-
     texto = req.texto
     case_id = None
     if req.doc_id:
-        document = (
-            await db.execute(
-                select(Document).where(
-                    Document.id == req.doc_id,
-                    Document.deleted_at.is_(None),
-                )
-            )
-        ).scalar_one_or_none()
-        if not document:
-            raise HTTPException(status_code=404, detail="Documento não encontrado")
+        document = await _documento_ativo(db, req.doc_id)
         await _verificar_acesso_documento(db, cu, document)
         if not _pode_acessar_confidencial(cu, document.confidencialidade.value):
             raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
         case_id = document.case_id
         texto = texto or document.ocr_text
-
     if not texto or len(texto.strip()) < 40:
-        raise HTTPException(
-            status_code=422,
-            detail="Sem texto suficiente para classificar (OCR vazio ou muito curto).",
-        )
-
+        raise HTTPException(status_code=422, detail="Sem texto suficiente para classificar")
     tipos = await _tipos_master_ativos(db)
     if not tipos:
-        raise HTTPException(
-            status_code=503,
-            detail="Catálogo de tipos (document_types_master) não populado — rode o seed.",
-        )
-
+        raise HTTPException(status_code=503, detail="Catálogo de tipos não populado")
     from app.services.documento_service import sugerir_tipo
-
     try:
         return await sugerir_tipo(
             db,
             cu.id,
             texto,
-            tipos=[
-                {
-                    "tipo_key": t.tipo_key,
-                    "nome": t.nome,
-                    "descricao": t.descricao,
-                }
-                for t in tipos
-            ],
+            tipos=[{"tipo_key": t.tipo_key, "nome": t.nome, "descricao": t.descricao} for t in tipos],
             case_id=case_id,
             doc_id=req.doc_id,
         )
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error("sugerir-tipo falhou (doc %s): %s", req.doc_id, exc, exc_info=True)
+        logger.warning("sugerir-tipo indisponível; exception_type=%s", type(exc).__name__)
         raise HTTPException(status_code=503, detail="Serviço de IA indisponível no momento") from exc
 
 
@@ -321,178 +374,98 @@ async def upload(
     confidencialidade: str = Form("confidencial"),
     case_id: Optional[str] = Form(None),
     client_id: Optional[str] = Form(None),
+    documento_anterior_id: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    if case_id:
-        caso = await verificar_acesso_caso(db, cu, case_id)
-        if client_id and client_id != caso.client_id:
-            raise HTTPException(
-                status_code=422,
-                detail="client_id diverge do cliente do caso informado",
-            )
-        client_id = caso.client_id
-    elif client_id:
-        cli = (
-            await db.execute(
-                select(Client.id).where(
-                    Client.id == client_id,
-                    Client.deleted_at.is_(None),
-                )
-            )
-        ).scalar_one_or_none()
-        if cli is None:
-            raise HTTPException(status_code=404, detail="Cliente não encontrado")
-        await _verificar_acesso_cliente_sem_caso(db, cu, client_id)
-
+    titulo = (titulo or "").strip()
+    if not titulo:
+        raise HTTPException(status_code=422, detail="Título obrigatório")
+    if len(titulo) > 255:
+        raise HTTPException(status_code=422, detail="Título excede 255 caracteres")
+    tipo = await _validar_tipo(db, tipo)
     try:
         conf_enum = DocConfidencialidade(confidencialidade)
     except ValueError as exc:
-        validos = ", ".join(c.value for c in DocConfidencialidade)
-        raise HTTPException(
-            status_code=422,
-            detail=f"Confidencialidade inválida: {confidencialidade}. Use: {validos}",
-        ) from exc
+        raise HTTPException(status_code=422, detail="Confidencialidade inválida") from exc
+    if not _pode_acessar_confidencial(cu, conf_enum.value):
+        raise HTTPException(status_code=403, detail="Somente sócio+ pode gravar documento em cofre restrito+")
 
-    ext = os.path.splitext(file.filename or "")[1].lower()
-    if ext not in EXTENSOES_PERMITIDAS:
-        raise HTTPException(status_code=422, detail=f"Extensão não permitida: {ext}")
-
-    if tipo:
-        tipos_validos = set(TIPOS_LEGADOS)
-        try:
-            tipos_validos |= {t.tipo_key for t in await _tipos_master_ativos(db)}
-        except Exception as exc:
-            logger.warning("document_types_master indisponível na validação de tipo: %s", exc)
-        if tipo not in tipos_validos:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Tipo de documento inválido: {tipo}. Use GET /documents/tipos.",
-            )
-
-    conteudo = await file.read()
-    if len(conteudo) > settings.MAX_UPLOAD_MB * 1024 * 1024:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Arquivo excede {settings.MAX_UPLOAD_MB}MB",
-        )
-    mime_real = _validar_conteudo(ext, conteudo)
-
-    agora = datetime.now(timezone.utc)
-    subdir = f"{agora.year}/{agora.month:02d}"
-    os.makedirs(f"{settings.UPLOAD_DIR}/{subdir}", exist_ok=True)
-    doc_id = str(uuid4())
-    filepath = f"{subdir}/{doc_id}{ext}"
-    full_path = f"{settings.UPLOAD_DIR}/{filepath}"
-
-    async with aiofiles.open(full_path, "wb") as handle:
-        await handle.write(conteudo)
-
-    ocr_text = None
-    nfe_info = None
-    try:
-        if ext == ".xml":
-            res_xml = await asyncio.to_thread(extrair_xml, full_path)
-            if res_xml:
-                ocr_text = res_xml.get("texto")
-                nfe_info = res_xml.get("nfe")
-        else:
-            ocr_text = await asyncio.to_thread(extrair_texto, full_path, mime_real)
-    except Exception as exc:
-        logger.warning("OCR falhou no upload doc %s: %s", doc_id, exc)
-
-    document = Document(
-        id=doc_id,
-        titulo=titulo,
-        tipo=tipo,
-        filename=_nome_original_seguro(file.filename, f"documento{ext}"),
-        filepath=filepath,
-        mimetype=mime_real,
-        size_bytes=len(conteudo),
-        # Integridade (migration 147). O EJC é sistema de PROVA DOCUMENTAL: o
-        # hash é o que sustenta que o arquivo juntado hoje é o mesmo de amanhã.
-        # A maquinaria de SHA-256 existia inteira desde a 142 (serviço local,
-        # remoto via rclone, rescan, task de backfill) e o upload direto não
-        # chamava nada — o hash só existia em `document_intake_items`, que este
-        # caminho não alimenta. Calculado dos bytes que já estão em memória:
-        # sem I/O extra, sem reler o arquivo do disco.
-        sha256=hashlib.sha256(conteudo).hexdigest(),
-        confidencialidade=conf_enum,
-        ocr_text=ocr_text,
+    case_id, client_id, _ = await _resolver_contexto_upload(
+        db,
+        cu,
         case_id=case_id,
         client_id=client_id,
-        uploaded_by=cu.id,
-    )
-
-    # Compatibilidade G3 mantida nesta onda. A identidade por título será
-    # substituída por versionamento explícito em PR próprio, com testes de
-    # concorrência e constraint após auditoria dos grupos existentes.
-    if case_id:
-        existente = (
-            await db.execute(
-                select(Document)
-                .where(
-                    Document.titulo == titulo,
-                    Document.case_id == case_id,
-                    Document.deleted_at.is_(None),
-                )
-                .order_by(Document.versao.desc())
-                .limit(1)
-            )
-        ).scalar_one_or_none()
-        if existente:
-            grupo = existente.versao_grupo_id or existente.id
-            document.versao = (existente.versao or 1) + 1
-            document.versao_grupo_id = grupo
-            document.versao_anterior_id = existente.id
-        else:
-            document.versao_grupo_id = doc_id
-
-    db.add(document)
-    await criar_audit_log(
-        db,
-        cu.id,
-        cu.role.value,
-        "UPLOAD",
-        "documents",
-        doc_id,
-        dados_depois={
-            "case_id": case_id,
-            "client_id": client_id,
-            "tipo": tipo,
-            "confidencialidade": conf_enum.value,
-            "size_bytes": len(conteudo),
-            "storage": "local",
-        },
+        documento_anterior_id=documento_anterior_id,
     )
     try:
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        try:
-            os.unlink(full_path)
-        except FileNotFoundError:
-            pass
-        except OSError:
-            logger.error("Falha ao compensar arquivo órfão %s", filepath, exc_info=True)
-        raise
+        scanner = obter_scanner_documentos()
+    except MalwareScanIndisponivelError as exc:
+        raise HTTPException(status_code=503, detail="Validação antimalware indisponível") from exc
 
+    try:
+        resultado = await ingerir_documento_local(
+            db,
+            file,
+            filename=file.filename,
+            upload_root=Path(settings.UPLOAD_DIR),
+            max_bytes=settings.MAX_UPLOAD_MB * 1024 * 1024,
+            dados=DadosPersistenciaDocumento(
+                titulo=titulo,
+                tipo=tipo,
+                confidencialidade=conf_enum,
+                case_id=case_id,
+                client_id=client_id,
+                uploaded_by=cu.id,
+                user_role=cu.role.value,
+                documento_anterior_id=documento_anterior_id,
+            ),
+            scanner=scanner,
+        )
+    except UploadExcedeLimiteError as exc:
+        raise HTTPException(status_code=413, detail=f"Arquivo excede {settings.MAX_UPLOAD_MB}MB") from exc
+    except UploadVazioError as exc:
+        raise HTTPException(status_code=422, detail="Arquivo vazio") from exc
+    except MalwareDetectadoError as exc:
+        raise HTTPException(status_code=422, detail="Arquivo bloqueado pela política antimalware") from exc
+    except MalwareScanIndisponivelError as exc:
+        raise HTTPException(status_code=503, detail="Validação antimalware indisponível") from exc
+    except DocumentoAnteriorNaoEncontradoError as exc:
+        raise HTTPException(status_code=409, detail="Documento predecessor indisponível") from exc
+    except DocumentoContextoDivergenteError as exc:
+        raise HTTPException(status_code=422, detail="Contexto da nova versão diverge do predecessor") from exc
+    except (DocumentoAnteriorObsoletoError, DocumentoGrupoInconsistenteError) as exc:
+        raise HTTPException(status_code=409, detail="Grupo de versões requer saneamento antes de nova revisão") from exc
+    except (DocumentoVersaoError, PersistenciaDocumentoInvalidaError) as exc:
+        raise HTTPException(status_code=422, detail="Metadados de versionamento inválidos") from exc
+
+    document = resultado.documento
     if case_id:
         from app.services.status_transicao import avancar_status_pos_commit
-
         await avancar_status_pos_commit(db, case_id, "documento_vinculado", user_id=cu.id)
-    if case_id and ocr_text:
-        background_tasks.add_task(analisar_documento_bg, case_id, ocr_text, doc_id, cu.id)
-
-    resposta: dict = {"id": doc_id, "detail": "Documento enviado"}
-    if nfe_info:
-        resposta["nfe"] = nfe_info
-    if ext in FORMATOS_SEM_INDEXACAO and not ocr_text:
-        resposta["aviso"] = (
-            "Conteúdo não indexável: formato legado sem extração de texto "
-            f"({ext}). Converta para {'.docx' if ext == '.doc' else '.xlsx'} "
-            "para habilitar busca por conteúdo e análise por IA."
+    mecanismo_analise = None
+    if case_id and document.ocr_text:
+        mecanismo_analise = await agendar_analise_documento(
+            document.id,
+            cu.id,
+            document.sha256,
+            background_tasks,
         )
+
+    resposta: dict = {
+        "id": document.id,
+        "detail": "Documento enviado",
+        "versao": document.versao,
+        "sha256": document.sha256,
+        "integrity_status": document.integrity_status,
+        "malware_scan_status": document.malware_scan_status,
+        "analysis_status": document.analysis_status,
+        "analysis_dispatch": mecanismo_analise,
+    }
+    if resultado.extracao.nfe:
+        resposta["nfe"] = resultado.extracao.nfe
+    if Path(document.filename).suffix.lower() in FORMATOS_SEM_INDEXACAO and not document.ocr_text:
+        resposta["aviso"] = "Conteúdo não indexável no formato legado; converta para formato atual."
     return resposta
 
 
@@ -503,30 +476,25 @@ async def listar(
     case_id: Optional[str] = None,
     client_id: Optional[str] = None,
     search: Optional[str] = Query(None, max_length=200),
-    tipo: Optional[str] = Query(None, description="Filtra por tipo exato (tipo_key)"),
-    confidencialidade: Optional[str] = Query(
-        None,
-        description="Filtra por nível exato (normal|interno|restrito|confidencial|segredo_justica)",
-    ),
-    data_inicio: Optional[date] = Query(None, description="created_at >= data (UTC)"),
-    data_fim: Optional[date] = Query(None, description="created_at <= data (UTC, inclusivo)"),
-    classificacao_pendente: Optional[bool] = Query(
-        None,
-        description="true → somente documentos sem tipo (tipo IS NULL)",
-    ),
+    tipo: Optional[str] = None,
+    confidencialidade: Optional[str] = None,
+    data_inicio: Optional[date] = None,
+    data_fim: Optional[date] = None,
+    classificacao_pendente: Optional[bool] = None,
+    cursor_created_at: Optional[datetime] = Query(None),
+    cursor_id: Optional[str] = Query(None, max_length=36),
+    include_total: bool = Query(True),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    conf_filtro: Optional[DocConfidencialidade] = None
+    if bool(cursor_created_at) != bool(cursor_id):
+        raise HTTPException(status_code=422, detail="cursor_created_at e cursor_id devem ser informados juntos")
+    conf_filtro = None
     if confidencialidade:
         try:
             conf_filtro = DocConfidencialidade(confidencialidade)
         except ValueError as exc:
-            validos = ", ".join(c.value for c in DocConfidencialidade)
-            raise HTTPException(
-                status_code=422,
-                detail=f"Confidencialidade inválida: {confidencialidade}. Use: {validos}",
-            ) from exc
+            raise HTTPException(status_code=422, detail="Confidencialidade inválida") from exc
 
     query = select(Document).where(Document.deleted_at.is_(None))
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
@@ -535,40 +503,22 @@ async def listar(
         if not getattr(cu, "client_id", None):
             query = query.where(Document.id.is_(None))
         else:
-            query = query.where(
-                Document.client_id == cu.client_id,
-                Document.confidencialidade == "normal",
-            )
+            query = query.where(Document.client_id == cu.client_id, Document.confidencialidade == "normal")
     elif not is_gestao(cu):
         casos_visiveis = select(Case.id).where(
             Case.deleted_at.is_(None),
-            or_(
-                Case.advogado_responsavel_id == cu.id,
-                Case.advogado_auxiliar_id == cu.id,
-            ),
+            or_(Case.advogado_responsavel_id == cu.id, Case.advogado_auxiliar_id == cu.id),
         )
         clientes_visiveis = select(Case.client_id).where(
             Case.deleted_at.is_(None),
             Case.client_id.is_not(None),
-            or_(
-                Case.advogado_responsavel_id == cu.id,
-                Case.advogado_auxiliar_id == cu.id,
-            ),
+            or_(Case.advogado_responsavel_id == cu.id, Case.advogado_auxiliar_id == cu.id),
         )
-        query = query.where(
-            or_(
-                Document.case_id.in_(casos_visiveis),
-                (
-                    Document.case_id.is_(None)
-                    & Document.client_id.in_(clientes_visiveis)
-                ),
-                (
-                    Document.case_id.is_(None)
-                    & Document.client_id.is_(None)
-                    & (Document.uploaded_by == cu.id)
-                ),
-            )
-        )
+        query = query.where(or_(
+            Document.case_id.in_(casos_visiveis),
+            Document.case_id.is_(None) & Document.client_id.in_(clientes_visiveis),
+            Document.case_id.is_(None) & Document.client_id.is_(None) & (Document.uploaded_by == cu.id),
+        ))
     if case_id:
         query = query.where(Document.case_id == case_id)
     if client_id:
@@ -582,76 +532,145 @@ async def listar(
     elif classificacao_pendente is False:
         query = query.where(Document.tipo.is_not(None))
     if data_inicio:
-        query = query.where(
-            Document.created_at
-            >= datetime.combine(data_inicio, dtime.min, tzinfo=timezone.utc)
-        )
+        query = query.where(Document.created_at >= datetime.combine(data_inicio, dtime.min, tzinfo=timezone.utc))
     if data_fim:
         query = query.where(
-            Document.created_at
-            < datetime.combine(
-                data_fim + timedelta(days=1),
-                dtime.min,
-                tzinfo=timezone.utc,
-            )
+            Document.created_at < datetime.combine(data_fim + timedelta(days=1), dtime.min, tzinfo=timezone.utc)
         )
     if search and search.strip():
-        termo = (
-            search.strip()
-            .replace("\\", "\\\\")
-            .replace("%", "\\%")
-            .replace("_", "\\_")
+        termo = search.strip()
+        escaped = termo.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        vector = sqlfunc.to_tsvector(
+            "portuguese",
+            sqlfunc.coalesce(Document.titulo, "") + " " + sqlfunc.coalesce(Document.ocr_text, ""),
         )
-        padrao = f"%{termo}%"
-        query = query.where(
-            (Document.titulo.ilike(padrao, escape="\\"))
-            | (Document.ocr_text.ilike(padrao, escape="\\"))
-        )
+        tsquery = sqlfunc.plainto_tsquery("portuguese", termo)
+        query = query.where(or_(
+            Document.titulo.ilike(f"%{escaped}%", escape="\\"),
+            vector.op("@@")(tsquery),
+        ))
+    if cursor_created_at and cursor_id:
+        query = query.where(or_(
+            Document.created_at < cursor_created_at,
+            (Document.created_at == cursor_created_at) & (Document.id < cursor_id),
+        ))
     query = query.order_by(Document.created_at.desc(), Document.id.desc())
 
-    total = (
-        await db.execute(select(sqlfunc.count()).select_from(query.subquery()))
-    ).scalar()
-    rows = (
-        await db.execute(query.offset((page - 1) * page_size).limit(page_size))
-    ).scalars().all()
+    total = None
+    if include_total:
+        total = (await db.execute(select(sqlfunc.count()).select_from(query.subquery()))).scalar()
+    if cursor_created_at:
+        rows = (await db.execute(query.limit(page_size))).scalars().all()
+    else:
+        rows = (await db.execute(query.offset((page - 1) * page_size).limit(page_size))).scalars().all()
+    next_cursor = None
+    if len(rows) == page_size:
+        ultimo = rows[-1]
+        next_cursor = {
+            "created_at": ultimo.created_at.isoformat() if ultimo.created_at else None,
+            "id": ultimo.id,
+        }
     return {
-        "data": [_serializar_documento(document) for document in rows],
+        "data": [_serializar_documento(d) for d in rows],
         "total": total,
         "page": page,
         "page_size": page_size,
+        "next_cursor": next_cursor,
     }
 
 
-# Detalhe por ID (pente fino E2E 30/08 §5.1): a releitura direta de um documento
-# respondia 405 — só existiam list/download/PATCH/DELETE. Declarada DEPOIS das
-# rotas estáticas de 1 segmento (/tipos, GET /) para não capturá-las; /drive/*
-# tem mais segmentos e não conflita.
+class RescanRequest(BaseModel):
+    document_ids: list[str] = Field(default_factory=list, max_length=100)
+    client_id: Optional[str] = None
+    case_id: Optional[str] = None
+
+
+@router.post("/integridade/rescan", status_code=202)
+async def iniciar_rescan(
+    payload: RescanRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if cu.role.value not in {"superadmin", "admin"}:
+        raise HTTPException(status_code=403, detail="Rescan de integridade exige admin ou superadmin")
+    ids = list(dict.fromkeys(payload.document_ids))
+    batch = DocumentHashRescanBatch(
+        id=str(uuid4()),
+        cliente_id=payload.client_id,
+        caso_id=payload.case_id,
+        document_ids_json=json.dumps(ids) if ids else None,
+        dry_run=False,
+        status="pendente",
+        criado_por=cu.id,
+    )
+    db.add(batch)
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "RESCAN_INTEGRIDADE", "documents", batch.id,
+        dados_depois={"document_count": len(ids), "client_scope": bool(payload.client_id), "case_scope": bool(payload.case_id)},
+    )
+    await db.commit()
+    try:
+        mecanismo = agendar_rescan(batch.id, background_tasks=background_tasks)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="Fila de rescan indisponível") from exc
+    batch.mecanismo = mecanismo
+    await db.commit()
+    return {"batch_id": batch.id, "status": batch.status, "mecanismo": mecanismo}
+
+
+@router.get("/integridade/rescan/{batch_id}")
+async def status_rescan(
+    batch_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if cu.role.value not in {"superadmin", "admin", "socio"}:
+        raise HTTPException(status_code=403, detail="Consulta de integridade exige sócio+")
+    batch = await db.get(DocumentHashRescanBatch, batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Lote não encontrado")
+    itens = (
+        await db.execute(
+            select(DocumentHashRescanItem)
+            .where(DocumentHashRescanItem.batch_id == batch_id, DocumentHashRescanItem.motivo.is_not(None))
+            .limit(100)
+        )
+    ).scalars().all()
+    return {
+        "batch_id": batch.id,
+        "status": batch.status,
+        "mecanismo": batch.mecanismo,
+        "total_selecionado": batch.total_selecionado,
+        "total_concluidos": batch.total_concluidos,
+        "total_erros": batch.total_erros,
+        "total_nao_disponiveis": batch.total_nao_disponiveis,
+        "iniciado_em": batch.iniciado_em,
+        "concluido_em": batch.concluido_em,
+        "divergencias": [
+            {"document_id": i.document_id, "status": i.status, "motivo": i.motivo}
+            for i in itens
+        ],
+    }
+
+
 @router.get("/{doc_id}")
 async def detalhar(
     doc_id: str,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Metadados de um documento — mesmo shape do item da listagem."""
-    document = (
-        await db.execute(
-            select(Document).where(
-                Document.id == doc_id,
-                Document.deleted_at.is_(None),
-            )
-        )
-    ).scalar_one_or_none()
-    if not document:
-        raise HTTPException(status_code=404, detail="Documento não encontrado")
-
-    # Mesmo caminho de autorização do download: gate único por caso/cliente/
-    # uploader + cofre por confidencialidade.
+    document = await _documento_ativo(db, doc_id)
     await _verificar_acesso_documento(db, cu, document)
     if not _pode_acessar_confidencial(cu, document.confidencialidade.value):
         raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
-
-    return _serializar_documento(document)
+    if document.confidencialidade.value in {"restrito", "confidencial", "segredo_justica"}:
+        await criar_audit_log(
+            db, cu.id, cu.role.value, "VIEW_DOCUMENTO", "documents", doc_id,
+            dados_depois={"storage": "drive" if document.drive_file_id else "local"},
+        )
+        await db.commit()
+    return _serializar_detalhe(document)
 
 
 @router.get("/{doc_id}/download")
@@ -660,17 +679,7 @@ async def download(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    document = (
-        await db.execute(
-            select(Document).where(
-                Document.id == doc_id,
-                Document.deleted_at.is_(None),
-            )
-        )
-    ).scalar_one_or_none()
-    if not document:
-        raise HTTPException(status_code=404, detail="Documento não encontrado")
-
+    document = await _documento_ativo(db, doc_id)
     await _verificar_acesso_documento(db, cu, document)
     if not _pode_acessar_confidencial(cu, document.confidencialidade.value):
         raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
@@ -683,25 +692,13 @@ async def download(
                 remote_path=_remote_path_documento(document),
             )
         except gd.DriveIndisponivelError as exc:
-            raise HTTPException(
-                status_code=503,
-                detail="Google Drive não configurado/indisponível",
-            ) from exc
+            raise HTTPException(status_code=503, detail="Google Drive não configurado/indisponível") from exc
         except gd.DriveObjetoNaoEncontradoError as exc:
             raise HTTPException(status_code=410, detail="Arquivo remoto não encontrado") from exc
         except Exception as exc:
-            logger.error("Falha ao baixar documento remoto %s", doc_id, exc_info=True)
+            logger.warning("Download Drive falhou; doc_id=%s exception_type=%s", doc_id, type(exc).__name__)
             raise HTTPException(status_code=502, detail="Falha no storage remoto") from exc
-
-        await criar_audit_log(
-            db,
-            cu.id,
-            cu.role.value,
-            "DOWNLOAD",
-            "documents",
-            doc_id,
-            dados_depois={"storage": "drive"},
-        )
+        await criar_audit_log(db, cu.id, cu.role.value, "DOWNLOAD", "documents", doc_id, dados_depois={"storage": "drive"})
         await db.commit()
         return Response(
             content=content,
@@ -709,43 +706,20 @@ async def download(
             headers={"Content-Disposition": _content_disposition(document.filename)},
         )
 
-    full_path = f"{settings.UPLOAD_DIR}/{document.filepath}"
-    if not os.path.exists(full_path):
+    full_path = _full_path_local(document)
+    if not full_path.exists():
         raise HTTPException(status_code=410, detail="Arquivo físico não encontrado")
-
-    await criar_audit_log(
-        db,
-        cu.id,
-        cu.role.value,
-        "DOWNLOAD",
-        "documents",
-        doc_id,
-        dados_depois={"storage": "local"},
-    )
+    await criar_audit_log(db, cu.id, cu.role.value, "DOWNLOAD", "documents", doc_id, dados_depois={"storage": "local"})
     await db.commit()
-    return FileResponse(
-        full_path,
-        filename=document.filename,
-        media_type=document.mimetype or "application/octet-stream",
-    )
+    return FileResponse(str(full_path), filename=document.filename, media_type=document.mimetype or "application/octet-stream")
 
 
-async def _soft_delete_documento(
-    db: AsyncSession,
-    cu: User,
-    document: Document,
-    *,
-    storage: str,
-) -> None:
+async def _soft_delete_documento(db: AsyncSession, cu: User, document: Document, *, storage: str) -> None:
+    await desativar_rag_documento(db, document)
     document.deleted_at = datetime.now(timezone.utc)
     await criar_audit_log(
-        db,
-        cu.id,
-        cu.role.value,
-        "DELETE",
-        "documents",
-        document.id,
-        dados_depois={"storage": storage, "storage_preservado": True},
+        db, cu.id, cu.role.value, "DELETE", "documents", document.id,
+        dados_depois={"storage": storage, "storage_preservado": True, "rag_desativado": True},
     )
     await db.commit()
 
@@ -756,41 +730,15 @@ async def remover(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    document = (
-        await db.execute(
-            select(Document).where(
-                Document.id == doc_id,
-                Document.deleted_at.is_(None),
-            )
-        )
-    ).scalar_one_or_none()
-    if not document:
-        raise HTTPException(status_code=404, detail="Documento não encontrado")
+    document = await _documento_ativo(db, doc_id)
     await _verificar_acesso_documento(db, cu, document)
-    await exigir_documento_sem_referencias_bloqueantes(
-        db,
-        doc_id,
-        acao="excluído",
-    )
-
-    # Soft-delete deve ser reversível: o storage físico é preservado para que
-    # /trash/.../restaurar possa reativar o documento sem perda de evidência.
-    # A eliminação física pertence exclusivamente ao fluxo de PURGE, que exige
-    # superadmin, motivo e trilha própria.
-    await _soft_delete_documento(
-        db,
-        cu,
-        document,
-        storage="drive" if document.drive_file_id else "local",
-    )
+    await exigir_documento_sem_referencias_bloqueantes(db, doc_id, acao="excluído")
+    await _soft_delete_documento(db, cu, document, storage="drive" if document.drive_file_id else "local")
     return MsgResponse(detail="Documento removido")
 
 
 class DocumentPatchRequest(BaseModel):
-    """Somente metadados; vínculo com caso é operação de domínio dedicada."""
-
     model_config = ConfigDict(extra="forbid")
-
     titulo: Optional[str] = None
     tipo: Optional[str] = None
     confidencialidade: Optional[str] = None
@@ -803,89 +751,42 @@ async def atualizar_metadados(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Atualiza título/tipo/confidencialidade; nunca movimenta evidência entre casos."""
-    document = (
-        await db.execute(
-            select(Document).where(
-                Document.id == doc_id,
-                Document.deleted_at.is_(None),
-            )
-        )
-    ).scalar_one_or_none()
-    if not document:
-        raise HTTPException(status_code=404, detail="Documento não encontrado")
-
+    document = await _documento_ativo(db, doc_id)
     await _verificar_acesso_documento(db, cu, document)
     if not _pode_acessar_confidencial(cu, document.confidencialidade.value):
         raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
-
     campos = req.model_dump(exclude_unset=True)
     if not campos:
         raise HTTPException(status_code=422, detail="Nenhum campo para atualizar")
-
     alteracoes: list[str] = []
-
     if "titulo" in campos:
-        novo_titulo = (campos["titulo"] or "").strip()
-        if not novo_titulo:
-            raise HTTPException(status_code=422, detail="Título não pode ser vazio")
-        if novo_titulo != document.titulo:
-            document.titulo = novo_titulo
+        novo = (campos["titulo"] or "").strip()
+        if not novo or len(novo) > 255:
+            raise HTTPException(status_code=422, detail="Título inválido")
+        if novo != document.titulo:
+            document.titulo = novo
             alteracoes.append("titulo")
-
     if "confidencialidade" in campos:
         try:
-            conf_enum = DocConfidencialidade(campos["confidencialidade"])
+            conf = DocConfidencialidade(campos["confidencialidade"])
         except (ValueError, TypeError) as exc:
-            validos = ", ".join(c.value for c in DocConfidencialidade)
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    f"Confidencialidade inválida: {campos['confidencialidade']}. "
-                    f"Use: {validos}"
-                ),
-            ) from exc
-        if not _pode_acessar_confidencial(cu, conf_enum.value):
-            raise HTTPException(
-                status_code=403,
-                detail="Somente sócio+ pode mover documento para o cofre (restrito+)",
-            )
-        if conf_enum != document.confidencialidade:
-            document.confidencialidade = conf_enum
+            raise HTTPException(status_code=422, detail="Confidencialidade inválida") from exc
+        if not _pode_acessar_confidencial(cu, conf.value):
+            raise HTTPException(status_code=403, detail="Somente sócio+ pode mover documento para o cofre")
+        if conf != document.confidencialidade:
+            document.confidencialidade = conf
             alteracoes.append("confidencialidade")
-
     if "tipo" in campos:
-        novo_tipo = campos["tipo"]
-        if novo_tipo:
-            tipos_validos = set(TIPOS_LEGADOS)
-            try:
-                tipos_validos |= {t.tipo_key for t in await _tipos_master_ativos(db)}
-            except Exception as exc:
-                logger.warning("document_types_master indisponível: %s", exc)
-            if novo_tipo not in tipos_validos:
-                raise HTTPException(
-                    status_code=422,
-                    detail=(
-                        f"Tipo de documento inválido: {novo_tipo}. "
-                        "Use GET /documents/tipos."
-                    ),
-                )
+        novo_tipo = await _validar_tipo(db, campos["tipo"])
         if novo_tipo != document.tipo:
             document.tipo = novo_tipo
             alteracoes.append("tipo")
-
     if alteracoes:
         await criar_audit_log(
-            db,
-            cu.id,
-            cu.role.value,
-            "UPDATE",
-            "documents",
-            doc_id,
+            db, cu.id, cu.role.value, "UPDATE", "documents", doc_id,
             dados_depois={"campos_alterados": sorted(set(alteracoes))},
         )
         await db.commit()
-
     return {
         "id": document.id,
         "titulo": document.titulo,
@@ -894,6 +795,185 @@ async def atualizar_metadados(
         "case_id": document.case_id,
         "client_id": document.client_id,
         "detail": "Metadados atualizados" if alteracoes else "Nada a alterar",
+    }
+
+
+class DocumentGovernanceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    retention_until: Optional[datetime] = None
+    legal_hold: Optional[bool] = None
+    legal_hold_reason: Optional[str] = Field(None, max_length=2000)
+    motivo_alteracao: str = Field(..., min_length=5, max_length=500)
+
+
+@router.get("/{doc_id}/governanca")
+async def obter_governanca(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    _exigir_papel(cu, "socio", "Governança documental exige sócio+")
+    document = await _documento_para_governanca(db, doc_id)
+    await _verificar_acesso_documento(db, cu, document)
+    return {
+        "document_id": document.id,
+        "retention_until": document.retention_until,
+        "legal_hold": bool(document.legal_hold),
+        "legal_hold_reason": document.legal_hold_reason,
+        "legal_hold_set_by": document.legal_hold_set_by,
+        "legal_hold_set_at": document.legal_hold_set_at,
+        "deleted_at": document.deleted_at,
+    }
+
+
+@router.patch("/{doc_id}/governanca")
+async def atualizar_governanca(
+    doc_id: str,
+    req: DocumentGovernanceRequest,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    _exigir_papel(cu, "socio", "Governança documental exige sócio+")
+    document = await _documento_para_governanca(db, doc_id)
+    await _verificar_acesso_documento(db, cu, document)
+    campos = req.model_dump(exclude_unset=True)
+    alteracoes: list[str] = []
+    if "retention_until" in campos:
+        valor = req.retention_until
+        if valor is not None and valor.tzinfo is None:
+            raise HTTPException(status_code=422, detail="retention_until deve conter timezone")
+        if valor != document.retention_until:
+            document.retention_until = valor
+            alteracoes.append("retention_until")
+    if "legal_hold" in campos:
+        if req.legal_hold:
+            motivo_hold = (req.legal_hold_reason or "").strip()
+            if len(motivo_hold) < 5:
+                raise HTTPException(status_code=422, detail="Motivo do legal hold é obrigatório")
+            document.legal_hold = True
+            document.legal_hold_reason = motivo_hold
+            document.legal_hold_set_by = cu.id
+            document.legal_hold_set_at = datetime.now(timezone.utc)
+        else:
+            document.legal_hold = False
+            document.legal_hold_reason = None
+            document.legal_hold_set_by = None
+            document.legal_hold_set_at = None
+        alteracoes.append("legal_hold")
+    if not alteracoes:
+        raise HTTPException(status_code=422, detail="Nenhuma alteração de governança informada")
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "DOCUMENT_GOVERNANCE", "documents", doc_id,
+        detalhes="Alteração de retenção/legal hold",
+        dados_depois={
+            "campos_alterados": sorted(set(alteracoes)),
+            "legal_hold": bool(document.legal_hold),
+            "motivo_alteracao_informado": bool(req.motivo_alteracao.strip()),
+        },
+    )
+    await db.commit()
+    return await obter_governanca(doc_id, db, cu)
+
+
+@router.post("/{doc_id}/reprocessar-analise", status_code=202)
+async def reprocessar_analise(
+    doc_id: str,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    _exigir_papel(cu, "advogado", "Reprocessamento de análise exige advogado+")
+    document = await _documento_ativo(db, doc_id)
+    await _verificar_acesso_documento(db, cu, document)
+    if not _pode_acessar_confidencial(cu, document.confidencialidade.value):
+        raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
+    if not document.case_id or not document.ocr_text:
+        raise HTTPException(status_code=422, detail="Documento sem caso/OCR para análise")
+    document.analysis_status = "pending"
+    document.analysis_error_code = None
+    document.analysis_source_sha256 = document.sha256
+    document.analysis_updated_at = datetime.now(timezone.utc)
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "REPROCESS_AI", "documents", doc_id,
+        dados_depois={"analysis_status": "pending"},
+    )
+    await db.commit()
+    mecanismo = await agendar_analise_documento(doc_id, cu.id, document.sha256, background_tasks)
+    return {"document_id": doc_id, "analysis_status": "pending", "mecanismo": mecanismo}
+
+
+@router.post("/{doc_id}/verificar-integridade", status_code=202)
+async def verificar_integridade(
+    doc_id: str,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    _exigir_papel(cu, "socio", "Verificação de integridade exige sócio+")
+    document = await _documento_ativo(db, doc_id)
+    await _verificar_acesso_documento(db, cu, document)
+    batch = DocumentHashRescanBatch(
+        id=str(uuid4()),
+        cliente_id=document.client_id,
+        caso_id=document.case_id,
+        document_ids_json=json.dumps([doc_id]),
+        dry_run=False,
+        status="pendente",
+        criado_por=cu.id,
+    )
+    db.add(batch)
+    await db.commit()
+    mecanismo = agendar_rescan(batch.id, background_tasks=background_tasks)
+    batch.mecanismo = mecanismo
+    await db.commit()
+    return {"batch_id": batch.id, "document_id": doc_id, "mecanismo": mecanismo}
+
+
+class DocumentRagRequest(BaseModel):
+    ativo: bool = True
+
+
+@router.post("/{doc_id}/rag")
+async def configurar_rag_documento(
+    doc_id: str,
+    req: DocumentRagRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    _exigir_papel(cu, "advogado", "Uso de documento na inteligência exige advogado+")
+    document = await _documento_ativo(db, doc_id)
+    await _verificar_acesso_documento(db, cu, document)
+    if not _pode_acessar_confidencial(cu, document.confidencialidade.value):
+        raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
+
+    if not req.ativo:
+        alterado = await desativar_rag_documento(db, document)
+        await criar_audit_log(
+            db, cu.id, cu.role.value, "RAG_DISABLE", "documents", doc_id,
+            dados_depois={"rag_status": document.rag_status, "alterado": alterado},
+        )
+        await db.commit()
+        return {"document_id": doc_id, "rag_status": document.rag_status}
+
+    try:
+        knowledge_doc, resultado = await indexar_documento_no_caso(db, document)
+    except DocumentRagBridgeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "RAG_INDEX", "documents", doc_id,
+        dados_depois={"rag_status": document.rag_status, "knowledge_doc_id": knowledge_doc.id},
+    )
+    await db.commit()
+    mecanismo = None
+    if knowledge_doc.status_indexacao != "indexado":
+        mecanismo = await agendar_indexacao(knowledge_doc.id, background_tasks)
+    return {
+        "document_id": doc_id,
+        "rag_status": document.rag_status,
+        "knowledge_doc_id": knowledge_doc.id,
+        "resultado": resultado,
+        "mecanismo": mecanismo,
     }
 
 
@@ -908,71 +988,16 @@ async def publicar_no_portal(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Ato EXPLÍCITO de publicação ao Portal do Cliente (Issue #698).
-
-    Separado do PATCH de metadados comuns (`atualizar_metadados`) de
-    propósito: reclassificar um documento para "normal" é gestão documental
-    (peça já pública, cópia de diário oficial), publicar para o titular é
-    comunicação com o cliente. Antes desta rota eram o mesmo botão.
-
-    Piso de papel: MESMO desenho do Data Room (`_pode_editar` — advogado+
-    — cobre publicar E despublicar de saída, antes de qualquer checagem fina).
-    Despublicar exige o mesmo piso de publicar — não é "qualquer um com acesso
-    ao documento pode revogar": revogar visibilidade do cliente é decisão do
-    escritório tanto quanto concedê-la, e um piso assimétrico deixaria um
-    perfil abaixo de advogado (com acesso de leitura ao documento via caso)
-    apagar uma publicação que só um advogado+ pôde criar.
-    Publicar tem, além disso, o piso fino por confidencialidade
-    (`pode_publicar_externamente`, app/core/publicacao_externa) — a MESMA
-    política que o Data Room usa para o link público, para as duas nunca
-    divergirem. O Portal só exibe documentos `confidencialidade=normal`
-    (`GET /portal/documentos`), então publicar qualquer outro nível é rejeitado
-    aqui — não teria efeito lá e confundiria quem publicou. Despublicar,
-    ao contrário, precisa funcionar mesmo se o documento já foi reclassificado
-    para interno/segredo_justica nesse meio tempo (limpar o registro de uma
-    publicação antiga) — por isso usa o piso de PAPEL (advogado+), não o piso
-    fino por confidencialidade atual.
-
-    Idempotente: pedir o estado já vigente não regrava publicado_por/em nem
-    duplica audit log.
-    """
-    d = (await db.execute(
-        select(Document).where(
-            Document.id == doc_id, Document.deleted_at.is_(None)
-        )
-    )).scalar_one_or_none()
-    if not d:
-        raise HTTPException(status_code=404, detail="Documento não encontrado")
-
-    # Ownership (IDOR) + cofre — mesmos gates do PATCH de metadados.
+    d = await _documento_ativo(db, doc_id)
     await _verificar_acesso_documento(db, cu, d)
     if not _pode_acessar_confidencial(cu, d.confidencialidade.value):
         raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
-
-    # Piso de papel do ATO (publicar OU despublicar) — mesmo piso do Data
-    # Room (`_pode_editar`), independente da confidencialidade atual do
-    # documento. Sem isto, despublicar ficava só atrás do gate de OWNERSHIP
-    # acima — um perfil abaixo de advogado com acesso ao caso conseguiria
-    # revogar uma publicação que só um advogado+ pôde criar.
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["advogado"]:
-        raise HTTPException(
-            status_code=403,
-            detail="Publicar ou despublicar no Portal exige advogado ou superior",
-        )
-
+    _exigir_papel(cu, "advogado", "Publicar ou despublicar no Portal exige advogado ou superior")
     if req.publicado:
         if confidencialidade_str(d) != DocConfidencialidade.normal.value:
-            raise HTTPException(
-                status_code=422,
-                detail="Só documentos com confidencialidade normal podem ser "
-                       "publicados no Portal do Cliente",
-            )
+            raise HTTPException(status_code=422, detail="Só documentos normais podem ser publicados no Portal")
         if not pode_publicar_externamente(cu, d):
-            raise HTTPException(
-                status_code=403,
-                detail="A classificação atual do documento impede publicação externa",
-            )
-
+            raise HTTPException(status_code=403, detail="A classificação atual impede publicação externa")
     ja_publicado = bool(d.publicado_portal)
     if ja_publicado != req.publicado:
         d.publicado_portal = req.publicado
@@ -982,10 +1007,9 @@ async def publicar_no_portal(
             db, cu.id, cu.role.value,
             "PUBLISH_PORTAL" if req.publicado else "UNPUBLISH_PORTAL",
             "documents", doc_id,
-            detalhes=f"publicado_portal: {ja_publicado} → {req.publicado}",
+            dados_depois={"publicado_portal": req.publicado},
         )
         await db.commit()
-
     return {
         "id": d.id,
         "publicado_portal": bool(d.publicado_portal),
@@ -994,53 +1018,28 @@ async def publicar_no_portal(
     }
 
 
-@router.post(
-    "/{doc_id}/classificar",
-    dependencies=[Depends(rate_limit("doc-classificar", 15))],
-)
+@router.post("/{doc_id}/classificar", dependencies=[Depends(rate_limit("doc-classificar", 15))])
 async def classificar_tipo_documento(
     doc_id: str,
-    aplicar: bool = Query(
-        False,
-        description=(
-            "Se true, grava o tipo sugerido em Document.tipo somente quando válido."
-        ),
-    ),
+    aplicar: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    document = (
-        await db.execute(
-            select(Document).where(
-                Document.id == doc_id,
-                Document.deleted_at.is_(None),
-            )
-        )
-    ).scalar_one_or_none()
-    if not document:
-        raise HTTPException(status_code=404, detail="Documento não encontrado")
+    document = await _documento_ativo(db, doc_id)
     await _verificar_acesso_documento(db, cu, document)
     if not _pode_acessar_confidencial(cu, document.confidencialidade.value):
         raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
-
     from app.services.document_classifier import classificar_documento
-
     resultado = await classificar_documento(db, document.ocr_text or "")
     aplicado = False
     if aplicar and resultado.get("tipo_sugerido"):
         document.tipo = resultado["tipo_sugerido"]
         await criar_audit_log(
-            db,
-            cu.id,
-            cu.role.value,
-            "UPDATE",
-            "documents",
-            doc_id,
+            db, cu.id, cu.role.value, "UPDATE", "documents", doc_id,
             dados_depois={"campos_alterados": ["tipo"], "origem": "classificacao_ia_hitl"},
         )
         await db.commit()
         aplicado = True
-
     return {
         "doc_id": doc_id,
         "aplicado": aplicado,
@@ -1050,129 +1049,146 @@ async def classificar_tipo_documento(
     }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# GOOGLE DRIVE — compatibilidade de endpoints; lifecycle usa o mesmo Document.
-# ─────────────────────────────────────────────────────────────────────────────
 @router.post("/drive/upload")
 async def upload_para_drive(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     case_id: Optional[str] = Form(None),
     descricao: Optional[str] = Form(None),
+    documento_anterior_id: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    case = None
-    client_id = None
-    folder_token = None
-    if case_id:
-        case = await verificar_acesso_caso(db, current_user, case_id)
-        client_id = case.client_id
-        folder_token = gd.case_folder_token(case_id)
-
-    ext = os.path.splitext(file.filename or "")[1].lower()
-    if ext not in EXTENSOES_PERMITIDAS:
-        raise HTTPException(status_code=422, detail=f"Extensão não permitida: {ext}")
-
-    content = await file.read()
-    if len(content) > settings.MAX_UPLOAD_MB * 1024 * 1024:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Arquivo excede {settings.MAX_UPLOAD_MB}MB",
-        )
-    mime = _validar_conteudo(ext, content)
-
-    doc_id = str(uuid4())
-    nome_original = _nome_original_seguro(file.filename, f"documento{ext}")
-    nome_remoto = f"{doc_id}{ext}"
-    try:
-        result = await asyncio.to_thread(
-            gd.upload_file,
-            content,
-            nome_remoto,
-            mime,
-            folder_token,
-        )
-    except gd.DriveIndisponivelError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="Google Drive não configurado/indisponível",
-        ) from exc
-    except Exception as exc:
-        logger.error("Falha no upload para o Drive", exc_info=True)
-        raise HTTPException(status_code=502, detail="Falha no storage remoto") from exc
-
-    file_id = str(result.get("id") or "")
-    remote_path = str(result.get("remote_path") or "")
-    if not file_id or not remote_path:
-        try:
-            if remote_path:
-                await asyncio.to_thread(gd.delete_file, file_id, remote_path=remote_path)
-        except Exception:
-            logger.critical("Falha ao compensar upload Drive sem ID/path", exc_info=True)
-        raise HTTPException(status_code=502, detail="Storage remoto não retornou identidade válida")
-
-    document = Document(
-        id=doc_id,
-        case_id=case_id,
-        client_id=client_id,
-        titulo=nome_original,
-        descricao=descricao,
-        filename=nome_original,
-        filepath=f"drive://{remote_path}",
-        mimetype=mime,
-        size_bytes=len(content),
-        drive_file_id=file_id,
-        drive_link=result.get("webViewLink"),
-        uploaded_by=current_user.id,
-        confidencialidade=DocConfidencialidade.confidencial,
-        versao_grupo_id=doc_id,
-    )
-    db.add(document)
-    await criar_audit_log(
+    case_id, client_id, predecessor = await _resolver_contexto_upload(
         db,
-        current_user.id,
-        current_user.role.value,
-        "UPLOAD",
-        "documents",
-        doc_id,
-        dados_depois={
-            "case_id": case_id,
-            "client_id": client_id,
-            "confidencialidade": DocConfidencialidade.confidencial.value,
-            "size_bytes": len(content),
-            "storage": "drive",
-        },
+        current_user,
+        case_id=case_id,
+        client_id=None,
+        documento_anterior_id=documento_anterior_id,
     )
+    folder_token = gd.case_folder_token(case_id) if case_id else None
     try:
-        await db.commit()
-    except Exception as exc:
-        await db.rollback()
-        try:
-            await asyncio.to_thread(gd.delete_file, file_id, remote_path=remote_path)
-        except Exception:
-            logger.critical(
-                "Falha ao compensar objeto remoto após erro de persistência doc %s",
-                doc_id,
-                exc_info=True,
-            )
-        raise HTTPException(status_code=500, detail="Falha ao registrar documento") from exc
+        scanner = obter_scanner_documentos()
+    except MalwareScanIndisponivelError as exc:
+        raise HTTPException(status_code=503, detail="Validação antimalware indisponível") from exc
 
-    if case is not None:
-        from app.services.status_transicao import avancar_status_pos_commit
-
-        await avancar_status_pos_commit(
-            db,
-            case_id,
-            "documento_vinculado",
-            user_id=current_user.id,
+    try:
+        ingestao = await preparar_ingestao_documento_local(
+            file,
+            filename=file.filename,
+            upload_root=Path(settings.UPLOAD_DIR),
+            max_bytes=settings.MAX_UPLOAD_MB * 1024 * 1024,
+            scanner=scanner,
         )
+    except UploadExcedeLimiteError as exc:
+        raise HTTPException(status_code=413, detail=f"Arquivo excede {settings.MAX_UPLOAD_MB}MB") from exc
+    except UploadVazioError as exc:
+        raise HTTPException(status_code=422, detail="Arquivo vazio") from exc
+    except MalwareDetectadoError as exc:
+        raise HTTPException(status_code=422, detail="Arquivo bloqueado pela política antimalware") from exc
+    except MalwareScanIndisponivelError as exc:
+        raise HTTPException(status_code=503, detail="Validação antimalware indisponível") from exc
 
+    file_id = ""
+    remote_path = ""
+    try:
+        extracao = await extrair_texto_compatibilidade(db, ingestao, user_id=current_user.id)
+        content = await asyncio.to_thread(ingestao.storage.caminho_staging_para_validacao.read_bytes)
+        nome_remoto = f"{ingestao.doc_id}{ingestao.ext}"
+        try:
+            result = await asyncio.to_thread(
+                gd.upload_file,
+                content,
+                nome_remoto,
+                ingestao.mimetype,
+                folder_token,
+            )
+        except gd.DriveIndisponivelError as exc:
+            raise HTTPException(status_code=503, detail="Google Drive não configurado/indisponível") from exc
+        except Exception as exc:
+            logger.warning("Upload Drive falhou; exception_type=%s", type(exc).__name__)
+            raise HTTPException(status_code=502, detail="Falha no storage remoto") from exc
+
+        file_id = str(result.get("id") or "")
+        remote_path = str(result.get("remote_path") or "")
+        if not file_id or not remote_path:
+            raise HTTPException(status_code=502, detail="Storage remoto não retornou identidade válida")
+
+        agora = datetime.now(timezone.utc)
+        tem_analise = bool(case_id and extracao.ocr_text)
+        document = Document(
+            id=ingestao.doc_id,
+            case_id=case_id,
+            client_id=client_id,
+            titulo=ingestao.filename,
+            descricao=descricao,
+            filename=ingestao.filename,
+            filepath=f"drive://{remote_path}",
+            mimetype=ingestao.mimetype,
+            size_bytes=ingestao.size_bytes,
+            sha256=ingestao.sha256,
+            ocr_text=extracao.ocr_text,
+            drive_file_id=file_id,
+            drive_link=result.get("webViewLink"),
+            uploaded_by=current_user.id,
+            confidencialidade=DocConfidencialidade.confidencial,
+            malware_scan_status=ingestao.malware_scan_status.value,
+            malware_scanned_at=agora if ingestao.malware_scan_status.value != "not_requested" else None,
+            integrity_status="registered",
+            analysis_status="pending" if tem_analise else "not_requested",
+            analysis_updated_at=agora,
+            analysis_source_sha256=ingestao.sha256 if tem_analise else None,
+            rag_status="not_indexed" if tem_analise else None,
+        )
+        db.add(document)
+        if predecessor:
+            await preparar_nova_versao(db, document, documento_anterior_id=predecessor.id)
+        else:
+            configurar_documento_raiz(document)
+        await criar_audit_log(
+            db, current_user.id, current_user.role.value, "UPLOAD", "documents", document.id,
+            dados_depois={
+                "case_id": case_id,
+                "client_id": client_id,
+                "confidencialidade": document.confidencialidade.value,
+                "size_bytes": ingestao.size_bytes,
+                "storage": "drive",
+                "malware_scan_status": document.malware_scan_status,
+                "integrity_status": document.integrity_status,
+            },
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        if remote_path or file_id:
+            try:
+                await asyncio.to_thread(gd.delete_file, file_id, remote_path=remote_path or None)
+            except Exception:
+                logger.error("Falha ao compensar objeto remoto após erro de persistência")
+        raise
+    finally:
+        if not ingestao.storage.compensar():
+            logger.error("Falha ao limpar staging do upload Drive")
+
+    if case_id:
+        from app.services.status_transicao import avancar_status_pos_commit
+        await avancar_status_pos_commit(db, case_id, "documento_vinculado", user_id=current_user.id)
+    mecanismo_analise = None
+    if case_id and document.ocr_text:
+        mecanismo_analise = await agendar_analise_documento(
+            document.id, current_user.id, document.sha256, background_tasks
+        )
     return {
-        "id": doc_id,
+        "id": document.id,
         "drive_file_id": file_id,
-        "nome": nome_original,
-        "link": result.get("webViewLink"),
+        "nome": document.filename,
+        "link": document.drive_link,
         "download": result.get("webContentLink"),
+        "sha256": document.sha256,
+        "versao": document.versao,
+        "malware_scan_status": document.malware_scan_status,
+        "analysis_status": document.analysis_status,
+        "analysis_dispatch": mecanismo_analise,
     }
 
 
@@ -1180,23 +1196,14 @@ async def _gate_drive_doc(db: AsyncSession, cu: User, file_id: str) -> Document:
     docs = (
         await db.execute(
             select(Document)
-            .where(
-                Document.drive_file_id == file_id,
-                Document.deleted_at.is_(None),
-            )
+            .where(Document.drive_file_id == file_id, Document.deleted_at.is_(None))
             .limit(2)
         )
     ).scalars().all()
     if not docs:
         raise HTTPException(status_code=404, detail="Documento não encontrado")
     if len(docs) != 1:
-        # drive_file_id legado não tem unique constraint. Nunca escolher uma
-        # linha arbitrária: isso poderia autorizar por um caso e operar o objeto
-        # compartilhado por outro.
-        raise HTTPException(
-            status_code=409,
-            detail="Referência remota ambígua — requer correção administrativa",
-        )
+        raise HTTPException(status_code=409, detail="Referência remota ambígua — requer correção administrativa")
     document = docs[0]
     await _verificar_acesso_documento(db, cu, document)
     if not _pode_acessar_confidencial(cu, document.confidencialidade.value):
@@ -1211,22 +1218,16 @@ async def link_documento(
     current_user: User = Depends(get_current_user),
 ):
     document = await _gate_drive_doc(db, current_user, file_id)
-    info = gd.get_file_link(file_id)
+    try:
+        info = await asyncio.to_thread(gd.get_file_link, file_id)
+    except gd.DriveIndisponivelError as exc:
+        raise HTTPException(status_code=503, detail="Google Drive não configurado/indisponível") from exc
     await criar_audit_log(
-        db,
-        current_user.id,
-        current_user.role.value,
-        "VIEW_DOCUMENTO",
-        "documents",
-        document.id,
+        db, current_user.id, current_user.role.value, "VIEW_DOCUMENTO", "documents", document.id,
         dados_depois={"storage": "drive"},
     )
     await db.commit()
-    return {
-        "view": info.get("webViewLink"),
-        "download": info.get("webContentLink"),
-        "nome": document.filename,
-    }
+    return {"view": info.get("webViewLink"), "download": info.get("webContentLink"), "nome": document.filename}
 
 
 @router.get("/drive/{file_id}/download")
@@ -1237,29 +1238,16 @@ async def download_documento(
 ):
     document = await _gate_drive_doc(db, current_user, file_id)
     try:
-        content = await asyncio.to_thread(
-            gd.download_file,
-            file_id,
-            remote_path=_remote_path_documento(document),
-        )
+        content = await asyncio.to_thread(gd.download_file, file_id, remote_path=_remote_path_documento(document))
     except gd.DriveIndisponivelError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="Google Drive não configurado/indisponível",
-        ) from exc
+        raise HTTPException(status_code=503, detail="Google Drive não configurado/indisponível") from exc
     except gd.DriveObjetoNaoEncontradoError as exc:
         raise HTTPException(status_code=410, detail="Arquivo remoto não encontrado") from exc
     except Exception as exc:
-        logger.error("Falha ao baixar arquivo Drive", exc_info=True)
+        logger.warning("Download Drive falhou; exception_type=%s", type(exc).__name__)
         raise HTTPException(status_code=502, detail="Falha no storage remoto") from exc
-
     await criar_audit_log(
-        db,
-        current_user.id,
-        current_user.role.value,
-        "DOWNLOAD",
-        "documents",
-        document.id,
+        db, current_user.id, current_user.role.value, "DOWNLOAD", "documents", document.id,
         dados_depois={"storage": "drive"},
     )
     await db.commit()
@@ -1277,14 +1265,6 @@ async def deletar_documento_drive(
     current_user: User = Depends(get_current_user),
 ):
     document = await _gate_drive_doc(db, current_user, file_id)
-    await exigir_documento_sem_referencias_bloqueantes(
-        db,
-        document.id,
-        acao="excluído",
-    )
-
-    # Compatibilidade do endpoint legado: a ação agora segue o mesmo lifecycle
-    # reversível de DELETE /documents/{doc_id}. O arquivo remoto permanece
-    # preservado até a purga definitiva.
+    await exigir_documento_sem_referencias_bloqueantes(db, document.id, acao="excluído")
     await _soft_delete_documento(db, current_user, document, storage="drive")
     return {"ok": True}
