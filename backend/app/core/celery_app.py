@@ -1,5 +1,5 @@
 # ── app/core/celery_app.py ───────────────────────────────────────────────────
-# App Celery do EJC (Fase 3A — fila assíncrona real).
+# App Celery do EJC (Fase 3A).
 #
 # Broker e result backend no Redis (settings.REDIS_URL). O worker roda no
 # serviço `worker` do docker-compose (mesma imagem do backend):
@@ -7,8 +7,7 @@
 #     celery -A app.core.celery_app.celery_app worker --loglevel=INFO
 #
 # A API só despacha para cá quando CELERY_ENABLED=True E o Redis responde ao
-# ping — caso contrário o dispatcher (app/tasks/dispatcher.py) usa
-# BackgroundTasks, preservando o comportamento pré-Celery.
+# ping — caso contrário os dispatchers usam BackgroundTasks.
 from __future__ import annotations
 
 from celery import Celery
@@ -21,17 +20,15 @@ celery_app = Celery(
     "ejc",
     broker=settings.REDIS_URL,
     backend=settings.REDIS_URL,
-    # vault_sync não tem tasks: o include só garante o import no worker,
-    # registrando o handler de task_prerun (ressincronização do cofre, PR-2).
     include=[
-        "app.tasks.rag_tasks", "app.tasks.vault_sync",
-        "app.tasks.processo_eletronico_tasks", "app.tasks.raio_x_tasks",
+        "app.tasks.rag_tasks",
+        "app.tasks.document_tasks",
+        "app.tasks.rescan_tasks",
+        "app.tasks.vault_sync",
+        "app.tasks.processo_eletronico_tasks",
+        "app.tasks.raio_x_tasks",
         # event_subscribers instala o registro único de providers e a telemetria
-        # de provedores. Sem este import o worker rodava SEM eles (auditoria
-        # 15/08, P1-6): as chamadas de IA das tasks (ex.: raio_x → documento_
-        # service → ai_gateway.chat) não apareciam em /ia-governanca/provedores.
-        # O fail-closed do kill-switch já não depende disto — foi internalizado
-        # em ai_gateway._resolver_cadeia —, mas o registro e a telemetria sim.
+        # também dentro do processo worker.
         "app.services.event_subscribers",
     ],
 )
@@ -42,12 +39,9 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="America/Sao_Paulo",
     enable_utc=True,
-    # Confiabilidade: ack só depois de executar (worker morto → task re-entregue).
     task_acks_late=True,
     worker_prefetch_multiplier=1,
-    # Não trava o boot do worker se o Redis ainda estiver subindo (compose).
     broker_connection_retry_on_startup=True,
-    # Resultados expiram em 1 dia (indexação é fire-and-forget na prática).
     result_expires=86400,
     task_default_queue="ejc",
 )
