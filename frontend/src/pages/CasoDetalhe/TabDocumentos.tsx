@@ -1,14 +1,32 @@
-// ── Aba Documentos do caso — upload e vínculo embutidos (Tela C, Bloco 3.2) ──
-import { useCallback, useEffect, useRef, useState } from "react";
-import { FileUp, Link2, Search } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  FileUp,
+  Link2,
+  Search,
+  Upload,
+  X,
+} from "lucide-react";
 import api from "../../lib/api";
 import { asList } from "../../lib/list";
 import { toast } from "../../components/Toast";
-import { Empty } from "../../components/UI";
+import { Button, Spinner } from "../../components/UI";
+import DocumentDrawer from "../../components/documents/DocumentDrawer";
+import DocumentStatusBadge from "../../components/documents/DocumentStatusBadge";
 import { useAuth } from "../../stores/auth";
+import {
+  duplicateDetail,
+  getDocumentPolicy,
+  listDocuments,
+  uploadDocument,
+  type DocumentItem,
+  type DocumentPolicy,
+} from "../../services/documents";
 import CaseDocumentActions from "./CaseDocumentActions";
 
-const PAPEIS_VINCULO_DOCUMENTAL = new Set([
+const CAN_LINK = new Set([
   "superadmin",
   "admin",
   "socio",
@@ -16,45 +34,8 @@ const PAPEIS_VINCULO_DOCUMENTAL = new Set([
   "advogado_auxiliar",
   "estagiario",
 ]);
-
-async function baixarDoc(docId: string, filename: string) {
-  try {
-    const r = await api.get(`/documents/${docId}/download`, {
-      responseType: "blob",
-    });
-    const url = URL.createObjectURL(r.data);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename || "documento";
-    a.click();
-    URL.revokeObjectURL(url);
-  } catch {
-    toast.error("Não foi possível baixar o documento.");
-  }
-}
-
-function detalheErro(error: unknown, fallback: string): string {
-  const detail = (error as { response?: { data?: { detail?: unknown } } })
-    ?.response?.data?.detail;
-  if (typeof detail === "string" && detail) return detail;
-  if (
-    detail &&
-    typeof detail === "object" &&
-    typeof (detail as { mensagem?: unknown }).mensagem === "string"
-  ) {
-    return (detail as { mensagem: string }).mensagem;
-  }
-  return fallback;
-}
-
-function formatarDataDocumento(value?: string | null): string | null {
-  if (!value) return null;
-  const data = new Date(value);
-  if (Number.isNaN(data.getTime())) return null;
-  return data.toLocaleDateString("pt-BR");
-}
-
-const TIPOS_DOCUMENTO = [
+const SOCIO_PLUS = new Set(["superadmin", "admin", "socio"]);
+const LEGACY_TYPES = [
   { value: "outro", label: "Outro" },
   { value: "peticao", label: "Petição" },
   { value: "decisao", label: "Decisão" },
@@ -72,333 +53,451 @@ type DocumentoCandidato = {
   created_at?: string | null;
 };
 
+type TipoDoc = { tipo_key: string; nome: string };
+
+function detalheErro(error: unknown, fallback: string): string {
+  const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+  if (typeof detail === "string" && detail) return detail;
+  if (detail && typeof detail === "object") {
+    const message = (detail as { message?: unknown; mensagem?: unknown }).message ??
+      (detail as { mensagem?: unknown }).mensagem;
+    if (typeof message === "string") return message;
+  }
+  return fallback;
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("pt-BR");
+}
+
+function extOf(name?: string | null) {
+  const value = name || "";
+  const index = value.lastIndexOf(".");
+  return index >= 0 ? value.slice(index).toLowerCase() : "";
+}
+
+function withoutExt(name: string) {
+  const index = name.lastIndexOf(".");
+  return index > 0 ? name.slice(0, index) : name;
+}
+
+function confLabel(value: string) {
+  return ({
+    normal: "Normal",
+    interno: "Interno",
+    restrito: "Restrito",
+    confidencial: "Confidencial",
+    segredo_justica: "Segredo de justiça",
+  })[value] || value;
+}
+
 export default function TabDocumentos({ caseId }: { caseId: string }) {
   const user = useAuth((state) => state.user);
-  const podeVincularDocumento = PAPEIS_VINCULO_DOCUMENTAL.has(user?.role || "");
-  const [docs, setDocs] = useState<any[]>([]);
-  const [arquivo, setArquivo] = useState<File | null>(null);
-  const [titulo, setTitulo] = useState("");
-  const [tipo, setTipo] = useState("outro");
-  const [enviando, setEnviando] = useState(false);
-  const [arrastando, setArrastando] = useState(false);
+  const role = user?.role || "";
+  const canLink = CAN_LINK.has(role);
+  const canUseCofre = SOCIO_PLUS.has(role);
+
+  const [docs, setDocs] = useState<DocumentItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
+  const [loading, setLoading] = useState(true);
+  const [drawerId, setDrawerId] = useState<string | null>(null);
+
+  const [policy, setPolicy] = useState<DocumentPolicy | null>(null);
+  const [types, setTypes] = useState<TipoDoc[]>(LEGACY_TYPES.map((item) => ({
+    tipo_key: item.value,
+    nome: item.label,
+  })));
+  const [file, setFile] = useState<File | null>(null);
+  const [title, setTitle] = useState("");
+  const [type, setType] = useState("outro");
+  const [conf, setConf] = useState("normal");
+  const [predecessor, setPredecessor] = useState<DocumentItem | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const [buscaVinculo, setBuscaVinculo] = useState("");
-  const [resultadosVinculo, setResultadosVinculo] = useState<
-    DocumentoCandidato[]
-  >([]);
-  const [totalVinculo, setTotalVinculo] = useState(0);
-  const [buscandoVinculo, setBuscandoVinculo] = useState(false);
-  const [erroBuscaVinculo, setErroBuscaVinculo] = useState<string | null>(null);
-  const [tentativaBusca, setTentativaBusca] = useState(0);
-  const [vinculandoId, setVinculandoId] = useState<string | null>(null);
-  const buscaSeq = useRef(0);
+  const [linkSearch, setLinkSearch] = useState("");
+  const [linkResults, setLinkResults] = useState<DocumentoCandidato[]>([]);
+  const [linkTotal, setLinkTotal] = useState(0);
+  const [linkLoading, setLinkLoading] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [linkingId, setLinkingId] = useState<string | null>(null);
+  const linkSeq = useRef(0);
 
-  const carregar = useCallback(() => {
-    api
-      .get(`/documents/?case_id=${caseId}`)
-      .then((r) => setDocs(asList(r.data)))
-      .catch(() => setDocs([]));
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await listDocuments({ caseId, page, pageSize });
+      setDocs(result.data || []);
+      setTotal(result.total || 0);
+    } catch {
+      setDocs([]);
+      setTotal(0);
+      toast.error("Não foi possível carregar os documentos deste caso.");
+    } finally {
+      setLoading(false);
+    }
+  }, [caseId, page]);
+
+  useEffect(() => {
+    setPage(1);
   }, [caseId]);
 
   useEffect(() => {
-    carregar();
-  }, [carregar]);
+    void load();
+  }, [load]);
 
   useEffect(() => {
-    const termo = buscaVinculo.trim();
-    const seq = ++buscaSeq.current;
-    let ativo = true;
+    void Promise.all([
+      getDocumentPolicy().then(setPolicy).catch(() => setPolicy(null)),
+      api
+        .get("/documents/tipos")
+        .then((response) => {
+          const master: TipoDoc[] = Array.isArray(response.data?.data) ? response.data.data : [];
+          const keys = new Set(master.map((item) => item.tipo_key));
+          setTypes([
+            ...master,
+            ...LEGACY_TYPES.filter((item) => !keys.has(item.value)).map((item) => ({
+              tipo_key: item.value,
+              nome: item.label,
+            })),
+          ]);
+        })
+        .catch(() => undefined),
+    ]);
+  }, []);
 
-    // Resultados pertencem ao par caseId+termo. Limpar imediatamente impede
-    // que um botão de contexto anterior seja acionado durante debounce/rede.
-    setResultadosVinculo([]);
-    setTotalVinculo(0);
-    setErroBuscaVinculo(null);
-
-    if (!podeVincularDocumento || !termo) {
-      setBuscandoVinculo(false);
+  useEffect(() => {
+    const term = linkSearch.trim();
+    const seq = ++linkSeq.current;
+    let active = true;
+    setLinkResults([]);
+    setLinkTotal(0);
+    setLinkError(null);
+    if (!canLink || !term) {
+      setLinkLoading(false);
       return () => {
-        ativo = false;
+        active = false;
       };
     }
 
-    setBuscandoVinculo(true);
+    setLinkLoading(true);
     const timer = window.setTimeout(async () => {
       try {
-        const r = await api.get(`/cases/${caseId}/documentos/candidatos`, {
-          params: { search: termo, page: 1, page_size: 20 },
+        const response = await api.get(`/cases/${caseId}/documentos/candidatos`, {
+          params: { search: term, page: 1, page_size: 20 },
         });
-        if (!ativo || seq !== buscaSeq.current) return;
-        setResultadosVinculo(asList(r.data) as DocumentoCandidato[]);
-        setTotalVinculo(Number(r.data?.total || 0));
+        if (!active || seq !== linkSeq.current) return;
+        setLinkResults(asList(response.data) as DocumentoCandidato[]);
+        setLinkTotal(Number(response.data?.total || 0));
       } catch (error) {
-        if (!ativo || seq !== buscaSeq.current) return;
-        setErroBuscaVinculo(
-          detalheErro(error, "Não foi possível buscar documentos disponíveis."),
-        );
+        if (!active || seq !== linkSeq.current) return;
+        setLinkError(detalheErro(error, "Não foi possível buscar documentos disponíveis."));
       } finally {
-        if (ativo && seq === buscaSeq.current) setBuscandoVinculo(false);
+        if (active && seq === linkSeq.current) setLinkLoading(false);
       }
-    }, 400);
+    }, 350);
 
     return () => {
-      ativo = false;
+      active = false;
       window.clearTimeout(timer);
     };
-  }, [buscaVinculo, caseId, tentativaBusca, podeVincularDocumento]);
+  }, [canLink, caseId, linkSearch]);
 
-  const vincular = async (docId: string) => {
-    if (!podeVincularDocumento) return;
-    setVinculandoId(docId);
-    try {
-      await api.post(`/cases/${caseId}/documentos/${docId}/vincular`);
-      toast.success("Documento vinculado ao caso.");
-      setBuscaVinculo("");
-      setResultadosVinculo([]);
-      setTotalVinculo(0);
-      carregar();
-    } catch (error) {
-      toast.error(
-        detalheErro(error, "Não foi possível vincular o documento ao caso."),
-      );
-    } finally {
-      setVinculandoId(null);
+  const chooseFile = (next: File | null) => {
+    if (!next) return;
+    const allowed = new Set((policy?.extensions || []).map((item) => item.toLowerCase()));
+    if (allowed.size > 0 && !allowed.has(extOf(next.name))) {
+      toast.error("Formato de arquivo não permitido pela política documental.");
+      return;
     }
+    const maxBytes = (policy?.max_upload_mb || 0) * 1024 * 1024;
+    if (maxBytes > 0 && next.size > maxBytes) {
+      toast.error(`Arquivo excede ${policy?.max_upload_mb} MB.`);
+      return;
+    }
+    setFile(next);
+    if (!title || predecessor) setTitle(withoutExt(next.name));
   };
 
-  const selecionarArquivo = (file: File | null) => {
-    setArquivo(file);
-    if (file && !titulo) setTitulo(file.name);
+  const resetUpload = () => {
+    setFile(null);
+    setTitle("");
+    setType("outro");
+    setConf("normal");
+    setPredecessor(null);
+    if (inputRef.current) inputRef.current.value = "";
   };
 
-  const enviar = async () => {
-    if (!arquivo) {
+  const startNewVersion = (document: DocumentItem) => {
+    setPredecessor(document);
+    setFile(null);
+    setTitle(document.titulo);
+    setType(document.tipo || "outro");
+    setConf(document.confidencialidade || "normal");
+    if (inputRef.current) inputRef.current.value = "";
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const submitUpload = async () => {
+    if (!file) {
       toast.error("Selecione um documento para anexar ao caso.");
       return;
     }
-    setEnviando(true);
+    if (!title.trim()) {
+      toast.error("Informe o título do documento.");
+      return;
+    }
+
+    const request = {
+      file,
+      titulo: title.trim(),
+      tipo: type || undefined,
+      confidencialidade: conf,
+      caseId,
+      predecessorId: predecessor?.id,
+    };
+    setUploading(true);
     try {
-      const body = new FormData();
-      body.append("file", arquivo);
-      body.append("titulo", titulo.trim() || arquivo.name);
-      body.append("tipo", tipo);
-      body.append("case_id", caseId);
-      await api.post("/documents/upload", body, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      toast.success("Documento anexado ao caso.");
-      setArquivo(null);
-      setTitulo("");
-      setTipo("outro");
-      if (inputRef.current) inputRef.current.value = "";
-      carregar();
+      try {
+        await uploadDocument(request);
+      } catch (error) {
+        const duplicate = duplicateDetail(error);
+        if (!duplicate) throw error;
+        const proceed = window.confirm(
+          "Já existe um arquivo idêntico neste caso. Deseja registrar outra cópia mesmo assim? A decisão ficará auditada.",
+        );
+        if (!proceed) return;
+        await uploadDocument({ ...request, allowDuplicate: true });
+      }
+      toast.success(predecessor ? "Nova versão registrada." : "Documento anexado ao caso.");
+      resetUpload();
+      setPage(1);
+      await load();
     } catch (error) {
-      toast.error(
-        detalheErro(error, "Não foi possível anexar o documento ao caso."),
-      );
+      toast.error(detalheErro(error, "Não foi possível anexar o documento ao caso."));
     } finally {
-      setEnviando(false);
+      setUploading(false);
     }
   };
 
+  const linkDocument = async (documentId: string) => {
+    if (!canLink) return;
+    setLinkingId(documentId);
+    try {
+      await api.post(`/cases/${caseId}/documentos/${documentId}/vincular`);
+      toast.success("Documento vinculado ao caso.");
+      setLinkSearch("");
+      setLinkResults([]);
+      setLinkTotal(0);
+      setPage(1);
+      await load();
+    } catch (error) {
+      toast.error(detalheErro(error, "Não foi possível vincular o documento ao caso."));
+    } finally {
+      setLinkingId(null);
+    }
+  };
+
+  const formatHelp = useMemo(() => {
+    const extensions = policy?.extensions || [];
+    const formats = extensions.length
+      ? extensions.map((item) => item.replace(".", "").toUpperCase()).join(", ")
+      : "formatos definidos pelo servidor";
+    return `${formats}${policy?.max_upload_mb ? ` · até ${policy.max_upload_mb} MB` : ""}`;
+  }, [policy]);
+
   return (
     <div className="space-y-4">
-      <div className="card p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-slate-700">
-          Anexar documento ao caso
-        </h3>
+      <section className="card space-y-3 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-800">
+              {predecessor ? "Enviar nova versão" : "Anexar documento ao caso"}
+            </h3>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {predecessor
+                ? `A nova versão ficará ligada à v${predecessor.versao || 1}; a anterior será preservada.`
+                : "O arquivo será validado, armazenado e processado pelo fluxo documental do EJC."}
+            </p>
+          </div>
+          {predecessor && (
+            <Button variant="ghost" size="sm" onClick={resetUpload} icon={<X size={14} />}>
+              Cancelar nova versão
+            </Button>
+          )}
+        </div>
+
         <div
           role="button"
           tabIndex={0}
           onClick={() => inputRef.current?.click()}
-          onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setArrastando(true);
+          onKeyDown={(event) => event.key === "Enter" && inputRef.current?.click()}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragging(true);
           }}
-          onDragLeave={() => setArrastando(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setArrastando(false);
-            selecionarArquivo(e.dataTransfer.files?.[0] ?? null);
+          onDragLeave={() => setDragging(false)}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragging(false);
+            chooseFile(event.dataTransfer.files?.[0] || null);
           }}
-          className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-6 text-center transition-all duration-150 ${
-            arrastando
-              ? "border-primary-500 bg-primary-50 shadow-card"
-              : "border-slate-200 hover:border-primary-300 hover:bg-slate-50 hover:shadow-soft"
+          className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-5 text-center transition ${
+            dragging ? "border-primary-500 bg-primary-50" : "border-slate-200 hover:border-primary-300 hover:bg-slate-50"
           }`}
         >
           <FileUp className="h-6 w-6 text-primary-600" />
-          {arquivo ? (
-            <p className="text-sm font-medium text-slate-800">{arquivo.name}</p>
-          ) : (
-            <p className="text-sm text-slate-600">
-              Arraste um arquivo aqui ou clique para selecionar
-            </p>
-          )}
-          <p className="text-xs text-slate-400">
-            PDF, DOCX, DOC, JPG, PNG, XLSX, XLS, TXT, MD e XML.
-          </p>
+          <p className="text-sm font-medium text-slate-700">{file?.name || "Arraste um arquivo ou clique para selecionar"}</p>
+          <p className="text-xs text-slate-400">{formatHelp}</p>
           <input
             ref={inputRef}
             type="file"
-            accept=".pdf,.docx,.doc,.jpg,.jpeg,.png,.xlsx,.xls,.txt,.md,.xml"
+            accept={(policy?.extensions || []).join(",") || undefined}
             className="hidden"
-            onChange={(e) => selecionarArquivo(e.target.files?.[0] ?? null)}
+            onChange={(event) => chooseFile(event.target.files?.[0] || null)}
           />
         </div>
-        <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_180px_auto]">
           <input
             className="input w-full text-sm"
-            value={titulo}
+            value={title}
             maxLength={255}
-            onChange={(e) => setTitulo(e.target.value)}
+            onChange={(event) => setTitle(event.target.value)}
             placeholder="Título do documento"
           />
-          <select
-            className="input text-sm"
-            value={tipo}
-            onChange={(e) => setTipo(e.target.value)}
-            aria-label="Tipo do documento"
-          >
-            {TIPOS_DOCUMENTO.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
+          <select className="input text-sm" value={type} onChange={(event) => setType(event.target.value)} aria-label="Tipo do documento">
+            {types.map((item) => (
+              <option key={item.tipo_key} value={item.tipo_key}>{item.nome}</option>
             ))}
           </select>
-          <button
-            type="button"
-            onClick={() => void enviar()}
-            disabled={!arquivo || enviando}
-            className="btn-primary text-sm disabled:opacity-50"
-          >
-            {enviando ? "Anexando…" : "Anexar documento"}
-          </button>
+          <select className="input text-sm" value={conf} onChange={(event) => setConf(event.target.value)} aria-label="Nível de acesso">
+            {(policy?.confidentiality || ["normal", "interno", "restrito", "confidencial", "segredo_justica"])
+              .filter((value) => canUseCofre || !["restrito", "confidencial", "segredo_justica"].includes(value))
+              .map((value) => <option key={value} value={value}>{confLabel(value)}</option>)}
+          </select>
+          <Button disabled={!file || uploading} onClick={() => void submitUpload()} icon={<Upload size={14} />}>
+            {uploading ? "Enviando…" : predecessor ? "Nova versão" : "Anexar"}
+          </Button>
         </div>
-      </div>
+      </section>
 
       <CaseDocumentActions caseId={caseId} docs={docs} />
 
-      {podeVincularDocumento && (
-        <div className="card p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-slate-700">
-            Vincular documento já cadastrado
-          </h3>
-          <p className="text-xs text-slate-500">
-            Apenas documentos ainda sem caso podem ser vinculados. Documentos
-            que já integram outro caso permanecem preservados no contexto de
-            origem.
-          </p>
-          <div className="relative">
+      {canLink && (
+        <section className="card space-y-3 p-4">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-800">Vincular documento já cadastrado</h3>
+            <p className="mt-0.5 text-xs text-slate-500">A busca retorna apenas documentos elegíveis segundo o backend.</p>
+          </div>
+          <label className="relative block">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               className="input w-full pl-9 text-sm"
-              value={buscaVinculo}
-              onChange={(e) => setBuscaVinculo(e.target.value)}
-              placeholder="Buscar documento por título ou arquivo…"
+              value={linkSearch}
+              onChange={(event) => setLinkSearch(event.target.value)}
+              placeholder="Buscar por título ou arquivo…"
             />
-          </div>
-          {buscandoVinculo && (
-            <p className="text-xs text-slate-400">Buscando…</p>
+          </label>
+          {linkLoading && <p className="text-xs text-slate-400">Buscando…</p>}
+          {linkError && <p className="rounded-lg bg-danger-50 p-2 text-xs text-danger-700">{linkError}</p>}
+          {!linkLoading && !linkError && linkSearch.trim() && linkResults.length === 0 && (
+            <p className="text-xs text-slate-400">Nenhum documento disponível para vínculo.</p>
           )}
-          {!buscandoVinculo && erroBuscaVinculo && (
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-red-100 bg-red-50 p-2 text-xs text-red-700">
-              <span>{erroBuscaVinculo}</span>
-              <button
-                type="button"
-                className="font-medium underline"
-                onClick={() => setTentativaBusca((v) => v + 1)}
-              >
-                Tentar novamente
-              </button>
-            </div>
-          )}
-          {!buscandoVinculo &&
-            !erroBuscaVinculo &&
-            buscaVinculo.trim() &&
-            resultadosVinculo.length === 0 && (
-              <p className="text-xs text-slate-400">
-                Nenhum documento disponível para vínculo.
-              </p>
-            )}
-          {resultadosVinculo.length > 0 && (
+          {linkResults.length > 0 && (
             <div className="space-y-1">
-              {resultadosVinculo.map((d) => {
-                const jaVinculado = Boolean(d.case_id);
-                const dataDocumento = formatarDataDocumento(d.created_at);
-                return (
-                  <div
-                    key={d.id}
-                    className="flex items-center justify-between gap-2 rounded-lg border border-slate-100 p-2 text-sm"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-slate-800">
-                        {d.titulo || d.filename || "Documento"}
-                      </p>
-                      <p className="truncate text-xs text-slate-500">
-                        {[d.filename, dataDocumento, d.confidencialidade]
-                          .filter(Boolean)
-                          .join(" • ")}
-                      </p>
-                      {jaVinculado && (
-                        <p className="text-xs text-amber-600">
-                          Já vinculado a outro caso — a evidência original não
-                          pode ser movida.
-                        </p>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => void vincular(d.id)}
-                      disabled={jaVinculado || vinculandoId === d.id}
-                      className="btn-secondary flex shrink-0 items-center gap-1 text-xs disabled:opacity-50"
-                    >
-                      <Link2 className="h-3.5 w-3.5" />
-                      {jaVinculado
-                        ? "Indisponível"
-                        : vinculandoId === d.id
-                          ? "Vinculando…"
-                          : "Vincular"}
-                    </button>
+              {linkResults.map((document) => (
+                <div key={document.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 p-2 text-sm">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-800">{document.titulo || document.filename || "Documento"}</p>
+                    <p className="truncate text-xs text-slate-400">
+                      {[document.filename, formatDate(document.created_at), document.confidencialidade].filter(Boolean).join(" · ")}
+                    </p>
                   </div>
-                );
-              })}
-              {totalVinculo > resultadosVinculo.length && (
-                <p className="pt-1 text-xs text-slate-400">
-                  {totalVinculo} documentos correspondem à busca. Refine o termo
-                  para localizar outros resultados.
-                </p>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={Boolean(document.case_id) || linkingId === document.id}
+                    onClick={() => void linkDocument(document.id)}
+                    icon={<Link2 size={13} />}
+                  >
+                    {document.case_id ? "Indisponível" : linkingId === document.id ? "Vinculando…" : "Vincular"}
+                  </Button>
+                </div>
+              ))}
+              {linkTotal > linkResults.length && (
+                <p className="pt-1 text-xs text-slate-400">{linkTotal} resultados. Refine a busca para localizar outros.</p>
               )}
             </div>
           )}
-        </div>
+        </section>
       )}
 
-      <h2 className="font-semibold">Documentos ({docs.length})</h2>
-      <div className="space-y-2">
-        {docs.map((d, i) => (
-          <div
-            key={d.id || i}
-            className="card p-3 flex justify-between items-center text-sm cursor-pointer transition-colors duration-150 hover:bg-slate-50"
-            onClick={() =>
-              baixarDoc(d.id, d.filename || d.nome_arquivo || d.titulo)
-            }
-            title="Clique para baixar"
-          >
-            <span className="text-gray-800">
-              {d.titulo || d.filename || d.nome_arquivo}
-            </span>
-            <span className="text-gray-400 text-xs">
-              {d.tipo_peca || d.tipo}
-            </span>
+      <section className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="font-semibold text-slate-800">Documentos ({total})</h2>
+          {total > 0 && <span className="text-xs text-slate-400">Página {page} de {pageCount}</span>}
+        </div>
+
+        {loading ? (
+          <div className="grid min-h-32 place-items-center"><Spinner /></div>
+        ) : docs.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center">
+            <FileText className="mx-auto text-slate-300" size={28} />
+            <p className="mt-2 text-sm font-medium text-slate-600">Nenhum documento vinculado a este caso.</p>
           </div>
-        ))}
-        {docs.length === 0 && (
-          <Empty message="Nenhum documento vinculado a este caso" />
+        ) : (
+          <div className="space-y-2">
+            {docs.map((document) => (
+              <button
+                key={document.id}
+                type="button"
+                onClick={() => setDrawerId(document.id)}
+                className="card flex w-full items-center justify-between gap-3 p-3 text-left transition hover:bg-slate-50"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-800">{document.titulo}</p>
+                  <p className="mt-0.5 truncate text-xs text-slate-400">
+                    {document.filename} · {document.tipo?.replaceAll("_", " ") || "Não classificado"} · v{document.versao || 1}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  <DocumentStatusBadge document={document} />
+                  <span className="text-xs text-slate-400">{formatDate(document.created_at)}</span>
+                </div>
+              </button>
+            ))}
+          </div>
         )}
-      </div>
+
+        {total > pageSize && (
+          <div className="flex justify-end gap-2 pt-2">
+            <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} icon={<ChevronLeft size={14} />}>
+              Anterior
+            </Button>
+            <Button size="sm" variant="secondary" disabled={page >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} icon={<ChevronRight size={14} />}>
+              Próxima
+            </Button>
+          </div>
+        )}
+      </section>
+
+      <DocumentDrawer
+        documentId={drawerId}
+        onClose={() => setDrawerId(null)}
+        onNewVersion={(document) => {
+          setDrawerId(null);
+          startNewVersion(document);
+        }}
+        onChanged={() => void load()}
+      />
     </div>
   );
 }
