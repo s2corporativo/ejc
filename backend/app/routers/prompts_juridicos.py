@@ -15,7 +15,7 @@ from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.security import EQUIPE_JURIDICA, get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.models.prompt_juridico import PromptJuridico, PromptCategoria
 from app.core.rate_limit import rate_limit
@@ -68,8 +68,39 @@ def _preencher_variaveis(template: str, variaveis: dict) -> str:
 def _extrair_variaveis(conteudo: str) -> list[str]:
     return sorted(set(_PLACEHOLDER.findall(conteudo)))
 
+def _role_value(user: User) -> str:
+    return str(getattr(getattr(user, "role", None), "value", getattr(user, "role", "")) or "")
+
 def _pode_editar(user: User) -> bool:
-    return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["advogado"]
+    return ROLE_LEVEL.get(_role_value(user), 0) >= ROLE_LEVEL["advogado"]
+
+def _so_publicos(user: User) -> bool:
+    """Papéis fora da equipe jurídica só enxergam prompts marcados públicos.
+
+    `financeiro` fica numericamente acima de `estagiario` em ROLE_LEVEL, então
+    esta decisão não pode ser expressa por piso hierárquico. A fonte canônica é
+    a allowlist exata EQUIPE_JURIDICA.
+    """
+    return _role_value(user) not in EQUIPE_JURIDICA
+
+async def _carregar_visivel(
+    db: AsyncSession, prompt_id: str, user: User
+) -> PromptJuridico:
+    """Aplica no detalhe/execução a mesma visibilidade da coleção.
+
+    Um prompt privado oculto da listagem não pode ser lido ou executado por ID.
+    Responde 404 para não confirmar a existência do registro privado.
+    """
+    q = select(PromptJuridico).where(
+        PromptJuridico.id == prompt_id,
+        PromptJuridico.deleted_at.is_(None),
+    )
+    if _so_publicos(user):
+        q = q.where(PromptJuridico.publico.is_(True))
+    p = (await db.execute(q)).scalar_one_or_none()
+    if not p:
+        raise HTTPException(404, "Prompt não encontrado")
+    return p
 
 # ── Clamp de task_type (P0.1) ─────────────────────────────────────────────────
 # req.task_type é INPUT LIVRE do request. Não confiamos nele: só passa ao
@@ -115,8 +146,9 @@ async def listar_prompts(
 ):
     q = select(PromptJuridico).where(PromptJuridico.deleted_at.is_(None))
 
-    # Usuários não-staff só veem prompts públicos
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
+    # Visibilidade é por pertencimento à equipe jurídica, não por nível.
+    # `financeiro` (4) > `estagiario` (3), mas não integra EQUIPE_JURIDICA.
+    if _so_publicos(cu):
         q = q.where(PromptJuridico.publico.is_(True))
 
     if categoria:
@@ -163,15 +195,7 @@ async def obter_prompt(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    p = (await db.execute(
-        select(PromptJuridico).where(
-            PromptJuridico.id == prompt_id,
-            PromptJuridico.deleted_at.is_(None),
-        )
-    )).scalar_one_or_none()
-    if not p:
-        raise HTTPException(404, "Prompt não encontrado")
-    return _out(p)
+    return _out(await _carregar_visivel(db, prompt_id, cu))
 
 
 @router.patch("/{prompt_id}")
@@ -211,7 +235,7 @@ async def remover_prompt(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
+    if ROLE_LEVEL.get(_role_value(cu), 0) < ROLE_LEVEL["socio"]:
         raise HTTPException(403, "Apenas sócios podem remover prompts")
     p = (await db.execute(
         select(PromptJuridico).where(
@@ -241,14 +265,7 @@ async def executar_prompt(
     from app.services.sanitizer import sanitizar_pii
     from app.services.legal_base import garantir_identidade
 
-    p = (await db.execute(
-        select(PromptJuridico).where(
-            PromptJuridico.id == prompt_id,
-            PromptJuridico.deleted_at.is_(None),
-        )
-    )).scalar_one_or_none()
-    if not p:
-        raise HTTPException(404, "Prompt não encontrado")
+    p = await _carregar_visivel(db, prompt_id, cu)
 
     # Preenche variáveis
     conteudo_preenchido = _preencher_variaveis(p.conteudo, req.variaveis)
@@ -272,6 +289,10 @@ async def executar_prompt(
             temperature=req.temperature,
             max_tokens=req.max_tokens,
         )
+    except HTTPException:
+        # Erro já classificado pelo gateway/política (ex.: kill-switch) não deve
+        # virar 502 genérico nesta borda.
+        raise
     except Exception:
         logger.exception("Falha na chamada de IA (prompts jurídicos)")
         raise HTTPException(502, "IA indisponível no momento")
@@ -329,4 +350,3 @@ class PromptResponse(PromptCreate):
 
 # ── (incorporado de prompts.py — D4; handlers colidentes com o
 #    canônico removidos — compatibilidade preservada via redirect 308) ──
-
