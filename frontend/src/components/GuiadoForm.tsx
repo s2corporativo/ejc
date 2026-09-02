@@ -1,6 +1,13 @@
 import { useMemo } from "react";
 
-/** Campos guiados por tipo de peça — fonte: peca_workflow_service._CAMPOS_GUIADOS */
+/** Campos guiados por tipo de peça — fonte: peca_workflow_service._CAMPOS_GUIADOS.
+ *
+ * `pedidos` também é coletado nos tipos não contenciosos abaixo porque o
+ * pipeline geral de geração exige um campo de resultado pretendido. Nesses
+ * casos o rótulo deixa claro que não se trata necessariamente de pedidos
+ * processuais: é o que o advogado quer obter do contrato, notificação ou
+ * parecer. O conteúdo continua sendo integralmente informado pelo usuário.
+ */
 const CAMPOS_GUIADOS: Record<string, string[]> = {
   peticao_inicial: [
     "partes",
@@ -60,6 +67,7 @@ const CAMPOS_GUIADOS: Record<string, string[]> = {
     "prazo_vigencia",
     "rescisao",
     "foro",
+    "pedidos",
   ],
   notificacao: [
     "notificante",
@@ -68,6 +76,7 @@ const CAMPOS_GUIADOS: Record<string, string[]> = {
     "obrigacao_exigida",
     "prazo_cumprimento",
     "consequencias_inadimplemento",
+    "pedidos",
   ],
   parecer: [
     "consulente",
@@ -76,6 +85,7 @@ const CAMPOS_GUIADOS: Record<string, string[]> = {
     "premissas",
     "riscos",
     "conclusao_solicitada",
+    "pedidos",
   ],
 };
 const FALLBACK_CAMPOS = ["partes", "fatos", "provas", "pedidos"];
@@ -86,7 +96,7 @@ const CAMPO_LABEL: Record<string, string> = {
   pretensao: "Pretensão do autor",
   competencia: "Competência do juízo",
   provas: "Provas disponíveis",
-  pedidos: "Pedidos",
+  pedidos: "Pedidos / resultado jurídico pretendido",
   autor: "Autor (nome completo/Razão Social)",
   reu: "Réu (nome completo/Razão Social)",
   pretensao_autor: "Pretensão do autor",
@@ -134,7 +144,8 @@ const CAMPO_PLACEHOLDER: Record<string, string> = {
   pretensao: "O que o autor quer obter com esta ação...",
   competencia: "Ex.: Justiça Estadual — Vara Cível, Foro de Betim/MG",
   provas: "Documentos, testemunhos, perícias disponíveis...",
-  pedidos: "Liste os pedidos principais e subsidiários...",
+  pedidos:
+    "Informe os pedidos ou, em peça não contenciosa, o resultado jurídico que o documento deve produzir...",
   autor: "Nome completo ou Razão Social do autor",
   reu: "Nome completo ou Razão Social do réu",
   preliminares: "Ex.: Incompetência, ilegitimidade, carência da ação...",
