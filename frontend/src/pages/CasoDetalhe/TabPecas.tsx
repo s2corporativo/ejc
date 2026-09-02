@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import { FileText, ShieldCheck, Sparkles } from "lucide-react";
 
@@ -91,7 +91,7 @@ function Etapa({
   titulo,
   texto,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   titulo: string;
   texto: string;
 }) {
