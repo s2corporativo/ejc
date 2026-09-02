@@ -28,8 +28,19 @@ def _prazo(**kw) -> Deadline:
             "regime_calculo": "civel",
         },
     )
+    # O construtor de Deadline força toda NOVA prioridade crítica a não
+    # confirmada. Fixtures que representam registro já persistido/conferido
+    # aplicam o estado histórico somente depois da construção.
+    estado_historico = {
+        chave: kw.pop(chave)
+        for chave in ("confirmado", "conferido_por", "conferido_em")
+        if chave in kw
+    }
     base.update(kw)
-    return Deadline(**base)
+    prazo = Deadline(**base)
+    for chave, valor in estado_historico.items():
+        setattr(prazo, chave, valor)
+    return prazo
 
 
 def test_snapshot_nao_contem_identificador_de_caso_ou_partes():
