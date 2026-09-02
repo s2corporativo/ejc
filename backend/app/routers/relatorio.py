@@ -1,28 +1,24 @@
-"""Relatório mensal consolidado — endpoint GET /api/v1/relatorio/mensal?mes=YYYY-MM.
+"""Relatório mensal consolidado — GET /api/v1/relatorio/mensal?mes=YYYY-MM.
 
-O financeiro usa `fee_payments` como fonte de caixa e saldo residual para
-contas a receber. `fees.valor` permanece o valor contratado/original.
+Honorários recebidos vêm de `fee_payments`; contas a receber usam saldo residual.
+Saídas de caixa usam `office_expenses.pago_em`. A competência da despesa continua
+separada para análise gerencial e não é confundida com a data efetiva da baixa.
 """
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.security import get_current_user
 from app.core.status_caso import STATUS_ABERTOS
 from app.models.user import User
 
 _ABERTOS_SQL = ",".join(f"'{s.value}'" for s in STATUS_ABERTOS)
-
 router = APIRouter(prefix="/relatorio", tags=["Relatório"])
 _GESTOR_FIN = {"superadmin", "admin", "socio", "financeiro"}
-
-
-def _is_gestor(u: User) -> bool:
-    return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["socio"]
 
 
 @router.get("/mensal")
@@ -82,13 +78,14 @@ async def relatorio_mensal(
     )
     hon_data = dict(hon.mappings().first() or {})
 
+    # Obrigações da competência selecionada.
     desp = await db.execute(
         text(
             """
             SELECT
                 COUNT(*) FILTER (WHERE status != 'cancelado') AS qtd_total,
                 COUNT(*) FILTER (WHERE status = 'pago') AS qtd_pagas,
-                COALESCE(SUM(valor) FILTER (WHERE status = 'pago'), 0) AS total_pago,
+                COALESCE(SUM(valor) FILTER (WHERE status = 'pago'), 0) AS total_pago_competencia,
                 COALESCE(SUM(valor) FILTER (WHERE status = 'pendente'), 0) AS total_pendente,
                 COALESCE(SUM(valor) FILTER (WHERE status != 'cancelado'), 0) AS total_geral
             FROM office_expenses
@@ -98,6 +95,22 @@ async def relatorio_mensal(
         {"mes": mes},
     )
     desp_data = dict(desp.mappings().first() or {})
+
+    # Caixa real: baixa pertence ao mês de pago_em, ainda que a competência seja outra.
+    saidas_caixa = await db.execute(
+        text(
+            """
+            SELECT COALESCE(SUM(valor), 0)
+            FROM office_expenses
+            WHERE deleted_at IS NULL
+              AND status = 'pago'
+              AND pago_em IS NOT NULL
+              AND date_trunc('month', pago_em)
+                  = date_trunc('month', CAST(:mes AS date))
+            """
+        ),
+        {"mes": mes_ref},
+    )
 
     casos = await db.execute(
         text(
@@ -167,8 +180,9 @@ async def relatorio_mensal(
     )
 
     recebido = float(hon_data.get("recebido_mes") or 0)
-    despesas_pagas = float(desp_data.get("total_pago") or 0)
-    resultado = recebido - despesas_pagas
+    despesas_pagas_caixa = float(saidas_caixa.scalar() or 0)
+    despesas_pagas_competencia = float(desp_data.get("total_pago_competencia") or 0)
+    resultado = recebido - despesas_pagas_caixa
 
     return {
         "mes": mes,
@@ -181,9 +195,9 @@ async def relatorio_mensal(
             "atrasado": float(hon_data.get("total_atrasado") or 0),
             "qtd_pendentes": int(hon_data.get("qtd_pendentes") or 0),
             "qtd_recebidos_mes": int(hon_data.get("qtd_recebidos_mes") or 0),
-            # alias temporário para consumidores legados do shape anterior
             "qtd_pagos_mes": int(hon_data.get("qtd_recebidos_mes") or 0),
-            "despesas_pagas": despesas_pagas,
+            "despesas_pagas": despesas_pagas_caixa,
+            "despesas_pagas_competencia": despesas_pagas_competencia,
             "despesas_pendentes": float(desp_data.get("total_pendente") or 0),
             "resultado_mes": resultado,
             "margem_pct": round((resultado / recebido * 100) if recebido else 0, 1),
@@ -206,7 +220,7 @@ async def relatorio_mensal(
             for r in por_cat.mappings().all()
         ],
         "aviso": (
-            "Relatório gerencial do EJC. Caixa de honorários deriva de pagamentos "
-            "registrados; não substitui escrituração ou validação contábil/fiscal."
+            "Relatório gerencial do EJC. Entradas e saídas de caixa derivam de "
+            "pagamentos/baixas efetivos; não substitui escrituração ou validação contábil."
         ),
     }
