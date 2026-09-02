@@ -48,6 +48,10 @@ def _origem_exige_confirmacao_humana(origem: str | None) -> bool:
     return valor in {"datajud", "importacao_ia"} or valor.startswith("ia_")
 
 
+def _prioridade_critica(valor) -> bool:
+    return getattr(valor, "value", valor) == DeadlinePrioridade.critica.value
+
+
 class Deadline(Base):
     __tablename__ = "deadlines"
 
@@ -56,6 +60,13 @@ class Deadline(Base):
             kwargs.get("origem")
         ):
             kwargs["confirmado"] = False
+        # #717: nenhuma nova materialização crítica pode nascer já conferida,
+        # mesmo se um caller legado tentar passar confirmado=True. A segunda
+        # validação ocorre pelo endpoint canônico /deadlines/{id}/confirmar.
+        if _prioridade_critica(kwargs.get("prioridade")):
+            kwargs["confirmado"] = False
+            kwargs["conferido_por"] = None
+            kwargs["conferido_em"] = None
         super().__init__(**kwargs)
 
     id = Column(String(36), primary_key=True)
