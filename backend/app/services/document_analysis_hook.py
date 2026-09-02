@@ -1,13 +1,12 @@
 """Hook compartilhado de análise estratégica após documento entrar em um caso.
 
-A rotina é deliberadamente assíncrona e tolerante a falha: o vínculo/upload do
-GED já foi persistido antes da análise. Qualquer indisponibilidade de IA vira
-warning e não desfaz o ato documental. AILog/HITL permanecem obrigatórios.
+A rotina é deliberadamente assíncrona e, por padrão, tolerante a falha: o
+vínculo/upload do GED já foi persistido antes da análise. O worker durável pode
+pedir ``raise_on_error=True`` para acionar retry; callers legados continuam
+fail-soft.
 
-A análise jurídica não termina no log: quando produz conteúdo útil, também gera
-um CaseIntelligenceSnapshot append-only, não aprovado, ligado ao AILog. Assim o
-parecer pago pelo escritório vira inteligência revisável do caso em vez de ficar
-preso no log truncado de auditoria.
+AILog/HITL permanecem obrigatórios. Quando há conteúdo útil, também é gerado um
+CaseIntelligenceSnapshot append-only, não aprovado, ligado ao AILog.
 """
 from __future__ import annotations
 
@@ -34,11 +33,7 @@ def _lista(valor) -> list:
 
 
 def payload_snapshot_documento(resultado: dict, doc_id: str) -> dict:
-    """Converte o parecer estratégico para o contrato do snapshot do caso.
-
-    Só inclui informação realmente produzida. Campo ausente permanece ausente;
-    brecha ou tese não é inventada para preencher um formato.
-    """
+    """Converte o parecer estratégico para o contrato do snapshot do caso."""
     estrategia = resultado.get("estrategia")
     jurimetria = (
         resultado.get("jurimetria")
@@ -96,11 +91,9 @@ async def _gravar_snapshot_documento(
     resultado,
     ai_log_id: str,
 ) -> None:
-    """Versiona o parecer no caso sem quebrar o upload se a gravação falhar."""
     if not isinstance(resultado, dict) or resultado.get("erro"):
         return
     payload = payload_snapshot_documento(resultado, doc_id)
-    # documento_id + fontes, sozinhos, não constituem parecer jurídico útil.
     conteudo_juridico = set(payload) - {"documento_id", "fontes", "verificacao_citacoes"}
     if not conteudo_juridico:
         return
@@ -112,10 +105,7 @@ async def _gravar_snapshot_documento(
         case_id=case_id,
         origem="documento",
         payload=cis.compactar_payload(payload),
-        resumo=(
-            resultado.get("sumario_fatos")
-            or "Leitura estratégica de documento anexado"
-        )[:500],
+        resumo=(resultado.get("sumario_fatos") or "Leitura estratégica de documento anexado")[:500],
         ai_log_ids=[ai_log_id],
         criado_por=None,
     )
@@ -126,8 +116,14 @@ async def analisar_documento_bg(
     ocr_text: str,
     doc_id: str,
     user_id: str,
-) -> None:
-    """Analisa OCR no contexto do caso, registra AILog e snapshot HITL."""
+    *,
+    raise_on_error: bool = False,
+) -> bool:
+    """Analisa OCR, registra AILog/HITL e snapshot.
+
+    Em falha, o comportamento padrão permanece fail-soft. Workers duráveis usam
+    ``raise_on_error=True`` para transformar a falha em retry da fila.
+    """
     try:
         async with AsyncSessionLocal() as db:
             row = await db.execute(
@@ -176,5 +172,12 @@ async def analisar_documento_bg(
                 resultado=resultado,
                 ai_log_id=log_id,
             )
-    except Exception as exc:  # fail-safe: ato documental já foi persistido
-        logger.warning("Hook analise doc falhou: %s", exc)
+        return True
+    except Exception as exc:
+        logger.warning(
+            "Hook analise documental falhou; exception_type=%s",
+            type(exc).__name__,
+        )
+        if raise_on_error:
+            raise
+        return False
