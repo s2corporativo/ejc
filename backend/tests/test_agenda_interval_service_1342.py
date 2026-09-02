@@ -108,7 +108,7 @@ def test_recorrencia_excecao_remove_ocorrencia_sem_deslocar_serie():
     ]
 
 
-def test_recorrencia_mensal_ajusta_fim_do_mes_sem_erro():
+def test_recorrencia_mensal_preserva_dia_ancora_apos_fevereiro():
     base = _intervalo("2026-01-31T09:00:00", "2026-01-31T10:00:00")
     ocorrencias = svc.expandir_recorrencia(
         base,
@@ -117,7 +117,7 @@ def test_recorrencia_mensal_ajusta_fim_do_mes_sem_erro():
     assert [o.inicio.date().isoformat() for o in ocorrencias] == [
         "2026-01-31",
         "2026-02-28",
-        "2026-03-28",
+        "2026-03-31",
     ]
 
 
