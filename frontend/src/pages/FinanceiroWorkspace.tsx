@@ -39,7 +39,7 @@ const PRINCIPAIS: ReadonlySet<FinanceTab> = new Set([
   "honorarios",
   "despesas",
 ]);
-const MAIS: ReadonlyArray<FinanceTab> = ["nfse", "contratos"];
+const MAIS: ReadonlyArray<FinanceTab> = ["nfse", "contratos", "recorrentes"];
 const SOCIEDADE_ROLES = new Set(["superadmin", "admin", "socio"]);
 
 export type FinanceTab = (typeof TABS)[number]["k"];
