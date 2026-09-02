@@ -1,4 +1,4 @@
-"""Exclusão Drive: objeto remoto precede o soft-delete do Document."""
+"""Exclusão Drive: soft-delete preserva o objeto remoto até o hard purge."""
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -101,7 +101,7 @@ def _audits(db: _FakeDB) -> list[AuditLog]:
     return [obj for obj in db.added if isinstance(obj, AuditLog)]
 
 
-def test_delete_drive_remove_objeto_antes_do_soft_delete(monkeypatch):
+def test_delete_drive_soft_delete_preserva_objeto_remoto(monkeypatch):
     doc = _doc_drive()
     db = _FakeDB(
         [
@@ -112,7 +112,6 @@ def test_delete_drive_remove_objeto_antes_do_soft_delete(monkeypatch):
     chamadas: list[tuple[str, str | None]] = []
 
     def fake_delete(file_id: str, *, remote_path=None):
-        assert doc.deleted_at is None, "metadata não pode sumir antes do storage"
         chamadas.append((file_id, remote_path))
 
     monkeypatch.setattr(documents_router.gd, "delete_file", fake_delete)
@@ -120,16 +119,19 @@ def test_delete_drive_remove_objeto_antes_do_soft_delete(monkeypatch):
     response = _client(db).delete("/documents/drive/drive-1")
 
     assert response.status_code == 200
-    assert chamadas == [("drive-1", "geral/interno-uuid.pdf")]
+    assert chamadas == []
     assert doc.deleted_at is not None
     assert db.committed == 1
     logs = _audits(db)
     assert len(logs) == 1
     assert logs[0].acao == "DELETE"
-    assert logs[0].dados_depois == {"storage": "drive"}
+    assert logs[0].dados_depois == {
+        "storage": "drive",
+        "storage_preservado": True,
+    }
 
 
-def test_delete_drive_falha_remota_preserva_documento_ativo(monkeypatch):
+def test_delete_drive_nao_depende_da_disponibilidade_remota(monkeypatch):
     doc = _doc_drive()
     db = _FakeDB(
         [
@@ -140,13 +142,15 @@ def test_delete_drive_falha_remota_preserva_documento_ativo(monkeypatch):
 
     def fake_delete(file_id: str, *, remote_path=None):
         del file_id, remote_path
-        raise RuntimeError("falha simulada sem dado sensível")
+        raise AssertionError("soft-delete não deve tocar no storage remoto")
 
     monkeypatch.setattr(documents_router.gd, "delete_file", fake_delete)
 
     response = _client(db).delete("/documents/drive/drive-1")
 
-    assert response.status_code == 502
-    assert doc.deleted_at is None
-    assert db.committed == 0
-    assert _audits(db) == []
+    assert response.status_code == 200
+    assert doc.deleted_at is not None
+    assert db.committed == 1
+    logs = _audits(db)
+    assert len(logs) == 1
+    assert logs[0].acao == "DELETE"
