@@ -208,6 +208,14 @@ ADICOES_INTENCIONAIS = {
     # Mesmo gate de autorização do download (_verificar_acesso_documento +
     # cofre); devolve o shape do item da listagem, sem paths de storage.
     ("/api/documents/{doc_id}", "GET"),
+    # Issue #1369: workflow jurídico simplificado do GED. As rotas são
+    # deliberadamente aditivas, autenticadas e registradas no main.py; nenhuma
+    # expõe filepath, Drive ID, outbox, OCR ou payload WORM.
+    ("/api/documents/workflow/stats", "GET"),
+    ("/api/documents/workflow/inbox", "GET"),
+    ("/api/documents/workflow/upload", "POST"),
+    ("/api/documents/{doc_id}/versions", "GET"),
+    ("/api/documents/{doc_id}/history", "GET"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
