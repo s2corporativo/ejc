@@ -142,6 +142,16 @@ async function selecionar(titulo = "Contrato teste") {
   await screen.findByText(/selecionado\(s\)/i);
 }
 
+async function seletorCasoDoModal(): Promise<HTMLSelectElement> {
+  await screen.findByText(
+    "O vínculo é validado pelo backend e respeita cliente, caso e permissões do usuário.",
+  );
+  const selects = screen.getAllByRole("combobox");
+  const modalSelect = selects.at(-1);
+  expect(modalSelect).toBeTruthy();
+  return modalSelect as HTMLSelectElement;
+}
+
 beforeEach(() => {
   simulacoes.role = "estagiario";
   simulacoes.apiGet.mockReset();
@@ -209,7 +219,7 @@ describe("Documentos — mutações", () => {
     await selecionar();
 
     fireEvent.click(screen.getByRole("button", { name: /Vincular ao caso/i }));
-    const seletor = await screen.findByRole("combobox", { name: "" });
+    const seletor = await seletorCasoDoModal();
     fireEvent.change(seletor, { target: { value: CASO.id } });
     fireEvent.click(screen.getByRole("button", { name: "Vincular" }));
 
@@ -229,7 +239,7 @@ describe("Documentos — mutações", () => {
     await screen.findByText("2 selecionado(s)");
 
     fireEvent.click(screen.getByRole("button", { name: /Vincular ao caso/i }));
-    const seletor = screen.getByRole("combobox");
+    const seletor = await seletorCasoDoModal();
     fireEvent.change(seletor, { target: { value: CASO.id } });
     fireEvent.click(screen.getByRole("button", { name: "Vincular" }));
 
