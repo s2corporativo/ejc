@@ -1,7 +1,8 @@
 """Regressões da auditoria financeira E2E de 02/09/2026.
 
-Cobrem invariantes de validação, normalização e pré-fechamento que não podem
-regredir silenciosamente, sem exigir acesso a banco de produção.
+Cobrem invariantes de validação, normalização, pré-fechamento e integração do
+scheduler que não podem regredir silenciosamente, sem exigir acesso a banco de
+produção.
 """
 import asyncio
 from datetime import date
@@ -157,6 +158,21 @@ def test_fechamento_score_penaliza_categoria_e_nao_volume():
     um = [{"codigo": "x", "severidade": "bloqueio", "qtd": 1}]
     muitos = [{"codigo": "x", "severidade": "bloqueio", "qtd": 999}]
     assert _classificar_fechamento(um) == _classificar_fechamento(muitos)
+
+
+def test_hardening_scheduler_substitui_apenas_callbacks_financeiros():
+    from app.services import scheduler
+    from app.services import scheduler_financeiro
+
+    original_brief = scheduler._morning_brief
+    original_honorarios = scheduler._alertar_honorarios
+    try:
+        scheduler_financeiro.instalar()
+        assert scheduler._morning_brief is scheduler_financeiro._morning_brief_financeiro
+        assert scheduler._alertar_honorarios is scheduler_financeiro._marcar_honorarios_atrasados
+    finally:
+        scheduler._morning_brief = original_brief
+        scheduler._alertar_honorarios = original_honorarios
 
 
 class _ResultadoFake:
