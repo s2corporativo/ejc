@@ -13,6 +13,7 @@ import {
   Clock3,
   Receipt,
   BarChart3,
+  ShieldCheck,
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "../components/Toast";
@@ -40,13 +41,39 @@ const CATEGORIA_LABEL: Record<string, string> = {
 
 type FinanceDestino = "honorarios" | "despesas" | "nfse" | "contratos";
 
+type FinanceAction = { tab?: FinanceDestino; status?: string };
+
 interface AtencaoItem {
   codigo: string;
   prioridade: "alta" | "media" | "baixa";
   titulo: string;
   qtd: number;
   valor: number | null;
-  acao?: { tab?: FinanceDestino; status?: string };
+  acao?: FinanceAction;
+}
+
+interface FechamentoItem {
+  codigo: string;
+  severidade: "bloqueio" | "revisao";
+  titulo: string;
+  qtd: number;
+  valor: number | null;
+  acao?: FinanceAction;
+}
+
+interface FechamentoData {
+  competencia: string;
+  modo: "pre_fechamento_read_only";
+  status: "pronto" | "revisao" | "bloqueado";
+  score_integridade: number;
+  pode_fechar_persistente: boolean;
+  bloqueios: FechamentoItem[];
+  revisoes: FechamentoItem[];
+  total_bloqueios: number;
+  total_revisoes: number;
+  dependencia_estrutural?: string;
+  recomendacao?: string;
+  aviso?: string;
 }
 
 function StatCard({
@@ -115,6 +142,7 @@ export default function FinanceiroDashboard({
 }) {
   const [d, setD] = useState<any>(null);
   const [atencao, setAtencao] = useState<AtencaoItem[]>([]);
+  const [fechamento, setFechamento] = useState<FechamentoData | null>(null);
   const [relatorio, setRelatorio] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -127,14 +155,25 @@ export default function FinanceiroDashboard({
         params: { competencia },
       });
       setD(consolidado.data);
-      try {
-        const fila = await api.get("/financeiro/atencao");
-        setAtencao(Array.isArray(fila.data?.itens) ? fila.data.itens : []);
-      } catch {
-        setAtencao([]);
-      }
+
+      const [fila, preFechamento] = await Promise.allSettled([
+        api.get("/financeiro/atencao"),
+        api.get("/financeiro/fechamento-inteligente", {
+          params: { competencia },
+        }),
+      ]);
+
+      setAtencao(
+        fila.status === "fulfilled" && Array.isArray(fila.value.data?.itens)
+          ? fila.value.data.itens
+          : [],
+      );
+      setFechamento(
+        preFechamento.status === "fulfilled" ? preFechamento.value.data : null,
+      );
     } catch (e: any) {
       setD(null);
+      setFechamento(null);
       setErro(
         e?.response?.data?.detail ||
           "Não foi possível carregar o consolidado financeiro.",
@@ -176,11 +215,11 @@ export default function FinanceiroDashboard({
     }
   };
 
-  const navegarAtencao = (item: AtencaoItem) => {
-    const tab = item.acao?.tab;
+  const navegarAcao = (acao?: FinanceAction) => {
+    const tab = acao?.tab;
     if (!tab) return;
     if ((tab === "honorarios" || tab === "despesas") && onDrillDown) {
-      onDrillDown(tab, item.acao?.status);
+      onDrillDown(tab, acao?.status);
       return;
     }
     onNavigate?.(tab);
@@ -202,6 +241,22 @@ export default function FinanceiroDashboard({
   const desp = d?.despesas ?? {};
   const caixa = Number(d?.caixa_periodo ?? 0);
   const totalDespesas = Number(desp.fixo ?? 0) + Number(desp.variavel ?? 0);
+  const fechamentoItens = [
+    ...(fechamento?.bloqueios ?? []),
+    ...(fechamento?.revisoes ?? []),
+  ];
+  const fechamentoTone =
+    fechamento?.status === "bloqueado"
+      ? "border-danger-200 bg-danger-50/40"
+      : fechamento?.status === "revisao"
+        ? "border-warn-200 bg-warn-50/40"
+        : "border-success-200 bg-success-50/40";
+  const fechamentoLabel =
+    fechamento?.status === "bloqueado"
+      ? "Bloqueado"
+      : fechamento?.status === "revisao"
+        ? "Revisão necessária"
+        : "Pronto para revisão final";
 
   return (
     <div className="space-y-6">
@@ -282,7 +337,7 @@ export default function FinanceiroDashboard({
                 <button
                   key={item.codigo}
                   type="button"
-                  onClick={() => navegarAtencao(item)}
+                  onClick={() => navegarAcao(item.acao)}
                   className="flex w-full items-center gap-3 px-5 py-3.5 text-left hover:bg-slate-50"
                 >
                   <div className={`rounded-lg p-2 ${tone}`}>
@@ -302,6 +357,73 @@ export default function FinanceiroDashboard({
           </div>
         )}
       </section>
+
+      {fechamento && (
+        <section className={`card overflow-hidden border ${fechamentoTone}`}>
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100/70 px-5 py-4">
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg bg-white p-2 shadow-sm">
+                <ShieldCheck className="h-5 w-5 text-primary-600" />
+              </div>
+              <div>
+                <h2 className="font-semibold text-slate-800">Pré-fechamento inteligente</h2>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Gate gerencial da competência {fechamento.competencia}. Não congela lançamentos.
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                {fechamentoLabel}
+              </div>
+              <div className="mt-0.5 text-2xl font-bold text-slate-800">
+                {fechamento.score_integridade}/100
+              </div>
+            </div>
+          </div>
+
+          {fechamentoItens.length === 0 ? (
+            <div className="px-5 py-4">
+              <div className="flex items-center gap-2 text-sm font-medium text-success-700">
+                <CheckCircle className="h-4 w-4" /> Nenhum bloqueio ou item de revisão detectado.
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                A competência está pronta para conferência humana final. O fechamento imutável será habilitado somente após a migration linear própria.
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100/80">
+              {fechamentoItens.map((item) => (
+                <button
+                  key={item.codigo}
+                  type="button"
+                  onClick={() => navegarAcao(item.acao)}
+                  className="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-white/60"
+                >
+                  <AlertCircle
+                    className={`h-4 w-4 ${
+                      item.severidade === "bloqueio" ? "text-danger-600" : "text-warn-600"
+                    }`}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-slate-800">{item.titulo}</p>
+                    <p className="text-xs text-slate-500">
+                      {item.severidade === "bloqueio" ? "Impede fechamento" : "Exige conferência"}
+                      {` · ${item.qtd} item(ns)`}
+                      {item.valor != null ? ` · ${fmtR$(item.valor)}` : ""}
+                    </p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-slate-300" />
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="border-t border-slate-100/70 px-5 py-3 text-[11px] leading-relaxed text-slate-500">
+            {fechamento.dependencia_estrutural}
+          </div>
+        </section>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="card p-5">
