@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { AlertTriangle, BookOpenCheck, RefreshCw, Scale } from "lucide-react";
 
 import api from "../../lib/api";
+import { fmtTaxaSucesso } from "../../utils/formato";
 
 interface TeseVinculada {
   id: string;
@@ -23,27 +24,35 @@ export default function TesesVinculadasPanel({ caseId }: { caseId: string }) {
   const [teses, setTeses] = useState<TeseVinculada[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
+  const requestSeqRef = useRef(0);
 
-  const carregar = async () => {
+  const carregar = useCallback(async () => {
+    const requestSeq = ++requestSeqRef.current;
     setCarregando(true);
     setErro(null);
     try {
       const { data } = await api.get<TeseVinculada[]>(`/teses/casos/${caseId}`);
+      if (requestSeq !== requestSeqRef.current) return;
       setTeses(Array.isArray(data) ? data : []);
     } catch (e: any) {
+      if (requestSeq !== requestSeqRef.current) return;
       setTeses([]);
       setErro(
         e?.response?.data?.detail ||
           "Não foi possível carregar as teses vinculadas a este caso.",
       );
     } finally {
-      setCarregando(false);
+      if (requestSeq === requestSeqRef.current) setCarregando(false);
     }
-  };
+  }, [caseId]);
 
   useEffect(() => {
     void carregar();
-  }, [caseId]);
+    return () => {
+      // Invalida a resposta em voo quando o componente desmonta ou o caseId muda.
+      requestSeqRef.current += 1;
+    };
+  }, [carregar]);
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -93,65 +102,103 @@ export default function TesesVinculadasPanel({ caseId }: { caseId: string }) {
         </div>
       ) : teses.length === 0 ? (
         <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-          Nenhuma tese está vinculada a este caso. O vínculo deve ser feito de
-          forma deliberada no Banco de Teses; o EJC não cria vínculo automático.
+          Nenhuma tese está vinculada a este caso. Consulte o Banco de Teses para
+          localizar conteúdo institucional. Esta tela não oferece ação de vínculo;
+          o EJC não cria vínculo automático.
         </div>
       ) : (
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
-          {teses.map((tese) => (
-            <article key={tese.id} className="rounded-xl border border-slate-200 p-4">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">
-                    {tese.titulo}
+          {teses.map((tese) => {
+            const ativa = tese.status === "ativa";
+            return (
+              <article
+                key={tese.id}
+                className={`rounded-xl border p-4 ${
+                  ativa ? "border-slate-200" : "border-amber-200 bg-amber-50/30"
+                }`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">
+                      {tese.titulo}
+                    </div>
+                    <div className="mt-1 text-[11px] text-slate-500">
+                      {[tese.area_juridica, tese.tribunal].filter(Boolean).join(" · ") ||
+                        "Sem área/tribunal informado"}
+                    </div>
                   </div>
-                  <div className="mt-1 text-[11px] text-slate-500">
-                    {[tese.area_juridica, tese.tribunal].filter(Boolean).join(" · ") ||
-                      "Sem área/tribunal informado"}
+                  <div className="flex flex-wrap items-center justify-end gap-1.5">
+                    <span
+                      className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${
+                        ativa
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-amber-100 text-amber-800"
+                      }`}
+                    >
+                      {tese.status}
+                    </span>
+                    {typeof tese.taxa_sucesso === "number" && (
+                      <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-600">
+                        histórico {fmtTaxaSucesso(tese.taxa_sucesso)}
+                      </span>
+                    )}
                   </div>
                 </div>
-                {typeof tese.taxa_sucesso === "number" && (
-                  <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-600">
-                    histórico {Math.round(tese.taxa_sucesso * 100)}%
-                  </span>
+
+                {!ativa && (
+                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-4 text-amber-800">
+                    Tese não ativa. Não a trate como fundamento institucional aprovado
+                    sem revisão e mudança deliberada de status.
+                  </div>
                 )}
-              </div>
 
-              {tese.descricao && (
-                <p className="mt-3 line-clamp-3 text-xs leading-5 text-slate-600">
-                  {tese.descricao}
-                </p>
-              )}
-
-              {tese.fundamentacao && (
-                <div className="mt-3 rounded-lg bg-slate-50 p-3">
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                    Fundamentação cadastrada
-                  </div>
-                  <p className="mt-1 line-clamp-4 whitespace-pre-line text-xs leading-5 text-slate-600">
-                    {tese.fundamentacao}
+                {tese.descricao && (
+                  <p className="mt-3 whitespace-pre-line text-xs leading-5 text-slate-600">
+                    {tese.descricao}
                   </p>
-                </div>
-              )}
+                )}
 
-              {tese.contra_argumento && (
-                <div className="mt-3 rounded-lg border border-amber-100 bg-amber-50/60 p-3">
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-                    Contrargumento previsível cadastrado
+                {tese.fundamentacao && (
+                  <div className="mt-3 rounded-lg bg-slate-50 p-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                      Fundamentação cadastrada
+                    </div>
+                    <p className="mt-1 whitespace-pre-line text-xs leading-5 text-slate-600">
+                      {tese.fundamentacao}
+                    </p>
                   </div>
-                  <p className="mt-1 line-clamp-4 whitespace-pre-line text-xs leading-5 text-amber-900">
-                    {tese.contra_argumento}
-                  </p>
-                </div>
-              )}
+                )}
 
-              {tese.resultado && (
-                <div className="mt-3 text-[11px] text-slate-500">
-                  Resultado do vínculo: <strong>{tese.resultado}</strong>
-                </div>
-              )}
-            </article>
-          ))}
+                {tese.jurisprudencia && (
+                  <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                      Jurisprudência cadastrada
+                    </div>
+                    <p className="mt-1 whitespace-pre-line text-xs leading-5 text-slate-600">
+                      {tese.jurisprudencia}
+                    </p>
+                  </div>
+                )}
+
+                {tese.contra_argumento && (
+                  <div className="mt-3 rounded-lg border border-amber-100 bg-amber-50/60 p-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                      Contrargumento previsível cadastrado
+                    </div>
+                    <p className="mt-1 whitespace-pre-line text-xs leading-5 text-amber-900">
+                      {tese.contra_argumento}
+                    </p>
+                  </div>
+                )}
+
+                {tese.resultado && (
+                  <div className="mt-3 text-[11px] text-slate-500">
+                    Resultado do vínculo: <strong>{tese.resultado}</strong>
+                  </div>
+                )}
+              </article>
+            );
+          })}
         </div>
       )}
     </section>
