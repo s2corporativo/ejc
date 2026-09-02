@@ -1,11 +1,12 @@
 # ── app/routers/trash.py ─────────────────────────────────────────────────────
-# Lixeira: lista, restaura e (V2-4.4, LGPD art. 16/18 VI) purga definitivamente
-# registros soft-deleted. Admin/sócio para listar/restaurar; purgar (irreversível)
-# é superadmin apenas.
+# Lixeira: lista, restaura e purga definitivamente registros soft-deleted.
+# Admin/sócio para listar/restaurar; purga irreversível é superadmin apenas.
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +24,12 @@ from app.models.legal_doc import LegalDoc
 from app.models.procuracao import Procuracao
 from app.models.task import Task
 from app.models.user import User
+from app.services.document_rag_bridge import desativar_rag_documento
+from app.services.document_storage_operation_service import (
+    StorageOperationInvalidaError,
+    criar_operacao_purge,
+)
+from app.tasks.dispatcher import agendar_purge_storage
 
 ENTIDADES = {
     "clients": (Client, lambda x: x.nome or x.razao_social),
@@ -39,36 +46,20 @@ ENTIDADES = {
 router = APIRouter(prefix="/trash", tags=["Lixeira"])
 
 
-async def _exigir_pai_ativo(
-    db: AsyncSession, modelo, registro_id: str, rotulo: str
-) -> None:
+async def _exigir_pai_ativo(db: AsyncSession, modelo, registro_id: str, rotulo: str) -> None:
     pai = await db.scalar(select(modelo).where(modelo.id == registro_id))
     if pai is None:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Não é possível restaurar: {rotulo} vinculado não existe mais.",
-        )
+        raise HTTPException(status_code=409, detail=f"Não é possível restaurar: {rotulo} vinculado não existe mais.")
     if getattr(pai, "deleted_at", None) is not None:
         raise HTTPException(
             status_code=409,
-            detail=(
-                f"Não é possível restaurar enquanto {rotulo} vinculado estiver "
-                "na lixeira. Restaure a dependência primeiro."
-            ),
+            detail=f"Não é possível restaurar enquanto {rotulo} vinculado estiver na lixeira. Restaure a dependência primeiro.",
         )
 
 
-async def _validar_dependencias_restauração(
-    db: AsyncSession, entidade: str, registro
-) -> None:
-    """Evita reativar filho cujo caso/cliente continua soft-deleted.
-
-    Não tenta restaurar dependências automaticamente: a ordem precisa ser uma
-    decisão explícita do operador e cada restauração mantém seu próprio audit log.
-    """
+async def _validar_dependencias_restauração(db: AsyncSession, entidade: str, registro) -> None:
     if entidade == "clients":
         return
-
     if entidade == "cases":
         client_id = getattr(registro, "client_id", None)
         if client_id:
@@ -78,7 +69,6 @@ async def _validar_dependencias_restauração(
     case_id = getattr(registro, "case_id", None)
     if case_id:
         await _exigir_pai_ativo(db, Case, case_id, "o caso")
-
     client_id = getattr(registro, "client_id", None)
     if client_id:
         await _exigir_pai_ativo(db, Client, client_id, "o cliente")
@@ -92,18 +82,12 @@ async def listar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(["superadmin", "admin", "socio"])),
 ):
+    del cu
     if entidade not in ENTIDADES:
-        raise HTTPException(
-            status_code=422, detail=f"Entidade inválida. Use: {list(ENTIDADES)}"
-        )
+        raise HTTPException(status_code=422, detail=f"Entidade inválida. Use: {list(ENTIDADES)}")
     modelo, rotulo = ENTIDADES[entidade]
     total = int(
-        await db.scalar(
-            select(func.count())
-            .select_from(modelo)
-            .where(modelo.deleted_at.isnot(None))
-        )
-        or 0
+        await db.scalar(select(func.count()).select_from(modelo).where(modelo.deleted_at.isnot(None))) or 0
     )
     rows = (
         await db.execute(
@@ -114,15 +98,21 @@ async def listar(
             .limit(page_size)
         )
     ).scalars().all()
-    return {
-        "data": [
-            {"id": r.id, "rotulo": rotulo(r), "excluido_em": r.deleted_at}
-            for r in rows
-        ],
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-    }
+
+    data = []
+    for r in rows:
+        item = {"id": r.id, "rotulo": rotulo(r), "excluido_em": r.deleted_at}
+        if entidade == "documents":
+            item.update({
+                "legal_hold": bool(r.legal_hold),
+                "retention_until": r.retention_until,
+                "purga_bloqueada": bool(
+                    r.legal_hold
+                    or (r.retention_until and r.retention_until > datetime.now(timezone.utc))
+                ),
+            })
+        data.append(item)
+    return {"data": data, "total": total, "page": page, "page_size": page_size}
 
 
 @router.post("/{entidade}/{registro_id}/restaurar")
@@ -137,9 +127,7 @@ async def restaurar(
     modelo, _ = ENTIDADES[entidade]
     registro = (
         await db.execute(
-            select(modelo).where(
-                modelo.id == registro_id, modelo.deleted_at.isnot(None)
-            )
+            select(modelo).where(modelo.id == registro_id, modelo.deleted_at.isnot(None))
         )
     ).scalar_one_or_none()
     if not registro:
@@ -172,47 +160,24 @@ async def purgar(
     entidade: str,
     registro_id: str,
     payload: PurgarRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(["superadmin"])),
 ):
-    """Exclusão DEFINITIVA (hard delete) — LGPD art. 16 e art. 18, VI.
+    """Hard purge governado.
 
-    Até esta rota, não havia caminho pela aplicação para atender um pedido de
-    eliminação: `DELETE /trash/{entidade}/{id}` e `POST .../purgar` respondiam
-    404 (auditoria V2-4.4). Salvaguardas deliberadas:
-
-    - só `superadmin` (mais restrito que `restaurar`, que aceita admin/socio —
-      irreversível, então o piso de permissão é mais alto);
-    - só purga o que JÁ está na lixeira (`deleted_at` preenchido) — o soft
-      delete continua sendo o único caminho de exclusão de um registro ativo;
-    - `motivo` obrigatório (mín. 5 caracteres), mesmo padrão de
-      `DELETE /cases/{id}` (R2);
-    - audit log ANTES do delete físico (a linha em si vai deixar de existir —
-      a trilha em audit_logs é o único registro que sobra depois da purga);
-    - NÃO tenta cascatear a exclusão para registros dependentes: um
-      IntegrityError vira 409 explícito, e o operador purga a dependência
-      primeiro. Cascatear automaticamente exclusão IRREVERSÍVEL é mais
-      perigoso do que pedir uma segunda chamada.
-
-    Política de retenção (prazo mínimo de guarda antes de permitir purga) NÃO
-    está codificada aqui de propósito — pauta D-pendente com o advogado
-    responsável (auditoria: "peça a política de retenção antes de codificar
-    prazos, não arbitre"). Até essa decisão, a salvaguarda é o julgamento
-    humano do superadmin, registrado no `motivo` obrigatório.
+    Para documentos, legal hold/retenção são gates de backend sem bypass por
+    superadmin. A identidade de storage é capturada em outbox ANTES do delete e
+    comitada na mesma transação; a remoção física ocorre somente depois.
     """
     if entidade not in ENTIDADES:
         raise HTTPException(status_code=422, detail="Entidade inválida")
     modelo, rotulo = ENTIDADES[entidade]
-    # `with_for_update()`: sem lock, um `restaurar` concorrente (admin/socio,
-    # nível de permissão mais baixo) entre este SELECT e o commit abaixo podia
-    # apagar fisicamente um registro que acabara de ser restaurado (achado da
-    # revisão de segurança, TOCTOU) — o DELETE do ORM não reconfere
-    # `deleted_at` no momento do commit.
     registro = (
         await db.execute(
-            select(modelo).where(
-                modelo.id == registro_id, modelo.deleted_at.isnot(None)
-            ).with_for_update()
+            select(modelo)
+            .where(modelo.id == registro_id, modelo.deleted_at.isnot(None))
+            .with_for_update()
         )
     ).scalar_one_or_none()
     if not registro:
@@ -221,8 +186,28 @@ async def purgar(
             detail="Registro não está na lixeira — purga exige exclusão (soft delete) prévia.",
         )
 
+    storage_operation = None
+    if entidade == "documents":
+        agora = datetime.now(timezone.utc)
+        if bool(registro.legal_hold):
+            raise HTTPException(status_code=409, detail="Documento sob legal hold — purga bloqueada")
+        if registro.retention_until and registro.retention_until > agora:
+            raise HTTPException(status_code=409, detail="Documento ainda está dentro do prazo de retenção")
+        try:
+            storage_operation = criar_operacao_purge(registro, requested_by=cu.id)
+        except StorageOperationInvalidaError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="Documento sem identidade de storage válida — correção administrativa necessária",
+            ) from exc
+        db.add(storage_operation)
+        await desativar_rag_documento(db, registro)
+
     excluido_em = registro.deleted_at
-    rotulo_registro = rotulo(registro)
+    dados_antes = {"excluido_em": excluido_em.isoformat() if excluido_em else None}
+    if entidade != "documents":
+        dados_antes["rotulo"] = rotulo(registro)
+
     await criar_audit_log(
         db,
         cu.id,
@@ -231,11 +216,11 @@ async def purgar(
         entidade,
         registro_id,
         detalhes=payload.motivo,
-        dados_antes={
-            "rotulo": rotulo_registro,
-            "excluido_em": excluido_em.isoformat() if excluido_em else None,
+        dados_antes=dados_antes,
+        dados_depois={
+            "purgado": True,
+            "storage_cleanup_outbox": bool(storage_operation),
         },
-        dados_depois={"purgado": True},
     )
     await db.delete(registro)
     try:
@@ -250,4 +235,17 @@ async def purgar(
                 "Purgue as dependências primeiro."
             ),
         )
-    return {"detail": "Registro purgado definitivamente"}
+
+    mecanismo = None
+    if storage_operation is not None:
+        # Se o agendamento falhar depois do commit, a operação continua pendente
+        # no banco e pode ser retomada; a evidência da intenção não se perde.
+        try:
+            mecanismo = await agendar_purge_storage(storage_operation.id, background_tasks)
+        except Exception:
+            mecanismo = "pending_outbox"
+
+    return {
+        "detail": "Registro purgado definitivamente",
+        "storage_cleanup": mecanismo,
+    }
