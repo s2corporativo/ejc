@@ -2,9 +2,11 @@
 
 Este arquivo é o ledger canônico de **reservas futuras** e do trecho recente da cadeia Alembic. O histórico detalhado de reservas antigas permanece preservado no Git.
 
-**Head canônico atual da `main`:** `155_indices_listagem_espinha`
-**Próximo prefixo livre:** `156`
-Após o merge desta PR, o próximo prefixo livre será `157` — a `156` ficará ocupada por `156_documentos_governanca_outbox` e **não poderá ser reutilizada**.
+**Head canônico atual da `main`:** `156_documentos_governanca_outbox`
+**Próximo prefixo livre:** `157`
+Após o merge desta PR, o próximo prefixo livre continuará `157` — a `156` ficará ocupada por `156_documentos_governanca_outbox` e **não poderá ser reutilizada**.
+
+> Enquanto o PR #1368 estiver aberto, esta declaração acompanha o head efetivo da branch para que os gates Alembic validem a cadeia que está sendo promovida. No merge, a `main` passa a ter esse mesmo head.
 
 > Nunca reutilize um número menor ou igual ao head atual, mesmo quando houver lacuna histórica. A ordem numérica precisa crescer junto com `down_revision`.
 
@@ -48,7 +50,7 @@ gh pr list --state open
 | `153_legal_doc_client_id` | `152_thesis_candidate_tese_banco` | Mesclada | Isolamento estável cliente → peça avulsa, reconstruído a partir do #1231 sem reutilizar a antiga migration 147. |
 | `154_saneamento_schema` | `153_legal_doc_client_id` | Mesclada | Módulo de saneamento de base processual (PROMPT 1). Encadeada sobre 153 porque era o head real no momento (`alembic heads`) — não pressupõe que 153 já tenha sido mesclada; conferir o head real de novo antes do merge. 7 tabelas próprias, **prefixadas `saneamento_*` no schema `public`** — nenhuma alteração em tabela existente do EJC. Um schema Postgres dedicado (`CREATE SCHEMA`) foi cogitado e descartado: `scripts/check_migration_compatibility.py` (gate de deploy) e os testes de paridade schema↔ORM (`test_schema_dr_parity.py`, `test_schema_sync.py`) extraem nomes de tabela por regex/AST sem suporte a qualificação de schema — mudar essas ferramentas para um caso de uso isolado era desproporcional ao módulo. Prefixo de tabela entrega o mesmo isolamento prático. |
 | `155_indices_listagem_espinha` | `154_saneamento_schema` | Mesclada | Índices parciais de listagem em `cases`/`clients`/`documents` (AUD27-P3-11). `deadlines` fora de propósito: já coberta por `ix_deadlines_data_prazo`, medido. |
-| `156_documentos_governanca_outbox` | `155_indices_listagem_espinha` | **Em PR — #1368** | Governança documental expand-only: estados de malware/IA/integridade/RAG, retenção/legal hold e outbox durável de storage. Nenhum `DROP` no upgrade. |
+| `156_documentos_governanca_outbox` | `155_indices_listagem_espinha` | **Em PR — #1368 / HEAD desta branch** | Governança documental expand-only: estados de malware/IA/integridade/RAG, retenção/legal hold e outbox durável de storage. Nenhum `DROP` no upgrade. |
 
 ## Banco de Teses — decisão canônica
 
