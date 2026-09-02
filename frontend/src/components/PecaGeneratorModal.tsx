@@ -820,6 +820,7 @@ function PainelQualidade({
   const citacoes = Array.isArray(verificacao?.citacoes) ? verificacao!.citacoes! : [];
   const criticas = citacoes.filter(
     (citacao) =>
+      citacao.status === "identificada" ||
       citacao.status === "suspeita" ||
       citacao.status === "possivelmente_desatualizada" ||
       citacao.status === "generica",
