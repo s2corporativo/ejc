@@ -156,8 +156,11 @@ async def resolver_cliente(
         observacoes="Criado automaticamente pela importacao inteligente — revisar dados (OAB).",
     )
     db.add(novo)
-    await criar_audit_log(db, cu.id, cu.role.value, "CREATE_AUTO", "clients", novo.id,
-                          detalhes=f"import inteligente: {nome or cpf or cnpj}")
+    # Audit WORM: não persistir nome/documento do titular em `detalhes`.
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "CREATE_AUTO", "clients", novo.id,
+        detalhes="Cliente criado pela importação inteligente; revisão cadastral pendente",
+    )
     try:
         await db.commit()
     except IntegrityError:
@@ -608,15 +611,25 @@ async def detalhe(
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
     return c
 
-@router.post("/{client_id}/ia-analise")
+
+@router.post(
+    "/{client_id}/ia-analise",
+    dependencies=[Depends(rate_limit("cliente-ia-analise", 5))],
+)
 async def ia_analise_cliente(
     client_id: str,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(_req_clientes),
 ):
+    """IA do Cliente: análise agregada do histórico autorizado.
+
+    A chamada é ato jurídico assistivo: exige advogado+ no backend, além do
+    gate de carteira. O contexto enviado ao provedor é minimizado e agregado —
+    não contém nome, CPF/CNPJ, títulos de casos nem descrição de honorários.
     """
-    ABA 6 – IA do Cliente: Análise completa do histórico (Seção 2.113).
-    """
+    requer_advogado(cu, detail="Análise estratégica de cliente restrita a advogados")
+
+    from collections import Counter
     from app.core.ai_brain import ai_gateway
     from app.models.case import Case
     from app.models.fee import Fee
@@ -626,33 +639,60 @@ async def ia_analise_cliente(
     )).scalar_one_or_none()
     if not c:
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
-    # Sigilo interno (LGPD/EOAB): a IA agrega histórico completo (casos +
-    # financeiro) do cliente — só a própria carteira. 404 (não vaza existência).
     if not await _pode_ver_cliente(cu, c, db):
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
-    casos = (await db.execute(select(Case).where(Case.client_id == client_id))).scalars().all()
-    financeiro = (await db.execute(select(Fee).where(Fee.client_id == client_id))).scalars().all()
+    casos = (await db.execute(
+        select(Case).where(Case.client_id == client_id, Case.deleted_at.is_(None))
+    )).scalars().all()
+    financeiro = (await db.execute(
+        select(Fee).where(Fee.client_id == client_id, Fee.deleted_at.is_(None))
+    )).scalars().all()
 
-    contexto = f"Cliente: {c.nome_exibicao}\nTipo: {c.tipo}\n"
-    contexto += f"Casos: {len(casos)}\n"
-    contexto += f"Histórico Financeiro: {len(financeiro)} registros.\n"
+    def _enum(v):
+        return getattr(v, "value", v) or "não informado"
 
-    # LGPD: sanitiza PII (nome do cliente, CPF/CNPJ etc.) antes de enviar à IA —
-    # mesmo padrão dos demais endpoints de IA (cases.py assistente-estrategico).
+    areas = Counter(str(_enum(x.area)) for x in casos)
+    status_casos = Counter(str(_enum(x.status)) for x in casos)
+    status_fin = Counter(str(_enum(x.status)) for x in financeiro)
+    total_fin = round(sum(float(x.valor or 0) for x in financeiro), 2)
+    total_pago = round(sum(
+        float(x.valor or 0) for x in financeiro
+        if str(_enum(x.status)) == "pago"
+    ), 2)
+
+    contexto = (
+        f"Tipo de cliente: {_enum(c.tipo)}\n"
+        f"Casos ativos no cadastro: {len(casos)}\n"
+        f"Distribuição por área: {dict(areas)}\n"
+        f"Distribuição por status processual: {dict(status_casos)}\n"
+        f"Registros financeiros: {len(financeiro)}\n"
+        f"Distribuição financeira por status: {dict(status_fin)}\n"
+        f"Valor nominal agregado registrado: R$ {total_fin:.2f}\n"
+        f"Valor agregado com status pago: R$ {total_pago:.2f}\n"
+    )
+
+    # Defesa adicional: mesmo o contexto agregado passa pelo sanitizer antes do
+    # gateway. O nome do cliente é fornecido apenas à lista de termos a remover,
+    # nunca como dado necessário à análise.
     from app.services.sanitizer import sanitizar_pii
-    contexto, pii_ctx = sanitizar_pii(contexto, [c.nome_exibicao] if c.nome_exibicao else None)
+    contexto, pii_ctx = sanitizar_pii(
+        contexto,
+        [c.nome_exibicao] if c.nome_exibicao else None,
+    )
 
-    demanda = "Faça uma análise estratégica completa do perfil deste cliente, identificando riscos, oportunidades e padrão de litígios."
+    demanda = (
+        "Analise exclusivamente os indicadores agregados fornecidos. Identifique "
+        "padrões de carteira, riscos operacionais/financeiros e oportunidades de "
+        "acompanhamento jurídico. Não invente fatos, teses, documentos, resultados "
+        "ou causas dos padrões. Sempre destaque o que não pode ser concluído sem "
+        "examinar os autos e documentos do cliente."
+    )
 
-    res = await ai_gateway.processar_demanda(demanda, contexto, tipo="juridico_profundo")
+    res = await ai_gateway.processar_demanda(
+        demanda, contexto, tipo="juridico_profundo"
+    )
 
-    # Auditoria obrigatória (LGPD/OAB): rastro em ai_logs para toda chamada de IA.
-    # Este endpoint passava pelo shim legado sem gravar AILog (furo #4a). ADITIVO:
-    # não altera a resposta. Análise é de PERFIL DO CLIENTE, não de um caso →
-    # tipo_uso=outro (analise_caso é "sugestão de teses" no dashboard de
-    # governança) e case_id=None (AILog.case_id é nullable). Loga só em sucesso;
-    # erro de gravação PROPAGA (registrar_ai_log), consistente com os já auditados.
     if res.get("status") == "sucesso":
         from app.services.ai_guard import registrar_ai_log
         from app.models.ai_log import AITipoUso
@@ -790,14 +830,14 @@ async def remover(
 # ═══ Validação de documentos + Acesso ao Portal + Relatório LGPD ═══
 from pydantic import BaseModel as _BM, EmailStr as _Email, Field as _Field
 from app.core.security import get_password_hash
-from app.services.security_service import validar_forca_senha
+from app.services.security_service import SENHA_MIN_LEN, validar_forca_senha
 from app.models.user import User as _User, UserRole as _Role
 from fastapi.responses import Response as _Resp
 
 
 class CriarAcessoReq(_BM):
     email: _Email
-    senha_inicial: str = _Field(min_length=8)
+    senha_inicial: str = _Field(min_length=SENHA_MIN_LEN)
 
 
 @router.post("/{client_id}/criar-acesso", status_code=201)
@@ -824,9 +864,6 @@ async def criar_acesso_portal(
     if existe:
         raise HTTPException(status_code=409, detail="E-mail já cadastrado no sistema")
 
-    # Política de senha forte também na criação de acesso ao Portal — este era o
-    # último ponto de definição de senha sem validação (Field(min_length=8) só
-    # garante comprimento). Mesmo padrão de users.criar: ValueError → 400.
     try:
         validar_forca_senha(payload.senha_inicial, payload.email)
     except ValueError as e:
@@ -838,16 +875,14 @@ async def criar_acesso_portal(
         full_name=c.nome or c.razao_social or "Cliente",
         role=_Role.cliente_externo,
         client_id=client_id,
-        must_change_password=True,   # troca obrigatória no 1º acesso
+        must_change_password=True,
         is_active=True,
     )
     db.add(u)
-    # Ação destacada (A2): criação de credencial EXTERNA é evento de segurança —
-    # não pode se diluir nos "CREATE" genéricos da trilha.
+    # Evento de segurança WORM sem e-mail/PII no texto permanente.
     await criar_audit_log(
         db, cu.id, cu.role.value, "PORTAL_ACESSO_CRIADO", "users", u.id,
-        detalhes=f"Acesso ao Portal criado p/ cliente {client_id} "
-                 f"(email {payload.email.lower()})",
+        detalhes=f"Acesso ao Portal criado para cliente {client_id}",
     )
     await db.commit()
     return {

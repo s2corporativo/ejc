@@ -29,6 +29,8 @@ import api from "../lib/api";
 import ClientServiceTimeline, {
   type ClientTimelineExtraEvent,
 } from "../components/ClientServiceTimeline";
+import ClienteIaPanel from "../components/ClienteIaPanel";
+import { useAuth } from "../stores/auth";
 import { soDigitos } from "../utils/phone";
 import { toast } from "../components/Toast";
 import { areaLabel } from "../lib/areas";
@@ -44,7 +46,7 @@ import {
 
 interface DossieData {
   cliente: {
-    id: number;
+    id: string;
     nome: string;
     email: string;
     telefone: string;
@@ -65,7 +67,7 @@ interface DossieData {
     area_breakdown: Record<string, number>;
   };
   casos: Array<{
-    id: number;
+    id: string;
     numero_interno: string;
     titulo: string;
     area: string;
@@ -75,8 +77,8 @@ interface DossieData {
     updated_at: string;
   }>;
   prazos: Array<{
-    id: number;
-    case_id: number;
+    id: string;
+    case_id: string;
     descricao: string;
     due_date: string;
     dias_restantes: number;
@@ -84,8 +86,8 @@ interface DossieData {
     urgente: boolean;
   }>;
   documentos_recentes: Array<{
-    id: number;
-    case_id: number;
+    id: string;
+    case_id: string;
     nome: string;
     tipo: string;
     created_at: string;
@@ -215,9 +217,6 @@ type PendingItem = {
   description?: string;
   status: string;
   due_date?: string;
-  // Frente 12 do plano de evolução (migration 147): nullable no banco —
-  // pendência antiga não tem classificação, e ausência significa "não
-  // avaliado", nunca "sem impacto".
   impacto?: string | null;
   providencia?: string | null;
   created_at: string;
@@ -237,9 +236,6 @@ const PENDING_STATUS_LABEL: Record<string, string> = {
   em_analise: "Em análise",
   concluido: "Concluído",
 };
-// Vocabulários espelhados de app/routers/pending_items.py (_IMPACTOS_VALIDOS
-// e _PROVIDENCIAS_VALIDAS). Divergir aqui produz 422 na gravação — foi
-// exatamente o que acontecia com os tipos procuracao/certidao/outro.
 const PENDING_IMPACTO_LABEL: Record<string, string> = {
   alto: "Impacto alto",
   medio: "Impacto médio",
@@ -320,8 +316,6 @@ function PendingItemsPanel({
       await api.post(`/clients/${clientId}/pending-items`, {
         ...form,
         due_date: form.due_date || undefined,
-        // "" é o valor do <select> "não classificado"; enviar string vazia
-        // reprovaria no vocabulário fechado do backend (422).
         impacto: form.impacto || undefined,
         providencia: form.providencia || undefined,
       });
@@ -440,8 +434,6 @@ function PendingItemsPanel({
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
           />
-          {/* Impacto e providência: o que separa inventário de plano de
-              ação. Ambos opcionais — "" grava NULL (não avaliado). */}
           <div className="grid grid-cols-2 gap-2">
             <select
               className="input py-1.5 text-xs"
@@ -983,18 +975,26 @@ function RelatorioFinanceiro({
 }
 
 export default function DossieCliente() {
+  const { user } = useAuth();
   const { clientId } = useParams<{ clientId: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
-  const validTabs = [
-    "resumo",
-    "atendimentos",
-    "casos",
-    "prazos",
-    "financeiro",
-    "documentos",
-  ];
+  const role = user?.role || "";
+  const podeIaCliente = ["superadmin", "admin", "socio", "advogado"].includes(role);
+  const podeCriarAcesso = ["superadmin", "admin", "socio", "advogado"].includes(role);
+  const validTabs = useMemo(
+    () => [
+      "resumo",
+      "atendimentos",
+      "casos",
+      "prazos",
+      "financeiro",
+      "documentos",
+      ...(podeIaCliente ? ["ia_cliente"] : []),
+    ],
+    [podeIaCliente],
+  );
   const [data, setData] = useState<DossieData | null>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
@@ -1005,7 +1005,8 @@ export default function DossieCliente() {
   useEffect(() => {
     const tab = searchParams.get("tab");
     if (tab && validTabs.includes(tab)) setAbaAtiva(tab);
-  }, [searchParams]);
+    else if (abaAtiva === "ia_cliente" && !podeIaCliente) setAbaAtiva("resumo");
+  }, [searchParams, validTabs, abaAtiva, podeIaCliente]);
 
   const carregarDossie = useCallback(() => {
     if (!clientId) return;
@@ -1154,8 +1155,12 @@ export default function DossieCliente() {
   const [criandoAcesso, setCriandoAcesso] = useState(false);
 
   const criarAcessoPortal = async () => {
-    if (!acessoForm.email.trim() || acessoForm.senha_inicial.length < 8) {
-      toast.error("Informe e-mail e senha inicial com no mínimo 8 caracteres");
+    if (!podeCriarAcesso) {
+      toast.error("Seu perfil não possui permissão para criar acesso ao Portal");
+      return;
+    }
+    if (!acessoForm.email.trim() || acessoForm.senha_inicial.length < 10) {
+      toast.error("Informe e-mail e senha inicial com no mínimo 10 caracteres");
       return;
     }
     setCriandoAcesso(true);
@@ -1253,6 +1258,9 @@ export default function DossieCliente() {
     { id: "prazos", label: "Prazos", icon: Calendar },
     { id: "financeiro", label: "Financeiro", icon: DollarSign },
     { id: "documentos", label: "Documentos", icon: FileText },
+    ...(podeIaCliente
+      ? [{ id: "ia_cliente", label: "IA Cliente", icon: Bot }]
+      : []),
   ];
 
   return (
@@ -1440,18 +1448,20 @@ export default function DossieCliente() {
               >
                 <Calendar className="w-3.5 h-3.5" /> Agendar reunião
               </Link>
-              <button
-                onClick={() => {
-                  setAcessoForm({
-                    email: cliente.email || "",
-                    senha_inicial: "",
-                  });
-                  setAcessoOpen(true);
-                }}
-                className="btn-outline text-xs"
-              >
-                <KeyRound className="w-3.5 h-3.5" /> Acesso ao portal
-              </button>
+              {podeCriarAcesso && (
+                <button
+                  onClick={() => {
+                    setAcessoForm({
+                      email: cliente.email || "",
+                      senha_inicial: "",
+                    });
+                    setAcessoOpen(true);
+                  }}
+                  className="btn-outline text-xs"
+                >
+                  <KeyRound className="w-3.5 h-3.5" /> Acesso ao portal
+                </button>
+              )}
             </div>
           </div>
 
@@ -1576,19 +1586,9 @@ export default function DossieCliente() {
         </div>
       )}
 
-      {abaAtiva === "ia_cliente" && (
-        <div className="card p-8 text-center space-y-4 animate-fade-in">
-          <Bot className="w-12 h-12 mx-auto text-bronze-pale" />
-          <h3 className="text-lg font-serif">IA do Cliente (Análise 360º)</h3>
-          <p className="text-sm text-slate-500 max-w-md mx-auto">
-            A análise estratégica automática do histórico deste cliente (padrões
-            de litígio, riscos financeiros e oportunidades) ainda está em
-            desenvolvimento. Enquanto isso, use a Pesquisa e IA com o caso do
-            cliente selecionado.
-          </p>
-          <span className="inline-block text-xs font-medium text-slate-400 border border-bronze-pale rounded-full px-3 py-1">
-            Em breve
-          </span>
+      {abaAtiva === "ia_cliente" && podeIaCliente && (
+        <div className="animate-fade-in">
+          <ClienteIaPanel clientId={clientId!} />
         </div>
       )}
 
@@ -1659,7 +1659,7 @@ export default function DossieCliente() {
       </Modal>
 
       <Modal
-        open={acessoOpen}
+        open={podeCriarAcesso && acessoOpen}
         onClose={() => setAcessoOpen(false)}
         title="Acesso ao Portal do Cliente"
       >
@@ -1680,7 +1680,7 @@ export default function DossieCliente() {
             />
           </div>
           <div>
-            <label className="label">Senha inicial (mín. 8) *</label>
+            <label className="label">Senha inicial (mín. 10, letra, número e símbolo) *</label>
             <input
               type="password"
               className="input"
