@@ -683,11 +683,14 @@ async def ia_analise_cliente(
         f"{contexto}"
     )
 
+    # Perfil `resumo` não exige fontes no AgentRegistry; com usar_rag=False,
+    # o context_builder não consulta RAG e a análise fica estritamente limitada
+    # aos indicadores agregados preparados acima.
     res = await orchestrator.run(
         db=db,
         user=cu,
-        task_type="case_analysis",
-        domain="estrategia",
+        task_type="resumo",
+        domain="clientes",
         mensagem=demanda,
         usar_rag=False,
         params={
@@ -697,13 +700,19 @@ async def ia_analise_cliente(
         },
     )
 
-    # Shape compatível com o painel existente, preservando os campos de
-    # governança do núcleo para a UI exibir HITL/alertas e manter rastreabilidade.
+    # Shape compatível com o painel existente, preservando o carimbo HITL
+    # canônico do núcleo. `requer_revisao` é a fonte autoritativa da política;
+    # `revisao_obrigatoria` do validator é apenas um alerta específico.
     return {
         "status": "sucesso",
         "resposta": res.get("conteudo"),
         "modelo_utilizado": res.get("modelo"),
-        "revisao_obrigatoria": res.get("revisao_obrigatoria", True),
+        "revisao_obrigatoria": res.get(
+            "requer_revisao", res.get("revisao_obrigatoria", True)
+        ),
+        "is_rascunho": res.get("is_rascunho", True),
+        "status_hitl": res.get("status_hitl"),
+        "aviso_hitl": res.get("aviso_hitl"),
         "sem_base_verificavel": res.get("sem_base_verificavel", False),
         "alertas": res.get("alertas", []),
         "citacoes": res.get("citacoes", []),
@@ -988,8 +997,8 @@ async def dados_lgpd_json(
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
     casos = (await db.execute(select(_Case).where(
-        _Case.client_id == client_id, _Case.deleted_at.is_(None)
-    ))).scalars().all()
+        _Case.client_id == client_id, _Case.deleted_at.is_(None))
+    )).scalars().all()
     docs = (await db.execute(select(_Doc).where(
         _Doc.client_id == client_id, _Doc.deleted_at.is_(None)
     ))).scalars().all()
