@@ -24,6 +24,19 @@ const SLUG_DIFERENTE_DA_AREA: Record<string, string> = {
 
 const AREAS_CONHECIDAS = new Set(AREAS_FALLBACK.map((a) => a.slug));
 
+function areasCaseBackend(): Set<string> | null {
+  const modelo = join(RAIZ, "backend/app/models/case.py");
+  if (!existsSync(modelo)) return null; // frontend isolado: nada a comparar
+  const fonte = readFileSync(modelo, "utf-8");
+  const corpo = fonte.slice(
+    fonte.indexOf("class CaseArea"),
+    fonte.indexOf("class CaseStatus"),
+  );
+  return new Set(
+    [...corpo.matchAll(/^\s+\w+\s*=\s*"([a-z_]+)"/gm)].map((m) => m[1]),
+  );
+}
+
 describe("taxonomia de áreas dos hubs", () => {
   it("nenhum hub achata a área: areaCaso corresponde ao próprio hub", () => {
     const divergentes = Object.entries(RAMOS)
@@ -81,20 +94,23 @@ describe("taxonomia de áreas dos hubs", () => {
   // Trava de drift contra a fonte real: o enum do backend. Se uma área usada
   // pelos hubs não existir lá, o POST /cases falha com 422 em runtime.
   it("toda areaCaso existe no enum CaseArea do backend", () => {
-    const modelo = join(RAIZ, "backend/app/models/case.py");
-    if (!existsSync(modelo)) return; // frontend isolado: nada a comparar
-    const fonte = readFileSync(modelo, "utf-8");
-    const corpo = fonte.slice(
-      fonte.indexOf("class CaseArea"),
-      fonte.indexOf("class CaseStatus"),
-    );
-    const doEnum = new Set(
-      [...corpo.matchAll(/^\s+\w+\s*=\s*"([a-z_]+)"/gm)].map((m) => m[1]),
-    );
+    const doEnum = areasCaseBackend();
+    if (!doEnum) return;
     expect(doEnum.size).toBeGreaterThan(0);
     const ausentes = Object.values(RAMOS)
       .map((cfg) => cfg.areaCaso)
       .filter((area) => !doEnum.has(area));
     expect(ausentes).toEqual([]);
+  });
+
+  // O fallback existe justamente para o cenário em que GET /areas falha. Nesse
+  // estado degradado ele não pode oferecer uma taxonomia menor ou diferente da
+  // aceita pelo backend, pois telas distintas acabariam com contratos distintos.
+  it("fallback do frontend tem paridade integral com CaseArea do backend", () => {
+    const doEnum = areasCaseBackend();
+    if (!doEnum) return;
+    expect(doEnum.size).toBeGreaterThan(0);
+    const doFrontend = new Set(AREAS_FALLBACK.map((area) => area.slug));
+    expect([...doFrontend].sort()).toEqual([...doEnum].sort());
   });
 });
