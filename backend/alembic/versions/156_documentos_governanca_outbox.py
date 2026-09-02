@@ -73,12 +73,7 @@ def upgrade() -> None:
         sa.Column("processed_at", sa.DateTime(timezone=True), nullable=True),
         sa.UniqueConstraint("operation_key", name="uq_document_storage_operations_key"),
     )
-    op.create_index(
-        "ix_document_storage_operations_operation_key",
-        "document_storage_operations",
-        ["operation_key"],
-        unique=True,
-    )
+    # UNIQUE já provê índice físico no PostgreSQL; não duplicar estrutura.
     op.create_index(
         "ix_document_storage_operations_document_id",
         "document_storage_operations",
@@ -96,7 +91,6 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("ix_document_storage_operations_status", table_name="document_storage_operations")
     op.drop_index("ix_document_storage_operations_document_id", table_name="document_storage_operations")
-    op.drop_index("ix_document_storage_operations_operation_key", table_name="document_storage_operations")
     op.drop_table("document_storage_operations")
 
     op.drop_index("ix_documents_rag_status", table_name="documents")
