@@ -7,8 +7,10 @@ import {
   FolderOpen,
   LayoutTemplate,
   MoreHorizontal,
+  PenLine,
   Plus,
   Printer,
+  Save,
   SearchCheck,
   ShieldAlert,
   ShieldCheck,
@@ -145,6 +147,9 @@ export default function Pecas() {
   const [modalIA, setModalIA] = useState(false);
   const [modal, setModal] = useState(false);
   const [view, setView] = useState<LegalDoc | null>(null);
+  const [editandoConteudo, setEditandoConteudo] = useState(false);
+  const [conteudoEdicao, setConteudoEdicao] = useState("");
+  const [salvandoConteudo, setSalvandoConteudo] = useState(false);
   const [form, setForm] = useState<any>({
     tipo_peca: "peticao_inicial",
     ai_generated: false,
@@ -266,8 +271,52 @@ export default function Pecas() {
     try {
       const { data: detalhe } = await api.get(`/legal-docs/${id}`);
       setView(detalhe);
+      setConteudoEdicao(detalhe.conteudo || "");
+      setEditandoConteudo(false);
     } catch (e: any) {
       toast.error(errDetail(e, "Falha ao carregar a peça"));
+    }
+  };
+
+  const fecharWorkspace = () => {
+    setView(null);
+    setEditandoConteudo(false);
+    setConteudoEdicao("");
+  };
+
+  const salvarConteudoWorkspace = async () => {
+    if (!view) return;
+    if (view.status === "final" || view.status === "protocolada") {
+      toast.error("Versão final ou protocolada não pode ser editada neste fluxo.");
+      return;
+    }
+    const novoConteudo = conteudoEdicao.trim();
+    if (!novoConteudo) {
+      toast.error("O conteúdo da peça não pode ficar vazio.");
+      return;
+    }
+    if (novoConteudo === (view.conteudo || "").trim()) {
+      setEditandoConteudo(false);
+      toast.info("Nenhuma alteração de conteúdo para salvar.");
+      return;
+    }
+
+    setSalvandoConteudo(true);
+    try {
+      const { data: atualizada } = await api.patch(`/legal-docs/${view.id}`, {
+        conteudo: conteudoEdicao,
+      });
+      setView(atualizada);
+      setConteudoEdicao(atualizada.conteudo || conteudoEdicao);
+      setEditandoConteudo(false);
+      toast.success(
+        "Nova versão salva. Validação e revisão devem ser refeitas antes da aprovação.",
+      );
+      load();
+    } catch (e: any) {
+      toast.error(errDetail(e, "Falha ao salvar a nova versão da peça"));
+    } finally {
+      setSalvandoConteudo(false);
     }
   };
 
@@ -293,7 +342,7 @@ export default function Pecas() {
           : "Peça devolvida para revisão",
       );
       setRevisao(null);
-      setView(null);
+      fecharWorkspace();
       load();
     } catch (e: any) {
       setRevisao({
@@ -340,7 +389,7 @@ export default function Pecas() {
       });
       toast.success("Peça revisada, aprovada e assinada");
       setRevisao(null);
-      setView(null);
+      fecharWorkspace();
       load();
     } catch (e: any) {
       const status = e?.response?.status;
@@ -374,7 +423,7 @@ export default function Pecas() {
     try {
       await api.patch(`/legal-docs/${doc.id}`, { status: "final" });
       toast.success("Versão final registrada — peça pronta para protocolo");
-      setView(null);
+      fecharWorkspace();
       load();
     } catch (e: any) {
       toast.error(errDetail(e, "Falha ao finalizar a peça"));
@@ -387,7 +436,7 @@ export default function Pecas() {
       if (temProtocoloRegistrado(detalhe)) {
         await api.patch(`/legal-docs/${doc.id}`, { status: "protocolada" });
         toast.success("Peça marcada como protocolada");
-        setView(null);
+        fecharWorkspace();
         load();
         return;
       }
@@ -419,7 +468,7 @@ export default function Pecas() {
       });
       toast.success("Protocolo registrado");
       setProtocolo(null);
-      setView(null);
+      fecharWorkspace();
       load();
     } catch (e: any) {
       toast.error(
@@ -990,23 +1039,79 @@ export default function Pecas() {
 
       <Modal
         open={!!view}
-        onClose={() => setView(null)}
-        title={view?.titulo || "Peça"}
+        onClose={fecharWorkspace}
+        title={view?.titulo ? `Workspace Jurídico · ${view.titulo}` : "Workspace Jurídico"}
         wide
       >
         {view && (
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
             <div className="min-w-0">
-              <div className="mb-4 flex flex-wrap items-center gap-2">
-                <Badge tone="slate">{faseLabel(view.status)}</Badge>
-                {origemBadge(view)}
-                {view.codigo_peca && (
-                  <Badge tone="ouro" className="font-mono">
-                    {view.codigo_peca}
-                  </Badge>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone="slate">{faseLabel(view.status)}</Badge>
+                  {origemBadge(view)}
+                  <Badge tone="slate">v{view.versao}.0</Badge>
+                  {view.codigo_peca && (
+                    <Badge tone="ouro" className="font-mono">
+                      {view.codigo_peca}
+                    </Badge>
+                  )}
+                </div>
+                {view.status !== "final" && view.status !== "protocolada" && (
+                  <div className="flex items-center gap-2">
+                    {editandoConteudo ? (
+                      <>
+                        <button
+                          type="button"
+                          className="btn-ghost px-3 py-1.5 text-xs"
+                          disabled={salvandoConteudo}
+                          onClick={() => {
+                            setConteudoEdicao(view.conteudo || "");
+                            setEditandoConteudo(false);
+                          }}
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-primary px-3 py-1.5 text-xs"
+                          disabled={salvandoConteudo}
+                          onClick={salvarConteudoWorkspace}
+                        >
+                          <Save size={14} />
+                          {salvandoConteudo ? "Salvando..." : "Salvar nova versão"}
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn-ghost px-3 py-1.5 text-xs"
+                        onClick={() => setEditandoConteudo(true)}
+                      >
+                        <PenLine size={14} /> Editar texto
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
-              <Markdown source={view.conteudo} className="text-sm text-slate-700" />
+
+              {editandoConteudo ? (
+                <div className="space-y-2">
+                  <textarea
+                    className="input min-h-[62vh] w-full font-mono text-sm leading-6"
+                    value={conteudoEdicao}
+                    onChange={(e) => setConteudoEdicao(e.target.value)}
+                    aria-label="Conteúdo editável da peça"
+                  />
+                  <p className="text-xs text-amber-700">
+                    Salvar cria nova versão lógica e exige nova validação/revisão antes da aprovação.
+                  </p>
+                </div>
+              ) : (
+                <div className="min-h-[55vh] rounded-xl border border-slate-100 bg-white p-5">
+                  <Markdown source={view.conteudo} className="text-sm text-slate-700" />
+                </div>
+              )}
             </div>
 
             <aside className="space-y-3 border-t border-slate-100 pt-4 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
@@ -1015,7 +1120,7 @@ export default function Pecas() {
                   Inteligência jurídica
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
-                  Validação, fontes e crítica ficam concentradas aqui; o texto permanece separado.
+                  Fontes, validação e crítica ficam separados do texto. A IA não altera a peça sem ação explícita do advogado.
                 </p>
               </div>
 
@@ -1089,6 +1194,8 @@ export default function Pecas() {
                 ) : view.status !== "protocolada" ? (
                   <button
                     className="btn-primary w-full justify-center"
+                    disabled={editandoConteudo}
+                    title={editandoConteudo ? "Salve ou cancele a edição antes de revisar" : undefined}
                     onClick={() => abrirRevisao(view)}
                   >
                     <ShieldCheck size={14} /> Revisar peça
@@ -1330,7 +1437,6 @@ export default function Pecas() {
         caseId={casoFiltro}
         onNeedFicha={onNeedFicha}
         onConcluido={() => {
-          setModalIA(false);
           load();
         }}
       />
