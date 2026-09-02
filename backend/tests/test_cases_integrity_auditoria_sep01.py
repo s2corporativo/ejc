@@ -50,6 +50,16 @@ async def test_intake_sem_advogado_nao_vira_responsavel_automaticamente():
     assert db.execute_calls == 0
 
 
+async def test_advogado_sem_responsavel_assume_sem_query_redundante():
+    db = _DB()
+    advogado = _user("adv-1", "advogado")
+
+    resolved = await integrity.resolver_responsavel_juridico(db, advogado, None)
+
+    assert resolved == "adv-1"
+    assert db.execute_calls == 0
+
+
 async def test_estagiario_pode_indicar_advogado_mas_nao_assumir_o_caso():
     advogado = _user("adv-1", "advogado")
     db = _DB(advogado)
