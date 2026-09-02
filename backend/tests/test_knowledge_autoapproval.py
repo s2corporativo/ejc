@@ -35,6 +35,16 @@ def test_conteudo_juridico_sem_status_explicito_nasce_pendente():
     assert "approved_at" not in extra["auto_approval"]
 
 
+def test_doutrina_sem_status_explicito_nasce_pendente():
+    doc = _doc({"confidence_level": "media"}, categoria="doutrina_comentada")
+    extra = aplicar_aprovacao_automatica(doc)
+
+    assert extra["authority_level"] == "doutrinaria"
+    assert extra["rag_status"] == "pendente"
+    assert extra["auto_approval"]["policy"] == POLITICA_JURIDICO_PENDENTE
+    assert "approved_at" not in extra["auto_approval"]
+
+
 def test_conteudo_nao_juridico_sem_status_mantem_compatibilidade_autoaprovada():
     doc = _doc({"confidence_level": "alta"}, categoria="manual_operacional_interno")
     extra = aplicar_aprovacao_automatica(doc)
