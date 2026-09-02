@@ -1,7 +1,7 @@
+import { toast } from "../../components/Toast";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Sparkles, RefreshCw, ArchiveRestore } from "lucide-react";
-import { toast } from "../../components/Toast";
 import api from "../../lib/api";
 import { asList } from "../../lib/list";
 import { areaLabel, useAreas } from "../../lib/areas";
@@ -9,6 +9,7 @@ import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../../lib/iaErro";
 import { useIaStatus } from "../../lib/iaStatus";
 import IntakeAnalise from "../../components/IntakeAnalise";
 import ConversaoChecklist from "../../components/ConversaoChecklist";
+import CaseClosureModal from "../../components/CaseClosureModal";
 import type { Case } from "../../types";
 import {
   StatusBadge,
@@ -299,15 +300,7 @@ export default function TabResumo({
   const [movs, setMovs] = useState<any[]>([]);
   const [novoMov, setNovoMov] = useState("");
   const [encModal, setEncModal] = useState(false);
-  const [encLoading, setEncLoading] = useState(false);
   const [sigiloSalvando, setSigiloSalvando] = useState(false);
-  const [enc, setEnc] = useState({
-    resultado: "exito_total",
-    motivo_resultado: "",
-    provas_determinantes: "",
-    licoes_aprendidas: "",
-    alimentar_rag: true,
-  });
   const [gerando, setGerando] = useState(false);
   const [honModal, setHonModal] = useState(false);
   const [honLoading, setHonLoading] = useState(false);
@@ -386,22 +379,6 @@ export default function TabResumo({
       .then((r) => setMovs(asList(r.data)))
       .catch(() => {});
   }, [caso.id]);
-
-  const encerrar = async () => {
-    setEncLoading(true);
-    try {
-      await api.post(`/cases/${caso.id}/encerrar`, enc);
-      setEncModal(false);
-      toast.success(
-        "Caso encerrado. Conhecimento registrado na base institucional (precedente + memória + tese).",
-      );
-      window.location.reload();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao encerrar");
-    } finally {
-      setEncLoading(false);
-    }
-  };
 
   const gerarDocs = async () => {
     setGerando(true);
@@ -860,85 +837,12 @@ export default function TabResumo({
         </Modal>
       )}
 
-      {encModal && (
-        <Modal
-          open={encModal}
-          onClose={() => setEncModal(false)}
-          title="Encerrar caso — Pós-Mortem"
-        >
-          <div className="space-y-3">
-            <p className="text-xs text-slate-500">
-              Ao encerrar, o conhecimento do caso vira ativo institucional:{" "}
-              <b>precedente na base de conhecimento</b> +{" "}
-              <b>memória institucional</b> + <b>tese no banco</b>. Tudo como
-              rascunho revisável (OAB).
-            </p>
-            <div>
-              <label className="label">Resultado</label>
-              <select
-                className="input w-full"
-                value={enc.resultado}
-                onChange={(e) => setEnc({ ...enc, resultado: e.target.value })}
-              >
-                <option value="exito_total">Êxito total</option>
-                <option value="exito_parcial">Êxito parcial</option>
-                <option value="acordo">Acordo</option>
-                <option value="improcedente">Improcedente</option>
-              </select>
-            </div>
-            <div>
-              <label className="label">Motivo do resultado</label>
-              <textarea
-                rows={2}
-                className="input w-full"
-                value={enc.motivo_resultado}
-                onChange={(e) =>
-                  setEnc({ ...enc, motivo_resultado: e.target.value })
-                }
-              />
-            </div>
-            <div>
-              <label className="label">Provas determinantes</label>
-              <textarea
-                rows={2}
-                className="input w-full"
-                value={enc.provas_determinantes}
-                onChange={(e) =>
-                  setEnc({ ...enc, provas_determinantes: e.target.value })
-                }
-              />
-            </div>
-            <div>
-              <label className="label">Lições aprendidas</label>
-              <textarea
-                rows={2}
-                className="input w-full"
-                value={enc.licoes_aprendidas}
-                onChange={(e) =>
-                  setEnc({ ...enc, licoes_aprendidas: e.target.value })
-                }
-              />
-            </div>
-            <label className="flex items-center gap-2 text-sm text-slate-600">
-              <input
-                type="checkbox"
-                checked={enc.alimentar_rag}
-                onChange={(e) =>
-                  setEnc({ ...enc, alimentar_rag: e.target.checked })
-                }
-              />
-              Alimentar a base de conhecimento
-            </label>
-            <button
-              onClick={encerrar}
-              disabled={encLoading}
-              className="btn-primary w-full"
-            >
-              {encLoading ? "Encerrando..." : "Confirmar encerramento"}
-            </button>
-          </div>
-        </Modal>
-      )}
+      <CaseClosureModal
+        caseId={caso.id}
+        open={encModal}
+        onClose={() => setEncModal(false)}
+        onClosed={() => window.location.reload()}
+      />
 
       {honModal && (
         <Modal
