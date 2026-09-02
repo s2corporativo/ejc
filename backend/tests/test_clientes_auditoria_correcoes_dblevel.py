@@ -160,7 +160,7 @@ async def test_relatorio_financeiro_nao_quebra_apos_cutover_pii():
             u_socio = await _carregar_user(db, socio)
             resp = await relatorio_financeiro_cliente(cli, db, u_socio)
             assert resp["cliente"]["id"] == cli
-            assert resp["cliente"]["cpf_cnpj"] == "11144477735"
+            assert resp["cliente"]["cpf_cnpj"] == "***.444.777-**"
             assert resp["resumo"]["total"] == 250.0
         finally:
             await _limpar(db, client_ids=[cli], user_ids=[socio])
