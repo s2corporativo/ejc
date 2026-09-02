@@ -624,15 +624,16 @@ async def ia_analise_cliente(
     """IA do Cliente: análise agregada do histórico autorizado.
 
     A chamada é ato jurídico assistivo: exige advogado+ no backend, além do
-    gate de carteira. O contexto enviado ao provedor é minimizado e agregado —
-    não contém nome, CPF/CNPJ, títulos de casos nem descrição de honorários.
+    gate de carteira. O contexto enviado à IA é minimizado e agregado — não
+    contém nome, CPF/CNPJ, títulos de casos nem descrição de honorários — e a
+    execução passa pelo orquestrador institucional (validação, HITL e AILog).
     """
     requer_advogado(cu, detail="Análise estratégica de cliente restrita a advogados")
 
     from collections import Counter
-    from app.core.ai_brain import ai_gateway
     from app.models.case import Case
     from app.models.fee import Fee
+    from app.services.ai.core.orchestrator import orchestrator
 
     c = (await db.execute(
         select(Client).where(Client.id == client_id, Client.deleted_at.is_(None))
@@ -663,7 +664,7 @@ async def ia_analise_cliente(
 
     contexto = (
         f"Tipo de cliente: {_enum(c.tipo)}\n"
-        f"Casos ativos no cadastro: {len(casos)}\n"
+        f"Total de casos não excluídos: {len(casos)}\n"
         f"Distribuição por área: {dict(areas)}\n"
         f"Distribuição por status processual: {dict(status_casos)}\n"
         f"Registros financeiros: {len(financeiro)}\n"
@@ -672,38 +673,42 @@ async def ia_analise_cliente(
         f"Valor agregado com status pago: R$ {total_pago:.2f}\n"
     )
 
-    # Defesa adicional: mesmo o contexto agregado passa pelo sanitizer antes do
-    # gateway. O nome do cliente é fornecido apenas à lista de termos a remover,
-    # nunca como dado necessário à análise.
-    from app.services.sanitizer import sanitizar_pii
-    contexto, pii_ctx = sanitizar_pii(
-        contexto,
-        [c.nome_exibicao] if c.nome_exibicao else None,
-    )
-
     demanda = (
         "Analise exclusivamente os indicadores agregados fornecidos. Identifique "
         "padrões de carteira, riscos operacionais/financeiros e oportunidades de "
         "acompanhamento jurídico. Não invente fatos, teses, documentos, resultados "
         "ou causas dos padrões. Sempre destaque o que não pode ser concluído sem "
-        "examinar os autos e documentos do cliente."
+        "examinar os autos e documentos do cliente.\n\n"
+        "[INDICADORES AGREGADOS DO CLIENTE]\n"
+        f"{contexto}"
     )
 
-    res = await ai_gateway.processar_demanda(
-        demanda, contexto, tipo="juridico_profundo"
+    res = await orchestrator.run(
+        db=db,
+        user=cu,
+        task_type="case_analysis",
+        domain="estrategia",
+        mensagem=demanda,
+        usar_rag=False,
+        params={
+            "module_key": "clientes",
+            "surface": "cliente_ia",
+            "nomes_proteger": [c.nome_exibicao] if c.nome_exibicao else [],
+        },
     )
 
-    if res.get("status") == "sucesso":
-        from app.services.ai_guard import registrar_ai_log
-        from app.models.ai_log import AITipoUso
-        await registrar_ai_log(
-            db, user_id=cu.id, tipo_uso=AITipoUso.outro, case_id=None,
-            prompt_sanitizado=f"{contexto}\n\n[DEMANDA]\n{demanda}",
-            pii_removida=bool(pii_ctx),
-            resposta=res.get("resposta"),
-            modelo=res.get("modelo_utilizado"),
-        )
-    return res
+    # Shape compatível com o painel existente, preservando os campos de
+    # governança do núcleo para a UI exibir HITL/alertas e manter rastreabilidade.
+    return {
+        "status": "sucesso",
+        "resposta": res.get("conteudo"),
+        "modelo_utilizado": res.get("modelo"),
+        "revisao_obrigatoria": res.get("revisao_obrigatoria", True),
+        "sem_base_verificavel": res.get("sem_base_verificavel", False),
+        "alertas": res.get("alertas", []),
+        "citacoes": res.get("citacoes", []),
+        "log_id": res.get("log_id"),
+    }
 
 
 @router.patch("/{client_id}", response_model=ClientResponse)

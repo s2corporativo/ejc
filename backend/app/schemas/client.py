@@ -4,7 +4,7 @@ from pydantic import AliasChoices, BaseModel, EmailStr, Field, field_validator, 
 from typing import Optional
 from datetime import datetime, date
 
-from app.models.client import ClientStatus, ClientTipo, ClientOrigem
+from app.models.client import ClientStatus, ClientTipo, ClientOrigem, PII_INDECIFRAVEL
 
 # Etapas do funil de leads (CRM) — mesmas colunas do board CRMLeads.tsx.
 ETAPAS_FUNIL = {"lead", "contato", "reuniao", "proposta", "convertido", "perdido"}
@@ -212,10 +212,13 @@ class ClientResponse(ClientBase):
     def _minimizar_documento(self, handler):
         data = handler(self)
         mascara = None
-        if data.get("cpf"):
-            mascara = self._mascarar(str(data["cpf"]))
-        elif data.get("cnpj"):
-            mascara = self._mascarar(str(data["cnpj"]))
+        documento = data.get("cpf") or data.get("cnpj")
+        if documento == PII_INDECIFRAVEL:
+            # Falha de decifragem é sinal operacional e não pode virar ausência
+            # silenciosa de documento; o marcador não contém PII.
+            mascara = PII_INDECIFRAVEL
+        elif documento:
+            mascara = self._mascarar(str(documento))
         # LGPD/minimização: não basta a UI preferir a máscara; o valor em claro
         # não pode trafegar no JSON comum e ficar disponível no DevTools/logs.
         data.pop("cpf", None)

@@ -76,6 +76,29 @@ async def anonimizar_cliente(
             "bloqueios": bloqueios,
         })
 
+    motivo_limpo = (motivo or "").strip()
+    if bloqueios and forcar and not motivo_limpo:
+        # Transformação irreversível + override de representação ativa exige
+        # fundamento explícito. Sem isso a trilha provaria o ato, mas não a
+        # decisão administrativa/jurídica que autorizou a exceção.
+        raise HTTPException(
+            422,
+            "Justificativa obrigatória para anonimização forçada com bloqueios ativos",
+        )
+
+    # A justificativa precisa permanecer auditável, mas jamais em texto bruto:
+    # operador pode colar CPF/CNPJ, processo, e-mail, telefone ou nome. O WORM
+    # recebe somente versão sanitizada e curta, em campo estruturado restrito.
+    motivo_sanitizado = None
+    if motivo_limpo:
+        from app.services.sanitizer import sanitizar_pii
+
+        motivo_sanitizado, _ = sanitizar_pii(
+            motivo_limpo,
+            [cliente.nome_exibicao] if cliente.nome_exibicao else None,
+        )
+        motivo_sanitizado = motivo_sanitizado.strip()[:500] or None
+
     agora = datetime.now(timezone.utc)
 
     # Sobrescreve PII. Mantém: id, tipo, status, created_at, relacionamentos
@@ -111,18 +134,28 @@ async def anonimizar_cliente(
     for u in usuarios_portal:
         u.is_active = False
 
-    # Log de auditoria WORM SEM texto livre: `motivo` é campo fornecido pelo
-    # operador e pode conter PII, dado sensível ou conteúdo de caso. O rastro
-    # precisa provar que houve justificativa, não perpetuar o teor dela.
+    # WORM: resumo em `detalhes` sem PII + fundamento sanitizado em payload
+    # estruturado. Isso preserva a substância da decisão para auditoria futura
+    # sem perpetuar o texto livre original do operador.
     detalhes = (
         "Anonimização LGPD art.17; "
-        f"justificativa_informada={'sim' if bool((motivo or '').strip()) else 'nao'}"
+        f"justificativa_sanitizada={'sim' if motivo_sanitizado else 'nao'}"
     )
     if bloqueios:
         detalhes += f"; FORÇADO apesar de {len(bloqueios)} bloqueio(s) ativo(s)"
     await criar_audit_log(
-        db, executor_id, executor_role, "ANONIMIZAR_LGPD", "clients", client_id,
+        db,
+        executor_id,
+        executor_role,
+        "ANONIMIZAR_LGPD",
+        "clients",
+        client_id,
         detalhes=detalhes,
+        dados_depois={
+            "forcado": bool(forcar and bloqueios),
+            "bloqueios_ignorados": len(bloqueios),
+            "justificativa_sanitizada": motivo_sanitizado,
+        },
     )
     await db.commit()
 
