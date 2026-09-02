@@ -394,15 +394,56 @@ export default function FinanceiroDashboard({
 
       {relatorio && (
         <section className="card p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-semibold text-slate-800">Relatório gerencial</h2>
-            <button onClick={() => setRelatorio(null)} className="text-xs text-slate-400 hover:text-slate-700">
+          <div className="mb-4 flex items-start justify-between gap-4">
+            <div>
+              <h2 className="font-semibold text-slate-800">
+                Relatório gerencial — {relatorio.mes_label}
+              </h2>
+              <p className="mt-0.5 text-xs text-slate-400">
+                Caixa por pagamentos efetivos e saldo residual. Não substitui a contabilidade.
+              </p>
+            </div>
+            <button
+              onClick={() => setRelatorio(null)}
+              className="text-xs text-slate-400 hover:text-slate-700"
+            >
               Fechar
             </button>
           </div>
-          <pre className="max-h-72 overflow-auto whitespace-pre-wrap text-xs text-slate-600">
-            {JSON.stringify(relatorio, null, 2)}
-          </pre>
+
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div className="rounded-xl bg-success-50 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-success-700">Recebido</p>
+              <p className="mt-1 font-bold text-success-800">{fmtR$(relatorio.financeiro?.recebido_mes)}</p>
+            </div>
+            <div className="rounded-xl bg-danger-50 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-danger-700">Despesas pagas</p>
+              <p className="mt-1 font-bold text-danger-800">{fmtR$(relatorio.financeiro?.despesas_pagas)}</p>
+            </div>
+            <div className="rounded-xl bg-slate-100 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500">Resultado</p>
+              <p className="mt-1 font-bold text-slate-800">{fmtR$(relatorio.financeiro?.resultado_mes)}</p>
+            </div>
+            <div className="rounded-xl bg-warn-50 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-warn-700">Em atraso</p>
+              <p className="mt-1 font-bold text-warn-800">{fmtR$(relatorio.financeiro?.atrasado)}</p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+            <div className="rounded-lg border border-slate-100 p-3">
+              <span className="text-slate-500">Novos casos no mês</span>
+              <strong className="float-right text-slate-800">{relatorio.casos?.novos_mes ?? 0}</strong>
+            </div>
+            <div className="rounded-lg border border-slate-100 p-3">
+              <span className="text-slate-500">Casos encerrados</span>
+              <strong className="float-right text-slate-800">{relatorio.casos?.encerrados_mes ?? 0}</strong>
+            </div>
+            <div className="rounded-lg border border-slate-100 p-3">
+              <span className="text-slate-500">Prazos vencidos</span>
+              <strong className="float-right text-danger-600">{relatorio.prazos?.vencidos_abertos ?? 0}</strong>
+            </div>
+          </div>
         </section>
       )}
     </div>
