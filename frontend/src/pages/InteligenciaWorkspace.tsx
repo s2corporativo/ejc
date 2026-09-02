@@ -27,6 +27,7 @@ import { useAuth } from "../stores/auth";
 import { MENSAGEM_IA_NAO_ATIVADA, useIaStatus } from "../lib/iaStatus";
 
 const GESTORES: readonly string[] = ["superadmin", "admin", "socio"];
+const ADVOGADOS: readonly string[] = ["superadmin", "admin", "socio", "advogado"];
 
 const TABS = [
   {
@@ -51,6 +52,7 @@ const TABS = [
     k: "honorarios",
     label: "Precificar honorários",
     icon: Calculator,
+    roles: ADVOGADOS,
   },
   { k: "jurimetria", label: "Analisar dados e resultados", icon: Scale },
   {
