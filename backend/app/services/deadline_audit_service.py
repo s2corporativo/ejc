@@ -21,6 +21,18 @@ from app.services.deadline_calculator import eh_feriado
 ENGINE_VERSION = "deadline_calculator/2026-09-01.v1"
 
 
+class PrazoAuditError(ValueError):
+    """Erro de invariável de auditoria/conferência."""
+
+
+class DuplaValidacaoError(PrazoAuditError):
+    """O mesmo usuário tentou calcular e conferir prazo crítico."""
+
+
+class ProvaIncompletaError(PrazoAuditError):
+    """Faltam elementos mínimos para conferir prazo crítico."""
+
+
 def _valor(value: Any) -> Any:
     return getattr(value, "value", value)
 
@@ -43,11 +55,11 @@ def _excecoes_calendario(
     tribunal: str | None,
     regime: str | None,
 ) -> list[dict[str, Any]]:
-    """Materializa dias excepcionais para reprodução/conferência do cálculo.
+    """Materializa dias excepcionais observados para reprodução/conferência.
 
-    O registro é factual: não contém partes, número de processo ou texto de
-    intimação. Para CPP, fins de semana/feriados intermediários são apenas
-    observados; a regra própria do regime continua sendo a do motor canônico.
+    O registro é factual: não contém partes, número de processo ou teor de
+    intimação. Para CPP, finais de semana e feriados intermediários são apenas
+    observados; o snapshot não afirma que foram excluídos da contagem.
     """
     if fim < inicio:
         return []
@@ -82,10 +94,27 @@ def _excecoes_calendario(
     return itens
 
 
+def validar_marcos_prazo(
+    *,
+    data_publicacao: date | None,
+    termo_inicial: date | None,
+    termo_final: date,
+) -> None:
+    if data_publicacao and termo_inicial and termo_inicial < data_publicacao:
+        raise ProvaIncompletaError(
+            "termo_inicial não pode ser anterior à data_publicacao"
+        )
+    if termo_inicial and termo_final < termo_inicial:
+        raise ProvaIncompletaError(
+            "data_prazo não pode ser anterior ao termo_inicial"
+        )
+
+
 def construir_prova_calculo(
     *,
     actor_id: str,
     data_ciencia: date | None,
+    data_publicacao: date | None,
     termo_inicial: date | None,
     termo_final: date,
     regime: str | None,
@@ -97,12 +126,17 @@ def construir_prova_calculo(
     resultado: dict[str, Any] | None,
     modo_origem: str,
 ) -> dict[str, Any]:
-    """Cria snapshot reproduzível ou explicita que a data foi manual.
+    """Cria snapshot suficiente para reexecutar ou identificar lacunas.
 
-    ``resultado`` é a saída do motor canônico quando houve cálculo automático.
-    Em prazo informado manualmente, os campos desconhecidos permanecem nulos;
-    isso é evidência da ausência de cálculo, e não convite a inferir parâmetros.
+    ``data_ciencia`` jamais é renomeada silenciosamente para termo inicial. Se o
+    chamador ainda usa o campo legado como base do motor, isso aparece em
+    ``data_base_calculo``; ``termo_inicial`` permanece nulo até ser conhecido.
     """
+    validar_marcos_prazo(
+        data_publicacao=data_publicacao,
+        termo_inicial=termo_inicial,
+        termo_final=termo_final,
+    )
     inicio = termo_inicial or data_ciencia
     excecoes = (
         _excecoes_calendario(
@@ -120,7 +154,9 @@ def construir_prova_calculo(
         "engine_version": ENGINE_VERSION if resultado else None,
         "modo_origem": modo_origem,
         "data_ciencia": _iso(data_ciencia),
-        "termo_inicial": _iso(termo_inicial or data_ciencia),
+        "data_publicacao": _iso(data_publicacao),
+        "termo_inicial": _iso(termo_inicial),
+        "data_base_calculo": _iso(inicio),
         "termo_final": termo_final.isoformat(),
         "regime_calculo": regime,
         "tribunal": tribunal,
@@ -137,7 +173,27 @@ def construir_prova_calculo(
         "calculado_em": datetime.now(timezone.utc).isoformat(),
         "historico_recalculo": [],
         "ultima_conferencia": None,
+        "estado_validacao": "aguardando_conferencia",
     }
+
+
+def _atualizar_snapshot_material(
+    metadata: dict[str, Any],
+    depois: dict[str, Any],
+    actor_id: str,
+) -> None:
+    mapa = {
+        "data_publicacao": "data_publicacao",
+        "termo_inicial": "termo_inicial",
+        "data_prazo": "termo_final",
+        "regime_calculo": "regime_calculo",
+        "base_legal": "regra_juridica",
+    }
+    for origem, destino in mapa.items():
+        if origem in depois:
+            metadata[destino] = _iso(depois[origem])
+    metadata["calculado_por"] = actor_id
+    metadata["calculado_em"] = datetime.now(timezone.utc).isoformat()
 
 
 def invalidar_conferencia(
@@ -148,7 +204,7 @@ def invalidar_conferencia(
     antes: dict[str, Any],
     depois: dict[str, Any],
 ) -> bool:
-    """Invalida conferência e preserva histórico de recálculo/alteração."""
+    """Invalida conferência e preserva histórico da mudança material."""
     metadata = deepcopy(getattr(prazo, "calculo_metadata", None) or {})
     historico = list(metadata.get("historico_recalculo") or [])
     havia_conferencia = bool(
@@ -172,10 +228,7 @@ def invalidar_conferencia(
     metadata["historico_recalculo"] = historico
     metadata["ultima_conferencia"] = None
     metadata["estado_validacao"] = "aguardando_conferencia"
-    if "data_prazo" in depois:
-        metadata["termo_final"] = _iso(depois["data_prazo"])
-    metadata["calculado_por"] = actor_id
-    metadata["calculado_em"] = datetime.now(timezone.utc).isoformat()
+    _atualizar_snapshot_material(metadata, depois, actor_id)
     prazo.calculo_metadata = metadata
     prazo.calculado_por = actor_id
     prazo.conferido_por = None
@@ -184,22 +237,43 @@ def invalidar_conferencia(
     return havia_conferencia
 
 
+def validar_prova_para_conferencia(prazo: Any) -> None:
+    if not prazo_critico(prazo):
+        return
+    metadata = getattr(prazo, "calculo_metadata", None) or {}
+    if not metadata or not metadata.get("termo_final"):
+        raise ProvaIncompletaError(
+            "Prazo crítico sem snapshot reproduzível: revise os marcos antes de conferir."
+        )
+    tipo = _valor(getattr(prazo, "tipo", None))
+    if tipo == "processual":
+        if not getattr(prazo, "regime_calculo", None):
+            raise ProvaIncompletaError(
+                "Prazo processual crítico exige regime_calculo antes da conferência."
+            )
+        if not getattr(prazo, "termo_inicial", None):
+            raise ProvaIncompletaError(
+                "Prazo processual crítico exige termo_inicial antes da conferência."
+            )
+
+
 def validar_conferente(prazo: Any, actor_id: str) -> None:
     """Aplica usuários distintos somente a prazo de prioridade crítica."""
     if not prazo_critico(prazo):
         return
     calculista = getattr(prazo, "calculado_por", None)
     if not calculista:
-        raise ValueError(
+        raise ProvaIncompletaError(
             "Prazo crítico legado sem calculista identificado: revise/recalcule antes da conferência."
         )
     if calculista == actor_id:
-        raise ValueError(
+        raise DuplaValidacaoError(
             "Prazo crítico exige dupla validação: o conferente deve ser diferente do calculista."
         )
 
 
 def registrar_conferencia(prazo: Any, actor_id: str) -> None:
+    validar_prova_para_conferencia(prazo)
     validar_conferente(prazo, actor_id)
     agora = datetime.now(timezone.utc)
     prazo.confirmado = True
