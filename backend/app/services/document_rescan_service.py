@@ -1,38 +1,26 @@
-"""Serviço de rescan/backfill de SHA-256 de documentos (Épico #1019 A3.2).
+"""Serviço de rescan/backfill de SHA-256 de documentos.
 
-Recalcula o SHA-256 de documentos vigentes e grava o resultado nas tabelas
-``document_hash_rescan_batches`` / ``document_hash_rescan_items`` (migration
-142). Usa as primitivas já existentes:
+Recalcula o SHA-256 de documentos vigentes, compara com o hash probatório
+persistido no próprio ``Document`` e, quando houver, com o último intake. O
+resultado alimenta tanto as tabelas históricas de rescan quanto o estado simples
+de integridade exibido pelo GED.
 
-- ``document_hash_service.calcular_sha256_local`` para arquivos locais;
-- ``document_remote_hash_service.calcular_sha256_remoto_rclone`` para
-  documentos no Drive (``drive_file_id`` presente).
-
-Contrato: ``executar_rescan(upload_root, rclone_config, documentos)`` retorna
-``RescanResultado`` com contagens por status e ``divergencias`` — cada
-divergência carrega ``document_id``, ``motivo`` e hashes, **nunca** filepath
-ou dados pessoais (LGPD). Lote nunca aborta por item individual: itens
-ausentes/indisponíveis viram ``nao_disponivel``, erros de cálculo viram
-``erro`` com motivo classificado.
-
-Os pontos de banco (``selecionar_documentos``, ``buscar_intake_sha``,
-``gravar_item_rescan``) vivem neste módulo como funções independentes de
-módulo — mockáveis nos testes unitários — e são o ponto de fiação do
-dispatch (Celery/BackgroundTasks) no PR de integração.
+Nenhuma divergência inclui filepath ou conteúdo documental.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from app.services import document_hash_service
 from app.services.document_remote_hash_service import (
     ConfiguracaoHashRclone,
-    calcular_sha256_remoto_rclone,
     HashRemotoConfiguracaoError,
     HashRemotoIndisponivelError,
+    calcular_sha256_remoto_rclone,
 )
 
 logger = logging.getLogger("ejc.services.document_rescan")
@@ -42,8 +30,6 @@ FATIA_LIMITE = 50
 
 @dataclass(frozen=True)
 class RescanResultado:
-    """Resultado de um rescan: contagens por status + divergências."""
-
     batch_id: str
     itens_processados: int = 0
     itens_concluidos: int = 0
@@ -53,33 +39,22 @@ class RescanResultado:
 
 
 class _SemFonteRemotaError(RuntimeError):
-    """Documento no Drive sem configuração rclone — item recusado de forma
-    segura (nunca cai em hash local com filepath ``drive:...``)."""
+    pass
 
 
 def _motivo_divergencia(erro: Exception) -> str | None:
-    """Classifica a exceção da fonte de hash em motivo LGPD-safe.
-    ``None`` = erro não esperado (infraestrutura genérica)."""
     if isinstance(erro, document_hash_service.HashArquivoIndisponivelError):
         return "arquivo_ausente"
     if isinstance(erro, document_hash_service.HashMetadataMismatchError):
         return "tamanho_divergente"
     if isinstance(erro, document_hash_service.HashPathInvalidoError):
         return "caminho_invalido"
-    if isinstance(
-        erro, (HashRemotoIndisponivelError, HashRemotoConfiguracaoError)
-    ):
+    if isinstance(erro, (HashRemotoIndisponivelError, HashRemotoConfiguracaoError)):
         return "infraestrutura_remota"
     return None
 
 
-async def _hashar_documento(
-    documento,
-    upload_root: Path,
-    rclone_config,
-) -> document_hash_service.HashDocumentoCalculado:
-    """Fonte de hash condicional: local ou remota. Nunca faz fallback
-    inseguro de filepath ``drive:...`` para o hash local."""
+async def _hashar_documento(documento, upload_root: Path, rclone_config):
     if documento.drive_file_id:
         if not rclone_config:
             raise _SemFonteRemotaError()
@@ -100,46 +75,26 @@ async def _hashar_documento(
     )
 
 
-async def _processar_item(
-    documento,
-    upload_root: Path,
-    rclone_config,
-    itens: list[dict],
-) -> None:
-    """Processa um único documento de forma isolada: qualquer falha vira
-    divergência classificada; ``CancelledError`` é propagado para permitir
-    cancelamento ordenado do lote."""
+async def _processar_item(documento, upload_root: Path, rclone_config, itens: list[dict]) -> None:
     try:
         calculado = await _hashar_documento(documento, upload_root, rclone_config)
     except _SemFonteRemotaError:
-        itens.append({
-            "document_id": documento.id,
-            "motivo": "sem_fonte_remota",
-            "status": "erro",
-        })
+        itens.append({"document_id": documento.id, "motivo": "sem_fonte_remota", "status": "erro"})
         return
     except document_hash_service.HashArquivoIndisponivelError:
-        itens.append({
-            "document_id": documento.id,
-            "motivo": "arquivo_ausente",
-            "status": "nao_disponivel",
-        })
+        itens.append({"document_id": documento.id, "motivo": "arquivo_ausente", "status": "nao_disponivel"})
         return
     except document_hash_service.HashMetadataMismatchError:
-        itens.append({
-            "document_id": documento.id,
-            "motivo": "tamanho_divergente",
-            "status": "erro",
-        })
+        itens.append({"document_id": documento.id, "motivo": "tamanho_divergente", "status": "erro"})
         return
     except Exception as excecao:
         motivo = _motivo_divergencia(excecao) or "infraestrutura_generica"
-        logger.exception("falha pontual no rescan de %s", documento.id)
-        itens.append({
-            "document_id": documento.id,
-            "motivo": motivo,
-            "status": "erro",
-        })
+        logger.warning(
+            "Falha pontual no rescan; document_id=%s exception_type=%s",
+            documento.id,
+            type(excecao).__name__,
+        )
+        itens.append({"document_id": documento.id, "motivo": motivo, "status": "erro"})
         return
     itens.append({
         "document_id": documento.id,
@@ -150,51 +105,74 @@ async def _processar_item(
 
 
 async def _enriquecer_divergencias(
-    db, itens: list[dict], documentos_map: dict[str, str], batch_id: str = "",
+    db,
+    itens: list[dict],
+    documentos_map: dict[str, object],
+    batch_id: str = "",
 ) -> None:
-    """Compara o SHA calculado com o último intake de cada item concluído
-    e marca ``diverge_do_intake`` quando houver diferença — mantendo o
-    hash de intake para triagem humana, sem path ou CPF (LGPD)."""
+    """Compara hash físico com ``Document.sha256`` e intake e persiste estados."""
+    agora = datetime.now(timezone.utc)
     for item in itens:
+        documento = documentos_map.get(item["document_id"])
+        sha_intake = None
+
         if item["status"] == "concluido":
+            calculado = item.get("sha256_calculado")
+            sha_registrado = getattr(documento, "sha256", None) if documento else None
+            if sha_registrado:
+                if calculado != sha_registrado:
+                    item["motivo"] = "diverge_do_documento"
+                    if documento is not None:
+                        documento.integrity_status = "divergent"
+                elif documento is not None:
+                    documento.integrity_status = "verified"
+            elif documento is not None:
+                documento.integrity_status = "legacy_unregistered"
+
+            if documento is not None:
+                documento.integrity_verified_at = agora
+
             try:
                 intakes = await buscar_intake_sha(db, item["document_id"])
-            except Exception as excecao:  # falha pontual não derruba o lote
+            except Exception as excecao:
                 logger.warning(
-                    "[rescan] intake indisponível (%s: %s) para documento %s",
-                    type(excecao).__name__, str(excecao)[:100],
+                    "Intake indisponível durante rescan; document_id=%s exception_type=%s",
                     item["document_id"],
+                    type(excecao).__name__,
                 )
                 intakes = []
             if intakes:
-                ultimo_intake = (
+                sha_intake = (
                     intakes[0].sha256 if hasattr(intakes[0], "sha256")
                     else intakes[0]["sha256"]
                 )
-                if ultimo_intake and ultimo_intake != item["sha256_calculado"]:
-                    item["motivo"] = "diverge_do_intake"
-                    item["sha256_intake"] = ultimo_intake
-                else:
-                    item["sha256_intake"] = ultimo_intake or ""
-        # Grava o item do lote independentemente do status/motivo.
+                if sha_intake and sha_intake != calculado:
+                    if not item["motivo"]:
+                        item["motivo"] = "diverge_do_intake"
+                    if documento is not None:
+                        documento.integrity_status = "divergent"
+        elif documento is not None:
+            documento.integrity_status = (
+                "unavailable" if item["status"] == "nao_disponivel" else "error"
+            )
+            documento.integrity_verified_at = agora
+
         try:
             await gravar_item_rescan(
                 db,
                 batch_id,
                 item["document_id"],
                 sha256_calculado=item.get("sha256_calculado", ""),
+                sha256_intake=sha_intake or "",
                 motivo=item["motivo"] or None,
                 status=item["status"],
             )
         except Exception as excecao:
             logger.warning(
-                "[rescan] gravação falhou (%s: %s) para documento %s",
-                type(excecao).__name__, str(excecao)[:100],
+                "Gravação de item rescan falhou; document_id=%s exception_type=%s",
                 item["document_id"],
+                type(excecao).__name__,
             )
-
-
-# ──────────────────────── Pontos de fiação (mockáveis) ────────────────────
 
 
 async def selecionar_documentos(
@@ -203,8 +181,6 @@ async def selecionar_documentos(
     client_id: str | None = None,
     case_id: str | None = None,
 ) -> list:
-    """Seleciona documentos vigentes (``deleted_at IS NULL``) — fonte única
-    de alvos do rescan."""
     from sqlalchemy import select
     from app.models.document import Document
 
@@ -219,11 +195,7 @@ async def selecionar_documentos(
     return list(resultado.scalars().all())
 
 
-async def buscar_intake_sha(
-    db, document_id: str,
-) -> list:
-    """Retorna os itens de intake mais recentes (desc por ``created_at``)
-    do documento — para comparação com o SHA recalculado."""
+async def buscar_intake_sha(db, document_id: str) -> list:
     from sqlalchemy import desc, select
     from app.models.document_intake import DocumentIntakeItem
 
@@ -242,10 +214,10 @@ async def gravar_item_rescan(
     batch_id: str,
     document_id: str,
     sha256_calculado: str,
-    motivo: str,
+    motivo: str | None,
     status: str,
+    sha256_intake: str = "",
 ) -> None:
-    """Grava ``document_hash_rescan_items`` com commit próprio por item."""
     from app.models.document_rescan import DocumentHashRescanItem
 
     db.add(DocumentHashRescanItem(
@@ -255,18 +227,15 @@ async def gravar_item_rescan(
         status=status,
         motivo=motivo or None,
         sha256_calculado=sha256_calculado or None,
+        sha256_intake=sha256_intake or None,
     ))
     await db.flush()
     await db.commit()
 
 
 def _novo_id() -> str:
-    """Id UUID-4 sem hífen, compatível com o padrão do repositório."""
     import uuid
     return uuid.uuid4().hex
-
-
-# ──────────────────────────── Orquestração do lote ───────────────────────
 
 
 async def executar_rescan(
@@ -277,15 +246,6 @@ async def executar_rescan(
     db=None,
     batch_id: str = "",
 ) -> RescanResultado:
-    """Recalcula SHA-256 dos ``documentos`` e devolve ``RescanResultado``.
-    Cada item é processado de forma isolada: falhas individuais viram
-    divergências classificadas, sem abortar o lote. Cancelamento propagado
-    para encerramento ordenado (``documentos`` é a fonte única de alvos).
-
-    Quando ``db`` é informado, compara o hash calculado com o último intake
-    (``buscar_intake_sha``), marca ``diverge_do_intake`` e grava o item do
-    lote (``gravar_item_rescan``). Sem ``db`` o serviço funciona como
-    primitiva pura — útil em testes unitários e backfill sem banco."""
     _upload_root = Path(upload_root)
     itens: list[dict] = []
     documentos_map = {doc.id: doc for doc in documentos}
@@ -301,9 +261,7 @@ async def executar_rescan(
         await _enriquecer_divergencias(db, itens, documentos_map, batch_id)
 
     erros = sum(1 for item in itens if item["status"] == "erro")
-    nao_disponiveis = sum(
-        (1 for item in itens if item["status"] == "nao_disponivel"),
-    )
+    nao_disponiveis = sum(1 for item in itens if item["status"] == "nao_disponivel")
     concluidos = len(documentos) - erros - nao_disponiveis
 
     return RescanResultado(
