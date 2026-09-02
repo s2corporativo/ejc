@@ -79,25 +79,21 @@ async def anonimizar_cliente(
     motivo_limpo = (motivo or "").strip()
     if bloqueios and forcar and not motivo_limpo:
         # Transformação irreversível + override de representação ativa exige
-        # fundamento explícito. Sem isso a trilha provaria o ato, mas não a
-        # decisão administrativa/jurídica que autorizou a exceção.
+        # fundamento explícito. O texto livre é exigido como confirmação humana,
+        # mas NÃO é persistido no WORM, pois pode conter PII/dado sensível.
         raise HTTPException(
             422,
             "Justificativa obrigatória para anonimização forçada com bloqueios ativos",
         )
 
-    # A justificativa precisa permanecer auditável, mas jamais em texto bruto:
-    # operador pode colar CPF/CNPJ, processo, e-mail, telefone ou nome. O WORM
-    # recebe somente versão sanitizada e curta, em campo estruturado restrito.
-    motivo_sanitizado = None
-    if motivo_limpo:
-        from app.services.sanitizer import sanitizar_pii
-
-        motivo_sanitizado, _ = sanitizar_pii(
-            motivo_limpo,
-            [cliente.nome_exibicao] if cliente.nome_exibicao else None,
-        )
-        motivo_sanitizado = motivo_sanitizado.strip()[:500] or None
+    # Auditoria usa somente vocabulário controlado. Nunca persiste o teor livre
+    # de `motivo`: sanitização por regex não garante remoção de nomes de terceiros,
+    # saúde ou outros dados sensíveis que poderiam ficar imutáveis no WORM.
+    codigo_justificativa = (
+        "OVERRIDE_REPRESENTACAO_ATIVA"
+        if bloqueios and forcar
+        else "ANONIMIZACAO_SEM_BLOQUEIO"
+    )
 
     agora = datetime.now(timezone.utc)
 
@@ -134,12 +130,12 @@ async def anonimizar_cliente(
     for u in usuarios_portal:
         u.is_active = False
 
-    # WORM: resumo em `detalhes` sem PII + fundamento sanitizado em payload
-    # estruturado. Isso preserva a substância da decisão para auditoria futura
-    # sem perpetuar o texto livre original do operador.
+    # WORM: somente metadados controlados, suficientes para comprovar o tipo da
+    # decisão sem reter texto livre potencialmente pessoal/sensível.
     detalhes = (
         "Anonimização LGPD art.17; "
-        f"justificativa_sanitizada={'sim' if motivo_sanitizado else 'nao'}"
+        f"justificativa_informada={'sim' if bool(motivo_limpo) else 'nao'}; "
+        f"codigo={codigo_justificativa}"
     )
     if bloqueios:
         detalhes += f"; FORÇADO apesar de {len(bloqueios)} bloqueio(s) ativo(s)"
@@ -154,7 +150,8 @@ async def anonimizar_cliente(
         dados_depois={
             "forcado": bool(forcar and bloqueios),
             "bloqueios_ignorados": len(bloqueios),
-            "justificativa_sanitizada": motivo_sanitizado,
+            "justificativa_informada": bool(motivo_limpo),
+            "codigo_justificativa": codigo_justificativa,
         },
     )
     await db.commit()
