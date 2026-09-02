@@ -130,6 +130,22 @@ async def test_ia_analise_cliente_usa_orquestrador_e_preserva_ailog_hitl(monkeyp
     assert chamada["params"]["surface"] == "cliente_ia"
     assert "Empresa ACME" not in chamada["mensagem"]
     assert "Total de casos não excluídos: 1" in chamada["mensagem"]
+    assert "[INDICADORES AGREGADOS DO CLIENTE]" in chamada["mensagem"]
+
+
+def test_categoria_ailog_cliente_nao_contamina_resumo_documental():
+    """O perfil sem RAG continua sendo RESUMO, mas a telemetria da superfície
+    Cliente IA preserva a categoria histórica `outro`. Resumo documental comum
+    continua em `resumo_documento`."""
+    from app.services.ai.core.audit_logger import _tipo_uso
+    from app.services.system_prompts import TarefaIA
+
+    prompt_cliente = (
+        "Analise exclusivamente os indicadores agregados fornecidos.\n"
+        "[INDICADORES AGREGADOS DO CLIENTE]\nTotal de casos não excluídos: 2"
+    )
+    assert _tipo_uso(TarefaIA.RESUMO, prompt_cliente) == AITipoUso.outro
+    assert _tipo_uso(TarefaIA.RESUMO, "Resuma o documento anexado.") == AITipoUso.resumo_documento
 
 
 # ── intelligence.py (legado vivo) :: analise_impacto ──────────────────────────
