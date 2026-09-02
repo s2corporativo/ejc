@@ -43,6 +43,12 @@ _CATEGORIAS_RESTRITAS = {
     "andamento_processual",
 }
 
+# Categorias cujo estado de domínio é autoritativo para o estado do RAG. Nelas,
+# uma regressão da peça (ex.: aprovada → em_revisao após edição) DEVE rebaixar
+# `rag_status`, em vez de aplicar a regra genérica dos ingestores periódicos que
+# preserva aprovações humanas contra re-feed automático.
+_CATEGORIAS_RAG_ESTADO_AUTORITATIVO = {"peca_interna", "peca_escritorio"}
+
 # User-Agent realista — portais públicos rejeitam clientes anônimos/bots.
 _UA = (
     "Mozilla/5.0 (compatible; EJC-LegalBot/1.0; "
@@ -299,7 +305,7 @@ async def upsert_documento(
     chunks: list[str] | None = None,
     paginas: list[dict] | None = None,
     forcar_nova_versao: bool = False,
-    preservar_aprovacao_rag: bool = True,
+    preservar_aprovacao_rag: bool | None = None,
 ) -> str:
     """Insere/atualiza um documento com versionamento e isolamento por cliente.
 
@@ -310,11 +316,10 @@ async def upsert_documento(
     desative ou reutilize chunks de outro. Documentos públicos usam client_id
     NULL e seguem globalmente únicos.
 
-    ``preservar_aprovacao_rag`` mantém a regra histórica de re-feed por padrão:
-    um documento já aprovado não é rebaixado só porque um ingestor periódico
-    reenviou ``rag_status=pendente``. Consumidores cujo estado de domínio é a
-    fonte autoritativa (ex.: ciclo jurídico de uma peça interna) podem passar
-    ``False`` para permitir rebaixamento explícito sem apagar uma recusa humana.
+    Por padrão, ingestores preservam aprovação humana contra re-feed automático.
+    Peças internas são exceção deliberada: seu próprio ciclo de vida é a fonte
+    autoritativa, então aprovação/regressão deve refletir imediatamente no RAG.
+    O parâmetro continua disponível para chamadores com política explícita.
     """
     conteudo = normalizar(conteudo)
     if len(conteudo) < 50:
@@ -326,6 +331,9 @@ async def upsert_documento(
         )
     if not (chave_origem or "").strip():
         raise ValueError("chave_origem é obrigatória para ingestão idempotente")
+
+    if preservar_aprovacao_rag is None:
+        preservar_aprovacao_rag = categoria not in _CATEGORIAS_RAG_ESTADO_AUTORITATIVO
 
     # Gate de confiança (governança de IA): grava no extra JSONB a chave
     # canônica lida por ia_governanca._conf.
