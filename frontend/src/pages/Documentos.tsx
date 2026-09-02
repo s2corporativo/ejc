@@ -57,7 +57,6 @@ const CAN_LINK = new Set([
   "estagiario",
 ]);
 const LEGACY_TYPES = ["procuracao", "contrato", "decisao", "peticao", "prova", "outro"];
-const PREVIEW_EXT = new Set([".pdf", ".jpg", ".jpeg", ".png"]);
 
 const extOf = (name?: string | null) => {
   const value = name || "";
@@ -512,7 +511,6 @@ export default function Documentos() {
 
       {casoFiltro && (
         <CaseFilterChip
-          casoId={casoFiltro}
           nome={casoFiltroNome}
           onRemove={removerFiltro}
         />
