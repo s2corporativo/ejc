@@ -1,12 +1,11 @@
 """Visão financeira consolidada — tela única.
 
 GET /api/v1/financeiro/consolidado?competencia=YYYY-MM
-Receitas classificadas + despesas por competência + caixa do período.
+GET /api/v1/financeiro/demonstrativo?competencia=YYYY-MM
 
-Princípio contábil operacional deste endpoint: entrada de caixa vem de
-`fee_payments`; `fees.valor` representa o valor contratado/original e só serve
-para apurar o saldo ainda a receber. Isso evita reconhecer integralmente um fee
-no mês da quitação quando parcelas foram recebidas em meses anteriores.
+Princípio operacional: caixa usa pagamentos/baixas efetivas; competência usa
+vencimento contratual dos honorários e a competência declarada das despesas.
+O demonstrativo é GERENCIAL, não substitui escrituração ou DRE contábil.
 """
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
@@ -33,9 +32,19 @@ def _money(v) -> Decimal:
 
 _suc = getattr(FeeTipo, "sucumbencia", None)
 _SUCUMB = _suc.value if _suc is not None else "sucumbencia"
-
-# Least-privilege: caixa/receitas do escritório só p/ gestão/financeiro.
 _GESTOR_FIN = {"superadmin", "admin", "socio", "financeiro"}
+
+
+def _exigir_financeiro(cu: User) -> None:
+    if cu.role.value not in _GESTOR_FIN:
+        raise HTTPException(403, "Acesso restrito a gestão/financeiro")
+
+
+def _competencia_atual(competencia: Optional[str]) -> str:
+    if competencia:
+        return competencia
+    t = date.today()
+    return f"{t.year}-{t.month:02d}"
 
 
 @router.get("/consolidado")
@@ -44,20 +53,10 @@ async def consolidado(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    if cu.role.value not in _GESTOR_FIN:
-        raise HTTPException(403, "Acesso restrito a gestão/financeiro")
-    if not competencia:
-        t = date.today()
-        competencia = f"{t.year}-{t.month:02d}"
+    _exigir_financeiro(cu)
+    competencia = _competencia_atual(competencia)
     mes_ref = date.fromisoformat(f"{competencia}-01")
 
-    # ── Receitas / saldos de honorários ──────────────────────────────
-    # Duas bases independentes:
-    # 1) `pagamentos_mes`: fluxo de caixa efetivamente recebido no período;
-    # 2) `saldos`: valor original menos todos os pagamentos já registrados.
-    #
-    # Percentuais sem valor monetário realizado não são transformados em reais
-    # por suposição: o contador separado torna essa lacuna visível ao operador.
     fees = (
         await db.execute(
             text(
@@ -146,7 +145,6 @@ async def consolidado(
     percentuais_sem_valor = int(bruto.pop("percentuais_sem_valor") or 0)
     fees = {k: _money(v) for k, v in bruto.items()}
 
-    # ── Despesas (office_expenses) ───────────────────────────────────
     desp = (
         await db.execute(
             text(
@@ -235,4 +233,124 @@ async def consolidado(
             "variavel": desp["variavel"],
             "por_categoria": por_categoria,
         },
+    }
+
+
+@router.get("/demonstrativo")
+async def demonstrativo_gerencial(
+    competencia: Optional[str] = Query(None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Separa competência operacional de fluxo de caixa.
+
+    Não é DRE fiscal/contábil. Receita por competência usa o mês de vencimento
+    do fee (único marcador econômico hoje existente); caixa usa a data efetiva
+    do FeePayment. Despesa por competência usa ``office_expenses.competencia``;
+    saída de caixa usa ``pago_em``. Percentuais sem base monetária ficam fora dos
+    totais em reais e são explicitamente contados.
+    """
+    _exigir_financeiro(cu)
+    competencia = _competencia_atual(competencia)
+    mes_ref = date.fromisoformat(f"{competencia}-01")
+
+    rec = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    COALESCE(SUM(valor) FILTER (
+                        WHERE valor IS NOT NULL AND status != 'cancelado'
+                    ), 0) AS receitas_competencia,
+                    COUNT(*) FILTER (
+                        WHERE valor IS NULL AND percentual_exito IS NOT NULL
+                          AND status != 'cancelado'
+                    ) AS percentuais_sem_base
+                FROM fees
+                WHERE deleted_at IS NULL
+                  AND date_trunc('month', data_vencimento)
+                      = date_trunc('month', CAST(:mes AS date))
+                """
+            ),
+            {"mes": mes_ref},
+        )
+    ).mappings().first()
+
+    despesas_comp = (
+        await db.execute(
+            text(
+                """
+                SELECT COALESCE(SUM(valor), 0)
+                FROM office_expenses
+                WHERE deleted_at IS NULL
+                  AND status != 'cancelado'
+                  AND competencia = :comp
+                """
+            ),
+            {"comp": competencia},
+        )
+    ).scalar()
+
+    entradas_caixa = (
+        await db.execute(
+            text(
+                """
+                SELECT COALESCE(SUM(fp.valor), 0)
+                FROM fee_payments fp
+                JOIN fees f ON f.id = fp.fee_id
+                WHERE f.deleted_at IS NULL
+                  AND date_trunc('month', fp.data_pagamento)
+                      = date_trunc('month', CAST(:mes AS date))
+                """
+            ),
+            {"mes": mes_ref},
+        )
+    ).scalar()
+
+    saidas_caixa = (
+        await db.execute(
+            text(
+                """
+                SELECT COALESCE(SUM(valor), 0)
+                FROM office_expenses
+                WHERE deleted_at IS NULL
+                  AND status = 'pago'
+                  AND pago_em IS NOT NULL
+                  AND date_trunc('month', pago_em)
+                      = date_trunc('month', CAST(:mes AS date))
+                """
+            ),
+            {"mes": mes_ref},
+        )
+    ).scalar()
+
+    receitas_comp = _money(rec["receitas_competencia"])
+    despesas_comp = _money(despesas_comp)
+    entradas_caixa = _money(entradas_caixa)
+    saidas_caixa = _money(saidas_caixa)
+
+    return {
+        "competencia": competencia,
+        "natureza": "gerencial_nao_contabil",
+        "criterios": {
+            "receita_competencia": "mês de data_vencimento do honorário",
+            "despesa_competencia": "office_expenses.competencia",
+            "entrada_caixa": "fee_payments.data_pagamento",
+            "saida_caixa": "office_expenses.pago_em",
+        },
+        "competencia_operacional": {
+            "receitas": receitas_comp,
+            "despesas": despesas_comp,
+            "resultado": _money(receitas_comp - despesas_comp),
+            "percentuais_sem_base_monetaria": int(rec["percentuais_sem_base"] or 0),
+        },
+        "fluxo_caixa": {
+            "entradas": entradas_caixa,
+            "saidas": saidas_caixa,
+            "saldo_periodo": _money(entradas_caixa - saidas_caixa),
+        },
+        "aviso": (
+            "Demonstrativo gerencial do EJC. Não substitui escrituração, DRE ou "
+            "validação contábil/fiscal pelo profissional responsável."
+        ),
     }
