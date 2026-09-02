@@ -1,8 +1,8 @@
 // Central unificada: fusão de atividades e relacionamento em uma única tela.
 // A aba é controlada por ?tab= para deep links. A experiência operacional de
 // atividades usa a CentralAtividadesSimplificada. Links históricos que chegam
-// com `?tipo=` permanecem temporariamente na CentralAtividades antiga para
-// preservar filtros/ações durante a transição e manter rollback trivial.
+// com `?tipo=` ou `?view=` permanecem temporariamente na CentralAtividades
+// antiga para preservar filtros/visualizações durante a transição.
 import { useSearchParams } from "react-router";
 import { CalendarClock, Users } from "lucide-react";
 import { useAuth } from "../stores/auth";
@@ -47,11 +47,13 @@ export default function Central() {
     setSearchParams(params, { replace: true });
   };
 
-  // `/prazos`, `/tarefas`, `/intimacoes` e `/suspensoes` ainda redirecionam
-  // para `/atividades?tipo=...`. Enquanto esses redirects não forem migrados,
-  // o modo compatível mantém exatamente a semântica anterior em vez de ignorar
-  // silenciosamente o filtro. A rota normal `/atividades` já usa a UX nova.
-  const legacyTypedDeepLink = Boolean(searchParams.get("tipo"));
+  // `/prazos`, `/tarefas`, `/intimacoes`, `/suspensoes`, `/agenda` e `/kanban`
+  // ainda redirecionam usando `tipo`/`view`. Enquanto os redirects não forem
+  // migrados, o modo compatível mantém a semântica anterior em vez de ignorar
+  // silenciosamente filtros ou visualizações. `/atividades` limpa já usa a UX nova.
+  const legacyDeepLink = Boolean(
+    searchParams.get("tipo") || searchParams.get("view"),
+  );
 
   return (
     <div>
@@ -83,7 +85,7 @@ export default function Central() {
       )}
       {tab === "relacionamento" ? (
         <CentralRelacionamento />
-      ) : legacyTypedDeepLink ? (
+      ) : legacyDeepLink ? (
         <CentralAtividades />
       ) : (
         <CentralAtividadesSimplificada />
