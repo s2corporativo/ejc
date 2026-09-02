@@ -3,10 +3,12 @@
 GET /api/v1/financeiro/consolidado?competencia=YYYY-MM
 GET /api/v1/financeiro/atencao
 GET /api/v1/financeiro/demonstrativo?competencia=YYYY-MM
+GET /api/v1/financeiro/fechamento-inteligente?competencia=YYYY-MM
 
 Princípio operacional: caixa usa pagamentos/baixas efetivas; competência usa
 vencimento contratual dos honorários e a competência declarada das despesas.
-O demonstrativo é GERENCIAL, não substitui escrituração ou DRE contábil.
+O demonstrativo e o pré-fechamento são GERENCIAIS e não substituem escrituração,
+DRE contábil ou validação fiscal pelo profissional responsável.
 """
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
@@ -46,6 +48,25 @@ def _competencia_atual(competencia: Optional[str]) -> str:
         return competencia
     t = date.today()
     return f"{t.year}-{t.month:02d}"
+
+
+def _classificar_fechamento(itens: list[dict]) -> tuple[str, int]:
+    """Classifica o pré-fechamento sem persistir decisão de negócio.
+
+    O score é deliberadamente simples e explicável: cada categoria bloqueante
+    presente reduz 25 pontos e cada categoria de revisão reduz 7. A quantidade
+    de linhas aparece no detalhe, mas não multiplica a penalidade para evitar
+    que uma competência volumosa pareça estruturalmente pior só por ter mais
+    lançamentos.
+    """
+    bloqueios = sum(1 for item in itens if item.get("severidade") == "bloqueio")
+    revisoes = sum(1 for item in itens if item.get("severidade") == "revisao")
+    score = max(0, 100 - (bloqueios * 25) - (revisoes * 7))
+    if bloqueios:
+        return "bloqueado", score
+    if revisoes:
+        return "revisao", score
+    return "pronto", score
 
 
 @router.get("/consolidado")
@@ -546,5 +567,224 @@ async def demonstrativo_gerencial(
         "aviso": (
             "Demonstrativo gerencial do EJC. Não substitui escrituração, DRE ou "
             "validação contábil/fiscal pelo profissional responsável."
+        ),
+    }
+
+
+@router.get("/fechamento-inteligente")
+async def fechamento_inteligente(
+    competencia: Optional[str] = Query(None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Pré-fechamento gerencial read-only da competência.
+
+    Não grava estado de fechamento e não torna o período imutável. Essa parte
+    depende de schema próprio e deve entrar somente na próxima migration linear,
+    após a revisão 156 hoje reservada por outra frente. Aqui o objetivo é dar
+    ao gestor um gate explicável e reproduzível antes do fechamento definitivo.
+    """
+    _exigir_financeiro(cu)
+    competencia = _competencia_atual(competencia)
+    mes_ref = date.fromisoformat(f"{competencia}-01")
+
+    fee_integridade = (
+        await db.execute(
+            text(
+                """
+                WITH pagos AS (
+                    SELECT fee_id, COALESCE(SUM(valor), 0) AS total_pago
+                    FROM fee_payments
+                    GROUP BY fee_id
+                )
+                SELECT
+                    COUNT(*) FILTER (
+                        WHERE f.valor IS NOT NULL
+                          AND COALESCE(p.total_pago, 0) > f.valor
+                    ) AS overpayment,
+                    COUNT(*) FILTER (
+                        WHERE CAST(f.status AS text) = 'pago'
+                          AND f.valor IS NOT NULL
+                          AND COALESCE(p.total_pago, 0) < f.valor
+                    ) AS pago_com_saldo,
+                    COUNT(*) FILTER (
+                        WHERE f.valor IS NULL
+                          AND f.percentual_exito IS NOT NULL
+                          AND CAST(f.status AS text) IN ('pendente','atrasado')
+                          AND date_trunc('month', f.data_vencimento)
+                              = date_trunc('month', CAST(:mes AS date))
+                    ) AS percentuais_sem_base,
+                    COUNT(*) FILTER (
+                        WHERE CAST(f.status AS text) IN ('pendente','atrasado')
+                          AND f.valor IS NOT NULL
+                          AND f.data_vencimento <=
+                              (date_trunc('month', CAST(:mes AS date))
+                               + INTERVAL '1 month - 1 day')::date
+                          AND GREATEST(f.valor - COALESCE(p.total_pago, 0), 0) > 0
+                    ) AS recebiveis_pendentes,
+                    COALESCE(SUM(
+                        GREATEST(f.valor - COALESCE(p.total_pago, 0), 0)
+                    ) FILTER (
+                        WHERE CAST(f.status AS text) IN ('pendente','atrasado')
+                          AND f.valor IS NOT NULL
+                          AND f.data_vencimento <=
+                              (date_trunc('month', CAST(:mes AS date))
+                               + INTERVAL '1 month - 1 day')::date
+                    ), 0) AS recebiveis_pendentes_valor
+                FROM fees f
+                LEFT JOIN pagos p ON p.fee_id = f.id
+                WHERE f.deleted_at IS NULL
+                  AND CAST(f.status AS text) != 'cancelado'
+                """
+            ),
+            {"mes": mes_ref},
+        )
+    ).mappings().first()
+
+    desp_integridade = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    COUNT(*) FILTER (
+                        WHERE status = 'pago' AND pago_em IS NULL
+                    ) AS pagas_sem_data,
+                    COUNT(*) FILTER (
+                        WHERE status = 'pendente'
+                          AND vencimento IS NOT NULL
+                          AND vencimento <=
+                              (date_trunc('month', CAST(:mes AS date))
+                               + INTERVAL '1 month - 1 day')::date
+                    ) AS despesas_pendentes,
+                    COALESCE(SUM(valor) FILTER (
+                        WHERE status = 'pendente'
+                          AND vencimento IS NOT NULL
+                          AND vencimento <=
+                              (date_trunc('month', CAST(:mes AS date))
+                               + INTERVAL '1 month - 1 day')::date
+                    ), 0) AS despesas_pendentes_valor
+                FROM office_expenses
+                WHERE deleted_at IS NULL
+                  AND competencia = :comp
+                  AND status != 'cancelado'
+                """
+            ),
+            {"mes": mes_ref, "comp": competencia},
+        )
+    ).mappings().first()
+
+    comprovantes = (
+        await db.execute(
+            text(
+                """
+                SELECT COUNT(*) AS qtd, COALESCE(SUM(fp.valor), 0) AS total
+                FROM fee_payments fp
+                JOIN fees f ON f.id = fp.fee_id
+                WHERE f.deleted_at IS NULL
+                  AND fp.comprovante_doc_id IS NULL
+                  AND date_trunc('month', fp.data_pagamento)
+                      = date_trunc('month', CAST(:mes AS date))
+                """
+            ),
+            {"mes": mes_ref},
+        )
+    ).mappings().first()
+
+    itens: list[dict] = []
+
+    def adicionar(codigo: str, severidade: str, titulo: str, qtd, *, valor=None, acao=None):
+        quantidade = int(qtd or 0)
+        if not quantidade:
+            return
+        itens.append({
+            "codigo": codigo,
+            "severidade": severidade,
+            "titulo": titulo,
+            "qtd": quantidade,
+            "valor": _money(valor) if valor is not None else None,
+            "acao": acao,
+        })
+
+    adicionar(
+        "overpayment",
+        "bloqueio",
+        "Honorários com recebimento acima do valor contratado",
+        fee_integridade["overpayment"],
+        acao={"tab": "honorarios"},
+    )
+    adicionar(
+        "pago_com_saldo",
+        "bloqueio",
+        "Honorários marcados como pagos ainda possuem saldo",
+        fee_integridade["pago_com_saldo"],
+        acao={"tab": "honorarios"},
+    )
+    adicionar(
+        "despesa_paga_sem_data",
+        "bloqueio",
+        "Despesas pagas sem data efetiva de pagamento",
+        desp_integridade["pagas_sem_data"],
+        acao={"tab": "despesas"},
+    )
+    adicionar(
+        "percentual_sem_base",
+        "bloqueio",
+        "Honorários percentuais da competência ainda sem base monetária",
+        fee_integridade["percentuais_sem_base"],
+        acao={"tab": "honorarios"},
+    )
+    adicionar(
+        "recebiveis_pendentes",
+        "revisao",
+        "Contas a receber permanecem abertas até o fim da competência",
+        fee_integridade["recebiveis_pendentes"],
+        valor=fee_integridade["recebiveis_pendentes_valor"],
+        acao={"tab": "honorarios", "status": "pendente"},
+    )
+    adicionar(
+        "despesas_pendentes",
+        "revisao",
+        "Despesas da competência permanecem pendentes",
+        desp_integridade["despesas_pendentes"],
+        valor=desp_integridade["despesas_pendentes_valor"],
+        acao={"tab": "despesas", "status": "pendente"},
+    )
+    adicionar(
+        "pagamentos_sem_comprovante",
+        "revisao",
+        "Recebimentos do mês estão sem comprovante documental",
+        comprovantes["qtd"],
+        valor=comprovantes["total"],
+        acao={"tab": "honorarios"},
+    )
+
+    status, score = _classificar_fechamento(itens)
+    snapshot = await demonstrativo_gerencial(competencia, db, cu)
+    bloqueios = [item for item in itens if item["severidade"] == "bloqueio"]
+    revisoes = [item for item in itens if item["severidade"] == "revisao"]
+
+    return {
+        "competencia": competencia,
+        "modo": "pre_fechamento_read_only",
+        "status": status,
+        "score_integridade": score,
+        "pode_fechar_persistente": False,
+        "bloqueios": bloqueios,
+        "revisoes": revisoes,
+        "total_bloqueios": len(bloqueios),
+        "total_revisoes": len(revisoes),
+        "snapshot": snapshot,
+        "dependencia_estrutural": (
+            "O fechamento imutável depende de migration própria após a revisão "
+            "Alembic 156 atualmente reservada por outra frente."
+        ),
+        "recomendacao": (
+            "Corrija os bloqueios antes de fechar. Pendências de revisão podem "
+            "permanecer abertas desde que sejam conscientemente conciliadas e "
+            "documentadas no fechamento definitivo."
+        ),
+        "aviso": (
+            "Pré-fechamento gerencial do EJC. Não congela lançamentos e não "
+            "substitui conciliação bancária, escrituração ou validação contábil."
         ),
     }
