@@ -225,15 +225,40 @@ def _registrar_job() -> None:
 
 
 def instalar() -> None:
+    """Instala primeiro a barreira jurídica; recursos cognitivos degradam isolados.
+
+    `_instalar_wrappers` é crítico: qualquer falha nele propaga e, por consequência,
+    impede o boot via `event_subscribers`. Categoria de IA e agendamento do feed são
+    auxiliares; falha neles não pode remover a barreira já instalada nem derrubar o
+    backend inteiro.
+    """
     global _INSTALADO
     if _INSTALADO:
         return
-    # Segurança primeiro: os wrappers que bloqueiam criação automática são
-    # instalados antes da telemetria/job opcional.
+
+    # CRÍTICO: se falhar, a exceção deve chegar ao boot.
     _instalar_wrappers()
-    _registrar_categoria_restrita()
+
+    try:
+        _registrar_categoria_restrita()
+    except Exception as exc:
+        logger.error(
+            "Barreira DataJud ativa, mas categoria cognitiva não foi registrada: %s",
+            exc,
+            exc_info=True,
+        )
+
     # Onda 3 §4.1: o router datajud_intelligence é registrado explicitamente
-    # em app/main.py (antes era anexado a andamentos.router por patch daqui).
-    _registrar_job()
+    # em app/main.py. O job de alimentação é melhoria cognitiva, não controle de
+    # segurança; por isso degrada sem reativar qualquer criador de Deadline.
+    try:
+        _registrar_job()
+    except Exception as exc:
+        logger.error(
+            "Barreira DataJud ativa, mas job cognitivo não foi registrado: %s",
+            exc,
+            exc_info=True,
+        )
+
     _INSTALADO = True
     logger.info("Feed cognitivo DataJud instalado com materialização de prazo bloqueada")
