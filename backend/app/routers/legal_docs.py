@@ -581,7 +581,11 @@ async def atualizar(
             and d.ai_generated and not d.human_reviewed):
         raise HTTPException(
             status_code=422,
-            detail="Peca gerada por IA exige revisao humana registrada antes de aprovar (use POST /legal-docs/{id}/revisar). Provimento OAB 205/2021.",
+            detail=(
+                "Peça gerada por IA exige revisão humana registrada antes de "
+                "aprovar. Use POST /legal-docs/{id}/revisar ou, preferencialmente, "
+                "POST /legal-docs/{id}/conferir-e-assinar."
+            ),
         )
     # ── FLX-070: status 'protocolada' exige advogado + protocolo registrado ──
     if novo_status == "protocolada" and status_atual != "protocolada":
@@ -647,8 +651,15 @@ async def revisar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Registro de revisão humana — desbloqueia aprovação de peça IA."""
-    # P1-5: revisão de peça é ato privativo de advogado (Prov. OAB 205/2021).
+    """Registra revisão humana sem contornar os gates da validação de IA.
+
+    Este endpoint é mantido por compatibilidade com o fluxo legado. Para peça
+    gerada por IA, marcar ``aprovado=true`` exige uma validação jurídica corrente
+    da MESMA versão e submete o AILog ao mesmo citation gate fail-closed do fluxo
+    canônico ``conferir-e-assinar``. O caminho legado não aceita override de
+    citações: quando houver exceção justificada, o advogado deve usar o fluxo
+    canônico, que possui campos próprios e trilha de auditoria para a decisão.
+    """
     requer_advogado(cu, detail="Registrar revisão de peça é restrito a advogados")
     d = (await db.execute(
         select(LegalDoc).where(
@@ -660,6 +671,60 @@ async def revisar(
     if d.case_id:
         await verificar_acesso_caso(db, cu, d.case_id)
 
+    ai_log_id: str | None = None
+    if payload.aprovado and d.ai_generated:
+        validacao = await _ultima_validacao_peca(db, d)
+        ai_log_id = validacao.get("ai_log_id")
+        if not ai_log_id:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Peça gerada por IA exige validação jurídica corrente da versão "
+                    "antes de registrar a revisão. Execute POST /legal-docs/{id}/validar "
+                    "ou use POST /legal-docs/{id}/conferir-e-assinar."
+                ),
+            )
+
+        log = (await db.execute(
+            select(AILog).where(AILog.id == ai_log_id).with_for_update()
+        )).scalar_one_or_none()
+        if log is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Validação corrente da peça está inconsistente; gere nova validação antes de revisar.",
+            )
+        if log.user_id != cu.id and ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
+            raise HTTPException(
+                status_code=403,
+                detail="Sem permissão para revisar este log",
+            )
+
+        if _status_value(log.status_hitl) not in ("revisado", "aplicado"):
+            from app.services.citation_gate import aplicar_gate_hitl
+            await aplicar_gate_hitl(db, log, "revisado", False, None, cu)
+            log.status_hitl = AIStatusHITL.revisado
+            log.revisado_por = cu.id
+            log.revisado_em = datetime.now(timezone.utc)
+            await criar_audit_log(
+                db, cu.id, cu.role.value, "REVISAO_HITL", "ai_logs", ai_log_id,
+                detalhes=f"revisado pelo caminho legado da peca {doc_id}; override_citacoes=false",
+            )
+            await db.flush()
+            validacao = await _ultima_validacao_peca(db, d)
+
+        # O citation gate resolve alucinação, mas o fluxo também exige score e
+        # veredito operacional aptos. Sem isso, `human_reviewed=true` criaria uma
+        # falsa aparência de liberação para uma validação reprovada.
+        if not validacao.get("apto_fluxo"):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Revisão não pode ser registrada como aprovada: a validação "
+                    f"jurídica corrente está em estado '{validacao.get('status')}'. "
+                    f"{validacao.get('motivo')}"
+                ),
+            )
+
     d.human_reviewed = payload.aprovado
     d.revisor_id = cu.id
     d.revisado_em = datetime.now(timezone.utc)
@@ -668,11 +733,12 @@ async def revisar(
 
     await criar_audit_log(
         db, cu.id, cu.role.value, "REVISAO_HITL", "legal_docs", doc_id,
-        detalhes=f"aprovado={payload.aprovado}",
+        detalhes=f"aprovado={payload.aprovado}; ai_log_id={ai_log_id or '-'}",
     )
     await db.commit()
     await db.refresh(d)
-    # ETAPA 2 — re-indexa a versão revisada (qualidade validada) na RAG.
+    # Re-indexa a versão revisada. O indexador mantém `rag_status=pendente` em
+    # status `corrigida`; só aprovada/final/protocolada vira conhecimento aprovado.
     if payload.aprovado:
         background.add_task(indexar_peca_rag, doc_id)
     return d
@@ -692,8 +758,7 @@ async def aprovar(
     a aprovação é recusada (422). Mantém os gates de qualidade existentes
     (validação jurídica + jurisprudência) coerentes com o fluxo do PATCH.
     """
-    # P1-5: aprovar peça é ato de advogado (Prov. OAB 205/2021) — antes bastava
-    # ter acesso ao caso.
+    # Restrição operacional do EJC: aprovação jurídica somente por advogado.
     requer_advogado(cu, detail="Aprovar peça é restrito a advogados")
     d = (await db.execute(
         select(LegalDoc).where(
