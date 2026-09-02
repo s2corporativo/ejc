@@ -32,8 +32,6 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-# ── Helpers (SQL cru, como nos demais *_dblevel.py) ─────────────────────────
-
 async def _criar_user(db, role: str = "advogado") -> str:
     uid = str(uuid4())
     await db.execute(
@@ -126,8 +124,6 @@ async def _dispose_engine_apos_teste():
     await engine.dispose()
 
 
-# ── Achado 1: dossiê e relatório financeiro não podem 500 ──────────────────
-
 async def test_dossie_cliente_nao_quebra_apos_cutover_pii():
     from app.core.database import AsyncSessionLocal
     from app.routers.dossie_cliente import dossie_cliente
@@ -141,7 +137,7 @@ async def test_dossie_cliente_nao_quebra_apos_cutover_pii():
             u_socio = await _carregar_user(db, socio)
             resp = await dossie_cliente(cli, db, u_socio)
             assert resp["cliente"]["id"] == cli
-            assert resp["cliente"]["cpf_cnpj"] == "52998224725"
+            assert resp["cliente"]["cpf_cnpj"] == "***.982.247-**"
         finally:
             await _limpar(db, user_ids=[socio], client_ids=[cli])
 
@@ -160,13 +156,11 @@ async def test_relatorio_financeiro_nao_quebra_apos_cutover_pii():
             u_socio = await _carregar_user(db, socio)
             resp = await relatorio_financeiro_cliente(cli, db, u_socio)
             assert resp["cliente"]["id"] == cli
-            assert resp["cliente"]["cpf_cnpj"] == "11144477735"
+            assert resp["cliente"]["cpf_cnpj"] == "***.444.777-**"
             assert resp["resumo"]["total"] == 250.0
         finally:
             await _limpar(db, client_ids=[cli], user_ids=[socio])
 
-
-# ── Achado 2: /checar-conflito eleva a "critico" com status vigente ────────
 
 async def test_checar_conflito_critico_com_status_de_caso_vigente():
     from app.core.database import AsyncSessionLocal
@@ -178,7 +172,6 @@ async def test_checar_conflito_critico_com_status_de_caso_vigente():
     async with AsyncSessionLocal() as db:
         advogado = await _criar_user(db, "advogado")
         outro_cliente = await _criar_cliente(db, f"Outro Cliente {tok}")
-        # Status pós-migration 126 (não estava em _STATUS_ATIVOS antes do fix).
         caso = await _criar_caso(db, outro_cliente, f"Caso {tok}", status="aberto")
         await _criar_parte(db, caso, nome_parte)
         await db.commit()
@@ -193,8 +186,6 @@ async def test_checar_conflito_critico_com_status_de_caso_vigente():
 
 
 async def test_checar_conflito_case_partes_escapa_wildcard():
-    """Achado 11: nome com wildcard não vira curinga (____ não casa nomes
-    de 4+ caracteres quaisquer)."""
     from app.core.database import AsyncSessionLocal
     from app.routers.clients import checar_conflito
     from app.schemas.client import ConflitoCheckRequest
@@ -208,8 +199,6 @@ async def test_checar_conflito_case_partes_escapa_wildcard():
         await db.commit()
         try:
             u_advogado = await _carregar_user(db, advogado)
-            # "____" não deve casar "Parte Real ..." se o escape funcionar —
-            # antes do fix, qualquer nome de 4+ chars era encontrado.
             res = await checar_conflito(
                 ConflitoCheckRequest(nome="____"), db, u_advogado)
             assert res["nivel"] == "nenhum"
@@ -217,8 +206,6 @@ async def test_checar_conflito_case_partes_escapa_wildcard():
             await _limpar(db, case_ids=[caso], client_ids=[outro_cliente],
                           user_ids=[advogado])
 
-
-# ── Achado 3: /verificar-conflito mascara o documento ───────────────────────
 
 async def test_verificar_conflito_mascara_documento():
     from app.core.database import AsyncSessionLocal
@@ -242,8 +229,6 @@ async def test_verificar_conflito_mascara_documento():
             await _limpar(db, user_ids=[advogado], client_ids=[cli])
 
 
-# ── Achado 4: dossiê segue o gate de titularidade do módulo ────────────────
-
 async def test_dossie_respeita_titularidade():
     from app.core.database import AsyncSessionLocal
     from app.routers.dossie_cliente import dossie_cliente
@@ -257,18 +242,14 @@ async def test_dossie_respeita_titularidade():
         try:
             u_dono = await _carregar_user(db, dono)
             u_outro = await _carregar_user(db, outro)
-            # Dono vê o dossiê do próprio cliente.
             resp = await dossie_cliente(cli, db, u_dono)
             assert resp["cliente"]["id"] == cli
-            # Advogado sem vínculo → 404 (não vaza existência).
             with pytest.raises(HTTPException) as exc:
                 await dossie_cliente(cli, db, u_outro)
             assert exc.value.status_code == 404
         finally:
             await _limpar(db, user_ids=[dono, outro], client_ids=[cli])
 
-
-# ── Achado 5: exclusão bloqueia com caso ativo e desativa o portal ─────────
 
 async def test_remover_cliente_bloqueia_com_caso_ativo():
     from app.core.database import AsyncSessionLocal
@@ -285,8 +266,6 @@ async def test_remover_cliente_bloqueia_com_caso_ativo():
             with pytest.raises(HTTPException) as exc:
                 await remover(cli, False, db, u_socio)
             assert exc.value.status_code == 409
-
-            # forcar=True prossegue apesar do bloqueio.
             resp = await remover(cli, True, db, u_socio)
             assert resp.detail == "Cliente removido"
         finally:
@@ -319,8 +298,6 @@ async def test_remover_cliente_desativa_portal():
             await _limpar(db, client_ids=[cli], user_ids=[socio])
 
 
-# ── Achado 6: status inválido na listagem vira 422 ──────────────────────────
-
 async def test_listar_status_invalido_retorna_422():
     from app.core.database import AsyncSessionLocal
     from app.routers.clients import listar
@@ -337,14 +314,7 @@ async def test_listar_status_invalido_retorna_422():
             await _limpar(db, user_ids=[socio])
 
 
-# ── Achado 8: secretaria e financeiro veem relatório de qualquer cliente ───
-
 async def test_relatorio_financeiro_secretaria_e_financeiro_veem_qualquer_cliente():
-    """Cobre as DUAS camadas de autorização do endpoint: a dependency de topo
-    (_req_fin_adv, restringe por papel) e o gate de titularidade por registro
-    (_cliente_visivel). Chamar só o handler (sem passar por _req_fin_adv)
-    escondia que o teto do router ainda barrava secretaria mesmo depois do
-    gate de titularidade já liberar — achado do Codex no PR #1063."""
     from app.core.database import AsyncSessionLocal
     from app.routers.relatorio_cliente import _req_fin_adv, relatorio_financeiro_cliente
 
@@ -358,13 +328,8 @@ async def test_relatorio_financeiro_secretaria_e_financeiro_veem_qualquer_client
         try:
             u_secretaria = await _carregar_user(db, secretaria)
             u_financeiro = await _carregar_user(db, financeiro)
-
-            # Camada 1: dependency de topo não pode rejeitar quem o achado 8
-            # pretende liberar.
             assert _req_fin_adv(u_secretaria) is u_secretaria
             assert _req_fin_adv(u_financeiro) is u_financeiro
-
-            # Camada 2: gate de titularidade por registro.
             assert (await relatorio_financeiro_cliente(cli, db, u_secretaria))["cliente"]["id"] == cli
             assert (await relatorio_financeiro_cliente(cli, db, u_financeiro))["cliente"]["id"] == cli
         finally:

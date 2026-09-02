@@ -195,10 +195,11 @@ class ClientResponse(ClientBase):
     responsavel_id: Optional[str] = None
     created_at: datetime
     # Cutover C6/LGPD: as colunas cpf/cnpj em texto puro não existem mais no
-    # model. Ao serializar a partir do ORM (from_attributes), lê as propriedades
-    # cpf_plain/cnpj_plain (decrypt de cpf_enc/cnpj_enc) — NUNCA o ciphertext.
-    # AliasChoices mantém compatibilidade caso um dia seja validado de um dict
-    # com a chave "cpf"/"cnpj".
+    # model. Ao validar a partir do ORM, as aliases abaixo leem as propriedades
+    # cpf_plain/cnpj_plain SOMENTE para produzir a máscara canônica. O
+    # serializer remove os valores em claro antes de qualquer resposta HTTP
+    # baseada em ClientResponse. A revelação completa fica restrita a rotas
+    # explicitamente desenhadas para isso (ex.: dossiê/LGPD) e com gate próprio.
     cpf: Optional[str] = Field(
         default=None, validation_alias=AliasChoices("cpf_plain", "cpf"))
     cnpj: Optional[str] = Field(
@@ -207,27 +208,18 @@ class ClientResponse(ClientBase):
     class Config:
         from_attributes = True
 
-    # F-15 (auditoria funcional 16/08/2026): a listagem de clientes expunha
-    # cpf/cnpj DECIFRADOS a qualquer perfil com leitura (minimização LGPD —
-    # art. 6º, III), enquanto a busca global já mascarava. Agora a
-    # listagem devolve SOMENTE o documento mascarado (mesma máscara canônica
-    # da busca global); a revelação completa fica restrita à ficha individual
-    # com gate de titularidade — lá o frontend consulta /clients/{id} com o
-    # mesmo schema, MAS o detalhe pode pedir documento_plain sob demanda.
-    # Nota: ClientResponse é usada em listagem E detalhe; para não quebrar
-    # consumidores internos legítimos do documento completo, o mask aqui se
-    # aplica APENAS ao campo de exibição `documento_exibicao`; cpf/cnpj
-    # continuam disponíveis nos campos originais para uso controlado.
     @model_serializer(mode="wrap")
-    def _mask_documento_listagem(self, handler):
+    def _minimizar_documento(self, handler):
         data = handler(self)
-        # Listagem/leitura comum: expõe o mascarado; CPF/CNPJ em claro
-        # continuam no payload apenas para rotas de detalhe autenticado.
         mascara = None
         if data.get("cpf"):
             mascara = self._mascarar(str(data["cpf"]))
         elif data.get("cnpj"):
             mascara = self._mascarar(str(data["cnpj"]))
+        # LGPD/minimização: não basta a UI preferir a máscara; o valor em claro
+        # não pode trafegar no JSON comum e ficar disponível no DevTools/logs.
+        data.pop("cpf", None)
+        data.pop("cnpj", None)
         data["documento_exibicao"] = mascara
         return data
 
