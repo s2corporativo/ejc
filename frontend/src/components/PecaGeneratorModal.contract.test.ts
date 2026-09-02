@@ -38,4 +38,9 @@ describe("PecaGeneratorModal — contrato da auditoria E2E", () => {
     expect(fonte).toContain('setAreas([])');
     expect(fonte).toContain('setNiveis([])');
   });
+
+  it("exibe individualmente citação identificada mas ainda não confirmada", () => {
+    expect(fonte).toContain('citacao.status === "identificada" ||');
+    expect(fonte).toContain("citacao.citacao || citacao.trecho || \"citação\"");
+  });
 });
