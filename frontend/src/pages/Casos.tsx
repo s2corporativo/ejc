@@ -89,6 +89,8 @@ import {
 import Kanban from "./Kanban";
 import { List } from "lucide-react";
 
+const PAGE_SIZE = 25;
+
 // Taxonomia canônica de áreas: GET /areas via useAreas(), com fallback
 // completo do enum CaseArea (25 áreas) em lib/areas.ts.
 
@@ -324,6 +326,7 @@ export default function Casos() {
   const [arquivoF, setArquivoF] = useState<"ativos" | "arquivados" | "todos">(
     "ativos",
   );
+  const [page, setPage] = useState(1);
   const [desarquivandoId, setDesarquivandoId] = useState<string | null>(null);
   // Exclusão (soft delete → Lixeira) restrita a administração/sócios
   const { user } = useAuth();
@@ -443,8 +446,10 @@ export default function Casos() {
           area: areaF || undefined,
           status: statusF || undefined,
           advogado_id: advogadoF || undefined,
+          case_type: tipoF || undefined,
           arquivo: arquivoF,
-          page_size: 50,
+          page,
+          page_size: PAGE_SIZE,
         },
       })
       .then((r) => {
@@ -487,7 +492,11 @@ export default function Casos() {
       toast.success("Caso excluído — reversível pela Lixeira.");
       setDelCaso(null);
       setDelMotivo("");
-      await load();
+      if (data?.data.length === 1 && page > 1) {
+        setPage((p) => p - 1);
+      } else {
+        await load();
+      }
     } catch (e: any) {
       if (e?.response?.status === 403) {
         toast.error("Sem permissão para excluir casos (apenas admin/sócio).");
@@ -505,7 +514,7 @@ export default function Casos() {
   };
 
   useEffect(() => {
-    // load() inicial fica a cargo do effect de [arquivoF] abaixo
+    // load() inicial fica a cargo do effect de filtros/página abaixo
     // clientes p/ filtro/seletor — falha silenciosa se o perfil (ex.: financeiro)
     // não puder listar clientes (403); o restante de /casos segue funcionando.
     api
@@ -519,9 +528,13 @@ export default function Casos() {
       .catch(() => setAdvogados([]));
   }, []);
   useEffect(() => {
+    setPage(1);
+  }, [search, areaF, tipoF, statusF, advogadoF, arquivoF]);
+  useEffect(() => {
     const t = setTimeout(load, 350);
     return () => clearTimeout(t);
-  }, [search, areaF, statusF, advogadoF, arquivoF]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, areaF, tipoF, statusF, advogadoF, arquivoF, page]);
 
   // Passo 3 do fluxograma documental: abre a REVISÃO antes de qualquer escrita.
   // Só depois de "Confirmar criação" é que salvar() cria o caso e anexa o doc.
@@ -873,6 +886,11 @@ export default function Casos() {
     setPreview(null);
   };
 
+  const totalPages = Math.max(
+    1,
+    Math.ceil((data?.total ?? 0) / (data?.page_size || PAGE_SIZE)),
+  );
+
   return (
     <div>
       <PageHeader
@@ -1067,101 +1085,123 @@ export default function Casos() {
               />
             )
           ) : (
-            <div className="card overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-primary-50/60 text-left dark:bg-white/[0.04]">
-                  <tr>
-                    <th className="px-4 py-2.5 label-caps">Nº interno</th>
-                    <th className="px-4 py-2.5 label-caps">Título</th>
-                    <th className="px-4 py-2.5 label-caps">Área</th>
-                    <th className="px-4 py-2.5 label-caps">Tipo</th>
-                    <th className="px-4 py-2.5 label-caps">Status</th>
-                    <th className="px-4 py-2.5 label-caps">Parte contrária</th>
-                    <th className="px-4 py-2.5 label-caps">Aberto em</th>
-                    {(arquivoF === "arquivados" || podeExcluir) && (
-                      <th className="px-4 py-2.5 label-caps">Ações</th>
-                    )}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">
-                  {(tipoF
-                    ? data.data.filter(
-                        (c: any) => (c.case_type || "judicial") === tipoF,
-                      )
-                    : data.data
-                  ).map((c) => (
-                    <tr
-                      key={c.id}
-                      className="transition-colors duration-150 hover:bg-primary-50/40 dark:hover:bg-white/[0.03]"
-                    >
-                      <td className="px-4 py-3 font-mono text-xs text-bronze-deep font-medium tracking-tight">
-                        <Link to={`/casos/${c.id}`}>{c.numero_interno}</Link>
-                      </td>
-                      <td
-                        className="px-4 py-3 text-navy-800"
-                        style={{ fontWeight: 400 }}
-                      >
-                        <Link to={`/casos/${c.id}`} className="hover:underline">
-                          {c.titulo}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-500 capitalize">
-                        {areaLabel((c as any).area) || c.area}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${CASE_TYPE_COLOR[(c as any).case_type || "judicial"]}`}
-                        >
-                          {CASE_TYPE_LABEL[(c as any).case_type || "judicial"]}
-                          {(c as any).extrajudicial_type
-                            ? ` · ${EXTRAJ_TYPES.find((e) => e.k === (c as any).extrajudicial_type)?.l || ""}`
-                            : ""}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <StatusBadge value={c.status} />
-                      </td>
-                      <td className="px-4 py-3 text-slate-500">
-                        {c.parte_contraria || "—"}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-slate-400">
-                        {fmtDate(c.created_at)}
-                      </td>
+            <>
+              <div className="card overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-primary-50/60 text-left dark:bg-white/[0.04]">
+                    <tr>
+                      <th className="px-4 py-2.5 label-caps">Nº interno</th>
+                      <th className="px-4 py-2.5 label-caps">Título</th>
+                      <th className="px-4 py-2.5 label-caps">Área</th>
+                      <th className="px-4 py-2.5 label-caps">Tipo</th>
+                      <th className="px-4 py-2.5 label-caps">Status</th>
+                      <th className="px-4 py-2.5 label-caps">Parte contrária</th>
+                      <th className="px-4 py-2.5 label-caps">Aberto em</th>
                       {(arquivoF === "arquivados" || podeExcluir) && (
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            {arquivoF === "arquivados" && (
-                              <button
-                                onClick={() => desarquivar(c.id)}
-                                disabled={desarquivandoId === c.id}
-                                className="flex items-center gap-1 text-xs font-medium text-primary-700 hover:underline disabled:opacity-50"
-                              >
-                                <ArchiveRestore size={13} />
-                                {desarquivandoId === c.id
-                                  ? "Desarquivando..."
-                                  : "Desarquivar"}
-                              </button>
-                            )}
-                            {podeExcluir && (
-                              <button
-                                onClick={() => {
-                                  setDelMotivo("");
-                                  setDelCaso(c);
-                                }}
-                                title="Excluir caso (reversível pela Lixeira)"
-                                className="flex min-h-[24px] items-center gap-1 text-xs font-medium text-danger-600 hover:underline"
-                              >
-                                <Trash2 size={13} /> Excluir
-                              </button>
-                            )}
-                          </div>
-                        </td>
+                        <th className="px-4 py-2.5 label-caps">Ações</th>
                       )}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">
+                    {data.data.map((c) => (
+                      <tr
+                        key={c.id}
+                        className="transition-colors duration-150 hover:bg-primary-50/40 dark:hover:bg-white/[0.03]"
+                      >
+                        <td className="px-4 py-3 font-mono text-xs text-bronze-deep font-medium tracking-tight">
+                          <Link to={`/casos/${c.id}`}>{c.numero_interno}</Link>
+                        </td>
+                        <td
+                          className="px-4 py-3 text-navy-800"
+                          style={{ fontWeight: 400 }}
+                        >
+                          <Link to={`/casos/${c.id}`} className="hover:underline">
+                            {c.titulo}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-500 capitalize">
+                          {areaLabel((c as any).area) || c.area}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${CASE_TYPE_COLOR[(c as any).case_type || "judicial"]}`}
+                          >
+                            {CASE_TYPE_LABEL[(c as any).case_type || "judicial"]}
+                            {(c as any).extrajudicial_type
+                              ? ` · ${EXTRAJ_TYPES.find((e) => e.k === (c as any).extrajudicial_type)?.l || ""}`
+                              : ""}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <StatusBadge value={c.status} />
+                        </td>
+                        <td className="px-4 py-3 text-slate-500">
+                          {c.parte_contraria || "—"}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-400">
+                          {fmtDate(c.created_at)}
+                        </td>
+                        {(arquivoF === "arquivados" || podeExcluir) && (
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              {arquivoF === "arquivados" && (
+                                <button
+                                  onClick={() => desarquivar(c.id)}
+                                  disabled={desarquivandoId === c.id}
+                                  className="flex items-center gap-1 text-xs font-medium text-primary-700 hover:underline disabled:opacity-50"
+                                >
+                                  <ArchiveRestore size={13} />
+                                  {desarquivandoId === c.id
+                                    ? "Desarquivando..."
+                                    : "Desarquivar"}
+                                </button>
+                              )}
+                              {podeExcluir && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDelMotivo("");
+                                    setDelCaso(c);
+                                  }}
+                                  title="Excluir caso (reversível pela Lixeira)"
+                                  aria-label={`Excluir caso ${c.titulo}`}
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-danger-600 transition-colors hover:bg-danger-50 hover:text-danger-700 focus:outline-none focus:ring-2 focus:ring-danger-200"
+                                >
+                                  <Trash2 size={16} aria-hidden="true" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500">
+                <span>
+                  Página {page} de {totalPages} · {data.total} caso(s)
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  >
+                    Anterior
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  >
+                    Próxima
+                  </Button>
+                </div>
+              </div>
+            </>
           )}
         </>
       )}
