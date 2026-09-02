@@ -3,14 +3,17 @@
 Cobrem invariantes de validação e normalização que não podem regredir
 silenciosamente, sem exigir acesso a banco de produção.
 """
+import asyncio
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.routers.despesas import DespesaCreate, DespesaUpdate, _normalizar_baixa
+from app.routers.financeiro_consolidado import pendencias_operacionais
 from app.routers.office_contracts import ContractCreate
 from app.routers.partner_withdrawals import WithdrawalCreate
 from app.routers.pix import PixCobrancaIn, gerar_brcode
@@ -130,3 +133,57 @@ def test_brcode_decimal_preserva_centavos_e_crc():
     assert "5406123.45" in codigo
     assert codigo[-8:-4] == "6304"
     assert len(codigo[-4:]) == 4
+
+
+class _ResultadoFake:
+    def __init__(self, *, mapping=None, scalar_value=None):
+        self.mapping = mapping
+        self.scalar_value = scalar_value
+
+    def mappings(self):
+        return self
+
+    def first(self):
+        return self.mapping
+
+    def scalar(self):
+        return self.scalar_value
+
+
+class _DBFake:
+    def __init__(self, resultados):
+        self.resultados = list(resultados)
+
+    async def execute(self, *_args, **_kwargs):
+        return self.resultados.pop(0)
+
+
+def test_fila_atencao_prioriza_risco_e_nao_expoe_pii():
+    db = _DBFake(
+        [
+            _ResultadoFake(mapping={"qtd": 2, "total": Decimal("900.00")}),
+            _ResultadoFake(
+                mapping={
+                    "vencidas_qtd": 1,
+                    "vencidas_total": Decimal("200.00"),
+                    "proximas_qtd": 3,
+                    "proximas_total": Decimal("600.00"),
+                }
+            ),
+            _ResultadoFake(mapping={"qtd": 4, "total": Decimal("1200.00")}),
+            _ResultadoFake(scalar_value=2),
+            _ResultadoFake(scalar_value=1),
+        ]
+    )
+    usuario = SimpleNamespace(role=SimpleNamespace(value="financeiro"))
+
+    resposta = asyncio.run(pendencias_operacionais(db=db, cu=usuario))
+
+    assert resposta["total"] == 6
+    assert [i["prioridade"] for i in resposta["itens"][:2]] == ["alta", "alta"]
+    assert resposta["itens"][0]["codigo"] == "honorarios_vencidos"
+    assert resposta["itens"][0]["valor"] == Decimal("900.00")
+    for item in resposta["itens"]:
+        assert "cliente" not in item
+        assert "case_id" not in item
+        assert "descricao" not in item
