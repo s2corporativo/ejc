@@ -1,8 +1,9 @@
 """Persistência transacional do documento local já preparado pela ingestão.
 
 Esta camada conecta a UoW física ao ``Document``/AuditLog sem assumir
-responsabilidades de autorização, OCR ou seleção de tipo jurídico. O caller deve
-entregar contexto já autorizado e, se houver extração, ``ocr_text`` já sanitizado.
+responsabilidades de autorização ou seleção de tipo jurídico. O caller deve
+entregar contexto já autorizado e, se houver extração, ``ocr_text`` já obtido
+pela camada determinística de extração.
 
 Invariante central:
 
@@ -12,16 +13,13 @@ Não existe ``await`` entre o retorno bem-sucedido de ``db.commit()`` e
 ``ingestao.confirmar()``. Assim, depois que o banco confirma o registro, a UoW
 é marcada como confirmada imediatamente e o context manager não pode compensar
 um arquivo cujo ``Document`` já foi commitado.
-
-Importante: esta camada persiste somente atributos confirmados no model atual de
-``Document``. SHA-256, malware status, OCR-used e metadados extraídos continuam
-fora do model até migration canônica futura.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +30,7 @@ from app.services.document_version_service import (
     configurar_documento_raiz,
     preparar_nova_versao,
 )
+from app.services.malware_scan_service import MalwareScanStatus
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +41,7 @@ class PersistenciaDocumentoInvalidaError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class ConteudoDocumentoPreparado:
-    """Texto de OCR já sanitizado pelo caller."""
+    """Texto de OCR já extraído pelo caller."""
 
     ocr_text: str | None = None
 
@@ -100,7 +99,6 @@ def _validar_dados(
         limite=255,
         obrigatorio=True,
     )
-    # Document.tipo é String(50) no model atual; não ampliar por service.
     tipo = _texto_limitado(dados.tipo, campo="tipo", limite=50)
     case_id = _texto_limitado(dados.case_id, campo="case_id", limite=36)
     client_id = _texto_limitado(dados.client_id, campo="client_id", limite=36)
@@ -135,11 +133,7 @@ def _validar_conteudo(
 
 
 async def _rollback_sem_mascarar(db: AsyncSession) -> None:
-    """Conclui rollback mesmo se houver novo cancelamento durante a limpeza.
-
-    Esta função só é chamada enquanto uma exceção original já está sendo
-    tratada. Cancelamento/erro do próprio rollback nunca substitui essa exceção.
-    """
+    """Conclui rollback mesmo se houver novo cancelamento durante a limpeza."""
 
     tarefa = asyncio.create_task(db.rollback())
     try:
@@ -150,7 +144,6 @@ async def _rollback_sem_mascarar(db: AsyncSession) -> None:
         except BaseException:
             logger.error("Falha ao executar rollback da persistência documental")
     except BaseException:
-        # Não incluir DSN, SQL, errno ou mensagem da exceção de rollback.
         logger.error("Falha ao executar rollback da persistência documental")
 
 
@@ -161,13 +154,7 @@ async def persistir_documento_local(
     dados: DadosPersistenciaDocumento,
     conteudo: ConteudoDocumentoPreparado | None = None,
 ) -> Document:
-    """Persiste um documento local e confirma a UoW somente após commit.
-
-    A função assume a responsabilidade pelo staging desde a entrada no contexto:
-    falha de metadado, versionamento, audit ou commit compensa o arquivo. É seguro
-    o caller também manter um ``async with ingestao`` externo durante OCR; a saída
-    aninhada vê estado confirmado/compensado e é idempotente.
-    """
+    """Persiste um documento local e confirma a UoW somente após commit."""
 
     conteudo = conteudo or ConteudoDocumentoPreparado()
 
@@ -183,6 +170,9 @@ async def persistir_documento_local(
                 predecessor,
             ) = _validar_dados(ingestao, dados)
             conteudo = _validar_conteudo(conteudo)
+            agora = datetime.now(timezone.utc)
+            houve_scan = ingestao.malware_scan_status is not MalwareScanStatus.NAO_SOLICITADO
+            tem_analise = bool(case_id and conteudo.ocr_text)
 
             documento = Document(
                 id=ingestao.doc_id,
@@ -197,14 +187,18 @@ async def persistir_documento_local(
                 confidencialidade=dados.confidencialidade,
                 ocr_text=conteudo.ocr_text,
                 uploaded_by=uploaded_by,
-                # Achado 30: `IngestaoDocumentoLocal` ja expoe `.sha256`,
-                # calculado na gravacao em disco. O valor existia e era
-                # descartado aqui.
                 sha256=ingestao.sha256,
+                malware_scan_status=ingestao.malware_scan_status.value,
+                malware_scanned_at=agora if houve_scan else None,
+                integrity_status="registered",
+                analysis_status="pending" if tem_analise else "not_requested",
+                analysis_updated_at=agora,
+                analysis_source_sha256=ingestao.sha256 if tem_analise else None,
+                rag_status="not_indexed" if tem_analise else None,
             )
 
-            # Adicionar antes de preparar versão é intencional: C1 usa
-            # ``db.no_autoflush`` e prova que nenhum INSERT prematuro ocorre.
+            # Adicionar antes de preparar versão é intencional: o service usa
+            # no_autoflush e mantém INSERT + lock/versionamento na mesma transação.
             db.add(documento)
             if predecessor:
                 await preparar_nova_versao(
@@ -215,8 +209,6 @@ async def persistir_documento_local(
             else:
                 configurar_documento_raiz(documento)
 
-            # Somente depois das validações/versionamento o arquivo sai da
-            # quarentena e ganha o path final.
             ingestao.promover()
 
             await criar_audit_log(
@@ -236,6 +228,8 @@ async def persistir_documento_local(
                     "size_bytes": ingestao.size_bytes,
                     "storage": "local",
                     "malware_scan_status": ingestao.malware_scan_status.value,
+                    "integrity_status": "registered",
+                    "analysis_status": documento.analysis_status,
                 },
             )
             await db.commit()
@@ -243,8 +237,6 @@ async def persistir_documento_local(
             await _rollback_sem_mascarar(db)
             raise
 
-        # Sem await entre commit e confirmação física: cancellation não cria a
-        # janela DB-confirmado/UoW-ainda-compensável.
         ingestao.confirmar()
 
     return documento
