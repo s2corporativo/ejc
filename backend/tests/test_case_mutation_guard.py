@@ -53,6 +53,15 @@ def test_caso_aberto_permanece_editavel():
     assert guard.garantir_caso_editavel(caso) is caso
 
 
+def test_guarda_valida_ownership_antes_e_depois_do_lock():
+    fonte = inspect.getsource(guard.verificar_caso_editavel)
+    primeira_validacao = fonte.index("await verificar_acesso_caso")
+    lock = fonte.index("await serializar_mutacao_caso")
+    segunda_validacao = fonte.rindex("await verificar_acesso_caso")
+
+    assert primeira_validacao < lock < segunda_validacao
+
+
 def test_deadline_create_e_update_usam_guarda_compartilhada():
     from app.routers import deadlines
 
@@ -62,3 +71,4 @@ def test_deadline_create_e_update_usam_guarda_compartilhada():
     assert "verificar_caso_editavel" in fonte_atualizar
     assert "verificar_acesso_caso" not in fonte_criar
     assert "verificar_acesso_caso" not in fonte_atualizar
+    assert "await db.refresh(d)" in fonte_atualizar
