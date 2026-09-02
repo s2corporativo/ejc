@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.security import EQUIPE_JURIDICA, get_current_user, ROLE_LEVEL
 from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.checklist import (
@@ -65,11 +65,16 @@ class AddItemReq(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def _role_value(u: User) -> str:
+    return str(getattr(getattr(u, "role", None), "value", getattr(u, "role", "")) or "")
+
 def _pode_editar(u: User) -> bool:
-    return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["estagiario"]
+    # Checklists são superfície jurídica. `financeiro` (nível 4) não pode ser
+    # promovido pelo piso de `estagiario` (3): usar a allowlist exata canônica.
+    return _role_value(u) in EQUIPE_JURIDICA
 
 def _pode_gerenciar(u: User) -> bool:
-    return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["advogado"]
+    return ROLE_LEVEL.get(_role_value(u), 0) >= ROLE_LEVEL["advogado"]
 
 def _out_template(t: ChecklistTemplate, itens: list = []) -> dict:
     return {
@@ -183,7 +188,7 @@ async def remover_template(
     db:  AsyncSession = Depends(get_db),
     cu:  User = Depends(get_current_user),
 ):
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
+    if ROLE_LEVEL.get(_role_value(cu), 0) < ROLE_LEVEL["socio"]:
         raise HTTPException(403)
     t = (await db.execute(
         select(ChecklistTemplate).where(ChecklistTemplate.id == template_id)
@@ -395,7 +400,8 @@ async def marcar_item(
     elif not req.concluido and era_concluido:
         item.concluido_por = None
         item.concluido_em  = None
-        ck.itens_ok = max(0, (ck.itens_ok or 0) - 1)
+        ck.itens_ok = max(0, (ck.itens_ok or 0) - 1
+        )
 
     # Auto-conclui checklist quando todos os obrigatórios estiverem ok
     obrigatorios = (await db.execute(
