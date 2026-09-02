@@ -627,6 +627,13 @@ async def atualizar(
     ns = ns.value if hasattr(ns, "value") else ns
     if ns in _STATUS_PRE_PROTOCOLO and status_antigo not in _STATUS_PRE_PROTOCOLO and d.case_id:
         background.add_task(_bg_checklist_protocolo, d.case_id, cu.id)
+    # O estado da peça é autoritativo para o conhecimento institucional. Toda
+    # alteração de conteúdo ou transição de lifecycle precisa sincronizar a RAG
+    # depois do commit: promoção libera conhecimento aprovado; edição/regressão
+    # rebaixa e substitui o conteúdo/indexação da versão anterior.
+    status_novo_efetivo = _status_value(d.status)
+    if conteudo_alterado or status_novo_efetivo != status_antigo:
+        background.add_task(indexar_peca_rag, d.id)
     return d
 
 
