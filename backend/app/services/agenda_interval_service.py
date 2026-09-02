@@ -171,21 +171,37 @@ def validar_regra_recorrencia(regra: RegraRecorrencia) -> None:
         raise AgendaTemporalError("recorrência exige quantidade ou data limite")
 
 
-def _adicionar_meses(valor: datetime, meses: int) -> datetime:
+def _adicionar_meses(
+    valor: datetime,
+    meses: int,
+    *,
+    dia_ancora: int | None = None,
+) -> datetime:
     indice = (valor.month - 1) + meses
     ano = valor.year + indice // 12
     mes = indice % 12 + 1
-    dia = min(valor.day, calendar.monthrange(ano, mes)[1])
+    alvo = dia_ancora if dia_ancora is not None else valor.day
+    dia = min(alvo, calendar.monthrange(ano, mes)[1])
     return valor.replace(year=ano, month=mes, day=dia)
 
 
-def _proximo_inicio(valor: datetime, regra: RegraRecorrencia) -> datetime:
+def _inicio_ocorrencia(
+    base_inicio: datetime,
+    regra: RegraRecorrencia,
+    indice_ocorrencia: int,
+) -> datetime:
+    """Calcula cada ocorrência a partir da âncora original, evitando deriva."""
+    saltos = regra.intervalo * indice_ocorrencia
     if regra.frequencia == "diaria":
-        return valor + timedelta(days=regra.intervalo)
+        return base_inicio + timedelta(days=saltos)
     if regra.frequencia == "semanal":
-        return valor + timedelta(weeks=regra.intervalo)
+        return base_inicio + timedelta(weeks=saltos)
     if regra.frequencia == "mensal":
-        return _adicionar_meses(valor, regra.intervalo)
+        return _adicionar_meses(
+            base_inicio,
+            saltos,
+            dia_ancora=base_inicio.day,
+        )
     raise AgendaTemporalError(f"frequência inválida: {regra.frequencia}")
 
 
@@ -197,12 +213,14 @@ def expandir_recorrencia(
 ) -> tuple[IntervaloAgenda, ...]:
     """Expande série com limite rígido; exceção remove só a ocorrência indicada.
 
-    A série é calculada por horário local do evento e só então comparada em UTC,
-    preservando o relógio local em mudanças de offset do timezone.
+    Cada ocorrência é derivada da âncora original, não da ocorrência anterior.
+    Assim, uma série mensal iniciada em dia 31 usa o último dia de fevereiro mas
+    volta ao dia 31 em março, em vez de derivar permanentemente para o dia 28.
     """
     validar_regra_recorrencia(regra)
     tz = timezone_valido(base.timezone)
-    duracao = base.fim.astimezone(tz) - base.inicio.astimezone(tz)
+    base_inicio = base.inicio.astimezone(tz)
+    duracao = base.fim.astimezone(tz) - base_inicio
     excecoes = {
         _aware_local(valor, tz).isoformat()
         for valor in excecoes_inicio
@@ -212,9 +230,9 @@ def expandir_recorrencia(
         limite = _aware_local(limite, tz)
 
     resultados: list[IntervaloAgenda] = []
-    atual = base.inicio.astimezone(tz)
     geradas = 0
     while geradas < MAX_OCORRENCIAS:
+        atual = _inicio_ocorrencia(base_inicio, regra, geradas)
         if limite is not None and atual > limite:
             break
         geradas += 1
@@ -229,7 +247,6 @@ def expandir_recorrencia(
             )
         if regra.quantidade is not None and geradas >= regra.quantidade:
             break
-        atual = _proximo_inicio(atual, regra)
 
     if geradas >= MAX_OCORRENCIAS and regra.quantidade is None:
         # Uma data limite muito distante não pode transformar um request em lote
