@@ -27,6 +27,7 @@ _STATUS_FEE_VALIDOS = frozenset(s.value for s in FeeStatus)
 # diz uma coisa e o sistema faz outra.
 _TIPOS_COM_PERCENTUAL = frozenset({FeeTipo.exito.value, FeeTipo.misto.value})
 
+
 class FeeCreate(BaseModel):
     tipo: str = "fixo"
     descricao: str
@@ -75,8 +76,10 @@ class FeeCreate(BaseModel):
         # fixo cujo percentual `honorarios_oab.py` nunca lê — cobrança que
         # existe no cadastro e não existe no cálculo. Achado da 2ª revisão do
         # Codex no PR #1238.
-        if (self.percentual_exito is not None
-                and self.tipo not in _TIPOS_COM_PERCENTUAL):
+        if (
+            self.percentual_exito is not None
+            and self.tipo not in _TIPOS_COM_PERCENTUAL
+        ):
             raise ValueError(
                 f"'percentual_exito' não se aplica a honorário do tipo "
                 f"{self.tipo!r}: o cálculo só usa percentual em "
@@ -87,8 +90,17 @@ class FeeCreate(BaseModel):
 
 
 class FeeUpdate(BaseModel):
+    """Alteração parcial de honorário.
+
+    Mantém a mesma regra monetária da criação: `valor` nunca pode ser negativo.
+    Campos desconhecidos falham com 422 para evitar atualizações silenciosamente
+    ignoradas em uma superfície financeira.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
     descricao: Optional[str] = None
-    valor: Optional[Decimal] = None
+    valor: Optional[ValorNaoNegativo] = None
     status: Optional[str] = None
     data_vencimento: Optional[date] = None
     observacoes: Optional[str] = None
@@ -105,7 +117,6 @@ class FeeUpdate(BaseModel):
                 f"{v!r}. Valores permitidos: {sorted(_STATUS_FEE_VALIDOS)}"
             )
         return v
-
 
 
 class FeePaymentCreate(BaseModel):
@@ -176,6 +187,7 @@ class FeePaymentCreate(BaseModel):
             )
         return v
 
+
 class FeeResponse(BaseModel):
     id: str
     tipo: str
@@ -188,5 +200,6 @@ class FeeResponse(BaseModel):
     client_id: str
     case_id: Optional[str] = None
     created_at: datetime
+
     class Config:
         from_attributes = True
