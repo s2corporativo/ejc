@@ -28,6 +28,17 @@ from app.schemas.deadline import (
     DeadlineResponse,
     DeadlineUpdate,
 )
+from app.services.deadline_audit_service import (
+    DuplaValidacaoError,
+    ProvaIncompletaError,
+    adicionar_notificacao_reconferencia,
+    construir_prova_calculo,
+    invalidar_conferencia,
+    prazo_critico,
+    preparar_estado_inicial,
+    registrar_conferencia,
+    validar_marcos_prazo,
+)
 from app.services.deadline_calculator import (
     calcular_prazo_processual,
     dias_uteis_restantes,
@@ -48,6 +59,14 @@ _ROLES_RESPONSAVEIS = {
     UserRole.estagiario,
     UserRole.secretaria,
 }
+_MATERIAL_CALCULO = {
+    "data_prazo",
+    "data_publicacao",
+    "termo_inicial",
+    "regime_calculo",
+    "base_legal",
+    "prioridade",
+}
 
 
 def _ids_casos_do_usuario(user: User):
@@ -65,12 +84,7 @@ def _ids_casos_do_usuario(user: User):
 
 
 def _filtro_escopo_prazos(q, cu: User):
-    """Escopo de leitura: prazo avulso é pessoal; prazo de caso herda o caso.
-
-    Antes, `Deadline.case_id.is_(None)` liberava TODO prazo avulso a qualquer
-    usuário interno. Agora gestão mantém visão global e não-gestão só vê prazo
-    do próprio caso ou prazo pelo qual é responsável.
-    """
+    """Escopo de leitura: prazo avulso é pessoal; prazo de caso herda o caso."""
     if is_gestao(cu):
         return q
     return q.where(
@@ -105,7 +119,6 @@ async def _verificar_acesso_prazo(
         return
     if is_gestao(cu) or prazo.responsavel_id == cu.id:
         return
-    # 404 uniforme para não transformar ID de prazo avulso em oráculo.
     raise HTTPException(status_code=404, detail="Prazo não encontrado")
 
 
@@ -116,6 +129,18 @@ async def _validar_responsavel_prazo(
     *,
     case_id: str | None,
 ) -> User:
+    if responsavel_id == cu.id:
+        if (
+            cu.role not in _ROLES_RESPONSAVEIS
+            or getattr(cu, "deleted_at", None) is not None
+            or getattr(cu, "is_active", True) is False
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="responsavel_id inválido: usuário atual não é elegível",
+            )
+        return cu
+
     alvo = (
         await db.execute(
             select(User).where(
@@ -131,7 +156,7 @@ async def _validar_responsavel_prazo(
             detail="responsavel_id inválido: informe usuário interno ativo e elegível",
         )
 
-    if is_gestao(cu) or alvo.id == cu.id:
+    if is_gestao(cu):
         return alvo
 
     if not case_id:
@@ -156,12 +181,7 @@ def _resolver_regime_processual(
     regime: str | None,
     dias_uteis: bool,
 ) -> tuple[str, bool]:
-    """Prazo processual exige regime explícito; nunca presume CPC.
-
-    `dias_uteis` permanece no schema por compatibilidade de transporte, mas não
-    substitui a escolha jurídica do regime. Isso fecha o modo de falha em que
-    ausência de regime era convertida silenciosamente em cível.
-    """
+    """Prazo processual exige regime explícito; nunca presume CPC."""
     del dias_uteis
     if regime:
         return regime, False
@@ -198,6 +218,27 @@ def _base_processual(
     if legado:
         base += " · regime assumido por compatibilidade; conferir"
     return base
+
+
+def _validar_criticidade_estruturada(
+    *,
+    tipo: str,
+    prioridade: str,
+    regime_calculo: str | None,
+    termo_inicial: date | None,
+) -> None:
+    if prioridade != "critica" or tipo != "processual":
+        return
+    if not regime_calculo:
+        raise HTTPException(
+            status_code=422,
+            detail="Prazo processual crítico exige regime_calculo explícito",
+        )
+    if not termo_inicial:
+        raise HTTPException(
+            status_code=422,
+            detail="Prazo processual crítico exige termo_inicial explícito",
+        )
 
 
 @router.post("/calcular")
@@ -402,10 +443,18 @@ async def criar(
 ):
     data_prazo = payload.data_prazo
     base = payload.base_legal
-    confirmado = True
+    confirmado_motor = True
     calculo_audit: dict | None = None
+    base_calculo = payload.termo_inicial or payload.data_intimacao
 
-    if not data_prazo and payload.dias_prazo and payload.data_intimacao:
+    _validar_criticidade_estruturada(
+        tipo=payload.tipo,
+        prioridade=payload.prioridade,
+        regime_calculo=payload.regime_calculo,
+        termo_inicial=payload.termo_inicial,
+    )
+
+    if not data_prazo and payload.dias_prazo and base_calculo:
         if payload.tipo == "processual":
             regime, legado = _resolver_regime_processual(
                 payload.regime_calculo,
@@ -418,7 +467,7 @@ async def criar(
                 )
             try:
                 calculo_audit = calcular_prazo_processual(
-                    payload.data_intimacao,
+                    base_calculo,
                     payload.dias_prazo,
                     regime,  # type: ignore[arg-type]
                     tribunal=payload.tribunal,
@@ -436,11 +485,11 @@ async def criar(
                 excecao_recesso_penal=payload.excecao_recesso_penal,
             )
             if calculo_audit["resultado_preliminar"]:
-                confirmado = False
+                confirmado_motor = False
                 base += " · CALENDÁRIO DEGRADADO: conferência humana obrigatória"
         elif payload.dias_uteis:
             data_prazo = prazo_dias_uteis(
-                payload.data_intimacao,
+                base_calculo,
                 payload.dias_prazo,
                 tribunal=payload.tribunal,
                 em_dobro=payload.dobro,
@@ -452,7 +501,7 @@ async def criar(
             )
         else:
             data_prazo = prazo_dias_corridos(
-                payload.data_intimacao,
+                base_calculo,
                 payload.dias_prazo,
                 tribunal=payload.tribunal,
             )
@@ -461,8 +510,20 @@ async def criar(
     if not data_prazo:
         raise HTTPException(
             status_code=422,
-            detail="Informe data_prazo OU (data_intimacao + dias_prazo)",
+            detail=(
+                "Informe data_prazo OU "
+                "((termo_inicial ou data_intimacao) + dias_prazo)"
+            ),
         )
+
+    try:
+        validar_marcos_prazo(
+            data_publicacao=payload.data_publicacao,
+            termo_inicial=payload.termo_inicial,
+            termo_final=data_prazo,
+        )
+    except ProvaIncompletaError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     caso = None
     if payload.case_id:
@@ -484,6 +545,27 @@ async def criar(
             detail="Responsável informado não pertence à equipe jurídica do caso",
         )
 
+    confirmado, calculado_por = preparar_estado_inicial(
+        prioridade=payload.prioridade,
+        actor_id=cu.id,
+        confirmado_motor=confirmado_motor,
+    )
+    prova = construir_prova_calculo(
+        actor_id=cu.id,
+        data_ciencia=payload.data_intimacao,
+        data_publicacao=payload.data_publicacao,
+        termo_inicial=payload.termo_inicial,
+        termo_final=data_prazo,
+        regime=payload.regime_calculo if payload.tipo == "processual" else None,
+        tribunal=payload.tribunal,
+        dias=payload.dias_prazo,
+        dobro=payload.dobro,
+        excecao_recesso_penal=payload.excecao_recesso_penal,
+        base_legal=base,
+        resultado=calculo_audit,
+        modo_origem="motor_canonico" if calculo_audit else "vencimento_manual",
+    )
+
     d = Deadline(
         id=str(uuid4()),
         titulo=payload.titulo,
@@ -492,6 +574,15 @@ async def criar(
         descricao=payload.descricao,
         data_prazo=data_prazo,
         data_intimacao=payload.data_intimacao,
+        data_publicacao=payload.data_publicacao,
+        termo_inicial=payload.termo_inicial,
+        regime_calculo=(
+            payload.regime_calculo if payload.tipo == "processual" else None
+        ),
+        calculo_metadata=prova,
+        calculado_por=calculado_por,
+        conferido_por=None,
+        conferido_em=None,
         base_legal=base,
         case_id=payload.case_id,
         responsavel_id=responsavel_id,
@@ -505,16 +596,14 @@ async def criar(
         "CREATE",
         "deadlines",
         d.id,
-        dados_depois=(
-            {
-                "calculo_automatico": True,
-                "regime_calculo": calculo_audit.get("regime_calculo"),
-                "calendario_status": calculo_audit.get("calendario_status"),
-                "resultado_preliminar": calculo_audit.get("resultado_preliminar"),
-            }
-            if calculo_audit
-            else {"calculo_automatico": False}
-        ),
+        dados_depois={
+            "calculo_automatico": calculo_audit is not None,
+            "regime_calculo": d.regime_calculo,
+            "calendario_status": prova.get("calendario_status"),
+            "resultado_preliminar": prova.get("resultado_preliminar"),
+            "estado_validacao": prova.get("estado_validacao"),
+            "prioridade": payload.prioridade,
+        },
     )
     await db.commit()
     await db.refresh(d)
@@ -545,6 +634,9 @@ async def atualizar(
     data_antes = d.data_prazo
     responsavel_antes = d.responsavel_id
 
+    if "data_prazo" in mudancas and mudancas["data_prazo"] is None:
+        raise HTTPException(status_code=422, detail="data_prazo não pode ser vazio")
+
     if "responsavel_id" in mudancas:
         novo_responsavel = mudancas["responsavel_id"]
         if not novo_responsavel:
@@ -558,6 +650,37 @@ async def atualizar(
             novo_responsavel,
             case_id=d.case_id,
         )
+
+    candidato_prazo = mudancas.get("data_prazo", d.data_prazo)
+    candidato_publicacao = mudancas.get("data_publicacao", d.data_publicacao)
+    candidato_termo = mudancas.get("termo_inicial", d.termo_inicial)
+    candidato_regime = mudancas.get("regime_calculo", d.regime_calculo)
+    candidato_prioridade = mudancas.get(
+        "prioridade",
+        getattr(d.prioridade, "value", d.prioridade),
+    )
+    candidato_tipo = getattr(d.tipo, "value", d.tipo)
+
+    try:
+        validar_marcos_prazo(
+            data_publicacao=candidato_publicacao,
+            termo_inicial=candidato_termo,
+            termo_final=candidato_prazo,
+        )
+    except ProvaIncompletaError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    _validar_criticidade_estruturada(
+        tipo=candidato_tipo,
+        prioridade=candidato_prioridade,
+        regime_calculo=candidato_regime,
+        termo_inicial=candidato_termo,
+    )
+
+    material_antes = {
+        campo: getattr(d, campo)
+        for campo in _MATERIAL_CALCULO
+        if campo in mudancas
+    }
 
     if "data_prazo" in mudancas and mudancas["data_prazo"] != d.data_prazo:
         await criar_audit_log(
@@ -573,6 +696,39 @@ async def atualizar(
 
     for k, v in mudancas.items():
         setattr(d, k, v)
+
+    material_depois = {
+        campo: getattr(d, campo)
+        for campo in material_antes
+    }
+    campos_materiais_alterados = [
+        campo
+        for campo in material_antes
+        if material_antes[campo] != material_depois[campo]
+    ]
+    if campos_materiais_alterados:
+        havia_conferencia = invalidar_conferencia(
+            d,
+            actor_id=cu.id,
+            motivo="alteracao_material",
+            antes=material_antes,
+            depois=material_depois,
+        )
+        await criar_audit_log(
+            db,
+            cu.id,
+            cu.role.value,
+            "PRAZO_PROVA_REABERTA",
+            "deadlines",
+            deadline_id,
+            dados_depois={
+                "campos_alterados": sorted(campos_materiais_alterados),
+                "havia_conferencia": havia_conferencia,
+                "novo_calculista": cu.id,
+            },
+        )
+        if havia_conferencia:
+            adicionar_notificacao_reconferencia(db, d.responsavel_id)
 
     mudou_data = d.data_prazo != data_antes
     mudou_responsavel = d.responsavel_id != responsavel_antes
@@ -659,18 +815,38 @@ async def confirmar(
         raise HTTPException(status_code=404, detail="Prazo não encontrado")
     await _verificar_acesso_prazo(db, cu, d)
 
-    if not d.confirmado:
-        d.confirmado = True
-        await criar_audit_log(
-            db,
-            cu.id,
-            cu.role.value,
-            "PRAZO_CONFIRMADO",
-            "deadlines",
-            deadline_id,
-        )
-        await db.commit()
-        await db.refresh(d)
+    if d.confirmado and not prazo_critico(d):
+        return DeadlineResponse.model_validate(d)
+    if (
+        d.confirmado
+        and prazo_critico(d)
+        and d.conferido_por
+        and d.conferido_por != d.calculado_por
+    ):
+        return DeadlineResponse.model_validate(d)
+
+    try:
+        registrar_conferencia(d, cu.id)
+    except DuplaValidacaoError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ProvaIncompletaError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    await criar_audit_log(
+        db,
+        cu.id,
+        cu.role.value,
+        "PRAZO_CONFERIDO",
+        "deadlines",
+        deadline_id,
+        dados_depois={
+            "calculado_por": d.calculado_por,
+            "conferido_por": d.conferido_por,
+            "dupla_validacao": prazo_critico(d),
+        },
+    )
+    await db.commit()
+    await db.refresh(d)
     return DeadlineResponse.model_validate(d)
 
 
