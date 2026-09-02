@@ -912,18 +912,8 @@ export default function Casos() {
                 <LayoutGrid size={15} /> Quadro
               </button>
             </div>
-            <Button
-              variant="secondary"
-              icon={<PenLine size={16} />}
-              onClick={() => nav(NOVO_CASO_MANUAL_PATH)}
-            >
-              Cadastro manual
-            </Button>
-            <button
-              className="btn-gold"
-              onClick={() => nav(NOVO_CASO_DOCUMENTO_PATH)}
-            >
-              <FileUp size={16} /> Novo caso por documento
+            <button className="btn-gold" onClick={() => nav("/entrada")}>
+              <Plus size={16} /> Novo caso
             </button>
           </div>
         }
@@ -1071,9 +1061,9 @@ export default function Casos() {
             ) : (
               <Empty
                 titulo="Nenhum caso por aqui ainda"
-                descricao="Os casos são o centro do EJC: cada um reúne prazos, documentos, peças e honorários. Comece abrindo o primeiro pelo cadastro guiado."
+                descricao="Os casos são o centro do EJC: cada um reúne prazos, documentos, peças e honorários. Comece abrindo o primeiro pela Entrada Jurídica."
                 acao={
-                  <Link to="/casos/novo">
+                  <Link to="/entrada">
                     <Button
                       variant="primary"
                       icon={<Plus className="h-4 w-4" />}
