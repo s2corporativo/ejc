@@ -4,8 +4,9 @@ A regra é deliberadamente determinística: nenhum modelo de IA decide se um cas
 pode ser encerrado. Prazos ativos bloqueiam o fechamento; outras pendências
 relevantes viram alertas que exigem confirmação humana explícita.
 
-Este serviço não faz commit e não altera dados. O router continua responsável
-por ownership/RBAC, persistência e AuditLog.
+Este serviço não faz commit. O advisory lock por caso é transacional e existe
+para impedir que um prazo seja criado/alterado entre o diagnóstico e o commit do
+encerramento; persistência e AuditLog continuam pertencendo ao router.
 """
 from __future__ import annotations
 
@@ -18,6 +19,10 @@ from app.models.deadline import Deadline, DeadlineStatus
 from app.models.fee import Fee, FeeStatus
 from app.models.legal_doc import LegalDoc, PecaStatus
 from app.models.task import Task, TaskStatus
+from app.services.case_mutation_guard import (
+    garantir_caso_editavel,
+    serializar_mutacao_caso,
+)
 
 
 async def diagnosticar_fechamento(db: AsyncSession, caso: Any) -> dict[str, Any]:
@@ -36,6 +41,16 @@ async def diagnosticar_fechamento(db: AsyncSession, caso: Any) -> dict[str, Any]
     caso. O chamador deve aplicar ownership antes de expor o resultado.
     """
     case_id = str(caso.id)
+
+    # O mesmo lock é usado pelas mutações fatais de prazo. No POST /encerrar ele
+    # permanece retido até o commit do router, fechando a janela de corrida entre
+    # "diagnóstico limpo" e a troca de status para encerrado.
+    await serializar_mutacao_caso(db, case_id)
+    refresh = getattr(db, "refresh", None)
+    if refresh is not None:
+        await refresh(caso)
+    garantir_caso_editavel(caso)
+
     bloqueios: list[dict[str, Any]] = []
     alertas: list[dict[str, Any]] = []
 
