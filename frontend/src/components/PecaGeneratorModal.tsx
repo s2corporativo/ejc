@@ -26,7 +26,9 @@ import {
 import GuiadoForm from "./GuiadoForm";
 
 // Catálogo de peças e áreas vem de GET /pecas/meta (fonte única no backend).
-// O modal não espelha mais essas listas manualmente — busca no mount.
+// Por segurança jurídica, o modal NÃO mantém catálogo local paralelo: se a
+// taxonomia canônica estiver indisponível, a geração fica bloqueada em vez de
+// apresentar uma lista parcial/desatualizada como se fosse completa.
 interface TipoMeta {
   value: string;
   label: string;
@@ -57,50 +59,8 @@ const GRUPO_ORDEM = [
   "extrajudicial",
 ];
 
-// Fallback mínimo embutido — usado APENAS se GET /pecas/meta falhar, para não
-// quebrar o modal. Cobre um tipo de cada grupo e as áreas mais comuns.
-const TIPOS_FALLBACK: TipoMeta[] = [
-  {
-    value: "peticao_inicial",
-    label: "Petição Inicial",
-    grupo: "judicial_inicial",
-  },
-  { value: "contestacao", label: "Contestação", grupo: "judicial_pos" },
-  {
-    value: "replica",
-    label: "Réplica (Impugnação à Contestação)",
-    grupo: "judicial_pos",
-  },
-  { value: "recurso_ordinario", label: "Recurso Ordinário", grupo: "recurso" },
-  { value: "apelacao", label: "Apelação", grupo: "recurso" },
-  { value: "acordo", label: "Proposta de Acordo", grupo: "extrajudicial" },
-  {
-    value: "notificacao",
-    label: "Notificação Extrajudicial",
-    grupo: "extrajudicial",
-  },
-  { value: "contrato", label: "Minuta de Contrato", grupo: "extrajudicial" },
-];
-const AREAS_FALLBACK: AreaMeta[] = [
-  { value: "trabalhista", label: "Trabalhista" },
-  { value: "civil", label: "Cível" },
-  { value: "previdenciario", label: "Previdenciário" },
-  { value: "tributario", label: "Tributário" },
-  { value: "criminal", label: "Criminal" },
-  { value: "consumidor", label: "Consumidor" },
-  { value: "administrativo", label: "Administrativo" },
-  { value: "familia", label: "Família" },
-];
-
-// Nível de complexidade / rito (GET /pecas/meta → niveis_complexidade). Fallback
-// embutido usado APENAS se o meta não trouxer a lista. Rótulos legíveis abaixo.
-const NIVEIS_FALLBACK = [
-  "comum",
-  "simples",
-  "completa",
-  "estrategica",
-  "juizado_especial",
-];
+// Rótulos legíveis dos níveis retornados por /pecas/meta. A lista de valores
+// continua pertencendo exclusivamente ao backend.
 const NIVEL_LABEL: Record<string, string> = {
   comum: "Procedimento comum",
   simples: "Simples/enxuta",
@@ -433,11 +393,13 @@ export default function PecaGeneratorModal({
     Record<string, string>
   >({});
 
-  // Catálogo (/pecas/meta): parte do fallback e é substituído ao carregar.
-  const [tipos, setTipos] = useState<TipoMeta[]>(TIPOS_FALLBACK);
-  const [areas, setAreas] = useState<AreaMeta[]>(AREAS_FALLBACK);
-  const [niveis, setNiveis] = useState<string[]>(NIVEIS_FALLBACK);
+  // Catálogo canônico carregado do backend. Sem fallback local: qualquer falha
+  // deixa o fluxo fechado, evitando taxonomia parcial ou incompatível.
+  const [tipos, setTipos] = useState<TipoMeta[]>([]);
+  const [areas, setAreas] = useState<AreaMeta[]>([]);
+  const [niveis, setNiveis] = useState<string[]>([]);
   const [metaLoading, setMetaLoading] = useState(false);
+  const [metaErro, setMetaErro] = useState<string | null>(null);
   const metaLoadedRef = useRef(false);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -446,30 +408,57 @@ export default function PecaGeneratorModal({
   // vazamento da conexão quando o modal é removido durante a geração.
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  // Busca o catálogo de peças/áreas na primeira abertura do modal. Falha é
-  // silenciosa (mantém o fallback embutido + toast discreto) para não quebrar
-  // o fluxo. Permite retry numa próxima abertura se a chamada falhar.
+  // Busca o catálogo de peças/áreas na primeira abertura do modal. O contrato é
+  // fail-closed: o backend é a fonte única; payload vazio/parcial equivale a
+  // indisponibilidade e não autoriza geração com catálogo local stale.
   useEffect(() => {
     if (!open || metaLoadedRef.current) return;
     metaLoadedRef.current = true;
     setMetaLoading(true);
+    setMetaErro(null);
     api
       .get<PecasMeta>("/pecas/meta")
       .then(({ data }) => {
-        if (Array.isArray(data.tipos) && data.tipos.length)
-          setTipos(data.tipos);
-        if (Array.isArray(data.areas) && data.areas.length)
-          setAreas(data.areas);
         if (
-          Array.isArray(data.niveis_complexidade) &&
-          data.niveis_complexidade.length
-        )
-          setNiveis(data.niveis_complexidade);
+          !Array.isArray(data.tipos) ||
+          data.tipos.length === 0 ||
+          !Array.isArray(data.areas) ||
+          data.areas.length === 0 ||
+          !Array.isArray(data.niveis_complexidade) ||
+          data.niveis_complexidade.length === 0
+        ) {
+          throw new Error("Catálogo canônico de peças incompleto");
+        }
+
+        setTipos(data.tipos);
+        setAreas(data.areas);
+        setNiveis(data.niveis_complexidade);
+        setTipoPeca((atual) =>
+          data.tipos!.some((t) => t.value === atual)
+            ? atual
+            : data.tipos![0].value,
+        );
+        setAreaDireito((atual) =>
+          data.areas!.some((a) => a.value === atual)
+            ? atual
+            : data.areas![0].value,
+        );
+        setNivelComplexidade((atual) =>
+          data.niveis_complexidade!.includes(atual)
+            ? atual
+            : data.niveis_complexidade![0],
+        );
       })
       .catch(() => {
         metaLoadedRef.current = false;
+        setTipos([]);
+        setAreas([]);
+        setNiveis([]);
+        setMetaErro(
+          "Catálogo jurídico indisponível. A geração foi bloqueada para evitar uso de tipos ou áreas desatualizados.",
+        );
         toast.error(
-          "Não foi possível carregar o catálogo de peças. Usando lista básica.",
+          "Não foi possível carregar o catálogo canônico de peças. Geração bloqueada com segurança.",
         );
       })
       .finally(() => setMetaLoading(false));
@@ -533,6 +522,19 @@ export default function PecaGeneratorModal({
   };
 
   const gerar = useCallback(async () => {
+    if (
+      metaLoading ||
+      metaErro ||
+      tipos.length === 0 ||
+      areas.length === 0 ||
+      niveis.length === 0
+    ) {
+      toast.error(
+        "Catálogo jurídico indisponível. Reabra o gerador para tentar carregar novamente.",
+      );
+      return;
+    }
+
     const isGuiado = modo === "guiado";
     const effectiveFatos = isGuiado
       ? Object.entries(respostasGuiadas)
@@ -702,6 +704,11 @@ export default function PecaGeneratorModal({
       setFase("erro");
     }
   }, [
+    metaLoading,
+    metaErro,
+    tipos,
+    areas,
+    niveis,
     modo,
     respostasGuiadas,
     tipoPeca,
@@ -733,6 +740,13 @@ export default function PecaGeneratorModal({
     URL.revokeObjectURL(url);
   };
 
+  const catalogoIndisponivel =
+    metaLoading ||
+    !!metaErro ||
+    tipos.length === 0 ||
+    areas.length === 0 ||
+    niveis.length === 0;
+
   return (
     <Modal open={open} onClose={fechar} title="Gerador de Peças — IA" wide>
       <div className="flex flex-col">
@@ -746,6 +760,13 @@ export default function PecaGeneratorModal({
           {/* ── FASE: FORMULÁRIO ── */}
           {fase === "form" && (
             <div className="p-6 flex flex-col gap-4">
+              {metaErro && (
+                <div className="flex items-start gap-2 rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-xs text-danger-700">
+                  <ShieldAlert size={16} className="mt-0.5 flex-shrink-0" />
+                  <span>{metaErro}</span>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">
@@ -755,7 +776,7 @@ export default function PecaGeneratorModal({
                     value={tipoPeca}
                     onChange={(e) => setTipoPeca(e.target.value)}
                     className="input"
-                    disabled={metaLoading}
+                    disabled={catalogoIndisponivel}
                   >
                     {GRUPO_ORDEM.filter((g) =>
                       tipos.some((t) => t.grupo === g),
@@ -795,7 +816,7 @@ export default function PecaGeneratorModal({
                     value={areaDireito}
                     onChange={(e) => setAreaDireito(e.target.value)}
                     className="input"
-                    disabled={metaLoading}
+                    disabled={catalogoIndisponivel}
                   >
                     {areas.map((a) => (
                       <option key={a.value} value={a.value}>
@@ -818,7 +839,7 @@ export default function PecaGeneratorModal({
                   value={nivelComplexidade}
                   onChange={(e) => setNivelComplexidade(e.target.value)}
                   className="input"
-                  disabled={metaLoading}
+                  disabled={catalogoIndisponivel}
                 >
                   {niveis.map((n) => (
                     <option key={n} value={n}>
@@ -1291,7 +1312,7 @@ export default function PecaGeneratorModal({
               <Button
                 variant="ai"
                 onClick={gerar}
-                disabled={fatos.length < 50 || pedidos.length < 10}
+                disabled={catalogoIndisponivel}
                 icon={<Sparkles size={15} />}
               >
                 Gerar peça com IA
