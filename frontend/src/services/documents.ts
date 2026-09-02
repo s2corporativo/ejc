@@ -27,6 +27,7 @@ export interface DocumentItem {
   integrity_status?: string | null;
   integrity_verified_at?: string | null;
   malware_scan_status?: string | null;
+  malware_scanned_at?: string | null;
   rag_status?: string | null;
   rag_indexed_at?: string | null;
   legal_hold?: boolean;
@@ -76,13 +77,7 @@ export interface DocumentGovernance {
   legal_hold_reason?: string | null;
   legal_hold_set_by?: string | null;
   legal_hold_set_at?: string | null;
-  integrity_status?: string | null;
-  integrity_verified_at?: string | null;
-  analysis_status?: string | null;
-  analysis_updated_at?: string | null;
-  rag_status?: string | null;
-  rag_indexed_at?: string | null;
-  publicado_portal?: boolean;
+  deleted_at?: string | null;
 }
 
 export interface ListDocumentsParams {
@@ -115,6 +110,17 @@ export interface DuplicateDetail {
   document_id: string;
 }
 
+export interface DocumentClassification {
+  doc_id: string;
+  aplicado: boolean;
+  tipo_atual?: string | null;
+  tipo_sugerido?: string | null;
+  confianca?: "alta" | "media" | "baixa" | null;
+  justificativa?: string;
+  disponivel?: boolean;
+  aviso?: string;
+}
+
 export const STATUS_LABEL: Record<OperationalStatus, string> = {
   ready: "Pronto",
   processing: "Processando",
@@ -133,14 +139,15 @@ export function humanStatus(document: DocumentItem): OperationalStatus {
   if (document.operational_status) return document.operational_status;
   const reasons = document.attention_reasons || [];
   if (reasons.length > 0) return "attention";
+  if (["failed", "stale"].includes(document.analysis_status || "")) return "attention";
+  if (["divergent", "error", "unavailable"].includes(document.integrity_status || ""))
+    return "attention";
+  if (["infected", "error", "unavailable"].includes(document.malware_scan_status || ""))
+    return "attention";
   if (["pending", "processing"].includes(document.analysis_status || ""))
     return "processing";
   if (["pending", "processing"].includes(document.malware_scan_status || ""))
     return "processing";
-  if (["failed", "stale"].includes(document.analysis_status || ""))
-    return "attention";
-  if (["divergent", "error", "unavailable"].includes(document.integrity_status || ""))
-    return "attention";
   return "ready";
 }
 
@@ -225,6 +232,14 @@ export async function updateDocumentGovernance(
   return data;
 }
 
+export async function updateDocumentMetadata(
+  id: string,
+  payload: { titulo?: string; tipo?: string | null; confidencialidade?: string },
+): Promise<DocumentItem> {
+  const { data } = await api.patch<DocumentItem>(`/documents/${id}`, payload);
+  return data;
+}
+
 export async function uploadDocument(input: UploadDocumentInput): Promise<DocumentItem> {
   const body = new FormData();
   body.append("file", input.file);
@@ -250,6 +265,11 @@ export async function moveDocumentToTrash(id: string): Promise<void> {
   await api.delete(`/documents/${id}`);
 }
 
+export async function getDocumentBlob(id: string): Promise<Blob> {
+  const { data } = await api.get(`/documents/${id}/download`, { responseType: "blob" });
+  return data as Blob;
+}
+
 export async function reprocessDocument(id: string): Promise<void> {
   await api.post(`/documents/${id}/reprocessar-analise`);
 }
@@ -259,11 +279,18 @@ export async function verifyDocumentIntegrity(id: string): Promise<void> {
 }
 
 export async function setDocumentRag(id: string, enabled: boolean): Promise<void> {
-  await api.post(`/documents/${id}/rag`, null, { params: { enabled } });
+  await api.post(`/documents/${id}/rag`, { ativo: enabled });
 }
 
-export async function classifyDocument(id: string, apply = false) {
-  const { data } = await api.post(`/documents/${id}/classificar`, null, {
+export async function publishDocumentToPortal(id: string, published: boolean): Promise<void> {
+  await api.patch(`/documents/${id}/publicacao-portal`, { publicado: published });
+}
+
+export async function classifyDocument(
+  id: string,
+  apply = false,
+): Promise<DocumentClassification> {
+  const { data } = await api.post<DocumentClassification>(`/documents/${id}/classificar`, null, {
     params: { aplicar: apply },
   });
   return data;
