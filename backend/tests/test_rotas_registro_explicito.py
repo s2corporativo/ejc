@@ -57,6 +57,9 @@ ADICOES_INTENCIONAIS = {
     # existe para o outro estado terminal). O frontend usava PATCH cru com
     # status="aberto" fixo -- passa a chamar este endpoint dedicado.
     ("/api/cases/{case_id}/reabrir", "POST"),
+    # PR #1380: pré-checagem determinística do encerramento. A rota só lê
+    # metadados do próprio caso, aplica ownership/RBAC e não altera domínio.
+    ("/api/cases/{case_id}/fechamento/diagnostico", "GET"),
     # Issue #1272 (V2-4.4 do plano-mestre): purga definitiva (hard delete) de
     # registro já soft-deleted, restrita a superadmin — antes não havia
     # caminho pela aplicação para atender pedido de eliminação LGPD (art. 16 e
