@@ -7,12 +7,14 @@ que atua.
 """
 from __future__ import annotations
 
+from fastapi import HTTPException
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.ownership import is_gestao
+from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.core.security import ROLE_LEVEL
 from app.models.case import Case
+from app.models.client import Client
 from app.models.document import Document
 from app.models.user import User
 
@@ -21,6 +23,96 @@ INTEGRIDADE_ATENCAO = {"divergent", "error", "unavailable"}
 MALWARE_ATENCAO = {"infected", "error", "unavailable"}
 ANALISE_PROCESSANDO = {"pending", "processing"}
 MALWARE_PROCESSANDO = {"pending", "processing"}
+
+
+def pode_acessar_confidencial(user: User, confidencialidade: str) -> bool:
+    if confidencialidade in {"restrito", "confidencial", "segredo_justica"}:
+        return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["socio"]
+    return True
+
+
+async def verificar_acesso_cliente_sem_caso(
+    db: AsyncSession,
+    user: User,
+    client_id: str,
+) -> None:
+    if is_gestao(user):
+        return
+    if user.role.value == "cliente_externo":
+        if getattr(user, "client_id", None) == client_id:
+            return
+        raise HTTPException(status_code=403, detail="Sem permissão para este cliente")
+    case_id = await db.scalar(
+        select(Case.id)
+        .where(
+            Case.client_id == client_id,
+            Case.deleted_at.is_(None),
+            or_(
+                Case.advogado_responsavel_id == user.id,
+                Case.advogado_auxiliar_id == user.id,
+            ),
+        )
+        .limit(1)
+    )
+    if case_id is None:
+        raise HTTPException(status_code=403, detail="Sem permissão para este cliente")
+
+
+async def verificar_acesso_documento(
+    db: AsyncSession,
+    user: User,
+    document: Document,
+) -> None:
+    if document.case_id:
+        await verificar_acesso_caso(db, user, document.case_id)
+        return
+    if is_gestao(user) or document.uploaded_by == user.id:
+        return
+    if document.client_id:
+        conf = getattr(document.confidencialidade, "value", document.confidencialidade)
+        if user.role.value == "cliente_externo" and conf != "normal":
+            raise HTTPException(status_code=403, detail="Documento interno ou restrito")
+        await verificar_acesso_cliente_sem_caso(db, user, document.client_id)
+        return
+    raise HTTPException(status_code=403, detail="Sem permissão para este documento")
+
+
+async def resolver_contexto_upload(
+    db: AsyncSession,
+    user: User,
+    *,
+    case_id: str | None,
+    client_id: str | None,
+    predecessor: Document | None,
+) -> tuple[str | None, str | None]:
+    if predecessor is not None:
+        await verificar_acesso_documento(db, user, predecessor)
+        conf = getattr(predecessor.confidencialidade, "value", predecessor.confidencialidade)
+        if not pode_acessar_confidencial(user, conf):
+            raise HTTPException(status_code=403, detail="Documento predecessor restrito — acesso negado")
+        if case_id is None:
+            case_id = predecessor.case_id
+        if client_id is None:
+            client_id = predecessor.client_id
+        if case_id != predecessor.case_id or client_id != predecessor.client_id:
+            raise HTTPException(
+                status_code=422,
+                detail="Nova versão deve manter o mesmo caso/cliente do predecessor",
+            )
+
+    if case_id:
+        case = await verificar_acesso_caso(db, user, case_id)
+        if client_id and case.client_id and client_id != case.client_id:
+            raise HTTPException(status_code=422, detail="client_id não corresponde ao cliente do caso")
+        client_id = case.client_id
+    elif client_id:
+        await verificar_acesso_cliente_sem_caso(db, user, client_id)
+        existe = await db.scalar(
+            select(Client.id).where(Client.id == client_id, Client.deleted_at.is_(None))
+        )
+        if not existe:
+            raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    return case_id, client_id
 
 
 def motivos_atencao(document: Document) -> list[str]:
