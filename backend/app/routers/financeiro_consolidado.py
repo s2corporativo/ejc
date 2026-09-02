@@ -22,6 +22,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.fee import FeeTipo
 from app.models.user import User
+from app.services.fee_ledger_compat import LEDGER_COMPAT_CTES
 
 router = APIRouter(prefix="/financeiro", tags=["Financeiro Consolidado"])
 
@@ -51,14 +52,7 @@ def _competencia_atual(competencia: Optional[str]) -> str:
 
 
 def _classificar_fechamento(itens: list[dict]) -> tuple[str, int]:
-    """Classifica o pré-fechamento sem persistir decisão de negócio.
-
-    O score é deliberadamente simples e explicável: cada categoria bloqueante
-    presente reduz 25 pontos e cada categoria de revisão reduz 7. A quantidade
-    de linhas aparece no detalhe, mas não multiplica a penalidade para evitar
-    que uma competência volumosa pareça estruturalmente pior só por ter mais
-    lançamentos.
-    """
+    """Classifica o pré-fechamento sem persistir decisão de negócio."""
     bloqueios = sum(1 for item in itens if item.get("severidade") == "bloqueio")
     revisoes = sum(1 for item in itens if item.get("severidade") == "revisao")
     score = max(0, 100 - (bloqueios * 25) - (revisoes * 7))
@@ -83,11 +77,7 @@ async def consolidado(
         await db.execute(
             text(
                 f"""
-                WITH pagamentos_totais AS (
-                    SELECT fee_id, COALESCE(SUM(valor), 0) AS total_pago
-                    FROM fee_payments
-                    GROUP BY fee_id
-                ),
+                WITH {LEDGER_COMPAT_CTES},
                 saldos AS (
                     SELECT
                         f.id,
@@ -95,22 +85,22 @@ async def consolidado(
                         f.descricao,
                         CAST(f.status AS text) AS status,
                         GREATEST(
-                            COALESCE(f.valor, 0) - COALESCE(pt.total_pago, 0),
+                            COALESCE(f.valor, 0) - COALESCE(pe.total_pago, 0),
                             0
                         ) AS saldo
                     FROM fees f
-                    LEFT JOIN pagamentos_totais pt ON pt.fee_id = f.id
+                    LEFT JOIN pagamentos_efetivos pe ON pe.fee_id = f.id
                     WHERE f.deleted_at IS NULL
                 ),
                 pagamentos_mes AS (
                     SELECT
-                        fp.valor,
+                        re.valor,
                         CAST(f.tipo AS text) AS tipo,
                         f.descricao
-                    FROM fee_payments fp
-                    JOIN fees f ON f.id = fp.fee_id
+                    FROM recebimentos_efetivos re
+                    JOIN fees f ON f.id = re.fee_id
                     WHERE f.deleted_at IS NULL
-                      AND date_trunc('month', fp.data_pagamento)
+                      AND date_trunc('month', re.data_pagamento)
                           = date_trunc('month', CAST(:mes AS date))
                 )
                 SELECT
@@ -167,8 +157,6 @@ async def consolidado(
     percentuais_sem_valor = int(bruto.pop("percentuais_sem_valor") or 0)
     fees = {k: _money(v) for k, v in bruto.items()}
 
-    # Competência das despesas: visão de obrigações do mês, independente da data
-    # em que a baixa financeira aconteceu.
     desp = (
         await db.execute(
             text(
@@ -191,8 +179,6 @@ async def consolidado(
     ).mappings().first()
     desp = {k: _money(v) for k, v in dict(desp).items()}
 
-    # Fluxo de caixa: saída pertence ao mês real de `pago_em`, não à competência
-    # original. Isso mantém o card "Caixa do período" reconciliável com extrato.
     saidas_caixa_mes = _money(
         (
             await db.execute(
@@ -301,20 +287,17 @@ async def pendencias_operacionais(
     hon = (
         await db.execute(
             text(
-                """
-                WITH pagos AS (
-                    SELECT fee_id, COALESCE(SUM(valor), 0) AS total_pago
-                    FROM fee_payments GROUP BY fee_id
-                )
+                f"""
+                WITH {LEDGER_COMPAT_CTES}
                 SELECT COUNT(*) AS qtd,
-                       COALESCE(SUM(GREATEST(f.valor - COALESCE(p.total_pago, 0), 0)), 0) AS total
+                       COALESCE(SUM(GREATEST(f.valor - COALESCE(pe.total_pago, 0), 0)), 0) AS total
                 FROM fees f
-                LEFT JOIN pagos p ON p.fee_id = f.id
+                LEFT JOIN pagamentos_efetivos pe ON pe.fee_id = f.id
                 WHERE f.deleted_at IS NULL
                   AND f.valor IS NOT NULL
                   AND CAST(f.status AS text) IN ('pendente','atrasado')
                   AND f.data_vencimento < :hoje
-                  AND GREATEST(f.valor - COALESCE(p.total_pago, 0), 0) > 0
+                  AND GREATEST(f.valor - COALESCE(pe.total_pago, 0), 0) > 0
                 """
             ),
             {"hoje": hoje},
@@ -384,11 +367,11 @@ async def pendencias_operacionais(
                 WHERE deleted_at IS NULL
                   AND status = 'vigente'
                   AND end_date IS NOT NULL
-                  AND end_date >= :hoje
-                  AND end_date <= :limite
+                  AND end_date >= CURRENT_DATE
+                  AND end_date <= CURRENT_DATE
+                        + make_interval(days => COALESCE(alert_days_before, 30))
                 """
-            ),
-            {"hoje": hoje, "limite": hoje + timedelta(days=30)},
+            )
         )
     ).scalar() or 0
 
@@ -400,7 +383,8 @@ async def pendencias_operacionais(
             "titulo": "Honorários vencidos",
             "qtd": int(hon["qtd"] or 0),
             "valor": _money(hon["total"]),
-            "acao": {"tab": "honorarios", "status": "atrasado"},
+            # Sem filtro de status: o card conta pendentes vencidos E atrasados.
+            "acao": {"tab": "honorarios"},
         })
     if int(despesas["vencidas_qtd"] or 0):
         itens.append({
@@ -442,7 +426,7 @@ async def pendencias_operacionais(
         itens.append({
             "codigo": "contratos_vencendo",
             "prioridade": "media",
-            "titulo": "Contratos vencem nos próximos 30 dias",
+            "titulo": "Contratos dentro da janela individual de alerta",
             "qtd": int(contratos),
             "valor": None,
             "acao": {"tab": "contratos"},
@@ -459,12 +443,7 @@ async def demonstrativo_gerencial(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Separa competência operacional de fluxo de caixa.
-
-    Não é DRE fiscal/contábil. Receita por competência usa o mês de vencimento
-    do fee; caixa usa a data efetiva do FeePayment. Despesa por competência usa
-    ``office_expenses.competencia`` e saída de caixa usa ``pago_em``.
-    """
+    """Separa competência operacional de fluxo de caixa."""
     _exigir_financeiro(cu)
     competencia = _competencia_atual(competencia)
     mes_ref = date.fromisoformat(f"{competencia}-01")
@@ -509,12 +488,13 @@ async def demonstrativo_gerencial(
     entradas_caixa = (
         await db.execute(
             text(
-                """
-                SELECT COALESCE(SUM(fp.valor), 0)
-                FROM fee_payments fp
-                JOIN fees f ON f.id = fp.fee_id
+                f"""
+                WITH {LEDGER_COMPAT_CTES}
+                SELECT COALESCE(SUM(re.valor), 0)
+                FROM recebimentos_efetivos re
+                JOIN fees f ON f.id = re.fee_id
                 WHERE f.deleted_at IS NULL
-                  AND date_trunc('month', fp.data_pagamento)
+                  AND date_trunc('month', re.data_pagamento)
                       = date_trunc('month', CAST(:mes AS date))
                 """
             ),
@@ -550,7 +530,7 @@ async def demonstrativo_gerencial(
         "criterios": {
             "receita_competencia": "mês de data_vencimento do honorário",
             "despesa_competencia": "office_expenses.competencia",
-            "entrada_caixa": "fee_payments.data_pagamento",
+            "entrada_caixa": "fee_payments.data_pagamento; fallback legado não duplicante",
             "saida_caixa": "office_expenses.pago_em",
         },
         "competencia_operacional": {
@@ -577,13 +557,7 @@ async def fechamento_inteligente(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Pré-fechamento gerencial read-only da competência.
-
-    Não grava estado de fechamento e não torna o período imutável. Essa parte
-    depende de schema próprio e deve entrar somente na próxima migration linear,
-    após a revisão 156 hoje reservada por outra frente. Aqui o objetivo é dar
-    ao gestor um gate explicável e reproduzível antes do fechamento definitivo.
-    """
+    """Pré-fechamento gerencial read-only da competência."""
     _exigir_financeiro(cu)
     competencia = _competencia_atual(competencia)
     mes_ref = date.fromisoformat(f"{competencia}-01")
@@ -591,21 +565,17 @@ async def fechamento_inteligente(
     fee_integridade = (
         await db.execute(
             text(
-                """
-                WITH pagos AS (
-                    SELECT fee_id, COALESCE(SUM(valor), 0) AS total_pago
-                    FROM fee_payments
-                    GROUP BY fee_id
-                )
+                f"""
+                WITH {LEDGER_COMPAT_CTES}
                 SELECT
                     COUNT(*) FILTER (
                         WHERE f.valor IS NOT NULL
-                          AND COALESCE(p.total_pago, 0) > f.valor
+                          AND COALESCE(pe.total_pago, 0) > f.valor
                     ) AS overpayment,
                     COUNT(*) FILTER (
                         WHERE CAST(f.status AS text) = 'pago'
                           AND f.valor IS NOT NULL
-                          AND COALESCE(p.total_pago, 0) < f.valor
+                          AND COALESCE(pe.total_pago, 0) < f.valor
                     ) AS pago_com_saldo,
                     COUNT(*) FILTER (
                         WHERE f.valor IS NULL
@@ -620,19 +590,24 @@ async def fechamento_inteligente(
                           AND f.data_vencimento <=
                               (date_trunc('month', CAST(:mes AS date))
                                + INTERVAL '1 month - 1 day')::date
-                          AND GREATEST(f.valor - COALESCE(p.total_pago, 0), 0) > 0
+                          AND GREATEST(f.valor - COALESCE(pe.total_pago, 0), 0) > 0
                     ) AS recebiveis_pendentes,
                     COALESCE(SUM(
-                        GREATEST(f.valor - COALESCE(p.total_pago, 0), 0)
+                        GREATEST(f.valor - COALESCE(pe.total_pago, 0), 0)
                     ) FILTER (
                         WHERE CAST(f.status AS text) IN ('pendente','atrasado')
                           AND f.valor IS NOT NULL
                           AND f.data_vencimento <=
                               (date_trunc('month', CAST(:mes AS date))
                                + INTERVAL '1 month - 1 day')::date
-                    ), 0) AS recebiveis_pendentes_valor
+                    ), 0) AS recebiveis_pendentes_valor,
+                    COUNT(*) FILTER (
+                        WHERE pe.legado_sem_subledger = TRUE
+                          AND date_trunc('month', f.data_pagamento)
+                              = date_trunc('month', CAST(:mes AS date))
+                    ) AS legados_sem_subledger
                 FROM fees f
-                LEFT JOIN pagos p ON p.fee_id = f.id
+                LEFT JOIN pagamentos_efetivos pe ON pe.fee_id = f.id
                 WHERE f.deleted_at IS NULL
                   AND CAST(f.status AS text) != 'cancelado'
                 """
@@ -739,7 +714,7 @@ async def fechamento_inteligente(
         "Contas a receber permanecem abertas até o fim da competência",
         fee_integridade["recebiveis_pendentes"],
         valor=fee_integridade["recebiveis_pendentes_valor"],
-        acao={"tab": "honorarios", "status": "pendente"},
+        acao={"tab": "honorarios"},
     )
     adicionar(
         "despesas_pendentes",
@@ -756,6 +731,13 @@ async def fechamento_inteligente(
         comprovantes["qtd"],
         valor=comprovantes["total"],
         acao={"tab": "honorarios"},
+    )
+    adicionar(
+        "legados_sem_subledger",
+        "revisao",
+        "Quitações históricas ainda não foram normalizadas no subledger",
+        fee_integridade["legados_sem_subledger"],
+        acao={"tab": "honorarios", "status": "pago"},
     )
 
     status, score = _classificar_fechamento(itens)
