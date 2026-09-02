@@ -1,31 +1,30 @@
 #!/usr/bin/env python3
 """Atestação externa do gold set jurídico do EJC.
 
-O arquivo JSONL do corpus consegue provar estrutura/proveniência declarada, mas
-não consegue provar que uma pessoa realmente revisou o gabarito: um agente com
-acesso à branch também consegue editar nomes e datas no próprio corpus.
+O corpus versionado consegue provar estrutura e proveniência DECLARADA, mas não
+prova que uma pessoa realmente revisou o gabarito: quem altera a branch também
+consegue editar nomes e datas no próprio JSONL.
 
-Este módulo fecha essa classe de falso positivo sem criar dados jurídicos. A
-atestação precisa existir FORA do repositório e ser autenticada por HMAC com uma
-chave fornecida pelo ambiente de CI/operação. O segredo nunca é lido de arquivo
-versionado e nunca é impresso.
+Este módulo valida uma decisão independente da branch usando Ed25519:
 
-A assinatura vincula exatamente:
-- HEAD Git;
-- SHA-256 determinístico do corpus real;
-- identidade declarada do atestador;
-- instante da atestação;
-- escopo/schema do contrato.
+- manifesto de atestação fica fora do repositório do corpus;
+- chave PÚBLICA de verificação também vem de fonte externa/protegida;
+- chave PRIVADA nunca entra no EJC, no CI da branch ou neste código;
+- assinatura vincula o HEAD Git e o SHA-256 determinístico do corpus exatos.
 
-Sem arquivo externo, chave, HEAD exato ou assinatura válida, a verificação falha
-fechado. Este mecanismo comprova a existência de uma decisão externa à branch;
-a correção jurídica material continua sendo responsabilidade humana.
+A verificação deve ser executada por um gate protegido usando esta implementação
+já confiável (por exemplo, da `main`/imagem pinada), e não por código modificado
+no mesmo PR que apresenta o corpus. Sem atestação, chave pública, HEAD exato ou
+assinatura válida, o comando falha fechado.
+
+Isto comprova que existiu uma decisão externa à branch. Não substitui a revisão
+jurídica material nem cria qualquer gabarito automaticamente.
 """
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
-import hmac
 import json
 import os
 import re
@@ -34,10 +33,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
 SCHEMA_VERSION = 1
 SCOPE = "ejc-legal-gold"
-ENV_KEY = "EJC_GOLD_ATTESTATION_KEY"
 ENV_HEAD = "EJC_GOLD_HEAD_SHA"
+ENV_ATTESTATION_FILE = "EJC_GOLD_ATTESTATION_FILE"
+ENV_PUBLIC_KEY_FILE = "EJC_GOLD_ATTESTATION_PUBLIC_KEY_FILE"
 _SHA_GIT = re.compile(r"^[0-9a-fA-F]{40,64}$")
 _SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
 
@@ -101,22 +105,13 @@ def _payload_assinado(manifesto: dict[str, Any]) -> dict[str, Any]:
 
 
 def canonical_payload(manifesto: dict[str, Any]) -> bytes:
-    """Representação canônica usada pelo verificador e pelo processo de assinatura."""
+    """Representação canônica que a ferramenta humana externa deve assinar."""
     return json.dumps(
         _payload_assinado(manifesto),
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
-
-
-def assinatura_esperada(manifesto: dict[str, Any], chave: str) -> str:
-    """Calcula HMAC; utilidade pública para testes/ferramenta humana externa."""
-    if len(chave.encode("utf-8")) < 32:
-        raise GoldAttestationError("chave de atestação deve ter ao menos 32 bytes")
-    return hmac.new(
-        chave.encode("utf-8"), canonical_payload(manifesto), hashlib.sha256
-    ).hexdigest()
 
 
 def _data_atestacao(valor: Any) -> str:
@@ -134,32 +129,60 @@ def _data_atestacao(valor: Any) -> str:
     return raw
 
 
-def _fora_do_repositorio(path: Path, repo_root: Path) -> None:
+def _fora_do_repositorio(path: Path, repo_root: Path, rotulo: str) -> None:
     try:
         path.resolve().relative_to(repo_root.resolve())
     except ValueError:
         return
     raise GoldAttestationError(
-        "arquivo de atestação deve ser externo ao repositório/branch do corpus"
+        f"{rotulo} deve ser externo ao repositório/branch do corpus"
     )
+
+
+def _carregar_chave_publica(path: Path) -> Ed25519PublicKey:
+    try:
+        chave = serialization.load_pem_public_key(path.read_bytes())
+    except Exception as exc:
+        raise GoldAttestationError("chave pública Ed25519 inválida") from exc
+    if not isinstance(chave, Ed25519PublicKey):
+        raise GoldAttestationError("chave pública precisa ser Ed25519")
+    return chave
+
+
+def _decodificar_assinatura(valor: Any) -> bytes:
+    raw = str(valor or "").strip()
+    if not raw:
+        raise GoldAttestationError("assinatura Ed25519 ausente")
+    try:
+        assinatura = base64.b64decode(raw, validate=True)
+    except Exception as exc:
+        raise GoldAttestationError("assinatura Ed25519 não é Base64 válida") from exc
+    if len(assinatura) != 64:
+        raise GoldAttestationError("assinatura Ed25519 deve ter 64 bytes")
+    return assinatura
 
 
 def validar_atestacao(
     *,
     corpus_dir: str | os.PathLike[str],
     attestation_file: str | os.PathLike[str],
+    public_key_file: str | os.PathLike[str],
     head_sha: str,
-    chave: str,
     repo_root: str | os.PathLike[str],
 ) -> AttestationResult:
     head = str(head_sha or "").strip().lower()
     if not _SHA_GIT.fullmatch(head):
         raise GoldAttestationError("HEAD Git ausente ou inválido")
 
+    repo = Path(repo_root).resolve()
     att_path = Path(attestation_file).resolve()
+    key_path = Path(public_key_file).resolve()
     if not att_path.is_file():
         raise GoldAttestationError("arquivo externo de atestação não encontrado")
-    _fora_do_repositorio(att_path, Path(repo_root))
+    if not key_path.is_file():
+        raise GoldAttestationError("arquivo externo de chave pública não encontrado")
+    _fora_do_repositorio(att_path, repo, "arquivo de atestação")
+    _fora_do_repositorio(key_path, repo, "chave pública de atestação")
 
     try:
         manifesto = json.loads(att_path.read_text(encoding="utf-8"))
@@ -187,12 +210,12 @@ def validar_atestacao(
         raise GoldAttestationError("attested_by é obrigatório")
     attested_at = _data_atestacao(manifesto.get("attested_at"))
 
-    assinatura = str(manifesto.get("signature_hmac_sha256") or "").strip().lower()
-    if not _SHA256.fullmatch(assinatura):
-        raise GoldAttestationError("assinatura HMAC ausente ou inválida")
-    esperada = assinatura_esperada(manifesto, chave)
-    if not hmac.compare_digest(assinatura, esperada):
-        raise GoldAttestationError("assinatura HMAC não confere")
+    assinatura = _decodificar_assinatura(manifesto.get("signature_ed25519_base64"))
+    chave_publica = _carregar_chave_publica(key_path)
+    try:
+        chave_publica.verify(assinatura, canonical_payload(manifesto))
+    except InvalidSignature as exc:
+        raise GoldAttestationError("assinatura Ed25519 não confere") from exc
 
     return AttestationResult(
         head_sha=head,
@@ -212,7 +235,11 @@ def main() -> None:
     parser.add_argument("--corpus-dir", default=str(aqui.parent))
     parser.add_argument(
         "--attestation-file",
-        default=os.getenv("EJC_GOLD_ATTESTATION_FILE", ""),
+        default=os.getenv(ENV_ATTESTATION_FILE, ""),
+    )
+    parser.add_argument(
+        "--public-key-file",
+        default=os.getenv(ENV_PUBLIC_KEY_FILE, ""),
     )
     parser.add_argument(
         "--head-sha",
@@ -220,13 +247,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    chave = os.getenv(ENV_KEY, "")
     try:
         resultado = validar_atestacao(
             corpus_dir=args.corpus_dir,
             attestation_file=args.attestation_file,
+            public_key_file=args.public_key_file,
             head_sha=args.head_sha,
-            chave=chave,
             repo_root=repo_root,
         )
     except GoldAttestationError as exc:
