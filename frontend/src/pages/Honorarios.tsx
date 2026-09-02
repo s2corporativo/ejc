@@ -162,16 +162,13 @@ export default function Honorarios() {
   };
 
   const abrirPagamento = async (fee: Fee) => {
-    // O segundo/terceiro pagamento não deve sugerir novamente o valor bruto do
-    // contrato. Consulta o subledger e preenche o saldo residual; para honorário
-    // percentual sem base monetária, deixa o valor em branco para revisão humana.
     let valor: number | string | undefined = fee.valor ?? undefined;
     try {
       const r = await api.get(`/fees/${fee.id}/pagamentos`);
       if (r.data?.saldo != null) valor = r.data.saldo;
     } catch {
-      // Falha ao buscar histórico não bloqueia o modal; o backend continuará
-      // protegendo contra overpayment e inconsistência.
+      // O backend continua protegendo contra overpayment, mas o modal de baixa
+      // pode ser aberto para correção manual se o subledger estiver indisponível.
     }
     setPagModal(fee);
     setPag({ valor, data_pagamento: hojeISO() });
@@ -192,6 +189,28 @@ export default function Honorarios() {
     }
   };
 
+  const abrirPix = async (fee: Fee) => {
+    // Cobrança deve ser fail-closed: nunca gerar PIX pelo valor bruto quando há
+    // pagamentos parciais. Consulta o subledger antes de abrir o modal.
+    try {
+      const r = await api.get(`/fees/${fee.id}/pagamentos`);
+      const saldo = r.data?.saldo;
+      if (saldo == null) {
+        toast.error("Saldo monetário ainda não está apurado para este honorário.");
+        return;
+      }
+      if (Number(saldo) <= 0) {
+        toast.error("Este honorário não possui saldo disponível para cobrança.");
+        return;
+      }
+      setPixModal({ ...fee, saldo });
+      setPixRes(null);
+      setPixQr("");
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Não foi possível apurar o saldo para PIX");
+    }
+  };
+
   const gerarPix = async (fee: any) => {
     if (!pixCfg.chave) {
       toast.error("Informe a chave PIX do escritório (campo abaixo).");
@@ -201,11 +220,21 @@ export default function Honorarios() {
     setPixRes(null);
     setPixQr("");
     try {
+      // Revalida imediatamente antes de gerar para reduzir risco de cobrar um
+      // saldo já baixado em outra sessão desde a abertura do modal.
+      const ledger = await api.get(`/fees/${fee.id}/pagamentos`);
+      const saldo = ledger.data?.saldo;
+      if (saldo == null || Number(saldo) <= 0) {
+        toast.error("Não há saldo monetário disponível para gerar esta cobrança.");
+        setPixModal(null);
+        return;
+      }
+      setPixModal((atual: any) => (atual ? { ...atual, saldo } : atual));
       const { data } = await api.post("/pix/cobranca", {
         chave: pixCfg.chave,
         nome: pixCfg.nome || "Escritorio",
         cidade: pixCfg.cidade || "Betim",
-        valor: fee.valor,
+        valor: saldo,
         txid: (fee.id || "").replace(/-/g, "").slice(0, 25),
         descricao: (fee.descricao || "Honorarios").slice(0, 25),
       });
@@ -276,28 +305,16 @@ export default function Honorarios() {
       {resumo && (
         <div className="grid grid-cols-3 gap-4 mb-6">
           <div className="card p-4">
-            <div className="text-xs text-slate-400 uppercase font-semibold">
-              Pendente
-            </div>
-            <div className="text-xl font-bold text-navy">
-              {fmtMoney(resumo.pendente)}
-            </div>
+            <div className="text-xs text-slate-400 uppercase font-semibold">Pendente</div>
+            <div className="text-xl font-bold text-navy">{fmtMoney(resumo.pendente)}</div>
           </div>
           <div className="card p-4">
-            <div className="text-xs text-slate-400 uppercase font-semibold">
-              Em atraso
-            </div>
-            <div className="text-xl font-bold text-danger-600">
-              {fmtMoney(resumo.atrasado)}
-            </div>
+            <div className="text-xs text-slate-400 uppercase font-semibold">Em atraso</div>
+            <div className="text-xl font-bold text-danger-600">{fmtMoney(resumo.atrasado)}</div>
           </div>
           <div className="card p-4">
-            <div className="text-xs text-slate-400 uppercase font-semibold">
-              Recebido no mês
-            </div>
-            <div className="text-xl font-bold text-success-600">
-              {fmtMoney(resumo.recebido_mes)}
-            </div>
+            <div className="text-xs text-slate-400 uppercase font-semibold">Recebido no mês</div>
+            <div className="text-xl font-bold text-success-600">{fmtMoney(resumo.recebido_mes)}</div>
           </div>
         </div>
       )}
@@ -315,10 +332,7 @@ export default function Honorarios() {
       </div>
 
       {error ? (
-        <ErrorState
-          message="Não foi possível carregar os honorários. Tente novamente."
-          onRetry={load}
-        />
+        <ErrorState message="Não foi possível carregar os honorários. Tente novamente." onRetry={load} />
       ) : !data ? (
         <Spinner />
       ) : data.data.length === 0 ? (
@@ -339,57 +353,27 @@ export default function Honorarios() {
             <tbody className="divide-y divide-slate-100">
               {(Array.isArray(data.data) ? data.data : []).map((f) => (
                 <tr key={f.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 font-medium text-navy">
-                    {f.descricao}
-                  </td>
-                  <td className="px-4 py-3 text-xs capitalize">
-                    {f.tipo.replace(/_/g, " ")}
-                  </td>
+                  <td className="px-4 py-3 font-medium text-navy">{f.descricao}</td>
+                  <td className="px-4 py-3 text-xs capitalize">{f.tipo.replace(/_/g, " ")}</td>
                   <td className="px-4 py-3 font-semibold">{quantoCobrar(f)}</td>
-                  <td className="px-4 py-3 text-slate-500">
-                    {fmtDate(f.data_vencimento)}
-                  </td>
+                  <td className="px-4 py-3 text-slate-500">{fmtDate(f.data_vencimento)}</td>
+                  <td className="px-4 py-3"><StatusBadge value={f.status} /></td>
                   <td className="px-4 py-3">
-                    <StatusBadge value={f.status} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      className="btn-ghost px-2 py-1 text-slate-500"
-                      title="Histórico de pagamentos"
-                      onClick={() => abrirHistorico(f)}
-                    >
+                    <button className="btn-ghost px-2 py-1 text-slate-500" title="Histórico de pagamentos" onClick={() => abrirHistorico(f)}>
                       <History size={15} />
                     </button>
                     {f.status !== "pago" && f.status !== "cancelado" && (
-                      <button
-                        className="btn-ghost px-2 py-1 text-success-700"
-                        title="Registrar pagamento"
-                        onClick={() => abrirPagamento(f)}
-                      >
+                      <button className="btn-ghost px-2 py-1 text-success-700" title="Registrar pagamento" onClick={() => abrirPagamento(f)}>
                         <DollarSign size={15} />
                       </button>
                     )}
-                    {f.status !== "pago" &&
-                      f.status !== "cancelado" &&
-                      f.valor != null && (
-                        <button
-                          className="btn-ghost px-2 py-1 text-teal-600"
-                          title="Cobrar via PIX"
-                          onClick={() => {
-                            setPixModal(f);
-                            setPixRes(null);
-                            setPixQr("");
-                          }}
-                        >
-                          <QrCode size={15} />
-                        </button>
-                      )}
+                    {f.status !== "pago" && f.status !== "cancelado" && f.valor != null && (
+                      <button className="btn-ghost px-2 py-1 text-teal-600" title="Cobrar via PIX" onClick={() => abrirPix(f)}>
+                        <QrCode size={15} />
+                      </button>
+                    )}
                     {f.tipo === "exito" && f.status === "pago" && (
-                      <button
-                        className="btn-ghost px-2 py-1 text-bronze-deep"
-                        title="Rateio de êxito 50/50"
-                        onClick={() => abrirRateio(f)}
-                      >
+                      <button className="btn-ghost px-2 py-1 text-bronze-deep" title="Rateio de êxito 50/50" onClick={() => abrirRateio(f)}>
                         <Split size={15} />
                       </button>
                     )}
@@ -401,34 +385,17 @@ export default function Honorarios() {
         </div>
       )}
 
-      <Modal
-        open={modal}
-        onClose={() => setModal(false)}
-        title="Novo lançamento"
-        wide
-      >
+      <Modal open={modal} onClose={() => setModal(false)} title="Novo lançamento" wide>
         <div className="grid sm:grid-cols-2 gap-4">
           <div className="sm:col-span-2">
             <label className="label">Descrição *</label>
-            <input
-              className="input"
-              value={form.descricao || ""}
-              onChange={(e) => setForm({ ...form, descricao: e.target.value })}
-            />
+            <input className="input" value={form.descricao || ""} onChange={(e) => setForm({ ...form, descricao: e.target.value })} />
           </div>
           <div>
             <label className="label">Cliente *</label>
-            <select
-              className="input"
-              value={form.client_id || ""}
-              onChange={(e) => setForm({ ...form, client_id: e.target.value })}
-            >
+            <select className="input" value={form.client_id || ""} onChange={(e) => setForm({ ...form, client_id: e.target.value })}>
               <option value="">Selecione...</option>
-              {clientes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.nome || c.razao_social}
-                </option>
-              ))}
+              {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome || c.razao_social}</option>)}
             </select>
           </div>
           <div>
@@ -438,13 +405,7 @@ export default function Honorarios() {
               value={form.tipo}
               onChange={(e) => {
                 const tipo = e.target.value;
-                setForm({
-                  ...form,
-                  tipo,
-                  ...(TIPOS_COM_PERCENTUAL.includes(tipo)
-                    ? {}
-                    : { percentual_exito: "" }),
-                });
+                setForm({ ...form, tipo, ...(TIPOS_COM_PERCENTUAL.includes(tipo) ? {} : { percentual_exito: "" }) });
               }}
             >
               <option value="fixo">Fixo</option>
@@ -457,29 +418,12 @@ export default function Honorarios() {
           </div>
           <div>
             <label className="label">Valor (R$)</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              className="input"
-              value={form.valor || ""}
-              onChange={(e) => setForm({ ...form, valor: e.target.value })}
-            />
+            <input type="number" step="0.01" min="0" className="input" value={form.valor || ""} onChange={(e) => setForm({ ...form, valor: e.target.value })} />
           </div>
           {TIPOS_COM_PERCENTUAL.includes(form.tipo) && (
             <div>
               <label className="label">Percentual de êxito (%)</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                max="100"
-                className="input"
-                value={form.percentual_exito || ""}
-                onChange={(e) =>
-                  setForm({ ...form, percentual_exito: e.target.value })
-                }
-              />
+              <input type="number" step="0.01" min="0" max="100" className="input" value={form.percentual_exito || ""} onChange={(e) => setForm({ ...form, percentual_exito: e.target.value })} />
             </div>
           )}
           <div className="sm:col-span-2 -mt-1">
@@ -491,58 +435,27 @@ export default function Honorarios() {
           </div>
           <div>
             <label className="label">Vencimento</label>
-            <input
-              type="date"
-              className="input"
-              value={form.data_vencimento || ""}
-              onChange={(e) =>
-                setForm({ ...form, data_vencimento: e.target.value })
-              }
-            />
+            <input type="date" className="input" value={form.data_vencimento || ""} onChange={(e) => setForm({ ...form, data_vencimento: e.target.value })} />
           </div>
         </div>
         <div className="flex justify-end mt-5">
-          <button className="btn-primary" disabled={salvando} onClick={salvar}>
-            {salvando ? "Salvando..." : "Lançar"}
-          </button>
+          <button className="btn-primary" disabled={salvando} onClick={salvar}>{salvando ? "Salvando..." : "Lançar"}</button>
         </div>
       </Modal>
 
-      <Modal
-        open={!!pagModal}
-        onClose={() => setPagModal(null)}
-        title="Registrar pagamento"
-      >
+      <Modal open={!!pagModal} onClose={() => setPagModal(null)} title="Registrar pagamento">
         <div className="space-y-4">
           <div>
             <label className="label">Valor pago (R$)</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0.01"
-              className="input"
-              value={pag.valor || ""}
-              onChange={(e) => setPag({ ...pag, valor: e.target.value })}
-            />
+            <input type="number" step="0.01" min="0.01" className="input" value={pag.valor || ""} onChange={(e) => setPag({ ...pag, valor: e.target.value })} />
           </div>
           <div>
             <label className="label">Data do pagamento</label>
-            <input
-              type="date"
-              className="input"
-              value={pag.data_pagamento || ""}
-              onChange={(e) =>
-                setPag({ ...pag, data_pagamento: e.target.value })
-              }
-            />
+            <input type="date" className="input" value={pag.data_pagamento || ""} onChange={(e) => setPag({ ...pag, data_pagamento: e.target.value })} />
           </div>
           <div>
             <label className="label">Forma</label>
-            <select
-              className="input"
-              value={pag.forma || ""}
-              onChange={(e) => setPag({ ...pag, forma: e.target.value })}
-            >
+            <select className="input" value={pag.forma || ""} onChange={(e) => setPag({ ...pag, forma: e.target.value })}>
               <option value="">—</option>
               <option value="pix">PIX</option>
               <option value="transferencia">Transferência</option>
@@ -552,21 +465,13 @@ export default function Honorarios() {
               <option value="outro">Outro</option>
             </select>
           </div>
-          <button
-            className="btn-primary w-full justify-center"
-            onClick={registrarPag}
-            disabled={registrando}
-          >
+          <button className="btn-primary w-full justify-center" onClick={registrarPag} disabled={registrando}>
             {registrando ? "Registrando..." : "Confirmar"}
           </button>
         </div>
       </Modal>
 
-      <Modal
-        open={!!histModal}
-        onClose={() => setHistModal(null)}
-        title="Histórico de pagamentos"
-      >
+      <Modal open={!!histModal} onClose={() => setHistModal(null)} title="Histórico de pagamentos">
         {histModal?.loading ? (
           <Spinner />
         ) : histModal?.data ? (
@@ -574,204 +479,87 @@ export default function Honorarios() {
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="card p-3">
                 <div className="text-xs text-slate-400">Total recebido</div>
-                <div className="font-bold text-success-700">
-                  {fmtMoney(histModal.data.total_pago)}
-                </div>
+                <div className="font-bold text-success-700">{fmtMoney(histModal.data.total_pago)}</div>
               </div>
               <div className="card p-3">
                 <div className="text-xs text-slate-400">Saldo</div>
-                <div className="font-bold text-navy">
-                  {histModal.data.saldo == null
-                    ? "A apurar"
-                    : fmtMoney(histModal.data.saldo)}
-                </div>
+                <div className="font-bold text-navy">{histModal.data.saldo == null ? "A apurar" : fmtMoney(histModal.data.saldo)}</div>
               </div>
             </div>
             {histModal.data.pagamentos?.length ? (
               <div className="overflow-x-auto border border-slate-100 rounded-lg">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
-                    <tr>
-                      <th className="p-2 text-left">Data</th>
-                      <th className="p-2 text-left">Forma</th>
-                      <th className="p-2 text-right">Valor</th>
-                    </tr>
+                    <tr><th className="p-2 text-left">Data</th><th className="p-2 text-left">Forma</th><th className="p-2 text-right">Valor</th></tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {histModal.data.pagamentos.map((p: any) => (
                       <tr key={p.id}>
                         <td className="p-2">{fmtDate(p.data_pagamento)}</td>
-                        <td className="p-2 capitalize">
-                          {(p.forma || "—").replace(/_/g, " ")}
-                        </td>
-                        <td className="p-2 text-right font-semibold">
-                          {fmtMoney(p.valor)}
-                        </td>
+                        <td className="p-2 capitalize">{(p.forma || "—").replace(/_/g, " ")}</td>
+                        <td className="p-2 text-right font-semibold">{fmtMoney(p.valor)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            ) : (
-              <Empty message="Nenhum pagamento registrado" />
-            )}
+            ) : <Empty message="Nenhum pagamento registrado" />}
           </div>
         ) : null}
       </Modal>
 
-      {/* REGRA FIXA: percentual 50/50 hardcoded no backend
-          (backend/app/routers/exito_rateio.py). Não há endpoint de
-          configuração societária para esse rateio — se um dia existir,
-          carregar o percentual da API em vez do texto fixo. */}
-      <Modal
-        open={!!rateioModal}
-        onClose={() => setRateioModal(null)}
-        title="Rateio de Êxito — 50% Titular / 50% Escritório"
-      >
+      <Modal open={!!rateioModal} onClose={() => setRateioModal(null)} title="Rateio de Êxito — 50% Titular / 50% Escritório">
         {rateioLoading || !rateioModal?.calc ? (
           <Spinner />
         ) : (
           <div className="space-y-4">
-            <div className="text-sm text-slate-600">
-              {rateioModal.calc.fee?.caso_titulo || "Caso"} · Titular:{" "}
-              <b>{rateioModal.calc.titular?.nome || "—"}</b>
-            </div>
+            <div className="text-sm text-slate-600">{rateioModal.calc.fee?.caso_titulo || "Caso"} · Titular: <b>{rateioModal.calc.titular?.nome || "—"}</b></div>
             <div className="space-y-2 text-sm">
               {[
-                [
-                  "Honorário de êxito (bruto)",
-                  rateioModal.calc.bruto,
-                  "text-navy",
-                ],
-                [
-                  "(−) Despesas do caso",
-                  rateioModal.calc.despesas_caso,
-                  "text-danger-500",
-                ],
-                [
-                  "(=) Líquido a ratear",
-                  rateioModal.calc.liquido,
-                  "text-navy font-bold",
-                ],
-                [
-                  "Titular do caso (50%)",
-                  rateioModal.calc.titular?.valor,
-                  "text-success-600 font-bold",
-                ],
-                [
-                  "Escritório (50%)",
-                  rateioModal.calc.escritorio?.valor,
-                  "text-bronze-deep font-bold",
-                ],
+                ["Honorário de êxito (bruto)", rateioModal.calc.bruto, "text-navy"],
+                ["(−) Despesas do caso", rateioModal.calc.despesas_caso, "text-danger-500"],
+                ["(=) Líquido a ratear", rateioModal.calc.liquido, "text-navy font-bold"],
+                ["Titular do caso (50%)", rateioModal.calc.titular?.valor, "text-success-600 font-bold"],
+                ["Escritório (50%)", rateioModal.calc.escritorio?.valor, "text-bronze-deep font-bold"],
               ].map(([l, v, cls]: any) => (
-                <div
-                  key={l}
-                  className="flex justify-between border-b border-slate-100 pb-1.5"
-                >
-                  <span className="text-slate-500">{l}</span>
-                  <span className={cls}>{fmtMoney(Number(v))}</span>
+                <div key={l} className="flex justify-between border-b border-slate-100 pb-1.5">
+                  <span className="text-slate-500">{l}</span><span className={cls}>{fmtMoney(Number(v))}</span>
                 </div>
               ))}
             </div>
-            {!rateioModal.calc.titular?.partner_id && (
-              <p className="text-xs text-warn-600">
-                ⚠ Titular não é sócio cadastrado — gere o saque manualmente.
-              </p>
-            )}
-            <button
-              className="btn-primary w-full justify-center"
-              disabled={!rateioModal.calc.titular?.partner_id}
-              onClick={gerarRateio}
-            >
-              Gerar saque do titular (pendente)
-            </button>
+            {!rateioModal.calc.titular?.partner_id && <p className="text-xs text-warn-600">⚠ Titular não é sócio cadastrado — gere o saque manualmente.</p>}
+            <button className="btn-primary w-full justify-center" disabled={!rateioModal.calc.titular?.partner_id} onClick={gerarRateio}>Gerar saque do titular (pendente)</button>
           </div>
         )}
       </Modal>
 
-      <Modal
-        open={!!pixModal}
-        onClose={() => setPixModal(null)}
-        title="Cobrança via PIX"
-      >
+      <Modal open={!!pixModal} onClose={() => setPixModal(null)} title="Cobrança via PIX">
         {pixModal && (
           <div className="space-y-3">
-            <p className="text-sm text-slate-600">
-              {pixModal.descricao} · <b>{fmtMoney(pixModal.valor)}</b>
-            </p>
+            <p className="text-sm text-slate-600">{pixModal.descricao} · saldo a cobrar: <b>{fmtMoney(pixModal.saldo)}</b></p>
             <div className="grid grid-cols-3 gap-2">
               <div className="col-span-3">
                 <label className="label">Chave PIX do escritório *</label>
-                <input
-                  className="input"
-                  value={pixCfg.chave || ""}
-                  onChange={(e) =>
-                    setPixCfg({ ...pixCfg, chave: e.target.value })
-                  }
-                  placeholder="CPF/CNPJ, e-mail, telefone ou aleatória"
-                />
-                <p className="text-[11px] text-slate-400 mt-1">
-                  A configuração fica somente nesta sessão do navegador.
-                </p>
+                <input className="input" value={pixCfg.chave || ""} onChange={(e) => setPixCfg({ ...pixCfg, chave: e.target.value })} placeholder="CPF/CNPJ, e-mail, telefone ou aleatória" />
+                <p className="text-[11px] text-slate-400 mt-1">A configuração fica somente nesta sessão do navegador.</p>
               </div>
               <div className="col-span-2">
                 <label className="label">Recebedor</label>
-                <input
-                  className="input"
-                  value={pixCfg.nome || ""}
-                  onChange={(e) =>
-                    setPixCfg({ ...pixCfg, nome: e.target.value })
-                  }
-                  placeholder="Nome do escritório"
-                />
+                <input className="input" value={pixCfg.nome || ""} onChange={(e) => setPixCfg({ ...pixCfg, nome: e.target.value })} placeholder="Nome do escritório" />
               </div>
               <div>
                 <label className="label">Cidade</label>
-                <input
-                  className="input"
-                  value={pixCfg.cidade || ""}
-                  onChange={(e) =>
-                    setPixCfg({ ...pixCfg, cidade: e.target.value })
-                  }
-                  placeholder="Betim"
-                />
+                <input className="input" value={pixCfg.cidade || ""} onChange={(e) => setPixCfg({ ...pixCfg, cidade: e.target.value })} placeholder="Betim" />
               </div>
             </div>
-            <button
-              className="btn-primary w-full justify-center"
-              onClick={() => gerarPix(pixModal)}
-            >
-              Gerar cobrança PIX
-            </button>
+            <button className="btn-primary w-full justify-center" onClick={() => gerarPix(pixModal)}>Gerar cobrança PIX</button>
             {pixRes && (
               <div className="text-center space-y-2 pt-2 border-t border-slate-100">
-                {pixQr && (
-                  <img
-                    src={pixQr}
-                    alt="QR PIX"
-                    className="mx-auto rounded-lg border border-black/[0.05] shadow-sm"
-                  />
-                )}
+                {pixQr && <img src={pixQr} alt="QR PIX" className="mx-auto rounded-lg border border-black/[0.05] shadow-sm" />}
                 <p className="text-xs text-slate-500">PIX copia e cola:</p>
-                <textarea
-                  readOnly
-                  className="input w-full text-[11px] font-mono"
-                  rows={3}
-                  value={pixRes.copia_e_cola}
-                  onClick={(e) => (e.target as HTMLTextAreaElement).select()}
-                />
-                <button
-                  className="btn-secondary text-sm"
-                  onClick={() => {
-                    navigator.clipboard?.writeText(pixRes.copia_e_cola);
-                  }}
-                >
-                  Copiar código
-                </button>
-                <p className="text-[11px] text-slate-400">
-                  Após a confirmação do pagamento, registre a baixa pelo botão $
-                  na lista.
-                </p>
+                <textarea readOnly className="input w-full text-[11px] font-mono" rows={3} value={pixRes.copia_e_cola} onClick={(e) => (e.target as HTMLTextAreaElement).select()} />
+                <button className="btn-secondary text-sm" onClick={() => navigator.clipboard?.writeText(pixRes.copia_e_cola)}>Copiar código</button>
+                <p className="text-[11px] text-slate-400">Após a confirmação do pagamento, registre a baixa pelo botão $ na lista.</p>
               </div>
             )}
           </div>
