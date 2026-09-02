@@ -116,9 +116,6 @@ const FILA: { key: string; label: string; desc: string }[] = [
 // Espelha STATUS_EXIGE_REVISAO do backend (legal_docs.py).
 const STATUS_POS_APROVACAO = new Set(["aprovada", "final", "protocolada"]);
 
-// Corpo do 409 do gate antialucinação (citation_gate.aplicar_gate_hitl):
-// citações que a base oficial não confirmou e que impedem a aprovação enquanto
-// não forem corrigidas — ou assumidas por override justificado.
 type CitacaoBloqueio = {
   mensagem?: string;
   politica?: string;
@@ -140,11 +137,7 @@ export default function Pecas() {
   const [aprovacao, setAprovacao] = useState<{
     doc: LegalDoc;
     observacoes: string;
-    erro?: string; // E05: validação do backend exibida DENTRO do dialog
-    // P2-9 (auditoria de IA 18/08): o gate antialucinação devolve 409 com as
-    // citações bloqueantes. Antes, o advogado via só a mensagem de erro e o
-    // fluxo morria ali. Agora o 409 vira decisão: corrigir a peça ou assumir
-    // por escrito o override, que fica auditado no backend.
+    erro?: string;
     bloqueio?: CitacaoBloqueio;
     justificativa?: string;
   } | null>(null);
@@ -163,7 +156,6 @@ export default function Pecas() {
   const [auditando, setAuditando] = useState(false);
   const [printDoc, setPrintDoc] = useState<LegalDoc | null>(null);
 
-  // Dispara a impressão somente depois que a .print-view estiver renderizada
   useEffect(() => {
     if (!printDoc) return;
     const t = window.setTimeout(() => {
@@ -212,14 +204,7 @@ export default function Pecas() {
   };
 
   const [erro, setErro] = useState(false);
-
-  // Modo Caso: `?caso=` na URL vence; sem query, o caso ativo preenche.
-  // GET /legal-docs/ já aceita case_id (fecha o GAP do link_modulo da jornada).
   const { casoFiltro, casoFiltroNome, removerFiltro } = useCasoFiltro();
-
-  // ── Gate da Ficha de Triagem (só quando há caso vinculado) ──────────
-  // Sem caso (geração avulsa) a ficha NÃO é exigida. Com caso, a peça só é
-  // liberada após a ficha estar "confirmada". O 409 do backend é o fallback.
   const [fichaStatus, setFichaStatus] = useState<FichaStatus>("rascunho");
   const [fichaCampos, setFichaCampos] = useState<FichaTriagemCampos | null>(
     null,
@@ -241,8 +226,6 @@ export default function Pecas() {
     fichaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
-  // Abre o gerador de IA respeitando o gate: com caso e sem ficha confirmada,
-  // leva o usuário à ficha em vez de abrir o modal.
   const abrirGeradorIA = () => {
     if (casoFiltro && !fichaConfirmada) {
       irParaFicha();
@@ -251,7 +234,6 @@ export default function Pecas() {
     setModalIA(true);
   };
 
-  // Fallback: backend barrou a geração (409 need_ficha_triagem).
   const onNeedFicha = useCallback(() => {
     setModalIA(false);
     setFichaStatus("rascunho");
@@ -282,7 +264,6 @@ export default function Pecas() {
     }
     setSalvando(true);
     try {
-      // Modo Caso: peça manual criada com o filtro ativo nasce vinculada ao caso.
       await api.post("/legal-docs/", {
         ...form,
         case_id: form.case_id ?? casoFiltro ?? null,
@@ -326,16 +307,7 @@ export default function Pecas() {
     }
   };
 
-  // BUG-08 (HITL): aprovação humana obrigatória de peças geradas por IA.
-  // Único caminho para aprovar peça de IA; exige observações não vazias.
-  // Um só ato no backend (POST /conferir-e-assinar): valida juridicamente se
-  // preciso, registra a revisão HITL e assina — tudo numa transação.
   const aprovarPeca = async () => {
-    // E05 (auditoria funcional): quando o backend rejeita (422 — ex.: score de
-    // validação jurídica abaixo do mínimo), o dialog PERMANECE aberto com a
-    // causa exata dentro dele (campo obrigatório e feedback no próprio dialog),
-    // em vez de fechar/avancar com erro silencioso e o usuário sem saber o quê
-    // corrigir.
     if (!aprovacao) return;
     const observacoes = aprovacao.observacoes.trim();
     if (!observacoes) {
@@ -345,8 +317,6 @@ export default function Pecas() {
       });
       return;
     }
-    // Override do gate de citações: só vai quando o advogado JÁ viu o bloqueio
-    // e escreveu a justificativa — o backend a exige e a registra em auditoria.
     const justificativa = (aprovacao.justificativa || "").trim();
     if (aprovacao.bloqueio && !justificativa) {
       setAprovacao({
@@ -374,13 +344,9 @@ export default function Pecas() {
       load();
     } catch (e: any) {
       const msg = errDetail(e, "Falha ao conferir e assinar a peça");
-      // Erro de validação (422) fica visível DENTRO do dialog; o usuário
-      // corrige e reenvia. Erros genéricos vão para o toast.
       const status = e?.response?.status;
       const detail = e?.response?.data?.detail;
       if (status === 409 && detail?.erro === "citacoes_nao_verificadas") {
-        // O 409 do gate NÃO é fim de linha: mostra o que bloqueou e abre o
-        // caminho do override justificado, no mesmo dialog.
         setAprovacao({
           ...aprovacao,
           bloqueio: {
@@ -405,10 +371,24 @@ export default function Pecas() {
   };
 
   const avancarStatus = async (doc: LegalDoc, status: string) => {
-    // FLX-070: "protocolada" exige comprovante registrado ANTES (o backend
-    // devolve 422 no PATCH direto) — desvia para o fluxo de protocolo.
     if (status === "protocolada") {
       await iniciarProtocolo(doc);
+      return;
+    }
+    // Nunca promover `corrigida → aprovada` pelo PATCH genérico: o endpoint
+    // canônico de aprovação registra o ato humano e reindexa a peça no RAG.
+    if (status === "aprovada") {
+      if (doc.ai_generated) {
+        setAprovacao({ doc, observacoes: doc.notas_revisao || "" });
+        return;
+      }
+      try {
+        await api.patch(`/legal-docs/${doc.id}/aprovar`, { observacoes: "" });
+        toast.success('Peça movida para "Aprovada"');
+        load();
+      } catch (e: any) {
+        toast.error(errDetail(e, "Falha ao aprovar a peça"));
+      }
       return;
     }
     try {
@@ -421,7 +401,6 @@ export default function Pecas() {
     }
   };
 
-  // ── FLX-070: registrar protocolo → status "protocolada" ────────────────
   const [protocolo, setProtocolo] = useState<{
     doc: LegalDoc;
     numero: string;
@@ -430,8 +409,6 @@ export default function Pecas() {
   } | null>(null);
   const [protocolando, setProtocolando] = useState(false);
 
-  // Se a peça já tem numero_protocolo (a listagem não traz; o detalhe sim),
-  // pula o modal e vai direto ao PATCH de status. Cancelar o modal não move.
   const iniciarProtocolo = async (doc: LegalDoc) => {
     try {
       const { data } = await api.get<LegalDoc>(`/legal-docs/${doc.id}`);
@@ -462,10 +439,8 @@ export default function Pecas() {
     }
     setProtocolando(true);
     try {
-      // 1) registra o comprovante (número/tribunal/data) na peça
       await api.patch(`/legal-docs/${protocolo.doc.id}/protocolo`, payload);
     } catch (e: any) {
-      // Peça segue onde estava — modal aberto para corrigir e tentar de novo.
       toast.error(
         mensagemErroProtocolo(e?.response?.status, e?.response?.data?.detail),
       );
@@ -473,13 +448,11 @@ export default function Pecas() {
       return;
     }
     try {
-      // 2) só então move o status (gates de HITL/validação continuam valendo)
       await api.patch(`/legal-docs/${protocolo.doc.id}`, {
         status: "protocolada",
       });
       toast.success('Protocolo registrado — peça movida para "Protocolada"');
     } catch (e: any) {
-      // Protocolo JÁ registrado: um novo "Protocolar" pula o modal e só move.
       toast.error(
         errDetail(
           e,
@@ -501,7 +474,6 @@ export default function Pecas() {
       ]);
       setTemplates(t.data.data);
       setCasos(c.data.data);
-      // Modo Caso: pré-seleciona o caso filtrado ao gerar de template.
       setCasoSel((prev) => prev || casoFiltro || "");
       setTplModal(true);
     } catch (e: any) {
@@ -524,9 +496,6 @@ export default function Pecas() {
     }
   };
 
-  // Peça ainda não aprovada baixa o PDF de LEITURA (/pdf-minuta, marcado como
-  // minuta, sem gate de protocolo) — o advogado precisa ler antes de assinar.
-  // Aprovada/final/protocolada segue no PDF de protocolo (/pdf, com gates).
   const baixarPdf = async (doc: LegalDoc) => {
     const aprovada = STATUS_POS_APROVACAO.has(doc.status);
     try {
@@ -564,8 +533,6 @@ export default function Pecas() {
     }
   };
 
-  // Geração cara (weasyprint + mesclagem de anexos) e rate-limited (5/min):
-  // trava o botão da linha durante a chamada para evitar disparo duplo.
   const [gerandoVL, setGerandoVL] = useState<string | null>(null);
 
   const baixarDocumentoUnico = async (doc: LegalDoc) => {
@@ -594,7 +561,6 @@ export default function Pecas() {
 
   const imprimirPeca = async (doc: LegalDoc) => {
     try {
-      // A listagem pode não trazer o conteúdo completo — busca a peça inteira
       const { data } = await api.get(`/legal-docs/${doc.id}`);
       setPrintDoc(data);
     } catch (e: any) {
@@ -631,7 +597,6 @@ export default function Pecas() {
     setAuditando(true);
     setAuditoria(null);
     try {
-      // Envia apenas o id — o backend busca o conteúdo com RBAC/ownership.
       const { data } = await api.post("/ai/auditar-peca", {
         peca_id: doc.id,
         tipo_peca: doc.tipo_peca,
@@ -647,16 +612,13 @@ export default function Pecas() {
     }
   };
 
-  // ── Fila de produção: agrupa pelas etapas reais do backend ────────────────
   const docs = data && Array.isArray(data.data) ? data.data : [];
   const grupos = FILA.map((s) => ({
     ...s,
     itens: docs.filter((p) => p.status === s.key),
   }));
-  // Defensivo: status fora do enum conhecido (nunca some da tela).
   const foraFila = docs.filter((p) => !FILA.some((s) => s.key === p.status));
 
-  // Origem manual/IA + estado da revisão humana (HITL) — badge compartilhada.
   const origemBadge = (p: LegalDoc) =>
     p.ai_generated ? (
       p.human_reviewed ? (
@@ -672,7 +634,6 @@ export default function Pecas() {
       <span className="text-xs text-slate-400">manual</span>
     );
 
-  // Link para o caso vinculado (a listagem só expõe case_id, sem título).
   const casoLink = (p: LegalDoc) =>
     p.case_id ? (
       <Link
@@ -694,8 +655,6 @@ export default function Pecas() {
     p.status === "corrigida" &&
     p.validacao_juridica?.apto_fluxo;
 
-  // FLX-070: o registro de protocolo aceita peça aprovada/final (backend:
-  // STATUS_EXIGE_REVISAO) — daí o botão nessas duas etapas da fila.
   const podeProtocolar = (p: LegalDoc) =>
     p.status === "aprovada" || p.status === "final";
 
@@ -731,7 +690,6 @@ export default function Pecas() {
         </div>
       )}
 
-      {/* Ficha de triagem: gate obrigatório antes de gerar peça com caso. */}
       {casoFiltro && (
         <div className="mb-6 space-y-4">
           {fichaConfirmada && fichaCampos && (
@@ -792,9 +750,6 @@ export default function Pecas() {
         <Spinner />
       ) : docs.length === 0 ? (
         casoFiltro ? (
-          // Filtro de caso ativo: peças sem vínculo (ex.: demonstrativos das
-          // calculadoras) ficam ocultas — oferecer a visão completa evita o
-          // "salvei e sumiu" relatado na auditoria de usabilidade.
           <EmptyState
             title="Nenhuma peça neste caso"
             message="Você está vendo apenas as peças do caso filtrado. Peças sem vínculo (como demonstrativos de calculadoras) aparecem na lista completa."
@@ -809,8 +764,6 @@ export default function Pecas() {
         )
       ) : (
         <>
-          {/* Contadores da fila de produção — todas as etapas do enum, mesmo
-            vazias, para o fluxo completo ficar visível de relance. */}
           <div className="mb-4 flex flex-wrap items-center gap-2">
             {grupos.map((g) => (
               <span
@@ -855,8 +808,6 @@ export default function Pecas() {
                 </span>
               </div>
 
-              {/* Mobile (<md): cards empilhados com os fluxos essenciais —
-                visualizar, baixar e revisar/aprovar (HITL) usáveis em 390px. */}
               <div className="space-y-2 md:hidden">
                 {g.itens.map((p) => (
                   <div key={p.id} className="card p-4">
@@ -883,9 +834,7 @@ export default function Pecas() {
                       {origemBadge(p)}
                       {(() => {
                         const v = validacaoLabel(p);
-                        return (
-                          <span className={`badge ${v.cls}`}>{v.label}</span>
-                        );
+                        return <span className={`badge ${v.cls}`}>{v.label}</span>;
                       })()}
                       {casoLink(p)}
                     </div>
@@ -1095,7 +1044,6 @@ export default function Pecas() {
         </>
       )}
 
-      {/* Nova peça */}
       <Modal
         open={modal}
         onClose={() => setModal(false)}
@@ -1166,7 +1114,6 @@ export default function Pecas() {
         </div>
       </Modal>
 
-      {/* Visualizar */}
       <Modal
         open={!!view}
         onClose={() => setView(null)}
@@ -1175,8 +1122,8 @@ export default function Pecas() {
       >
         {view?.ai_generated && !view?.human_reviewed && (
           <div className="mb-3 p-3 rounded-lg bg-warn-50 text-warn-800 text-xs font-medium">
-            ⚠️ Peça gerada por IA — revisão humana obrigatória antes de aprovar
-            (Provimento OAB 205/2021)
+            ⚠️ Peça gerada por IA — revisão humana obrigatória antes de aprovar,
+            conforme a política interna de governança jurídica e HITL do EJC.
           </div>
         )}
         {view?.validacao_juridica && (
@@ -1211,7 +1158,6 @@ export default function Pecas() {
         <Markdown source={view?.conteudo} className="text-sm text-slate-700" />
       </Modal>
 
-      {/* Revisão HITL */}
       <Modal
         open={!!revisao}
         onClose={() => setRevisao(null)}
@@ -1230,21 +1176,15 @@ export default function Pecas() {
           }
         />
         <div className="flex justify-end gap-2 mt-4">
-          <button
-            className="btn-danger"
-            onClick={() => registrarRevisao(false)}
-          >
+          <button className="btn-danger" onClick={() => registrarRevisao(false)}>
             Reprovar
           </button>
-          <button
-            className="btn-primary"
-            onClick={() => registrarRevisao(true)}
-          >
+          <button className="btn-primary" onClick={() => registrarRevisao(true)}>
             <ShieldCheck size={15} /> Aprovar revisão
           </button>
         </div>
       </Modal>
-      {/* Aprovação HITL de peça gerada por IA (BUG-08) */}
+
       <Modal
         open={!!aprovacao}
         onClose={() => setAprovacao(null)}
@@ -1261,7 +1201,6 @@ export default function Pecas() {
           placeholder="Observações da revisão (obrigatório)"
           value={aprovacao?.observacoes || ""}
           onChange={(e) =>
-            // E05: limpa o erro em exibição ao digitar
             aprovacao &&
             setAprovacao({
               ...aprovacao,
@@ -1270,9 +1209,6 @@ export default function Pecas() {
             })
           }
         />
-        {/* P2-9: citações que a base oficial não confirmou. O texto NÃO é
-          reescrito — o advogado corrige a peça ou assume o override por
-          escrito, e a justificativa vai para a trilha de auditoria. */}
         {aprovacao?.bloqueio && (
           <div className="mt-3 rounded-lg border-2 border-amber-300 bg-amber-50 p-3">
             <div className="mb-1 flex items-center gap-2 text-sm font-bold text-amber-800">
@@ -1317,8 +1253,6 @@ export default function Pecas() {
             />
           </div>
         )}
-        {/* E05 (auditoria funcional): causa exata da rejeição do backend
-          (ex.: validação jurídica com score abaixo do mínimo) exibida no dialog */}
         {aprovacao?.erro && (
           <div className="mt-3 rounded-lg border border-danger-300 bg-danger-50 px-3 py-2 text-xs text-danger-700">
             <strong>Não foi possível aprovar:</strong> {aprovacao.erro}
@@ -1342,8 +1276,7 @@ export default function Pecas() {
           </button>
         </div>
       </Modal>
-      {/* FLX-070: registrar protocolo antes de mover para "Protocolada".
-        Cancelar/fechar NÃO move a peça — nenhum PATCH acontece sem confirmar. */}
+
       <Modal
         open={!!protocolo}
         onClose={() => setProtocolo(null)}
@@ -1412,7 +1345,7 @@ export default function Pecas() {
           </button>
         </div>
       </Modal>
-      {/* Modal: gerar de template */}
+
       <Modal
         open={tplModal}
         onClose={() => setTplModal(false)}
@@ -1456,7 +1389,6 @@ export default function Pecas() {
         </div>
       </Modal>
 
-      {/* Modal: resultado da auditoria IA */}
       <Modal
         open={!!auditoria || auditando}
         onClose={() => {
@@ -1485,7 +1417,6 @@ export default function Pecas() {
         }}
       />
 
-      {/* View de impressão — invisível em tela, única coisa visível no print */}
       {printDoc && (
         <div className="print-view">
           <h1 className="print-view-title">{printDoc.titulo}</h1>
@@ -1500,7 +1431,6 @@ export default function Pecas() {
   );
 }
 
-// Semáforo de risco reaproveitando os tons do DS (Badge).
 const RISCO_TONE: Record<
   FichaTriagemCampos["risco_processual"],
   "green" | "amber" | "red"
@@ -1510,7 +1440,6 @@ const RISCO_TONE: Record<
   alto: "red",
 };
 
-// valor_causa é string livre; formata como moeda quando for numérico.
 function fmtValorCausa(v: string): string {
   const n = Number(
     String(v)
