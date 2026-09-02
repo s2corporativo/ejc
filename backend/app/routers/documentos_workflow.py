@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.core.security import ROLE_LEVEL, get_current_user
+from app.core.security import get_current_user
 from app.models.audit_log import AuditLog, criar_audit_log
 from app.models.document import DocConfidencialidade, Document
 from app.models.redesign import DocumentTypeMaster
@@ -82,6 +82,18 @@ def _serializar_lista(document: Document) -> dict:
     }
 
 
+def _query_visivel(cu: User):
+    query = select(Document).where(Document.deleted_at.is_(None))
+    return aplicar_visibilidade_documentos(query, cu)
+
+
+async def _contar(db: AsyncSession, query) -> int:
+    total = await db.scalar(
+        select(sqlfunc.count()).select_from(query.order_by(None).subquery())
+    )
+    return int(total or 0)
+
+
 async def _documento_ativo(db: AsyncSession, doc_id: str) -> Document:
     document = await db.scalar(
         select(Document).where(Document.id == doc_id, Document.deleted_at.is_(None))
@@ -106,7 +118,47 @@ async def _validar_tipo(db: AsyncSession, tipo: str | None) -> str | None:
     return tipo
 
 
-@router.get("/inbox")
+@router.get("/workflow/stats")
+async def estatisticas_documentais(
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """KPIs exatos no servidor, sempre dentro do mesmo escopo de visibilidade."""
+
+    base = _query_visivel(cu)
+    agora = datetime.now(timezone.utc)
+    inicio_mes = datetime(agora.year, agora.month, 1, tzinfo=timezone.utc)
+
+    total = await _contar(db, base)
+    confidenciais = await _contar(
+        db,
+        base.where(Document.confidencialidade != DocConfidencialidade.normal),
+    )
+    este_mes = await _contar(db, base.where(Document.created_at >= inicio_mes))
+    inbox = await _contar(db, base.where(filtro_caixa_entrada()))
+
+    tipo_query = select(Document.tipo, sqlfunc.count(Document.id)).where(
+        Document.deleted_at.is_(None)
+    )
+    tipo_query = aplicar_visibilidade_documentos(tipo_query, cu)
+    tipo_rows = (
+        await db.execute(tipo_query.group_by(Document.tipo).order_by(sqlfunc.count(Document.id).desc()))
+    ).all()
+    por_tipo = [
+        {"tipo": tipo or "outros", "total": int(qtd)}
+        for tipo, qtd in tipo_rows
+    ]
+    return {
+        "total": total,
+        "confidenciais": confidenciais,
+        "este_mes": este_mes,
+        "inbox": inbox,
+        "tipos_distintos": len(por_tipo),
+        "por_tipo": por_tipo[:8],
+    }
+
+
+@router.get("/workflow/inbox")
 async def caixa_entrada_documental(
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
@@ -117,17 +169,13 @@ async def caixa_entrada_documental(
 ):
     """Itens visíveis que exigem classificação, vínculo ou correção operacional."""
 
-    query = select(Document).where(Document.deleted_at.is_(None))
-    query = aplicar_visibilidade_documentos(query, cu)
-    query = query.where(filtro_caixa_entrada())
+    query = _query_visivel(cu).where(filtro_caixa_entrada())
     if case_id:
         query = query.where(Document.case_id == case_id)
     if client_id:
         query = query.where(Document.client_id == client_id)
 
-    total = await db.scalar(
-        select(sqlfunc.count()).select_from(query.order_by(None).subquery())
-    )
+    total = await _contar(db, query)
     rows = (
         await db.execute(
             query.order_by(Document.created_at.desc(), Document.id.desc())
@@ -137,7 +185,7 @@ async def caixa_entrada_documental(
     ).scalars().all()
     return {
         "data": [_serializar_lista(item) for item in rows],
-        "total": int(total or 0),
+        "total": total,
         "page": page,
         "page_size": page_size,
     }
@@ -214,7 +262,7 @@ async def upload_workflow(
     file: UploadFile = File(...),
     titulo: str = Form(...),
     tipo: Optional[str] = Form(None),
-    confidencialidade: str = Form("normal"),
+    confidencialidade: str = Form("confidencial"),
     case_id: Optional[str] = Form(None),
     client_id: Optional[str] = Form(None),
     documento_anterior_id: Optional[str] = Form(None),
@@ -251,6 +299,7 @@ async def upload_workflow(
     except MalwareScanIndisponivelError as exc:
         raise HTTPException(status_code=503, detail="Validação antimalware indisponível") from exc
 
+    duplicado: Document | None = None
     try:
         ingestao = await preparar_ingestao_documento_local(
             file,
@@ -282,6 +331,18 @@ async def upload_workflow(
                 ingestao,
                 user_id=cu.id,
             )
+            if duplicado is not None and permitir_duplicado:
+                # persistir_documento_local faz o commit; registrar antes mantém
+                # o override e o novo Document na MESMA transação/rollback.
+                await criar_audit_log(
+                    db,
+                    cu.id,
+                    cu.role.value,
+                    "DUPLICATE_OVERRIDE",
+                    "documents",
+                    ingestao.doc_id,
+                    dados_depois={"duplicate_document_id": duplicado.id, "sha_match": True},
+                )
             document = await persistir_documento_local(
                 db,
                 ingestao,
@@ -315,18 +376,6 @@ async def upload_workflow(
         raise HTTPException(status_code=409, detail="Grupo de versões requer saneamento antes de nova revisão") from exc
     except (DocumentoVersaoError, PersistenciaDocumentoInvalidaError) as exc:
         raise HTTPException(status_code=422, detail="Metadados de versionamento inválidos") from exc
-
-    if duplicado is not None and permitir_duplicado:
-        await criar_audit_log(
-            db,
-            cu.id,
-            cu.role.value,
-            "DUPLICATE_OVERRIDE",
-            "documents",
-            document.id,
-            dados_depois={"duplicate_document_id": duplicado.id, "sha_match": True},
-        )
-        await db.commit()
 
     if case_id:
         from app.services.status_transicao import avancar_status_pos_commit
