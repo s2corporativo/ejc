@@ -73,8 +73,16 @@ def _deadline(**kwargs) -> Deadline:
         ciencia_confirmada=False,
         created_at=datetime.now(timezone.utc),
     )
+    estado_historico = {
+        chave: kwargs.pop(chave)
+        for chave in ("confirmado", "conferido_por", "conferido_em")
+        if chave in kwargs
+    }
     base.update(kwargs)
-    return Deadline(**base)
+    prazo = Deadline(**base)
+    for chave, valor in estado_historico.items():
+        setattr(prazo, chave, valor)
+    return prazo
 
 
 def _audit_noop(monkeypatch):
