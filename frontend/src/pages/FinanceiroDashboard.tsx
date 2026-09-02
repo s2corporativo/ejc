@@ -1,18 +1,18 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   DollarSign,
-  TrendingUp,
   TrendingDown,
   Wallet,
-  Award,
-  Scale,
   AlertCircle,
   CheckCircle,
-  BarChart3,
   RefreshCw,
   Download,
   FileText,
   PiggyBank,
+  ChevronRight,
+  Clock3,
+  Receipt,
+  BarChart3,
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "../components/Toast";
@@ -20,7 +20,10 @@ import { Empty, Spinner } from "../components/UI";
 
 function fmtR$(v: number | undefined | null) {
   if (v == null) return "R$ 0,00";
-  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  return Number(v).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
 }
 
 const CATEGORIA_LABEL: Record<string, string> = {
@@ -35,41 +38,50 @@ const CATEGORIA_LABEL: Record<string, string> = {
   outro: "Outros",
 };
 
+type FinanceDestino = "honorarios" | "despesas" | "nfse" | "contratos";
+
+interface AtencaoItem {
+  codigo: string;
+  prioridade: "alta" | "media" | "baixa";
+  titulo: string;
+  qtd: number;
+  valor: number | null;
+  acao?: { tab?: FinanceDestino; status?: string };
+}
+
 function StatCard({
   label,
   value,
   icon: Icon,
-  color = "blue",
+  tone = "slate",
   sub,
   onClick,
 }: {
   label: string;
   value: string;
   icon: React.ElementType;
-  color?: "blue" | "green" | "red" | "yellow" | "purple" | "slate" | "bronze";
+  tone?: "green" | "red" | "yellow" | "blue" | "slate";
   sub?: string;
   onClick?: () => void;
 }) {
-  const colors: Record<string, string> = {
-    blue: "bg-primary-50 text-primary-600",
+  const tones: Record<string, string> = {
     green: "bg-success-50 text-success-600",
     red: "bg-danger-50 text-danger-600",
     yellow: "bg-warn-50 text-warn-600",
-    purple: "bg-ai-50 text-ai-600",
+    blue: "bg-primary-50 text-primary-600",
     slate: "bg-slate-100 text-slate-600",
-    bronze: "bg-orange-50 text-orange-600",
   };
-  const inner = (
+  const content = (
     <>
-      <div className={`p-2.5 rounded-lg ${colors[color]}`}>
-        <Icon className="w-5 h-5" />
+      <div className={`rounded-lg p-2.5 ${tones[tone]}`}>
+        <Icon className="h-5 w-5" />
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-[11px] text-slate-500 uppercase tracking-wide font-medium">
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
           {label}
         </p>
-        <p className="text-lg font-bold text-slate-800 mt-0.5">{value}</p>
-        {sub && <p className="text-[11px] text-slate-400 mt-0.5">{sub}</p>}
+        <p className="mt-0.5 text-lg font-bold text-slate-800">{value}</p>
+        {sub && <p className="mt-0.5 text-[11px] text-slate-400">{sub}</p>}
       </div>
     </>
   );
@@ -78,14 +90,13 @@ function StatCard({
       <button
         type="button"
         onClick={onClick}
-        className="card p-4 flex items-center gap-3 text-left w-full cursor-pointer transition-shadow hover:shadow-md hover:ring-1 hover:ring-primary-200"
-        title={`Ver detalhes de ${label}`}
+        className="card flex w-full items-center gap-3 p-4 text-left transition-shadow hover:shadow-md hover:ring-1 hover:ring-primary-200"
       >
-        {inner}
+        {content}
       </button>
     );
   }
-  return <div className="card p-4 flex items-center gap-3">{inner}</div>;
+  return <div className="card flex items-center gap-3 p-4">{content}</div>;
 }
 
 function competenciaAtual() {
@@ -96,13 +107,14 @@ function competenciaAtual() {
 export default function FinanceiroDashboard({
   competencia = competenciaAtual(),
   onDrillDown,
+  onNavigate,
 }: {
-  /** Competência (AAAA-MM) — controlada pelo FinanceiroWorkspace. */
   competencia?: string;
-  /** Navega para outra aba do workspace (drill-down dos indicadores). */
   onDrillDown?: (tab: "honorarios" | "despesas", status?: string) => void;
+  onNavigate?: (tab: FinanceDestino) => void;
 }) {
   const [d, setD] = useState<any>(null);
+  const [atencao, setAtencao] = useState<AtencaoItem[]>([]);
   const [relatorio, setRelatorio] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -111,15 +123,21 @@ export default function FinanceiroDashboard({
     setLoading(true);
     setErro(null);
     try {
-      const r = await api.get(
-        `/financeiro/consolidado?competencia=${competencia}`,
-      );
-      setD(r.data);
+      const consolidado = await api.get("/financeiro/consolidado", {
+        params: { competencia },
+      });
+      setD(consolidado.data);
+      try {
+        const fila = await api.get("/financeiro/atencao");
+        setAtencao(Array.isArray(fila.data?.itens) ? fila.data.itens : []);
+      } catch {
+        setAtencao([]);
+      }
     } catch (e: any) {
       setD(null);
       setErro(
         e?.response?.data?.detail ||
-          "Não foi possível carregar o consolidado financeiro. Os valores abaixo podem estar indisponíveis — tente atualizar.",
+          "Não foi possível carregar o consolidado financeiro.",
       );
     } finally {
       setLoading(false);
@@ -132,20 +150,17 @@ export default function FinanceiroDashboard({
 
   const carregarRelatorio = async () => {
     try {
-      const r = await api.get(`/relatorio/mensal?mes=${competencia}`);
+      const r = await api.get("/relatorio/mensal", {
+        params: { mes: competencia },
+      });
       setRelatorio(r.data);
     } catch (e: any) {
-      setRelatorio(null);
-      setErro(
-        e?.response?.data?.detail ||
-          "Não foi possível carregar o relatório mensal. Tente atualizar.",
-      );
+      toast.error(e?.response?.data?.detail || "Falha ao carregar relatório");
     }
   };
 
   const exportarCSV = async () => {
     try {
-      // Reusa o cliente axios (baseURL /api + interceptor de token/refresh).
       const resp = await api.get("/despesas/export/csv", {
         params: { competencia },
         responseType: "blob",
@@ -157,315 +172,238 @@ export default function FinanceiroDashboard({
       a.click();
       URL.revokeObjectURL(url);
     } catch (e: any) {
-      toast.error(
-        e.response?.data?.detail || "Não foi possível exportar o CSV",
-      );
+      toast.error(e?.response?.data?.detail || "Não foi possível exportar o CSV");
     }
   };
 
+  const navegarAtencao = (item: AtencaoItem) => {
+    const tab = item.acao?.tab;
+    if (!tab) return;
+    if ((tab === "honorarios" || tab === "despesas") && onDrillDown) {
+      onDrillDown(tab, item.acao?.status);
+      return;
+    }
+    onNavigate?.(tab);
+  };
+
+  if (loading) return <Spinner />;
+  if (erro) {
+    return (
+      <div className="rounded-xl border border-danger-200 bg-danger-50 p-4 text-sm text-danger-700">
+        {erro}
+        <button onClick={load} className="ml-3 underline">
+          Tentar novamente
+        </button>
+      </div>
+    );
+  }
+
   const rec = d?.receitas ?? {};
   const desp = d?.despesas ?? {};
-  const caixa = d?.caixa_periodo ?? 0;
-  const totalGeralDesp = (desp.fixo ?? 0) + (desp.variavel ?? 0);
+  const caixa = Number(d?.caixa_periodo ?? 0);
+  const totalDespesas = Number(desp.fixo ?? 0) + Number(desp.variavel ?? 0);
 
   return (
     <div className="space-y-6">
-      {/* Cabeçalho fica no FinanceiroWorkspace (título + competência única);
-          aqui apenas as ações específicas da visão consolidada. */}
-      <div className="flex items-center justify-end gap-2 flex-wrap">
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <button onClick={carregarRelatorio} className="btn-secondary">
-          <FileText className="w-4 h-4" /> Relatório
+          <FileText className="h-4 w-4" /> Relatório
         </button>
         <button onClick={exportarCSV} className="btn-secondary">
-          <Download className="w-4 h-4" /> CSV
+          <Download className="h-4 w-4" /> CSV
         </button>
-        <button
-          onClick={load}
-          className="btn-secondary p-2"
-          aria-label="Atualizar"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+        <button onClick={load} className="btn-secondary p-2" aria-label="Atualizar">
+          <RefreshCw className="h-4 w-4" />
         </button>
       </div>
 
-      {loading ? (
-        <Spinner />
-      ) : erro ? (
-        <div className="rounded-xl border border-danger-200 bg-danger-50 p-4 text-sm text-danger-700">
-          {erro}
-        </div>
-      ) : (
-        <>
-          {/* Cards principais — Caixa / Receber / Pagar / Resultado */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard
-              label="Caixa do período"
-              value={fmtR$(caixa)}
-              icon={PiggyBank}
-              color={caixa >= 0 ? "green" : "red"}
-              sub={`Margem ${d?.margem_pct ?? 0}%`}
-            />
-            <StatCard
-              label="A Receber"
-              value={fmtR$((rec.a_receber ?? 0) + (rec.atrasado ?? 0))}
-              icon={DollarSign}
-              color="yellow"
-              sub={`Atrasado: ${fmtR$(rec.atrasado)}`}
-              onClick={
-                onDrillDown
-                  ? () => onDrillDown("honorarios", "pendente")
-                  : undefined
-              }
-            />
-            <StatCard
-              label="A Pagar"
-              value={fmtR$(desp.a_pagar)}
-              icon={TrendingDown}
-              color="red"
-              sub={`Pagas: ${fmtR$(desp.pagas)}`}
-              onClick={
-                onDrillDown
-                  ? () => onDrillDown("despesas", "pendente")
-                  : undefined
-              }
-            />
-            <StatCard
-              label="Resultado do mês"
-              value={fmtR$(caixa)}
-              icon={caixa >= 0 ? CheckCircle : AlertCircle}
-              color={caixa >= 0 ? "green" : "red"}
-            />
-          </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard
+          label="Caixa do período"
+          value={fmtR$(caixa)}
+          icon={PiggyBank}
+          tone={caixa >= 0 ? "green" : "red"}
+          sub={`Margem ${d?.margem_pct ?? 0}%`}
+        />
+        <StatCard
+          label="A receber"
+          value={fmtR$(Number(rec.a_receber ?? 0) + Number(rec.atrasado ?? 0))}
+          icon={DollarSign}
+          tone="yellow"
+          sub={`Atrasado: ${fmtR$(rec.atrasado)}`}
+          onClick={
+            onDrillDown ? () => onDrillDown("honorarios", "pendente") : undefined
+          }
+        />
+        <StatCard
+          label="A pagar"
+          value={fmtR$(desp.a_pagar)}
+          icon={TrendingDown}
+          tone="red"
+          sub={`Pago: ${fmtR$(desp.pagas)}`}
+          onClick={
+            onDrillDown ? () => onDrillDown("despesas", "pendente") : undefined
+          }
+        />
+        <StatCard
+          label="Recebido no mês"
+          value={fmtR$(rec.recebido_mes)}
+          icon={Wallet}
+          tone="blue"
+        />
+      </div>
 
-          {/* Receitas classificadas */}
+      <section className="card overflow-hidden">
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <div>
-            <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">
-              Receitas (recebidas no mês)
-            </h2>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <StatCard
-                label="Honorários Contratuais"
-                value={fmtR$(rec.contratual)}
-                icon={Wallet}
-                color="blue"
-                sub="Pro labore / partido"
-              />
-              {/* REGRA FIXA: rateio 50/50 hardcoded no backend
-                  (backend/app/routers/exito_rateio.py). Não existe endpoint de
-                  configuração societária para esse percentual — se um dia
-                  existir, carregar daqui em vez do texto fixo. */}
-              <StatCard
-                label="Êxito (Ad Exitum)"
-                value={fmtR$(rec.exito)}
-                icon={Award}
-                color="bronze"
-                sub="50% titular / 50% escritório"
-              />
-              <StatCard
-                label="Sucumbência"
-                value={fmtR$(rec.sucumbencia)}
-                icon={Scale}
-                color="purple"
-                sub="Parte vencida"
-              />
-              <StatCard
-                label="Custas / Despesas"
-                value={fmtR$(rec.custas)}
-                icon={TrendingUp}
-                color="slate"
-                sub="Reembolsáveis"
-              />
-            </div>
-          </div>
-
-          {/* Receitas previstas (a receber) */}
-          {rec.previsto && rec.previsto.total > 0 && (
-            <div>
-              <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">
-                Receitas previstas (a receber)
-              </h2>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard
-                  label="Contratual prevista"
-                  value={fmtR$(rec.previsto.contratual)}
-                  icon={Wallet}
-                  color="blue"
-                />
-                <StatCard
-                  label="Êxito previsto"
-                  value={fmtR$(rec.previsto.exito)}
-                  icon={Award}
-                  color="bronze"
-                />
-                <StatCard
-                  label="Sucumbência prevista"
-                  value={fmtR$(rec.previsto.sucumbencia)}
-                  icon={Scale}
-                  color="purple"
-                />
-                <StatCard
-                  label="Custas previstas"
-                  value={fmtR$(rec.previsto.custas)}
-                  icon={TrendingUp}
-                  color="slate"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Duas colunas: receita detalhe + despesas */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Honorários (status) */}
-            <div className="card p-5">
-              <h2 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                <Wallet className="w-4 h-4 text-primary-500" /> Honorários —
-                situação
-              </h2>
-              <div className="space-y-3">
-                {[
-                  {
-                    label: "Recebido no mês",
-                    value: rec.recebido_mes,
-                    color: "text-success-600",
-                  },
-                  {
-                    label: "A receber (pendente)",
-                    value: rec.a_receber,
-                    color: "text-warn-600",
-                  },
-                  {
-                    label: "Atrasado",
-                    value: rec.atrasado,
-                    color: "text-danger-600",
-                  },
-                ].map(({ label, value, color }) => (
-                  <div
-                    key={label}
-                    className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0"
-                  >
-                    <span className="text-sm text-slate-600">{label}</span>
-                    <span className={`text-sm font-semibold ${color}`}>
-                      {fmtR$(value)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Despesas por categoria + fixo/variável */}
-            <div className="card p-5">
-              <h2 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-danger-500" /> Despesas por
-                categoria
-              </h2>
-              {!desp.por_categoria?.length ? (
-                <Empty message="Sem despesas no mês" />
-              ) : (
-                <div className="space-y-2.5">
-                  {desp.por_categoria.map(({ categoria, total }: any) => {
-                    const pct =
-                      totalGeralDesp > 0 ? (total / totalGeralDesp) * 100 : 0;
-                    return (
-                      <div key={categoria}>
-                        <div className="flex justify-between text-xs mb-0.5">
-                          <span className="text-slate-600">
-                            {CATEGORIA_LABEL[categoria] ?? categoria}
-                          </span>
-                          <span className="font-medium text-slate-700">
-                            {fmtR$(total)}
-                          </span>
-                        </div>
-                        <div className="h-1.5 bg-slate-100 rounded-full">
-                          <div
-                            className="h-1.5 bg-danger-400 rounded-full"
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Custos fixos</span>
-                  <span className="font-medium text-slate-700">
-                    {fmtR$(desp.fixo)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Custos variáveis</span>
-                  <span className="font-medium text-slate-700">
-                    {fmtR$(desp.variavel)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Relatório gerencial */}
-          {relatorio && (
-            <div className="card p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-slate-800 flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-ai-500" /> Relatório
-                  Gerencial — {relatorio.mes_label}
-                </h2>
-                <button
-                  onClick={() => setRelatorio(null)}
-                  className="text-xs text-slate-400 hover:text-slate-600"
-                >
-                  Fechar
-                </button>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[
-                  { l: "Casos ativos", v: relatorio.casos?.ativos },
-                  { l: "Novos no mês", v: relatorio.casos?.novos_mes },
-                  { l: "Encerrados", v: relatorio.casos?.encerrados_mes },
-                  {
-                    l: "Prazos vencidos",
-                    v: relatorio.prazos?.vencidos_abertos,
-                  },
-                ].map(({ l, v }) => (
-                  <div
-                    key={l}
-                    className="bg-slate-50 rounded-lg p-3 text-center"
-                  >
-                    <p className="text-xs text-slate-500">{l}</p>
-                    <p className="text-lg font-bold text-slate-800 mt-0.5">
-                      {v ?? 0}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Saldo destaque */}
-          <div
-            className={`rounded-xl border p-5 flex items-center justify-between ${caixa >= 0 ? "bg-success-50 border-success-200" : "bg-danger-50 border-danger-200"}`}
-          >
-            <div>
-              <p
-                className={`text-sm font-medium ${caixa >= 0 ? "text-success-700" : "text-danger-700"}`}
-              >
-                {caixa >= 0
-                  ? "Resultado positivo no período"
-                  : "Resultado negativo no período"}
-              </p>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Recebido {fmtR$(rec.recebido_mes)} − Despesas pagas{" "}
-                {fmtR$(desp.pagas)}
-              </p>
-            </div>
-            <p
-              className={`text-2xl font-bold ${caixa >= 0 ? "text-success-700" : "text-danger-700"}`}
-            >
-              {fmtR$(caixa)}
+            <h2 className="font-semibold text-slate-800">Precisa da sua atenção</h2>
+            <p className="mt-0.5 text-xs text-slate-400">
+              Somente itens que exigem decisão ou conferência financeira.
             </p>
           </div>
-        </>
+          <Clock3 className="h-5 w-5 text-slate-300" />
+        </div>
+        {atencao.length === 0 ? (
+          <div className="p-5">
+            <div className="flex items-center gap-2 text-sm text-success-700">
+              <CheckCircle className="h-4 w-4" /> Nenhuma pendência financeira prioritária.
+            </div>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {atencao.map((item) => {
+              const tone =
+                item.prioridade === "alta"
+                  ? "text-danger-600 bg-danger-50"
+                  : item.prioridade === "media"
+                    ? "text-warn-700 bg-warn-50"
+                    : "text-slate-500 bg-slate-100";
+              return (
+                <button
+                  key={item.codigo}
+                  type="button"
+                  onClick={() => navegarAtencao(item)}
+                  className="flex w-full items-center gap-3 px-5 py-3.5 text-left hover:bg-slate-50"
+                >
+                  <div className={`rounded-lg p-2 ${tone}`}>
+                    <AlertCircle className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-slate-800">{item.titulo}</p>
+                    <p className="text-xs text-slate-400">
+                      {item.qtd} item(ns)
+                      {item.valor != null ? ` · ${fmtR$(item.valor)}` : ""}
+                    </p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-slate-300" />
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <section className="card p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 font-semibold text-slate-800">
+              <Wallet className="h-4 w-4 text-primary-500" /> Recebimentos
+            </h2>
+            <button
+              type="button"
+              onClick={() => onNavigate?.("honorarios")}
+              className="text-xs font-medium text-primary-600 hover:underline"
+            >
+              Abrir
+            </button>
+          </div>
+          <div className="space-y-3 text-sm">
+            {[
+              ["Recebido no mês", rec.recebido_mes, "text-success-600"],
+              ["A receber", rec.a_receber, "text-warn-600"],
+              ["Em atraso", rec.atrasado, "text-danger-600"],
+              ["Previsto", rec.previsto?.total, "text-slate-700"],
+            ].map(([label, value, cls]: any) => (
+              <div key={label} className="flex justify-between border-b border-slate-50 pb-2 last:border-0">
+                <span className="text-slate-500">{label}</span>
+                <span className={`font-semibold ${cls}`}>{fmtR$(value)}</span>
+              </div>
+            ))}
+          </div>
+          {Number(rec.percentuais_sem_valor ?? 0) > 0 && (
+            <div className="mt-4 rounded-lg bg-warn-50 px-3 py-2 text-xs text-warn-700">
+              {rec.percentuais_sem_valor} honorário(s) percentual(is) ainda sem valor monetário apurado.
+            </div>
+          )}
+        </section>
+
+        <section className="card p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 font-semibold text-slate-800">
+              <Receipt className="h-4 w-4 text-danger-500" /> Despesas
+            </h2>
+            <button
+              type="button"
+              onClick={() => onNavigate?.("despesas")}
+              className="text-xs font-medium text-primary-600 hover:underline"
+            >
+              Abrir
+            </button>
+          </div>
+          <div className="space-y-3 text-sm">
+            {[
+              ["A pagar", desp.a_pagar, "text-danger-600"],
+              ["Pagas", desp.pagas, "text-success-600"],
+              ["Fixas", desp.fixo, "text-slate-700"],
+              ["Variáveis / extras", desp.variavel, "text-slate-700"],
+            ].map(([label, value, cls]: any) => (
+              <div key={label} className="flex justify-between border-b border-slate-50 pb-2 last:border-0">
+                <span className="text-slate-500">{label}</span>
+                <span className={`font-semibold ${cls}`}>{fmtR$(value)}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <section className="card p-5">
+        <h2 className="mb-4 flex items-center gap-2 font-semibold text-slate-800">
+          <BarChart3 className="h-4 w-4 text-slate-400" /> Despesas por categoria
+        </h2>
+        {!desp.por_categoria?.length ? (
+          <Empty message="Sem despesas no mês" />
+        ) : (
+          <div className="grid gap-x-8 gap-y-3 md:grid-cols-2">
+            {desp.por_categoria.map(({ categoria, total }: any) => {
+              const pct = totalDespesas > 0 ? (Number(total) / totalDespesas) * 100 : 0;
+              return (
+                <div key={categoria}>
+                  <div className="mb-1 flex justify-between text-xs">
+                    <span className="text-slate-600">{CATEGORIA_LABEL[categoria] ?? categoria}</span>
+                    <span className="font-medium text-slate-700">{fmtR$(total)}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-slate-100">
+                    <div className="h-1.5 rounded-full bg-slate-400" style={{ width: `${Math.min(pct, 100)}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {relatorio && (
+        <section className="card p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="font-semibold text-slate-800">Relatório gerencial</h2>
+            <button onClick={() => setRelatorio(null)} className="text-xs text-slate-400 hover:text-slate-700">
+              Fechar
+            </button>
+          </div>
+          <pre className="max-h-72 overflow-auto whitespace-pre-wrap text-xs text-slate-600">
+            {JSON.stringify(relatorio, null, 2)}
+          </pre>
+        </section>
       )}
     </div>
   );
