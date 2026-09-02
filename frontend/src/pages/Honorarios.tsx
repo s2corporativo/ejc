@@ -29,6 +29,14 @@ import {
 const STATUS_VALIDOS = ["pendente", "atrasado", "pago"];
 const TIPOS_COM_PERCENTUAL = ["exito", "misto"];
 
+function hojeISO(): string {
+  const agora = new Date();
+  const ano = agora.getFullYear();
+  const mes = String(agora.getMonth() + 1).padStart(2, "0");
+  const dia = String(agora.getDate()).padStart(2, "0");
+  return `${ano}-${mes}-${dia}`;
+}
+
 export function quantoCobrar(f: Fee): string {
   const partes: string[] = [];
   if (f.valor != null) partes.push(fmtMoney(f.valor));
@@ -151,6 +159,22 @@ export default function Honorarios() {
       toast.error(e.response?.data?.detail || "Erro ao carregar pagamentos");
       setHistModal(null);
     }
+  };
+
+  const abrirPagamento = async (fee: Fee) => {
+    // O segundo/terceiro pagamento não deve sugerir novamente o valor bruto do
+    // contrato. Consulta o subledger e preenche o saldo residual; para honorário
+    // percentual sem base monetária, deixa o valor em branco para revisão humana.
+    let valor: number | string | undefined = fee.valor ?? undefined;
+    try {
+      const r = await api.get(`/fees/${fee.id}/pagamentos`);
+      if (r.data?.saldo != null) valor = r.data.saldo;
+    } catch {
+      // Falha ao buscar histórico não bloqueia o modal; o backend continuará
+      // protegendo contra overpayment e inconsistência.
+    }
+    setPagModal(fee);
+    setPag({ valor, data_pagamento: hojeISO() });
   };
 
   const registrarPag = async () => {
@@ -340,10 +364,7 @@ export default function Honorarios() {
                       <button
                         className="btn-ghost px-2 py-1 text-success-700"
                         title="Registrar pagamento"
-                        onClick={() => {
-                          setPagModal(f);
-                          setPag({ valor: f.valor });
-                        }}
+                        onClick={() => abrirPagamento(f)}
                       >
                         <DollarSign size={15} />
                       </button>
