@@ -52,21 +52,33 @@ async def resolver_responsavel_juridico(
     Secretaria e estagiário continuam podendo participar do intake quando o
     endpoint autorizar, mas não viram responsáveis jurídicos por fallback.
     Nesses perfis o responsável precisa ser informado explicitamente.
+
+    Quando o próprio solicitante, já autenticado e com papel jurídico apto,
+    assume o caso por fallback, não repetimos uma consulta de existência ao
+    banco: a identidade já foi validada pelo fluxo de autenticação e o papel é
+    checado aqui. Responsável indicado explicitamente continua sendo carregado
+    e validado no banco para impedir usuário inexistente, inativo ou papel
+    incompatível.
     """
     solicitante_role = _role_value(solicitante)
-    resolved_id = responsavel_id
-    if not resolved_id and solicitante_role in RESPONSAVEL_JURIDICO_ROLES:
-        resolved_id = str(solicitante.id)
 
-    if not resolved_id:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "Informe um advogado responsável pelo caso. Usuários de intake "
-                "não podem assumir automaticamente a responsabilidade jurídica."
-            ),
-        )
+    if not responsavel_id:
+        if solicitante_role not in RESPONSAVEL_JURIDICO_ROLES:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Informe um advogado responsável pelo caso. Usuários de intake "
+                    "não podem assumir automaticamente a responsabilidade jurídica."
+                ),
+            )
+        if getattr(solicitante, "is_active", True) is False:
+            raise HTTPException(
+                status_code=422,
+                detail="Advogado responsável inexistente ou inativo.",
+            )
+        return str(solicitante.id)
 
+    resolved_id = str(responsavel_id)
     responsavel = (
         await db.execute(
             select(User).where(
