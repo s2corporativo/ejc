@@ -64,6 +64,17 @@ def test_client_response_preserva_alerta_de_documento_indecifravel():
     assert resposta["documento_exibicao"] == PII_INDECIFRAVEL
 
 
+def test_client_response_openapi_nao_anuncia_documento_bruto():
+    from app.schemas.client import ClientResponse
+
+    schema = ClientResponse.model_json_schema(mode="serialization")
+    propriedades = schema.get("properties", {})
+
+    assert "cpf" not in propriedades
+    assert "cnpj" not in propriedades
+    assert "documento_exibicao" in propriedades
+
+
 def test_criar_acesso_portal_respeita_minimo_canonico_de_senha():
     from app.routers.clients import CriarAcessoReq
     from app.services.security_service import SENHA_MIN_LEN
