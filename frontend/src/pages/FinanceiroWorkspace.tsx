@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useSearchParams } from "react-router";
 import {
   BarChart3,
@@ -5,10 +6,11 @@ import {
   TrendingDown,
   FileText,
   Building2,
-  Repeat,
   Calculator,
   Calendar,
   Receipt,
+  MoreHorizontal,
+  ChevronDown,
 } from "lucide-react";
 import FinanceiroDashboard from "./FinanceiroDashboard";
 import Honorarios from "./Honorarios";
@@ -24,15 +26,21 @@ import { useAuth } from "../stores/auth";
 
 const TABS = [
   { k: "visao", label: "Visão geral", icon: BarChart3 },
-  { k: "honorarios", label: "Honorários e cobranças", icon: Wallet },
-  { k: "nfse", label: "Notas fiscais (NFS-e)", icon: Receipt },
+  { k: "honorarios", label: "Recebimentos", icon: Wallet },
   { k: "despesas", label: "Despesas", icon: TrendingDown },
-  { k: "recorrentes", label: "Despesas recorrentes", icon: Repeat },
+  { k: "nfse", label: "Notas fiscais (NFS-e)", icon: Receipt },
   { k: "contratos", label: "Contratos do escritório", icon: FileText },
+  { k: "recorrentes", label: "Despesas recorrentes", icon: MoreHorizontal },
   { k: "societaria", label: "Sociedade", icon: Building2 },
   { k: "estimador", label: "Estimador de honorários", icon: Calculator },
 ] as const;
 
+const PRINCIPAIS: ReadonlySet<FinanceTab> = new Set([
+  "visao",
+  "honorarios",
+  "despesas",
+]);
+const MAIS: ReadonlyArray<FinanceTab> = ["nfse", "contratos"];
 const SOCIEDADE_ROLES = new Set(["superadmin", "admin", "socio"]);
 
 export type FinanceTab = (typeof TABS)[number]["k"];
@@ -40,7 +48,6 @@ export type FinanceTab = (typeof TABS)[number]["k"];
 export const isFinanceTab = (value: string | null): value is FinanceTab =>
   TABS.some((tab) => tab.k === value);
 
-/** Competência no formato AAAA-MM (mesmo formato do <input type="month">). */
 export const isCompetencia = (value: string | null): value is string =>
   !!value && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
 
@@ -71,17 +78,12 @@ const TABS_COM_COMPETENCIA: ReadonlySet<FinanceTab> = new Set([
 
 export default function FinanceiroWorkspace() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const [maisAberto, setMaisAberto] = useState(false);
   const user = useAuth((s) => s.user);
   const podeSociedade = SOCIEDADE_ROLES.has(user?.role ?? "");
-  const tabsVisiveis = podeSociedade
-    ? TABS
-    : TABS.filter((item) => item.k !== "societaria");
 
   const raw = searchParams.get("tab");
   const tabSolicitada: FinanceTab = isFinanceTab(raw) ? raw : "visao";
-  // `financeiro` pode acessar o workspace, mas não dados societários. O
-  // backend já devolve 403; esta guarda elimina uma aba/deep-link sem função e
-  // mantém o frontend coerente com o RBAC autoritativo.
   const tab: FinanceTab =
     tabSolicitada === "societaria" && !podeSociedade
       ? "visao"
@@ -90,10 +92,12 @@ export default function FinanceiroWorkspace() {
   const competencia = isCompetencia(rawComp) ? rawComp : competenciaAtual();
   const mostraCompetencia = TABS_COM_COMPETENCIA.has(tab);
 
-  const setTab = (next: FinanceTab, extra?: Record<string, string>) =>
+  const setTab = (next: FinanceTab, extra?: Record<string, string>) => {
+    setMaisAberto(false);
     setSearchParams(nextFinanceParams(searchParams, next, extra), {
       replace: true,
     });
+  };
 
   const setCompetencia = (value: string) => {
     const params = new URLSearchParams(searchParams);
@@ -102,12 +106,15 @@ export default function FinanceiroWorkspace() {
     setSearchParams(params, { replace: true });
   };
 
+  const principais = TABS.filter((item) => PRINCIPAIS.has(item.k));
+  const extras = TABS.filter((item) => MAIS.includes(item.k));
+
   return (
     <div className="executive-workspace space-y-5">
       <PageHeader
         eyebrow="Gestão financeira"
         title="Financeiro"
-        subtitle="Honorários, cobranças, despesas, contratos e administração da sociedade em uma visão operacional única."
+        subtitle="Receber, pagar e acompanhar o caixa do escritório em um único fluxo operacional."
         actions={
           mostraCompetencia ? (
             <label className="input flex w-auto items-center gap-2 py-1.5">
@@ -126,9 +133,10 @@ export default function FinanceiroWorkspace() {
           ) : undefined
         }
       />
-      <div className="overflow-x-auto">
+
+      <div className="flex items-center gap-2 overflow-visible">
         <div className="flex w-fit gap-1 rounded-xl bg-slate-900/[0.05] p-1 dark:bg-white/[0.07]">
-          {tabsVisiveis.map(({ k, label, icon: Icon }) => (
+          {principais.map(({ k, label, icon: Icon }) => (
             <button
               key={k}
               onClick={() => setTab(k)}
@@ -142,7 +150,36 @@ export default function FinanceiroWorkspace() {
             </button>
           ))}
         </div>
+
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setMaisAberto((v) => !v)}
+            className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-all ${
+              MAIS.includes(tab)
+                ? "bg-slate-800 text-white"
+                : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+            }`}
+            aria-expanded={maisAberto}
+          >
+            Mais <ChevronDown size={14} />
+          </button>
+          {maisAberto && (
+            <div className="absolute left-0 top-11 z-30 min-w-64 rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+              {extras.map(({ k, label, icon: Icon }) => (
+                <button
+                  key={k}
+                  onClick={() => setTab(k)}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/[0.06]"
+                >
+                  <Icon size={15} /> {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
+
       <div className="min-w-0">
         <ErrorBoundary key={tab}>
           {tab === "visao" && (
@@ -151,13 +188,14 @@ export default function FinanceiroWorkspace() {
               onDrillDown={(destino, status) =>
                 setTab(destino, status ? { status } : undefined)
               }
+              onNavigate={(destino) => setTab(destino)}
             />
           )}
           {tab === "honorarios" && <Honorarios />}
-          {tab === "nfse" && <NotasFiscais />}
           {tab === "despesas" && <Despesas competencia={competencia} />}
-          {tab === "recorrentes" && <DespesasRecorrentes />}
+          {tab === "nfse" && <NotasFiscais />}
           {tab === "contratos" && <OfficeContracts />}
+          {tab === "recorrentes" && <DespesasRecorrentes />}
           {tab === "societaria" && podeSociedade && <Sociedade />}
           {tab === "estimador" && <EstimadorHonorarios />}
         </ErrorBoundary>
