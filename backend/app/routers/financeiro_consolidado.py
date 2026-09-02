@@ -146,6 +146,8 @@ async def consolidado(
     percentuais_sem_valor = int(bruto.pop("percentuais_sem_valor") or 0)
     fees = {k: _money(v) for k, v in bruto.items()}
 
+    # Competência das despesas: visão de obrigações do mês, independente da data
+    # em que a baixa financeira aconteceu.
     desp = (
         await db.execute(
             text(
@@ -167,6 +169,27 @@ async def consolidado(
         )
     ).mappings().first()
     desp = {k: _money(v) for k, v in dict(desp).items()}
+
+    # Fluxo de caixa: saída pertence ao mês real de `pago_em`, não à competência
+    # original. Isso mantém o card "Caixa do período" reconciliável com extrato.
+    saidas_caixa_mes = _money(
+        (
+            await db.execute(
+                text(
+                    """
+                    SELECT COALESCE(SUM(valor), 0)
+                    FROM office_expenses
+                    WHERE deleted_at IS NULL
+                      AND status = 'pago'
+                      AND pago_em IS NOT NULL
+                      AND date_trunc('month', pago_em)
+                          = date_trunc('month', CAST(:mes AS date))
+                    """
+                ),
+                {"mes": mes_ref},
+            )
+        ).scalar()
+    )
 
     por_cat = (
         await db.execute(
@@ -193,8 +216,8 @@ async def consolidado(
     ]
 
     recebido = fees["recebido_mes"]
-    despesas_pagas = desp["pago"]
-    caixa = _money(recebido - despesas_pagas)
+    despesas_pagas_competencia = desp["pago"]
+    caixa = _money(recebido - saidas_caixa_mes)
     margem = (
         (caixa / recebido * 100).quantize(_Q1, ROUND_HALF_UP)
         if recebido
@@ -205,6 +228,11 @@ async def consolidado(
         "competencia": competencia,
         "caixa_periodo": caixa,
         "margem_pct": margem,
+        "fluxo_caixa": {
+            "entradas": recebido,
+            "saidas": saidas_caixa_mes,
+            "saldo_periodo": caixa,
+        },
         "receitas": {
             "recebido_mes": recebido,
             "a_receber": fees["a_receber"],
@@ -228,7 +256,8 @@ async def consolidado(
             },
         },
         "despesas": {
-            "pagas": despesas_pagas,
+            "pagas": despesas_pagas_competencia,
+            "saidas_caixa_mes": saidas_caixa_mes,
             "a_pagar": desp["a_pagar"],
             "fixo": desp["fixo"],
             "variavel": desp["variavel"],
@@ -242,11 +271,7 @@ async def pendencias_operacionais(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Fila curta do que exige decisão financeira.
-
-    Retorna agregados sem PII de cliente/caso. A interface navega para a tela de
-    origem, onde o RBAC existente continua sendo a autoridade para os detalhes.
-    """
+    """Fila curta do que exige decisão financeira sem expor PII no resumo."""
     _exigir_financeiro(cu)
     hoje = date.today()
     em_7_dias = hoje + timedelta(days=7)
@@ -416,10 +441,8 @@ async def demonstrativo_gerencial(
     """Separa competência operacional de fluxo de caixa.
 
     Não é DRE fiscal/contábil. Receita por competência usa o mês de vencimento
-    do fee (único marcador econômico hoje existente); caixa usa a data efetiva
-    do FeePayment. Despesa por competência usa ``office_expenses.competencia``;
-    saída de caixa usa ``pago_em``. Percentuais sem base monetária ficam fora dos
-    totais em reais e são explicitamente contados.
+    do fee; caixa usa a data efetiva do FeePayment. Despesa por competência usa
+    ``office_expenses.competencia`` e saída de caixa usa ``pago_em``.
     """
     _exigir_financeiro(cu)
     competencia = _competencia_atual(competencia)
