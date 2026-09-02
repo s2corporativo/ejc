@@ -1,121 +1,94 @@
-import { useEffect, useState, useRef, useCallback } from "react";
-import { authFetch } from "../lib/stream";
-import api from "../lib/api";
-import { Modal, Button, Badge } from "./UI";
-import { toast } from "./Toast";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Sparkles,
-  FileText,
-  Scale,
-  Search,
-  BookOpen,
-  ListOrdered,
   AlertTriangle,
   CheckCircle2,
-  Loader2,
   Copy,
   Download,
-  ChevronDown,
-  ChevronUp,
+  FileText,
+  Loader2,
+  PenLine,
   ShieldAlert,
   ShieldCheck,
-  PenLine,
-  CopyPlus,
-  Bot,
+  Sparkles,
 } from "lucide-react";
+
+import api from "../lib/api";
+import { authFetch } from "../lib/stream";
+import { Badge, Button, Modal } from "./UI";
+import { toast } from "./Toast";
 import GuiadoForm from "./GuiadoForm";
 
-// Catálogo de peças e áreas vem de GET /pecas/meta (fonte única no backend).
-// Por segurança jurídica, o modal NÃO mantém catálogo local paralelo: se a
-// taxonomia canônica estiver indisponível, a geração fica bloqueada em vez de
-// apresentar uma lista parcial/desatualizada como se fosse completa.
 interface TipoMeta {
   value: string;
   label: string;
   grupo: string;
 }
+
 interface AreaMeta {
   value: string;
   label: string;
 }
+
 interface PecasMeta {
   tipos?: TipoMeta[];
   areas?: AreaMeta[];
   niveis_complexidade?: string[];
 }
 
-// Rótulos legíveis dos grupos de tipo (TIPOS_PECA_GRUPO no backend) e a ordem
-// em que os <optgroup> aparecem no <select>.
-const GRUPO_LABEL: Record<string, string> = {
-  judicial_inicial: "Peça inicial",
-  judicial_pos: "Fase pós-inicial",
-  recurso: "Recursos",
-  extrajudicial: "Extrajudicial",
-};
-const GRUPO_ORDEM = [
-  "judicial_inicial",
-  "judicial_pos",
-  "recurso",
-  "extrajudicial",
-];
-
-// Rótulos legíveis dos níveis retornados por /pecas/meta. A lista de valores
-// continua pertencendo exclusivamente ao backend.
-const NIVEL_LABEL: Record<string, string> = {
-  comum: "Procedimento comum",
-  simples: "Simples/enxuta",
-  completa: "Completa",
-  estrategica: "Estratégica (+ teses alternativas)",
-  juizado_especial: "Juizado Especial (sumaríssimo)",
-};
-
-// Teses condicionais — adição/override MANUAL do advogado. O backend também
-// deriva algumas automaticamente pelo caso/ficha; estas somam às automáticas.
-// Flags desconhecidas são ignoradas pelo backend.
-const FLAGS_TESES: { value: string; label: string }[] = [
-  { value: "dano_moral", label: "Dano moral" },
-  { value: "relacao_consumo", label: "Relação de consumo" },
-  { value: "hipossuficiencia", label: "Hipossuficiência" },
-  {
-    value: "prova_documental_suficiente",
-    label: "Prova documental suficiente",
-  },
-  { value: "pedido_tutela", label: "Pedido de tutela de urgência" },
-];
-
 interface Etapa {
   num: number;
   titulo: string;
-  icon: React.ReactNode;
   status: "aguardando" | "em_andamento" | "concluido" | "erro";
   resultado?: string;
 }
 
-const ETAPAS_DEF: Omit<Etapa, "status">[] = [
-  {
-    num: 1,
-    titulo: "Identificando tipo de peça",
-    icon: <FileText size={15} />,
-  },
-  { num: 2, titulo: "Estruturando enquadramento", icon: <Scale size={15} /> },
-  { num: 3, titulo: "Buscando fundamentos legais", icon: <Search size={15} /> },
-  { num: 4, titulo: "Analisando jurisprudência", icon: <BookOpen size={15} /> },
-  { num: 5, titulo: "Organizando argumentos", icon: <ListOrdered size={15} /> },
-  { num: 6, titulo: "Identificando riscos", icon: <AlertTriangle size={15} /> },
-  {
-    num: 7,
-    titulo: "Montando documento completo",
-    icon: <CheckCircle2 size={15} />,
-  },
+const ETAPAS = [
+  "Identificando a peça",
+  "Estruturando o enquadramento",
+  "Buscando fundamentos",
+  "Analisando jurisprudência",
+  "Organizando argumentos",
+  "Identificando riscos",
+  "Montando a minuta",
 ];
 
-function etapasInit(): Etapa[] {
-  return ETAPAS_DEF.map((e) => ({ ...e, status: "aguardando" }));
+const NIVEL_LABEL: Record<string, string> = {
+  comum: "Procedimento comum",
+  simples: "Simples / enxuta",
+  completa: "Completa",
+  estrategica: "Estratégica",
+  juizado_especial: "Juizado Especial",
+};
+
+const FLAGS_TESES = [
+  ["dano_moral", "Dano moral"],
+  ["relacao_consumo", "Relação de consumo"],
+  ["hipossuficiencia", "Hipossuficiência"],
+  ["prova_documental_suficiente", "Prova documental suficiente"],
+  ["pedido_tutela", "Tutela de urgência"],
+] as const;
+
+type CitacaoStatus =
+  | "verificada"
+  | "identificada"
+  | "suspeita"
+  | "generica"
+  | "possivelmente_desatualizada";
+
+interface CitacaoVerificada {
+  citacao?: string;
+  trecho?: string;
+  status: CitacaoStatus;
+  aviso?: string | null;
 }
 
-// ── Verificação de citações (anti-alucinação #46) ──────────────────────────
-// Evento SSE `residuos` (Modo Molde): identificador do caso de ORIGEM que
-// sobreviveu na peça nova. Protocolar assim é quebra de sigilo (EOAB art. 34).
+interface VerificacaoCitacoes {
+  total?: number;
+  score?: number | null;
+  citacoes?: CitacaoVerificada[];
+  avisos?: string[];
+}
+
 interface ResiduoAchado {
   categoria: "cliente" | "parte_contraria" | "documento" | "processo";
   rotulo: string;
@@ -123,235 +96,24 @@ interface ResiduoAchado {
   mensagem: string;
 }
 
-// Shape emitido pelo backend no evento SSE `concluido` (verificacao_citacoes),
-// produzido por verificador_jurisprudencia. Cada citação vem com um `status`
-// e, quando aplicável, um `aviso` explicando o motivo.
-type CitacaoStatus =
-  | "verificada"
-  | "identificada"
-  | "suspeita"
-  | "generica"
-  // Existe na base interna, mas só em versão SUPERADA: a redação vigente pode
-  // ter mudado. Citar redação revogada em peça é erro profissional.
-  | "possivelmente_desatualizada";
-
-interface CitacaoVerificada {
-  citacao?: string;
-  trecho?: string;
-  tipo?: string;
-  status: CitacaoStatus;
-  aviso?: string | null;
-  fonte_verificacao?: string | null;
-}
-
-interface VerificacaoCitacoes {
-  total?: number;
-  confirmadas?: number;
-  nao_encontradas?: number;
-  score?: number | null;
-  citacoes?: CitacaoVerificada[];
-  contagem_status?: Partial<Record<CitacaoStatus, number>>;
-  avisos?: string[];
-}
-
-const CIT_STATUS_CFG: Record<
-  CitacaoStatus,
-  { label: string; row: string; chip: string }
-> = {
-  suspeita: {
-    label: "Suspeita",
-    row: "bg-danger-50 border-danger-200",
-    chip: "bg-danger-100 text-danger-800",
-  },
-  possivelmente_desatualizada: {
-    label: "Desatualizada",
-    row: "bg-orange-50 border-orange-200",
-    chip: "bg-orange-100 text-orange-800",
-  },
-  generica: {
-    label: "Genérica",
-    row: "bg-warn-50 border-warn-200",
-    chip: "bg-warn-100 text-warn-800",
-  },
-  identificada: {
-    label: "Identificada",
-    row: "bg-slate-50 border-slate-200",
-    chip: "bg-slate-200 text-slate-700",
-  },
-  verificada: {
-    label: "Verificada",
-    row: "bg-green-50 border-green-200",
-    chip: "bg-green-100 text-green-700",
-  },
-};
-
-// Ordem de exibição: primeiro o que exige conferência. "Desatualizada" vem
-// logo após "suspeita" — é achado ACIONÁVEL (a norma existe, mas a redação
-// mudou), mais urgente que uma menção apenas genérica.
-const CIT_ORDEM: CitacaoStatus[] = [
-  "suspeita",
-  "possivelmente_desatualizada",
-  "generica",
-  "identificada",
-  "verificada",
-];
-
-function VerificacaoCitacoesPanel({
-  verificacao,
-}: {
-  verificacao: VerificacaoCitacoes | null;
-}) {
-  // Sinal indisponível → aviso NEUTRO (nunca um falso "tudo verificado").
-  if (!verificacao) {
-    return (
-      <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-        <ShieldAlert size={16} className="flex-shrink-0 text-slate-400" />
-        <span>
-          Verificação de citações indisponível para esta peça — confira súmulas,
-          artigos e processos manualmente antes de protocolar.
-        </span>
-      </div>
-    );
-  }
-
-  const citacoes = Array.isArray(verificacao.citacoes)
-    ? verificacao.citacoes
-    : [];
-  const total = verificacao.total ?? citacoes.length;
-
-  if (total === 0) {
-    return (
-      <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-        <ShieldAlert size={16} className="flex-shrink-0 text-slate-400" />
-        <span>
-          Nenhuma citação jurisprudencial detectada no texto — nada a verificar.
-        </span>
-      </div>
-    );
-  }
-
-  const cont: Partial<Record<CitacaoStatus, number>> =
-    verificacao.contagem_status ??
-    citacoes.reduce<Partial<Record<CitacaoStatus, number>>>((acc, c) => {
-      acc[c.status] = (acc[c.status] ?? 0) + 1;
-      return acc;
-    }, {});
-  const nSuspeita = cont.suspeita ?? 0;
-  const nGenerica = cont.generica ?? 0;
-  const nIdentificada = cont.identificada ?? 0;
-  const score = verificacao.score;
-
-  // Tom do cabeçalho: vermelho se há suspeita (bloqueia aprovação no backend),
-  // âmbar se há genérica/identificada não confirmada, verde se tudo verificado.
-  const alerta = nSuspeita > 0;
-  const atencao = !alerta && (nGenerica > 0 || nIdentificada > 0);
-  const headTone = alerta
-    ? "border-danger-200 bg-danger-50"
-    : atencao
-      ? "border-warn-200 bg-warn-50"
-      : "border-green-200 bg-green-50";
-  const scoreTone = alerta
-    ? "bg-danger-100 text-danger-800"
-    : atencao
-      ? "bg-warn-100 text-warn-800"
-      : "bg-green-100 text-green-700";
-
-  const ordenadas = [...citacoes].sort(
-    (a, b) => CIT_ORDEM.indexOf(a.status) - CIT_ORDEM.indexOf(b.status),
-  );
-
-  return (
-    <div className="rounded-xl border border-slate-200 overflow-hidden">
-      <div className={`flex items-center gap-2 px-4 py-3 border-b ${headTone}`}>
-        {alerta ? (
-          <ShieldAlert size={16} className="flex-shrink-0 text-danger-600" />
-        ) : atencao ? (
-          <AlertTriangle size={16} className="flex-shrink-0 text-warn-600" />
-        ) : (
-          <ShieldCheck size={16} className="flex-shrink-0 text-green-600" />
-        )}
-        <span className="text-sm font-medium text-slate-800">
-          Verificação de citações
-        </span>
-        {score != null && (
-          <span
-            className={`ml-auto rounded-full px-2.5 py-0.5 text-xs font-semibold ${scoreTone}`}
-          >
-            Score {score}/100
-          </span>
-        )}
-      </div>
-
-      <div className="px-4 py-3 space-y-3">
-        {/* Contadores por status (só os presentes) */}
-        <div className="flex flex-wrap gap-1.5">
-          {CIT_ORDEM.filter((s) => (cont[s] ?? 0) > 0).map((s) => (
-            <span
-              key={s}
-              className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${CIT_STATUS_CFG[s].chip}`}
-            >
-              {cont[s]} {CIT_STATUS_CFG[s].label.toLowerCase()}
-            </span>
-          ))}
-        </div>
-
-        {nSuspeita > 0 && (
-          <div className="flex items-start gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
-            <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
-            <span>
-              <strong>
-                {nSuspeita} citação(ões) suspeita(s) de alucinação.
-              </strong>{" "}
-              A política do sistema <strong>bloqueia a aprovação</strong>{" "}
-              enquanto houver citação suspeita — confira ou remova cada uma
-              antes de revisar e assinar.
-            </span>
-          </div>
-        )}
-
-        <ul className="space-y-1.5">
-          {ordenadas.map((c, i) => {
-            const cfg = CIT_STATUS_CFG[c.status] ?? CIT_STATUS_CFG.identificada;
-            return (
-              <li key={i} className={`rounded-lg border px-3 py-2 ${cfg.row}`}>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${cfg.chip}`}
-                  >
-                    {cfg.label}
-                  </span>
-                  <span className="text-xs font-medium text-slate-800 break-words">
-                    {c.citacao || c.trecho || "(citação)"}
-                  </span>
-                </div>
-                {c.aviso && (
-                  <p className="mt-1 text-[11px] leading-snug text-slate-500">
-                    {c.aviso}
-                  </p>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    </div>
-  );
-}
-
 interface Props {
   open: boolean;
   onClose: () => void;
   caseId?: string;
   onConcluido?: (logId: string, documento: string) => void;
-  /**
-   * Chamado quando o backend barra a geração por falta de ficha de triagem
-   * confirmada (HTTP 409 { need_ficha_triagem: true, case_id }). O pai deve
-   * levar o usuário à ficha. Recebe o case_id devolvido pelo backend.
-   */
   onNeedFicha?: (caseId: string) => void;
 }
 
 type Fase = "form" | "gerando" | "concluido" | "erro";
+type ModoVisivel = "guiado" | "livre";
+
+function etapasInit(): Etapa[] {
+  return ETAPAS.map((titulo, index) => ({
+    num: index + 1,
+    titulo,
+    status: "aguardando",
+  }));
+}
 
 export default function PecaGeneratorModal({
   open,
@@ -367,34 +129,20 @@ export default function PecaGeneratorModal({
   const [codigoPeca, setCodigoPeca] = useState("");
   const [erroMsg, setErroMsg] = useState("");
   const [copiado, setCopiado] = useState(false);
-  const [expandidos, setExpandidos] = useState<Set<number>>(new Set());
-  const [verificacao, setVerificacao] = useState<VerificacaoCitacoes | null>(
-    null,
-  );
-  // Modo Molde: identificadores do caso de ORIGEM encontrados na peça nova.
-  const [residuos, setResiduos] = useState<ResiduoAchado[]>([]);
-  // Alertas da validação canônica do núcleo de IA (promessa de resultado,
-  // citação não confirmada, ausência de base verificável). Chegam no evento
-  // `concluido`; lista vazia = nada a sinalizar.
-  const [alertasIa, setAlertasIa] = useState<string[]>([]);
 
   const [tipoPeca, setTipoPeca] = useState("peticao_inicial");
   const [areaDireito, setAreaDireito] = useState("trabalhista");
   const [nivelComplexidade, setNivelComplexidade] = useState("comum");
-  const [flagsTeses, setFlagsTeses] = useState<Set<string>>(new Set());
+  const [modo, setModo] = useState<ModoVisivel>("guiado");
+  const [mostrarAvancado, setMostrarAvancado] = useState(false);
+
+  const [respostasGuiadas, setRespostasGuiadas] = useState<Record<string, string>>({});
   const [fatos, setFatos] = useState("");
   const [pedidos, setPedidos] = useState("");
   const [instrucoes, setInstrucoes] = useState("");
   const [nomesProteger, setNomesProteger] = useState("");
-  const [modo, setModo] = useState<"livre" | "guiado" | "molde" | "agente">(
-    "livre",
-  );
-  const [respostasGuiadas, setRespostasGuiadas] = useState<
-    Record<string, string>
-  >({});
+  const [flagsTeses, setFlagsTeses] = useState<Set<string>>(new Set());
 
-  // Catálogo canônico carregado do backend. Sem fallback local: qualquer falha
-  // deixa o fluxo fechado, evitando taxonomia parcial ou incompatível.
   const [tipos, setTipos] = useState<TipoMeta[]>([]);
   const [areas, setAreas] = useState<AreaMeta[]>([]);
   const [niveis, setNiveis] = useState<string[]>([]);
@@ -402,20 +150,20 @@ export default function PecaGeneratorModal({
   const [metaErro, setMetaErro] = useState<string | null>(null);
   const metaLoadedRef = useRef(false);
 
+  const [verificacao, setVerificacao] = useState<VerificacaoCitacoes | null>(null);
+  const [alertasIa, setAlertasIa] = useState<string[]>([]);
+  const [residuos, setResiduos] = useState<ResiduoAchado[]>([]);
+
   const abortRef = useRef<AbortController | null>(null);
 
-  // Aborta o stream SSE em voo ao desmontar — evita setState após unmount e
-  // vazamento da conexão quando o modal é removido durante a geração.
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  // Busca o catálogo de peças/áreas na primeira abertura do modal. O contrato é
-  // fail-closed: o backend é a fonte única; payload vazio/parcial equivale a
-  // indisponibilidade e não autoriza geração com catálogo local stale.
   useEffect(() => {
     if (!open || metaLoadedRef.current) return;
     metaLoadedRef.current = true;
     setMetaLoading(true);
     setMetaErro(null);
+
     api
       .get<PecasMeta>("/pecas/meta")
       .then(({ data }) => {
@@ -427,7 +175,7 @@ export default function PecaGeneratorModal({
           !Array.isArray(data.niveis_complexidade) ||
           data.niveis_complexidade.length === 0
         ) {
-          throw new Error("Catálogo canônico de peças incompleto");
+          throw new Error("Catálogo canônico incompleto");
         }
 
         setTipos(data.tipos);
@@ -455,17 +203,25 @@ export default function PecaGeneratorModal({
         setAreas([]);
         setNiveis([]);
         setMetaErro(
-          "Catálogo jurídico indisponível. A geração foi bloqueada para evitar uso de tipos ou áreas desatualizados.",
+          "Catálogo jurídico indisponível. A geração foi bloqueada para evitar taxonomia desatualizada.",
         );
-        toast.error(
-          "Não foi possível carregar o catálogo canônico de peças. Geração bloqueada com segurança.",
-        );
+        toast.error("Não foi possível carregar o catálogo de peças");
       })
       .finally(() => setMetaLoading(false));
   }, [open]);
 
-  const tipoLabel = (v: string) => tipos.find((t) => t.value === v)?.label ?? v;
-  const areaLabel = (v: string) => areas.find((a) => a.value === v)?.label ?? v;
+  const tipoLabel = (value: string) =>
+    tipos.find((tipo) => tipo.value === value)?.label ?? value;
+
+  const areaLabel = (value: string) =>
+    areas.find((area) => area.value === value)?.label ?? value;
+
+  const catalogoIndisponivel =
+    metaLoading ||
+    !!metaErro ||
+    tipos.length === 0 ||
+    areas.length === 0 ||
+    niveis.length === 0;
 
   const resetForm = () => {
     setFase("form");
@@ -475,12 +231,17 @@ export default function PecaGeneratorModal({
     setCodigoPeca("");
     setErroMsg("");
     setCopiado(false);
-    setExpandidos(new Set());
+    setModo("guiado");
+    setMostrarAvancado(false);
+    setRespostasGuiadas({});
+    setFatos("");
+    setPedidos("");
+    setInstrucoes("");
+    setNomesProteger("");
+    setFlagsTeses(new Set());
     setVerificacao(null);
     setAlertasIa([]);
     setResiduos([]);
-    setModo("livre");
-    setRespostasGuiadas({});
   };
 
   const fechar = () => {
@@ -489,57 +250,40 @@ export default function PecaGeneratorModal({
     onClose();
   };
 
+  const toggleFlag = (flag: string) => {
+    setFlagsTeses((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(flag)) novo.delete(flag);
+      else novo.add(flag);
+      return novo;
+    });
+  };
+
   const setEtapaStatus = (
     num: number,
     status: Etapa["status"],
     resultado?: string,
   ) => {
-    setEtapas((prev) =>
-      prev.map((e) =>
-        e.num === num
-          ? { ...e, status, resultado: resultado ?? e.resultado }
-          : e,
+    setEtapas((atual) =>
+      atual.map((etapa) =>
+        etapa.num === num
+          ? { ...etapa, status, resultado: resultado ?? etapa.resultado }
+          : etapa,
       ),
     );
   };
 
-  const toggleFlagTese = (value: string) => {
-    setFlagsTeses((prev) => {
-      const next = new Set(prev);
-      if (next.has(value)) next.delete(value);
-      else next.add(value);
-      return next;
-    });
-  };
-
-  const toggleExpandir = (num: number) => {
-    setExpandidos((prev) => {
-      const next = new Set(prev);
-      if (next.has(num)) next.delete(num);
-      else next.add(num);
-      return next;
-    });
-  };
-
   const gerar = useCallback(async () => {
-    if (
-      metaLoading ||
-      metaErro ||
-      tipos.length === 0 ||
-      areas.length === 0 ||
-      niveis.length === 0
-    ) {
-      toast.error(
-        "Catálogo jurídico indisponível. Reabra o gerador para tentar carregar novamente.",
-      );
+    if (catalogoIndisponivel) {
+      toast.error("Catálogo jurídico indisponível. Reabra o gerador e tente novamente.");
       return;
     }
 
     const isGuiado = modo === "guiado";
     const effectiveFatos = isGuiado
       ? Object.entries(respostasGuiadas)
-          .filter(([k, v]) => v.trim().length > 0)
-          .map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`)
+          .filter(([, valor]) => valor.trim().length > 0)
+          .map(([campo, valor]) => `${campo.replace(/_/g, " ")}: ${valor}`)
           .join("\n\n")
       : fatos;
     const effectivePedidos = isGuiado
@@ -549,37 +293,31 @@ export default function PecaGeneratorModal({
     if (!effectiveFatos.trim() || effectiveFatos.trim().length < 50) {
       toast.error(
         isGuiado
-          ? "Preencha pelo menos o campo 'fatos' no formulário guiado."
+          ? "Preencha os dados essenciais do formulário guiado."
           : "Descreva os fatos com pelo menos 50 caracteres.",
       );
       return;
     }
     if (!effectivePedidos.trim() || effectivePedidos.trim().length < 10) {
-      toast.error(
-        isGuiado
-          ? "Preencha o campo 'pedidos' no formulário guiado."
-          : "Informe os pedidos.",
-      );
+      toast.error("Informe o resultado jurídico pretendido / pedidos.");
       return;
     }
 
     setFase("gerando");
     setEtapas(etapasInit());
     setDocumento("");
+    setVerificacao(null);
+    setAlertasIa([]);
     setResiduos([]);
     abortRef.current = new AbortController();
 
-    // Contrato estruturado dos modos (P1 — fim das tags de modo embutidas no
-    // prompt): o backend valida via preparar_modo_producao e devolve 409 com
-    // os bloqueios quando o modo não está pronto para redação.
     const modoProducao = {
       modo,
       tipo_peca: tipoPeca,
       area_direito: areaDireito,
-      instrucao_livre: instrucoes || null,
+      instrucao_livre: modo === "livre" ? instrucoes || null : null,
       respostas_guiadas: isGuiado ? respostasGuiadas : {},
-      // Agente: o clique em "Gerar" é a aprovação explícita do plano exibido.
-      aprovado_para_redacao: modo === "agente",
+      aprovado_para_redacao: false,
     };
 
     const body = JSON.stringify({
@@ -591,7 +329,7 @@ export default function PecaGeneratorModal({
       pedidos: effectivePedidos,
       nomes_proteger: nomesProteger
         .split(",")
-        .map((s) => s.trim())
+        .map((nome) => nome.trim())
         .filter(Boolean),
       case_id: caseId ?? null,
       instrucoes_adicionais: instrucoes || null,
@@ -607,130 +345,108 @@ export default function PecaGeneratorModal({
       });
 
       if (!res.ok) {
-        const err = await res
-          .json()
-          .catch(() => ({ detail: "Erro desconhecido" }));
-        // Gate da ficha de triagem: peça com case_id exige ficha confirmada.
-        // FastAPI aninha o payload sob `detail`:
-        //   { detail: { detail, need_ficha_triagem: true, case_id } }
-        // O pai leva o usuário até a ficha; abortamos a geração sem erro cru.
+        const err = await res.json().catch(() => ({ detail: "Erro desconhecido" }));
         const detailObj =
           typeof err.detail === "object" && err.detail !== null
             ? (err.detail as Record<string, any>)
             : null;
+
         if (res.status === 409 && detailObj?.need_ficha_triagem) {
           setFase("form");
           onNeedFicha?.(detailObj.case_id ?? caseId ?? "");
           return;
         }
-        // Bloqueio dos modos controlados: lista objetiva do que falta.
+
         if (res.status === 409 && Array.isArray(detailObj?.bloqueios)) {
           setFase("form");
-          toast.error(
-            `Modo ${detailObj.modo ?? modo}: ${detailObj.bloqueios.join(" · ")}`,
-          );
+          toast.error(detailObj.bloqueios.join(" · "));
           return;
         }
+
         const detail = detailObj
-          ? (detailObj.mensagem ??
-            detailObj.detail ??
-            JSON.stringify(detailObj))
+          ? detailObj.mensagem ?? detailObj.detail ?? JSON.stringify(detailObj)
           : err.detail;
-        throw new Error(detail ?? "Erro na requisição");
+        throw new Error(detail || "Falha na geração");
       }
 
-      const reader = res.body!.getReader();
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("Stream de geração indisponível");
       const decoder = new TextDecoder();
-      let buf = "";
+      let buffer = "";
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        buf += decoder.decode(value, { stream: true });
+        buffer += decoder.decode(value, { stream: true });
+        const partes = buffer.split("\n\n");
+        buffer = partes.pop() ?? "";
 
-        const parts = buf.split("\n\n");
-        buf = parts.pop() ?? "";
-
-        for (const part of parts) {
-          const eventLine = part.match(/^event:\s*(.+)$/m)?.[1]?.trim();
-          const dataLine = part.match(/^data:\s*(.+)$/ms)?.[1]?.trim();
+        for (const parte of partes) {
+          const eventName = parte.match(/^event:\s*(.+)$/m)?.[1]?.trim();
+          const dataLine = parte.match(/^data:\s*(.+)$/ms)?.[1]?.trim();
           if (!dataLine) continue;
 
-          let payload: Record<string, any> = {};
+          let payload: Record<string, any>;
           try {
             payload = JSON.parse(dataLine);
           } catch {
             continue;
           }
 
-          if (eventLine === "step") {
-            const { etapa, status, resultado } = payload;
+          if (eventName === "step") {
             setEtapaStatus(
-              etapa,
-              status === "em_andamento" ? "em_andamento" : "concluido",
-              resultado,
+              payload.etapa,
+              payload.status === "em_andamento" ? "em_andamento" : "concluido",
+              payload.resultado,
             );
-          } else if (eventLine === "concluido") {
+          } else if (eventName === "concluido") {
             setDocumento(payload.documento ?? "");
             setAiLogId(payload.ai_log_id ?? "");
             setCodigoPeca(payload.codigo_peca ?? "");
-            // Relatório anti-alucinação do pipeline (súmulas/artigos/processos
-            // conferidos contra a base oficial) — pode vir null (fail-safe do
-            // backend), tratado como "verificação indisponível" no painel.
             setVerificacao(payload.verificacao_citacoes ?? null);
-            // Validação canônica do núcleo (response_validator): alertas ao
-            // revisor HITL — promessa de resultado (vedação OAB), citação não
-            // confirmada, peça sem âncora verificável.
             setAlertasIa(
               Array.isArray(payload.alertas)
                 ? payload.alertas.filter((a: unknown) => typeof a === "string")
                 : [],
             );
             setFase("concluido");
-            onConcluido?.(payload.ai_log_id, payload.documento);
-          } else if (eventLine === "residuos") {
-            // Modo Molde: identificadores do caso de ORIGEM que sobreviveram
-            // na peça nova (quebra de sigilo se protocolada assim). Chega
-            // DEPOIS do "concluido" — a peça é entregue, mas com o alerta.
-            setResiduos(payload.achados ?? []);
-          } else if (eventLine === "erro") {
+            onConcluido?.(payload.ai_log_id ?? "", payload.documento ?? "");
+          } else if (eventName === "residuos") {
+            setResiduos(Array.isArray(payload.achados) ? payload.achados : []);
+          } else if (eventName === "erro") {
             throw new Error(payload.detail ?? "Erro na geração");
           }
         }
       }
     } catch (e: any) {
-      if (e.name === "AbortError") return;
-      setErroMsg(e.message ?? "Erro desconhecido");
+      if (e?.name === "AbortError") return;
+      setErroMsg(e?.message ?? "Erro desconhecido");
       setFase("erro");
     }
   }, [
-    metaLoading,
-    metaErro,
-    tipos,
-    areas,
-    niveis,
+    catalogoIndisponivel,
     modo,
     respostasGuiadas,
-    tipoPeca,
-    areaDireito,
-    nivelComplexidade,
-    flagsTeses,
     fatos,
     pedidos,
     instrucoes,
     nomesProteger,
+    tipoPeca,
+    areaDireito,
+    nivelComplexidade,
+    flagsTeses,
     caseId,
-    onConcluido,
     onNeedFicha,
+    onConcluido,
   ]);
 
   const copiar = () => {
     navigator.clipboard.writeText(documento);
     setCopiado(true);
-    setTimeout(() => setCopiado(false), 2000);
+    window.setTimeout(() => setCopiado(false), 1800);
   };
 
-  const baixarTxt = () => {
+  const baixar = () => {
     const blob = new Blob([documento], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -740,628 +456,442 @@ export default function PecaGeneratorModal({
     URL.revokeObjectURL(url);
   };
 
-  const catalogoIndisponivel =
-    metaLoading ||
-    !!metaErro ||
-    tipos.length === 0 ||
-    areas.length === 0 ||
-    niveis.length === 0;
-
   return (
-    <Modal open={open} onClose={fechar} title="Gerador de Peças — IA" wide>
-      <div className="flex flex-col">
-        <div className="-mt-5 -mx-5 mb-4 px-5 pb-3 border-b border-slate-100">
-          <p className="text-xs text-slate-400">
-            Pipeline 7 etapas · HITL obrigatório
-          </p>
-        </div>
+    <Modal open={open} onClose={fechar} title="Criar peça" wide>
+      {fase === "form" && (
+        <div className="space-y-5">
+          <div className="rounded-xl border border-primary-100 bg-primary-50/50 p-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-navy">
+              <Sparkles size={16} /> Fluxo recomendado
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              Informe o tipo e os dados do caso. O EJC organiza a estrutura, pesquisa fundamentos e gera a minuta para revisão humana.
+            </p>
+          </div>
 
-        <div className="flex-1 overflow-y-auto">
-          {/* ── FASE: FORMULÁRIO ── */}
-          {fase === "form" && (
-            <div className="p-6 flex flex-col gap-4">
-              {metaErro && (
-                <div className="flex items-start gap-2 rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-xs text-danger-700">
-                  <ShieldAlert size={16} className="mt-0.5 flex-shrink-0" />
-                  <span>{metaErro}</span>
-                </div>
-              )}
+          {metaErro && (
+            <div className="flex items-start gap-2 rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-xs text-danger-700">
+              <ShieldAlert size={16} className="mt-0.5 shrink-0" />
+              {metaErro}
+            </div>
+          )}
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Tipo de peça
-                  </label>
-                  <select
-                    value={tipoPeca}
-                    onChange={(e) => setTipoPeca(e.target.value)}
-                    className="input"
-                    disabled={catalogoIndisponivel}
-                  >
-                    {GRUPO_ORDEM.filter((g) =>
-                      tipos.some((t) => t.grupo === g),
-                    ).map((g) => (
-                      <optgroup key={g} label={GRUPO_LABEL[g] ?? g}>
-                        {tipos
-                          .filter((t) => t.grupo === g)
-                          .map((t) => (
-                            <option key={t.value} value={t.value}>
-                              {t.label}
-                            </option>
-                          ))}
-                      </optgroup>
-                    ))}
-                    {/* Defensivo: tipos com grupo fora dos quatro conhecidos */}
-                    {(() => {
-                      const extras = tipos.filter(
-                        (t) => !GRUPO_ORDEM.includes(t.grupo),
-                      );
-                      return extras.length ? (
-                        <optgroup label="Outros">
-                          {extras.map((t) => (
-                            <option key={t.value} value={t.value}>
-                              {t.label}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ) : null;
-                    })()}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Área do direito
-                  </label>
-                  <select
-                    value={areaDireito}
-                    onChange={(e) => setAreaDireito(e.target.value)}
-                    className="input"
-                    disabled={catalogoIndisponivel}
-                  >
-                    {areas.map((a) => (
-                      <option key={a.value} value={a.value}>
-                        {a.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <label className="label text-xs">Tipo de peça</label>
+              <select
+                className="input"
+                value={tipoPeca}
+                disabled={catalogoIndisponivel}
+                onChange={(e) => {
+                  setTipoPeca(e.target.value);
+                  setRespostasGuiadas({});
+                }}
+              >
+                {tipos.map((tipo) => (
+                  <option key={tipo.value} value={tipo.value}>
+                    {tipo.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label text-xs">Área</label>
+              <select
+                className="input"
+                value={areaDireito}
+                disabled={catalogoIndisponivel}
+                onChange={(e) => setAreaDireito(e.target.value)}
+              >
+                {areas.map((area) => (
+                  <option key={area.value} value={area.value}>
+                    {area.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label text-xs">Nível / rito</label>
+              <select
+                className="input"
+                value={nivelComplexidade}
+                disabled={catalogoIndisponivel}
+                onChange={(e) => setNivelComplexidade(e.target.value)}
+              >
+                {niveis.map((nivel) => (
+                  <option key={nivel} value={nivel}>
+                    {NIVEL_LABEL[nivel] ?? nivel}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+            <div>
+              <div className="text-sm font-medium text-slate-700">
+                {modo === "guiado" ? "Preenchimento guiado" : "Preenchimento livre"}
               </div>
+              <div className="text-xs text-slate-400">
+                {modo === "guiado"
+                  ? "O formulário adapta as perguntas ao tipo de peça."
+                  : "Use campos abertos quando já souber exatamente o que deseja redigir."}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn-ghost px-3 py-1.5 text-xs"
+              onClick={() => setMostrarAvancado((v) => !v)}
+            >
+              <PenLine size={14} /> Opções avançadas
+            </button>
+          </div>
 
+          {mostrarAvancado && (
+            <div className="flex gap-2 rounded-xl bg-slate-100 p-1">
+              <button
+                type="button"
+                onClick={() => setModo("guiado")}
+                className={`flex-1 rounded-lg px-3 py-2 text-xs font-medium ${
+                  modo === "guiado"
+                    ? "bg-white text-primary-700 shadow-sm"
+                    : "text-slate-500"
+                }`}
+              >
+                Guiado
+              </button>
+              <button
+                type="button"
+                onClick={() => setModo("livre")}
+                className={`flex-1 rounded-lg px-3 py-2 text-xs font-medium ${
+                  modo === "livre"
+                    ? "bg-white text-primary-700 shadow-sm"
+                    : "text-slate-500"
+                }`}
+              >
+                Livre
+              </button>
+            </div>
+          )}
+
+          {modo === "guiado" ? (
+            <GuiadoForm
+              tipoPeca={tipoPeca}
+              respostas={respostasGuiadas}
+              onChange={(campo, valor) =>
+                setRespostasGuiadas((atual) => ({ ...atual, [campo]: valor }))
+              }
+            />
+          ) : (
+            <div className="space-y-3">
               <div>
-                <label
-                  htmlFor="peca-nivel"
-                  className="block text-xs font-medium text-slate-600 mb-1"
-                >
-                  Nível / rito
-                </label>
-                <select
-                  id="peca-nivel"
-                  value={nivelComplexidade}
-                  onChange={(e) => setNivelComplexidade(e.target.value)}
-                  className="input"
-                  disabled={catalogoIndisponivel}
-                >
-                  {niveis.map((n) => (
-                    <option key={n} value={n}>
-                      {NIVEL_LABEL[n] ?? n}
-                    </option>
-                  ))}
-                </select>
+                <label className="label text-xs">Fatos *</label>
+                <textarea
+                  className="input min-h-[130px]"
+                  value={fatos}
+                  onChange={(e) => setFatos(e.target.value)}
+                  placeholder="Descreva cronologicamente os fatos relevantes..."
+                />
               </div>
-
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-2">
-                  Modo de produção
-                </label>
-                <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
-                  {(
-                    [
-                      {
-                        id: "livre",
-                        label: "Livre",
-                        icon: <PenLine size={14} />,
-                        desc: "Campos abertos",
-                      },
-                      {
-                        id: "guiado",
-                        label: "Guiado",
-                        icon: <ListOrdered size={14} />,
-                        desc: "Passo a passo",
-                      },
-                      {
-                        id: "molde",
-                        label: "Molde",
-                        icon: <CopyPlus size={14} />,
-                        desc: "Espelhar peça",
-                      },
-                      {
-                        id: "agente",
-                        label: "Agente",
-                        icon: <Bot size={14} />,
-                        desc: "10 etapas",
-                      },
-                    ] as const
-                  ).map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => setModo(m.id)}
-                      className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-all ${
-                        modo === m.id
-                          ? "bg-white text-ai-700 shadow-sm"
-                          : "text-slate-500 hover:text-slate-700"
-                      }`}
-                      title={m.desc}
-                    >
-                      {m.icon}
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-[11px] text-slate-400 mt-1.5">
-                  {modo === "livre" &&
-                    "Preencha os campos livremente — a IA interpreta sua redação."}
-                  ,
-                  {modo === "guiado" &&
-                    "Formulário estruturado por tipo de peça — cada campo alimenta uma etapa específica."}
-                  ,
-                  {modo === "molde" &&
-                    "Selecione uma peça existente como modelo para espelhar estrutura e estilo."}
-                  ,
-                  {modo === "agente" &&
-                    "Pipeline completo com 10 etapas — o agente executa busca, análise e síntese autonomamente."}
-                  ,
-                </p>
+                <label className="label text-xs">Pedidos / resultado pretendido *</label>
+                <textarea
+                  className="input min-h-[90px]"
+                  value={pedidos}
+                  onChange={(e) => setPedidos(e.target.value)}
+                  placeholder="Informe os pedidos principais e subsidiários..."
+                />
               </div>
+            </div>
+          )}
 
-              <fieldset className="border border-slate-100 rounded-xl px-4 py-3">
-                <legend className="text-xs font-medium text-slate-600 px-1">
-                  Teses condicionais (opcional)
-                </legend>
-                <p className="text-xs text-slate-400 mb-2">
-                  O sistema já detecta algumas automaticamente pelo caso/ficha.
-                  Marque aqui apenas as que deseja adicionar manualmente — elas
-                  somam às automáticas.
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
-                  {FLAGS_TESES.map((f) => (
-                    <label
-                      key={f.value}
-                      className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer"
-                    >
+          <details className="rounded-xl border border-slate-200 bg-slate-50/50">
+            <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-slate-600 [&::-webkit-details-marker]:hidden">
+              Ajustes jurídicos e LGPD
+            </summary>
+            <div className="space-y-4 border-t border-slate-200 p-4">
+              <div>
+                <div className="mb-2 text-xs font-medium text-slate-600">
+                  Teses condicionais
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {FLAGS_TESES.map(([value, label]) => (
+                    <label key={value} className="flex items-center gap-2 text-xs text-slate-600">
                       <input
                         type="checkbox"
-                        checked={flagsTeses.has(f.value)}
-                        onChange={() => toggleFlagTese(f.value)}
-                        className="rounded border-slate-300 text-ai-600 focus:ring-ai-500"
+                        checked={flagsTeses.has(value)}
+                        onChange={() => toggleFlag(value)}
                       />
-                      {f.label}
+                      {label}
                     </label>
                   ))}
                 </div>
-              </fieldset>
-
-              {/* ── CAMPOS POR MODO ── */}
-              {modo === "guiado" ? (
-                <GuiadoForm
-                  tipoPeca={tipoPeca}
-                  respostas={respostasGuiadas}
-                  onChange={(campo, valor) =>
-                    setRespostasGuiadas((prev) => ({ ...prev, [campo]: valor }))
-                  }
-                />
-              ) : modo === "molde" ? (
-                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-                  <CopyPlus size={24} className="mx-auto mb-2 text-slate-400" />
-                  <p>
-                    Selecione uma peça existente no passo seguinte para usar
-                    como modelo. A IA manterá a estrutura e estilo do molde.
-                  </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="label text-xs">Nomes a proteger</label>
+                  <input
+                    className="input"
+                    value={nomesProteger}
+                    onChange={(e) => setNomesProteger(e.target.value)}
+                    placeholder="Separados por vírgula"
+                  />
                 </div>
-              ) : modo === "agente" ? (
-                <div className="rounded-xl border border-dashed border-ai-200 bg-ai-50 px-4 py-6 text-center text-sm text-ai-700">
-                  <Bot size={24} className="mx-auto mb-2 text-ai-400" />
-                  <p>
-                    O agente executará 10 etapas automaticamente: Extração →
-                    Classificação → Tese → Precedentes → Fundamentação → Pedidos
-                    → Estrutura → Redação → Revisão → Versão Final.
-                  </p>
-                  <p className="mt-1 text-xs text-ai-500">
-                    Preencha os campos abaixo com as informações básicas — o
-                    agente irá expandir e enriquecer cada seção.
-                  </p>
+                <div>
+                  <label className="label text-xs">Instruções adicionais</label>
+                  <input
+                    className="input"
+                    value={instrucoes}
+                    onChange={(e) => setInstrucoes(e.target.value)}
+                    placeholder="Ex.: destacar urgência, manter linguagem objetiva..."
+                  />
                 </div>
-              ) : null}
-
-              {modo !== "guiado" && (
-                <>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">
-                      Descrição dos fatos{" "}
-                      <span className="text-danger-400">*</span>
-                      <span className="text-slate-400 font-normal ml-1">
-                        mín. 50 caracteres
-                      </span>
-                    </label>
-                    <textarea
-                      value={fatos}
-                      onChange={(e) => setFatos(e.target.value)}
-                      placeholder="Descreva os fatos de forma detalhada. A IA usa esta descrição como base para todas as 7 etapas do pipeline..."
-                      rows={5}
-                      className="input resize-none"
-                    />
-                    <div className="text-right text-xs text-slate-400 mt-0.5">
-                      {fatos.length} caracteres
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">
-                      Pedidos <span className="text-danger-400">*</span>
-                    </label>
-                    <textarea
-                      value={pedidos}
-                      onChange={(e) => setPedidos(e.target.value)}
-                      placeholder="Liste os pedidos principais e subsidiários..."
-                      rows={3}
-                      className="input resize-none"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">
-                        Nomes a proteger (LGPD)
-                        <span className="text-slate-400 font-normal ml-1">
-                          separados por vírgula
-                        </span>
-                      </label>
-                      <input
-                        type="text"
-                        value={nomesProteger}
-                        onChange={(e) => setNomesProteger(e.target.value)}
-                        placeholder="João Silva, Maria Costa..."
-                        className="input"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">
-                        Instruções adicionais
-                      </label>
-                      <input
-                        type="text"
-                        value={instrucoes}
-                        onChange={(e) => setInstrucoes(e.target.value)}
-                        placeholder="Ex: incluir pedido liminar..."
-                        className="input"
-                      />
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {modo === "guiado" && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">
-                      Nomes a proteger (LGPD)
-                      <span className="text-slate-400 font-normal ml-1">
-                        separados por vírgula
-                      </span>
-                    </label>
-                    <input
-                      type="text"
-                      value={nomesProteger}
-                      onChange={(e) => setNomesProteger(e.target.value)}
-                      placeholder="João Silva, Maria Costa..."
-                      className="input"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">
-                      Instruções adicionais
-                    </label>
-                    <input
-                      type="text"
-                      value={instrucoes}
-                      onChange={(e) => setInstrucoes(e.target.value)}
-                      placeholder="Ex: incluir pedido liminar..."
-                      className="input"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="bg-warn-50 border border-warn-200 rounded-lg px-4 py-3 text-xs text-warn-800">
-                <strong>⚠️ RASCUNHO:</strong> toda peça gerada por IA exige
-                revisão e assinatura por advogado habilitado (OAB). Não
-                protocole sem revisão humana.
               </div>
             </div>
-          )}
+          </details>
 
-          {/* ── FASE: GERANDO ── */}
-          {(fase === "gerando" || fase === "erro") && (
-            <div className="p-6">
-              <div className="mb-5">
-                <h3 className="text-sm font-medium text-slate-800 mb-1">
-                  {fase === "gerando"
-                    ? "Gerando sua peça..."
-                    : "Erro na geração"}
-                </h3>
-                <p className="text-xs text-slate-400">
-                  {tipoLabel(tipoPeca)} · {areaLabel(areaDireito)}
-                  <span className="ml-2 inline-flex items-center rounded-md bg-ai-50 px-1.5 py-0.5 text-[10px] font-medium text-ai-700 ring-1 ring-inset ring-ai-200">
-                    {modo === "livre"
-                      ? "Livre"
-                      : modo === "guiado"
-                        ? "Guiado"
-                        : modo === "molde"
-                          ? "Molde"
-                          : "Agente"}
-                  </span>
-                </p>
-              </div>
+          <div className="flex items-start gap-2 rounded-lg border border-warn-200 bg-warn-50 px-4 py-3 text-xs text-warn-800">
+            <ShieldAlert size={15} className="mt-0.5 shrink-0" />
+            <span>
+              A saída é uma minuta. Aprovação e assinatura permanecem obrigatoriamente humanas no fluxo de Peças.
+            </span>
+          </div>
 
-              <div className="flex flex-col gap-2">
-                {etapas.map((e) => (
-                  <div
-                    key={e.num}
-                    className="border border-slate-100 rounded-xl overflow-hidden"
-                  >
-                    <div
-                      className={`flex items-center gap-3 px-4 py-3 transition-colors ${
-                        e.status === "concluido"
-                          ? "bg-green-50"
-                          : e.status === "em_andamento"
-                            ? "bg-ai-50"
-                            : "bg-white"
-                      }`}
-                    >
-                      <div
-                        className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-medium ${
-                          e.status === "concluido"
-                            ? "bg-green-500 text-white"
-                            : e.status === "em_andamento"
-                              ? "bg-ai-600 text-white"
-                              : "bg-slate-100 text-slate-400"
-                        }`}
-                      >
-                        {e.status === "em_andamento" ? (
-                          <Loader2 size={13} className="animate-spin" />
-                        ) : e.status === "concluido" ? (
-                          <CheckCircle2 size={13} />
-                        ) : (
-                          e.num
-                        )}
-                      </div>
-                      <div
-                        className={`flex-1 text-sm ${
-                          e.status === "concluido"
-                            ? "text-green-800 font-medium"
-                            : e.status === "em_andamento"
-                              ? "text-ai-800 font-medium"
-                              : "text-slate-400"
-                        }`}
-                      >
-                        {e.titulo}
-                      </div>
-                      {e.status === "concluido" && e.resultado && (
-                        <button
-                          onClick={() => toggleExpandir(e.num)}
-                          className="text-slate-400 hover:text-slate-600 p-0.5"
-                        >
-                          {expandidos.has(e.num) ? (
-                            <ChevronUp size={14} />
-                          ) : (
-                            <ChevronDown size={14} />
-                          )}
-                        </button>
-                      )}
-                    </div>
-                    {e.status === "concluido" &&
-                      e.resultado &&
-                      expandidos.has(e.num) && (
-                        <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 text-xs text-slate-600 leading-relaxed">
-                          {e.resultado}
-                        </div>
-                      )}
-                  </div>
-                ))}
-              </div>
-
-              {fase === "erro" && (
-                <div className="mt-4 bg-danger-50 border border-danger-200 rounded-lg px-4 py-3 text-sm text-danger-700">
-                  {erroMsg}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── FASE: CONCLUÍDO ── */}
-          {fase === "concluido" && (
-            <div className="p-6 flex flex-col gap-4">
-              <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
-                <CheckCircle2
-                  size={18}
-                  className="text-green-600 flex-shrink-0"
-                />
-                <div className="flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-green-800">
-                      Peça gerada com sucesso
-                    </span>
-                    {codigoPeca && (
-                      <Badge tone="ouro" className="font-mono">
-                        {codigoPeca}
-                      </Badge>
-                    )}
-                    <span className="inline-flex items-center rounded-md bg-ai-50 px-1.5 py-0.5 text-[10px] font-medium text-ai-700 ring-1 ring-inset ring-ai-200">
-                      Modo:{" "}
-                      {modo === "livre"
-                        ? "Livre"
-                        : modo === "guiado"
-                          ? "Guiado"
-                          : modo === "molde"
-                            ? "Molde"
-                            : "Agente"}
-                    </span>
-                  </div>
-                  <div className="text-xs text-green-600">
-                    Log ID: {aiLogId} · Aguarda revisão HITL
-                  </div>
-                </div>
-              </div>
-
-              {/* Painel anti-alucinação — score + citações destacadas por
-                  status (suspeita/genérica em vermelho/amarelo, verificadas em
-                  verde). Fica junto ao documento para a revisão HITL. */}
-              <VerificacaoCitacoesPanel verificacao={verificacao} />
-
-              {/* Alertas da validação canônica (response_validator): promessa
-                  de resultado, citação não confirmada, ausência de base
-                  verificável. O texto da peça NÃO é reescrito — o revisor
-                  precisa ver o que o modelo escreveu para poder corrigir. */}
-              {alertasIa.length > 0 && (
-                <div className="rounded-lg border-2 border-amber-300 bg-amber-50 p-3">
-                  <div className="mb-1 flex items-center gap-2 text-sm font-bold text-amber-800">
-                    <ShieldAlert size={16} />
-                    Alertas da validação jurídica ({alertasIa.length})
-                  </div>
-                  <ul className="list-disc space-y-1 pl-5 text-xs text-amber-800">
-                    {alertasIa.map((alerta, i) => (
-                      <li key={i}>{alerta}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Detector de resíduos (Modo Molde): identificador do caso de
-                  ORIGEM que sobreviveu na peça. Protocolar assim é quebra de
-                  sigilo — por isso o alerta é vermelho e vem antes do texto. */}
-              {residuos.length > 0 && (
-                <div className="rounded-lg border-2 border-red-300 bg-red-50 p-3">
-                  <div className="mb-1 flex items-center gap-2 text-sm font-bold text-red-800">
-                    <ShieldAlert size={16} />
-                    Resíduos do caso de origem ({residuos.length})
-                  </div>
-                  <p className="mb-2 text-xs text-red-700">
-                    A peça reaproveitou o molde e manteve dados de OUTRO caso.
-                    Remova antes de aprovar — protocolar assim expõe dados de
-                    outro cliente (EOAB art. 34 / LGPD).
-                  </p>
-                  <ul className="space-y-1">
-                    {residuos.map((r, i) => (
-                      <li key={i} className="text-xs text-red-800">
-                        <span className="font-semibold">{r.rotulo}:</span>{" "}
-                        <code className="rounded bg-red-100 px-1">
-                          {r.termo}
-                        </code>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-medium text-slate-600">
-                    Documento gerado
-                  </label>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={copiar}
-                      className="flex items-center gap-1 text-xs text-slate-500 hover:text-ai-600 transition-colors"
-                    >
-                      <Copy size={13} />
-                      {copiado ? "Copiado!" : "Copiar"}
-                    </button>
-                    <button
-                      onClick={baixarTxt}
-                      className="flex items-center gap-1 text-xs text-slate-500 hover:text-ai-600 transition-colors"
-                    >
-                      <Download size={13} />
-                      Baixar
-                    </button>
-                  </div>
-                </div>
-                <textarea
-                  readOnly
-                  value={documento}
-                  rows={14}
-                  className="input bg-slate-50 font-mono resize-none"
-                />
-              </div>
-
-              <div className="bg-warn-50 border border-warn-200 rounded-lg px-4 py-3 text-xs text-warn-800">
-                <strong>⚠️ Atenção:</strong> este é um rascunho gerado por IA.
-                Revise, complemente com dados reais do caso e assine antes de
-                protocolar.
-              </div>
-            </div>
-          )}
+          <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+            <Button variant="ghost" onClick={fechar}>
+              Cancelar
+            </Button>
+            <Button
+              variant="ai"
+              onClick={gerar}
+              disabled={catalogoIndisponivel}
+              icon={<Sparkles size={15} />}
+            >
+              Gerar minuta
+            </Button>
+          </div>
         </div>
+      )}
 
-        {/* Footer */}
-        <div className="-mx-5 -mb-5 px-6 py-4 mt-4 border-t border-slate-100 flex items-center justify-between gap-3 bg-white rounded-b-2xl">
-          {fase === "form" && (
-            <>
-              <Button variant="ghost" onClick={fechar}>
-                Cancelar
-              </Button>
-              <Button
-                variant="ai"
-                onClick={gerar}
-                disabled={catalogoIndisponivel}
-                icon={<Sparkles size={15} />}
+      {(fase === "gerando" || fase === "erro") && (
+        <div className="space-y-4">
+          <div>
+            <div className="text-sm font-semibold text-navy">
+              {fase === "gerando" ? "Preparando a minuta" : "Não foi possível gerar"}
+            </div>
+            <div className="mt-1 text-xs text-slate-400">
+              {tipoLabel(tipoPeca)} · {areaLabel(areaDireito)}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            {etapas.map((etapa) => (
+              <div
+                key={etapa.num}
+                className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-sm ${
+                  etapa.status === "concluido"
+                    ? "border-success-200 bg-success-50 text-success-700"
+                    : etapa.status === "em_andamento"
+                      ? "border-primary-200 bg-primary-50 text-primary-700"
+                      : "border-slate-100 text-slate-400"
+                }`}
               >
-                Gerar peça com IA
-              </Button>
-            </>
-          )}
-          {fase === "gerando" && (
-            <>
-              <div className="flex items-center gap-2 text-xs text-slate-400">
-                <Loader2 size={13} className="animate-spin" />
-                Processando pipeline...
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-xs shadow-sm">
+                  {etapa.status === "em_andamento" ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : etapa.status === "concluido" ? (
+                    <CheckCircle2 size={13} />
+                  ) : (
+                    etapa.num
+                  )}
+                </div>
+                <span>{etapa.titulo}</span>
               </div>
-              <button
+            ))}
+          </div>
+
+          {fase === "erro" && (
+            <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+              {erroMsg}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+            {fase === "gerando" ? (
+              <Button
+                variant="ghost"
                 onClick={() => {
                   abortRef.current?.abort();
                   resetForm();
                 }}
-                className="px-4 py-2 text-sm text-danger-500 hover:text-danger-700 transition-colors"
               >
                 Cancelar
-              </button>
-            </>
-          )}
-          {fase === "erro" && (
-            <>
-              <Button variant="ghost" onClick={resetForm}>
-                Voltar
               </Button>
-              <Button
-                variant="ai"
-                onClick={gerar}
-                icon={<Sparkles size={15} />}
-              >
-                Tentar novamente
-              </Button>
-            </>
-          )}
-          {fase === "concluido" && (
-            <>
-              <Button variant="ghost" onClick={resetForm}>
-                Nova peça
-              </Button>
-              <Button variant="ai" onClick={fechar}>
-                Fechar
-              </Button>
-            </>
-          )}
+            ) : (
+              <>
+                <Button variant="ghost" onClick={resetForm}>
+                  Voltar
+                </Button>
+                <Button variant="ai" onClick={gerar} icon={<Sparkles size={15} />}>
+                  Tentar novamente
+                </Button>
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
+
+      {fase === "concluido" && (
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 rounded-xl border border-success-200 bg-success-50 p-4">
+            <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-success-600" />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-semibold text-success-800">
+                  Minuta criada
+                </span>
+                {codigoPeca && <Badge tone="ouro">{codigoPeca}</Badge>}
+              </div>
+              <p className="mt-1 text-xs text-success-700">
+                A peça foi salva e seguirá para revisão humana no módulo Peças.
+              </p>
+              {aiLogId && (
+                <p className="mt-1 text-[11px] text-success-600">Log: {aiLogId}</p>
+              )}
+            </div>
+          </div>
+
+          <PainelQualidade
+            verificacao={verificacao}
+            alertas={alertasIa}
+            residuos={residuos}
+          />
+
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <label className="text-xs font-medium text-slate-600">Minuta</label>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  className="flex items-center gap-1 text-xs text-slate-500 hover:text-primary-700"
+                  onClick={copiar}
+                >
+                  <Copy size={13} /> {copiado ? "Copiado" : "Copiar"}
+                </button>
+                <button
+                  type="button"
+                  className="flex items-center gap-1 text-xs text-slate-500 hover:text-primary-700"
+                  onClick={baixar}
+                >
+                  <Download size={13} /> Baixar
+                </button>
+              </div>
+            </div>
+            <textarea
+              readOnly
+              className="input min-h-[280px] bg-slate-50 font-mono text-xs"
+              value={documento}
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+            <Button variant="ghost" onClick={resetForm}>
+              Criar outra
+            </Button>
+            <Button variant="primary" onClick={fechar}>
+              Ir para Peças
+            </Button>
+          </div>
+        </div>
+      )}
     </Modal>
+  );
+}
+
+function PainelQualidade({
+  verificacao,
+  alertas,
+  residuos,
+}: {
+  verificacao: VerificacaoCitacoes | null;
+  alertas: string[];
+  residuos: ResiduoAchado[];
+}) {
+  const citacoes = Array.isArray(verificacao?.citacoes) ? verificacao!.citacoes! : [];
+  const criticas = citacoes.filter(
+    (citacao) =>
+      citacao.status === "suspeita" ||
+      citacao.status === "possivelmente_desatualizada" ||
+      citacao.status === "generica",
+  );
+
+  if (!verificacao && alertas.length === 0 && residuos.length === 0) {
+    return (
+      <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+        <ShieldAlert size={15} className="mt-0.5 shrink-0" />
+        Verificação automática indisponível ou sem achados. A revisão humana continua obrigatória.
+      </div>
+    );
+  }
+
+  const haAtencao = criticas.length > 0 || alertas.length > 0 || residuos.length > 0;
+
+  return (
+    <div
+      className={`rounded-xl border p-4 ${
+        haAtencao
+          ? "border-warn-200 bg-warn-50"
+          : "border-success-200 bg-success-50"
+      }`}
+    >
+      <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+        {haAtencao ? <AlertTriangle size={16} /> : <ShieldCheck size={16} />}
+        Controle de qualidade
+        {typeof verificacao?.score === "number" && (
+          <Badge tone={haAtencao ? "amber" : "green"}>
+            {Math.round(verificacao.score)}/100
+          </Badge>
+        )}
+      </div>
+
+      {!haAtencao && (
+        <p className="mt-2 text-xs text-success-700">
+          Nenhum alerta automático relevante foi encontrado. Isso não substitui a conferência do advogado.
+        </p>
+      )}
+
+      {criticas.length > 0 && (
+        <ul className="mt-2 space-y-1 text-xs text-warn-800">
+          {criticas.map((citacao, index) => (
+            <li key={index}>
+              <strong>{citacao.status.replace(/_/g, " ")}:</strong>{" "}
+              {citacao.citacao || citacao.trecho || "citação"}
+              {citacao.aviso ? ` — ${citacao.aviso}` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {alertas.length > 0 && (
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-warn-800">
+          {alertas.map((alerta, index) => (
+            <li key={index}>{alerta}</li>
+          ))}
+        </ul>
+      )}
+
+      {residuos.length > 0 && (
+        <div className="mt-3 rounded-lg border border-danger-200 bg-danger-50 p-3 text-xs text-danger-700">
+          <strong>Dados residuais detectados:</strong> revise antes de aprovar.
+          <ul className="mt-1 list-disc pl-5">
+            {residuos.map((residuo, index) => (
+              <li key={index}>
+                {residuo.rotulo}: {residuo.termo}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
