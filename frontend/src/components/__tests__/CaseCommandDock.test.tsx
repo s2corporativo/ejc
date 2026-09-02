@@ -38,7 +38,7 @@ describe("CaseCommandDock", () => {
     remove.mockResolvedValue({ data: { ok: true } });
   });
 
-  it("navega pelos MESMOS cinco destinos canônicos da barra do caso", () => {
+  it("prioriza quatro áreas operacionais e mantém Estratégia & IA separada", () => {
     render(
       <MemoryRouter>
         <CaseCommandDock caseId="case-1" />
@@ -46,25 +46,15 @@ describe("CaseCommandDock", () => {
     );
 
     fireEvent.click(
-      screen.getByRole("button", { name: /Abrir ações simples/ }),
+      screen.getByRole("button", { name: /Abrir ações rápidas do caso/ }),
     );
 
-    expect(screen.getByText("Modo simples")).toBeTruthy();
-    // Fase 1: os destinos de navegação são exatamente os cinco rótulos
-    // canônicos (config/caseNav) — os mesmos da CaseContextBar e da página.
-    for (const rotulo of [
-      "Visão",
-      "Atividades",
-      "Arquivos",
-      "Estratégia",
-      "Financeiro",
-    ]) {
+    expect(screen.getByText("Ações rápidas")).toBeTruthy();
+    for (const rotulo of ["Visão", "Atividades", "Documentos", "Financeiro"]) {
       expect(screen.getByText(rotulo)).toBeTruthy();
     }
-    // "Peças" deixou de ser um sexto destino de navegação: virou ação de
-    // produção, ao lado de Áreas do caso e Anexar documento.
-    expect(screen.queryByText("Jornada e próxima ação")).toBeNull();
-    expect(screen.getByRole("button", { name: /Peças do caso/ })).toBeTruthy();
+    expect(screen.getByText("Estratégia & IA")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Peças do caso/ })).toBeNull();
   });
 
   it("usa a taxonomia canônica e vincula uma área ao caso", async () => {
@@ -75,7 +65,7 @@ describe("CaseCommandDock", () => {
     );
 
     fireEvent.click(
-      screen.getByRole("button", { name: /Abrir ações simples/ }),
+      screen.getByRole("button", { name: /Abrir ações rápidas do caso/ }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Áreas do caso" }));
 
@@ -102,7 +92,7 @@ describe("CaseCommandDock", () => {
     );
 
     fireEvent.click(
-      screen.getByRole("button", { name: /Abrir ações simples/ }),
+      screen.getByRole("button", { name: /Abrir ações rápidas do caso/ }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Anexar documento" }));
 
