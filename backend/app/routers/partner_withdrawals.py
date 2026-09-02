@@ -59,6 +59,23 @@ async def _buscar(db: AsyncSession, withdrawal_id: str):
     return result.mappings().first()
 
 
+async def _exigir_socio_ativo(db: AsyncSession, partner_id: str) -> None:
+    """A retirada só pode ser atribuída a usuário que integra o cap table ativo."""
+    socio = await db.execute(
+        text(
+            """
+            SELECT id
+            FROM socios
+            WHERE user_id=:user_id AND ativo=TRUE
+            LIMIT 1
+            """
+        ),
+        {"user_id": partner_id},
+    )
+    if socio.scalar_one_or_none() is None:
+        raise HTTPException(422, "Sócio ativo não encontrado para a retirada informada")
+
+
 @router.get("")
 async def list_withdrawals(
     partner_id: Optional[str] = None,
@@ -102,6 +119,7 @@ async def create_withdrawal(
     partner_id = body.partner_id or str(current_user.id)
     if partner_id != str(current_user.id) and _role(current_user) != "superadmin":
         raise HTTPException(403, "Não é permitido solicitar saque para outro sócio")
+    await _exigir_socio_ativo(db, partner_id)
 
     gross = _money(body.gross_value)
     expenses = _money(body.case_expenses)
