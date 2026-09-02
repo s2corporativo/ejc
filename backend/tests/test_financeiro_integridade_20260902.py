@@ -1,7 +1,7 @@
 """Regressões da auditoria financeira E2E de 02/09/2026.
 
-Cobrem invariantes de validação e normalização que não podem regredir
-silenciosamente, sem exigir acesso a banco de produção.
+Cobrem invariantes de validação, normalização e pré-fechamento que não podem
+regredir silenciosamente, sem exigir acesso a banco de produção.
 """
 import asyncio
 from datetime import date
@@ -13,7 +13,10 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.routers.despesas import DespesaCreate, DespesaUpdate, _normalizar_baixa
-from app.routers.financeiro_consolidado import pendencias_operacionais
+from app.routers.financeiro_consolidado import (
+    _classificar_fechamento,
+    pendencias_operacionais,
+)
 from app.routers.office_contracts import ContractCreate
 from app.routers.partner_withdrawals import WithdrawalCreate
 from app.routers.pix import PixCobrancaIn, gerar_brcode
@@ -133,6 +136,27 @@ def test_brcode_decimal_preserva_centavos_e_crc():
     assert "5406123.45" in codigo
     assert codigo[-8:-4] == "6304"
     assert len(codigo[-4:]) == 4
+
+
+def test_fechamento_inteligente_classifica_pronto_revisao_e_bloqueio():
+    assert _classificar_fechamento([]) == ("pronto", 100)
+
+    revisao = [
+        {"codigo": "pendente", "severidade": "revisao", "qtd": 50},
+    ]
+    assert _classificar_fechamento(revisao) == ("revisao", 93)
+
+    bloqueado = [
+        {"codigo": "overpayment", "severidade": "bloqueio", "qtd": 1},
+        {"codigo": "sem_comprovante", "severidade": "revisao", "qtd": 20},
+    ]
+    assert _classificar_fechamento(bloqueado) == ("bloqueado", 68)
+
+
+def test_fechamento_score_penaliza_categoria_e_nao_volume():
+    um = [{"codigo": "x", "severidade": "bloqueio", "qtd": 1}]
+    muitos = [{"codigo": "x", "severidade": "bloqueio", "qtd": 999}]
+    assert _classificar_fechamento(um) == _classificar_fechamento(muitos)
 
 
 class _ResultadoFake:
