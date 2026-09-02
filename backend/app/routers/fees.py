@@ -66,6 +66,17 @@ def _filtro_fees_lista(q, user: User):
     return q.where(Fee.case_id.in_(_ids_casos_do_usuario(user)))
 
 
+async def _total_pago_fee(db: AsyncSession, fee_id: str) -> Decimal:
+    total = (
+        await db.execute(
+            select(sqlfunc.coalesce(sqlfunc.sum(FeePayment.valor), 0)).where(
+                FeePayment.fee_id == fee_id
+            )
+        )
+    ).scalar()
+    return Decimal(str(total or 0))
+
+
 router = APIRouter(prefix="/fees", tags=["Honorários"])
 
 
@@ -91,7 +102,6 @@ async def listar(
     if case_id:
         q = q.where(Fee.case_id == case_id)
     if competencia:
-        # Validação explícita (422) para compor com os demais filtros.
         if not _RE_COMPETENCIA.fullmatch(competencia):
             raise HTTPException(
                 status_code=422,
@@ -123,28 +133,67 @@ async def resumo(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """KPIs institucionais para perfis fiduciários; demais veem apenas seus casos."""
+    """KPIs de cobrança e caixa baseados nos lançamentos reais de pagamento.
+
+    `pendente`/`atrasado` representam SALDO, não o valor original do fee. Já
+    `recebido_mes` soma `fee_payments` na data em que o caixa efetivamente entrou.
+    Assim um honorário de R$ 1.000 com R$ 600 pagos aparece como R$ 400 a receber,
+    e a parcela de R$ 600 é reconhecida no mês do pagamento, mesmo antes da
+    quitação integral.
+    """
     hoje = date.today()
-    base = select(
-        sqlfunc.sum(Fee.valor).filter(Fee.status == FeeStatus.pendente),
-        sqlfunc.sum(Fee.valor).filter(Fee.status == FeeStatus.atrasado),
-        sqlfunc.sum(Fee.valor).filter(
-            Fee.status == FeeStatus.pago,
-            sqlfunc.extract("month", Fee.data_pagamento) == hoje.month,
-            sqlfunc.extract("year", Fee.data_pagamento) == hoje.year,
-        ),
-    ).where(Fee.deleted_at.is_(None))
+
+    pagamentos_por_fee = (
+        select(
+            FeePayment.fee_id.label("fee_id"),
+            sqlfunc.coalesce(sqlfunc.sum(FeePayment.valor), 0).label("total_pago"),
+        )
+        .group_by(FeePayment.fee_id)
+        .subquery()
+    )
+    total_pago = sqlfunc.coalesce(pagamentos_por_fee.c.total_pago, 0)
+    saldo = sqlfunc.greatest(sqlfunc.coalesce(Fee.valor, 0) - total_pago, 0)
+
+    base_saldos = (
+        select(
+            sqlfunc.coalesce(sqlfunc.sum(saldo).filter(Fee.status == FeeStatus.pendente), 0),
+            sqlfunc.coalesce(sqlfunc.sum(saldo).filter(Fee.status == FeeStatus.atrasado), 0),
+        )
+        .outerjoin(pagamentos_por_fee, pagamentos_por_fee.c.fee_id == Fee.id)
+        .where(Fee.deleted_at.is_(None))
+    )
+    base_caixa = (
+        select(sqlfunc.coalesce(sqlfunc.sum(FeePayment.valor), 0))
+        .join(Fee, Fee.id == FeePayment.fee_id)
+        .where(
+            Fee.deleted_at.is_(None),
+            sqlfunc.extract("month", FeePayment.data_pagamento) == hoje.month,
+            sqlfunc.extract("year", FeePayment.data_pagamento) == hoje.year,
+        )
+    )
+    base_percentuais = select(sqlfunc.count(Fee.id)).where(
+        Fee.deleted_at.is_(None),
+        Fee.valor.is_(None),
+        Fee.percentual_exito.is_not(None),
+        Fee.status.in_([FeeStatus.pendente, FeeStatus.atrasado]),
+    )
 
     escopo = "escritorio"
     if not _ve_financeiro_total(cu):
-        base = base.where(Fee.case_id.in_(_ids_casos_do_usuario(cu)))
+        ids = _ids_casos_do_usuario(cu)
+        base_saldos = base_saldos.where(Fee.case_id.in_(ids))
+        base_caixa = base_caixa.where(Fee.case_id.in_(ids))
+        base_percentuais = base_percentuais.where(Fee.case_id.in_(ids))
         escopo = "meus_casos"
 
-    pendente, atrasado, recebido_mes = (await db.execute(base)).one()
+    pendente, atrasado = (await db.execute(base_saldos)).one()
+    recebido_mes = (await db.execute(base_caixa)).scalar()
+    percentuais_sem_valor = (await db.execute(base_percentuais)).scalar() or 0
     return {
         "pendente": float(pendente or 0),
         "atrasado": float(atrasado or 0),
         "recebido_mes": float(recebido_mes or 0),
+        "percentuais_sem_valor": int(percentuais_sem_valor),
         "escopo": escopo,
     }
 
@@ -203,13 +252,41 @@ async def atualizar(
     if not fee:
         raise HTTPException(status_code=404, detail="Honorário não encontrado")
 
+    alteracoes = payload.model_dump(exclude_unset=True)
+    total_pago = await _total_pago_fee(db, fee_id)
+    novo_valor = alteracoes.get("valor", fee.valor)
+    novo_status = alteracoes.get("status", fee.status)
+    novo_status_valor = getattr(novo_status, "value", novo_status)
+
+    if novo_valor is not None and Decimal(str(novo_valor)) < total_pago:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "valor do honorário não pode ficar abaixo do total já recebido; "
+                "registre eventual estorno em fluxo próprio antes de reduzir a cobrança"
+            ),
+        )
+    if novo_status_valor == FeeStatus.cancelado.value and total_pago > 0:
+        raise HTTPException(
+            status_code=409,
+            detail="honorário com pagamento não pode ser cancelado sem conciliação/estorno",
+        )
+    if novo_status_valor == FeeStatus.pago.value:
+        if novo_valor is None:
+            raise HTTPException(
+                status_code=422,
+                detail="honorário percentual sem valor monetário realizado não pode ser quitado manualmente",
+            )
+        if total_pago < Decimal(str(novo_valor)):
+            raise HTTPException(
+                status_code=422,
+                detail="status 'pago' exige pagamentos registrados que cubram o valor do honorário",
+            )
+
     dados_antes = jsonable_encoder(
-        {
-            key: getattr(fee, key, None)
-            for key in payload.model_dump(exclude_unset=True)
-        }
+        {key: getattr(fee, key, None) for key in alteracoes}
     )
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    for key, value in alteracoes.items():
         setattr(fee, key, value)
 
     await criar_audit_log(
@@ -242,6 +319,24 @@ async def registrar_pagamento(
     ).scalar_one_or_none()
     if not fee:
         raise HTTPException(status_code=404, detail="Honorário não encontrado")
+    if fee.status == FeeStatus.cancelado:
+        raise HTTPException(status_code=409, detail="Honorário cancelado não aceita pagamento")
+    if fee.status == FeeStatus.pago:
+        raise HTTPException(status_code=409, detail="Honorário já está quitado")
+
+    total_antes = await _total_pago_fee(db, fee_id)
+    if fee.valor is not None:
+        devido = Decimal(str(fee.valor))
+        if total_antes >= devido:
+            raise HTTPException(
+                status_code=409,
+                detail="O valor do honorário já está integralmente coberto pelos pagamentos existentes",
+            )
+        if total_antes + payload.valor > devido:
+            raise HTTPException(
+                status_code=422,
+                detail="Pagamento excede o saldo do honorário; concilie crédito/estorno em fluxo próprio",
+            )
 
     payment = FeePayment(
         id=str(uuid4()),
@@ -253,16 +348,11 @@ async def registrar_pagamento(
     db.add(payment)
     await db.flush()
 
-    total_pago = (
-        await db.execute(
-            select(sqlfunc.coalesce(sqlfunc.sum(FeePayment.valor), 0)).where(
-                FeePayment.fee_id == fee_id
-            )
-        )
-    ).scalar()
+    total_pago = await _total_pago_fee(db, fee_id)
 
     quitado = False
-    if fee.valor and Decimal(total_pago) >= fee.valor:
+    quitacao_indeterminada = fee.valor is None and fee.percentual_exito is not None
+    if fee.valor is not None and total_pago >= Decimal(str(fee.valor)):
         fee.status = FeeStatus.pago
         fee.data_pagamento = payload.data_pagamento
         quitado = True
@@ -274,14 +364,27 @@ async def registrar_pagamento(
         "PAGAMENTO",
         "fees",
         fee_id,
-        detalhes=f"Pagamento registrado; quitado={quitado}",
+        detalhes=(
+            f"Pagamento {payment.id} registrado; quitado={quitado}; "
+            f"quitacao_indeterminada={quitacao_indeterminada}"
+        ),
+        dados_depois={
+            "payment_id": payment.id,
+            "quitado": quitado,
+            "quitacao_indeterminada": quitacao_indeterminada,
+        },
     )
     await db.commit()
     return {
         "id": payment.id,
         "total_pago": float(total_pago),
         "quitado": quitado,
-        "detail": "Pagamento registrado",
+        "quitacao_indeterminada": quitacao_indeterminada,
+        "detail": (
+            "Pagamento registrado; quitação percentual depende de base de cálculo monetária"
+            if quitacao_indeterminada
+            else "Pagamento registrado"
+        ),
     }
 
 
@@ -298,6 +401,13 @@ async def cancelar(
     ).scalar_one_or_none()
     if not fee:
         raise HTTPException(status_code=404, detail="Honorário não encontrado")
+
+    total_pago = await _total_pago_fee(db, fee_id)
+    if total_pago > 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Honorário com pagamento não pode ser cancelado sem conciliação/estorno",
+        )
 
     fee.deleted_at = datetime.now(timezone.utc)
     fee.status = FeeStatus.cancelado
