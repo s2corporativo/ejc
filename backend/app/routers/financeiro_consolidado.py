@@ -1,13 +1,14 @@
 """Visão financeira consolidada — tela única.
 
 GET /api/v1/financeiro/consolidado?competencia=YYYY-MM
+GET /api/v1/financeiro/atencao
 GET /api/v1/financeiro/demonstrativo?competencia=YYYY-MM
 
 Princípio operacional: caixa usa pagamentos/baixas efetivas; competência usa
 vencimento contratual dos honorários e a competência declarada das despesas.
 O demonstrativo é GERENCIAL, não substitui escrituração ou DRE contábil.
 """
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
@@ -234,6 +235,176 @@ async def consolidado(
             "por_categoria": por_categoria,
         },
     }
+
+
+@router.get("/atencao")
+async def pendencias_operacionais(
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Fila curta do que exige decisão financeira.
+
+    Retorna agregados sem PII de cliente/caso. A interface navega para a tela de
+    origem, onde o RBAC existente continua sendo a autoridade para os detalhes.
+    """
+    _exigir_financeiro(cu)
+    hoje = date.today()
+    em_7_dias = hoje + timedelta(days=7)
+    ha_30_dias = hoje - timedelta(days=30)
+
+    hon = (
+        await db.execute(
+            text(
+                """
+                WITH pagos AS (
+                    SELECT fee_id, COALESCE(SUM(valor), 0) AS total_pago
+                    FROM fee_payments GROUP BY fee_id
+                )
+                SELECT COUNT(*) AS qtd,
+                       COALESCE(SUM(GREATEST(f.valor - COALESCE(p.total_pago, 0), 0)), 0) AS total
+                FROM fees f
+                LEFT JOIN pagos p ON p.fee_id = f.id
+                WHERE f.deleted_at IS NULL
+                  AND f.valor IS NOT NULL
+                  AND CAST(f.status AS text) IN ('pendente','atrasado')
+                  AND f.data_vencimento < :hoje
+                  AND GREATEST(f.valor - COALESCE(p.total_pago, 0), 0) > 0
+                """
+            ),
+            {"hoje": hoje},
+        )
+    ).mappings().first()
+
+    despesas = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    COUNT(*) FILTER (WHERE vencimento < :hoje) AS vencidas_qtd,
+                    COALESCE(SUM(valor) FILTER (WHERE vencimento < :hoje), 0) AS vencidas_total,
+                    COUNT(*) FILTER (
+                        WHERE vencimento >= :hoje AND vencimento <= :limite
+                    ) AS proximas_qtd,
+                    COALESCE(SUM(valor) FILTER (
+                        WHERE vencimento >= :hoje AND vencimento <= :limite
+                    ), 0) AS proximas_total
+                FROM office_expenses
+                WHERE deleted_at IS NULL
+                  AND status = 'pendente'
+                  AND vencimento IS NOT NULL
+                """
+            ),
+            {"hoje": hoje, "limite": em_7_dias},
+        )
+    ).mappings().first()
+
+    sem_comprovante = (
+        await db.execute(
+            text(
+                """
+                SELECT COUNT(*) AS qtd, COALESCE(SUM(fp.valor), 0) AS total
+                FROM fee_payments fp
+                JOIN fees f ON f.id = fp.fee_id
+                WHERE f.deleted_at IS NULL
+                  AND fp.comprovante_doc_id IS NULL
+                  AND fp.data_pagamento >= :inicio
+                """
+            ),
+            {"inicio": ha_30_dias},
+        )
+    ).mappings().first()
+
+    percentuais_sem_base = (
+        await db.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM fees
+                WHERE deleted_at IS NULL
+                  AND valor IS NULL
+                  AND percentual_exito IS NOT NULL
+                  AND CAST(status AS text) IN ('pendente','atrasado')
+                """
+            )
+        )
+    ).scalar() or 0
+
+    contratos = (
+        await db.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM office_contracts
+                WHERE deleted_at IS NULL
+                  AND status = 'vigente'
+                  AND end_date IS NOT NULL
+                  AND end_date >= :hoje
+                  AND end_date <= :limite
+                """
+            ),
+            {"hoje": hoje, "limite": hoje + timedelta(days=30)},
+        )
+    ).scalar() or 0
+
+    itens = []
+    if int(hon["qtd"] or 0):
+        itens.append({
+            "codigo": "honorarios_vencidos",
+            "prioridade": "alta",
+            "titulo": "Honorários vencidos",
+            "qtd": int(hon["qtd"] or 0),
+            "valor": _money(hon["total"]),
+            "acao": {"tab": "honorarios", "status": "atrasado"},
+        })
+    if int(despesas["vencidas_qtd"] or 0):
+        itens.append({
+            "codigo": "despesas_vencidas",
+            "prioridade": "alta",
+            "titulo": "Despesas vencidas",
+            "qtd": int(despesas["vencidas_qtd"] or 0),
+            "valor": _money(despesas["vencidas_total"]),
+            "acao": {"tab": "despesas", "status": "pendente"},
+        })
+    if int(despesas["proximas_qtd"] or 0):
+        itens.append({
+            "codigo": "despesas_proximas",
+            "prioridade": "media",
+            "titulo": "Despesas vencem nos próximos 7 dias",
+            "qtd": int(despesas["proximas_qtd"] or 0),
+            "valor": _money(despesas["proximas_total"]),
+            "acao": {"tab": "despesas", "status": "pendente"},
+        })
+    if int(sem_comprovante["qtd"] or 0):
+        itens.append({
+            "codigo": "pagamentos_sem_comprovante",
+            "prioridade": "baixa",
+            "titulo": "Pagamentos sem comprovante nos últimos 30 dias",
+            "qtd": int(sem_comprovante["qtd"] or 0),
+            "valor": _money(sem_comprovante["total"]),
+            "acao": {"tab": "honorarios"},
+        })
+    if int(percentuais_sem_base):
+        itens.append({
+            "codigo": "percentuais_sem_base",
+            "prioridade": "media",
+            "titulo": "Honorários percentuais sem base monetária",
+            "qtd": int(percentuais_sem_base),
+            "valor": None,
+            "acao": {"tab": "honorarios"},
+        })
+    if int(contratos):
+        itens.append({
+            "codigo": "contratos_vencendo",
+            "prioridade": "media",
+            "titulo": "Contratos vencem nos próximos 30 dias",
+            "qtd": int(contratos),
+            "valor": None,
+            "acao": {"tab": "contratos"},
+        })
+
+    ordem = {"alta": 0, "media": 1, "baixa": 2}
+    itens.sort(key=lambda item: ordem[item["prioridade"]])
+    return {"gerado_em": hoje.isoformat(), "total": len(itens), "itens": itens}
 
 
 @router.get("/demonstrativo")
