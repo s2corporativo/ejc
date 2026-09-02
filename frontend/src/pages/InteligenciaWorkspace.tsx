@@ -10,6 +10,7 @@ import {
   SearchCheck,
   Wrench,
   AlertTriangle,
+  Calculator,
 } from "lucide-react";
 import AgenteIA from "./AgenteIA";
 import IA from "./IA";
@@ -19,6 +20,7 @@ import ConteudoJuridico from "./ConteudoJuridico";
 import Jurimetria from "./Jurimetria";
 import ConhecimentoGovernado from "./ConhecimentoGovernado";
 import DashboardIA from "./DashboardIA";
+import EstimadorHonorarios from "../components/EstimadorHonorarios";
 import ErrorBoundary from "../components/ErrorBoundary";
 import { AIFactualityLegend, IANotice, PageHeader } from "../components/UI";
 import { useAuth } from "../stores/auth";
@@ -26,8 +28,6 @@ import { MENSAGEM_IA_NAO_ATIVADA, useIaStatus } from "../lib/iaStatus";
 
 const GESTORES: readonly string[] = ["superadmin", "admin", "socio"];
 
-// A navegação descreve a TAREFA jurídica. O roteamento de modelo, agente,
-// profundidade e provedor permanece interno ao núcleo único de IA.
 const TABS = [
   {
     k: "assistente",
@@ -47,12 +47,12 @@ const TABS = [
       { k: "ferramentas", label: "Ferramentas especializadas", icon: Wrench },
     ],
   },
+  {
+    k: "honorarios",
+    label: "Precificar honorários",
+    icon: Calculator,
+  },
   { k: "jurimetria", label: "Analisar dados e resultados", icon: Scale },
-  // CONSOLIDAÇÃO CONHECIMENTO 2026-07: superfície canônica única de
-  // Conhecimento. "Pesquisar e validar fontes" (ConteudoJuridico, aberto a
-  // toda a equipe jurídica) e "Administrar base de conhecimento"
-  // (ConhecimentoGovernado, restrito a gestores) passaram a ser sub-abas
-  // desta aba — antes eram as abas separadas `pesquisa` e `conhecimento`.
   {
     k: "conhecimento",
     label: "Conhecimento jurídico",
@@ -77,22 +77,15 @@ const TABS = [
 
 type Tab = (typeof TABS)[number]["k"];
 
-// Deep-links antigos continuam resolvendo para a tarefa equivalente.
 const LEGACY_TABS: Record<string, { tab: Tab; sub?: string }> = {
   agente: { tab: "assistente", sub: "agente" },
   ia: { tab: "producao", sub: "analise" },
   ferramentas: { tab: "producao", sub: "ferramentas" },
-  // A antiga aba `pesquisa` e o alias `conteudo` agora resolvem para a
-  // sub-aba de pesquisa dentro da aba canônica Conhecimento.
   conteudo: { tab: "conhecimento", sub: "pesquisa" },
   pesquisa: { tab: "conhecimento", sub: "pesquisa" },
+  estimador: { tab: "honorarios" },
 };
 
-/**
- * Fonte de verdade dos deep-links de aba do workspace: aceita uma aba real
- * (TABS) ou um alias legado (LEGACY_TABS). Usada pelos testes de integridade
- * de rota para validar os LEGACY_REDIRECTS `/inteligencia?tab=...`.
- */
 export function isInteligenciaTab(value: string | null): boolean {
   if (!value) return false;
   return (
@@ -127,8 +120,6 @@ export default function InteligenciaWorkspace() {
 
   const tabDef = TABS.find((item) => item.k === tab);
   const allSubs = tabDef && "subs" in tabDef ? tabDef.subs : undefined;
-  // Sub-abas podem ter RBAC próprio (ex.: "curadoria" só para gestores);
-  // filtramos pelo papel do usuário preservando o mesmo acesso de antes.
   const subs = allSubs?.filter((item) => {
     const roles = (item as { roles?: readonly string[] }).roles;
     return !roles || Boolean(user?.role && roles.includes(user.role));
@@ -160,7 +151,7 @@ export default function InteligenciaWorkspace() {
       <PageHeader
         eyebrow="Inteligência jurídica"
         title="Inteligência Jurídica"
-        subtitle="Escolha o que precisa fazer. O EJC seleciona internamente a ferramenta, a fonte e o nível de profundidade adequados."
+        subtitle="Pesquisa, análise, produção e precificação jurídica com fontes e revisão profissional."
       />
 
       {!iaDisponivel && (
@@ -226,6 +217,7 @@ export default function InteligenciaWorkspace() {
           {tab === "assistente" && sub === "rapido" && <AssistenteIA />}
           {tab === "producao" && sub === "analise" && <IA />}
           {tab === "producao" && sub === "ferramentas" && <FerramentasIA />}
+          {tab === "honorarios" && <EstimadorHonorarios />}
           {tab === "jurimetria" && <Jurimetria />}
           {tab === "conhecimento" && sub === "pesquisa" && <ConteudoJuridico />}
           {tab === "conhecimento" && sub === "curadoria" && (
