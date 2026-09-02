@@ -1,8 +1,9 @@
-"""Relatório mensal consolidado — GET /api/v1/relatorio/mensal?mes=YYYY-MM.
+"""Relatório mensal consolidado — GET /api/relatorio/mensal?mes=YYYY-MM.
 
-Honorários recebidos vêm de `fee_payments`; contas a receber usam saldo residual.
-Saídas de caixa usam `office_expenses.pago_em`. A competência da despesa continua
-separada para análise gerencial e não é confundida com a data efetiva da baixa.
+Honorários recebidos usam o ledger efetivo compartilhado: `fee_payments` é a
+fonte soberana e, somente quando não existe nenhuma linha no subledger, um fee
+legado já `pago` com `valor` e `data_pagamento` é reconhecido em leitura. Saídas
+de caixa usam `office_expenses.pago_em`; competência continua separada.
 """
 from datetime import date
 from typing import Optional
@@ -15,6 +16,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.status_caso import STATUS_ABERTOS
 from app.models.user import User
+from app.services.fee_ledger_compat import LEDGER_COMPAT_CTES
 
 _ABERTOS_SQL = ",".join(f"'{s.value}'" for s in STATUS_ABERTOS)
 router = APIRouter(prefix="/relatorio", tags=["Relatório"])
@@ -27,7 +29,7 @@ async def relatorio_mensal(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Resumo gerencial mensal com caixa real e saldos ainda a receber."""
+    """Resumo gerencial mensal com caixa real e compatibilidade histórica explícita."""
     if cu.role.value not in _GESTOR_FIN:
         raise HTTPException(403, "Acesso restrito a gestão/financeiro")
     if not mes:
@@ -40,25 +42,24 @@ async def relatorio_mensal(
 
     hon = await db.execute(
         text(
-            """
-            WITH pagos AS (
-                SELECT fee_id, COALESCE(SUM(valor), 0) AS total_pago
-                FROM fee_payments
-                GROUP BY fee_id
-            ), saldos AS (
+            f"""
+            WITH {LEDGER_COMPAT_CTES},
+            saldos AS (
                 SELECT
                     f.id,
                     CAST(f.status AS text) AS status,
-                    GREATEST(COALESCE(f.valor, 0) - COALESCE(p.total_pago, 0), 0) AS saldo
+                    GREATEST(
+                        COALESCE(f.valor, 0) - COALESCE(pe.total_pago, 0),
+                        0
+                    ) AS saldo
                 FROM fees f
-                LEFT JOIN pagos p ON p.fee_id = f.id
+                LEFT JOIN pagamentos_efetivos pe ON pe.fee_id = f.id
                 WHERE f.deleted_at IS NULL
-            ), recebimentos_mes AS (
-                SELECT fp.fee_id, fp.valor
-                FROM fee_payments fp
-                JOIN fees f ON f.id = fp.fee_id
-                WHERE f.deleted_at IS NULL
-                  AND date_trunc('month', fp.data_pagamento)
+            ),
+            recebimentos_mes AS (
+                SELECT fee_id, valor, legado_sem_subledger
+                FROM recebimentos_efetivos
+                WHERE date_trunc('month', data_pagamento)
                       = date_trunc('month', CAST(:mes AS date))
             )
             SELECT
@@ -70,7 +71,11 @@ async def relatorio_mensal(
                     WHERE status IN ('pendente','atrasado')
                 ), 0) AS total_pendente,
                 COALESCE(SUM(saldo) FILTER (WHERE status='atrasado'), 0) AS total_atrasado,
-                (SELECT COALESCE(SUM(valor), 0) FROM recebimentos_mes) AS recebido_mes
+                (SELECT COALESCE(SUM(valor), 0) FROM recebimentos_mes) AS recebido_mes,
+                (SELECT COUNT(*) FROM recebimentos_mes
+                 WHERE legado_sem_subledger) AS recebimentos_legados_qtd,
+                (SELECT COALESCE(SUM(valor), 0) FROM recebimentos_mes
+                 WHERE legado_sem_subledger) AS recebimentos_legados_valor
             FROM saldos
             """
         ),
@@ -149,14 +154,15 @@ async def relatorio_mensal(
 
     por_tipo = await db.execute(
         text(
-            """
+            f"""
+            WITH {LEDGER_COMPAT_CTES}
             SELECT CAST(f.tipo AS text) AS tipo,
-                   COUNT(DISTINCT fp.fee_id) AS qtd,
-                   COALESCE(SUM(fp.valor), 0) AS total
-            FROM fee_payments fp
-            JOIN fees f ON f.id = fp.fee_id
-            WHERE f.deleted_at IS NULL
-              AND date_trunc('month', fp.data_pagamento)
+                   COUNT(DISTINCT re.fee_id) AS qtd,
+                   COALESCE(SUM(re.valor), 0) AS total,
+                   COUNT(*) FILTER (WHERE re.legado_sem_subledger) AS legados_qtd
+            FROM recebimentos_efetivos re
+            JOIN fees f ON f.id = re.fee_id
+            WHERE date_trunc('month', re.data_pagamento)
                   = date_trunc('month', CAST(:mes AS date))
             GROUP BY CAST(f.tipo AS text)
             ORDER BY total DESC
@@ -196,6 +202,8 @@ async def relatorio_mensal(
             "qtd_pendentes": int(hon_data.get("qtd_pendentes") or 0),
             "qtd_recebidos_mes": int(hon_data.get("qtd_recebidos_mes") or 0),
             "qtd_pagos_mes": int(hon_data.get("qtd_recebidos_mes") or 0),
+            "recebimentos_legados_qtd": int(hon_data.get("recebimentos_legados_qtd") or 0),
+            "recebimentos_legados_valor": float(hon_data.get("recebimentos_legados_valor") or 0),
             "despesas_pagas": despesas_pagas_caixa,
             "despesas_pagas_competencia": despesas_pagas_competencia,
             "despesas_pendentes": float(desp_data.get("total_pendente") or 0),
@@ -212,7 +220,12 @@ async def relatorio_mensal(
             "vencidos_abertos": int(prazos_data.get("vencidos_abertos") or 0),
         },
         "por_tipo_honorario": [
-            {"tipo": r["tipo"], "qtd": int(r["qtd"]), "total": float(r["total"])}
+            {
+                "tipo": r["tipo"],
+                "qtd": int(r["qtd"]),
+                "total": float(r["total"]),
+                "legados_qtd": int(r["legados_qtd"] or 0),
+            }
             for r in por_tipo.mappings().all()
         ],
         "por_categoria_despesa": [
@@ -221,6 +234,8 @@ async def relatorio_mensal(
         ],
         "aviso": (
             "Relatório gerencial do EJC. Entradas e saídas de caixa derivam de "
-            "pagamentos/baixas efetivos; não substitui escrituração ou validação contábil."
+            "pagamentos/baixas efetivos; quitações históricas sem subledger são "
+            "identificadas separadamente e não geram lançamentos sintéticos. Não "
+            "substitui escrituração ou validação contábil."
         ),
     }
