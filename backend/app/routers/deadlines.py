@@ -382,6 +382,10 @@ async def atualizar(
         raise HTTPException(status_code=404, detail="Prazo não encontrado")
     if d.case_id:
         await verificar_caso_editavel(db, cu, d.case_id)
+        # O prazo foi lido antes do lock para descobrir o case_id. Reidrata após
+        # o lock para não aplicar um PATCH sobre estado ORM obsoleto caso outro
+        # request do mesmo caso tenha aguardado/commitado antes.
+        await db.refresh(d)
 
     mudancas = payload.model_dump(exclude_unset=True)
     status_antes = getattr(d.status, "value", d.status)
