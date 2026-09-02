@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useSearchParams } from "react-router";
+import { Navigate, useSearchParams } from "react-router";
 import {
   BarChart3,
   Wallet,
@@ -18,8 +18,6 @@ import NotasFiscais from "./NotasFiscais";
 import Despesas from "./Despesas";
 import DespesasRecorrentes from "./DespesasRecorrentes";
 import OfficeContracts from "./OfficeContracts";
-import Sociedade from "./Sociedade";
-import EstimadorHonorarios from "../components/EstimadorHonorarios";
 import ErrorBoundary from "../components/ErrorBoundary";
 import { PageHeader } from "../components/UI";
 import { useAuth } from "../stores/auth";
@@ -31,6 +29,7 @@ const TABS = [
   { k: "nfse", label: "Notas fiscais (NFS-e)", icon: Receipt },
   { k: "contratos", label: "Contratos do escritório", icon: FileText },
   { k: "recorrentes", label: "Despesas recorrentes", icon: MoreHorizontal },
+  // Deep-links históricos: não aparecem mais no menu Financeiro.
   { k: "societaria", label: "Sociedade", icon: Building2 },
   { k: "estimador", label: "Estimador de honorários", icon: Calculator },
 ] as const;
@@ -84,6 +83,18 @@ export default function FinanceiroWorkspace() {
 
   const raw = searchParams.get("tab");
   const tabSolicitada: FinanceTab = isFinanceTab(raw) ? raw : "visao";
+
+  if (tabSolicitada === "societaria" && podeSociedade) {
+    const sub = searchParams.get("sub");
+    const destino = sub
+      ? `/gestao-escritorio/sociedade?sub=${encodeURIComponent(sub)}`
+      : "/gestao-escritorio/sociedade";
+    return <Navigate to={destino} replace />;
+  }
+  if (tabSolicitada === "estimador") {
+    return <Navigate to="/inteligencia?tab=honorarios" replace />;
+  }
+
   const tab: FinanceTab =
     tabSolicitada === "societaria" && !podeSociedade
       ? "visao"
@@ -196,8 +207,6 @@ export default function FinanceiroWorkspace() {
           {tab === "nfse" && <NotasFiscais />}
           {tab === "contratos" && <OfficeContracts />}
           {tab === "recorrentes" && <DespesasRecorrentes />}
-          {tab === "societaria" && podeSociedade && <Sociedade />}
-          {tab === "estimador" && <EstimadorHonorarios />}
         </ErrorBoundary>
       </div>
     </div>
