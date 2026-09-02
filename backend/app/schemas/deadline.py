@@ -15,6 +15,8 @@ class DeadlineCreate(BaseModel):
     prioridade: str = "media"
     data_prazo: Optional[date] = None
     data_intimacao: Optional[date] = None
+    data_publicacao: Optional[date] = None
+    termo_inicial: Optional[date] = None
     dias_prazo: Optional[int] = None
     dias_uteis: bool = True
     dobro: bool = False
@@ -52,6 +54,10 @@ class DeadlineUpdate(BaseModel):
     status: Optional[str] = None
     prioridade: Optional[str] = None
     data_prazo: Optional[date] = None
+    data_publicacao: Optional[date] = None
+    termo_inicial: Optional[date] = None
+    regime_calculo: Optional[RegimeCalculo] = None
+    base_legal: Optional[str] = None
     responsavel_id: Optional[str] = None
     observacoes: Optional[str] = None
 
