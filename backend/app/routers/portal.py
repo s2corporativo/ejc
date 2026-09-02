@@ -16,22 +16,19 @@ from app.core.security import get_current_user
 from app.models.user import User, UserRole
 from app.models.case import Case, CaseMovimento
 from app.models.deadline import Deadline
-from app.models.fee import Fee, FeePayment
+from app.models.fee import Fee
 from app.models.document import Document, DocConfidencialidade
 from app.models.audit_log import criar_audit_log
+from app.services.fee_ledger_compat import LEDGER_COMPAT_CTES
 
 router = APIRouter(prefix="/portal", tags=["Portal do Cliente"])
 
-# Movimentações visíveis ao cliente no Portal: atos processuais oficiais.
-# ``ia`` (triagem interna) e ``nota`` (anotação de estratégia do escritório)
-# são internas — nunca devem aparecer em nenhuma resposta do Portal.
 TIPOS_MOVIMENTOS_PORTAL = (
     "peticao", "decisao", "audiencia", "intimacao", "andamento_oficial"
 )
 
 
 def _exigir_cliente(cu: User) -> str:
-    """Garante perfil cliente_externo com vínculo; retorna client_id."""
     if cu.role != UserRole.cliente_externo or not cu.client_id:
         raise HTTPException(status_code=403, detail="Acesso exclusivo do Portal do Cliente")
     return cu.client_id
@@ -49,9 +46,6 @@ async def meus_casos(
         ).order_by(Case.created_at.desc())
     )).scalars().all()
 
-    # Última movimentação por caso em UMA query (window function — evita N+1).
-    # LGPD: mesmo dado já exposto em GET /portal/casos/{id} (data + descricao
-    # sem o sufixo técnico " [dj:..."), nada além.
     ultimas: dict[str, dict] = {}
     case_ids = [c.id for c in rows]
     if case_ids:
@@ -75,7 +69,6 @@ async def meus_casos(
             for cid, data, descricao in movs
         }
 
-    # Visão do cliente: status e dados públicos — SEM estratégia interna
     return {"data": [
         {"id": c.id, "numero_interno": c.numero_interno, "titulo": c.titulo,
          "area": c.area.value if hasattr(c.area, "value") else str(c.area),
@@ -137,9 +130,6 @@ async def documentos(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Docs do cliente com confidencialidade NORMAL E publicado_portal=true
-    (ato EXPLÍCITO — Issue #698). Exceção: o próprio upload do cliente pelo
-    Portal nasce visível a ele mesmo, sem depender de ato do escritório."""
     client_id = _exigir_cliente(cu)
     rows = (await db.execute(
         select(Document).where(
@@ -164,33 +154,46 @@ async def financeiro(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Financeiro do próprio cliente com saldos derivados dos pagamentos reais.
+    """Financeiro do próprio cliente com ledger real + fallback legado seguro.
 
-    O valor contratado e o total pago são mantidos separados. Em honorário
-    monetário parcial, `saldo` é o que resta a pagar; em honorário puramente
-    percentual sem base monetária realizada, o saldo permanece indeterminado em
-    vez de o sistema inventar um valor.
+    `fee_payments` é soberano. Apenas fees antigos já quitados, com valor e
+    data_pagamento, entram como pagamento legado quando NÃO existe nenhuma linha
+    no subledger. Nenhum pagamento sintético é persistido por esta leitura.
     """
     client_id = _exigir_cliente(cu)
-    pagamentos = (
-        select(
-            FeePayment.fee_id.label("fee_id"),
-            func.coalesce(func.sum(FeePayment.valor), 0).label("total_pago"),
-        )
-        .group_by(FeePayment.fee_id)
-        .subquery()
+
+    ledger = await db.execute(
+        text(
+            f"""
+            WITH {LEDGER_COMPAT_CTES}
+            SELECT pe.fee_id, pe.total_pago, pe.legado_sem_subledger
+            FROM pagamentos_efetivos pe
+            JOIN fees f ON f.id = pe.fee_id
+            WHERE f.client_id = :client_id
+              AND f.deleted_at IS NULL
+            """
+        ),
+        {"client_id": client_id},
     )
+    por_fee = {
+        r["fee_id"]: {
+            "total_pago": float(r["total_pago"] or 0),
+            "legado_sem_subledger": bool(r["legado_sem_subledger"]),
+        }
+        for r in ledger.mappings().all()
+    }
+
     rows = (await db.execute(
-        select(Fee, func.coalesce(pagamentos.c.total_pago, 0).label("total_pago"))
-        .outerjoin(pagamentos, pagamentos.c.fee_id == Fee.id)
+        select(Fee)
         .where(Fee.client_id == client_id, Fee.deleted_at.is_(None))
         .order_by(Fee.data_vencimento)
-    )).all()
+    )).scalars().all()
 
     data = []
-    for fee, total_pago_raw in rows:
+    for fee in rows:
         valor_contratado = float(fee.valor) if fee.valor is not None else None
-        total_pago = float(total_pago_raw or 0)
+        compat = por_fee.get(fee.id, {"total_pago": 0.0, "legado_sem_subledger": False})
+        total_pago = float(compat["total_pago"])
         saldo = (
             max(valor_contratado - total_pago, 0.0)
             if valor_contratado is not None
@@ -198,12 +201,11 @@ async def financeiro(
         )
         data.append({
             "descricao": fee.descricao,
-            # Compatibilidade com clientes antigos: `valor` segue como valor
-            # contratado. Novas telas devem usar saldo/total_pago explicitamente.
             "valor": valor_contratado,
             "valor_contratado": valor_contratado,
             "total_pago": total_pago,
             "saldo": saldo,
+            "pagamento_legado_sem_subledger": bool(compat["legado_sem_subledger"]),
             "percentual_exito": (
                 float(fee.percentual_exito)
                 if fee.percentual_exito is not None
@@ -217,16 +219,11 @@ async def financeiro(
     return {"data": data}
 
 
-# ── Mensagens do caso (chat cliente↔escritório) ──────────────────────────────
-# Espelha app/routers/mensagens.py, mas sob /api/portal para não abrir /api/cases
-# ao cliente_externo no middleware. Mesma tabela portal_mensagens → conversa única
-# com o lado do escritório. autor_tipo é sempre "cliente" aqui.
 class MsgIn(BaseModel):
     mensagem: str = Field(min_length=1, max_length=4000)
 
 
 async def _caso_do_cliente(case_id: str, client_id: str, db: AsyncSession) -> None:
-    """Garante que o caso pertence ao próprio cliente (isolamento LGPD)."""
     r = await db.execute(
         text("SELECT 1 FROM cases WHERE id = :cid AND client_id = :clid "
              "AND deleted_at IS NULL"),
@@ -241,12 +238,6 @@ async def mensagens_nao_lidas(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Contagem de mensagens do escritório ainda não lidas pelo cliente.
-
-    SEM efeito colateral: diferente do GET de mensagens do caso, NÃO marca
-    nada como lido — permite ao Dashboard do Portal exibir o badge de
-    "mensagem nova" sem consumir a notificação.
-    """
     client_id = _exigir_cliente(cu)
     res = await db.execute(
         text("""
@@ -276,7 +267,6 @@ async def listar_mensagens_portal(
         {"cid": case_id},
     )
     msgs = [dict(r) for r in res.mappings().all()]
-    # marca como lidas as mensagens do escritório
     await db.execute(
         text("UPDATE portal_mensagens SET lida = true "
              "WHERE case_id = :cid AND autor_tipo <> 'cliente' AND lida = false"),
