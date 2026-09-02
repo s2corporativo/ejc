@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   Copy,
   Download,
-  FileText,
   Loader2,
   PenLine,
   ShieldAlert,
@@ -246,6 +245,9 @@ export default function PecaGeneratorModal({
 
   const fechar = () => {
     abortRef.current?.abort();
+    if (fase === "concluido" && documento) {
+      onConcluido?.(aiLogId, documento);
+    }
     resetForm();
     onClose();
   };
@@ -410,7 +412,6 @@ export default function PecaGeneratorModal({
                 : [],
             );
             setFase("concluido");
-            onConcluido?.(payload.ai_log_id ?? "", payload.documento ?? "");
           } else if (eventName === "residuos") {
             setResiduos(Array.isArray(payload.achados) ? payload.achados : []);
           } else if (eventName === "erro") {
@@ -437,7 +438,6 @@ export default function PecaGeneratorModal({
     flagsTeses,
     caseId,
     onNeedFicha,
-    onConcluido,
   ]);
 
   const copiar = () => {
