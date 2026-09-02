@@ -8,6 +8,10 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+from fastapi import HTTPException
+
+from app.models.case import CaseStatus
 from app.models.deadline import DeadlineStatus
 from app.models.fee import FeeStatus
 from app.models.legal_doc import PecaStatus
@@ -37,15 +41,22 @@ class _DB:
     def __init__(self, *batches):
         self._batches = list(batches)
         self.execute_calls = 0
+        self.refresh_calls = 0
 
-    async def execute(self, _stmt):
+    async def execute(self, stmt, *_args, **_kwargs):
         self.execute_calls += 1
+        if "pg_advisory_xact_lock" in str(stmt):
+            return _Result([])
         return _Result(self._batches.pop(0))
+
+    async def refresh(self, _obj):
+        self.refresh_calls += 1
 
 
 def _caso(**overrides):
     base = {
         "id": "case-1",
+        "status": CaseStatus.aberto,
         "proxima_acao": None,
     }
     base.update(overrides)
@@ -69,7 +80,8 @@ async def test_prazo_ativo_bloqueia_fechamento_mesmo_sem_confirmacao():
     assert diagnostico["resumo"]["prazos_nao_confirmados"] == 1
     assert diagnostico["bloqueios"][0]["codigo"] == "prazo_ativo"
     assert "a confirmar" in diagnostico["bloqueios"][0]["descricao"]
-    assert db.execute_calls == 4
+    assert db.execute_calls == 5
+    assert db.refresh_calls == 1
 
 
 async def test_pendencias_nao_fatais_exigem_confirmacao_humana():
@@ -123,3 +135,14 @@ async def test_caso_sem_pendencias_fica_pronto_para_encerrar():
         "pecas_nao_protocoladas": 0,
         "proxima_acao_pendente": False,
     }
+
+
+async def test_caso_terminal_e_rechecado_apos_lock():
+    db = _DB()
+
+    with pytest.raises(HTTPException) as exc:
+        await diagnosticar_fechamento(db, _caso(status=CaseStatus.encerrado))
+
+    assert exc.value.status_code == 409
+    assert db.execute_calls == 1
+    assert db.refresh_calls == 1
