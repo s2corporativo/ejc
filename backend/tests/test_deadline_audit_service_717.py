@@ -16,9 +16,17 @@ def _prazo(**kw) -> Deadline:
         prioridade="critica",
         data_prazo=date(2026, 9, 22),
         data_intimacao=date(2026, 9, 1),
+        data_publicacao=date(2026, 9, 1),
+        termo_inicial=date(2026, 9, 2),
+        regime_calculo="civel",
         confirmado=False,
         calculado_por="calc-1",
-        calculo_metadata={"historico_recalculo": []},
+        calculo_metadata={
+            "historico_recalculo": [],
+            "termo_final": "2026-09-22",
+            "termo_inicial": "2026-09-02",
+            "regime_calculo": "civel",
+        },
     )
     base.update(kw)
     return Deadline(**base)
@@ -28,6 +36,7 @@ def test_snapshot_nao_contem_identificador_de_caso_ou_partes():
     prova = svc.construir_prova_calculo(
         actor_id="u1",
         data_ciencia=date(2026, 9, 1),
+        data_publicacao=date(2026, 9, 1),
         termo_inicial=date(2026, 9, 2),
         termo_final=date(2026, 9, 22),
         regime="civel",
@@ -43,6 +52,7 @@ def test_snapshot_nao_contem_identificador_de_caso_ou_partes():
         },
         modo_origem="calculo_automatico",
     )
+    assert prova["data_publicacao"] == "2026-09-01"
     assert prova["termo_inicial"] == "2026-09-02"
     assert prova["termo_final"] == "2026-09-22"
     assert prova["regime_calculo"] == "civel"
@@ -51,6 +61,42 @@ def test_snapshot_nao_contem_identificador_de_caso_ou_partes():
     assert "case_id" not in prova
     assert "numero_processo" not in prova
     assert "cliente" not in prova
+
+
+def test_ciencia_nao_e_rebatizada_como_termo_inicial():
+    prova = svc.construir_prova_calculo(
+        actor_id="u1",
+        data_ciencia=date(2026, 9, 1),
+        data_publicacao=None,
+        termo_inicial=None,
+        termo_final=date(2026, 9, 22),
+        regime=None,
+        tribunal=None,
+        dias=None,
+        dobro=False,
+        excecao_recesso_penal=False,
+        base_legal=None,
+        resultado=None,
+        modo_origem="vencimento_manual",
+    )
+    assert prova["data_ciencia"] == "2026-09-01"
+    assert prova["termo_inicial"] is None
+    assert prova["data_base_calculo"] == "2026-09-01"
+
+
+def test_marcos_rejeitam_cronologia_invalida():
+    with pytest.raises(svc.ProvaIncompletaError, match="data_publicacao"):
+        svc.validar_marcos_prazo(
+            data_publicacao=date(2026, 9, 5),
+            termo_inicial=date(2026, 9, 4),
+            termo_final=date(2026, 9, 22),
+        )
+    with pytest.raises(svc.ProvaIncompletaError, match="termo_inicial"):
+        svc.validar_marcos_prazo(
+            data_publicacao=date(2026, 9, 1),
+            termo_inicial=date(2026, 9, 4),
+            termo_final=date(2026, 9, 3),
+        )
 
 
 def test_prazo_critico_nasce_nao_confirmado_e_com_calculista():
@@ -72,15 +118,25 @@ def test_prazo_nao_critico_preserva_estado_do_motor():
 
 def test_critico_impede_autoconfirmacao():
     prazo = _prazo(calculado_por="u1")
-    with pytest.raises(ValueError, match="diferente do calculista"):
+    with pytest.raises(svc.DuplaValidacaoError, match="diferente do calculista"):
         svc.registrar_conferencia(prazo, "u1")
     assert prazo.confirmado is False
 
 
 def test_critico_exige_calculista_identificado():
     prazo = _prazo(calculado_por=None)
-    with pytest.raises(ValueError, match="legado sem calculista"):
+    with pytest.raises(svc.ProvaIncompletaError, match="legado sem calculista"):
         svc.registrar_conferencia(prazo, "u2")
+
+
+def test_critico_processual_exige_termo_e_regime():
+    sem_termo = _prazo(termo_inicial=None)
+    with pytest.raises(svc.ProvaIncompletaError, match="termo_inicial"):
+        svc.registrar_conferencia(sem_termo, "u2")
+
+    sem_regime = _prazo(regime_calculo=None)
+    with pytest.raises(svc.ProvaIncompletaError, match="regime_calculo"):
+        svc.registrar_conferencia(sem_regime, "u2")
 
 
 def test_segundo_usuario_confirma_e_fica_registrado():
@@ -100,6 +156,9 @@ def test_mudanca_material_reabre_conferencia_e_troca_calculista():
         conferido_por="u2",
         calculo_metadata={
             "historico_recalculo": [],
+            "termo_final": "2026-09-22",
+            "termo_inicial": "2026-09-02",
+            "regime_calculo": "civel",
             "ultima_conferencia": {"por": "u2"},
         },
     )
@@ -118,4 +177,5 @@ def test_mudanca_material_reabre_conferencia_e_troca_calculista():
     hist = prazo.calculo_metadata["historico_recalculo"]
     assert hist[-1]["antes"]["data_prazo"] == "2026-09-22"
     assert hist[-1]["depois"]["data_prazo"] == "2026-09-25"
+    assert prazo.calculo_metadata["termo_final"] == "2026-09-25"
     assert prazo.calculo_metadata["estado_validacao"] == "aguardando_conferencia"
