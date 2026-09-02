@@ -28,6 +28,7 @@ from app.schemas.deadline import (
     DeadlineResponse,
     DeadlineUpdate,
 )
+from app.services.case_mutation_guard import verificar_caso_editavel
 from app.services.deadline_calculator import (
     calcular_prazo_processual,
     dias_uteis_restantes,
@@ -328,7 +329,7 @@ async def criar(
         )
 
     if payload.case_id:
-        await verificar_acesso_caso(db, cu, payload.case_id)
+        await verificar_caso_editavel(db, cu, payload.case_id)
 
     d = Deadline(
         id=str(uuid4()),
@@ -380,7 +381,7 @@ async def atualizar(
     if not d:
         raise HTTPException(status_code=404, detail="Prazo não encontrado")
     if d.case_id:
-        await verificar_acesso_caso(db, cu, d.case_id)
+        await verificar_caso_editavel(db, cu, d.case_id)
 
     mudancas = payload.model_dump(exclude_unset=True)
     status_antes = getattr(d.status, "value", d.status)
