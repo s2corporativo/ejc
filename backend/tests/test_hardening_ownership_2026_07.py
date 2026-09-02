@@ -138,14 +138,12 @@ async def test_A1_atualizar_cliente_fora_carteira_404():
     """PATCH bloqueado ANTES de qualquer escrita: advogado alheio → 404
     (não vaza existência), fechando o write-IDOR de PII cifrada."""
     cli = Client(id="c1", responsavel_id="outro_adv")
-    # 1ª execute: SELECT do cliente; 2ª execute (dentro de _pode_ver_cliente):
-    # busca de caso vinculado → None (sem acesso).
     db = _SeqDB([_Res(scalar_one=cli), _Res(first=None)])
     with pytest.raises(HTTPException) as exc:
         await atualizar("c1", ClientUpdate(nome="Hackeado"), db,
                         _user(UserRole.advogado, "u1"))
     assert exc.value.status_code == 404
-    assert db.committed is False  # nada foi gravado
+    assert db.committed is False
 
 
 async def test_A1_atualizar_cliente_da_carteira_ok(monkeypatch):
@@ -153,7 +151,7 @@ async def test_A1_atualizar_cliente_da_carteira_ok(monkeypatch):
     monkeypatch.setattr("app.routers.clients.criar_audit_log",
                         lambda *a, **k: _async_noop())
     cli = Client(id="c1", responsavel_id="u1", nome="Antigo")
-    db = _SeqDB([_Res(scalar_one=cli)])  # _pode_ver_cliente passa no responsavel_id
+    db = _SeqDB([_Res(scalar_one=cli)])
     out = await atualizar("c1", ClientUpdate(nome="Novo Nome"), db,
                           _user(UserRole.advogado, "u1"))
     assert out.nome == "Novo Nome"
@@ -178,7 +176,7 @@ async def test_A2_centro_custos_advogado_sem_case_id_escopa_por_ownership():
     await listar_lancamentos(case_id=None, tipo=None, categoria=None, pago=None,
                              page=1, per_page=30, db=db, cu=_user(UserRole.advogado, "u1"))
     sqls = " || ".join(_sql(s) for s in db.executed)
-    assert "cases.id" in sqls  # escopo de ownership aplicado
+    assert "cases.id" in sqls
 
 
 async def test_A2_centro_custos_gestao_sem_case_id_ve_tudo():
@@ -187,7 +185,7 @@ async def test_A2_centro_custos_gestao_sem_case_id_ve_tudo():
     await listar_lancamentos(case_id=None, tipo=None, categoria=None, pago=None,
                              page=1, per_page=30, db=db, cu=_user(UserRole.socio, "u1"))
     sqls = " || ".join(_sql(s) for s in db.executed)
-    assert "cases.id" not in sqls  # sem escopo — vê todos os lançamentos
+    assert "cases.id" not in sqls
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -206,15 +204,19 @@ async def test_A3_filtro_escopo_prazos_gestao_nao_restringe():
 
 
 async def test_A3_filtro_escopo_prazos_nao_gestao_restringe():
-    """Não-gestão recebe o escopo: casos próprios OU responsável direto OU
-    prazos avulsos (case_id IS NULL)."""
+    """Não-gestão recebe o escopo: casos próprios OU responsabilidade direta.
+
+    Prazo avulso de terceiro NÃO entra no escopo apenas por ter case_id NULL;
+    isso seria um IDOR de agenda/prazo. A cláusula vulnerável antiga era
+    `OR deadlines.case_id IS NULL`.
+    """
     q = select(Deadline)
     filtrada = _filtro_escopo_prazos(q, _user(UserRole.advogado, "u1"))
     assert filtrada is not q
     sql = _sql(filtrada)
-    assert "cases.id" in sql          # subquery de casos do usuário
-    assert "responsavel_id" in sql    # OU responsável direto
-    assert "IS NULL" in sql           # OU avulso (case_id IS NULL)
+    assert "cases.id" in sql
+    assert "responsavel_id" in sql
+    assert "deadlines.case_id IS NULL" not in sql
 
 
 async def test_A3_filtro_escopo_prazos_advogado_auxiliar_tambem_restringe():
@@ -234,7 +236,7 @@ from app.routers.deadlines import cancelar  # noqa: E402
 
 def test_B1_requer_advogado_nao_barra_superadmin():
     """Regressão do lockout: requer_advogado deixa superadmin(9) passar."""
-    requer_advogado(_user(UserRole.superadmin, "u1"))  # não levanta
+    requer_advogado(_user(UserRole.superadmin, "u1"))
 
 
 def test_B1_requer_advogado_barra_financeiro():
@@ -246,7 +248,7 @@ def test_B1_requer_advogado_barra_financeiro():
 async def test_B1_cancelar_superadmin_passa_do_gate():
     """DELETE por superadmin passa do gate (não 403); com prazo inexistente
     o resultado é 404 — provando que o piso não o barra mais."""
-    db = _SeqDB([_Res(scalar_one=None)])  # prazo não encontrado
+    db = _SeqDB([_Res(scalar_one=None)])
     with pytest.raises(HTTPException) as exc:
         await cancelar("d1", db, _user(UserRole.superadmin, "u1"))
     assert exc.value.status_code == 404
@@ -280,11 +282,10 @@ async def test_A4_gate_room_gestao_passa():
 
 
 async def test_A4_gate_room_sala_de_caso_alheio_404():
-    """Sala vinculada a caso de outra carteira → 404 (verificar_acesso_caso
-    daria 403; _gate_room converte para 404 e não vaza a sala)."""
+    """Sala vinculada a caso de outra carteira → 404."""
     room = DataRoom(id="r1", case_id="cX", client_id=None)
     caso = Case(id="cX", advogado_responsavel_id="outro", advogado_auxiliar_id="tb_outro")
-    db = _SeqDB([_Res(scalar_one=caso)])  # verificar_acesso_caso carrega o caso
+    db = _SeqDB([_Res(scalar_one=caso)])
     with pytest.raises(HTTPException) as exc:
         await _gate_room(db, _user(UserRole.advogado, "u1"), room)
     assert exc.value.status_code == 404
@@ -302,8 +303,6 @@ async def test_A4_gate_room_sala_de_cliente_alheio_404():
     """Sala só com client_id de carteira alheia → 404."""
     room = DataRoom(id="r1", case_id=None, client_id="clX")
     cli = Client(id="clX", responsavel_id="outro_adv")
-    # 1ª execute: SELECT Client (em _gate_room); 2ª execute: caso vinculado
-    # (em _pode_ver_cliente) → None.
     db = _SeqDB([_Res(scalar_one=cli), _Res(first=None)])
     with pytest.raises(HTTPException) as exc:
         await _gate_room(db, _user(UserRole.advogado, "u1"), room)
@@ -313,7 +312,7 @@ async def test_A4_gate_room_sala_de_cliente_alheio_404():
 async def test_A4_gate_room_sala_de_cliente_proprio_passa():
     room = DataRoom(id="r1", case_id=None, client_id="clX")
     cli = Client(id="clX", responsavel_id="u1")
-    db = _SeqDB([_Res(scalar_one=cli)])  # _pode_ver_cliente passa no responsavel_id
+    db = _SeqDB([_Res(scalar_one=cli)])
     out = await _gate_room(db, _user(UserRole.advogado, "u1"), room)
     assert out is room
 
@@ -333,8 +332,7 @@ from app.routers.partner_withdrawals import approve_withdrawal, pay_withdrawal  
 
 
 class _WUser:
-    """current_user do partner_withdrawals: role é comparada com o set de
-    strings PRIVILEGED (UserRole é str-enum, mas usamos string crua p/ clareza)."""
+    """current_user do partner_withdrawals: role é comparada com PRIVILEGED."""
 
     def __init__(self, role: str, uid: str):
         self.role = role
@@ -342,7 +340,6 @@ class _WUser:
 
 
 async def test_A6_socio_nao_aprova_propria_retirada_403():
-    """Auto-aprovação bloqueada (SoD): partner_id == current_user.id → 403."""
     db = _SeqDB([_Res(fetchone=("socio-1", "pendente"))])
     with pytest.raises(HTTPException) as exc:
         await approve_withdrawal("w1", db, _WUser("socio", "socio-1"))
@@ -350,7 +347,6 @@ async def test_A6_socio_nao_aprova_propria_retirada_403():
 
 
 async def test_A6_socio_aprova_retirada_de_outro_ok():
-    """Sócio aprova a retirada de OUTRO sócio (pendente) normalmente."""
     db = _SeqDB([_Res(fetchone=("socio-2", "pendente")), _Res()])
     out = await approve_withdrawal("w1", db, _WUser("socio", "socio-1"))
     assert out["status"] == "aprovado"
@@ -358,7 +354,6 @@ async def test_A6_socio_aprova_retirada_de_outro_ok():
 
 
 async def test_A6_superadmin_nao_aprova_propria_retirada_403():
-    """Nem superadmin escapa da segregação (auto-dealing é do indivíduo)."""
     db = _SeqDB([_Res(fetchone=("god-1", "pendente"))])
     with pytest.raises(HTTPException) as exc:
         await approve_withdrawal("w1", db, _WUser("superadmin", "god-1"))
@@ -379,7 +374,6 @@ async def test_A6_socio_paga_retirada_de_outro_ok():
 
 
 async def test_A6_financeiro_nao_aprova_403():
-    """Papel fora de PRIVILEGED (financeiro) segue barrado no piso."""
     with pytest.raises(HTTPException) as exc:
         await approve_withdrawal("w1", _SeqDB(), _WUser("financeiro", "f1"))
     assert exc.value.status_code == 403
@@ -411,7 +405,6 @@ async def test_D9a_secretaria_ve_qualquer_atendimento():
 
 
 async def test_D9a_advogado_ve_o_proprio_registro():
-    """Criador/responsável do atendimento sempre vê o próprio registro."""
     a = _atend(created_by="u1")
     assert await _pode_ver_atendimento(_SeqDB(), _user(UserRole.advogado, "u1"), a) is True
 
@@ -422,7 +415,6 @@ async def test_D9a_advogado_ve_atendimento_avulso_sem_cliente():
 
 
 async def test_D9a_advogado_ve_atendimento_de_cliente_da_carteira():
-    """Cliente cujo responsavel_id é o advogado → vê."""
     a = _atend()
     cli = Client(id="clX", responsavel_id="u1")
     db = _SeqDB([_Res(scalar_one=cli)])
@@ -430,17 +422,13 @@ async def test_D9a_advogado_ve_atendimento_de_cliente_da_carteira():
 
 
 async def test_D9a_advogado_NAO_ve_atendimento_de_carteira_alheia():
-    """Registro de cliente de OUTRA carteira (sem titularidade e sem caso
-    vinculado) → não visível (handler responde 404)."""
     a = _atend()
     cli = Client(id="clX", responsavel_id="outro_adv")
-    # 1ª execute: SELECT Client → cli; 2ª execute: caso vinculado → None.
     db = _SeqDB([_Res(scalar_one=cli), _Res(first=None)])
     assert await _pode_ver_atendimento(db, _user(UserRole.advogado, "u1"), a) is False
 
 
 async def test_D9a_advogado_ve_atendimento_via_caso_vinculado():
-    """Sem titularidade do cliente, mas com caso do cliente na carteira → vê."""
     a = _atend()
     cli = Client(id="clX", responsavel_id="outro_adv")
     db = _SeqDB([_Res(scalar_one=cli), _Res(first=("case-1",))])
