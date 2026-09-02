@@ -36,6 +36,8 @@ export default function PortalAssinaturas() {
   const [loading, setLoading] = useState(true);
   const [comprovante, setComprovante] = useState<Comprovante | null>(null);
   const [signing, setSigning] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<string | null>(null);
+  const [visualizados, setVisualizados] = useState<Set<string>>(() => new Set());
 
   const load = () => {
     setLoading(true);
@@ -48,7 +50,40 @@ export default function PortalAssinaturas() {
     load();
   }, []);
 
+  const visualizarDocumento = async (s: any) => {
+    setViewing(s.id);
+    try {
+      const { data } = await api.get(`/signatures/${s.id}/documento`, {
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(data as Blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.click();
+      // Mantém o blob disponível tempo suficiente para a nova aba carregá-lo.
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setVisualizados((atuais) => {
+        const proximo = new Set(atuais);
+        proximo.add(s.id);
+        return proximo;
+      });
+    } catch (e: any) {
+      toast.error(
+        e?.response?.data?.detail ||
+          "Não foi possível abrir o documento. A assinatura continua bloqueada.",
+      );
+    } finally {
+      setViewing(null);
+    }
+  };
+
   const assinar = async (s: any) => {
+    if (!visualizados.has(s.id)) {
+      toast.error("Abra e leia o documento antes de assinar.");
+      return;
+    }
     if (
       !confirm(
         "Ao confirmar, você declara que LEU e CONCORDA com o documento.\n" +
@@ -169,39 +204,64 @@ export default function PortalAssinaturas() {
             </h2>
           </div>
           <div className="divide-y divide-slate-100">
-            {pendentes.map((s) => (
-              <div
-                key={s.id}
-                className="px-5 py-4 flex items-center justify-between gap-4"
-              >
-                <div className="flex items-start gap-3 min-w-0">
-                  <div className="w-8 h-8 bg-warn-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <FileText className="w-4 h-4 text-warn-500" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-800 truncate">
-                      {s.documento}
-                    </p>
-                    {s.created_at && (
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        Solicitado em {fmtDataHora(s.created_at)}
+            {pendentes.map((s) => {
+              const foiVisualizado = visualizados.has(s.id);
+              return (
+                <div
+                  key={s.id}
+                  className="px-5 py-4 flex items-center justify-between gap-4"
+                >
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className="w-8 h-8 bg-warn-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <FileText className="w-4 h-4 text-warn-500" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-800 truncate">
+                        {s.documento}
                       </p>
-                    )}
-                    <p className="text-xs text-slate-300 font-mono mt-0.5">
-                      #{s.hash?.slice(0, 16)}…
-                    </p>
+                      {s.created_at && (
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Solicitado em {fmtDataHora(s.created_at)}
+                        </p>
+                      )}
+                      <p className="text-xs text-slate-300 font-mono mt-0.5">
+                        #{s.hash?.slice(0, 16)}…
+                      </p>
+                      {!foiVisualizado && (
+                        <p className="text-xs text-warn-600 mt-1">
+                          Abra o documento antes de assinar.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => visualizarDocumento(s)}
+                      disabled={viewing === s.id || signing === s.id}
+                      className="btn-secondary text-sm px-3 py-2"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      {viewing === s.id
+                        ? "Abrindo…"
+                        : foiVisualizado
+                          ? "Ver novamente"
+                          : "Ver documento"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => assinar(s)}
+                      disabled={!foiVisualizado || signing === s.id || viewing === s.id}
+                      title={!foiVisualizado ? "Abra o documento antes de assinar" : undefined}
+                      className="btn-primary text-sm px-4 py-2"
+                    >
+                      <PenLine className="w-3.5 h-3.5" />
+                      {signing === s.id ? "Assinando…" : "Assinar"}
+                    </button>
                   </div>
                 </div>
-                <button
-                  onClick={() => assinar(s)}
-                  disabled={signing === s.id}
-                  className="btn-primary text-sm px-4 py-2 flex-shrink-0"
-                >
-                  <PenLine className="w-3.5 h-3.5" />
-                  {signing === s.id ? "Assinando…" : "Assinar"}
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
