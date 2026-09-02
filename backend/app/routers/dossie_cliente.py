@@ -19,6 +19,7 @@ from app.core.degradacao import ColetorDeSecoes, executar_secao
 from app.core.security import get_current_user
 from app.core.status_caso import STATUS_ABERTOS, STATUS_FECHADOS
 from app.models.user import User
+from app.services.pii_crypto import mascarar_documento
 
 _STATUS_ABERTOS_STR = {s.value for s in STATUS_ABERTOS}
 _STATUS_FECHADOS_STR = {s.value for s in STATUS_FECHADOS}
@@ -107,21 +108,21 @@ async def dossie_cliente(
     # limiar de titularidade usado no restante do módulo (detalhe do cliente,
     # /ia-analise, relatório financeiro, pending-items): gestão/secretaria
     # veem tudo; advogado/auxiliar só quando é responsável pelo cliente ou
-    # atua em ao menos um caso não excluído dele. Antes o dossiê era
-    # gestão-only enquanto a rota /clientes ficava liberada a advogado e
-    # secretaria — 403 estrutural mesmo para cliente da própria carteira
-    # (achado da auditoria). ia-analise já agrega o mesmo histórico (casos +
-    # financeiro) sob este exato gate — o dossiê passa a ser consistente com
-    # ele, não mais restritivo.
+    # atua em ao menos um caso não excluído dele.
     if not await cliente_id_visivel(db, cu, client_id):
         raise HTTPException(404, "Cliente não encontrado")
-    # Reusa Client.documento_plain (decifra resiliente por-linha, mesmo
-    # fallback PII_INDECIFRAVEL) em vez de duplicar a lógica de decrypt aqui —
-    # instância transiente (não persistida, não consulta o banco) só para
-    # aproveitar a property já testada do model.
+
+    # Reusa Client.documento_plain para decifrar de forma resiliente, mas a
+    # resposta comum do dossiê aplica minimização: o CPF/CNPJ integral não é
+    # necessário para navegar casos, prazos, documentos ou indicadores e não
+    # deve ficar disponível no DevTools/rede. Exportações LGPD com gate próprio
+    # continuam sendo a superfície deliberada para o dado completo.
     from app.models.client import Client as _Client
     cli_transiente = _Client(cpf_enc=cli_row["cpf_enc"], cnpj_enc=cli_row["cnpj_enc"])
-    cli = {**dict(cli_row), "cpf_cnpj": cli_transiente.documento_plain}
+    cli = {
+        **dict(cli_row),
+        "cpf_cnpj": mascarar_documento(cli_transiente.documento_plain),
+    }
     del cli["cpf_enc"], cli["cnpj_enc"]
 
     secoes = ColetorDeSecoes("dossie_cliente", db)
@@ -141,10 +142,6 @@ async def dossie_cliente(
             status_breakdown[c["status"]] = status_breakdown.get(c["status"], 0) + 1
             area_breakdown[c["area"]] = area_breakdown.get(c["area"], 0) + 1
         return {
-            # Desde a migration 126 o enum persistido não tem "ativo"/"triagem"
-            # -- esses literais nunca batiam com `cases.status` e o contador
-            # ficava sempre em 0. Usa o mesmo agregado STATUS_ABERTOS/
-            # STATUS_FECHADOS de app/core/status_caso.py (fonte única).
             "casos_ativos": sum(1 for c in casos if c["status"] in _STATUS_ABERTOS_STR),
             "casos_encerrados": sum(1 for c in casos if c["status"] in _STATUS_FECHADOS_STR),
             "status_breakdown": status_breakdown,
