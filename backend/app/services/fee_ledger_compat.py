@@ -10,7 +10,8 @@ Regra de transição, deliberadamente NÃO duplicante:
 2. se não existe nenhum pagamento e o fee legado está ``pago``, possui
    ``data_pagamento`` e ``valor`` monetário, o valor do fee é lido como
    recebimento legado;
-3. nenhum registro sintético é gravado automaticamente. A normalização física
+3. honorários soft-deleted não participam de saldo nem caixa;
+4. nenhum registro sintético é gravado automaticamente. A normalização física
    deverá ser feita em migration/backfill controlado quando a cadeia Alembic
    estiver disponível.
 """
@@ -26,11 +27,13 @@ from app.models.fee import Fee, FeePayment, FeeStatus
 
 LEDGER_COMPAT_CTES = """
 pagamentos_reais AS (
-    SELECT fee_id,
-           COALESCE(SUM(valor), 0) AS total_pago,
+    SELECT fp.fee_id,
+           COALESCE(SUM(fp.valor), 0) AS total_pago,
            COUNT(*) AS qtd_pagamentos
-    FROM fee_payments
-    GROUP BY fee_id
+    FROM fee_payments fp
+    JOIN fees f ON f.id = fp.fee_id
+    WHERE f.deleted_at IS NULL
+    GROUP BY fp.fee_id
 ),
 pagamentos_efetivos AS (
     SELECT
@@ -52,10 +55,13 @@ pagamentos_efetivos AS (
         END AS legado_sem_subledger
     FROM fees f
     LEFT JOIN pagamentos_reais pr ON pr.fee_id = f.id
+    WHERE f.deleted_at IS NULL
 ),
 recebimentos_efetivos AS (
     SELECT fp.fee_id, fp.valor, fp.data_pagamento, FALSE AS legado_sem_subledger
     FROM fee_payments fp
+    JOIN fees f ON f.id = fp.fee_id
+    WHERE f.deleted_at IS NULL
     UNION ALL
     SELECT f.id AS fee_id, f.valor, f.data_pagamento, TRUE AS legado_sem_subledger
     FROM fees f
