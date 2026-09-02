@@ -10,6 +10,7 @@ import {
   FileType2,
   Split,
   QrCode,
+  History,
 } from "lucide-react";
 import QRCode from "qrcode";
 import api from "../lib/api";
@@ -26,23 +27,21 @@ import {
 } from "../components/UI";
 
 const STATUS_VALIDOS = ["pendente", "atrasado", "pago"];
-
-/** Tipos em que o percentual de êxito é efetivamente aplicado no cálculo
- *  (`routers/honorarios_oab.py`: `f.tipo in (exito, misto) and
- *  f.percentual_exito`). Fora deles o percentual seria gravado e ignorado. */
 const TIPOS_COM_PERCENTUAL = ["exito", "misto"];
 
-/** O que o escritório vai cobrar, em uma célula. Um honorário de êxito puro
- *  não tem `valor` — mostrar só `fmtMoney(valor)` fazia a tela exibir "—"
- *  para um lançamento recém-salvo, e os exports omitiam quanto foi contratado. */
+function hojeISO(): string {
+  const agora = new Date();
+  const ano = agora.getFullYear();
+  const mes = String(agora.getMonth() + 1).padStart(2, "0");
+  const dia = String(agora.getDate()).padStart(2, "0");
+  return `${ano}-${mes}-${dia}`;
+}
+
 export function quantoCobrar(f: Fee): string {
   const partes: string[] = [];
   if (f.valor != null) partes.push(fmtMoney(f.valor));
   if (f.percentual_exito != null)
     partes.push(`${f.percentual_exito}% de êxito`);
-  // Os DOIS quando os dois foram contratados. Devolver só o valor fixo escondia
-  // o percentual do lançamento e do relatório, deixando o registro dizer menos
-  // do que o contrato diz — meio caminho do defeito que este helper corrigiu.
   if (partes.length) return partes.join(" + ");
   return fmtMoney(f.valor);
 }
@@ -52,15 +51,13 @@ export default function Honorarios() {
   const [resumo, setResumo] = useState<any>(null);
   const [clientes, setClientes] = useState<Client[]>([]);
   const [searchParams] = useSearchParams();
-  // Filtro inicial pode vir do drill-down do dashboard (?status=pendente).
-  // Obs.: o endpoint /fees/ não aceita competência — esta aba ignora o
-  // filtro de competência compartilhado do FinanceiroWorkspace.
   const [statusF, setStatusF] = useState(() => {
     const s = searchParams.get("status");
     return s && STATUS_VALIDOS.includes(s) ? s : "";
   });
   const [modal, setModal] = useState(false);
   const [pagModal, setPagModal] = useState<Fee | null>(null);
+  const [histModal, setHistModal] = useState<any>(null);
   const [form, setForm] = useState<any>({ tipo: "fixo" });
   const [pag, setPag] = useState<any>({});
   const [salvando, setSalvando] = useState(false);
@@ -69,7 +66,10 @@ export default function Honorarios() {
   const [pixModal, setPixModal] = useState<any>(null);
   const [pixCfg, setPixCfg] = useState<any>(() => {
     try {
-      return JSON.parse(localStorage.getItem("ejc_pix") || "{}");
+      // Chave PIX pode conter CPF/CNPJ/e-mail/telefone. Não persiste em
+      // localStorage: fica apenas na sessão atual do navegador.
+      localStorage.removeItem("ejc_pix");
+      return JSON.parse(sessionStorage.getItem("ejc_pix") || "{}");
     } catch {
       return {};
     }
@@ -92,6 +92,7 @@ export default function Honorarios() {
       .then((r) => setResumo(r.data))
       .catch(() => {});
   };
+
   useEffect(() => {
     load();
     api
@@ -107,11 +108,6 @@ export default function Honorarios() {
     }
     setSalvando(true);
     try {
-      // Campo numérico que o usuário esvazia vira "" (não `undefined`), e o
-      // Pydantic reprova a string vazia com "Input should be a valid decimal"
-      // — mensagem sobre digitação, quando a regra real é "informe valor ou
-      // percentual". Preencher um e deixar o outro vazio é o fluxo NORMAL
-      // deste formulário, então o vazio não pode virar erro de tipo.
       const payload = Object.fromEntries(
         Object.entries(form).filter(([, v]) => v !== "" && v !== null),
       );
@@ -154,6 +150,33 @@ export default function Honorarios() {
     }
   };
 
+  const abrirHistorico = async (fee: Fee) => {
+    setHistModal({ fee, loading: true });
+    try {
+      const r = await api.get(`/fees/${fee.id}/pagamentos`);
+      setHistModal({ fee, loading: false, data: r.data });
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Erro ao carregar pagamentos");
+      setHistModal(null);
+    }
+  };
+
+  const abrirPagamento = async (fee: Fee) => {
+    // O segundo/terceiro pagamento não deve sugerir novamente o valor bruto do
+    // contrato. Consulta o subledger e preenche o saldo residual; para honorário
+    // percentual sem base monetária, deixa o valor em branco para revisão humana.
+    let valor: number | string | undefined = fee.valor ?? undefined;
+    try {
+      const r = await api.get(`/fees/${fee.id}/pagamentos`);
+      if (r.data?.saldo != null) valor = r.data.saldo;
+    } catch {
+      // Falha ao buscar histórico não bloqueia o modal; o backend continuará
+      // protegendo contra overpayment e inconsistência.
+    }
+    setPagModal(fee);
+    setPag({ valor, data_pagamento: hojeISO() });
+  };
+
   const registrarPag = async () => {
     if (!pagModal || !pag.valor || !pag.data_pagamento || registrando) return;
     setRegistrando(true);
@@ -174,7 +197,7 @@ export default function Honorarios() {
       toast.error("Informe a chave PIX do escritório (campo abaixo).");
       return;
     }
-    localStorage.setItem("ejc_pix", JSON.stringify(pixCfg));
+    sessionStorage.setItem("ejc_pix", JSON.stringify(pixCfg));
     setPixRes(null);
     setPixQr("");
     try {
@@ -199,7 +222,6 @@ export default function Honorarios() {
 
   return (
     <div>
-      {/* Cabeçalho fica no FinanceiroWorkspace; aqui apenas as ações da aba. */}
       <div className="flex gap-2 items-center justify-end flex-wrap mb-4">
         <button
           onClick={() => {
@@ -331,31 +353,37 @@ export default function Honorarios() {
                     <StatusBadge value={f.status} />
                   </td>
                   <td className="px-4 py-3">
+                    <button
+                      className="btn-ghost px-2 py-1 text-slate-500"
+                      title="Histórico de pagamentos"
+                      onClick={() => abrirHistorico(f)}
+                    >
+                      <History size={15} />
+                    </button>
                     {f.status !== "pago" && f.status !== "cancelado" && (
                       <button
                         className="btn-ghost px-2 py-1 text-success-700"
                         title="Registrar pagamento"
-                        onClick={() => {
-                          setPagModal(f);
-                          setPag({ valor: f.valor });
-                        }}
+                        onClick={() => abrirPagamento(f)}
                       >
                         <DollarSign size={15} />
                       </button>
                     )}
-                    {f.status !== "pago" && f.status !== "cancelado" && (
-                      <button
-                        className="btn-ghost px-2 py-1 text-teal-600"
-                        title="Cobrar via PIX"
-                        onClick={() => {
-                          setPixModal(f);
-                          setPixRes(null);
-                          setPixQr("");
-                        }}
-                      >
-                        <QrCode size={15} />
-                      </button>
-                    )}
+                    {f.status !== "pago" &&
+                      f.status !== "cancelado" &&
+                      f.valor != null && (
+                        <button
+                          className="btn-ghost px-2 py-1 text-teal-600"
+                          title="Cobrar via PIX"
+                          onClick={() => {
+                            setPixModal(f);
+                            setPixRes(null);
+                            setPixQr("");
+                          }}
+                        >
+                          <QrCode size={15} />
+                        </button>
+                      )}
                     {f.tipo === "exito" && f.status === "pago" && (
                       <button
                         className="btn-ghost px-2 py-1 text-bronze-deep"
@@ -410,9 +438,6 @@ export default function Honorarios() {
               value={form.tipo}
               onChange={(e) => {
                 const tipo = e.target.value;
-                // Trocar para um tipo sem percentual esconde o campo; deixar o
-                // número digitado no estado mandaria um percentual que o
-                // backend agora recusa (e que o cálculo ignoraria).
                 setForm({
                   ...form,
                   tipo,
@@ -441,13 +466,6 @@ export default function Honorarios() {
               onChange={(e) => setForm({ ...form, valor: e.target.value })}
             />
           </div>
-          {/* O schema aceita honorário definido em REAIS ou em PERCENTUAL, e
-              `FeeCreate` exige ao menos um dos dois. O formulário só oferecia
-              "Valor", então o contrato de êxito puramente percentual — o caso
-              mais comum em ação indenizatória — era impossível pela interface:
-              ou não passava na validação, ou o advogado inventava um valor
-              fixo e mudava a natureza financeira do contrato. Achado da
-              revisão do Codex em 2026-08-22, no PR #1238. */}
           {TIPOS_COM_PERCENTUAL.includes(form.tipo) && (
             <div>
               <label className="label">Percentual de êxito (%)</label>
@@ -467,8 +485,8 @@ export default function Honorarios() {
           <div className="sm:col-span-2 -mt-1">
             <p className="text-xs text-slate-500 dark:text-slate-400">
               {TIPOS_COM_PERCENTUAL.includes(form.tipo)
-                ? "Informe o valor em reais OU o percentual de êxito — ao menos um é obrigatório. Preenchendo os dois, o teto ético da OAB é calculado apenas sobre o valor fixo (honorarios_oab.py), então o percentual fica só como registro do contrato."
-                : "Informe o valor em reais. O percentual de êxito só se aplica aos tipos Êxito e Misto, que são os que o cálculo usa."}
+                ? "Informe o valor em reais ou o percentual de êxito. Se o contrato combinar os dois, o EJC registra ambos; a base econômica do percentual e o teto aplicável exigem conferência jurídica antes da quitação."
+                : "Informe o valor em reais. O percentual de êxito só se aplica aos tipos Êxito e Misto."}
             </p>
           </div>
           <div>
@@ -501,6 +519,7 @@ export default function Honorarios() {
             <input
               type="number"
               step="0.01"
+              min="0.01"
               className="input"
               value={pag.valor || ""}
               onChange={(e) => setPag({ ...pag, valor: e.target.value })}
@@ -529,6 +548,8 @@ export default function Honorarios() {
               <option value="transferencia">Transferência</option>
               <option value="dinheiro">Dinheiro</option>
               <option value="cartao">Cartão</option>
+              <option value="boleto">Boleto</option>
+              <option value="outro">Outro</option>
             </select>
           </div>
           <button
@@ -539,6 +560,63 @@ export default function Honorarios() {
             {registrando ? "Registrando..." : "Confirmar"}
           </button>
         </div>
+      </Modal>
+
+      <Modal
+        open={!!histModal}
+        onClose={() => setHistModal(null)}
+        title="Histórico de pagamentos"
+      >
+        {histModal?.loading ? (
+          <Spinner />
+        ) : histModal?.data ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="card p-3">
+                <div className="text-xs text-slate-400">Total recebido</div>
+                <div className="font-bold text-success-700">
+                  {fmtMoney(histModal.data.total_pago)}
+                </div>
+              </div>
+              <div className="card p-3">
+                <div className="text-xs text-slate-400">Saldo</div>
+                <div className="font-bold text-navy">
+                  {histModal.data.saldo == null
+                    ? "A apurar"
+                    : fmtMoney(histModal.data.saldo)}
+                </div>
+              </div>
+            </div>
+            {histModal.data.pagamentos?.length ? (
+              <div className="overflow-x-auto border border-slate-100 rounded-lg">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+                    <tr>
+                      <th className="p-2 text-left">Data</th>
+                      <th className="p-2 text-left">Forma</th>
+                      <th className="p-2 text-right">Valor</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {histModal.data.pagamentos.map((p: any) => (
+                      <tr key={p.id}>
+                        <td className="p-2">{fmtDate(p.data_pagamento)}</td>
+                        <td className="p-2 capitalize">
+                          {(p.forma || "—").replace(/_/g, " ")}
+                        </td>
+                        <td className="p-2 text-right font-semibold">
+                          {fmtMoney(p.valor)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <Empty message="Nenhum pagamento registrado" />
+            )}
+          </div>
+        ) : null}
       </Modal>
 
       {/* REGRA FIXA: percentual 50/50 hardcoded no backend
@@ -632,6 +710,9 @@ export default function Honorarios() {
                   }
                   placeholder="CPF/CNPJ, e-mail, telefone ou aleatória"
                 />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  A configuração fica somente nesta sessão do navegador.
+                </p>
               </div>
               <div className="col-span-2">
                 <label className="label">Recebedor</label>

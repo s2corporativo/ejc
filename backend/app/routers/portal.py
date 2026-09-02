@@ -16,7 +16,7 @@ from app.core.security import get_current_user
 from app.models.user import User, UserRole
 from app.models.case import Case, CaseMovimento
 from app.models.deadline import Deadline
-from app.models.fee import Fee
+from app.models.fee import Fee, FeePayment
 from app.models.document import Document, DocConfidencialidade
 from app.models.audit_log import criar_audit_log
 
@@ -95,7 +95,7 @@ async def caso_detalhe(
 ):
     client_id = _exigir_cliente(cu)
     c = (await db.execute(select(Case).where(
-        Case.id == case_id, Case.client_id == client_id,  # ← isolamento
+        Case.id == case_id, Case.client_id == client_id,
         Case.deleted_at.is_(None),
     ))).scalar_one_or_none()
     if not c:
@@ -164,20 +164,57 @@ async def financeiro(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    """Financeiro do próprio cliente com saldos derivados dos pagamentos reais.
+
+    O valor contratado e o total pago são mantidos separados. Em honorário
+    monetário parcial, `saldo` é o que resta a pagar; em honorário puramente
+    percentual sem base monetária realizada, o saldo permanece indeterminado em
+    vez de o sistema inventar um valor.
+    """
     client_id = _exigir_cliente(cu)
+    pagamentos = (
+        select(
+            FeePayment.fee_id.label("fee_id"),
+            func.coalesce(func.sum(FeePayment.valor), 0).label("total_pago"),
+        )
+        .group_by(FeePayment.fee_id)
+        .subquery()
+    )
     rows = (await db.execute(
-        select(Fee).where(
-            Fee.client_id == client_id, Fee.deleted_at.is_(None),
-        ).order_by(Fee.data_vencimento)
-    )).scalars().all()
-    return {"data": [
-        {"descricao": f.descricao,
-         "valor": float(f.valor) if f.valor else None,
-         "vencimento": f.data_vencimento,
-         "pago_em": f.data_pagamento,
-         "status": f.status.value if hasattr(f.status, "value") else str(f.status)}
-        for f in rows
-    ]}
+        select(Fee, func.coalesce(pagamentos.c.total_pago, 0).label("total_pago"))
+        .outerjoin(pagamentos, pagamentos.c.fee_id == Fee.id)
+        .where(Fee.client_id == client_id, Fee.deleted_at.is_(None))
+        .order_by(Fee.data_vencimento)
+    )).all()
+
+    data = []
+    for fee, total_pago_raw in rows:
+        valor_contratado = float(fee.valor) if fee.valor is not None else None
+        total_pago = float(total_pago_raw or 0)
+        saldo = (
+            max(valor_contratado - total_pago, 0.0)
+            if valor_contratado is not None
+            else None
+        )
+        data.append({
+            "descricao": fee.descricao,
+            # Compatibilidade com clientes antigos: `valor` segue como valor
+            # contratado. Novas telas devem usar saldo/total_pago explicitamente.
+            "valor": valor_contratado,
+            "valor_contratado": valor_contratado,
+            "total_pago": total_pago,
+            "saldo": saldo,
+            "percentual_exito": (
+                float(fee.percentual_exito)
+                if fee.percentual_exito is not None
+                else None
+            ),
+            "tipo": fee.tipo.value if hasattr(fee.tipo, "value") else str(fee.tipo),
+            "vencimento": fee.data_vencimento,
+            "pago_em": fee.data_pagamento,
+            "status": fee.status.value if hasattr(fee.status, "value") else str(fee.status),
+        })
+    return {"data": data}
 
 
 # ── Mensagens do caso (chat cliente↔escritório) ──────────────────────────────

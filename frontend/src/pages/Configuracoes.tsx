@@ -60,7 +60,7 @@ const HOME_OPTIONS: Array<{
   {
     route: "/financeiro",
     label: "Financeiro",
-    description: "Honorários, despesas e sociedade",
+    description: "Honorários, recebimentos, despesas e caixa",
   },
 ];
 
