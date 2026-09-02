@@ -194,16 +194,21 @@ class ClientResponse(ClientBase):
     area_interesse: Optional[str] = None
     responsavel_id: Optional[str] = None
     created_at: datetime
-    # Cutover C6/LGPD: as colunas cpf/cnpj em texto puro não existem mais no
-    # model. Ao validar a partir do ORM, as aliases abaixo leem as propriedades
-    # cpf_plain/cnpj_plain SOMENTE para produzir a máscara canônica. O
-    # serializer remove os valores em claro antes de qualquer resposta HTTP
-    # baseada em ClientResponse. A revelação completa fica restrita a rotas
-    # explicitamente desenhadas para isso (ex.: dossiê/LGPD) e com gate próprio.
+    # Contrato público explícito: este é o ÚNICO documento exposto na resposta
+    # comum. CPF/CNPJ abaixo existem apenas como campos internos de validação para
+    # ler cpf_plain/cnpj_plain do ORM e produzir a máscara; `exclude=True` os
+    # retira também do JSON Schema/OpenAPI de SERIALIZAÇÃO, não só do payload.
+    documento_exibicao: Optional[str] = None
     cpf: Optional[str] = Field(
-        default=None, validation_alias=AliasChoices("cpf_plain", "cpf"))
+        default=None,
+        validation_alias=AliasChoices("cpf_plain", "cpf"),
+        exclude=True,
+    )
     cnpj: Optional[str] = Field(
-        default=None, validation_alias=AliasChoices("cnpj_plain", "cnpj"))
+        default=None,
+        validation_alias=AliasChoices("cnpj_plain", "cnpj"),
+        exclude=True,
+    )
 
     class Config:
         from_attributes = True
@@ -212,15 +217,15 @@ class ClientResponse(ClientBase):
     def _minimizar_documento(self, handler):
         data = handler(self)
         mascara = None
-        documento = data.get("cpf") or data.get("cnpj")
+        documento = self.cpf or self.cnpj
         if documento == PII_INDECIFRAVEL:
             # Falha de decifragem é sinal operacional e não pode virar ausência
             # silenciosa de documento; o marcador não contém PII.
             mascara = PII_INDECIFRAVEL
         elif documento:
             mascara = self._mascarar(str(documento))
-        # LGPD/minimização: não basta a UI preferir a máscara; o valor em claro
-        # não pode trafegar no JSON comum e ficar disponível no DevTools/logs.
+        # Defesa em profundidade: `exclude=True` já remove os campos do handler;
+        # os pops preservam a garantia mesmo se configuração futura mudar.
         data.pop("cpf", None)
         data.pop("cnpj", None)
         data["documento_exibicao"] = mascara
