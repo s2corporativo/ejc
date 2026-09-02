@@ -110,12 +110,50 @@ A integração com `/pecas/gerar` já está ativa no fluxo canônico. O router:
    resultado no stream para revisão humana.
 
 O frontend `PecaGeneratorModal` consome o catálogo canônico em `GET /pecas/meta`
-e envia o contrato estruturado dos quatro modos. O catálogo do backend é fonte
-única: indisponibilidade dessa rota deve bloquear a geração, não degradar para
-listas locais parciais.
+e envia `modo_producao` estruturado. O catálogo do backend é fonte única:
+indisponibilidade dessa rota bloqueia a geração em vez de degradar para listas
+locais parciais.
 
 Não devem ser criados endpoints públicos paralelos de geração, outro motor de
 peça ou chamadas adicionais obrigatórias de IA.
+
+## Superfície simplificada — 2026-09-02
+
+A existência de quatro contratos internos não significa que os quatro devam
+aparecer simultaneamente para o usuário. A interface operacional foi reduzida
+para evitar excesso de escolhas e impedir que modos ainda não homologados E2E
+pareçam prontos para uso cotidiano.
+
+Na tela comum:
+
+- **Guiado** é o fluxo recomendado e padrão;
+- **Livre** fica em `Opções avançadas`;
+- **Molde** permanece implementado e testado no backend, mas não é exposto até
+  existir seleção real de peça de origem, validação de versão/hash e fluxo E2E;
+- **Agente** permanece implementado e testado no backend, mas não é exposto até
+  existir seleção/autorização real de documentos, plano visível e aprovação
+  explícita antes da redação.
+
+Ocultar Molde/Agente na UI não remove contratos, testes ou compatibilidade do
+endpoint. Trata-se de **fail-closed de produto**: capacidade interna não
+homologada não deve ser apresentada como funcionalidade pronta.
+
+A tela `Pecas.tsx` também simplifica o lifecycle visual. Os estados persistidos
+continuam inalterados:
+
+```text
+rascunho → em_revisao → corrigida → aprovada → final → protocolada
+```
+
+mas são agrupados na interface em:
+
+```text
+Em elaboração → Revisadas → Aprovadas → Protocoladas
+```
+
+A mudança é somente de UX. Transições continuam ocorrendo por ações jurídicas
+explícitas (`Revisar peça`, `Aprovar e assinar`, `Finalizar`, `Protocolar`) e os
+gates do backend permanecem autoritativos.
 
 ## Segurança e LGPD
 
@@ -127,7 +165,9 @@ peça ou chamadas adicionais obrigatórias de IA.
 - o Modo Molde exige detector de resíduos antes da aprovação;
 - o Modo Agente exige caso e documentos explicitamente autorizados;
 - nenhum modo produz documento protocolável sem revisão humana;
-- falha do catálogo `/pecas/meta` é tratada de forma fail-closed no frontend.
+- falha do catálogo `/pecas/meta` é tratada de forma fail-closed no frontend;
+- ocultar modos não homologados reduz risco de uso incorreto e não altera RBAC,
+  ownership, auditoria ou HITL.
 
 ## Rollback
 
