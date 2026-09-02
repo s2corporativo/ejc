@@ -43,6 +43,15 @@ def test_edicao_invalida_revisao_e_protocolo_e_imutavel():
     assert "Conteúdo alterado exige novo ciclo" in bloco
 
 
+def test_patch_sincroniza_rag_quando_conteudo_ou_status_mudam():
+    src = _source("app/routers/legal_docs.py")
+    bloco = _function_source(src, "atualizar")
+    assert "status_novo_efetivo = _status_value(d.status)" in bloco
+    assert "if conteudo_alterado or status_novo_efetivo != status_antigo:" in bloco
+    assert "background.add_task(indexar_peca_rag, d.id)" in bloco
+    assert bloco.index("await db.commit()") < bloco.index("background.add_task(indexar_peca_rag, d.id)")
+
+
 def test_mutacoes_da_peca_usam_lock_pessimista():
     src = _source("app/routers/legal_docs.py")
     for nome in ("atualizar", "revisar", "aprovar", "registrar_protocolo"):
