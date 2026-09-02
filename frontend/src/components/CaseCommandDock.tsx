@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import {
-  FileText,
   FileUp,
   Gavel,
   LayoutGrid,
@@ -161,12 +160,18 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
     setAreaNova("");
   };
 
-  const actions = CASE_NAV_SECTIONS.map((secao) => ({
+  // Modo simples: somente as quatro superfícies usadas no trabalho diário.
+  // Estratégia/IA continua disponível logo abaixo como recurso avançado; nada
+  // é removido nem escondido de deep-links existentes.
+  const actions = CASE_NAV_SECTIONS.filter((secao) =>
+    ["resumo", "timeline", "documentos", "financeiro"].includes(secao.tab),
+  ).map((secao) => ({
     label: secao.label,
     description: secao.descricao,
     icon: secao.icon,
     to: caminhoAbaCaso(caseId, secao.tab),
   }));
+  const estrategia = CASE_NAV_SECTIONS.find((secao) => secao.tab === "teses");
 
   return (
     <>
@@ -174,7 +179,7 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
         type="button"
         onClick={() => setView("menu")}
         className="fixed bottom-6 right-6 z-30 inline-flex items-center gap-2 rounded-xl bg-primary-700 px-4 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-primary-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-2"
-        aria-label="Abrir ações simples do caso"
+        aria-label="Abrir ações rápidas do caso"
       >
         <Gavel className="h-4 w-4" />
         Ações do caso
@@ -185,11 +190,10 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
           <div className="space-y-5">
             <div className="rounded-xl bg-primary-50 p-4 text-sm text-primary-900 ring-1 ring-inset ring-primary-100">
               <div className="flex items-center gap-2 font-semibold">
-                <LayoutGrid className="h-4 w-4" /> Modo simples
+                <LayoutGrid className="h-4 w-4" /> Ações rápidas
               </div>
               <p className="mt-1 text-primary-700">
-                Escolha a tarefa. O workspace completo continua disponível na
-                tela do caso.
+                Escolha o que precisa fazer agora. Recursos especializados continuam disponíveis no workspace completo.
               </p>
             </div>
 
@@ -216,20 +220,13 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
               ))}
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-3">
+            <div className="grid gap-2 sm:grid-cols-2">
               <Button
                 variant="secondary"
                 onClick={() => setView("areas")}
                 icon={<Scale className="h-4 w-4" />}
               >
                 Áreas do caso
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => abrirDestino(caminhoAbaCaso(caseId, "pecas"))}
-                icon={<FileText className="h-4 w-4" />}
-              >
-                Peças do caso
               </Button>
               <Button
                 variant="primary"
@@ -239,6 +236,24 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
                 Anexar documento
               </Button>
             </div>
+
+            {estrategia && (
+              <button
+                type="button"
+                onClick={() => abrirDestino(caminhoAbaCaso(caseId, estrategia.tab))}
+                className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-primary-200 hover:bg-primary-50/40"
+              >
+                <span>
+                  <span className="block text-sm font-semibold text-slate-900">
+                    Estratégia & IA
+                  </span>
+                  <span className="mt-0.5 block text-xs text-slate-500">
+                    Teses, riscos, jurisprudência, dossiê e ferramentas jurídicas.
+                  </span>
+                </span>
+                <estrategia.icon className="h-4 w-4 shrink-0 text-primary-700" />
+              </button>
+            )}
           </div>
         )}
 
@@ -329,8 +344,7 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
                   Anexar documento ao caso
                 </h3>
                 <p className="mt-1 text-sm text-slate-500">
-                  O backend valida extensão, conteúdo, permissão e vínculo ao
-                  caso.
+                  O backend valida extensão, conteúdo, permissão e vínculo ao caso.
                 </p>
               </div>
               <Button
@@ -361,8 +375,7 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
                 }}
               />
               <p className="mt-1 text-xs text-slate-500">
-                PDF, DOCX, DOC, JPG, PNG, XLSX, XLS, TXT e XML. DOC e XLS são
-                armazenados sem indexação de texto.
+                PDF, DOCX, DOC, JPG, PNG, XLSX, XLS, TXT e XML. DOC e XLS são armazenados sem indexação de texto.
               </p>
             </div>
 
