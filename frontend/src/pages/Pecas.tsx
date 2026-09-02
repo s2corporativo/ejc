@@ -327,27 +327,23 @@ export default function Pecas() {
     });
   };
 
-  const salvarRevisao = async (aprovado: boolean) => {
+  const devolverParaRevisao = async () => {
     if (!revisao) return;
     setRevisando(true);
     setRevisao({ ...revisao, erro: undefined });
     try {
       await api.post(`/legal-docs/${revisao.doc.id}/revisar`, {
-        aprovado,
+        aprovado: false,
         notas: revisao.notas,
       });
-      toast.success(
-        aprovado
-          ? "Revisão registrada — peça pronta para aprovação"
-          : "Peça devolvida para revisão",
-      );
+      toast.success("Peça devolvida para revisão");
       setRevisao(null);
       fecharWorkspace();
       load();
     } catch (e: any) {
       setRevisao({
         ...revisao,
-        erro: errDetail(e, "Falha ao registrar a revisão"),
+        erro: errDetail(e, "Falha ao devolver a peça para revisão"),
       });
     } finally {
       setRevisando(false);
@@ -585,6 +581,9 @@ export default function Pecas() {
       setAuditoria(
         `VALIDAÇÃO JURÍDICA\nVeredito: ${resultado.veredito}\nScore: ${resultado.score_confianca}/100\n\n${resultado.resposta}\n\n${resultado.aviso || ""}`,
       );
+      if (view?.id === doc.id) {
+        await abrirDetalhe(doc.id);
+      }
       load();
     } catch (e: any) {
       toast.error(errDetail(e, "Falha na validação jurídica"));
@@ -1222,7 +1221,7 @@ export default function Pecas() {
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
               <strong className="text-slate-800">{revisao.doc.titulo}</strong>
               <p className="mt-1 text-xs">
-                Revise o conteúdo, registre suas observações e escolha se deseja apenas salvar a revisão ou concluir a aprovação e assinatura.
+                Revise o conteúdo, registre suas observações e escolha entre devolver para ajustes ou concluir a aprovação e assinatura.
               </p>
             </div>
 
@@ -1283,16 +1282,9 @@ export default function Pecas() {
               <button
                 className="btn-ghost"
                 disabled={revisando}
-                onClick={() => salvarRevisao(false)}
+                onClick={devolverParaRevisao}
               >
                 Devolver para revisão
-              </button>
-              <button
-                className="btn-ghost"
-                disabled={revisando}
-                onClick={() => salvarRevisao(true)}
-              >
-                Salvar revisão
               </button>
               <button
                 className="btn-primary"
