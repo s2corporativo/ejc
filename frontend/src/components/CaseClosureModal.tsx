@@ -156,7 +156,11 @@ export default function CaseClosureModal({
   };
 
   return (
-    <Modal open={open} onClose={encerrando ? () => {} : onClose} title="Encerrar caso — fechamento inteligente">
+    <Modal
+      open={open}
+      onClose={encerrando ? () => {} : onClose}
+      title="Encerrar caso — fechamento inteligente"
+    >
       {carregando || !diagnostico ? (
         <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-sm text-slate-500">
           <Spinner />
@@ -174,12 +178,19 @@ export default function CaseClosureModal({
             <Alert variant="danger" title="Bloqueios impedem o encerramento">
               <div className="mt-2 space-y-2">
                 {diagnostico.bloqueios.map((item) => (
-                  <div key={`${item.codigo}-${item.id}`} className="flex gap-2 text-xs">
+                  <div
+                    key={`${item.codigo}-${item.id}`}
+                    className="flex gap-2 text-xs"
+                  >
                     <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
                     <div>
                       <p className="font-semibold">{item.titulo}</p>
                       <p>{item.descricao}</p>
-                      <Link className="font-medium underline" to={item.destino}>
+                      <Link
+                        className="font-medium underline"
+                        to={item.destino}
+                        onClick={onClose}
+                      >
                         Resolver antes de encerrar
                       </Link>
                     </div>
@@ -190,20 +201,27 @@ export default function CaseClosureModal({
           ) : diagnostico.alertas.length === 0 ? (
             <Alert variant="success" title="Checklist operacional concluído">
               <span className="inline-flex items-center gap-1">
-                <CheckCircle2 className="h-4 w-4" /> Nenhuma pendência operacional
-                relevante foi encontrada.
+                <CheckCircle2 className="h-4 w-4" /> Nenhuma pendência
+                operacional relevante foi encontrada.
               </span>
             </Alert>
           ) : (
             <Alert variant="warning" title="Pendências para revisão humana">
               <div className="mt-2 space-y-2">
                 {diagnostico.alertas.map((item) => (
-                  <div key={`${item.codigo}-${item.id}`} className="flex gap-2 text-xs">
+                  <div
+                    key={`${item.codigo}-${item.id}`}
+                    className="flex gap-2 text-xs"
+                  >
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                     <div>
                       <p className="font-semibold">{item.titulo}</p>
                       <p>{item.descricao}</p>
-                      <Link className="font-medium underline" to={item.destino}>
+                      <Link
+                        className="font-medium underline"
+                        to={item.destino}
+                        onClick={onClose}
+                      >
                         Conferir no caso
                       </Link>
                     </div>
@@ -236,7 +254,8 @@ export default function CaseClosureModal({
               Financeiro pendente: <b>{diagnostico.resumo.financeiro_pendente}</b>
             </div>
             <div className="rounded-lg bg-slate-50 p-2">
-              Peças não protocoladas: <b>{diagnostico.resumo.pecas_nao_protocoladas}</b>
+              Peças não protocoladas:{" "}
+              <b>{diagnostico.resumo.pecas_nao_protocoladas}</b>
             </div>
           </div>
 
@@ -261,7 +280,9 @@ export default function CaseClosureModal({
               rows={2}
               className="input w-full"
               value={form.motivo_resultado}
-              onChange={(e) => setForm({ ...form, motivo_resultado: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, motivo_resultado: e.target.value })
+              }
               disabled={diagnostico.bloqueios.length > 0}
               placeholder="Mínimo 20 caracteres: fundamentos aceitos/rejeitados e razão do desfecho."
             />
@@ -272,7 +293,9 @@ export default function CaseClosureModal({
               rows={2}
               className="input w-full"
               value={form.provas_determinantes}
-              onChange={(e) => setForm({ ...form, provas_determinantes: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, provas_determinantes: e.target.value })
+              }
               disabled={diagnostico.bloqueios.length > 0}
               placeholder="Mínimo 10 caracteres."
             />
@@ -283,7 +306,9 @@ export default function CaseClosureModal({
               rows={2}
               className="input w-full"
               value={form.licoes_aprendidas}
-              onChange={(e) => setForm({ ...form, licoes_aprendidas: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, licoes_aprendidas: e.target.value })
+              }
               disabled={diagnostico.bloqueios.length > 0}
               placeholder="Mínimo 20 caracteres."
             />
@@ -293,15 +318,17 @@ export default function CaseClosureModal({
               type="checkbox"
               checked={form.alimentar_rag}
               disabled={diagnostico.bloqueios.length > 0}
-              onChange={(e) => setForm({ ...form, alimentar_rag: e.target.checked })}
+              onChange={(e) =>
+                setForm({ ...form, alimentar_rag: e.target.checked })
+              }
             />
             Alimentar a base institucional com o pós-mortem revisado
           </label>
 
           {!camposValidos && diagnostico.bloqueios.length === 0 && (
             <p className="text-xs text-slate-500">
-              Complete o pós-mortem: motivo e lições com pelo menos 20 caracteres,
-              e provas determinantes com pelo menos 10.
+              Complete o pós-mortem: motivo e lições com pelo menos 20
+              caracteres, e provas determinantes com pelo menos 10.
             </p>
           )}
 
