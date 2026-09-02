@@ -126,7 +126,9 @@ class DocumentStorageOperation(Base):
     __tablename__ = "document_storage_operations"
 
     id = Column(String(36), primary_key=True)
-    operation_key = Column(String(64), nullable=False, unique=True, index=True)
+    # UNIQUE já fornece índice físico no PostgreSQL; não declarar index=True
+    # evita criar duas estruturas equivalentes para a mesma chave idempotente.
+    operation_key = Column(String(64), nullable=False, unique=True)
     document_id = Column(String(36), nullable=False, index=True)
     storage_kind = Column(String(20), nullable=False)
     storage_locator = Column(String(1000), nullable=False)
