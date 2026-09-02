@@ -1,13 +1,14 @@
-// Central unificada: fusão de CentralAtividades (/atividades) e
-// CentralRelacionamento (/central-relacionamento, agora redirect) em uma
-// única tela com abas. A aba é controlada por ?tab= para deep links; o
-// parâmetro ?view= continua sendo lido pela aba de atividades (compatível
-// com os redirects /agenda e /kanban).
+// Central unificada: fusão de atividades e relacionamento em uma única tela.
+// A aba é controlada por ?tab= para deep links. A experiência operacional de
+// atividades usa a CentralAtividadesSimplificada. Links históricos que chegam
+// com `?tipo=` ou `?view=` permanecem temporariamente na CentralAtividades
+// antiga para preservar filtros/visualizações durante a transição.
 import { useSearchParams } from "react-router";
 import { CalendarClock, Users } from "lucide-react";
 import { useAuth } from "../stores/auth";
 import { ROLES } from "../config/moduleRegistry";
 import CentralAtividades from "./CentralAtividades";
+import CentralAtividadesSimplificada from "./CentralAtividadesSimplificada";
 import CentralRelacionamento from "./CentralRelacionamento";
 
 export type CentralTab = "atividades" | "relacionamento";
@@ -17,7 +18,7 @@ export function isCentralTab(value: string | null): value is CentralTab {
 }
 
 const TABS: { key: CentralTab; label: string; icon: typeof Users }[] = [
-  { key: "atividades", label: "Agenda, Prazos e Tarefas", icon: CalendarClock },
+  { key: "atividades", label: "Atividades", icon: CalendarClock },
   { key: "relacionamento", label: "Atendimentos de Clientes", icon: Users },
 ];
 
@@ -45,6 +46,14 @@ export default function Central() {
     params.set("tab", next);
     setSearchParams(params, { replace: true });
   };
+
+  // `/prazos`, `/tarefas`, `/intimacoes`, `/suspensoes`, `/agenda` e `/kanban`
+  // ainda redirecionam usando `tipo`/`view`. Enquanto os redirects não forem
+  // migrados, o modo compatível mantém a semântica anterior em vez de ignorar
+  // silenciosamente filtros ou visualizações. `/atividades` limpa já usa a UX nova.
+  const legacyDeepLink = Boolean(
+    searchParams.get("tipo") || searchParams.get("view"),
+  );
 
   return (
     <div>
@@ -76,8 +85,10 @@ export default function Central() {
       )}
       {tab === "relacionamento" ? (
         <CentralRelacionamento />
-      ) : (
+      ) : legacyDeepLink ? (
         <CentralAtividades />
+      ) : (
+        <CentralAtividadesSimplificada />
       )}
     </div>
   );
