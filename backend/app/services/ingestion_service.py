@@ -299,6 +299,7 @@ async def upsert_documento(
     chunks: list[str] | None = None,
     paginas: list[dict] | None = None,
     forcar_nova_versao: bool = False,
+    preservar_aprovacao_rag: bool = True,
 ) -> str:
     """Insere/atualiza um documento com versionamento e isolamento por cliente.
 
@@ -308,6 +309,12 @@ async def upsert_documento(
     chave externa pode existir em clientes diferentes sem que um tenant atualize,
     desative ou reutilize chunks de outro. Documentos públicos usam client_id
     NULL e seguem globalmente únicos.
+
+    ``preservar_aprovacao_rag`` mantém a regra histórica de re-feed por padrão:
+    um documento já aprovado não é rebaixado só porque um ingestor periódico
+    reenviou ``rag_status=pendente``. Consumidores cujo estado de domínio é a
+    fonte autoritativa (ex.: ciclo jurídico de uma peça interna) podem passar
+    ``False`` para permitir rebaixamento explícito sem apagar uma recusa humana.
     """
     conteudo = normalizar(conteudo)
     if len(conteudo) < 50:
@@ -367,7 +374,11 @@ async def upsert_documento(
                         mesclado.pop(campo, None)
             if anterior.get("rag_status") == "recusado":
                 mesclado["rag_status"] = "recusado"
-            elif anterior.get("rag_status") == "aprovado" and extra.get("rag_status") == "pendente":
+            elif (
+                preservar_aprovacao_rag
+                and anterior.get("rag_status") == "aprovado"
+                and extra.get("rag_status") == "pendente"
+            ):
                 # AI-079 (auditoria 2026-07-26): doc que EXIGE revisão humana ainda
                 # não revisada NÃO re-promove 'pendente'→'aprovado' no re-feed —
                 # senão o estoque DataJud aprovado antes do fix nunca seria
