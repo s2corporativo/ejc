@@ -30,6 +30,7 @@ from app.services.case_integrity_service import (
     resolver_responsavel_juridico,
     sincronizar_processo_principal_do_caso,
 )
+from app.services.case_closure_service import diagnosticar_fechamento
 from app.services import event_bus
 from app.services.documental import gerar_documentos_iniciais
 # Mesmo vocabulário/contrato de poderes do kit documental (fonte única do
@@ -1009,6 +1010,23 @@ class EncerrarCasoReq(_BM2):
     provas_determinantes: str = _F2(min_length=10)
     licoes_aprendidas: str = _F2(min_length=20)
     alimentar_rag: bool = True
+    confirmar_alertas: bool = False
+
+
+@router.get("/{case_id}/fechamento/diagnostico")
+async def diagnostico_fechamento_caso(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Pré-checagem determinística do encerramento, sem alterar o caso."""
+    _role = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
+    if _role not in ("superadmin", "admin", "socio", "advogado"):
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    case = await verificar_acesso_caso(db, cu, case_id)
+    if case.status in (CaseStatus.encerrado, CaseStatus.arquivado):
+        raise HTTPException(status_code=409, detail="Caso já encerrado")
+    return await diagnosticar_fechamento(db, case)
 
 
 @router.post("/{case_id}/encerrar")
@@ -1021,6 +1039,10 @@ async def encerrar_caso(
     """
     Encerramento com Pós-Mortem obrigatório: o conhecimento do caso
     vira ativo institucional (ingestão automática na base RAG).
+
+    Antes de persistir, o backend repete o diagnóstico operacional. Prazos
+    ativos bloqueiam o encerramento; demais alertas exigem confirmação humana
+    explícita para evitar fechamento acidental com trabalho ainda aberto.
     """
     _role = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
     if _role not in ("superadmin", "admin", "socio", "advogado"):
@@ -1032,6 +1054,27 @@ async def encerrar_caso(
         raise HTTPException(status_code=404, detail="Caso não encontrado")
     if case.status in (CaseStatus.encerrado, CaseStatus.arquivado):
         raise HTTPException(status_code=409, detail="Caso já encerrado")
+
+    diagnostico = await diagnosticar_fechamento(db, case)
+    if diagnostico["bloqueios"]:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "mensagem": "O caso possui prazos ativos e não pode ser encerrado.",
+                **diagnostico,
+            },
+        )
+    if diagnostico["alertas"] and not payload.confirmar_alertas:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "mensagem": (
+                    "O caso possui pendências operacionais. Revise o checklist "
+                    "e confirme explicitamente se deseja encerrar mesmo assim."
+                ),
+                **diagnostico,
+            },
+        )
 
     case.status_anterior = case.status.value
     case.status = CaseStatus.encerrado
@@ -1088,7 +1131,15 @@ async def encerrar_caso(
     ))
     await criar_audit_log(
         db, cu.id, cu.role.value, "UPDATE", "cases", case_id,
-        detalhes=f"Encerramento ({payload.resultado}) com pós-mortem",
+        detalhes=(
+            f"Encerramento ({payload.resultado}) com pós-mortem; "
+            f"alertas_confirmados={bool(payload.confirmar_alertas)}"
+        ),
+        dados_depois={
+            "resultado": payload.resultado,
+            "alertas_confirmados": bool(payload.confirmar_alertas),
+            "resumo_fechamento": diagnostico["resumo"],
+        },
     )
     await db.commit()
     # NÚCLEO COGNITIVO — complementa o precedente-RAG acima com Memória
@@ -1099,7 +1150,10 @@ async def encerrar_caso(
         event_bus.emitir, "caso.encerrado", "case", case_id,
         {"resultado": payload.resultado}, cu.id,
     )
-    return {"detail": "Caso encerrado. Conhecimento registrado na base institucional."}
+    return {
+        "detail": "Caso encerrado. Conhecimento registrado na base institucional.",
+        "diagnostico_fechamento": diagnostico,
+    }
 
 
 # ── Importação inteligente → Caso núcleo (P1) ─────────────────────────────────
