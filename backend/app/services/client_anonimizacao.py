@@ -111,11 +111,15 @@ async def anonimizar_cliente(
     for u in usuarios_portal:
         u.is_active = False
 
-    # Log de auditoria SEM PII — só o fato, quem autorizou, e se foi forçado
-    # apesar de bloqueios (rastreabilidade da decisão).
-    detalhes = f"Anonimização LGPD art.17. Motivo: {motivo or 'não informado'}."
+    # Log de auditoria WORM SEM texto livre: `motivo` é campo fornecido pelo
+    # operador e pode conter PII, dado sensível ou conteúdo de caso. O rastro
+    # precisa provar que houve justificativa, não perpetuar o teor dela.
+    detalhes = (
+        "Anonimização LGPD art.17; "
+        f"justificativa_informada={'sim' if bool((motivo or '').strip()) else 'nao'}"
+    )
     if bloqueios:
-        detalhes += f" FORÇADO apesar de {len(bloqueios)} bloqueio(s) ativo(s)."
+        detalhes += f"; FORÇADO apesar de {len(bloqueios)} bloqueio(s) ativo(s)"
     await criar_audit_log(
         db, executor_id, executor_role, "ANONIMIZAR_LGPD", "clients", client_id,
         detalhes=detalhes,

@@ -15,7 +15,9 @@ from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, ROLE_LEVEL
+from app.models.audit_log import criar_audit_log
 from app.models.user import User
 from app.models.client import Client
 from app.models.case import Case
@@ -42,7 +44,10 @@ def _ve_todos(user: User) -> bool:
     return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["socio"]
 
 
-@router.get("/clientes.csv")
+@router.get(
+    "/clientes.csv",
+    dependencies=[Depends(rate_limit("export-clientes", 5))],
+)
 async def export_clientes(db: AsyncSession = Depends(get_db),
                           cu: User = Depends(get_current_user)):
     # M04 (homologação 2026-08-15): exportação de cadastro de clientes (com
@@ -56,10 +61,21 @@ async def export_clientes(db: AsyncSession = Depends(get_db),
         .order_by(Client.created_at.desc())
     )).scalars().all()
     # Documento decifrado sob demanda (cutover C6/LGPD): não há mais texto puro
-    # no banco — o CSV para o staff do CRM exibe o valor em claro como antes.
+    # no banco. Como esta é uma exportação integral deliberada, o ato recebe
+    # rate limit e trilha WORM sem registrar qualquer PII no próprio log.
     linhas = [[c.nome or c.razao_social or "", c.tipo.value,
                c.documento_plain or "", c.email or "", c.telefone or "",
                str(c.status.value)] for c in rows]
+    await criar_audit_log(
+        db,
+        cu.id,
+        cu.role.value,
+        "EXPORT_CLIENTES_CSV",
+        "clients",
+        None,
+        detalhes=f"exportação integral; registros={len(rows)}",
+    )
+    await db.commit()
     return _csv("clientes.csv",
                 ["Nome", "Tipo", "Documento", "Email", "Telefone", "Status"], linhas)
 

@@ -14,6 +14,7 @@ from app.core.degradacao import ColetorDeSecoes
 from app.core.security import get_current_user
 from app.models.client import Client
 from app.models.user import User
+from app.services.pii_crypto import mascarar_documento
 
 # secretaria incluída pelo achado 8 da auditoria: tem visão total do CRM
 # (client_ownership.visao_total_clientes) mas caía neste gate de topo e
@@ -25,7 +26,8 @@ _FIN_ADV = {"superadmin", "admin", "socio", "financeiro", "advogado", "secretari
 
 
 def _req_fin_adv(cu: User = Depends(get_current_user)) -> User:
-    # Relatório financeiro + PII (CPF/CNPJ) do cliente: gestão/secretaria/financeiro/advogado.
+    # Relatório financeiro contém dados pessoais e financeiros: acesso segue a
+    # matriz existente, mas o documento identificador trafega apenas mascarado.
     if cu.role.value not in _FIN_ADV:
         raise HTTPException(status_code=403, detail="Acesso restrito a gestão/financeiro/advogado")
     return cu
@@ -88,9 +90,10 @@ async def relatorio_financeiro_cliente(
     cu: User = Depends(get_current_user),
 ):
     # Cutover C6/LGPD: cpf/cnpj não existem mais em texto puro (migration 112).
-    # Carrega via ORM para usar documento_plain (decifra resiliente) — a query
-    # em SQL bruto anterior referenciava colunas dropadas e o relatório
-    # inteiro respondia 500 (achado crítico da auditoria).
+    # Carrega via ORM para usar documento_plain (decifra resiliente) e aplica
+    # minimização antes da resposta: o frontend financeiro não necessita do
+    # identificador completo e perfis como financeiro/secretaria podem acessar
+    # este relatório. O valor integral fica nas rotas LGPD/dossiê com gate próprio.
     cli_obj = (await db.execute(
         select(Client).where(Client.id == client_id, Client.deleted_at.is_(None))
     )).scalar_one_or_none()
@@ -102,7 +105,8 @@ async def relatorio_financeiro_cliente(
     cli = {
         "id": cli_obj.id, "nome": cli_obj.nome_exibicao,
         "email": cli_obj.email, "telefone": cli_obj.telefone,
-        "whatsapp": cli_obj.whatsapp, "cpf_cnpj": cli_obj.documento_plain,
+        "whatsapp": cli_obj.whatsapp,
+        "cpf_cnpj": mascarar_documento(cli_obj.documento_plain),
     }
 
     secoes = ColetorDeSecoes("relatorio_financeiro_cliente", db)
