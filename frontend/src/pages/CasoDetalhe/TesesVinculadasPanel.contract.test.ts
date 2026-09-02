@@ -18,6 +18,7 @@ describe("Peças — Banco de Teses canônico no contexto do caso", () => {
   it("não injeta automaticamente tese na peça nem cria vínculo", () => {
     expect(fonte).toContain("não injeta automaticamente estas teses na peça");
     expect(fonte).toContain("o EJC não cria vínculo automático");
+    expect(fonte).toContain("Esta tela não oferece ação de vínculo");
     expect(fonte).not.toContain("api.post(");
     expect(fonte).not.toContain("api.patch(");
   });
@@ -29,10 +30,30 @@ describe("Peças — Banco de Teses canônico no contexto do caso", () => {
     expect(fonte).toContain("a decisão jurídica continua humana");
   });
 
-  it("trata loading, erro, retry e estado vazio", () => {
+  it("mantém inteiro teor visível e diferencia teses não ativas", () => {
+    expect(fonte).toContain('const ativa = tese.status === "ativa"');
+    expect(fonte).toContain("Tese não ativa");
+    expect(fonte).not.toContain("line-clamp-4");
+    expect(fonte).toContain("Jurisprudência cadastrada");
+  });
+
+  it("formata histórico pelas duas convenções canônicas", () => {
+    expect(fonte).toContain('import { fmtTaxaSucesso } from "../../utils/formato"');
+    expect(fonte).toContain("fmtTaxaSucesso(tese.taxa_sucesso)");
+    expect(fonte).not.toContain("tese.taxa_sucesso * 100");
+  });
+
+  it("descarta respostas antigas quando o caso muda", () => {
+    expect(fonte).toContain("requestSeqRef");
+    expect(fonte).toContain("requestSeq !== requestSeqRef.current");
+    expect(fonte).toContain("requestSeqRef.current += 1");
+  });
+
+  it("trata loading, erro, retry e estado vazio sem prometer vínculo inexistente", () => {
     expect(fonte).toContain("Carregando teses do caso");
     expect(fonte).toContain("Não foi possível carregar as teses vinculadas");
     expect(fonte).toContain("Tentar novamente");
     expect(fonte).toContain("Nenhuma tese está vinculada a este caso");
+    expect(fonte).toContain("Consulte o Banco de Teses para localizar conteúdo institucional");
   });
 });
