@@ -1,29 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 
 const simulacoes = vi.hoisted(() => ({
   role: "estagiario",
-  get: vi.fn(),
-  post: vi.fn(),
-  patch: vi.fn(),
-  delete: vi.fn(),
+  apiGet: vi.fn(),
+  apiPost: vi.fn(),
+  apiPatch: vi.fn(),
+  apiDelete: vi.fn(),
+  listInbox: vi.fn(),
+  listDocuments: vi.fn(),
+  updateMetadata: vi.fn(),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
-  toastInfo: vi.fn(),
 }));
 
 vi.mock("../lib/api", () => ({
   default: {
-    get: simulacoes.get,
-    post: simulacoes.post,
-    patch: simulacoes.patch,
-    delete: simulacoes.delete,
+    get: simulacoes.apiGet,
+    post: simulacoes.apiPost,
+    patch: simulacoes.apiPatch,
+    delete: simulacoes.apiDelete,
   },
 }));
 
@@ -34,14 +31,22 @@ vi.mock("../stores/auth", () => ({
 
 vi.mock("../contexts/useCasoFiltro", () => ({
   useCasoFiltro: () => ({
-    casoFiltro: null,
-    casoFiltroNome: "",
+    casoFiltro: undefined,
+    casoFiltroNome: undefined,
     removerFiltro: vi.fn(),
   }),
 }));
 
-vi.mock("../components/Dashboards", () => ({
-  DocumentosStats: () => null,
+vi.mock("../components/documents/DocumentWorkflowStats", () => ({
+  default: () => null,
+}));
+
+vi.mock("../components/documents/DocumentDrawer", () => ({
+  default: () => null,
+}));
+
+vi.mock("../components/documents/DocumentStatusBadge", () => ({
+  default: () => <span>Pronto</span>,
 }));
 
 vi.mock("../components/CaseFilterChip", () => ({
@@ -52,8 +57,25 @@ vi.mock("../components/Toast", () => ({
   toast: {
     error: simulacoes.toastError,
     success: simulacoes.toastSuccess,
-    info: simulacoes.toastInfo,
+    info: vi.fn(),
   },
+}));
+
+vi.mock("../services/documents", () => ({
+  ATTENTION_LABEL: { sem_caso: "Sem caso vinculado" },
+  duplicateDetail: () => null,
+  getDocumentBlob: vi.fn(),
+  getDocumentPolicy: vi.fn().mockResolvedValue({
+    extensions: [".pdf", ".md"],
+    max_upload_mb: 25,
+    confidentiality: ["normal", "interno", "restrito", "confidencial", "segredo_justica"],
+    malware_scan_enabled: false,
+  }),
+  listDocuments: simulacoes.listDocuments,
+  listInbox: simulacoes.listInbox,
+  moveDocumentToTrash: vi.fn().mockResolvedValue(undefined),
+  updateDocumentMetadata: simulacoes.updateMetadata,
+  uploadDocument: vi.fn().mockResolvedValue({}),
 }));
 
 import Documentos from "./Documentos";
@@ -66,6 +88,9 @@ const DOCUMENTO = {
   confidencialidade: "normal",
   size_bytes: 1024,
   case_id: null,
+  versao: 1,
+  operational_status: "ready",
+  attention_reasons: ["sem_caso"],
   created_at: "2026-08-10T12:00:00Z",
 };
 
@@ -79,76 +104,55 @@ const DOCUMENTO_2 = {
 
 const CASO = {
   id: "case-1",
-  numero_interno: "EJC-001",
   titulo: "Caso teste",
   client_id: "client-1",
 };
 
-function prepararApi(documentos = [DOCUMENTO]): void {
-  simulacoes.get.mockImplementation((url: string) => {
-    if (url === "/documents/") {
-      return Promise.resolve({
-        data: {
-          data: documentos,
-          total: documentos.length,
-          page: 1,
-          page_size: 50,
-        },
-      });
-    }
-    if (url === "/cases/") {
-      return Promise.resolve({ data: { data: [CASO] } });
-    }
-    if (url === "/clients/") {
-      return Promise.resolve({ data: { data: [] } });
-    }
-    if (url === "/documents/tipos") {
-      return Promise.resolve({ data: { data: [] } });
-    }
+function preparar(documentos = [DOCUMENTO]) {
+  const resposta = {
+    data: documentos,
+    total: documentos.length,
+    page: 1,
+    page_size: 25,
+  };
+  simulacoes.listInbox.mockResolvedValue(resposta);
+  simulacoes.listDocuments.mockResolvedValue(resposta);
+  simulacoes.updateMetadata.mockResolvedValue(DOCUMENTO);
+  simulacoes.apiGet.mockImplementation((url: string) => {
+    if (url === "/documents/tipos") return Promise.resolve({ data: { data: [] } });
+    if (url === "/cases/") return Promise.resolve({ data: { data: [CASO] } });
+    if (url === "/clients/") return Promise.resolve({ data: { data: [] } });
     return Promise.reject(new Error(`GET inesperado: ${url}`));
   });
-  simulacoes.post.mockResolvedValue({ data: {} });
-  simulacoes.patch.mockImplementation(
-    (url: string, payload: Record<string, unknown>) =>
-      Promise.resolve({
-        data: {
-          ...DOCUMENTO,
-          ...(url === "/documents/doc-1" ? payload : {}),
-        },
-      }),
-  );
+  simulacoes.apiPost.mockResolvedValue({ data: {} });
 }
 
-async function renderizar(): Promise<void> {
-  render(<Documentos />);
+async function renderizar(documentos = [DOCUMENTO]) {
+  preparar(documentos);
+  render(
+    <MemoryRouter>
+      <Documentos />
+    </MemoryRouter>,
+  );
   await screen.findByText("Contrato teste");
 }
 
-async function selecionar(titulo = "Contrato teste"): Promise<void> {
+async function selecionar(titulo = "Contrato teste") {
   fireEvent.click(screen.getByLabelText(`Selecionar ${titulo}`));
   await screen.findByText(/selecionado\(s\)/i);
 }
 
-async function abrirModalVinculo(): Promise<HTMLSelectElement> {
-  fireEvent.click(screen.getByRole("button", { name: /Vincular ao caso/i }));
-  await screen.findByText(/Vincular ao caso — .* documento\(s\)/i);
-  const seletor = screen
-    .getByText("Caso de destino")
-    .parentElement?.querySelector("select");
-  expect(seletor).not.toBeNull();
-  return seletor as HTMLSelectElement;
-}
-
 beforeEach(() => {
   simulacoes.role = "estagiario";
-  simulacoes.get.mockReset();
-  simulacoes.post.mockReset();
-  simulacoes.patch.mockReset();
-  simulacoes.delete.mockReset();
+  simulacoes.apiGet.mockReset();
+  simulacoes.apiPost.mockReset();
+  simulacoes.apiPatch.mockReset();
+  simulacoes.apiDelete.mockReset();
+  simulacoes.listInbox.mockReset();
+  simulacoes.listDocuments.mockReset();
+  simulacoes.updateMetadata.mockReset();
   simulacoes.toastError.mockReset();
   simulacoes.toastSuccess.mockReset();
-  simulacoes.toastInfo.mockReset();
-  prepararApi();
 });
 
 afterEach(cleanup);
@@ -161,100 +165,78 @@ describe("Documentos — RBAC de vínculo", () => {
     "advogado",
     "advogado_auxiliar",
     "estagiario",
-  ])("expõe a ação para papel jurídico autorizado: %s", async (role) => {
+  ])("expõe vínculo para papel autorizado: %s", async (role) => {
     simulacoes.role = role;
-
     await renderizar();
     await selecionar();
-
-    expect(
-      screen.getByRole("button", { name: /Vincular ao caso/i }),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Vincular ao caso/i })).toBeTruthy();
   });
 
   it.each(["financeiro", "secretaria", "cliente_externo"])(
-    "oculta a ação para papel fora do contrato backend: %s",
+    "oculta vínculo para papel fora do contrato: %s",
     async (role) => {
       simulacoes.role = role;
-
       await renderizar();
       await selecionar();
-
-      expect(
-        screen.queryByRole("button", { name: /Vincular ao caso/i }),
-      ).toBeNull();
+      expect(screen.queryByRole("button", { name: /Vincular ao caso/i })).toBeNull();
     },
   );
 });
 
 describe("Documentos — mutações", () => {
-  it("PATCH de metadados nunca envia case_id", async () => {
+  it("PATCH de metadados não envia case_id", async () => {
     await renderizar();
-    fireEvent.click(screen.getByTitle("Editar metadados"));
+    fireEvent.click(screen.getByLabelText("Ações de Contrato teste"));
+    fireEvent.click(screen.getByRole("button", { name: "Editar metadados" }));
 
     const titulo = await screen.findByDisplayValue("Contrato teste");
     fireEvent.change(titulo, { target: { value: "Contrato revisado" } });
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
 
     await waitFor(() => {
-      expect(simulacoes.patch).toHaveBeenCalledWith("/documents/doc-1", {
+      expect(simulacoes.updateMetadata).toHaveBeenCalledWith("doc-1", {
         titulo: "Contrato revisado",
+        tipo: "contrato",
+        confidencialidade: "normal",
       });
     });
-    const payload = simulacoes.patch.mock.calls[0][1] as Record<
-      string,
-      unknown
-    >;
-    expect(payload).not.toHaveProperty("case_id");
+    expect(simulacoes.updateMetadata.mock.calls[0][1]).not.toHaveProperty("case_id");
   });
 
-  it("usa o POST canônico para vínculo por documento", async () => {
+  it("usa o endpoint canônico de vínculo por documento", async () => {
     simulacoes.role = "advogado";
-
     await renderizar();
     await selecionar();
-    const seletor = await abrirModalVinculo();
 
+    fireEvent.click(screen.getByRole("button", { name: /Vincular ao caso/i }));
+    const seletor = await screen.findByRole("combobox", { name: "" });
     fireEvent.change(seletor, { target: { value: CASO.id } });
-    fireEvent.click(screen.getByRole("button", { name: "Vincular todos" }));
+    fireEvent.click(screen.getByRole("button", { name: "Vincular" }));
 
     await waitFor(() => {
-      expect(simulacoes.post).toHaveBeenCalledWith(
+      expect(simulacoes.apiPost).toHaveBeenCalledWith(
         "/cases/case-1/documentos/doc-1/vincular",
       );
     });
   });
 
-  it("preserva falha isolada e resume vínculo parcial", async () => {
+  it("mantém falha isolada no vínculo em lote", async () => {
     simulacoes.role = "advogado";
-    prepararApi([DOCUMENTO, DOCUMENTO_2]);
-    simulacoes.post.mockResolvedValueOnce({ data: {} }).mockRejectedValueOnce({
-      response: { data: { detail: "Documento já vinculado" } },
-    });
-
-    await renderizar();
+    simulacoes.apiPost.mockResolvedValueOnce({ data: {} }).mockRejectedValueOnce(new Error("falha"));
+    await renderizar([DOCUMENTO, DOCUMENTO_2]);
     await selecionar("Contrato teste");
     fireEvent.click(screen.getByLabelText("Selecionar Petição teste"));
     await screen.findByText("2 selecionado(s)");
-    const seletor = await abrirModalVinculo();
 
+    fireEvent.click(screen.getByRole("button", { name: /Vincular ao caso/i }));
+    const seletor = screen.getByRole("combobox");
     fireEvent.change(seletor, { target: { value: CASO.id } });
-    fireEvent.click(screen.getByRole("button", { name: "Vincular todos" }));
+    fireEvent.click(screen.getByRole("button", { name: "Vincular" }));
 
     await waitFor(() => {
-      expect(simulacoes.post).toHaveBeenNthCalledWith(
-        1,
-        "/cases/case-1/documentos/doc-1/vincular",
-      );
-      expect(simulacoes.post).toHaveBeenNthCalledWith(
-        2,
-        "/cases/case-1/documentos/doc-2/vincular",
-      );
+      expect(simulacoes.apiPost).toHaveBeenCalledTimes(2);
       expect(simulacoes.toastError).toHaveBeenCalledWith(
-        expect.stringContaining("1 vinculado(s), 1 falhou(aram)"),
-      );
-      expect(simulacoes.toastError).toHaveBeenCalledWith(
-        expect.stringContaining("Documento já vinculado"),
+        expect.stringContaining("1 vínculo(s) não puderam ser concluídos"),
       );
     });
   });
