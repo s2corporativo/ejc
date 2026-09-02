@@ -34,7 +34,7 @@ export const CASE_NAV_SECTIONS: readonly CaseNavSection[] = [
     label: "Visão",
     tab: "resumo",
     icon: LayoutDashboard,
-    descricao: "Próxima ação, jornada, alertas e dados do caso.",
+    descricao: "Visão geral, próxima ação, alertas e dados essenciais do caso.",
     tabs: ["resumo", "partes", "etiquetas"],
     routeAliases: ["/jornada", "/entrevista"],
   },
@@ -43,7 +43,7 @@ export const CASE_NAV_SECTIONS: readonly CaseNavSection[] = [
     label: "Atividades",
     tab: "timeline",
     icon: Activity,
-    descricao: "Linha do tempo, processos, prazos, audiências e memória.",
+    descricao: "Linha do tempo, prazos, tarefas, audiências e movimentações.",
     tabs: [
       "timeline",
       "processos",
@@ -55,14 +55,13 @@ export const CASE_NAV_SECTIONS: readonly CaseNavSection[] = [
     ],
   },
   {
-    // Tela C (Bloco 3): "pecas" entra aqui — peça é o documento que o caso
-    // produz, e a seção já reúne tudo que o caso guarda e gera em arquivo.
-    // Duplicação temporária com o módulo /pecas aceita pelo titular
-    // (Decisões de 2026-08-02, item 2).
-    label: "Arquivos",
+    // Documentos é o agrupador visível: reúne arquivos recebidos e produzidos
+    // sem criar um módulo paralelo. Peças, provas, contratos e procurações
+    // preservam suas abas/deep-links internos.
+    label: "Documentos",
     tab: "documentos",
     icon: FileStack,
-    descricao: "Documentos, peças, provas, contratos e procurações.",
+    descricao: "Documentos, peças, provas, contratos e procurações do caso.",
     tabs: ["documentos", "pecas", "provas", "contratos", "procuracoes"],
   },
   {
@@ -72,14 +71,14 @@ export const CASE_NAV_SECTIONS: readonly CaseNavSection[] = [
     // precedentes, score e risco), dossiê e ferramentas (com IA Defensiva).
     tab: "teses",
     icon: Scale,
-    descricao: "Teses, indicadores, dossiê e ferramentas de decisão jurídica.",
+    descricao: "Teses, riscos, jurisprudência, dossiê e ferramentas jurídicas.",
     tabs: ["teses", "indicadores", "dossie", "ferramentas"],
   },
   {
     label: "Financeiro",
     tab: "financeiro",
     icon: WalletCards,
-    descricao: "Honorários, custos e liquidez do caso.",
+    descricao: "Honorários, pagamentos, custos, despesas e liquidez do caso.",
     tabs: ["financeiro", "custos", "liquidez"],
   },
 ];
