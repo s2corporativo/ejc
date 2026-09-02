@@ -94,19 +94,25 @@ A redação fica bloqueada enquanto faltar:
 A aprovação do plano não equivale à aprovação da peça. O documento gerado
 continua como rascunho sujeito ao HITL já existente.
 
-## Integração prevista
+## Integração implementada
 
-A integração com `/pecas/gerar` deverá ocorrer depois da validação deste
-contrato. O router deve:
+A integração com `/pecas/gerar` já está ativa no fluxo canônico. O router:
 
-1. validar role e acesso ao caso como já faz hoje;
-2. montar `ProducaoModoRequest`;
-3. chamar `preparar_modo_producao`;
-4. retornar 409/422 quando houver bloqueios;
-5. anexar `instrucoes_pipeline` às instruções adicionais;
-6. chamar o pipeline de sete etapas já existente;
-7. registrar modo, referência do molde e aprovação no `AILog` ou metadado
-   auditável existente, sem dados sensíveis em log.
+1. valida role e acesso ao caso;
+2. monta/valida `ProducaoModoRequest` recebido em `modo_producao`;
+3. chama `preparar_modo_producao`;
+4. retorna 409/422 quando houver bloqueios;
+5. incorpora `instrucoes_pipeline` às instruções adicionais;
+6. chama o pipeline de sete etapas já existente;
+7. registra metadados auditáveis do modo, referência de molde e aprovação do
+   plano sem gravar conteúdo sensível em log;
+8. no Modo Molde, executa detector de resíduos do caso de origem e expõe o
+   resultado no stream para revisão humana.
+
+O frontend `PecaGeneratorModal` consome o catálogo canônico em `GET /pecas/meta`
+e envia o contrato estruturado dos quatro modos. O catálogo do backend é fonte
+única: indisponibilidade dessa rota deve bloquear a geração, não degradar para
+listas locais parciais.
 
 Não devem ser criados endpoints públicos paralelos de geração, outro motor de
 peça ou chamadas adicionais obrigatórias de IA.
@@ -120,10 +126,13 @@ peça ou chamadas adicionais obrigatórias de IA.
   sistema, reduzindo risco de prompt injection;
 - o Modo Molde exige detector de resíduos antes da aprovação;
 - o Modo Agente exige caso e documentos explicitamente autorizados;
-- nenhum modo produz documento protocolável sem revisão humana.
+- nenhum modo produz documento protocolável sem revisão humana;
+- falha do catálogo `/pecas/meta` é tratada de forma fail-closed no frontend.
 
 ## Rollback
 
-A camada é aditiva e ainda não altera o endpoint existente. O rollback consiste
-em reverter os arquivos de schema, service, testes e documentação. Não há
-migration, dado ou fila a restaurar.
+A camada é aditiva e está integrada ao endpoint existente. O rollback desta
+integração consiste em reverter, de forma coordenada, router, schema, service,
+frontend, testes e documentação para uma revisão anterior conhecida. Não há
+migration específica dos quatro modos nem dado persistido que exija restauração.
+A reversão não deve criar endpoint ou motor paralelo para manter compatibilidade.
