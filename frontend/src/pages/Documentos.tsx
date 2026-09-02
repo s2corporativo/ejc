@@ -1,51 +1,54 @@
-import { useEffect, useState, useRef } from "react";
-import { toast } from "../components/Toast";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router";
 import {
-  Upload,
+  ChevronLeft,
+  ChevronRight,
   Download,
-  Search,
+  FileText,
+  Filter,
+  FolderInput,
+  Inbox,
   Link2,
-  Lock,
-  Pencil,
-  Sparkles,
-  Eye,
+  MoreHorizontal,
+  Search,
+  ShieldCheck,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import api from "../lib/api";
-import {
-  Modal,
-  Empty,
-  EmptyState,
-  Spinner,
-  Button,
-  fmtDate,
-} from "../components/UI";
-import { DocumentosStats } from "../components/Dashboards";
+import { toast } from "../components/Toast";
+import { Button, Modal, Spinner } from "../components/UI";
 import CaseFilterChip from "../components/CaseFilterChip";
+import DocumentDrawer from "../components/documents/DocumentDrawer";
+import DocumentStatusBadge from "../components/documents/DocumentStatusBadge";
+import DocumentWorkflowStats from "../components/documents/DocumentWorkflowStats";
 import { useCasoFiltro } from "../contexts/useCasoFiltro";
 import { asList } from "../lib/list";
 import { useAuth } from "../stores/auth";
+import {
+  ATTENTION_LABEL,
+  duplicateDetail,
+  getDocumentBlob,
+  getDocumentPolicy,
+  listDocuments,
+  listInbox,
+  moveDocumentToTrash,
+  updateDocumentMetadata,
+  uploadDocument,
+  type DocumentItem,
+  type DocumentListResponse,
+  type DocumentPolicy,
+} from "../services/documents";
 
-/** Item de alternativa devolvido pela classificação por IA. */
-type ClassAlternativa = { tipo_key: string; nome: string };
+type ViewMode = "inbox" | "all" | "recent";
+type TipoDoc = { tipo_key: string; nome: string };
+type CasoResumo = { id: string; titulo?: string; client_id?: string | null };
+type ClienteResumo = { id: string; nome?: string; razao_social?: string };
+type PendingUpload = { file: File; titulo: string; erro?: string };
 
-/** Shape de POST /documents/{id}/classificar (aplicar=false|true). */
-type ClassResultado = {
-  doc_id: string;
-  aplicado: boolean;
-  tipo_atual: string | null;
-  tipo_sugerido: string | null;
-  confianca: "alta" | "media" | "baixa" | null;
-  alternativas: ClassAlternativa[];
-  justificativa: string;
-  disponivel: boolean;
-  pii_removida?: boolean;
-  modelo?: string;
-  aviso?: string;
-};
-
-const PAPEIS_VINCULO_DOCUMENTAL = new Set([
+const SOCIO_PLUS = new Set(["superadmin", "admin", "socio"]);
+const CAN_LINK = new Set([
   "superadmin",
   "admin",
   "socio",
@@ -53,1429 +56,911 @@ const PAPEIS_VINCULO_DOCUMENTAL = new Set([
   "advogado_auxiliar",
   "estagiario",
 ]);
+const LEGACY_TYPES = ["procuracao", "contrato", "decisao", "peticao", "prova", "outro"];
+const PREVIEW_EXT = new Set([".pdf", ".jpg", ".jpeg", ".png"]);
 
-const CONF_LABEL: Record<string, string> = {
-  alta: "Alta confiança",
-  media: "Confiança média",
-  baixa: "Baixa confiança",
+const extOf = (name?: string | null) => {
+  const value = name || "";
+  const index = value.lastIndexOf(".");
+  return index >= 0 ? value.slice(index).toLowerCase() : "";
 };
 
-// Espelho de DocConfidencialidade do backend (mesmos valores do upload).
-const CONF_OPCOES: { k: string; l: string }[] = [
-  { k: "normal", l: "Normal" },
-  { k: "interno", l: "Interno" },
-  { k: "restrito", l: "Restrito (cofre — sócios)" },
-  { k: "confidencial", l: "Confidencial (cofre)" },
-  { k: "segredo_justica", l: "Segredo de justiça (cofre)" },
-];
-
-// Espelho de TIPOS_LEGADOS do backend: aceitos no PATCH além do master.
-const TIPOS_LEGADOS = [
-  "procuracao",
-  "contrato",
-  "decisao",
-  "peticao",
-  "prova",
-  "outro",
-];
-
-/** Item de GET /documents/tipos (master de tipos ativos). */
-type TipoDoc = { tipo_key: string; nome: string };
-
-// Espelho de EXTENSOES_PERMITIDAS do backend (documents.py).
-const EXTS_UPLOAD = [
-  ".pdf",
-  ".docx",
-  ".doc",
-  ".jpg",
-  ".jpeg",
-  ".png",
-  ".xlsx",
-  ".xls",
-  ".txt",
-  ".xml",
-];
-
-// Formatos com pré-visualização inline (via GET /{id}/download como blob).
-const EXTS_PREVIEW: Record<string, "pdf" | "img"> = {
-  ".pdf": "pdf",
-  ".jpg": "img",
-  ".jpeg": "img",
-  ".png": "img",
+const withoutExt = (name: string) => {
+  const index = name.lastIndexOf(".");
+  return index > 0 ? name.slice(0, index) : name;
 };
 
-const extDe = (nome: string) => {
-  const i = nome.lastIndexOf(".");
-  return i >= 0 ? nome.slice(i).toLowerCase() : "";
-};
-const semExtensao = (nome: string) => {
-  const i = nome.lastIndexOf(".");
-  return i > 0 ? nome.slice(0, i) : nome;
-};
-const fmtKB = (bytes?: number) =>
-  bytes ? `${(bytes / 1024).toFixed(0)} KB` : "—";
+const fmtDate = (value?: string | null) =>
+  value
+    ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(value))
+    : "—";
 
-/** Arquivo aguardando envio no modal de upload (título editável por arquivo). */
-type PendenteUpload = { file: File; titulo: string; erro?: string };
+const fmtBytes = (value?: number | null) => {
+  if (!value) return "—";
+  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const confLabel = (value?: string | null) =>
+  ({
+    normal: "Normal",
+    interno: "Interno",
+    restrito: "Restrito",
+    confidencial: "Confidencial",
+    segredo_justica: "Segredo de justiça",
+  })[value || ""] || value || "—";
+
+const roleCanUseConf = (role: string, conf: string) =>
+  SOCIO_PLUS.has(role) || !["restrito", "confidencial", "segredo_justica"].includes(conf);
+
+function recentStartDate(): string {
+  const date = new Date();
+  date.setDate(date.getDate() - 30);
+  return date.toISOString().slice(0, 10);
+}
 
 export default function Documentos() {
+  const navigate = useNavigate();
   const user = useAuth((state) => state.user);
-  const podeVincularDocumento = PAPEIS_VINCULO_DOCUMENTAL.has(user?.role || "");
-  const [data, setData] = useState<any>(null);
-  const [search, setSearch] = useState("");
-  const [modal, setModal] = useState(false);
-  const [form, setForm] = useState<any>({ confidencialidade: "normal" });
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [enviando, setEnviando] = useState(false);
-  const [casos, setCasos] = useState<any[]>([]);
-
-  // Upload múltiplo: fila de arquivos com título pré-preenchido (nome sem
-  // extensão) e editável. O endpoint aceita 1 arquivo por chamada — o envio é
-  // sequencial com progresso e resumo final.
-  const [pendentes, setPendentes] = useState<PendenteUpload[]>([]);
-  const [dragOver, setDragOver] = useState(false);
-  const [progresso, setProgresso] = useState<{
-    done: number;
-    total: number;
-  } | null>(null);
-
-  // Filtro por cliente — GET /documents/ aceita client_id.
-  const [clientes, setClientes] = useState<any[]>([]);
-  const [clienteFiltro, setClienteFiltro] = useState("");
-
-  // Filtros novos do GET /documents/ (tipo, confidencialidade, datas,
-  // classificação pendente) — todos aditivos no backend.
-  const [tipos, setTipos] = useState<TipoDoc[]>([]);
-  const [tipoFiltro, setTipoFiltro] = useState("");
-  const [confFiltro, setConfFiltro] = useState("");
-  const [dataInicio, setDataInicio] = useState("");
-  const [dataFim, setDataFim] = useState("");
-  const [soPendentes, setSoPendentes] = useState(false);
-
-  // Edição de metadados por linha (PATCH /documents/{id}). Vínculo com caso não
-  // é metadado editável: usa operação de domínio dedicada.
-  const [editDoc, setEditDoc] = useState<any | null>(null);
-  const [editForm, setEditForm] = useState<any>({});
-  const [salvandoEdit, setSalvandoEdit] = useState(false);
-
-  const [loteConfModal, setLoteConfModal] = useState(false);
-  const [loteConf, setLoteConf] = useState("normal");
-  const [loteCasoModal, setLoteCasoModal] = useState(false);
-  const [loteCaso, setLoteCaso] = useState("");
-
-  // Pré-visualização sem download (blob de GET /{id}/download).
-  const [preview, setPreview] = useState<{
-    doc: any;
-    kind: "pdf" | "img";
-  } | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewErro, setPreviewErro] = useState<string | null>(null);
-  const previewUrlRef = useRef<string | null>(null);
-  previewUrlRef.current = previewUrl;
-  useEffect(
-    () => () => {
-      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
-    },
-    [],
-  );
-
-  // Seleção múltipla para ações em lote (baixar / excluir / metadata / vínculo).
-  const [sel, setSel] = useState<Set<string>>(new Set());
-  const [loteBusy, setLoteBusy] = useState<
-    "download" | "delete" | "conf" | "vincular" | null
-  >(null);
-
-  // Classificação de tipo por IA (sugerir → aplicar), confirmação humana obrigatória.
-  const [classDoc, setClassDoc] = useState<any | null>(null);
-  const [classResult, setClassResult] = useState<ClassResultado | null>(null);
-  const [classLoading, setClassLoading] = useState(false);
-  const [aplicando, setAplicando] = useState(false);
-
-  const [erro, setErro] = useState(false);
-  const seq = useRef(0);
-
+  const role = user?.role || "";
+  const canLink = CAN_LINK.has(role);
   const { casoFiltro, casoFiltroNome, removerFiltro } = useCasoFiltro();
 
-  const load = () => {
-    const my = ++seq.current;
-    setErro(false);
-    return api
-      .get("/documents/", {
-        params: {
+  const [mode, setMode] = useState<ViewMode>("inbox");
+  const [response, setResponse] = useState<DocumentListResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(25);
+  const [search, setSearch] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [clientId, setClientId] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [confFilter, setConfFilter] = useState("");
+  const [dateStart, setDateStart] = useState("");
+  const [dateEnd, setDateEnd] = useState("");
+  const [pendingClassification, setPendingClassification] = useState(false);
+  const [policy, setPolicy] = useState<DocumentPolicy | null>(null);
+  const [types, setTypes] = useState<TipoDoc[]>([]);
+  const [cases, setCases] = useState<CasoResumo[]>([]);
+  const [clients, setClients] = useState<ClienteResumo[]>([]);
+  const [drawerId, setDrawerId] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [menuId, setMenuId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const seq = useRef(0);
+
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploads, setUploads] = useState<PendingUpload[]>([]);
+  const [uploadType, setUploadType] = useState("");
+  const [uploadConf, setUploadConf] = useState("normal");
+  const [uploadCaseId, setUploadCaseId] = useState("");
+  const [uploadClientId, setUploadClientId] = useState("");
+  const [predecessor, setPredecessor] = useState<DocumentItem | null>(null);
+  const [uploadBusy, setUploadBusy] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
+
+  const [editDoc, setEditDoc] = useState<DocumentItem | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editType, setEditType] = useState("");
+  const [editConf, setEditConf] = useState("normal");
+  const [editBusy, setEditBusy] = useState(false);
+
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkCaseId, setLinkCaseId] = useState("");
+  const [batchBusy, setBatchBusy] = useState<"download" | "delete" | "link" | "conf" | null>(null);
+  const [batchConfOpen, setBatchConfOpen] = useState(false);
+  const [batchConf, setBatchConf] = useState("normal");
+
+  const docs = response?.data || [];
+  const total = response?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const selectedDocs = useMemo(
+    () => docs.filter((doc) => selected.has(doc.id)),
+    [docs, selected],
+  );
+
+  const load = async () => {
+    const requestId = ++seq.current;
+    setLoading(true);
+    setLoadError(false);
+    try {
+      let result: DocumentListResponse;
+      if (mode === "inbox") {
+        result = await listInbox({
+          page,
+          pageSize,
+          caseId: casoFiltro,
+          clientId: clientId || undefined,
+        });
+      } else {
+        result = await listDocuments({
+          page,
+          pageSize,
           search: search || undefined,
-          case_id: casoFiltro,
-          client_id: clienteFiltro || undefined,
-          tipo: tipoFiltro || undefined,
-          confidencialidade: confFiltro || undefined,
-          data_inicio: dataInicio || undefined,
-          data_fim: dataFim || undefined,
-          classificacao_pendente: soPendentes || undefined,
-          page_size: 50,
-        },
-      })
-      .then((r) => {
-        if (my !== seq.current) return;
-        setData(r.data);
-        setSel(new Set());
-      })
-      .catch(() => {
-        if (my !== seq.current) return;
-        setErro(true);
-        toast.error("Falha ao carregar documentos");
-      });
+          caseId: casoFiltro,
+          clientId: clientId || undefined,
+          tipo: typeFilter || undefined,
+          confidencialidade: confFilter || undefined,
+          dataInicio: mode === "recent" ? recentStartDate() : dateStart || undefined,
+          dataFim: dateEnd || undefined,
+          classificacaoPendente: pendingClassification || undefined,
+        });
+      }
+      if (requestId !== seq.current) return;
+      setResponse(result);
+      setSelected(new Set());
+    } catch {
+      if (requestId !== seq.current) return;
+      setLoadError(true);
+      setResponse(null);
+    } finally {
+      if (requestId === seq.current) setLoading(false);
+    }
   };
 
   useEffect(() => {
-    api
-      .get("/cases/", { params: { page_size: 200 } })
-      .then((r) => setCasos(asList(r.data)))
-      .catch(() => {});
-    api
-      .get("/clients/", { params: { page_size: 200 } })
-      .then((r) => setClientes(asList(r.data)))
-      .catch(() => {});
-    api
-      .get("/documents/tipos")
-      .then((r) => {
-        const master: TipoDoc[] = Array.isArray(r.data?.data)
-          ? r.data.data
-          : [];
-        const chaves = new Set(master.map((t) => t.tipo_key));
-        setTipos([
-          ...master,
-          ...TIPOS_LEGADOS.filter((k) => !chaves.has(k)).map((k) => ({
-            tipo_key: k,
-            nome: k.replace(/_/g, " "),
-          })),
-        ]);
-      })
-      .catch(() => {
-        setTipos(
-          TIPOS_LEGADOS.map((k) => ({
-            tipo_key: k,
-            nome: k.replace(/_/g, " "),
-          })),
-        );
-        toast.error("Falha ao carregar os tipos de documento");
-      });
+    void Promise.all([
+      getDocumentPolicy().then(setPolicy).catch(() => setPolicy(null)),
+      api
+        .get("/documents/tipos")
+        .then((res) => {
+          const master: TipoDoc[] = Array.isArray(res.data?.data) ? res.data.data : [];
+          const keys = new Set(master.map((item) => item.tipo_key));
+          setTypes([
+            ...master,
+            ...LEGACY_TYPES.filter((key) => !keys.has(key)).map((key) => ({
+              tipo_key: key,
+              nome: key.replaceAll("_", " "),
+            })),
+          ]);
+        })
+        .catch(() =>
+          setTypes(LEGACY_TYPES.map((key) => ({ tipo_key: key, nome: key.replaceAll("_", " ") }))),
+        ),
+      api
+        .get("/cases/", { params: { page_size: 100 } })
+        .then((res) => setCases(asList(res.data) as CasoResumo[]))
+        .catch(() => setCases([])),
+      api
+        .get("/clients/", { params: { page_size: 100 } })
+        .then((res) => setClients(asList(res.data) as ClienteResumo[]))
+        .catch(() => setClients([])),
+    ]);
   }, []);
 
   useEffect(() => {
-    const t = setTimeout(load, 350);
-    return () => clearTimeout(t);
-  }, [
-    search,
-    casoFiltro,
-    clienteFiltro,
-    tipoFiltro,
-    confFiltro,
-    dataInicio,
-    dataFim,
-    soPendentes,
-  ]);
+    setPage(1);
+  }, [mode, search, casoFiltro, clientId, typeFilter, confFilter, dateStart, dateEnd, pendingClassification]);
 
-  // ── Upload múltiplo ────────────────────────────────────────────────────────
-  const adicionarArquivos = (lista: FileList | File[] | null) => {
-    if (!lista) return;
-    const novos: PendenteUpload[] = [];
-    const ignorados: string[] = [];
-    Array.from(lista).forEach((f) => {
-      if (!EXTS_UPLOAD.includes(extDe(f.name))) {
-        ignorados.push(f.name);
-        return;
-      }
-      novos.push({ file: f, titulo: semExtensao(f.name) });
-    });
-    if (ignorados.length > 0) {
-      const formatos = EXTS_UPLOAD.map((e) =>
-        e.replace(".", "").toUpperCase(),
-      ).join(", ");
-      toast.error(
-        ignorados.length === 1
-          ? `O arquivo "${ignorados[0]}" não foi aceito. Formatos permitidos: ${formatos}.`
-          : `Os arquivos ${ignorados.map((n) => `"${n}"`).join(", ")} não foram aceitos. Formatos permitidos: ${formatos}.`,
-      );
-    }
-    if (novos.length > 0) setPendentes((p) => [...p, ...novos]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(), mode === "inbox" ? 0 : 300);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, page, search, casoFiltro, clientId, typeFilter, confFilter, dateStart, dateEnd, pendingClassification, refreshKey]);
+
+  const changed = () => {
+    setRefreshKey((value) => value + 1);
+    void load();
   };
 
-  const upload = async () => {
-    if (pendentes.length === 0) {
+  const resetUpload = () => {
+    setUploads([]);
+    setUploadType("");
+    setUploadConf("normal");
+    setUploadCaseId(casoFiltro || "");
+    setUploadClientId("");
+    setPredecessor(null);
+    setUploadProgress(null);
+  };
+
+  const openUpload = (previous?: DocumentItem) => {
+    resetUpload();
+    if (previous) {
+      setPredecessor(previous);
+      setUploadType(previous.tipo || "");
+      setUploadConf(previous.confidencialidade || "normal");
+      setUploadCaseId(previous.case_id || "");
+      setUploadClientId(previous.client_id || "");
+    } else if (casoFiltro) {
+      setUploadCaseId(casoFiltro);
+    }
+    setUploadOpen(true);
+  };
+
+  const addFiles = (files: FileList | null) => {
+    if (!files) return;
+    const allowed = new Set((policy?.extensions || []).map((item) => item.toLowerCase()));
+    const maxBytes = (policy?.max_upload_mb || 0) * 1024 * 1024;
+    const added: PendingUpload[] = [];
+    for (const file of Array.from(files)) {
+      const ext = extOf(file.name);
+      if (allowed.size > 0 && !allowed.has(ext)) {
+        toast.error(`Formato não permitido: ${file.name}`);
+        continue;
+      }
+      if (maxBytes > 0 && file.size > maxBytes) {
+        toast.error(`${file.name} excede ${policy?.max_upload_mb} MB`);
+        continue;
+      }
+      added.push({ file, titulo: withoutExt(file.name) });
+      if (predecessor) break;
+    }
+    setUploads((current) => (predecessor ? added.slice(0, 1) : [...current, ...added]));
+  };
+
+  const submitUpload = async () => {
+    if (uploads.length === 0) {
       toast.error("Selecione ao menos um arquivo");
       return;
     }
-    if (pendentes.some((p) => !p.titulo.trim())) {
-      toast.error("Todo arquivo precisa de um título");
+    if (uploads.some((item) => !item.titulo.trim())) {
+      toast.error("Todo documento precisa de um título");
       return;
     }
-    setEnviando(true);
-    const falhas: PendenteUpload[] = [];
-    const avisos: string[] = [];
-    let ok = 0;
-    for (let i = 0; i < pendentes.length; i++) {
-      setProgresso({ done: i, total: pendentes.length });
-      const p = pendentes[i];
-      const fd = new FormData();
-      fd.append("file", p.file);
-      fd.append("titulo", p.titulo.trim());
-      fd.append("confidencialidade", form.confidencialidade);
-      if (form.tipo) fd.append("tipo", form.tipo);
-      if (form.case_id) {
-        fd.append("case_id", form.case_id);
-        const caso = casos.find((c) => c.id === form.case_id);
-        if (caso?.client_id) fd.append("client_id", caso.client_id);
-      }
-      try {
-        const r = await api.post("/documents/upload", fd);
-        ok += 1;
-        if (r.data?.aviso) avisos.push(`${p.titulo}: ${r.data.aviso}`);
-      } catch (e: any) {
-        falhas.push({
-          ...p,
-          erro: e.response?.data?.detail || "Erro no upload",
-        });
-      }
-    }
-    setProgresso(null);
-    setEnviando(false);
-    if (ok > 0) load();
-    avisos.slice(0, 3).forEach((a) => toast.info(a));
-    if (falhas.length === 0) {
-      toast.success(
-        ok === 1 ? "1 documento enviado" : `${ok} documentos enviados`,
-      );
-      setPendentes([]);
-      setModal(false);
-      setForm({ confidencialidade: "normal" });
-    } else {
-      toast.error(
-        `${ok} enviado(s), ${falhas.length} falhou(aram) — revise os itens marcados e reenvie`,
-      );
-      setPendentes(falhas);
-    }
-  };
-
-  // ── Download ───────────────────────────────────────────────────────────────
-  const baixarBlob = async (d: any) => {
-    const r = await api.get(`/documents/${d.id}/download`, {
-      responseType: "blob",
-    });
-    const url = URL.createObjectURL(r.data);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = d.filename || d.titulo || "documento";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const baixar = async (d: any) => {
+    setUploadBusy(true);
+    const failed: PendingUpload[] = [];
+    let success = 0;
     try {
-      await baixarBlob(d);
-    } catch {
-      toast.error(`Falha ao baixar "${d.titulo}"`);
-    }
-  };
-
-  // ── Pré-visualização ───────────────────────────────────────────────────────
-  const abrirPreview = async (d: any) => {
-    const kind = EXTS_PREVIEW[extDe(d.filename || "")];
-    if (!kind) return;
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreview({ doc: d, kind });
-    setPreviewUrl(null);
-    setPreviewErro(null);
-    try {
-      const r = await api.get(`/documents/${d.id}/download`, {
-        responseType: "blob",
-      });
-      setPreviewUrl(URL.createObjectURL(r.data));
-    } catch {
-      setPreviewErro(
-        "Não foi possível carregar a pré-visualização. Tente baixar o arquivo.",
-      );
-    }
-  };
-
-  const fecharPreview = () => {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreview(null);
-    setPreviewUrl(null);
-    setPreviewErro(null);
-  };
-
-  // ── Seleção múltipla / ações em lote ──────────────────────────────────────
-  const docs: any[] = Array.isArray(data?.data) ? data.data : [];
-  const selDocs = docs.filter((d) => sel.has(d.id));
-  const allSel = docs.length > 0 && docs.every((d) => sel.has(d.id));
-
-  const toggleSel = (id: string) =>
-    setSel((prev) => {
-      const n = new Set(prev);
-      if (n.has(id)) n.delete(id);
-      else n.add(id);
-      return n;
-    });
-
-  const toggleSelAll = () =>
-    setSel(allSel ? new Set() : new Set(docs.map((d) => d.id)));
-
-  const baixarSelecionados = async () => {
-    if (selDocs.length === 0) return;
-    setLoteBusy("download");
-    let ok = 0;
-    const falhas: string[] = [];
-    for (const d of selDocs) {
-      try {
-        await baixarBlob(d);
-        ok += 1;
-      } catch {
-        falhas.push(d.titulo);
-      }
-    }
-    setLoteBusy(null);
-    if (falhas.length === 0) {
-      toast.success(`${ok} documento(s) baixado(s)`);
-    } else {
-      toast.error(
-        `${ok} baixado(s), ${falhas.length} falhou(aram): ${falhas
-          .slice(0, 3)
-          .join(", ")}${falhas.length > 3 ? "…" : ""}`,
-      );
-    }
-  };
-
-  const excluirSelecionados = async () => {
-    if (selDocs.length === 0) return;
-    if (
-      !window.confirm(`Excluir ${selDocs.length} documento(s) selecionado(s)?`)
-    )
-      return;
-    setLoteBusy("delete");
-    let ok = 0;
-    const falhas: string[] = [];
-    for (const d of selDocs) {
-      try {
-        await api.delete(`/documents/${d.id}`);
-        ok += 1;
-      } catch {
-        falhas.push(d.titulo);
-      }
-    }
-    setLoteBusy(null);
-    setSel(new Set());
-    load();
-    if (falhas.length === 0) {
-      toast.success(`${ok} documento(s) excluído(s)`);
-    } else {
-      toast.error(
-        `${ok} excluído(s), ${falhas.length} falhou(aram): ${falhas
-          .slice(0, 3)
-          .join(", ")}${falhas.length > 3 ? "…" : ""}`,
-      );
-    }
-  };
-
-  const excluir = async (d: any) => {
-    if (!window.confirm(`Excluir o documento "${d.titulo}"?`)) return;
-    try {
-      await api.delete(`/documents/${d.id}`);
-      toast.success("Documento excluído");
-      load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao excluir documento");
-    }
-  };
-
-  // ── Edição de metadados (PATCH nunca altera case_id) ──────────────────────
-  const patchErroMsg = (e: any) =>
-    e.response?.data?.detail || "Falha ao atualizar o documento";
-
-  const abrirEdicao = (d: any) => {
-    setEditDoc(d);
-    setEditForm({
-      titulo: d.titulo || "",
-      tipo: d.tipo || "",
-      confidencialidade: d.confidencialidade,
-    });
-  };
-
-  const aplicarPatchNaLista = (docId: string, r: any) =>
-    setData((prev: any) =>
-      prev
-        ? {
-            ...prev,
-            data: (Array.isArray(prev.data) ? prev.data : []).map((x: any) =>
-              x.id === docId
-                ? {
-                    ...x,
-                    titulo: r.titulo,
-                    tipo: r.tipo,
-                    confidencialidade: r.confidencialidade,
-                  }
-                : x,
-            ),
-          }
-        : prev,
-    );
-
-  const salvarEdicao = async () => {
-    if (!editDoc) return;
-    if (!String(editForm.titulo || "").trim()) {
-      toast.error("Título não pode ser vazio");
-      return;
-    }
-    const payload: Record<string, unknown> = {};
-    if (editForm.titulo.trim() !== editDoc.titulo)
-      payload.titulo = editForm.titulo.trim();
-    if ((editForm.tipo || null) !== (editDoc.tipo || null))
-      payload.tipo = editForm.tipo || null;
-    if (editForm.confidencialidade !== editDoc.confidencialidade)
-      payload.confidencialidade = editForm.confidencialidade;
-    if (Object.keys(payload).length === 0) {
-      toast.info("Nenhuma alteração para salvar");
-      setEditDoc(null);
-      return;
-    }
-    setSalvandoEdit(true);
-    try {
-      const r = await api.patch(`/documents/${editDoc.id}`, payload);
-      aplicarPatchNaLista(editDoc.id, r.data);
-      toast.success("Metadados atualizados");
-      setEditDoc(null);
-    } catch (e: any) {
-      toast.error(patchErroMsg(e));
-    } finally {
-      setSalvandoEdit(false);
-    }
-  };
-
-  const alterarConfidencialidadeLote = async () => {
-    if (selDocs.length === 0) return;
-    setLoteBusy("conf");
-    let ok = 0;
-    const falhas: string[] = [];
-    let ultimoErro = "";
-    for (const d of selDocs) {
-      try {
-        await api.patch(`/documents/${d.id}`, { confidencialidade: loteConf });
-        ok += 1;
-      } catch (e: any) {
-        falhas.push(d.titulo);
-        ultimoErro = patchErroMsg(e);
-      }
-    }
-    setLoteBusy(null);
-    setLoteConfModal(false);
-    load();
-    if (falhas.length === 0) {
-      toast.success(`${ok} documento(s) atualizado(s)`);
-    } else {
-      toast.error(
-        `${ok} atualizado(s), ${falhas.length} falhou(aram): ${falhas
-          .slice(0, 3)
-          .join(", ")}${falhas.length > 3 ? "…" : ""} — ${ultimoErro}`,
-      );
-    }
-  };
-
-  const vincularSelecionados = async () => {
-    if (!podeVincularDocumento || selDocs.length === 0 || !loteCaso) return;
-    setLoteBusy("vincular");
-    let ok = 0;
-    const falhas: string[] = [];
-    let ultimoErro = "";
-    for (const d of selDocs) {
-      try {
-        await api.post(`/cases/${loteCaso}/documentos/${d.id}/vincular`);
-        ok += 1;
-      } catch (e: any) {
-        falhas.push(d.titulo);
-        ultimoErro = e.response?.data?.detail || "Vínculo negado";
-      }
-    }
-    setLoteBusy(null);
-    setLoteCasoModal(false);
-    setLoteCaso("");
-    setSel(new Set());
-    load();
-    if (falhas.length === 0) {
-      toast.success(`${ok} documento(s) vinculado(s) ao caso`);
-    } else {
-      toast.error(
-        `${ok} vinculado(s), ${falhas.length} falhou(aram): ${falhas
-          .slice(0, 3)
-          .join(", ")}${falhas.length > 3 ? "…" : ""} — ${ultimoErro}`,
-      );
-    }
-  };
-
-  // ── Classificação IA (HITL) ────────────────────────────────────────────────
-  const classificar = async (doc: any) => {
-    setClassDoc(doc);
-    setClassResult(null);
-    setClassLoading(true);
-    try {
-      const r = await api.post<ClassResultado>(
-        `/documents/${doc.id}/classificar`,
-        null,
-        { params: { aplicar: false } },
-      );
-      setClassResult(r.data);
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao classificar documento");
-      setClassDoc(null);
-    } finally {
-      setClassLoading(false);
-    }
-  };
-
-  const aplicarTipo = async () => {
-    if (!classDoc) return;
-    setAplicando(true);
-    try {
-      const r = await api.post<ClassResultado>(
-        `/documents/${classDoc.id}/classificar`,
-        null,
-        { params: { aplicar: true } },
-      );
-      const novoTipo = r.data.tipo_atual;
-      setData((prev: any) =>
-        prev
-          ? {
-              ...prev,
-              data: (Array.isArray(prev.data) ? prev.data : []).map((d: any) =>
-                d.id === classDoc.id ? { ...d, tipo: novoTipo } : d,
-              ),
+      for (let index = 0; index < uploads.length; index += 1) {
+        const item = uploads[index];
+        setUploadProgress({ done: index, total: uploads.length });
+        const selectedCase = cases.find((entry) => String(entry.id) === uploadCaseId);
+        const inferredClient = uploadClientId || selectedCase?.client_id || undefined;
+        const request = {
+          file: item.file,
+          titulo: item.titulo,
+          tipo: uploadType || undefined,
+          confidencialidade: uploadConf,
+          caseId: uploadCaseId || undefined,
+          clientId: inferredClient || undefined,
+          predecessorId: predecessor?.id || undefined,
+        };
+        try {
+          await uploadDocument(request);
+          success += 1;
+        } catch (error) {
+          const duplicate = duplicateDetail(error);
+          if (duplicate) {
+            const proceed = window.confirm(
+              "Já existe um arquivo idêntico neste contexto. Deseja registrar outra cópia mesmo assim? A decisão ficará auditada.",
+            );
+            if (proceed) {
+              try {
+                await uploadDocument({ ...request, allowDuplicate: true });
+                success += 1;
+                continue;
+              } catch {
+                // cai no registro de falha abaixo
+              }
             }
-          : prev,
-      );
-      toast.success(`Tipo aplicado: ${novoTipo || "—"}`);
-      setClassDoc(null);
-      setClassResult(null);
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao aplicar o tipo");
+          }
+          failed.push({ ...item, erro: "Não foi possível enviar este documento" });
+        }
+      }
     } finally {
-      setAplicando(false);
+      setUploadBusy(false);
+      setUploadProgress(null);
+    }
+    if (success > 0) changed();
+    if (failed.length === 0) {
+      toast.success(success === 1 ? "Documento enviado" : `${success} documentos enviados`);
+      setUploadOpen(false);
+      resetUpload();
+    } else {
+      setUploads(failed);
+      toast.error(`${failed.length} documento(s) precisam ser reenviados`);
     }
   };
 
-  const fecharClass = () => {
-    setClassDoc(null);
-    setClassResult(null);
+  const download = async (doc: DocumentItem) => {
+    try {
+      const blob = await getDocumentBlob(doc.id);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = doc.filename || doc.titulo;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Falha ao baixar o documento");
+    }
   };
 
-  const confIcon = (c: string) =>
-    ["restrito", "confidencial", "segredo_justica"].includes(c) ? (
-      <Lock size={13} className="text-danger-500" />
-    ) : null;
+  const edit = (doc: DocumentItem) => {
+    setEditDoc(doc);
+    setEditTitle(doc.titulo || "");
+    setEditType(doc.tipo || "");
+    setEditConf(doc.confidencialidade || "normal");
+    setMenuId(null);
+  };
+
+  const saveEdit = async () => {
+    if (!editDoc || !editTitle.trim()) return;
+    setEditBusy(true);
+    try {
+      await updateDocumentMetadata(editDoc.id, {
+        titulo: editTitle.trim(),
+        tipo: editType || null,
+        confidencialidade: editConf,
+      });
+      toast.success("Documento atualizado");
+      setEditDoc(null);
+      changed();
+    } catch {
+      toast.error("Não foi possível atualizar o documento");
+    } finally {
+      setEditBusy(false);
+    }
+  };
+
+  const removeOne = async (doc: DocumentItem) => {
+    setMenuId(null);
+    if (!window.confirm(`Mover “${doc.titulo}” para a Lixeira? O arquivo físico será preservado.`)) return;
+    try {
+      await moveDocumentToTrash(doc.id);
+      toast.success("Documento movido para a Lixeira");
+      if (drawerId === doc.id) setDrawerId(null);
+      changed();
+    } catch {
+      toast.error("Não foi possível mover o documento para a Lixeira");
+    }
+  };
+
+  const batchDownload = async () => {
+    if (!selectedDocs.length) return;
+    setBatchBusy("download");
+    try {
+      for (const doc of selectedDocs) await download(doc);
+    } finally {
+      setBatchBusy(null);
+    }
+  };
+
+  const batchDelete = async () => {
+    if (!selectedDocs.length) return;
+    if (!window.confirm(`Mover ${selectedDocs.length} documento(s) para a Lixeira?`)) return;
+    setBatchBusy("delete");
+    let failures = 0;
+    for (const doc of selectedDocs) {
+      try {
+        await moveDocumentToTrash(doc.id);
+      } catch {
+        failures += 1;
+      }
+    }
+    setBatchBusy(null);
+    toast[failures ? "error" : "success"](
+      failures ? `${failures} documento(s) não puderam ser removidos` : "Documentos movidos para a Lixeira",
+    );
+    changed();
+  };
+
+  const batchLink = async () => {
+    if (!selectedDocs.length || !linkCaseId) return;
+    setBatchBusy("link");
+    let failures = 0;
+    for (const doc of selectedDocs) {
+      try {
+        await api.post(`/cases/${linkCaseId}/documentos/${doc.id}/vincular`);
+      } catch {
+        failures += 1;
+      }
+    }
+    setBatchBusy(null);
+    setLinkOpen(false);
+    toast[failures ? "error" : "success"](
+      failures ? `${failures} vínculo(s) não puderam ser concluídos` : "Documentos vinculados ao caso",
+    );
+    changed();
+  };
+
+  const batchSetConf = async () => {
+    if (!selectedDocs.length) return;
+    setBatchBusy("conf");
+    let failures = 0;
+    for (const doc of selectedDocs) {
+      try {
+        await updateDocumentMetadata(doc.id, { confidencialidade: batchConf });
+      } catch {
+        failures += 1;
+      }
+    }
+    setBatchBusy(null);
+    setBatchConfOpen(false);
+    toast[failures ? "error" : "success"](
+      failures ? `${failures} documento(s) não puderam ter o acesso alterado` : "Nível de acesso atualizado",
+    );
+    changed();
+  };
+
+  const toggleAll = (checked: boolean) =>
+    setSelected(checked ? new Set(docs.map((doc) => doc.id)) : new Set());
+
+  const toggleOne = (id: string, checked: boolean) =>
+    setSelected((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+
+  const activeFilters = [clientId, typeFilter, confFilter, dateStart, dateEnd, pendingClassification ? "1" : ""].filter(Boolean).length;
 
   return (
-    <div>
-      {/* SEM PageHeader aqui, de propósito. Este componente NÃO é rota: ele é
-          renderizado dentro de `GestaoDocumental`, que já monta o `PageHeader`
-          com o mesmo título "Documentos". Os dois juntos produziam DOIS <h1>
-          idênticos na mesma tela — medido em 22/08/2026 —, o que tira do leitor
-          de tela a âncora de qual é o título da página, além de repetir o
-          cabeçalho visualmente. Fica só a ação, que é desta aba. */}
-      <div className="mb-6 flex flex-wrap items-center justify-end gap-2">
-        <button
-          className="btn-gold"
-          onClick={() => {
-            if (casoFiltro && !form.case_id) {
-              setForm((f: any) => ({ ...f, case_id: casoFiltro }));
-            }
-            setModal(true);
-          }}
-        >
-          <Upload size={16} /> Enviar
-        </button>
+    <div className="mx-auto w-full max-w-[1500px] space-y-5 px-4 pb-10 pt-4 sm:px-6 lg:px-8">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
+            <FileText size={16} />
+            Gestão documental
+          </div>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">Documentos</h1>
+          <p className="mt-1 max-w-3xl text-sm text-slate-500">
+            Organize o acervo, trate pendências, envie novas versões e controle o uso dos documentos na inteligência jurídica.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" onClick={() => navigate("/lixeira")} icon={<Trash2 size={15} />}>
+            Lixeira
+          </Button>
+          <Button onClick={() => openUpload()} icon={<Upload size={15} />}>
+            Enviar documento
+          </Button>
+        </div>
       </div>
 
-      <DocumentosStats />
-
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="relative w-full max-w-md">
-          <Search
-            size={16}
-            className="absolute left-3 top-2.5 text-slate-400"
-          />
-          <input
-            className="input pl-9"
-            placeholder="Buscar documento..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        {clientes.length > 0 && (
-          <select
-            className="input w-auto max-w-[220px] text-sm"
-            value={clienteFiltro}
-            onChange={(e) => setClienteFiltro(e.target.value)}
-            title="Filtrar por cliente"
-          >
-            <option value="">Todos os clientes</option>
-            {clientes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nome || c.razao_social || "Cliente"}
-              </option>
-            ))}
-          </select>
-        )}
-        <select
-          className="input w-auto max-w-[200px] text-sm"
-          value={tipoFiltro}
-          onChange={(e) => setTipoFiltro(e.target.value)}
-          title="Filtrar por tipo"
-        >
-          <option value="">Todos os tipos</option>
-          {tipos.map((t) => (
-            <option key={t.tipo_key} value={t.tipo_key}>
-              {t.nome}
-            </option>
-          ))}
-        </select>
-        <select
-          className="input w-auto max-w-[220px] text-sm"
-          value={confFiltro}
-          onChange={(e) => setConfFiltro(e.target.value)}
-          title="Filtrar por confidencialidade"
-        >
-          <option value="">Qualquer confidencialidade</option>
-          {CONF_OPCOES.map((c) => (
-            <option key={c.k} value={c.k}>
-              {c.l}
-            </option>
-          ))}
-        </select>
-        <div
-          className="flex items-center gap-1 text-xs text-slate-500"
-          title="Filtrar por período de envio"
-        >
-          <input
-            type="date"
-            className="input w-auto py-1.5 text-sm"
-            value={dataInicio}
-            aria-label="Enviado a partir de"
-            onChange={(e) => setDataInicio(e.target.value)}
-          />
-          <span>até</span>
-          <input
-            type="date"
-            className="input w-auto py-1.5 text-sm"
-            value={dataFim}
-            aria-label="Enviado até"
-            onChange={(e) => setDataFim(e.target.value)}
-          />
-        </div>
-        <label className="flex cursor-pointer items-center gap-1.5 text-sm text-slate-600">
-          <input
-            type="checkbox"
-            checked={soPendentes}
-            onChange={(e) => setSoPendentes(e.target.checked)}
-          />
-          Só classificação pendente
-        </label>
-        {casoFiltro && (
-          <CaseFilterChip nome={casoFiltroNome} onRemove={removerFiltro} />
-        )}
-      </div>
-
-      {sel.size > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary-200 bg-primary-50/60 px-3 py-2 text-sm dark:border-primary-800 dark:bg-primary-900/20">
-          <span className="font-medium text-navy">
-            {sel.size} selecionado(s)
-          </span>
-          <button
-            className="btn-ghost px-2 py-1"
-            disabled={loteBusy !== null}
-            onClick={baixarSelecionados}
-          >
-            <Download size={14} />
-            {loteBusy === "download" ? "Baixando…" : "Baixar"}
-          </button>
-          <button
-            className="btn-ghost px-2 py-1"
-            disabled={loteBusy !== null}
-            onClick={() => {
-              setLoteConf("normal");
-              setLoteConfModal(true);
-            }}
-          >
-            <Lock size={14} />
-            {loteBusy === "conf" ? "Alterando…" : "Alterar confidencialidade"}
-          </button>
-          {podeVincularDocumento && (
-            <button
-              className="btn-ghost px-2 py-1"
-              disabled={loteBusy !== null}
-              onClick={() => {
-                setLoteCaso("");
-                setLoteCasoModal(true);
-              }}
-            >
-              <Link2 size={14} />
-              {loteBusy === "vincular" ? "Vinculando…" : "Vincular ao caso"}
-            </button>
-          )}
-          <button
-            className="btn-ghost px-2 py-1 text-danger-500"
-            disabled={loteBusy !== null}
-            onClick={excluirSelecionados}
-          >
-            <Trash2 size={14} />
-            {loteBusy === "delete" ? "Excluindo…" : "Excluir"}
-          </button>
-          <button
-            className="btn-ghost px-2 py-1"
-            disabled={loteBusy !== null}
-            onClick={() => setSel(new Set())}
-          >
-            <X size={14} /> Limpar seleção
-          </button>
-        </div>
+      {casoFiltro && (
+        <CaseFilterChip
+          casoId={casoFiltro}
+          nome={casoFiltroNome}
+          onRemove={removerFiltro}
+        />
       )}
 
-      {erro && !data ? (
-        <EmptyState
-          title="Falha ao carregar documentos"
-          message="Não foi possível carregar a lista. Verifique sua conexão e tente novamente."
-          action={
-            <Button variant="primary" onClick={load}>
-              Tentar novamente
-            </Button>
-          }
-        />
-      ) : !data ? (
-        <Spinner />
-      ) : data.data.length === 0 ? (
-        <Empty message="Nenhum documento" />
-      ) : (
-        <div className="card overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
-              <tr>
-                <th className="w-8 px-3 py-3">
+      <DocumentWorkflowStats refreshKey={refreshKey} />
+
+      <section className="overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/[0.08] dark:bg-slate-950">
+        <div className="border-b border-slate-100 px-4 pt-4 dark:border-white/[0.08] sm:px-5">
+          <div className="flex flex-wrap items-center gap-1">
+            {([
+              ["inbox", "Entrada", Inbox],
+              ["all", "Todos", FileText],
+              ["recent", "Recentes", FolderInput],
+            ] as const).map(([value, label, Icon]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setMode(value)}
+                className={`inline-flex items-center gap-2 rounded-t-lg border-b-2 px-3 py-2 text-sm font-semibold transition ${
+                  mode === value
+                    ? "border-primary-600 text-primary-700"
+                    : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                }`}
+              >
+                <Icon size={15} />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-3 p-4 sm:p-5">
+          {mode === "inbox" ? (
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Itens que precisam de ação</h2>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Documentos sem vínculo, sem classificação ou com processamento que exige revisão.
+                </p>
+              </div>
+              <select
+                value={clientId}
+                onChange={(event) => setClientId(event.target.value)}
+                className="input min-w-56"
+                aria-label="Filtrar caixa de entrada por cliente"
+              >
+                <option value="">Todos os clientes</option>
+                {clients.map((client) => (
+                  <option key={client.id} value={client.id}>
+                    {client.nome || client.razao_social || client.id}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+                <label className="relative flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                   <input
-                    type="checkbox"
-                    checked={allSel}
-                    onChange={toggleSelAll}
-                    aria-label="Selecionar todos"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Buscar por título ou conteúdo indexado"
+                    className="input w-full pl-9"
                   />
-                </th>
-                <th className="px-4 py-3">Título</th>
-                <th className="px-4 py-3">Arquivo</th>
-                <th className="px-4 py-3">Tipo</th>
-                <th className="px-4 py-3">Confidencialidade</th>
-                <th className="px-4 py-3">Tamanho</th>
-                <th className="px-4 py-3">Enviado em</th>
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {docs.map((d: any) => (
-                <tr key={d.id} className="hover:bg-slate-50">
-                  <td className="w-8 px-3 py-3">
+                </label>
+                <Button
+                  variant="secondary"
+                  onClick={() => setShowFilters((value) => !value)}
+                  icon={<Filter size={15} />}
+                >
+                  Filtros{activeFilters ? ` (${activeFilters})` : ""}
+                </Button>
+              </div>
+
+              {showFilters && (
+                <div className="grid gap-3 rounded-xl bg-slate-50 p-4 dark:bg-white/[0.04] sm:grid-cols-2 xl:grid-cols-5">
+                  <label className="space-y-1 text-xs font-medium text-slate-600">
+                    Cliente
+                    <select value={clientId} onChange={(event) => setClientId(event.target.value)} className="input w-full">
+                      <option value="">Todos</option>
+                      {clients.map((client) => (
+                        <option key={client.id} value={client.id}>
+                          {client.nome || client.razao_social || client.id}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-1 text-xs font-medium text-slate-600">
+                    Tipo
+                    <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="input w-full">
+                      <option value="">Todos</option>
+                      {types.map((item) => (
+                        <option key={item.tipo_key} value={item.tipo_key}>{item.nome}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-1 text-xs font-medium text-slate-600">
+                    Acesso
+                    <select value={confFilter} onChange={(event) => setConfFilter(event.target.value)} className="input w-full">
+                      <option value="">Todos</option>
+                      {(policy?.confidentiality || ["normal", "interno", "restrito", "confidencial", "segredo_justica"]).map((value) => (
+                        <option key={value} value={value}>{confLabel(value)}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-1 text-xs font-medium text-slate-600">
+                    De
+                    <input type="date" value={dateStart} onChange={(event) => setDateStart(event.target.value)} className="input w-full" disabled={mode === "recent"} />
+                  </label>
+                  <label className="space-y-1 text-xs font-medium text-slate-600">
+                    Até
+                    <input type="date" value={dateEnd} onChange={(event) => setDateEnd(event.target.value)} className="input w-full" />
+                  </label>
+                  <label className="flex items-center gap-2 text-xs font-medium text-slate-600 sm:col-span-2">
                     <input
                       type="checkbox"
-                      checked={sel.has(d.id)}
-                      onChange={() => toggleSel(d.id)}
-                      aria-label={`Selecionar ${d.titulo}`}
+                      checked={pendingClassification}
+                      onChange={(event) => setPendingClassification(event.target.checked)}
                     />
-                  </td>
-                  <td className="px-4 py-3 font-medium text-navy flex items-center gap-1.5">
-                    {confIcon(d.confidencialidade)} {d.titulo}
-                  </td>
-                  <td className="px-4 py-3 text-slate-500 text-xs">
-                    {d.filename}
-                  </td>
-                  <td className="px-4 py-3 text-xs">
-                    {d.tipo ? (
-                      <span className="capitalize">
-                        {String(d.tipo).replace(/_/g, " ")}
-                      </span>
-                    ) : (
-                      <span
-                        className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400"
-                        title="Documento sem tipo definido — use a classificação por IA (✦) ou defina manualmente."
-                      >
-                        Classificação pendente
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 capitalize text-xs">
-                    {d.confidencialidade.replace(/_/g, " ")}
-                  </td>
-                  <td className="px-4 py-3 text-slate-400 text-xs">
-                    {fmtKB(d.size_bytes)}
-                  </td>
-                  <td className="px-4 py-3 text-slate-400">
-                    {fmtDate(d.created_at)}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-1">
-                      {EXTS_PREVIEW[extDe(d.filename || "")] && (
-                        <button
-                          className="btn-ghost px-2 py-1"
-                          title="Pré-visualizar"
-                          onClick={() => abrirPreview(d)}
-                        >
-                          <Eye size={15} />
-                        </button>
-                      )}
-                      <button
-                        className="btn-ghost px-2 py-1"
-                        title="Editar metadados"
-                        onClick={() => abrirEdicao(d)}
-                      >
-                        <Pencil size={15} />
-                      </button>
-                      <button
-                        className="btn-ghost px-2 py-1"
-                        title="Classificar tipo (IA)"
-                        disabled={classLoading && classDoc?.id === d.id}
-                        onClick={() => classificar(d)}
-                      >
-                        <Sparkles size={15} />
-                      </button>
-                      <button
-                        className="btn-ghost px-2 py-1"
-                        title="Baixar"
-                        onClick={() => baixar(d)}
-                      >
-                        <Download size={15} />
-                      </button>
-                      <button
-                        className="btn-ghost px-2 py-1 text-danger-500"
-                        title="Excluir"
-                        onClick={() => excluir(d)}
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    Somente documentos com tipo pendente
+                  </label>
+                </div>
+              )}
+            </>
+          )}
+
+          {selectedDocs.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary-200 bg-primary-50/60 px-3 py-2 dark:border-primary-900/50 dark:bg-primary-950/20">
+              <span className="mr-1 text-xs font-semibold text-primary-800 dark:text-primary-200">
+                {selectedDocs.length} selecionado(s)
+              </span>
+              <Button size="sm" variant="secondary" disabled={batchBusy !== null} onClick={() => void batchDownload()} icon={<Download size={14} />}>
+                Baixar
+              </Button>
+              {canLink && (
+                <Button size="sm" variant="secondary" disabled={batchBusy !== null} onClick={() => setLinkOpen(true)} icon={<Link2 size={14} />}>
+                  Vincular ao caso
+                </Button>
+              )}
+              <Button size="sm" variant="secondary" disabled={batchBusy !== null} onClick={() => setBatchConfOpen(true)} icon={<ShieldCheck size={14} />}>
+                Alterar acesso
+              </Button>
+              <Button size="sm" variant="ghost" disabled={batchBusy !== null} onClick={() => void batchDelete()} icon={<Trash2 size={14} />}>
+                Lixeira
+              </Button>
+              <button type="button" onClick={() => setSelected(new Set())} className="ml-auto p-1 text-slate-400 hover:text-slate-700" aria-label="Limpar seleção">
+                <X size={16} />
+              </button>
+            </div>
+          )}
+
+          {loading ? (
+            <div className="grid min-h-64 place-items-center"><Spinner /></div>
+          ) : loadError ? (
+            <div className="rounded-xl border border-danger-200 bg-danger-50 p-6 text-center">
+              <p className="text-sm font-semibold text-danger-800">Não foi possível carregar os documentos.</p>
+              <Button className="mt-3" variant="secondary" onClick={() => void load()}>Tentar novamente</Button>
+            </div>
+          ) : docs.length === 0 ? (
+            <div className="grid min-h-64 place-items-center rounded-xl border border-dashed border-slate-200 p-8 text-center dark:border-white/[0.1]">
+              <div>
+                <FileText className="mx-auto text-slate-300" size={32} />
+                <p className="mt-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  {mode === "inbox" ? "Nenhuma pendência documental" : "Nenhum documento encontrado"}
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  {mode === "inbox" ? "Os itens que exigirem ação aparecerão aqui." : "Ajuste os filtros ou envie um novo documento."}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-visible rounded-xl border border-slate-200 dark:border-white/[0.08]">
+              <div className="overflow-x-auto overflow-y-visible">
+                <table className="w-full min-w-[940px] text-left text-sm">
+                  <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:bg-white/[0.04]">
+                    <tr>
+                      <th className="w-10 px-3 py-3">
+                        <input
+                          type="checkbox"
+                          checked={docs.length > 0 && selected.size === docs.length}
+                          onChange={(event) => toggleAll(event.target.checked)}
+                          aria-label="Selecionar página"
+                        />
+                      </th>
+                      <th className="px-3 py-3">Documento</th>
+                      <th className="px-3 py-3">Tipo</th>
+                      <th className="px-3 py-3">Acesso</th>
+                      <th className="px-3 py-3">Status</th>
+                      <th className="px-3 py-3">Versão</th>
+                      <th className="px-3 py-3">Data</th>
+                      <th className="w-12 px-3 py-3" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">
+                    {docs.map((doc) => (
+                      <tr key={doc.id} className="group hover:bg-slate-50/70 dark:hover:bg-white/[0.03]">
+                        <td className="px-3 py-3 align-top">
+                          <input
+                            type="checkbox"
+                            checked={selected.has(doc.id)}
+                            onChange={(event) => toggleOne(doc.id, event.target.checked)}
+                            aria-label={`Selecionar ${doc.titulo}`}
+                          />
+                        </td>
+                        <td className="max-w-[420px] px-3 py-3 align-top">
+                          <button type="button" onClick={() => setDrawerId(doc.id)} className="block max-w-full text-left">
+                            <span className="block truncate font-semibold text-slate-900 hover:text-primary-700 dark:text-white">{doc.titulo}</span>
+                            <span className="mt-0.5 block truncate text-xs text-slate-400">
+                              {doc.filename} · {fmtBytes(doc.size_bytes)}
+                            </span>
+                            {mode === "inbox" && (doc.attention_reasons || []).length > 0 && (
+                              <span className="mt-1 flex flex-wrap gap-1">
+                                {(doc.attention_reasons || []).slice(0, 2).map((reason) => (
+                                  <span key={reason} className="rounded bg-warn-50 px-1.5 py-0.5 text-[10px] font-medium text-warn-700">
+                                    {ATTENTION_LABEL[reason] || "Precisa de ação"}
+                                  </span>
+                                ))}
+                              </span>
+                            )}
+                          </button>
+                        </td>
+                        <td className="px-3 py-3 align-top capitalize text-slate-600 dark:text-slate-300">{doc.tipo?.replaceAll("_", " ") || "Não classificado"}</td>
+                        <td className="px-3 py-3 align-top text-slate-600 dark:text-slate-300">{confLabel(doc.confidencialidade)}</td>
+                        <td className="px-3 py-3 align-top"><DocumentStatusBadge document={doc} /></td>
+                        <td className="px-3 py-3 align-top text-slate-500">v{doc.versao || 1}</td>
+                        <td className="px-3 py-3 align-top text-slate-500">{fmtDate(doc.created_at)}</td>
+                        <td className="relative px-3 py-3 align-top">
+                          <button
+                            type="button"
+                            onClick={() => setMenuId((current) => (current === doc.id ? null : doc.id))}
+                            className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/[0.08]"
+                            aria-label={`Ações de ${doc.titulo}`}
+                          >
+                            <MoreHorizontal size={17} />
+                          </button>
+                          {menuId === doc.id && (
+                            <div className="absolute right-3 top-11 z-30 w-48 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-white/[0.1] dark:bg-slate-900">
+                              <button type="button" onClick={() => { setDrawerId(doc.id); setMenuId(null); }} className="menu-item w-full">Abrir detalhes</button>
+                              <button type="button" onClick={() => { void download(doc); setMenuId(null); }} className="menu-item w-full">Baixar</button>
+                              <button type="button" onClick={() => edit(doc)} className="menu-item w-full">Editar metadados</button>
+                              <button type="button" onClick={() => { openUpload(doc); setMenuId(null); }} className="menu-item w-full">Enviar nova versão</button>
+                              <button type="button" onClick={() => void removeOne(doc)} className="menu-item w-full text-danger-600">Mover para Lixeira</button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {!loading && !loadError && total > 0 && (
+            <div className="flex flex-col gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500 dark:border-white/[0.08] sm:flex-row sm:items-center sm:justify-between">
+              <span>
+                {total.toLocaleString("pt-BR")} documento(s) · página {Math.min(page, pageCount)} de {pageCount}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} icon={<ChevronLeft size={14} />}>
+                  Anterior
+                </Button>
+                <Button size="sm" variant="secondary" disabled={page >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} icon={<ChevronRight size={14} />}>
+                  Próxima
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </section>
+
+      <DocumentDrawer
+        documentId={drawerId}
+        onClose={() => setDrawerId(null)}
+        onNewVersion={(doc) => openUpload(doc)}
+        onChanged={changed}
+      />
 
       <Modal
-        open={modal}
-        onClose={() => {
-          if (!enviando) setModal(false);
-        }}
-        title="Enviar documentos"
+        open={uploadOpen}
+        onClose={() => !uploadBusy && setUploadOpen(false)}
+        title={predecessor ? `Nova versão — ${predecessor.titulo}` : "Enviar documento"}
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" disabled={uploadBusy} onClick={() => setUploadOpen(false)}>Cancelar</Button>
+            <Button disabled={uploadBusy || uploads.length === 0} onClick={() => void submitUpload()}>
+              {uploadBusy ? "Enviando…" : predecessor ? "Enviar nova versão" : uploads.length > 1 ? `Enviar ${uploads.length} documentos` : "Enviar documento"}
+            </Button>
+          </>
+        }
       >
         <div className="space-y-4">
-          <div>
-            <label className="label">
-              Arquivos * (pdf, docx, jpg, png, xlsx, xml — máx 50MB cada)
-            </label>
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => fileRef.current?.click()}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ")
-                  fileRef.current?.click();
-              }}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragOver(true);
-              }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragOver(false);
-                adicionarArquivos(e.dataTransfer.files);
-              }}
-              className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed px-4 py-6 text-center text-sm transition-colors ${
-                dragOver
-                  ? "border-primary-400 bg-primary-50/60 dark:bg-primary-900/20"
-                  : "border-slate-300 text-slate-500 hover:border-primary-300 dark:border-slate-600"
-              }`}
-            >
-              <Upload size={20} className="text-slate-400" />
-              <span>
-                Arraste arquivos aqui ou{" "}
-                <span className="font-medium text-primary-600">
-                  clique para selecionar
-                </span>
-              </span>
-              <span className="text-xs text-slate-400">
-                Vários arquivos de uma vez — um envio por arquivo
-              </span>
+          {predecessor && (
+            <div className="rounded-xl border border-info-200 bg-info-50 p-3 text-sm text-info-800">
+              Esta operação criará uma nova versão ligada explicitamente à versão v{predecessor.versao || 1}. A versão anterior será preservada no histórico.
             </div>
-            <input
-              ref={fileRef}
-              type="file"
-              multiple
-              className="hidden"
-              accept={EXTS_UPLOAD.join(",")}
-              onChange={(e) => {
-                adicionarArquivos(e.target.files);
-                e.target.value = "";
-              }}
-            />
-          </div>
+          )}
 
-          {pendentes.length > 0 && (
+          <label className="block rounded-xl border-2 border-dashed border-slate-200 p-5 text-center hover:border-primary-300">
+            <Upload className="mx-auto text-slate-400" size={24} />
+            <span className="mt-2 block text-sm font-semibold text-slate-700">Escolher {predecessor ? "arquivo" : "arquivos"}</span>
+            <span className="mt-1 block text-xs text-slate-400">
+              {(policy?.extensions || []).map((item) => item.replace(".", "").toUpperCase()).join(", ") || "Formatos definidos pelo servidor"}
+              {policy?.max_upload_mb ? ` · até ${policy.max_upload_mb} MB por arquivo` : ""}
+            </span>
+            <input
+              type="file"
+              multiple={!predecessor}
+              accept={(policy?.extensions || []).join(",") || undefined}
+              onChange={(event) => addFiles(event.target.files)}
+              className="hidden"
+            />
+          </label>
+
+          {uploads.length > 0 && (
             <div className="space-y-2">
-              <div className="text-xs uppercase text-slate-400">
-                {pendentes.length} arquivo(s) na fila — título editável
-              </div>
-              {pendentes.map((p, i) => (
-                <div
-                  key={`${p.file.name}-${i}`}
-                  className="rounded-lg border border-slate-200 p-2 dark:border-slate-700"
-                >
-                  <div className="flex items-center gap-2">
-                    <input
-                      className="input flex-1 py-1 text-sm"
-                      value={p.titulo}
-                      placeholder="Título do documento"
-                      onChange={(e) =>
-                        setPendentes((prev) =>
-                          prev.map((x, j) =>
-                            j === i ? { ...x, titulo: e.target.value } : x,
-                          ),
-                        )
-                      }
-                    />
-                    <span className="shrink-0 text-xs text-slate-400">
-                      {fmtKB(p.file.size)}
-                    </span>
-                    <button
-                      className="btn-ghost shrink-0 px-1.5 py-1"
-                      title="Remover da fila"
-                      disabled={enviando}
-                      onClick={() =>
-                        setPendentes((prev) => prev.filter((_, j) => j !== i))
-                      }
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                  <div className="mt-0.5 truncate text-xs text-slate-400">
-                    {p.file.name}
-                  </div>
-                  {p.erro && (
-                    <div className="mt-1 text-xs text-danger-500">
-                      Falhou: {p.erro}
-                    </div>
-                  )}
+              {uploads.map((item, index) => (
+                <div key={`${item.file.name}-${index}`} className="flex items-center gap-2 rounded-lg border border-slate-200 p-2">
+                  <FileText size={16} className="shrink-0 text-slate-400" />
+                  <input
+                    value={item.titulo}
+                    onChange={(event) =>
+                      setUploads((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, titulo: event.target.value } : entry))
+                    }
+                    className="input min-w-0 flex-1"
+                    aria-label={`Título de ${item.file.name}`}
+                  />
+                  <span className="hidden text-xs text-slate-400 sm:inline">{fmtBytes(item.file.size)}</span>
+                  <button type="button" onClick={() => setUploads((current) => current.filter((_, entryIndex) => entryIndex !== index))} className="p-1 text-slate-400 hover:text-danger-600" aria-label="Remover arquivo">
+                    <X size={15} />
+                  </button>
                 </div>
               ))}
             </div>
           )}
 
-          <div>
-            <label className="label">Vincular ao caso (recomendado)</label>
-            <select
-              className="input"
-              value={form.case_id || ""}
-              onChange={(e) =>
-                setForm({ ...form, case_id: e.target.value || undefined })
-              }
-            >
-              <option value="">— Sem vínculo —</option>
-              {casos.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {(c.numero_interno ? c.numero_interno + " — " : "") +
-                    (c.titulo || "Caso")}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-xs text-slate-400">
-              O vínculo criado no upload nasce no contexto do caso.
-              Movimentações posteriores usam o fluxo específico de vínculo e
-              nunca o PATCH de metadados.
-            </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-xs font-medium text-slate-600">
+              Tipo
+              <select value={uploadType} onChange={(event) => setUploadType(event.target.value)} className="input w-full">
+                <option value="">Classificar depois</option>
+                {types.map((item) => <option key={item.tipo_key} value={item.tipo_key}>{item.nome}</option>)}
+              </select>
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-600">
+              Nível de acesso
+              <select value={uploadConf} onChange={(event) => setUploadConf(event.target.value)} className="input w-full">
+                {(policy?.confidentiality || ["normal", "interno", "restrito", "confidencial", "segredo_justica"])
+                  .filter((value) => roleCanUseConf(role, value))
+                  .map((value) => <option key={value} value={value}>{confLabel(value)}</option>)}
+              </select>
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-600">
+              Caso
+              <select value={uploadCaseId} onChange={(event) => setUploadCaseId(event.target.value)} className="input w-full" disabled={Boolean(predecessor?.case_id)}>
+                <option value="">Sem caso por enquanto</option>
+                {cases.map((item) => <option key={item.id} value={item.id}>{item.titulo || item.id}</option>)}
+              </select>
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-600">
+              Cliente
+              <select value={uploadClientId} onChange={(event) => setUploadClientId(event.target.value)} className="input w-full" disabled={Boolean(predecessor?.client_id)}>
+                <option value="">Inferir pelo caso / não informado</option>
+                {clients.map((item) => <option key={item.id} value={item.id}>{item.nome || item.razao_social || item.id}</option>)}
+              </select>
+            </label>
           </div>
-          <div>
-            <label className="label">Confidencialidade</label>
-            <select
-              className="input"
-              value={form.confidencialidade}
-              onChange={(e) =>
-                setForm({ ...form, confidencialidade: e.target.value })
-              }
-            >
-              <option value="normal">Normal</option>
-              <option value="interno">Interno</option>
-              <option value="restrito">Restrito (cofre — sócios)</option>
-              <option value="confidencial">Confidencial (cofre)</option>
-              <option value="segredo_justica">
-                Segredo de justiça (cofre)
-              </option>
-            </select>
-          </div>
-          <button
-            className="btn-primary w-full justify-center"
-            disabled={enviando || pendentes.length === 0}
-            onClick={upload}
-          >
-            {enviando
-              ? progresso
-                ? `Enviando ${progresso.done + 1}/${progresso.total}…`
-                : "Enviando..."
-              : pendentes.length > 1
-                ? `Enviar ${pendentes.length} arquivos`
-                : "Enviar"}
-          </button>
+
+          {uploadProgress && (
+            <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Enviando {Math.min(uploadProgress.done + 1, uploadProgress.total)} de {uploadProgress.total}…
+            </div>
+          )}
         </div>
       </Modal>
 
-      {/* Edição de metadados — case_id não faz parte deste contrato. */}
       <Modal
-        open={!!editDoc}
-        onClose={() => {
-          if (!salvandoEdit) setEditDoc(null);
-        }}
+        open={Boolean(editDoc)}
+        onClose={() => !editBusy && setEditDoc(null)}
         title="Editar documento"
         footer={
           <>
-            <button
-              className="btn-ghost"
-              disabled={salvandoEdit}
-              onClick={() => setEditDoc(null)}
-            >
-              Cancelar
-            </button>
-            <button
-              className="btn-primary"
-              disabled={salvandoEdit}
-              onClick={salvarEdicao}
-            >
-              {salvandoEdit ? "Salvando..." : "Salvar"}
-            </button>
-          </>
-        }
-      >
-        {editDoc && (
-          <div className="space-y-4">
-            <div>
-              <label className="label">Título *</label>
-              <input
-                className="input"
-                value={editForm.titulo || ""}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, titulo: e.target.value })
-                }
-              />
-            </div>
-            <div>
-              <label className="label">Tipo</label>
-              <select
-                className="input"
-                value={editForm.tipo || ""}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, tipo: e.target.value })
-                }
-              >
-                <option value="">— Sem tipo (classificação pendente) —</option>
-                {tipos.map((t) => (
-                  <option key={t.tipo_key} value={t.tipo_key}>
-                    {t.nome}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">Confidencialidade</label>
-              <select
-                className="input"
-                value={editForm.confidencialidade || "normal"}
-                onChange={(e) =>
-                  setEditForm({
-                    ...editForm,
-                    confidencialidade: e.target.value,
-                  })
-                }
-              >
-                {CONF_OPCOES.map((c) => (
-                  <option key={c.k} value={c.k}>
-                    {c.l}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-1 text-xs text-slate-400">
-                Mover para restrito+ (cofre) exige perfil de sócio.
-              </p>
-            </div>
-            {editDoc.case_id && (
-              <p className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs text-slate-500">
-                Este documento já pertence a um caso. O vínculo não é editável
-                como metadado para preservar histórico e cadeia probatória.
-              </p>
-            )}
-          </div>
-        )}
-      </Modal>
-
-      {/* Lote: alterar confidencialidade */}
-      <Modal
-        open={loteConfModal}
-        onClose={() => {
-          if (loteBusy === null) setLoteConfModal(false);
-        }}
-        title={`Alterar confidencialidade — ${selDocs.length} documento(s)`}
-        footer={
-          <>
-            <button
-              className="btn-ghost"
-              disabled={loteBusy !== null}
-              onClick={() => setLoteConfModal(false)}
-            >
-              Cancelar
-            </button>
-            <button
-              className="btn-primary"
-              disabled={loteBusy !== null}
-              onClick={alterarConfidencialidadeLote}
-            >
-              {loteBusy === "conf" ? "Aplicando..." : "Aplicar a todos"}
-            </button>
+            <Button variant="secondary" disabled={editBusy} onClick={() => setEditDoc(null)}>Cancelar</Button>
+            <Button disabled={editBusy || !editTitle.trim()} onClick={() => void saveEdit()}>{editBusy ? "Salvando…" : "Salvar"}</Button>
           </>
         }
       >
         <div className="space-y-3">
-          <div>
-            <label className="label">Novo nível</label>
-            <select
-              className="input"
-              value={loteConf}
-              onChange={(e) => setLoteConf(e.target.value)}
-            >
-              {CONF_OPCOES.map((c) => (
-                <option key={c.k} value={c.k}>
-                  {c.l}
-                </option>
-              ))}
+          <label className="block space-y-1 text-xs font-medium text-slate-600">
+            Título
+            <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} className="input w-full" maxLength={255} />
+          </label>
+          <label className="block space-y-1 text-xs font-medium text-slate-600">
+            Tipo
+            <select value={editType} onChange={(event) => setEditType(event.target.value)} className="input w-full">
+              <option value="">Não classificado</option>
+              {types.map((item) => <option key={item.tipo_key} value={item.tipo_key}>{item.nome}</option>)}
             </select>
-          </div>
-          <p className="text-xs text-slate-400">
-            Aplicado item a item — mover para restrito+ (cofre) exige perfil de
-            sócio; falhas individuais aparecem no resumo.
-          </p>
+          </label>
+          <label className="block space-y-1 text-xs font-medium text-slate-600">
+            Nível de acesso
+            <select value={editConf} onChange={(event) => setEditConf(event.target.value)} className="input w-full">
+              {(policy?.confidentiality || ["normal", "interno", "restrito", "confidencial", "segredo_justica"])
+                .filter((value) => roleCanUseConf(role, value))
+                .map((value) => <option key={value} value={value}>{confLabel(value)}</option>)}
+            </select>
+          </label>
         </div>
       </Modal>
 
-      {/* Lote: vínculo usa a mesma operação de domínio da aba do caso. */}
-      {podeVincularDocumento && (
-        <Modal
-          open={loteCasoModal}
-          onClose={() => {
-            if (loteBusy === null) setLoteCasoModal(false);
-          }}
-          title={`Vincular ao caso — ${selDocs.length} documento(s)`}
-          footer={
-            <>
-              <button
-                className="btn-ghost"
-                disabled={loteBusy !== null}
-                onClick={() => setLoteCasoModal(false)}
-              >
-                Cancelar
-              </button>
-              <button
-                className="btn-primary"
-                disabled={loteBusy !== null || !loteCaso}
-                onClick={vincularSelecionados}
-              >
-                {loteBusy === "vincular" ? "Vinculando..." : "Vincular todos"}
-              </button>
-            </>
-          }
-        >
-          <div className="space-y-3">
-            <div>
-              <label className="label">Caso de destino</label>
-              <select
-                className="input"
-                value={loteCaso}
-                onChange={(e) => setLoteCaso(e.target.value)}
-              >
-                <option value="">Selecione...</option>
-                {casos.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {(c.numero_interno ? c.numero_interno + " — " : "") +
-                      (c.titulo || "Caso")}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <p className="text-xs text-slate-400">
-              Somente documentos ainda sem caso podem ser adotados por este
-              fluxo. Documento que já integra outro caso permanece no contexto
-              de origem; cada recusa aparece no resumo sem interromper os demais
-              itens.
-            </p>
-          </div>
-        </Modal>
-      )}
-
       <Modal
-        open={!!preview}
-        onClose={fecharPreview}
-        title={preview ? `Pré-visualização — ${preview.doc.titulo}` : ""}
+        open={linkOpen}
+        onClose={() => !batchBusy && setLinkOpen(false)}
+        title="Vincular documentos ao caso"
         footer={
-          preview ? (
-            <>
-              <button className="btn-ghost" onClick={fecharPreview}>
-                Fechar
-              </button>
-              <button
-                className="btn-primary"
-                onClick={() => baixar(preview.doc)}
-              >
-                <Download size={14} /> Baixar
-              </button>
-            </>
-          ) : undefined
+          <>
+            <Button variant="secondary" disabled={batchBusy !== null} onClick={() => setLinkOpen(false)}>Cancelar</Button>
+            <Button disabled={!linkCaseId || batchBusy !== null} onClick={() => void batchLink()}>{batchBusy === "link" ? "Vinculando…" : "Vincular"}</Button>
+          </>
         }
       >
-        {preview && (
-          <div className="min-h-[200px]">
-            {previewErro ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                {previewErro}
-              </div>
-            ) : !previewUrl ? (
-              <div className="py-8">
-                <Spinner />
-                <p className="mt-3 text-center text-xs text-slate-400">
-                  Carregando o arquivo…
-                </p>
-              </div>
-            ) : preview.kind === "pdf" ? (
-              <iframe
-                src={previewUrl}
-                title={preview.doc.titulo}
-                className="h-[70vh] w-full rounded-lg border border-slate-200 dark:border-slate-700"
-              />
-            ) : (
-              <img
-                src={previewUrl}
-                alt={preview.doc.titulo}
-                className="mx-auto max-h-[70vh] max-w-full rounded-lg object-contain"
-              />
-            )}
-          </div>
-        )}
+        <p className="mb-3 text-sm text-slate-500">O vínculo é validado pelo backend e respeita cliente, caso e permissões do usuário.</p>
+        <select value={linkCaseId} onChange={(event) => setLinkCaseId(event.target.value)} className="input w-full">
+          <option value="">Selecione o caso</option>
+          {cases.map((item) => <option key={item.id} value={item.id}>{item.titulo || item.id}</option>)}
+        </select>
       </Modal>
 
       <Modal
-        open={!!classDoc}
-        onClose={fecharClass}
-        title="Classificar tipo (IA)"
+        open={batchConfOpen}
+        onClose={() => !batchBusy && setBatchConfOpen(false)}
+        title="Alterar nível de acesso"
         footer={
-          classResult && classResult.disponivel && classResult.tipo_sugerido ? (
-            <>
-              <button className="btn-ghost" onClick={fecharClass}>
-                Cancelar
-              </button>
-              <button
-                className="btn-primary"
-                disabled={aplicando}
-                onClick={aplicarTipo}
-              >
-                {aplicando ? "Aplicando..." : "Aplicar tipo sugerido"}
-              </button>
-            </>
-          ) : (
-            <button className="btn-ghost" onClick={fecharClass}>
-              Fechar
-            </button>
-          )
+          <>
+            <Button variant="secondary" disabled={batchBusy !== null} onClick={() => setBatchConfOpen(false)}>Cancelar</Button>
+            <Button disabled={batchBusy !== null} onClick={() => void batchSetConf()}>{batchBusy === "conf" ? "Atualizando…" : "Aplicar"}</Button>
+          </>
         }
       >
-        {classDoc && (
-          <p className="mb-4 text-sm text-slate-500">
-            Documento:{" "}
-            <span className="font-medium text-navy">{classDoc.titulo}</span>
-          </p>
-        )}
-
-        {classLoading || !classResult ? (
-          <div className="py-8">
-            <Spinner />
-            <p className="mt-3 text-center text-xs text-slate-400">
-              Analisando o texto do documento…
-            </p>
-          </div>
-        ) : !classResult.disponivel || !classResult.tipo_sugerido ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-            Classificação por IA indisponível.
-            {classResult.justificativa && (
-              <span className="mt-1 block text-xs text-amber-700">
-                {classResult.justificativa}
-              </span>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="rounded-xl bg-slate-900/[0.04] p-4 dark:bg-white/[0.06]">
-              <div className="text-xs uppercase text-slate-400">
-                Tipo sugerido
-              </div>
-              <div className="mt-1 flex items-center gap-2">
-                <span className="text-lg font-semibold capitalize text-navy">
-                  {String(classResult.tipo_sugerido).replace(/_/g, " ")}
-                </span>
-                {classResult.confianca && (
-                  <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-600">
-                    {CONF_LABEL[classResult.confianca] ?? classResult.confianca}
-                  </span>
-                )}
-              </div>
-              {classResult.tipo_atual && (
-                <div className="mt-1 text-xs text-slate-400">
-                  Tipo atual:{" "}
-                  <span className="capitalize">
-                    {String(classResult.tipo_atual).replace(/_/g, " ")}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {classResult.justificativa && (
-              <div>
-                <div className="mb-1 text-xs uppercase text-slate-400">
-                  Justificativa
-                </div>
-                <p className="text-sm text-slate-600">
-                  {classResult.justificativa}
-                </p>
-              </div>
-            )}
-
-            {classResult.alternativas.length > 0 && (
-              <div>
-                <div className="mb-1 text-xs uppercase text-slate-400">
-                  Alternativas
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {classResult.alternativas.map((a) => (
-                    <span
-                      key={a.tipo_key}
-                      className="rounded-full bg-slate-900/[0.05] px-2.5 py-0.5 text-xs text-slate-600 dark:bg-white/[0.07] dark:text-slate-300"
-                      title={a.tipo_key}
-                    >
-                      {a.nome}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <p className="text-xs text-slate-400">
-              {classResult.aviso ||
-                "Sugestão gerada por IA — confirmação humana obrigatória."}
-            </p>
-          </div>
-        )}
+        <p className="mb-3 text-sm text-slate-500">A alteração será feita documento a documento e continuará sujeita às regras de cofre do backend.</p>
+        <select value={batchConf} onChange={(event) => setBatchConf(event.target.value)} className="input w-full">
+          {(policy?.confidentiality || ["normal", "interno", "restrito", "confidencial", "segredo_justica"])
+            .filter((value) => roleCanUseConf(role, value))
+            .map((value) => <option key={value} value={value}>{confLabel(value)}</option>)}
+        </select>
       </Modal>
     </div>
   );
