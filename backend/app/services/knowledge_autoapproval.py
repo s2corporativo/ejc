@@ -50,11 +50,13 @@ _CATEGORIA_JURIDICA_TOKENS = (
     "enunciado",
     "datajud",
     "juridic",
+    "doutrina",
 )
 _AUTORIDADES_JURIDICAS = {
     "oficial_normativa",
     "precedente_vinculante",
     "jurisprudencia_oficial",
+    "doutrinaria",
 }
 
 
