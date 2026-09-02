@@ -80,26 +80,37 @@ class DespesaUpdate(_DespesaCampos):
 
 
 def _normalizar_baixa(dados: dict, *, status_atual: Optional[str] = None) -> dict:
-    """Mantém a invariável financeira status=pago <-> pago_em preenchido.
+    """Mantém a invariável financeira ``status=pago`` ↔ ``pago_em``.
 
-    A baixa manual pode vir tanto do botão rápido quanto do formulário geral.
-    O backend é a fonte da verdade: ao entrar em ``pago`` sem data, registra hoje;
-    ao voltar para pendente/cancelado sem uma data explicitamente informada, limpa
-    ``pago_em`` para não deixar uma baixa histórica ativa em estado incompatível.
+    A data de caixa é histórica e não pode ser reescrita por uma edição comum.
+    Só sintetizamos ``date.today()`` quando há transição real para ``pago``.
+    Ao sair de ``pago`` limpamos a data se o chamador não informar outra coisa;
+    uma tentativa explícita de manter ``pago_em`` em estado não pago é rejeitada.
     """
     normalizados = dict(dados)
+    status_informado = "status" in normalizados
     status_novo = normalizados.get("status", status_atual)
+    pago_em_informado = "pago_em" in normalizados
 
     if status_novo == "pago":
-        if normalizados.get("pago_em") is None:
-            normalizados["pago_em"] = date.today()
-    elif "status" in normalizados and "pago_em" not in normalizados:
-        normalizados["pago_em"] = None
-    elif status_novo != "pago" and normalizados.get("pago_em") is not None:
-        raise HTTPException(
-            status_code=422,
-            detail="pago_em só pode ser informado quando o status da despesa for 'pago'",
-        )
+        if status_informado and status_atual != "pago":
+            # create(status=pago) ou transição pendente/cancelado -> pago.
+            if normalizados.get("pago_em") is None:
+                normalizados["pago_em"] = date.today()
+        elif status_atual == "pago" and pago_em_informado and normalizados.get("pago_em") is None:
+            raise HTTPException(
+                status_code=422,
+                detail="despesa paga deve manter uma data de pagamento válida",
+            )
+        # Edição de descrição/categoria/etc. em despesa já paga: não tocar pago_em.
+    else:
+        if pago_em_informado and normalizados.get("pago_em") is not None:
+            raise HTTPException(
+                status_code=422,
+                detail="pago_em só pode ser informado quando o status da despesa for 'pago'",
+            )
+        if status_informado and status_atual == "pago" and not pago_em_informado:
+            normalizados["pago_em"] = None
 
     return normalizados
 
