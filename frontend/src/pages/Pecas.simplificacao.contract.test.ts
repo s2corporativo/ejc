@@ -36,9 +36,11 @@ describe("Peças — contrato da interface operacional simplificada", () => {
     expect(fonte).toContain("Crítica da peça");
   });
 
-  it("mantém inteligência separada do texto da peça", () => {
+  it("mantém inteligência separada do texto e suporta edição controlada", () => {
+    expect(fonte).toContain("Workspace Jurídico");
     expect(fonte).toContain("Inteligência jurídica");
-    expect(fonte).toContain("Validação, fontes e crítica ficam concentradas aqui");
+    expect(fonte).toContain("Fontes, validação e crítica ficam separados do texto");
     expect(fonte).toContain('<Markdown source={view.conteudo}');
+    expect(fonte).toContain("Salvar nova versão");
   });
 });
