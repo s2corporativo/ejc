@@ -1,22 +1,23 @@
-"""Relatório mensal consolidado — endpoint GET /api/v1/relatorio/mensal?mes=YYYY-MM"""
+"""Relatório mensal consolidado — endpoint GET /api/v1/relatorio/mensal?mes=YYYY-MM.
+
+O financeiro usa `fee_payments` como fonte de caixa e saldo residual para
+contas a receber. `fees.valor` permanece o valor contratado/original.
+"""
+from datetime import date
+from typing import Optional
+
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
+
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.core.status_caso import STATUS_ABERTOS
 from app.models.user import User
 
-# "Ativos" é AGREGADO dos status abertos (migration 126) — nenhum status se
-# chama `ativo`. Interpolado porque a lista é constante do código, nunca
-# entrada de usuário.
 _ABERTOS_SQL = ",".join(f"'{s.value}'" for s in STATUS_ABERTOS)
-from typing import Optional
 
 router = APIRouter(prefix="/relatorio", tags=["Relatório"])
-
-# Least-privilege: relatório financeiro do escritório só p/ gestão/financeiro
-# (corrige _is_gestor definido-mas-nunca-usado, ampliando p/ incluir financeiro).
 _GESTOR_FIN = {"superadmin", "admin", "socio", "financeiro"}
 
 
@@ -26,81 +27,144 @@ def _is_gestor(u: User) -> bool:
 
 @router.get("/mensal")
 async def relatorio_mensal(
-    mes: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}$"),
+    mes: Optional[str] = Query(None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Retorna resumo financeiro + operacional do mês para relatório gerencial."""
+    """Resumo gerencial mensal com caixa real e saldos ainda a receber."""
     if cu.role.value not in _GESTOR_FIN:
         raise HTTPException(403, "Acesso restrito a gestão/financeiro")
-    from datetime import date
     if not mes:
         today = date.today()
         mes = f"{today.year}-{today.month:02d}"
 
     ano, m = mes.split("-")
     mes_str = f"{int(m):02d}/{ano}"
+    mes_ref = date.fromisoformat(f"{mes}-01")
 
-    # Honorários
-    hon = await db.execute(text("""
-        SELECT
-            COUNT(*) FILTER (WHERE status NOT IN ('cancelado','pago')) AS qtd_pendentes,
-            COUNT(*) FILTER (WHERE status = 'pago' AND date_trunc('month', updated_at) = date_trunc('month', CAST(:mes AS date))) AS qtd_pagos_mes,
-            COALESCE(SUM(valor) FILTER (WHERE status NOT IN ('cancelado','pago')), 0) AS total_pendente,
-            COALESCE(SUM(valor) FILTER (WHERE status = 'atrasado'), 0) AS total_atrasado,
-            COALESCE(SUM(valor) FILTER (
-                WHERE status = 'pago' AND date_trunc('month', updated_at) = date_trunc('month', CAST(:mes AS date))
-            ), 0) AS recebido_mes
-        FROM fees WHERE deleted_at IS NULL
-    """), {"mes": date.fromisoformat(f"{mes}-01")})
+    hon = await db.execute(
+        text(
+            """
+            WITH pagos AS (
+                SELECT fee_id, COALESCE(SUM(valor), 0) AS total_pago
+                FROM fee_payments
+                GROUP BY fee_id
+            ), saldos AS (
+                SELECT
+                    f.id,
+                    CAST(f.status AS text) AS status,
+                    GREATEST(COALESCE(f.valor, 0) - COALESCE(p.total_pago, 0), 0) AS saldo
+                FROM fees f
+                LEFT JOIN pagos p ON p.fee_id = f.id
+                WHERE f.deleted_at IS NULL
+            ), recebimentos_mes AS (
+                SELECT fp.fee_id, fp.valor
+                FROM fee_payments fp
+                JOIN fees f ON f.id = fp.fee_id
+                WHERE f.deleted_at IS NULL
+                  AND date_trunc('month', fp.data_pagamento)
+                      = date_trunc('month', CAST(:mes AS date))
+            )
+            SELECT
+                COUNT(*) FILTER (
+                    WHERE status IN ('pendente','atrasado') AND saldo > 0
+                ) AS qtd_pendentes,
+                (SELECT COUNT(DISTINCT fee_id) FROM recebimentos_mes) AS qtd_recebidos_mes,
+                COALESCE(SUM(saldo) FILTER (
+                    WHERE status IN ('pendente','atrasado')
+                ), 0) AS total_pendente,
+                COALESCE(SUM(saldo) FILTER (WHERE status='atrasado'), 0) AS total_atrasado,
+                (SELECT COALESCE(SUM(valor), 0) FROM recebimentos_mes) AS recebido_mes
+            FROM saldos
+            """
+        ),
+        {"mes": mes_ref},
+    )
     hon_data = dict(hon.mappings().first() or {})
 
-    # Despesas
-    desp = await db.execute(text("""
-        SELECT
-            COUNT(*) AS qtd_total,
-            COUNT(*) FILTER (WHERE status = 'pago') AS qtd_pagas,
-            COALESCE(SUM(valor) FILTER (WHERE status = 'pago'), 0) AS total_pago,
-            COALESCE(SUM(valor) FILTER (WHERE status != 'pago'), 0) AS total_pendente,
-            COALESCE(SUM(valor), 0) AS total_geral
-        FROM office_expenses WHERE deleted_at IS NULL
-          AND competencia = :mes
-    """), {"mes": mes})
+    desp = await db.execute(
+        text(
+            """
+            SELECT
+                COUNT(*) FILTER (WHERE status != 'cancelado') AS qtd_total,
+                COUNT(*) FILTER (WHERE status = 'pago') AS qtd_pagas,
+                COALESCE(SUM(valor) FILTER (WHERE status = 'pago'), 0) AS total_pago,
+                COALESCE(SUM(valor) FILTER (WHERE status = 'pendente'), 0) AS total_pendente,
+                COALESCE(SUM(valor) FILTER (WHERE status != 'cancelado'), 0) AS total_geral
+            FROM office_expenses
+            WHERE deleted_at IS NULL AND competencia = :mes
+            """
+        ),
+        {"mes": mes},
+    )
     desp_data = dict(desp.mappings().first() or {})
 
-    # Casos
-    casos = await db.execute(text(f"""
-        SELECT
-            COUNT(*) AS total,
-            COUNT(*) FILTER (WHERE status IN ({_ABERTOS_SQL})) AS ativos,
-            COUNT(*) FILTER (WHERE status = 'encerrado' AND date_trunc('month', updated_at) = date_trunc('month', CAST(:mes AS date))) AS encerrados_mes,
-            COUNT(*) FILTER (WHERE date_trunc('month', created_at) = date_trunc('month', CAST(:mes AS date))) AS novos_mes
-        FROM cases WHERE deleted_at IS NULL
-    """), {"mes": date.fromisoformat(f"{mes}-01")})
+    casos = await db.execute(
+        text(
+            f"""
+            SELECT
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE status IN ({_ABERTOS_SQL})) AS ativos,
+                COUNT(*) FILTER (
+                    WHERE status = 'encerrado'
+                      AND date_trunc('month', updated_at)
+                          = date_trunc('month', CAST(:mes AS date))
+                ) AS encerrados_mes,
+                COUNT(*) FILTER (
+                    WHERE date_trunc('month', created_at)
+                          = date_trunc('month', CAST(:mes AS date))
+                ) AS novos_mes
+            FROM cases WHERE deleted_at IS NULL
+            """
+        ),
+        {"mes": mes_ref},
+    )
     casos_data = dict(casos.mappings().first() or {})
 
-    # Prazos vencidos sem conclusão
-    prazos = await db.execute(text("""
-        SELECT COUNT(*) AS vencidos_abertos
-        FROM deadlines WHERE deleted_at IS NULL
-          AND status NOT IN ('concluido','cancelado')
-          AND data_prazo < CURRENT_DATE
-    """))
+    prazos = await db.execute(
+        text(
+            """
+            SELECT COUNT(*) AS vencidos_abertos
+            FROM deadlines
+            WHERE deleted_at IS NULL
+              AND status NOT IN ('concluido','cancelado')
+              AND data_prazo < CURRENT_DATE
+            """
+        )
+    )
     prazos_data = dict(prazos.mappings().first() or {})
 
-    # Honorários por tipo
-    por_tipo = await db.execute(text("""
-        SELECT tipo, COUNT(*) AS qtd, COALESCE(SUM(valor), 0) AS total
-        FROM fees WHERE deleted_at IS NULL AND status NOT IN ('cancelado')
-        GROUP BY tipo ORDER BY total DESC
-    """))
+    por_tipo = await db.execute(
+        text(
+            """
+            SELECT CAST(f.tipo AS text) AS tipo,
+                   COUNT(DISTINCT fp.fee_id) AS qtd,
+                   COALESCE(SUM(fp.valor), 0) AS total
+            FROM fee_payments fp
+            JOIN fees f ON f.id = fp.fee_id
+            WHERE f.deleted_at IS NULL
+              AND date_trunc('month', fp.data_pagamento)
+                  = date_trunc('month', CAST(:mes AS date))
+            GROUP BY CAST(f.tipo AS text)
+            ORDER BY total DESC
+            """
+        ),
+        {"mes": mes_ref},
+    )
 
-    # Despesas por categoria
-    por_cat = await db.execute(text("""
-        SELECT categoria, COALESCE(SUM(valor), 0) AS total
-        FROM office_expenses WHERE deleted_at IS NULL AND competencia = :mes
-        GROUP BY categoria ORDER BY total DESC
-    """), {"mes": mes})
+    por_cat = await db.execute(
+        text(
+            """
+            SELECT categoria, COALESCE(SUM(valor), 0) AS total
+            FROM office_expenses
+            WHERE deleted_at IS NULL
+              AND status != 'cancelado'
+              AND competencia = :mes
+            GROUP BY categoria ORDER BY total DESC
+            """
+        ),
+        {"mes": mes},
+    )
 
     recebido = float(hon_data.get("recebido_mes") or 0)
     despesas_pagas = float(desp_data.get("total_pago") or 0)
@@ -110,12 +174,15 @@ async def relatorio_mensal(
         "mes": mes,
         "mes_label": mes_str,
         "gerado_em": date.today().isoformat(),
+        "natureza": "gerencial_nao_contabil",
         "financeiro": {
             "recebido_mes": recebido,
             "pendente": float(hon_data.get("total_pendente") or 0),
             "atrasado": float(hon_data.get("total_atrasado") or 0),
             "qtd_pendentes": int(hon_data.get("qtd_pendentes") or 0),
-            "qtd_pagos_mes": int(hon_data.get("qtd_pagos_mes") or 0),
+            "qtd_recebidos_mes": int(hon_data.get("qtd_recebidos_mes") or 0),
+            # alias temporário para consumidores legados do shape anterior
+            "qtd_pagos_mes": int(hon_data.get("qtd_recebidos_mes") or 0),
             "despesas_pagas": despesas_pagas,
             "despesas_pendentes": float(desp_data.get("total_pendente") or 0),
             "resultado_mes": resultado,
@@ -138,4 +205,8 @@ async def relatorio_mensal(
             {"categoria": r["categoria"], "total": float(r["total"])}
             for r in por_cat.mappings().all()
         ],
+        "aviso": (
+            "Relatório gerencial do EJC. Caixa de honorários deriva de pagamentos "
+            "registrados; não substitui escrituração ou validação contábil/fiscal."
+        ),
     }
