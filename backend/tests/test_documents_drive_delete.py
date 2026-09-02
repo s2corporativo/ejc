@@ -128,6 +128,7 @@ def test_delete_drive_soft_delete_preserva_objeto_remoto(monkeypatch):
     assert logs[0].dados_depois == {
         "storage": "drive",
         "storage_preservado": True,
+        "rag_desativado": True,
     }
 
 
