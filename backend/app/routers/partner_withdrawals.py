@@ -15,8 +15,11 @@ from app.models.user import User
 
 router = APIRouter(prefix="/partner-withdrawals", tags=["partner-withdrawals"])
 
-# Saque é ato societário, não uma despesa administrativa comum.
-PRIVILEGED = {"superadmin", "socio"}
+# Gestão precisa enxergar a fila compartilhada para que um segundo responsável
+# aprove/rejeite. Apenas sócio (ou superadmin agindo administrativamente) pode
+# originar retirada; admin pode gerir, mas não cria saque em nome próprio.
+_GESTAO = {"superadmin", "admin", "socio"}
+_SOLICITANTES = {"superadmin", "socio"}
 _Q2 = Decimal("0.01")
 
 
@@ -28,9 +31,14 @@ def _role(user: User) -> str:
     return getattr(user.role, "value", str(user.role))
 
 
-def _require_partner(user: User) -> None:
-    if _role(user) not in PRIVILEGED:
-        raise HTTPException(403, "Acesso restrito a sócios")
+def _require_gestao(user: User) -> None:
+    if _role(user) not in _GESTAO:
+        raise HTTPException(403, "Acesso restrito à gestão societária")
+
+
+def _require_solicitante(user: User) -> None:
+    if _role(user) not in _SOLICITANTES:
+        raise HTTPException(403, "Apenas sócios podem solicitar retirada")
 
 
 class WithdrawalCreate(BaseModel):
@@ -60,15 +68,10 @@ async def list_withdrawals(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _require_partner(current_user)
+    _require_gestao(current_user)
     q = "SELECT * FROM partner_withdrawals WHERE deleted_at IS NULL"
     params = {}
-    # Só superadmin pode consultar a carteira de outro sócio. O próprio sócio
-    # vê exclusivamente os seus saques, mesmo que tente forçar partner_id.
-    if _role(current_user) != "superadmin":
-        q += " AND partner_id=:pid"
-        params["pid"] = str(current_user.id)
-    elif partner_id:
+    if partner_id:
         q += " AND partner_id=:pid"
         params["pid"] = partner_id
     if status:
@@ -95,7 +98,7 @@ async def create_withdrawal(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _require_partner(current_user)
+    _require_solicitante(current_user)
     partner_id = body.partner_id or str(current_user.id)
     if partner_id != str(current_user.id) and _role(current_user) != "superadmin":
         raise HTTPException(403, "Não é permitido solicitar saque para outro sócio")
@@ -152,7 +155,7 @@ async def approve_withdrawal(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _require_partner(current_user)
+    _require_gestao(current_user)
     row = await _buscar(db, withdrawal_id)
     if not row:
         raise HTTPException(404, "Withdrawal not found")
@@ -191,7 +194,7 @@ async def reject_withdrawal(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _require_partner(current_user)
+    _require_gestao(current_user)
     row = await _buscar(db, withdrawal_id)
     if not row:
         raise HTTPException(404, "Withdrawal not found")
@@ -230,7 +233,7 @@ async def pay_withdrawal(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _require_partner(current_user)
+    _require_gestao(current_user)
     row = await _buscar(db, withdrawal_id)
     if not row:
         raise HTTPException(404, "Withdrawal not found")
@@ -269,7 +272,7 @@ async def delete_withdrawal(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _require_partner(current_user)
+    _require_gestao(current_user)
     row = await _buscar(db, withdrawal_id)
     if not row:
         raise HTTPException(404, "Withdrawal not found")
@@ -278,7 +281,8 @@ async def delete_withdrawal(
             409,
             "Retirada aprovada ou paga não pode ser excluída; preserve o histórico financeiro",
         )
-    if str(row["partner_id"]) != str(current_user.id) and _role(current_user) != "superadmin":
+    role = _role(current_user)
+    if str(row["partner_id"]) != str(current_user.id) and role not in {"superadmin", "admin"}:
         raise HTTPException(403, "Não é permitido excluir solicitação de outro sócio")
 
     await db.execute(
@@ -288,7 +292,7 @@ async def delete_withdrawal(
     await criar_audit_log(
         db,
         current_user.id,
-        _role(current_user),
+        role,
         "DELETE",
         "partner_withdrawals",
         withdrawal_id,
