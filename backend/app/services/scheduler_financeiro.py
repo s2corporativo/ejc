@@ -7,7 +7,7 @@ uma refatoração ampla do scheduler central durante a auditoria do Financeiro.
 Objetivos:
 - Morning Brief usa saldo residual (FeePayment), não valor contratado bruto;
 - honorário só vira atrasado se ainda houver obrigação aberta;
-- transição automática pendente -> atrasado deixa trilha de auditoria;
+- transição automática pendente -> atrasado deixa trilha de auditoria atômica;
 - nenhuma PII financeira adicional é registrada em log/auditoria.
 """
 from __future__ import annotations
@@ -153,6 +153,12 @@ async def _morning_brief_financeiro() -> None:
             f"Honor. vencidos: {hon_qtd} (saldo R$ {hon_valor:,.2f})"
             f"{percentual_txt} | IBAMA <=5d: {amb_criticas}"
         )
+        percentual_html = (
+            f"<li><b>Honorários percentuais sem base monetária:</b> "
+            f"{percentuais_sem_base}</li>"
+            if percentuais_sem_base
+            else ""
+        )
         msg_html = (
             f"<h3>EJC — Morning Brief {hoje.strftime('%d/%m/%Y')}</h3>"
             f"<ul>"
@@ -160,13 +166,8 @@ async def _morning_brief_financeiro() -> None:
             f"<li><b>Prazos 7 dias:</b> {prazos_7d}</li>"
             f"<li><b>Honorários vencidos:</b> {hon_qtd} "
             f"(saldo R$ {hon_valor:,.2f})</li>"
-            + (
-                f"<li><b>Honorários percentuais sem base monetária:</b> "
-                f"{percentuais_sem_base}</li>"
-                if percentuais_sem_base
-                else ""
-            )
-            + f"<li><b>Defesas IBAMA ≤5 dias:</b> {amb_criticas}</li>"
+            f"{percentual_html}"
+            f"<li><b>Defesas IBAMA ≤5 dias:</b> {amb_criticas}</li>"
             f"</ul><p><a href='https://ejc.depaulateixeira.adv.br'>Acessar EJC</a></p>"
         )
 
@@ -202,7 +203,7 @@ async def _morning_brief_financeiro() -> None:
 
 async def _marcar_honorarios_atrasados() -> None:
     """Transição automática auditada de honorários ainda efetivamente abertos."""
-    from app.modules.auditoria.middleware import registrar_acao
+    from app.models.audit_log import criar_audit_log
 
     try:
         async with AsyncSessionLocal() as db:
@@ -252,17 +253,21 @@ async def _marcar_honorarios_atrasados() -> None:
                     if not (result.rowcount or 0):
                         await db.rollback()
                         continue
-                    await db.commit()
-                    await registrar_acao(
+                    await criar_audit_log(
                         db,
-                        None,
-                        "status_atrasado_automatico",
-                        "fees",
-                        row.id,
-                        "Honorário marcado automaticamente como atrasado após vencimento; saldo ainda aberto.",
+                        user_id=None,
+                        user_role="system",
+                        acao="status_atrasado_automatico",
+                        entidade="fees",
+                        registro_id=row.id,
+                        detalhes=(
+                            "Honorário marcado automaticamente como atrasado após "
+                            "vencimento; saldo ainda aberto."
+                        ),
                         dados_antes={"status": "pendente"},
                         dados_depois={"status": "atrasado"},
                     )
+                    await db.commit()
                     alterados += 1
                 except Exception as exc:
                     await db.rollback()
