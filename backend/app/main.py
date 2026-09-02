@@ -74,6 +74,7 @@ from app.routers import documento_ia
 from app.routers import raio_x
 from app.routers import legal_chat
 from app.routers import documents
+from app.routers import documentos_workflow
 from app.routers import dossie_cliente
 from app.routers import dossie_estrategico
 from app.routers import environmental
@@ -317,7 +318,6 @@ app.add_middleware(APIVersionCompatibilityMiddleware)
 # mesma task do endpoint → ContextVar propaga com segurança).
 from app.core.request_context import ClientIPMiddleware
 app.add_middleware(ClientIPMiddleware)
-
 # Compressão GZip (>500 bytes): reduz payload JSON em 70-85%. Fica entre
 # CORS (externo) e Auth (interno) — não altera a lógica de autorização.
 app.add_middleware(GZipMiddleware, minimum_size=500)
@@ -376,6 +376,7 @@ app.include_router(documento_ia.router, prefix=API)
 app.include_router(raio_x.router, prefix=API)
 app.include_router(legal_chat.router, prefix=API)
 app.include_router(documents.router, prefix=API)
+app.include_router(documentos_workflow.router, prefix=API)
 app.include_router(dossie_cliente.router, prefix=API)
 app.include_router(dossie_estrategico.router, prefix=API)
 app.include_router(environmental.router, prefix=API)
