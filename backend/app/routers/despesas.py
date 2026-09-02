@@ -79,6 +79,31 @@ class DespesaUpdate(_DespesaCampos):
     pass
 
 
+def _normalizar_baixa(dados: dict, *, status_atual: Optional[str] = None) -> dict:
+    """Mantém a invariável financeira status=pago <-> pago_em preenchido.
+
+    A baixa manual pode vir tanto do botão rápido quanto do formulário geral.
+    O backend é a fonte da verdade: ao entrar em ``pago`` sem data, registra hoje;
+    ao voltar para pendente/cancelado sem uma data explicitamente informada, limpa
+    ``pago_em`` para não deixar uma baixa histórica ativa em estado incompatível.
+    """
+    normalizados = dict(dados)
+    status_novo = normalizados.get("status", status_atual)
+
+    if status_novo == "pago":
+        if normalizados.get("pago_em") is None:
+            normalizados["pago_em"] = date.today()
+    elif "status" in normalizados and "pago_em" not in normalizados:
+        normalizados["pago_em"] = None
+    elif status_novo != "pago" and normalizados.get("pago_em") is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="pago_em só pode ser informado quando o status da despesa for 'pago'",
+        )
+
+    return normalizados
+
+
 @router.get("/resumo")
 async def get_resumo(
     competencia: Optional[str] = Query(None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
@@ -250,7 +275,7 @@ async def create_despesa(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    dados = body.model_dump()
+    dados = _normalizar_baixa(body.model_dump())
     result = await db.execute(
         text(
             """
@@ -309,6 +334,7 @@ async def update_despesa(
     updates = body.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(status_code=422, detail="Nenhum campo informado para atualizar")
+    updates = _normalizar_baixa(updates, status_atual=antes["status"])
 
     set_clause = ", ".join(f"{k}=:{k}" for k in updates)
     result = await db.execute(
