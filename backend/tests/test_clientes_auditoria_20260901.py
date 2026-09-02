@@ -92,20 +92,27 @@ def test_gate_advogado_permite_advogado():
     requer_advogado(advogado)
 
 
-def test_ia_cliente_usa_orquestrador_institucional_e_rotulo_correto():
+def test_ia_cliente_usa_orquestrador_sem_rag_forcado_e_hitl_canonico():
     from app.routers.clients import ia_analise_cliente
 
     fonte = inspect.getsource(ia_analise_cliente)
     assert "orchestrator.run" in fonte
     assert "ai_gateway.processar_demanda" not in fonte
+    assert 'task_type="resumo"' in fonte
+    assert 'usar_rag=False' in fonte
+    assert '"requer_revisao"' in fonte
+    assert '"status_hitl"' in fonte
+    assert '"aviso_hitl"' in fonte
     assert "Total de casos não excluídos" in fonte
     assert "Casos ativos no cadastro" not in fonte
 
 
-def test_anonimizacao_preserva_justificativa_sanitizada_na_auditoria():
+def test_anonimizacao_audita_codigo_controlado_sem_texto_livre():
     from app.services.client_anonimizacao import anonimizar_cliente
 
     fonte = inspect.getsource(anonimizar_cliente)
-    assert "sanitizar_pii" in fonte
-    assert '"justificativa_sanitizada"' in fonte
+    assert "sanitizar_pii" not in fonte
+    assert '"codigo_justificativa"' in fonte
+    assert "OVERRIDE_REPRESENTACAO_ATIVA" in fonte
     assert "Justificativa obrigatória" in fonte
+    assert "justificativa_sanitizada" not in fonte
