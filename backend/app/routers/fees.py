@@ -22,10 +22,9 @@ from app.models.fee import Fee, FeePayment, FeeStatus
 from app.models.user import User
 from app.schemas.common import MsgResponse
 from app.schemas.fee import FeeCreate, FeePaymentCreate, FeeResponse, FeeUpdate
+from app.services.document_access_policy import exigir_documento_compativel_com_caso
 
 _FINANCEIRO_TOTAL = {"superadmin", "admin", "socio", "financeiro"}
-
-# Competência AAAA-MM (mês 01–12).
 _RE_COMPETENCIA = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
 
@@ -75,6 +74,12 @@ async def _total_pago_fee(db: AsyncSession, fee_id: str) -> Decimal:
         )
     ).scalar()
     return Decimal(str(total or 0))
+
+
+async def _fee_visivel(db: AsyncSession, fee_id: str, user: User) -> Optional[Fee]:
+    q = select(Fee).where(Fee.id == fee_id, Fee.deleted_at.is_(None))
+    q = _filtro_fees_lista(q, user)
+    return (await db.execute(q)).scalar_one_or_none()
 
 
 router = APIRouter(prefix="/fees", tags=["Honorários"])
@@ -133,14 +138,7 @@ async def resumo(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """KPIs de cobrança e caixa baseados nos lançamentos reais de pagamento.
-
-    `pendente`/`atrasado` representam SALDO, não o valor original do fee. Já
-    `recebido_mes` soma `fee_payments` na data em que o caixa efetivamente entrou.
-    Assim um honorário de R$ 1.000 com R$ 600 pagos aparece como R$ 400 a receber,
-    e a parcela de R$ 600 é reconhecida no mês do pagamento, mesmo antes da
-    quitação integral.
-    """
+    """KPIs de cobrança e caixa baseados nos lançamentos reais de pagamento."""
     hoje = date.today()
 
     pagamentos_por_fee = (
@@ -304,6 +302,51 @@ async def atualizar(
     return fee
 
 
+@router.get("/{fee_id}/pagamentos")
+async def listar_pagamentos(
+    fee_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Subledger imutável de recebimentos de um honorário."""
+    fee = await _fee_visivel(db, fee_id, cu)
+    if not fee:
+        raise HTTPException(status_code=404, detail="Honorário não encontrado")
+
+    pagamentos = (
+        await db.execute(
+            select(FeePayment)
+            .where(FeePayment.fee_id == fee_id)
+            .order_by(FeePayment.data_pagamento.desc(), FeePayment.created_at.desc())
+        )
+    ).scalars().all()
+    total_pago = sum((Decimal(str(p.valor or 0)) for p in pagamentos), Decimal("0"))
+    saldo = None
+    if fee.valor is not None:
+        saldo = max(Decimal(str(fee.valor)) - total_pago, Decimal("0"))
+
+    return {
+        "fee_id": fee_id,
+        "valor_contratado": float(fee.valor) if fee.valor is not None else None,
+        "percentual_exito": (
+            float(fee.percentual_exito) if fee.percentual_exito is not None else None
+        ),
+        "total_pago": float(total_pago),
+        "saldo": float(saldo) if saldo is not None else None,
+        "pagamentos": [
+            {
+                "id": p.id,
+                "valor": float(p.valor),
+                "data_pagamento": p.data_pagamento.isoformat(),
+                "forma": p.forma,
+                "comprovante_doc_id": p.comprovante_doc_id,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+            }
+            for p in pagamentos
+        ],
+    }
+
+
 @router.post("/{fee_id}/pagamentos", status_code=201)
 async def registrar_pagamento(
     fee_id: str,
@@ -323,6 +366,29 @@ async def registrar_pagamento(
         raise HTTPException(status_code=409, detail="Honorário cancelado não aceita pagamento")
     if fee.status == FeeStatus.pago:
         raise HTTPException(status_code=409, detail="Honorário já está quitado")
+
+    if payload.comprovante_doc_id:
+        if not fee.case_id:
+            raise HTTPException(
+                status_code=422,
+                detail="comprovante documental só pode ser vinculado a honorário associado a um caso",
+            )
+        caso = (
+            await db.execute(
+                select(Case).where(
+                    Case.id == fee.case_id,
+                    Case.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+        if not caso:
+            raise HTTPException(status_code=409, detail="Caso do honorário não está disponível")
+        await exigir_documento_compativel_com_caso(
+            db,
+            cu,
+            document_id=payload.comprovante_doc_id,
+            case=caso,
+        )
 
     total_antes = await _total_pago_fee(db, fee_id)
     if fee.valor is not None:
@@ -344,6 +410,7 @@ async def registrar_pagamento(
         valor=payload.valor,
         data_pagamento=payload.data_pagamento,
         forma=payload.forma,
+        comprovante_doc_id=payload.comprovante_doc_id,
     )
     db.add(payment)
     await db.flush()
@@ -370,6 +437,8 @@ async def registrar_pagamento(
         ),
         dados_depois={
             "payment_id": payment.id,
+            "forma": payment.forma,
+            "comprovante_vinculado": bool(payment.comprovante_doc_id),
             "quitado": quitado,
             "quitacao_indeterminada": quitacao_indeterminada,
         },
