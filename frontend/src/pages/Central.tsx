@@ -1,13 +1,12 @@
-// Central unificada: fusão de CentralAtividades (/atividades) e
-// CentralRelacionamento (/central-relacionamento, agora redirect) em uma
-// única tela com abas. A aba é controlada por ?tab= para deep links; o
-// parâmetro ?view= continua sendo lido pela aba de atividades (compatível
-// com os redirects /agenda e /kanban).
+// Central unificada: fusão de atividades e relacionamento em uma única tela.
+// A aba é controlada por ?tab= para deep links. A experiência operacional de
+// atividades é montada pela CentralAtividadesSimplificada; a implementação
+// anterior permanece no repositório como rollback, sem mudar contratos de API.
 import { useSearchParams } from "react-router";
 import { CalendarClock, Users } from "lucide-react";
 import { useAuth } from "../stores/auth";
 import { ROLES } from "../config/moduleRegistry";
-import CentralAtividades from "./CentralAtividades";
+import CentralAtividadesSimplificada from "./CentralAtividadesSimplificada";
 import CentralRelacionamento from "./CentralRelacionamento";
 
 export type CentralTab = "atividades" | "relacionamento";
@@ -17,7 +16,7 @@ export function isCentralTab(value: string | null): value is CentralTab {
 }
 
 const TABS: { key: CentralTab; label: string; icon: typeof Users }[] = [
-  { key: "atividades", label: "Agenda, Prazos e Tarefas", icon: CalendarClock },
+  { key: "atividades", label: "Atividades", icon: CalendarClock },
   { key: "relacionamento", label: "Atendimentos de Clientes", icon: Users },
 ];
 
@@ -77,7 +76,7 @@ export default function Central() {
       {tab === "relacionamento" ? (
         <CentralRelacionamento />
       ) : (
-        <CentralAtividades />
+        <CentralAtividadesSimplificada />
       )}
     </div>
   );
