@@ -18,7 +18,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 APP_DIR = BACKEND_DIR / "app"
-HEAD_REVISION = "155_indices_listagem_espinha"
+HEAD_REVISION = "156_prazos_auditaveis_regime"
 
 RAW_SQL_TABLES_ESPERADAS = {
     "agenda_eventos", "areas", "case_ambiental", "case_etiquetas",
@@ -32,14 +32,7 @@ RAW_SQL_TABLES_ESPERADAS = {
 VIEWS_ESPERADAS = {"vw_atividades"}
 FALSOS_POSITIVOS_SQL = {
     "alembic_version", "pg_extension", "pg_stat_activity",
-    # CTE recursiva do versionamento documental (``WITH RECURSIVE cadeia``),
-    # não é tabela real — introduzida no GED (#1134).
     "cadeia",
-    # Views de catálogo do information_schema (não tabelas da aplicação) —
-    # introspecção dinâmica de FK/UNIQUE em app/services/saneamento/fusao.py
-    # (Issue #1319, fusão real de casos duplicados): o schema muda com o
-    # tempo, então a lista de tabelas com FK para cases.id é calculada em
-    # runtime via estas views, nunca hardcoded.
     "table_constraints", "key_column_usage", "constraint_column_usage",
 }
 _RUIDO_SQL = {
@@ -75,8 +68,6 @@ _RE_CREATE_VIEW = re.compile(
     r'CREATE\s+(?:OR\s+REPLACE\s+)?(?:MATERIALIZED\s+)?VIEW\s+'
     r'(?:IF\s+NOT\s+EXISTS\s+)?"?([a-zA-Z_]\w*)"?', re.I
 )
-# Exige separador de cláusula depois da tabela. Assim `EXTRACT(YEAR FROM
-# created_at)` e `EXTRACT(... FROM d.data_prazo)` não viram tabelas fictícias.
 _RE_REF_FROM = re.compile(
     r'\b(?:FROM|JOIN)\s+(?:"?[a-z_][a-z0-9_]*"?\.)?'
     r'"?([a-z_][a-z0-9_]*)"?(?=\s|,|;|$)', re.I
@@ -382,11 +373,6 @@ def test_colunas_de_insert_raw_existem_na_cadeia():
     assert not faltas, f"Colunas de INSERT raw-SQL sem migration: {faltas}"
 
 
-# O guard precisa cobrir as DUAS variáveis que o teste consome. Só
-# `RUN_DB_TESTS` deixava `os.environ["SCHEMA_CHECK_DATABASE_URL"]` estourar
-# KeyError: o teste FALHAVA por configuração ausente em vez de pular, e um
-# erro de ambiente ficava indistinguível de uma quebra real de schema no log.
-# No CI (ci.yml define ambas) o teste segue rodando exatamente como antes.
 @pytest.mark.skipif(
     not (os.getenv("RUN_DB_TESTS") and os.getenv("SCHEMA_CHECK_DATABASE_URL")),
     reason="requer PostgreSQL (RUN_DB_TESTS=1 e SCHEMA_CHECK_DATABASE_URL)",

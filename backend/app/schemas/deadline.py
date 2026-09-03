@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, field_validator
 
@@ -15,17 +15,13 @@ class DeadlineCreate(BaseModel):
     prioridade: str = "media"
     data_prazo: Optional[date] = None
     data_intimacao: Optional[date] = None
+    data_publicacao: Optional[date] = None
+    termo_inicial: Optional[date] = None
     dias_prazo: Optional[int] = None
-    dias_uteis: bool = True                  # compatibilidade com clientes legados
+    dias_uteis: bool = True
     dobro: bool = False
     tribunal: Optional[str] = None
-    # Novo contrato explícito para prazo PROCESSUAL. Clientes legados que não
-    # enviam o campo permanecem compatíveis quando dias_uteis=true (cível), mas
-    # o frontend novo sempre envia o regime escolhido. Processo penal só é
-    # calculado quando `regime_calculo="penal"`.
     regime_calculo: Optional[RegimeCalculo] = None
-    # CPP art. 798-A: somente marcar quando o operador tiver identificado uma
-    # exceção legal à suspensão do recesso. Nunca inferida por IA/palavra-chave.
     excecao_recesso_penal: bool = False
     base_legal: Optional[str] = None
     descricao: Optional[str] = None
@@ -36,6 +32,7 @@ class DeadlineCreate(BaseModel):
     @classmethod
     def _tipo_valido(cls, v: str) -> str:
         from app.models.deadline import DeadlineTipo
+
         validos = {m.value for m in DeadlineTipo}
         if v not in validos:
             raise ValueError(f"tipo inválido: use um de {sorted(validos)}")
@@ -45,6 +42,7 @@ class DeadlineCreate(BaseModel):
     @classmethod
     def _prioridade_valida(cls, v: str) -> str:
         from app.models.deadline import DeadlinePrioridade
+
         validos = {m.value for m in DeadlinePrioridade}
         if v not in validos:
             raise ValueError(f"prioridade inválida: use uma de {sorted(validos)}")
@@ -56,6 +54,10 @@ class DeadlineUpdate(BaseModel):
     status: Optional[str] = None
     prioridade: Optional[str] = None
     data_prazo: Optional[date] = None
+    data_publicacao: Optional[date] = None
+    termo_inicial: Optional[date] = None
+    regime_calculo: Optional[RegimeCalculo] = None
+    base_legal: Optional[str] = None
     responsavel_id: Optional[str] = None
     observacoes: Optional[str] = None
 
@@ -65,6 +67,7 @@ class DeadlineUpdate(BaseModel):
         if v is None or str(v).strip() == "":
             return v
         from app.models.deadline import DeadlineStatus
+
         validos = {m.value for m in DeadlineStatus}
         if v not in validos:
             raise ValueError(f"status inválido: use um de {sorted(validos)}")
@@ -76,6 +79,7 @@ class DeadlineUpdate(BaseModel):
         if v is None or str(v).strip() == "":
             return v
         from app.models.deadline import DeadlinePrioridade
+
         validos = {m.value for m in DeadlinePrioridade}
         if v not in validos:
             raise ValueError(f"prioridade inválida: use uma de {sorted(validos)}")
@@ -90,6 +94,13 @@ class DeadlineResponse(BaseModel):
     status: str
     data_prazo: date
     data_intimacao: Optional[date] = None
+    data_publicacao: Optional[date] = None
+    termo_inicial: Optional[date] = None
+    regime_calculo: Optional[str] = None
+    calculo_metadata: Optional[dict[str, Any]] = None
+    calculado_por: Optional[str] = None
+    conferido_por: Optional[str] = None
+    conferido_em: Optional[datetime] = None
     base_legal: Optional[str] = None
     case_id: Optional[str] = None
     responsavel_id: Optional[str] = None
@@ -108,7 +119,7 @@ class DeadlineResponse(BaseModel):
 class CalcularPrazoRequest(BaseModel):
     data_inicio: date
     dias: int
-    dias_uteis: bool = True                  # compatibilidade com contrato legado
+    dias_uteis: bool = True
     dobro: bool = False
     tribunal: Optional[str] = None
     tipo: str = "processual"
@@ -119,6 +130,7 @@ class CalcularPrazoRequest(BaseModel):
     @classmethod
     def _tipo_valido(cls, v: str) -> str:
         from app.models.deadline import DeadlineTipo
+
         validos = {m.value for m in DeadlineTipo}
         if v not in validos:
             raise ValueError(f"tipo inválido: use um de {sorted(validos)}")

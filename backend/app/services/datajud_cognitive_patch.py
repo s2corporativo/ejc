@@ -1,5 +1,10 @@
 # ── app/services/datajud_cognitive_patch.py ───────────────────────────────────
-"""Integra DataJud ao RAG nativo preservando os fluxos existentes."""
+"""Integra DataJud ao RAG nativo preservando os fluxos existentes.
+
+O patch também é a barreira fail-safe para prazo: movimento do DataJud é
+metadado processual, não prova suficiente de publicação/termo inicial. Até a
+reconstrução auditável da #968, nenhuma rota DataJud materializa Deadline.
+"""
 from __future__ import annotations
 
 import logging
@@ -18,7 +23,10 @@ def _numero_limpo(valor: str | None) -> str:
     return re.sub(r"\D", "", valor or "")
 
 
-async def _fonte_exata(numero_cnj: str, tribunal_alias: str | None = None) -> dict | None:
+async def _fonte_exata(
+    numero_cnj: str,
+    tribunal_alias: str | None = None,
+) -> dict | None:
     from app.services import datajud_service as dj
 
     settings = get_settings()
@@ -55,11 +63,13 @@ async def _consultar_movimentos_exatos(
     for movimento in source.get("movimentos") or []:
         descricao = (movimento.get("nome") or "").strip()
         if descricao:
-            movimentos.append({
-                "data": movimento.get("dataHora") or "",
-                "codigo": movimento.get("codigo"),
-                "descricao": descricao,
-            })
+            movimentos.append(
+                {
+                    "data": movimento.get("dataHora") or "",
+                    "codigo": movimento.get("codigo"),
+                    "descricao": descricao,
+                }
+            )
     movimentos.sort(key=lambda item: item["data"])
     return movimentos
 
@@ -87,6 +97,7 @@ async def _consultar_processo_exato(numero_cnj: str) -> dict | None:
 async def _alimentar_sem_quebrar(db, case) -> None:
     try:
         from app.services.datajud_cognitive_feed import alimentar_caso
+
         async with db.begin_nested():
             await alimentar_caso(db, case, embutir_vetores=False)
     except Exception as exc:
@@ -95,6 +106,34 @@ async def _alimentar_sem_quebrar(db, case) -> None:
             getattr(case, "numero_interno", None) or getattr(case, "id", "?"),
             f"{type(exc).__name__}: {str(exc)[:180]}",
         )
+
+
+async def _nao_criar_deadline_datajud(*_args, **_kwargs) -> None:
+    """Defesa em profundidade: DataJud nunca cria Deadline automaticamente."""
+    logger.warning(
+        "Criação automática de Deadline por DataJud bloqueada: "
+        "exige revisão humana de publicação, termo inicial, regime e calendário."
+    )
+
+
+async def _sincronizar_prazos_bloqueado(
+    caso_id: str,
+    numero_cnj: str,
+    db,
+) -> dict:
+    """Contrato compatível enquanto #968 não materializa cálculo auditável.
+
+    Não consulta novamente a fonte e não grava prazo. `caso_id`, `numero_cnj` e
+    `db` são mantidos para compatibilidade das rotas e background tasks.
+    """
+    del caso_id, numero_cnj, db
+    return {
+        "criados": 0,
+        "encontrados": 0,
+        "erro": None,
+        "bloqueado": True,
+        "motivo": "revisao_humana_obrigatoria_ate_motor_auditavel",
+    }
 
 
 def _instalar_wrappers() -> None:
@@ -120,23 +159,31 @@ def _instalar_wrappers() -> None:
         sugestoes = original_detectar(descricao, data_evento)
         if sugestoes:
             logger.info(
-                "DataJud detectou possível providência, mas nenhum prazo foi criado automaticamente."
+                "DataJud detectou possível providência, mas nenhum prazo foi "
+                "criado automaticamente."
             )
         return []
+
+    # O bloqueio é instalado ANTES dos wrappers externos. Mesmo que uma função
+    # legada tente chegar ao antigo criador, o último passo de escrita é no-op.
+    dj._criar_deadline_automatico = _nao_criar_deadline_datajud
+    dj._detectar_prazos_criticos = detectar_sem_criar_prazo
+    dj.sincronizar_prazos_datajud = _sincronizar_prazos_bloqueado
 
     dj.consultar_movimentos = _consultar_movimentos_exatos
     dj.consultar_processo = _consultar_processo_exato
     dj.upsert_movimentos_no_caso = upsert_com_feed
     dj.sincronizar_caso = sync_com_feed
-    dj._detectar_prazos_criticos = detectar_sem_criar_prazo
 
     try:
         from app.routers import cases as cases_router
+
         cases_router._dj_sync = sync_com_feed
     except Exception as exc:
         logger.warning("Não foi possível atualizar cases._dj_sync: %s", exc)
     try:
         from app.services import datajud_sync_service as sync_clientes
+
         sync_clientes.consultar_movimentos = _consultar_movimentos_exatos
         sync_clientes.upsert_movimentos_no_caso = upsert_com_feed
     except Exception as exc:
@@ -147,16 +194,16 @@ def _instalar_wrappers() -> None:
 
 def _registrar_categoria_restrita() -> None:
     from app.services import ai_service
+
     if "andamento_processual" not in ai_service._RESTRICTED_CATS:
         ai_service._RESTRICTED_CATS.append("andamento_processual")
-
-
 
 
 async def _job_feed_datajud() -> None:
     try:
         from app.core.database import AsyncSessionLocal
         from app.services.datajud_cognitive_feed import alimentar_lote
+
         async with AsyncSessionLocal() as db:
             resultado = await alimentar_lote(db, limite=100)
         logger.info("Job feed DataJud: %s", resultado)
@@ -178,13 +225,40 @@ def _registrar_job() -> None:
 
 
 def instalar() -> None:
+    """Instala primeiro a barreira jurídica; recursos cognitivos degradam isolados.
+
+    `_instalar_wrappers` é crítico: qualquer falha nele propaga e, por consequência,
+    impede o boot via `event_subscribers`. Categoria de IA e agendamento do feed são
+    auxiliares; falha neles não pode remover a barreira já instalada nem derrubar o
+    backend inteiro.
+    """
     global _INSTALADO
     if _INSTALADO:
         return
+
+    # CRÍTICO: se falhar, a exceção deve chegar ao boot.
     _instalar_wrappers()
-    _registrar_categoria_restrita()
+
+    try:
+        _registrar_categoria_restrita()
+    except Exception as exc:
+        logger.error(
+            "Barreira DataJud ativa, mas categoria cognitiva não foi registrada: %s",
+            exc,
+            exc_info=True,
+        )
+
     # Onda 3 §4.1: o router datajud_intelligence é registrado explicitamente
-    # em app/main.py (antes era anexado a andamentos.router por patch daqui).
-    _registrar_job()
+    # em app/main.py. O job de alimentação é melhoria cognitiva, não controle de
+    # segurança; por isso degrada sem reativar qualquer criador de Deadline.
+    try:
+        _registrar_job()
+    except Exception as exc:
+        logger.error(
+            "Barreira DataJud ativa, mas job cognitivo não foi registrado: %s",
+            exc,
+            exc_info=True,
+        )
+
     _INSTALADO = True
-    logger.info("Feed cognitivo DataJud instalado")
+    logger.info("Feed cognitivo DataJud instalado com materialização de prazo bloqueada")

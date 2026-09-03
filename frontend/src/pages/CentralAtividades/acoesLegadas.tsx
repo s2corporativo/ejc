@@ -1,7 +1,7 @@
 // ── Ações que só existiam nas telas legadas, trazidas para a Central ─────────
 // Fluxos de intimação (prazo assistido, captura manual) e de suspensão de
-// tribunal (criar, excluir, simular). Os endpoints são os mesmos das telas
-// legadas — nada foi criado no backend e nenhuma tela legada foi removida.
+// tribunal (criar, excluir). O simulador jurídico usa o motor canônico de
+// deadlines para não manter duas regras de cálculo processual.
 import { useEffect, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import api from "../../lib/api";
@@ -38,10 +38,18 @@ function fmtData(d?: string | null): string {
 
 // ── 1. Prazo assistido da intimação (aceitar / recusar) ──────────────────────
 
+type RegimeProcessual = "civel" | "trabalhista" | "penal";
+
 type PrazoSugerido = {
   disponivel?: boolean;
   dias?: number | null;
   data_sugerida?: string | null;
+  data_disponibilizacao?: string | null;
+  data_publicacao?: string | null;
+  termo_inicial?: string | null;
+  regime_calculo?: RegimeProcessual | null;
+  case_id?: string | null;
+  aviso?: string | null;
   base_legal?: string | null;
   base_calculo?: string | null;
   motivo?: string | null;
@@ -56,13 +64,10 @@ export type SugestaoAberta = {
 };
 
 /**
- * Modal do prazo assistido: mesmo fluxo de dois passos da tela legada de
- * Intimações (removida na consolidação de 2026-08; ver histórico no git) —
- * a sugestão vem do GET em modo leitura e só então
- * o advogado aceita (cria o Deadline) ou recusa (não cria nada).
- *
- * A recusa NÃO pede motivo: o endpoint `POST /intimacoes/{id}/recusar-prazo`
- * não recebe corpo. O próprio modal é a confirmação, como no legado.
+ * Prazo DJEN é HITL. Os quatro marcos ficam visíveis e distintos:
+ * disponibilização (fato capturado), publicação, termo inicial e vencimento.
+ * Nenhum deles é preenchido a partir de outro. O regime processual também é
+ * informado explicitamente antes da materialização do Deadline.
  */
 export function PrazoSugeridoModal({
   sugestao,
@@ -74,17 +79,68 @@ export function PrazoSugeridoModal({
   onResolvido: () => void;
 }) {
   const [salvando, setSalvando] = useState<"aceitar" | "recusar" | null>(null);
+  const [dataPublicacao, setDataPublicacao] = useState("");
+  const [termoInicial, setTermoInicial] = useState("");
+  const [regimeCalculo, setRegimeCalculo] = useState<RegimeProcessual | "">("");
+  const [vencimentoConferido, setVencimentoConferido] = useState("");
+  const [fonteConferida, setFonteConferida] = useState(false);
   const dados = sugestao?.dados;
   const status = dados?.prazo_sugerido_status ?? "nenhum";
   const jaResolvido = status === "aceito" || status === "recusado";
   const semBase = dados?.disponivel === false;
 
+  useEffect(() => {
+    setDataPublicacao(dados?.data_publicacao?.slice(0, 10) ?? "");
+    setTermoInicial(dados?.termo_inicial?.slice(0, 10) ?? "");
+    setRegimeCalculo(dados?.regime_calculo ?? "");
+    setVencimentoConferido("");
+    setFonteConferida(false);
+  }, [sugestao?.id, dados?.data_publicacao, dados?.termo_inicial, dados?.regime_calculo]);
+
+  const revisaoCompleta =
+    !!dados?.case_id &&
+    !!dataPublicacao &&
+    !!termoInicial &&
+    !!regimeCalculo &&
+    !!vencimentoConferido &&
+    fonteConferida;
+
+  const cronologiaValida = (): boolean => {
+    const disponibilidade = dados?.data_disponibilizacao?.slice(0, 10) ?? "";
+    if (disponibilidade && dataPublicacao < disponibilidade) return false;
+    if (termoInicial < dataPublicacao) return false;
+    if (vencimentoConferido < termoInicial) return false;
+    return true;
+  };
+
   const aceitar = async () => {
     if (!sugestao) return;
+    if (semBase && !revisaoCompleta) {
+      toast.error(
+        "Informe publicação, termo inicial, regime, vencimento final e confirme a conferência da fonte oficial.",
+      );
+      return;
+    }
+    if (semBase && !cronologiaValida()) {
+      toast.error(
+        "Revise a cronologia: disponibilização ≤ publicação ≤ termo inicial ≤ vencimento.",
+      );
+      return;
+    }
     setSalvando("aceitar");
     try {
+      const body = semBase
+        ? {
+            data_publicacao: dataPublicacao,
+            termo_inicial: termoInicial,
+            regime_calculo: regimeCalculo,
+            data_prazo: vencimentoConferido,
+            confirmacao_fonte_oficial: true,
+          }
+        : undefined;
       const { data } = await api.post(
         `/intimacoes/${sugestao.id}/aceitar-prazo`,
+        body,
       );
       toast.success(
         data.criado === false
@@ -94,12 +150,11 @@ export function PrazoSugeridoModal({
       onResolvido();
       onClose();
     } catch (e: any) {
-      // 422 = intimação sem caso vinculado (ou sem base para calcular).
       toast.error(
         e?.response?.status === 422
           ? erroDetalhe(
               e,
-              "Intimação sem caso vinculado — vincule um caso antes de gerar o prazo.",
+              "Revise o vínculo do caso e os marcos processuais antes de gerar o prazo.",
             )
           : erroDetalhe(e, "Não foi possível cadastrar o prazo."),
       );
@@ -138,9 +193,90 @@ export function PrazoSugeridoModal({
           </p>
 
           {semBase ? (
-            <div className="rounded-lg border border-warn-200 bg-warn-50 p-3 text-xs text-warn-800">
-              {dados?.motivo ||
-                "Sem data de disponibilização não é possível sugerir prazo para esta intimação."}
+            <div className="space-y-3">
+              <div className="rounded-lg border border-warn-200 bg-warn-50 p-3 text-xs text-warn-800">
+                {dados?.aviso ||
+                  "Cálculo automático indisponível. Confira a comunicação oficial antes de informar os marcos processuais."}
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800">
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-500">Disponibilização capturada</span>
+                  <span className="font-medium text-slate-700 dark:text-slate-200">
+                    {fmtData(dados?.data_disponibilizacao)}
+                  </span>
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Disponibilização ≠ publicação ≠ termo inicial ≠ vencimento. O
+                  EJC não converte um marco no outro por inferência.
+                </p>
+              </div>
+              {!dados?.case_id && (
+                <div className="rounded-lg border border-danger-200 bg-danger-50 p-2 text-xs text-danger-700">
+                  A intimação ainda não está vinculada a um caso. Vincule o caso
+                  antes de aceitar o prazo.
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label text-xs">Data de publicação *</label>
+                  <input
+                    className="input"
+                    aria-label="Data de publicação"
+                    type="date"
+                    value={dataPublicacao}
+                    onChange={(e) => setDataPublicacao(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="label text-xs">Termo inicial *</label>
+                  <input
+                    className="input"
+                    aria-label="Termo inicial"
+                    type="date"
+                    value={termoInicial}
+                    onChange={(e) => setTermoInicial(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="label text-xs">Regime processual *</label>
+                  <select
+                    className="input"
+                    aria-label="Regime processual"
+                    value={regimeCalculo}
+                    onChange={(e) =>
+                      setRegimeCalculo(e.target.value as RegimeProcessual | "")
+                    }
+                  >
+                    <option value="">Selecione…</option>
+                    <option value="civel">Cível — CPC</option>
+                    <option value="trabalhista">Trabalhista — CLT</option>
+                    <option value="penal">Penal — CPP</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label text-xs">Vencimento final *</label>
+                  <input
+                    className="input"
+                    aria-label="Vencimento final"
+                    type="date"
+                    value={vencimentoConferido}
+                    onChange={(e) => setVencimentoConferido(e.target.value)}
+                  />
+                </div>
+              </div>
+              <label className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300">
+                <input
+                  type="checkbox"
+                  aria-label="Confirmei a fonte oficial"
+                  checked={fonteConferida}
+                  onChange={(e) => setFonteConferida(e.target.checked)}
+                />
+                <span>
+                  Conferi na fonte oficial a publicação, o termo inicial, o regime
+                  processual e o calendário aplicável, e confirmo o vencimento
+                  final informado acima.
+                </span>
+              </label>
             </div>
           ) : (
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800">
@@ -167,7 +303,7 @@ export function PrazoSugeridoModal({
           )}
 
           <p className="text-[11px] text-slate-500 italic">
-            Sugestão automática — o prazo só é criado depois que você aceita.
+            O prazo só é criado após uma ação humana explícita.
           </p>
 
           {jaResolvido && (
@@ -190,12 +326,18 @@ export function PrazoSugeridoModal({
             </button>
             <button
               onClick={aceitar}
-              disabled={salvando !== null || semBase || status === "aceito"}
+              disabled={
+                salvando !== null ||
+                status === "aceito" ||
+                (semBase && !revisaoCompleta)
+              }
               className="px-4 py-2 bg-success-600 text-white text-sm rounded-lg hover:bg-success-700 disabled:opacity-60"
             >
               {salvando === "aceitar"
                 ? "Aceitando..."
-                : "Aceitar e criar prazo"}
+                : semBase
+                  ? "Cadastrar prazo revisado"
+                  : "Aceitar e criar prazo"}
             </button>
           </div>
         </div>
@@ -231,7 +373,6 @@ export function SuspensaoFormModal({
   useEffect(() => {
     if (!open) return;
     setErro("");
-    // Lista de tribunais é conveniência: se falhar, o campo vira texto livre.
     api
       .get("/suspensoes/tribunais")
       .then((r) =>
@@ -338,7 +479,7 @@ export function SuspensaoFormModal({
   );
 }
 
-// ── 3. Simulador de prazo (leitura — não grava nada) ─────────────────────────
+// ── 3. Simulador processual canônico (leitura — não grava nada) ──────────────
 
 export function SimularPrazoModal({
   open,
@@ -350,8 +491,10 @@ export function SimularPrazoModal({
   const [sim, setSim] = useState({
     data_inicio: "",
     dias: 15,
-    contagem: "uteis",
+    regime_calculo: "civel" as RegimeProcessual,
     tribunal: "",
+    dobro: false,
+    excecao_recesso_penal: false,
   });
   const [res, setRes] = useState<any>(null);
   const [erro, setErro] = useState("");
@@ -362,15 +505,23 @@ export function SimularPrazoModal({
       setErro("Informe a data inicial.");
       return;
     }
+    if (!Number.isFinite(Number(sim.dias)) || Number(sim.dias) < 1) {
+      setErro("Informe uma quantidade de dias maior que zero.");
+      return;
+    }
     setCarregando(true);
     setErro("");
     setRes(null);
     try {
-      // POST /suspensoes/simular NÃO persiste — é cálculo de apoio.
-      const { data } = await api.post("/suspensoes/simular", {
-        ...sim,
+      const { data } = await api.post("/deadlines/calcular", {
+        data_inicio: sim.data_inicio,
         dias: Number(sim.dias),
-        tribunal: sim.tribunal || null,
+        tipo: "processual",
+        regime_calculo: sim.regime_calculo,
+        tribunal: sim.tribunal.trim() || null,
+        dobro: sim.regime_calculo === "penal" ? false : sim.dobro,
+        excecao_recesso_penal:
+          sim.regime_calculo === "penal" && sim.excecao_recesso_penal,
       });
       setRes(data);
     } catch (e) {
@@ -381,11 +532,12 @@ export function SimularPrazoModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Simular vencimento de prazo">
+    <Modal open={open} onClose={onClose} title="Simular vencimento processual">
       <div className="space-y-3">
         <p className="text-xs text-slate-500">
-          Considera feriados e, se o tribunal for informado, as suspensões dele.
-          Simulação de apoio — nada é gravado.
+          Usa o motor processual canônico do EJC. Informe o regime jurídico e
+          confira tribunal, termo inicial, feriados e suspensões antes de usar o
+          resultado em um caso real. A simulação não grava prazo.
         </p>
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -398,7 +550,7 @@ export function SimularPrazoModal({
             />
           </div>
           <div>
-            <label className="label text-xs">Dias</label>
+            <label className="label text-xs">Dias *</label>
             <input
               className="input"
               type="number"
@@ -408,14 +560,25 @@ export function SimularPrazoModal({
             />
           </div>
           <div>
-            <label className="label text-xs">Contagem</label>
+            <label className="label text-xs">Regime processual *</label>
             <select
               className="input"
-              value={sim.contagem}
-              onChange={(e) => setSim({ ...sim, contagem: e.target.value })}
+              value={sim.regime_calculo}
+              onChange={(e) =>
+                setSim({
+                  ...sim,
+                  regime_calculo: e.target.value as RegimeProcessual,
+                  dobro: e.target.value === "penal" ? false : sim.dobro,
+                  excecao_recesso_penal:
+                    e.target.value === "penal"
+                      ? sim.excecao_recesso_penal
+                      : false,
+                })
+              }
             >
-              <option value="uteis">Dias úteis</option>
-              <option value="corridos">Dias corridos</option>
+              <option value="civel">Cível — CPC</option>
+              <option value="trabalhista">Trabalhista — CLT</option>
+              <option value="penal">Penal — CPP</option>
             </select>
           </div>
           <div>
@@ -423,30 +586,79 @@ export function SimularPrazoModal({
             <input
               className="input"
               value={sim.tribunal}
-              placeholder="Opcional"
+              placeholder="TJMG, TRT3, STJ…"
               onChange={(e) => setSim({ ...sim, tribunal: e.target.value })}
             />
           </div>
         </div>
+
+        {sim.regime_calculo !== "penal" && (
+          <label className="flex items-start gap-2 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={sim.dobro}
+              onChange={(e) => setSim({ ...sim, dobro: e.target.checked })}
+            />
+            <span>
+              Aplicar prazo em dobro. Marque somente depois de conferir a hipótese
+              legal aplicável ao caso.
+            </span>
+          </label>
+        )}
+
+        {sim.regime_calculo === "penal" && (
+          <label className="flex items-start gap-2 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={sim.excecao_recesso_penal}
+              onChange={(e) =>
+                setSim({ ...sim, excecao_recesso_penal: e.target.checked })
+              }
+            />
+            <span>
+              Exceção legal ao recesso do CPP art. 798-A confirmada pelo operador.
+            </span>
+          </label>
+        )}
+
+        {!sim.tribunal.trim() && (
+          <div className="rounded-lg border border-warn-200 bg-warn-50 p-2 text-[11px] text-warn-800">
+            Tribunal não informado: feriados e suspensões locais podem alterar o
+            vencimento. Trate o resultado como preliminar até a conferência.
+          </div>
+        )}
+
         {erro && <p className="text-xs text-danger-600">{erro}</p>}
         {res && (
           <div className="rounded-lg border border-gold-200 bg-gold-50 p-3 text-sm">
             <div className="flex justify-between gap-2">
               <span className="text-slate-500">Vencimento</span>
               <span className="font-semibold text-navy">
-                {fmtData(res.vencimento ?? res.data_vencimento)}
+                {fmtData(res.data_vencimento)}
               </span>
             </div>
-            {res.base && (
-              <p className="text-[11px] text-slate-500 mt-2">{res.base}</p>
+            {res.regime_calculo && (
+              <p className="text-[11px] text-slate-600 mt-1">
+                Regime: {res.regime_calculo}
+              </p>
             )}
-            {Array.isArray(res.suspensoes_aplicadas) &&
-              res.suspensoes_aplicadas.length > 0 && (
-                <p className="text-[11px] text-slate-600 mt-1">
-                  {res.suspensoes_aplicadas.length} suspensão(ões)
-                  considerada(s).
-                </p>
-              )}
+            {res.modo && (
+              <p className="text-[11px] text-slate-500 mt-1">{res.modo}</p>
+            )}
+            {res.calendario_status && (
+              <p className="text-[11px] text-slate-500 mt-1">
+                Calendário: {res.calendario_status}
+              </p>
+            )}
+            {(res.resultado_preliminar || res.revisao_obrigatoria) && (
+              <div className="mt-2 rounded border border-warn-200 bg-warn-50 p-2 text-[11px] text-warn-800">
+                Resultado preliminar — revisão humana obrigatória antes de
+                confirmar o prazo.
+              </div>
+            )}
+            {res.aviso && (
+              <p className="text-[11px] text-warn-800 mt-2">{res.aviso}</p>
+            )}
           </div>
         )}
         <div className="flex gap-2 justify-end">

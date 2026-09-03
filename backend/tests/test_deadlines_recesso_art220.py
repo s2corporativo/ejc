@@ -61,7 +61,12 @@ class _FakeDB:
         self.commits = 0
 
     async def execute(self, *a, **k):
-        return _Res(self._resultados.pop(0) if self._resultados else None)
+        if self._resultados:
+            return _Res(self._resultados.pop(0))
+        # Desde AP-11, POST /deadlines valida o responsável no banco. Estes
+        # testes exercitam autoatribuição ao próprio usuário; o fake devolve
+        # um usuário jurídico ativo como faria a sessão real.
+        return _Res(_user())
 
     def add(self, obj):
         if isinstance(obj, Deadline):
@@ -129,6 +134,7 @@ async def test_post_deadlines_aplica_recesso_para_tipo_processual():
         data_intimacao=TERMO_INICIAL_RECESSO,
         dias_prazo=DIAS_RECESSO,
         dias_uteis=True,
+        regime_calculo="civel",
     )
     resp = await criar(payload=payload, db=db, cu=_user())
 
@@ -191,6 +197,7 @@ async def test_post_deadlines_converge_com_referencia_do_motor_de_pecas():
             dias_prazo=DIAS_RECESSO,
             dias_uteis=True,
             tribunal="TJMG",
+            regime_calculo="civel",
         ),
         db=db, cu=_user(),
     )
@@ -214,6 +221,7 @@ async def test_post_deadlines_registra_recesso_na_base_legal():
             data_intimacao=TERMO_INICIAL_RECESSO,
             dias_prazo=DIAS_RECESSO,
             dias_uteis=True,
+            regime_calculo="civel",
         ),
         db=db, cu=_user(),
     )
@@ -254,8 +262,11 @@ async def test_calculadora_converge_com_criacao_para_prazo_processual():
 
     previa = await calcular(
         req=CalcularPrazoRequest(
-            data_inicio=TERMO_INICIAL_RECESSO, dias=DIAS_RECESSO,
-            dias_uteis=True, tipo="processual",
+            data_inicio=TERMO_INICIAL_RECESSO,
+            dias=DIAS_RECESSO,
+            dias_uteis=True,
+            tipo="processual",
+            regime_calculo="civel",
         ),
         cu=_user(),
     )
@@ -268,6 +279,7 @@ async def test_calculadora_converge_com_criacao_para_prazo_processual():
             data_intimacao=TERMO_INICIAL_RECESSO,
             dias_prazo=DIAS_RECESSO,
             dias_uteis=True,
+            regime_calculo="civel",
         ),
         db=db, cu=_user(),
     )
