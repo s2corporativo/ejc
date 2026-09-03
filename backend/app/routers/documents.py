@@ -409,6 +409,13 @@ async def upload(
         filepath=filepath,
         mimetype=mime_real,
         size_bytes=len(conteudo),
+        # Integridade (migration 147). O EJC é sistema de PROVA DOCUMENTAL: o
+        # hash é o que sustenta que o arquivo juntado hoje é o mesmo de amanhã.
+        # A maquinaria de SHA-256 existia inteira desde a 142 (serviço local,
+        # remoto via rclone, rescan, task de backfill) e o upload direto não
+        # chamava nada — o hash só existia em `document_intake_items`, que este
+        # caminho não alimenta. Calculado dos bytes que já estão em memória:
+        # sem I/O extra, sem reler o arquivo do disco.
         sha256=hashlib.sha256(conteudo).hexdigest(),
         confidencialidade=conf_enum,
         ocr_text=ocr_text,
@@ -417,6 +424,9 @@ async def upload(
         uploaded_by=cu.id,
     )
 
+    # Compatibilidade G3 mantida nesta onda. A identidade por título será
+    # substituída por versionamento explícito em PR próprio, com testes de
+    # concorrência e constraint após auditoria dos grupos existentes.
     if case_id:
         existente = (
             await db.execute(
@@ -613,12 +623,17 @@ async def listar(
     }
 
 
+# Detalhe por ID (pente fino E2E 30/08 §5.1): a releitura direta de um documento
+# respondia 405 — só existiam list/download/PATCH/DELETE. Declarada DEPOIS das
+# rotas estáticas de 1 segmento (/tipos, GET /) para não capturá-las; /drive/*
+# tem mais segmentos e não conflita.
 @router.get("/{doc_id}")
 async def detalhar(
     doc_id: str,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    """Metadados de um documento — mesmo shape do item da listagem."""
     document = (
         await db.execute(
             select(Document).where(
@@ -630,6 +645,8 @@ async def detalhar(
     if not document:
         raise HTTPException(status_code=404, detail="Documento não encontrado")
 
+    # Mesmo caminho de autorização do download: gate único por caso/cliente/
+    # uploader + cofre por confidencialidade.
     await _verificar_acesso_documento(db, cu, document)
     if not _pode_acessar_confidencial(cu, document.confidencialidade.value):
         raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
@@ -728,11 +745,7 @@ async def _soft_delete_documento(
         "DELETE",
         "documents",
         document.id,
-        dados_depois={
-            "storage": storage,
-            "storage_remocao_tentada": False,
-            "lifecycle": "soft_delete",
-        },
+        dados_depois={"storage": storage, "storage_preservado": True},
     )
     await db.commit()
 
@@ -760,6 +773,10 @@ async def remover(
         acao="excluído",
     )
 
+    # Soft-delete deve ser reversível: o storage físico é preservado para que
+    # /trash/.../restaurar possa reativar o documento sem perda de evidência.
+    # A eliminação física pertence exclusivamente ao fluxo de PURGE, que exige
+    # superadmin, motivo e trilha própria.
     await _soft_delete_documento(
         db,
         cu,
@@ -770,6 +787,8 @@ async def remover(
 
 
 class DocumentPatchRequest(BaseModel):
+    """Somente metadados; vínculo com caso é operação de domínio dedicada."""
+
     model_config = ConfigDict(extra="forbid")
 
     titulo: Optional[str] = None
@@ -784,6 +803,7 @@ async def atualizar_metadados(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    """Atualiza título/tipo/confidencialidade; nunca movimenta evidência entre casos."""
     document = (
         await db.execute(
             select(Document).where(
@@ -888,6 +908,34 @@ async def publicar_no_portal(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    """Ato EXPLÍCITO de publicação ao Portal do Cliente (Issue #698).
+
+    Separado do PATCH de metadados comuns (`atualizar_metadados`) de
+    propósito: reclassificar um documento para "normal" é gestão documental
+    (peça já pública, cópia de diário oficial), publicar para o titular é
+    comunicação com o cliente. Antes desta rota eram o mesmo botão.
+
+    Piso de papel: MESMO desenho do Data Room (`_pode_editar` — advogado+
+    — cobre publicar E despublicar de saída, antes de qualquer checagem fina).
+    Despublicar exige o mesmo piso de publicar — não é "qualquer um com acesso
+    ao documento pode revogar": revogar visibilidade do cliente é decisão do
+    escritório tanto quanto concedê-la, e um piso assimétrico deixaria um
+    perfil abaixo de advogado (com acesso de leitura ao documento via caso)
+    apagar uma publicação que só um advogado+ pôde criar.
+    Publicar tem, além disso, o piso fino por confidencialidade
+    (`pode_publicar_externamente`, app/core/publicacao_externa) — a MESMA
+    política que o Data Room usa para o link público, para as duas nunca
+    divergirem. O Portal só exibe documentos `confidencialidade=normal`
+    (`GET /portal/documentos`), então publicar qualquer outro nível é rejeitado
+    aqui — não teria efeito lá e confundiria quem publicou. Despublicar,
+    ao contrário, precisa funcionar mesmo se o documento já foi reclassificado
+    para interno/segredo_justica nesse meio tempo (limpar o registro de uma
+    publicação antiga) — por isso usa o piso de PAPEL (advogado+), não o piso
+    fino por confidencialidade atual.
+
+    Idempotente: pedir o estado já vigente não regrava publicado_por/em nem
+    duplica audit log.
+    """
     d = (await db.execute(
         select(Document).where(
             Document.id == doc_id, Document.deleted_at.is_(None)
@@ -896,10 +944,16 @@ async def publicar_no_portal(
     if not d:
         raise HTTPException(status_code=404, detail="Documento não encontrado")
 
+    # Ownership (IDOR) + cofre — mesmos gates do PATCH de metadados.
     await _verificar_acesso_documento(db, cu, d)
     if not _pode_acessar_confidencial(cu, d.confidencialidade.value):
         raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
 
+    # Piso de papel do ATO (publicar OU despublicar) — mesmo piso do Data
+    # Room (`_pode_editar`), independente da confidencialidade atual do
+    # documento. Sem isto, despublicar ficava só atrás do gate de OWNERSHIP
+    # acima — um perfil abaixo de advogado com acesso ao caso conseguiria
+    # revogar uma publicação que só um advogado+ pôde criar.
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["advogado"]:
         raise HTTPException(
             status_code=403,
@@ -910,7 +964,8 @@ async def publicar_no_portal(
         if confidencialidade_str(d) != DocConfidencialidade.normal.value:
             raise HTTPException(
                 status_code=422,
-                detail="Só documentos com confidencialidade normal podem ser publicados no Portal do Cliente",
+                detail="Só documentos com confidencialidade normal podem ser "
+                       "publicados no Portal do Cliente",
             )
         if not pode_publicar_externamente(cu, d):
             raise HTTPException(
@@ -945,7 +1000,12 @@ async def publicar_no_portal(
 )
 async def classificar_tipo_documento(
     doc_id: str,
-    aplicar: bool = Query(False),
+    aplicar: bool = Query(
+        False,
+        description=(
+            "Se true, grava o tipo sugerido em Document.tipo somente quando válido."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -990,6 +1050,9 @@ async def classificar_tipo_documento(
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# GOOGLE DRIVE — compatibilidade de endpoints; lifecycle usa o mesmo Document.
+# ─────────────────────────────────────────────────────────────────────────────
 @router.post("/drive/upload")
 async def upload_para_drive(
     file: UploadFile = File(...),
@@ -1127,6 +1190,9 @@ async def _gate_drive_doc(db: AsyncSession, cu: User, file_id: str) -> Document:
     if not docs:
         raise HTTPException(status_code=404, detail="Documento não encontrado")
     if len(docs) != 1:
+        # drive_file_id legado não tem unique constraint. Nunca escolher uma
+        # linha arbitrária: isso poderia autorizar por um caso e operar o objeto
+        # compartilhado por outro.
         raise HTTPException(
             status_code=409,
             detail="Referência remota ambígua — requer correção administrativa",
@@ -1217,5 +1283,8 @@ async def deletar_documento_drive(
         acao="excluído",
     )
 
+    # Compatibilidade do endpoint legado: a ação agora segue o mesmo lifecycle
+    # reversível de DELETE /documents/{doc_id}. O arquivo remoto permanece
+    # preservado até a purga definitiva.
     await _soft_delete_documento(db, current_user, document, storage="drive")
     return {"ok": True}
