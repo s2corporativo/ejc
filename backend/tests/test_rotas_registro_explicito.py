@@ -51,6 +51,21 @@ def _extrair_rotas(app) -> list[dict]:
 # Adições INTENCIONAIS posteriores ao snapshot. O registro explícito (§4.1) não
 # pode criar nem remover rota; qualquer outra novidade falha o teste.
 ADICOES_INTENCIONAIS = {
+    # ── Ficha viva do Banco de Teses (Legal Drafting 2.0 §5) ────────────────
+    # Sub-recursos da ficha CANÔNICA `teses` — não é módulo novo nem banco
+    # paralelo (a decisão está no ledger de migrations). Todos sob o MESMO RBAC
+    # do Banco de Teses: `_is_staff` (EQUIPE_JURIDICA, allowlist exata da Issue
+    # #694 — financeiro não entra) para ler, `_pode_editar` (advogado+) para
+    # escrever. Nenhum expõe caso ou cliente que o usuário já não enxergasse;
+    # `POST /overrides` é o único que toca um caso e exige
+    # `verificar_acesso_caso` (o registro vincula ficha a caso concreto, e
+    # escrever em caso alheio seria IDOR).
+    ("/api/teses/{tese_id}/versoes", "GET"),      # histórico imutável da ficha
+    ("/api/teses/{tese_id}/fontes", "GET"),       # lastro + cobertura
+    ("/api/teses/{tese_id}/fontes", "POST"),      # liga elemento a fonte real
+    ("/api/teses/{tese_id}/confianca", "GET"),    # confiança MEDIDA + revisão
+    ("/api/teses/{tese_id}/overrides", "GET"),    # recusas registradas
+    ("/api/teses/{tese_id}/overrides", "POST"),   # registra a recusa (ownership)
     ("/api/architecture/uso-rotas", "GET"),
     # Issue #1272 (Classe B do plano-mestre): reabertura de caso ENCERRADO
     # restaurando o estágio de trabalho real, simétrica a /desarquivar (que já
