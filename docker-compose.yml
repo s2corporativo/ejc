@@ -101,11 +101,15 @@ services:
       # legal-tuned PT-BR) como 2º externo; Groq depois.
       # Requer ANTHROPIC_API_KEY no .env do VPS (segredo — nunca versionado).
       AI_PROVIDER_PRIORITY: "anthropic,maritaca,groq,ollama"
-      # Decisão de produto (2026-07-19): Maritaca LIGADA neste stack — a chave
-      # MARITACA_API_KEY vive só no .env do VPS; sem chave o provider continua
-      # inelegível (fail-safe, fora da cadeia). O .env pode sobrepor para
-      # desligar (MARITACA_ENABLED=false) sem tocar neste arquivo.
-      MARITACA_ENABLED: "${MARITACA_ENABLED:-true}"
+      # Maritaca: default alinhado ao código (config.py) e ao .env.example —
+      # DESLIGADA até decisão explícita no .env (MARITACA_ENABLED=true). Antes o
+      # compose ligava por padrão e divergia das outras duas fontes (análise
+      # E2E 03/09/2026, A2); com chave presente, dado jurídico pseudonimizado
+      # saía para um destino não soberano sem ninguém ter habilitado.
+      MARITACA_ENABLED: "${MARITACA_ENABLED:-false}"
+      # Perfil de IA (opcional): externo | local | hibrido | desligado — deriva
+      # os *_ENABLED e a prioridade; vazio = flags manuais (config.py).
+      AI_PROFILE: "${AI_PROFILE:-}"
     volumes:
       - uploads_data:/app/uploads
       - backups_data:/app/backups
@@ -166,8 +170,9 @@ services:
       # sem Ollama local neste stack; IA externa com mascaramento de PII.
       OLLAMA_ENABLED: "false"
       AI_PROVIDER_PRIORITY: "anthropic,maritaca,groq,ollama"
-      # Mesma decisão de produto da API: Maritaca ligada; .env pode sobrepor.
-      MARITACA_ENABLED: "${MARITACA_ENABLED:-true}"
+      # Mesmo default da API: Maritaca desligada até decisão explícita no .env.
+      MARITACA_ENABLED: "${MARITACA_ENABLED:-false}"
+      AI_PROFILE: "${AI_PROFILE:-}"
     volumes:
       - uploads_data:/app/uploads
       - fastembed_cache:/tmp/fastembed_cache

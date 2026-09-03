@@ -79,15 +79,14 @@ def _busca_semantica_pronta(
 def _estado_provedores(cfg) -> dict:
     """Espelha kill-switch, provider forçado e elegibilidade do ai_gateway."""
     externos_permitidos = bool(cfg.AI_EXTERNAL_PROVIDERS_ALLOWED)
+    # Fonte única de elegibilidade (provider_registry). A cópia local que
+    # existia aqui esquecia GROQ_ENABLED (análise E2E 03/09/2026, A3). O
+    # registry já embute AI_ENABLED; `runtime` abaixo preserva o contrato.
+    from app.services.ai.provider_registry import provider_elegivel_com
+
     configurados = {
-        "anthropic": bool(
-            externos_permitidos and cfg.ANTHROPIC_ENABLED and cfg.ANTHROPIC_API_KEY
-        ),
-        "maritaca": bool(
-            externos_permitidos and cfg.MARITACA_ENABLED and cfg.MARITACA_API_KEY
-        ),
-        "groq": bool(externos_permitidos and cfg.GROQ_API_KEY),
-        "ollama": bool(getattr(cfg, "OLLAMA_ENABLED", False)),
+        p: provider_elegivel_com(p, cfg)
+        for p in ("anthropic", "maritaca", "groq", "ollama")
     }
     prioridade = [
         p.strip().lower()

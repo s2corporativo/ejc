@@ -36,7 +36,18 @@ _scheduler: AsyncIOScheduler | None = None
 def get_scheduler() -> AsyncIOScheduler:
     global _scheduler
     if _scheduler is None:
-        _scheduler = AsyncIOScheduler(timezone="America/Sao_Paulo")
+        # misfire_grace_time: um restart no horário do job não pode apagar a
+        # execução do dia em silêncio (F4 da análise E2E 03/09/2026). O
+        # default do APScheduler é 1 s; aqui a janela vem de Settings.
+        _scheduler = AsyncIOScheduler(
+            timezone="America/Sao_Paulo",
+            job_defaults={
+                "misfire_grace_time": int(
+                    getattr(settings, "SCHEDULER_MISFIRE_GRACE_SECONDS", 3600)
+                ),
+                "coalesce": True,
+            },
+        )
     return _scheduler
 
 
@@ -1224,9 +1235,65 @@ async def _reembedar_rag_orfaos():
             logger.info("[Scheduler] auto-reembed pulado: embeddings indisponíveis")
             return
         from scripts.reembedar_chunks_orfaos import reembedar
-        await reembedar(batch_size=int(getattr(settings, "RAG_AUTO_REEMBED_BATCH", 20)))
+        resultado = await reembedar(
+            batch_size=int(getattr(settings, "RAG_AUTO_REEMBED_BATCH", 20)))
     except Exception as e:  # nunca derruba o scheduler
         logger.warning("[Scheduler] auto-reembed falhou (será retentado): %s", str(e)[:200])
+        from app.services.heartbeat_service import JOB_REEMBED_RAG
+        await _bater_ponto(JOB_REEMBED_RAG, "erro", str(e)[:200])
+        return
+    from app.services.heartbeat_service import JOB_REEMBED_RAG
+    # Heartbeat por RESULTADO: `reembedar` engole a falha de cada chunk e
+    # devolve a contagem em `erros`. Sem olhar o resultado, uma rodada que
+    # falhou em todos os chunks bateria ponto "ok" e o painel diria que o RAG
+    # está saudável enquanto os órfãos se acumulam.
+    dados = resultado if isinstance(resultado, dict) else {}
+    if dados.get("disponivel") is False:
+        await _bater_ponto(JOB_REEMBED_RAG, "erro",
+                           "embeddings indisponíveis — nada foi reembedado")
+        return
+    erros = int(dados.get("erros") or 0)
+    if erros:
+        await _bater_ponto(
+            JOB_REEMBED_RAG, "erro",
+            f"{erros} documento(s) com órfão sem reembedar "
+            f"(ok={dados.get('ok', 0)})"[:200])
+        return
+    await _bater_ponto(JOB_REEMBED_RAG, "ok")
+
+
+async def _job_backup_drive_monitorado():
+    """Envelope do backup com heartbeat por RESULTADO (F4): o job canônico
+    continua em backup_execution_service; aqui só se registra ok/erro."""
+    from app.services.backup_execution_service import job_backup_drive_exclusivo
+    from app.services.heartbeat_service import JOB_BACKUP_DRIVE
+    try:
+        resultado = await job_backup_drive_exclusivo()
+    except Exception as e:
+        await _bater_ponto(JOB_BACKUP_DRIVE, "erro", str(e)[:200])
+        raise
+    if not settings.BACKUP_ENABLED:
+        await _bater_ponto(JOB_BACKUP_DRIVE, "ok", "BACKUP_ENABLED=false — pulado")
+        return
+    # O motor de backup NÃO propaga exceção: converte falha em
+    # {"ok": False, "status": "erro"} e retorna normalmente. Registrar "ok" só
+    # porque não houve exceção transformaria backup quebrado em painel verde —
+    # exatamente o cenário que o heartbeat existe para impedir.
+    dados = resultado if isinstance(resultado, dict) else {}
+    status = str(dados.get("status") or "")
+    if status == "em_execucao":
+        await _bater_ponto(JOB_BACKUP_DRIVE, "ok",
+                           "outro backup já estava em curso — rodada pulada")
+        return
+    if not dados.get("ok", False):
+        detalhe = str(dados.get("erro") or status or "backup não confirmou sucesso")
+        await _bater_ponto(JOB_BACKUP_DRIVE, "erro", detalhe[:200])
+        return
+    # `parcial` conta como ok (os artefatos locais existem), mas o detalhe
+    # precisa dizer o que faltou — tipicamente o envio offsite.
+    detalhe = (f"parcial: {dados.get('offsite_erro') or 'offsite não confirmado'}"
+               if status == "parcial" else None)
+    await _bater_ponto(JOB_BACKUP_DRIVE, "ok", detalhe[:200] if detalhe else None)
 
 
 def start_scheduler():
@@ -1314,10 +1381,9 @@ def start_scheduler():
     # própria timezone. A execução canônica é job_backup_drive_exclusivo
     # (mutex global + trilha de auditoria; origem "agendado").
     from app.services.backup_service import hora_backup_utc
-    from app.services.backup_execution_service import job_backup_drive_exclusivo
     _bk_hora, _bk_min = hora_backup_utc()
     s.add_job(
-        job_backup_drive_exclusivo,
+        _job_backup_drive_monitorado,
         CronTrigger(hour=_bk_hora, minute=_bk_min, timezone="UTC"),
         id="backup_drive", replace_existing=True,
     )

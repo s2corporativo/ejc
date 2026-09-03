@@ -18,6 +18,8 @@ JOB_PRAZOS_ALERTAS = "prazos_alertas"
 JOB_AUDIENCIAS = "audiencias_agenda"
 JOB_PRESCRICAO = "prescricao"
 JOB_ENTRADA_EXPURGO = "entrada_expurgo"
+JOB_BACKUP_DRIVE = "backup_drive"
+JOB_REEMBED_RAG = "reembed_rag_orfaos"
 
 _MAX_DIARIO = 26
 _MAX_DATAJUD = 14
@@ -58,6 +60,19 @@ JOBS_MONITORADOS: dict[str, dict[str, Any]] = {
         "label": "Alertas de prescrição",
         "max_age_horas": _MAX_SEMANAL,
         "cadencia": "semanal (segundas 09h05)",
+    },
+    # F4 (análise E2E 03/09/2026): o backup — o job cuja falha é a mais cara —
+    # e o auto-reembed do RAG não tinham heartbeat; o painel mandava "ler o
+    # log". Ambos passam a ser monitorados por resultado.
+    JOB_BACKUP_DRIVE: {
+        "label": "Backup offsite (Drive/rclone)",
+        "max_age_horas": _MAX_DIARIO,
+        "cadencia": "diário (BACKUP_HORA_LOCAL)",
+    },
+    JOB_REEMBED_RAG: {
+        "label": "Auto-reindex do RAG (chunks órfãos)",
+        "max_age_horas": 3,
+        "cadencia": "horário (:20)",
     },
 }
 

@@ -128,11 +128,22 @@ async def consultar(
         fontes_rag="; ".join(f.get("titulo") or "" for f in fontes) or None,
         tokens_input=resp.input_tokens, tokens_output=resp.output_tokens,
     )
-    return {"perfil": perfil, "label": cfg["label"], "resposta": resp.texto,
-            "modelo": resp.modelo, "provedor": resp.provedor, "nivel_inteligencia": nivel,
-            "fontes": [{"titulo": f.get("titulo"), "categoria": f.get("categoria"),
-                        "fonte": f.get("fonte")} for f in fontes],
-            "log_id": log_id, "is_rascunho": True,
-            "padrao_saida": "juridico_profissional",
-            "requer_conferencia": True,
-            "aviso_hitl": "Resposta gerada em padrão jurídico-profissional. Conferir fatos, fontes, documentos, valores e estratégia antes do uso externo."}
+    legado = {
+        "perfil": perfil, "label": cfg["label"], "resposta": resp.texto,
+        "modelo": resp.modelo, "provedor": resp.provedor, "nivel_inteligencia": nivel,
+        "fontes": [{"titulo": f.get("titulo"), "categoria": f.get("categoria"),
+                    "fonte": f.get("fonte")} for f in fontes],
+        "log_id": log_id, "is_rascunho": True,
+        "padrao_saida": "juridico_profissional",
+        "requer_conferencia": True,
+        "tokens_input": resp.input_tokens, "tokens_output": resp.output_tokens,
+        "aviso_hitl": "Resposta gerada em padrão jurídico-profissional. Conferir fatos, fontes, documentos, valores e estratégia antes do uso externo.",
+    }
+    # PORTA CANÔNICA: POST /ia/analisar com `perfil` (routers/ia_capacidades.py
+    # → services/ai/core/capacidades.py::analisar). Este endpoint segue
+    # atendendo pelo contrato antigo e devolve TAMBÉM o envelope canônico das
+    # cinco capacidades; o `aviso_hitl` específico do perfil é preservado.
+    from app.services.ai.core import capacidades
+    canonico = capacidades.canonizar("analisar", legado)
+    canonico["aviso_hitl"] = legado["aviso_hitl"]
+    return {**legado, **canonico}
