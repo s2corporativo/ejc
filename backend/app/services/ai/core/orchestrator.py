@@ -87,7 +87,10 @@ class SingleAICoreOrchestrator:
         process_id: str | None = None,
         params: dict | None = None,
         usar_rag: bool = True,
-        nivel_inteligencia: str = "alto",
+        # I2: None → o gateway aplica o piso da TAREFA (_nivel_piso). Informar
+        # "alto" aqui anulava AI_NIVEL_INTELIGENCIA_MERITO=maximo para todo o
+        # núcleo (o piso só vale quando o chamador não pede nível).
+        nivel_inteligencia: str | None = None,
     ) -> dict:
         params = params or {}
 

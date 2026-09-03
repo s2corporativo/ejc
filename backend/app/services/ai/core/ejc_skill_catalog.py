@@ -80,12 +80,14 @@ _LEGAL_DATA: dict[str, tuple[str, str, str]] = {
         "Sociedades, contratos empresariais, governança, crise e atividade econômica.",
         "Delimite empresário/sociedade, estrutura societária, poderes, contrato, obrigação, governança, garantias, insolvência e impactos tributários ou trabalhistas conexos. Separe prevenção, negociação, contencioso e reestruturação.",
     ),
-    "civel": (
+    # Chaves = taxonomia CANÔNICA (app/core/taxonomia.AREAS_CANONICAS): "civil"
+    # e "criminal" (não "civel"/"penal"); os nomes forenses seguem como alias.
+    "civil": (
         "Direito Civil",
         "Obrigações, contratos, responsabilidade, bens, cobrança e processo civil.",
         "Identifique relação jurídica, obrigação, inadimplemento, dano, nexo, culpa ou regime objetivo, prescrição/decadência, tutela adequada, competência, prova e exequibilidade. Separe direito material e técnica processual.",
     ),
-    "penal": (
+    "criminal": (
         "Direito Penal",
         "Análise penal e processual penal com garantias, prova e estratégia defensiva.",
         "Reconstrua cronologia, imputação, tipicidade, autoria, materialidade, elemento subjetivo, excludentes, competência, fase, cautelares, nulidades, prova lícita, cadeia de custódia, prescrição e alternativas legalmente cabíveis.",
@@ -267,10 +269,10 @@ MODULE_SKILL_SPECS: dict[str, NativeSkillSpec] = {
 LEGAL_AREA_ALIASES: dict[str, str] = {
     "empresarial": "empresarial",
     "societario": "empresarial",
-    "civel": "civel",
-    "civil": "civel",
-    "penal": "penal",
-    "criminal": "penal",
+    "civel": "civil",
+    "civil": "civil",
+    "penal": "criminal",
+    "criminal": "criminal",
     "trabalhista": "trabalhista",
     "trabalho": "trabalhista",
     "administrativo": "administrativo",
@@ -291,8 +293,8 @@ LEGAL_AREA_ALIASES: dict[str, str] = {
 
 LEGAL_AREA_KEYWORDS: dict[str, tuple[str, ...]] = {
     "empresarial": ("sociedade", "socio", "falencia", "recuperacao judicial", "contrato empresarial"),
-    "civel": ("responsabilidade civil", "cobranca", "indenizacao", "obrigacao civil"),
-    "penal": ("processo penal", "inquerito", "flagrante", "habeas corpus", "denuncia"),
+    "civil": ("civel", "responsabilidade civil", "cobranca", "indenizacao", "obrigacao civil"),
+    "criminal": ("penal", "processo penal", "inquerito", "flagrante", "habeas corpus", "denuncia"),
     "trabalhista": ("clt", "vinculo", "jornada", "verbas rescisorias", "reclamacao trabalhista"),
     "administrativo": ("processo administrativo", "servidor publico", "improbidade", "ato administrativo"),
     "bancario": ("contrato bancario", "extrato", "tarifa", "emprestimo", "financiamento"),
@@ -329,13 +331,20 @@ def _resolve_exact(value: str | None, aliases: dict[str, str]) -> str | None:
 
 
 def _best_keyword_match(text: str, candidates: dict[str, Iterable[str]]) -> str | None:
+    """Melhor candidato por pontuação de termos. EMPATE → None: escolher o
+    primeiro do dicionário seria decidir ramo/módulo pela ordem de declaração,
+    não pelo texto — a decisão fica com o humano (HITL)."""
     normalized = _normalize(text).replace("_", " ")
     scored: list[tuple[int, str]] = []
     for key, terms in candidates.items():
         score = sum(max(1, len(term.split())) for term in terms if term and term in normalized)
         if score:
             scored.append((score, key))
-    return max(scored, default=(0, ""))[1] or None
+    if not scored:
+        return None
+    melhor = max(score for score, _ in scored)
+    empatados = [key for score, key in scored if score == melhor]
+    return empatados[0] if len(empatados) == 1 else None
 
 
 def resolve_native_skill_plan(
@@ -384,15 +393,25 @@ def native_skill_specs() -> list[NativeSkillSpec]:
 
 
 def native_skill_coverage() -> dict[str, object]:
+    """Cobertura REAL das skills nativas.
+
+    C7 (análise E2E 03/09): a versão anterior comparava `_LEGAL_DATA` consigo
+    mesma e nunca acusava ramo faltante. Agora o esperado é a taxonomia
+    canônica (`AREAS_CANONICAS`); `missing` lista as áreas SEM método de ramo —
+    escrever esses métodos exige advogado, não se inventa aqui.
+    """
+    from app.core.taxonomia import AREAS_CANONICAS
     expected_modules = set(_MODULE_BY_KEY)
     covered_modules = set(MODULE_SKILL_SPECS)
-    expected_areas = set(_LEGAL_DATA)
+    expected_areas = set(AREAS_CANONICAS)
     covered_areas = set(LEGAL_AREA_SPECS)
     return {
         "legal_areas": {
             "expected": len(expected_areas),
-            "covered": len(covered_areas),
+            "covered": len(covered_areas & expected_areas),
             "missing": sorted(expected_areas - covered_areas),
+            # Chaves do catálogo fora do enum canônico (deveria ser vazio).
+            "nao_canonicas": sorted(covered_areas - expected_areas),
         },
         "modules": {
             "expected": len(expected_modules),
@@ -401,5 +420,5 @@ def native_skill_coverage() -> dict[str, object]:
             "extra": sorted(covered_modules - expected_modules),
         },
         "total_native_skills": len(covered_areas) + len(covered_modules),
-        "complete": expected_modules == covered_modules and expected_areas == covered_areas,
+        "complete": expected_modules == covered_modules and expected_areas <= covered_areas,
     }

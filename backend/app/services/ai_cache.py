@@ -37,8 +37,11 @@ def _tarefa_cacheavel(task_type: str) -> bool:
 
     A política é consultada pela mesma fonte usada pelo gateway. O fallback da
     política é EXTERNO_PSEUDONIMIZADO; assim, tarefa desconhecida também fica
-    protegida. LOCAL_COMPLETO e MASCARAMENTO são tecnicamente cacheáveis, pois
-    não há reidratação reversível, mas o override organizacional é respeitado.
+    protegida. LOCAL_COMPLETO (sigilo reforçado) também NÃO é cacheável (A6):
+    o conteúdo trafega EM CLARO para o provedor local e a resposta pode carregar
+    dado pessoal real — persistir isso no Redis contraria a política de que o
+    conteúdo dessas áreas não sai do processo. Só MASCARAMENTO (irreversível)
+    é cacheável.
     """
     try:
         from app.services.ai.sanitization_policy import ModoSanitizacao, modo_para_task
@@ -46,6 +49,7 @@ def _tarefa_cacheavel(task_type: str) -> bool:
         return modo not in (
             ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
             ModoSanitizacao.EXTRACAO_LOCAL,
+            ModoSanitizacao.LOCAL_COMPLETO,
         )
     except Exception:
         # Fail-closed: falha ao determinar a política nunca autoriza persistir

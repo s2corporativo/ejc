@@ -77,6 +77,8 @@ async def calcular_score(
         raise HTTPException(404, "Caso não encontrado")
 
     # Chamar LLM — via AI Gateway (barreira única de PII/LGPD + logs HITL).
+    resp = None
+    user_prompt = ""
     try:
         system_prompt = (
             "Você é um avaliador jurídico do escritório. Avalie o caso e responda "
@@ -107,6 +109,18 @@ async def calcular_score(
         logger.warning("Score jurídico por IA indisponível; usando fallback zerado", exc_info=True)
         scores = {k: 0 for k in DIMS}
         scores.update({"detalhes": {}, "recomendacoes": ["Score calculado manualmente"]})
+
+    # I9 (análise E2E 03/09): call site com db+user sem AILog — custo e trilha
+    # LGPD invisíveis. Fora do try: erro de gravação PROPAGA (regra do ai_guard).
+    if resp is not None:
+        from app.models.ai_log import AITipoUso
+        from app.services.sanitizer import sanitizar_pii
+        prompt_log, pii = sanitizar_pii(user_prompt)
+        await ai_gateway.registrar_log_resposta(
+            db, user_id=cu.id, tipo_uso=AITipoUso.analise_caso, resp=resp,
+            prompt_sanitizado="[SCORE_JURIDICO]\n" + prompt_log, pii_removida=pii,
+            case_id=case_id,
+        )
 
     total = sum(scores.get(k, 0) for k in DIMS)
 
@@ -139,5 +153,10 @@ async def calcular_score(
         dados_depois={"total": total, "tipo": "ia"},
     )
     await db.commit()
-    return {**scores, "total": total, "id": row["id"],
-            "aviso": "Resultado gerado por IA — revisão humana obrigatória"}
+    # S8: vocabulário HITL canônico (is_rascunho/requer_revisao/status_hitl/
+    # aviso_hitl) somado ao "aviso" legado — o frontend antigo segue funcionando.
+    from app.services.ai.core import hitl_policy
+    return hitl_policy.aplicar({
+        **scores, "total": total, "id": row["id"],
+        "aviso": "Resultado gerado por IA — revisão humana obrigatória",
+    })

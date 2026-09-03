@@ -262,6 +262,11 @@ class Settings(BaseSettings):
     # trabalho jurídico de mérito, a resposta rasa custa mais caro que o token.
     AI_NIVEL_INTELIGENCIA_MERITO: str = "maximo"   # peça, análise, estratégia
     AI_NIVEL_INTELIGENCIA_PADRAO: str = "alto"     # demais tarefas de prosa
+    # Deadline AGREGADO da cadeia de fallback do gateway (I8/A5): a soma dos
+    # timeouts individuais (Ollama 120 s + Maritaca 90 s + Groq 60 s + Anthropic
+    # 180 s) podia passar de 7 min numa única requisição. Ao estourar, o gateway
+    # devolve erro leigo (sem nome de provedor) e loga WARNING. 0 = sem limite.
+    AI_CHAIN_DEADLINE_SECONDS: int = 240
     # Sala Jurídica: extração automática do estado jurídico consolidado após
     # cada resposta (roda no provider LOCAL via task_type "resumo" — custo
     # zero; falha degrada para o merge de fontes, nunca bloqueia a resposta).
