@@ -19,8 +19,10 @@
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 import asyncio
+import contextvars
 import logging
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -294,10 +296,47 @@ _MSG_DEADLINE_CADEIA = (
 )
 
 
-def _deadline_cadeia():
-    """Context manager de timeout para o laço de provedores (0/None = sem limite)."""
+# Prazo ABSOLUTO da cadeia em curso (loop.time()), para que cada provedor
+# receba o orçamento RESTANTE. Revisão de segurança 03/09/2026 (P2-2): o
+# provider Anthropic usa o SDK síncrono dentro de `asyncio.to_thread`, que NÃO
+# é cancelável — sem um timeout próprio derivado do que sobrou, o estouro do
+# deadline abandonava a task enquanto a thread seguia até 120 s, gerando
+# chamada cobrada, sem AILog e sem custo no painel. Com o orçamento restante,
+# o próprio SDK aborta a requisição.
+_DEADLINE_ABS: contextvars.ContextVar[float | None] = contextvars.ContextVar(
+    "ai_gateway_deadline_abs", default=None
+)
+
+
+@asynccontextmanager
+async def _deadline_cadeia():
+    """Timeout do laço de provedores (0/None = sem limite) + prazo absoluto."""
     segundos = int(getattr(get_settings(), "AI_CHAIN_DEADLINE_SECONDS", 0) or 0)
-    return asyncio.timeout(segundos if segundos > 0 else None)
+    if segundos <= 0:
+        async with asyncio.timeout(None):
+            yield
+        return
+    token = _DEADLINE_ABS.set(asyncio.get_running_loop().time() + segundos)
+    try:
+        async with asyncio.timeout(segundos):
+            yield
+    finally:
+        _DEADLINE_ABS.reset(token)
+
+
+def _orcamento_restante() -> float | None:
+    """Segundos que ainda cabem no deadline da cadeia (None = sem deadline).
+
+    Nunca devolve valor não positivo: um timeout <= 0 no SDK viraria erro de
+    validação em vez de deixar o `asyncio.timeout` externo encerrar o laço."""
+    alvo = _DEADLINE_ABS.get()
+    if alvo is None:
+        return None
+    try:
+        restante = alvo - asyncio.get_running_loop().time()
+    except RuntimeError:  # sem loop em execução (chamada síncrona de teste)
+        return None
+    return max(restante, 1.0)
 
 
 def _tokens_cache(usage: dict) -> tuple[int | None, int | None]:
@@ -1025,7 +1064,12 @@ async def _chamar_provedor(
         )
     elif provider == "anthropic":
         from app.services.providers import anthropic_provider
-        return await anthropic_provider.chat(messages, model, temperature, max_tokens)
+        # timeout_s = orçamento RESTANTE da cadeia: o SDK síncrono roda em
+        # thread não cancelável, então quem precisa abortar é ele (P2-2).
+        return await anthropic_provider.chat(
+            messages, model, temperature, max_tokens,
+            timeout_s=_orcamento_restante(),
+        )
     elif provider == "maritaca":
         from app.services.providers import maritaca_provider
         return await maritaca_provider.chat(messages, model, temperature, max_tokens)
@@ -1187,9 +1231,15 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
         if db is not None and user_id:
             from app.services.ai_guard import registrar_ai_log
             from app.services.ai.core.audit_logger import _tipo_uso
+            # Revisão de segurança 03/09/2026 (P3-1): o prompt do hit é o texto
+            # PRÉ-barreira e o hit não sabe se a chamada original foi
+            # pseudonimizada — gravá-lo cru marcado como `pii_removida=False`
+            # deixava PII no registro de auditoria. Sanitiza antes de gravar.
+            from app.services.sanitizer import sanitizar_pii as _san_log
+            _prompt_log, _pii_log = _san_log(mensagem or "")
             await registrar_ai_log(
                 db, user_id=user_id, tipo_uso=_tipo_uso(tarefa), case_id=case_id,
-                prompt_sanitizado=mensagem[:8000], pii_removida=False,
+                prompt_sanitizado=_prompt_log[:8000], pii_removida=_pii_log,
                 resposta=(_cached.get("texto") or "")[:8000],
                 modelo=str(_cached.get("modelo") or "")[:50],
                 fontes_rag="[cache_hit] resposta servida do cache — tokens/custo zero",

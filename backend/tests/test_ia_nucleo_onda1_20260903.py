@@ -877,3 +877,84 @@ class TestI5AgentesComFonte:
         # O AILog do turno seguinte à tool carrega a trilha das fontes.
         assert ailogs[-1]["fontes_rag"] and "chunk=k1" in ailogs[-1]["fontes_rag"]
         assert r["fontes"] == [{"titulo": "Súmula 1", "categoria": "sumula_stj", "fonte": "STJ"}]
+
+
+# ── Revisão de segurança 03/09/2026 — P2-2: orçamento restante da cadeia ─────
+# O SDK da Anthropic é síncrono e roda em `asyncio.to_thread`, que não é
+# cancelável: sem repassar o que sobra do deadline, o estouro abandonava a
+# task e a requisição seguia até ANTHROPIC_TIMEOUT_SECONDS — cobrada, sem
+# AILog e fora do painel de custo.
+def test_orcamento_restante_sem_deadline_e_none():
+    import asyncio as _aio
+
+    from app.services import ai_gateway as gw
+
+    async def _cenario():
+        return gw._orcamento_restante()
+
+    assert _aio.run(_cenario()) is None
+
+
+def test_orcamento_restante_dentro_do_deadline(monkeypatch):
+    import asyncio as _aio
+
+    from app.core.config import get_settings
+    from app.services import ai_gateway as gw
+
+    monkeypatch.setattr(get_settings(), "AI_CHAIN_DEADLINE_SECONDS", 30)
+
+    async def _cenario():
+        async with gw._deadline_cadeia():
+            return gw._orcamento_restante()
+
+    restante = _aio.run(_cenario())
+    assert restante is not None
+    assert 0 < restante <= 30
+
+
+def test_orcamento_restante_nunca_zero_ou_negativo(monkeypatch):
+    """Timeout <= 0 viraria erro de validação no SDK; o piso deixa o
+    `asyncio.timeout` externo encerrar o laço."""
+    import asyncio as _aio
+
+    from app.core.config import get_settings
+    from app.services import ai_gateway as gw
+
+    monkeypatch.setattr(get_settings(), "AI_CHAIN_DEADLINE_SECONDS", 30)
+
+    async def _cenario():
+        async with gw._deadline_cadeia():
+            # Simula deadline já vencido.
+            gw._DEADLINE_ABS.set(_aio.get_running_loop().time() - 5)
+            return gw._orcamento_restante()
+
+    assert _aio.run(_cenario()) >= 1.0
+
+
+def test_provider_anthropic_recebe_timeout_restante(monkeypatch):
+    """`_chamar_provedor` repassa o orçamento restante só para a Anthropic."""
+    import asyncio as _aio
+
+    from app.core.config import get_settings
+    from app.services import ai_gateway as gw
+    from app.services.providers import anthropic_provider
+
+    monkeypatch.setattr(get_settings(), "AI_CHAIN_DEADLINE_SECONDS", 30)
+    recebidos: dict = {}
+
+    async def _fake_chat(messages, model, temperature, max_tokens, timeout_s=None):
+        recebidos["timeout_s"] = timeout_s
+        return ("ok", {"model": "m"})
+
+    monkeypatch.setattr(anthropic_provider, "chat", _fake_chat)
+
+    async def _cenario():
+        async with gw._deadline_cadeia():
+            return await gw._chamar_provedor(
+                "anthropic", None, [{"role": "user", "content": "oi"}], 0.2, 100,
+            )
+
+    texto, _ = _aio.run(_cenario())
+    assert texto == "ok"
+    assert recebidos["timeout_s"] is not None
+    assert 0 < recebidos["timeout_s"] <= 30

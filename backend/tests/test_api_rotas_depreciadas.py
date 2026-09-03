@@ -64,3 +64,19 @@ def test_parse_ignora_entradas_malformadas():
     exatas, prefixos = mw._parse_depreciadas("GET /api/a,  lixo , POST /api/b/*, ,DELETE")
     assert exatas == {("GET", "/api/a")}
     assert prefixos == (("POST", "/api/b/"),)
+
+
+# ── P3-5 (revisão de segurança 03/09/2026): Sunset validada no boot ──────────
+def test_sunset_invalida_falha_no_boot():
+    import pytest as _pytest
+
+    from app.core.config import Settings
+
+    base = dict(_env_file=None, APP_ENV="development", SECRET_KEY="x" * 32)
+    with _pytest.raises(ValueError, match="API_ROTAS_SUNSET inválida"):
+        Settings(**base, API_ROTAS_SUNSET="dezembro de 2026")
+    # Data HTTP válida passa e é preservada.
+    s = Settings(**base, API_ROTAS_SUNSET="Wed, 02 Dec 2026 00:00:00 GMT")
+    assert s.API_ROTAS_SUNSET == "Wed, 02 Dec 2026 00:00:00 GMT"
+    # Vazio continua sendo o default (poda desligada).
+    assert Settings(**base).API_ROTAS_SUNSET == ""

@@ -94,10 +94,14 @@ async def gerar_checklist_ia(db: AsyncSession, case_id: str, gatilho: str = "ger
     # background tasks passam user_id). Prompt já sanitizado (sanitizar_pii).
     if user_id:
         from app.models.ai_log import AITipoUso
+        # P3-2: `user` inclui o contexto do RAG (`ctx_txt`), que não passou por
+        # sanitizar_pii — afirmar pii_removida=True sobre ele era falso.
+        from app.services.sanitizer import sanitizar_pii as _san_log
+        _prompt_log, _pii_log = _san_log(f"[CHECKLIST_IA gatilho={gatilho}]\n" + user)
         await ai_gateway.registrar_log_resposta(
             db, user_id=user_id, tipo_uso=AITipoUso.outro, resp=resp,
-            prompt_sanitizado=f"[CHECKLIST_IA gatilho={gatilho}]\n" + user,
-            pii_removida=True, case_id=case_id,
+            prompt_sanitizado=_prompt_log,
+            pii_removida=_pii_log, case_id=case_id,
         )
     itens_ia = _parse_itens(resp.texto)
     if not itens_ia:

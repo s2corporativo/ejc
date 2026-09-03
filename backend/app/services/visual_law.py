@@ -103,10 +103,14 @@ async def gerar_diagrama(
 
     if db is not None and user_id:
         from app.models.ai_log import AITipoUso
+        # P3-2: `pii_removida=True` era premissa sobre o chamador. Sanitiza aqui
+        # e reporta o que de fato aconteceu.
+        from app.services.sanitizer import sanitizar_pii as _san_log
+        _prompt_log, _pii_log = _san_log(f"[VISUAL_LAW tipo={tipo}]\n" + user_msg)
         await registrar_log_resposta(
             db, user_id=user_id, tipo_uso=AITipoUso.outro, resp=resp,
-            prompt_sanitizado=f"[VISUAL_LAW tipo={tipo}]\n" + user_msg,
-            pii_removida=True, case_id=case_id,
+            prompt_sanitizado=_prompt_log,
+            pii_removida=_pii_log, case_id=case_id,
         )
 
     # Remove eventuais fences de markdown do output

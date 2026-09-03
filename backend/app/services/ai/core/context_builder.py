@@ -82,6 +82,18 @@ def _trunca(texto: str, limite: int) -> str:
     return texto[:limite] + "\n[... truncado para caber no contexto ...]"
 
 
+def _uma_linha(v, limite: int | None = None) -> str:
+    """Achata quebras de linha de campo livre antes de entrar no dossiê.
+
+    Revisão de segurança 03/09/2026 (P3-3): título de documento, prazo ou tese
+    é texto que o usuário escreve. Com `\\n` dentro, um título pode forjar o
+    cabeçalho de outra seção do contexto ("[FONTES — BASE DE CONHECIMENTO
+    INTERNA]") e passar por conteúdo que o sistema montou. `descricao` e
+    `fundamentacao` já eram achatadas; os títulos não eram."""
+    texto = " ".join(str(v or "").split())
+    return texto[:limite] if limite else texto
+
+
 def _fmt(v) -> str:
     if v is None:
         return ""
@@ -201,7 +213,7 @@ async def _secao_documentos(db, case_id: str) -> str:
     linhas = [_TITULOS["documentos"]]
     for d in docs:
         resumo = (getattr(d, "descricao", None) or "").strip().replace("\n", " ")
-        linha = f"  • {d.titulo} (tipo: {d.tipo or 'não classificado'})"
+        linha = f"  • {_uma_linha(d.titulo, 200)} (tipo: {_uma_linha(d.tipo) or 'não classificado'})"
         if resumo:
             linha += f" — {resumo[:200]}"
         linhas.append(linha)
@@ -222,10 +234,10 @@ async def _secao_prazos(db, case_id: str) -> str:
         return ""
     linhas = [_TITULOS["prazos"]]
     for p in prazos:
-        linha = (f"  • {_fmt(p.data_prazo)} — {p.titulo} "
+        linha = (f"  • {_fmt(p.data_prazo)} — {_uma_linha(p.titulo, 200)} "
                  f"[{_fmt(p.tipo)}/{_fmt(p.prioridade)}/{_fmt(p.status)}]")
         if getattr(p, "base_legal", None):
-            linha += f" (base: {p.base_legal})"
+            linha += f" (base: {_uma_linha(p.base_legal, 200)})"
         linhas.append(linha)
     return "\n".join(linhas)
 
@@ -245,9 +257,9 @@ async def _secao_teses(db, case_id: str) -> str:
     linhas = [_TITULOS["teses"]]
     for row in rows:
         tese, resultado = row[0], (row[1] if len(row) > 1 else None)
-        linha = f"  • {tese.titulo} ({_fmt(tese.status) or 'ativa'}"
+        linha = f"  • {_uma_linha(tese.titulo, 200)} ({_fmt(tese.status) or 'ativa'}"
         if resultado:
-            linha += f", resultado: {resultado}"
+            linha += f", resultado: {_uma_linha(resultado, 100)}"
         linha += ")"
         fund = (getattr(tese, "fundamentacao", None) or "").strip().replace("\n", " ")
         if fund:

@@ -751,9 +751,15 @@ async def _gerar_teses(
     # I9: o motor de teses gerava sem AILog (custo/trilha invisíveis).
     from app.models.ai_log import AITipoUso
     from app.services.ai_gateway import registrar_log_resposta
+    # P3-2 (revisão de segurança 03/09/2026): `user` carrega os precedentes
+    # internos e a fundamentação das teses, que não passaram por sanitização —
+    # só o `texto` do usuário tinha passado. Sanitiza o prompt INTEIRO antes de
+    # gravar, senão o registro afirma "sem PII" carregando nome de parte.
+    from app.services.sanitizer import sanitizar_pii as _san_log
+    _prompt_log, _pii_log = _san_log("[MOTOR_TESES]\n" + user)
     await registrar_log_resposta(
         db, user_id=cu.id, tipo_uso=AITipoUso.analise_caso, resp=resp,
-        prompt_sanitizado="[MOTOR_TESES]\n" + user, pii_removida=pii,
+        prompt_sanitizado=_prompt_log, pii_removida=(pii or _pii_log),
         case_id=req.case_id,
     )
 

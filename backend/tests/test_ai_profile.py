@@ -64,3 +64,29 @@ def test_perfil_alimenta_a_fonte_unica_de_elegibilidade():
     externo = Settings(**_BASE, AI_PROFILE="externo")
     assert provider_elegivel_com("anthropic", externo) is True
     assert provider_elegivel_com("ollama", externo) is False
+
+
+# ── Precedência: flag explícita vence o perfil (revisão de segurança, P2-1) ───
+# Sem isto, AI_PROFILE=externo no compose desfazia em silêncio o kill-switch
+# que o operador aplicou à mão durante um incidente.
+def test_flag_explicita_do_operador_vence_o_perfil():
+    s = Settings(**_BASE, AI_PROFILE="hibrido", AI_EXTERNAL_PROVIDERS_ALLOWED=False)
+    assert s.AI_EXTERNAL_PROVIDERS_ALLOWED is False, (
+        "kill-switch explícito não pode ser revertido pelo perfil"
+    )
+    s2 = Settings(**_BASE, AI_PROFILE="externo", ANTHROPIC_ENABLED=False, GROQ_ENABLED=False)
+    assert (s2.ANTHROPIC_ENABLED, s2.GROQ_ENABLED) == (False, False)
+    # O que o operador NÃO definiu continua vindo do perfil.
+    assert s2.OLLAMA_ENABLED is False
+
+
+def test_perfil_local_nao_religa_ollama_se_operador_desligou():
+    s = Settings(**_BASE, AI_PROFILE="local", OLLAMA_ENABLED=False)
+    assert s.OLLAMA_ENABLED is False
+    assert s.AI_EXTERNAL_PROVIDERS_ALLOWED is False  # derivado, não explícito
+
+
+def test_perfil_desligado_respeita_ai_enabled_explicito():
+    s = Settings(**_BASE, AI_PROFILE="desligado", AI_ENABLED=True)
+    assert s.AI_ENABLED is True  # explícito vence; o log registra a divergência
+    assert Settings(**_BASE, AI_PROFILE="desligado").AI_ENABLED is False

@@ -3,6 +3,7 @@
 # NUNCA hardcodar segredos neste arquivo.
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
+import logging
 from functools import lru_cache
 from typing import List
 from pydantic import model_validator
@@ -149,6 +150,8 @@ class Settings(BaseSettings):
     # sufixo "*" como prefixo) que passam a responder com `Deprecation: true` e
     # `Sunset` (API_ROTAS_SUNSET, data HTTP) antes da remoção.
     API_ROTAS_DEPRECIADAS: str = ""
+    # Data HTTP (RFC 7231) enviada em `Sunset`. Validada no boot para não virar
+    # header malformado em runtime (revisão de segurança 03/09/2026, P3-5).
     API_ROTAS_SUNSET: str = ""
 
     # Documento grande: leitura em blocos + síntese, sem truncamento silencioso.
@@ -1044,40 +1047,85 @@ class Settings(BaseSettings):
         ]
 
     @model_validator(mode="after")
+    def _validar_sunset(self):
+        """`API_ROTAS_SUNSET` precisa ser data HTTP válida (RFC 7231).
+
+        Falhar no boot é melhor que emitir header malformado por meses: quem
+        consome `Sunset` é ferramenta de cliente, e valor inválido é ignorado
+        em silêncio — a poda pareceria anunciada sem estar."""
+        bruto = (self.API_ROTAS_SUNSET or "").strip()
+        if not bruto:
+            return self
+        from email.utils import parsedate_to_datetime
+        try:
+            parsedate_to_datetime(bruto)
+        except (TypeError, ValueError) as e:
+            raise ValueError(
+                f"API_ROTAS_SUNSET inválida: {bruto!r} — use data HTTP, "
+                'ex.: "Wed, 02 Dec 2026 00:00:00 GMT"'
+            ) from e
+        self.API_ROTAS_SUNSET = bruto
+        return self
+
+    @model_validator(mode="after")
     def _aplicar_perfil_ia(self):
         """AI_PROFILE deriva as flags de provedor (fonte única de configuração).
 
         Roda ANTES de _validar_seguranca_producao (ordem de definição), para que
         a validação de produção enxergue as flags já derivadas. Vazio mantém o
-        comportamento histórico (flags manuais)."""
+        comportamento histórico (flags manuais).
+
+        PRECEDÊNCIA (revisão de segurança 03/09/2026, P2-1): flag definida
+        EXPLICITAMENTE pelo operador (env, .env ou construtor) SEMPRE vence o
+        perfil. Sem isso, `AI_PROFILE=externo` no compose desfazia em silêncio
+        um `AI_EXTERNAL_PROVIDERS_ALLOWED=false` aplicado à mão durante um
+        incidente de LGPD — kill-switch documentado voltando a `true` sem log,
+        sem aviso e sem falha de boot. O perfil só preenche o que não foi dito.
+        Quando há conflito, o perfil cede e o boot registra WARNING nomeando a
+        flag (nunca o valor), para que a divergência apareça no log."""
         perfil = (self.AI_PROFILE or "").strip().lower()
         if not perfil:
             return self
+
+        explicitas = set(self.model_fields_set or ())
+
+        def _derivar(campo: str, valor):
+            """Aplica o valor do perfil só se o operador não tiver definido o campo."""
+            if campo in explicitas:
+                if getattr(self, campo) != valor:
+                    logging.getLogger("ejc").warning(
+                        "[Config] AI_PROFILE=%s queria %s derivado, mas o valor "
+                        "explícito do ambiente prevalece.", perfil, campo,
+                    )
+                return
+            setattr(self, campo, valor)
+
         if perfil == "desligado":
-            self.AI_ENABLED = False
+            _derivar("AI_ENABLED", False)
         elif perfil == "local":
-            self.AI_EXTERNAL_PROVIDERS_ALLOWED = False
-            self.OLLAMA_ENABLED = True
-            self.ANTHROPIC_ENABLED = False
-            self.GROQ_ENABLED = False
-            self.MARITACA_ENABLED = False
-            self.AI_PROVIDER_PRIORITY = "ollama"
+            _derivar("AI_EXTERNAL_PROVIDERS_ALLOWED", False)
+            _derivar("OLLAMA_ENABLED", True)
+            _derivar("ANTHROPIC_ENABLED", False)
+            _derivar("GROQ_ENABLED", False)
+            _derivar("MARITACA_ENABLED", False)
+            _derivar("AI_PROVIDER_PRIORITY", "ollama")
         elif perfil == "externo":
-            self.AI_EXTERNAL_PROVIDERS_ALLOWED = True
-            self.OLLAMA_ENABLED = False
-            self.ANTHROPIC_ENABLED = True
-            self.GROQ_ENABLED = True
+            _derivar("AI_EXTERNAL_PROVIDERS_ALLOWED", True)
+            _derivar("OLLAMA_ENABLED", False)
+            _derivar("ANTHROPIC_ENABLED", True)
+            _derivar("GROQ_ENABLED", True)
             # Maritaca só entra se o operador a ligou explicitamente (não é
             # soberana por default — ver comentário de MARITACA_ENABLED).
-            self.AI_PROVIDER_PRIORITY = (
-                "anthropic,maritaca,groq" if self.MARITACA_ENABLED else "anthropic,groq"
+            _derivar(
+                "AI_PROVIDER_PRIORITY",
+                "anthropic,maritaca,groq" if self.MARITACA_ENABLED else "anthropic,groq",
             )
         elif perfil == "hibrido":
-            self.AI_EXTERNAL_PROVIDERS_ALLOWED = True
-            self.OLLAMA_ENABLED = True
-            self.ANTHROPIC_ENABLED = True
-            self.GROQ_ENABLED = True
-            self.AI_PROVIDER_PRIORITY = "anthropic,maritaca,groq,ollama"
+            _derivar("AI_EXTERNAL_PROVIDERS_ALLOWED", True)
+            _derivar("OLLAMA_ENABLED", True)
+            _derivar("ANTHROPIC_ENABLED", True)
+            _derivar("GROQ_ENABLED", True)
+            _derivar("AI_PROVIDER_PRIORITY", "anthropic,maritaca,groq,ollama")
         else:
             raise ValueError(
                 f"AI_PROFILE inválido: {self.AI_PROFILE!r} "
