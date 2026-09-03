@@ -34,7 +34,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
-import os
 from typing import Awaitable, Callable
 
 import httpx
@@ -181,7 +180,11 @@ async def testar_anthropic() -> TesteResultado:
     """Valida a chave Anthropic via GET /v1/models (barato). Espelha o intent do
     anthropic_provider.health() (que só checa presença) com teste real de rede."""
     s = get_settings()
-    key = s.ANTHROPIC_API_KEY or os.getenv("ANTHROPIC_API_KEY", "")
+    # Só Settings — mesma resolução de anthropic_provider._api_key(). O antigo
+    # `or os.getenv(...)` fazia o testador validar a chave velha do .env depois
+    # de o Cofre revogar a credencial (Settings=""), reportando "configurada"
+    # para uma chave que o runtime já não usa (análise E2E 03/09/2026).
+    key = s.ANTHROPIC_API_KEY
     if _vazio(key):
         return (AUSENTE, "ANTHROPIC_API_KEY não configurada.")
     return await _probe(
