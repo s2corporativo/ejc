@@ -10,6 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select, or_, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -397,8 +398,18 @@ async def atualizar_tese(
 ):
     if not _pode_editar(cu):
         raise HTTPException(403)
+    # `with_for_update`: o versionamento lê a ÚLTIMA versão e grava a seguinte.
+    # Dois PATCH concorrentes na MESMA ficha leriam a mesma "última" e tentariam
+    # gravar o mesmo número — o UNIQUE(tese_id, versao) rejeitaria o segundo com
+    # 500 e a edição se perderia. A premissa de worker único do repo não protege
+    # aqui: o servidor é async e interleava nos `await`. O lock de linha
+    # serializa as edições da mesma ficha (as de fichas diferentes seguem em
+    # paralelo); a segunda requisição relê depois do commit da primeira e grava
+    # a versão certa, sem perder nada.
     t = (await db.execute(
-        select(Tese).where(Tese.id == tese_id, Tese.deleted_at.is_(None))
+        select(Tese)
+        .where(Tese.id == tese_id, Tese.deleted_at.is_(None))
+        .with_for_update()
     )).scalar_one_or_none()
     if not t:
         raise HTTPException(404)
@@ -416,7 +427,21 @@ async def atualizar_tese(
     # nada mudou de fato — salvar sem alterar não polui o histórico.
     versao = await ficha_viva.registrar_versao(
         db, t, user_id=cu.id, resumo_mudanca=resumo)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Cinto e suspensório: o lock acima resolve a corrida deste handler, mas
+        # um chamador futuro de `registrar_versao` que não trave a linha voltaria
+        # a colidir. 409 honesto — o advogado recarrega e reaplica — em vez de um
+        # 500 com erro cru de banco.
+        await db.rollback()
+        logger.warning(
+            "Colisão de versão na ficha %s (edição concorrente).", tese_id)
+        raise HTTPException(
+            409,
+            "Outra edição desta ficha foi gravada enquanto você editava. "
+            "Recarregue a ficha e aplique suas alterações novamente.",
+        )
     saida = _tese_out(t)
     saida["versao_registrada"] = versao.versao if versao else None
     return saida
@@ -936,21 +961,24 @@ async def motor_teses_async_status(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class FonteIn(BaseModel):
-    elemento:   str = Field(description=f"Um de {list(ELEMENTOS_FONTE)}")
+    # `max_length` em todos: as mensagens de erro de domínio interpolam o valor
+    # recebido, e a coluna `trecho` é TEXT sem teto próprio.
+    elemento:   str = Field(max_length=20, description=f"Um de {list(ELEMENTOS_FONTE)}")
     referencia: str = Field(min_length=2, max_length=300)
     # Obrigatório: uma referência sem o texto que ela diz não é verificável —
     # é exatamente o formato de uma citação alucinada.
-    trecho:     str = Field(min_length=10)
+    trecho:     str = Field(min_length=10, max_length=20_000)
     fonte_url:  Optional[str] = Field(default=None, max_length=500)
     knowledge_doc_id:    Optional[str] = Field(default=None, max_length=36)
     authority_record_id: Optional[str] = Field(default=None, max_length=36)
     status_verificacao:  str = Field(
-        default="nao_verificada", description=f"Um de {list(STATUS_FONTE)}")
+        default="nao_verificada", max_length=20,
+        description=f"Um de {list(STATUS_FONTE)}")
 
 
 class OverrideIn(BaseModel):
     case_id: str = Field(max_length=36)
-    motivo:  str = Field(description=f"Um de {list(MOTIVOS_OVERRIDE)}")
+    motivo:  str = Field(max_length=30, description=f"Um de {list(MOTIVOS_OVERRIDE)}")
     justificativa: str = Field(
         min_length=ficha_viva.JUSTIFICATIVA_MIN, max_length=4000,
         description="Obrigatória: é ela que transforma a recusa em sinal de revisão.")
@@ -1081,20 +1109,37 @@ async def listar_recusas_da_ficha(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Casos em que a ficha foi AFASTADA, e por quê."""
+    """Casos em que a ficha foi AFASTADA, e por quê.
+
+    A LISTA é filtrada pela visibilidade de casos do usuário: `justificativa` é
+    texto livre escrito por um advogado SOBRE UM CASO CONCRETO, então listar
+    sem filtro exporia conteúdo de caso alheio a qualquer membro da equipe
+    jurídica — `estagiario` incluído — e ainda enumeraria `case_id`s. Mesma
+    regra de `casos-candidatos`, que traz o comentário "sem isso a varredura
+    seria um vazamento".
+
+    O SINAL de revisão continua sendo calculado sobre TODAS as recusas: é
+    contagem por motivo, não expõe caso nenhum, e é justamente o dado que diz
+    se a ficha precisa ser revista. Filtrá-lo faria dois advogados verem
+    diagnósticos diferentes da MESMA ficha institucional — e o gestor, que vê
+    tudo, veria um terceiro.
+    """
     if not _is_staff(cu):
         raise HTTPException(403, "Acesso restrito à equipe jurídica")
     await _ficha_ou_404(db, tese_id)
-    overrides = await ficha_viva.overrides_da_ficha(db, tese_id)
+    todas = await ficha_viva.overrides_da_ficha(db, tese_id)
+    visiveis = await ficha_viva.overrides_da_ficha(db, tese_id, visivel_para=cu)
     return {
         "tese_id": tese_id,
-        "sinal": ficha_viva.sinal_de_revisao(overrides),
+        "sinal": ficha_viva.sinal_de_revisao(todas),
+        "total_no_escritorio": len(todas),
+        "ocultos_por_visibilidade": len(todas) - len(visiveis),
         "overrides": [{
             "id": o.id, "case_id": o.case_id, "versao_tese": o.versao_tese,
             "motivo": o.motivo, "justificativa": o.justificativa,
             "criado_por": o.criado_por,
             "criado_em": o.criado_em.isoformat() if o.criado_em else None,
-        } for o in overrides],
+        } for o in visiveis],
     }
 
 

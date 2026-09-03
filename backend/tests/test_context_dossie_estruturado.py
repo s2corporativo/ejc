@@ -298,10 +298,12 @@ class _FakeDBComLastro(_FakeDB):
     def __init__(self, *, fontes=(), **kw):
         super().__init__(**kw)
         self.fontes = list(fontes)
+        self.sqls_fontes: list[str] = []
 
     async def execute(self, stmt, params=None):
         from app.models.tese import TeseFonte
         if stmt.column_descriptions[0].get("entity") is TeseFonte:
+            self.sqls_fontes.append(str(stmt))
             return _Res(self.fontes)
         return await super().execute(stmt, params)
 
@@ -379,3 +381,51 @@ async def test_lastro_indisponivel_nao_derruba_a_secao(_mocks):
     assert "[TESES VINCULADAS AO CASO]" in ctx.texto
     assert "Repetição do indébito em dobro" in ctx.texto
     assert "teses" in ctx.secoes
+
+
+async def test_trecho_cortado_e_marcado_no_dossie(_mocks):
+    """Achado do pente fino 03/09. `_uma_linha` trunca por fatia seca, e este
+    trecho entra rotulado `[FONTE VERIFICADA]` — o material que o redator PODE
+    citar. Um dispositivo cuja ressalva ("…salvo quando…") caia depois do
+    limite chegaria ao modelo afirmando o CONTRÁRIO da fonte, com selo de
+    verificado. O delimitador não protege contra isso: é fidelidade de citação,
+    não injeção."""
+    from app.models.tese import TeseFonte
+    longa = TeseFonte(
+        id="f1", tese_id="t1", elemento="fundamentacao",
+        referencia="art. fictício", knowledge_doc_id="doc-1",
+        trecho=("A parte responde pelo dano " * 40) + "salvo quando comprovar caso fortuito.",
+        status_verificacao="verificada",
+    )
+    db = _FakeDBComLastro(documentos=_docs(), prazos=_prazos(), teses=_teses(),
+                          fontes=[longa])
+    ctx = await cb.montar_contexto(db, mensagem="pergunta fictícia",
+                                   case_id="caso-A", user=SimpleNamespace(id="u1"))
+    assert "[…TRECHO CORTADO — consulte a fonte antes de citar]" in ctx.texto
+    # A ressalva de fato NÃO coube — é exatamente o cenário que a marca cobre.
+    assert "salvo quando comprovar caso fortuito" not in ctx.texto
+
+
+async def test_trecho_curto_nao_ganha_marca_de_corte(_mocks):
+    db = _FakeDBComLastro(documentos=_docs(), prazos=_prazos(), teses=_teses(),
+                          fontes=[_fonte_verificada()])
+    ctx = await cb.montar_contexto(db, mensagem="pergunta fictícia",
+                                   case_id="caso-A", user=SimpleNamespace(id="u1"))
+    assert "TRECHO CORTADO" not in ctx.texto
+
+
+async def test_fonte_sem_vinculo_com_a_base_nao_entra_no_dossie(_mocks):
+    """Defesa em profundidade: o selo "verificada" também é aceito por URL de
+    domínio oficial, o que basta para o painel da ficha, mas não para virar
+    `[FONTE VERIFICADA]` no prompt — ali o rótulo promete que o SISTEMA tem o
+    texto. A consulta filtra por `knowledge_doc_id`/`authority_record_id`; o
+    fake abaixo prova que o filtro está no SQL."""
+    db = _FakeDBComLastro(documentos=_docs(), prazos=_prazos(), teses=_teses(),
+                          fontes=[_fonte_verificada()])
+    await cb.montar_contexto(db, mensagem="p", case_id="caso-A",
+                             user=SimpleNamespace(id="u1"))
+    from app.models.tese import TeseFonte
+    sql = next(s for s in db.sqls_fontes if "tese_fontes" in s)
+    assert "knowledge_doc_id IS NOT NULL" in sql
+    assert "authority_record_id IS NOT NULL" in sql
+    assert TeseFonte is not None

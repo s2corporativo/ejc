@@ -119,8 +119,13 @@ describe("FichaVivaPanel", () => {
     render(<FichaVivaPanel teseId="t1" />);
 
     await waitFor(() => expect(screen.getByText("1/2 verificada(s)")).toBeTruthy());
-    const link = screen.getByText("art. 42, par. único, CDC");
-    expect(link.getAttribute("href")).toBe("https://exemplo.fictic.io/cdc");
+    // A rastreabilidade clicável vem do `SourceCitation` (UI.tsx), que envolve
+    // a citação num `<a>` quando recebe href — por isso `closest`, e não o
+    // atributo do próprio nó de texto.
+    const citacao = screen.getByText("art. 42, par. único, CDC");
+    expect(citacao.closest("a")?.getAttribute("href")).toBe(
+      "https://exemplo.fictic.io/cdc",
+    );
     expect(screen.getByText(/Sem fonte: contra_argumento, gatilho/)).toBeTruthy();
   });
 
@@ -186,5 +191,42 @@ describe("FichaVivaPanel", () => {
     await waitFor(() =>
       expect(screen.getByText("Ficha viva indisponível")).toBeTruthy(),
     );
+  });
+});
+
+describe("FichaVivaPanel — resposta malformada (pente fino 03/09)", () => {
+  it("200 sem `fontes` não estoura no render", async () => {
+    // O `?? []` que faltava: `fontes.slice(0, 6)` estourava e a exceção
+    // escapava como unhandled rejection.
+    get.mockImplementation((url: string) => {
+      if (url.includes("/confianca")) return Promise.resolve({ data: CONF_ALTA });
+      if (url.includes("/fontes"))
+        return Promise.resolve({
+          data: {
+            cobertura: {
+              total: 2,
+              verificadas: 1,
+              nao_verificadas: 1,
+              elementos_cobertos: [],
+              elementos_sem_fonte: [],
+            },
+          },
+        });
+      return Promise.resolve({ data: { versoes: [] } });
+    });
+    render(<FichaVivaPanel teseId="t1" />);
+    await waitFor(() => expect(screen.getByText("Confiança alta")).toBeTruthy());
+    expect(screen.getByText("1/2 verificada(s)")).toBeTruthy();
+  });
+
+  it("corpo nulo não deixa o painel em spinner eterno", async () => {
+    get.mockResolvedValue({ data: null });
+    render(<FichaVivaPanel teseId="t1" />);
+    // Sem o `setCarregando(false)` hoistado, esta espera estourava por timeout:
+    // nem conteúdo, nem fallback de erro — só o spinner.
+    await waitFor(() =>
+      expect(screen.getByText("O que mudou nesta ficha")).toBeTruthy(),
+    );
+    expect(screen.getByText(/Sem histórico registrado/)).toBeTruthy();
   });
 });

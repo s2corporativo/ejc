@@ -258,12 +258,22 @@ async def _lastro_das_fichas(db, tese_ids: list[str]) -> dict[str, list]:
     if not tese_ids:
         return {}
     try:
-        from sqlalchemy import select
+        from sqlalchemy import or_, select
         from app.models.tese import TeseFonte
         fontes = (await db.execute(
             select(TeseFonte)
             .where(TeseFonte.tese_id.in_(tese_ids),
-                   TeseFonte.status_verificacao == "verificada")
+                   TeseFonte.status_verificacao == "verificada",
+                   # Defesa em profundidade (pente fino 03/09): o dossiê só usa
+                   # fonte com VÍNCULO à base — documento curado ou precedente
+                   # registrado. O selo "verificada" também é aceito por URL de
+                   # domínio oficial (ver `ficha_viva_service`), o que basta
+                   # para o painel da ficha, mas não para virar `[FONTE
+                   # VERIFICADA]` no prompt do redator: ali o rótulo compete com
+                   # o documento do processo, e o que ele promete é que o
+                   # SISTEMA tem o texto, não que alguém digitou um link certo.
+                   or_(TeseFonte.knowledge_doc_id.isnot(None),
+                       TeseFonte.authority_record_id.isnot(None)))
             .order_by(TeseFonte.tese_id, TeseFonte.elemento, TeseFonte.criado_em)
         )).scalars().all()
     except Exception as e:  # tabela ausente em banco antigo, erro de conexão…
@@ -335,10 +345,19 @@ async def _secao_teses(db, case_id: str) -> str:
 
         fontes = lastro.get(tese.id, [])[:_LIMITE_FONTES_POR_TESE]
         for f in fontes:
+            # Corte MARCADO. `_uma_linha` trunca por fatia seca, e este trecho
+            # entra rotulado `[FONTE VERIFICADA]` — o material que o redator
+            # PODE citar. Um dispositivo cuja ressalva ("…salvo quando…") caia
+            # depois do limite chegaria ao modelo afirmando o CONTRÁRIO da
+            # fonte, com selo de verificado. O delimitador não protege contra
+            # isso: é fidelidade de citação, não injeção.
+            trecho = (f.trecho or "").strip()
+            marca = "" if len(trecho) <= _MAX_TRECHO_FONTE else \
+                " […TRECHO CORTADO — consulte a fonte antes de citar]"
             linhas.append(
                 f"      ↳ [FONTE VERIFICADA · {_uma_linha(f.elemento, 30)}] "
                 f"{_uma_linha(f.referencia, 200)}: "
-                f"{_uma_linha(f.trecho, _MAX_TRECHO_FONTE)}"
+                f"{_uma_linha(trecho, _MAX_TRECHO_FONTE)}{marca}"
             )
 
         fund = (getattr(tese, "fundamentacao", None) or "").strip()

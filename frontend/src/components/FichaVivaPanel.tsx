@@ -18,7 +18,7 @@
 import { useEffect, useState } from "react";
 import { BookMarked, History, ShieldCheck, TriangleAlert } from "lucide-react";
 import api from "../lib/api";
-import { Badge, Card, Empty, Spinner } from "../components/UI";
+import { Badge, Card, Empty, SourceCitation, Spinner } from "../components/UI";
 
 type Confianca = {
   rotulo: "alta" | "media" | "baixa" | "amostra_insuficiente";
@@ -93,14 +93,23 @@ export default function FichaVivaPanel({ teseId }: { teseId: string }) {
       api.get<{ versoes: Versao[] }>(`/teses/${teseId}/versoes`, { params: { limite: 10 } }),
     ]).then((r) => {
       if (!ativo) return;
+      // `setCarregando(false)` PRIMEIRO: se um dos acessos abaixo estourar
+      // (200 com corpo malformado — `data` nulo, `cobertura` ausente), a
+      // exceção escapava como unhandled rejection e o painel ficava em spinner
+      // ETERNO, sem conteúdo e sem o fallback de erro. Achado do pente fino
+      // 03/09.
+      setCarregando(false);
       // `allSettled` de propósito: o histórico não vir não pode esconder a
       // confiança, que é o dado que muda a decisão do advogado.
-      setConfianca(r[0].status === "fulfilled" ? r[0].value.data : null);
-      setCobertura(r[1].status === "fulfilled" ? r[1].value.data.cobertura : null);
-      setFontes(r[1].status === "fulfilled" ? r[1].value.data.fontes : []);
-      setVersoes(r[2].status === "fulfilled" ? (r[2].value.data.versoes ?? []) : []);
       setFalhou(r.every((x) => x.status === "rejected"));
-      setCarregando(false);
+      setConfianca(r[0].status === "fulfilled" ? (r[0].value?.data ?? null) : null);
+      setCobertura(
+        r[1].status === "fulfilled" ? (r[1].value?.data?.cobertura ?? null) : null,
+      );
+      // `?? []` como em `versoes`: 200 sem `fontes` fazia `fontes.slice()`
+      // estourar no render.
+      setFontes(r[1].status === "fulfilled" ? (r[1].value?.data?.fontes ?? []) : []);
+      setVersoes(r[2].status === "fulfilled" ? (r[2].value?.data?.versoes ?? []) : []);
     });
     return () => {
       ativo = false;
@@ -199,22 +208,21 @@ export default function FichaVivaPanel({ teseId }: { teseId: string }) {
                     <Badge
                       tone={f.status_verificacao === "verificada" ? "green" : "slate"}
                     >
-                      {f.elemento}
+                      {f.status_verificacao === "verificada"
+                        ? "verificada"
+                        : "não verificada"}
                     </Badge>
-                    {f.fonte_url ? (
-                      <a
-                        href={f.fonte_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="font-medium text-navy-900 hover:text-bronze hover:underline"
-                      >
-                        {f.referencia}
-                      </a>
-                    ) : (
-                      <span className="font-medium text-navy-900">
-                        {f.referencia}
-                      </span>
-                    )}
+                    {/* `SourceCitation` (UI.tsx) foi construído para citação
+                        rastreável — vira `<a>` quando recebe href — e estava
+                        MORTO: nenhum arquivo o importava. Reutilizar em vez de
+                        reimplementar a mesma ramificação link/sem-link aqui
+                        também dá ao lastro a mesma linguagem visual do resto
+                        do sistema. */}
+                    <SourceCitation
+                      tipo={f.elemento}
+                      titulo={f.referencia}
+                      href={f.fonte_url ?? undefined}
+                    />
                   </span>
                   <span className="mt-0.5 block truncate text-slate-500">
                     {f.trecho}

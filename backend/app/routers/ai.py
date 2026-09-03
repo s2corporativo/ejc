@@ -346,7 +346,14 @@ async def citacoes_do_log(
     _modo_sigilo = await modo_sigilo_por_case_id(db, getattr(log, "case_id", None))
     try:
         gate = await validar_citacoes(
-            db, log.resposta or "", modo_sanitizacao=_modo_sigilo)
+            db, log.resposta or "", modo_sanitizacao=_modo_sigilo,
+            # RELATÓRIO DE LEITURA, não gate: sem `False` aqui, cada GET
+            # dispararia até MAX_POR_CHAMADA idas ao provedor, e o rate limit
+            # (30/min/usuário) permitiria centenas de chamadas de IA por minuto
+            # a partir de um verbo de leitura, sem nenhum ato de aprovação. A
+            # pertinência roda onde a decisão é tomada: `aplicar_gate_hitl`.
+            # Mesma escolha, e mesmo motivo, de `POST /validar-citacoes`.
+            verificar_pertinencia=False)
     except Exception:
         _logger.exception(
             "Falha ao recomputar relatório de citações do AILog %s.", log_id)
@@ -1368,7 +1375,21 @@ async def gerar_minuta(body: MinutaIn, db: AsyncSession = Depends(get_db),
     # `tema` + `fatos` do contrato antigo compõem a mensagem; `tipo_peca` viaja
     # como parâmetro do plano de skills (padrão de `capacidades._executar`, que
     # move sobras de `opcoes` para `params`).
-    mensagem = f"TEMA: {body.tema}\n\nFATOS: {body.fatos or body.tema}"
+    # O TIPO DA PEÇA vai na MENSAGEM, não em `opcoes`. Regressão achada no pente
+    # fino de 03/09: `opcoes` cai em `params` do orquestrador, que lê apenas
+    # `module_key`, `surface`, `nomes_proteger` e `prompt_extra` — `tipo_peca`
+    # era descartado em silêncio. O consumidor de produção
+    # (`frontend/src/pages/ramos/RamoAnalise.tsx`) manda o tipo escolhido pelo
+    # advogado: ele pedia contestação e recebia rascunho genérico. O contrato de
+    # RESPOSTA já estava preservado; faltava o de REQUISIÇÃO.
+    _partes = []
+    if body.tipo_peca:
+        _partes.append(f"TIPO DE PEÇA: {body.tipo_peca}")
+    if body.area:
+        _partes.append(f"ÁREA: {body.area}")
+    _partes.append(f"TEMA: {body.tema}")
+    _partes.append(f"FATOS: {body.fatos or body.tema}")
+    mensagem = "\n\n".join(_partes)
     try:
         envelope = await capacidades.redigir(
             db, cu,

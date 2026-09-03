@@ -185,11 +185,30 @@ async def adicionar_fonte(
         raise FichaVivaErro(
             "trecho da fonte é obrigatório: uma referência sem o texto que ela "
             "diz não é verificável.")
-    if status_verificacao == "verificada" and not (
-            knowledge_doc_id or authority_record_id or fonte_url):
+    if fonte_url and not _url_http(fonte_url):
         raise FichaVivaErro(
-            "fonte marcada como 'verificada' exige vínculo com a base curada, "
-            "com um precedente registrado, ou uma URL oficial.")
+            "fonte_url deve ser http(s) — a URL é renderizada como link no "
+            "painel da ficha.")
+
+    # ── O selo "verificada" não pode ser auto-atribuível ─────────────────────
+    # Achado do pente fino de 03/09. A regra anterior aceitava QUALQUER
+    # `fonte_url` (só `max_length`), então `fonte_url="x"` bastava para marcar
+    # "verificada". E o selo não é cosmético: `context_builder._lastro_das_fichas`
+    # seleciona exatamente `status_verificacao == "verificada"` e injeta a fonte
+    # no dossiê do redator com o rótulo `[FONTE VERIFICADA]`, enquanto a
+    # `fundamentacao` do próprio catálogo vai como `[NÃO VERIFICADA]`. Ou seja:
+    # texto digitado à mão virava a autoridade citável da peça, e o texto curado
+    # virava mera pista — a hierarquia de confiança INVERTIDA.
+    #
+    # Agora "verificada" exige lastro que o SISTEMA consegue conferir: um
+    # documento da base curada ou um precedente registrado que EXISTEM de fato
+    # (conferidos por SELECT), ou uma URL de domínio OFICIAL (mesma allowlist de
+    # `knowledge_governance.fonte_oficial`, reutilizada — não uma cópia).
+    # Referência que ainda não foi ingerida continua registrável: fica
+    # `nao_verificada`, com a URL guardada. É o status honesto.
+    if status_verificacao == "verificada":
+        await _exigir_lastro_conferivel(
+            db, knowledge_doc_id, authority_record_id, fonte_url)
 
     fonte = TeseFonte(
         id=str(uuid4()), tese_id=tese_id, elemento=elemento,
@@ -201,6 +220,57 @@ async def adicionar_fonte(
     )
     db.add(fonte)
     return fonte
+
+
+def _url_http(url: str | None) -> bool:
+    from urllib.parse import urlparse
+    try:
+        return urlparse(str(url or "")).scheme in ("http", "https")
+    except ValueError:
+        return False
+
+
+async def _exigir_lastro_conferivel(
+    db, knowledge_doc_id: str | None, authority_record_id: str | None,
+    fonte_url: str | None,
+) -> None:
+    """Levanta `FichaVivaErro` se nada do que sustenta o selo "verificada" for
+    conferível. Ver o bloco em `adicionar_fonte` para o porquê."""
+    from sqlalchemy import select
+    from app.services.knowledge_governance import fonte_oficial
+
+    if fonte_url and fonte_oficial(fonte_url):
+        return
+
+    if authority_record_id and db is not None:
+        from app.models.matriz_teses import AuthorityRecord
+        existe = (await db.execute(
+            select(AuthorityRecord.id)
+            .where(AuthorityRecord.id == authority_record_id)
+        )).first()
+        if existe:
+            return
+
+    if knowledge_doc_id and db is not None:
+        # Mesmo gate do RAG: um documento que o usuário não poderia recuperar
+        # também não pode lastrear a ficha institucional.
+        from sqlalchemy import text as _text
+        from app.services.ai_service import _filtros_gate_rag
+        existe = (await db.execute(
+            _text("SELECT kd.id FROM knowledge_docs kd "
+                  "WHERE kd.id = :did AND kd.deleted_at IS NULL "
+                  + _filtros_gate_rag(False) + " LIMIT 1"),
+            {"did": knowledge_doc_id},
+        )).first()
+        if existe:
+            return
+
+    raise FichaVivaErro(
+        "fonte marcada como 'verificada' exige lastro conferível: um documento "
+        "da base curada ou um precedente registrado que existam de fato, ou uma "
+        "URL de domínio oficial (planalto.gov.br, *.jus.br…). Referência ainda "
+        "não ingerida deve ficar como 'nao_verificada' — a URL fica guardada."
+    )
 
 
 async def fontes_da_ficha(db, tese_id: str) -> list[TeseFonte]:
@@ -258,12 +328,41 @@ async def registrar_override(
     return override
 
 
-async def overrides_da_ficha(db, tese_id: str) -> list[TeseOverride]:
-    from sqlalchemy import desc, select
-    return list((await db.execute(
-        select(TeseOverride).where(TeseOverride.tese_id == tese_id)
-        .order_by(desc(TeseOverride.criado_em))
-    )).scalars())
+async def overrides_da_ficha(
+    db, tese_id: str, *, visivel_para=None,
+) -> list[TeseOverride]:
+    """Recusas da ficha. Com `visivel_para` (um `User`), devolve SÓ as de casos
+    que aquele usuário pode abrir.
+
+    O filtro é obrigatório em qualquer superfície que exponha `case_id` ou
+    `justificativa`: a justificativa é texto livre escrito por um advogado
+    SOBRE UM CASO CONCRETO — "não aplicamos porque a vítima é menor e o
+    padrasto confessou" é conteúdo do caso, não metadado da ficha. Sem filtro,
+    um estagiário (que está em EQUIPE_JURIDICA) leria isso de qualquer caso do
+    escritório, inclusive de caso com `sigilo_reforcado`. Mesmo predicado de
+    `casos_candidatos` no router: gestão (socio+) vê tudo; equipe vê apenas os
+    casos em que é responsável ou auxiliar.
+
+    `visivel_para=None` devolve TUDO e existe só para uso agregado — a contagem
+    por motivo de `sinal_de_revisao`, que não expõe caso nenhum.
+    """
+    from sqlalchemy import desc, or_, select
+    from app.core.security import ROLE_LEVEL
+    from app.models.case import Case
+
+    q = (select(TeseOverride)
+         .where(TeseOverride.tese_id == tese_id)
+         .order_by(desc(TeseOverride.criado_em)))
+    if visivel_para is not None and (
+        ROLE_LEVEL.get(getattr(visivel_para.role, "value", visivel_para.role), 0)
+        < ROLE_LEVEL["socio"]
+    ):
+        q = q.join(Case, Case.id == TeseOverride.case_id).where(
+            Case.deleted_at.is_(None),
+            or_(Case.advogado_responsavel_id == visivel_para.id,
+                Case.advogado_auxiliar_id == visivel_para.id),
+        )
+    return list((await db.execute(q)).scalars())
 
 
 def sinal_de_revisao(overrides: list[TeseOverride]) -> dict:

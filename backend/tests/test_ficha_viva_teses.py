@@ -26,11 +26,19 @@ pytestmark = pytest.mark.anyio
 
 
 class _FakeDB:
-    def __init__(self):
+    def __init__(self, lastro_existe: bool = True):
         self.added = []
+        self._lastro_existe = lastro_existe
 
     def add(self, obj):
         self.added.append(obj)
+
+    async def execute(self, *_a, **_kw):
+        # Responde à conferência de lastro do selo "verificada"
+        # (`_exigir_lastro_conferivel`): o documento da base curada existe.
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            first=lambda: ("doc-1",) if self._lastro_existe else None)
 
 
 def _ficha(**kw) -> Tese:
@@ -183,6 +191,18 @@ class TestFontes:
             await fv.adicionar_fonte(
                 db=_FakeDB(), tese_id="t", elemento="fundamentacao",
                 referencia="", trecho="texto fictício suficientemente longo")
+
+    async def test_verificada_com_doc_inexistente_e_recusada(self):
+        """Achado P2-3 do pente fino 03/09: o selo alimenta o dossiê do redator
+        como `[FONTE VERIFICADA]`. Um id que não existe na base não pode
+        conferi-lo — senão texto digitado à mão vira a autoridade citável."""
+        with pytest.raises(fv.FichaVivaErro, match="lastro conferível"):
+            await fv.adicionar_fonte(
+                db=_FakeDB(lastro_existe=False), tese_id="t",
+                elemento="fundamentacao", referencia="art. 373 CPC",
+                trecho="trecho fictício suficientemente longo",
+                knowledge_doc_id="doc-que-nao-existe",
+                status_verificacao="verificada")
 
     async def test_verificada_sem_vinculo_e_recusada(self):
         """Sem base curada, precedente ou URL oficial, 'verificada' seria só
