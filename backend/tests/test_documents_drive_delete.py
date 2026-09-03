@@ -127,7 +127,8 @@ def test_delete_drive_soft_delete_preserva_objeto_remoto(monkeypatch):
     assert logs[0].acao == "DELETE"
     assert logs[0].dados_depois == {
         "storage": "drive",
-        "storage_preservado": True,
+        "storage_preservacao_intencao": True,
+        "storage_verificado": False,
     }
 
 
