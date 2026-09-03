@@ -93,8 +93,15 @@ export default function Prompts() {
         `/prompts-juridicos/${exec.id}/executar`,
         { variaveis: vars },
       );
+      // O backend devolve `resposta` (prompts_juridicos.executar); as demais
+      // chaves ficam por compatibilidade — antes caía sempre no JSON.stringify
+      // e o usuário via o payload cru em vez do texto gerado.
       setOut(
-        data.resultado ?? data.conteudo ?? data.texto ?? JSON.stringify(data),
+        data.resposta ??
+          data.resultado ??
+          data.conteudo ??
+          data.texto ??
+          JSON.stringify(data),
       );
     } catch (err: any) {
       setOut("Erro: " + (err.response?.data?.detail || "falha"));

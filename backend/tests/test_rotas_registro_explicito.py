@@ -208,6 +208,10 @@ ADICOES_INTENCIONAIS = {
     # Mesmo gate de autorização do download (_verificar_acesso_documento +
     # cofre); devolve o shape do item da listagem, sem paths de storage.
     ("/api/documents/{doc_id}", "GET"),
+    # PR #1365 (Issue #1075): registro de visualização prévia do documento
+    # pelo signatário antes da assinatura (portal). Publicada sem entrada
+    # neste ledger — o merge deixou a suíte vermelha; regularizada aqui.
+    ("/api/signatures/{sig_id}/documento-visualizado", "POST"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
@@ -399,6 +403,14 @@ def test_paridade_openapi_com_snapshot_anterior():
     # deps não é hashável. Divergência diferente da declarada continua
     # reprovando.
     AUTH_ALTERACOES_INTENCIONAIS = (
+        # PRs #1348/#1349 (auditoria E2E de clientes, set/2026): rate limit
+        # (`rate_limit(...)` → dependência `_dep`) adicionado à análise de IA
+        # do cliente e ao export CSV de clientes. Só ACRESCENTA uma
+        # dependência de throttling; os gates de identidade/RBAC existentes
+        # permanecem. Os merges não registraram a alteração aqui e deixaram
+        # a suíte vermelha — regularizado na análise ponta a ponta de 03/09.
+        (("/api/clients/{client_id}/ia-analise", "POST"), ["HTTPBearer", "_dep", "_req_clientes", "get_current_user", "get_db"]),
+        (("/api/export/clientes.csv", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
         # Homologação M20 (16/08/2026): correção crítica — o endpoint
         # substituto _listar_docs_escopado (GET /api/rag/docs) perdia os
         # Depends de db e cu na substituição por side effect, derrubando a

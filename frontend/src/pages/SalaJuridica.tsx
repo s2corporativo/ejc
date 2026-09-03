@@ -636,7 +636,9 @@ export default function SalaJuridica() {
       return;
     }
     try {
-      const { data } = await api.get("/clients", {
+      // Barra final: sem ela o backend responde 307 para /api/clients/ (prefixo
+      // legado, com header Deprecation) — um round-trip extra por busca.
+      const { data } = await api.get("/clients/", {
         params: { search: normalizado, page_size: 8 },
       });
       if (!clientesGateRef.current.isCurrent(token)) return;
@@ -763,7 +765,8 @@ export default function SalaJuridica() {
       return;
     }
     try {
-      const { data } = await api.get("/cases", {
+      // Barra final: evita o 307 para o prefixo legado (ver busca de clientes).
+      const { data } = await api.get("/cases/", {
         params: { search: normalizado, page_size: 10 },
       });
       if (!casosGateRef.current.isCurrent(token)) return;

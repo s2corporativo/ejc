@@ -19,7 +19,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 import logging
-import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -244,10 +243,6 @@ _ANTHROPIC_MODEL_BY_TASK = {
     "critica_adversarial": lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
 }
 
-
-def _anthropic_key() -> str:
-    """Mesma resolução do provider: Settings tipada → os.getenv (docker env_file)."""
-    return settings.ANTHROPIC_API_KEY or os.getenv("ANTHROPIC_API_KEY", "")
 
 
 @dataclass
