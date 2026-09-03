@@ -397,3 +397,96 @@ RBAC, está marcada como **decisão do titular**.
 **Critério de sucesso de cada onda**: o gold set (I7) melhora ou não piora, a
 suíte completa fica verde no push, e `/ia-governanca/provedores`,
 `/diagnostico/central` e o painel de custo dizem a mesma coisa.
+
+---
+
+## 10. Execução das ondas (03/09/2026, por ordem do titular)
+
+O titular autorizou executar as três ondas do §9.4 até o fim. Registro do que
+entrou, com o mesmo critério de verificação do resto do relatório: só é
+`[VERIFICADO]` o que foi conferido no código ou provado por teste desta sessão.
+
+**Método.** Cinco frentes em worktrees isolados (núcleo de IA, RAG/contexto,
+configuração/diagnóstico, frontend, portas por capacidade), integradas na
+branch e submetidas aos portões completos. Regra 10 do `CLAUDE.md` respeitada:
+arquivo pertencente a PR aberto não foi tocado — cada exceção está listada
+abaixo.
+
+### 10.1 Entregue
+
+| Item do §9 | O que entrou | Onde |
+|---|---|---|
+| **I2** nível por tarefa | `nivel_inteligencia` vira `Optional[str] = None` nos schemas de `/ai/core/*` e no orquestrador; `None` deixa `_nivel_piso` decidir (mérito → `maximo`, que aciona FIRAC; econômicas → `padrao`) | `routers/ai_core.py`, `services/ai/core/orchestrator.py` |
+| **I8** cadeia e deadline | `anthropic` no fim das cadeias `resumo` e `chat_rapido` (modelo rápido); `AI_CHAIN_DEADLINE_SECONDS=240` com `asyncio.timeout` em volta do laço de provedores | `ai_gateway.py`, `config.py` |
+| **A4** modelos e preços | `claude-opus-5` em `_MODERN_PREFIXES`; tabela de custo com Opus 5, Sonnet 5 corrigido para 2/10, família Fable; modelo fora da tabela vira `warning`, não custo zero silencioso | `providers/anthropic_provider.py`, `ai_cost.py` |
+| **A7** custo de cache | `cache_creation_input_tokens` × 1,25 e `cache_read_input_tokens` × 0,10 do preço de input, propagados até o `AILog` | `ai_cost.py`, `ai_gateway.py` |
+| **A6** cache × kill-switch | Consulta ao cache só depois de haver cadeia elegível; cache hit grava `AILog`; tarefa `LOCAL_COMPLETO` deixa de ser cacheável | `ai_gateway.py`, `ai_cache.py` |
+| **A8** fail-closed | Provedor desconhecido levanta erro em vez de cair no Groq; `health()` usa a fonte única e não gasta cota do provedor | `ai_gateway.py` |
+| **I9/B3** AILog | Registro em nove call sites que tinham `db`+`user` e não gravavam (score jurídico, jurisprudência interna, honorários, análise bancária, checklist, movimento, classificador de documento, visual law, análise estratégica) | routers e services citados |
+| **S8** vocabulário HITL | `hitl_policy.aplicar()` como último passo nas rotas que devolvem texto de modelo, inclusive nos ramos de erro do `documento_ia` | `routers/teses.py`, `jurisprudencia_interna.py`, `provas.py`, `honorarios_oab.py`, `analise_bancaria.py`, `documento_ia.py` |
+| **I5/B4** agentes com fonte | Fontes do RAG acumuladas no loop e passadas ao validador (fim do "SEM BASE VERIFICÁVEL" falso); `exige_fonte=True` em prazos e LGPD/OAB; áreas do catálogo alinhadas ao enum canônico; empate de palavra-chave deixa de escolher por ordem alfabética | `services/ai/agent/**`, `agent_registry.py`, `ejc_skill_catalog.py` |
+| **C1** seed vetorizado | O seed reindexa os órfãos ao final quando os embeddings estão disponíveis (`SEED_EMBED_ORFAOS`) — busca semântica útil desde o primeiro boot | `seeds/seed_all.py`, `scripts/reembedar_chunks_orfaos.py` |
+| **C5** chunk × janela | `EMBEDDINGS_MAX_CHARS=1800` limita o chunker jurídico e o corte por tamanho; chunker jurídico entra no caminho de produção da ingestão manual e da API pública | `legal_chunker.py`, `routers/rag.py`, `routers/rag_public.py` |
+| **C3** métricas pelo gate | `filtros_gate_rag()` vira fragmento único, usado por cobertura e saúde; `usable_docs` passa a refletir o que o RAG realmente recupera | `ai_service.py`, `rag_coverage.py`, `knowledge_governance.py` |
+| **C4** escopo por caso | `scope_case_id` propagado onde o caso já era conhecido (análise de caso, teses ocultas, contrato, deep research, dossiê, tools do agente) | diversos services |
+| **C6** rag_public | Chave irrestrita não aceita mais `client_id`/`case_id` no payload; chave restrita só o próprio cliente, com 422 explícito | `routers/rag_public.py` |
+| **B7** deep research | `AILog` com tokens e custo somando as duas chamadas; entidades do caso propagadas | `deep_research_service.py` |
+| **I3** dossiê de contexto | Contexto do caso em seções de ordem estável (base legal, partes, documentos, prazos, teses, intimações do caso, pergunta), com tetos por seção e total | `services/ai/core/context_builder.py` |
+| **DJEN → RAG** | A captura por advogado passa a ingerir a intimação vinculada ao caso (`rag_status=pendente`; curadoria segue humana) | `djen_service.py` |
+| **S3** perfil de IA | `AI_PROFILE` (`externo\|local\|hibrido\|desligado`) deriva flags e prioridade; compose alinhado ao código | `config.py`, `docker-compose*.yml` |
+| **A2/F3** configuração | `MARITACA_ENABLED` com o mesmo default nas três fontes; `.env.example` documenta todo campo de `Settings`, travado por teste de paridade | `.env.example`, `tests/test_env_example_paridade.py` |
+| **S2/A3** painéis | Diagnóstico e saúde da IA consultam `provider_registry`; fim das cópias que ignoravam `GROQ_ENABLED` e o kill-switch de externos | `integration_status.py`, `routers/ia_saude.py` |
+| **S6** portões | `scripts/ledger_rotas.py` (diff revisável do ledger) e pre-push por área do diff (`scripts/instalar_hooks.sh`) | `backend/scripts/`, `scripts/hooks/` |
+| **S4** poda | `scripts/poda_rotas.py` lista candidatas por telemetria; `API_ROTAS_DEPRECIADAS`/`API_ROTAS_SUNSET` marcam rotas antes da remoção | `backend/scripts/`, `core/api_version_middleware.py` |
+| **F4** jobs | Heartbeat por resultado para backup e reembed; `misfire_grace_time` para o disparo perdido não sumir em silêncio | `heartbeat_service.py`, `scheduler.py` |
+| **D3** CORS | `PUT` na lista de métodos (duas rotas o usam) | `main.py` |
+| **S7/D6/E2/E4** frontend | `useCarregar` com três estados aplicado às abas e painéis; `try/catch` nos handlers mutantes; `detail` cru nunca vai ao JSX; stack do `ErrorBoundary` truncado | `frontend/src/lib/useCarregar.ts` e telas |
+| **E1/E3/E5/E7/E8** frontend | Aviso HITL no FAQ/Glossário; vocabulário real de status no painel de provedores; diálogo de override de citações reutilizável; botões por papel; streams com cleanup | telas de IA |
+| **C8/C9** conhecimento | Aprovação passa pelo endpoint audit-logado, com o conteúdo à vista e notas obrigatórias; importação de jurisprudência não aprova mais por padrão | `GovernancaIA.tsx`, `KnowledgeGovernancePanel.tsx`, `RevisaoConhecimentoDialog.tsx` |
+| **S1** tipos gerados | `scripts/gerar_tipos_frontend.py` emite `types/gerado.ts` (áreas, enums de prazo, papéis) com teste que reprova arquivo desatualizado; listas locais passam a derivar dele | backend + frontend |
+| **S5** menu | Removidas da navegação as entradas do Bloco 4 (jurimetria/predição, Victory Vault, radar, notícias, sociedade); Diagnóstico e Usuários saem do menu e ganham cartão em Configurações → Administração | `moduleRegistry.tsx`, `Configuracoes.tsx` |
+
+### 10.2 Não entregue, com motivo
+
+- **D1 — `secretaria` cria caso e não lista.** `routers/cases.py` pertence ao
+  PR aberto #1380 (regra 10). A correção é de RBAC e precisa da decisão do
+  titular entre dar leitura escopada ou tirar a permissão de criar.
+- **C2 — auto-aprovação de documento não governado.** Coberto pelos PRs
+  abertos #1382/#1383; não duplicado aqui.
+- **B1/B2 parciais — sigilo reforçado em `peca_service` e `motor_peca_service`.**
+  Ambos pertencem aos PRs abertos #1376/#1384. Os demais call sites receberam
+  a propagação.
+- **Chunker jurídico dentro de `ingestion_service`.** O arquivo está em PR
+  aberto; a entrada em produção foi feita pelos call sites (`chunks=`), então
+  os ingestores automáticos (Planalto, súmulas, TJMG) seguem no corte por
+  tamanho até aquele PR fechar.
+- **Menu em 12 entradas.** Ficou em 16. As quatro restantes (Sala Jurídica,
+  Raio-X do processo, Banco de Teses, DPT360) só sairiam do menu virando abas
+  do hub de Inteligência — isso é o Bloco 3 do plano (o caso como espaço de
+  trabalho), redesenho com consequência de UX, não troca de flag. Escondê-las
+  sem destino as deixaria inalcançáveis, o que é pior que uma entrada a mais.
+
+### 10.3 Portões (evidência)
+
+| Portão | Resultado |
+|---|---|
+| `ruff check app` | ✅ limpo |
+| `pytest` completo com `RUN_DB_TESTS=1` (PG16 + pgvector) | ✅ **6.927 passed**, 66 skipped, 0 failed |
+| `alembic upgrade head` do zero | ✅ head `155_indices_listagem_espinha` (sem migration nova) |
+| `npm run lint` (tsc) | ✅ limpo |
+| `npm test` | ✅ 117 arquivos, **626 passed** |
+| `npm run build` | ✅ |
+| `scripts/ledger_rotas.py --verificar` | ✅ sem divergência não declarada |
+
+### 10.4 Correções feitas na integração
+
+- Os testes novos do frontend usavam `toHaveTextContent`, matcher de jest-dom
+  que este projeto não instala. Reescritos para `textContent` + `toMatch`/
+  `toContain` em vez de acrescentar dependência.
+- Um teste de FAQ/Glossário exigia a mensagem genérica de IA indisponível; o
+  contrato real é melhor (o detalhe técnico é filtrado e a tela usa o fallback
+  específico da ação). A asserção foi alinhada ao contrato, mantendo a parte
+  que importa: dialeto de infraestrutura nunca chega ao advogado.
+- O teste de paridade de `.env.example` pegou, na integração, uma variável
+  nova sem documentação (`DJEN_CAPTURA_INGERIR_RAG`) — exatamente o que ele
+  existe para pegar. Documentada.
