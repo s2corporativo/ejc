@@ -224,6 +224,7 @@ async def analisar_caso(
     scope_client_id: str | None = None,
     case_id: str | None = None,
     db=None,
+    user_id: str | None = None,
 ) -> dict:
     """
     Análise estratégica completa do caso.
@@ -353,6 +354,23 @@ async def analisar_caso(
             entidades=entidades,
             modo_sanitizacao=modo_sigilo,
         )
+        # I9: AILog quando há db+user_id (routers/documento_ia.py já informa;
+        # routers/ai.py, cases.py e document_analysis_hook.py passam a informar
+        # quando integrarem — arquivos fora deste pacote/em PR aberto).
+        if db is not None and user_id:
+            from app.models.ai_log import AITipoUso
+            from app.services.ai.core.audit_logger import _fontes_str
+            from app.services.ai_gateway import registrar_log_resposta
+            await registrar_log_resposta(
+                db, user_id=user_id, tipo_uso=AITipoUso.analise_caso, resp=resp,
+                prompt_sanitizado="[ANALISE_ESTRATEGICA]\n" + contexto_sanitizado,
+                pii_removida=bool(
+                    resultado_sanitizacao[1]
+                    if isinstance(resultado_sanitizacao, tuple) and len(resultado_sanitizacao) > 1
+                    else False
+                ) or bool(entidades),
+                case_id=case_id, fontes_rag=_fontes_str(_fontes_rag),
+            )
         resultado = _parse_json_robusto(resp.texto)
         if not resultado:
             logger.warning("Análise estratégica retornou JSON inválido: %s", resp.texto[:200])

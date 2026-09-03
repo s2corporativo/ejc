@@ -98,7 +98,8 @@ def _parse_json(txt: str) -> Optional[dict]:
         return None
 
 
-async def _analisar(texto: str, area: str = "default") -> dict:
+async def _analisar(texto: str, area: str = "default", *, db=None,
+                    user_id: str | None = None) -> dict:
     if len(texto.strip()) < 120:
         raise HTTPException(422, "Texto do documento muito curto para análise (mín. 120 caracteres)")
     sys = AREA_PROMPTS.get(area, AREA_PROMPTS["default"]) + FORMATO
@@ -107,11 +108,24 @@ async def _analisar(texto: str, area: str = "default") -> dict:
         messages=[{"role": "system", "content": sys}, {"role": "user", "content": user_msg}],
         task_type="analise_juridica", temperature=0.2, max_tokens=1800,
     )
+    # I9: AILog quando há db+user (o documento pode ter PII → prompt logado
+    # SANITIZADO). Erro de gravação PROPAGA (regra do ai_guard).
+    if db is not None and user_id:
+        from app.models.ai_log import AITipoUso
+        from app.services.sanitizer import sanitizar_pii
+        prompt_log, pii = sanitizar_pii(user_msg)
+        await ai_gateway.registrar_log_resposta(
+            db, user_id=user_id, tipo_uso=AITipoUso.analise_caso, resp=resp,
+            prompt_sanitizado=f"[ANALISE_BANCARIA area={area}]\n" + prompt_log,
+            pii_removida=pii,
+        )
     data = _parse_json(resp.texto) or {"resumo": resp.texto[:1500], "_bruto": True}
     data["_aviso"] = ("Análise gerada por IA como apoio — revisão obrigatória do advogado. "
                       "Em contratos bancários, compare a taxa com o painel 'Taxas de Juros' do Banco Central.")
     data["_modelo"] = resp.modelo
-    return data
+    # S8: vocabulário HITL canônico somado às chaves "_aviso"/"_modelo" legadas.
+    from app.services.ai.core import hitl_policy
+    return hitl_policy.aplicar(data)
 
 
 @router.post("/contrato", dependencies=[Depends(rate_limit("analise-bancaria", 10))])
@@ -144,7 +158,7 @@ async def analisar_documento(
             raise HTTPException(422, f"Falha ao ler o PDF: {str(e)[:120]}")
     if not conteudo:
         raise HTTPException(422, "Envie um PDF ou cole o texto do documento")
-    return await _analisar(conteudo, area)
+    return await _analisar(conteudo, area, db=db, user_id=cu.id)
 
 
 # Consulta Olinda/BCB extraída para app/services/abusividade_service.py (reúso

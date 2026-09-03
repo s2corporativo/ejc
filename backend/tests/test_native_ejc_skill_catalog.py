@@ -17,8 +17,8 @@ from app.services.ai.core.skill_registry import SKILL_REGISTRY
 
 EXPECTED_LEGAL_AREAS = {
     "empresarial",
-    "civel",
-    "penal",
+    "civil",       # chave canônica (AREAS_CANONICAS); "civel" é alias
+    "criminal",    # chave canônica; "penal" é alias
     "trabalhista",
     "administrativo",
     "bancario",
@@ -34,8 +34,8 @@ EXPECTED_LEGAL_AREAS = {
 
 AREA_AGENTS = {
     "empresarial": "CorporateLawAgent",
-    "civel": "CivilLawAgent",
-    "penal": "CriminalLawAgent",
+    "civil": "CivilLawAgent",
+    "criminal": "CriminalLawAgent",
     "trabalhista": "LaborLawAgent",
     "administrativo": "AdministrativeLawAgent",
     "bancario": "BankForensicsAgent",
@@ -62,10 +62,17 @@ def test_catalogo_cobre_todos_os_ramos_e_modulos() -> None:
     assert len(native_skill_specs()) == 48
 
     coverage = native_skill_coverage()
-    assert coverage["complete"] is True
     assert coverage["total_native_skills"] == 48
-    assert coverage["legal_areas"]["missing"] == []
     assert coverage["modules"]["missing"] == []
+    # C7: a cobertura agora é medida contra a taxonomia CANÔNICA — e acusa as
+    # áreas sem método de ramo em vez de comparar o catálogo consigo mesmo.
+    from app.core.taxonomia import AREAS_CANONICAS
+    assert coverage["legal_areas"]["expected"] == len(AREAS_CANONICAS)
+    assert coverage["legal_areas"]["nao_canonicas"] == []
+    faltantes = set(coverage["legal_areas"]["missing"])
+    assert faltantes == set(AREAS_CANONICAS) - EXPECTED_LEGAL_AREAS
+    assert faltantes, "há áreas canônicas sem método de ramo (decisão de advogado)"
+    assert coverage["complete"] is False
 
 
 def test_resolver_combina_ramo_e_modulo_sem_llm() -> None:
@@ -135,6 +142,22 @@ def test_coordenador_e_especialistas_estao_registrados() -> None:
     for area, agent_name in AREA_AGENTS.items():
         agent = AGENT_REGISTRY[agent_name]
         assert f"ramo_{area}" in agent.skills
+
+
+def test_aliases_forenses_resolvem_para_chave_canonica() -> None:
+    """'civel'/'penal' (nome forense, domain de tela) → skill canônica."""
+    for dominio, esperado in (("civel", "ramo_civil"), ("civil", "ramo_civil"),
+                              ("penal", "ramo_criminal"), ("criminal", "ramo_criminal")):
+        plan = resolve_native_skill_plan(task_type="chat", domain=dominio, message="")
+        assert esperado in plan.skill_names, (dominio, plan.skill_names)
+
+
+def test_empate_de_keywords_nao_escolhe_ramo() -> None:
+    """C7: empate entre ramos → None (a ordem do dicionário não decide mérito)."""
+    from app.services.ai.core.ejc_skill_catalog import _best_keyword_match
+    assert _best_keyword_match("x", {"a": ("x",), "b": ("x",)}) is None
+    assert _best_keyword_match("x y", {"a": ("x", "y"), "b": ("x",)}) == "a"
+    assert _best_keyword_match("nada", {"a": ("x",)}) is None
 
 
 def test_roteamento_dedica_ambiental_digital_e_transito() -> None:

@@ -196,7 +196,11 @@ async def analisar(
                 logger.warning(f"Núcleo IA falhou no diagnóstico: {type(e).__name__}")
                 resultado["diagnostico_nucleo"] = None
                 resultado["nucleo_aviso"] = "Diagnóstico pelo núcleo de IA indisponível no momento."
-        return resultado
+        # S8: carimbo HITL canônico como ÚLTIMO passo — inclusive nos ramos de
+        # erro do núcleo (antes o payload degradado saía sem is_rascunho/
+        # aviso_hitl, e a extração estruturada continua sendo saída de modelo).
+        from app.services.ai.core import hitl_policy
+        return hitl_policy.aplicar(resultado)
     finally:
         try:
             os.unlink(tmp.name)
@@ -236,15 +240,16 @@ async def analisar_url(
         "trechos curtos e link de origem; para jurisprudência, validar em fonte oficial."
     )
 
+    from app.services.ai.core import hitl_policy
     if not req.executar_analise:
-        return out
+        return hitl_policy.aplicar(out)
 
     if not caso:
         raise HTTPException(status_code=422, detail="Informe case_id para executar análise")
     if resultado.bloqueado or not resultado.dossie:
         out["analise"] = None
         out["analise_aviso"] = "Análise não executada porque a URL não gerou texto importável."
-        return out
+        return hitl_policy.aplicar(out)
 
     try:
         from app.services.analise_estrategica import analisar_caso
@@ -254,7 +259,10 @@ async def analisar_url(
             numero_processo=caso.numero_processo or "",
             texto_documento=resultado.dossie,
             scope_client_id=caso.client_id,
+            # I9/C4: escopo por caso + trilha AILog com o usuário que disparou.
+            case_id=req.case_id,
             db=db,
+            user_id=current_user.id,
         )
         out["analise"] = analise
         out["analise_aviso"] = "Análise gerada como rascunho. Revise antes de usar no caso."
@@ -266,7 +274,7 @@ async def analisar_url(
         out["analise"] = None
         out["analise_aviso"] = mensagem_ia_para_usuario(exc)
 
-    return out
+    return hitl_policy.aplicar(out)
 
 
 class AplicarAcoesRequest(BaseModel):
