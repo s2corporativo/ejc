@@ -11,11 +11,11 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
-import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote, urlencode
+from uuid import uuid4
 
 from fastapi import HTTPException, Request
 from sqlalchemy import select
@@ -191,7 +191,7 @@ async def abrir_manifesto(
     acesso_numero = int(link.acessos_realizados)
     db.add(
         DataRoomAcessoLog(
-            id=__import__("uuid").uuid4().hex[:36],
+            id=str(uuid4()),
             link_id=link.id,
             ip=obter_ip_real(request),
             user_agent=(request.headers.get("user-agent") or "").strip()[:500] or None,
@@ -248,6 +248,27 @@ async def abrir_manifesto(
     }
 
 
+async def _registrar_download_publico(
+    db: AsyncSession,
+    *,
+    arquivo_id: str,
+    link_id: str,
+    acesso_numero: int,
+    request: Request,
+) -> None:
+    await criar_audit_log(
+        db,
+        None,
+        "publico_data_room",
+        "DOWNLOAD_PUBLICO",
+        "data_room_arquivos",
+        arquivo_id,
+        ip=obter_ip_real(request),
+        dados_depois={"link_id": link_id, "acesso_numero": acesso_numero},
+    )
+    await db.commit()
+
+
 async def preparar_download(
     db: AsyncSession,
     token: str,
@@ -299,18 +320,6 @@ async def preparar_download(
     if doc is None or not _arquivo_publicavel(arquivo, doc):
         raise HTTPException(status_code=410, detail="Documento não está mais disponível")
 
-    await criar_audit_log(
-        db,
-        None,
-        "publico_data_room",
-        "DOWNLOAD_PUBLICO",
-        "data_room_arquivos",
-        arquivo.id,
-        ip=obter_ip_real(request),
-        dados_depois={"link_id": link.id, "acesso_numero": acesso_numero},
-    )
-    await db.commit()
-
     filename = arquivo.nome_exibicao or doc.filename or "documento"
     media_type = doc.mimetype or "application/octet-stream"
     if doc.drive_file_id:
@@ -326,10 +335,25 @@ async def preparar_download(
             raise HTTPException(status_code=410, detail="Arquivo remoto não encontrado") from exc
         except Exception as exc:
             raise HTTPException(status_code=502, detail="Falha no storage remoto") from exc
+        await _registrar_download_publico(
+            db,
+            arquivo_id=arquivo.id,
+            link_id=link.id,
+            acesso_numero=acesso_numero,
+            request=request,
+        )
         return EntregaPublica(filename=filename, media_type=media_type, content=content)
 
+    local_path = _local_path_seguro(doc)
+    await _registrar_download_publico(
+        db,
+        arquivo_id=arquivo.id,
+        link_id=link.id,
+        acesso_numero=acesso_numero,
+        request=request,
+    )
     return EntregaPublica(
         filename=filename,
         media_type=media_type,
-        local_path=_local_path_seguro(doc),
+        local_path=local_path,
     )
