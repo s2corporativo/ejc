@@ -8,7 +8,7 @@ fail() {
   exit 1
 }
 
-for cmd in curl jq; do
+for cmd in curl jq mktemp; do
   command -v "$cmd" >/dev/null 2>&1 || fail "$cmd ausente"
 done
 
@@ -16,9 +16,19 @@ API_BASE="${WOODPECKER_API_URL:-https://ci.depaulateixeira.adv.br/api}"
 API_TOKEN="${WOODPECKER_API_TOKEN:-}"
 [ -n "$API_TOKEN" ] || fail "defina WOODPECKER_API_TOKEN localmente; não passe token por argumento ou chat"
 
+AUTH_HEADER_FILE="$(mktemp)"
+chmod 600 -- "$AUTH_HEADER_FILE"
+printf 'Authorization: Bearer %s\n' "$API_TOKEN" >"$AUTH_HEADER_FILE"
+unset API_TOKEN WOODPECKER_API_TOKEN
+
+cleanup() {
+  rm -f -- "$AUTH_HEADER_FILE"
+}
+trap cleanup EXIT
+
 api_get() {
   curl -fsS \
-    -H "Authorization: Bearer ${API_TOKEN}" \
+    -H @"$AUTH_HEADER_FILE" \
     -H 'Accept: application/json' \
     "${API_BASE}$1"
 }
@@ -27,7 +37,7 @@ api_patch_json() {
   local path="$1"
   local body="$2"
   curl -fsS -X PATCH \
-    -H "Authorization: Bearer ${API_TOKEN}" \
+    -H @"$AUTH_HEADER_FILE" \
     -H 'Accept: application/json' \
     -H 'Content-Type: application/json' \
     --data "$body" \
@@ -37,7 +47,7 @@ api_patch_json() {
 api_post_empty() {
   local path="$1"
   curl -fsS -X POST \
-    -H "Authorization: Bearer ${API_TOKEN}" \
+    -H @"$AUTH_HEADER_FILE" \
     -H 'Accept: application/json' \
     "${API_BASE}${path}"
 }
@@ -172,6 +182,10 @@ Uso:
 Variáveis obrigatórias/aceitas:
   WOODPECKER_API_TOKEN   PAT administrativo local. Nunca é impresso.
   WOODPECKER_API_URL     default: https://ci.depaulateixeira.adv.br/api
+
+O PAT é transferido para um arquivo temporário 0600 e removido da variável antes
+das chamadas curl, evitando exposição do Bearer em argv/ps. O arquivo é apagado
+automaticamente ao sair.
 
 O comando check é read-only. fix-schedule altera somente name/no_schedule preservando
 explicitamente o nome atual. restart-pipeline reexecuta um pipeline existente e deve
