@@ -33,6 +33,7 @@ const RecuperarSenha = lazy(() => import("./pages/RecuperarSenha"));
 const RedefinirSenha = lazy(() => import("./pages/RedefinirSenha"));
 const TrocarSenha = lazy(() => import("./pages/TrocarSenha"));
 const Configurar2FA = lazy(() => import("./pages/Configurar2FA"));
+const DataRoomPublico = lazy(() => import("./pages/DataRoomPublico"));
 const PortalDashboard = lazy(() => import("./pages/portal/PortalDashboard"));
 const PortalCasos = lazy(() => import("./pages/portal/PortalCasos"));
 const PortalCasoDetalhe = lazy(
@@ -89,6 +90,7 @@ export default function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/recuperar-senha" element={<RecuperarSenha />} />
             <Route path="/redefinir-senha" element={<RedefinirSenha />} />
+            <Route path="/data-room-publico/:token" element={<DataRoomPublico />} />
             <Route
               path="/trocar-senha"
               element={
