@@ -410,6 +410,11 @@ async def sugerir_provas_faltantes(
     from app.services.ai.entidades_caso import entidades_do_caso
     from app.services.ai_gateway import chat as gw_chat
     entidades = await entidades_do_caso(db, case_id)
+    # PISO DE SIGILO: pseudonimizar nomes não basta num caso marcado
+    # `sigilo_reforcado` — ali o conteúdo não pode sair do VPS de forma
+    # alguma. `case` já veio de `verificar_acesso_caso`, sem consulta extra.
+    from app.services.ai.sanitization_policy import modo_sigilo_do_caso
+    modo_sigilo = modo_sigilo_do_caso(case)
 
     aviso: Optional[str] = None
     try:
@@ -422,6 +427,7 @@ async def sugerir_provas_faltantes(
             temperature=0.2,
             max_tokens=1800,
             entidades=entidades,
+            modo_sanitizacao=modo_sigilo,
         )
     except Exception as e:  # provider indisponível NUNCA vira 500 aqui
         # Detalhe do provider só no log — não vaza infraestrutura na UI.
