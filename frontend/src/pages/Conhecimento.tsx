@@ -5,8 +5,6 @@ import {
   Search,
   BookOpen,
   Trash2,
-  FileText,
-  Scale,
   Gavel,
   ScrollText,
   Library,
@@ -29,19 +27,11 @@ import {
 import { asList } from "../lib/list";
 
 // ── Categorias ────────────────────────────────────────────────────────────────
+// Sem `peca_escritorio`/`precedente_interno`: são categorias RESTRITAS no
+// backend (ai_service._RESTRICTED_CATS) — a ingestão manual responde 422 e
+// manda usar o fluxo dedicado de documento de cliente/caso. Antes eram a
+// opção padrão do formulário e o caminho feliz da tela falhava sempre.
 const CATS: { value: string; label: string; icon: any; cor: string }[] = [
-  {
-    value: "peca_escritorio",
-    label: "Peça do escritório",
-    icon: FileText,
-    cor: "bg-navy/10 text-navy",
-  },
-  {
-    value: "precedente_interno",
-    label: "Tese vencedora",
-    icon: Scale,
-    cor: "bg-bronze-50 text-bronze-deep",
-  },
   {
     value: "sumula_tst",
     label: "Súmula TST",
@@ -131,7 +121,7 @@ function ModalIngestao({
 }) {
   const [form, setForm] = useState({
     titulo: "",
-    categoria: "peca_escritorio",
+    categoria: "jurisprudencia",
     fonte: "",
     tribunal: "",
     conteudo: "",
@@ -144,7 +134,7 @@ function ModalIngestao({
     if (open) {
       setForm({
         titulo: "",
-        categoria: "peca_escritorio",
+        categoria: "jurisprudencia",
         fonte: "",
         tribunal: "",
         conteudo: "",
@@ -459,8 +449,6 @@ function ModalIngestPdf({
                   <option value="sumula_tst">Súmula TST</option>
                   <option value="legislacao">Legislação</option>
                   <option value="doutrina">Doutrina</option>
-                  <option value="precedente_interno">Precedente interno</option>
-                  <option value="peca_escritorio">Peça do escritório</option>
                 </select>
               </div>
               <div>

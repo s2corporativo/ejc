@@ -90,7 +90,9 @@ export default function TabTimeline({ caseId }: { caseId: string }) {
 
     setSalvandoHoras(true);
     try {
-      await api.post("/timesheet", {
+      // Barra final: sem ela o POST leva 307 para /api/timesheet/ (prefixo
+      // legado) e cada lançamento de horas custa dois round-trips.
+      await api.post("/timesheet/", {
         case_id: caseId,
         data: hojeLocalISO(),
         minutos,
