@@ -25,6 +25,7 @@ import {
   fmtDate,
 } from "../components/UI";
 import { asList } from "../lib/list";
+import { mensagemErroHttp } from "../lib/iaErro";
 
 // ── Categorias ────────────────────────────────────────────────────────────────
 // Sem `peca_escritorio`/`precedente_interno`: são categorias RESTRITAS no
@@ -173,7 +174,7 @@ function ModalIngestao({
       onSalvo();
       onClose();
     } catch (e: any) {
-      setErro(e.response?.data?.detail || "Erro ao ingerir");
+      setErro(mensagemErroHttp(e, "Erro ao ingerir"));
     } finally {
       setSalvando(false);
     }
@@ -385,7 +386,7 @@ function ModalIngestPdf({
       }
       onSalvo();
     } catch (e: any) {
-      setErro(e.response?.data?.detail ?? "Erro ao ingerir");
+      setErro(mensagemErroHttp(e, "Erro ao ingerir"));
     } finally {
       setSalvando(false);
     }
@@ -627,10 +628,7 @@ function SecaoImportarJuris({ onImportado }: { onImportado: () => void }) {
         setErro(fim.erro || "Falha na importação — tente novamente");
       }
     } catch (e: any) {
-      setErro(
-        e.response?.data?.detail?.toString?.() ||
-          "Erro ao iniciar a importação",
-      );
+      setErro(mensagemErroHttp(e, "Erro ao iniciar a importação"));
     } finally {
       if (vivoRef.current) setImportando(false);
     }

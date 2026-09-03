@@ -427,8 +427,10 @@ async def sugerir_provas_faltantes(
         # Detalhe do provider só no log — não vaza infraestrutura na UI.
         logging.getLogger("ejc.provas").warning(
             f"sugerir-faltantes: gateway indisponível: {e}")
-        return {"data": [], "total": 0, "modelo": None, "provedor": None,
-                "aviso": "IA indisponível no momento — tente novamente em instantes."}
+        from app.services.ai.core import hitl_policy
+        return hitl_policy.aplicar(
+            {"data": [], "total": 0, "modelo": None, "provedor": None,
+             "aviso": "IA indisponível no momento — tente novamente em instantes."})
 
     sugestoes = _parse_sugestoes(resp.texto, [p.titulo for p in provas])
     if not sugestoes:
@@ -456,8 +458,12 @@ async def sugerir_provas_faltantes(
     ))
     await db.commit()
 
-    return {"data": sugestoes, "total": len(sugestoes),
-            "modelo": resp.modelo, "provedor": resp.provedor, "aviso": aviso}
+    # S8: vocabulário HITL canônico (is_rascunho/requer_revisao/status_hitl/
+    # aviso_hitl) somado às chaves legadas — último passo da rota.
+    from app.services.ai.core import hitl_policy
+    return hitl_policy.aplicar(
+        {"data": sugestoes, "total": len(sugestoes),
+         "modelo": resp.modelo, "provedor": resp.provedor, "aviso": aviso})
 
 
 @router.get("/matriz",
