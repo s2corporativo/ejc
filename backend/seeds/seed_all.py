@@ -111,6 +111,49 @@ async def _rodar_seed_async(nome: str, coro_fn) -> None:
         print(f"[seed] AVISO: seed '{nome}' falhou (não-fatal): {exc}")
 
 
+def _em_pytest() -> bool:
+    """True quando o seed roda dentro de uma sessão pytest (nunca baixa modelo)."""
+    return bool(os.environ.get("PYTEST_CURRENT_TEST"))
+
+
+async def vetorizar_orfaos_pos_seed() -> dict:
+    """C1 (análise E2E de IA 2026-09-03): o seed nasce VETORIZADO.
+
+    Antes, os documentos iniciais (súmulas conferidas, legislação) ficavam sem
+    vetor até o job horário `reembed_rag_orfaos` (:20) — na primeira hora após
+    a instalação a busca semântica devolvia vazio. Aqui, quando o provider de
+    embeddings está disponível, reaproveita-se o MESMO reindexador idempotente
+    do script/job (`scripts.reembedar_chunks_orfaos.reembedar`), que só toca
+    chunk com `embedding IS NULL`. Desligável com SEED_EMBED_ORFAOS=false;
+    em pytest nunca executa (não baixa modelo).
+
+    Retorna um resumo {"executado": bool, "motivo": str|None, ...contagens}.
+    """
+    from app.core.config import get_settings
+
+    s = get_settings()
+    if not s.SEED_EMBED_ORFAOS:
+        print("[seed] reembed de órfãos desligado (SEED_EMBED_ORFAOS=false).")
+        return {"executado": False, "motivo": "desligado"}
+    if _em_pytest():
+        return {"executado": False, "motivo": "pytest"}
+
+    from app.services import embedding_service
+
+    if not embedding_service.disponivel():
+        print("[seed] embeddings indisponíveis — chunks do seed ficam para o "
+              "job horário reembed_rag_orfaos.")
+        return {"executado": False, "motivo": "embeddings_indisponiveis"}
+
+    from scripts import reembedar_chunks_orfaos as reembed_mod
+
+    resumo = await reembed_mod.reembedar(batch_size=max(1, int(s.RAG_AUTO_REEMBED_BATCH)))
+    resumo = dict(resumo or {})
+    print(f"[seed] reembed de chunks órfãos: docs ok={resumo.get('ok', 0)} "
+          f"erros={resumo.get('erros', 0)}")
+    return {"executado": True, "motivo": None, **resumo}
+
+
 async def main() -> None:
     await seed_admin()
 
@@ -141,6 +184,9 @@ async def main() -> None:
     from app.seeds.base_juridica_seed import seed_base_juridica
 
     await _rodar_seed_async("base_juridica_real", seed_base_juridica)
+    # C1: vetoriza na hora o que o seed acabou de gravar (idempotente,
+    # best-effort, só com embeddings disponíveis).
+    await _rodar_seed_async("reembed_orfaos_pos_seed", vetorizar_orfaos_pos_seed)
     print("[seed] concluído.")
 
 

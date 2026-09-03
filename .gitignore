@@ -110,3 +110,6 @@ backend/app/seeds/backups/
 /data/
 # Cópia transitória do inventário (scripts/governanca/inventario-repo.sh)
 /var/
+# Saída de execução do gold set de IA (backend/app/eval/run_gold_ia.py):
+# é resultado de rodada, não fonte — o número muda a cada execução.
+backend/app/eval/relatorio_gold_ia.json

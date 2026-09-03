@@ -11,6 +11,15 @@ interface State {
   message: string;
 }
 
+// D7: o backend (`observabilidade.py`) limita `stack`/`component_stack` a
+// 8000 caracteres; acima disso devolvia 422 e o crash não era registrado.
+export const LIMITE_STACK = 8000;
+
+export function truncarStack(valor: unknown): string | undefined {
+  if (typeof valor !== "string" || !valor) return undefined;
+  return valor.length > LIMITE_STACK ? valor.slice(0, LIMITE_STACK) : valor;
+}
+
 /**
  * Limite de erro reutilizável. Impede que uma exceção de renderização em um
  * módulo/aba derrube toda a tela (tela branca). Registra o erro no console e
@@ -43,9 +52,11 @@ export default class ErrorBoundary extends Component<Props, State> {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          message: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined,
-          component_stack: info?.componentStack,
+          message: truncarStack(
+            error instanceof Error ? error.message : String(error),
+          ),
+          stack: truncarStack(error instanceof Error ? error.stack : undefined),
+          component_stack: truncarStack(info?.componentStack),
           url: window.location.pathname,
           user_agent: navigator.userAgent,
         }),

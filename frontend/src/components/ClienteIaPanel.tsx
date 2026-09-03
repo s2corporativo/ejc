@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Bot, RefreshCw } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "./Toast";
+import { mensagemErroIA } from "../lib/iaErro";
 
 interface ClienteIaPanelProps {
   clientId: string;
@@ -82,11 +83,10 @@ export default function ClienteIaPanel({
       if (controller.signal.aborted || err.code === "ERR_CANCELED") {
         return;
       }
-      const detalhe = err.response?.data?.detail;
-      const mensagem =
-        typeof detalhe === "string"
-          ? detalhe
-          : "Não foi possível executar a análise estratégica do cliente.";
+      const mensagem = mensagemErroIA(
+        err,
+        "Não foi possível executar a análise estratégica do cliente.",
+      );
       setErro(mensagem);
       setResultado(null);
       toast.error(mensagem);

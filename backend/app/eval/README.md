@@ -4,7 +4,10 @@ Ciclo **eval-driven**: meça o baseline **antes** de mudar qualquer coisa
 (reranker, embedding, prompt, threshold), depois itere medindo cada passo.
 Sem régua, toda melhoria é aposta.
 
-> Três gold sets, mesma filosofia:
+> Quatro gold sets, mesma filosofia:
+> - **Capacidades** (`run_gold_ia.py`, seção 8): mede as CINCO portas de IA
+>   (`analisar`, `redigir`, `resumir`, `conversar`, `extrair`) — tem modo
+>   `--mock` offline para CI. Casos ainda CANDIDATOS (sem atestação humana).
 > - **RAG** (`run_eval.py`, este documento): mede o *retrieval* e a resposta.
 > - **Trajetória do agente** (`agent_trajectory.py`, seção 6): mede as *decisões*
 >   do loop de tool-use (qual tool chamou, se fundamentou, se respeitou HITL/leitura
@@ -270,3 +273,51 @@ python -m app.eval.run_eval --gold app/eval/gold_set.jsonl --k 6
 O CI (`.github/workflows/ci.yml`, job `eval-smoke`) roda `--smoke` +
 `agent_trajectory` em modo não bloqueante; torna-se gate bloqueante quando o gold
 set real existir e o baseline estiver estabelecido.
+
+## 8. Régua das CINCO CAPACIDADES (`run_gold_ia.py`) — item I7
+
+Desde a unificação das portas de IA (item I1: `/ia/analisar`, `/ia/redigir`,
+`/ia/resumir`, `/ia/conversar`, `/ia/extrair`), a pergunta "a IA melhorou?"
+precisa de resposta **por capacidade**, não por endpoint. É o que esta régua faz.
+
+- **Gold set**: `gold_set_ia_candidatos.jsonl` — 10 casos **100% fictícios**
+  (`E2E-FICTICIO-*`), distribuídos em consumidor (4), cível (3), trabalhista (2)
+  e família (1). Cada linha traz `entrada` (fatos + pergunta/pedido),
+  `capacidade`, `area`, `criterios` (os pontos que a resposta tinha de
+  enfrentar), `citacoes_esperadas_tipo` e `nao_deve_conter`.
+- **Citação por TIPO, nunca por número**: o gold set exige *"artigo do CDC sobre
+  vício do produto"*, não *"art. N"*. Número de súmula ou de artigo entra
+  **depois**, pela mão do curador humano, conferido em fonte oficial — inventar
+  numeração para "completar o gabarito" contamina a régua inteira.
+- **Candidato ≠ atestado**: todos os casos são `status: "candidato"`,
+  `atestado_por: null`. `gold_governance.py` os conta à parte
+  (`candidatos_não_atestados`) e **não** os soma à cobertura por área; o
+  relatório da régua repete o aviso. Enquanto ninguém atestar, o número compara
+  execuções entre si e não certifica a qualidade jurídica da IA.
+
+```bash
+cd backend
+
+# Modo MOCK — provedor falso determinístico. Roda em CI: sem rede, sem banco,
+# sem chave de provedor. Mede o HARNESS, não a IA.
+python -m app.eval.run_gold_ia --mock
+
+# Gate de regressão (piso de score e tolerância zero a conteúdo proibido)
+python -m app.eval.run_gold_ia --mock --min-score 0.5 --max-proibidos 0
+
+# Modo REAL — gateway + LLM-juiz sobre os critérios + citation_check
+python -m app.eval.run_gold_ia --juiz --out app/eval/relatorio_gold_ia.json
+```
+
+**Pontuação por caso** (0..1): `0.6 × cobertura dos critérios + 0.4 × cobertura
+das citações por tipo` (sem citação esperada, o peso vai todo para os
+critérios). Citação só conta quando a resposta traz **o assunto e o marcador da
+fonte** (CDC, CLT, Código Civil, súmula, dispositivo constitucional…) — repetir a
+tese não é fundamentar. **Conteúdo proibido zera o caso**: promessa de
+resultado, valor certo de indenização ou dispensa da revisão humana não são
+desconto de pontinho, são reprovação.
+
+Saída em `relatorio_gold_ia.json`: score por caso (com os critérios *não*
+enfrentados, que é o que o curador lê), agregado global, por área e por
+capacidade, mais o bloco `governanca`. Teste offline do modo `--mock`:
+`tests/test_gold_ia_regua.py`.

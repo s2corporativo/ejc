@@ -135,10 +135,17 @@ async def _ingerir_texto(db, background_tasks, titulo, categoria, conteudo,
         fonte=fonte, tribunal=tribunal,
     )
     from app.services.ingestion_service import upsert_documento
+    from app.services.legal_chunker import chunks_para_ingestao
+    # C5: categoria jurídica (legislacao*/sumula*/jurisprudencia*/doutrina) →
+    # chunker por artigo/heading com teto = janela do modelo. PDF com páginas
+    # mantém o chunking por página (origem da citação); demais → corte por
+    # tamanho dentro do upsert. hash_conteudo não muda (é do documento inteiro).
+    chunks_juridicos = None if paginas else chunks_para_ingestao(conteudo, categoria)
     resultado = await upsert_documento(
         db, titulo=titulo, categoria=categoria, conteudo=conteudo,
         chave_origem=chave, fonte=fonte, tribunal=tribunal, extra=extra,
         confianca=confianca, embutir_vetores=False, paginas=paginas,
+        chunks=chunks_juridicos,
     )
     doc = (await db.execute(select(KnowledgeDoc).where(
         KnowledgeDoc.chave_origem == chave,

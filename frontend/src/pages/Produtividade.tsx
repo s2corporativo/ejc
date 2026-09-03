@@ -1,6 +1,6 @@
 import { exportCsv } from "../utils/exportCsv";
 import { exportPdf } from "../utils/exportPdf";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Briefcase,
   Clock,
@@ -10,8 +10,10 @@ import {
   Users,
 } from "lucide-react";
 import api from "../lib/api";
-import { PageHeader, Spinner } from "../components/UI";
+import { ErrorState, PageHeader, Spinner } from "../components/UI";
 import { toast } from "../components/Toast";
+import { mensagemErroHttp } from "../lib/iaErro";
+import { mensagemDaFalha, useCarregar } from "../lib/useCarregar";
 
 const PERIODOS = [
   { label: "7 dias", value: "7d" },
@@ -113,30 +115,19 @@ function BarRow({
 
 export default function Produtividade() {
   const [periodo, setPeriodo] = useState("30d");
-  const [data, setData] = useState<ProdData | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let ativo = true;
-    setLoading(true);
-    api
-      .get(`/analytics/produtividade?periodo=${periodo}`)
-      .then((r: { data: ProdData }) => {
-        if (ativo) setData(r.data);
-      })
-      .catch(() => {
-        if (ativo) setData(null);
-      })
-      .finally(() => {
-        if (ativo) setLoading(false);
-      });
-
-    // A resposta de um período anterior nunca pode sobrescrever o snapshot
-    // atual nem liberar exportação com metadados divergentes.
-    return () => {
-      ativo = false;
-    };
-  }, [periodo]);
+  // A resposta de um período anterior nunca sobrescreve o snapshot atual nem
+  // libera exportação com metadados divergentes (useCarregar descarta
+  // respostas atrasadas). 403 vira mensagem de permissão, não "erro".
+  const carga = useCarregar<ProdData>(
+    () =>
+      api
+        .get(`/analytics/produtividade?periodo=${periodo}`)
+        .then((r: { data: ProdData }) => r.data),
+    [periodo],
+    { fallbackErro: "Não foi possível carregar a produtividade." },
+  );
+  const data = carga.estado === "falhou" ? null : carga.dados;
+  const loading = carga.carregando;
 
   const registrarExportacao = async (
     formato: "csv" | "pdf",
@@ -149,10 +140,12 @@ export default function Produtividade() {
         linhas: snapshot.por_advogado.length,
       });
       return true;
-    } catch (e: any) {
+    } catch (e) {
       toast.error(
-        e?.response?.data?.detail ||
+        mensagemErroHttp(
+          e,
           "A exportação não foi realizada porque não foi possível registrar a trilha de auditoria.",
+        ),
       );
       return false;
     }
@@ -261,7 +254,15 @@ export default function Produtividade() {
       {loading ? (
         <Spinner />
       ) : !data ? (
-        <div className="text-zinc-400 text-sm">Erro ao carregar dados.</div>
+        <ErrorState
+          title={
+            carga.status === 403
+              ? "Sem permissão para ver a produtividade"
+              : "Não foi possível carregar a produtividade"
+          }
+          message={mensagemDaFalha(carga)}
+          onRetry={carga.status === 403 ? undefined : carga.recarregar}
+        />
       ) : (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

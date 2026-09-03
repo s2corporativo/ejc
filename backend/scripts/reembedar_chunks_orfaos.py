@@ -113,11 +113,14 @@ async def _reembedar_doc(db, doc_id: str, dry_run: bool) -> str:
     return "ok"
 
 
-async def reembedar(batch_size: int = 20, dry_run: bool = False) -> None:
+async def reembedar(batch_size: int = 20, dry_run: bool = False) -> dict:
+    """Reembeda chunks órfãos em lotes. Retorna contagens
+    {"ok", "erros", "dry_run", "disponivel"} — consumidas pelo seed (C1) para
+    logar quantos documentos nasceram vetorizados; o CLI ignora o retorno."""
     if not emb_disponivel():
         logger.error("Embeddings indisponíveis (EMBEDDINGS_ENABLED off ou "
                      "provider ausente). Abortando sem alterar nada.")
-        return
+        return {"ok": 0, "erros": 0, "dry_run": 0, "disponivel": False}
 
     total_ok = total_erro = total_dry = 0
     # Paginação por chave estável. OFFSET sobre um conjunto que encolhe a cada
@@ -164,6 +167,8 @@ async def reembedar(batch_size: int = 20, dry_run: bool = False) -> None:
 
     logger.info("[reembedar] concluído — ok=%s erros=%s dry-run=%s",
                 total_ok, total_erro, total_dry)
+    return {"ok": total_ok, "erros": total_erro, "dry_run": total_dry,
+            "disponivel": True}
 
 
 if __name__ == "__main__":
