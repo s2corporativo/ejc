@@ -342,6 +342,19 @@ class SingleAICoreOrchestrator:
                     # garante que a crítica pseudonimize os mesmos nomes antes
                     # do provider externo (LGPD). Inclui `nomes_proteger` extras.
                     entidades=entidades or None,
+                    # PISO DE SIGILO — sem estes dois argumentos, a crítica
+                    # herdava só a política do task_type `critica_adversarial`
+                    # (EXTERNO_PSEUDONIMIZADO) e, preferindo provider externo
+                    # por diversidade, levava a peça + o contexto do caso
+                    # (dossiê/OCR/RAG) para fora do VPS logo DEPOIS de a
+                    # geração ter rodado corretamente em local. `modo_sigilo` é
+                    # o piso já resolvido acima (caso.sigilo_reforcado ou área
+                    # sensível); `case_id` deixa a própria `criticar_peca`
+                    # reconferir o piso do caso — os demais chamadores
+                    # (peca_service, raio_x, /ia-adversarial) já passam case_id
+                    # e passam a herdar a mesma proteção pelo ponto único.
+                    case_id=case_id,
+                    modo_sanitizacao=modo_sigilo,
                 )
                 await adversarial.anexar_critica_ao_log(db, log_id, critica)
                 critica_dict = critica.model_dump()
