@@ -21,6 +21,7 @@ import api from "../lib/api";
 import { asList } from "../lib/list";
 import { toast } from "../components/Toast";
 import { Badge, Card, Empty, PageHeader, Spinner } from "../components/UI";
+import FichaVivaPanel from "../components/FichaVivaPanel";
 
 type Tese = {
   id: string;
@@ -401,6 +402,18 @@ export default function BancoTeses() {
           )}
         </Card>
       </div>
+
+      {/* ── Ficha viva da tese selecionada ─────────────────────────────────
+          Abaixo das colunas, em largura total: o histórico e o lastro são
+          leitura em prosa, e espremê-los numa coluna ao lado da varredura
+          faria o advogado ignorar exatamente o que precisa conferir antes de
+          usar a tese numa peça. Só monta com tese selecionada — a busca é
+          preguiçosa e não custa nada até haver o que mostrar. */}
+      {selecionada && (
+        <div className="mt-4">
+          <FichaVivaPanel key={selecionada.id} teseId={selecionada.id} />
+        </div>
+      )}
     </div>
   );
 }

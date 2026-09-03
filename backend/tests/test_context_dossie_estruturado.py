@@ -279,3 +279,153 @@ async def test_chunk_repetido_nas_duas_buscas_nao_duplica(monkeypatch, _mocks):
     ctx = await cb.montar_contexto(db, mensagem="pergunta", case_id="caso-A",
                                    user=SimpleNamespace(id="u1"))
     assert [f.get("chunk_id") for f in ctx.fontes] == ["c1"]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FICHA VIVA NO DOSSIÊ (Legal Drafting 2.0 §14)
+#
+# A seção de teses despejava `Tese.fundamentacao` — TEXTO LIVRE, não verificado
+# — no prompt do redator sem qualificação alguma. Uma ficha cuja fundamentação
+# diz "Súmula 297/TST" (que pode não existir, estar superada ou ser de outro
+# tribunal) chegava ao modelo com o mesmo peso de um documento do processo, e o
+# modelo a citava como certeza — contradizendo a regra do `legal_base` de que
+# autoridade específica só vale quando está EXPLICITAMENTE nas fontes da etapa.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class _FakeDBComLastro(_FakeDB):
+    """Acrescenta ao fake a consulta de `TeseFonte` (fontes verificadas)."""
+
+    def __init__(self, *, fontes=(), **kw):
+        super().__init__(**kw)
+        self.fontes = list(fontes)
+        self.sqls_fontes: list[str] = []
+
+    async def execute(self, stmt, params=None):
+        from app.models.tese import TeseFonte
+        if stmt.column_descriptions[0].get("entity") is TeseFonte:
+            self.sqls_fontes.append(str(stmt))
+            return _Res(self.fontes)
+        return await super().execute(stmt, params)
+
+
+def _fonte_verificada():
+    from app.models.tese import TeseFonte
+    return TeseFonte(
+        id="f1", tese_id="t1", elemento="fundamentacao",
+        referencia="art. 42, parágrafo único, CDC",
+        trecho="O consumidor cobrado em quantia indevida tem direito à "
+               "repetição do indébito, por valor igual ao dobro do que pagou "
+               "em excesso, acrescido de correção monetária e juros legais.",
+        status_verificacao="verificada",
+    )
+
+
+async def test_fundamentacao_livre_vai_rotulada_como_nao_verificada(_mocks):
+    """Sem o rótulo, o modelo trata texto livre do catálogo como fonte e cita
+    número de súmula que ninguém conferiu."""
+    db = _FakeDBComLastro(documentos=_docs(), prazos=_prazos(), teses=_teses())
+    ctx = await cb.montar_contexto(db, mensagem="cabe repetição em dobro?",
+                                   case_id="caso-A", user=SimpleNamespace(id="u1"))
+    assert "[NÃO VERIFICADA — pista de pesquisa, não cite como certeza]" in ctx.texto
+    assert "CDC art. 42, parágrafo único" in ctx.texto
+
+
+async def test_fonte_verificada_entra_com_trecho_real_e_rotulo(_mocks):
+    db = _FakeDBComLastro(documentos=_docs(), prazos=_prazos(), teses=_teses(),
+                          fontes=[_fonte_verificada()])
+    ctx = await cb.montar_contexto(db, mensagem="cabe repetição em dobro?",
+                                   case_id="caso-A", user=SimpleNamespace(id="u1"))
+    assert "[FONTE VERIFICADA · fundamentacao]" in ctx.texto
+    assert "art. 42, parágrafo único, CDC" in ctx.texto
+    # O TRECHO real entra — é ele que o redator pode citar.
+    assert "repetição do indébito, por valor igual ao dobro" in ctx.texto
+
+
+async def test_gatilhos_dizem_quando_a_ficha_se_aplica(_mocks):
+    from app.models.tese import Tese, TeseStatus
+    teses = [(Tese(id="t1", titulo="Repetição em dobro", status=TeseStatus.ativa,
+                   gatilhos=["cobrança após quitação", "negativação indevida"]),
+              "pendente")]
+    db = _FakeDBComLastro(documentos=_docs(), prazos=_prazos(), teses=teses)
+    ctx = await cb.montar_contexto(db, mensagem="pergunta fictícia",
+                                   case_id="caso-A", user=SimpleNamespace(id="u1"))
+    assert "aplica-se quando: cobrança após quitação; negativação indevida" in ctx.texto
+
+
+async def test_confianca_entra_medida_com_a_amostra_nao_como_porcentagem_crua(_mocks):
+    """`taxa_sucesso` crua de uma ficha 1-de-1 diria "100%" e enviesaria a
+    redação. O dossiê leva o rótulo e a amostra."""
+    from app.models.tese import Tese, TeseStatus
+    teses = [(Tese(id="t1", titulo="Ficha fictícia", status=TeseStatus.ativa,
+                   vezes_venceu=1, vezes_perdeu=0, taxa_sucesso=1.0), "pendente")]
+    db = _FakeDBComLastro(documentos=_docs(), prazos=_prazos(), teses=teses)
+    ctx = await cb.montar_contexto(db, mensagem="pergunta fictícia",
+                                   case_id="caso-A", user=SimpleNamespace(id="u1"))
+    assert "[confiança amostra_insuficiente: 1 de 1 caso(s) decidido(s)]" in ctx.texto
+    assert "100%" not in ctx.texto
+
+
+async def test_lastro_indisponivel_nao_derruba_a_secao(_mocks):
+    """Ausência de lastro nunca pode custar o dossiê do caso — o contexto do
+    processo vale mais que o enriquecimento da tese."""
+    class _DBSemTabelaDeFontes(_FakeDB):
+        async def execute(self, stmt, params=None):
+            from app.models.tese import TeseFonte
+            if stmt.column_descriptions[0].get("entity") is TeseFonte:
+                raise RuntimeError("relation \"tese_fontes\" does not exist")
+            return await super().execute(stmt, params)
+
+    db = _DBSemTabelaDeFontes(documentos=_docs(), prazos=_prazos(), teses=_teses())
+    ctx = await cb.montar_contexto(db, mensagem="cabe repetição em dobro?",
+                                   case_id="caso-A", user=SimpleNamespace(id="u1"))
+    assert "[TESES VINCULADAS AO CASO]" in ctx.texto
+    assert "Repetição do indébito em dobro" in ctx.texto
+    assert "teses" in ctx.secoes
+
+
+async def test_trecho_cortado_e_marcado_no_dossie(_mocks):
+    """Achado do pente fino 03/09. `_uma_linha` trunca por fatia seca, e este
+    trecho entra rotulado `[FONTE VERIFICADA]` — o material que o redator PODE
+    citar. Um dispositivo cuja ressalva ("…salvo quando…") caia depois do
+    limite chegaria ao modelo afirmando o CONTRÁRIO da fonte, com selo de
+    verificado. O delimitador não protege contra isso: é fidelidade de citação,
+    não injeção."""
+    from app.models.tese import TeseFonte
+    longa = TeseFonte(
+        id="f1", tese_id="t1", elemento="fundamentacao",
+        referencia="art. fictício", knowledge_doc_id="doc-1",
+        trecho=("A parte responde pelo dano " * 40) + "salvo quando comprovar caso fortuito.",
+        status_verificacao="verificada",
+    )
+    db = _FakeDBComLastro(documentos=_docs(), prazos=_prazos(), teses=_teses(),
+                          fontes=[longa])
+    ctx = await cb.montar_contexto(db, mensagem="pergunta fictícia",
+                                   case_id="caso-A", user=SimpleNamespace(id="u1"))
+    assert "[…TRECHO CORTADO — consulte a fonte antes de citar]" in ctx.texto
+    # A ressalva de fato NÃO coube — é exatamente o cenário que a marca cobre.
+    assert "salvo quando comprovar caso fortuito" not in ctx.texto
+
+
+async def test_trecho_curto_nao_ganha_marca_de_corte(_mocks):
+    db = _FakeDBComLastro(documentos=_docs(), prazos=_prazos(), teses=_teses(),
+                          fontes=[_fonte_verificada()])
+    ctx = await cb.montar_contexto(db, mensagem="pergunta fictícia",
+                                   case_id="caso-A", user=SimpleNamespace(id="u1"))
+    assert "TRECHO CORTADO" not in ctx.texto
+
+
+async def test_fonte_sem_vinculo_com_a_base_nao_entra_no_dossie(_mocks):
+    """Defesa em profundidade: o selo "verificada" também é aceito por URL de
+    domínio oficial, o que basta para o painel da ficha, mas não para virar
+    `[FONTE VERIFICADA]` no prompt — ali o rótulo promete que o SISTEMA tem o
+    texto. A consulta filtra por `knowledge_doc_id`/`authority_record_id`; o
+    fake abaixo prova que o filtro está no SQL."""
+    db = _FakeDBComLastro(documentos=_docs(), prazos=_prazos(), teses=_teses(),
+                          fontes=[_fonte_verificada()])
+    await cb.montar_contexto(db, mensagem="p", case_id="caso-A",
+                             user=SimpleNamespace(id="u1"))
+    from app.models.tese import TeseFonte
+    sql = next(s for s in db.sqls_fontes if "tese_fontes" in s)
+    assert "knowledge_doc_id IS NOT NULL" in sql
+    assert "authority_record_id IS NOT NULL" in sql
+    assert TeseFonte is not None
