@@ -340,8 +340,13 @@ async def citacoes_do_log(
         raise HTTPException(status_code=403, detail="Sem permissão para este log")
 
     from app.services.citation_gate import validar_citacoes
+    from app.services.ai.sanitization_policy import modo_sigilo_por_case_id
+    # Mesmo piso de sigilo do gate de aprovação (aplicar_gate_hitl): a dimensão
+    # de pertinência envia a AFIRMAÇÃO da peça ao provedor.
+    _modo_sigilo = await modo_sigilo_por_case_id(db, getattr(log, "case_id", None))
     try:
-        gate = await validar_citacoes(db, log.resposta or "")
+        gate = await validar_citacoes(
+            db, log.resposta or "", modo_sanitizacao=_modo_sigilo)
     except Exception:
         _logger.exception(
             "Falha ao recomputar relatório de citações do AILog %s.", log_id)

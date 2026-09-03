@@ -117,6 +117,11 @@ _MODO_DEFAULT_POR_TASK: dict[str, ModoSanitizacao] = {
     "auditoria_peca": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
     "jurimetria": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
     "critica_adversarial": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    # Verificação de PERTINÊNCIA: envia a AFIRMAÇÃO da peça (com fatos do caso)
+    # e o texto da autoridade. Explícita aqui, e não pelo fallback, para deixar
+    # registrado que o piso do CASO ainda a reforça — `validar_citacoes` propaga
+    # `modo_sanitizacao` justamente porque a afirmação carrega fatos.
+    "verificacao_pertinencia": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
     # Modo 4 — extração estruturada local (importação/OCR de documento).
     "intake": ModoSanitizacao.EXTRACAO_LOCAL,
     "importacao_documento": ModoSanitizacao.EXTRACAO_LOCAL,

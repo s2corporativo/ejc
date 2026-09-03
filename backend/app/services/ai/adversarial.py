@@ -365,7 +365,13 @@ async def criticar_peca(
     if db is not None:
         from app.services import citation_gate
         try:
-            citacoes = await citation_gate.validar_citacoes(db, resp.texto)
+            citacoes = await citation_gate.validar_citacoes(
+                db, resp.texto, modo_sanitizacao=modo_efetivo,
+                # A crítica é APOIO ao revisor, não peça sujeita a aprovação:
+                # sua jurisprudência já vai rotulada como "verificar fonte". N
+                # chamadas extras de IA aqui custariam sem mudar decisão.
+                verificar_pertinencia=False,
+            )
             if citacoes.bloqueantes:
                 alertas.append(
                     f"{len(citacoes.bloqueantes)} citação(ões) da PRÓPRIA crítica "
