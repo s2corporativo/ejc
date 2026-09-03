@@ -39,6 +39,26 @@
 # tipos cujo TEXTO existe na base curada. Julgados (`processo_cnj`, `recurso`)
 # ficam `indeterminada` com motivo explícito até a base ter ementa deles — a
 # ingestão de ementas é o que destrava esse tipo, não uma mudança aqui.
+#
+# ONDE ISTO RODA (e onde deliberadamente NÃO roda)
+#
+#   ✔ `citation_gate.aplicar_gate_hitl` — a APROVAÇÃO do AILog. É o ponto de
+#     ENFORCEMENT: `nao_sustentada` impede aprovar na política `bloquear`.
+#   ✔ `GET /ai/logs/{id}/citacoes` — recomputa o relatório sob demanda.
+#   ✘ GERAÇÃO da peça (`ai/core/response_validator.validar`). Ali roda o gate de
+#     EXISTÊNCIA (`citation_check` + `verificador_jurisprudencia`), não este.
+#     Deliberado: `validar` roda a CADA geração, e o advogado costuma gerar
+#     várias versões antes de aprovar — rodar aqui multiplicaria N chamadas de
+#     IA (uma por citação) pelo número de rascunhos descartados. O gate na
+#     aprovação roda UMA vez, sobre a peça que de fato segue, e é onde a
+#     decisão é tomada. Consequência aceita: o advogado descobre a
+#     impertinência ao aprovar, não ao gerar — e ele lê a peça de qualquer
+#     forma (HITL/OAB).
+#   ✘ `POST /validar-citacoes` — preserva o contrato documentado do endpoint
+#     ("100% local, sem LLM, sem rede externa") e não tem caso do qual derivar
+#     piso de sigilo. Desligado explicitamente (`verificar_pertinencia=False`).
+#   ✘ Crítica adversarial — é apoio ao revisor, não peça sujeita a aprovação, e
+#     sua jurisprudência já vai rotulada como "verificar fonte".
 from __future__ import annotations
 
 import logging
@@ -117,8 +137,16 @@ _SYSTEM = (
     "MOTIVO: <uma frase>"
 )
 
-_RE_VEREDITO = re.compile(r"VEREDITO:\s*(SUSTENTADA|NAO_SUSTENTADA)", re.I)
-_RE_TRECHO = re.compile(r"TRECHO:\s*(.*?)(?=\nMOTIVO:|\Z)", re.I | re.S)
+# `NÃO SUSTENTADA`, `NAO-SUSTENTADA`, `Não_Sustentada`: o modelo escreve o
+# português natural, e o veredito BLOQUEANTE era o mais sujeito a se perder por
+# grafia — falhando na direção PERMISSIVA (`indeterminada` nunca bloqueia).
+# A negação é casada por conta própria, com acento e separador opcionais.
+_RE_VEREDITO = re.compile(
+    r"VEREDITO:\s*(N[AÃ]O[\s_-]*SUSTENTADA|SUSTENTADA)", re.I)
+# `\s*` e não `\n`: resposta em UMA LINHA ("VEREDITO: X TRECHO: y MOTIVO: z")
+# fazia o lookahead falhar, o grupo engolir " MOTIVO: …" e a transcrição FIEL
+# ser arquivada como "indício de fundamento inventado".
+_RE_TRECHO = re.compile(r"TRECHO:\s*(.*?)(?=\s*MOTIVO:|\Z)", re.I | re.S)
 _RE_MOTIVO = re.compile(r"MOTIVO:\s*(.+)", re.I)
 # Fronteira de frase: ponto final/interrogação/exclamação seguidos de espaço.
 # `art.`, `n.`, `S.A.` e afins não são fronteira — daí exigir a maiúscula.
@@ -230,10 +258,16 @@ async def texto_da_autoridade(db, citacao: dict) -> tuple[str | None, str | None
 
     if tipo == "sumula":
         tribunal = (citacao.get("tribunal") or "").strip().lower()
-        chaves = (
-            [f"sumula:{tribunal}:{numero}"] if tribunal
-            else [f"sumula:{t}:{numero}" for t in ("stf", "stj", "tst", "tjmg")]
-        )
+        # Sem tribunal a citação é AMBÍGUA: "Súmula 7" existe no STF, no STJ e
+        # no TST com textos DIFERENTES. A consulta anterior varria os quatro e
+        # pegava `LIMIT 1` sem `ORDER BY` — o Postgres escolhia, e a pertinência
+        # confrontava a afirmação contra a súmula de um tribunal sorteado,
+        # podendo bloquear uma citação correta e mudar de resposta entre
+        # execuções. Coerente com a política do módulo ("não saber ≠ saber que
+        # está errado"), ambiguidade vira `indeterminada`, não veredito.
+        if not tribunal:
+            return None, None
+        chaves = [f"sumula:{tribunal}:{numero}"]
         linha = (await db.execute(
             _text(
                 "SELECT kd.titulo, string_agg(kc.conteudo, E'\\n' ORDER BY kc.ordem) "
@@ -247,19 +281,29 @@ async def texto_da_autoridade(db, citacao: dict) -> tuple[str | None, str | None
         )).first()
     else:  # artigo — reusa o recorte por diploma do verificador (AI-056): o
         # texto tem de vir do diploma REALMENTE citado, nunca de outra lei.
-        from app.services.citation_check import _fonte_artigo
+        from app.services.citation_check import _fonte_artigo, _regex_artigo
         fonte = await _fonte_artigo(db, numero, citacao.get("diploma"), vigente=True)
         if not fonte or not fonte.get("doc_id"):
             return None, None
+        # O CHUNK do artigo, NÃO o diploma inteiro (achado do pente fino 03/09).
+        # `_fonte_artigo` devolve o `doc_id` do CÓDIGO — há um documento por
+        # diploma —, e agregar seus chunks entregava, para "art. 373 do CPC", o
+        # preâmbulo e os primeiros artigos do CPC cortados em 4000 caracteres.
+        # O modelo então respondia NAO_SUSTENTADA corretamente (o texto que
+        # recebeu de fato não amparava) e, com CITACOES_POLITICA=bloquear (o
+        # DEFAULT), a aprovação HITL de quase toda peça que citasse artigo
+        # travava. O mesmo regex de localização do verificador seleciona o
+        # chunk certo; sem chunk correspondente, `(None, None)` → indeterminada.
         linha = (await db.execute(
             _text(
                 "SELECT kd.titulo, string_agg(kc.conteudo, E'\\n' ORDER BY kc.ordem) "
                 "FROM knowledge_docs kd JOIN knowledge_chunks kc ON kc.doc_id = kd.id "
                 "WHERE kd.id = :did AND kd.deleted_at IS NULL "
+                "AND kc.conteudo ~* :artigo_re "
                 + _filtros_gate_rag(False)
                 + " GROUP BY kd.id, kd.titulo"
             ),
-            {"did": fonte["doc_id"]},
+            {"did": fonte["doc_id"], "artigo_re": _regex_artigo(numero)},
         )).first()
 
     if not linha or not linha[1]:
@@ -269,7 +313,12 @@ async def texto_da_autoridade(db, citacao: dict) -> tuple[str | None, str | None
 
 def _parse(resposta: str) -> tuple[str | None, str, str]:
     m = _RE_VEREDITO.search(resposta or "")
-    veredito = m.group(1).lower() if m else None
+    veredito = None
+    if m:
+        bruto = m.group(1).upper()
+        # Canoniza a grafia livre (acento/hífen/espaço) no vocabulário interno.
+        veredito = (NAO_SUSTENTADA if bruto.startswith(("NAO", "NÃO"))
+                    else SUSTENTADA)
     t = _RE_TRECHO.search(resposta or "")
     mo = _RE_MOTIVO.search(resposta or "")
     return veredito, (t.group(1).strip() if t else ""), (mo.group(1).strip() if mo else "")
@@ -280,6 +329,7 @@ async def avaliar_citacao(
     autoridade: str,
     fonte: str | None = None,
     modo_sanitizacao=None,
+    entidades: dict[str, list[str]] | None = None,
 ) -> Pertinencia:
     """Confronta UMA afirmação contra o texto de UMA autoridade.
 
@@ -308,6 +358,22 @@ async def avaliar_citacao(
             temperature=0.0,
             max_tokens=400,
             modo_sanitizacao=modo_sanitizacao,
+            # Nível EXPLÍCITO: o piso por tarefa injetaria o método FIRAC
+            # ("(1) FATOS … (5) CONCLUSÃO") num prompt cujo contrato inteiro é
+            # `VEREDITO:/TRECHO:/MOTIVO:` conferido por regex. A resposta viria
+            # em prosa, o parse falharia e TODA citação viraria `indeterminada`
+            # — a verificação ficaria silenciosamente inútil. O gateway também
+            # protege (a tarefa está em `_TAREFAS_SAIDA_ESTRUTURADA`); isto é a
+            # segunda camada, no ponto que conhece o contrato da resposta.
+            nivel_inteligencia="padrao",
+            # ENTIDADES NOMEADAS do caso (LGPD). A AFIRMAÇÃO é uma frase inteira
+            # da peça e carrega os nomes de cliente e parte contrária em claro.
+            # Sem a lista, a barreira do gateway cai no NER heurístico — que
+            # pega a maioria, mas é heurístico; a lista do caso é determinística
+            # e é o que todos os outros caminhos do repo passam. Casos com
+            # sigilo reforçado já estão cobertos por `modo_sanitizacao` (não
+            # saem do VPS); isto protege o RESTO do acervo.
+            entidades=entidades or None,
         )
     except Exception as e:
         logger.warning("[pertinencia] verificação indisponível: %s", str(e)[:200])
@@ -343,6 +409,7 @@ async def avaliar_citacao(
 
 async def avaliar_texto(
     db, texto: str, citacoes: list[dict], modo_sanitizacao=None,
+    case_id: str | None = None,
 ) -> RelatorioPertinencia:
     """Confronta cada citação verificável do texto contra sua autoridade.
 
@@ -353,6 +420,14 @@ async def avaliar_texto(
     """
     if not habilitada():
         return RelatorioPertinencia(habilitada=False)
+
+    # Entidades do caso montadas UMA VEZ por relatório (fail-safe: o helper
+    # nunca levanta e devolve {} em qualquer falha, degradando para a barreira
+    # estrutural do gateway).
+    entidades: dict[str, list[str]] = {}
+    if case_id and db is not None:
+        from app.services.ai.entidades_caso import entidades_do_caso
+        entidades = await entidades_do_caso(db, case_id)
 
     itens: list[dict] = []
     motivos: list[str] = []
@@ -384,7 +459,7 @@ async def avaliar_texto(
         verificadas += 1
         itens.append(_item(c, await avaliar_citacao(
             extrair_afirmacao(texto, c.get("span")), autoridade, fonte,
-            modo_sanitizacao=modo_sanitizacao,
+            modo_sanitizacao=modo_sanitizacao, entidades=entidades or None,
         )))
 
     nao = sum(1 for i in itens if i["veredito"] == NAO_SUSTENTADA)

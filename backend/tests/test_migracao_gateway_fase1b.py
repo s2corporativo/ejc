@@ -277,6 +277,18 @@ async def test_gerar_minuta_delega_a_porta_canonica(ia_extra_consolidado, monkey
         db=db, cu=_cu(),
     )
 
+    # REGRESSÃO DE ENTRADA (pente fino 03/09): `tipo_peca` e `area` iam em
+    # `opcoes`, que cai em `params` do orquestrador — e o orquestrador lê APENAS
+    # `module_key`, `surface`, `nomes_proteger` e `prompt_extra`. O tipo era
+    # descartado em silêncio: o consumidor de produção
+    # (`frontend/src/pages/ramos/RamoAnalise.tsx`) manda o tipo escolhido pelo
+    # advogado, que pedia CONTESTAÇÃO e recebia rascunho genérico. O contrato de
+    # RESPOSTA estava preservado; faltava o de REQUISIÇÃO.
+    mensagem = chamadas[0]["mensagem"]
+    assert "TIPO DE PEÇA: contestação" in mensagem
+    assert "ÁREA: consumidor" in mensagem
+    assert "TEMA: cobrança indevida fictícia" in mensagem
+
     # 1. Passou pelo Núcleo Único, não pelo gateway direto.
     assert len(chamadas) == 1, "a rota deve delegar a capacidades.redigir"
     assert gw == [], "não pode mais chamar o gateway direto (perderia os gates)"

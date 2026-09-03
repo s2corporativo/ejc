@@ -194,7 +194,7 @@ async def avaliar_bloqueantes_pertinencia(rel_pert: dict | None) -> list[dict]:
 
 async def validar_citacoes(
     db, texto: str, *, politica: str | None = None, modo_sanitizacao=None,
-    verificar_pertinencia: bool = True,
+    verificar_pertinencia: bool = True, case_id: str | None = None,
 ) -> RelatorioCitacoes:
     """Valida citações de um texto gerado por IA e aplica a política.
 
@@ -203,6 +203,10 @@ async def validar_citacoes(
 
     - `modo_sanitizacao`: piso de sigilo do caso, propagado à pertinência —
       que envia a AFIRMAÇÃO da peça, carregada de fatos, ao provedor.
+    - `case_id`: monta as ENTIDADES NOMEADAS do caso para a pseudonimização
+      REVERSÍVEL do gateway. A afirmação enviada à pertinência é uma frase
+      inteira da peça e carrega nomes de cliente e parte contrária em claro;
+      sem a lista, só o NER heurístico do gateway os protegeria.
     - `verificar_pertinencia=False`: mantém a chamada 100% local e sem LLM
       mesmo com a flag ligada. É o que preserva o contrato documentado de
       `POST /validar-citacoes`, cujos chamadores contam com "sem LLM, sem rede
@@ -253,7 +257,7 @@ async def validar_citacoes(
         if verificar_pertinencia and _pert.habilitada():
             rel_pert = (await _pert.avaliar_texto(
                 db, texto, rel.get("citacoes") or [],
-                modo_sanitizacao=modo_sanitizacao,
+                modo_sanitizacao=modo_sanitizacao, case_id=case_id,
             )).model_dump()
             bloqueantes += [
                 CitacaoBloqueante(**b)
@@ -265,7 +269,18 @@ async def validar_citacoes(
             "[citacoes] verificação de pertinência indisponível "
             "(gate de existência inalterado): %s", str(e)[:200],
         )
-        rel_pert = None
+        # NÃO devolve `None`: `None` significa "dimensão DESLIGADA" no schema, e
+        # o revisor leria uma falha total da checagem como se ela simplesmente
+        # não estivesse ativa. Estado próprio, com a mesma honestidade que
+        # `indeterminada` tem por citação — a checagem que ele acredita ativa
+        # não rodou, e ele precisa saber.
+        rel_pert = {
+            "habilitada": True, "erro": True, "total": 0, "itens": [],
+            "motivos": ["Verificação de PERTINÊNCIA indisponível nesta análise "
+                        "— confira manualmente se as autoridades citadas "
+                        "sustentam o que a peça afirma."],
+        }
+        motivos.extend(rel_pert["motivos"])
 
     if verificacao_parcial:
         motivos.append(
@@ -332,13 +347,19 @@ async def aplicar_gate_hitl(
     # Piso de sigilo do caso do PRÓPRIO AILog: a dimensão de pertinência manda
     # ao provedor a AFIRMAÇÃO da peça, carregada de fatos. Sem isto, o gate de
     # aprovação de um caso sigiloso seria a porta dos fundos que o resto fechou.
-    # Sem `case_id` (ou com falha de leitura) não há piso extra: a política do
-    # task_type continua valendo e o gateway reforça de qualquer forma.
+    # Sem `case_id` não há piso extra: a política do task_type continua valendo
+    # e o gateway reforça de qualquer forma. FALHA DE LEITURA, porém, PROPAGA —
+    # `modo_sigilo_por_case_id` não tem try/except de propósito, e esta chamada
+    # está FORA do try abaixo: erro transitório lendo `cases` vira 500 em vez de
+    # aprovar sem saber se o caso é sigiloso. Fail-closed deliberado; não
+    # "conserte" envolvendo em try/except.
     from app.services.ai.sanitization_policy import modo_sigilo_por_case_id
     modo_sigilo = await modo_sigilo_por_case_id(db, getattr(log, "case_id", None))
 
     try:
-        gate = await validar_citacoes(db, log.resposta, modo_sanitizacao=modo_sigilo)
+        gate = await validar_citacoes(
+            db, log.resposta, modo_sanitizacao=modo_sigilo,
+            case_id=getattr(log, "case_id", None))
     except Exception:
         logger.exception(
             "Falha na verificação de citações do AILog %s (política %s).",

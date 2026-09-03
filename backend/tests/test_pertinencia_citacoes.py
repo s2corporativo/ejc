@@ -324,5 +324,217 @@ class TestIntegracaoComOGate:
             fake_verificar)
 
         rel = await citation_gate.validar_citacoes(None, "Texto fictício.")
-        assert rel.pertinencia is None          # dimensão ausente, não falsa
-        assert rel.bloqueia_aprovacao is False  # gate de existência intacto
+        # Gate de EXISTÊNCIA intacto — o ponto do fail-safe.
+        assert rel.bloqueia_aprovacao is False
+        # E o estado é DISTINGUÍVEL de "dimensão desligada" (achado P2-5 do
+        # pente fino 03/09): `None` significa desligada no schema, e devolver
+        # `None` numa FALHA faria o revisor ler uma checagem que não rodou como
+        # uma checagem que ele desligou. Mesma honestidade do `indeterminada`
+        # por citação.
+        assert rel.pertinencia is not None
+        assert rel.pertinencia["erro"] is True
+        assert rel.pertinencia["habilitada"] is True
+        assert any("PERTINÊNCIA indisponível" in m for m in rel.motivos)
+
+    async def test_desligada_de_fato_devolve_none(self, monkeypatch):
+        """Contraprova: com a flag OFF, `None` continua significando
+        'dimensão desligada' — os dois estados não se confundem."""
+        from app.core.config import get_settings
+        from app.services import citation_gate
+        monkeypatch.setattr(get_settings(), "PERTINENCIA_ENABLED", False)
+
+        async def fake_verificar(db, texto, **kw):
+            return {"total": 0, "confirmadas": 0, "nao_encontradas": 0,
+                    "citacoes": [], "score": 100}
+        monkeypatch.setattr(
+            "app.services.verificador_jurisprudencia.verificar_jurisprudencia",
+            fake_verificar)
+
+        rel = await citation_gate.validar_citacoes(None, "Texto fictício.")
+        assert rel.pertinencia is None
+
+
+# ── 6. Roteamento e nível — o defeito que tornaria a feature inútil ──────────
+# Achado do pente fino de 03/09: sem entrada própria no gateway,
+# `verificacao_pertinencia` caía no default `analise_juridica` e recebia o piso
+# de nível "alto", que injeta o método FIRAC ("(1) FATOS … (5) CONCLUSÃO") num
+# prompt cujo contrato inteiro é `VEREDITO:/TRECHO:/MOTIVO:` conferido por
+# regex. A resposta viria em prosa, o parse falharia e TODA citação viraria
+# `indeterminada` — a verificação silenciosamente inútil, sem erro nenhum.
+
+class TestRoteamentoENivel:
+    def test_tarefa_e_de_saida_estruturada(self):
+        """Piso de nível "padrao" e modo de prosa ignorado — é o que impede o
+        FIRAC de entrar num prompt de formato exato."""
+        from app.services import ai_gateway
+        assert pertinencia.TASK_TYPE in ai_gateway._TAREFAS_SAIDA_ESTRUTURADA
+        assert ai_gateway._nivel_piso(pertinencia.TASK_TYPE) == "padrao"
+
+    def test_nivel_padrao_nao_injeta_firac(self):
+        """Prova direta: com "padrao" a instrução extra não traz FIRAC."""
+        from app.services import ai_gateway
+        msgs = ai_gateway._aplicar_nivel(
+            [{"role": "system", "content": pertinencia._SYSTEM}],
+            None, task_label=pertinencia.TASK_TYPE)
+        assert not any("FIRAC" in m["content"] for m in msgs)
+
+    def test_nivel_alto_injetaria_firac_em_tarefa_de_prosa(self):
+        """Contraprova — o risco era real, não hipotético: numa tarefa de prosa
+        o mesmo caminho injeta FIRAC."""
+        from app.services import ai_gateway
+        msgs = ai_gateway._aplicar_nivel(
+            [{"role": "system", "content": "x"}], "alto", task_label="analise_juridica")
+        assert any("FIRAC" in m["content"] for m in msgs)
+
+    def test_cadeia_e_economica_nao_a_de_analise_juridica(self):
+        """Pergunta fechada de 400 tokens, uma POR CITAÇÃO: cair na cadeia mais
+        cara multiplicava o custo pelo número de citações da peça."""
+        from app.services import ai_gateway
+        assert pertinencia.TASK_TYPE in ai_gateway.TASK_ROUTING
+        cadeia = [p for p, _ in ai_gateway.TASK_ROUTING[pertinencia.TASK_TYPE]]
+        # Local primeiro, pago por último — mesma forma de `resumo`.
+        assert cadeia[0] == "ollama"
+        assert cadeia[-1] == "anthropic"
+
+    def test_modelo_anthropic_e_o_rapido_nao_o_complexo(self):
+        from app.core.config import get_settings
+        from app.services import ai_gateway
+        assert ai_gateway._resolver_modelo(
+            "anthropic", pertinencia.TASK_TYPE, None
+        ) == get_settings().ANTHROPIC_MODEL_RAPIDO
+
+    async def test_call_site_pede_nivel_padrao_explicitamente(
+            self, ligada, monkeypatch):
+        """Segunda camada, no ponto que conhece o contrato da resposta: mesmo
+        que o piso do gateway mude, este call site não regride."""
+        cap: dict = {}
+        _mock_gateway(monkeypatch, _resposta("NAO_SUSTENTADA"), cap)
+        await pertinencia.avaliar_citacao("Afirmação fictícia.", ART_373)
+        assert cap["nivel_inteligencia"] == "padrao"
+
+
+# ── 7. Achados ALTA do pente fino de 03/09 ──────────────────────────────────
+
+class TestTextoDaAutoridade:
+    """`texto_da_autoridade` é o insumo de TUDO: se ele traz o texto errado, a
+    IA responde certo sobre o texto errado e a peça é bloqueada por engano."""
+
+    class _DBEspiao:
+        """Captura o SQL e os parâmetros das consultas."""
+
+        def __init__(self, linha_conteudo=("CPC/2015", ART_373)):
+            self.sqls: list[str] = []
+            self.params: list[dict] = []
+            self._conteudo = linha_conteudo
+
+        async def execute(self, stmt, params=None, *_a, **_kw):
+            sql = str(stmt)
+            self.sqls.append(sql)
+            self.params.append(params or {})
+            if "string_agg" in sql:
+                return SimpleNamespace(first=lambda: self._conteudo)
+            return SimpleNamespace(
+                first=lambda: ("doc-1", "CPC/2015", "planalto:cpc", 1, True, None))
+
+    async def test_artigo_busca_o_CHUNK_nao_o_diploma_inteiro(self):
+        """`_fonte_artigo` devolve o `doc_id` do CÓDIGO — há um documento por
+        diploma. Agregar seus chunks entregava, para "art. 373 do CPC", o
+        preâmbulo e os primeiros artigos cortados em 4000 caracteres; o modelo
+        respondia NAO_SUSTENTADA (corretamente, sobre o texto errado) e, com
+        CITACOES_POLITICA=bloquear (o DEFAULT), travava a aprovação de quase
+        toda peça que citasse artigo."""
+        db = self._DBEspiao()
+        texto, _ = await pertinencia.texto_da_autoridade(
+            db, {"tipo": "artigo", "numero": "373", "diploma": "CPC"})
+        assert texto == ART_373
+        sql_conteudo = next(s for s in db.sqls if "string_agg" in s)
+        assert "kc.conteudo ~* :artigo_re" in sql_conteudo
+        # E o regex é o do artigo pedido, não o do diploma.
+        p_conteudo = db.params[db.sqls.index(sql_conteudo)]
+        assert "373" in p_conteudo["artigo_re"]
+
+    async def test_sumula_sem_tribunal_e_ambigua_e_nao_devolve_texto(self):
+        """"Súmula 7" existe no STF, no STJ e no TST com textos DIFERENTES. A
+        consulta anterior varria os quatro com `LIMIT 1` sem `ORDER BY`: o
+        Postgres escolhia, a pertinência confrontava contra a súmula de um
+        tribunal sorteado, e o resultado podia mudar entre execuções."""
+        db = self._DBEspiao()
+        texto, fonte = await pertinencia.texto_da_autoridade(
+            db, {"tipo": "sumula", "numero": "7", "tribunal": None})
+        assert (texto, fonte) == (None, None)
+        assert db.sqls == []          # nem consultou — ambiguidade não vira SQL
+
+    async def test_sumula_com_tribunal_consulta_so_aquele_tribunal(self):
+        db = self._DBEspiao()
+        await pertinencia.texto_da_autoridade(
+            db, {"tipo": "sumula", "numero": "7", "tribunal": "STJ"})
+        assert db.params[0]["k"] == ["sumula:stj:7"]
+
+
+class TestGrafiaDoVeredito:
+    """O veredito BLOQUEANTE era o mais sujeito a se perder por grafia — e se
+    perdia na direção PERMISSIVA (`indeterminada` nunca bloqueia)."""
+
+    @pytest.mark.parametrize("grafia", [
+        "NAO_SUSTENTADA", "NÃO_SUSTENTADA", "NÃO SUSTENTADA",
+        "NAO-SUSTENTADA", "não sustentada",
+    ])
+    async def test_negacao_em_portugues_natural_ainda_bloqueia(
+            self, ligada, monkeypatch, grafia):
+        _mock_gateway(monkeypatch, SimpleNamespace(
+            texto=f"VEREDITO: {grafia}\nTRECHO: \nMOTIVO: não ampara",
+            modelo="m", provedor="ollama", input_tokens=1, output_tokens=1))
+        p = await pertinencia.avaliar_citacao("Afirmação fictícia.", ART_373)
+        assert p.veredito == pertinencia.NAO_SUSTENTADA
+        assert p.bloqueante is True
+
+    async def test_sustentada_nao_e_confundida_com_a_negacao(
+            self, ligada, monkeypatch):
+        _mock_gateway(monkeypatch, _resposta(
+            "SUSTENTADA", trecho="ao autor, quanto ao fato constitutivo de seu direito"))
+        p = await pertinencia.avaliar_citacao("Afirmação fictícia.", ART_373)
+        assert p.veredito == pertinencia.SUSTENTADA
+
+    async def test_resposta_em_uma_linha_nao_vira_falsa_alucinacao(
+            self, ligada, monkeypatch):
+        """O lookahead exigia `\\n` antes de MOTIVO: numa resposta de uma linha,
+        o grupo engolia " MOTIVO: …", `trecho_confere` reprovava, e uma
+        transcrição FIEL era arquivada como "indício de fundamento inventado"."""
+        literal = "ao autor, quanto ao fato constitutivo de seu direito"
+        _mock_gateway(monkeypatch, SimpleNamespace(
+            texto=f"VEREDITO: SUSTENTADA TRECHO: {literal} MOTIVO: confere",
+            modelo="m", provedor="ollama", input_tokens=1, output_tokens=1))
+        p = await pertinencia.avaliar_citacao("Afirmação fictícia.", ART_373)
+        assert p.veredito == pertinencia.SUSTENTADA
+        assert p.trecho_rejeitado is False
+
+
+class TestEntidadesDoCaso:
+    async def test_entidades_chegam_ao_gateway(self, ligada, monkeypatch):
+        """A AFIRMAÇÃO é uma frase inteira da peça e carrega nomes em claro.
+        Sem a lista do caso, só o NER heurístico do gateway os protegeria."""
+        cap: dict = {}
+        _mock_gateway(monkeypatch, _resposta("NAO_SUSTENTADA"), cap)
+        await pertinencia.avaliar_citacao(
+            "Afirmação fictícia.", ART_373,
+            entidades={"cliente": ["João da Silva"]})
+        assert cap["entidades"] == {"cliente": ["João da Silva"]}
+
+    async def test_avaliar_texto_monta_as_entidades_uma_vez(
+            self, ligada, monkeypatch):
+        chamadas = {"n": 0}
+
+        async def fake_entidades(db, case_id):
+            chamadas["n"] += 1
+            return {"cliente": ["João da Silva"]}
+        monkeypatch.setattr(
+            "app.services.ai.entidades_caso.entidades_do_caso", fake_entidades)
+
+        cap: dict = {}
+        _mock_gateway(monkeypatch, _resposta("NAO_SUSTENTADA"), cap)
+        rel = await pertinencia.avaliar_texto(
+            _DBAutoridade(), PECA_ERRADA, [_citacao(), _citacao()],
+            case_id="caso-1")
+        assert rel.nao_sustentadas == 2
+        assert chamadas["n"] == 1     # uma vez por relatório, não por citação
+        assert cap["entidades"] == {"cliente": ["João da Silva"]}
