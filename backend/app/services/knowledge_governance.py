@@ -20,10 +20,25 @@ from difflib import SequenceMatcher
 from typing import Any, Iterable
 from urllib.parse import urlparse
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.rag import KnowledgeChunk, KnowledgeDoc
+
+
+async def _ids_recuperaveis(db: AsyncSession) -> set[str]:
+    """Ids dos documentos vigentes que PASSAM no gate de recuperação do RAG —
+    exatamente o fragmento `ai_service.filtros_gate_rag()` (C3): a saúde da
+    base conta como "utilizável" só o que a busca de fato devolve."""
+    from app.services.ai_service import filtros_gate_rag
+
+    sql = (
+        "SELECT kd.id FROM knowledge_docs kd "
+        "WHERE kd.deleted_at IS NULL AND kd.vigente = TRUE "
+        f"{filtros_gate_rag()}"
+    )
+    rows = (await db.execute(text(sql))).all()
+    return {str(r[0]) for r in rows}
 
 
 OFFICIAL_HOST_SUFFIXES = (
@@ -412,6 +427,10 @@ async def health_snapshot(db: AsyncSession) -> dict[str, Any]:
     docs = await _active_docs(db, include_history=True)
     current_docs = [d for d in docs if d.vigente]
     metrics = await _chunk_metrics(db)
+    # C3: "utilizável" = passa no MESMO gate SQL da recuperação (não só
+    # rag_status=aprovado — vigência verificada, quarentena e corpus fictício
+    # também contam, como na busca).
+    recuperaveis = await _ids_recuperaveis(db)
     duplicates, conflicts = detectar_duplicidades(current_docs)
 
     counts = Counter()
@@ -423,10 +442,12 @@ async def health_snapshot(db: AsyncSession) -> dict[str, Any]:
         legal = inferir_situacao_juridica(doc)
         authority = inferir_autoridade_documento(doc)
         approved = _norm((doc.extra or {}).get("rag_status")) == "aprovado"
+        recuperavel = str(doc.id) in recuperaveis
 
         counts["approved"] += int(approved)
+        counts["retrievable_docs"] += int(recuperavel)
         counts["vectorized_docs"] += int(doc.status_indexacao == "indexado")
-        counts["usable_docs"] += int(approved and metric["chunks"] > 0 and quality["status"] != "incompleto")
+        counts["usable_docs"] += int(recuperavel and metric["chunks"] > 0 and quality["status"] != "incompleto")
         counts["chunks"] += metric["chunks"]
         counts["embedded_chunks"] += metric["embedded"]
         counts["ocr_issues"] += int(any("OCR" in issue for issue in quality["issues"]))
@@ -482,6 +503,8 @@ async def health_snapshot(db: AsyncSession) -> dict[str, Any]:
             "total_docs": total,
             "historical_versions": len(docs) - total,
             "approved_docs": counts["approved"],
+            # C3: passa no gate SQL da recuperação (mesmo fragmento da busca).
+            "retrievable_docs": counts["retrievable_docs"],
             "usable_docs": counts["usable_docs"],
             "vectorized_docs": counts["vectorized_docs"],
             "total_chunks": counts["chunks"],

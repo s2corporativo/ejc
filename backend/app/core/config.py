@@ -191,6 +191,12 @@ class Settings(BaseSettings):
     # custam ~10%). True = comportamento atual; False = system como string pura
     # (sem cache_control). Não afeta os demais providers.
     AI_PROMPT_CACHING_ENABLED: bool = True
+    # Dossiê de contexto do caso (context_builder — I3 da análise E2E de IA
+    # 2026-09-03): seções em ordem ESTÁVEL (o que muda pouco vem primeiro, para
+    # aproveitar o prompt caching), cada uma truncada em
+    # AI_CONTEXTO_MAX_CHARS_SECAO e o conjunto em AI_CONTEXTO_MAX_CHARS.
+    AI_CONTEXTO_MAX_CHARS_SECAO: int = 6000
+    AI_CONTEXTO_MAX_CHARS: int = 60000
     # Busca web (verificação ativa) via server-side tool do Anthropic.
     # Padrão de integrações externas do repo: default OFF + degradação graciosa
     # (se a API rejeitar o tool, a chamada repete sem ele). O tool só é anexado
@@ -520,6 +526,13 @@ class Settings(BaseSettings):
     # margem para atraso de disponibilização sem reprocessar demais (o upsert
     # é idempotente por chave_origem, então sobreposição é inofensiva).
     DJEN_INGEST_JANELA_DIAS: int = 2
+    # Captura por advogado (djen_service.capturar_para_advogado): intimação de
+    # processo VINCULADO a caso ativo também entra no RAG como
+    # `comunicacao_processual` restrita ao cliente/caso, com rag_status
+    # 'pendente' (a curadoria decide). Usa a MESMA chave_origem do ingestor
+    # por OAB monitorada (idempotente entre os dois caminhos). False = só a
+    # tela de intimações, sem RAG.
+    DJEN_CAPTURA_INGERIR_RAG: bool = True
 
     # ── TJMG — jurisprudência estadual MG (crawler agendado → RAG) ───────
     # O TJMG NÃO tem API aberta (≠ STJ CKAN): a jurisprudência fica atrás de
@@ -607,12 +620,23 @@ class Settings(BaseSettings):
     # OOM-killer GLOBAL da VPS, que hospeda outros sistemas além do EJC.
     # Lote pequeno e fixo mantém o pico limitado e previsível.
     EMBEDDINGS_BATCH: int = 16
+    # Teto de caracteres por chunk, coerente com a janela do modelo de
+    # embeddings (e5-large: 512 tokens ≈ 1.800 chars em pt-BR). O chunker
+    # jurídico (legal_chunker._MAX_DEFAULT) e o corte por tamanho
+    # (ingestion_service.CHUNK_TAMANHO) NUNCA excedem este valor — a cauda
+    # acima da janela ficaria sem vetor (C5 da análise E2E de IA 2026-09-03).
+    EMBEDDINGS_MAX_CHARS: int = 1800
     # Auto-reindex do RAG (O-2): job periódico do scheduler reembeda chunks órfãos
     # (embedding IS NULL) — assim a troca de modelo/dimensão (migration 096) se
     # AUTO-CURA sem passo manual no deploy. No-op rápido quando não há órfãos.
     # O script manual (scripts.reembedar_chunks_orfaos) segue como fallback.
     RAG_AUTO_REEMBED_ENABLED: bool = True
     RAG_AUTO_REEMBED_BATCH: int = 20
+    # Seed nasce vetorizado (C1): ao final de seeds/seed_all.py, se o provider
+    # de embeddings estiver disponível, os chunks órfãos do seed são
+    # reembedados na hora (idempotente) — sem isto a busca semântica fica vazia
+    # até o job horário. False = comportamento anterior (só o job).
+    SEED_EMBED_ORFAOS: bool = True
 
     # ── Reranking (cross-encoder) do RAG — Fase 1 auditoria IA 2026-07-17 ─
     # Reordena os candidatos do retrieval híbrido (pgvector cosine + RRF pg_trgm)
