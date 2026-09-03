@@ -493,3 +493,36 @@ abaixo.
 - O teste de paridade de `.env.example` pegou, na integração, uma variável
   nova sem documentação (`DJEN_CAPTURA_INGERIR_RAG`) — exatamente o que ele
   existe para pegar. Documentada.
+
+### 10.5 Revisão de segurança do diff (regra 8)
+
+O `security-auditor` revisou os 122 arquivos do diff acumulado e devolveu
+**aprovado com ressalvas**: nenhum P0/P1, dois P2 e seis P3 — todos regressões
+introduzidas pelas próprias ondas, não defeitos pré-existentes. Os oito foram
+tratados no commit `e05dda9a`, cada um com regressão:
+
+| # | Achado | O que acontecia | Correção |
+|---|---|---|---|
+| **P2-1** | `AI_PROFILE` sobrescrevia kill-switch explícito | Operador aplica `AI_EXTERNAL_PROVIDERS_ALLOWED=false` no `.env` do VPS durante incidente de LGPD e reinicia; com `AI_PROFILE=externo` no compose, a flag voltava a `true` sem log, sem aviso e sem falha de boot | Flag definida no ambiente **sempre vence o perfil** (`model_fields_set`); conflito gera WARNING nomeando a flag, nunca o valor |
+| **P2-2** | Prazo da cadeia não cancelava a chamada Anthropic | O SDK é síncrono e roda em `asyncio.to_thread`, que não é cancelável: no estouro do prazo a tarefa era abandonada e a requisição seguia até 120 s — cobrada, sem `AILog`, fora do painel de custo. O risco cresceu porque a Anthropic passou a ser o último elo de `resumo`/`chat_rapido` | O provedor recebe o **orçamento restante** e encurta o timeout da própria requisição (nunca alarga) |
+| **P3-1** | `AILog` do cache hit gravava prompt cru | Marcado como `pii_removida=False`, deixava PII no registro de auditoria | Sanitiza antes de gravar e reporta o que de fato ocorreu |
+| **P3-2** | Três pontos afirmavam PII removida sem cobrir o prompt inteiro | Motor de teses, checklist e visual law logavam blocos de RAG/dossiê não sanitizados como "sem PII" | Sanitizam o prompt completo antes do registro |
+| **P3-3** | Campo livre podia forjar seção do dossiê | Título de documento, prazo ou tese com quebra de linha simulava o cabeçalho `[FONTES — BASE DE CONHECIMENTO INTERNA]` | Campos livres achatados (o mesmo tratamento que descrição e fundamentação já tinham) |
+| **P3-4** | Ledger permitia rebaseline silencioso de auth | `--atualizar` regravava o snapshot com `auth_deps` novas; depois o teste passaria sem declaração | Recusa regravar quando há alteração de autenticação, salvo `--confirmar-auth` |
+| **P3-5** | `API_ROTAS_SUNSET` ia crua para o header | Valor inválido é ignorado pelo cliente em silêncio: a poda pareceria anunciada sem estar | Validada no boot como data HTTP |
+| **P3-6** | Hook instalado por symlink | Segue o conteúdo da branch em checkout | Registrado como modelo de confiança; script é benigno, sem mudança |
+
+O auditor também confirmou como **corretas** as partes sensíveis: ordem dos
+validadores (o perfil roda antes da validação de produção), `MARITACA_EXIGIR_SOBERANIA`
+não contornável por perfil, kill-switch global sobrevivendo a qualquer perfil,
+motivos de inelegibilidade sem valor de chave nem URL interna, CORS sem `*` com
+credenciais, cross-tenant fechado no `rag_public` sem oráculo de enumeração,
+documento de cofre excluído do dossiê por allowlist fail-closed, resposta do
+`AILog` pseudonimizada pelo validador do model, mensagem de timeout sem nome de
+provedor, e os scripts novos sem injeção de comando (`grep` por lista de
+argumentos, `ast.literal_eval` sobre fonte versionada).
+
+**Observação registrada, sem correção:** com `DJEN_CAPTURA_INGERIR_RAG=true` o
+volume de teor de intimações em `knowledge_docs` cresce. O escopo está correto
+(idempotente, filtrado por cliente e caso), mas não há rotina de expurgo por
+`client_id` — vale confirmar a política de retenção antes de ligar em produção.
