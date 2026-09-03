@@ -21,9 +21,20 @@ grep -Fq 'fix-schedule' "$SCRIPT" || fail "correção segura de no_schedule ause
 grep -Fq "'{name:\$name,no_schedule:false}'" "$SCRIPT" || fail "PATCH não preserva nome ao liberar schedule"
 grep -Fq 'restart-pipeline' "$SCRIPT" || fail "rerun controlado de pipeline ausente"
 
+grep -Fq 'AUTH_HEADER_FILE="$(mktemp)"' "$SCRIPT" || fail "PAT não usa arquivo temporário"
+grep -Fq 'chmod 600 -- "$AUTH_HEADER_FILE"' "$SCRIPT" || fail "arquivo temporário do PAT não é 0600"
+grep -Fq 'unset API_TOKEN WOODPECKER_API_TOKEN' "$SCRIPT" || fail "PAT permanece exportado após preparar header"
+grep -Fq 'rm -f -- "$AUTH_HEADER_FILE"' "$SCRIPT" || fail "arquivo temporário do PAT não é removido"
+grep -Fq -- '-H @"$AUTH_HEADER_FILE"' "$SCRIPT" || fail "curl não lê Authorization de arquivo protegido"
+
 # O helper não deve fabricar/rotacionar agentes, reparar repositório ou executar operação destrutiva.
 if grep -Eq 'POST[^\n]*/agents|DELETE|/repos/[^ ]*/repair|openssl rand|set -x' "$SCRIPT"; then
   fail "ferramenta API contém mutação fora do escopo seguro"
+fi
+
+# Bearer não pode ser passado diretamente na linha de comando do curl.
+if grep -Eq -- '-H[[:space:]]+"Authorization: Bearer' "$SCRIPT"; then
+  fail "PAT poderia aparecer em argv/ps"
 fi
 
 # Nunca acessar/exibir token de agente devolvido pela API.
