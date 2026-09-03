@@ -242,8 +242,59 @@ async def _secao_prazos(db, case_id: str) -> str:
     return "\n".join(linhas)
 
 
+# Fontes VERIFICADAS por ficha que entram no dossiê. Teto baixo de propósito:
+# o objetivo é dar ao redator o lastro das teses do caso, não despejar o
+# acervo — e cada trecho compete por contexto com os documentos do processo.
+_LIMITE_FONTES_POR_TESE = 3
+_MAX_TRECHO_FONTE = 400
+
+
+async def _lastro_das_fichas(db, tese_ids: list[str]) -> dict[str, list]:
+    """Fontes VERIFICADAS das fichas, agrupadas por tese (uma consulta só).
+
+    Fail-safe: qualquer falha devolve `{}` e a seção degrada para o
+    comportamento anterior. Ausência de lastro nunca pode derrubar o dossiê do
+    caso — o contexto do processo vale mais que o enriquecimento da tese."""
+    if not tese_ids:
+        return {}
+    try:
+        from sqlalchemy import select
+        from app.models.tese import TeseFonte
+        fontes = (await db.execute(
+            select(TeseFonte)
+            .where(TeseFonte.tese_id.in_(tese_ids),
+                   TeseFonte.status_verificacao == "verificada")
+            .order_by(TeseFonte.tese_id, TeseFonte.elemento, TeseFonte.criado_em)
+        )).scalars().all()
+    except Exception as e:  # tabela ausente em banco antigo, erro de conexão…
+        logger.warning("[contexto] lastro das fichas indisponível: %s", str(e)[:200])
+        return {}
+    agrupado: dict[str, list] = {}
+    for f in fontes:
+        agrupado.setdefault(f.tese_id, []).append(f)
+    return agrupado
+
+
 async def _secao_teses(db, case_id: str) -> str:
-    """Seção 5 — teses vinculadas ao caso (TeseCasoLink), com resultado."""
+    """Seção 5 — teses vinculadas ao caso, com LASTRO e CONFIANÇA MEDIDA.
+
+    Antes esta seção despejava `Tese.fundamentacao` — TEXTO LIVRE, não
+    verificado — no prompt do redator sem qualificação alguma. Uma ficha cuja
+    fundamentação diz "Súmula 297/TST" (que pode não existir, estar superada ou
+    ser de outro tribunal) chegava ao modelo com o mesmo peso de um documento
+    do processo, e o modelo a citava como certeza. Isso contradiz a regra do
+    `legal_base`: autoridade específica só quando ela está EXPLICITAMENTE nas
+    fontes da etapa.
+
+    Agora, para cada ficha:
+      • as fontes VERIFICADAS entram com referência e TRECHO REAL, rotuladas
+        como verificadas — é o que o redator pode citar;
+      • a fundamentação em texto livre continua indo, mas rotulada como NÃO
+        VERIFICADA, para ser tratada como pista de pesquisa e não como citação;
+      • a confiança é a MEDIDA (com a amostra junto), nunca `taxa_sucesso`
+        crua: "100%" de uma ficha usada uma vez enviesaria a redação;
+      • ficha sinalizada para revisão avisa disso no próprio dossiê.
+    """
     from sqlalchemy import select
     from app.models.tese import Tese, TeseCasoLink
     rows = (await db.execute(
@@ -254,6 +305,10 @@ async def _secao_teses(db, case_id: str) -> str:
     )).all()
     if not rows:
         return ""
+
+    teses = [row[0] for row in rows]
+    lastro = await _lastro_das_fichas(db, [t.id for t in teses])
+
     linhas = [_TITULOS["teses"]]
     for row in rows:
         tese, resultado = row[0], (row[1] if len(row) > 1 else None)
@@ -261,10 +316,39 @@ async def _secao_teses(db, case_id: str) -> str:
         if resultado:
             linha += f", resultado: {_uma_linha(resultado, 100)}"
         linha += ")"
-        fund = (getattr(tese, "fundamentacao", None) or "").strip().replace("\n", " ")
-        if fund:
-            linha += f" — {fund[:300]}"
+
+        # Confiança MEDIDA — nunca a taxa crua. Fail-safe: sem o service, a
+        # linha simplesmente não ganha o rótulo.
+        try:
+            from app.services.ficha_viva_service import confianca as _confianca
+            c = _confianca(tese)
+            if c["casos_decididos"]:
+                linha += (f" [confiança {c['rotulo']}: {c['vezes_venceu']} de "
+                          f"{c['casos_decididos']} caso(s) decidido(s)]")
+        except Exception:
+            pass
+
+        gatilhos = [g for g in (getattr(tese, "gatilhos", None) or []) if g]
+        if gatilhos:
+            linha += " — aplica-se quando: " + _uma_linha("; ".join(gatilhos), 300)
         linhas.append(linha)
+
+        fontes = lastro.get(tese.id, [])[:_LIMITE_FONTES_POR_TESE]
+        for f in fontes:
+            linhas.append(
+                f"      ↳ [FONTE VERIFICADA · {_uma_linha(f.elemento, 30)}] "
+                f"{_uma_linha(f.referencia, 200)}: "
+                f"{_uma_linha(f.trecho, _MAX_TRECHO_FONTE)}"
+            )
+
+        fund = (getattr(tese, "fundamentacao", None) or "").strip()
+        if fund:
+            # Rótulo explícito: sem ele, o modelo trata texto livre do catálogo
+            # como fonte e cita número de súmula que ninguém conferiu.
+            linhas.append(
+                "      ↳ [NÃO VERIFICADA — pista de pesquisa, não cite como "
+                f"certeza] {_uma_linha(fund, 300)}"
+            )
     return "\n".join(linhas)
 
 
