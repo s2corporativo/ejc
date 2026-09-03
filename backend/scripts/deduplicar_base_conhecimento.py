@@ -285,7 +285,7 @@ _SQL_CANDIDATOS = text("""
 _SQL_REBAIXAR = text("""
     UPDATE knowledge_docs
        SET vigente = false,
-           extra = COALESCE(extra, '{}'::jsonb) || :marca::jsonb
+           extra = COALESCE(extra, '{}'::jsonb) || CAST(:marca AS jsonb)
      WHERE id = :id AND vigente = true
 """)
 
