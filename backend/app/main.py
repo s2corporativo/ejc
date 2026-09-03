@@ -87,6 +87,7 @@ from app.routers import gestao_societaria
 from app.routers import google_drive_knowledge
 from app.routers import ia_adversarial
 from app.routers import ia_agente
+from app.routers import ia_capacidades
 from app.routers import ia_citacoes
 from app.routers import ia_defensiva
 from app.routers import ia_especializada
@@ -392,6 +393,9 @@ app.include_router(gestao_societaria.router, prefix=API)
 app.include_router(google_drive_knowledge.router, prefix=API)  # /api/rag/google-drive/* (curadoria da base, piso admin/socio)
 app.include_router(ia_adversarial.router, prefix=API)
 app.include_router(ia_agente.router, prefix=API)
+# I1 (análise E2E 03/09/2026): porta canônica por capacidade — /ia/analisar,
+# /ia/redigir, /ia/resumir, /ia/conversar, /ia/extrair.
+app.include_router(ia_capacidades.router, prefix=API)
 app.include_router(ia_citacoes.router, prefix=API)
 app.include_router(ia_defensiva.router, prefix=API)
 app.include_router(ia_especializada.router, prefix=API)

@@ -43,6 +43,19 @@ class AiResponse(BaseModel):
     tokens_usados: int
     custo_estimado_brl: float
     aviso: str = "RASCUNHO — revisão humana obrigatória antes de qualquer uso (OAB)."
+    # ── Chaves canônicas (I1, 03/09/2026) ────────────────────────────────────
+    # A porta canônica é `/ia/{capacidade}` (routers/ia_capacidades.py). Esta
+    # rota continua atendendo pelo contrato antigo e passa a devolver TAMBÉM o
+    # envelope único das cinco capacidades — `capacidade` diz em qual porta
+    # aquela TarefaIA cai (`capacidades.capacidade_da_tarefa`).
+    capacidade: str = ""
+    log_id: Optional[str] = None
+    status_hitl: str = "gerado"
+    aviso_hitl: str = ""
+    fontes_rag: list[dict] = []
+    citacoes: list[dict] = []
+    alertas: list[str] = []
+    tokens: dict = {}
 
 
 def _ai_enabled() -> bool:
@@ -146,4 +159,9 @@ async def executar_ia(
         from app.core.ai_errors import http_erro_ia
         raise http_erro_ia(e, status.HTTP_503_SERVICE_UNAVAILABLE,
                            contexto="executar_tarefa_ia")
-    return AiResponse(**resultado)
+    # Envelope canônico por cima do contrato antigo: `TarefaIA` → capacidade
+    # (/ia/analisar, /ia/redigir, /ia/resumir, /ia/conversar, /ia/extrair).
+    from app.services.ai.core import capacidades
+    capacidade = capacidades.capacidade_da_tarefa(req.tarefa)
+    canonico = capacidades.canonizar(capacidade, resultado)
+    return AiResponse(**{**resultado, **canonico})
