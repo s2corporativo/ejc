@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 
 from app.models.user import UserRole
-from app.routers import checklists, prompts_juridicos
+from app.routers import checklists, entrada_universal, prompts_juridicos
 
 
 def _u(role: UserRole):
@@ -68,3 +70,38 @@ def test_loader_privado_aplica_publico_para_papel_nao_juridico():
     assert "_so_publicos(user)" in fonte
     assert "PromptJuridico.publico.is_(True)" in fonte
     assert "HTTPException(404" in fonte
+
+
+def test_entrada_universal_meta_barra_financeiro_e_preserva_estagiario():
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(entrada_universal.meta(cu=_u(UserRole.financeiro)))
+    assert exc.value.status_code == 403
+
+    resposta = asyncio.run(entrada_universal.meta(cu=_u(UserRole.estagiario)))
+    assert resposta["multiplos_arquivos"] is True
+
+
+def test_entrada_universal_processar_barra_financeiro_antes_de_validar_payload():
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(
+            entrada_universal.processar(
+                files=[],
+                texto="",
+                db=None,
+                cu=_u(UserRole.financeiro),
+            )
+        )
+    assert exc.value.status_code == 403
+
+    # Para papel jurídico, o mesmo payload vazio avança pelo gate e falha na
+    # validação de entrada (422), provando que o RBAC ocorre antes de upload/OCR/IA.
+    with pytest.raises(HTTPException) as exc_legal:
+        asyncio.run(
+            entrada_universal.processar(
+                files=[],
+                texto="",
+                db=None,
+                cu=_u(UserRole.estagiario),
+            )
+        )
+    assert exc_legal.value.status_code == 422
