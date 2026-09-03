@@ -33,9 +33,7 @@ describe("TabPartes (S7)", () => {
   it("falha de carga vira ErrorState e o retry recarrega", async () => {
     getMock.mockRejectedValueOnce(erroHttp(503));
     render(<TabPartes caseId="c1" />);
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      /Não foi possível carregar as partes/,
-    );
+    expect((await screen.findByRole("alert")).textContent).toMatch(/Não foi possível carregar as partes/);
     getMock.mockResolvedValueOnce({ data: [{ id: "p1", nome: "Maria", tipo: "autor" }] });
     fireEvent.click(screen.getByRole("button", { name: /Tentar novamente/ }));
     await waitFor(() => expect(screen.getByText("Maria")).toBeTruthy());

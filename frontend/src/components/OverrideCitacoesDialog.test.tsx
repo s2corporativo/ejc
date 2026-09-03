@@ -82,9 +82,7 @@ describe("useOverrideCitacoes (E5)", () => {
     fireEvent.click(
       screen.getByRole("button", { name: /Aprovar com justificativa/ }),
     );
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      ERRO_JUSTIFICATIVA_OBRIGATORIA,
-    );
+    expect(screen.getByRole("alert").textContent).toContain(ERRO_JUSTIFICATIVA_OBRIGATORIA);
     expect(enviar).toHaveBeenCalledTimes(1);
 
     fireEvent.change(screen.getByLabelText("Justificativa do override"), {

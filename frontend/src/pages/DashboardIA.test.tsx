@@ -21,9 +21,9 @@ describe("Saúde da IA (E4)", () => {
     getMock.mockRejectedValueOnce(erroHttp(500, "Traceback provider x"));
     render(<DashboardIA />);
     const alerta = await screen.findByRole("alert");
-    expect(alerta).toHaveTextContent(/Não foi possível carregar a saúde da IA/);
+    expect(alerta.textContent).toMatch(/Não foi possível carregar a saúde da IA/);
     // detail técnico não vaza
-    expect(alerta).not.toHaveTextContent(/Traceback/);
+    expect(alerta.textContent).not.toMatch(/Traceback/);
     expect(screen.queryByText("Chamadas")).toBeNull();
 
     getMock.mockResolvedValueOnce({
@@ -38,8 +38,6 @@ describe("Saúde da IA (E4)", () => {
   it("403 mostra mensagem de permissão", async () => {
     getMock.mockRejectedValueOnce(erroHttp(403, "Not enough permissions"));
     render(<DashboardIA />);
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      /não tem permissão/i,
-    );
+    expect((await screen.findByRole("alert")).textContent).toMatch(/não tem permissão/i);
   });
 });

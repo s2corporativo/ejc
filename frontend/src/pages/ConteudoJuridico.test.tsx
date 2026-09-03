@@ -52,8 +52,8 @@ describe("tela FAQ & Glossário (E1)", () => {
     render(<ConteudoJuridico />);
     fireEvent.click(screen.getByRole("button", { name: /Gerar FAQ/ }));
     const faixa = await screen.findByRole("status");
-    expect(faixa).toHaveTextContent(/revisão humana obrigatória/i);
-    expect(faixa).toHaveTextContent("log-abc");
+    expect(faixa.textContent).toMatch(/revisão humana obrigatória/i);
+    expect(faixa.textContent).toContain("log-abc");
     expect(screen.getByText("P?")).toBeTruthy();
     expect(postMock).toHaveBeenCalledWith("/conteudo/faq", {
       area: "consumidor",
@@ -73,8 +73,13 @@ describe("tela FAQ & Glossário (E1)", () => {
     render(<ConteudoJuridico />);
     fireEvent.click(screen.getByRole("button", { name: /Gerar glossário/ }));
     const alerta = await screen.findByRole("alert");
-    expect(alerta).not.toHaveTextContent(/provedores falharam/);
-    expect(alerta).toHaveTextContent(/inteligência artificial não está disponível/i);
+    // O contrato é duplo: o dialeto de infraestrutura NUNCA chega ao advogado
+    // (mensagemSegura descarta "provedores falharam") e sobra uma mensagem
+    // leiga. Aqui a tela informa o fallback específico da ação, mais útil que
+    // o genérico de IA indisponível.
+    expect(alerta.textContent).not.toMatch(/provedores falharam/);
+    expect(alerta.textContent).not.toMatch(/task=|provider|_ENABLED|API_KEY/);
+    expect(alerta.textContent).toMatch(/Não foi possível gerar o glossário/i);
   });
 
   it("select de área vem da taxonomia gerada com rótulos pt-BR", () => {

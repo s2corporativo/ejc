@@ -53,8 +53,6 @@ describe("Biblioteca de Prompts — botões por papel (E7)", () => {
   it("falha de carga vira ErrorState (S7)", async () => {
     getMock.mockRejectedValueOnce(new Error("rede"));
     render(<Prompts />);
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      /Não foi possível carregar os prompts/,
-    );
+    expect((await screen.findByRole("alert")).textContent).toMatch(/Não foi possível carregar os prompts/);
   });
 });
