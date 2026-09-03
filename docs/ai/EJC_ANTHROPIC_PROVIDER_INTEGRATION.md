@@ -2,6 +2,28 @@
 
 Data: 2026-07-04.
 
+> **Estado atual (03/09/2026 — análise ponta a ponta, A9).** Números de linha e
+> alguns valores abaixo são de julho. Diferenças materiais hoje, conferidas no
+> código:
+>
+> - `ANTHROPIC_MODEL_COMPLEXO` default é **`claude-opus-4-8`** (não Haiku);
+>   `ANTHROPIC_MODEL_RAPIDO` segue `claude-haiku-4-5-20251001`. Modelos da
+>   geração atual (`claude-opus-4-7/4-8`, `claude-opus-5`, `claude-sonnet-5`,
+>   `claude-fable-5*`) usam `thinking` adaptativo + `effort` em vez de
+>   `temperature` (`_MODERN_PREFIXES` em `anthropic_provider.py`).
+> - A chave vem **somente de Settings** (`_api_key()`): o fallback `os.getenv`
+>   foi removido do provider e do testador do Cofre, porque anulava a revogação
+>   pelo Cofre de Credenciais.
+> - Prioridade default `anthropic,maritaca,groq,ollama`; `resumo`/`chat_rapido`
+>   também incluem `anthropic` (modelo rápido) no fim da cadeia; deadline
+>   agregado `AI_CHAIN_DEADLINE_SECONDS`.
+> - Custo: `services/ai_cost.py` (`_PRECOS_ANTHROPIC_USD_MM`), com tokens de
+>   prompt caching precificados (criação ×1,25, leitura ×0,10 do preço de
+>   input) — não mais `_PRICING_USD_MM` no gateway.
+> - Elegibilidade: `services/ai/provider_registry.py` (fonte única; inclui
+>   `AI_ENABLED`); painel de verdade `GET /ia-governanca/provedores`.
+> - Perfil: `AI_PROFILE` (ver `EJC_AI_PROVIDER_POLICY.md`).
+
 Anthropic entra no EJC **exclusivamente como um provider plugável do `ai_gateway`** (`backend/app/services/providers/anthropic_provider.py`), com o mesmo contrato de Ollama/Groq: `chat(messages, model, temperature, max_tokens) -> (texto, usage_dict)`. Não existe endpoint, service ou tela "da Anthropic".
 
 ## 1. Variáveis de ambiente (core/config.py:67-78; .env.example:17-29)

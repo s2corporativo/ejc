@@ -1,11 +1,18 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { toast } from "../../components/Toast";
 import api from "../../lib/api";
 import { asList } from "../../lib/list";
-import { Empty } from "../../components/UI";
+import { Empty, ErrorState, Spinner } from "../../components/UI";
+import { mensagemErroHttp } from "../../lib/iaErro";
+import { useCarregar } from "../../lib/useCarregar";
 
 export default function TabPartes({ caseId }: { caseId: string }) {
-  const [partes, setPartes] = useState<any[]>([]);
+  const carga = useCarregar<any[]>(
+    () => api.get(`/cases/${caseId}/partes`).then((r) => asList(r.data)),
+    [caseId],
+    { fallbackErro: "Não foi possível carregar as partes do caso." },
+  );
+  const partes = carga.dados ?? [];
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     tipo: "autor",
@@ -28,32 +35,42 @@ export default function TabPartes({ caseId }: { caseId: string }) {
     perito: "Perito",
   };
 
-  useEffect(() => {
-    api
-      .get(`/cases/${caseId}/partes`)
-      .then((r) => setPartes(asList(r.data)))
-      .catch(() => {});
-  }, [caseId]);
-
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.post(`/cases/${caseId}/partes`, form);
-    setShowForm(false);
-    api
-      .get(`/cases/${caseId}/partes`)
-      .then((r) => setPartes(asList(r.data)))
-      .catch(() => {});
+    try {
+      await api.post(`/cases/${caseId}/partes`, form);
+      setShowForm(false);
+      toast.success("Parte adicionada");
+      carga.recarregar();
+    } catch (err) {
+      toast.error(mensagemErroHttp(err, "Não foi possível adicionar a parte."));
+    }
   };
 
   const remover = async (id: string) => {
     if (!confirm("Remover esta parte?")) return;
     try {
       await api.delete(`/cases/${caseId}/partes/${id}`);
-      setPartes((p) => p.filter((x) => x.id !== id));
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao remover parte");
+      carga.recarregar();
+    } catch (err) {
+      toast.error(mensagemErroHttp(err, "Erro ao remover parte"));
     }
   };
+
+  if (carga.estado === "carregando" && !carga.dados)
+    return (
+      <div className="flex justify-center py-10">
+        <Spinner />
+      </div>
+    );
+  if (carga.estado === "falhou")
+    return (
+      <ErrorState
+        title="Não foi possível carregar as partes"
+        message={carga.erro ?? undefined}
+        onRetry={carga.recarregar}
+      />
+    );
 
   return (
     <div className="space-y-4">

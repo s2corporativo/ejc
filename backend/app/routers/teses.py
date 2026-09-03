@@ -566,7 +566,12 @@ async def sugerir_teses_ia(
                   for t in teses_existentes]
         catalogo = "[TESES DO ESCRITÓRIO DISPONÍVEIS]\n" + "\n".join(linhas) + "\n\n"
 
-    fontes = await buscar_contexto_rag(db, texto_limpo[:300], limite=5, scope_client_id=escopo_cli)
+    # C4: escopo cliente E caso — intimação/precedente de outro processo do
+    # mesmo cliente não entra como contexto desta sugestão.
+    fontes = await buscar_contexto_rag(
+        db, texto_limpo[:300], limite=5, scope_client_id=escopo_cli,
+        scope_case_id=req.case_id,
+    )
     rag_txt = ""
     if fontes:
         linhas = [f"- {f['titulo']}: {f['conteudo'][:200]}" for f in fontes]
@@ -605,7 +610,9 @@ Risco: [principal fragilidade]
             modelo=f"{resp.provedor}/{resp.modelo}" if resp.provedor else resp.modelo,
             tokens_input=resp.input_tokens, tokens_output=resp.output_tokens,
         )
-        return {
+        # S8: vocabulário HITL canônico como último passo; chaves legadas mantidas.
+        from app.services.ai.core import hitl_policy
+        return hitl_policy.aplicar({
             "ai_log_id": log_id,
             "resposta": resp.texto,
             "modelo_usado": resp.modelo,
@@ -613,7 +620,7 @@ Risco: [principal fragilidade]
             "fallback": resp.fallback_ativado,
             "teses_existentes_encontradas": len(teses_existentes),
             "aviso": "⚠️ Sugestões de IA — RASCUNHO. Revisar antes de usar.",
-        }
+        })
     except HTTPException:
         raise
     except Exception:
@@ -685,7 +692,11 @@ async def _gerar_teses(
     jurisp = await buscar_contexto_rag(
         db, consulta, limite=6,
         categorias=["jurisprudencia", "sumula_stf", "sumula_stj", "sumula_tst"], modo_or=True)
-    internos = await buscar_contexto_rag(db, consulta, limite=4, categorias=["precedente_interno"], modo_or=True, scope_client_id=escopo_cli)
+    internos = await buscar_contexto_rag(
+        db, consulta, limite=4, categorias=["precedente_interno"], modo_or=True,
+        scope_client_id=escopo_cli,
+        scope_case_id=req.case_id,  # C4: precedente interno restrito ao caso
+    )
     doutrina = await buscar_contexto_rag(db, consulta, limite=3, categorias=["doutrina"], modo_or=True)
 
     teses_venc = (await db.execute(
@@ -737,6 +748,21 @@ async def _gerar_teses(
         logger.exception("Falha na chamada de IA (motor de teses)")
         raise HTTPException(502, "IA indisponível no momento")
 
+    # I9: o motor de teses gerava sem AILog (custo/trilha invisíveis).
+    from app.models.ai_log import AITipoUso
+    from app.services.ai_gateway import registrar_log_resposta
+    # P3-2 (revisão de segurança 03/09/2026): `user` carrega os precedentes
+    # internos e a fundamentação das teses, que não passaram por sanitização —
+    # só o `texto` do usuário tinha passado. Sanitiza o prompt INTEIRO antes de
+    # gravar, senão o registro afirma "sem PII" carregando nome de parte.
+    from app.services.sanitizer import sanitizar_pii as _san_log
+    _prompt_log, _pii_log = _san_log("[MOTOR_TESES]\n" + user)
+    await registrar_log_resposta(
+        db, user_id=cu.id, tipo_uso=AITipoUso.analise_caso, resp=resp,
+        prompt_sanitizado=_prompt_log, pii_removida=(pii or _pii_log),
+        case_id=req.case_id,
+    )
+
     data = _parse_json_motor(resp.texto) or {"teses": [], "_bruto": resp.texto[:1500]}
     ordem = {"alta": 0, "media": 1, "baixa": 2}
     if isinstance(data.get("teses"), list):
@@ -747,7 +773,9 @@ async def _gerar_teses(
     }
     data["modelo"] = f"{resp.provedor}/{resp.modelo}"
     data["_aviso"] = "Teses geradas por IA — RASCUNHO. Verifique cada julgado/artigo e revise antes de usar (OAB)."
-    return data
+    # S8: vocabulário HITL canônico como último passo ("_aviso" legado mantido).
+    from app.services.ai.core import hitl_policy
+    return hitl_policy.aplicar(data)
 
 
 # ── E04 (auditoria funcional): geração assíncrona com polling ───────────
