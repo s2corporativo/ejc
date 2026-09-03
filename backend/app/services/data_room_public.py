@@ -240,7 +240,7 @@ async def abrir_manifesto(
 
     await db.commit()
     return {
-        "data_room": {"nome": room.nome, "descricao": room.descricao},
+        "data_room": {"nome": room.nome},
         "arquivos": itens,
         "acesso_numero": acesso_numero,
         "expira_em": link.expira_em.isoformat() if link.expira_em else None,
