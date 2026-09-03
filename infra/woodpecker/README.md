@@ -110,14 +110,15 @@ não repara webhook e não imprime PAT ou token do agente.
 
 O PAT deve existir apenas no ambiente local autorizado. Não coloque PAT em
 Issue, PR, chat, histórico de shell, `.env` versionado ou argumento de linha de
-comando. A ferramenta transfere o Bearer para arquivo temporário `0600`, remove
-a variável antes de chamar `curl` e apaga o arquivo ao sair.
+comando. Prefira carregar o PAT a partir do gerenciador/cofre local da VPS sem
+digitá-lo diretamente após `export`. A ferramenta transfere o Bearer para
+arquivo temporário `0600`, remove a variável antes de chamar `curl` e apaga o
+arquivo ao sair.
 
 ```bash
 cd /opt/woodpecker-ci/infra/woodpecker
 
-# Defina o PAT de forma segura na sessão já autorizada.
-export WOODPECKER_API_TOKEN='...'
+# WOODPECKER_API_TOKEN deve já existir na sessão por mecanismo seguro local.
 
 # Somente leitura: agentes, fila, repo EJC (id 2) e pipeline 447.
 bash diagnose-api.sh check 2 447
