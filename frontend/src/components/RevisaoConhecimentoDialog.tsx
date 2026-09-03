@@ -30,6 +30,9 @@ export type DocumentoRevisao = {
   qualidade?: { score?: number; status?: string; issues?: string[] };
   metricas?: { chunks?: number; chars?: number; embedded?: number };
   citacao?: Record<string, unknown> | string | null;
+  /** Prefixo do texto REALMENTE indexado (KnowledgeChunk.conteudo). */
+  previa_texto?: string | null;
+  previa_truncada?: boolean;
 };
 
 export type RevisaoConhecimentoProps = {
@@ -152,7 +155,11 @@ export function RevisaoConhecimentoDialog({
   const aprovar = decisao === "aprovar";
   const trechos = trechosDoExtra(doc?.extra);
   const citacao = citacaoTexto(doc?.citacao);
-  const semTextoVisivel = Boolean(doc) && trechos.length === 0 && !citacao;
+  // O que o revisor tem diante dos olhos: a prévia do texto indexado é a
+  // evidência primária; os campos de `extra` e a citação são complementos.
+  const previa = (doc?.previa_texto ?? "").trim();
+  const semTextoVisivel =
+    Boolean(doc) && !previa && trechos.length === 0 && !citacao;
   const exigeConferencia = aprovar && semTextoVisivel;
 
   const confirmar = async () => {
@@ -313,6 +320,22 @@ export function RevisaoConhecimentoDialog({
                 {citacao}
               </p>
             )}
+            {previa && (
+              <div>
+                <p className="mb-1 text-[11px] font-semibold uppercase text-slate-500">
+                  Texto indexado {doc.previa_truncada ? "(início)" : ""}
+                </p>
+                <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-200 bg-white p-3 font-sans text-xs leading-relaxed text-slate-700">
+                  {previa}
+                </pre>
+                {doc.previa_truncada && (
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Prévia truncada — este é o começo do que a IA recupera, não
+                    o inteiro teor.
+                  </p>
+                )}
+              </div>
+            )}
             {trechos.length > 0 ? (
               <div className="max-h-72 space-y-2 overflow-auto rounded-lg border border-slate-200 bg-white p-3">
                 {trechos.map(([rotulo, valor]) => (
@@ -327,10 +350,13 @@ export function RevisaoConhecimentoDialog({
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-slate-500">
-                Este documento não tem trecho textual nos metadados — confira o
-                original pela fonte indicada acima antes de decidir.
-              </p>
+              !previa && (
+                <p className="text-xs text-slate-500">
+                  Este documento não tem texto indexado nem trecho nos
+                  metadados — confira o original pela fonte indicada acima
+                  antes de decidir.
+                </p>
+              )
             )}
             {exigeConferencia && (
               <label className="flex items-start gap-2 rounded-lg border border-warn-200 bg-warn-50 p-2 text-xs text-warn-800">

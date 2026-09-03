@@ -167,3 +167,29 @@ def test_notas_longas_sao_truncadas_sem_estourar_o_campo():
     extra = _registrar_decisao_revisao(
         None, aprovado=True, user_id="u1", notas="x" * 5000)
     assert len(extra["human_review_notes"]) == 2000
+
+
+# ── Prévia do texto indexado (revisão automatizada do PR, 03/09/2026) ────────
+# O conteúdo do documento vive em KnowledgeChunk.conteudo, não em `extra`: sem
+# devolvê-lo, o revisor aprovava legislação/jurisprudência para a IA vendo só
+# título e metadados.
+def test_previa_curta_volta_inteira():
+    from app.services.knowledge_governance import _PREVIA_MAX_CHARS, _recortar_previa
+
+    assert _recortar_previa("Art. 42. Texto curto.") == "Art. 42. Texto curto."
+    assert _recortar_previa("") == ""
+    assert _recortar_previa(None) == ""
+    assert len(_recortar_previa("x" * (_PREVIA_MAX_CHARS + 500))) <= _PREVIA_MAX_CHARS
+
+
+def test_previa_corta_em_fronteira_de_paragrafo_quando_compensa():
+    from app.services.knowledge_governance import _PREVIA_MAX_CHARS, _recortar_previa
+
+    # Fronteira depois da metade do teto: o corte a respeita.
+    corpo = "a" * (_PREVIA_MAX_CHARS - 100) + "\n\n" + "b" * 500
+    assert _recortar_previa(corpo).endswith("a")
+    assert "b" not in _recortar_previa(corpo)
+
+    # Fronteira cedo demais: cortar ali jogaria fora metade da prévia útil.
+    corpo2 = "a" * 10 + "\n\n" + "b" * (_PREVIA_MAX_CHARS * 2)
+    assert len(_recortar_previa(corpo2)) == _PREVIA_MAX_CHARS

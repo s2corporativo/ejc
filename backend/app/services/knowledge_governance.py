@@ -568,6 +568,13 @@ async def document_details(db: AsyncSession, doc_id: str) -> dict[str, Any] | No
     ).scalar_one_or_none()
     if not doc:
         return None
+    # PRÉVIA DO TEXTO INDEXADO (revisão automatizada do PR, 03/09/2026): o
+    # conteúdo do documento vive em KnowledgeChunk.conteudo, não em `extra`.
+    # Sem devolvê-lo, o revisor decidia se uma legislação ou um acórdão pode
+    # alimentar a IA olhando só título e metadados — aprovação às cegas, que é
+    # exatamente o que a tela de revisão existe para impedir. Recorte limitado
+    # (_PREVIA_MAX_CHARS): é material de conferência, não o inteiro teor.
+    previa = _recortar_previa(await _document_text(db, doc.id))
     metrics = await _chunk_metrics(db)
     metric = metrics.get(doc.id, {"chunks": 0, "chars": 0, "embedded": 0})
     if doc.chave_origem:
@@ -594,6 +601,8 @@ async def document_details(db: AsyncSession, doc_id: str) -> dict[str, Any] | No
         "created_at": doc.created_at.isoformat() if doc.created_at else None,
         "atualizado_em": doc.atualizado_em.isoformat() if doc.atualizado_em else None,
         "extra": dict(doc.extra or {}),
+        "previa_texto": previa,
+        "previa_truncada": bool(previa) and len(previa) >= _PREVIA_MAX_CHARS,
         "autoridade": inferir_autoridade_documento(doc),
         "situacao_juridica": inferir_situacao_juridica(doc),
         "frescor": avaliar_frescor(doc),
@@ -610,6 +619,25 @@ async def document_details(db: AsyncSession, doc_id: str) -> dict[str, Any] | No
             for version in versions
         ],
     }
+
+
+# Teto da prévia devolvida em `document_details`. Grande o bastante para
+# conferir ementa/artigos iniciais; pequeno o bastante para não trafegar o
+# inteiro teor de um código inteiro a cada abertura do diálogo.
+_PREVIA_MAX_CHARS = 8000
+
+
+def _recortar_previa(texto: str) -> str:
+    """Prefixo do texto indexado, cortado em fronteira de parágrafo quando dá."""
+    texto = (texto or "").strip()
+    if len(texto) <= _PREVIA_MAX_CHARS:
+        return texto
+    corte = texto[:_PREVIA_MAX_CHARS]
+    ultima_quebra = corte.rfind("\n\n")
+    # Só respeita a fronteira se ela não jogar fora metade da prévia.
+    if ultima_quebra > _PREVIA_MAX_CHARS // 2:
+        corte = corte[:ultima_quebra]
+    return corte.rstrip()
 
 
 async def _document_text(db: AsyncSession, doc_id: str) -> str:

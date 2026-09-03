@@ -33,6 +33,16 @@ const DOC_COM_TEXTO = {
 
 const DOC_SEM_TEXTO = { id: "d2", titulo: "PDF digitalizado sem OCR" };
 
+// Caso REAL da maioria do acervo: o texto vive em KnowledgeChunk.conteudo e
+// chega pela prévia, não por `extra`.
+const DOC_SO_COM_PREVIA = {
+  id: "d4",
+  titulo: "Lei 8.078/1990 — CDC",
+  previa_texto: "Art. 42. Na cobrança de débitos, o consumidor inadimplente "
+    + "não será exposto a ridículo, nem submetido a constrangimento.",
+  previa_truncada: true,
+};
+
 function abrir(props: Partial<Parameters<typeof RevisaoConhecimentoDialog>[0]> = {}) {
   return render(
     <RevisaoConhecimentoDialog
@@ -78,6 +88,17 @@ describe("aprovação sem texto visível", () => {
     fireEvent.change(notas(), { target: { value: "fonte não confiável" } });
     fireEvent.click(botao(/Rejeitar/));
     await waitFor(() => expect(mockApi.post).toHaveBeenCalledTimes(1));
+  });
+
+  it("prévia do texto indexado dispensa a declaração e fica visível", async () => {
+    mockApi.get.mockResolvedValue({ data: DOC_SO_COM_PREVIA });
+    abrir({ docId: "d4" });
+    await screen.findByText("Lei 8.078/1990 — CDC");
+
+    expect(screen.getByText(/consumidor inadimplente/)).toBeTruthy();
+    expect(screen.getByText(/Prévia truncada/)).toBeTruthy();
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(botao(/Aprovar/).disabled).toBe(false);
   });
 
   it("documento COM ementa não pede declaração extra", async () => {
