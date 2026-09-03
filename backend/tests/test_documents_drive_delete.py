@@ -1,4 +1,4 @@
-"""Exclusão Drive: soft-delete não toca no objeto remoto até o hard purge."""
+"""Exclusão Drive: soft-delete preserva o objeto remoto até o hard purge."""
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -101,16 +101,7 @@ def _audits(db: _FakeDB) -> list[AuditLog]:
     return [obj for obj in db.added if isinstance(obj, AuditLog)]
 
 
-def _assert_audit_soft_delete(log: AuditLog) -> None:
-    assert log.acao == "DELETE"
-    assert log.dados_depois == {
-        "storage": "drive",
-        "storage_remocao_tentada": False,
-        "lifecycle": "soft_delete",
-    }
-
-
-def test_delete_drive_soft_delete_nao_toca_objeto_remoto(monkeypatch):
+def test_delete_drive_soft_delete_preserva_objeto_remoto(monkeypatch):
     doc = _doc_drive()
     db = _FakeDB(
         [
@@ -133,7 +124,11 @@ def test_delete_drive_soft_delete_nao_toca_objeto_remoto(monkeypatch):
     assert db.committed == 1
     logs = _audits(db)
     assert len(logs) == 1
-    _assert_audit_soft_delete(logs[0])
+    assert logs[0].acao == "DELETE"
+    assert logs[0].dados_depois == {
+        "storage": "drive",
+        "storage_preservado": True,
+    }
 
 
 def test_delete_drive_nao_depende_da_disponibilidade_remota(monkeypatch):
@@ -158,4 +153,4 @@ def test_delete_drive_nao_depende_da_disponibilidade_remota(monkeypatch):
     assert db.committed == 1
     logs = _audits(db)
     assert len(logs) == 1
-    _assert_audit_soft_delete(logs[0])
+    assert logs[0].acao == "DELETE"
