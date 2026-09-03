@@ -6,6 +6,7 @@ import {
   Gavel,
   LayoutGrid,
   Scale,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
@@ -168,6 +169,8 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
     to: caminhoAbaCaso(caseId, secao.tab),
   }));
 
+  const caminhoProduzirPeca = `${caminhoAbaCaso(caseId, "pecas")}&acao=produzir`;
+
   return (
     <>
       <button
@@ -216,7 +219,21 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
               ))}
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-3">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Button
+                variant="primary"
+                onClick={() => abrirDestino(caminhoProduzirPeca)}
+                icon={<Sparkles className="h-4 w-4" />}
+              >
+                Produzir peça
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => abrirDestino(caminhoAbaCaso(caseId, "pecas"))}
+                icon={<FileText className="h-4 w-4" />}
+              >
+                Fila de peças
+              </Button>
               <Button
                 variant="secondary"
                 onClick={() => setView("areas")}
@@ -226,13 +243,6 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
               </Button>
               <Button
                 variant="secondary"
-                onClick={() => abrirDestino(caminhoAbaCaso(caseId, "pecas"))}
-                icon={<FileText className="h-4 w-4" />}
-              >
-                Peças do caso
-              </Button>
-              <Button
-                variant="primary"
                 onClick={() => setView("upload")}
                 icon={<FileUp className="h-4 w-4" />}
               >
