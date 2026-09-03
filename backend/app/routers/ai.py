@@ -689,6 +689,14 @@ async def assistente_estrategico(
         if caso.advogado_responsavel_id != cu.id and getattr(caso, "advogado_auxiliar_id", None) != cu.id:
             raise HTTPException(403, "Sem permissão para este caso")
 
+    # PISO DE SIGILO (achado da auditoria do módulo de minutas): esta rota é
+    # vinculada a um caso e monta o DOSSIÊ COMPLETO, mas nunca lia
+    # `Case.sigilo_reforcado` — um caso de crime sexual/menor ia
+    # pseudonimizado ao provedor EXTERNO, apesar do piso LOCAL_COMPLETO. O
+    # `caso` já está carregado acima (ownership), então não custa consulta.
+    from app.services.ai.sanitization_policy import modo_sigilo_do_caso
+    modo_sigilo = modo_sigilo_do_caso(caso)
+
     # Monta dossiê completo (sanitizado para LGPD)
     from app.services.ai_service import buscar_contexto_rag
     from app.services.sanitizer import sanitizar_pii
@@ -753,6 +761,7 @@ async def assistente_estrategico(
             task_type=task,
             temperature=0.2,
             max_tokens=3000,
+            modo_sanitizacao=modo_sigilo,
         )
     except Exception as e:
         raise http_erro_ia(e, 502)
@@ -820,6 +829,14 @@ async def dual_ia(
         if caso.advogado_responsavel_id != cu.id and getattr(caso, "advogado_auxiliar_id", None) != cu.id:
             raise HTTPException(403, "Sem permissão para este caso")
 
+    # PISO DE SIGILO (achado da auditoria do módulo de minutas): esta rota é
+    # vinculada a um caso e monta o DOSSIÊ COMPLETO, mas nunca lia
+    # `Case.sigilo_reforcado` — um caso de crime sexual/menor ia
+    # pseudonimizado ao provedor EXTERNO, apesar do piso LOCAL_COMPLETO. O
+    # `caso` já está carregado acima (ownership), então não custa consulta.
+    from app.services.ai.sanitization_policy import modo_sigilo_do_caso
+    modo_sigilo = modo_sigilo_do_caso(caso)
+
     from app.services.ai_gateway import chat as gw_chat
     from app.services.sanitizer import sanitizar_pii
     from app.models.ai_log import AILog, AITipoUso, AIStatusHITL, classificar_risco_ia
@@ -855,6 +872,7 @@ async def dual_ia(
             messages=[{"role": "system", "content": system1}, {"role": "user", "content": user1}],
             task_type=task, temperature=0.2, max_tokens=2500,
             model_override=req.model1,
+            modo_sanitizacao=modo_sigilo,
         )
     except Exception as e:
         raise http_erro_ia(e, 502, contexto="dual-ia-1")
@@ -891,6 +909,7 @@ async def dual_ia(
             messages=[{"role": "system", "content": system2}, {"role": "user", "content": user2}],
             task_type=task, temperature=0.3, max_tokens=2500,
             model_override=req.model2,
+            modo_sanitizacao=modo_sigilo,
         )
     except Exception as e:
         raise http_erro_ia(e, 502, contexto="dual-ia-2")
@@ -1001,6 +1020,14 @@ async def motor_estrategia(
         if caso.advogado_responsavel_id != cu.id and getattr(caso, "advogado_auxiliar_id", None) != cu.id:
             raise HTTPException(403, "Sem permissão para este caso")
 
+    # PISO DE SIGILO (achado da auditoria do módulo de minutas): esta rota é
+    # vinculada a um caso e monta o DOSSIÊ COMPLETO, mas nunca lia
+    # `Case.sigilo_reforcado` — um caso de crime sexual/menor ia
+    # pseudonimizado ao provedor EXTERNO, apesar do piso LOCAL_COMPLETO. O
+    # `caso` já está carregado acima (ownership), então não custa consulta.
+    from app.services.ai.sanitization_policy import modo_sigilo_do_caso
+    modo_sigilo = modo_sigilo_do_caso(caso)
+
     from app.services.ai_gateway import chat as gw_chat
     from app.services.ai_service import buscar_contexto_rag
     from app.models.ai_log import AILog, AITipoUso, AIStatusHITL, classificar_risco_ia
@@ -1064,6 +1091,7 @@ REGRAS:
             task_type="analise_juridica",
             temperature=0.4,
             max_tokens=3500,
+            modo_sanitizacao=modo_sigilo,
         )
     except Exception as e:
         raise http_erro_ia(e, 502)
@@ -1299,13 +1327,11 @@ class MinutaIn(_BaseModel_consolidacao):
     fatos: Optional[str] = None
     case_id: Optional[str] = None
 
-SYS_MINUTA = (
-    "Você é advogado redator. Produza um RASCUNHO de {tipo} na área de {area}, "
-    "estruturado (endereçamento, qualificação [deixe placeholders], dos fatos, "
-    "do direito, dos pedidos). Use a base de jurisprudência/teses fornecida como "
-    "CONTEXTO quando pertinente, citando-a. NÃO invente jurisprudência nem números "
-    "de processo. Deixe claro onde faltam dados com [COLCHETES]."
-)
+# `SYS_MINUTA` vivia aqui: era o system prompt do pipeline PRÓPRIO desta rota,
+# que virou wrapper da porta canônica (abaixo). Removido em vez de mantido como
+# código morto — o system prompt do redator é o de `system_prompts.py`, e uma
+# segunda definição só voltaria a divergir da canônica com o tempo.
+
 
 @router.post("/gerar-minuta", dependencies=[Depends(rate_limit("ia-gerar-minuta", 10))])
 async def gerar_minuta(body: MinutaIn, db: AsyncSession = Depends(get_db),
