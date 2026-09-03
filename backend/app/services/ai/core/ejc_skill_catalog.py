@@ -420,5 +420,21 @@ def native_skill_coverage() -> dict[str, object]:
             "extra": sorted(covered_modules - expected_modules),
         },
         "total_native_skills": len(covered_areas) + len(covered_modules),
+        # `complete` é a métrica ASPIRACIONAL: todas as áreas canônicas têm
+        # método de ramo. Hoje é False (faltam 11 áreas) e continua sendo a
+        # verdade que o painel de cobertura deve mostrar — não se maquia.
         "complete": expected_modules == covered_modules and expected_areas <= covered_areas,
+        # `estrutura_ok` é a métrica OPERACIONAL: o que o CÓDIGO controla —
+        # todo módulo tem método, nenhuma área foge do enum canônico, e existe
+        # pelo menos um ramo. Separar as duas conserta um defeito real: o seed
+        # das skills nativas usava `complete` como portão e, como faltam 11
+        # métodos jurídicos ("escrever esses métodos exige advogado, não se
+        # inventa aqui"), ele levantava SEMPRE — as 48 skills válidas nunca
+        # chegavam a `ejc_skills`. Lacuna de CONTEÚDO passava por defeito de
+        # ESTRUTURA e bloqueava o que já estava pronto.
+        "estrutura_ok": (
+            expected_modules == covered_modules
+            and not (covered_areas - expected_areas)
+            and bool(covered_areas)
+        ),
     }

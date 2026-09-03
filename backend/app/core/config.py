@@ -293,6 +293,20 @@ class Settings(BaseSettings):
     # ausência como suspeita). Ligue SÓ quando a base de conhecimento estiver
     # abrangente (senão gera falso-positivo em citação real ainda não ingerida).
     CITACOES_MODO_ESTRITO: bool = False
+    # ── PERTINÊNCIA da citação (opt-in, default OFF) ──────────────────────
+    # O gate acima valida EXISTÊNCIA (o número CNJ tem DV válido, a súmula está
+    # na base, o artigo consta do diploma certo e vigente). Não responde a
+    # pergunta que derruba a peça na audiência: a autoridade citada DIZ o que a
+    # peça afirma que ela diz? Com True, cada citação `verificada` de tipo cujo
+    # texto existe na base curada (súmula/artigo) é confrontada contra a
+    # AFIRMAÇÃO que acompanha — e a verificação só aceita "sustentada" quando
+    # transcreve da autoridade um trecho que EXISTE nela (conferência
+    # programática; ver services/ai/pertinencia.py). Custo: uma chamada de IA
+    # por citação verificável, com teto por chamada. Default OFF porque
+    # acrescenta latência e custo ao fluxo de aprovação; ligue quando a base de
+    # legislação/súmulas estiver abrangente. Veredito "não verificada" NUNCA
+    # bloqueia — só "não sustentada" bloqueia, e só na política `bloquear`.
+    PERTINENCIA_ENABLED: bool = False
     # ── Modo Duas IAs (Fase 5 — validação adversarial) ────────────────────
     # True = peças de alta complexidade geradas pelo Núcleo de IA recebem uma
     # SEGUNDA passada por uma IA Crítica/Adversarial (advogado da parte
