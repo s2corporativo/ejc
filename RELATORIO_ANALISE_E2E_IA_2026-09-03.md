@@ -306,3 +306,94 @@ Ambiente descartável desta sessão: admin fictício `admin.e2e@ejc.adv.br`,
 banco `ejc_app`/`ejc_test` em cluster efêmero, 24 súmulas do seed. Nenhum dado
 real, nenhum acesso a produção, nenhum segredo versionado. As sondas de IA
 foram feitas **sem** provedor configurado — nenhum conteúdo saiu do container.
+
+---
+
+## 9. Críticas, sugestões e alterações — mais inteligente e mais simples
+
+Base: tudo o que foi medido nesta sessão (§2–§6) mais as auditorias de 18/08
+(capacidade) e 30/08 (E2E). Onde a proposta muda decisão de produto, custo ou
+RBAC, está marcada como **decisão do titular**.
+
+### 9.1 Críticas estruturais (o que impede o sistema de ser mais inteligente)
+
+1. **A inteligência depende da porta, não da pergunta.** A mesma capacidade
+   existe em cinco endpoints com contratos diferentes (`/ai/analisar-caso`,
+   `/ai/core/analyze`, `/ai/casos/{id}/assistente`, `/ia-especializada/*`,
+   `/ia-defensiva/analisar`; idem para chat, minuta e resumo). Só o
+   orquestrador aplica sigilo do caso, escopo cliente+caso, RAG, nível, FIRAC,
+   HITL e AILog de uma vez; as outras portas aplicam subconjuntos (§5.2 B1–B3).
+   Consequência prática medida: nove serviços sem `modo_sanitizacao`, dez
+   call sites sem AILog, quatro vocabulários HITL concorrentes.
+2. **O teto de inteligência é configuração morta.** O piso
+   `AI_NIVEL_INTELIGENCIA_MERITO=maximo` nunca é alcançado porque o núcleo
+   informa `"alto"` por default (B6); o protocolo FIRAC continua desligado por
+   default (18/08); o contexto entregue ao modelo usa ~2,5% da janela (18/08);
+   a instalação limpa nasce com 24 súmulas sem vetor (C1); 11 das 27 áreas
+   canônicas não têm método de ramo (C7); o chunker jurídico existe e não está
+   no caminho de produção (C5). Nenhum desses limites exige modelo melhor.
+3. **Fontes de verdade existem, mas as cópias vencem.** Elegibilidade de
+   provedores (1 fonte, 5 cópias), áreas do direito (1 enum, 6 listas),
+   catálogo de módulos (3 catálogos), ledger de rotas (manual), tipos TS
+   escritos à mão contra schemas Pydantic (`origem` de prazo com 4 valores
+   reais contra 2–3 declarados). Toda auditoria desde julho encontra a mesma
+   classe de defeito porque a causa (cópia manual) não foi removida.
+4. **O painel de custo não é confiável.** Sem AILog em dez call sites, sem
+   preço para tokens de prompt caching, `deep_research` a custo zero e modelos
+   novos sem tabela (A4, A7, B3, B7): o número que o titular vê para decidir
+   orçamento de IA está subestimado por construção.
+5. **Não há régua.** O gold set (A-8 de 18/08) segue aberto. Sem avaliação
+   reproduzível, "mais inteligente" não é mensurável, e cada mudança de prompt
+   ou de provedor é um salto no escuro — inclusive as propostas abaixo.
+6. **O processo deixa a `main` envelhecer.** Dezessete testes vermelhos
+   entraram por merges recentes sem que o portão local rodasse; o ledger de
+   rotas não foi atualizado por três PRs; o harness E2E já tinha envelhecido em
+   silêncio em agosto. O CI parado virou ausência de portão, não portão local.
+
+### 9.2 Alterações para deixar o sistema mais inteligente
+
+| # | Alteração | Efeito esperado | Esforço | Decisão |
+|---|---|---|---|---|
+| I1 | **Uma porta de IA por capacidade** (`analisar`, `redigir`, `resumir`, `conversar`, `extrair`), todas resolvidas por `orchestrator.executar(tarefa, contexto)`, que aplica sigilo, escopo cliente+caso, RAG, nível, FIRAC, gate de citações, HITL e AILog. Os 25 endpoints de `ai.py` e os periféricos viram adaptadores finos e depois shims 308. | Elimina B1–B3, B5, C4 e a fragmentação de 18/08 de uma vez; qualidade deixa de depender da porta | Grande (2 ondas) | Titular (quebra frontend por etapas) |
+| I2 | **Nível por tarefa, não por chamador**: default `None` nos schemas de `/ai/core/*` e no orquestrador; `_nivel_piso` decide; FIRAC ligado para tarefas de mérito; nos modelos Anthropic modernos usar `thinking: adaptive` + `output_config.effort` (`xhigh` para peça/estratégia, `low` para triagem/resumo) em vez de `temperature`. | O "carro bem projetado" passa a receber combustível; custo controlado por tarefa | Pequeno | Autor (já autorizado pela política de piso) |
+| I3 | **Contexto do caso como dossiê estruturado**: `context_builder` monta fatos, partes, documentos classificados, prazos, teses vinculadas, intimações **do caso** (`scope_case_id` obrigatório quando há `scope_client_id`) e base legal da área, com o prefixo estável sob prompt caching (já ligado). | Usa a janela do modelo; fecha C4; reduz alucinação por falta de fato | Médio | Autor |
+| I4 | **Base de conhecimento que nasce pronta e cresce sozinha**: seed vetoriza ao final (C1); chunker jurídico no caminho de produção com teto derivado da janela do modelo (C5); auto-ingestão das intimações DJEN e das peças aprovadas (`ingerir-ai-log` já existe) por caso; curadoria pelo endpoint audit-logado `revisar` com o conteúdo visível (C8); métricas de cobertura derivadas do mesmo filtro do gate (C3). | Busca semântica útil desde a instalação; base cresce com o trabalho real do escritório | Médio | Autor; C8/C9 titular |
+| I5 | **Agentes com fonte**: acumular fontes do RAG no loop (B4); `exige_fonte=True` em `ProcessAgent`/`SecurityLGPDOABAgent` (B5); taxonomia única `AREAS_CANONICAS` no roteamento por ramo, com método para as 11 áreas faltantes e cobertura calculada contra o enum (C7). | Fim do "SEM BASE VERIFICÁVEL" falso; prazos e LGPD com citação obrigatória | Pequeno/médio | Autor; métodos de ramo exigem advogado |
+| I6 | **Grounding ao vivo por default nas tarefas de mérito**: `AI_LIVE_GROUNDING_ENABLED` e `AI_GROUNDING_DATAJUD_ENABLED` documentados no `.env.example` e ligados quando a integração estiver configurada. | Resposta confere andamento/jurisprudência real antes de afirmar | Pequeno | Titular (custo de chamadas) |
+| I7 | **Régua**: gold set de 30 casos anonimizados (peça esperada, citações válidas, área, prazo) + script `eval/` com LLM-juiz e `citation_check`; roda em todo PR que toque prompt, provedor ou RAG e publica delta. | "Mais inteligente" vira número; protege contra regressão de prompt | Médio | Titular (curadoria jurídica humana) |
+| I8 | **Cadeia de provedores por tarefa completa e com deadline** (A1, A5): Anthropic no fim de `resumo`/`chat_rapido`; `AI_CHAIN_DEADLINE_SECONDS`; `claude-opus-5` em `_MODERN_PREFIXES` e na tabela de custo (A4). | Sem cadeia vazia em produção; sem request de 7 min; custo real | Pequeno | Titular (custo) |
+| I9 | **Custo verdadeiro**: AILog em todo call site com `db`+`user` (B3), tokens de cache precificados (A7), `deep_research` com tokens (B7), alerta de budget por área. | Painel de custo confiável para decidir | Pequeno/médio | Autor |
+
+### 9.3 Alterações para deixar o sistema mais simples
+
+| # | Alteração | Efeito esperado | Esforço | Decisão |
+|---|---|---|---|---|
+| S1 | **Gerar, não copiar**: tipos TS e enums (`CaseArea`, `DeadlineOrigem`, status) gerados do OpenAPI (`openapi-typescript`) num passo de build; apagar as 6 listas de áreas, os `AREA_LABEL` locais e o tipo `Deadline` manual. Teste de paridade vira desnecessário. | Fim da classe de defeito "cópia que diverge" no frontend | Médio | Autor |
+| S2 | **Um painel de diagnóstico**: `/diagnostico/central` consome `provider_registry` (elegibilidade + motivo) e `integration_status` passa a chamar a mesma função; remover `/ai/status` e o `_estado_provedores` de `ia_saude` (A3); Painel de Provedores com o vocabulário do backend (E3). | V2-6.3 fechado; um lugar para olhar | Pequeno/médio | Autor |
+| S3 | **Perfil de IA em vez de 12 flags**: `AI_PROFILE=externo|local|hibrido|desligado` deriva `*_ENABLED`, `AI_EXTERNAL_PROVIDERS_ALLOWED` e prioridade; compose herda os defaults do código (A2); teste que reprova campo de `Settings` ausente do `.env.example` (F3). | Configuração impossível de ficar incoerente entre código, `.env.example` e compose | Pequeno/médio | Titular (defaults) |
+| S4 | **Poda de superfície guiada por telemetria**: ciclo trimestral com `/uso-rotas` (90 dias sem uso → 308 + `Deprecation` → remoção); remover o prefixo legado `/api` quando a telemetria mostrar zero uso; `PUT` → `PATCH` nas duas rotas restantes (D3). | ~350 rotas sem consumidor deixam de ser superfície de ataque e manutenção | Médio (contínuo) | Titular (janela de telemetria) |
+| S5 | **Módulos 34 → 10–12 e o Caso como espaço de trabalho** (V3-B3/B4 do plano mestre): Entrada Única → Caso → (documentos, prazos, peças, IA) numa tela; menu com o que sobra. RBAC de tela derivado do `module_registry` do backend, nunca de lista literal (D2, D8). | Advogado leva um caso do início ao protocolo sem conhecer o sistema — critério de lançamento | Grande | Titular (plano próprio já existe) |
+| S6 | **Ledger de rotas automático**: snapshot OpenAPI regenerado pelo teste com diff revisável no PR (rota nova ou auth alterada aparece como diff, não como assert quebrado). Pre-push obrigatório com `ruff` + `pytest` (backend tocado) e `tsc` + `vitest` (frontend tocado), usando `scripts/ci-local.sh`. | Os 17 vermelhos e os 3 PRs sem ledger não teriam entrado | Pequeno | Autor |
+| S7 | **Um jeito de carregar e um jeito de errar no frontend**: hook `useCarregar` (carregando / vazio / falhou) e `mensagemErroHttp` em todo handler (D6, D7, E2, E4); `detail` cru nunca vai ao JSX. | Fim das falhas silenciosas e das telas que caem em 422 | Médio (mecânico) | Autor |
+| S8 | **Um vocabulário HITL**: `hitl_policy.aplicar()` como último passo de toda rota que devolve texto de modelo; remover `requer_revisao_humana`/`necessita_revisao_humana` (B5); UI exibe `aviso_hitl` por padrão em todo componente de resultado (E1). | Frontend e painéis enxergam todo rascunho | Pequeno/médio | Autor |
+| S9 | **Cortes já pautados** (plano mestre CORTE-1..7 e CL-A5): jurimetria/predição, `diplomacia-v3`, Victory Vault, notícias, sociedade, skills sem uso em log, `UI.tsx` de 1.437 linhas. | Menos superfície, menos prompt sem dono, menos risco disciplinar | Médio | Titular |
+
+### 9.4 Ordem sugerida (três ondas)
+
+1. **Onda 1 — barato e imediato** (autor, sem decisão de produto): I2, I5, I9,
+   S2, S6, S7, S8 e os pontos pequenos de I4 (seed vetoriza; chunker no
+   caminho). Fecha a maior parte dos P1 do §5 e devolve confiança ao painel de
+   custo e ao ledger.
+2. **Onda 2 — decisões do titular com uma linha de código cada**: I8 (cadeia
+   e deadline), I6 (grounding), S3 (perfil de IA e defaults), D1 (secretaria),
+   C8/C9 (fluxo de aprovação de conhecimento), I7 (gold set: começa com 10
+   casos).
+3. **Onda 3 — estrutural**: I1 (uma porta por capacidade), I3 (dossiê de
+   contexto), S1 (tipos gerados), S4 (poda por telemetria), S5 (34 → 10–12).
+   I1 e S5 são a mesma direção do parecer arquitetural já aprovado; o que este
+   relatório acrescenta é a evidência de que a fragmentação custa qualidade
+   jurídica mensurável hoje, não só manutenção.
+
+**Critério de sucesso de cada onda**: o gold set (I7) melhora ou não piora, a
+suíte completa fica verde no push, e `/ia-governanca/provedores`,
+`/diagnostico/central` e o painel de custo dizem a mesma coisa.
