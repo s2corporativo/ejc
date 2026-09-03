@@ -477,6 +477,9 @@ abaixo.
 | `npm test` | ✅ 117 arquivos, **626 passed** |
 | `npm run build` | ✅ |
 | `scripts/ledger_rotas.py --verificar` | ✅ sem divergência não declarada |
+| App ao vivo com todas as ondas | ✅ boot limpo, 41 jobs, `/api/health/ready` ready, 866 rotas e 0 duplicatas |
+| `/api/ai/status` ao vivo | ✅ agora diz `claude-opus-4-8` (antes `(=rapido)`) e lista os quatro provedores com motivo, pela fonte única |
+| Seed em banco novo (C1) | ✅ **25 de 25 trechos vetorizados** ao final do seed — antes ficavam em 0 até o job horário |
 
 ### 10.4 Correções feitas na integração
 
