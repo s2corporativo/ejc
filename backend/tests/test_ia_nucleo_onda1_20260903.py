@@ -958,3 +958,18 @@ def test_provider_anthropic_recebe_timeout_restante(monkeypatch):
     assert texto == "ok"
     assert recebidos["timeout_s"] is not None
     assert 0 < recebidos["timeout_s"] <= 30
+
+
+def test_ai_executar_sem_nivel_deixa_o_piso_decidir():
+    """I2 aplicado também em POST /ai/executar: o default fixo "alto" fazia
+    esta porta ignorar AI_NIVEL_INTELIGENCIA_MERITO."""
+    from app.routers.ai_tools import AiRequest
+    from app.services.system_prompts import TarefaIA
+
+    req = AiRequest(tarefa=TarefaIA.ANALISE_CASO, mensagem="fatos do caso para análise")
+    assert req.nivel_inteligencia is None
+    # Quem informar explicitamente continua sendo respeitado.
+    req2 = AiRequest(
+        tarefa=TarefaIA.ANALISE_CASO, mensagem="fatos do caso", nivel_inteligencia="maximo",
+    )
+    assert req2.nivel_inteligencia == "maximo"

@@ -1,0 +1,288 @@
+{
+  "gerado_em": "2026-09-03T10:56:18+00:00",
+  "gold": "gold_set_ia_candidatos.jsonl",
+  "modo": "mock",
+  "mede_qualidade_juridica": false,
+  "governanca": {
+    "casos": 10,
+    "candidatos_nao_atestados": 10,
+    "atestados_por_humano": 0,
+    "aviso": "Casos CANDIDATOS não são gold set atestado: sem curador, fonte oficial conferida e vigência, o número compara execuções entre si e não certifica a qualidade jurídica da IA."
+  },
+  "agregado": {
+    "global": {
+      "n": 10,
+      "score_medio": 0.539,
+      "cobertura_criterios": 0.78,
+      "cobertura_citacoes_tipo": 0.742,
+      "aprovados": 6,
+      "casos_com_conteudo_proibido": 3
+    },
+    "por_area": {
+      "civel": {
+        "n": 3,
+        "score_medio": 0.516,
+        "cobertura_criterios": 0.656,
+        "cobertura_citacoes_tipo": 1.0,
+        "aprovados": 2,
+        "casos_com_conteudo_proibido": 1
+      },
+      "consumidor": {
+        "n": 4,
+        "score_medio": 0.485,
+        "cobertura_criterios": 0.708,
+        "cobertura_citacoes_tipo": 0.5,
+        "aprovados": 2,
+        "casos_com_conteudo_proibido": 1
+      },
+      "familia": {
+        "n": 1,
+        "score_medio": 0.0,
+        "cobertura_criterios": 1.0,
+        "cobertura_citacoes_tipo": 0.667,
+        "aprovados": 0,
+        "casos_com_conteudo_proibido": 1
+      },
+      "trabalhista": {
+        "n": 2,
+        "score_medio": 0.95,
+        "cobertura_criterios": 1.0,
+        "cobertura_citacoes_tipo": 0.875,
+        "aprovados": 2,
+        "casos_com_conteudo_proibido": 0
+      }
+    },
+    "por_capacidade": {
+      "analisar": {
+        "n": 5,
+        "score_medio": 0.608,
+        "cobertura_criterios": 0.847,
+        "cobertura_citacoes_tipo": 0.683,
+        "aprovados": 3,
+        "casos_com_conteudo_proibido": 1
+      },
+      "conversar": {
+        "n": 2,
+        "score_medio": 0.84,
+        "cobertura_criterios": 0.9,
+        "cobertura_citacoes_tipo": 0.75,
+        "aprovados": 2,
+        "casos_com_conteudo_proibido": 0
+      },
+      "extrair": {
+        "n": 1,
+        "score_medio": 0.667,
+        "cobertura_criterios": 0.667,
+        "cobertura_citacoes_tipo": 1.0,
+        "aprovados": 1,
+        "casos_com_conteudo_proibido": 0
+      },
+      "redigir": {
+        "n": 1,
+        "score_medio": 0.0,
+        "cobertura_criterios": 0.6,
+        "cobertura_citacoes_tipo": 0.5,
+        "aprovados": 0,
+        "casos_com_conteudo_proibido": 1
+      },
+      "resumir": {
+        "n": 1,
+        "score_medio": 0.0,
+        "cobertura_criterios": 0.5,
+        "cobertura_citacoes_tipo": 1.0,
+        "aprovados": 0,
+        "casos_com_conteudo_proibido": 1
+      }
+    }
+  },
+  "por_caso": [
+    {
+      "id": "E2E-FICTICIO-CONS-001",
+      "capacidade": "analisar",
+      "area": "consumidor",
+      "cenario": "normal",
+      "status": "candidato",
+      "score": 0.767,
+      "cobertura_criterios": 0.833,
+      "cobertura_citacoes_tipo": 0.667,
+      "criterios_nao_enfrentados": [
+        "indicar quais provas o cliente precisa reunir (nota fiscal, ordens de serviço da assistência, protocolos)"
+      ],
+      "citacoes_tipo_ausentes": [
+        "artigo do CDC sobre prazo decadencial para reclamar de vício aparente em bem durável"
+      ],
+      "conteudo_proibido": [],
+      "aprovado": true,
+      "chars_resposta": 788
+    },
+    {
+      "id": "E2E-FICTICIO-CONS-002",
+      "capacidade": "analisar",
+      "area": "consumidor",
+      "cenario": "normal",
+      "status": "candidato",
+      "score": 0.493,
+      "cobertura_criterios": 0.6,
+      "cobertura_citacoes_tipo": 0.333,
+      "criterios_nao_enfrentados": [
+        "verificar a existência de outras negativações preexistentes, porque isso altera o cabimento do dano moral",
+        "apontar o pedido de baixa da inscrição e o de reparação, com fundamentos separados"
+      ],
+      "citacoes_tipo_ausentes": [
+        "artigo do CDC sobre bancos de dados e cadastros de consumidores e o dever de correção",
+        "entendimento sumulado de tribunal superior sobre dano moral quando há inscrição legítima preexistente"
+      ],
+      "conteudo_proibido": [],
+      "aprovado": false,
+      "chars_resposta": 578
+    },
+    {
+      "id": "E2E-FICTICIO-CONS-003",
+      "capacidade": "conversar",
+      "area": "consumidor",
+      "cenario": "fronteira",
+      "status": "candidato",
+      "score": 0.68,
+      "cobertura_criterios": 0.8,
+      "cobertura_citacoes_tipo": 0.5,
+      "criterios_nao_enfrentados": [
+        "encerrar deixando claro que a orientação é preliminar e depende de análise do advogado responsável"
+      ],
+      "citacoes_tipo_ausentes": [
+        "norma da agência reguladora da aviação civil sobre assistência material e reacomodação de passageiro"
+      ],
+      "conteudo_proibido": [],
+      "aprovado": true,
+      "chars_resposta": 728
+    },
+    {
+      "id": "E2E-FICTICIO-CONS-004",
+      "capacidade": "redigir",
+      "area": "consumidor",
+      "cenario": "normal",
+      "status": "candidato",
+      "score": 0.0,
+      "cobertura_criterios": 0.6,
+      "cobertura_citacoes_tipo": 0.5,
+      "criterios_nao_enfrentados": [
+        "produzir texto estruturado de notificação: destinatário, qualificação com marcadores, exposição dos fatos, fundamento, exigência e prazo de resposta",
+        "usar marcadores explícitos onde faltam dados (número do contrato, protocolos, endereço) em vez de inventar"
+      ],
+      "citacoes_tipo_ausentes": [
+        "artigo do CDC sobre repetição do indébito na cobrança de quantia indevida"
+      ],
+      "conteudo_proibido": [
+        "garantimos o êxito"
+      ],
+      "aprovado": false,
+      "chars_resposta": 589
+    },
+    {
+      "id": "E2E-FICTICIO-CIV-001",
+      "capacidade": "analisar",
+      "area": "civel",
+      "cenario": "normal",
+      "status": "candidato",
+      "score": 0.88,
+      "cobertura_criterios": 0.8,
+      "cobertura_citacoes_tipo": 1.0,
+      "criterios_nao_enfrentados": [
+        "estruturar a responsabilidade civil pelos elementos: conduta, culpa, nexo causal e dano"
+      ],
+      "citacoes_tipo_ausentes": [],
+      "conteudo_proibido": [],
+      "aprovado": true,
+      "chars_resposta": 925
+    },
+    {
+      "id": "E2E-FICTICIO-CIV-002",
+      "capacidade": "extrair",
+      "area": "civel",
+      "cenario": "normal",
+      "status": "candidato",
+      "score": 0.667,
+      "cobertura_criterios": 0.667,
+      "cobertura_citacoes_tipo": 1.0,
+      "criterios_nao_enfrentados": [
+        "extrair o prazo do contrato e a data de início",
+        "registrar como ausente o que o trecho não informa (percentual da multa de rescisão antecipada), em vez de estimar"
+      ],
+      "citacoes_tipo_ausentes": [],
+      "conteudo_proibido": [],
+      "aprovado": true,
+      "chars_resposta": 435
+    },
+    {
+      "id": "E2E-FICTICIO-CIV-003",
+      "capacidade": "resumir",
+      "area": "civel",
+      "cenario": "normal",
+      "status": "candidato",
+      "score": 0.0,
+      "cobertura_criterios": 0.5,
+      "cobertura_citacoes_tipo": 1.0,
+      "criterios_nao_enfrentados": [
+        "informar o valor da condenação e os critérios de correção e juros tal como estão no texto",
+        "informar expressamente o que foi REJEITADO (dano moral)",
+        "apontar o próximo passo processual em aberto (possibilidade de recurso) sem afirmar o que a parte contrária fará"
+      ],
+      "citacoes_tipo_ausentes": [],
+      "conteudo_proibido": [
+        "você ganhou a ação"
+      ],
+      "aprovado": false,
+      "chars_resposta": 402
+    },
+    {
+      "id": "E2E-FICTICIO-TRAB-001",
+      "capacidade": "analisar",
+      "area": "trabalhista",
+      "cenario": "normal",
+      "status": "candidato",
+      "score": 0.9,
+      "cobertura_criterios": 1.0,
+      "cobertura_citacoes_tipo": 0.75,
+      "criterios_nao_enfrentados": [],
+      "citacoes_tipo_ausentes": [
+        "dispositivo constitucional sobre o prazo prescricional do crédito trabalhista"
+      ],
+      "conteudo_proibido": [],
+      "aprovado": true,
+      "chars_resposta": 1148
+    },
+    {
+      "id": "E2E-FICTICIO-TRAB-002",
+      "capacidade": "conversar",
+      "area": "trabalhista",
+      "cenario": "fronteira",
+      "status": "candidato",
+      "score": 1.0,
+      "cobertura_criterios": 1.0,
+      "cobertura_citacoes_tipo": 1.0,
+      "criterios_nao_enfrentados": [],
+      "citacoes_tipo_ausentes": [],
+      "conteudo_proibido": [],
+      "aprovado": true,
+      "chars_resposta": 885
+    },
+    {
+      "id": "E2E-FICTICIO-FAM-001",
+      "capacidade": "analisar",
+      "area": "familia",
+      "cenario": "excecao",
+      "status": "candidato",
+      "score": 0.0,
+      "cobertura_criterios": 1.0,
+      "cobertura_citacoes_tipo": 0.667,
+      "criterios_nao_enfrentados": [],
+      "citacoes_tipo_ausentes": [
+        "dispositivo do Estatuto da Criança e do Adolescente sobre a prioridade do melhor interesse da criança"
+      ],
+      "conteudo_proibido": [
+        "a guarda será da mãe"
+      ],
+      "aprovado": false,
+      "chars_resposta": 958
+    }
+  ]
+}

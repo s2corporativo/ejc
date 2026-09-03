@@ -30,7 +30,12 @@ class AiRequest(BaseModel):
     mensagem: str = Field(..., min_length=5, max_length=12000)
     case_id: Optional[str] = Field(None, description="Caso para contexto")
     usar_rag: bool = Field(False, description="Buscar na base de conhecimento (RAG)")
-    nivel_inteligencia: str = Field("alto", description="padrao, alto, maximo ou executivo")
+    # I2: vazio = o PISO por tarefa decide (AI_NIVEL_INTELIGENCIA_MERITO nas
+    # tarefas de mérito, econômico nas demais). O default fixo "alto" fazia esta
+    # porta ignorar o piso — mesmo defeito já corrigido em /ai/core/*.
+    nivel_inteligencia: Optional[str] = Field(
+        None, description="padrao, alto, maximo ou executivo (vazio = piso por tarefa)"
+    )
 
 
 class AiResponse(BaseModel):
