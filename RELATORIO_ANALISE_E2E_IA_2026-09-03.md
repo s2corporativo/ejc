@@ -526,3 +526,61 @@ argumentos, `ast.literal_eval` sobre fonte versionada).
 volume de teor de intimações em `knowledge_docs` cresce. O escopo está correto
 (idempotente, filtrado por cliente e caso), mas não há rotina de expurgo por
 `client_id` — vale confirmar a política de retenção antes de ligar em produção.
+
+### 10.6 Onda E — uma porta por capacidade (I1) e a régua (I7)
+
+**I1 — cinco portas, um contrato.** `POST /ia/{analisar|redigir|resumir|conversar|extrair}`
+(`routers/ia_capacidades.py` → `services/ai/core/capacidades.py`), todas
+delegando ao orquestrador com `nivel_inteligencia=None` para o piso por tarefa
+decidir. Cada porta exige autenticação, bloqueia `cliente_externo` pelo valor
+do enum, aplica limite de tamanho, `rate_limit` e verificação de acesso ao caso
+quando há `case_id`; `analisar` e `redigir` exigem equipe jurídica. Resposta
+única: `conteudo, capacidade, tarefa, modelo, provider, log_id, is_rascunho,
+requer_revisao, status_hitl, aviso_hitl, fontes_rag[], citacoes[], alertas[],
+custo_estimado_brl, tokens{}`, carimbada por `hitl_policy.aplicar()`.
+
+Verificado ao vivo (sem provedor configurado): as cinco portas respondem, o
+acesso anônimo recebe 401 e a indisponibilidade de IA degrada com mensagem de
+negócio — nunca 500.
+
+**Ressalva de escopo, registrada.** As portas antigas passaram a devolver o
+contrato canônico (`capacidades.canonizar()` por cima do resultado legado,
+chaves antigas preservadas), mas o **motor** delas continua o pipeline
+anterior. A troca de motor em `/ai/resumir-texto`, `/ai/gerar-minuta` e
+`/ai/pesquisar` quebra quatro suítes que fixam o pipeline antigo como contrato
+(`test_migracao_gateway_fase1b`, `test_ai_idor_case_id_gates`,
+`test_sigilo_reforcado_pontos_de_entrada`, `test_ai_prompt_injection_delimitadores`)
+— arquivos fora da propriedade da frente. A migração de superfície aconteceu
+onde importa: **o frontend não chama mais nenhuma porta antiga**. Terminar a
+troca de motor é trabalho de uma PR própria, que precisa reescrever esses
+contratos de teste com o titular ciente.
+
+**Mudança de UX que o titular deve conhecer:** o perfil "Financeira" da IA
+especializada agora passa por `/ia/analisar`, que exige equipe jurídica — os
+papéis `financeiro` e `secretaria` deixam de alcançá-lo. É o endurecimento
+pedido no escopo, mas é perda de acesso para dois papéis.
+
+**I7 — a régua.** `backend/app/eval/gold_set_ia_candidatos.jsonl` com 10 casos
+fictícios (consumidor 4, civil 3, trabalhista 2, família 1), cada um com
+critérios do que a resposta deve conter, tipo de citação esperada e o que não
+pode aparecer. `run_gold_ia.py` roda em modo `--mock` (provedor determinístico,
+sem rede, serve para CI) e em modo real pelo gateway. A governança do gold set
+foi respeitada: os 10 entram como **candidatos**, contados à parte, e o próprio
+relatório avisa que candidato não certifica qualidade jurídica — atestação
+exige curador humano, fonte oficial e vigência.
+
+**I2 completado.** `/ai/executar` ainda tinha `nivel_inteligencia` com default
+fixo `"alto"`, ignorando o piso — mesmo defeito de `/ai/core/*`. Corrigido com
+teste (commit `7c30d530`).
+
+### 10.7 Portões finais (todas as ondas integradas)
+
+| Portão | Resultado |
+|---|---|
+| `ruff check app` | ✅ limpo (2 avisos remanescentes em `scripts/` são pré-existentes, arquivos não tocados) |
+| `pytest` completo com `RUN_DB_TESTS=1` | ✅ **6.963 passed**, 66 skipped, 0 failed |
+| `npm run lint` / `npm test` / `npm run build` | ✅ limpo · **118 arquivos, 635 passed** · build OK |
+| `scripts/ledger_rotas.py --verificar` | ✅ sem divergência não declarada (as 5 rotas novas estão registradas) |
+| `run_gold_ia.py --mock` | ✅ 10 candidatos avaliados, relatório gerado, governança respeitada |
+| Cinco portas ao vivo | ✅ protegidas (401 anônimo) e com degradação de negócio sem provedor |
+| Revisão de segurança | ✅ aprovado com ressalvas; as 8 ressalvas fechadas (§10.5) |
