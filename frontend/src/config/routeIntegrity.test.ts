@@ -36,11 +36,13 @@ const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
 const appSrc = readFileSync(join(SRC_DIR, "App.tsx"), "utf-8");
 
 // ── Exceções explícitas: rotas montadas literalmente no App, FORA do registry ──
-// Autenticação pública + jornadas de segurança autenticadas, mas sem menu:
+// Autenticação pública + capability URLs públicas + jornadas de segurança
+// autenticadas, mas sem menu:
 export const PUBLIC_APP_ROUTES = [
   "/login",
   "/recuperar-senha",
   "/redefinir-senha",
+  "/data-room-publico/:token",
   "/trocar-senha",
   "/configurar-2fa",
 ] as const;
