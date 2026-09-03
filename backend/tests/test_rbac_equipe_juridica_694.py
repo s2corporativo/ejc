@@ -321,9 +321,9 @@ def test_helper_bool_barra_secretaria_e_cliente_externo(modulo, funcao):
 
 
 # ── Teste de VARREDURA (não enumeração manual) ────────────────────────────────
-# As exceções restantes são ocorrências históricas que ainda precisam de frente
-# própria. `bank_analysis.py`, `entrada_universal.py` e `checklists.py` já saíram
-# do grandfather; prompts jurídicos e avatar permanecem em frentes próprias.
+# Todos os gates jurídicos conhecidos da Issue #694 já saíram do grandfather.
+# `users.py::obter_avatar` não é superfície jurídica e permanece até migrar para
+# uma política semântica própria de staff em frente separada.
 _ROUTERS = pathlib.Path(__file__).resolve().parents[1] / "app" / "routers"
 _PADRAO_PISO_ESTAGIARIO = re.compile(
     r"""ROLE_LEVEL\s*(?:
@@ -333,7 +333,6 @@ _PADRAO_PISO_ESTAGIARIO = re.compile(
     re.VERBOSE,
 )
 _GRANDFATHER_ISSUE_694: dict[str, frozenset[str]] = {
-    "prompts_juridicos.py": frozenset({"listar_prompts"}),
     "users.py": frozenset({"obter_avatar"}),
 }
 
@@ -386,7 +385,7 @@ def test_grandfather_nao_cobre_arquivos_corrigidos():
         "jurisprudencia_externa.py", "precedentes_jurisprudencia.py",
         "jurimetria.py", "memoria_institucional.py", "consumidor_monitor.py",
         "ficha_triagem.py", "novos_modulos.py", "bank_analysis.py",
-        "entrada_universal.py", "checklists.py",
+        "entrada_universal.py", "checklists.py", "prompts_juridicos.py",
     }
     assert arquivos_corrigidos.isdisjoint(_GRANDFATHER_ISSUE_694)
 
