@@ -38,4 +38,8 @@ async def validar_citacoes_endpoint(
     relatório completo do verificador rigoroso + a decisão da política
     (`bloqueia_aprovacao`, `bloqueantes`, `motivos`).
     """
-    return await validar_citacoes(db, req.texto)
+    # `verificar_pertinencia=False` PRESERVA o contrato documentado acima: a
+    # dimensão de pertinência usa IA, e este endpoint recebe texto avulso, sem
+    # caso do qual derivar piso de sigilo. Pertinência roda nos fluxos ligados a
+    # um caso (aprovação HITL, pipeline de peça), não aqui.
+    return await validar_citacoes(db, req.texto, verificar_pertinencia=False)
