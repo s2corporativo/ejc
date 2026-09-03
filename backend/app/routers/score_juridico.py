@@ -57,7 +57,12 @@ async def calcular_score(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(_req_adv),
 ):
-    await verificar_acesso_caso(db, cu, case_id)
+    case = await verificar_acesso_caso(db, cu, case_id)
+    # PISO DE SIGILO: rota vinculada a caso que nunca lia `Case.sigilo_reforcado`
+    # — o score de um caso de crime sexual/menor ia ao provedor EXTERNO apesar do
+    # piso LOCAL_COMPLETO. O caso já vem do gate de ownership acima.
+    from app.services.ai.sanitization_policy import modo_sigilo_do_caso
+    modo_sigilo = modo_sigilo_do_caso(case)
     # Buscar dados do caso
     case_r = await db.execute(
         text("""
@@ -100,6 +105,7 @@ async def calcular_score(
             task_type="analise_juridica",
             temperature=0.15,
             max_tokens=1024,
+            modo_sanitizacao=modo_sigilo,
         )
         match = re.search(r"\{.*\}", resp.texto, re.DOTALL)
         scores = json.loads(match.group()) if match else {}

@@ -311,14 +311,8 @@ async def analisar_caso(
         # orchestrator.py/agent/loop.py, que já consultam Case.sigilo_reforcado.
         # Um caso de crime sexual/menor ia pseudonimizado ao externo mesmo com
         # a flag marcada.
-        from sqlalchemy import text as _text
-        _row = (await db.execute(
-            _text("SELECT sigilo_reforcado FROM cases WHERE id = :cid AND deleted_at IS NULL"),
-            {"cid": case_id},
-        )).first()
-        if _row and _row[0]:
-            from app.services.ai.sanitization_policy import ModoSanitizacao
-            modo_sigilo = ModoSanitizacao.LOCAL_COMPLETO
+        from app.services.ai.sanitization_policy import modo_sigilo_por_case_id
+        modo_sigilo = await modo_sigilo_por_case_id(db, case_id)
 
     # LGPD — sanitiza a PII ESTRUTURAL (CPF/CNPJ/processo/e-mail…) e aplica a
     # SEGUNDA BARREIRA (validar_sem_pii) ANTES de qualquer envio ao LLM. Quando há
