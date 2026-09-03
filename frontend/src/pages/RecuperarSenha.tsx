@@ -7,6 +7,8 @@ export default function RecuperarSenha() {
   const [ok, setOk] = useState(false);
 
   const enviar = async () => {
+    // Silêncio intencional (não é o padrão S7): a tela SEMPRE responde
+    // "sucesso" para não revelar se o e-mail existe — anti-enumeração.
     await api.post("/auth/recuperar-senha", { email }).catch(() => {});
     setOk(true); // sempre sucesso (não revela se e-mail existe)
   };

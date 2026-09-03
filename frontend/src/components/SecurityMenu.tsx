@@ -1,6 +1,7 @@
 // ── Menu do avatar: foto de perfil, segurança e preferências ──
 import { useRef, useState } from "react";
 import { toast } from "./Toast";
+import { mensagemErroHttp } from "../lib/iaErro";
 import { useNavigate } from "react-router";
 import {
   BellRing,
@@ -100,14 +101,18 @@ export default function SecurityMenu({ user }: { user: any }) {
   };
 
   const salvarOab = async () => {
-    await api.patch(`/users/${user.id}`, {
-      djen_oab_numero: oabNum,
-      djen_oab_uf: oabUf,
-    });
-    setModal(null);
-    toast.success(
-      "OAB salva — intimações DJEN serão capturadas diariamente às 06h30.",
-    );
+    try {
+      await api.patch(`/users/${user.id}`, {
+        djen_oab_numero: oabNum,
+        djen_oab_uf: oabUf,
+      });
+      setModal(null);
+      toast.success(
+        "OAB salva — intimações DJEN serão capturadas diariamente às 06h30.",
+      );
+    } catch (e) {
+      toast.error(mensagemErroHttp(e, "Não foi possível salvar a OAB."));
+    }
   };
 
   const copiarIcs = async () => {
