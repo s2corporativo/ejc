@@ -89,7 +89,15 @@ def _normalizar_task_type(task_type: str) -> str:
 # Tarefas cujo prompt exige "SAÍDA OBRIGATÓRIA — JSON" (parse downstream):
 # triagem/prazos/honorarios (system_prompts/*.py). O modo executivo impõe prosa
 # em 3 blocos — mutuamente exclusivo com JSON; aplicá-lo quebraria o parse.
-_TAREFAS_SAIDA_ESTRUTURADA = {"triagem", "prazos", "honorarios"}
+# `verificacao_pertinencia` entra aqui porque o contrato da resposta é um
+# formato EXATO (`VEREDITO:/TRECHO:/MOTIVO:`) conferido por regex: sem isto o
+# piso da tarefa seria "alto", que injeta o método FIRAC ("(1) FATOS … (5)
+# CONCLUSÃO") num prompt que pede pergunta fechada — o parse falharia e TODA
+# citação viraria `indeterminada`, deixando a verificação silenciosamente
+# inútil (defeito achado no pente fino de 03/09).
+_TAREFAS_SAIDA_ESTRUTURADA = {
+    "triagem", "prazos", "honorarios", "verificacao_pertinencia",
+}
 
 # Tarefas de MÉRITO jurídico: raciocínio sobre direito aplicado ao caso. São as
 # que justificam o nível mais alto — e eram as que mais caíam em "padrao",
@@ -190,6 +198,18 @@ TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
         ("groq",   None),
         ("anthropic", None), # ANTHROPIC_MODEL_RAPIDO (último recurso pago)
     ],
+    # Verificação de PERTINÊNCIA (services/ai/pertinencia.py): pergunta FECHADA
+    # de 400 tokens, temperatura 0, executada UMA VEZ POR CITAÇÃO verificável.
+    # Sem entrada própria caía no default `analise_juridica` — a cadeia mais
+    # CARA (ANTHROPIC_MODEL_COMPLEXO) — multiplicada pelo número de citações da
+    # peça. Cadeia econômica, mesma forma de `resumo`: local primeiro, pago por
+    # último e com o modelo rápido.
+    "verificacao_pertinencia": [
+        ("ollama", None),
+        ("maritaca", None),
+        ("groq",   None),
+        ("anthropic", None), # ANTHROPIC_MODEL_RAPIDO (ver _resolver_modelo)
+    ],
     "analise_contrato": [
         ("ollama",    None),  # OLLAMA_MODEL_CONTRATO
         ("anthropic", None),
@@ -252,6 +272,9 @@ _ANTHROPIC_MODEL_BY_TASK = {
     "auditoria_peca":   lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
     "jurimetria":       lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
     "critica_adversarial": lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
+    # Pergunta fechada com conferência programática do trecho: o modelo caro
+    # não acerta mais um "sim/não" lastreado — e aqui roda por citação.
+    "verificacao_pertinencia": lambda: settings.ANTHROPIC_MODEL_RAPIDO,
 }
 
 

@@ -256,18 +256,13 @@ async def _modo_sigilo_caso(db: AsyncSession, case_id: str | None):
     fazia essa checagem. Um caso de crime sexual/menor analisado por aqui
     (`analisar_caso`, `detectar_teses_ocultas`, `auditar_peca`,
     `preparar_audiencia`, `analisar_contrato`) ia pseudonimizado ao externo
-    mesmo com a flag marcada. Lookup leve (mesmo padrão de
-    `_escopo_cliente_do_caso`), não o ORM inteiro."""
-    if not case_id:
-        return None
-    row = (await db.execute(
-        text("SELECT sigilo_reforcado FROM cases WHERE id = :cid AND deleted_at IS NULL"),
-        {"cid": case_id},
-    )).first()
-    if not row or not row[0]:
-        return None
-    from app.services.ai.sanitization_policy import ModoSanitizacao
-    return ModoSanitizacao.LOCAL_COMPLETO
+    mesmo com a flag marcada.
+
+    Consolidação: a consulta vive em `sanitization_policy.modo_sigilo_por_case_id`
+    (ponto único, junto da política que ela alimenta). Este wrapper permanece
+    porque é o nome usado pelos chamadores deste módulo."""
+    from app.services.ai.sanitization_policy import modo_sigilo_por_case_id
+    return await modo_sigilo_por_case_id(db, case_id)
 
 
 async def _escopo_cliente_do_caso(db: AsyncSession, case_id: str | None) -> str | None:

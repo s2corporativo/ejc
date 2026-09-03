@@ -547,16 +547,8 @@ async def validar_rascunho_juridico(
     # Case.sigilo_reforcado — mas nunca fazia essa checagem. Auditoria de peça
     # num caso de crime sexual/menor ia pseudonimizada ao externo mesmo com a
     # flag marcada.
-    modo_sigilo = None
-    if payload.case_id:
-        from sqlalchemy import text as _text
-        row = (await db.execute(
-            _text("SELECT sigilo_reforcado FROM cases WHERE id = :cid AND deleted_at IS NULL"),
-            {"cid": payload.case_id},
-        )).first()
-        if row and row[0]:
-            from app.services.ai.sanitization_policy import ModoSanitizacao
-            modo_sigilo = ModoSanitizacao.LOCAL_COMPLETO
+    from app.services.ai.sanitization_policy import modo_sigilo_por_case_id
+    modo_sigilo = await modo_sigilo_por_case_id(db, payload.case_id)
 
     resp = await chat(
         messages=[
