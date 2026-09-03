@@ -327,10 +327,9 @@ def test_helper_bool_barra_secretaria_e_cliente_externo(modulo, funcao):
 # backend/app/routers/. Mesmo desenho de guarda que test_middleware_auth_
 # invariant.py usa para o invariante de auth (regex sobre o código-fonte).
 #
-# GRANDFATHER: os 7 sítios (6 arquivos) que a Issue #694 também lista mas que
-# esta correção NÃO tocou porque pertencem a PRs abertos concorrentes
-# (bank_analysis.py, entrada_universal.py, checklists.py, prompts_juridicos.py,
-# ai.py, users.py).
+# GRANDFATHER: permanecem apenas bank_analysis.py (corrigido na pilha #1381)
+# e users.py::obter_avatar. O avatar é política interna de staff, não superfície
+# jurídica, e deve migrar para guarda semântica própria antes de sair da lista.
 #
 # Rastreado por OCORRÊNCIA individual (arquivo::função), não por arquivo
 # inteiro (review do Codex no PR #706): pular o arquivo inteiro tinha dois
@@ -375,12 +374,12 @@ _PADRAO_PISO_ESTAGIARIO = re.compile(
 # ocorrência NOVA numa função diferente do mesmo arquivo seja pega.
 _GRANDFATHER_ISSUE_694: dict[str, frozenset[str]] = {
     "bank_analysis.py": frozenset({"gerar_peca"}),
-    "entrada_universal.py": frozenset({"meta", "processar"}),
-    "checklists.py": frozenset({"_pode_editar"}),
-    "prompts_juridicos.py": frozenset({"listar_prompts"}),
     # ai.py::assistente_estrategico e ai.py::visual_law corrigidos na
     # auditoria de segurança das APIs de IA (18/08) — migrados para
     # requer_equipe_juridica (allowlist exata).
+    # users.py::obter_avatar não é superfície jurídica: permanece aqui somente
+    # enquanto a guarda for baseada na sintaxe do piso, e deve migrar para uma
+    # política explícita de staff em PR separado para sair deste grandfather.
     "users.py": frozenset({"obter_avatar"}),
 }
 

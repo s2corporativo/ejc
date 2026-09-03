@@ -20,7 +20,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.core.rate_limit import rate_limit
-from app.core.security import ROLE_LEVEL, get_current_user
+from app.core.security import get_current_user, requer_equipe_juridica
 import hashlib
 import shutil
 from app.models.case import CaseMovimento
@@ -281,8 +281,7 @@ async def _analisar_ia(db: AsyncSession, cu: User, *, modalidade: str | None,
 
 @router.get("/meta")
 async def meta(cu: User = Depends(get_current_user)):
-    if ROLE_LEVEL.get(_role_value(cu), 0) < ROLE_LEVEL["estagiario"]:
-        raise HTTPException(403, "Acesso restrito à equipe jurídica")
+    requer_equipe_juridica(cu, "Acesso restrito à equipe jurídica")
     return {"formatos": sorted(EXTENSOES_SUPORTADAS), "multiplos_arquivos": True, "zip": True,
             "max_arquivos": MAX_ARQUIVOS, "max_lote_mb": MAX_BYTES_LOTE // 1024 // 1024,
             "fluxo": ["persistir_original", "hash_e_duplicidade", "ocr_por_pagina", "classificar", "comparar",
@@ -371,8 +370,7 @@ async def processar(
     texto: Optional[str] = Form(None), confidencialidade: str = Form("normal"),
     db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user),
 ):
-    if ROLE_LEVEL.get(_role_value(cu), 0) < ROLE_LEVEL["estagiario"]:
-        raise HTTPException(403, "Acesso restrito à equipe jurídica")
+    requer_equipe_juridica(cu, "Acesso restrito à equipe jurídica")
     if modalidade and modalidade not in CATALOGO_DOCUMENTAL:
         raise HTTPException(422, f"Modalidade inválida: {modalidade}")
     if not files and len((texto or "").strip()) < 40:
@@ -718,4 +716,3 @@ async def vincular_lote_ao_caso(
         "operacao_idempotente": lote_ja_vinculado and vinculados == 0 and not conflitos,
         "revisao_obrigatoria": True,
     }
-
