@@ -94,13 +94,15 @@ def test_governanca_de_pr_e_registro_de_agente_estao_restritos():
     assert "WOODPECKER_DISABLE_USER_AGENT_REGISTRATION=true" in texto
 
 
-def test_script_api_aplica_o_mesmo_modo_sem_versionar_token():
+def test_script_api_aplica_o_mesmo_modo_sem_expor_token():
     texto = _texto(APPROVAL_SCRIPT_PATH)
     assert 'WOODPECKER_API_BASE:-https://ci.depaulateixeira.adv.br/api' in texto
     assert 'WOODPECKER_REPO_ID:-2' in texto
     assert '"require_approval":"forks"' in texto
-    assert 'Authorization: Bearer ${WOODPECKER_TOKEN}' in texto
-    assert "WOODPECKER_TOKEN:?" in texto
+    assert 'read -r -s -p "Woodpecker PAT: " WOODPECKER_TOKEN' in texto
+    assert 'Authorization: Bearer %s' in texto
+    assert "curl --config -" in texto
+    assert '--header "Authorization: Bearer ${WOODPECKER_TOKEN}"' not in texto
     assert 'echo "${WOODPECKER_TOKEN}"' not in texto
 
 
