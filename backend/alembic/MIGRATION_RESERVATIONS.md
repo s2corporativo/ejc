@@ -6,6 +6,30 @@ Este arquivo é o ledger canônico de **reservas futuras** e do trecho recente d
 **Próximo prefixo livre:** `157`
 Após o merge desta PR, o próximo prefixo livre será `157` — a `154`, a `155` e a `156` estão aplicadas e **não podem ser reutilizadas**.
 
+> ⚠️ **156 ESTÁ DISPUTADO — não integrar esta branch como 156.**
+> Bloqueio de governança registrado no PR #1417 em 03/09/2026 e conferido
+> contra as fontes primárias: a `main` (`7e2d5469`) continua em
+> `155_indices_listagem_espinha`, e existem **quatro** candidatas ao 156 —
+> #1333 `156_case_despesas_processuais` (branch `feat/casos-despesas-
+> processuais-156`), #1412 `156_prazos_auditaveis_regime`, #1368
+> `156_documentos_governanca_outbox` e esta #1417 `156_ficha_viva_teses`.
+> A decisão vigente mantém **#1333** como candidata a reter o 156, por ser a
+> mudança mais isolada de schema.
+>
+> As duas linhas de head acima descrevem o estado **DESTA BRANCH**, não o da
+> `main`. Elas existem porque `test_migration_reservations_head.py` compara o
+> head documentado com o head real do Alembic no checkout — na branch, o head
+> real É a 156.
+>
+> **Não renumerar por antecipação** (nada de 157/158/159 "reservado"). A
+> renumeração só ocorre depois de: (1) base #1410 reconciliada/aceita;
+> (2) integração real das migrations anteriores; (3) leitura do head Alembic
+> vigente; (4) atualização CONJUNTA de `revision`, `down_revision`, deste
+> ledger e das guardas (`test_alembic_single_head.py`,
+> `test_schema_dr_parity.py`, `test_preliminares_fundacao_schema_140.py`);
+> (5) `upgrade → downgrade → upgrade` em PostgreSQL controlado, com
+> `alembic heads` único.
+
 > Nunca reutilize um número menor ou igual ao head atual, mesmo quando houver lacuna histórica. A ordem numérica precisa crescer junto com `down_revision`.
 
 ## Regra obrigatória
@@ -48,7 +72,7 @@ gh pr list --state open
 | `153_legal_doc_client_id` | `152_thesis_candidate_tese_banco` | Mesclada | Isolamento estável cliente → peça avulsa, reconstruído a partir do #1231 sem reutilizar a antiga migration 147. |
 | `154_saneamento_schema` | `153_legal_doc_client_id` | Mesclada | Módulo de saneamento de base processual (PROMPT 1). Encadeada sobre 153 porque era o head real no momento (`alembic heads`) — não pressupõe que 153 já tenha sido mesclada; conferir o head real de novo antes do merge. 7 tabelas próprias, **prefixadas `saneamento_*` no schema `public`** — nenhuma alteração em tabela existente do EJC. Um schema Postgres dedicado (`CREATE SCHEMA`) foi cogitado e descartado: `scripts/check_migration_compatibility.py` (gate de deploy) e os testes de paridade schema↔ORM (`test_schema_dr_parity.py`, `test_schema_sync.py`) extraem nomes de tabela por regex/AST sem suporte a qualificação de schema — mudar essas ferramentas para um caso de uso isolado era desproporcional ao módulo. Prefixo de tabela entrega o mesmo isolamento prático. |
 | `155_indices_listagem_espinha` | `154_saneamento_schema` | **Em PR — HEAD desta branch** | Índices parciais de listagem em `cases`/`clients`/`documents` (AUD27-P3-11). `deadlines` fora de propósito: já coberta por `ix_deadlines_data_prazo`, medido. **Renumerada de 154 para 155** ao mesclar a `main`: o #1318 chegou primeiro e ocupou a 154 — mesma colisão que renumerou a 150 (era 148). |
-| `156_ficha_viva_teses` | `155_indices_listagem_espinha` | **Em PR — HEAD desta branch** | Ficha viva do Banco de Teses (Legal Drafting 2.0 §5). Encadeada sobre 155 porque era o head real no momento (`alembic heads`) — não pressupõe que 155 já tenha sido mesclada; conferir o head real de novo antes do merge. **Estende a estrutura canônica, não cria banco paralelo**: três tabelas novas (`tese_versoes`, `tese_fontes`, `tese_overrides`) e duas colunas novas em `teses` (`gatilhos`, `versao`), ambas com `server_default` para não falhar em banco com dado. `tese_caso_links` fica intacta — ela já era o "LegalSkillCaseUsage" que a missão pedia. Nenhuma coluna removida, nenhum dado reescrito, nenhuma constraint nova sobre linha existente. |
+| `156_ficha_viva_teses` | `155_indices_listagem_espinha` | **Em PR — HEAD desta branch · NÚMERO DISPUTADO (ver aviso no topo; #1333 tem precedência)** | Ficha viva do Banco de Teses (Legal Drafting 2.0 §5). Encadeada sobre 155 porque era o head real no momento (`alembic heads`) — não pressupõe que 155 já tenha sido mesclada; conferir o head real de novo antes do merge. **Estende a estrutura canônica, não cria banco paralelo**: três tabelas novas (`tese_versoes`, `tese_fontes`, `tese_overrides`) e duas colunas novas em `teses` (`gatilhos`, `versao`), ambas com `server_default` para não falhar em banco com dado. `tese_caso_links` fica intacta — ela já era o "LegalSkillCaseUsage" que a missão pedia. Nenhuma coluna removida, nenhum dado reescrito, nenhuma constraint nova sobre linha existente. |
 
 ## Banco de Teses — decisão canônica
 

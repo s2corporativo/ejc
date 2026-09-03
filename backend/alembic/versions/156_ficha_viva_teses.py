@@ -4,6 +4,16 @@ Revision ID: 156_ficha_viva_teses
 Revises: 155_indices_listagem_espinha
 Create Date: 2026-09-03
 
+⚠️ NÚMERO DISPUTADO — não integrar como 156 sem renumerar.
+Bloqueio de governança registrado no PR #1417 (03/09/2026): a `main` continua
+em `155_indices_listagem_espinha` e há quatro candidatas ao 156 (#1333, #1412,
+#1368 e esta). A decisão vigente dá precedência a #1333, por ser a mudança
+mais isolada de schema. A renumeração NÃO deve ser antecipada — o
+procedimento e as condições estão no aviso do topo de
+`alembic/MIGRATION_RESERVATIONS.md`. O conteúdo desta migration não muda com
+a renumeração; mudam `revision`, `down_revision`, o ledger e as três guardas
+de head.
+
 Implementa a FASE "LEGAL KNOWLEDGE SKILLS" (§5 do Legal Drafting 2.0) sobre a
 estrutura CANÔNICA, não ao lado dela.
 

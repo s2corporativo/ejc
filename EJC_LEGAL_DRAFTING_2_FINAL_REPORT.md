@@ -2,7 +2,7 @@
 
 **Branch**: `feature/legal-drafting-2` · **PR**: #1417 (draft)
 **Base**: `claude/ai-system-end-to-end-analysis-b44lgi` @ `541519ee` (head do PR #1410) — **não a `main`**
-**Commits**: 7 · **Diff**: 43 arquivos, +4.105 / −182
+**Commits**: 10 · **Diff**: ~50 arquivos
 **Data**: 03/09/2026
 
 > Este relatório não afirma conclusão da missão. A §41 exige evidência
@@ -258,7 +258,22 @@ pode esconder a confiança.
 
 ---
 
-## 9. Migration 156
+## 9. Migration 156 — **NÚMERO BLOQUEADO POR GOVERNANÇA**
+
+> **Bloqueio registrado no PR #1417 em 03/09/2026, conferido contra as fontes
+> primárias.** A `main` (`7e2d5469`) continua em `155_indices_listagem_espinha`
+> e há **quatro** candidatas ao 156: #1333 `156_case_despesas_processuais`
+> (branch `feat/casos-despesas-processuais-156`), #1412
+> `156_prazos_auditaveis_regime`, #1368 `156_documentos_governanca_outbox` e
+> esta. A decisão vigente dá precedência a **#1333**.
+>
+> **Esta branch não pode ser integrada como 156.** A renumeração NÃO foi
+> antecipada — nada de 157/158/159 "reservado" — porque renumerar agora, com
+> três concorrentes e a base #1410 ainda não reconciliada, só moveria a colisão.
+> O bloqueio está registrado no topo de `MIGRATION_RESERVATIONS.md`, na linha da
+> reserva e no docstring da própria migration, com as cinco condições e a lista
+> exata do que muda na renumeração (`revision`, `down_revision`, ledger e as
+> três guardas de head). O CONTEÚDO da migration não muda.
 
 Head real conferido com `alembic heads` (era `155_indices_listagem_espinha`) e
 reserva registrada no ledger, com os cinco guardas de head atualizados.
@@ -275,22 +290,22 @@ upgrade do zero → schema conferido → `INSERT` em `teses` herdando os default
 
 ## 10. Evidência de verificação
 
-Última execução, no commit `7a3041a2`:
+Última execução, no commit `325a0cc9` (pós pente fino):
 
 ```text
 backend
   ruff check app ..................... All checks passed!
   alembic upgrade head (PG16 limpo) .. head 156_ficha_viva_teses
   alembic downgrade -1 / re-upgrade .. OK, dado preservado
-  pytest (PG16 + pgvector) ........... 6736 passed, 430 skipped, 0 falhas
+  pytest (PG16 + pgvector) ........... 6768 passed, 432 skipped, 0 falhas
 
 frontend
   npm run lint (tsc --noEmit) ........ limpo
-  npm test ........................... 120 arquivos, 654 passed
+  npm test ........................... 120 arquivos, 656 passed
   npm run build ...................... OK
 ```
 
-Testes novos nesta branch: **~90** (5 sigilo + 10 delimitador + 3 contrato AST
+Testes novos nesta branch: **~130** (5 sigilo + 10 delimitador + 3 contrato AST
 + 2 orquestrador + 23 pertinência + 35 ficha viva + 14 rotas + 8 componente +
 5 contexto).
 
@@ -300,6 +315,32 @@ self-hosted rodou verde nos commits anteriores (pipeline 470); o do commit
 final estava em fila no fechamento deste relatório.
 
 ---
+
+## 10-A. Pente fino de ponta a ponta (03/09, pós-entrega)
+
+Auditoria independente (`security-auditor` + `code-reviewer`) sobre os 8
+commits, com cada achado conferido no código antes de virar correção.
+**11 defeitos, 3 deles graves — todos introduzidos por esta branch.**
+
+O dado desconfortável: os três graves **passavam em toda a suíte**, porque os
+testes mockavam justamente a camada defeituosa. O verde de 6.736 testes era
+verdadeiro e insuficiente.
+
+| # | Defeito | Consequência real |
+|---|---|---|
+| 1 | Pertinência confrontava o **diploma inteiro**, não o artigo | `_fonte_artigo` devolve o `doc_id` do código; para "art. 373 do CPC" o modelo recebia o preâmbulo do CPC, respondia `NAO_SUSTENTADA` corretamente sobre o texto errado e — com a política `bloquear`, que é o **default** — travaria a aprovação de quase toda peça que citasse artigo |
+| 2 | `GET /teses/{id}/overrides` **vazava entre casos** | `justificativa` é texto livre sobre caso concreto; era servida a qualquer membro de `EQUIPE_JURIDICA` (estagiário incluído) de qualquer caso, inclusive com sigilo reforçado |
+| 3 | `tipo_peca` parou de chegar ao modelo | Regressão de **entrada** no wrapper: o advogado pedia contestação e recebia rascunho genérico |
+| 4 | Selo "verificada" auto-atribuível | **Invertia a hierarquia de confiança** no prompt: texto digitado virava `[FONTE VERIFICADA]`, texto curado virava pista |
+| 5 | Súmula sem tribunal → tribunal **sorteado** | "Súmula 7" existe em STF/STJ/TST com textos diferentes |
+| 6 | Trecho truncado sem marca | Norma com ressalva ("…salvo quando…") chegava afirmando o **contrário**, com selo de verificada |
+| 7 | Roteamento caro + **FIRAC** injetado | Num prompt de formato exato: o parse falharia e tudo viraria `indeterminada` |
+| 8 | Veredito bloqueante falhava **aberto** por acento | `NÃO SUSTENTADA` não casava o regex ASCII |
+| 9 | Corrida no versionamento | Dois PATCH concorrentes → 500 e edição perdida |
+| 10 | Fail-open indistinguível de "desligado" | Revisor leria falha como desativação |
+| 11 | Spinner eterno com resposta malformada | Painel sem conteúdo e sem fallback |
+
+Correções com **+40 testes de regressão**, um por achado.
 
 ## 11. O que NÃO foi feito (§39 — não afirmar implementação não testada)
 
@@ -335,6 +376,7 @@ Isto é a metade do relatório que importa.
 
 | Risco | Mitigação atual |
 |---|---|
+| **Migration 156 bloqueada** — três PRs concorrentes disputam o número | Bloqueio registrado no ledger, na migration e no PR; renumeração NÃO antecipada; conteúdo da migration não muda |
 | Base não é a `main` | Rebase quando #1410 entrar; declarado no PR |
 | Crítica adversarial indisponível em caso sigiloso sem Ollama | Aviso explícito ao revisor; saída é operacional (subir IA local) |
 | Varredura da AST é sintática | Pega o padrão comum; não pega chamada indireta atrás de camadas |
@@ -349,6 +391,9 @@ Isto é a metade do relatório que importa.
    tabelas `LegalSkill*` da letra da missão.
 2. **Ligar `PERTINENCIA_ENABLED`** em produção — custo por citação verificável.
 3. **Merge do #1410**, do qual esta branch depende.
+3-A. **Ordem de integração das quatro migrations que disputam o 156** — a
+   decisão vigente dá precedência a #1333; esta branch renumera quando essa
+   ordem estiver resolvida e o head vigente puder ser lido.
 4. **Curadoria das fichas existentes** — sem fonte verificada, a nova coluna
    de lastro mostra zero para todas.
 
@@ -356,12 +401,17 @@ Isto é a metade do relatório que importa.
 
 ## 14. Conclusão
 
-Sete commits, 43 arquivos, +4.105/−182. Três furos de segurança fechados com
-prova negativa, quatro duplicações consolidadas em ponto único, uma classe
+Dez commits. Três furos de segurança fechados com prova negativa, quatro duplicações consolidadas em ponto único, uma classe
 recorrente de defeito travada por contrato automatizado, a validação de
 pertinência que não existia, e o catálogo de teses transformado em ficha
 auditável e ligada ao motor de redação.
 
+Depois disso, um pente fino independente achou **11 defeitos nesta própria
+entrega**, três deles graves — e três que passavam em toda a suíte. Estão
+corrigidos, com teste de regressão por achado, e a §10-A os lista sem
+atenuação: é o registro de que "suíte verde" não é sinônimo de "correto".
+
 **A missão não está concluída** — 9 das 14 fases seguem abertas, e a §1 acima
-diz exatamente quais. O que foi entregue está testado, com portão local verde
-e evidência reproduzível neste relatório.
+diz exatamente quais. A migration está **bloqueada por governança** (§9). O que
+foi entregue está testado, com portão local verde e evidência reproduzível
+neste relatório.
