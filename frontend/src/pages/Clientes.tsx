@@ -1,7 +1,7 @@
 import { toast } from "../components/Toast";
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router";
-import { Plus, Search, ShieldAlert, KeyRound } from "lucide-react";
+import { Link, useNavigate } from "react-router";
+import { Plus, Search, ShieldAlert } from "lucide-react";
 import api from "../lib/api";
 import { soDigitos } from "../utils/phone";
 import type { Client, Paged } from "../types";
@@ -13,12 +13,10 @@ import {
   Empty,
   EmptyState,
   SkeletonTable,
-  fmtDate,
   Alert,
   Badge,
   Button,
 } from "../components/UI";
-import { ClientesStats } from "../components/Dashboards";
 import { VerificarReceita } from "../components/Infosimples";
 
 // Resposta de POST /clients/checar-conflito. O NOME vem completo (dever ético:
@@ -40,6 +38,7 @@ interface ConflitoCheck {
   nivel: ConflitoNivel;
   matches: ConflitoMatch[];
 }
+type ResultadoConflito = ConflitoCheck | "indisponivel" | null;
 
 function openWhatsApp(phone: string, name: string) {
   const digits = soDigitos(phone);
@@ -50,17 +49,15 @@ function openWhatsApp(phone: string, name: string) {
 
 export default function Clientes() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [data, setData] = useState<Paged<Client> | null>(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [modal, setModal] = useState(false);
+  const [mostrarAvancado, setMostrarAvancado] = useState(false);
   const [conflito, setConflito] = useState<ConflitoCheck | null>(null);
+  const [conflitoIndisponivel, setConflitoIndisponivel] = useState(false);
   const [conflitoLoading, setConflitoLoading] = useState(false);
-  const [acessoModal, setAcessoModal] = useState<any>(null); // cliente alvo
-  const [acessoForm, setAcessoForm] = useState({
-    email: "",
-    senha_inicial: "",
-  });
   const [form, setForm] = useState<any>({
     tipo: "PF",
     cidade: "Betim",
@@ -73,7 +70,6 @@ export default function Clientes() {
   const seq = useRef(0);
 
   const role = user?.role || "";
-  const podeCriarAcesso = ["superadmin", "admin", "socio", "advogado"].includes(role);
   const podeRelatorioLgpd = ["superadmin", "admin", "socio"].includes(role);
 
   const load = () => {
@@ -98,49 +94,74 @@ export default function Clientes() {
     return () => clearTimeout(t);
   }, [search, page]);
 
-  // Checagem de conflito de interesses em tempo real (EOAB arts. 34-35).
-  // Fail-safe: qualquer erro é silencioso e NÃO impede o cadastro.
-  const checarConflito = async (): Promise<ConflitoCheck | null> => {
+  const limparCadastro = () => {
+    setForm({ tipo: "PF", cidade: "Betim", estado: "MG" });
+    setConflito(null);
+    setConflitoIndisponivel(false);
+    setMostrarAvancado(false);
+  };
+
+  // Checagem ética é best-effort e não bloqueia o cadastro. Falha técnica,
+  // porém, é exibida explicitamente para nunca parecer "nenhum conflito".
+  const checarConflito = async (): Promise<ResultadoConflito> => {
     const nome = (form.nome || form.razao_social || "").trim();
     const cpf = form.cpf;
     const cnpj = form.cnpj;
     const parte_contraria = form.parte_contraria;
-    // Nada relevante digitado ainda → limpa e não chama a API.
     if (!cpf && !cnpj && nome.length < 4 && !parte_contraria) {
       setConflito(null);
+      setConflitoIndisponivel(false);
       return null;
     }
     setConflitoLoading(true);
     try {
-      const { data } = await api.post<ConflitoCheck>(
+      const { data: resultado } = await api.post<ConflitoCheck>(
         "/clients/checar-conflito",
         { nome, cpf, cnpj, parte_contraria },
       );
-      setConflito(data);
-      return data;
+      setConflito(resultado);
+      setConflitoIndisponivel(false);
+      return resultado;
     } catch {
-      // Aviso ético é best-effort: falha na checagem não trava o formulário.
       setConflito(null);
-      return null;
+      setConflitoIndisponivel(true);
+      return "indisponivel";
     } finally {
       setConflitoLoading(false);
     }
   };
 
   const salvar = async () => {
-    // O alerta de conflito é apenas um aviso ético — NÃO bloqueia o cadastro.
     setSalvando(true);
     try {
-      await api.post("/clients/", form);
+      const { data: criado } = await api.post<Client>("/clients/", form);
       setModal(false);
-      setForm({ tipo: "PF", cidade: "Betim", estado: "MG" });
-      setConflito(null);
-      if (page !== 1) setPage(1);
-      else load();
+      limparCadastro();
+      // Depois do cadastro, a Ficha Mestra é o ponto canônico para continuar
+      // o relacionamento: caso, documentos, pendências, Portal e IA.
+      navigate(`/clientes/${criado.id}`);
     } catch (e: any) {
       toast.error(e.response?.data?.detail || "Erro ao salvar");
     } finally {
       setSalvando(false);
+    }
+  };
+
+  const baixarRelatorioLgpd = async (clientId: string) => {
+    try {
+      const r = await api.get(`/clients/${clientId}/relatorio-lgpd`, {
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `lgpd_${clientId.slice(0, 8)}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Não foi possível gerar o relatório LGPD",
+      );
     }
   };
 
@@ -152,15 +173,13 @@ export default function Clientes() {
     <div>
       <PageHeader
         title="Clientes"
-        subtitle={`${data?.total ?? 0} ${(data?.total ?? 0) === 1 ? "cadastrado" : "cadastrados"}`}
+        subtitle={`${data?.total ?? 0} ${(data?.total ?? 0) === 1 ? "cadastrado" : "cadastrados"} · localize e abra a Ficha Mestra`}
         actions={
           <button className="btn-gold" onClick={() => setModal(true)}>
             <Plus size={16} /> Novo cliente
           </button>
         }
       />
-
-      <ClientesStats />
 
       <div className="relative mb-4 max-w-md">
         <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
@@ -186,11 +205,11 @@ export default function Clientes() {
           }
         />
       ) : !data ? (
-        <SkeletonTable rows={6} cols={6} />
+        <SkeletonTable rows={6} cols={4} />
       ) : data.data.length === 0 ? (
         <Empty
           titulo="Nenhum cliente cadastrado"
-          descricao="O cadastro de clientes centraliza contatos, documentos e casos de cada pessoa ou empresa. Cadastre o primeiro para vinculá-lo aos casos."
+          descricao="Cadastre o primeiro cliente para abrir sua Ficha Mestra e então vincular casos, documentos e atendimentos."
           acao={
             <Button
               variant="primary"
@@ -206,115 +225,72 @@ export default function Clientes() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
               <tr>
-                <th className="px-4 py-3">Nome / Razão</th>
-                <th className="px-4 py-3">Tipo</th>
-                <th className="px-4 py-3">CPF / CNPJ</th>
-                <th className="px-4 py-3 text-right">Ações</th>
+                <th className="px-4 py-3">Cliente</th>
                 <th className="px-4 py-3">Contato</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Desde</th>
+                <th className="px-4 py-3 text-right">Privacidade</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {(Array.isArray(data.data) ? data.data : []).map((c) => (
                 <tr key={c.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 font-medium text-navy">
+                  <td className="px-4 py-3 min-w-[220px]">
                     <Link
                       to={`/clientes/${c.id}`}
-                      className="hover:text-bronze hover:underline"
+                      className="font-medium text-navy hover:text-bronze hover:underline"
                     >
                       {c.nome || c.razao_social}
                     </Link>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-400">
+                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+                        {c.tipo}
+                      </span>
+                      <span>{c.documento_exibicao || "Documento não informado"}</span>
+                    </div>
                   </td>
-                  <td className="px-4 py-3">{c.tipo}</td>
                   <td className="px-4 py-3 text-slate-500">
-                    {c.documento_exibicao || "—"}
-                  </td>
-                  <td className="px-4 py-3 text-right whitespace-nowrap">
-                    <button
-                      title="Dossiê Digital"
-                      className="text-bronze hover:text-bronze-dark inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5 font-medium text-xs"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        window.location.href = `/clientes/${c.id}`;
-                      }}
-                    >
-                      📋
-                    </button>
-                    {podeCriarAcesso && (
-                      <button
-                        title="Acesso ao Portal"
-                        className="text-navy hover:text-gold inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setAcessoModal(c);
-                          setAcessoForm({
-                            email: c.email || "",
-                            senha_inicial: "",
-                          });
-                        }}
-                      >
-                        <KeyRound size={14} />
-                      </button>
-                    )}
-                    {podeRelatorioLgpd && (
-                      <button
-                        title="Relatório LGPD"
-                        className="text-navy hover:text-gold inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5"
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          try {
-                            const r = await api.get(
-                              `/clients/${c.id}/relatorio-lgpd`,
-                              { responseType: "blob" },
-                            );
-                            const url = URL.createObjectURL(r.data);
-                            const a = document.createElement("a");
-                            a.href = url;
-                            a.download = `lgpd_${c.id.slice(0, 8)}.pdf`;
-                            a.click();
-                            URL.revokeObjectURL(url);
-                          } catch (e: any) {
-                            toast.error(
-                              e.response?.data?.detail ||
-                                "Não foi possível gerar o relatório LGPD",
-                            );
+                    <div className="flex items-center gap-2">
+                      <span>{c.whatsapp || c.telefone || c.email || "—"}</span>
+                      {(c.whatsapp || c.telefone) && (
+                        <button
+                          onClick={() =>
+                            openWhatsApp(
+                              c.whatsapp || c.telefone || "",
+                              c.nome || c.razao_social || "",
+                            )
                           }
-                        }}
-                      >
-                        📄
-                      </button>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-slate-500 flex items-center gap-2">
-                    <span>{c.whatsapp || c.telefone || c.email || "—"}</span>
-                    {(c.whatsapp || c.telefone) && (
-                      <button
-                        onClick={() =>
-                          openWhatsApp(
-                            c.whatsapp || c.telefone || "",
-                            c.nome || "",
-                          )
-                        }
-                        className="inline-flex min-h-[24px] min-w-[24px] items-center justify-center rounded-full bg-green-100 p-1 text-green-600 transition-colors hover:bg-green-200"
-                        title="Abrir WhatsApp"
-                      >
-                        <svg
-                          className="w-3.5 h-3.5"
-                          viewBox="0 0 24 24"
-                          fill="currentColor"
+                          className="inline-flex min-h-[28px] min-w-[28px] items-center justify-center rounded-full bg-green-100 p-1 text-green-600 transition-colors hover:bg-green-200"
+                          title="Abrir WhatsApp"
+                          aria-label={`Abrir WhatsApp de ${c.nome || c.razao_social || "cliente"}`}
                         >
-                          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
-                          <path d="M12 0C5.373 0 0 5.373 0 12c0 2.125.557 4.126 1.535 5.858L.057 23.486a.5.5 0 0 0 .612.612l5.63-1.477A11.95 11.95 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.886 0-3.655-.497-5.191-1.367l-.372-.217-3.858 1.012 1.013-3.842-.228-.384A9.96 9.96 0 0 1 2 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z" />
-                        </svg>
-                      </button>
-                    )}
+                          <svg
+                            className="h-3.5 w-3.5"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                          >
+                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
+                            <path d="M12 0C5.373 0 0 5.373 0 12c0 2.125.557 4.126 1.535 5.858L.057 23.486a.5.5 0 0 0 .612.612l5.63-1.477A11.95 11.95 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.886 0-3.655-.497-5.191-1.367l-.372-.217-3.858 1.012 1.013-3.842-.228-.384A9.96 9.96 0 0 1 2 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge value={c.status} />
                   </td>
-                  <td className="px-4 py-3 text-slate-400">
-                    {fmtDate(c.created_at)}
+                  <td className="px-4 py-3 text-right whitespace-nowrap">
+                    {podeRelatorioLgpd ? (
+                      <button
+                        type="button"
+                        className="btn-ghost px-2 py-1 text-xs"
+                        title="Gerar relatório LGPD"
+                        onClick={() => baixarRelatorioLgpd(String(c.id))}
+                      >
+                        LGPD
+                      </button>
+                    ) : (
+                      <span className="text-slate-300">—</span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -350,12 +326,12 @@ export default function Clientes() {
         open={modal}
         onClose={() => {
           setModal(false);
-          setConflito(null);
+          limparCadastro();
         }}
         title="Novo cliente"
         wide
       >
-        <div className="grid sm:grid-cols-2 gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="label">Tipo</label>
             <select
@@ -417,22 +393,22 @@ export default function Clientes() {
                   />
                   <button
                     type="button"
-                    className="btn-ghost text-xs whitespace-nowrap"
+                    className="btn-ghost whitespace-nowrap text-xs"
                     onClick={async () => {
                       try {
-                        const { data } = await api.get(
+                        const { data: receita } = await api.get(
                           `/utils/cnpj/${(form.cnpj || "").replace(/\D/g, "")}`,
                         );
                         setForm({
                           ...form,
-                          razao_social: data.razao_social,
-                          cep: data.cep,
-                          logradouro: data.logradouro,
-                          numero: data.numero,
-                          bairro: data.bairro,
-                          cidade: data.cidade,
-                          estado: data.estado,
-                          telefone: data.telefone,
+                          razao_social: receita.razao_social,
+                          cep: receita.cep,
+                          logradouro: receita.logradouro,
+                          numero: receita.numero,
+                          bairro: receita.bairro,
+                          cidade: receita.cidade,
+                          estado: receita.estado,
+                          telefone: receita.telefone,
                         });
                       } catch (e: any) {
                         toast.error(
@@ -441,7 +417,7 @@ export default function Clientes() {
                       }
                     }}
                   >
-                    🔍 Receita
+                    Receita
                   </button>
                   <VerificarReceita
                     tipo="cnpj"
@@ -466,38 +442,52 @@ export default function Clientes() {
             <label className="label">E-mail</label>
             <input
               className="input"
+              type="email"
               value={form.email || ""}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
             />
           </div>
+        </div>
 
-          {/* Endereço com busca CEP (ViaCEP) */}
-          <div className="grid grid-cols-3 gap-3">
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <button
+            type="button"
+            className="btn-ghost px-0 text-xs"
+            onClick={() => setMostrarAvancado((valor) => !valor)}
+          >
+            {mostrarAvancado
+              ? "Ocultar informações adicionais"
+              : "Adicionar endereço e dados para conflito"}
+          </button>
+        </div>
+
+        {mostrarAvancado && (
+          <div className="mt-3 grid gap-4 sm:grid-cols-2">
             <div>
               <label className="label">CEP</label>
-              <div className="flex gap-1">
-                <input
-                  className="input flex-1"
-                  value={form.cep || ""}
-                  onChange={(e) => setForm({ ...form, cep: e.target.value })}
-                  onBlur={async () => {
-                    const cep = (form.cep || "").replace(/\D/g, "");
-                    if (cep.length !== 8) return;
-                    try {
-                      const { data } = await api.get(`/utils/cep/${cep}`);
-                      setForm((f: any) => ({
-                        ...f,
-                        logradouro: data.logradouro,
-                        bairro: data.bairro,
-                        cidade: data.cidade,
-                        estado: data.estado,
-                      }));
-                    } catch {}
-                  }}
-                />
-              </div>
+              <input
+                className="input"
+                value={form.cep || ""}
+                onChange={(e) => setForm({ ...form, cep: e.target.value })}
+                onBlur={async () => {
+                  const cep = (form.cep || "").replace(/\D/g, "");
+                  if (cep.length !== 8) return;
+                  try {
+                    const { data: endereco } = await api.get(`/utils/cep/${cep}`);
+                    setForm((f: any) => ({
+                      ...f,
+                      logradouro: endereco.logradouro,
+                      bairro: endereco.bairro,
+                      cidade: endereco.cidade,
+                      estado: endereco.estado,
+                    }));
+                  } catch {
+                    // Endereço é complementar; erro de ViaCEP não impede cadastro.
+                  }
+                }}
+              />
             </div>
-            <div className="col-span-2">
+            <div>
               <label className="label">Logradouro</label>
               <input
                 className="input"
@@ -507,8 +497,6 @@ export default function Clientes() {
                 }
               />
             </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="label">Número</label>
               <input
@@ -517,7 +505,7 @@ export default function Clientes() {
                 onChange={(e) => setForm({ ...form, numero: e.target.value })}
               />
             </div>
-            <div className="col-span-2">
+            <div>
               <label className="label">Bairro</label>
               <input
                 className="input"
@@ -525,21 +513,52 @@ export default function Clientes() {
                 onChange={(e) => setForm({ ...form, bairro: e.target.value })}
               />
             </div>
+            <div>
+              <label className="label">Cidade</label>
+              <input
+                className="input"
+                value={form.cidade || ""}
+                onChange={(e) => setForm({ ...form, cidade: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="label">UF</label>
+              <input
+                className="input"
+                maxLength={2}
+                value={form.estado || ""}
+                onChange={(e) =>
+                  setForm({ ...form, estado: e.target.value.toUpperCase() })
+                }
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="label">
+                Parte contrária (se já conhecida — verificação de conflito)
+              </label>
+              <input
+                className="input"
+                value={form.parte_contraria || ""}
+                onChange={(e) =>
+                  setForm({ ...form, parte_contraria: e.target.value })
+                }
+                onBlur={checarConflito}
+              />
+            </div>
           </div>
-          <div className="sm:col-span-2">
-            <label className="label">
-              Parte contrária (se já conhecida — p/ verificação de conflito)
-            </label>
-            <input
-              className="input"
-              value={form.parte_contraria || ""}
-              onChange={(e) =>
-                setForm({ ...form, parte_contraria: e.target.value })
-              }
-              onBlur={checarConflito}
-            />
-          </div>
-        </div>
+        )}
+
+        {conflitoIndisponivel && (
+          <Alert
+            className="mt-4"
+            variant="warning"
+            title="Conflito não pôde ser verificado"
+          >
+            A consulta de conflito está indisponível neste momento. O cadastro
+            continua permitido, mas a análise de conflito deve ser realizada
+            antes da atuação no caso.
+          </Alert>
+        )}
 
         {conflito && conflito.conflito && conflito.nivel !== "nenhum" && (
           <Alert
@@ -552,22 +571,22 @@ export default function Clientes() {
             }
           >
             <ul className="space-y-1.5">
-              {conflito.matches.map((m, i) => (
+              {conflito.matches.map((match, i) => (
                 <li key={i} className="flex flex-wrap items-center gap-1.5">
-                  <Badge tone={conflito.nivel === "critico" ? "red" : "amber"}>
-                    {m.papel.replace(/_/g, " ")}
+                  <Badge
+                    tone={conflito.nivel === "critico" ? "red" : "amber"}
+                  >
+                    {match.papel.replace(/_/g, " ")}
                   </Badge>
-                  <span>{m.descricao}</span>
-                  {/* Mascarado: só serve para desempatar homônimo quando o
-                      operador já tem o documento em mãos. */}
-                  {m.documento_mascarado && (
+                  <span>{match.descricao}</span>
+                  {match.documento_mascarado && (
                     <span className="font-mono text-xs opacity-70">
-                      {m.documento_mascarado}
+                      {match.documento_mascarado}
                     </span>
                   )}
-                  {m.case_id && (
+                  {match.case_id && (
                     <Link
-                      to={`/casos/${m.case_id}`}
+                      to={`/casos/${match.case_id}`}
                       className="font-medium underline hover:no-underline"
                     >
                       ver caso
@@ -583,89 +602,31 @@ export default function Clientes() {
           </Alert>
         )}
 
-        <div className="flex justify-between mt-5">
+        <div className="mt-5 flex justify-between gap-3">
           <Button
             variant="ghost"
             icon={<ShieldAlert size={15} />}
             disabled={conflitoLoading}
             onClick={async () => {
-              const r = await checarConflito();
-              if (r && r.nivel === "nenhum")
+              const resultado = await checarConflito();
+              if (resultado === "indisponivel") {
+                toast.error("Não foi possível verificar conflito neste momento.");
+              } else if (resultado && resultado.nivel === "nenhum") {
                 toast.success("Nenhum conflito de interesses encontrado.");
-              else if (!r)
+              } else if (!resultado) {
                 toast.info(
                   "Informe nome/documento ou parte contrária para verificar.",
                 );
-              // r.nivel !== "nenhum" → o Alert inline já exibe o conflito
+              }
             }}
           >
             {conflitoLoading ? "Verificando..." : "Verificar conflito"}
           </Button>
           <Button variant="primary" disabled={salvando} onClick={salvar}>
-            {salvando ? "Salvando..." : "Salvar cliente"}
+            {salvando ? "Salvando..." : "Salvar e abrir ficha"}
           </Button>
         </div>
       </Modal>
-      {/* Modal: criar acesso ao Portal do Cliente */}
-      {acessoModal && podeCriarAcesso && (
-        <div className="modal-backdrop" onClick={() => setAcessoModal(null)}>
-          <div
-            className="card p-6 w-full max-w-sm"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="font-semibold text-navy mb-1 flex items-center gap-1.5">
-              <KeyRound size={16} /> Acesso ao Portal
-            </h3>
-            <p className="text-xs text-slate-500 mb-4">
-              {acessoModal.nome || acessoModal.razao_social} — o cliente trocará
-              a senha no 1º login.
-            </p>
-            <div className="space-y-3">
-              <input
-                className="input"
-                type="email"
-                placeholder="E-mail de login"
-                value={acessoForm.email}
-                onChange={(e) =>
-                  setAcessoForm({ ...acessoForm, email: e.target.value })
-                }
-              />
-              <input
-                className="input"
-                type="password"
-                autoComplete="new-password"
-                placeholder="Senha inicial (mín. 10, com letra, número e símbolo)"
-                value={acessoForm.senha_inicial}
-                onChange={(e) =>
-                  setAcessoForm({
-                    ...acessoForm,
-                    senha_inicial: e.target.value,
-                  })
-                }
-              />
-              <button
-                className="btn-primary w-full justify-center"
-                onClick={async () => {
-                  try {
-                    await api.post(
-                      `/clients/${acessoModal.id}/criar-acesso`,
-                      acessoForm,
-                    );
-                    toast.success(
-                      "Acesso criado! Informe o e-mail e a senha inicial ao cliente.",
-                    );
-                    setAcessoModal(null);
-                  } catch (e: any) {
-                    toast.error(e.response?.data?.detail || "Erro");
-                  }
-                }}
-              >
-                Criar acesso
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
