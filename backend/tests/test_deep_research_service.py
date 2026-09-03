@@ -30,10 +30,10 @@ async def test_decompor_tese_fallback_quando_gateway_falha(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_executar_deep_research_agrega_rag_precedentes_e_log(monkeypatch):
-    async def fake_decompor(tese, fatos, area, max_subquestoes=5):
+    async def fake_decompor(tese, fatos, area, max_subquestoes=5, **kw):
         return ["cabimento", "provas"]
 
-    async def fake_rag(db, consulta, limite=4, scope_client_id=None):
+    async def fake_rag(db, consulta, limite=4, scope_client_id=None, **kw):
         return [{
             "chunk_id": f"c-{consulta[:4]}",
             "titulo": "Fonte interna",
