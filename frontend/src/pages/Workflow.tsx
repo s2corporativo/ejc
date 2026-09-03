@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "../components/Toast";
+import { mensagemErroHttp } from "../lib/iaErro";
 import { GitBranch, Trash2, Plus, Clock } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner } from "../components/UI";
@@ -81,8 +82,8 @@ export default function Workflow() {
       setShow(false);
       setLoading(true);
       load();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Falha ao criar workflow");
+    } catch (err) {
+      toast.error(mensagemErroHttp(err, "Falha ao criar workflow"));
     } finally {
       setSaving(false);
     }
@@ -90,8 +91,13 @@ export default function Workflow() {
 
   const excluir = async (id: string) => {
     if (!confirm("Arquivar este workflow?")) return;
-    await api.delete(`/workflow/templates/${id}`);
-    setTpls((p) => p.filter((t) => t.id !== id));
+    try {
+      await api.delete(`/workflow/templates/${id}`);
+      setTpls((p) => p.filter((t) => t.id !== id));
+      toast.success("Workflow arquivado");
+    } catch (err) {
+      toast.error(mensagemErroHttp(err, "Falha ao arquivar workflow"));
+    }
   };
 
   if (loading)

@@ -142,11 +142,18 @@ async def executar_backup_background_exclusivo(
         }
 
 
-async def job_backup_drive_exclusivo() -> None:
-    """Job APScheduler canônico; gate BACKUP_ENABLED permanece centralizado."""
+async def job_backup_drive_exclusivo() -> dict[str, Any] | None:
+    """Job APScheduler canônico; gate BACKUP_ENABLED permanece centralizado.
+
+    DEVOLVE o resultado estruturado (ou ``None`` quando o gate está desligado).
+    O motor já converte falha em ``{"ok": False, "status": "erro"}`` em vez de
+    exceção: sem devolver esse dicionário, quem monitora o job só enxerga
+    "retornou sem exceção" e registraria SUCESSO num backup que falhou.
+    """
     if not settings.BACKUP_ENABLED:
         logger.debug("[Backup] BACKUP_ENABLED=false — job diário pulado")
-        return
+        return None
     result = await executar_backup_background_exclusivo(origem="agendado")
     if result.get("status") == "em_execucao":
         logger.info("[Backup] job diário não iniciou: outro backup já estava em curso")
+    return result

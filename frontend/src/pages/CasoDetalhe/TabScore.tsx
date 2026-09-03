@@ -1,10 +1,18 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "../../components/Toast";
 import api from "../../lib/api";
-import { fmtDate } from "../../components/UI";
+import { ErrorState, Spinner, fmtDate } from "../../components/UI";
+import { asList } from "../../lib/list";
+import { mensagemErroHttp } from "../../lib/iaErro";
+import { useCarregar } from "../../lib/useCarregar";
 
 export default function TabScore({ caseId }: { caseId: string }) {
-  const [scores, setScores] = useState<any[]>([]);
+  const carga = useCarregar<any[]>(
+    () => api.get(`/cases/${caseId}/score-juridico`).then((r) => asList(r.data)),
+    [caseId],
+    { fallbackErro: "Não foi possível carregar o score jurídico." },
+  );
+  const scores = carga.dados ?? [];
   const [calc, setCalc] = useState(false);
   const DIMS = [
     { k: "pedido", l: "Pedido", max: 15 },
@@ -16,27 +24,32 @@ export default function TabScore({ caseId }: { caseId: string }) {
     { k: "conformidade_formal", l: "Conformidade Formal", max: 5 },
   ];
 
-  useEffect(() => {
-    api
-      .get(`/cases/${caseId}/score-juridico`)
-      .then((r) => setScores(r.data))
-      .catch(() => {});
-  }, [caseId]);
-
   const calcular = async () => {
     setCalc(true);
     try {
       await api.post(`/cases/${caseId}/score-juridico/calcular`);
-      api
-        .get(`/cases/${caseId}/score-juridico`)
-        .then((r) => setScores(r.data))
-        .catch(() => {});
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha no cálculo");
+      carga.recarregar();
+    } catch (e) {
+      toast.error(mensagemErroHttp(e, "Falha no cálculo"));
     } finally {
       setCalc(false);
     }
   };
+
+  if (carga.estado === "carregando" && !carga.dados)
+    return (
+      <div className="flex justify-center py-10">
+        <Spinner />
+      </div>
+    );
+  if (carga.estado === "falhou")
+    return (
+      <ErrorState
+        title="Não foi possível carregar o score jurídico"
+        message={carga.erro ?? undefined}
+        onRetry={carga.recarregar}
+      />
+    );
 
   const top = scores[0];
   const getBarColor = (pct: number) =>
