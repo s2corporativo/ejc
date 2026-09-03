@@ -135,6 +135,21 @@ class Settings(BaseSettings):
     AUDIO_TRANSCRIPTION_DPA_APPROVED: bool = False
     GROQ_TRANSCRIPTION_MODEL: str = "whisper-large-v3"
     AI_ENABLED: bool = True
+    # Perfil de IA (S3 da análise E2E 03/09/2026): UMA variável que deriva os
+    # kill-switches e a prioridade, para código, .env.example e compose nunca
+    # divergirem. Valores: "externo" | "local" | "hibrido" | "desligado" | ""
+    # (vazio = flags manuais abaixo, comportamento histórico). Ver
+    # _aplicar_perfil_ia.
+    AI_PROFILE: str = ""
+    # APScheduler: janela de tolerância para disparo perdido (restart no
+    # horário do job). Sem isso o job do dia simplesmente não roda e nada
+    # reagenda (F4 da análise E2E 03/09/2026).
+    SCHEDULER_MISFIRE_GRACE_SECONDS: int = 3600
+    # Poda de rotas por telemetria (S4): CSV de "METODO /api/caminho" (aceita
+    # sufixo "*" como prefixo) que passam a responder com `Deprecation: true` e
+    # `Sunset` (API_ROTAS_SUNSET, data HTTP) antes da remoção.
+    API_ROTAS_DEPRECIADAS: str = ""
+    API_ROTAS_SUNSET: str = ""
 
     # Documento grande: leitura em blocos + síntese, sem truncamento silencioso.
     # O teto é propositalmente explícito para respeitar TPM/contexto do provedor.
@@ -998,6 +1013,49 @@ class Settings(BaseSettings):
             )
             if not valor
         ]
+
+    @model_validator(mode="after")
+    def _aplicar_perfil_ia(self):
+        """AI_PROFILE deriva as flags de provedor (fonte única de configuração).
+
+        Roda ANTES de _validar_seguranca_producao (ordem de definição), para que
+        a validação de produção enxergue as flags já derivadas. Vazio mantém o
+        comportamento histórico (flags manuais)."""
+        perfil = (self.AI_PROFILE or "").strip().lower()
+        if not perfil:
+            return self
+        if perfil == "desligado":
+            self.AI_ENABLED = False
+        elif perfil == "local":
+            self.AI_EXTERNAL_PROVIDERS_ALLOWED = False
+            self.OLLAMA_ENABLED = True
+            self.ANTHROPIC_ENABLED = False
+            self.GROQ_ENABLED = False
+            self.MARITACA_ENABLED = False
+            self.AI_PROVIDER_PRIORITY = "ollama"
+        elif perfil == "externo":
+            self.AI_EXTERNAL_PROVIDERS_ALLOWED = True
+            self.OLLAMA_ENABLED = False
+            self.ANTHROPIC_ENABLED = True
+            self.GROQ_ENABLED = True
+            # Maritaca só entra se o operador a ligou explicitamente (não é
+            # soberana por default — ver comentário de MARITACA_ENABLED).
+            self.AI_PROVIDER_PRIORITY = (
+                "anthropic,maritaca,groq" if self.MARITACA_ENABLED else "anthropic,groq"
+            )
+        elif perfil == "hibrido":
+            self.AI_EXTERNAL_PROVIDERS_ALLOWED = True
+            self.OLLAMA_ENABLED = True
+            self.ANTHROPIC_ENABLED = True
+            self.GROQ_ENABLED = True
+            self.AI_PROVIDER_PRIORITY = "anthropic,maritaca,groq,ollama"
+        else:
+            raise ValueError(
+                f"AI_PROFILE inválido: {self.AI_PROFILE!r} "
+                "(use externo | local | hibrido | desligado, ou deixe vazio)"
+            )
+        self.AI_PROFILE = perfil
+        return self
 
     @model_validator(mode="after")
     def _validar_seguranca_producao(self):

@@ -36,7 +36,18 @@ _scheduler: AsyncIOScheduler | None = None
 def get_scheduler() -> AsyncIOScheduler:
     global _scheduler
     if _scheduler is None:
-        _scheduler = AsyncIOScheduler(timezone="America/Sao_Paulo")
+        # misfire_grace_time: um restart no horário do job não pode apagar a
+        # execução do dia em silêncio (F4 da análise E2E 03/09/2026). O
+        # default do APScheduler é 1 s; aqui a janela vem de Settings.
+        _scheduler = AsyncIOScheduler(
+            timezone="America/Sao_Paulo",
+            job_defaults={
+                "misfire_grace_time": int(
+                    getattr(settings, "SCHEDULER_MISFIRE_GRACE_SECONDS", 3600)
+                ),
+                "coalesce": True,
+            },
+        )
     return _scheduler
 
 
@@ -1227,6 +1238,25 @@ async def _reembedar_rag_orfaos():
         await reembedar(batch_size=int(getattr(settings, "RAG_AUTO_REEMBED_BATCH", 20)))
     except Exception as e:  # nunca derruba o scheduler
         logger.warning("[Scheduler] auto-reembed falhou (será retentado): %s", str(e)[:200])
+        from app.services.heartbeat_service import JOB_REEMBED_RAG
+        await _bater_ponto(JOB_REEMBED_RAG, "erro", str(e)[:200])
+        return
+    from app.services.heartbeat_service import JOB_REEMBED_RAG
+    await _bater_ponto(JOB_REEMBED_RAG, "ok")
+
+
+async def _job_backup_drive_monitorado():
+    """Envelope do backup com heartbeat por RESULTADO (F4): o job canônico
+    continua em backup_execution_service; aqui só se registra ok/erro."""
+    from app.services.backup_execution_service import job_backup_drive_exclusivo
+    from app.services.heartbeat_service import JOB_BACKUP_DRIVE
+    try:
+        await job_backup_drive_exclusivo()
+    except Exception as e:
+        await _bater_ponto(JOB_BACKUP_DRIVE, "erro", str(e)[:200])
+        raise
+    detalhe = None if settings.BACKUP_ENABLED else "BACKUP_ENABLED=false — pulado"
+    await _bater_ponto(JOB_BACKUP_DRIVE, "ok", detalhe)
 
 
 def start_scheduler():
@@ -1314,10 +1344,9 @@ def start_scheduler():
     # própria timezone. A execução canônica é job_backup_drive_exclusivo
     # (mutex global + trilha de auditoria; origem "agendado").
     from app.services.backup_service import hora_backup_utc
-    from app.services.backup_execution_service import job_backup_drive_exclusivo
     _bk_hora, _bk_min = hora_backup_utc()
     s.add_job(
-        job_backup_drive_exclusivo,
+        _job_backup_drive_monitorado,
         CronTrigger(hour=_bk_hora, minute=_bk_min, timezone="UTC"),
         id="backup_drive", replace_existing=True,
     )
