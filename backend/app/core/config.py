@@ -1075,39 +1075,63 @@ class Settings(BaseSettings):
         a validação de produção enxergue as flags já derivadas. Vazio mantém o
         comportamento histórico (flags manuais).
 
-        PRECEDÊNCIA (revisão de segurança 03/09/2026, P2-1): flag definida
-        EXPLICITAMENTE pelo operador (env, .env ou construtor) SEMPRE vence o
-        perfil. Sem isso, `AI_PROFILE=externo` no compose desfazia em silêncio
-        um `AI_EXTERNAL_PROVIDERS_ALLOWED=false` aplicado à mão durante um
-        incidente de LGPD — kill-switch documentado voltando a `true` sem log,
-        sem aviso e sem falha de boot. O perfil só preenche o que não foi dito.
-        Quando há conflito, o perfil cede e o boot registra WARNING nomeando a
-        flag (nunca o valor), para que a divergência apareça no log."""
+        PRECEDÊNCIA — assimétrica, na direção do menor risco (revisão de
+        segurança 03/09/2026, P2-1, corrigida na revisão de 03/09/2026):
+
+        * Derivação PERMISSIVA (liga provedor, libera saída externa, ordena a
+          cadeia) **cede** à flag explícita do operador. Sem isso,
+          `AI_PROFILE=externo` no compose desfazia em silêncio um
+          `AI_EXTERNAL_PROVIDERS_ALLOWED=false` aplicado à mão durante um
+          incidente de LGPD — kill-switch documentado voltando a `true` sem
+          log, sem aviso e sem falha de boot.
+        * Derivação RESTRITIVA (desliga a IA ou um provedor EXTERNO) **vence**
+          a flag explícita. `AI_PROFILE=desligado` é kill-switch: se um
+          `AI_ENABLED=true` esquecido no `.env` o anulasse, o perfil que existe
+          justamente para parar a IA não pararia nada — e o operador leria no
+          painel que a IA está desligada enquanto ela segue chamando provedor.
+
+        Nos dois casos o conflito é registrado em WARNING nomeando a flag
+        (nunca o valor), dizendo qual lado prevaleceu."""
         perfil = (self.AI_PROFILE or "").strip().lower()
         if not perfil:
             return self
 
         explicitas = set(self.model_fields_set or ())
 
-        def _derivar(campo: str, valor):
-            """Aplica o valor do perfil só se o operador não tiver definido o campo."""
-            if campo in explicitas:
-                if getattr(self, campo) != valor:
-                    logging.getLogger("ejc").warning(
-                        "[Config] AI_PROFILE=%s queria %s derivado, mas o valor "
-                        "explícito do ambiente prevalece.", perfil, campo,
-                    )
+        def _derivar(campo: str, valor, *, restritivo: bool = False):
+            """Aplica o valor do perfil.
+
+            `restritivo=True` marca a derivação que REDUZ superfície (desliga a
+            IA ou um provedor externo): essa vence o valor explícito, porque é
+            o lado seguro do conflito. As demais preenchem apenas o que o
+            operador não disse.
+            """
+            if campo not in explicitas:
+                setattr(self, campo, valor)
                 return
-            setattr(self, campo, valor)
+            if getattr(self, campo) == valor:
+                return
+            log = logging.getLogger("ejc")
+            if restritivo:
+                setattr(self, campo, valor)
+                log.warning(
+                    "[Config] AI_PROFILE=%s é restritivo em %s e PREVALECE sobre "
+                    "o valor explícito do ambiente.", perfil, campo,
+                )
+            else:
+                log.warning(
+                    "[Config] AI_PROFILE=%s queria %s derivado, mas o valor "
+                    "explícito do ambiente prevalece.", perfil, campo,
+                )
 
         if perfil == "desligado":
-            _derivar("AI_ENABLED", False)
+            _derivar("AI_ENABLED", False, restritivo=True)
         elif perfil == "local":
-            _derivar("AI_EXTERNAL_PROVIDERS_ALLOWED", False)
+            _derivar("AI_EXTERNAL_PROVIDERS_ALLOWED", False, restritivo=True)
             _derivar("OLLAMA_ENABLED", True)
-            _derivar("ANTHROPIC_ENABLED", False)
-            _derivar("GROQ_ENABLED", False)
-            _derivar("MARITACA_ENABLED", False)
+            _derivar("ANTHROPIC_ENABLED", False, restritivo=True)
+            _derivar("GROQ_ENABLED", False, restritivo=True)
+            _derivar("MARITACA_ENABLED", False, restritivo=True)
             _derivar("AI_PROVIDER_PRIORITY", "ollama")
         elif perfil == "externo":
             _derivar("AI_EXTERNAL_PROVIDERS_ALLOWED", True)

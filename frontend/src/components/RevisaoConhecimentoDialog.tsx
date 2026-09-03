@@ -3,10 +3,10 @@
 // precisa VER o documento e registrar notas. O diálogo carrega
 // `GET /rag/governanca/docs/{id}` (metadados, autoridade, situação, citação,
 // qualidade e os campos textuais de `extra`), exige `notas` e registra a
-// decisão pelo endpoint audit-logado `POST /rag/governanca/docs/{id}/revisar`.
-// Quando o chamador informa `confidence_level`, o PATCH legado de curadoria
-// (`/ia-governanca/rag-curadoria/{id}`) ajusta só a confiança — nunca é ele
-// que "aprova".
+// decisão pelo endpoint audit-logado `POST /rag/governanca/docs/{id}/revisar`,
+// que grava decisão, notas e confiança na MESMA transação. Antes eram duas
+// chamadas (POST revisar + PATCH de curadoria): falhar a segunda deixava o
+// documento aprovado sem nível de confiança, sem aviso a ninguém.
 import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
 import api from "../lib/api";
@@ -44,6 +44,9 @@ export type RevisaoConhecimentoProps = {
 export const ERRO_NOTAS_OBRIGATORIAS =
   "Registre as notas da revisão: o que foi conferido e por que o documento pode (ou não) alimentar a IA.";
 
+export const ERRO_SEM_TEXTO_PARA_APROVAR =
+  "Este documento não tem trecho textual nos metadados. Confirme que conferiu o original na fonte indicada antes de liberá-lo para a IA.";
+
 const CAMPOS_TEXTO_EXTRA: Array<[string, string]> = [
   ["ementa", "Ementa"],
   ["tese_extraida", "Tese extraída"],
@@ -74,8 +77,9 @@ function citacaoTexto(citacao: DocumentoRevisao["citacao"]): string {
 }
 
 /**
- * Registra a decisão: POST revisar (audit-logado) e, se pedido, PATCH de
- * confiança. Exportada para teste e para reuso fora do diálogo.
+ * Registra a decisão numa ÚNICA chamada audit-logada: decisão, notas e
+ * confiança entram na mesma transação do backend. Exportada para teste e para
+ * reuso fora do diálogo.
  */
 export async function registrarRevisaoConhecimento(args: {
   docId: string;
@@ -83,18 +87,13 @@ export async function registrarRevisaoConhecimento(args: {
   notas: string;
   confidenceLevel?: "alta" | "media" | "baixa";
 }) {
-  const aprovado = args.decisao === "aprovar";
   await api.post(`/rag/governanca/docs/${args.docId}/revisar`, {
-    aprovado,
+    aprovado: args.decisao === "aprovar",
     notas: args.notas,
+    ...(args.confidenceLevel
+      ? { confidence_level: args.confidenceLevel }
+      : {}),
   });
-  if (args.confidenceLevel) {
-    await api.patch(`/ia-governanca/rag-curadoria/${args.docId}`, {
-      confidence_level: args.confidenceLevel,
-      rag_status: aprovado ? "aprovado" : "recusado",
-      notas: args.notas,
-    });
-  }
 }
 
 export function RevisaoConhecimentoDialog({
@@ -110,6 +109,10 @@ export function RevisaoConhecimentoDialog({
   const [notas, setNotas] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+  // Aprovar às cegas é o defeito que este diálogo existe para impedir: sem
+  // trecho textual nos metadados, o revisor precisa declarar que conferiu o
+  // original antes de o documento alimentar a IA.
+  const [conferiuOriginal, setConferiuOriginal] = useState(false);
 
   useEffect(() => {
     if (!docId) {
@@ -117,8 +120,13 @@ export function RevisaoConhecimentoDialog({
       setNotas("");
       setErro(null);
       setErroCarga(null);
+      setConferiuOriginal(false);
       return;
     }
+    // Documento novo: nenhum resquício da revisão anterior.
+    setNotas("");
+    setErro(null);
+    setConferiuOriginal(false);
     let ativo = true;
     setCarregando(true);
     setErroCarga(null);
@@ -141,11 +149,21 @@ export function RevisaoConhecimentoDialog({
     };
   }, [docId]);
 
+  const aprovar = decisao === "aprovar";
+  const trechos = trechosDoExtra(doc?.extra);
+  const citacao = citacaoTexto(doc?.citacao);
+  const semTextoVisivel = Boolean(doc) && trechos.length === 0 && !citacao;
+  const exigeConferencia = aprovar && semTextoVisivel;
+
   const confirmar = async () => {
     if (!docId) return;
     const texto = notas.trim();
     if (!texto) {
       setErro(ERRO_NOTAS_OBRIGATORIAS);
+      return;
+    }
+    if (exigeConferencia && !conferiuOriginal) {
+      setErro(ERRO_SEM_TEXTO_PARA_APROVAR);
       return;
     }
     setEnviando(true);
@@ -158,6 +176,7 @@ export function RevisaoConhecimentoDialog({
         confidenceLevel,
       });
       setNotas("");
+      setConferiuOriginal(false);
       onConcluido();
     } catch (e) {
       setErro(mensagemErroHttp(e, "Não foi possível registrar a revisão."));
@@ -165,10 +184,6 @@ export function RevisaoConhecimentoDialog({
       setEnviando(false);
     }
   };
-
-  const aprovar = decisao === "aprovar";
-  const trechos = trechosDoExtra(doc?.extra);
-  const citacao = citacaoTexto(doc?.citacao);
 
   return (
     <Modal
@@ -194,7 +209,16 @@ export function RevisaoConhecimentoDialog({
             type="button"
             className={`${aprovar ? "btn-primary" : "btn-danger"} inline-flex items-center gap-1 text-sm`}
             onClick={() => void confirmar()}
-            disabled={enviando || carregando || Boolean(erroCarga)}
+            // Notas em branco continuam sendo recusadas no clique, com a
+            // mensagem que explica o motivo. A conferência do original, ao
+            // contrário, tem afordância própria (o checkbox logo acima), então
+            // ali o botão fica desabilitado até a declaração ser marcada.
+            disabled={
+              enviando ||
+              carregando ||
+              Boolean(erroCarga) ||
+              (exigeConferencia && !conferiuOriginal)
+            }
           >
             {aprovar ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
             {enviando
@@ -307,6 +331,20 @@ export function RevisaoConhecimentoDialog({
                 Este documento não tem trecho textual nos metadados — confira o
                 original pela fonte indicada acima antes de decidir.
               </p>
+            )}
+            {exigeConferencia && (
+              <label className="flex items-start gap-2 rounded-lg border border-warn-200 bg-warn-50 p-2 text-xs text-warn-800">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={conferiuOriginal}
+                  onChange={(e) => setConferiuOriginal(e.target.checked)}
+                />
+                <span>
+                  Conferi o documento original na fonte indicada e confirmo que
+                  ele pode alimentar a IA.
+                </span>
+              </label>
             )}
           </>
         )}

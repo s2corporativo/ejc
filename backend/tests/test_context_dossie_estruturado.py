@@ -234,3 +234,48 @@ def test_titulo_com_quebra_de_linha_nao_forja_cabecalho_de_secao():
     # O teto corta campo longo sem deixar quebra de linha passar.
     assert len(cb._uma_linha("a" * 500, 200)) == 200
     assert cb._uma_linha(None) == ""
+
+
+# ── Revisão automatizada do PR (03/09/2026) ─────────────────────────────────
+# Os chunks de comunicação processual iam para o PROMPT (seção "intimacoes")
+# mas não entravam em `ctx.fontes`, que é a lista declarada ao gate de citações
+# e à tela: a intimação usada na resposta virava citação sem fonte declarada.
+async def test_intimacoes_entram_em_ctx_fontes(_mocks):
+    db = _FakeDB(documentos=_docs(), prazos=_prazos(), teses=_teses())
+    ctx = await cb.montar_contexto(db, mensagem="qual o prazo da intimação?",
+                                   case_id="caso-A", user=SimpleNamespace(id="u1"))
+
+    ids = [f.get("chunk_id") for f in ctx.fontes]
+    assert "c1" in ids, "chunk de comunicação processual precisa ser fonte declarada"
+    assert "c2" in ids, "a busca RAG geral continua declarada"
+    assert len(ids) == len(set(ids)), "sem duplicata quando as duas buscas coincidem"
+
+
+async def test_intimacoes_declaradas_mesmo_com_rag_geral_indisponivel(monkeypatch, _mocks):
+    async def _buscar(_db, consulta, **kw):
+        if kw.get("categorias") == ["comunicacao_processual"]:
+            return [{"titulo": "DJEN", "categoria": "comunicacao_processual",
+                     "conteudo": "Intime-se.", "chunk_id": "c1"}]
+        raise RuntimeError("pgvector fora")
+
+    monkeypatch.setattr(ai_service, "buscar_contexto_rag", _buscar)
+    db = _FakeDB(documentos=_docs(), prazos=_prazos(), teses=_teses())
+    ctx = await cb.montar_contexto(db, mensagem="pergunta", case_id="caso-A",
+                                   user=SimpleNamespace(id="u1"))
+
+    assert [f.get("chunk_id") for f in ctx.fontes] == ["c1"]
+    assert any("RAG indisponível" in a for a in ctx.avisos)
+
+
+async def test_chunk_repetido_nas_duas_buscas_nao_duplica(monkeypatch, _mocks):
+    repetido = {"titulo": "DJEN", "categoria": "comunicacao_processual",
+                "conteudo": "Intime-se.", "chunk_id": "c1"}
+
+    async def _buscar(_db, consulta, **kw):
+        return [dict(repetido)]
+
+    monkeypatch.setattr(ai_service, "buscar_contexto_rag", _buscar)
+    db = _FakeDB(documentos=_docs(), prazos=_prazos(), teses=_teses())
+    ctx = await cb.montar_contexto(db, mensagem="pergunta", case_id="caso-A",
+                                   user=SimpleNamespace(id="u1"))
+    assert [f.get("chunk_id") for f in ctx.fontes] == ["c1"]

@@ -85,13 +85,6 @@ class APIVersionCompatibilityMiddleware:
         async def send_with_headers(message: Message) -> None:
             if message["type"] == "http.response.start":
                 headers = list(message.get("headers", []))
-                if depreciada and not legacy_request:
-                    from app.core.config import get_settings
-
-                    headers.append((b"deprecation", b"true"))
-                    sunset = str(getattr(get_settings(), "API_ROTAS_SUNSET", "") or "")
-                    if sunset:
-                        headers.append((b"sunset", sunset.encode("utf-8")))
                 if canonical_request:
                     headers.append((b"content-location", original_path.encode("utf-8")))
                     headers.append((b"x-ejc-api-version", b"1"))
@@ -99,11 +92,24 @@ class APIVersionCompatibilityMiddleware:
                     successor = f"/api/v1{original_path[len('/api'):]}"
                     headers.extend(
                         [
-                            (b"deprecation", b"true"),
                             (b"link", f'<{successor}>; rel="successor-version"'.encode("utf-8")),
                             (b"x-ejc-api-version", b"legacy"),
                         ]
                     )
+                # `Deprecation` UMA vez: o prefixo legado já é depreciado por si;
+                # a rota listada em API_ROTAS_DEPRECIADAS também é.
+                if depreciada or legacy_request:
+                    headers.append((b"deprecation", b"true"))
+                # `Sunset` acompanha a rota, não a superfície. Emiti-la só no
+                # caminho canônico escondia a data justamente de quem ainda
+                # chama pelo prefixo legado — o cliente que mais precisa migrar
+                # (achado da revisão automatizada do PR, 03/09/2026).
+                if depreciada:
+                    from app.core.config import get_settings
+
+                    sunset = str(getattr(get_settings(), "API_ROTAS_SUNSET", "") or "")
+                    if sunset:
+                        headers.append((b"sunset", sunset.encode("utf-8")))
                 message = {**message, "headers": headers}
             await send(message)
 

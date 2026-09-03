@@ -1119,6 +1119,13 @@ async def registrar_log_resposta(
     return await registrar_ai_log(
         db, user_id=user_id, tipo_uso=tipo_uso, case_id=case_id,
         prompt_sanitizado=(prompt_sanitizado or "")[:8000], pii_removida=pii_removida,
+        # `resp.texto` é o texto JÁ REIDRATADO (marcadores trocados de volta
+        # pelos nomes reais) — é o que o usuário lê. A barreira de auditoria
+        # está uma camada abaixo, no `@validates("resposta")` de AILog, que
+        # pseudonimiza antes de persistir preservando citação jurisprudencial
+        # completa e marcador estrutural. Travado em
+        # tests/test_ailog_pseudonimiza_resposta_reidratada.py: trocar este
+        # caminho por INSERT em lote (sem ORM) fura a barreira em silêncio.
         resposta=(getattr(resp, "texto", None) or "")[:8000],
         modelo=(f"{provedor}/{modelo}" if provedor else modelo)[:50],
         fontes_rag="\n".join(trilha) or None,

@@ -6,7 +6,7 @@
 // componente extrai o padrão que já existia em `pages/Pecas.tsx` para que
 // IA Jurídica (`PATCH /ai/logs/{id}/hitl`) e IA Defensiva
 // (`PATCH /ia-defensiva/historico/{id}/status`) usem o mesmo caminho.
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Modal } from "./UI";
 
@@ -93,6 +93,16 @@ export function OverrideCitacoesDialog({
 }) {
   const [justificativa, setJustificativa] = useState("");
   const [erroLocal, setErroLocal] = useState<string | null>(null);
+
+  // O componente não desmonta entre um bloqueio e outro (o Modal só troca
+  // `open`): sem esta limpeza, a justificativa escrita para UMA citação
+  // bloqueada reaparecia pré-preenchida no override do PRÓXIMO documento — e
+  // seria gravada em auditoria como a justificativa daquele outro caso. O
+  // mesmo vale para o erro de validação, que ficava visível no diálogo novo.
+  useEffect(() => {
+    setJustificativa("");
+    setErroLocal(null);
+  }, [bloqueio]);
 
   const confirmar = () => {
     const texto = justificativa.trim();

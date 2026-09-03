@@ -2,8 +2,10 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
   ERRO_JUSTIFICATIVA_OBRIGATORIA,
+  OverrideCitacoesDialog,
   bloqueioDeCitacoes,
   useOverrideCitacoes,
+  type BloqueioCitacoes,
   type CamposOverride,
 } from "./OverrideCitacoesDialog";
 
@@ -126,5 +128,55 @@ describe("useOverrideCitacoes (E5)", () => {
     fireEvent.click(screen.getByText("marcar"));
     await waitFor(() => expect(capturado).not.toBeNull());
     expect(screen.queryByText("Citações não confirmadas")).toBeNull();
+  });
+});
+
+// ── Revisão automatizada do PR (03/09/2026) ─────────────────────────────────
+// O diálogo não desmonta entre um bloqueio e outro: sem limpar o estado, a
+// justificativa escrita para UMA citação bloqueada reaparecia no override do
+// PRÓXIMO caso e seria gravada em auditoria como justificativa daquele.
+describe("limpeza de estado entre bloqueios", () => {
+  function Palco({ bloqueio }: { bloqueio: BloqueioCitacoes | null }) {
+    return (
+      <OverrideCitacoesDialog
+        bloqueio={bloqueio}
+        onCancelar={() => {}}
+        onConfirmar={() => {}}
+      />
+    );
+  }
+
+  const bloqueio = (mensagem: string): BloqueioCitacoes => ({
+    mensagem,
+    motivos: [],
+    bloqueantes: [],
+  });
+
+  it("zera a justificativa quando o bloqueio muda", () => {
+    const { rerender } = render(<Palco bloqueio={bloqueio("primeiro")} />);
+    const campo = () =>
+      screen.getByLabelText("Justificativa do override") as HTMLTextAreaElement;
+
+    fireEvent.change(campo(), {
+      target: { value: "conferido no TJMG em 01/09" },
+    });
+    expect(campo().value).toBe("conferido no TJMG em 01/09");
+
+    rerender(<Palco bloqueio={bloqueio("segundo")} />);
+    expect(campo().value).toBe("");
+  });
+
+  it("zera o erro de validação ao fechar e reabrir", () => {
+    const { rerender } = render(<Palco bloqueio={bloqueio("primeiro")} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: /Aprovar com justificativa/ }),
+    );
+    expect(screen.getByRole("alert").textContent).toContain(
+      ERRO_JUSTIFICATIVA_OBRIGATORIA,
+    );
+
+    rerender(<Palco bloqueio={null} />);
+    rerender(<Palco bloqueio={bloqueio("segundo")} />);
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

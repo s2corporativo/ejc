@@ -71,6 +71,29 @@ def _extrair_variaveis(conteudo: str) -> list[str]:
 def _pode_editar(user: User) -> bool:
     return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["advogado"]
 
+def _visivel_para(cu: User):
+    """Cláusula de visibilidade: público OU do próprio autor.
+
+    `publico=False` é opt-OUT explícito do compartilhamento com o escritório
+    (a tela cria prompt privado por padrão). Antes, o filtro só existia para
+    quem estava ABAIXO de estagiário: qualquer membro da equipe lia — e
+    executava — o prompt privado de qualquer colega, esvaziando a promessa de
+    privacidade da própria tela (achado da revisão automatizada do PR,
+    03/09/2026).
+
+    Órfão (`created_by IS NULL`, efeito do ON DELETE SET NULL quando o autor é
+    removido) fica visível apenas de sócio para cima: tratá-lo como público
+    entregaria a todos o prompt privado de quem saiu do escritório, e escondê-lo
+    de todos o tornaria irrecuperável sem acesso direto ao banco.
+    """
+    clausulas = [
+        PromptJuridico.publico.is_(True),
+        PromptJuridico.created_by == cu.id,
+    ]
+    if ROLE_LEVEL.get(cu.role.value, 0) >= ROLE_LEVEL["socio"]:
+        clausulas.append(PromptJuridico.created_by.is_(None))
+    return or_(*clausulas)
+
 # ── Clamp de task_type (P0.1) ─────────────────────────────────────────────────
 # req.task_type é INPUT LIVRE do request. Não confiamos nele: só passa ao
 # gateway se pertencer ao vocabulário conhecido (TASK_ROUTING + TASK_ALIASES);
@@ -115,9 +138,11 @@ async def listar_prompts(
 ):
     q = select(PromptJuridico).where(PromptJuridico.deleted_at.is_(None))
 
-    # Usuários não-staff só veem prompts públicos
+    # Usuários não-staff só veem prompts públicos — nem os próprios.
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
         q = q.where(PromptJuridico.publico.is_(True))
+    else:
+        q = q.where(_visivel_para(cu))
 
     if categoria:
         q = q.where(PromptJuridico.categoria == categoria)
@@ -167,6 +192,9 @@ async def obter_prompt(
         select(PromptJuridico).where(
             PromptJuridico.id == prompt_id,
             PromptJuridico.deleted_at.is_(None),
+            # Prompt privado de outro autor responde 404 — não confirma nem
+            # nega a existência (mesma regra da listagem).
+            _visivel_para(cu),
         )
     )).scalar_one_or_none()
     if not p:
@@ -187,6 +215,7 @@ async def atualizar_prompt(
         select(PromptJuridico).where(
             PromptJuridico.id == prompt_id,
             PromptJuridico.deleted_at.is_(None),
+            _visivel_para(cu),   # editar prompt privado alheio é o mesmo vazamento
         )
     )).scalar_one_or_none()
     if not p:
@@ -245,6 +274,9 @@ async def executar_prompt(
         select(PromptJuridico).where(
             PromptJuridico.id == prompt_id,
             PromptJuridico.deleted_at.is_(None),
+            # Executar expõe o CONTEÚDO do prompt na resposta: a mesma regra de
+            # visibilidade da leitura precisa valer aqui.
+            _visivel_para(cu),
         )
     )).scalar_one_or_none()
     if not p:

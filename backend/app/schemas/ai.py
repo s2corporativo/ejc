@@ -112,3 +112,9 @@ class RespostaCapacidadeIA(BaseModel):
     alertas: List[str] = Field(default_factory=list)
     custo_estimado_brl: float = 0.0
     tokens: TokensIA = Field(default_factory=TokensIA)
+    # Relatório da crítica adversarial quando a capacidade a executa. É o mesmo
+    # dado que `hitl_policy.aplicar()` usa para decidir o carimbo de revisão:
+    # ausente do schema, o `response_model` o descartava e a tela exibia
+    # "revisão obrigatória" sem poder mostrar o motivo (achado da revisão
+    # automatizada do PR, 03/09/2026). `None` = a capacidade não a executou.
+    critica_adversarial: Optional[dict] = None

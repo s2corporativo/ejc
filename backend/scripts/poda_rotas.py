@@ -10,6 +10,13 @@ produz o relatório de candidatas para a decisão do titular. Ciclo sugerido:
 90 dias sem uso → entra em API_ROTAS_DEPRECIADAS (header Deprecation/Sunset)
 → remoção na janela seguinte, com entrada em REMOCOES_INTENCIONAIS do ledger.
 
+ALCANCE (revisão 03/09/2026): `route_usage` só conta as rotas de
+`ROTAS_MONITORADAS` — o middleware descarta as demais no caminho quente. Rota
+FORA dessa lista tem contagem zero porque NUNCA foi medida, não porque esteja
+ociosa. O relatório, portanto, só lista candidatas DENTRO da lista monitorada;
+para avaliar uma rota nova é preciso antes incluí-la em `ROTAS_MONITORADAS` e
+esperar a janela.
+
 Sem banco alcançável, usa só a telemetria em memória do processo (parcial) e
 diz isso no cabeçalho do relatório.
 """
@@ -44,7 +51,16 @@ def _rotas() -> list[tuple[str, str]]:
     return sorted(set(out))
 
 
-async def _uso(desde: datetime) -> dict[tuple[str, str], dict]:
+async def _uso(desde: datetime) -> tuple[dict[str, dict], str]:
+    """Rotas COM uso no período, indexadas pelo template SEM o prefixo /api.
+
+    O agregado de `route_usage` publica `rota` (já normalizada por
+    `_normalizar`: sem `/api`, sem barra final) e agrega por rota — não há
+    `metodo` na linha agregada nem chave `path`. Ler `path`/`metodo` produzia
+    a chave `("", "")` para todas as linhas: NENHUMA rota casava e o relatório
+    declarava o app inteiro ocioso. Casamos por path normalizado, que é o
+    grão real da medição.
+    """
     from app.services import route_usage
 
     try:
@@ -53,12 +69,15 @@ async def _uso(desde: datetime) -> dict[tuple[str, str], dict]:
     except Exception:  # HistoricoIndisponivel, banco fora, etc.
         agg = route_usage.agregado(desde.isoformat())
         fonte = "memoria"
-    usados: dict[tuple[str, str], dict] = {}
-    for linha in agg.get("rotas", agg.get("itens", [])) or []:
-        chave = (str(linha.get("metodo") or linha.get("method") or "").upper(), str(linha.get("path") or ""))
-        usados[chave] = linha
-    usados[("__fonte__", "")] = {"fonte": fonte}
-    return usados
+    if agg.get("historico_indisponivel"):
+        # Zero aqui significaria "não li o histórico", não "ninguém usou".
+        fonte = "INDISPONÍVEL"
+    usados: dict[str, dict] = {}
+    for linha in agg.get("rotas") or []:
+        rota = str(linha.get("rota") or "")
+        if rota and int(linha.get("total") or 0) > 0:
+            usados[rota] = linha
+    return usados, fonte
 
 
 def _consumidores(path: str) -> list[str]:
@@ -84,16 +103,28 @@ def main() -> int:
     ap.add_argument("--markdown", default="")
     args = ap.parse_args()
 
+    from app.services.route_usage import ROTAS_MONITORADAS, _normalizar
+
     desde = datetime.now(timezone.utc) - timedelta(days=args.dias)
     rotas = _rotas()
-    uso = asyncio.run(_uso(desde))
-    fonte = uso.pop(("__fonte__", ""), {}).get("fonte", "?")
+    uso, fonte = asyncio.run(_uso(desde))
+
+    if fonte == "INDISPONÍVEL":
+        print("Histórico de telemetria indisponível — sem base para declarar rota ociosa. "
+              "Nenhum relatório gerado.", file=sys.stderr)
+        return 2
+
+    # Só rota MEDIDA entra no relatório: fora de ROTAS_MONITORADAS a contagem é
+    # zero por ausência de medição, e listá-la como candidata autorizaria
+    # remover endpoint em uso diário.
+    monitoradas = [(m, p) for m, p in rotas if _normalizar(p) in ROTAS_MONITORADAS]
+    nao_medidas = len(rotas) - len(monitoradas)
 
     sem_uso_sem_consumidor, sem_uso_com_consumidor = [], []
-    for m, p in rotas:
+    for m, p in monitoradas:
         if p.startswith(_PUBLICAS):
             continue
-        if (m, p) in uso:
+        if _normalizar(p) in uso:
             continue
         cons = _consumidores(p)
         (sem_uso_com_consumidor if cons else sem_uso_sem_consumidor).append((m, p, cons))
@@ -103,7 +134,13 @@ def main() -> int:
         "",
         f"Gerado em {datetime.now(timezone.utc).isoformat(timespec='seconds')} · telemetria: **{fonte}**"
         + (" (parcial: só o processo atual)" if fonte == "memoria" else ""),
-        f"Rotas no app: {len(rotas)} · com uso no período: {len(uso)}",
+        f"Rotas no app: {len(rotas)} · MEDIDAS (ROTAS_MONITORADAS): {len(monitoradas)} · "
+        f"com uso no período: {len(uso)}",
+        "",
+        f"> As outras {nao_medidas} rotas do app **não são medidas** por `route_usage` e "
+        "por isso NÃO aparecem aqui: contagem zero nelas significa ausência de medição, "
+        "não ausência de uso. Para avaliar uma delas, inclua-a em `ROTAS_MONITORADAS` e "
+        "espere a janela.",
         "",
         f"## Sem uso e sem consumidor no frontend ({len(sem_uso_sem_consumidor)}) — candidatas diretas",
         "",

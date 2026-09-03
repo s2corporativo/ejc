@@ -86,7 +86,33 @@ def test_perfil_local_nao_religa_ollama_se_operador_desligou():
     assert s.AI_EXTERNAL_PROVIDERS_ALLOWED is False  # derivado, não explícito
 
 
-def test_perfil_desligado_respeita_ai_enabled_explicito():
+# ── Precedência assimétrica: derivação RESTRITIVA vence o explícito ──────────
+# Achado da revisão automatizada do PR (03/09/2026): com a regra "explícito
+# sempre vence", `AI_PROFILE=desligado` não desligava nada quando havia um
+# `AI_ENABLED=true` no ambiente — o perfil que existe para PARAR a IA era o
+# único que podia ser anulado por engano de configuração.
+def test_desligado_vence_ai_enabled_explicito():
     s = Settings(**_BASE, AI_PROFILE="desligado", AI_ENABLED=True)
-    assert s.AI_ENABLED is True  # explícito vence; o log registra a divergência
+    assert s.AI_ENABLED is False, "AI_PROFILE=desligado é kill-switch: sempre prevalece"
+    # Sem flag explícita o resultado é o mesmo (não há regressão do caso base).
     assert Settings(**_BASE, AI_PROFILE="desligado").AI_ENABLED is False
+
+
+def test_local_desliga_provedor_externo_mesmo_se_explicitamente_ligado():
+    s = Settings(**_BASE, AI_PROFILE="local",
+                 ANTHROPIC_ENABLED=True, GROQ_ENABLED=True,
+                 AI_EXTERNAL_PROVIDERS_ALLOWED=True)
+    assert s.AI_EXTERNAL_PROVIDERS_ALLOWED is False
+    assert (s.ANTHROPIC_ENABLED, s.GROQ_ENABLED) == (False, False)
+    from app.services.ai.provider_registry import provider_elegivel_com
+    assert provider_elegivel_com("anthropic", s) is False
+
+
+def test_derivacao_permissiva_continua_cedendo_ao_explicito():
+    # A assimetria não pode virar "o perfil sempre vence": ligar provedor
+    # externo contra a vontade explícita do operador é o defeito original.
+    s = Settings(**_BASE, AI_PROFILE="externo", AI_EXTERNAL_PROVIDERS_ALLOWED=False)
+    assert s.AI_EXTERNAL_PROVIDERS_ALLOWED is False
+    # E desligar a IA à mão continua valendo sob qualquer perfil permissivo.
+    s2 = Settings(**_BASE, AI_PROFILE="hibrido", AI_ENABLED=False)
+    assert s2.AI_ENABLED is False

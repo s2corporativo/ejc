@@ -584,3 +584,44 @@ teste (commit `7c30d530`).
 | `run_gold_ia.py --mock` | ✅ 10 candidatos avaliados, relatório gerado, governança respeitada |
 | Cinco portas ao vivo | ✅ protegidas (401 anônimo) e com degradação de negócio sem provedor |
 | Revisão de segurança | ✅ aprovado com ressalvas; as 8 ressalvas fechadas (§10.5) |
+
+### 10.8 Rodada de revisão automatizada do PR (Codex) — 15 achados
+
+O revisor automatizado do GitHub apontou **11 P1 e 4 P2** sobre o head
+`85a10e10`. Achado de bot é relato de defeito: cada um foi reproduzido antes de
+qualquer edição. **14 confirmados e corrigidos com teste de regressão; 1
+refutado por reprodução** — e mesmo o refutado ganhou teste, porque a garantia
+que o desmente era invisível no ponto de chamada.
+
+| # | Achado | Veredito | Correção |
+|---|---|---|---|
+| 1 | `AI_PROFILE=desligado` não vencia `AI_ENABLED=true` explícito | **procede** | Precedência assimétrica: derivação **restritiva** (desliga IA ou provedor externo) vence o explícito; **permissiva** continua cedendo. O kill-switch volta a ser kill-switch sem reabrir o defeito P2-1 |
+| 2 | `poda_rotas.py` lia `path`/`metodo`; a telemetria publica `rota` (sem `/api`) e agrega **sem método** | **procede** | Casamento por path normalizado. Além disso o relatório passa a se restringir a `ROTAS_MONITORADAS`: fora dela o zero é ausência de MEDIÇÃO, e listá-la como candidata autorizaria remover rota em uso diário |
+| 3 | Heartbeat do backup registrava `ok` em backup que falhou | **procede** | `job_backup_drive_exclusivo` devolve o resultado; o envelope inspeciona `ok`/`status` (o motor converte falha em `{ok: false}` e retorna normalmente, sem exceção) |
+| 4 | Heartbeat do re-embed ignorava `erros > 0` | **procede** | Ponto por resultado: `erros > 0` ou `disponivel=False` viram `erro` com detalhe |
+| 5 | `critica_adversarial` era descartada pelo `response_model` | **procede** | Campo declarado em `RespostaCapacidadeIA` e em `AiResponse`. Sem ele a tela exibia "revisão obrigatória" sem poder mostrar o motivo |
+| 6 | Chunks de comunicação processual iam ao prompt sem entrar em `ctx.fontes` | **procede** | Mesclados após o bloco RAG (que **atribui** `ctx.fontes`), sem duplicar chunk. Antes a intimação usada na resposta virava citação sem fonte declarada |
+| 7 | `Sunset` só no caminho canônico | **procede** | A data acompanha a **rota**, não a superfície: emitida também no prefixo legado, com `Deprecation` uma única vez |
+| 8 | Deep research recalculava o custo em vez de somar o apurado | **procede** | Usa `GatewayResponse.custo_estimado_brl`. O recálculo cobrava por resposta servida do cache (tokens registrados, custo zero) |
+| 9 | Régua real chamava o gateway direto com `"alto"` fixo | **procede** | Passa pela **porta canônica** da capacidade, sob usuário real do banco, com o nível preservado (`None` = piso por tarefa). O mapa paralelo capacidade→tarefa foi removido; `--usuario` escolhe sob quem a régua roda |
+| 10 | Prompt privado de um advogado era lido e **executado** por qualquer colega | **procede** | Cláusula de visibilidade (`público OR autor`) em listar, obter, editar e executar. Órfão (`created_by IS NULL`, efeito do `ON DELETE SET NULL`) fica visível só de sócio para cima |
+| 11 | `notas` da revisão de conhecimento eram descartadas pelo backend | **procede** | `RevisaoRequest.notas` obrigatória, persistida em `extra.human_review_notes` e no `detalhes` da auditoria. A própria tela prometia esse registro |
+| 12 | Decisão e confiança em duas requisições | **procede** | `confidence_level` entra no mesmo POST e na mesma transação. Não existe mais estado "aprovado sem confiança" por falha do segundo passo |
+| 13 | Aprovação liberada sem nenhum texto do documento na tela | **procede** | Sem trecho nem citação, aprovar exige declaração explícita de conferência do original (checkbox). Rejeitar não exige — recusar às cegas não contamina a IA |
+| 14 | `OverrideCitacoesDialog` não limpava justificativa/erro entre bloqueios | **procede** | Reset por `useEffect` na mudança de `bloqueio`. A justificativa de UMA citação bloqueada reaparecia no override do próximo caso e seria gravada em auditoria como a justificativa daquele |
+| 15 | Resposta reidratada gravaria PII no `AILog` | **NÃO procede** | A barreira existe uma camada abaixo: `@validates("resposta", "critica_adversarial")` no modelo pseudonimiza antes de persistir, preservando referência jurisprudencial completa e marcador estrutural. Reproduzido e **travado em teste** (`test_ailog_pseudonimiza_resposta_reidratada.py`) porque a garantia é invisível no ponto de chamada e sumiria em silêncio se o ORM virasse INSERT em lote |
+
+**Fora de escopo, registrado:** `DELETE /prompts-juridicos/{id}` continua
+restrito a sócio e sem cláusula de visibilidade — remover é ato de curadoria do
+acervo, não leitura de conteúdo alheio. Alterar exigiria decisão do titular
+sobre quem pode expurgar prompt privado de terceiro.
+
+**Portões desta rodada** (head do PR, ambiente local):
+
+| Portão | Resultado |
+|---|---|
+| `ruff check app` | ✅ limpo |
+| `pytest` completo com `RUN_DB_TESTS=1` (PostgreSQL 16 + pgvector) | ✅ **6.973 passed**, 89 skipped, 0 failed |
+| `npm run lint` / `npm test` / `npm run build` | ✅ limpo · **119 arquivos, 645 passed** · build OK |
+| `scripts/ledger_rotas.py --verificar` | ✅ sem divergência |
+| `run_gold_ia.py --mock` | ✅ 10 candidatos, governança preservada |

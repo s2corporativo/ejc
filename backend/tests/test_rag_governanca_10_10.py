@@ -98,3 +98,72 @@ def test_fluxos_internos_e_externos_declaram_estado_de_curadoria():
     assert '"rag_status": "aprovado"' in encerramento
     assert 'extra["rag_status"] = "pendente"' in drive
     assert '"aprovado" if meta["human_reviewed"] else "pendente"' in peca
+
+
+# ── Revisão automatizada do PR (03/09/2026) ─────────────────────────────────
+# `notas` chegava no corpo vindo da tela, mas o schema não a declarava: o
+# Pydantic a descartava e o registro de auditoria de uma decisão jurídica ficava
+# sem a única parte que explica o PORQUÊ. E a confiança vinha por um PATCH
+# separado — falhar o segundo passo deixava o documento aprovado sem nível.
+def test_revisao_exige_notas():
+    import pytest as _pytest
+    from pydantic import ValidationError
+
+    from app.routers.rag_governance import RevisaoRequest
+
+    with _pytest.raises(ValidationError):
+        RevisaoRequest(aprovado=True)
+    with _pytest.raises(ValidationError):
+        RevisaoRequest(aprovado=True, notas="")
+
+    r = RevisaoRequest(aprovado=True, notas="ementa conferida no TJMG em 01/09")
+    assert r.confidence_level is None
+
+
+def test_revisao_recusa_confianca_fora_do_vocabulario():
+    import pytest as _pytest
+    from pydantic import ValidationError
+
+    from app.routers.rag_governance import RevisaoRequest
+
+    with _pytest.raises(ValidationError):
+        RevisaoRequest(aprovado=True, notas="ok", confidence_level="altissima")
+    assert RevisaoRequest(
+        aprovado=True, notas="ok", confidence_level="alta").confidence_level == "alta"
+
+
+def test_decisao_grava_notas_e_confianca_no_mesmo_extra():
+    from app.routers.rag_governance import _registrar_decisao_revisao
+
+    extra = _registrar_decisao_revisao(
+        {"origem": "manual"}, aprovado=True, user_id="u1",
+        agora="2026-09-03T12:00:00+00:00",
+        notas="ementa conferida na fonte oficial; vigente",
+        confidence_level="alta",
+    )
+    assert extra["rag_status"] == "aprovado"
+    assert extra["human_review_notes"] == "ementa conferida na fonte oficial; vigente"
+    assert extra["confidence_level"] == "alta"
+    # Mesmo contrato JSONB que o PATCH de curadoria escrevia.
+    assert extra["curadoria"]["reviewed_by"] == "u1"
+    assert extra["curadoria"]["reviewed_at"] == "2026-09-03T12:00:00+00:00"
+    assert extra["origem"] == "manual"   # não destrói o que já existia
+
+
+def test_sem_confianca_o_extra_nao_ganha_curadoria():
+    from app.routers.rag_governance import _registrar_decisao_revisao
+
+    extra = _registrar_decisao_revisao(
+        None, aprovado=False, user_id="u1", notas="superado por súmula posterior")
+    assert extra["rag_status"] == "recusado"
+    assert extra["human_review_notes"] == "superado por súmula posterior"
+    assert "confidence_level" not in extra
+    assert "curadoria" not in extra
+
+
+def test_notas_longas_sao_truncadas_sem_estourar_o_campo():
+    from app.routers.rag_governance import _registrar_decisao_revisao
+
+    extra = _registrar_decisao_revisao(
+        None, aprovado=True, user_id="u1", notas="x" * 5000)
+    assert len(extra["human_review_notes"]) == 2000

@@ -284,3 +284,38 @@ def test_tarefa_ia_mapeia_para_capacidade():
     # Toda TarefaIA cai em UMA das cinco portas — nenhuma fica órfã.
     for tarefa in TarefaIA:
         assert capacidades.capacidade_da_tarefa(tarefa) in capacidades.CAPACIDADES
+
+
+# ── Revisão automatizada do PR (03/09/2026) ─────────────────────────────────
+# `canonizar` devolve `critica_adversarial`, mas o campo não existia em
+# `RespostaCapacidadeIA`: o `response_model` do FastAPI descartava o relatório
+# e a tela mostrava "revisão obrigatória" sem poder dizer por quê.
+def test_envelope_preserva_critica_adversarial_no_schema():
+    from app.schemas.ai import RespostaCapacidadeIA
+    from app.services.ai.core import capacidades
+
+    critica = {"risco": "alto", "pontos": ["tese sem precedente vinculante"]}
+    envelope = capacidades.canonizar(
+        "analisar", {**_RESPOSTA_NUCLEO, "critica_adversarial": critica})
+    assert envelope["critica_adversarial"] == critica
+
+    serializado = RespostaCapacidadeIA(**envelope).model_dump()
+    assert serializado["critica_adversarial"] == critica, (
+        "o response_model não pode descartar o relatório da crítica adversarial"
+    )
+
+    # Sem crítica o campo continua ausente do envelope e nulo no schema.
+    sem = capacidades.canonizar("analisar", dict(_RESPOSTA_NUCLEO))
+    assert "critica_adversarial" not in sem
+    assert RespostaCapacidadeIA(**sem).critica_adversarial is None
+
+
+def test_porta_legada_ai_executar_tambem_expoe_a_critica():
+    from app.routers.ai_tools import AiResponse
+
+    resp = AiResponse(
+        conteudo="x", modelo="anthropic/claude", provider="anthropic",
+        tarefa="analise_caso", tokens_usados=10, custo_estimado_brl=0.0,
+        critica_adversarial={"risco": "medio"},
+    )
+    assert resp.model_dump()["critica_adversarial"] == {"risco": "medio"}

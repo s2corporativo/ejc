@@ -291,6 +291,10 @@ async def montar_contexto(
     exige_fonte: bool = False,
 ) -> ContextoMontado:
     ctx = ContextoMontado()
+    # Chunks de comunicação processual do caso: entram no prompt na seção
+    # "intimacoes" e precisam sobreviver à atribuição de `ctx.fontes` no bloco
+    # RAG (que é uma ATRIBUIÇÃO, não um append).
+    fontes_intimacoes: list[dict] = []
     if db is None:
         return ctx
     max_secao, max_total = _limites()
@@ -359,6 +363,12 @@ async def montar_contexto(
                 ))
                 if intimacoes:
                     _add("intimacoes", _formatar_fontes(_TITULOS["intimacoes"], intimacoes))
+                    # Estes chunks vão para o PROMPT: precisam existir também em
+                    # `ctx.fontes`, que é a lista declarada ao gate de citações e
+                    # à tela. Sem isso, a intimação usada na resposta aparecia
+                    # como citação SEM fonte declarada — o gate a trataria como
+                    # não verificável e a rastreabilidade até os autos se perdia.
+                    fontes_intimacoes = list(intimacoes)
         else:
             ctx.avisos.append("Caso não encontrado — contexto do caso omitido.")
 
@@ -438,6 +448,19 @@ async def montar_contexto(
             logger.warning("Busca RAG do context builder falhou: %s", type(exc).__name__)
         if ctx.fontes:
             secoes.append(("fontes", _formatar_fontes(_TITULOS["fontes"], ctx.fontes)))
+
+    # Fontes declaradas = tudo que foi ao prompt como chunk citável. As
+    # intimações são mescladas DEPOIS do bloco RAG (que atribui `ctx.fontes`) e
+    # sem duplicar o mesmo chunk quando as duas buscas o retornam.
+    if fontes_intimacoes:
+        vistos = {f.get("chunk_id") for f in ctx.fontes if f.get("chunk_id")}
+        for fonte in fontes_intimacoes:
+            cid = fonte.get("chunk_id")
+            if cid and cid in vistos:
+                continue
+            if cid:
+                vistos.add(cid)
+            ctx.fontes.append(fonte)
 
     # Ordem canônica (estável) + teto total.
     ordem = {nome: i for i, nome in enumerate(ORDEM_SECOES)}

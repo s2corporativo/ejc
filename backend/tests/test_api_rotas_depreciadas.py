@@ -80,3 +80,26 @@ def test_sunset_invalida_falha_no_boot():
     assert s.API_ROTAS_SUNSET == "Wed, 02 Dec 2026 00:00:00 GMT"
     # Vazio continua sendo o default (poda desligada).
     assert Settings(**base).API_ROTAS_SUNSET == ""
+
+
+# ── Revisão automatizada do PR (03/09/2026) ─────────────────────────────────
+# A data de remoção acompanha a ROTA, não a superfície. Emiti-la só em /api/v1
+# escondia o prazo de quem ainda chama pelo prefixo legado.
+def test_sunset_da_rota_tambem_no_prefixo_legado(monkeypatch):
+    s = get_settings()
+    monkeypatch.setattr(s, "API_ROTAS_DEPRECIADAS", "GET /api/velha")
+    monkeypatch.setattr(s, "API_ROTAS_SUNSET", "Wed, 02 Dec 2026 00:00:00 GMT")
+    c = TestClient(_app())
+
+    r = c.get("/api/velha")
+    assert r.headers.get("x-ejc-api-version") == "legacy"
+    assert r.headers.get("sunset") == "Wed, 02 Dec 2026 00:00:00 GMT"
+    assert r.headers.get("deprecation") == "true"
+    # Um único header Deprecation (o prefixo legado e a lista não se somam).
+    assert [k for k, _ in r.headers.raw].count(b"deprecation") == 1
+
+    # Rota viva no prefixo legado: depreciada pela superfície, mas SEM Sunset —
+    # não há data de remoção declarada para ela.
+    r = c.get("/api/viva")
+    assert r.headers.get("deprecation") == "true"
+    assert "sunset" not in {k.lower() for k in r.headers.keys()}

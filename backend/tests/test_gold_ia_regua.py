@@ -214,3 +214,61 @@ def test_smoke_do_run_eval_valida_o_arquivo_de_candidatos():
     falso = dict(run_gold_ia.carregar_gold(str(GOLD))[0])
     falso["atestado_por"] = "quem-nao-conferiu"
     assert any("atestado_por" in e for e in _validar_caso_smoke(falso, GOLD.name))
+
+
+# ── Revisão automatizada do PR (03/09/2026) ─────────────────────────────────
+# O modo real chamava `executar_tarefa_ia` direto com `nivel_inteligencia="alto"`
+# fixo: media um pipeline sem contexto do caso, sem gate de citações e sem
+# carimbo HITL — e num nível de roteamento que a aplicação não usa.
+import pytest as _pytest
+
+
+@_pytest.mark.anyio
+async def test_modo_real_usa_a_porta_canonica_e_preserva_o_piso(monkeypatch):
+    from app.eval import run_gold_ia
+    from app.services.ai.core import capacidades
+
+    chamadas: list[dict] = []
+
+    def _porta(nome):
+        async def _fn(db, user, *, mensagem=None, area=None, opcoes=None, **kw):
+            chamadas.append({"capacidade": nome, "mensagem": mensagem,
+                             "area": area, "opcoes": opcoes})
+            return {"conteudo": "resposta canônica", "capacidade": nome,
+                    "alertas": ["conferir citação"], "citacoes": [{"x": 1}],
+                    "fontes_rag": [], "status_hitl": "gerado"}
+        return _fn
+
+    for cap in capacidades.CAPACIDADES:
+        monkeypatch.setattr(capacidades, cap, _porta(cap))
+
+    caso = {"id": "c1", "capacidade": "analisar", "area": "consumidor",
+            "entrada": "cabe repetição em dobro?"}
+
+    envelope = await run_gold_ia._resposta_real(object(), object(), caso, None)
+    assert envelope["conteudo"] == "resposta canônica"
+    assert chamadas[-1]["capacidade"] == "analisar"
+    assert chamadas[-1]["area"] == "consumidor"
+    assert chamadas[-1]["opcoes"] is None, (
+        "sem --nivel, quem decide é o PISO por tarefa; a régua não força 'alto'"
+    )
+
+    # Com --nivel explícito, o valor do operador é respeitado.
+    await run_gold_ia._resposta_real(object(), object(), caso, "maximo")
+    assert chamadas[-1]["opcoes"] == {"nivel_inteligencia": "maximo"}
+
+
+@_pytest.mark.anyio
+async def test_capacidade_fora_do_contrato_falha_alto():
+    from app.eval import run_gold_ia
+
+    with _pytest.raises(ValueError, match="capacidade desconhecida"):
+        await run_gold_ia._resposta_real(
+            object(), object(), {"capacidade": "adivinhar", "entrada": "x"}, None)
+
+
+def test_mapa_de_tarefa_paralelo_foi_removido():
+    # Um segundo mapa capacidade→tarefa era fonte divergente da canônica.
+    from app.eval import run_gold_ia
+
+    assert not hasattr(run_gold_ia, "TAREFA_POR_CAPACIDADE")

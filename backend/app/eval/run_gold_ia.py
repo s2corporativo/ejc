@@ -16,8 +16,11 @@
 #   --mock  provedor FALSO determinístico (hash do id do caso). Roda em CI, sem
 #           rede, banco ou chave de provedor. Mede o HARNESS, não a IA — e o
 #           relatório diz isso em `mede_qualidade_juridica: false`.
-#   (real)  chama o gateway (`executar_tarefa_ia`), e com --juiz adiciona o
-#           LLM-juiz (capacidade `analisar` como avaliador) e o `citation_check`.
+#   (real)  chama a PORTA CANÔNICA da capacidade (`services/ai/core/capacidades`
+#           → orquestrador único), sob um usuário real do banco, e com --juiz
+#           adiciona o LLM-juiz (capacidade `analisar` como avaliador) e o
+#           `citation_check`. Medir por atalho ao gateway media um pipeline sem
+#           contexto, sem gate de citações e sem HITL — não o que se usa.
 #
 # GOVERNANÇA: todo caso do arquivo é `status: "candidato"` — proposta SEM
 # atestação humana. Candidato nunca é apresentado como gold atestado, aqui nem
@@ -38,16 +41,11 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 GOLD_PADRAO = os.path.join(BASE, "gold_set_ia_candidatos.jsonl")
 RELATORIO_PADRAO = os.path.join(BASE, "relatorio_gold_ia.json")
 
-# Capacidade → tarefa do gateway no modo real. Espelha o mapa canônico de
-# `services/ai/core/capacidades.py`; aqui em string porque o runner roda fora do
-# ciclo de request (sem `user`/`db` de sessão HTTP).
-TAREFA_POR_CAPACIDADE = {
-    "analisar": "analise_caso",
-    "redigir": "minutas",
-    "resumir": "resumo",
-    "conversar": "pesquisa_juridica",
-    "extrair": "prazos",
-}
+# O modo real chama a PORTA CANÔNICA de cada capacidade
+# (`services/ai/core/capacidades.py` → orquestrador único). Medir por um atalho
+# ao gateway media um pipeline que nenhum usuário exercita: sem contexto do
+# caso, sem gate de citações, sem carimbo HITL e sem RBAC — exatamente as
+# camadas que decidem se a resposta presta.
 
 _STOPWORDS = {
     "a", "ao", "aos", "as", "com", "como", "da", "das", "de", "do", "dos", "e",
@@ -178,15 +176,49 @@ def resposta_mock(caso: dict) -> str:
 
 # ── Modo real: gateway + (opcional) juiz e gate de citações ──────────────────
 
-async def _resposta_real(caso: dict, nivel: str | None) -> str:
-    from app.services.ai_gateway import executar_tarefa_ia
+async def _resolver_usuario(db, email: str | None):
+    """Usuário sob o qual a régua roda. O orquestrador exige um usuário REAL:
+    é ele que define RBAC, escopo de dados e o `user_id` do AILog."""
+    from sqlalchemy import select
 
-    tarefa = TAREFA_POR_CAPACIDADE.get(str(caso.get("capacidade")), "analise_caso")
-    r = await executar_tarefa_ia(
-        tarefa, str(caso.get("entrada") or ""),
-        nivel_inteligencia=nivel or "alto",
-    )
-    return str((r or {}).get("conteudo") or "")
+    from app.models.user import User, UserRole
+
+    q = select(User).where(User.is_active.is_(True))
+    if email:
+        q = q.where(User.email == email)
+    else:
+        # Determinístico: o papel mais alto da equipe jurídica, desempatado por
+        # e-mail. Sem isso, duas execuções da régua podem medir permissões
+        # diferentes e o número deixa de ser comparável.
+        q = q.where(User.role.in_([UserRole.superadmin, UserRole.socio, UserRole.advogado]))
+    q = q.order_by(User.role.asc(), User.email.asc())
+    user = (await db.execute(q)).scalars().first()
+    if user is None:
+        raise SystemExit(
+            "Modo real exige um usuário ativo da equipe jurídica no banco "
+            "(superadmin/sócio/advogado). Use --usuario <email> para escolher."
+        )
+    return user
+
+
+async def _resposta_real(db, user, caso: dict, nivel: str | None) -> dict:
+    """Executa o caso pela porta canônica da capacidade e devolve o envelope.
+
+    `nivel` segue como veio: `None` significa "quem decide é o PISO por tarefa"
+    — forçar "alto" aqui media um roteamento que a aplicação não usa e inflava
+    o custo da régua.
+    """
+    from app.services.ai.core import capacidades
+
+    capacidade = str(caso.get("capacidade") or "")
+    if capacidade not in capacidades.CAPACIDADES:
+        raise ValueError(f"capacidade desconhecida no gold set: {capacidade!r}")
+    porta = getattr(capacidades, capacidade)
+    opcoes: dict = {}
+    if nivel:
+        opcoes["nivel_inteligencia"] = nivel
+    return await porta(db, user, mensagem=str(caso.get("entrada") or ""),
+                       area=(caso.get("area") or None), opcoes=opcoes or None)
 
 
 async def _juiz_llm(caso: dict, resposta: str) -> float | None:
@@ -282,20 +314,37 @@ def _governanca(casos: list[dict]) -> dict:
 
 async def executar(
     casos: list[dict], *, mock: bool, juiz: bool, nivel: str | None,
+    usuario: str | None = None,
 ) -> list[dict]:
     resultados: list[dict] = []
     db = None
     ctx = None
+    user = None
     if not mock:
         from app.core.database import AsyncSessionLocal
         ctx = AsyncSessionLocal()
         db = await ctx.__aenter__()
+        user = await _resolver_usuario(db, usuario)
+        print(f"modo real: executando como {user.email} "
+              f"({getattr(user.role, 'value', user.role)})", file=sys.stderr)
     try:
         for caso in casos:
             try:
-                resposta = resposta_mock(caso) if mock else await _resposta_real(caso, nivel)
+                if mock:
+                    resposta = resposta_mock(caso)
+                    envelope = None
+                else:
+                    envelope = await _resposta_real(db, user, caso, nivel)
+                    resposta = str(envelope.get("conteudo") or "")
                 ponto = pontuar(caso, resposta)
                 if not mock:
+                    # O envelope canônico já traz o resultado do gate de
+                    # citações e o carimbo HITL: é o que o usuário vê, e por
+                    # isso entra no relatório.
+                    ponto["status_hitl"] = envelope.get("status_hitl")
+                    ponto["alertas"] = list(envelope.get("alertas") or [])
+                    ponto["citacoes_declaradas"] = len(envelope.get("citacoes") or [])
+                    ponto["fontes_declaradas"] = len(envelope.get("fontes_rag") or [])
                     if juiz:
                         ponto["juiz_llm"] = await _juiz_llm(caso, resposta)
                     citacoes = await _citacoes_reais(db, resposta)
@@ -343,6 +392,9 @@ def main(argv: list[str] | None = None) -> int:
                    help="modo real: adiciona LLM-juiz sobre os critérios")
     p.add_argument("--nivel", default=None,
                    help="modo real: nível de inteligência (padrão: piso da tarefa)")
+    p.add_argument("--usuario", default=None,
+                   help="modo real: e-mail do usuário sob o qual a régua roda "
+                        "(padrão: papel jurídico mais alto ativo no banco)")
     p.add_argument("--out", default=RELATORIO_PADRAO)
     p.add_argument("--min-score", type=float, default=None,
                    help="falha se o score médio global ficar abaixo do piso")
@@ -356,7 +408,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     resultados = asyncio.run(
-        executar(casos, mock=args.mock, juiz=args.juiz, nivel=args.nivel)
+        executar(casos, mock=args.mock, juiz=args.juiz, nivel=args.nivel,
+                 usuario=args.usuario)
     )
     relatorio = montar_relatorio(casos, resultados, mock=args.mock, gold=args.gold)
 

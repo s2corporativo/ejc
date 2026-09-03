@@ -61,6 +61,9 @@ class AiResponse(BaseModel):
     citacoes: list[dict] = []
     alertas: list[str] = []
     tokens: dict = {}
+    # Mesmo motivo do schema canônico: sem declarar o campo, o response_model
+    # descartava o relatório da crítica adversarial que `canonizar` devolve.
+    critica_adversarial: Optional[dict] = None
 
 
 def _ai_enabled() -> bool:

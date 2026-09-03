@@ -115,9 +115,19 @@ async def decompor_tese(
 
 
 def _somar_uso(respostas: list) -> tuple[int | None, int | None, Decimal | None]:
-    """Soma tokens e custo estimado (R$) das respostas do gateway. Tokens
-    ausentes em TODAS as respostas → None (não inventa zero); custo pela
-    tabela de preços de `ai_cost` (provedor/modelo de cada chamada)."""
+    """Soma tokens e custo estimado (R$) das respostas do gateway.
+
+    O custo vem de ``GatewayResponse.custo_estimado_brl`` — o valor que o
+    gateway JÁ apurou e gravou no AILog, no orçamento e na governança. Recalcular
+    aqui a partir de (provedor, tokens, modelo) divergia da contabilidade oficial:
+    a resposta servida do cache tem ``custo_estimado_brl=0.0`` mas tokens
+    registrados, então o recálculo cobrava por chamada que não custou nada
+    (achado da revisão automatizada do PR, 03/09/2026).
+
+    Objeto parcial sem o campo (adaptador legado, dublê de teste) cai no
+    recálculo pela tabela de `ai_cost`, preservando o comportamento anterior.
+    Tokens ausentes em TODAS as respostas → None (não inventa zero).
+    """
     tokens_in = tokens_out = 0
     tem_tokens = False
     custo = Decimal("0")
@@ -128,9 +138,13 @@ def _somar_uso(respostas: list) -> tuple[int | None, int | None, Decimal | None]
             tem_tokens = True
         tokens_in += int(ti or 0)
         tokens_out += int(to or 0)
-        custo += estimar_custo_brl(
-            getattr(r, "provedor", "") or "", ti, to, getattr(r, "modelo", None)
-        )
+        apurado = getattr(r, "custo_estimado_brl", None)
+        if apurado is None:
+            custo += estimar_custo_brl(
+                getattr(r, "provedor", "") or "", ti, to, getattr(r, "modelo", None)
+            )
+        else:
+            custo += Decimal(str(apurado))
     if not tem_tokens:
         return None, None, None
     return tokens_in, tokens_out, custo
