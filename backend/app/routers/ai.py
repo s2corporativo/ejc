@@ -32,6 +32,27 @@ router = APIRouter(prefix="/ai", tags=["Inteligência Artificial"])
 _logger = logging.getLogger("ejc.routers.ai")
 
 
+# ══ I1 — PORTA CANÔNICA POR CAPACIDADE (análise E2E de 03/09/2026) ═══════════
+# A porta canônica de IA é `routers/ia_capacidades.py` (/ia/analisar,
+# /ia/redigir, /ia/resumir, /ia/conversar, /ia/extrair) sobre
+# `services/ai/core/capacidades.py`, que resolve TUDO no Núcleo Único.
+#
+# Os endpoints deste arquivo são ADAPTADORES: mantêm o contrato antigo e
+# devolvem TAMBÉM o envelope canônico (conteudo, capacidade, tarefa, modelo,
+# provider, log_id, is_rascunho, requer_revisao, status_hitl, aviso_hitl,
+# fontes_rag, citacoes, custo_estimado_brl, tokens), montado por
+# `capacidades.canonizar()`. Sem header de depreciação: quem chama hoje segue
+# funcionando e passa a ler as MESMAS chaves da porta nova.
+#
+# A troca do MOTOR (pipeline artesanal → Núcleo) destes endpoints é o passo
+# seguinte e está bloqueada por testes que fixam o pipeline legado como
+# contrato — `tests/test_ai_idor_case_id_gates.py` (analisar-caso,
+# resumir-documento), `tests/test_migracao_gateway_fase1b.py` (resumir-texto,
+# gerar-minuta, pesquisar), `tests/test_sigilo_reforcado_pontos_de_entrada.py`
+# (/ai/executar) e `tests/test_ai_prompt_injection_delimitadores.py`
+# (ia_especializada). Cada docstring abaixo repete o motivo no ponto exato.
+
+
 @router.post("/citacoes/verificar",
              dependencies=[Depends(rate_limit("verificar-citacoes", 15))])
 async def verificar_citacoes_juris(
@@ -85,7 +106,13 @@ async def analisar(
     )
     if "erro" in resultado:
         raise http_erro_ia(resultado["erro"], 502)
-    return resultado
+    # PORTA CANÔNICA: POST /ia/analisar (capacidades.analisar). A troca do MOTOR
+    # deste endpoint (ai_service.analisar_caso → Núcleo) fica para a entrega que
+    # também puder ajustar tests/test_ai_idor_case_id_gates.py, que fixa a
+    # chamada a `analisar_caso` como contrato. O CONTRATO DE SAÍDA já é o
+    # canônico: mesmas chaves das cinco portas, com o carimbo HITL único.
+    from app.services.ai.core import capacidades
+    return {**resultado, **capacidades.canonizar("analisar", resultado)}
 
 
 @router.get("/dossie/{case_id}")
@@ -131,7 +158,12 @@ async def resumir(
     resultado = await resumir_documento(db, cu.id, req.texto, case_id=req.case_id)
     if "erro" in resultado:
         raise http_erro_ia(resultado["erro"], 502)
-    return resultado
+    # PORTA CANÔNICA: POST /ia/resumir (capacidades.resumir). Mesmo caso de
+    # `/analisar-caso`: a saída já é a canônica; a troca do motor depende de
+    # tests/test_ai_idor_case_id_gates.py, que fixa a chamada a
+    # `resumir_documento` como contrato desta rota.
+    from app.services.ai.core import capacidades
+    return {**resultado, **capacidades.canonizar("resumir", resultado)}
 
 
 @router.get("/logs")
@@ -1229,6 +1261,13 @@ SYS_RESUMIR = (
 @router.post("/resumir-texto", dependencies=[Depends(rate_limit("ia-resumir", 15))])
 async def resumir_texto(body: ResumirIn, db: AsyncSession = Depends(get_db),
                         cu: User = Depends(get_current_user)):
+    """ADAPTADOR da porta canônica **POST /ia/resumir** (capacidades.resumir).
+
+    O CONTRATO DE SAÍDA já é o canônico (mesmas chaves das cinco portas). O
+    MOTOR segue o pipeline legado porque `tests/test_migracao_gateway_fase1b.py`
+    fixa `task_type`/system prompt desta rota — a troca entra na mesma entrega
+    que puder ajustar aquele teste.
+    """
     if not _settings_consolidacao.AI_ENABLED:
         raise HTTPException(503, "IA desabilitada")
     if body.case_id:
@@ -1243,8 +1282,13 @@ async def resumir_texto(body: ResumirIn, db: AsyncSession = Depends(get_db),
         logger.exception("Falha na chamada de IA")
         raise HTTPException(502, "Falha ao processar a solicitação de IA")
     log_id = await _log(db, cu.id, _AITipoUso_consolidacao.resumo_documento, body.case_id, limpo, pii, resposta, resp, task_type="resumo_documento")
-    return {"ai_log_id": log_id, "resposta": resposta,
-            "aviso": "⚠️ Resumo gerado por IA — confira com o original."}
+    from app.services.ai.core import capacidades
+    legado = {"ai_log_id": log_id, "resposta": resposta,
+              "modelo": _modelo_log_consolidacao(resp),
+              "tokens_input": _tokens_input_consolidacao(resp),
+              "tokens_output": _tokens_output_consolidacao(resp),
+              "aviso": "⚠️ Resumo gerado por IA — confira com o original."}
+    return {**legado, **capacidades.canonizar("resumir", legado)}
 
 
 # ── Gerar minuta de peça com apoio do RAG ─────────────────────────────────────
@@ -1301,9 +1345,19 @@ async def gerar_minuta(body: MinutaIn, db: AsyncSession = Depends(get_db),
         logger.exception("Falha na chamada de IA")
         raise HTTPException(502, "Falha ao processar a solicitação de IA")
     log_id = await _log(db, cu.id, _AITipoUso_consolidacao.redacao_peca, body.case_id, user, pii, resposta, resp, task_type="elaboracao_peca")
-    return {"ai_log_id": log_id, "resposta": resposta,
-            "fontes": [{"titulo": c.get("titulo"), "categoria": c.get("categoria")} for c in contexto],
-            "aviso": "⚠️ RASCUNHO gerado por IA — revisão humana obrigatória (OAB)."}
+    # PORTA CANÔNICA: POST /ia/redigir (capacidades.redigir) — mesma observação
+    # de `/resumir-texto`: saída já canônica, motor preso pelo teste de migração
+    # do gateway (fase 1b), que fixa task_type e system prompt desta rota.
+    from app.services.ai.core import capacidades
+    legado = {
+        "ai_log_id": log_id, "resposta": resposta,
+        "modelo": _modelo_log_consolidacao(resp),
+        "tokens_input": _tokens_input_consolidacao(resp),
+        "tokens_output": _tokens_output_consolidacao(resp),
+        "fontes": [{"titulo": c.get("titulo"), "categoria": c.get("categoria")} for c in contexto],
+        "aviso": "⚠️ RASCUNHO gerado por IA — revisão humana obrigatória (OAB).",
+    }
+    return {**legado, **capacidades.canonizar("redigir", legado)}
 
 
 # ── Pesquisa jurídica (RAG + IA) ──────────────────────────────────────────────
@@ -1346,9 +1400,19 @@ async def pesquisar(body: PesquisaIn, db: AsyncSession = Depends(get_db),
         logger.exception("Falha na chamada de IA")
         raise HTTPException(502, "Falha ao processar a solicitação de IA")
     log_id = await _log(db, cu.id, _AITipoUso_consolidacao.consulta_rag, None, user, pii, resposta, resp, task_type="estrategia")
-    return {"ai_log_id": log_id, "resposta": resposta,
-            "fontes": [{"titulo": c.get("titulo"), "categoria": c.get("categoria")} for c in contexto],
-            "aviso": "⚠️ Resposta gerada por IA — confira as fontes antes de usar em peça ou orientar o cliente."}
+    # PORTA CANÔNICA: POST /ia/conversar (capacidades.conversar) — pesquisa
+    # jurídica é pergunta e resposta fundamentada na base. Motor legado pelo
+    # mesmo motivo das rotas acima; saída já canônica.
+    from app.services.ai.core import capacidades
+    legado = {
+        "ai_log_id": log_id, "resposta": resposta,
+        "modelo": _modelo_log_consolidacao(resp),
+        "tokens_input": _tokens_input_consolidacao(resp),
+        "tokens_output": _tokens_output_consolidacao(resp),
+        "fontes": [{"titulo": c.get("titulo"), "categoria": c.get("categoria")} for c in contexto],
+        "aviso": "⚠️ Resposta gerada por IA — confira as fontes antes de usar em peça ou orientar o cliente.",
+    }
+    return {**legado, **capacidades.canonizar("conversar", legado)}
 
 
 # ── ETAPA 4 — Motor de honorários (tabela OAB/MG via RAG) ─────────────────────

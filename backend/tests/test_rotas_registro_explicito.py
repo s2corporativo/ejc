@@ -373,6 +373,18 @@ ADICOES_INTENCIONAIS |= {
     ("/api/modulos/precificacao/tabela", "GET"),  # PR #1218 (P3): rota canônica pós-prefixo
     ("/api/sumulas/verificar-conflito", "POST"),  # PR #1218 (P3): rota canônica pós-prefixo
 }
+# I1 (análise E2E de 03/09/2026) — UMA PORTA DE IA POR CAPACIDADE.
+# Cinco rotas NOVAS e canônicas (`routers/ia_capacidades.py`), todas resolvidas
+# pelo Núcleo Único (sigilo, escopo, RAG, gate de citações, HITL, AILog). As
+# portas antigas de /ai/* e /ia-especializada/* seguem registradas — nada foi
+# removido aqui, então não há entrada correspondente em REMOCOES_INTENCIONAIS.
+ADICOES_INTENCIONAIS |= {
+    ("/api/ia/analisar", "POST"),
+    ("/api/ia/conversar", "POST"),
+    ("/api/ia/extrair", "POST"),
+    ("/api/ia/redigir", "POST"),
+    ("/api/ia/resumir", "POST"),
+}
 
 
 
