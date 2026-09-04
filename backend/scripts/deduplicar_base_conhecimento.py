@@ -65,7 +65,7 @@ import asyncio
 import logging
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from sqlalchemy import text
 
