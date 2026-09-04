@@ -16,7 +16,14 @@ import httpx
 from app.integrations.feature_flags import require_enabled
 
 
-QUERIDO_DIARIO_BASE = "https://api.queridodiario.ok.org.br"
+# Host ATUAL da API. O antigo (`api.queridodiario.ok.org.br`) parou de terminar
+# TLS — o handshake falha antes de qualquer HTTP, então a integração inteira
+# respondia `QueridoDiarioError` 100% do tempo. Verificado ao vivo em
+# 04/09/2026: os dois nomes resolvem para os MESMOS IPs Cloudflare e só o SNI
+# muda; `queridodiario.ok.org.br/api/gazettes` redireciona (302) para o host
+# abaixo, que responde 200 com o mesmo contrato (`territory_ids`, `querystring`,
+# `excerpt_size`, `number_of_excerpts`, `size`, `published_since/until`).
+QUERIDO_DIARIO_BASE = "https://api.queridodiario.org.br"
 _IBGE_RE = re.compile(r"^\d{7}$")
 _TRANSIENTES = {429, 500, 502, 503, 504}
 
@@ -26,7 +33,10 @@ class QueridoDiarioError(RuntimeError):
 
 
 class QueridoDiarioClient:
-    def __init__(self, timeout_s: float = 20.0) -> None:
+    # 45 s (era 20 s): o host novo foi medido em 7,8 s para `/gazettes` e 23,1 s
+    # para `/cities` em 04/09/2026 — com 20 s, parte das chamadas estourava por
+    # timeout e virava "indisponível" sem a fonte estar fora do ar.
+    def __init__(self, timeout_s: float = 45.0) -> None:
         self.timeout = httpx.Timeout(timeout_s)
 
     async def _get_json(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
