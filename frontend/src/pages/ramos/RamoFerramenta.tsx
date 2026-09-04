@@ -4,6 +4,9 @@ import { Calculator, TrendingUp } from "lucide-react";
 import api from "../../lib/api";
 import {
   AVISO_FERRAMENTA_NAO_HOMOLOGADA,
+  ehBloqueioDeExportacaoDemonstrativo,
+  MENSAGEM_DEMONSTRATIVO_INDISPONIVEL,
+  mensagemErroDemonstrativo,
   mensagemErroFerramenta,
 } from "../../lib/iaErro";
 import { useCaseContext } from "../../stores/caseContext";
@@ -189,6 +192,13 @@ export default function RamoFerramenta({ f }: { f: FerramentaConfig }) {
   const [gerandoDoc, setGerandoDoc] = useState(false);
   const [docMsg, setDocMsg] = useState<string | null>(null);
   const [docLink, setDocLink] = useState<string | null>(null);
+  // A trava geral da exportação (PECAS_DEMONSTRATIVO_CALCULADORA_ENABLED) vive
+  // só no backend e não é exposta por nenhum endpoint de capacidades — nem por
+  // /pecas/meta, que devolve apenas tipos/áreas/níveis. Só descobrimos o
+  // bloqueio no 403 da primeira tentativa; a partir dele o botão fica
+  // desabilitado nesta sessão da tela, para o advogado não bater na mesma
+  // porta fechada repetidamente.
+  const [exportacaoBloqueada, setExportacaoBloqueada] = useState(false);
   const casoAtivo = useCaseContext((state) => state.caso);
 
   const naoHomologada = f.homologada === false;
@@ -265,9 +275,8 @@ export default function RamoFerramenta({ f }: { f: FerramentaConfig }) {
       );
       setDocLink(casoAtivo ? `/pecas?caso=${casoAtivo.id}` : "/pecas");
     } catch (e: any) {
-      setDocMsg(
-        mensagemErroFerramenta(e, "Falha ao salvar o demonstrativo em Peças."),
-      );
+      if (ehBloqueioDeExportacaoDemonstrativo(e)) setExportacaoBloqueada(true);
+      setDocMsg(mensagemErroDemonstrativo(e));
     } finally {
       setGerandoDoc(false);
     }
@@ -401,8 +410,16 @@ export default function RamoFerramenta({ f }: { f: FerramentaConfig }) {
             <div className="mt-3 pt-2 border-t border-gold-200 flex flex-wrap items-center gap-2">
               <button
                 className="btn-ghost text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={gerandoDoc || bloqueadaParaDocumento}
-                title={bloqueadaParaDocumento ? motivoBloqueio : undefined}
+                disabled={
+                  gerandoDoc || bloqueadaParaDocumento || exportacaoBloqueada
+                }
+                title={
+                  bloqueadaParaDocumento
+                    ? motivoBloqueio
+                    : exportacaoBloqueada
+                      ? MENSAGEM_DEMONSTRATIVO_INDISPONIVEL
+                      : undefined
+                }
                 onClick={gerarDemonstrativo}
               >
                 {gerandoDoc ? "Gerando..." : "📄 Gerar demonstrativo"}
@@ -415,7 +432,7 @@ export default function RamoFerramenta({ f }: { f: FerramentaConfig }) {
               )}
               {docMsg && (
                 <span
-                  className={`text-xs ${bloqueadaParaDocumento ? "text-warn-700" : "text-green-700"}`}
+                  className={`text-xs ${bloqueadaParaDocumento || exportacaoBloqueada ? "text-warn-700" : "text-green-700"}`}
                 >
                   {docMsg}{" "}
                   {docLink && (

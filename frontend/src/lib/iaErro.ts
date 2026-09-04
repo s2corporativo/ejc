@@ -26,6 +26,58 @@ export const MENSAGEM_FERRAMENTA_NAO_HOMOLOGADA =
 export const AVISO_FERRAMENTA_NAO_HOMOLOGADA =
   "Ferramenta não homologada — em revisão jurídica; resultado não deve ser usado profissionalmente.";
 
+// ── Exportação do demonstrativo de cálculo (POST /pecas/demonstrativo) ───────
+// O backend mantém a exportação atrás da flag PECAS_DEMONSTRATIVO_CALCULADORA_
+// ENABLED (default OFF) e responde **403** quando ela está desligada. Não há
+// endpoint de capacidades que exponha essa flag ao frontend — `/pecas/meta` só
+// devolve tipos/áreas/níveis —, então o único caminho honesto é degradar bem no
+// 403 em vez de vazar o texto cru do gate (que cita auditoria e data interna).
+/** Bloqueio administrativo da exportação (flag desligada no backend). */
+export const MENSAGEM_DEMONSTRATIVO_INDISPONIVEL =
+  "Demonstrativo de cálculo indisponível: as regras da calculadora ainda não " +
+  "foram homologadas. O resultado permanece na tela como apoio, sob revisão do advogado.";
+
+/** 403 por papel (allowlist EQUIPE_JURIDICA) — motivo diferente do anterior. */
+export const MENSAGEM_DEMONSTRATIVO_SEM_PERMISSAO =
+  "Seu perfil não tem permissão para gerar demonstrativos de cálculo.";
+
+// O backend usa 403 para DOIS motivos distintos nesta rota: falta de permissão
+// ("Acesso negado", de requer_equipe_juridica) e a trava de homologação. O
+// texto do gate de homologação sempre cita a exportação/as calculadoras; o de
+// permissão, não. Sem essa separação o advogado receberia "sem permissão"
+// quando o problema é a flag — e vice-versa.
+const MARCADOR_DEMONSTRATIVO_BLOQUEADO = /demonstrativ|calculadora|homologa/i;
+
+/**
+ * Erro do POST /pecas/demonstrativo em linguagem de advogado.
+ * Trata o 403 da trava de homologação e o 403 de papel com mensagens próprias;
+ * qualquer outro status cai no tratamento comum das calculadoras.
+ */
+export function mensagemErroDemonstrativo(
+  err: unknown,
+  fallback: string = "Falha ao salvar o demonstrativo em Peças.",
+): string {
+  const { status, detail } = detailDaResposta(err);
+  if (status === 403) {
+    const texto =
+      typeof detail === "string" ? detail : (mensagemObjeto(detail) ?? "");
+    return MARCADOR_DEMONSTRATIVO_BLOQUEADO.test(texto)
+      ? MENSAGEM_DEMONSTRATIVO_INDISPONIVEL
+      : MENSAGEM_DEMONSTRATIVO_SEM_PERMISSAO;
+  }
+  return mensagemErroFerramenta(err, fallback);
+}
+
+/** `true` quando o erro é a trava administrativa (flag OFF) — a tela usa isso
+ * para desabilitar o botão em vez de deixar o advogado tentar de novo. */
+export function ehBloqueioDeExportacaoDemonstrativo(err: unknown): boolean {
+  const { status, detail } = detailDaResposta(err);
+  if (status !== 403) return false;
+  const texto =
+    typeof detail === "string" ? detail : (mensagemObjeto(detail) ?? "");
+  return MARCADOR_DEMONSTRATIVO_BLOQUEADO.test(texto);
+}
+
 /**
  * Traduz o `detail` array do Pydantic (422 de validação) em orientação útil.
  * Nunca devolve objeto nem concatena payload arbitrário do servidor.
