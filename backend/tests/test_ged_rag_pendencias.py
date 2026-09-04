@@ -404,6 +404,17 @@ async def test_buscar_contexto_rag_textual_expoe_doc_id(monkeypatch):
             del sql, params
             return [linha]
 
+    # A hidratação de governança do reranker abre sessão própria e, sem banco,
+    # aplica o recorte fail-closed que descarta material NORMATIVO — comportamento
+    # correto, com teste próprio em test_knowledge_governance.py. Aqui o alvo é
+    # outro: provar que o fallback textual carrega doc_id/chunk_id no resultado.
+    from app.services.ai import reranker as _reranker
+
+    async def _passa_direto(candidatos):
+        return candidatos
+
+    monkeypatch.setattr(_reranker, "_hidratar_governanca", _passa_direto)
+
     result = await buscar_contexto_rag(
         _DBTxt(), "responsabilidade civil objetiva"
     )
