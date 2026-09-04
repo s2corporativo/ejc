@@ -224,16 +224,32 @@ def _extract_router_level_deps(tree: ast.Module) -> list[ast.expr]:
     real rodando a suíte localmente — `/jurimetria/ext/stats` não tinha
     NENHUM gate por função, só o do router inteiro). Cru; resolvido depois
     de `dep_registry` existir, em `discover_gates`."""
+    deps: list[ast.expr] = []
     for node in tree.body:
-        if not isinstance(node, ast.Assign):
+        # Forma 1: APIRouter(..., dependencies=[Depends(...)]).
+        if isinstance(node, ast.Assign):
+            if not any(isinstance(t, ast.Name) and t.id == "router" for t in node.targets):
+                continue
+            if isinstance(node.value, ast.Call):
+                for kw in node.value.keywords:
+                    if kw.arg == "dependencies" and isinstance(kw.value, ast.List):
+                        deps.extend(kw.value.elts)
             continue
-        if not any(isinstance(t, ast.Name) and t.id == "router" for t in node.targets):
-            continue
-        if isinstance(node.value, ast.Call):
-            for kw in node.value.keywords:
-                if kw.arg == "dependencies" and isinstance(kw.value, ast.List):
-                    return kw.value.elts
-    return []
+        # Forma 2: router.dependencies.append(Depends(...)) fora do construtor
+        # (padrão da consolidação de jurimetria_extra.py em jurimetria.py:441
+        # — sem isto a matriz derivava "permitido" onde o app aplica 403).
+        if (
+            isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Attribute)
+            and node.value.func.attr == "append"
+            and isinstance(node.value.func.value, ast.Attribute)
+            and node.value.func.value.attr == "dependencies"
+            and isinstance(node.value.func.value.value, ast.Name)
+            and node.value.func.value.value.id == "router"
+        ):
+            deps.extend(node.value.args)
+    return deps
 
 
 def _resolver_gate_de_dependencia(
@@ -356,13 +372,24 @@ def _module_role_constants(tree: ast.Module) -> dict[str, list[str]]:
     para resolver referências por nome (ver `_extract_roles_from_expr`)."""
     out: dict[str, list[str]] = dict(_CONSTANTES_DE_PAPEL_IMPORTADAS)
     for node in tree.body:
-        if not isinstance(node, ast.Assign):
+        # `NOME = ...` e também `NOME: frozenset[str] = ...` (AnnAssign): a
+        # forma anotada é a que o repo usa quando a constante é exportada para
+        # teste, e ficava de fora — o gate caía como `indeterminado` e SAÍA da
+        # amostra ao vivo, virando ponto cego justamente nas allowlists mais
+        # explícitas (foi o caso de `_PODE_CRIAR_CASO` em cases.py).
+        if isinstance(node, ast.Assign):
+            if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+                continue
+            alvo, valor = node.targets[0].id, node.value
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            if node.value is None:      # só declaração de tipo, sem valor
+                continue
+            alvo, valor = node.target.id, node.value
+        else:
             continue
-        if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
-            continue
-        roles = _extract_roles_from_expr(node.value, {})
+        roles = _extract_roles_from_expr(valor, {})
         if roles:
-            out[node.targets[0].id] = roles
+            out[alvo] = roles
     return out
 
 
@@ -486,13 +513,19 @@ def _import_aliases(tree: ast.Module) -> dict[str, str]:
     """`from app.core.security import require_roles as _rr` -> {"_rr":
     "require_roles"} — achado real (`dashboard.py`): sem isto, `Depends(_rr([
     ...]))` fica invisível ao parser porque `_rr` não é `require_roles`
-    textualmente. Cobre só os dois nomes que importam para o gate."""
+    textualmente. Cobre os nomes de gate reconhecidos pelo parser, incluindo
+    os compartilhados de `_GATES_COMPARTILHADOS` (`requer_equipe_juridica as
+    _je_requer_equipe_juridica` em jurimetria.py — sem isto o gate do router
+    inteiro ficava invisível e a matriz derivava "permitido" onde o app nega
+    com 403)."""
+    reconhecidos = ("require_roles", "require_roles_exact", "require_admin",
+                    *_GATES_COMPARTILHADOS)
     aliases: dict[str, str] = {}
     for node in ast.walk(tree):
         if not isinstance(node, ast.ImportFrom):
             continue
         for alias in node.names:
-            if alias.name in ("require_roles", "require_roles_exact", "require_admin") and alias.asname:
+            if alias.name in reconhecidos and alias.asname:
                 aliases[alias.asname] = alias.name
     return aliases
 
@@ -529,15 +562,23 @@ def _find_role_equality_check(body: list[ast.stmt]) -> list[str] | None:
     return None
 
 
-def _find_helper_call_gate(body: list[ast.stmt], helper_gates: dict[str, GateInfo]) -> GateInfo | None:
+def _find_helper_call_gate(
+    body: list[ast.stmt],
+    helper_gates: dict[str, GateInfo],
+    aliases: dict[str, str] | None = None,
+) -> GateInfo | None:
     """Acha chamada a um helper JÁ conhecido como gate (`requer_advogado(cu)`,
     ou um helper local tipo `_require_admin_socio(cu)` resolvido por
-    `_analisar_helpers_locais`) em qualquer ponto do corpo."""
+    `_analisar_helpers_locais`) em qualquer ponto do corpo. `aliases` resolve
+    import renomeado (`requer_equipe_juridica as _je_requer_equipe_juridica`,
+    achado real em jurimetria.py) para o nome canônico antes de comparar."""
+    aliases = aliases or {}
     for stmt in body:
         for node in ast.walk(stmt):
-            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                    and node.func.id in helper_gates):
-                return helper_gates[node.func.id]
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                nome = aliases.get(node.func.id, node.func.id)
+                if nome in helper_gates:
+                    return helper_gates[nome]
     return None
 
 
@@ -582,7 +623,7 @@ def _module_dep_aliases(
 
 
 def _analisar_helpers_locais(
-    tree: ast.Module, constants: dict[str, list[str]]
+    tree: ast.Module, constants: dict[str, list[str]], aliases: dict[str, str] | None = None
 ) -> dict[str, GateInfo]:
     """Analisa TODA função de nível de módulo (não só as decoradas como rota)
     em busca de um gate no PRÓPRIO corpo — cobre tanto helpers dedicados
@@ -613,7 +654,7 @@ def _analisar_helpers_locais(
         # (`_req_staff` em jurimetria_extra.py chama requer_equipe_juridica).
         # O `raise 403` está na função importada, não neste arquivo, então
         # nenhuma das varreduras acima o encontra.
-        compartilhado = _find_helper_call_gate(fn.body, _GATES_COMPARTILHADOS)
+        compartilhado = _find_helper_call_gate(fn.body, _GATES_COMPARTILHADOS, aliases)
         if compartilhado:
             helper_gates[fn.name] = compartilhado
             continue
@@ -707,7 +748,7 @@ def _gate_from_function(
         return auto, False
 
     chamada = _find_helper_call_gate(
-        fn.body, {**dep_registry, **_GATES_COMPARTILHADOS}
+        fn.body, {**dep_registry, **_GATES_COMPARTILHADOS}, aliases
     )
     if chamada:
         return chamada, False
@@ -854,7 +895,7 @@ def discover_gates(routers_dir: Path, main_py: Path | None = None) -> list[Route
         # Helpers locais (`_req_clientes`, `_require_admin_socio`, checagem
         # inline em handlers) resolvidos por ÚLTIMO: um alias de módulo com o
         # MESMO nome (raro) prevalece, mantendo a fonte mais explícita.
-        for nome, gate in _analisar_helpers_locais(tree, constants).items():
+        for nome, gate in _analisar_helpers_locais(tree, constants, aliases).items():
             dep_registry.setdefault(nome, gate)
 
         # Gate do ROUTER INTEIRO (`APIRouter(..., dependencies=[Depends(x)])`)
@@ -893,6 +934,78 @@ def discover_gates(routers_dir: Path, main_py: Path | None = None) -> list[Route
                     )
                 )
     return gates
+
+
+# ── Query mínima VÁLIDA por rota (pente fino 2026-08-30 §5.5) ────────────────
+# GET com query param OBRIGATÓRIO responde 422 quando sondado sem parâmetros —
+# o 422 até prova autorização quando o gate é via Depends() (ver via_depends),
+# mas NUNCA exercita o handler. Este mapa dá a cada rota dessas uma query
+# mínima VÁLIDA (valores fictícios inofensivos, conferidos ao vivo contra um
+# backend local com token admin em 30/08/2026) para a sonda enviar. Para rota
+# COBERTA pelo mapa, `run_fictitious_smoke.py` deixa de aceitar 422 em
+# silêncio: um 422 ali significa mapa desatualizado (parâmetro renomeado/novo
+# obrigatório) e REPROVA, em vez de virar "inconclusivo".
+
+
+@dataclass(frozen=True)
+class QueryMinima:
+    """Query string mínima que faz o handler EXECUTAR (não só validar).
+
+    `aceitos_alem_de_200`: códigos que, para papel PERMITIDO, também contam
+    como handler exercitado — usados quando o handler exige um RECURSO
+    existente que a sonda não tem como forjar (o motivo fica documentado em
+    `motivo`, nunca implícito). Rotas de IA/fontes externas que degradam
+    graciosamente (ex.: provedor ausente → 200 com aviso, ou 503 explícito do
+    handler) também entram por aqui — nunca um 5xx genérico."""
+
+    params: tuple[tuple[str, str], ...]
+    aceitos_alem_de_200: tuple[int, ...] = ()
+    motivo: str = ""
+
+    def query_string(self) -> str:
+        from urllib.parse import urlencode
+
+        return urlencode(list(self.params))
+
+
+QUERY_MINIMA_POR_ROTA: dict[str, QueryMinima] = {
+    # calculadoras.py — Query(..., gt=0); qualquer valor positivo executa.
+    "/api/calculadoras/inss": QueryMinima((("salario", "3000"),)),
+    "/api/calculadoras/irrf": QueryMinima((("rendimento", "5000"),)),
+    # jurisprudencia_externa.py — q: min_length=3. As buscas externas degradam
+    # graciosamente DENTRO do serviço (exceções viram lista vazia → 200),
+    # então 200 é o único código de sucesso mesmo sem rede.
+    "/api/jurisprudencia-externa/buscar": QueryMinima((("q", "dano moral"),)),
+    "/api/jurisprudencia-externa/buscar/lexml": QueryMinima((("q", "dano moral"),)),
+    "/api/jurisprudencia-externa/buscar/tjmg": QueryMinima((("q", "dano moral"),)),
+    # ficha_triagem.py — o handler exige caso EXISTENTE (verificar_acesso_caso
+    # roda DEPOIS do gate `_exigir_piso`): com um case_id fictício o papel
+    # permitido chega ao handler e recebe 404 "caso não encontrado" — isso JÁ
+    # exercita gate + handler; a sonda não tem como forjar um caso real por
+    # papel (mesma limitação documentada para paths com parâmetro).
+    "/api/triagem/ficha": QueryMinima(
+        (("case_id", "00000000-0000-0000-0000-000000000000"),),
+        aceitos_alem_de_200=(404,),
+        motivo=(
+            "handler exige caso existente (verificar_acesso_caso); 404 com "
+            "case_id fictício prova que gate e handler executaram"
+        ),
+    ),
+    # ai.py::roteamento_preview — task_type é texto livre normalizado pelo
+    # gateway; sem provedor a rota degrada graciosamente respondendo 200 com
+    # `provider_elegivel=false` (nunca 5xx), conferido ao vivo.
+    "/api/ai/roteamento/preview": QueryMinima((("task_type", "chat_juridico"),)),
+    # consumidor_monitor.py — empresa é texto livre; fora da base interna o
+    # handler responde 200 com avaliação genérica.
+    "/api/consumidor-monitor/triagem-jec": QueryMinima(
+        (("empresa", "Empresa Ficticia Exemplo"),)
+    ),
+    # previdenciario_beneficio.py — simulação stateless; idade/tempo dentro
+    # dos ranges validados (ge/le) executam o cálculo completo.
+    "/api/previdenciario/ferramentas/regras-transicao": QueryMinima(
+        (("idade", "58"), ("tempo_contribuicao_anos", "30"))
+    ),
+}
 
 
 # ── Seleção da amostra segura para sondagem ao vivo ──────────────────────────

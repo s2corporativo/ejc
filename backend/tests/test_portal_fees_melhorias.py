@@ -155,7 +155,7 @@ async def test_listagem_signatures_expoe_hash_completo_e_abreviado():
     )
     db = _FakeDB([
         [sr],                    # solicitações (p/ cliente: já filtradas por client_id)
-        [("d1", "Procuração")],  # títulos dos documentos
+        [("d1", "Procuração", "application/pdf", "procuracao.pdf")],  # id/título/mimetype/filename (#1365)
         [_cliente()],            # logins do portal (signatários)
     ])
     out = await listar(db=db, cu=_cliente())

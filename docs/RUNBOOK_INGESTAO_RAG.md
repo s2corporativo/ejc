@@ -22,7 +22,7 @@ fonte, defina a flag `=false` no `.env` do VPS e reinicie o backend
 | Flag | Default | Fonte |
 |------|---------|-------|
 | `ENABLE_SCHEDULER` | `true` | liga o APScheduler (todos os jobs abaixo) |
-| `DJEN_INGEST_ENABLED` | `true` | DJEN (intimações; OABs em `DJEN_OABS_MONITORADAS`, ex.: `251174/MG`) |
+| `DJEN_INGEST_ENABLED` | `true` | DJEN → RAG (OABs em `DJEN_OABS_MONITORADAS`: `252599/MG,251174/MG`). **Não confundir com o alerta de prazo**: o job das 06h30 (`capturar_para_advogado`) ignora esta variável e lê `users.djen_oab_numero` |
 | `TJMG_INGEST_ENABLED` | `true` | crawler de jurisprudência do TJMG |
 | `LEXML_INGEST_ENABLED` | `true` | **federação LexML** (ver cobertura abaixo) |
 | `CONHECIMENTO_INGEST_ENABLED` | `true` | ANPD + Normas RFB |
@@ -110,7 +110,7 @@ reindexação de embeddings.
 | Súmulas STJ/TST/STF | seed de súmulas + job `ing_stj` |
 | STJ / Câmara / Senado | jobs dedicados |
 | TJMG | job `ing_tjmg` + federação LexML |
-| DJEN (intimações) | job `ing_djen` (OAB `251174/MG`) |
+| DJEN (intimações) | job `ing_djen` (OABs `252599/MG` e `251174/MG`) |
 | **TRT-3 / TRF-6** | **federação LexML** (jurisdição nominal) |
 | **Juizados especiais** | **federação LexML** (turmas recursais) |
 | **Assembleia MG (ALMG) / legislação estadual** | **federação LexML** (esfera estadual) |

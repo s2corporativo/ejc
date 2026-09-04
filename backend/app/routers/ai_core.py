@@ -42,7 +42,10 @@ class CoreChatRequest(BaseModel):
     module_key: Optional[str] = Field(None, max_length=60)
     surface: Optional[str] = Field(None, max_length=80)
     case_id: Optional[str] = None
-    nivel_inteligencia: str = Field("alto", description="padrao | alto | maximo | executivo")
+    # I2: sem nível explícito o gateway aplica o PISO da tarefa (_nivel_piso):
+    # mérito → AI_NIVEL_INTELIGENCIA_MERITO (FIRAC); resumo/chat → padrao.
+    nivel_inteligencia: Optional[str] = Field(
+        None, description="padrao | alto | maximo | executivo (vazio = piso por tarefa)")
 
 
 class CoreTaskRequest(BaseModel):
@@ -56,7 +59,7 @@ class CoreTaskRequest(BaseModel):
     module_key: Optional[str] = Field(None, max_length=60)
     surface: Optional[str] = Field(None, max_length=80)
     usar_rag: bool = True
-    nivel_inteligencia: str = "alto"
+    nivel_inteligencia: Optional[str] = None  # I2: vazio = piso por tarefa
 
 
 class CoreAnalyzeRequest(BaseModel):
@@ -69,7 +72,7 @@ class CoreAnalyzeRequest(BaseModel):
     module_key: Optional[str] = Field(None, max_length=60)
     surface: Optional[str] = Field(None, max_length=80)
     usar_rag: bool = True
-    nivel_inteligencia: str = "alto"
+    nivel_inteligencia: Optional[str] = None  # I2: vazio = piso por tarefa
 
 
 class CoreGenerateRequest(BaseModel):
@@ -79,7 +82,7 @@ class CoreGenerateRequest(BaseModel):
     params: Optional[dict] = None
     module_key: Optional[str] = Field(None, max_length=60)
     surface: Optional[str] = Field(None, max_length=80)
-    nivel_inteligencia: str = "alto"
+    nivel_inteligencia: Optional[str] = None  # I2: vazio = piso por tarefa
 
 
 class CoreReportRequest(BaseModel):

@@ -85,6 +85,17 @@ class GovernanceMetadataPatch(BaseModel):
 
 class RevisaoRequest(BaseModel):
     aprovado: bool = Field(description="True para aprovar, False para rejeitar")
+    # Notas OBRIGATÓRIAS: a tela sempre as exigiu e o próprio aviso do diálogo
+    # promete que a decisão fica registrada "com estas notas" — mas o schema não
+    # as declarava e o Pydantic as descartava em silêncio. O registro de
+    # auditoria de uma decisão jurídica ficava sem a única parte que explica o
+    # PORQUÊ (achado da revisão automatizada do PR, 03/09/2026).
+    notas: str = Field(min_length=1, max_length=2000,
+                       description="O que foi conferido e por que a decisão")
+    # Confiança da curadoria aplicada NA MESMA transação da decisão. Antes a
+    # tela fazia POST /revisar + PATCH /rag-curadoria: se o segundo falhasse, o
+    # documento ficava aprovado sem nível de confiança e ninguém era avisado.
+    confidence_level: Literal["alta", "media", "baixa"] | None = None
 
 
 def _agora_iso() -> str:
@@ -153,6 +164,8 @@ def _registrar_decisao_revisao(
     aprovado: bool,
     user_id: str,
     agora: str | None = None,
+    notas: str | None = None,
+    confidence_level: str | None = None,
 ) -> dict:
     """Grava a decisão no mesmo contrato JSONB consumido pelo RAG/listener."""
     extra = dict(extra_atual or {})
@@ -170,6 +183,18 @@ def _registrar_decisao_revisao(
     extra["human_reviewed_at"] = timestamp
     extra["human_reviewed_by"] = str(user_id)
     extra["rag_status"] = "aprovado" if aprovado else "recusado"
+    if notas is not None:
+        extra["human_review_notes"] = str(notas)[:2000]
+    if confidence_level is not None:
+        # Mesmo contrato JSONB que o PATCH de curadoria escreve — aqui aplicado
+        # na MESMA transação da decisão, para que não exista estado "aprovado
+        # sem confiança".
+        extra["confidence_level"] = confidence_level
+        extra["curadoria"] = {
+            "reviewed_by": str(user_id),
+            "reviewed_at": timestamp,
+            "notas": str(notas or "")[:2000],
+        }
     return extra
 
 
@@ -323,6 +348,8 @@ async def revisar_documento_conhecimento(
         aprovado=payload.aprovado,
         user_id=str(cu.id),
         agora=timestamp,
+        notas=payload.notas,
+        confidence_level=payload.confidence_level,
     )
 
     # Compatibilidade com o campo legado: True significa aprovado; a decisão
@@ -344,6 +371,9 @@ async def revisar_documento_conhecimento(
         detalhes=(
             f"Documento {'aprovado' if payload.aprovado else 'rejeitado'} pelo revisor; "
             f"rag_status={doc.extra.get('rag_status')}"
+            + (f"; confidence_level={payload.confidence_level}"
+               if payload.confidence_level else "")
+            + f"; notas={payload.notas[:500]}"
         ),
     )
     await db.commit()
@@ -353,6 +383,7 @@ async def revisar_documento_conhecimento(
         "revisado": doc.revisado,
         "rag_status": (doc.extra or {}).get("rag_status"),
         "human_reviewed": bool((doc.extra or {}).get("human_reviewed")),
+        "confidence_level": (doc.extra or {}).get("confidence_level"),
         "revisado_em": doc.revisado_em.isoformat() if doc.revisado_em else None,
     }
 

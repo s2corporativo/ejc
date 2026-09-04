@@ -1,7 +1,5 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from "react";
 import {
-  Activity,
-  AlarmClock,
   BarChart3,
   Bell,
   BookOpen,
@@ -9,7 +7,6 @@ import {
   Briefcase,
   BriefcaseBusiness,
   CalendarClock,
-  CheckSquare,
   ClipboardPen,
   FileSignature,
   FileText,
@@ -100,10 +97,6 @@ const SalaJuridica = lazy(() => import("../pages/SalaJuridica"));
 const EntrevistaInteligente = lazy(
   () => import("../pages/EntrevistaInteligente"),
 );
-const Prazos = lazy(() => import("../pages/Prazos"));
-const Suspensoes = lazy(() => import("../pages/Suspensoes"));
-const Tarefas = lazy(() => import("../pages/Tarefas"));
-const Intimacoes = lazy(() => import("../pages/Intimacoes"));
 const Central = lazy(() => import("../pages/Central"));
 const AgendaDia = lazy(() => import("../pages/AgendaDia"));
 const GestaoDocumental = lazy(() => import("../pages/GestaoDocumental"));
@@ -481,59 +474,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     backendPrefixes: ["/api/atividades", "/api/agenda-eventos"],
   },
   {
-    key: "prazos",
-    path: "/legado/prazos",
-    label: "Prazos",
-    description: "Controle jurídico de prazos e confirmações.",
-    group: "Trabalhar um caso",
-    icon: AlarmClock,
-    component: Prazos,
-    status: "hidden",
-    helpKey: "prazos",
-    sensitive: true,
-    backendPrefixes: ["/api/deadlines"],
-  },
-  {
-    key: "tarefas",
-    path: "/legado/tarefas",
-    label: "Tarefas",
-    description: "Execução operacional atribuída à equipe.",
-    group: "Trabalhar um caso",
-    icon: CheckSquare,
-    component: Tarefas,
-    status: "hidden",
-    helpKey: "tarefas",
-    sensitive: true,
-    backendPrefixes: ["/api/tasks"],
-  },
-  {
-    key: "intimacoes",
-    path: "/legado/intimacoes",
-    label: "Intimações",
-    description: "Comunicações processuais e conferência jurídica.",
-    group: "Trabalhar um caso",
-    icon: Inbox,
-    component: Intimacoes,
-    status: "hidden",
-    helpKey: "intimacoes",
-    sensitive: true,
-    usesAI: true,
-    backendPrefixes: ["/api/intimacoes"],
-  },
-  {
-    key: "suspensoes",
-    path: "/legado/suspensoes",
-    label: "Suspensões",
-    description: "Suspensões processuais e reflexos em prazos.",
-    group: "Trabalhar um caso",
-    icon: Activity,
-    component: Suspensoes,
-    status: "hidden",
-    helpKey: "prazos",
-    sensitive: true,
-    backendPrefixes: ["/api/suspensoes"],
-  },
-  {
     key: "documentos",
     path: "/documentos",
     label: "Documentos",
@@ -674,7 +614,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     status: "hidden",
     helpKey: "datajud",
     sensitive: true,
-    backendPrefixes: ["/api/v1/datajud"],
+    backendPrefixes: ["/api/datajud"],
   },
   {
     key: "diario-oficial",
@@ -735,7 +675,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     backendPrefixes: [
       "/api/financeiro",
       "/api/fees",
-      "/api/v1/despesas",
+      "/api/despesas",
       "/api/nfse",
     ],
   },
@@ -788,7 +728,10 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: HeartPulse,
     component: CentralDiagnostico,
     roles: ROLES.gestores,
-    showInNav: true,
+    // Bloco 4 do plano de lançamento: fora do menu lateral (é administração,
+    // não estação de trabalho). Alcançável por /diagnostico e pelo cartão em
+    // Configurações → Administração. Rota e RBAC inalterados.
+    showInNav: false,
     order: 20,
     helpKey: "autofix",
     sensitive: true,
@@ -831,7 +774,9 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: Users,
     component: Usuarios,
     roles: ROLES.administradores,
-    showInNav: true,
+    // Bloco 4: fora do menu lateral; Configurações → Administração já tinha o
+    // cartão "Usuários e acessos". Rota e RBAC inalterados.
+    showInNav: false,
     order: 10,
     helpKey: "usuarios",
     sensitive: true,
@@ -958,6 +903,33 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
     from: "/kanban",
     to: "/atividades?view=kanban",
     reason: "Kanban de atividades foi incorporado à Central de Atividades.",
+  },
+  // CONSOLIDAÇÃO ATIVIDADES 2026-08: as quatro telas legadas de /legado/*
+  // (Prazos, Tarefas, Intimações, Suspensões) foram aposentadas — a Central
+  // de Atividades já cobre os quatro tipos via filtro `?tipo=`. Os redirects
+  // espelham os aliases curtos (/prazos etc.) de LEGACY_CANONICAL_REDIRECTS.
+  {
+    from: "/legado/prazos",
+    to: "/atividades?tipo=prazo",
+    reason: "A tela legada de Prazos foi consolidada na Central de Atividades.",
+  },
+  {
+    from: "/legado/tarefas",
+    to: "/atividades?tipo=tarefa",
+    reason:
+      "A tela legada de Tarefas foi consolidada na Central de Atividades.",
+  },
+  {
+    from: "/legado/intimacoes",
+    to: "/atividades?tipo=intimacao",
+    reason:
+      "A tela legada de Intimações foi consolidada na Central de Atividades.",
+  },
+  {
+    from: "/legado/suspensoes",
+    to: "/atividades?tipo=suspensao",
+    reason:
+      "A tela legada de Suspensões foi consolidada na Central de Atividades.",
   },
   {
     from: "/assistente-ia",

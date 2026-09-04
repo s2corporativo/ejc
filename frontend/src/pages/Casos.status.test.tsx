@@ -5,7 +5,13 @@
 // ou só "protocolado". O backend já validava e devolvia 422 para status fora
 // do enum (nunca mais 500) — faltava só a UI expor os seis valores reais.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 const getMock = vi.fn();
@@ -31,7 +37,9 @@ import Casos from "./Casos";
 
 function respostaPara(url: string) {
   if (url.startsWith("/cases/")) {
-    return Promise.resolve({ data: { data: [], total: 0, page: 1, page_size: 50 } });
+    return Promise.resolve({
+      data: { data: [], total: 0, page: 1, page_size: 50 },
+    });
   }
   if (url.startsWith("/clients/")) {
     return Promise.resolve({ data: { data: [] } });
@@ -96,7 +104,7 @@ describe("Casos — filtro de status", () => {
     });
   });
 
-  it("voltar para \"Todos os status\" omite o parâmetro — nunca envia sentinela", async () => {
+  it('voltar para "Todos os status" omite o parâmetro — nunca envia sentinela', async () => {
     renderCasos();
     const select = await screen.findByTitle("Filtrar por status do caso");
     getMock.mockClear();

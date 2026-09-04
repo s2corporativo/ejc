@@ -66,9 +66,17 @@ def test_motor_estrategia_delimita_dossie():
     assert _tem_delimitador(bloco)
 
 
-def test_gerar_minuta_delimita_contexto_rag():
+def test_gerar_minuta_nao_monta_prompt_proprio():
+    """`/ai/gerar-minuta` deixou de montar prompt: virou WRAPPER DE
+    COMPATIBILIDADE da porta canônica `/ia/redigir` (consolidação dos geradores
+    de minuta). O delimitador não some — passa a ser o do orquestrador, que usa
+    o ponto único `ai/delimitador.py` com token aleatório e ainda acrescenta
+    `response_validator`, reforço de sigilo por caso e `scope_case_id`, que esta
+    rota não tinha. O invariante que sobra aqui é NÃO voltar a montar prompt
+    próprio: seria reabrir o caminho sem delimitador que este arquivo trava."""
     bloco = _function_source(_source("app/routers/ai.py"), "gerar_minuta")
-    assert _tem_delimitador(bloco)
+    assert "capacidades.redigir(" in bloco
+    assert "ai_gateway.chat(" not in bloco and "gw_chat(" not in bloco
 
 
 def test_pesquisar_delimita_contexto_rag():

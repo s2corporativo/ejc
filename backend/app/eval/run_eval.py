@@ -366,6 +366,22 @@ def _validar_caso_smoke(caso: dict, arquivo: str) -> list[str]:
             # Roda o detector estrutural de PII da casa sobre os campos de
             # texto e FALHA se encontrar CPF/CNPJ/e-mail/telefone etc.
             erros.extend(_erros_pii_caso(caso))
+    elif "capacidade" in caso:     # candidatos da régua de capacidades (I7)
+        # gold_set_ia_candidatos.jsonl: casos FICTÍCIOS propostos para a régua
+        # das cinco capacidades. NÃO contam como cobertura (ver `_smoke`) e
+        # nunca podem se passar por caso atestado.
+        _req_str("id")
+        _req_str("capacidade")
+        _req_str("area")
+        _req_str("entrada")
+        _req_lista("criterios")
+        _req_lista("nao_deve_conter")
+        if caso.get("ficticio") is not True:
+            erros.append("caso candidato deve ter ficticio=true")
+        if str(caso.get("status") or "") != "candidato":
+            erros.append('caso candidato deve ter status="candidato"')
+        if caso.get("atestado_por") is not None:
+            erros.append("candidato não pode declarar atestado_por")
     elif "intencao" in caso:       # cenários de trajetória (agent_scenarios.jsonl)
         _req_str("intencao")       # validação profunda: app.eval.agent_trajectory
         _req_str("mensagem")
@@ -403,8 +419,16 @@ def _smoke(areas_obrigatorias: str | None = None, min_casos_area: int = 0) -> in
                 area = str(caso.get("area") or "").strip().lower() or "(sem_area)"
                 cobertura[area] = cobertura.get(area, 0) + 1
         status = "OK " if not erros_arq else "ERRO"
-        print(f"[{status}] {os.path.basename(arq)}: {len(casos)} caso(s)"
-              + ("  (exemplo — não conta como cobertura)" if eh_exemplo else ""))
+        # Candidato (I7) é proposta sem atestação humana: aparece marcado para
+        # ninguém ler "10 casos" como "10 casos curados".
+        candidatos = sum(1 for c in casos if str(c.get("status") or "") == "candidato")
+        if eh_exemplo:
+            nota = "  (exemplo — não conta como cobertura)"
+        elif candidatos:
+            nota = f"  ({candidatos} candidato(s) NÃO atestado(s) — não conta como cobertura)"
+        else:
+            nota = ""
+        print(f"[{status}] {os.path.basename(arq)}: {len(casos)} caso(s)" + nota)
         for e in erros_arq:
             print(f"       - {e}")
         falhas += len(erros_arq)

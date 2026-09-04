@@ -5,6 +5,7 @@ import { Plus, Search, ShieldAlert, KeyRound } from "lucide-react";
 import api from "../lib/api";
 import { soDigitos } from "../utils/phone";
 import type { Client, Paged } from "../types";
+import { useAuth } from "../stores/auth";
 import {
   PageHeader,
   StatusBadge,
@@ -48,8 +49,10 @@ function openWhatsApp(phone: string, name: string) {
 }
 
 export default function Clientes() {
+  const { user } = useAuth();
   const [data, setData] = useState<Paged<Client> | null>(null);
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [modal, setModal] = useState(false);
   const [conflito, setConflito] = useState<ConflitoCheck | null>(null);
   const [conflitoLoading, setConflitoLoading] = useState(false);
@@ -69,12 +72,16 @@ export default function Clientes() {
   // evitando que uma resposta antiga (busca com debounce) sobrescreva a nova.
   const seq = useRef(0);
 
+  const role = user?.role || "";
+  const podeCriarAcesso = ["superadmin", "admin", "socio", "advogado"].includes(role);
+  const podeRelatorioLgpd = ["superadmin", "admin", "socio"].includes(role);
+
   const load = () => {
     const my = ++seq.current;
     setErro(false);
     return api
       .get("/clients/", {
-        params: { search: search || undefined, page_size: 50 },
+        params: { search: search || undefined, page, page_size: 50 },
       })
       .then((r) => {
         if (my === seq.current) setData(r.data);
@@ -87,12 +94,9 @@ export default function Clientes() {
   };
 
   useEffect(() => {
-    load();
-  }, []);
-  useEffect(() => {
-    const t = setTimeout(load, 350);
+    const t = setTimeout(load, search ? 350 : 0);
     return () => clearTimeout(t);
-  }, [search]);
+  }, [search, page]);
 
   // Checagem de conflito de interesses em tempo real (EOAB arts. 34-35).
   // Fail-safe: qualquer erro é silencioso e NÃO impede o cadastro.
@@ -131,13 +135,18 @@ export default function Clientes() {
       setModal(false);
       setForm({ tipo: "PF", cidade: "Betim", estado: "MG" });
       setConflito(null);
-      load();
+      if (page !== 1) setPage(1);
+      else load();
     } catch (e: any) {
       toast.error(e.response?.data?.detail || "Erro ao salvar");
     } finally {
       setSalvando(false);
     }
   };
+
+  const totalPages = data
+    ? Math.max(1, Math.ceil(data.total / Math.max(1, data.page_size)))
+    : 1;
 
   return (
     <div>
@@ -159,7 +168,10 @@ export default function Clientes() {
           className="input pl-9"
           placeholder="Buscar por nome, CPF, CNPJ..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
         />
       </div>
 
@@ -216,7 +228,7 @@ export default function Clientes() {
                   </td>
                   <td className="px-4 py-3">{c.tipo}</td>
                   <td className="px-4 py-3 text-slate-500">
-                    {c.documento_exibicao || c.cpf || c.cnpj || "—"}
+                    {c.documento_exibicao || "—"}
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     <button
@@ -229,38 +241,50 @@ export default function Clientes() {
                     >
                       📋
                     </button>
-                    <button
-                      title="Acesso ao Portal"
-                      className="text-navy hover:text-gold inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setAcessoModal(c);
-                        setAcessoForm({
-                          email: c.email || "",
-                          senha_inicial: "",
-                        });
-                      }}
-                    >
-                      <KeyRound size={14} />
-                    </button>
-                    <button
-                      title="Relatório LGPD"
-                      className="text-navy hover:text-gold inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5"
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        const r = await api.get(
-                          `/clients/${c.id}/relatorio-lgpd`,
-                          { responseType: "blob" },
-                        );
-                        const url = URL.createObjectURL(r.data);
-                        const a = document.createElement("a");
-                        a.href = url;
-                        a.download = `lgpd_${c.id.slice(0, 8)}.pdf`;
-                        a.click();
-                      }}
-                    >
-                      📄
-                    </button>
+                    {podeCriarAcesso && (
+                      <button
+                        title="Acesso ao Portal"
+                        className="text-navy hover:text-gold inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setAcessoModal(c);
+                          setAcessoForm({
+                            email: c.email || "",
+                            senha_inicial: "",
+                          });
+                        }}
+                      >
+                        <KeyRound size={14} />
+                      </button>
+                    )}
+                    {podeRelatorioLgpd && (
+                      <button
+                        title="Relatório LGPD"
+                        className="text-navy hover:text-gold inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          try {
+                            const r = await api.get(
+                              `/clients/${c.id}/relatorio-lgpd`,
+                              { responseType: "blob" },
+                            );
+                            const url = URL.createObjectURL(r.data);
+                            const a = document.createElement("a");
+                            a.href = url;
+                            a.download = `lgpd_${c.id.slice(0, 8)}.pdf`;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                          } catch (e: any) {
+                            toast.error(
+                              e.response?.data?.detail ||
+                                "Não foi possível gerar o relatório LGPD",
+                            );
+                          }
+                        }}
+                      >
+                        📄
+                      </button>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-slate-500 flex items-center gap-2">
                     <span>{c.whatsapp || c.telefone || c.email || "—"}</span>
@@ -296,6 +320,29 @@ export default function Clientes() {
               ))}
             </tbody>
           </table>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-sm">
+              <span className="text-slate-500">
+                Página {data.page} de {totalPages}
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  disabled={data.page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Anterior
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={data.page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Próxima
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -560,7 +607,7 @@ export default function Clientes() {
         </div>
       </Modal>
       {/* Modal: criar acesso ao Portal do Cliente */}
-      {acessoModal && (
+      {acessoModal && podeCriarAcesso && (
         <div className="modal-backdrop" onClick={() => setAcessoModal(null)}>
           <div
             className="card p-6 w-full max-w-sm"
@@ -585,7 +632,8 @@ export default function Clientes() {
               />
               <input
                 className="input"
-                type="text"
+                type="password"
+                autoComplete="new-password"
                 placeholder="Senha inicial (mín. 10, com letra, número e símbolo)"
                 value={acessoForm.senha_inicial}
                 onChange={(e) =>

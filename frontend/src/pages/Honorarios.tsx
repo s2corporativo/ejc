@@ -130,7 +130,7 @@ export default function Honorarios() {
     setRateioLoading(true);
     setRateioModal({ fee });
     try {
-      const r = await api.get(`/honorarios-exito/${fee.id}/rateio`);
+      const r = await api.get(`/honorarios-oab/${fee.id}/rateio`);
       setRateioModal({ fee, calc: r.data });
     } catch (e: any) {
       toast.error(e.response?.data?.detail || "Erro ao calcular rateio");
@@ -143,7 +143,7 @@ export default function Honorarios() {
   const gerarRateio = async () => {
     if (!rateioModal?.fee) return;
     try {
-      await api.post(`/honorarios-exito/${rateioModal.fee.id}/rateio`);
+      await api.post(`/honorarios-oab/${rateioModal.fee.id}/rateio`);
       toast.success(
         "Rateio gerado — saque do titular criado em Saques Sócios (pendente de aprovação).",
       );

@@ -67,7 +67,7 @@ export default function Kanban() {
   const nav = useNavigate();
 
   const loadCols = useCallback(async (a: string) => {
-    const res = await api.get(`/kanban-columns?legal_area=${a}`);
+    const res = await api.get(`/kanban/columns?legal_area=${a}`);
     setCols(res.data ?? []);
   }, []);
 

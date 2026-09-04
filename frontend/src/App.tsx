@@ -21,7 +21,11 @@ import {
   RoleOnly,
   StaffOnly,
 } from "./components/RouteGuards";
-import { LEGACY_REDIRECTS, STAFF_ROUTES } from "./config/moduleRegistry";
+import {
+  LEGACY_REDIRECTS,
+  ROLES,
+  STAFF_ROUTES,
+} from "./config/moduleRegistry";
 import { useAuth } from "./stores/auth";
 import Login from "./pages/LoginModern";
 
@@ -182,7 +186,7 @@ export default function App() {
               <Route
                 path="/ia-governanca/provedores"
                 element={
-                  <RoleOnly roles={["superadmin", "admin", "socio"]}>
+                  <RoleOnly roles={ROLES.gestores}>
                     <PainelProvedoresIA />
                   </RoleOnly>
                 }
