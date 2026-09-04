@@ -132,18 +132,65 @@ describe("Clientes — documentos de admissão", () => {
     expect(screen.getByText("Contrato de Honorarios - Maria Souza")).toBeTruthy();
   });
 
-  it("regeneração é explícita (forcar_novo) — não duplica em silêncio", async () => {
+  it("regeneração é explícita (forcar_novo) e carrega os poderes escolhidos", async () => {
+    // Regressão: enviar só `forcar_novo` faria o backend aplicar os defaults e
+    // trocar o mandato — a procuração emitida com ad_judicia_et_extra voltaria
+    // como ad_judicia, e o cliente assinaria poderes que ninguém escolheu.
     montar();
     await screen.findByText("Maria Souza");
     fireEvent.click(screen.getByTitle("Procuração e contrato de honorários"));
     await screen.findByText("Procuracao - Maria Souza");
 
+    fireEvent.change(
+      screen.getByDisplayValue("Ad judicia (foro em geral)"),
+      { target: { value: "ad_judicia_et_extra" } },
+    );
     fireEvent.click(screen.getByText("Gerar novamente"));
+
     await waitFor(() =>
       expect(postMock).toHaveBeenCalledWith(
         "/clients/cli-1/gerar-documentos",
-        { forcar_novo: true },
+        {
+          forcar_novo: true,
+          tipo_poderes: "ad_judicia_et_extra",
+          permite_substabelecimento: true,
+          poderes_especiais: null,
+        },
       ),
+    );
+  });
+
+  it("resposta obsoleta não vaza documentos de outro cliente", async () => {
+    // Regressão: a resposta lenta de A chegando depois da abertura de B
+    // sobrescrevia a lista, e os botões baixavam as peças de A no modal de B.
+    const OUTRO = { ...CLIENTE, id: "cli-2", nome: "João Lima" };
+    let resolverA: ((v: unknown) => void) | null = null;
+
+    getMock.mockImplementation((url: string) => {
+      if (url === "/clients/cli-1/pecas-geradas") {
+        return new Promise((r) => {
+          resolverA = () => r({ data: PECAS });
+        });
+      }
+      if (url === "/clients/cli-2/pecas-geradas") {
+        return Promise.resolve({ data: [] });
+      }
+      return Promise.resolve({
+        data: { data: [CLIENTE, OUTRO], total: 2, page: 1, page_size: 20 },
+      });
+    });
+
+    montar();
+    await screen.findByText("Maria Souza");
+    const botoes = screen.getAllByTitle("Procuração e contrato de honorários");
+
+    fireEvent.click(botoes[0]); // A — fica pendente
+    fireEvent.click(botoes[1]); // B — resolve primeiro
+    await screen.findByText(/Nenhum documento de admissão/i);
+
+    resolverA?.(null); // resposta obsoleta de A chega por último
+    await waitFor(() =>
+      expect(screen.queryByText("Procuracao - Maria Souza")).toBeNull(),
     );
   });
 

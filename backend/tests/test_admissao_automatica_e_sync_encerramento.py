@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import pytest
 
+from fastapi import HTTPException
+
 from app.core.config import get_settings
 from app.routers import cases as cases_router
 from app.routers import clients as clients_router
@@ -39,6 +41,11 @@ class _Cliente:
     def __init__(self, status="ativo"):
         self.id = "cli-1"
         self.status = status
+
+
+async def _sem_limite(nome, chave, maximo):
+    """Cota livre: os testes de enfileiramento não exercitam o rate limit."""
+    return None
 
 
 class _Usuario:
@@ -340,3 +347,138 @@ async def test_primeira_emissao_com_poderes_passa(monkeypatch):
     ok, erro = await _chamar_gerar(monkeypatch, payload, {"ja_existia": False})
     assert erro is None
     assert ok == {"ja_existia": False}
+
+
+# ── Achados da review do Codex (PR #1458) ────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_cota_do_tribunal_nao_e_consumida_sem_sincronizacao(monkeypatch):
+    """Encerramento comum não pode gastar a cota MNI.
+
+    Regressão: o rate limit entrara como dependency da rota, e o FastAPI a
+    resolve ANTES do handler — dez encerramentos comuns num minuto derrubavam o
+    décimo primeiro com 429 e ainda esgotavam a cota do endpoint dedicado, sem
+    nenhuma chamada a tribunal.
+    """
+    consumos = []
+
+    async def _consumir(nome, chave, maximo):
+        consumos.append(nome)
+
+    monkeypatch.setattr(cases_router, "consumir", _consumir)
+
+    await cases_router._sincronizar_no_encerramento(
+        _FakeDB(), _Caso("1234567-89.2026.8.13.0027"), _Usuario("advogado"),
+        _Payload(False),
+    )
+    assert consumos == [], "encerramento sem sincronização não gasta cota do tribunal"
+
+
+@pytest.mark.asyncio
+async def test_cota_excedida_nao_derruba_o_encerramento(monkeypatch):
+    async def _estourar(nome, chave, maximo):
+        raise HTTPException(status_code=429, detail="Limite excedido")
+
+    monkeypatch.setattr(cases_router, "consumir", _estourar)
+
+    db = _FakeDB()
+    res = await cases_router._sincronizar_no_encerramento(
+        db, _Caso("1234567-89.2026.8.13.0027"), _Usuario("advogado"), _Payload(True)
+    )
+    assert res["status"] == "limite_excedido"
+    assert res["detalhe"]
+    assert db.commits == 0
+
+
+@pytest.mark.asyncio
+async def test_numero_em_branco_cai_no_do_caso(monkeypatch):
+    """`numero_cnj` só com espaços é truthy e vencia o `or`, virando vazio
+    depois do strip — o caso perdia a sincronização tendo número válido."""
+    enviados = []
+
+    class _Job:
+        id = "job-9"
+
+    import app.tasks.processo_eletronico_tasks as pe_tasks
+
+    monkeypatch.setattr(
+        pe_tasks.sincronizar_processo_task, "delay",
+        lambda c, n: (enviados.append((c, n)), _Job())[1],
+    )
+    monkeypatch.setattr(cases_router, "consumir", _sem_limite)
+
+    async def _audit(db, *a, **kw):
+        return None
+
+    monkeypatch.setattr(cases_router, "criar_audit_log", _audit)
+
+    res = await cases_router._sincronizar_no_encerramento(
+        _FakeDB(), _Caso("1234567-89.2026.8.13.0027"), _Usuario("advogado"),
+        _Payload(True, numero_cnj="   "),
+    )
+    assert res["status"] == "enfileirado"
+    assert enviados == [("case-1", "1234567-89.2026.8.13.0027")]
+
+
+@pytest.mark.asyncio
+async def test_falha_na_trilha_nao_vira_500_com_caso_ja_encerrado(monkeypatch):
+    """A task já está na fila e o caso já foi commitado como encerrado: falha
+    ao gravar a auditoria não pode propagar, ou a UI diria "falha ao encerrar"
+    para um caso encerrado e o retry devolveria "Caso já encerrado"."""
+
+    class _Job:
+        id = "job-11"
+
+    import app.tasks.processo_eletronico_tasks as pe_tasks
+
+    monkeypatch.setattr(pe_tasks.sincronizar_processo_task, "delay", lambda c, n: _Job())
+    monkeypatch.setattr(cases_router, "consumir", _sem_limite)
+
+    async def _audit_explode(db, *a, **kw):
+        raise RuntimeError("trilha WORM indisponível")
+
+    monkeypatch.setattr(cases_router, "criar_audit_log", _audit_explode)
+
+    db = _FakeDB()
+    res = await cases_router._sincronizar_no_encerramento(
+        db, _Caso("1234567-89.2026.8.13.0027"), _Usuario("advogado"), _Payload(True)
+    )
+    assert res["status"] == "enfileirado", "o estado real é enfileirado"
+    assert res["auditada"] is False, "a resposta admite que a trilha não foi gravada"
+    assert db.rollbacks == 1
+
+
+@pytest.mark.asyncio
+async def test_lead_convertido_recebe_o_kit(monkeypatch):
+    """Conversão do lead é O caminho de admissão: sem o disparo no PATCH, o
+    cliente convertido — o que assina procuração e contrato — ficaria sem o kit,
+    dependendo da ação manual que esta feature existe para eliminar."""
+    chamadas = []
+
+    async def _fake_gerar(db, cli, cu, **kw):
+        chamadas.append(cli.id)
+        return {"status": "rascunho"}
+
+    monkeypatch.setattr(gdc, "gerar_documentos_cliente", _fake_gerar)
+    monkeypatch.setattr(get_settings(), "CLIENTE_KIT_ADMISSAO_AUTOMATICO", True)
+
+    from app.models.client import ClientStatus
+
+    class _ClienteAtivo:
+        id = "cli-1"
+        status = ClientStatus.ativo
+
+    await clients_router._kit_admissao_automatico(
+        _FakeDB(), _ClienteAtivo(), _Usuario("advogado")
+    )
+    assert chamadas == ["cli-1"], "cliente admitido recebe o kit"
+
+
+def test_patch_dispara_o_kit_na_saida_de_lead():
+    """Trava estrutural: o handler de PATCH precisa comparar o status anterior
+    e chamar o disparo. Sem isso o board do CRM converte o lead em silêncio."""
+    import inspect
+
+    fonte = inspect.getsource(clients_router.atualizar)
+    assert "status_antes" in fonte
+    assert "_kit_admissao_automatico" in fonte

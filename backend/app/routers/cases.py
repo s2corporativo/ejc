@@ -12,7 +12,7 @@ from sqlalchemy import select, or_, func as sqlfunc, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.rate_limit import rate_limit
+from app.core.rate_limit import consumir, rate_limit
 from app.core.security import (get_current_user, require_roles, ROLE_LEVEL,
                                  require_roles_exact, requer_equipe_juridica)
 from app.models.user import User
@@ -994,15 +994,14 @@ class EncerrarCasoReq(_BM2):
     numero_cnj: Optional[str] = _F2(None, max_length=25)
 
 
-@router.post(
-    "/{case_id}/encerrar",
-    # Mesmo bucket do POST /processo-eletronico/sincronizar: o encerramento
-    # passou a ser uma segunda superfície para a MESMA chamada ao tribunal, e
-    # `encerrar → reabrir → encerrar` é acessível ao mesmo público. Sem
-    # compartilhar o limite, o laço enfileiraria chamadas SOAP ilimitadas com
-    # a credencial MNI do escritório (risco de bloqueio da conta no tribunal).
-    dependencies=[Depends(rate_limit("processo-eletronico-sync", 10))],
-)
+# O rate limit da sincronização MNI NÃO entra como dependency desta rota: o
+# FastAPI resolve dependencies antes do handler, e a cota do tribunal seria
+# consumida em TODO encerramento, inclusive nos que não pedem sincronização —
+# dez encerramentos comuns em um minuto derrubariam o décimo primeiro com 429 e
+# ainda esgotariam a cota do endpoint dedicado. O limite é consumido dentro de
+# `_sincronizar_no_encerramento`, no caminho opt-in, onde de fato há chamada ao
+# tribunal.
+@router.post("/{case_id}/encerrar")
 async def encerrar_caso(
     case_id: str, payload: EncerrarCasoReq,
     background: BackgroundTasks,
@@ -1116,12 +1115,31 @@ async def _sincronizar_no_encerramento(
     if not payload.sincronizar_processo_eletronico:
         return {"solicitada": False, "status": None, "detalhe": None}
 
-    numero = (payload.numero_cnj or case.numero_processo or "").strip()
+    # `strip` ANTES da escolha: um override só com espaços é truthy e venceria
+    # o `or`, virando string vazia depois — o caso perderia a sincronização
+    # tendo `numero_processo` válido. Vazio (ou em branco) cai no do caso.
+    numero = (payload.numero_cnj or "").strip() or (case.numero_processo or "").strip()
     if not numero:
         return {
             "solicitada": True, "status": "sem_numero", "job_id": None,
             "detalhe": ("Caso sem número de processo — cadastre o número no "
                         "caso e sincronize por Processo Eletrônico."),
+        }
+
+    # Cota compartilhada com `POST /processo-eletronico/sincronizar`: o
+    # encerramento é uma segunda superfície para a MESMA chamada ao tribunal, e
+    # `encerrar → reabrir → encerrar` é acessível ao mesmo público — sem o
+    # limite, o laço enfileiraria chamadas SOAP ilimitadas com a credencial MNI
+    # do escritório (risco de bloqueio da conta no tribunal). Estourar a cota
+    # NÃO derruba o encerramento, que já está commitado: vira mais um estado
+    # reportado, como os demais ramos.
+    try:
+        await consumir("processo-eletronico-sync", f"user:{cu.id}", 10)
+    except HTTPException:
+        return {
+            "solicitada": True, "status": "limite_excedido", "job_id": None,
+            "detalhe": ("Limite de sincronizações por minuto atingido — "
+                        "sincronize por Processo Eletrônico em instantes."),
         }
 
     try:
@@ -1144,16 +1162,37 @@ async def _sincronizar_no_encerramento(
     # tribunal e precisa ser rastreável até a origem da requisição.
     from app.services.security_service import obter_ip_real
 
-    await criar_audit_log(
-        db, cu.id, role_str(cu), "PROCESSO_ELETRONICO_SYNC_ENFILEIRADO",
-        "cases", case.id,
-        detalhes=f"encerramento numero_cnj={numero} job_id={job_id}",
-        ip=obter_ip_real(request) if request is not None else None,
-    )
-    await db.commit()
+    # A task JÁ está na fila e o caso JÁ está encerrado e commitado. Falha ao
+    # gravar a trilha não pode virar 500: a UI diria "falha ao encerrar" para um
+    # caso encerrado, e o retry devolveria "Caso já encerrado" — o operador
+    # ficaria sem saber o que aconteceu de fato. Registra no log do servidor e
+    # reporta o estado real, sinalizando a trilha que não foi gravada.
+    try:
+        await criar_audit_log(
+            db, cu.id, role_str(cu), "PROCESSO_ELETRONICO_SYNC_ENFILEIRADO",
+            "cases", case.id,
+            detalhes=f"encerramento numero_cnj={numero} job_id={job_id}",
+            ip=obter_ip_real(request) if request is not None else None,
+        )
+        await db.commit()
+        auditada = True
+    except Exception:
+        logger.warning(
+            "Trilha do enfileiramento MNI não gravada (caso %s, job %s)",
+            case.id, job_id, exc_info=True,
+        )
+        await db.rollback()
+        auditada = False
+
     return {
         "solicitada": True, "status": "enfileirado", "job_id": job_id,
-        "detalhe": "Sincronização com o tribunal enfileirada.",
+        "auditada": auditada,
+        "detalhe": (
+            "Sincronização com o tribunal enfileirada."
+            if auditada
+            else ("Sincronização enfileirada; o registro de auditoria falhou "
+                  "e está no log do servidor.")
+        ),
     }
 
 

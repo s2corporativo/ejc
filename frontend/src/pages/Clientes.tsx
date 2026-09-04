@@ -99,6 +99,20 @@ export default function Clientes() {
     null,
   );
   const [admissaoLoading, setAdmissaoLoading] = useState(false);
+  // Sequência da requisição em voo: a resposta de um cliente lento pode chegar
+  // depois de o usuário já ter aberto OUTRO cliente, e sobrescreveria a lista
+  // — o modal mostraria o nome de B com as peças (e os downloads) de A, ou
+  // seja, PII e documentos de cliente alheio. Só a última requisição aplica.
+  const admissaoReq = useRef(0);
+  // Poderes da NOVA versão. A procuração emitida não guarda os poderes que a
+  // originaram, então regenerar sem escolher aplicaria os defaults do backend
+  // e trocaria em silêncio o que o cliente assina (art. 105 do CPC,
+  // substabelecimento). A escolha passa a ser explícita, aqui.
+  const [admissaoPoderes, setAdmissaoPoderes] = useState({
+    tipo_poderes: "ad_judicia",
+    permite_substabelecimento: true,
+    poderes_especiais: "",
+  });
 
   const load = () => {
     const my = ++seq.current;
@@ -152,6 +166,7 @@ export default function Clientes() {
   };
 
   const carregarAdmissao = async (c: Client) => {
+    const req = ++admissaoReq.current;
     setAdmissaoModal(c);
     setAdmissaoPecas(null);
     setAdmissaoLoading(true);
@@ -159,29 +174,40 @@ export default function Clientes() {
       const { data } = await api.get<PecaAdmissao[]>(
         `/clients/${c.id}/pecas-geradas`,
       );
+      // Resposta obsoleta (outro cliente foi aberto no meio) é descartada.
+      if (req !== admissaoReq.current) return;
       setAdmissaoPecas(Array.isArray(data) ? data : []);
     } catch (e: any) {
+      if (req !== admissaoReq.current) return;
       setAdmissaoPecas([]);
       toast.error(
         e.response?.data?.detail || "Falha ao carregar os documentos de admissão",
       );
     } finally {
-      setAdmissaoLoading(false);
+      if (req === admissaoReq.current) setAdmissaoLoading(false);
     }
   };
 
   // Regeneração explícita: o backend é idempotente por cliente, então só cria
   // versão nova com forcar_novo. Serve para o caso em que o cadastro mudou
   // (endereço, área) depois de os rascunhos terem sido emitidos.
+  //
+  // Os poderes vão SEMPRE explícitos: a nova procuração substitui a anterior, e
+  // deixar o backend aplicar os defaults trocaria o mandato sem que o advogado
+  // decidisse. O formulário abaixo é o ponto onde ele confirma o que outorga.
   const regerarAdmissao = async () => {
     if (!admissaoModal) return;
+    const alvo = admissaoModal;
     setAdmissaoLoading(true);
     try {
-      await api.post(`/clients/${admissaoModal.id}/gerar-documentos`, {
+      await api.post(`/clients/${alvo.id}/gerar-documentos`, {
         forcar_novo: true,
+        tipo_poderes: admissaoPoderes.tipo_poderes,
+        permite_substabelecimento: admissaoPoderes.permite_substabelecimento,
+        poderes_especiais: admissaoPoderes.poderes_especiais.trim() || null,
       });
       toast.success("Procuração e contrato regerados como novos rascunhos.");
-      await carregarAdmissao(admissaoModal);
+      await carregarAdmissao(alvo);
     } catch (e: any) {
       toast.error(e.response?.data?.detail || "Falha ao regerar os documentos");
       setAdmissaoLoading(false);
@@ -767,6 +793,59 @@ export default function Clientes() {
               ))}
             </ul>
           )}
+
+          <div className="mt-5 rounded-lg border border-slate-200 p-3">
+            <p className="mb-2 text-xs font-semibold text-navy">
+              Poderes da nova procuração
+            </p>
+            <p className="mb-3 text-xs text-slate-500">
+              Gerar novamente cria uma versão nova <strong>com estes
+              poderes</strong> — confira antes, porque é o que o cliente
+              assinará. A versão anterior continua no histórico.
+            </p>
+            <div className="space-y-2">
+              <select
+                className="input w-full"
+                value={admissaoPoderes.tipo_poderes}
+                onChange={(e) =>
+                  setAdmissaoPoderes({
+                    ...admissaoPoderes,
+                    tipo_poderes: e.target.value,
+                  })
+                }
+              >
+                <option value="ad_judicia">Ad judicia (foro em geral)</option>
+                <option value="ad_judicia_et_extra">
+                  Ad judicia et extra (judicial e extrajudicial)
+                </option>
+                <option value="especiais">Poderes especiais</option>
+              </select>
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={admissaoPoderes.permite_substabelecimento}
+                  onChange={(e) =>
+                    setAdmissaoPoderes({
+                      ...admissaoPoderes,
+                      permite_substabelecimento: e.target.checked,
+                    })
+                  }
+                />
+                Permite substabelecimento
+              </label>
+              <input
+                className="input w-full"
+                placeholder="Poderes especiais (art. 105 do CPC) — opcional"
+                value={admissaoPoderes.poderes_especiais}
+                onChange={(e) =>
+                  setAdmissaoPoderes({
+                    ...admissaoPoderes,
+                    poderes_especiais: e.target.value,
+                  })
+                }
+              />
+            </div>
+          </div>
 
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setAdmissaoModal(null)}>

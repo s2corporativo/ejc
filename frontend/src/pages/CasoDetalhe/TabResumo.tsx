@@ -405,14 +405,20 @@ export default function TabResumo({
       // encerramento vale mesmo quando ela não sai. Reporta o que de fato
       // aconteceu, em vez de prometer o que foi apenas pedido.
       const sinc = data?.sincronizacao_processo_eletronico;
+      if (sinc?.solicitada && sinc.status !== "enfileirado") {
+        // O caso ESTÁ encerrado; só a sincronização falhou. Recarregar aqui
+        // apagaria o toast antes de ele renderizar e o operador acharia que o
+        // tribunal foi consultado. Mantém a página e fixa o motivo na tela.
+        setSincFalhou(
+          sinc.detalhe || "Não foi possível sincronizar com o tribunal.",
+        );
+        toast.error(sinc.detalhe || "Não foi possível sincronizar com o tribunal.");
+        return;
+      }
       if (sinc?.solicitada) {
-        if (sinc.status === "enfileirado") {
-          toast.success(
-            "Sincronização com o tribunal enfileirada — acompanhe em Processo Eletrônico.",
-          );
-        } else {
-          toast.error(sinc.detalhe || "Não foi possível sincronizar com o tribunal.");
-        }
+        toast.success(
+          "Sincronização com o tribunal enfileirada — acompanhe em Processo Eletrônico.",
+        );
       }
       window.location.reload();
     } catch (e: any) {
@@ -528,6 +534,10 @@ export default function TabResumo({
 
   // #R8 — conversão em judicial passa pelo checklist bloqueante (ConversaoChecklist)
   const [convModal, setConvModal] = useState(false);
+  // Motivo pelo qual a sincronização pedida no encerramento não saiu. Fica na
+  // tela porque é a ÚNICA indicação de que o tribunal não foi consultado — um
+  // toast morreria no reload que segue o encerramento.
+  const [sincFalhou, setSincFalhou] = useState<string | null>(null);
 
   const casoEncerrado =
     caso.status === "encerrado" || caso.status === "arquivado";
@@ -536,6 +546,17 @@ export default function TabResumo({
     <div className="space-y-5">
       {casoEncerrado && !ocultarAvisoEncerramento && (
         <AvisoCasoEncerrado caso={caso} />
+      )}
+      {sincFalhou && (
+        <Alert variant="warning" title="Caso encerrado, sem sincronização">
+          <p>{sincFalhou}</p>
+          <button
+            className="mt-2 underline hover:no-underline"
+            onClick={() => window.location.reload()}
+          >
+            Atualizar a página
+          </button>
+        </Alert>
       )}
       <div className="flex gap-2 flex-wrap">
         <button

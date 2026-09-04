@@ -818,6 +818,10 @@ async def atualizar(
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
     mudancas = payload.model_dump(exclude_unset=True)
+    # Guardado ANTES do setattr genérico: a saída de `lead` é o momento em que
+    # o cliente passa a ser admitido, e é lá que o kit precisa nascer (ver
+    # `_kit_admissao_automatico` no fim deste handler).
+    status_antes = getattr(c.status, "value", c.status)
 
     # Cutover C6/LGPD: cpf/cnpj não são mais colunas do model. Extrai antes do
     # setattr genérico e regrava SOMENTE cifrado + hash do campo alterado.
@@ -868,6 +872,16 @@ async def atualizar(
             detail="Dados inválidos — verifique o formato/tamanho dos campos (datas, textos longos, etc.).",
         )
     await db.refresh(c)
+    # Conversão do lead é O caminho de admissão do escritório: o board do CRM
+    # move o card para "convertido" e manda `status: "ativo"` por este PATCH
+    # (CRMLeads.tsx). Como o cadastro de lead não emite o kit (minimização), sem
+    # este disparo o cliente convertido — justamente o que assina procuração e
+    # contrato — ficaria dependendo da ação manual que esta feature existe para
+    # eliminar. Mesmas travas do cadastro: flag, papel jurídico, idempotência
+    # por cliente e falha que não derruba a atualização.
+    status_depois = getattr(c.status, "value", c.status)
+    if status_antes == ClientStatus.lead.value and status_depois != status_antes:
+        await _kit_admissao_automatico(db, c, cu)
     return c
 
 
