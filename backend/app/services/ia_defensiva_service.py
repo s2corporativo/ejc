@@ -325,16 +325,8 @@ async def executar_ia_defensiva(
     # Case.sigilo_reforcado — mas nunca fazia essa checagem. IA defensiva
     # (peça de defesa) num caso de crime sexual/menor ia pseudonimizada ao
     # externo mesmo com a flag marcada.
-    modo_sigilo = None
-    if payload.case_id:
-        from sqlalchemy import text as _text
-        row = (await db.execute(
-            _text("SELECT sigilo_reforcado FROM cases WHERE id = :cid AND deleted_at IS NULL"),
-            {"cid": payload.case_id},
-        )).first()
-        if row and row[0]:
-            from app.services.ai.sanitization_policy import ModoSanitizacao
-            modo_sigilo = ModoSanitizacao.LOCAL_COMPLETO
+    from app.services.ai.sanitization_policy import modo_sigilo_por_case_id
+    modo_sigilo = await modo_sigilo_por_case_id(db, payload.case_id)
 
     for etapa in etapas:
         user_prompt = _montar_user_prompt(

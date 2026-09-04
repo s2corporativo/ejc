@@ -453,12 +453,16 @@ async def rodar_agente(
         budget.registrar_custo(custo_passo)
 
         # AILog por turno — texto PSEUDONIMIZADO (sem PII real). Erro PROPAGA.
+        # I5/B4: fontes RAG acumuladas pelas tools de leitura até este turno
+        # entram na trilha (IDs/ordem — sem conteúdo, ver _fontes_str).
+        from app.services.ai.core.audit_logger import _fontes_str
         await registrar_ai_log(
             db, user_id=user.id, tipo_uso=AITipoUso.analise_caso, case_id=case_id,
             prompt_sanitizado=f"[AGENTE passo {budget.passos}]\n{prompt_log_base}",
             pii_removida=pii_removida,
             resposta=(resp.get("text_para_log") or "")[:8000],
             modelo=f"{resp.get('provider')}/{resp.get('model')}",
+            fontes_rag=_fontes_str(ctx.fontes_rag),
             tokens_input=usage.get("input_tokens"),
             tokens_output=usage.get("output_tokens"),
             custo_estimado=custo_passo,
@@ -532,7 +536,10 @@ async def rodar_agente(
     revisao_obrigatoria = False
     try:
         from app.services.ai.core.response_validator import validar
-        validado = await validar(db, final, exige_fonte=True, fontes=None)
+        # I5/B4: fontes REAIS consultadas pelas tools (antes `fontes=None` →
+        # toda resposta saía "SEM BASE VERIFICÁVEL" mesmo com RAG usado).
+        validado = await validar(db, final, exige_fonte=True,
+                                 fontes=ctx.fontes_rag or None)
         final = validado.get("conteudo", final)
         alertas = validado.get("alertas", []) or []
         revisao_obrigatoria = bool(validado.get("revisao_obrigatoria"))
@@ -555,6 +562,12 @@ async def rodar_agente(
         "custo_estimado_brl": round(custo_total, 4),
         "alertas": alertas,
         "revisao_obrigatoria": revisao_obrigatoria,
+        # I5: fontes consultadas (metadados, sem conteúdo) — mesmo formato do
+        # orchestrator, para a UI exibir a base da resposta.
+        "fontes": [
+            {"titulo": f.get("titulo"), "categoria": f.get("categoria"),
+             "fonte": f.get("fonte")} for f in ctx.fontes_rag
+        ],
     }
     await _emitir(on_event, "final", resultado_final)
     return resultado_final

@@ -397,3 +397,231 @@ RBAC, está marcada como **decisão do titular**.
 **Critério de sucesso de cada onda**: o gold set (I7) melhora ou não piora, a
 suíte completa fica verde no push, e `/ia-governanca/provedores`,
 `/diagnostico/central` e o painel de custo dizem a mesma coisa.
+
+---
+
+## 10. Execução das ondas (03/09/2026, por ordem do titular)
+
+O titular autorizou executar as três ondas do §9.4 até o fim. Registro do que
+entrou, com o mesmo critério de verificação do resto do relatório: só é
+`[VERIFICADO]` o que foi conferido no código ou provado por teste desta sessão.
+
+**Método.** Cinco frentes em worktrees isolados (núcleo de IA, RAG/contexto,
+configuração/diagnóstico, frontend, portas por capacidade), integradas na
+branch e submetidas aos portões completos. Regra 10 do `CLAUDE.md` respeitada:
+arquivo pertencente a PR aberto não foi tocado — cada exceção está listada
+abaixo.
+
+### 10.1 Entregue
+
+| Item do §9 | O que entrou | Onde |
+|---|---|---|
+| **I2** nível por tarefa | `nivel_inteligencia` vira `Optional[str] = None` nos schemas de `/ai/core/*` e no orquestrador; `None` deixa `_nivel_piso` decidir (mérito → `maximo`, que aciona FIRAC; econômicas → `padrao`) | `routers/ai_core.py`, `services/ai/core/orchestrator.py` |
+| **I8** cadeia e deadline | `anthropic` no fim das cadeias `resumo` e `chat_rapido` (modelo rápido); `AI_CHAIN_DEADLINE_SECONDS=240` com `asyncio.timeout` em volta do laço de provedores | `ai_gateway.py`, `config.py` |
+| **A4** modelos e preços | `claude-opus-5` em `_MODERN_PREFIXES`; tabela de custo com Opus 5, Sonnet 5 corrigido para 2/10, família Fable; modelo fora da tabela vira `warning`, não custo zero silencioso | `providers/anthropic_provider.py`, `ai_cost.py` |
+| **A7** custo de cache | `cache_creation_input_tokens` × 1,25 e `cache_read_input_tokens` × 0,10 do preço de input, propagados até o `AILog` | `ai_cost.py`, `ai_gateway.py` |
+| **A6** cache × kill-switch | Consulta ao cache só depois de haver cadeia elegível; cache hit grava `AILog`; tarefa `LOCAL_COMPLETO` deixa de ser cacheável | `ai_gateway.py`, `ai_cache.py` |
+| **A8** fail-closed | Provedor desconhecido levanta erro em vez de cair no Groq; `health()` usa a fonte única e não gasta cota do provedor | `ai_gateway.py` |
+| **I9/B3** AILog | Registro em nove call sites que tinham `db`+`user` e não gravavam (score jurídico, jurisprudência interna, honorários, análise bancária, checklist, movimento, classificador de documento, visual law, análise estratégica) | routers e services citados |
+| **S8** vocabulário HITL | `hitl_policy.aplicar()` como último passo nas rotas que devolvem texto de modelo, inclusive nos ramos de erro do `documento_ia` | `routers/teses.py`, `jurisprudencia_interna.py`, `provas.py`, `honorarios_oab.py`, `analise_bancaria.py`, `documento_ia.py` |
+| **I5/B4** agentes com fonte | Fontes do RAG acumuladas no loop e passadas ao validador (fim do "SEM BASE VERIFICÁVEL" falso); `exige_fonte=True` em prazos e LGPD/OAB; áreas do catálogo alinhadas ao enum canônico; empate de palavra-chave deixa de escolher por ordem alfabética | `services/ai/agent/**`, `agent_registry.py`, `ejc_skill_catalog.py` |
+| **C1** seed vetorizado | O seed reindexa os órfãos ao final quando os embeddings estão disponíveis (`SEED_EMBED_ORFAOS`) — busca semântica útil desde o primeiro boot | `seeds/seed_all.py`, `scripts/reembedar_chunks_orfaos.py` |
+| **C5** chunk × janela | `EMBEDDINGS_MAX_CHARS=1800` limita o chunker jurídico e o corte por tamanho; chunker jurídico entra no caminho de produção da ingestão manual e da API pública | `legal_chunker.py`, `routers/rag.py`, `routers/rag_public.py` |
+| **C3** métricas pelo gate | `filtros_gate_rag()` vira fragmento único, usado por cobertura e saúde; `usable_docs` passa a refletir o que o RAG realmente recupera | `ai_service.py`, `rag_coverage.py`, `knowledge_governance.py` |
+| **C4** escopo por caso | `scope_case_id` propagado onde o caso já era conhecido (análise de caso, teses ocultas, contrato, deep research, dossiê, tools do agente) | diversos services |
+| **C6** rag_public | Chave irrestrita não aceita mais `client_id`/`case_id` no payload; chave restrita só o próprio cliente, com 422 explícito | `routers/rag_public.py` |
+| **B7** deep research | `AILog` com tokens e custo somando as duas chamadas; entidades do caso propagadas | `deep_research_service.py` |
+| **I3** dossiê de contexto | Contexto do caso em seções de ordem estável (base legal, partes, documentos, prazos, teses, intimações do caso, pergunta), com tetos por seção e total | `services/ai/core/context_builder.py` |
+| **DJEN → RAG** | A captura por advogado passa a ingerir a intimação vinculada ao caso (`rag_status=pendente`; curadoria segue humana) | `djen_service.py` |
+| **S3** perfil de IA | `AI_PROFILE` (`externo\|local\|hibrido\|desligado`) deriva flags e prioridade; compose alinhado ao código | `config.py`, `docker-compose*.yml` |
+| **A2/F3** configuração | `MARITACA_ENABLED` com o mesmo default nas três fontes; `.env.example` documenta todo campo de `Settings`, travado por teste de paridade | `.env.example`, `tests/test_env_example_paridade.py` |
+| **S2/A3** painéis | Diagnóstico e saúde da IA consultam `provider_registry`; fim das cópias que ignoravam `GROQ_ENABLED` e o kill-switch de externos | `integration_status.py`, `routers/ia_saude.py` |
+| **S6** portões | `scripts/ledger_rotas.py` (diff revisável do ledger) e pre-push por área do diff (`scripts/instalar_hooks.sh`) | `backend/scripts/`, `scripts/hooks/` |
+| **S4** poda | `scripts/poda_rotas.py` lista candidatas por telemetria; `API_ROTAS_DEPRECIADAS`/`API_ROTAS_SUNSET` marcam rotas antes da remoção | `backend/scripts/`, `core/api_version_middleware.py` |
+| **F4** jobs | Heartbeat por resultado para backup e reembed; `misfire_grace_time` para o disparo perdido não sumir em silêncio | `heartbeat_service.py`, `scheduler.py` |
+| **D3** CORS | `PUT` na lista de métodos (duas rotas o usam) | `main.py` |
+| **S7/D6/E2/E4** frontend | `useCarregar` com três estados aplicado às abas e painéis; `try/catch` nos handlers mutantes; `detail` cru nunca vai ao JSX; stack do `ErrorBoundary` truncado | `frontend/src/lib/useCarregar.ts` e telas |
+| **E1/E3/E5/E7/E8** frontend | Aviso HITL no FAQ/Glossário; vocabulário real de status no painel de provedores; diálogo de override de citações reutilizável; botões por papel; streams com cleanup | telas de IA |
+| **C8/C9** conhecimento | Aprovação passa pelo endpoint audit-logado, com o conteúdo à vista e notas obrigatórias; importação de jurisprudência não aprova mais por padrão | `GovernancaIA.tsx`, `KnowledgeGovernancePanel.tsx`, `RevisaoConhecimentoDialog.tsx` |
+| **S1** tipos gerados | `scripts/gerar_tipos_frontend.py` emite `types/gerado.ts` (áreas, enums de prazo, papéis) com teste que reprova arquivo desatualizado; listas locais passam a derivar dele | backend + frontend |
+| **S5** menu | Removidas da navegação as entradas do Bloco 4 (jurimetria/predição, Victory Vault, radar, notícias, sociedade); Diagnóstico e Usuários saem do menu e ganham cartão em Configurações → Administração | `moduleRegistry.tsx`, `Configuracoes.tsx` |
+
+### 10.2 Não entregue, com motivo
+
+- **D1 — `secretaria` cria caso e não lista.** `routers/cases.py` pertence ao
+  PR aberto #1380 (regra 10). A correção é de RBAC e precisa da decisão do
+  titular entre dar leitura escopada ou tirar a permissão de criar.
+- **C2 — auto-aprovação de documento não governado.** Coberto pelos PRs
+  abertos #1382/#1383; não duplicado aqui.
+- **B1/B2 parciais — sigilo reforçado em `peca_service` e `motor_peca_service`.**
+  Ambos pertencem aos PRs abertos #1376/#1384. Os demais call sites receberam
+  a propagação.
+- **Chunker jurídico dentro de `ingestion_service`.** O arquivo está em PR
+  aberto; a entrada em produção foi feita pelos call sites (`chunks=`), então
+  os ingestores automáticos (Planalto, súmulas, TJMG) seguem no corte por
+  tamanho até aquele PR fechar.
+- **Menu em 12 entradas.** Ficou em 16. As quatro restantes (Sala Jurídica,
+  Raio-X do processo, Banco de Teses, DPT360) só sairiam do menu virando abas
+  do hub de Inteligência — isso é o Bloco 3 do plano (o caso como espaço de
+  trabalho), redesenho com consequência de UX, não troca de flag. Escondê-las
+  sem destino as deixaria inalcançáveis, o que é pior que uma entrada a mais.
+
+### 10.3 Portões (evidência)
+
+| Portão | Resultado |
+|---|---|
+| `ruff check app` | ✅ limpo |
+| `pytest` completo com `RUN_DB_TESTS=1` (PG16 + pgvector) | ✅ **6.927 passed**, 66 skipped, 0 failed |
+| `alembic upgrade head` do zero | ✅ head `155_indices_listagem_espinha` (sem migration nova) |
+| `npm run lint` (tsc) | ✅ limpo |
+| `npm test` | ✅ 117 arquivos, **626 passed** |
+| `npm run build` | ✅ |
+| `scripts/ledger_rotas.py --verificar` | ✅ sem divergência não declarada |
+| App ao vivo com todas as ondas | ✅ boot limpo, 41 jobs, `/api/health/ready` ready, 866 rotas e 0 duplicatas |
+| `/api/ai/status` ao vivo | ✅ agora diz `claude-opus-4-8` (antes `(=rapido)`) e lista os quatro provedores com motivo, pela fonte única |
+| Seed em banco novo (C1) | ✅ **25 de 25 trechos vetorizados** ao final do seed — antes ficavam em 0 até o job horário |
+
+### 10.4 Correções feitas na integração
+
+- Os testes novos do frontend usavam `toHaveTextContent`, matcher de jest-dom
+  que este projeto não instala. Reescritos para `textContent` + `toMatch`/
+  `toContain` em vez de acrescentar dependência.
+- Um teste de FAQ/Glossário exigia a mensagem genérica de IA indisponível; o
+  contrato real é melhor (o detalhe técnico é filtrado e a tela usa o fallback
+  específico da ação). A asserção foi alinhada ao contrato, mantendo a parte
+  que importa: dialeto de infraestrutura nunca chega ao advogado.
+- O teste de paridade de `.env.example` pegou, na integração, uma variável
+  nova sem documentação (`DJEN_CAPTURA_INGERIR_RAG`) — exatamente o que ele
+  existe para pegar. Documentada.
+
+### 10.5 Revisão de segurança do diff (regra 8)
+
+O `security-auditor` revisou os 122 arquivos do diff acumulado e devolveu
+**aprovado com ressalvas**: nenhum P0/P1, dois P2 e seis P3 — todos regressões
+introduzidas pelas próprias ondas, não defeitos pré-existentes. Os oito foram
+tratados no commit `e05dda9a`, cada um com regressão:
+
+| # | Achado | O que acontecia | Correção |
+|---|---|---|---|
+| **P2-1** | `AI_PROFILE` sobrescrevia kill-switch explícito | Operador aplica `AI_EXTERNAL_PROVIDERS_ALLOWED=false` no `.env` do VPS durante incidente de LGPD e reinicia; com `AI_PROFILE=externo` no compose, a flag voltava a `true` sem log, sem aviso e sem falha de boot | Flag definida no ambiente **sempre vence o perfil** (`model_fields_set`); conflito gera WARNING nomeando a flag, nunca o valor |
+| **P2-2** | Prazo da cadeia não cancelava a chamada Anthropic | O SDK é síncrono e roda em `asyncio.to_thread`, que não é cancelável: no estouro do prazo a tarefa era abandonada e a requisição seguia até 120 s — cobrada, sem `AILog`, fora do painel de custo. O risco cresceu porque a Anthropic passou a ser o último elo de `resumo`/`chat_rapido` | O provedor recebe o **orçamento restante** e encurta o timeout da própria requisição (nunca alarga) |
+| **P3-1** | `AILog` do cache hit gravava prompt cru | Marcado como `pii_removida=False`, deixava PII no registro de auditoria | Sanitiza antes de gravar e reporta o que de fato ocorreu |
+| **P3-2** | Três pontos afirmavam PII removida sem cobrir o prompt inteiro | Motor de teses, checklist e visual law logavam blocos de RAG/dossiê não sanitizados como "sem PII" | Sanitizam o prompt completo antes do registro |
+| **P3-3** | Campo livre podia forjar seção do dossiê | Título de documento, prazo ou tese com quebra de linha simulava o cabeçalho `[FONTES — BASE DE CONHECIMENTO INTERNA]` | Campos livres achatados (o mesmo tratamento que descrição e fundamentação já tinham) |
+| **P3-4** | Ledger permitia rebaseline silencioso de auth | `--atualizar` regravava o snapshot com `auth_deps` novas; depois o teste passaria sem declaração | Recusa regravar quando há alteração de autenticação, salvo `--confirmar-auth` |
+| **P3-5** | `API_ROTAS_SUNSET` ia crua para o header | Valor inválido é ignorado pelo cliente em silêncio: a poda pareceria anunciada sem estar | Validada no boot como data HTTP |
+| **P3-6** | Hook instalado por symlink | Segue o conteúdo da branch em checkout | Registrado como modelo de confiança; script é benigno, sem mudança |
+
+O auditor também confirmou como **corretas** as partes sensíveis: ordem dos
+validadores (o perfil roda antes da validação de produção), `MARITACA_EXIGIR_SOBERANIA`
+não contornável por perfil, kill-switch global sobrevivendo a qualquer perfil,
+motivos de inelegibilidade sem valor de chave nem URL interna, CORS sem `*` com
+credenciais, cross-tenant fechado no `rag_public` sem oráculo de enumeração,
+documento de cofre excluído do dossiê por allowlist fail-closed, resposta do
+`AILog` pseudonimizada pelo validador do model, mensagem de timeout sem nome de
+provedor, e os scripts novos sem injeção de comando (`grep` por lista de
+argumentos, `ast.literal_eval` sobre fonte versionada).
+
+**Observação registrada, sem correção:** com `DJEN_CAPTURA_INGERIR_RAG=true` o
+volume de teor de intimações em `knowledge_docs` cresce. O escopo está correto
+(idempotente, filtrado por cliente e caso), mas não há rotina de expurgo por
+`client_id` — vale confirmar a política de retenção antes de ligar em produção.
+
+### 10.6 Onda E — uma porta por capacidade (I1) e a régua (I7)
+
+**I1 — cinco portas, um contrato.** `POST /ia/{analisar|redigir|resumir|conversar|extrair}`
+(`routers/ia_capacidades.py` → `services/ai/core/capacidades.py`), todas
+delegando ao orquestrador com `nivel_inteligencia=None` para o piso por tarefa
+decidir. Cada porta exige autenticação, bloqueia `cliente_externo` pelo valor
+do enum, aplica limite de tamanho, `rate_limit` e verificação de acesso ao caso
+quando há `case_id`; `analisar` e `redigir` exigem equipe jurídica. Resposta
+única: `conteudo, capacidade, tarefa, modelo, provider, log_id, is_rascunho,
+requer_revisao, status_hitl, aviso_hitl, fontes_rag[], citacoes[], alertas[],
+custo_estimado_brl, tokens{}`, carimbada por `hitl_policy.aplicar()`.
+
+Verificado ao vivo (sem provedor configurado): as cinco portas respondem, o
+acesso anônimo recebe 401 e a indisponibilidade de IA degrada com mensagem de
+negócio — nunca 500.
+
+**Ressalva de escopo, registrada.** As portas antigas passaram a devolver o
+contrato canônico (`capacidades.canonizar()` por cima do resultado legado,
+chaves antigas preservadas), mas o **motor** delas continua o pipeline
+anterior. A troca de motor em `/ai/resumir-texto`, `/ai/gerar-minuta` e
+`/ai/pesquisar` quebra quatro suítes que fixam o pipeline antigo como contrato
+(`test_migracao_gateway_fase1b`, `test_ai_idor_case_id_gates`,
+`test_sigilo_reforcado_pontos_de_entrada`, `test_ai_prompt_injection_delimitadores`)
+— arquivos fora da propriedade da frente. A migração de superfície aconteceu
+onde importa: **o frontend não chama mais nenhuma porta antiga**. Terminar a
+troca de motor é trabalho de uma PR própria, que precisa reescrever esses
+contratos de teste com o titular ciente.
+
+**Mudança de UX que o titular deve conhecer:** o perfil "Financeira" da IA
+especializada agora passa por `/ia/analisar`, que exige equipe jurídica — os
+papéis `financeiro` e `secretaria` deixam de alcançá-lo. É o endurecimento
+pedido no escopo, mas é perda de acesso para dois papéis.
+
+**I7 — a régua.** `backend/app/eval/gold_set_ia_candidatos.jsonl` com 10 casos
+fictícios (consumidor 4, civil 3, trabalhista 2, família 1), cada um com
+critérios do que a resposta deve conter, tipo de citação esperada e o que não
+pode aparecer. `run_gold_ia.py` roda em modo `--mock` (provedor determinístico,
+sem rede, serve para CI) e em modo real pelo gateway. A governança do gold set
+foi respeitada: os 10 entram como **candidatos**, contados à parte, e o próprio
+relatório avisa que candidato não certifica qualidade jurídica — atestação
+exige curador humano, fonte oficial e vigência.
+
+**I2 completado.** `/ai/executar` ainda tinha `nivel_inteligencia` com default
+fixo `"alto"`, ignorando o piso — mesmo defeito de `/ai/core/*`. Corrigido com
+teste (commit `7c30d530`).
+
+### 10.7 Portões finais (todas as ondas integradas)
+
+| Portão | Resultado |
+|---|---|
+| `ruff check app` | ✅ limpo (2 avisos remanescentes em `scripts/` são pré-existentes, arquivos não tocados) |
+| `pytest` completo com `RUN_DB_TESTS=1` | ✅ **6.963 passed**, 66 skipped, 0 failed |
+| `npm run lint` / `npm test` / `npm run build` | ✅ limpo · **118 arquivos, 635 passed** · build OK |
+| `scripts/ledger_rotas.py --verificar` | ✅ sem divergência não declarada (as 5 rotas novas estão registradas) |
+| `run_gold_ia.py --mock` | ✅ 10 candidatos avaliados, relatório gerado, governança respeitada |
+| Cinco portas ao vivo | ✅ protegidas (401 anônimo) e com degradação de negócio sem provedor |
+| Revisão de segurança | ✅ aprovado com ressalvas; as 8 ressalvas fechadas (§10.5) |
+
+### 10.8 Rodada de revisão automatizada do PR (Codex) — 15 achados
+
+O revisor automatizado do GitHub apontou **11 P1 e 4 P2** sobre o head
+`85a10e10`. Achado de bot é relato de defeito: cada um foi reproduzido antes de
+qualquer edição. **14 confirmados e corrigidos com teste de regressão; 1
+refutado por reprodução** — e mesmo o refutado ganhou teste, porque a garantia
+que o desmente era invisível no ponto de chamada.
+
+| # | Achado | Veredito | Correção |
+|---|---|---|---|
+| 1 | `AI_PROFILE=desligado` não vencia `AI_ENABLED=true` explícito | **procede** | Precedência assimétrica: derivação **restritiva** (desliga IA ou provedor externo) vence o explícito; **permissiva** continua cedendo. O kill-switch volta a ser kill-switch sem reabrir o defeito P2-1 |
+| 2 | `poda_rotas.py` lia `path`/`metodo`; a telemetria publica `rota` (sem `/api`) e agrega **sem método** | **procede** | Casamento por path normalizado. Além disso o relatório passa a se restringir a `ROTAS_MONITORADAS`: fora dela o zero é ausência de MEDIÇÃO, e listá-la como candidata autorizaria remover rota em uso diário |
+| 3 | Heartbeat do backup registrava `ok` em backup que falhou | **procede** | `job_backup_drive_exclusivo` devolve o resultado; o envelope inspeciona `ok`/`status` (o motor converte falha em `{ok: false}` e retorna normalmente, sem exceção) |
+| 4 | Heartbeat do re-embed ignorava `erros > 0` | **procede** | Ponto por resultado: `erros > 0` ou `disponivel=False` viram `erro` com detalhe |
+| 5 | `critica_adversarial` era descartada pelo `response_model` | **procede** | Campo declarado em `RespostaCapacidadeIA` e em `AiResponse`. Sem ele a tela exibia "revisão obrigatória" sem poder mostrar o motivo |
+| 6 | Chunks de comunicação processual iam ao prompt sem entrar em `ctx.fontes` | **procede** | Mesclados após o bloco RAG (que **atribui** `ctx.fontes`), sem duplicar chunk. Antes a intimação usada na resposta virava citação sem fonte declarada |
+| 7 | `Sunset` só no caminho canônico | **procede** | A data acompanha a **rota**, não a superfície: emitida também no prefixo legado, com `Deprecation` uma única vez |
+| 8 | Deep research recalculava o custo em vez de somar o apurado | **procede** | Usa `GatewayResponse.custo_estimado_brl`. O recálculo cobrava por resposta servida do cache (tokens registrados, custo zero) |
+| 9 | Régua real chamava o gateway direto com `"alto"` fixo | **procede** | Passa pela **porta canônica** da capacidade, sob usuário real do banco, com o nível preservado (`None` = piso por tarefa). O mapa paralelo capacidade→tarefa foi removido; `--usuario` escolhe sob quem a régua roda |
+| 10 | Prompt privado de um advogado era lido e **executado** por qualquer colega | **procede** | Cláusula de visibilidade (`público OR autor`) em listar, obter, editar e executar. Órfão (`created_by IS NULL`, efeito do `ON DELETE SET NULL`) fica visível só de sócio para cima |
+| 11 | `notas` da revisão de conhecimento eram descartadas pelo backend | **procede** | `RevisaoRequest.notas` obrigatória, persistida em `extra.human_review_notes` e no `detalhes` da auditoria. A própria tela prometia esse registro |
+| 12 | Decisão e confiança em duas requisições | **procede** | `confidence_level` entra no mesmo POST e na mesma transação. Não existe mais estado "aprovado sem confiança" por falha do segundo passo |
+| 13 | Aprovação liberada sem nenhum texto do documento na tela | **procede** | O texto existia em `KnowledgeChunk.conteudo` e o endpoint não o devolvia. `document_details` passa a incluir `previa_texto` (recorte de 8.000 caracteres, cortado em fronteira de parágrafo) e o diálogo a exibe. O checkbox de conferência do original vira exceção: só quando não há texto indexado NEM trecho em `extra`. Rejeitar nunca exige — recusar às cegas não contamina a IA |
+| 14 | `OverrideCitacoesDialog` não limpava justificativa/erro entre bloqueios | **procede** | Reset por `useEffect` na mudança de `bloqueio`. A justificativa de UMA citação bloqueada reaparecia no override do próximo caso e seria gravada em auditoria como a justificativa daquele |
+| 15 | Resposta reidratada gravaria PII no `AILog` | **NÃO procede** | A barreira existe uma camada abaixo: `@validates("resposta", "critica_adversarial")` no modelo pseudonimiza antes de persistir, preservando referência jurisprudencial completa e marcador estrutural. Reproduzido e **travado em teste** (`test_ailog_pseudonimiza_resposta_reidratada.py`) porque a garantia é invisível no ponto de chamada e sumiria em silêncio se o ORM virasse INSERT em lote |
+
+**Fora de escopo, registrado:** `DELETE /prompts-juridicos/{id}` continua
+restrito a sócio e sem cláusula de visibilidade — remover é ato de curadoria do
+acervo, não leitura de conteúdo alheio. Alterar exigiria decisão do titular
+sobre quem pode expurgar prompt privado de terceiro.
+
+**Portões desta rodada** (head do PR, ambiente local):
+
+| Portão | Resultado |
+|---|---|
+| `ruff check app` | ✅ limpo |
+| `pytest` completo com `RUN_DB_TESTS=1` (PostgreSQL 16 + pgvector) | ✅ **6.973 passed**, 89 skipped, 0 failed |
+| `npm run lint` / `npm test` / `npm run build` | ✅ limpo · **119 arquivos, 645 passed** · build OK |
+| `scripts/ledger_rotas.py --verificar` | ✅ sem divergência |
+| `run_gold_ia.py --mock` | ✅ 10 candidatos, governança preservada |

@@ -1,10 +1,12 @@
 // ── Aba Indicadores (Fase 3 / QA): consolida jurisprudência RAG, precedentes,
 // score jurídico e índice de risco numa única aba de leitura estratégica ──────
 // Ex-sub-abas: "jurisprudencia", "precedentes", "score", "risco" (plano 2.5).
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "../../components/Toast";
-import { Empty, Spinner, fmtDate } from "../../components/UI";
+import { Empty, ErrorState, Spinner, fmtDate } from "../../components/UI";
 import api from "../../lib/api";
+import { mensagemErroHttp } from "../../lib/iaErro";
+import { useCarregar } from "../../lib/useCarregar";
 import TabRisco from "./TabRisco";
 import TabScore from "./TabScore";
 import type { Case } from "../../types";
@@ -21,42 +23,40 @@ export default function TabIndicadoresJuridicos({
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
 
-  const [precedentes, setPrecedentes] = useState<any[]>([]);
-  const [loadingPrec, setLoadingPrec] = useState(true);
+  const [erroBusca, setErroBusca] = useState<string | null>(null);
 
-  useEffect(() => {
-    let ativo = true;
-    setLoadingPrec(true);
-    api
-      .get(
-        `/jurisprudencias?area=${encodeURIComponent(caso.area || "")}&per_page=50`,
-      )
-      .then((r) => {
-        const data = r.data;
-        if (ativo)
-          setPrecedentes(Array.isArray(data) ? data : (data?.data ?? []));
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (ativo) setLoadingPrec(false);
-      });
-    return () => {
-      ativo = false;
-    };
-  }, [caso.area]);
+  const cargaPrec = useCarregar<any[]>(
+    () =>
+      api
+        .get(
+          `/jurisprudencias?area=${encodeURIComponent(caso.area || "")}&per_page=50`,
+        )
+        .then((r) => {
+          const data = r.data;
+          return Array.isArray(data) ? data : (data?.data ?? []);
+        }),
+    [caso.area],
+    { fallbackErro: "Não foi possível carregar os precedentes." },
+  );
+  const precedentes = cargaPrec.dados ?? [];
+  const loadingPrec = cargaPrec.carregando;
 
   const buscar = async () => {
     const q = query || caso.descricao_fatos || "";
     if (!q.trim()) return;
     setLoading(true);
     setSearched(true);
+    setErroBusca(null);
     try {
       const { data } = await api.get("/rag/buscar", {
         params: { q, limite: 10 },
       });
       setResults(data?.resultados ?? []);
-    } catch {
+    } catch (err) {
       setResults([]);
+      setErroBusca(
+        mensagemErroHttp(err, "Não foi possível buscar jurisprudência."),
+      );
     } finally {
       setLoading(false);
     }
@@ -110,7 +110,10 @@ export default function TabIndicadoresJuridicos({
               )}
             </div>
           ))}
-          {searched && results.length === 0 && !loading && (
+          {erroBusca && !loading && (
+            <ErrorState message={erroBusca} onRetry={buscar} />
+          )}
+          {searched && results.length === 0 && !loading && !erroBusca && (
             <Empty message="Nenhum resultado encontrado para esta busca" />
           )}
           {!searched && (
@@ -133,6 +136,12 @@ export default function TabIndicadoresJuridicos({
         </p>
         {loadingPrec ? (
           <Spinner />
+        ) : cargaPrec.estado === "falhou" ? (
+          <ErrorState
+            title="Não foi possível carregar os precedentes"
+            message={cargaPrec.erro ?? undefined}
+            onRetry={cargaPrec.recarregar}
+          />
         ) : precedentes.length === 0 ? (
           <p className="text-center py-6 text-gray-400 text-sm">
             Nenhuma jurisprudência interna cadastrada nesta área

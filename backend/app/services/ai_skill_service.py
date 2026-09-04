@@ -162,22 +162,53 @@ async def executar_skill(
     )
 
     system_prompt = skill.system_prompt
+    # ── ANTI-INJEÇÃO (pente fino 03/09) ──────────────────────────────────────
+    # O RAG ia para o SYSTEM, cru. `system` é o papel de MÁXIMA confiança do
+    # modelo, e o conteúdo vem da base de conhecimento, que aceita ingestão de
+    # PDF e de URL — um documento envenenado ali passava a ditar regra de
+    # sistema. É EXATAMENTE o achado que `ia_especializada.py` já corrigiu ("o
+    # pior caso: RAG ia direto para system"), e cuja regressão
+    # `test_ai_prompt_injection_delimitadores.py` trava lá; esta instância
+    # ficou de fora. Agora o RAG vai no USER, em bloco com token aleatório.
+    from app.services.ai import delimitador
+    user_content = query_limpa
     if contexto_rag:
-        trechos = "\n\n---\n\n".join(
-            f"Trecho {i+1}:\n{c}" for i, c in enumerate(contexto_rag)
+        _tok = delimitador.novo_token()
+        system_prompt += delimitador.INSTRUCAO_SYSTEM
+        user_content = delimitador.montar(
+            delimitador.bloco(
+                "BASE DE CONHECIMENTO INTERNA",
+                "\n\n---\n\n".join(
+                    f"Trecho {i+1}:\n{c}" for i, c in enumerate(contexto_rag)
+                ),
+                _tok,
+            ),
+            instrucao_final=query_limpa,
         )
-        system_prompt += f"\n\n## BASE DE CONHECIMENTO INTERNA:\n{trechos}"
 
     # Barreira anti-alucinação OBRIGATÓRIA: o system_prompt da skill é autoral
     # (gravado no banco) e o task_type derivado da área pode não passar por
     # aplicar_base no gateway — garantimos a identidade/regras OAB aqui.
     messages = garantir_identidade([
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": query_limpa},
+        {"role": "user", "content": user_content},
     ])
 
     provider = _ENGINE_PROVIDER.get(skill.engine, "groq")
     task_type = _AREA_TASK.get(skill.area, "analise_juridica")
+
+    # ── PISO DE SIGILO (pente fino 03/09) ────────────────────────────────────
+    # SÉTIMA ocorrência da classe que a Issue #1194 fechou seis vezes e este PR
+    # mais cinco: função que recebe `case_id` e chama o gateway sem
+    # `modo_sanitizacao`. Aqui era a pior variante — `provider_override` força
+    # o engine da skill, cujo default é **groq** (externo). Numa skill rodada
+    # sobre caso com `sigilo_reforcado=True`, o conteúdo ia para fora do VPS, e
+    # o filtro `_restringir_cadeia_local_completo` do gateway não ajudava
+    # porque só age quando o modo chega. O contrato automatizado que escrevi
+    # (`test_piso_sigilo_rotas_vinculadas_a_caso.py`) varre `app/routers/` e não
+    # alcançava `app/services/` — a varredura foi ampliada junto com esta correção.
+    from app.services.ai.sanitization_policy import modo_sigilo_por_case_id
+    modo_sigilo = await modo_sigilo_por_case_id(db, case_id)
 
     resp = await ai_gateway.chat(
         messages=messages,
@@ -185,6 +216,7 @@ async def executar_skill(
         provider_override=provider,
         nivel_inteligencia="alto",
         entidades=entidades,
+        modo_sanitizacao=modo_sigilo,
     )
 
     inp = resp.input_tokens or 0
@@ -238,6 +270,21 @@ async def executar_skill(
             + " ".join(alertas_juridicos)
         )
     return resultado
+
+
+def _bloco_documento(texto: str, indice: int, total: int) -> str:
+    """Bloco de OCR delimitado com token aleatório por chamada.
+
+    O texto vem de documento ENVIADO pelo usuário — na prática, escrito por
+    terceiro (parte contrária, órgão, cliente). Ia cru na mensagem, exatamente
+    o vetor que `documento_service` fechou.
+    """
+    from app.services.ai import delimitador
+    tok = delimitador.novo_token()
+    return delimitador.montar(
+        delimitador.bloco(f"DOCUMENTO ENVIADO - BLOCO {indice} DE {total}", texto, tok),
+        instrucao_final="Produza a ficha factual deste bloco.",
+    )
 
 
 async def executar_skill_documento_longo(
@@ -308,6 +355,14 @@ async def executar_skill_documento_longo(
     provider = _ENGINE_PROVIDER.get(skill.engine, "groq")
     semaforo = asyncio.Semaphore(2)
 
+    # PISO DE SIGILO resolvido UMA vez para as N+1 chamadas desta função
+    # (pente fino 03/09): eram TRÊS caminhos ao gateway sem `modo_sanitizacao`
+    # — o resumo de cada bloco e a síntese final —, todos com
+    # `provider_override` forçando o engine da skill (default groq, externo).
+    # Num caso `sigilo_reforcado=True`, o OCR inteiro do documento saía do VPS.
+    from app.services.ai.sanitization_policy import modo_sigilo_por_case_id
+    _modo_sigilo = await modo_sigilo_por_case_id(db, case_id)
+
     async def resumir_bloco(indice: int, bruto: str):
         limpo, pii = sanitizar_ou_abortar(bruto)
         mensagens = garantir_identidade([
@@ -324,10 +379,9 @@ async def executar_skill_documento_longo(
             },
             {
                 "role": "user",
-                "content": (
-                    f"DOCUMENTO ENVIADO — BLOCO {indice + 1} "
-                    f"DE {len(blocos)}\n\n{limpo}"
-                ),
+                # OCR de documento ENVIADO — conteúdo de terceiro. Delimitado
+                # com token aleatório, como em `documento_service`.
+                "content": _bloco_documento(limpo, indice + 1, len(blocos)),
             },
         ])
         async with semaforo:
@@ -338,6 +392,7 @@ async def executar_skill_documento_longo(
                 nivel_inteligencia="alto",
                 max_tokens=500,
                 entidades=entidades,
+                modo_sanitizacao=_modo_sigilo,
             )
         return indice, resposta, pii
 
@@ -351,19 +406,35 @@ async def executar_skill_documento_longo(
         for indice, resposta, _ in parciais
     )
     system_prompt = skill.system_prompt
+    from app.services.ai import delimitador
+    _tok_final = delimitador.novo_token()
+    _rag_bloco = ""
     if contexto_rag:
-        trechos = "\n\n---\n\n".join(
-            f"Trecho RAG {i + 1}:\n{c}" for i, c in enumerate(contexto_rag)
+        # Mesma correção de `executar_skill`: a base interna sai do SYSTEM.
+        system_prompt += delimitador.INSTRUCAO_SYSTEM
+        _rag_bloco = delimitador.bloco(
+            "BASE DE CONHECIMENTO INTERNA",
+            "\n\n---\n\n".join(
+                f"Trecho RAG {i + 1}:\n{c}" for i, c in enumerate(contexto_rag)
+            ),
+            _tok_final,
         )
-        system_prompt += f"\n\n## BASE INTERNA RECUPERADA:\n{trechos}"
     system_prompt += (
         "\n\nO documento foi lido em blocos. As fichas abaixo são intermediárias: "
         "não trate ausência na ficha como ausência nos autos; sinalize tudo o "
         "que exigir conferência no original. Não invente número de página."
     )
-    mensagem_final = (
-        (f"INSTRUÇÕES DO USUÁRIO:\n{instrucoes_limpas}\n\n" if instrucoes_limpas else "")
-        + f"FICHAS FACTUAIS DO DOCUMENTO ENVIADO:\n\n{fichas}"
+    # As FICHAS são resumo de documento de terceiro: entram como DADO
+    # delimitado, não como texto solto colado à instrução do usuário.
+    mensagem_final = delimitador.montar(
+        _rag_bloco,
+        delimitador.bloco(
+            "FICHAS FACTUAIS DO DOCUMENTO ENVIADO", fichas, _tok_final),
+        instrucao_final=(
+            f"INSTRUÇÕES DO USUÁRIO:\n{instrucoes_limpas}"
+            if instrucoes_limpas else
+            "Produza a saída conforme a finalidade da skill."
+        ),
     )
     final = await ai_gateway.chat(
         messages=garantir_identidade([
@@ -375,6 +446,7 @@ async def executar_skill_documento_longo(
         nivel_inteligencia="alto",
         max_tokens=3000,
         entidades=entidades,
+        modo_sanitizacao=_modo_sigilo,
     )
 
     respostas = [item[1] for item in parciais] + [final]
