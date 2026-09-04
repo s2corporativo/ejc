@@ -42,6 +42,32 @@ Dois caminhos, ambos válidos:
    `AuditLog` por alteração. Um erro em qualquer definição aborta o lote inteiro: meio
    cadastro aplicado é pior que nenhum, porque parece configurado.
 
+### A API do Comunica/CNJ é geograficamente restrita
+
+`https://comunicaapi.pje.jus.br` fica atrás de uma distribuição CloudFront com
+restrição por país. De fora do Brasil ela devolve **403 em qualquer rota**, inclusive
+`/swagger`, com o corpo *"The Amazon CloudFront distribution is configured to block
+access from your country"* — verificado em 04/09/2026 a partir de um egress nos EUA
+(`x-amz-cf-pop: IAD55`), enquanto BrasilAPI respondia 200 e DataJud 401 pelo mesmo
+túnel, o que descarta bloqueio genérico a serviços brasileiros.
+
+Consequência prática: **cadastro de OAB correto não garante captura**. Se o servidor
+que roda o job não sair do Brasil, todas as consultas viram `http_4xx` e o advogado
+fica sem intimação — o heartbeat marca `erro`, mas nada no texto diz que a causa é a
+localização do servidor.
+
+Confirme no host onde o job roda (um comando, sem cadastro nenhum):
+
+```bash
+docker exec -it ejc_backend python -m scripts.configurar_oab_djen --testar-fonte
+# ou, cru:
+curl -s -o /dev/null -w '%{http_code}\n' https://comunicaapi.pje.jus.br/swagger
+```
+
+`200` = a fonte fala com este servidor. `403` = não fala, e nenhum ajuste de cadastro
+resolve; a saída precisa ser por egress brasileiro (proxy/servidor no país), decisão
+de infraestrutura do titular.
+
 **Como o cadastro errado se manifesta:** o `heartbeat` do job classifica o resultado, não
 a execução. Zero OAB cadastrada devolve `nenhuma_oab_configurada` com status `erro`; par
 número/UF incompleto devolve `oab_nao_configurada` para aquele advogado. Um painel "verde"

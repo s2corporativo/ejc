@@ -35,6 +35,10 @@
 #     # 1) conferir o estado atual (não escreve nada)
 #     docker exec -it ejc_backend python -m scripts.configurar_oab_djen --verificar
 #
+#     # 1b) provar que a fonte responde DESTE host (não escreve nada; faz uma
+#     #     consulta real ao DJEN/CNJ por OAB monitorada)
+#     docker exec -it ejc_backend python -m scripts.configurar_oab_djen --testar-fonte
+#
 #     # 2) simular (dry-run — não escreve nada)
 #     docker exec -it ejc_backend python -m scripts.configurar_oab_djen \
 #         --definir "Guilherme=252599/MG" \
@@ -302,6 +306,78 @@ async def verificar() -> int:
     return 0
 
 
+async def testar_fonte(dias: int = 7) -> int:
+    """Consulta o DJEN/CNJ de verdade, por OAB monitorada. Somente leitura.
+
+    Cadastro correto e captura funcionando são coisas diferentes: a API do
+    Comunica/CNJ (`comunicaapi.pje.jus.br`) fica atrás de uma distribuição
+    CloudFront com RESTRIÇÃO GEOGRÁFICA — de fora do país ela devolve 403 em
+    qualquer rota, inclusive `/swagger`. Um host errado deixa o job "verde"
+    (heartbeat classifica como `http_4xx`) sem que ninguém saiba que o motivo
+    é a localização do servidor, não a OAB. Este modo responde a pergunta no
+    host onde o job realmente roda.
+    """
+    from app.services.djen_service import consultar_oab
+
+    async with AsyncSessionLocal() as db:
+        usuarios = await _usuarios_ativos(db)
+
+    alvos = []
+    for u in usuarios:
+        if not (u.djen_oab_numero or "").strip():
+            continue  # o job seleciona por este campo
+        numero, uf = oab_para_captura(u)
+        if numero and uf:
+            alvos.append((u, numero, uf))
+
+    if not alvos:
+        logger.error(
+            "Nenhuma OAB monitorada — não há o que testar. Cadastre com --definir."
+        )
+        return 2
+
+    logger.info("=== Consulta real ao DJEN/CNJ (janela de %d dias) ===", dias)
+    falhas = 0
+    codigos = set()
+    for u, numero, uf in alvos:
+        resultado = await consultar_oab(numero, uf, dias=dias)
+        if resultado.fonte_ok:
+            logger.info(
+                "  OK       %s — %s/%s: %d comunicação(ões) na janela (%d página[s])",
+                u.full_name, numero, uf, resultado.recebidas, resultado.paginas,
+            )
+        else:
+            falhas += 1
+            codigos.add(resultado.erro or "desconhecido")
+            logger.error(
+                "  FALHA    %s — %s/%s: %s",
+                u.full_name, numero, uf, resultado.erro,
+            )
+
+    logger.info("")
+    if not falhas:
+        logger.info(
+            "Fonte respondeu para todas as %d OAB(s). "
+            "`fonte_ok` com zero comunicações é resposta válida — significa que "
+            "não houve publicação na janela, não que ninguém perguntou.",
+            len(alvos),
+        )
+        return 0
+
+    logger.error("%d de %d OAB(s) falharam (%s).", falhas, len(alvos), ", ".join(sorted(codigos)))
+    if "http_4xx" in codigos:
+        logger.error(
+            "http_4xx no Comunica/CNJ costuma ser RESTRIÇÃO GEOGRÁFICA da "
+            "distribuição CloudFront: de fora do Brasil a API devolve 403 em "
+            "qualquer rota. Confirme com uma requisição crua neste mesmo host:\n"
+            "    curl -s -o /dev/null -w '%{http_code}\\n' "
+            "https://comunicaapi.pje.jus.br/swagger\n"
+            "403 aqui = o servidor não consegue falar com o DJEN de onde está, "
+            "e nenhum ajuste de cadastro resolve isso."
+        )
+    return 1
+
+
 async def executar(definicoes: list[Definicao], aplicar: bool) -> int:
     async with AsyncSessionLocal() as db:
         usuarios = await _usuarios_ativos(db)
@@ -410,11 +486,26 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="somente leitura: mostra de quem o job DJEN vai capturar hoje",
     )
+    ap.add_argument(
+        "--testar-fonte",
+        action="store_true",
+        help=(
+            "somente leitura: consulta o DJEN/CNJ de verdade por OAB "
+            "monitorada e diz se a fonte responde DESTE host"
+        ),
+    )
     args = ap.parse_args(argv)
 
-    if args.verificar and args.definir:
-        logger.error("--verificar é somente leitura; não combine com --definir.")
+    if (args.verificar or args.testar_fonte) and args.definir:
+        logger.error(
+            "--verificar e --testar-fonte são somente leitura; não combine com --definir."
+        )
         return 2
+    if args.verificar and args.testar_fonte:
+        logger.error("Rode um modo de cada vez.")
+        return 2
+    if args.testar_fonte:
+        return asyncio.run(testar_fonte())
     if args.verificar:
         return asyncio.run(verificar())
     if not args.definir:

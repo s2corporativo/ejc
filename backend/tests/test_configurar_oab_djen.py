@@ -192,3 +192,37 @@ def test_um_erro_aborta_o_lote_inteiro():
     )
     assert erros  # o chamador (executar) devolve 2 e não grava nada
     assert [i.user_id for i in plano] == ["2"]
+
+
+# ── CLI: modos somente-leitura não se misturam com gravação ──────────────────
+
+def test_cli_recusa_verificar_junto_com_definir():
+    from scripts.configurar_oab_djen import main
+
+    assert main(["--verificar", "--definir", "Guilherme=252599/MG"]) == 2
+
+
+def test_cli_recusa_testar_fonte_junto_com_definir():
+    from scripts.configurar_oab_djen import main
+
+    assert main(["--testar-fonte", "--definir", "Guilherme=252599/MG"]) == 2
+
+
+def test_cli_recusa_dois_modos_de_leitura_ao_mesmo_tempo():
+    from scripts.configurar_oab_djen import main
+
+    assert main(["--verificar", "--testar-fonte"]) == 2
+
+
+def test_cli_sem_argumento_nao_grava_nada():
+    from scripts.configurar_oab_djen import main
+
+    assert main([]) == 2
+
+
+def test_cli_recusa_definicao_invalida_antes_de_abrir_o_banco():
+    """O parser roda antes de qualquer conexão: entrada errada não chega a
+    tocar o banco nem a pedir confirmação."""
+    from scripts.configurar_oab_djen import main
+
+    assert main(["--definir", "Guilherme=252599", "--aplicar"]) == 2

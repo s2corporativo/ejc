@@ -164,11 +164,32 @@ def limpar_resultados_execucao() -> None:
     _RESULTADOS_EXECUCAO.set(())
 
 
+# A API do Comunica/CNJ fica atrás de uma distribuição CloudFront com
+# restrição por país: de fora do Brasil ela devolve 403 em QUALQUER rota,
+# inclusive /swagger, com este texto no corpo. Sem distinguir esse caso, o
+# diagnóstico mostra `http_4xx` e o operador procura o defeito no cadastro de
+# OAB — quando a causa é a localização do servidor, que nenhum ajuste de
+# cadastro corrige. Verificado em 04/09/2026 (x-amz-cf-pop IAD55).
+_MARCA_BLOQUEIO_GEOGRAFICO = "block access from your country"
+
+
+def _e_bloqueio_geografico(resposta: httpx.Response | None) -> bool:
+    if resposta is None or resposta.status_code != 403:
+        return False
+    try:
+        corpo = resposta.text or ""
+    except Exception:  # resposta em streaming/consumida — não dá para afirmar
+        return False
+    return _MARCA_BLOQUEIO_GEOGRAFICO in corpo.lower()
+
+
 def _classificar_erro_fonte(exc: Exception) -> str:
     if isinstance(exc, httpx.TimeoutException):
         return "timeout"
     if isinstance(exc, httpx.HTTPStatusError):
         status = exc.response.status_code if exc.response is not None else 0
+        if _e_bloqueio_geografico(exc.response):
+            return "geo_bloqueado"
         if status >= 500:
             return "http_5xx"
         if status >= 400:
