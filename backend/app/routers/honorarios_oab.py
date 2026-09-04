@@ -45,6 +45,12 @@ REGRAS = (
 )
 
 
+def _req_advogado(cu: User = Depends(get_current_user)) -> User:
+    """Precificação/proposta de honorários é ato jurídico: advogado+ no backend."""
+    requer_advogado(cu, detail="Precificação de honorários restrita a advogados")
+    return cu
+
+
 class EstimativaIn(BaseModel):
     area: str
     tipo_acao: str = Field(min_length=2, max_length=200)
@@ -85,7 +91,7 @@ async def _contexto_oab(db, area: str, tipo_acao: str) -> tuple[str, bool]:
 @router.get("/tabela")
 async def itens_tabela(area: str = "", tipo: str = "",
                        db: AsyncSession = Depends(get_db),
-                       cu: User = Depends(get_current_user)):
+                       cu: User = Depends(_req_advogado)):
     """Itens relevantes da tabela OAB/MG (transparência da fonte)."""
     txt, ok = await _contexto_oab(db, area, tipo)
     return {"disponivel": ok, "itens": txt or "Tabela oficial OAB/MG não disponível na base."}
@@ -94,7 +100,7 @@ async def itens_tabela(area: str = "", tipo: str = "",
 @router.post("/estimar", dependencies=[Depends(rate_limit("honorarios-estimar", 15))])
 async def estimar(body: EstimativaIn,
                   db: AsyncSession = Depends(get_db),
-                  cu: User = Depends(get_current_user)):
+                  cu: User = Depends(_req_advogado)):
     ctx_txt, tabela_ok = await _contexto_oab(db, body.area, body.tipo_acao)
 
     if tabela_ok:
@@ -172,17 +178,13 @@ class ItemOABIn(BaseModel):
     valor_minimo: Optional[float] = Field(None, ge=0)
     percentual: Optional[float] = Field(None, ge=0, le=100)
     unidade: Optional[str] = Field(None, max_length=30)
-    # Só preenchida quando INFORMADA pelo usuário (edição/vigência conhecida);
-    # nunca deduzida pelo sistema.
     vigencia_inicio: Optional[date] = None
     observacoes: Optional[str] = Field(None, max_length=2000)
-    fonte: str = Field(min_length=5, max_length=300)  # documento/URL oficial OAB/MG
+    fonte: str = Field(min_length=5, max_length=300)
 
     @field_validator("fonte")
     @classmethod
     def _fonte_identificavel(cls, v: str) -> str:
-        # Barreira mínima contra fonte nominal ("aaaaa"): precisa referenciar a
-        # OAB ou ser um endereço/documento identificável (URL).
         v = v.strip()
         if "oab" not in v.lower() and not v.lower().startswith(("http://", "https://")):
             raise ValueError(
@@ -192,7 +194,6 @@ class ItemOABIn(BaseModel):
 
 
 class EncerrarVigenciaIn(BaseModel):
-    # Data informada pelo usuário — o sistema não presume o fim da vigência.
     vigencia_fim: date
     motivo: Optional[str] = Field(None, max_length=300)
 
@@ -252,7 +253,6 @@ async def criar_item(
         area_juridica=body.area_juridica,
         valor_minimo=body.valor_minimo,
         percentual=body.percentual,
-        # VERBATIM da fonte: sem default — item só-percentual não ganha "R$".
         unidade=body.unidade,
         vigencia_inicio=body.vigencia_inicio,
         vigencia_fim=None,
@@ -312,11 +312,6 @@ async def encerrar_vigencia(
 # APROVADA é imutável (mudança = nova versão); contrato completo só a partir
 # de proposta aprovada. Restrito a advogado+ com ownership do caso e rate limit.
 
-def _req_advogado(cu: User = Depends(get_current_user)) -> User:
-    # Proposta/aprovação de honorários é ato jurídico: advogado+ (nível >= 6).
-    requer_advogado(cu)
-    return cu
-
 
 class FaixaIn(BaseModel):
     valor: Optional[float] = Field(None, ge=0)
@@ -342,7 +337,7 @@ class PropostaIn(BaseModel):
     """Rascunho de proposta — valores definidos/confirmados pelo ADVOGADO
     (a sugestão determinística do endpoint /sugerir é apenas referência)."""
     faixas: FaixasIn = FaixasIn()
-    origem_tabela: Optional[dict] = None      # item OAB verbatim (da sugestão)
+    origem_tabela: Optional[dict] = None
     exito_percentual: Optional[float] = Field(None, ge=0, le=100)
     parcelamento: Optional[ParcelamentoIn] = None
     despesas_criterio: Optional[str] = Field(None, max_length=2000)
@@ -463,10 +458,10 @@ async def rejeitar_proposta_honorarios(
 
 # ── (incorporado de honorarios_calc.py — D4) ──
 
-SUC_MIN = Decimal("0.10")      # art. 85 §2º CPC — piso
-SUC_MAX = Decimal("0.20")      # art. 85 §2º CPC — teto
-SUC_PROV = Decimal("0.15")     # provável (meio da faixa)
-TETO_ETICO = Decimal("0.50")   # alerta se honorários > 50% do proveito
+SUC_MIN = Decimal("0.10")
+SUC_MAX = Decimal("0.20")
+SUC_PROV = Decimal("0.15")
+TETO_ETICO = Decimal("0.50")
 _CENT = Decimal("0.01")
 
 
@@ -475,7 +470,6 @@ def _f(x):
 
 
 async def _get_case(db: AsyncSession, cu: User, case_id: str) -> Case:
-    # Gate de ownership (IDOR): 404 se não existe, 403 se sem acesso ao caso.
     return await verificar_acesso_caso(db, cu, case_id)
 
 
@@ -547,17 +541,10 @@ async def teto_etico(
 # ── (incorporado de exito_rateio.py — D4) ──
 
 _Q2 = Decimal("0.01")
-
-# Split do êxito líquido (após despesas) entre titular do caso e escritório.
-# Regra EJC atual: 50% titular / 50% escritório. Parametrizado (constante nomeada)
-# para remover o número mágico; o restante (1 - PERCENTUAL_TITULAR) fica com o
-# escritório. Não exposto na API por ora.
 PERCENTUAL_TITULAR = Decimal("0.50")
 
 
 def _money(v) -> Decimal:
-    """Coage numérico (Decimal de coluna Numeric, int, float, str, None) para
-    Decimal com 2 casas (ROUND_HALF_UP)."""
     return Decimal(str(v or 0)).quantize(_Q2, ROUND_HALF_UP)
 
 
@@ -581,9 +568,6 @@ async def _calcular(fee_id: str, db: AsyncSession) -> dict:
         raise HTTPException(422, "Rateio aplicável apenas a honorários de êxito")
 
     bruto = _money(fee["valor"])
-
-    # Custo do caso UNIFICADO: despesas pagas do centro de custos + custas/despesas lançadas em fees.
-    # (corrige: antes somava receitas+despesas; agora só tipo despesa, e inclui fees custas_despesas)
     desp = (await db.execute(text("""
         SELECT
           (SELECT COALESCE(SUM(valor),0) FROM centro_custos
@@ -600,7 +584,6 @@ async def _calcular(fee_id: str, db: AsyncSession) -> dict:
     escritorio_share = _money(liquido - titular_share)
     pct_titular = int((PERCENTUAL_TITULAR * 100).to_integral_value())
 
-    # Titular é sócio?
     partner = None
     if fee["advogado_responsavel_id"]:
         partner = (await db.execute(text("""
@@ -646,16 +629,11 @@ async def gerar_rateio(
     calc = await _calcular(fee_id, db)
     if not calc["pago"]:
         raise HTTPException(422, "Honorário de êxito ainda não foi pago")
-    socio_id = calc["titular"]["partner_id"]  # socios.id — prova de que o titular é sócio
+    socio_id = calc["titular"]["partner_id"]
     if not socio_id:
         raise HTTPException(422, "Advogado titular do caso não é sócio cadastrado — rateio manual necessário")
-    # A13 (auditoria 2026-06-30): partner_withdrawals.partner_id é, por convenção
-    # unificada, o users.id (igual ao create_withdrawal e ao filtro "minhas
-    # retiradas"). Antes gravava socios.id -> o rateio de êxito sumia da lista do
-    # próprio sócio. Passa a gravar o user_id do titular.
     partner_id = calc["titular"]["user_id"]
 
-    # Evita duplicar: já existe saque com esta referência?
     ref = f"exito:{fee_id}"
     dup = (await db.execute(text("""
         SELECT id FROM partner_withdrawals

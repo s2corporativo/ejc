@@ -40,6 +40,14 @@ class _Res:
     def scalar_one_or_none(self):
         return self._val
 
+    def mappings(self):
+        # O portal financeiro passou a ler as linhas por `mappings().first()`
+        # (dict), não mais por tupla — o fake acompanha o acessor real.
+        return self
+
+    def first(self):
+        return self._val
+
     def all(self):
         return self._val if isinstance(self._val, list) else []
 
@@ -176,7 +184,13 @@ async def test_portal_financeiro_inclui_pago_em():
               data_vencimento=date(2026, 6, 10),
               data_pagamento=date(2026, 6, 9),
               client_id="cli1", case_id=None, deleted_at=None)
-    db = _FakeDB([[fee]])
+    # Duas consultas: a lista de honorários e, depois, o ledger de pagamentos
+    # efetivos (CTE de compatibilidade). Honorário `pago` sem lançamento no
+    # subledger é o caso legado que a segunda consulta existe para cobrir.
+    db = _FakeDB([
+        [{"fee_id": "f1", "total_pago": 1500, "legado_sem_subledger": True}],
+        [fee],
+    ])
     out = await financeiro(db=db, cu=_cliente())
     assert out["data"][0]["pago_em"] == date(2026, 6, 9)
     assert out["data"][0]["vencimento"] == date(2026, 6, 10)

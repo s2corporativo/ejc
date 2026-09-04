@@ -43,6 +43,15 @@ def test_edicao_invalida_revisao_e_protocolo_e_imutavel():
     assert "Conteúdo alterado exige novo ciclo" in bloco
 
 
+def test_patch_sincroniza_rag_quando_conteudo_ou_status_mudam():
+    src = _source("app/routers/legal_docs.py")
+    bloco = _function_source(src, "atualizar")
+    assert "status_novo_efetivo = _status_value(d.status)" in bloco
+    assert "if conteudo_alterado or status_novo_efetivo != status_antigo:" in bloco
+    assert "background.add_task(indexar_peca_rag, d.id)" in bloco
+    assert bloco.index("await db.commit()") < bloco.index("background.add_task(indexar_peca_rag, d.id)")
+
+
 def test_mutacoes_da_peca_usam_lock_pessimista():
     src = _source("app/routers/legal_docs.py")
     for nome in ("atualizar", "revisar", "aprovar", "registrar_protocolo"):
@@ -97,6 +106,45 @@ def test_orquestrador_nao_depende_de_filtro_textual_legado():
     assert "_VALIDACAO_TIPO_FILTRO" not in src
     assert "AILog.legal_doc_id" in src
     assert "AILog.legal_doc_content_hash" in src
+
+
+# ── Auditoria E2E Peças 2026-09-02 / #984 ───────────────────────────────────
+
+def test_revisar_peca_ia_nao_contorna_citation_gate():
+    """O caminho legado /revisar não pode ser um atalho em relação ao fluxo
+    canônico conferir-e-assinar: aprovação de peça IA exige validação corrente,
+    lock do AILog e citation gate sem override silencioso."""
+    src = _source("app/routers/legal_docs.py")
+    bloco = _function_source(src, "revisar")
+
+    assert "requer_advogado" in bloco
+    assert "_ultima_validacao_peca" in bloco
+    assert "if not ai_log_id" in bloco
+    assert "select(AILog)" in bloco
+    assert ".with_for_update()" in bloco
+    assert "aplicar_gate_hitl" in bloco
+    assert 'await aplicar_gate_hitl(db, log, "revisado", False, None, cu)' in bloco
+    assert "AIStatusHITL.revisado" in bloco
+    assert '"REVISAO_HITL", "ai_logs"' in bloco
+    assert 'if not validacao.get("apto_fluxo")' in bloco
+
+
+def test_modulo_pecas_nao_atribui_hitl_ao_provimento_205():
+    """V2-4.3: o Provimento OAB 205/2021 trata de publicidade; não deve ser
+    apresentado no router de peças como fundamento do gate HITL."""
+    src = _source("app/routers/legal_docs.py")
+    assert "Provimento OAB 205/2021" not in src
+    assert "Prov. OAB 205/2021" not in src
+
+
+def test_rag_so_aprova_peca_revisada_e_em_status_juridico_apto():
+    src = _source("app/services/case_intel.py")
+    bloco = _function_source(src, "indexar_peca_rag")
+
+    assert 'status_peca = getattr(d.status, "value", None)' in bloco
+    assert '"status_peca": status_peca' in bloco
+    assert 'status_peca in {"aprovada", "final", "protocolada"}' in bloco
+    assert '"aprovado" if human_reviewed and status_apto_rag else "pendente"' in bloco
 
 
 # ── Achado #672 (homologação dinâmica, parte-13 §3.2): sem provedor de IA
