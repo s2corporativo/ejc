@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import posixpath
+import re
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
@@ -29,9 +30,13 @@ PREFIXOS_PUBLICOS = (
     "/api/docs",
     "/api/openapi.json",
     "/api/webhooks/",
-    "/api/calendar/",
     "/api/data-rooms/acesso/",
     "/api/rag/knowledge-base/",
+)
+
+_CALENDAR_FEED_PUBLICO_RE = re.compile(
+    r"^/api/calendar/[^/]+/[0-9a-f]{32}\.ics$",
+    flags=re.IGNORECASE,
 )
 
 
@@ -66,10 +71,21 @@ def _path_casa_prefixo_publico(path: str, prefixo: str) -> bool:
     return path == prefixo or path.startswith(prefixo + "/")
 
 
+def _calendar_feed_assinado_publico(path: str) -> bool:
+    """Libera apenas o feed ICS portador de token HMAC, nunca a gestão do feed.
+
+    `/calendar/me/url` e `/calendar/me/rotate` dependem de JWT e também devem
+    passar pelos gates globais de troca de senha, 2FA e isolamento do Portal.
+    """
+    return _CALENDAR_FEED_PUBLICO_RE.fullmatch(path) is not None
+
+
 def _is_publica(path: str) -> bool:
     """Retorna True se a rota não exige JWT, após normalização segura."""
     path = _api_path_interno(path)
     if not path.startswith("/api/"):
+        return True
+    if _calendar_feed_assinado_publico(path):
         return True
     return any(_path_casa_prefixo_publico(path, p) for p in PREFIXOS_PUBLICOS)
 
@@ -106,13 +122,13 @@ def _registrar_uso_de_rota(request, status_code: int) -> None:
             return
         rota = request.scope.get("route")
         template = getattr(rota, "path", None)
-        if not template:            # nenhuma rota casou (404): não é uso real
+        if not template:
             return
 
         from app.services import route_usage
 
         route_usage.registrar(template, request.method, getattr(request.state, "role", None))
-    except Exception:  # pragma: no cover — telemetria nunca quebra o request
+    except Exception:  # pragma: no cover
         pass
 
 
@@ -172,9 +188,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 },
             )
 
-        # Tokens emitidos antes da desativação podem conter o claim abaixo. A
-        # política global tem precedência, evitando que sessões antigas permaneçam
-        # presas na tela de setup enquanto o 2FA estiver temporariamente desligado.
         if (
             two_factor_enabled()
             and payload.get("two_factor_setup_required")
