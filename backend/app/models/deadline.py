@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     Enum as SAEnum,
     ForeignKey,
+    JSON,
     String,
     Text,
     func,
@@ -94,7 +95,12 @@ class Deadline(Base):
     regime_calculo = Column(String(20), nullable=True)
     # Snapshot reproduzível do cálculo/revisão: dias, tribunal, flags,
     # calendario_status, resultado_preliminar, modo e demais parâmetros seguros.
-    calculo_metadata = Column(JSONB, nullable=True)
+    # JSONB no Postgres (é o que a migration 156 cria), JSON no sqlite: o
+    # harness de teste dos vizinhos monta as tabelas com `create_all` sobre
+    # aiosqlite, e o SQLiteTypeCompiler não sabe compilar JSONB — sem a variante
+    # a suíte de Entrada Única e de RBAC de prazo quebrava no setup, não no
+    # comportamento. Em produção nada muda.
+    calculo_metadata = Column(JSONB().with_variant(JSON, "sqlite"), nullable=True)
     calculado_por = Column(String(36), nullable=True)
     conferido_por = Column(String(36), nullable=True)
     conferido_em = Column(DateTime(timezone=True), nullable=True)
