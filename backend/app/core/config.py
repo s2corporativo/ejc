@@ -654,6 +654,26 @@ class Settings(BaseSettings):
     # O script manual (scripts.reembedar_chunks_orfaos) segue como fallback.
     RAG_AUTO_REEMBED_ENABLED: bool = True
     RAG_AUTO_REEMBED_BATCH: int = 20
+    # Liberação do acervo (achado C-1 da auditoria de 04/09/2026): o gate de
+    # recuperação é fail-closed e correto, mas NENHUM ingestor automático
+    # produz os metadados de curadoria que ele exige — o acervo entra, o painel
+    # diz "aprovado" e a busca devolve vazio. Este job aplica, diariamente e de
+    # forma idempotente, a política de liberação POR ORIGEM OFICIAL
+    # (scripts.liberar_acervo_rag), para que documento novo não fique preso.
+    # NÃO enfraquece o gate: preenche o metadado que o gate exige, só em
+    # documento de fonte oficial, e nunca sobre decisão humana explícita
+    # ('recusado'/'bloqueado'/quarentena/requires_human_review) nem sobre
+    # marcador de revogação/suspensão.
+    RAG_LIBERACAO_LOTE_ENABLED: bool = True
+    # DECISÃO DO TITULAR (04/09/2026, opção A): legislação de origem oficial
+    # sem marcador de revogação é liberada como `legal_status='vigente'` em
+    # LOTE, por origem — não por conferência individual de cada diploma. A
+    # trilha grava `legal_status_origem='liberacao_lote:...'` justamente para
+    # distinguir depois o que foi conferido do que foi liberado por origem, e
+    # para tornar o lote reversível por marcador. `proposicao_legislativa`
+    # fica de fora: proposta em tramitação não é norma vigente.
+    # Desligar esta flag volta ao regime de curadoria individual.
+    RAG_LIBERACAO_LOTE_VIGENCIA: bool = True
     # Seed nasce vetorizado (C1): ao final de seeds/seed_all.py, se o provider
     # de embeddings estiver disponível, os chunks órfãos do seed são
     # reembedados na hora (idempotente) — sem isto a busca semântica fica vazia

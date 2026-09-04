@@ -1262,6 +1262,42 @@ async def _reembedar_rag_orfaos():
     await _bater_ponto(JOB_REEMBED_RAG, "ok")
 
 
+async def _liberar_acervo_rag():
+    """Aplica a política de liberação do acervo RAG (achado C-1 da auditoria de
+    04/09/2026), diariamente e de forma idempotente.
+
+    Sem isto, a liberação em lote é um passo manual que envelhece: cada novo
+    diploma do Planalto/LexML e cada nova jurisprudência nascem sem os
+    metadados que o gate de recuperação exige e ficam invisíveis para a IA até
+    alguém rodar o script à mão.
+
+    NÃO enfraquece o gate — preenche o metadado que ele exige, só em documento
+    de origem oficial, nunca sobre decisão humana explícita nem sobre marcador
+    de revogação. Heartbeat por RESULTADO: contagem liberada e o que RESTA
+    bloqueado, para que uma rodada inócua não bata ponto "ok"."""
+    if not getattr(settings, "RAG_LIBERACAO_LOTE_ENABLED", True):
+        return
+    from app.services.heartbeat_service import JOB_LIBERACAO_RAG
+    try:
+        from scripts.liberar_acervo_rag import executar
+        resultado = await executar(
+            aplicar=True,
+            vigencia=bool(getattr(settings, "RAG_LIBERACAO_LOTE_VIGENCIA", True)),
+        )
+    except Exception as e:  # nunca derruba o scheduler
+        logger.warning("[Scheduler] liberação do acervo RAG falhou: %s", str(e)[:200])
+        await _bater_ponto(JOB_LIBERACAO_RAG, "erro", str(e)[:200])
+        return
+    depois = resultado.get("depois") or {}
+    logger.info(
+        "[Scheduler] acervo RAG: %s aprovado(s), %s com vigência liberada; "
+        "restam %s sem aprovação e %s sem vigência",
+        resultado.get("aprovados"), resultado.get("vigencia_liberada", 0),
+        depois.get("sem_aprovacao"), depois.get("vigencia_nao_verificada"),
+    )
+    await _bater_ponto(JOB_LIBERACAO_RAG, "ok")
+
+
 async def _job_backup_drive_monitorado():
     """Envelope do backup com heartbeat por RESULTADO (F4): o job canônico
     continua em backup_execution_service; aqui só se registra ok/erro."""
@@ -1341,6 +1377,12 @@ def start_scheduler():
     # quando não há órfãos; max_instances=1 evita sobreposição na 1ª carga grande.
     s.add_job(_reembedar_rag_orfaos, CronTrigger(minute=20), id="reembed_rag_orfaos",
               replace_existing=True, max_instances=1, coalesce=True)
+    # Liberação do acervo RAG (C-1): 03:40, ANTES das ingestões das 04:00 —
+    # assim a rodada do dia trata o que os coletores da véspera trouxeram, e
+    # nenhum documento passa 24 h invisível para a IA por falta de metadado.
+    s.add_job(_liberar_acervo_rag, CronTrigger(hour=3, minute=40),
+              id="liberacao_acervo_rag", replace_existing=True,
+              max_instances=1, coalesce=True)
     s.add_job(_purgar_dados_lgpd, CronTrigger(day_of_week="sun", hour=2, minute=30), id="purga_lgpd", replace_existing=True)
     s.add_job(job_ingestao_camara,   CronTrigger(hour=4, minute=0),          id="ing_camara",   replace_existing=True)
     s.add_job(job_ingestao_senado,   CronTrigger(hour=4, minute=20),         id="ing_senado",   replace_existing=True)

@@ -20,6 +20,7 @@ JOB_PRESCRICAO = "prescricao"
 JOB_ENTRADA_EXPURGO = "entrada_expurgo"
 JOB_BACKUP_DRIVE = "backup_drive"
 JOB_REEMBED_RAG = "reembed_rag_orfaos"
+JOB_LIBERACAO_RAG = "liberacao_acervo_rag"
 
 _MAX_DIARIO = 26
 _MAX_DATAJUD = 14
@@ -73,6 +74,11 @@ JOBS_MONITORADOS: dict[str, dict[str, Any]] = {
         "label": "Auto-reindex do RAG (chunks órfãos)",
         "max_age_horas": 3,
         "cadencia": "horário (:20)",
+    },
+    JOB_LIBERACAO_RAG: {
+        "label": "Liberação do acervo RAG (curadoria por origem oficial)",
+        "max_age_horas": _MAX_DIARIO,
+        "cadencia": "diário (03:40)",
     },
 }
 
