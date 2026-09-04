@@ -24,6 +24,11 @@ def test_scheduler_nasce_com_misfire_grace_time(monkeypatch):
 
 
 def test_backup_monitorado_bate_ponto_ok_e_erro(monkeypatch):
+    # BACKUP_ENABLED default é False e o gate agora é verificado ANTES de
+    # chamar o motor (backup desligado não bate mais ponto "ok" — ver
+    # tests/test_painel_jobs_honesto.py). Este teste cobre o backup LIGADO,
+    # que sempre foi a sua intenção: ok no sucesso, erro na exceção.
+    monkeypatch.setattr(sch.settings, "BACKUP_ENABLED", True)
     batidas: list[tuple] = []
 
     async def _fake_ponto(job, status, detail=None):
@@ -32,7 +37,10 @@ def test_backup_monitorado_bate_ponto_ok_e_erro(monkeypatch):
     monkeypatch.setattr(sch, "_bater_ponto", _fake_ponto)
 
     async def _ok():
-        return None
+        # Sucesso REAL do motor (heartbeat por resultado, F4): o antigo
+        # `return None` só passava porque o gate desligado curto-circuitava em
+        # "ok" antes de olhar o resultado.
+        return {"ok": True, "status": "ok"}
 
     from app.services import backup_execution_service as bes
 
