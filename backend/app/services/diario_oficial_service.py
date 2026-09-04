@@ -14,7 +14,36 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-DOU_SEARCH_URL = "https://www.in.gov.br/consulta/-/buscar/dou"
+# Índice do dia inteiro, uma requisição por seção, SEM paginação e SEM senha.
+#
+# A URL anterior (`/consulta/-/buscar/dou`) foi abandonada por dois defeitos
+# medidos em 04/09/2026, ambos reproduzidos:
+#   1. o portal derruba a conexão quando o User-Agent é o do httpx
+#      (`RemoteProtocolError`); com UA de navegador responde 200;
+#   2. mesmo com UA aceito, a resposta é HTML — `resp.json()` estoura. O
+#      envelope `content.jsonArray` que o código exigia não existe mais.
+# O job rodava todo dia às 06h, caía em DOUIndisponivelError e nunca capturava
+# nada; o teste que o cobria injetava um contrato que a fonte nunca devolveu.
+#
+# O índice entrega o dia inteiro numa chamada (medido: DO1=297, DO2=752,
+# DO3=2167 itens), com JSON embutido em `<script id="params">`. Filtrar as
+# keywords localmente é mais barato e mais robusto do que depender do portlet
+# de busca, que pagina por cursor via POST.
+DOU_INDEX_URL = "https://www.in.gov.br/leiturajornal"
+
+# UA de navegador: o portal recusa o UA padrão do httpx (defeito 1 acima).
+_DOU_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/128.0 Safari/537.36"
+)
+
+# Seções: DO1 atos normativos, DO2 pessoal, DO3 contratos/licitações.
+_DOU_SECOES_PADRAO = ("do1", "do2", "do3")
+
+# Cache do índice POR EXECUÇÃO: `processar_alertas_dou` chama `buscar_dou` uma
+# vez por keyword, e sem isto N keywords custariam N×3 downloads do dia inteiro.
+# Premissa de worker único do EJC (mesma dos rate-limits em memória).
+_INDICE_CACHE: dict[tuple[str, str], list[dict]] = {}
 
 
 class DOUIndisponivelError(RuntimeError):
@@ -73,74 +102,133 @@ def status_dou() -> dict[str, Any]:
     return dict(_DOU_STATUS)
 
 
-async def buscar_dou(keyword: str, data_pub: date | None = None) -> list[dict]:
-    """Consulta o DOU e retorna publicações normalizadas.
+def _extrair_json_do_indice(html: str) -> list[dict]:
+    """Extrai o `jsonArray` do `<script id="params">` da página do índice.
 
-    Retorna ``[]`` SOMENTE quando a consulta foi tecnicamente válida e não há
-    publicações. Falha de rede, HTTP, parse ou contrato levanta
-    ``DOUIndisponivelError``.
+    O JSON vem embutido no HTML (não há endpoint JSON puro: `?format=xml`
+    devolve HTML e `/api/dou/<slug>` responde 404). Ausência do script é
+    QUEBRA DE CONTRATO, não zero publicações — o portal muda sem aviso, e foi
+    exatamente assim que a versão anterior deste módulo parou de funcionar sem
+    ninguém perceber.
     """
+    import json
+    import re
+
+    m = re.search(
+        r'<script[^>]*id="params"[^>]*>(.*?)</script>', html, re.DOTALL
+    )
+    if not m:
+        raise DOUIndisponivelError(
+            "Índice do DOU sem <script id='params'> — contrato do portal mudou"
+        )
+    try:
+        dados = json.loads(m.group(1).strip())
+    except json.JSONDecodeError as exc:
+        raise DOUIndisponivelError("Índice do DOU com JSON inválido") from exc
+
+    if not isinstance(dados, dict):
+        raise DOUIndisponivelError("Índice do DOU em formato inesperado")
+    bruto = dados.get("jsonArray")
+    if bruto is None:
+        raise DOUIndisponivelError("Índice do DOU sem jsonArray")
+    if not isinstance(bruto, list):
+        raise DOUIndisponivelError("jsonArray do DOU em formato inesperado")
+    return [i for i in bruto if isinstance(i, dict)]
+
+
+async def _carregar_indice(data_str: str, secao: str) -> list[dict]:
+    """Baixa (e memoiza) o índice de uma seção do dia."""
     import httpx
 
-    data_alvo = data_pub or date.today() - timedelta(days=1)
-    data_str = data_alvo.strftime("%d-%m-%Y")
-    params = {
-        "q": keyword,
-        "exactDate": data_str,
-        "sortType": "0",
-        "_search": "null",
-        "view": "simple",
-        "numberOfPage": "1",
-        "publishedFrom": data_str,
-        "publishedTo": data_str,
-    }
+    chave = (data_str, secao)
+    if chave in _INDICE_CACHE:
+        return _INDICE_CACHE[chave]
 
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.get(DOU_SEARCH_URL, params=params)
+        async with httpx.AsyncClient(
+            timeout=45,
+            follow_redirects=True,
+            headers={"User-Agent": _DOU_USER_AGENT},
+        ) as client:
+            resp = await client.get(
+                DOU_INDEX_URL, params={"data": data_str, "secao": secao}
+            )
             resp.raise_for_status()
-            data = resp.json()
+            html = resp.text
+    except DOUIndisponivelError:
+        raise
     except Exception as exc:
-        logger.warning(
-            "[DOU] fonte indisponível: %s",
-            type(exc).__name__,
-        )
+        logger.warning("[DOU] índice %s/%s indisponível: %s",
+                       data_str, secao, type(exc).__name__)
         raise DOUIndisponivelError(
-            f"Consulta ao DOU indisponível ({type(exc).__name__})"
+            f"Índice do DOU indisponível ({type(exc).__name__})"
         ) from None
 
-    if not isinstance(data, dict):
-        raise DOUIndisponivelError("Consulta ao DOU retornou formato inesperado")
+    itens = _extrair_json_do_indice(html)
+    _INDICE_CACHE[chave] = itens
+    return itens
 
-    # Fail-closed: ausência do envelope `content` é quebra de contrato, não
-    # evidência de zero publicações. Zero resultado válido é `jsonArray=[]`.
-    content = data.get("content")
-    if not isinstance(content, dict):
-        raise DOUIndisponivelError("Consulta ao DOU retornou content inválido")
 
-    bruto = content.get("jsonArray")
-    if bruto is None:
-        raise DOUIndisponivelError(
-            "Consulta ao DOU não retornou jsonArray no contrato esperado"
-        )
-    if not isinstance(bruto, list):
-        raise DOUIndisponivelError(
-            "Consulta ao DOU retornou jsonArray em formato inesperado"
-        )
-    json_array = [item for item in bruto if isinstance(item, dict)]
+def limpar_cache_indice() -> None:
+    """Zera o cache do índice — chamado no início de cada execução do job."""
+    _INDICE_CACHE.clear()
 
-    resultados = []
-    for item in json_array:
-        resultados.append(
-            {
-                "titulo": item.get("title", ""),
-                "resumo": item.get("excerpt", ""),
-                "link": f"https://www.in.gov.br{item.get('urlTitle', '')}",
-                "secao": str(item.get("artType", "")).replace("DOU - ", ""),
-                "data_publicacao": data_alvo,
-                "edicao": item.get("editionNumber", ""),
-            }
+
+def _casa_keyword(item: dict, keyword: str) -> bool:
+    """Casamento local, sem acento e sem caixa, no título e no excerto.
+
+    O índice traz `content` truncado em ~403 caracteres — é excerto, não
+    inteiro teor. Por isso o casamento aqui é de TRIAGEM: indica o ato a
+    conferir, não substitui a leitura da publicação.
+    """
+    import unicodedata
+
+    def _norm(t: str) -> str:
+        sem_acento = "".join(
+            c for c in unicodedata.normalize("NFD", t or "")
+            if unicodedata.category(c) != "Mn"
         )
+        return sem_acento.casefold()
+
+    alvo = _norm(keyword).strip()
+    if not alvo:
+        return False
+    campos = " ".join(
+        str(item.get(c) or "") for c in ("title", "titulo", "subTitulo", "content")
+    )
+    return alvo in _norm(campos)
+
+
+async def buscar_dou(keyword: str, data_pub: date | None = None) -> list[dict]:
+    """Consulta o DOU e retorna publicações normalizadas para a keyword.
+
+    Retorna ``[]`` SOMENTE quando a consulta foi tecnicamente válida e nenhuma
+    publicação casou. Falha de rede, HTTP, parse ou contrato levanta
+    ``DOUIndisponivelError`` — a distinção que impede "fonte quebrada" de se
+    disfarçar de "nada publicado hoje".
+    """
+    data_alvo = data_pub or date.today() - timedelta(days=1)
+    data_str = data_alvo.strftime("%d-%m-%Y")
+
+    resultados: list[dict] = []
+    for secao in _DOU_SECOES_PADRAO:
+        for item in await _carregar_indice(data_str, secao):
+            if not _casa_keyword(item, keyword):
+                continue
+            url_title = str(item.get("urlTitle") or "").lstrip("/")
+            resultados.append(
+                {
+                    "titulo": item.get("title") or item.get("titulo") or "",
+                    "resumo": item.get("content", ""),
+                    "link": (
+                        f"https://www.in.gov.br/web/dou/-/{url_title}"
+                        if url_title else DOU_INDEX_URL
+                    ),
+                    "secao": str(item.get("pubName") or secao).upper(),
+                    "data_publicacao": data_alvo,
+                    "edicao": item.get("editionNumber", ""),
+                }
+            )
     return resultados
 
 
@@ -157,6 +245,10 @@ async def processar_alertas_dou(db) -> int:
 
     from app.models.case import Case
     from app.models.diario_oficial import DiarioOficialAlerta, DiarioOficialKeyword
+
+    # Índice do dia é baixado uma vez por seção e reusado por todas as
+    # keywords desta execução; zerar aqui evita servir índice de ontem.
+    limpar_cache_indice()
     from app.models.user import User
     from app.services.djen_service import (
         buscar_caso_ativo_por_processo,

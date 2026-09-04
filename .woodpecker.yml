@@ -21,6 +21,15 @@ steps:
       DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@db:5432/ejc_db
       DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@db:5432/ejc_db
       SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user:ejc_pass@db:5432/ejc_db
+      # Sem isto, os 71 arquivos `*_dblevel.py` (184 arquivos gateiam pela
+      # variável) se auto-pulam: o pipeline sobe o pgvector, roda
+      # `alembic upgrade head` e então NÃO usa o banco para os testes que só
+      # existem por causa dele. Medido em 04/09/2026: 6.734 passed / 435
+      # skipped sem a variável, contra 7.080 passed / 89 skipped com ela —
+      # ~346 testes de banco invisíveis ao CI. O portão local do CLAUDE.md é
+      # `RUN_DB_TESTS=1 pytest tests -q`, e o cabeçalho deste arquivo define
+      # divergência entre os dois como bug daqui.
+      RUN_DB_TESTS: "1"
     commands:
       # Deps nativas de OCR/PDF exigidas pela suíte (mesma lista do ci.yml).
       - apt-get update -qq
