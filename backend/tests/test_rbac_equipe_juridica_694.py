@@ -1,5 +1,5 @@
 # ── tests/test_rbac_equipe_juridica_694.py ────────────────────────────────────
-# Issue #694 — 15 gates de RBAC na superfície jurídica usavam piso hierárquico
+# Issue #694 — gates de RBAC na superfície jurídica usavam piso hierárquico
 # `ROLE_LEVEL.get(...) < ROLE_LEVEL["estagiario"]` (ou o `>=` equivalente).
 # Como `financeiro` (nível 4) fica NUMERICAMENTE ACIMA de `estagiario` (nível 3)
 # em ROLE_LEVEL (app/core/security.py), esse piso liberava `financeiro` para
@@ -12,14 +12,6 @@
 # genérica do repositório) NÃO serve para isso: ela cai para comparação
 # hierárquica quando o papel não está na lista literal — é o MESMO defeito,
 # documentado em test_bloco6_rbac_papel.py::test_fin_gate_passa_nivel_suficiente.
-# Por isso require_roles(_EQUIPE) continuaria deixando financeiro passar
-# (nível 4 >= min(_EQUIPE) = nível de estagiario = 3).
-#
-# Este arquivo cobre os dois critérios de aceite testáveis da Issue:
-#   1) por papel, financeiro recebe 403 em POST /pecas/gerar e nas demais
-#      rotas de ato jurídico dos 15 arquivos corrigidos;
-#   2) uma varredura (não enumeração manual) que reprova qualquer gate NOVO
-#      escrito como piso hierárquico com estagiario em backend/app/routers/.
 from __future__ import annotations
 
 import ast
@@ -46,8 +38,6 @@ def _u(role: UserRole, uid: str = "u1") -> User:
     return User(id=uid, role=role, full_name="Fulano de Teste")
 
 
-# Papéis que a Issue #694 exige barrar (financeiro é o achado central; os
-# outros dois já eram barrados antes — travados aqui para não regredir).
 PAPEIS_FORA_DA_EQUIPE = [UserRole.financeiro, UserRole.secretaria, UserRole.cliente_externo]
 
 PAPEIS_DA_EQUIPE = [
@@ -59,8 +49,6 @@ PAPEIS_DA_EQUIPE = [
 # ── Gate compartilhado (fonte única) ──────────────────────────────────────────
 
 def test_financeiro_tem_nivel_hierarquico_acima_de_estagiario():
-    # Documenta a causa-raiz da Issue #694: um piso hierárquico com estagiario
-    # SEMPRE libera financeiro, porque ROLE_LEVEL o posiciona acima.
     assert ROLE_LEVEL["financeiro"] > ROLE_LEVEL["estagiario"]
     assert "financeiro" not in EQUIPE_JURIDICA
 
@@ -74,7 +62,7 @@ def test_require_roles_exact_nao_promove_papel_fora_da_allowlist():
 
 @pytest.mark.parametrize("role", PAPEIS_DA_EQUIPE)
 def test_requer_equipe_juridica_passa_equipe(role):
-    requer_equipe_juridica(_u(role))  # não levanta
+    requer_equipe_juridica(_u(role))
 
 
 @pytest.mark.parametrize("role", PAPEIS_FORA_DA_EQUIPE)
@@ -96,8 +84,6 @@ def _client_pecas(role: UserRole) -> TestClient:
 
 
 def test_pecas_gerar_financeiro_403():
-    # Critério de aceite: financeiro recebe 403 em POST /pecas/gerar — o
-    # gate mais grave da Issue (único gate de papel do endpoint).
     client = _client_pecas(UserRole.financeiro)
     body = {
         "tipo_peca": "peticao_inicial",
@@ -129,8 +115,6 @@ def test_pecas_meta_financeiro_403():
 
 
 def test_pecas_meta_estagiario_passa():
-    # Regressão: a allowlist não pode ter afrouxado nada para quem já tinha
-    # acesso — estagiario continua vendo o catálogo.
     client = _client_pecas(UserRole.estagiario)
     r = client.get("/pecas/meta")
     assert r.status_code == 200, r.text
@@ -145,10 +129,6 @@ async def test_pecas_deep_research_financeiro_403():
 
 
 def _req_demonstrativo(**over):
-    """Corpo VÁLIDO de demonstrativo. A Issue #702 (PR #705) tornou `ferramenta`,
-    `fontes`, `vigencia_regra` e `versao_regra` obrigatórios e não-brancos — sem
-    eles o Pydantic reprova na construção e o teste nunca chega ao gate que quer
-    exercitar. `versao_regra` é lida de ramos para não envelhecer no arquivo."""
     from app.routers import peca_geracao as peca_router
     from app.routers.ramos import VERSAO_REGRA_ATUAL
 
@@ -164,9 +144,6 @@ def _req_demonstrativo(**over):
 
 
 async def test_pecas_demonstrativo_financeiro_403(monkeypatch):
-    # gerar_demonstrativo tem QUATRO gates de conteúdo; o de papel agora vem
-    # ANTES de todos. Habilita a flag geral para provar que o 403 vem do papel,
-    # não da trava desligada por padrão.
     from app.routers import peca_geracao as peca_router
     from types import SimpleNamespace
 
@@ -182,30 +159,17 @@ async def test_pecas_demonstrativo_financeiro_403(monkeypatch):
 
 
 async def test_demonstrativo_financeiro_nao_descobre_estado_de_homologacao():
-    # Review do CodeRabbit no PR #706 (Segurança, Major). O gate de papel era o
-    # ÚLTIMO da função: `financeiro` com ferramenta NÃO homologada recebia 422
-    # com o MOTIVO da não homologação — estado interno vazando para quem não
-    # pode nem chamar a rota. Agora a autorização vem primeiro: 403 seco.
-    #
-    # Prova por negação: se alguém devolver o gate para o fim da função, o
-    # status vira 422 e este teste reprova.
     from app.routers import peca_geracao as peca_router
 
     with pytest.raises(HTTPException) as exc:
         await peca_router.gerar_demonstrativo(
             req=_req_demonstrativo(titulo="Dosimetria"), db=None,
             cu=_u(UserRole.financeiro))
-    assert exc.value.status_code == 403, (
-        "financeiro recebeu %s — o gate de papel voltou para depois da matriz de "
-        "homologação e está vazando o motivo da não homologação" % exc.value.status_code
-    )
+    assert exc.value.status_code == 403
     assert exc.value.detail == "Acesso negado"
 
 
 async def test_demonstrativo_equipe_ainda_ve_motivo_da_nao_homologacao():
-    # Contraprova: para quem PERTENCE à equipe, o 422 com o diagnóstico
-    # específico continua chegando — mover a autorização para o topo não pode
-    # ter engolido a mensagem útil ao advogado.
     from app.routers import peca_geracao as peca_router
 
     with pytest.raises(HTTPException) as exc:
@@ -214,6 +178,45 @@ async def test_demonstrativo_equipe_ainda_ve_motivo_da_nao_homologacao():
             cu=_u(UserRole.advogado))
     assert exc.value.status_code == 422
     assert exc.value.detail["codigo"] == "ferramenta_nao_homologada"
+
+
+# ── bank_analysis.py — Issue #772: saídas jurídicas laterais ─────────────────
+
+async def test_bank_analysis_gerar_peca_financeiro_403_antes_do_db():
+    from app.routers import bank_analysis as bank_router
+
+    with pytest.raises(HTTPException) as exc:
+        await bank_router.gerar_peca(
+            analysis_id="analysis-1", payload=None, db=None,
+            cu=_u(UserRole.financeiro),
+        )
+    assert exc.value.status_code == 403
+    assert "equipe jurídica" in str(exc.value.detail).lower()
+
+
+async def test_bank_analysis_documento_juridico_financeiro_403_antes_do_db():
+    from app.routers import bank_analysis as bank_router
+
+    with pytest.raises(HTTPException) as exc:
+        await bank_router.documento(
+            analysis_id="analysis-1", payload={"tipo": "peticao"}, db=None,
+            cu=_u(UserRole.financeiro),
+        )
+    assert exc.value.status_code == 403
+    assert "equipe jurídica" in str(exc.value.detail).lower()
+
+
+def test_bank_analysis_nao_usa_mais_piso_hierarquico_para_gerar_peca():
+    fonte = (_ROUTERS / "bank_analysis.py").read_text(encoding="utf-8")
+    assert "requer_equipe_juridica" in fonte
+    tree = ast.parse(fonte)
+    gerar = next(
+        n for n in ast.walk(tree)
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == "gerar_peca"
+    )
+    trecho = ast.get_source_segment(fonte, gerar) or ""
+    assert "ROLE_LEVEL" not in trecho
+    assert "requer_equipe_juridica" in trecho
 
 
 # ── provas.py — GET /provas/matriz ────────────────────────────────────────────
@@ -247,10 +250,10 @@ def test_ficha_triagem_exigir_piso_financeiro_403():
 
 def test_ficha_triagem_exigir_piso_estagiario_passa():
     from app.routers import ficha_triagem as ficha_router
-    ficha_router._exigir_piso(_u(UserRole.estagiario))  # não levanta
+    ficha_router._exigir_piso(_u(UserRole.estagiario))
 
 
-# ── jurimetria_extra.py / memoria_institucional.py — dependencies _req_staff ─
+# ── jurimetria / memória institucional ────────────────────────────────────────
 
 def test_jurimetria_consolidado_req_staff_financeiro_403():
     from app.routers.jurimetria import _req_staff
@@ -276,9 +279,6 @@ def test_memoria_institucional_req_staff_estagiario_passa():
     assert _req_staff(_u(UserRole.estagiario)).role == UserRole.estagiario
 
 
-# ── Helpers booleanos _is_staff/_pode_ver/_pode_usar_estilo — 9 arquivos ──────
-# Cada entrada é (módulo, nome_da_função, atributo_de_papel_no_arg). Todas
-# aceitam um único argumento posicional User/objeto com .role e retornam bool.
 _HELPERS_BOOL = [
     ("app.routers.dossie_estrategico", "_pode_ver"),
     ("app.routers.advogado_estilo", "_pode_usar_estilo"),
@@ -303,7 +303,6 @@ def test_helper_bool_barra_financeiro(modulo, funcao):
 
 @pytest.mark.parametrize("modulo,funcao", _HELPERS_BOOL)
 def test_helper_bool_passa_estagiario(modulo, funcao):
-    # Regressão: ninguém que já tinha acesso pode ter perdido.
     import importlib
     mod = importlib.import_module(modulo)
     helper = getattr(mod, funcao)
@@ -314,7 +313,6 @@ def test_helper_bool_passa_estagiario(modulo, funcao):
 
 @pytest.mark.parametrize("modulo,funcao", _HELPERS_BOOL)
 def test_helper_bool_barra_secretaria_e_cliente_externo(modulo, funcao):
-    # Nunca mudou: secretaria/cliente_externo já ficavam abaixo do piso.
     import importlib
     mod = importlib.import_module(modulo)
     helper = getattr(mod, funcao)
@@ -323,41 +321,10 @@ def test_helper_bool_barra_secretaria_e_cliente_externo(modulo, funcao):
 
 
 # ── Teste de VARREDURA (não enumeração manual) ────────────────────────────────
-# Reprova qualquer gate NOVO escrito como piso hierárquico com estagiario em
-# backend/app/routers/. Mesmo desenho de guarda que test_middleware_auth_
-# invariant.py usa para o invariante de auth (regex sobre o código-fonte).
-#
-# GRANDFATHER: os 7 sítios (6 arquivos) que a Issue #694 também lista mas que
-# esta correção NÃO tocou porque pertencem a PRs abertos concorrentes
-# (bank_analysis.py, entrada_universal.py, checklists.py, prompts_juridicos.py,
-# ai.py, users.py).
-#
-# Rastreado por OCORRÊNCIA individual (arquivo::função), não por arquivo
-# inteiro (review do Codex no PR #706): pular o arquivo inteiro tinha dois
-# defeitos — (a) um gate hierárquico NOVO adicionado a um arquivo
-# grandfatherizado (ex. um segundo piso em ai.py) não seria pego, porque o
-# arquivo inteiro era ignorado; (b) se um PR concorrente corrigisse a
-# ocorrência conhecida sem atualizar esta lista, o arquivo ficaria
-# permanentemente sem a proteção da varredura, já que continuaria na lista de
-# exclusão para sempre.
-#
-# A âncora é a FUNÇÃO, não o número da linha (ver _GRANDFATHER_ISSUE_694).
-# Qualquer ocorrência num arquivo grandfatherizado cuja função NÃO esteja no
-# conjunto é violação NOVA (assert `infratores`); e qualquer função listada
-# aqui que não tenha mais o padrão falha como baseline desatualizado (assert
-# `baseline_desatualizado`), forçando quem corrigiu a remover a entrada em vez
-# de deixá-la esquecida.
-#
-# Limitação aceita: se um mesmo PR remover o piso de uma função E adicionar
-# outro na MESMA função, os dois conjuntos continuam iguais e a troca passa.
-# Cobrir isso exigiria comparar o corpo da função, não sua identidade — custo
-# alto para um caso que o review de diff pega trivialmente.
+# As exceções restantes são ocorrências históricas que ainda precisam de frente
+# própria. `bank_analysis.py`, `entrada_universal.py` e `checklists.py` já saíram
+# do grandfather; prompts jurídicos e avatar permanecem em frentes próprias.
 _ROUTERS = pathlib.Path(__file__).resolve().parents[1] / "app" / "routers"
-# rglob + as duas formas de acesso (índice e .get) — review do CodeRabbit no PR
-# #706. Hoje não há router em subdiretório nem uso de ROLE_LEVEL.get("estagiario")
-# no repositório: a ampliação é PREVENTIVA, não corrige violação existente. Sem
-# ela, um gate hierárquico novo escrito em app/routers/<sub>/x.py, ou com .get(),
-# passaria pela varredura sem virar `infratores`.
 _PADRAO_PISO_ESTAGIARIO = re.compile(
     r"""ROLE_LEVEL\s*(?:
         \[\s*["']estagiario["']\s*\]
@@ -365,28 +332,13 @@ _PADRAO_PISO_ESTAGIARIO = re.compile(
     )""",
     re.VERBOSE,
 )
-# Ancorado pela FUNÇÃO que contém a ocorrência, não pelo número da linha.
-# A primeira versão desta lista fixava `arquivo:linha` e quebrou o CI do PR
-# #706 sem nenhuma mudança de gate: a `main` avançou (PRs #735/#736), o
-# `entrada_universal.py` cresceu e as duas ocorrências conhecidas escorregaram
-# de 175/258 para 266/356. Número de linha não identifica um gate — identifica
-# uma posição no arquivo, que qualquer merge desloca. O nome da função é
-# estável sob deslocamento e continua específico o bastante para que uma
-# ocorrência NOVA numa função diferente do mesmo arquivo seja pega.
 _GRANDFATHER_ISSUE_694: dict[str, frozenset[str]] = {
-    "bank_analysis.py": frozenset({"gerar_peca"}),
-    "entrada_universal.py": frozenset({"meta", "processar"}),
-    "checklists.py": frozenset({"_pode_editar"}),
     "prompts_juridicos.py": frozenset({"listar_prompts"}),
-    # ai.py::assistente_estrategico e ai.py::visual_law corrigidos na
-    # auditoria de segurança das APIs de IA (18/08) — migrados para
-    # requer_equipe_juridica (allowlist exata).
     "users.py": frozenset({"obter_avatar"}),
 }
 
 
 def _funcao_que_contem(tree: ast.Module, linha: int) -> str:
-    """Nome da função MAIS INTERNA que contém `linha` (ou "<módulo>")."""
     melhor, melhor_ini = "<módulo>", -1
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -418,49 +370,32 @@ def test_nenhum_router_juridico_novo_usa_piso_hierarquico_estagiario():
             baseline_desatualizado.append(f"{nome}::{fn}")
     assert not infratores, (
         "Gate hierárquico com piso ROLE_LEVEL['estagiario'] em router — isso "
-        "libera 'financeiro' (nível 4 > estagiario nível 3) para ato/acervo "
-        "jurídico (Issue #694). Use EQUIPE_JURIDICA/requer_equipe_juridica de "
-        "app.core.security (allowlist exata) em vez de comparação hierárquica:\n  "
-        + "\n  ".join(infratores)
+        "libera 'financeiro' para ato/acervo jurídico. Use "
+        "EQUIPE_JURIDICA/requer_equipe_juridica:\n  " + "\n  ".join(infratores)
     )
     assert not baseline_desatualizado, (
-        "Ocorrência grandfatherizada da Issue #694 (_GRANDFATHER_ISSUE_694) não "
-        "existe mais nessa função — ou o PR concorrente que a corrigiu esqueceu "
-        "de remover a entrada daqui, ou a função foi renomeada. Atualize "
-        "_GRANDFATHER_ISSUE_694 (remova a função, ou o arquivo inteiro se não "
-        "sobrar nenhuma):\n  " + "\n  ".join(baseline_desatualizado)
+        "Ocorrência grandfatherizada da Issue #694 não existe mais nessa função; "
+        "atualize _GRANDFATHER_ISSUE_694:\n  " + "\n  ".join(baseline_desatualizado)
     )
 
 
-def test_grandfather_nao_cobre_os_15_arquivos_corrigidos():
-    # Trava a lista de exceção: nenhum dos 15 arquivos desta Issue pode estar
-    # no grandfather (senão o teste acima pararia de proteger o que acabamos
-    # de corrigir).
+def test_grandfather_nao_cobre_arquivos_corrigidos():
     arquivos_corrigidos = {
         "peca_geracao.py", "dossie_estrategico.py", "provas.py",
-        "advogado_estilo.py", "teses.py",
-        "jurisprudencia_interna.py", "jurisprudencia_externa.py",
-        "precedentes_jurisprudencia.py", "jurimetria.py",
-        "memoria_institucional.py", "consumidor_monitor.py", "ficha_triagem.py",
-        "novos_modulos.py",
+        "advogado_estilo.py", "teses.py", "jurisprudencia_interna.py",
+        "jurisprudencia_externa.py", "precedentes_jurisprudencia.py",
+        "jurimetria.py", "memoria_institucional.py", "consumidor_monitor.py",
+        "ficha_triagem.py", "novos_modulos.py", "bank_analysis.py",
+        "entrada_universal.py", "checklists.py",
     }
     assert arquivos_corrigidos.isdisjoint(_GRANDFATHER_ISSUE_694)
-    assert len(arquivos_corrigidos) == 13  # 15 − 2 (teses_v4.py e jurimetria_extra.py arquivados em _dead_code)
 
 
 # ── Os gates compartilhados só valem chamados no CORPO ────────────────────────
-# `requer_equipe_juridica`/`requer_advogado` recebem `cu` como argumento comum,
-# não como dependency. Sob `Depends(...)` o FastAPI monta a rota EM SILÊNCIO e
-# trata `cu` e `detail` como query params de string — verificado: a rota vira
-# 403 permanente e o cliente escolhe a mensagem de erro pela URL. Anotar `cu`
-# NÃO impede (o FastAPI resolve o forward ref mesmo assim); só um teste impede.
 _GATES_DE_CORPO = ("requer_equipe_juridica", "requer_advogado")
 
 
 def _apelidos_de_gate(tree: ast.Module) -> dict[str, str]:
-    """Mapeia nome LOCAL -> nome canônico do gate, resolvendo alias de import
-    (`from app.core.security import requer_advogado as _req`). Sem isto, trocar
-    o nome no import escaparia da varredura."""
     apelidos = {g: g for g in _GATES_DE_CORPO}
     for node in ast.walk(tree):
         if not isinstance(node, ast.ImportFrom):
@@ -472,7 +407,6 @@ def _apelidos_de_gate(tree: ast.Module) -> dict[str, str]:
 
 
 def _nome_de(no: ast.expr) -> str | None:
-    """`x` -> "x"; `mod.x` -> "x" (o atributo final é o que identifica o gate)."""
     if isinstance(no, ast.Name):
         return no.id
     if isinstance(no, ast.Attribute):
@@ -490,16 +424,13 @@ def test_gates_compartilhados_nunca_usados_como_depends():
         tree = ast.parse(texto)
         apelidos = _apelidos_de_gate(tree)
         for node in ast.walk(tree):
-            # `Depends(...)` e `fastapi.Depends(...)` — o atributo final decide.
             if not (isinstance(node, ast.Call) and _nome_de(node.func) == "Depends"):
                 continue
-            # Alvo por posição OU pelo nomeado `dependency=`.
             alvos = list(node.args) + [
                 kw.value for kw in node.keywords if kw.arg == "dependency"
             ]
             if not alvos:
                 continue
-            # `security.requer_advogado` resolve pelo atributo; alias pelo import.
             local = _nome_de(alvos[0])
             nome_gate = apelidos.get(local)
             if nome_gate in _GATES_DE_CORPO:
@@ -508,8 +439,6 @@ def test_gates_compartilhados_nunca_usados_como_depends():
                 )
     assert not infratores, (
         "Gate compartilhado de app.core.security usado como Depends(). O FastAPI "
-        "aceita isso em silêncio e transforma `cu`/`detail` em query params: a "
-        "rota passa a responder 403 SEMPRE, com a mensagem de erro escolhida "
-        "pelo cliente na URL. Chame no CORPO do handler:\n  "
-        + "\n  ".join(infratores)
+        "aceita isso em silêncio e transforma `cu`/`detail` em query params. "
+        "Chame no CORPO do handler:\n  " + "\n  ".join(infratores)
     )
