@@ -52,6 +52,35 @@ def marcar_calendario_falho(alvo: str, erro_tipo: str) -> None:
     _CALENDARIO_RUNTIME[f"{alvo}_erro_tipo"] = erro_tipo
 
 
+AVISO_CALENDARIO_DEGRADADO = (
+    "Calendário local/suspensões indisponível: resultado preliminar, "
+    "exige conferência humana antes de confirmação."
+)
+
+
+def estado_degradacao(tribunal: str | None = None) -> tuple[bool, str | None]:
+    """`(degradado, aviso)` do calendário para QUALQUER cálculo de prazo.
+
+    FONTE ÚNICA, de propósito. A regra já existia dentro de
+    `calcular_prazo_processual`, e `routers/deadlines.py` — que calcula o prazo
+    administrativo pelas MESMAS funções de dia útil, sobre os MESMOS feriados do
+    banco — devolvia `resultado_preliminar: False` fixo. Ou seja: com a carga de
+    feriados falha, o prazo administrativo saía carimbado como DEFINITIVO sem
+    os feriados municipais. Duas cópias da regra viram duas verdades; esta é a
+    terceira ocorrência da mesma classe de defeito neste PR.
+
+    `_FERIADOS_DB` é global e entra em `eh_dia_util` sem depender de tribunal:
+    falha na carga dos feriados degrada todo cálculo. Suspensão é POR tribunal —
+    só degrada quando há tribunal na conta.
+    """
+    calendario = calendario_runtime_status()
+    degradado = bool(
+        calendario.get("feriados_ok") is False
+        or (tribunal and calendario.get("suspensoes_ok") is False)
+    )
+    return degradado, (AVISO_CALENDARIO_DEGRADADO if degradado else None)
+
+
 def calendario_runtime_status() -> dict[str, bool | str | None]:
     status = dict(_CALENDARIO_RUNTIME)
     if status["feriados_ok"] is False or status["suspensoes_ok"] is False:
@@ -356,14 +385,7 @@ def calcular_prazo_processual(
         raise ValueError("regime processual não suportado")
 
     calendario = calendario_runtime_status()
-    # Feriado municipal/estadual entra em `eh_dia_util` SEM depender de
-    # tribunal informado (_FERIADOS_DB é global): falha na carga dos feriados
-    # degrada QUALQUER cálculo. Suspensão é por tribunal — só degrada quando há
-    # tribunal na conta.
-    degradado = bool(
-        calendario.get("feriados_ok") is False
-        or (tribunal and calendario.get("suspensoes_ok") is False)
-    )
+    degradado, aviso = estado_degradacao(tribunal)
     return {
         "data_vencimento": vencimento,
         "regime_calculo": regime,
@@ -371,11 +393,7 @@ def calcular_prazo_processual(
         "calendario_status": calendario["status"],
         "resultado_preliminar": degradado,
         "revisao_obrigatoria": degradado,
-        "aviso": (
-            "Calendário local/suspensões indisponível: resultado preliminar, "
-            "exige conferência humana antes de confirmação."
-            if degradado else None
-        ),
+        "aviso": aviso,
     }
 
 
