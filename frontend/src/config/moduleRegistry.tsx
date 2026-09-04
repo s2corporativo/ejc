@@ -105,6 +105,7 @@ const RamosHub = lazy(() => import("../pages/RamosHub"));
 const RamoBase = lazy(() => import("../pages/ramos/RamoBase"));
 const CRMLeads = lazy(() => import("../pages/CRMLeads"));
 const FinanceiroWorkspace = lazy(() => import("../pages/FinanceiroWorkspace"));
+const SociedadeWorkspace = lazy(() => import("../pages/SociedadeWorkspace"));
 const InteligenciaWorkspace = lazy(
   () => import("../pages/InteligenciaWorkspace"),
 );
@@ -555,7 +556,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     path: "/inteligencia",
     label: "Pesquisa e IA",
     description:
-      "Pesquisa jurídica com IA: agentes, análise, jurimetria e conhecimento.",
+      "Pesquisa jurídica, análise, jurimetria, conhecimento e precificação de honorários.",
     group: "Pesquisar & IA",
     icon: Sparkles,
     component: InteligenciaWorkspace,
@@ -566,7 +567,12 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "inteligencia",
     sensitive: true,
     usesAI: true,
-    backendPrefixes: ["/api/ai", "/api/ai/core", "/api/ai/skills"],
+    backendPrefixes: [
+      "/api/ai",
+      "/api/ai/core",
+      "/api/ai/skills",
+      "/api/honorarios-oab",
+    ],
   },
   {
     key: "banco-teses",
@@ -577,16 +583,11 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Pesquisar & IA",
     icon: Library,
     component: BancoTeses,
-    // Espelha _is_staff do backend (routers/teses.py): allowlist EQUIPE_JURIDICA
-    // — financeiro e secretaria recebem 403 na API, e não veem a rota aqui.
     roles: ROLES.juridico,
     status: "beta",
     showInNav: true,
     backendPrefixes: ["/api/teses"],
-    // Varredura determinística por casamento de termos — nenhuma chamada de IA.
     usesAI: false,
-    // Lista título e área de casos: só os visíveis ao usuário, mas ainda assim
-    // é dado de processo.
     sensitive: true,
   },
   {
@@ -661,8 +662,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   {
     key: "financeiro",
     path: "/financeiro",
-    label: "Financeiro e Sociedade",
-    description: "Honorários, despesas, NFS-e, contratos e gestão societária.",
+    label: "Financeiro",
+    description: "Recebimentos, despesas, NFS-e, contratos e caixa do escritório.",
     group: "Gerir o escritório",
     icon: Wallet,
     component: FinanceiroWorkspace,
@@ -678,6 +679,22 @@ export const STAFF_ROUTES: ModuleRoute[] = [
       "/api/despesas",
       "/api/nfse",
     ],
+  },
+  {
+    key: "sociedade",
+    path: "/gestao-escritorio/sociedade",
+    label: "Sociedade",
+    description: "Sócios, participações, distribuições e retiradas.",
+    group: "Gerir o escritório",
+    icon: Users,
+    component: SociedadeWorkspace,
+    roles: ROLES.gestores,
+    showInNav: true,
+    essential: false,
+    order: 20,
+    helpKey: "financeiro",
+    sensitive: true,
+    backendPrefixes: ["/api/sociedade", "/api/partner-withdrawals"],
   },
   {
     key: "produtividade",
@@ -857,7 +874,7 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   {
     from: "/honorarios",
     to: "/financeiro?tab=honorarios",
-    reason: "Honorários foi incorporado ao workspace financeiro.",
+    reason: "Honorários contratados e recebimentos vivem no workspace financeiro.",
   },
   {
     from: "/nfse",
@@ -866,18 +883,18 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   },
   {
     from: "/sociedade",
-    to: "/financeiro?tab=societaria",
-    reason: "Gestão societária foi incorporada ao workspace financeiro.",
+    to: "/gestao-escritorio/sociedade",
+    reason: "Gestão societária foi separada do caixa operacional do escritório.",
   },
   {
     from: "/office-contracts",
     to: "/financeiro?tab=contratos",
-    reason: "Contratos do escritório foram incorporados ao financeiro.",
+    reason: "Contratos do escritório ficam disponíveis no menu Mais do Financeiro.",
   },
   {
     from: "/partner-withdrawals",
-    to: "/financeiro?tab=societaria&sub=saques",
-    reason: "Saques de sócios foram consolidados na gestão societária.",
+    to: "/gestao-escritorio/sociedade?sub=saques",
+    reason: "Retiradas pertencem à gestão societária, separada do caixa operacional.",
   },
   {
     from: "/financeiro-dashboard",
@@ -892,7 +909,7 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   {
     from: "/despesas-recorrentes",
     to: "/financeiro?tab=recorrentes",
-    reason: "Despesas recorrentes foram incorporadas ao workspace financeiro.",
+    reason: "O deep-link histórico é preservado enquanto a recorrência migra para o formulário único de despesas.",
   },
   {
     from: "/agenda",
@@ -904,10 +921,6 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
     to: "/atividades?view=kanban",
     reason: "Kanban de atividades foi incorporado à Central de Atividades.",
   },
-  // CONSOLIDAÇÃO ATIVIDADES 2026-08: as quatro telas legadas de /legado/*
-  // (Prazos, Tarefas, Intimações, Suspensões) foram aposentadas — a Central
-  // de Atividades já cobre os quatro tipos via filtro `?tipo=`. Os redirects
-  // espelham os aliases curtos (/prazos etc.) de LEGACY_CANONICAL_REDIRECTS.
   {
     from: "/legado/prazos",
     to: "/atividades?tipo=prazo",
@@ -1024,10 +1037,6 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
     to: "/inteligencia?tab=conhecimento",
     reason: "Wiki foi unificada na aba Conhecimento da Inteligência.",
   },
-  // FIX-003 (QA 13/08/2026): atalhos históricos do catálogo de ferramentas
-  // ainda referenciavam rotas que não existem, gerando 404. Agora
-  // redirecionam para os módulos canônicos vivos (LegacyRedirect preserva
-  // query e hash da URL de origem).
   {
     from: "/leads",
     to: "/crm-leads",

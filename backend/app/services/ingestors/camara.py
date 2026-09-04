@@ -53,6 +53,7 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                 titulo = f"{p.get('siglaTipo')} {p.get('numero')}/{p.get('ano')}"
                 conteudo = (
                     f"{titulo} (Câmara dos Deputados)\n"
+                    "ATENÇÃO: proposição em tramitação — não é norma vigente.\n"
                     f"Apresentada em: {p.get('dataApresentacao','')[:10]}\n\n"
                     f"Ementa: {ementa}"
                 )
@@ -61,10 +62,21 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                     db, titulo=titulo, categoria="proposicao_legislativa",
                     conteudo=conteudo, chave_origem=f"camara:{pid}",
                     fonte=p.get("uri") or f"{API}/proposicoes/{pid}",
-                    extra={"tipo": tipo, "ano": p.get("ano"),
-                           "numero": p.get("numero"), "casa": "camara",
-                           "rag_status": "aprovado", "tipo_fonte": "proposicao_oficial"},
-                    confianca="alta",   # fonte oficial (Câmara dos Deputados)
+                    extra={
+                        "tipo": tipo,
+                        "ano": p.get("ano"),
+                        "numero": p.get("numero"),
+                        "casa": "camara",
+                        "rag_status": "aprovado",
+                        "tipo_fonte": "proposicao_oficial",
+                        "source_official": True,
+                        "authority_level": "oficial_informativa",
+                        "proposicao_nao_vigente": True,
+                        "aviso_governanca": "Projeto em tramitação — não é norma vigente.",
+                    },
+                    # Fonte é oficial, mas o conteúdo é proposição em tramitação,
+                    # não direito vigente; confiança jurídica não pode ser "alta".
+                    confianca="media",
                 )
                 if res in ("novo", "atualizado"):
                     novos += 1
