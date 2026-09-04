@@ -49,6 +49,34 @@ describe("moduleLifecycle", () => {
     ).not.toContain("knowledge-hub");
   });
 
+  it("no catálogo (/ferramentas) o status oculto do manifesto não esconde nada", () => {
+    // O hub existe justamente para os módulos tirados do menu; filtrar por
+    // `status: "hidden"` ali esvaziaria a tela inteira.
+    const ocultosNoManifesto = [
+      { key: "prompts", path: "/prompts", status: "hidden" },
+      { key: "radar", path: "/radar", status: "hidden" },
+    ];
+    expect(
+      filterModulesByLifecycle(ocultosNoManifesto, {}, "catalogo").map(
+        (item) => item.key,
+      ),
+    ).toEqual(["prompts", "radar"]);
+  });
+
+  it("no catálogo, remove o módulo desligado pela administração", () => {
+    const catalogo = [
+      { key: "oculto", path: "/oculto", status: "hidden" },
+      { key: "desabilitado", path: "/desabilitado", status: "hidden" },
+    ];
+    // `oculto` tem menu_visible:false, mas continua acessível pelo gate — o
+    // hub deve oferecê-lo. `desabilitado` levaria à tela de indisponível.
+    expect(
+      filterModulesByLifecycle(catalogo, settings, "catalogo").map(
+        (item) => item.key,
+      ),
+    ).toEqual(["oculto"]);
+  });
+
   it("aceita apenas rotas internas diferentes da rota atual", () => {
     expect(safeReplacementRoute("/antigo", "/novo?tab=1")).toBe("/novo?tab=1");
     expect(safeReplacementRoute("/antigo", "https://example.com")).toBeNull();

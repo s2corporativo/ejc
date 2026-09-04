@@ -11,6 +11,8 @@ import {
 import { Badge, Button, Card, PageHeader } from "../components/UI";
 import { EmptyState } from "../components/UI";
 import { cn } from "../lib/cn";
+import { filterModulesByLifecycle } from "../lib/moduleLifecycle";
+import { useModuleLifecycleStore } from "../stores/moduleLifecycle";
 import DefesasRevisoesPanel from "../components/DefesasRevisoesPanel";
 import RevisaoBancariaDeterministica from "../components/RevisaoBancariaDeterministica";
 import {
@@ -28,7 +30,9 @@ export const CATEGORIAS_FERRAMENTAS: {
   {
     title: "Inteligência e conhecimento",
     description: "Bases de conteúdo e apoio à produção jurídica.",
-    keys: ["prompts"],
+    // `ajuda` é módulo oculto de topo como os demais deste hub; sem cartão
+    // aqui o único acesso era o HelpButton do cabeçalho.
+    keys: ["prompts", "ajuda"],
   },
   {
     title: "Compliance e governança",
@@ -45,7 +49,18 @@ export const CATEGORIAS_FERRAMENTAS: {
   {
     title: "Produtividade e operações",
     description: "Fluxos, indicadores e apoio operacional do dia a dia.",
-    keys: ["produtividade", "workflow", "checklists", "assinaturas", "crm"],
+    // `cadastro-manual` continua sendo rota viva (o componente é a tela sem IA
+    // que a Entrada Única também renderiza em modo manual) e é o único caminho
+    // registrado que não tinha nenhum link no app — o hub é o ponto de entrada
+    // coerente para ele.
+    keys: [
+      "produtividade",
+      "workflow",
+      "checklists",
+      "assinaturas",
+      "crm",
+      "cadastro-manual",
+    ],
   },
 ];
 
@@ -79,15 +94,24 @@ export default function Ferramentas() {
     [],
   );
 
+  // Liga/desliga administrativo (GET /system-modules/settings). Sem ele o hub
+  // oferecia cartão de módulo desativado, e o clique só chegava à tela do
+  // ModuleLifecycleGate ("Módulo temporariamente indisponível").
+  const lifecycleSettings = useModuleLifecycleStore((state) => state.settings);
+
   const termo = busca.trim().toLowerCase();
   const groups = useMemo(
     () =>
       CATEGORIAS_FERRAMENTAS.map((category) => ({
         ...category,
-        modules: category.keys
-          .map((key) => modulesByKey.get(key))
-          .filter((module): module is ModuleRoute => Boolean(module))
-          .filter((module) => canRoleAccessPath(user?.role, module.path))
+        modules: filterModulesByLifecycle(
+          category.keys
+            .map((key) => modulesByKey.get(key))
+            .filter((module): module is ModuleRoute => Boolean(module))
+            .filter((module) => canRoleAccessPath(user?.role, module.path)),
+          lifecycleSettings,
+          "catalogo",
+        )
           .filter(
             (module) =>
               !termo ||
@@ -100,7 +124,7 @@ export default function Ferramentas() {
               Number(favoritos.has(b.key)) - Number(favoritos.has(a.key)),
           ),
       })).filter((category) => category.modules.length > 0),
-    [favoritos, modulesByKey, termo, user?.role],
+    [favoritos, lifecycleSettings, modulesByKey, termo, user?.role],
   );
 
   const podeUsarDefesas = [
