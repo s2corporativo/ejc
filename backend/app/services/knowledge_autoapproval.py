@@ -10,8 +10,9 @@ Ordem de precedência:
 3. decisão humana já registrada;
 4. ``rag_status`` explícito do ingestor/curador;
 5. confiança explicitamente bloqueada;
-6. compatibilidade legada: somente documento sem estado explícito pode nascer
-   automaticamente aprovado.
+6. conteúdo jurídico sem estado explícito nasce pendente;
+7. compatibilidade legada: somente documento não jurídico sem estado explícito
+   pode nascer automaticamente aprovado.
 
 Aprovação significa apenas autorização para retrieval; não transforma conteúdo
 não oficial em fonte oficial nem supera isolamento, vigência ou HITL de peças.
@@ -32,11 +33,45 @@ POLITICA_REVISAO_PENDENTE = "human_review_required_not_auto_approved"
 POLITICA_DECISAO_HUMANA = "human_decision_respected"
 POLITICA_QUARENTENA = "quarantine_active_not_auto_approved"
 POLITICA_CONFIANCA_BLOQUEADA = "blocked_confidence_not_auto_approved"
+POLITICA_JURIDICO_PENDENTE = "legal_content_requires_explicit_approval"
 _CONFIANCAS_VALIDAS = {"alta", "media", "baixa", "bloqueado"}
+_CATEGORIA_JURIDICA_TOKENS = (
+    "legisl",
+    "norma",
+    "regulamento",
+    "sumula",
+    "juris",
+    "acordao",
+    "precedente",
+    "proposicao",
+    "peca",
+    "tese",
+    "parecer",
+    "enunciado",
+    "datajud",
+    "juridic",
+    "doutrina",
+)
+_AUTORIDADES_JURIDICAS = {
+    "oficial_normativa",
+    "precedente_vinculante",
+    "jurisprudencia_oficial",
+    "doutrinaria",
+}
 
 
 def _texto(valor: Any) -> str:
     return str(valor or "").strip().lower()
+
+
+def _conteudo_juridico_exige_status(
+    documento: KnowledgeDoc, authority: dict[str, Any]
+) -> bool:
+    categoria = _texto(documento.categoria)
+    return (
+        any(token in categoria for token in _CATEGORIA_JURIDICA_TOKENS)
+        or _texto(authority.get("code")) in _AUTORIDADES_JURIDICAS
+    )
 
 
 def aplicar_aprovacao_automatica(documento: KnowledgeDoc) -> dict:
@@ -95,8 +130,14 @@ def aplicar_aprovacao_automatica(documento: KnowledgeDoc) -> dict:
         # Confiança bloqueada sem status explícito continua fora do RAG.
         extra["rag_status"] = "bloqueado"
         auditoria["policy"] = POLITICA_CONFIANCA_BLOQUEADA
+    elif _conteudo_juridico_exige_status(documento, authority):
+        # P0 #985: conteúdo jurídico não pode receber aprovação por ausência de
+        # estado. Ingestores/curadores precisam declarar a decisão explicitamente.
+        extra["rag_status"] = "pendente"
+        auditoria["policy"] = POLITICA_JURIDICO_PENDENTE
     else:
-        # Compatibilidade legada limitada ao caso realmente não governado.
+        # Compatibilidade legada limitada ao conteúdo não jurídico realmente
+        # não governado. Não concede força jurídica; só disponibilidade no RAG.
         extra["rag_status"] = "aprovado"
         auditoria["policy"] = POLITICA
 
