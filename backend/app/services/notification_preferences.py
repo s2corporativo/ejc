@@ -69,10 +69,15 @@ def channel_availability(
             and settings.SMTP_USER
             and settings.SMTP_PASSWORD
         ),
-        # Vendor Z-API removido → não há remetente automático de WhatsApp. O
-        # canal fica sempre indisponível (mesmo com WHATSAPP_ENABLED), até que um
-        # novo backend de envio seja plugado. A Evolution API cobre só ENTRADA.
-        whatsapp=False,
+        # Remetente = Evolution API (a mesma instância do webhook de ENTRADA
+        # passou a cobrir também a SAÍDA). Mesma forma do e-mail acima: a flag
+        # sozinha não basta, a configuração precisa estar completa — sem URL ou
+        # sem chave não há para onde enviar e o canal fica indisponível.
+        whatsapp=bool(
+            settings.WHATSAPP_ENABLED
+            and settings.EVOLUTION_API_URL
+            and settings.EVOLUTION_API_KEY
+        ),
     )
 
 

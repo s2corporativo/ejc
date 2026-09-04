@@ -1265,16 +1265,27 @@ async def _reembedar_rag_orfaos():
 async def _job_backup_drive_monitorado():
     """Envelope do backup com heartbeat por RESULTADO (F4): o job canônico
     continua em backup_execution_service; aqui só se registra ok/erro."""
-    from app.services.backup_execution_service import job_backup_drive_exclusivo
     from app.services.heartbeat_service import JOB_BACKUP_DRIVE
+    # Gate ANTES de chamar o motor (antes era depois, e o "pulado" batia ponto
+    # "ok"): com BACKUP_ENABLED=false NÃO EXISTE backup, e painel verde para
+    # backup inexistente é pior que painel vermelho. O heartbeat só entende
+    # "ok"/"erro" (heartbeat_service._STATUS_VALIDOS — qualquer outra palavra é
+    # coagida a "erro" no UPSERT), então o estado honesto de "não está rodando"
+    # é "erro", com o motivo no `detail` para o painel não confundir com falha
+    # do rclone. Desligar o backup é decisão do titular — o painel só deixa de
+    # mentir que ele aconteceu.
+    if not settings.BACKUP_ENABLED:
+        await _bater_ponto(
+            JOB_BACKUP_DRIVE, "erro",
+            "BACKUP_ENABLED=false — nenhum backup foi executado (canal desligado)",
+        )
+        return
+    from app.services.backup_execution_service import job_backup_drive_exclusivo
     try:
         resultado = await job_backup_drive_exclusivo()
     except Exception as e:
         await _bater_ponto(JOB_BACKUP_DRIVE, "erro", str(e)[:200])
         raise
-    if not settings.BACKUP_ENABLED:
-        await _bater_ponto(JOB_BACKUP_DRIVE, "ok", "BACKUP_ENABLED=false — pulado")
-        return
     # O motor de backup NÃO propaga exceção: converte falha em
     # {"ok": False, "status": "erro"} e retorna normalmente. Registrar "ok" só
     # porque não houve exceção transformaria backup quebrado em painel verde —
@@ -1344,9 +1355,11 @@ def start_scheduler():
     s.add_job(_purgar_dados_lgpd, CronTrigger(day_of_week="sun", hour=2, minute=30), id="purga_lgpd", replace_existing=True)
     s.add_job(job_ingestao_camara,   CronTrigger(hour=4, minute=0),          id="ing_camara",   replace_existing=True)
     s.add_job(job_ingestao_senado,   CronTrigger(hour=4, minute=20),         id="ing_senado",   replace_existing=True)
-    # DJEN → RAG: gate interno DJEN_INGEST_ENABLED (default False)
+    # DJEN → RAG: gate interno DJEN_INGEST_ENABLED (default True — LIGADO por
+    # decisão do titular; desligue com DJEN_INGEST_ENABLED=false).
     s.add_job(job_ingestao_djen,     CronTrigger(hour=5, minute=0),          id="ing_djen",     replace_existing=True)
-    # TJMG → RAG: gate interno TJMG_INGEST_ENABLED (default False). Semanal
+    # TJMG → RAG: gate interno TJMG_INGEST_ENABLED (default True — LIGADO por
+    # decisão do titular; desligue com TJMG_INGEST_ENABLED=false). Semanal
     # (sáb 04h30) — crawler de jurisprudência estadual MG por temas curados.
     s.add_job(job_ingestao_tjmg,     CronTrigger(day_of_week="sat", hour=4, minute=30), id="ing_tjmg", replace_existing=True)
     # LexML (federador oficial) → RAG: gate interno LEXML_INGEST_ENABLED
@@ -1835,7 +1848,8 @@ async def job_ingestao_djen():
     """Diário 05h00 — comunicações processuais do DJEN (API Comunica/CNJ)
     das OABs monitoradas → RAG (arquivo histórico; a retenção da API é curta).
 
-    Gate: DJEN_INGEST_ENABLED (default False — opt-in no .env). Não confundir
+    Gate: DJEN_INGEST_ENABLED (default True — LIGADO por decisão do titular;
+    desligue com DJEN_INGEST_ENABLED=false no .env). Não confundir
     com job_djen_intimacoes (06h30), que alimenta a tela Intimações por
     advogado cadastrado; este job persiste as comunicações no RAG.
     """
@@ -1855,10 +1869,11 @@ async def job_ingestao_tjmg():
     """Sábado 04h30 — crawler da jurisprudência do TJMG (base de acórdãos) →
     RAG, por temas curados e janela de datas.
 
-    Gate: TJMG_INGEST_ENABLED (default False — opt-in no .env; validar contra
-    o site real antes de ativar em produção). O TJMG não tem API aberta, então
-    a coleta depende de scraping: se o HTML mudar ou o portal bloquear, a fonte
-    'tjmg' é marcada 'erro'/'parcial' no painel, sem derrubar o scheduler.
+    Gate: TJMG_INGEST_ENABLED (default True — LIGADO por decisão do titular;
+    desligue com TJMG_INGEST_ENABLED=false no .env). O TJMG não tem API aberta,
+    então a coleta depende de scraping: se o HTML mudar ou o portal bloquear,
+    a fonte 'tjmg' é marcada 'erro'/'parcial' no painel, sem derrubar o
+    scheduler.
     """
     from app.core.config import get_settings as _gs
     if not _gs().TJMG_INGEST_ENABLED:
