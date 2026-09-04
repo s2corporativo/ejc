@@ -1296,6 +1296,32 @@ async def _job_backup_drive_monitorado():
     await _bater_ponto(JOB_BACKUP_DRIVE, "ok", detalhe[:200] if detalhe else None)
 
 
+async def _job_querido_diario_monitor():
+    """Varredura diária dos diários oficiais municipais, com heartbeat por
+    RESULTADO (V2-3.1): o `detail` carrega o dicionário de contagens, não um
+    "ok" mudo. Monitor configurado mas sem produzir nada aparece como tal no
+    diagnóstico, em vez de passar por saudável.
+    """
+    import json
+
+    from app.core.database import AsyncSessionLocal
+    from app.services.heartbeat_service import JOB_QUERIDO_DIARIO
+    from app.services.querido_diario_monitor import executar_monitoramento
+
+    if not getattr(settings, "QUERIDO_DIARIO_MONITOR_ENABLED", False):
+        return
+    try:
+        async with AsyncSessionLocal() as db:
+            resultado = await executar_monitoramento(db)
+    except Exception as e:
+        await _bater_ponto(JOB_QUERIDO_DIARIO, "erro", str(e)[:200])
+        raise
+    # Erro dentro do resultado (integração desligada, configuração incompleta,
+    # falha de consulta) não é sucesso: o job rodou, mas não entregou.
+    status = "erro" if resultado.get("erros") else "ok"
+    await _bater_ponto(JOB_QUERIDO_DIARIO, status, json.dumps(resultado)[:200])
+
+
 def start_scheduler():
     """Inicia jobs APENAS se ENABLE_SCHEDULER=true (evita duplicação)."""
     if not settings.ENABLE_SCHEDULER:
@@ -1372,6 +1398,16 @@ def start_scheduler():
               id="feriados_brasilapi", replace_existing=True)
     s.add_job(_auditoria_processos,   CronTrigger(day_of_week="mon", hour=8, minute=15),  id="auditoria",  replace_existing=True)
     s.add_job(_monitor_diario_oficial, CronTrigger(hour=6, minute=0),                      id="dou_monitor", replace_existing=True)
+    # Diários oficiais MUNICIPAIS (Querido Diário) — gate duplo: o job só age
+    # com QUERIDO_DIARIO_MONITOR_ENABLED e o monitor ainda respeita a flag da
+    # integração (QUERIDO_DIARIO_ENABLED). Registrar sempre mantém o heartbeat
+    # visível no diagnóstico.
+    _hora_qd, _, _min_qd = str(
+        getattr(settings, "QUERIDO_DIARIO_MONITOR_HORA_UTC", "11:00")
+    ).partition(":")
+    s.add_job(_job_querido_diario_monitor,
+              CronTrigger(hour=int(_hora_qd or 11), minute=int(_min_qd or 0)),
+              id="querido_diario_monitor", replace_existing=True)
     s.add_job(_alertar_contratos,     CronTrigger(day_of_week="mon", hour=9, minute=30),  id="contratos",  replace_existing=True)
     # (removido job duplicado id="retencao_ia" — _purgar_logs_ia já agendado em id="purga_ia")
 

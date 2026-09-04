@@ -70,6 +70,33 @@ LEXML_NS = {
 }
 
 
+class LexMLBloqueadoError(RuntimeError):
+    """O LexML devolveu desafio anti-bot em vez do XML da busca.
+
+    Erro PRÓPRIO, e não lista vazia, porque as duas situações são
+    operacionalmente opostas: "a busca rodou e não achou nada" pede outra
+    consulta; "a busca não rodou" pede intervenção. Confundir as duas foi o
+    que fez a ingestão LexML→RAG reportar sucesso entregando zero.
+    """
+
+
+def _e_intersticio_antibot(resposta) -> bool:
+    """Identifica o interstício por content-type + marcadores do corpo.
+
+    Só o content-type não basta (o gate pode mudar de cabeçalho) e só o corpo
+    também não (uma busca legítima pode citar a palavra "verificação"); exigir
+    HTML E marcador reduz o falso positivo, e o custo de errar aqui é uma
+    exceção onde antes havia silêncio — o lado seguro.
+    """
+    tipo = (resposta.headers.get("content-type") or "").lower()
+    if "xml" in tipo:
+        return False
+    corpo = (resposta.text or "")[:4000].lower()
+    marcadores = ("verificação de segurança", "proof-of-work", "challenge",
+                  "<html", "javascript")
+    return "html" in tipo and any(m in corpo for m in marcadores)
+
+
 async def buscar_lexml(
     palavras: str,
     tipo: str = "jurisprudencia",
@@ -93,6 +120,21 @@ async def buscar_lexml(
     except Exception as exc:
         logger.warning("LexML indisponível: %s", exc)
         return []
+
+    if _e_intersticio_antibot(r):
+        # HTTP 200 com HTML de desafio anti-bot (proof-of-work do Senado,
+        # exige JS/WebCrypto). Verificado ao vivo em 04/09/2026.
+        #
+        # Antes esta resposta caía no `ParseError` abaixo e virava `return []`
+        # com um warning: o ingestor percorria as ~53 consultas do plano,
+        # recebia vazio em todas e reportava (0, 0) como execução BEM-SUCEDIDA.
+        # Federação LexML→RAG entregando nada, sem ninguém reclamar — a mesma
+        # classe de defeito do achado V2-3.1 (monitorar resultado, não
+        # execução). Agora falha alto: quem chama decide, mas não é enganado.
+        raise LexMLBloqueadoError(
+            "LexML respondeu com desafio anti-bot (HTML), não com XML. "
+            "A busca não foi executada."
+        )
 
     try:
         root = ET.fromstring(r.text)

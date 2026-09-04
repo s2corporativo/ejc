@@ -54,7 +54,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.services.ingestion_service import upsert_documento
-from app.services.jurisprudencia_externa import buscar_lexml
+from app.services.jurisprudencia_externa import LexMLBloqueadoError, buscar_lexml
 
 logger = logging.getLogger("ejc.ingestao.lexml")
 
@@ -319,9 +319,20 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
     novos = total = 0
     vistas: set[str] = set()   # dedup intra-execução (mesmo registro em 2 consultas)
 
+    consultas = 0
+    bloqueadas = 0
+
     for consulta, tipo, jur in _plano_federacao(cfg):
+        consultas += 1
         try:
             itens = await buscar_lexml(consulta, tipo=tipo, por_pagina=max_item)
+        except LexMLBloqueadoError as e:
+            # Contado à parte: bloqueio anti-bot não é "não achei nada", é "não
+            # perguntei". Se TODAS as consultas forem bloqueadas, a execução
+            # inteira falha ao final em vez de reportar (0, 0) como sucesso.
+            bloqueadas += 1
+            logger.warning("LexML %s %r bloqueado: %s", tipo, consulta, e)
+            continue
         except Exception as e:   # rede/XML — nunca derruba a execução inteira
             logger.warning("LexML %s %r: %s: %s", tipo, consulta, type(e).__name__, e)
             continue
@@ -408,5 +419,15 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
         alvo = jur.slug if jur else "tema"
         logger.info("LexML %s %r [%s]: %d novos / %d itens",
                     tipo, consulta, alvo, n_consulta, len(itens))
+
+    # Toda consulta bloqueada = a federação não rodou. Devolver (0, 0) aqui
+    # marcaria a execução como bem-sucedida no registro de fontes, escondendo
+    # que o LexML deixou de responder — foi assim que a ingestão passou a
+    # entregar zero sem ninguém perceber.
+    if consultas and bloqueadas == consultas:
+        raise LexMLBloqueadoError(
+            f"LexML bloqueou as {consultas} consultas do plano (desafio "
+            "anti-bot). Nenhuma ingestão foi executada."
+        )
 
     return novos, total
