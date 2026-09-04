@@ -1,7 +1,14 @@
 # Release checklist do EJC
 
 Aplicável a cada merge na `main` e a cada deploy em produção. Regras canônicas em
-`docs/GOVERNANCA_IA.md`. O merge e o deploy são atos **humanos**, autorizados pelo titular.
+`docs/GOVERNANCA_IA.md` (v4.0). O merge e o deploy são atos **humanos**, autorizados pelo
+titular.
+
+> **Enquanto o GitHub Actions estiver indisponível no nível da conta** (§6-B da governança),
+> os itens de CI/gate remoto deste checklist são satisfeitos pela **evidência local
+> proporcional ao diff registrada no corpo do PR** — portão a portão, commit e branch. CI
+> ausente ou `startup_failure` não aprova nem bloqueia. Quando a esteira voltar, os itens
+> voltam a valer literalmente.
 
 ## 1. Antes do merge do PR
 

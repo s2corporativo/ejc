@@ -1,7 +1,9 @@
 # Critérios de aceite — auditoria de Pull Request
 
-Todo PR do EJC é auditado em cinco camadas. Um "não" em qualquer camada aplicável impede o
-merge. Regras canônicas em `docs/GOVERNANCA_IA.md`.
+Todo PR do EJC é auditado em cinco camadas, **aplicadas proporcionalmente ao diff**: só as
+camadas que a mudança toca são exigidas (docs-only dispensa A/C/D/E técnicas; mudança sem UI
+dispensa D; sem regra jurídica dispensa C). Um "não" em qualquer camada aplicável impede o
+merge. Regras canônicas em `docs/GOVERNANCA_IA.md` (v4.0).
 
 ## A. Correção técnica
 
@@ -66,5 +68,6 @@ Aplicável a toda mudança que produza prazo, cálculo, tese, peça ou orientaç
 
 ## Encerramento
 
-Nenhum PR é aprovado sem o relatório final do executor: arquivos, comandos, testes,
-evidências, riscos residuais, limitações e pontos que exigem decisão humana.
+Nenhum PR é aprovado sem relatório — que é o **próprio PR com template preenchido** (§6 regra
+11 da governança): arquivos, comandos, testes, evidências, riscos residuais, limitações e
+pontos que exigem decisão humana. Não se exige documento separado.

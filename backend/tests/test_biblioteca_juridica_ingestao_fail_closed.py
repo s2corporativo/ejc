@@ -1,8 +1,10 @@
 """Regressões P0 da Biblioteca Jurídica: ingestão deve falhar para o lado seguro."""
 from __future__ import annotations
 
+import datetime
 import importlib.util
 import inspect
+import json
 from pathlib import Path
 
 
@@ -143,6 +145,36 @@ def test_ia_nao_pode_receber_autoridade_jurisprudencial():
     d = _doc(gerado_por_IA=True)
     erros = MOD.validar([d])
     assert any("gerado por IA" in e for e in erros)
+
+
+def test_frontmatter_com_data_iso_nao_quebra_serializacao_json():
+    """Regressão: YAML converte data ISO não citada (ex.: data_pesquisa: 2026-08-14)
+    em datetime.date. Sem normalização, build_extra() produz um dict com valores
+    não serializáveis em JSON, e a ingestão real (JSONB de knowledge_docs.extra)
+    aborta em runtime com TypeError, mesmo após o dry-run reportar sucesso."""
+    raw = (
+        "---\n"
+        "tipo_camada: fonte_primaria\n"
+        "canonical_id: FP-TEST-000001\n"
+        "origem_conteudo: legislacao\n"
+        "autoridade_juridica: normativa\n"
+        "score_autoridade: 100\n"
+        "area_juridica: tributario\n"
+        "nivel_confiaca: ALTA\n"
+        "data_pesquisa: 2026-08-25\n"
+        "gerado_por_IA: false\n"
+        "last_verified_at: 2026-08-25\n"
+        "legal_status_verificado_em: 2026-08-25\n"
+        "---\ncorpo\n"
+    )
+    meta, _ = MOD.strip_frontmatter(raw)
+    assert isinstance(meta["data_pesquisa"], str)
+    assert meta["data_pesquisa"] == "2026-08-25"
+    assert not isinstance(meta["data_pesquisa"], datetime.date)
+
+    meta["__body"] = "corpo"
+    extra = MOD.build_extra(meta)
+    json.dumps(extra)  # não deve levantar TypeError
 
 
 def test_execute_tem_transacao_unica_e_commit_so_no_final():

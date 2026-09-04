@@ -31,13 +31,26 @@ def test_chave_muda_com_mensagem_task_ou_param():
     assert ai_cache.chave("t", _msgs("a"), temperature=0.9) != base
 
 
-def test_tarefa_local_completo_pode_usar_cache(monkeypatch):
+def test_tarefa_local_completo_nao_usa_cache(monkeypatch):
+    """A6 (análise E2E 03/09): LOCAL_COMPLETO trafega em CLARO para o provedor
+    local — a resposta pode carregar dado pessoal real e não pode ir ao Redis."""
     from app.services.ai.sanitization_policy import ModoSanitizacao
     monkeypatch.setattr(
         "app.services.ai.sanitization_policy.modo_para_task",
         lambda _task: ModoSanitizacao.LOCAL_COMPLETO,
     )
     k = ai_cache.chave("sigilo_local", _msgs())
+    assert k.startswith("ai:nocache:")
+
+
+def test_tarefa_mascaramento_pode_usar_cache(monkeypatch):
+    """Só o mascaramento IRREVERSÍVEL continua cacheável."""
+    from app.services.ai.sanitization_policy import ModoSanitizacao
+    monkeypatch.setattr(
+        "app.services.ai.sanitization_policy.modo_para_task",
+        lambda _task: ModoSanitizacao.MASCARAMENTO,
+    )
+    k = ai_cache.chave("mascarada", _msgs())
     assert k.startswith("ai:resp:")
 
 
@@ -67,15 +80,19 @@ async def test_nocache_nao_abre_redis_mesmo_se_flag_ligada(monkeypatch):
 
 
 async def test_cache_hit_zera_tokens_e_custo(monkeypatch):
-    # Simula tarefa explicitamente LOCAL_COMPLETO/cacheável para exercitar o hit.
+    # Simula tarefa MASCARAMENTO (cacheável) e uma cadeia ELEGÍVEL (A6: o cache
+    # só é consultado depois de confirmada a cadeia) para exercitar o hit.
     from app.services import ai_gateway
     from app.services import ai_cache as _c
     from app.services.ai.sanitization_policy import ModoSanitizacao
 
     monkeypatch.setattr(
         "app.services.ai.sanitization_policy.modo_para_task",
-        lambda _task: ModoSanitizacao.LOCAL_COMPLETO,
+        lambda _task: ModoSanitizacao.MASCARAMENTO,
     )
+    monkeypatch.setattr(ai_gateway.settings, "AI_ENABLED", True)
+    monkeypatch.setattr(ai_gateway.settings, "OLLAMA_ENABLED", True)
+    monkeypatch.setattr(ai_gateway.settings, "AI_PROVIDER", "auto")
 
     async def _fake_obter(_key):
         return {"texto": "resposta cacheada", "modelo": "m", "provedor": "ollama",

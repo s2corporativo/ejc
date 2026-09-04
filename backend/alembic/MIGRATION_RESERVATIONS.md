@@ -1,95 +1,62 @@
 # Reserva de numeração das migrations do EJC
 
-Controle obrigatório para impedir que dois PRs escolham o mesmo número de migration ou
-partam de heads diferentes. Regra canônica em `docs/GOVERNANCA_IA.md`, seção 8.
+Este arquivo é o ledger canônico de **reservas futuras** e do trecho recente da cadeia Alembic. O histórico detalhado de reservas antigas permanece preservado no Git.
 
-**Head canônico da `main` em 2026-08-09:** `138_consolida_fontes_ingestao`.
+**Head canônico atual da `main`:** `155_indices_listagem_espinha`
+**Próximo prefixo livre:** `156`
+Após o merge desta PR, o próximo prefixo livre será `156` — a `154` e a `155` estão aplicadas e **não podem ser reutilizadas**.
 
-## Como reservar
+> Nunca reutilize um número menor ou igual ao head atual, mesmo quando houver lacuna histórica. A ordem numérica precisa crescer junto com `down_revision`.
 
-Antes de escrever qualquer migration:
+## Regra obrigatória
+
+Antes de criar migration:
 
 ```bash
 git checkout main && git pull --ff-only
-cd backend && python -m alembic heads          # confirma o head atual
-gh pr list --state open                        # confere quem já reservou número
+cd backend
+python -m alembic heads
+gh pr list --state open
 ```
 
-1. Atualize a `main` local.
-2. Consulte os PRs abertos (inclusive drafts) e esta tabela.
-3. Verifique o head do Alembic — o `down_revision` da sua migration é **o head da `main`**.
-   Nunca aponte para uma migration que ainda não foi mesclada: numa branch tirada da
-   `main` esse arquivo não existe, o grafo fica órfão e a guarda de numeração reprova
-   (`test_migration_numbering_guard.py`). Se o número anterior está reservado por um PR
-   aberto, resolva ou revogue formalmente a reserva antes de prosseguir —
-   `docs/GOVERNANCA_IA.md` exige frentes sequenciais e não suporta branches empilhadas.
-4. Registre a reserva nesta tabela **no mesmo PR** que cria ou altera a migration.
-5. Confirme as dependências: a cadeia precisa ficar linear e com head único.
+1. O `down_revision` deve ser o head efetivo da `main`, salvo merge revision explicitamente aprovada.
+2. Confira este ledger e todos os PRs abertos/drafts antes de escolher o prefixo.
+3. Reserve o novo número no mesmo PR que cria a migration.
+4. Branches empilhadas não reservam uma sequência futura: só o próximo número após a `main` pode ser tomado.
+5. Migration já aplicada/mesclada nunca é reescrita; correção posterior recebe novo número.
+6. Migration destrutiva exige backup comprovado, plano de rollback e aprovação explícita.
+7. `test_alembic_single_head.py`, `test_migration_numbering_guard.py` e `test_migration_reservations_head.py` são gates bloqueantes.
 
-Estados: `Reservada` (número tomado, migration em desenvolvimento) · `Em PR` (aberta,
-aguardando revisão) · `Mesclada` (na `main`) · `Revogada` (branch ficou incompatível; a
-migration precisa ser reconstruída e renumerada) · `Liberada` (PR fechado sem merge — o
-número volta a ficar disponível).
+## Estados
 
-## Tabela de reservas
+- `Reservada`: número tomado por trabalho baseado no head atual.
+- `Em PR`: migration existe em PR aberto e continua baseada no head atual.
+- `Mesclada`: integra a `main`.
+- `Revogada`: branch perdeu compatibilidade; conteúdo só pode ser reconstruído e renumerado.
+- `Liberada`: PR fechado sem merge **somente se o número ainda for maior que o head atual**. Número já ultrapassado nunca volta a ser utilizável.
 
-| Número | `down_revision` | Branch | PR | Responsável | Estado | Observação |
-|---|---|---|---|---|---|---|
-| 122_route_usage_metrics | 121_sala_juridica_chat | main | mesclada | Claude Code | Mesclada | Telemetria agregada de uso de rotas. |
-| 122_data_room_token_hash | 121_sala_juridica_chat | claude/new-session-4tyz91 | [#495](https://github.com/s2corporativo/ejc/pull/495) | Claude Code | Revogada | A `main` já usa o número 122. O conteúdo do PR só pode ser extraído para branch nova e renumerada. |
-| 122_documentos_publicacao_hash | 121_sala_juridica_chat | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Revogada | Colide com o head canônico e não pode ser integrado no estado atual. |
-| 132_processo_eletronico_mni | 131_audit_logs_worm | main | [#763](https://github.com/s2corporativo/ejc/pull/763) / [#819](https://github.com/s2corporativo/ejc/pull/819) | Claude Code / ChatGPT | Mesclada; correção em PR | Fase A MNI/TJMG já integra a `main`. O PR #819 corrige, antes de aplicação automática em produção, o seed que usava `op.bulk_insert`/`uuid4()` e reprovava no gate de deploy: passa a backfill aditivo, idempotente e determinístico. Se for comprovado que a revisão 132 já foi aplicada em produção fora da esteira registrada, esta edição deve ser abandonada e substituída por migration corretiva posterior. |
-| 123_deadline_owner | 122_documentos_publicacao_hash | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Revogada | Depende de migration inexistente na `main`; eventual extração deve receber nova numeração. |
-| 124_data_room_token_hash | 123_deadline_owner | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Revogada | Desenho antigo e cadeia inexistente; substituído pela reserva linear abaixo. |
-| 125_legal_doc_revisao | 124_data_room_token_hash | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Revogada | Não resolve a correlação estrutural LegalDoc ↔ AILog; eventual histórico será extraído separadamente. |
-| 126_fee_valor_check | 125_legal_doc_revisao | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Revogada | Eventual extração deve partir do head vigente e ser renumerada. |
-| 127_audit_log_worm | 126_fee_valor_check | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Revogada | Eventual extração deve partir do head vigente e ser renumerada. |
-| 123_legal_doc_ai_log_vinculo | 122_route_usage_metrics | main | [#544](https://github.com/s2corporativo/ejc/pull/544) | ChatGPT | Mesclada | FK + hash do conteúdo + invalidação automática da validação ao editar a peça. |
-| 124_dataroom_public_hardening | 123_legal_doc_ai_log_vinculo | fix/dataroom-public-link-hardening | [#547](https://github.com/s2corporativo/ejc/issues/547) | ChatGPT | Mesclada | Hash de links públicos em repouso e publicação externa explícita por arquivo. |
-| 125_fonte_execucoes_zeradas | 124_dataroom_public_hardening | claude/bloco5-monitorar-resultado | [#624](https://github.com/s2corporativo/ejc/pull/624) | Claude Code | Mesclada | Contador de execuções improdutivas + `ja_produziu` por fonte de ingestão (Bloco 5). |
-| 126_case_status_quatro_estados | 125_fonte_execucoes_zeradas | claude/bloco3-quatro-estados | [#630](https://github.com/s2corporativo/ejc/pull/630) | Claude Code | Mesclada | Quatro estados de caso (Bloco 3, decisão do titular 2026-08-02). Nasceu encadeada na 124; com o merge do #624 o down_revision foi promovido para a 125, como planejado. |
-| 127_publicacao_explicita | 126_case_status_quatro_estados | claude/ejc-audit-redesign-7i7idc | [#684](https://github.com/s2corporativo/ejc/pull/684) | Claude Code | Mesclada | Fase 0: corrige vazamento de sigilo do portal — documentos publicados por omissão. Default confidencialidade "normal"→"confidencial"; usuário marca EXPLICITAMENTE para publicar. Nota histórica: PR #679 reservou 128/129 a partir de head anterior e exige reconciliação antes de eventual integração. |
-| 130_ejc_skills_uso | 127_publicacao_explicita | claude/ejc-skills-uso-tracking | (a abrir) | Claude Code | Reservada | Bloco 4 (enxugar catálogo): contador `vezes_executado`/`ultima_execucao` em `ejc_skills`; não arquiva nada sozinho. |
-| 131_audit_logs_worm | 130_ejc_skills_uso | claude/audit-worm-699 | (a abrir) | Claude Code | Mesclada | Impõe WORM em `audit_logs` via trigger `BEFORE UPDATE OR DELETE`, com via privilegiada de expurgo inativa reservada para política futura. |
-| 138_consolida_fontes_ingestao | 132_processo_eletronico_mni | main | [#786](https://github.com/s2corporativo/ejc/pull/786) / [#819](https://github.com/s2corporativo/ejc/pull/819) | Claude Code / ChatGPT | Mesclada; correção em PR | **Head canônico atual da `main`.** A versão inicial consolidava as métricas por lógica dinâmica e removia as linhas `juris_import_*`, o que reprovava no classificador expand-only. O #819 preserva o histórico: promove a linha antiga quando não há canônica; quando coexistem, mescla métricas por UPDATE estático e arquiva a antiga como `legacy_138_*`, inativa, sem DELETE. Se houver prova de que a 138 já foi aplicada em produção fora da esteira registrada, esta edição deve ser abandonada e substituída por migration corretiva posterior. |
-| 140_preliminares_fundacao_schema | 138_consolida_fontes_ingestao | feat/964-preliminares-schema-139 | [#965](https://github.com/s2corporativo/ejc/pull/965) | ChatGPT | Mesclada | Fase 1 da fusão física Sala Jurídica + Raio-X: somente quatro tabelas unificadas novas; sem backfill, dual-write, ALTER ou DROP nas tabelas legadas. **Re-ancorada na `139_dpt360_ciclo_vida_lgpd`** para eliminar fork de heads (a `139` LGPD foi mesclada em main antes deste PR). |
-| 141_dpt360_diagnostico | 140_preliminares_fundacao_schema | Manus | (a abrir) | Manus | Em PR | Persistência de resultados do Diagnóstico Empresarial 360: tabela `dpt_diagnosticos` (evidências por área, HITL e auditoria OAB). Habilita o campo `persistencia` do readiness; integra-se à action `diagnostico` e ao contador `diagnosticos_pendentes` do dashboard. |
-| 143_signature_documento_visualizado | 142_document_hash_rescan | fix/signatura-visualizacao-previa | [#1149](https://github.com/s2corporativo/ejc/pull/1149) | Manus | Mesclada | Issue #1081 (ASS-01): coluna `documento_visualizado_em` em `signature_requests` para o servidor exigir e REGISTRAR a visualização prévia do documento antes de `POST /signatures/{sig_id}/assinar` (MP 2.200-2/2001, art. 10 §2º). Puramente aditiva (timestamp nullable).
-| 144_alembic_version_varchar128 | 143_signature_documento_visualizado | fix/migration-alembic-version-varchar128 | (a abrir) | Manus | Reservada | Padroniza `alembic_version.version_num` em `varchar(128)`: o upgrade da 143 estourava o `varchar(32)` original em ambientes novos (deploy em produção exigiu ALTER manual em 15/08/2026). Idempotente (pula se já >= 128) com downgrade protegido contra truncamento.
-| 146_case_sigilo_reforcado | 145_drop_orphan_db_only_columns | claude/auditoria-ia-juridica-c2tbf2 | [#1195](https://github.com/s2corporativo/ejc/pull/1195) | Claude Code | Em PR | Issue #1194: coluna `sigilo_reforcado boolean not null default false` em `cases` — achado do `security-auditor` provou que o piso `LOCAL_COMPLETO` de crimes sexuais/menores (redução do AI-019 pedida pelo titular) era inalcançável via `Case.area` (sem granularidade) e via `task_type` (nenhuma rota passa texto livre com a palavra certa). Campo explícito, marcado pelo advogado na triagem, consultado com prioridade em `orchestrator.py`/`agent/loop.py`. Puramente aditiva.
-| 147_pendencia_impacto_providencia | 146_case_sigilo_reforcado | claude/ejc-strategic-evolution-2qqasi | [#1241](https://github.com/s2corporativo/ejc/pull/1241) | Claude Code | Mesclada | Issue #1244 (frente 12 de `docs/estrategia/EVOLUCAO_ESTRATEGICA_EJC.md`): colunas `impacto varchar(10)` e `providencia varchar(30)`, ambas NULLABLE, em `client_pending_items`. A lista de pendências registrava o QUE falta e em que estágio está, mas não quanto pesa nem como resolver — os dois campos que convertem inventário em plano de ação. Puramente aditiva, sem backfill; vocabulário fechado no schema Pydantic, como já ocorre com `type`/`status` na mesma tabela. |
-| 149_documents_sha256_integridade | 147_pendencia_impacto_providencia | claude/ejc-auditoria-forense-completa-85xtuw | [#1238](https://github.com/s2corporativo/ejc/pull/1238) | Claude Code | Em PR | Issue #1237: coluna `sha256 varchar(64)` nullable + índice em `documents`. A maquinaria de hash já existia inteira desde a 142 (serviço local, remoto via rclone, rescan e task de backfill), mas o upload direto não calculava nada e a tabela não tinha onde guardar — o SHA-256 vivia só em `document_intake_items`, que só o fluxo de intake alimenta. Num sistema de prova documental, documento juntado pela tela ficava sem evidência de integridade. Puramente aditiva, sem backfill (o rescan existente é quem sabe ler arquivo local e remoto). Renumerada de 147 para 149 ao mesclar a `main` (colisão com `147_pendencia_impacto_providencia`, mesclada primeiro). |
-| 150_indices_fk_espinha_dominio | 149_documents_sha256_integridade | claude/ejc-auditoria-forense-completa-85xtuw | [#1238](https://github.com/s2corporativo/ejc/pull/1238) | Claude Code | Em PR | Issue #1237: índice nas 9 FKs de coluna única que apontam para `cases`, `clients` e `documents` e não tinham. Medido no schema real: são **74** FKs sem índice, não 6 como a anotação anterior dizia — mas 50 delas apontam para `users` (trilha: `created_by`, `aprovado_por`), escritas uma vez e nunca filtradas; indexá-las custaria escrita em 50 tabelas por uma consulta que não existe. Cobre só a espinha do domínio, percorrida em toda listagem escopada a caso/cliente/documento. Aditiva e reversível. Renumerada de 148 para 150 na mesma colisão. |
-| 151_case_status_anterior | 150_indices_fk_espinha_dominio | claude/ejc-strategic-evolution-2qqasi | [#1259](https://github.com/s2corporativo/ejc/pull/1259) | Claude Code | Em PR | Issue #1272 (Classe B do plano-mestre): coluna `status_anterior varchar(20)` NULLABLE em `cases`. Renumerada de 148 para 151 ao mesclar a `main` (149/150 ocupadas pelo #1238). |
-| 152_thesis_candidate_tese_banco | 151_case_status_anterior | claude/ejc-strategic-evolution-2qqasi | [#1259](https://github.com/s2corporativo/ejc/pull/1259) | Claude Code | Em PR | Issue #1272 (Classe A do plano-mestre): coluna `tese_banco_id varchar(36)` NULLABLE (FK `teses.id`, `ON DELETE SET NULL`) em `thesis_candidates`. Renumerada de 149 para 152 na mesma colisão. |
+## Cadeia recente reconciliada
 
-> **Decisão do titular em 2026-07-29.** A continuidade das correções foi autorizada após
-> a integração dos PRs #535, #542 e #543. As reservas das branches antigas #495/#497
-> foram revogadas porque partem de uma cadeia que não existe mais na `main`. Nenhuma
-> de suas migrations pode ser mesclada ou reutilizada sem reconstrução e nova reserva.
+| Número | `down_revision` | Estado | Observação |
+|---|---|---|---|
+| `147_pendencia_impacto_providencia` | `146_case_sigilo_reforcado` | Mesclada | Head anterior do qual partiram as frentes de agosto. |
+| `148_banco_teses_juridicas` | `147_pendencia_impacto_providencia` | **Revogada / aposentada** | Nunca integrou a `main`. A série antiga #1264/#1267 ficou incompatível depois que a cadeia avançou. Não reutilizar 148. |
+| `149_documents_sha256_integridade` | `147_pendencia_impacto_providencia` | Mesclada | Integridade documental. A lacuna 148 é histórica e intencional. |
+| `150_indices_fk_espinha_dominio` | `149_documents_sha256_integridade` | Mesclada | Índices da espinha do domínio. |
+| `151_case_status_anterior` | `150_indices_fk_espinha_dominio` | Mesclada | Histórico de status de caso. |
+| `152_thesis_candidate_tese_banco` | `151_case_status_anterior` | Mesclada | Ponte Matriz de Teses → Banco de Teses canônico. |
+| `153_legal_doc_client_id` | `152_thesis_candidate_tese_banco` | Mesclada | Isolamento estável cliente → peça avulsa, reconstruído a partir do #1231 sem reutilizar a antiga migration 147. |
+| `154_saneamento_schema` | `153_legal_doc_client_id` | Mesclada | Módulo de saneamento de base processual (PROMPT 1). Encadeada sobre 153 porque era o head real no momento (`alembic heads`) — não pressupõe que 153 já tenha sido mesclada; conferir o head real de novo antes do merge. 7 tabelas próprias, **prefixadas `saneamento_*` no schema `public`** — nenhuma alteração em tabela existente do EJC. Um schema Postgres dedicado (`CREATE SCHEMA`) foi cogitado e descartado: `scripts/check_migration_compatibility.py` (gate de deploy) e os testes de paridade schema↔ORM (`test_schema_dr_parity.py`, `test_schema_sync.py`) extraem nomes de tabela por regex/AST sem suporte a qualificação de schema — mudar essas ferramentas para um caso de uso isolado era desproporcional ao módulo. Prefixo de tabela entrega o mesmo isolamento prático. |
+| `155_indices_listagem_espinha` | `154_saneamento_schema` | **Em PR — HEAD desta branch** | Índices parciais de listagem em `cases`/`clients`/`documents` (AUD27-P3-11). `deadlines` fora de propósito: já coberta por `ix_deadlines_data_prazo`, medido. **Renumerada de 154 para 155** ao mesclar a `main`: o #1318 chegou primeiro e ocupou a 154 — mesma colisão que renumerou a 150 (era 148). |
+
+## Banco de Teses — decisão canônica
+
+A fonte de verdade é **`teses` + `tese_caso_links`**. Não criar `legal_theses`, `teses_juridicas`, `teses_v2`, `teses_v4` ou outro banco paralelo. Qualquer evolução deve estender a estrutura canônica de forma aditiva e preservar Jurimetria, Súmulas, matcher tese↔caso, Matriz de Teses e frontend existentes.
+
+Os PRs antigos #1264, #1267, #1269 e #1275 são fontes históricas de requisitos/código, não unidades de merge. Qualquer conteúdo ainda útil deve ser reaplicado sobre a `main` vigente, com nova numeração e sem substituir arquivos que já evoluíram.
+
+A reserva condicional que antes apontava `153` para uma extensão futura do Banco de Teses foi liberada porque não havia migration nem PR 153 em andamento. Como o isolamento cliente→documento corrige um risco concreto de ownership/homônimos, ele assume o próximo número canônico. Qualquer futura extensão de teses deverá usar o próximo número livre após a integração desta migration.
 
 ## Guarda automática
 
-`backend/tests/test_migration_numbering_guard.py` roda na suíte do CI e cobra, sem depender
-de identificador fixo:
-
-- número de prefixo único por migration — **é o teste que impede nova colisão**;
-- todo `down_revision` aponta para uma revisão existente;
-- o número do filho é sempre maior que o do pai;
-- head único;
-- nenhuma revisão de merge nova.
-
-`test_alembic_single_head.py` continua valendo para o encadeamento nominal já registrado,
-mas fixa o head à mão — por isso todo PR com migration precisa editá-lo, e dois PRs com
-migration conflitam ali por construção.
-
-## Regras que valem sempre
-
-- **Head único.** O repositório nunca tem dois heads; guardado pelos dois testes acima.
-- **Migration aplicada em produção não se edita** — corrige-se com uma nova.
-- **Autogenerate se revisa à mão.** Dezenas de tabelas do EJC existem apenas em SQL bruto e
-  não têm model ORM; `alembic/env.py` tem guarda `include_name()`. Nunca aceite um
-  `drop_table` proposto pelo autogenerate sem conferir a tabela.
-- **Migration destrutiva** exige backup comprovado e plano de rollback aprovados antes.
-- Toda migration precisa de `downgrade()` — ou de uma explicação no cabeçalho de por que é
-  irreversível e de qual é o procedimento de recuperação.
+`backend/tests/test_migration_reservations_head.py` compara este head documentado com o head real lido pelo Alembic e verifica que o próximo prefixo é exatamente o sucessor numérico. Assim, o ledger não pode voltar a anunciar um head antigo sem quebrar a suíte.

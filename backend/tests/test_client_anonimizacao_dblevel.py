@@ -138,11 +138,41 @@ async def test_bloqueia_com_caso_ativo_salvo_forcar():
             assert row["cpf_enc"] is not None
             assert row["anonimizado_em"] is None
 
-            # forcar=True passa por cima do bloqueio, mas registra isso.
+            # Override irreversível sem justificativa é rejeitado.
+            with pytest.raises(HTTPException) as exc_forcar:
+                await anonimizar_cliente(
+                    db, client_id, executor, "socio", forcar=True,
+                )
+            assert exc_forcar.value.status_code == 422
+
+            # Com justificativa, o override prossegue. O WORM registra apenas
+            # código controlado/metadados — nunca o texto livre fornecido.
+            motivo_override = "override automatizado de representação ativa"
             resultado = await anonimizar_cliente(
-                db, client_id, executor, "socio", forcar=True,
+                db, client_id, executor, "socio",
+                motivo=motivo_override,
+                forcar=True,
             )
             assert resultado["bloqueios_ignorados"]
+
+            audit = (await db.execute(
+                text(
+                    "SELECT detalhes, dados_depois FROM audit_logs "
+                    "WHERE user_id = :uid AND entidade = 'clients' "
+                    "AND registro_id = :cid AND acao = 'ANONIMIZAR_LGPD' "
+                    "ORDER BY created_at DESC LIMIT 1"
+                ),
+                {"uid": executor, "cid": client_id},
+            )).mappings().first()
+            assert audit is not None
+            assert audit["dados_depois"]["forcado"] is True
+            assert audit["dados_depois"]["codigo_justificativa"] == (
+                "OVERRIDE_REPRESENTACAO_ATIVA"
+            )
+            assert audit["dados_depois"]["justificativa_informada"] is True
+            assert "justificativa_sanitizada" not in audit["dados_depois"]
+            assert motivo_override not in (audit["detalhes"] or "")
+            assert motivo_override not in str(audit["dados_depois"])
         finally:
             await _limpar_executor(db, executor)
             await _limpar(db, client_id, case_id)

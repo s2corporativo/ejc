@@ -1,22 +1,20 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import api from "../lib/api";
-import { PageHeader, Spinner, fmtMoney } from "../components/UI";
+import { ErrorState, PageHeader, Spinner, fmtMoney } from "../components/UI";
+import { mensagemDaFalha, useCarregar } from "../lib/useCarregar";
 
 export default function DashboardIA() {
-  const [d, setD] = useState<any>(null);
   const [dias, setDias] = useState(30);
-  const [loading, setLoading] = useState(true);
+  // E4: erro de carga vira ErrorState com "Tentar novamente" — antes virava um
+  // painel de zeros indistinguível de "nenhuma chamada no período".
+  const carga = useCarregar<any>(
+    () => api.get(`/ia-saude/dashboard?dias=${dias}`).then((r) => r.data),
+    [dias],
+    { fallbackErro: "Não foi possível carregar a saúde da IA." },
+  );
+  const d = carga.dados;
 
-  useEffect(() => {
-    setLoading(true);
-    api
-      .get(`/ia-saude/dashboard?dias=${dias}`)
-      .then((r) => setD(r.data))
-      .catch(() => setD(null))
-      .finally(() => setLoading(false));
-  }, [dias]);
-
-  if (loading)
+  if (carga.carregando)
     return (
       <div className="flex justify-center py-20">
         <Spinner />
@@ -55,6 +53,14 @@ export default function DashboardIA() {
         }
       />
 
+      {carga.estado === "falhou" ? (
+        <ErrorState
+          title="Não foi possível carregar a saúde da IA"
+          message={mensagemDaFalha(carga)}
+          onRetry={carga.recarregar}
+        />
+      ) : (
+        <>
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
         <Kpi label="Chamadas" val={d?.total_chamadas ?? 0} />
         <Kpi label="Custo (R$)" val={fmtMoney(d?.custo_total_brl)} />
@@ -88,6 +94,8 @@ export default function DashboardIA() {
           </div>
         ))}
       </div>
+        </>
+      )}
     </div>
   );
 }

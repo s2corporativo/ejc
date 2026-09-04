@@ -55,7 +55,16 @@ def _filtro_mg_jec() -> str:
 
 
 def _where(mg_jec_only: bool) -> str:
-    base = "kd.deleted_at IS NULL AND COALESCE(kd.vigente, TRUE) = TRUE"
+    """WHERE das métricas = vigente/não excluído + o MESMO gate de governança
+    da recuperação (C3): cobertura nunca conta documento que a busca exclui
+    (sem rag_status aprovado, vigência não verificada, súmula em quarentena,
+    corpus fictício, revogado). Import tardio: ai_service é módulo pesado."""
+    from app.services.ai_service import filtros_gate_rag
+
+    base = (
+        "kd.deleted_at IS NULL AND COALESCE(kd.vigente, TRUE) = TRUE "
+        f"{filtros_gate_rag()}"
+    )
     return f"{base} AND {_filtro_mg_jec()}" if mg_jec_only else base
 
 

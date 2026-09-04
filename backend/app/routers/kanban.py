@@ -1,5 +1,5 @@
 """Kanban columns and case kanban management."""
-from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from typing import Optional
@@ -113,26 +113,3 @@ async def update_case_kanban(
     )
     await db.commit()
     return {"ok": True, "status_sincronizado": None}
-
-
-# Compatibilidade (PR #1218): o endereço canônico antigo GET /api/kanban-columns
-# (router sem prefixo + decorator "/kanban-columns", montado sob /api) agora
-# vive em /api/kanban/columns. Redirect 308 — o destino reautentica
-# (HTTPBearer), mesmo desenho dos PRs #1215/#1217.
-_compat = APIRouter(prefix="", tags=["Kanban — Compatibilidade"])
-
-
-from fastapi.responses import RedirectResponse as _RR
-
-
-@_compat.get("/kanban-columns")
-async def _redirect_kanban_columns(
-    request: Request,
-    # Conservador: o endereço movido (Onda 2) manteve o mesmo gate de auth —
-    # o redirect exige credencial antes de redirecionar; o destino reautentica.
-    current_user: User = Depends(get_current_user),
-) -> _RR:
-    del current_user
-    query = request.url.query
-    destino = "/api/kanban/columns" + (f"?{query}" if query else "")
-    return _RR(url=destino, status_code=308)

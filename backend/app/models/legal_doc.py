@@ -68,7 +68,10 @@ class LegalDoc(Base):
     protocolo_tribunal           = Column(String(120), nullable=True)
     protocolo_comprovante_doc_id = Column(String(36), nullable=True)
 
-    case_id    = Column(String(36), ForeignKey("cases.id"), nullable=True, index=True)
+    case_id = Column(String(36), ForeignKey("cases.id"), nullable=True, index=True)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=True, index=True)
+    # Identidade estável do kit de admissão; título/nome é só apresentação.
+    client_admission_kind = Column(String(40), nullable=True)
     created_by = Column(String(36), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

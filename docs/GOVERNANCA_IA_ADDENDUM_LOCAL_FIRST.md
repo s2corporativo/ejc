@@ -1,5 +1,9 @@
 # Adendo à Governança de IA — operação local-first
 
+> **CONSOLIDADO** em 2026-08-25 no §6-B de `docs/GOVERNANCA_IA.md` v4.0 (Issue #1286), como
+> este adendo previa ("até a consolidação textual"). Este arquivo permanece como registro
+> histórico da decisão; o texto vigente é o da governança principal.
+
 Data da decisão do titular: **2026-08-09**  
 Registro: **Issue #1000**
 

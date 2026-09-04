@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.core.security import (get_current_user, require_roles, ROLE_LEVEL,
-                                 requer_equipe_juridica)
+                                 require_roles_exact, requer_equipe_juridica)
 from app.models.user import User
 from app.models.case import Case, CaseMovimento, CaseStatus
 from app.models.audit_log import criar_audit_log
@@ -50,6 +50,26 @@ from app.schemas.common import MsgResponse
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/cases", tags=["Casos"])
+
+# M16 (auditoria 2026-06-30): criar caso = equipe jurídica + intake da
+# secretaria. AUD27-P1-1: era `require_roles(...)`, cujo piso HIERÁRQUICO
+# tomava o menor nível da lista (secretaria, 2) e promovia qualquer papel
+# acima dele — inclusive `financeiro` (4), que não está na lista e não abre
+# caso. Allowlist EXATA (mesma migração de `4ab8618` nos routers irmãos):
+# quem podia criar continua criando (estagiário incluído, já criava pelo
+# piso e é equipe jurídica); só a promoção acidental do financeiro cai.
+#
+# LITERAL de propósito, não `EQUIPE_JURIDICA | {...}`: a matriz RBAC derivada
+# (qa/e2e/rbac_matrix.py) resolve a allowlist por AST e não avalia expressão
+# binária — com o operador de união a rota caía como `indeterminado` e SAÍA da
+# amostra, virando ponto cego justamente no gate que esta correção endureceu.
+# `test_criar_caso_preserva_quem_ja_criava` garante que o literal não se
+# descole de EQUIPE_JURIDICA.
+_PODE_CRIAR_CASO: frozenset[str] = frozenset({
+    "superadmin", "admin", "socio", "advogado", "advogado_auxiliar",
+    "estagiario",   # equipe jurídica (espelha EQUIPE_JURIDICA)
+    "secretaria",   # intake
+})
 _ARQUIVAMENTO_ROLES = ["superadmin", "admin", "socio", "advogado"]
 
 # Status que exigem proxima_acao preenchido (G1 — caso sempre tem "o que fazer agora").
@@ -220,9 +240,7 @@ async def criar(
     payload: CaseCreate,
     background: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(require_roles(
-        ["superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "secretaria"]
-    )),  # M16 (auditoria 2026-06-30): criar caso = equipe jurídica/gestão/intake
+    cu: User = Depends(require_roles_exact(_PODE_CRIAR_CASO)),
 ):
     # BUG-03: rejeita título que é JSON/código cru de IA não parseado.
     if titulo_e_json_bruto(payload.titulo):
@@ -700,10 +718,31 @@ async def excluir(
             "pendencias": pendencias,
         })
 
-    c.deleted_at = datetime.now(timezone.utc)
+    agora = datetime.now(timezone.utc)
+    c.deleted_at = agora
+
+    # AUD27-P3-10 / V2-3.3: peça NÃO PROTOCOLADA não tem vida própria fora do
+    # caso. Sem cascata ela ficava ÓRFÃ: some da tela do caso (que não existe
+    # mais) mas continua em listagens e contadores — foi exatamente assim que
+    # AUD27-P2-1 nasceu no painel de guardrails. A protocolada nunca chega
+    # aqui: ela BLOQUEIA a exclusão na checagem acima. O que resta (rascunho,
+    # revisão, corrigida, aprovada, final) vai junto para a lixeira, de onde é
+    # restaurável depois do caso — a restauração exige o pai vivo. Os ids vão
+    # para a trilha: sem eles, restaurar o caso não diz QUAIS peças resgatar.
+    pecas_cascata = (await db.execute(
+        select(LegalDoc).where(
+            LegalDoc.case_id == case_id,
+            LegalDoc.deleted_at.is_(None),
+        )
+    )).scalars().all()
+    for peca in pecas_cascata:
+        peca.deleted_at = agora
+
     await criar_audit_log(
         db, cu.id, cu.role.value, "DELETE", "cases", case_id,
-        detalhes=f"Exclusão (soft delete). Motivo: {motivo_final}",
+        detalhes=(f"Exclusão (soft delete). Motivo: {motivo_final}. "
+                  f"Peças não protocoladas excluídas junto: {len(pecas_cascata)}"),
+        dados_antes={"pecas_cascata": [p.id for p in pecas_cascata]},
     )
     await db.commit()
     return MsgResponse(detail="Caso excluído (soft delete — restaurável pela lixeira)")

@@ -6,6 +6,9 @@ import {
   type DptDiagnosticKind,
   type DptDiagnosticReadiness,
 } from "./api";
+import ClienteNaoAcompanhado, {
+  isClienteForaDoPrograma,
+} from "./ClienteNaoAcompanhado";
 import DptIntelligence from "./DptIntelligence";
 
 const KINDS: Array<{ value: DptDiagnosticKind; label: string }> = [
@@ -45,7 +48,7 @@ export default function DptDiagnosis({
   const [readiness, setReadiness] = useState<DptDiagnosticReadiness | null>(
     null,
   );
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<"fora_do_programa" | "falha" | null>(null);
 
   useEffect(() => {
     if (!companies.some((company) => company.id === clientId)) {
@@ -57,10 +60,14 @@ export default function DptDiagnosis({
     if (!clientId) return;
     let active = true;
     setReadiness(null);
-    setError(false);
+    setError(null);
     void getDptDiagnosticReadiness(clientId, kind)
       .then((data) => active && setReadiness(data))
-      .catch(() => active && setError(true));
+      .catch(
+        (err: unknown) =>
+          active &&
+          setError(isClienteForaDoPrograma(err) ? "fora_do_programa" : "falha"),
+      );
     return () => {
       active = false;
     };
@@ -114,7 +121,12 @@ export default function DptDiagnosis({
           </label>
         </div>
 
-        {error ? (
+        {error === "fora_do_programa" ? (
+          // 404 é estado de negócio: cliente fora do programa DPT 360.
+          <div className="mt-4">
+            <ClienteNaoAcompanhado clientId={clientId} />
+          </div>
+        ) : error ? (
           <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             Não foi possível verificar as evidências disponíveis.
           </div>

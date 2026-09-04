@@ -58,7 +58,9 @@ function BuscaCliente({
     setBuscando(true);
     const t = window.setTimeout(() => {
       api
-        .get("/clients", { params: { search: limpo, page_size: 8 } })
+        // Barra final: sem ela o backend responde 307 para /api/clients/
+        // (prefixo legado) — round-trip extra a cada tecla digitada.
+        .get("/clients/", { params: { search: limpo, page_size: 8 } })
         .then((r) => setResultados(asLista<Client>(r.data)))
         .catch(() => setResultados([]))
         .finally(() => setBuscando(false));

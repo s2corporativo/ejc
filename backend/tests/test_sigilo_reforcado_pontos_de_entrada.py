@@ -349,3 +349,145 @@ class TestAgentToolEscrita:
         capturado = await self._rodar(monkeypatch, False)
         # área "civel" é EXTERNO_PSEUDONIMIZADO — não None, mas também não LOCAL.
         assert capturado["modo_sanitizacao"] != ModoSanitizacao.LOCAL_COMPLETO
+
+
+# ── 7. Crítica adversarial (Modo Duas IAs) ───────────────────────────────────
+# O caminho que a auditoria acima chamou de "outros caminhos" e não cobriu.
+# É o mais grave dos que restavam: a crítica recebe a PEÇA INTEIRA mais o
+# CONTEXTO DO CASO (dossiê/OCR/RAG) e, por design, PREFERE provider EXTERNO
+# para ter diversidade de modelo. Como o task_type `critica_adversarial` é
+# EXTERNO_PSEUDONIMIZADO na política, num caso `sigilo_reforcado=True` a
+# GERAÇÃO da peça rodava local (correto) e a CRÍTICA saía do VPS logo depois,
+# levando o mesmo conteúdo — anulando a proteção na etapa seguinte.
+
+class TestCriticaAdversarial:
+    """`adversarial.criticar_peca` — piso de sigilo do CASO e do CHAMADOR."""
+
+    @pytest.fixture
+    def gateway_ok(self, monkeypatch):
+        """Providers externos e Ollama elegíveis; captura os kwargs do gateway."""
+        from app.core.config import get_settings
+        from app.services.ai_gateway import GatewayResponse
+        st = get_settings()
+        monkeypatch.setattr(st, "ANTHROPIC_ENABLED", True)
+        monkeypatch.setattr(st, "ANTHROPIC_API_KEY", "sk-ant-fake-para-testes")
+        monkeypatch.setattr(st, "GROQ_API_KEY", "gsk-fake-para-testes")
+        monkeypatch.setattr(st, "OLLAMA_ENABLED", True)
+        monkeypatch.setattr(st, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
+        monkeypatch.setattr(st, "AI_PROVIDER", "auto")
+        monkeypatch.setattr(st, "AI_PROVIDER_PRIORITY", "anthropic,groq,ollama")
+        capturado: dict = {}
+
+        async def fake_chat(messages, **kw):
+            capturado.update(kw)
+            return GatewayResponse(
+                texto="## 6. NOTA DE ROBUSTEZ\nNOTA DE ROBUSTEZ: 70",
+                modelo="m-fake", provedor=kw.get("provider_override") or "anthropic",
+                task_type=kw.get("task_type", ""), input_tokens=1, output_tokens=1,
+            )
+
+        monkeypatch.setattr("app.services.ai_gateway.chat", fake_chat)
+        # Gate de citações da própria crítica: irrelevante aqui, e sem ele o
+        # `_FakeDB` receberia consultas que não sabe responder.
+        async def sem_gate(*_a, **_kw):
+            raise RuntimeError("gate desligado no teste")
+        monkeypatch.setattr(
+            "app.services.citation_gate.validar_citacoes", sem_gate,
+        )
+        return capturado
+
+    async def test_caso_sigiloso_forca_local_completo_no_gateway(
+            self, gateway_ok, monkeypatch):
+        from app.services.ai import adversarial
+        # Entidades do caso: fail-safe, mas evita consulta que o fake não sabe.
+        async def fake_entidades(db, case_id):
+            return {}
+        monkeypatch.setattr(
+            "app.services.ai.entidades_caso.entidades_do_caso", fake_entidades,
+        )
+
+        c = await adversarial.criticar_peca(
+            _FakeDB(True), texto_peca="Peça fictícia para crítica.",
+            contexto_caso="Contexto fictício do caso.",
+            task_type_origem="elaboracao_peca", provedor_origem="ollama",
+            case_id="caso-sigiloso-critica",
+        )
+        assert c.disponivel is True
+        assert gateway_ok["modo_sanitizacao"] == ModoSanitizacao.LOCAL_COMPLETO
+        # E o provider forçado por DIVERSIDADE não pode ser externo: o sigilo
+        # vence a diversidade (senão o override externo é o próprio vazamento).
+        assert gateway_ok["provider_override"] not in ("anthropic", "groq", "maritaca")
+
+    async def test_caso_normal_mantem_diversidade_externa(
+            self, gateway_ok, monkeypatch):
+        """Regressão inversa: sem a flag, nada muda (crítica segue preferindo
+        provider externo diverso e o modo é o da política do task_type)."""
+        from app.services.ai import adversarial
+        async def fake_entidades(db, case_id):
+            return {}
+        monkeypatch.setattr(
+            "app.services.ai.entidades_caso.entidades_do_caso", fake_entidades,
+        )
+
+        c = await adversarial.criticar_peca(
+            _FakeDB(False), texto_peca="Peça fictícia para crítica.",
+            task_type_origem="elaboracao_peca", provedor_origem="ollama",
+            case_id="caso-normal-critica",
+        )
+        assert c.disponivel is True
+        assert gateway_ok["modo_sanitizacao"] != ModoSanitizacao.LOCAL_COMPLETO
+        assert gateway_ok["provider_override"] == "anthropic"
+
+    async def test_modo_do_chamador_eleva_o_piso_sem_case_id(
+            self, gateway_ok):
+        """O orquestrador resolve o piso por ÁREA sensível e o informa — sem
+        `case_id` no banco, ele sozinho já tem de bastar."""
+        from app.services.ai import adversarial
+
+        c = await adversarial.criticar_peca(
+            None, texto_peca="Peça fictícia para crítica.",
+            provedor_origem="ollama",
+            modo_sanitizacao=ModoSanitizacao.LOCAL_COMPLETO,
+        )
+        assert c.disponivel is True
+        assert gateway_ok["modo_sanitizacao"] == ModoSanitizacao.LOCAL_COMPLETO
+        assert gateway_ok["provider_override"] not in ("anthropic", "groq", "maritaca")
+
+    async def test_sigilo_sem_ia_local_pula_a_critica_em_vez_de_vazar(
+            self, gateway_ok, monkeypatch):
+        """Fail-closed explícito: sigilo reforçado + nenhum provider LOCAL
+        elegível → crítica NÃO executada, com aviso próprio. Jamais externo."""
+        from app.core.config import get_settings
+        from app.services.ai import adversarial
+        monkeypatch.setattr(get_settings(), "OLLAMA_ENABLED", False)
+        async def fake_entidades(db, case_id):
+            return {}
+        monkeypatch.setattr(
+            "app.services.ai.entidades_caso.entidades_do_caso", fake_entidades,
+        )
+
+        c = await adversarial.criticar_peca(
+            _FakeDB(True), texto_peca="Peça fictícia para crítica.",
+            contexto_caso="Contexto fictício do caso.",
+            task_type_origem="elaboracao_peca", provedor_origem="ollama",
+            case_id="caso-sigiloso-sem-local",
+        )
+        assert c.disponivel is False
+        assert c.aviso == adversarial.AVISO_BLOQUEIO_SIGILO
+        # Prova NEGATIVA: o gateway não foi chamado — nada saiu do VPS.
+        assert gateway_ok == {}
+
+    async def test_falha_ao_ler_o_sigilo_pula_a_critica(self, gateway_ok):
+        """Sigilo INDETERMINADO (erro de banco) não vira "pode ir ao externo"."""
+        from app.services.ai import adversarial
+
+        class _DBQuebrado:
+            async def execute(self, *_a, **_kw):
+                raise RuntimeError("banco indisponível (simulado)")
+
+        c = await adversarial.criticar_peca(
+            _DBQuebrado(), texto_peca="Peça fictícia para crítica.",
+            task_type_origem="elaboracao_peca", case_id="caso-indeterminado",
+        )
+        assert c.disponivel is False
+        assert gateway_ok == {}
