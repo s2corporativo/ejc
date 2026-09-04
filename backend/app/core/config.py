@@ -664,7 +664,10 @@ class Settings(BaseSettings):
     # documento de fonte oficial, e nunca sobre decisão humana explícita
     # ('recusado'/'bloqueado'/quarentena/requires_human_review) nem sobre
     # marcador de revogação/suspensão.
-    RAG_LIBERACAO_LOTE_ENABLED: bool = True
+    # Fail-closed por default (gate de consolidação, 04/09/2026): a política
+    # nasce DESLIGADA no código e só é ativada por env, após homologação. O
+    # script continua executável à mão (`python -m scripts.liberar_acervo_rag`).
+    RAG_LIBERACAO_LOTE_ENABLED: bool = False
     # DECISÃO DO TITULAR (04/09/2026, opção A): legislação de origem oficial
     # sem marcador de revogação é liberada como `legal_status='vigente'` em
     # LOTE, por origem — não por conferência individual de cada diploma. A
@@ -673,7 +676,12 @@ class Settings(BaseSettings):
     # para tornar o lote reversível por marcador. `proposicao_legislativa`
     # fica de fora: proposta em tramitação não é norma vigente.
     # Desligar esta flag volta ao regime de curadoria individual.
-    RAG_LIBERACAO_LOTE_VIGENCIA: bool = True
+    #
+    # Fail-closed por default (gate de consolidação, 04/09/2026): a decisão do
+    # titular está registrada, mas a ativação é ato de operação por env na VPS,
+    # não default de código — o alcance da política é jurídico e precisa de
+    # homologação antes de valer para qualquer instalação.
+    RAG_LIBERACAO_LOTE_VIGENCIA: bool = False
     # Seed nasce vetorizado (C1): ao final de seeds/seed_all.py, se o provider
     # de embeddings estiver disponível, os chunks órfãos do seed são
     # reembedados na hora (idempotente) — sem isto a busca semântica fica vazia

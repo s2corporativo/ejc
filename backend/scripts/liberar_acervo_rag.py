@@ -52,9 +52,13 @@ ORIGENS_OFICIAIS = (
 )
 
 # Categorias alcançadas pelo gate de vigência (`LIKE '%legisl%'`).
-# `proposicao_legislativa` fica DE FORA de propósito: proposta em tramitação
-# não é norma vigente e não deve fundamentar peça.
-CATS_VIGENCIA = ("legislacao", "legislacao_tributaria", "referencia_legislativa")
+# Duas ficam DE FORA de propósito:
+#   • `proposicao_legislativa` — proposta em tramitação não é norma vigente e
+#     não pode fundamentar peça;
+#   • `referencia_legislativa` (LexML) — o PR #1452 estabeleceu que o LexML
+#     federa ementa/metadado, NUNCA o inteiro teor. Não se atesta vigência a
+#     partir de resumo; esses documentos seguem para curadoria individual.
+CATS_VIGENCIA = ("legislacao", "legislacao_tributaria")
 
 # Status de vigência que jamais podem ser sobrescritos por liberação em lote.
 STATUS_INTOCAVEIS = ("revogada", "revogado", "parcialmente_revogada", "suspensa")

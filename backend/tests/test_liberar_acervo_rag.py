@@ -16,6 +16,24 @@ def test_proposicao_legislativa_nunca_recebe_vigencia():
     assert "legislacao" in lib.CATS_VIGENCIA
 
 
+def test_lexml_nunca_recebe_vigencia_por_origem():
+    """O LexML federa ementa/metadado, nunca o inteiro teor (PR #1452).
+
+    Vigência não se atesta a partir de resumo: `referencia_legislativa` fica
+    fora da liberação por origem e segue para curadoria individual."""
+    assert "referencia_legislativa" not in lib.CATS_VIGENCIA
+
+
+def test_flags_nascem_fail_closed():
+    """A política é decisão jurídica: nasce desligada no código e só é ativada
+    por env, após homologação (gate de consolidação de 04/09/2026)."""
+    from app.core.config import Settings
+
+    padrao = Settings.model_fields
+    assert padrao["RAG_LIBERACAO_LOTE_ENABLED"].default is False
+    assert padrao["RAG_LIBERACAO_LOTE_VIGENCIA"].default is False
+
+
 def test_liberacao_de_vigencia_nunca_sobrepoe_revogacao():
     """Norma revogada/suspensa jamais volta a valer por liberação em lote."""
     for status in ("revogada", "revogado", "parcialmente_revogada", "suspensa"):
