@@ -43,25 +43,10 @@ DEGRAU_ESCALADA = "escalado_advogado"
 _em_execucao = False
 
 
-# ── Função pura (testável) ────────────────────────────────────────────────────
-
 def degrau_aplicavel(
     hoje: date, vencimento: date, degraus_enviados: set[str] | frozenset[str],
 ) -> str | None:
-    """Degrau MAIS AVANÇADO aplicável à parcela e ainda não enviado.
-
-    Regras (dias = hoje - vencimento; positivo = vencida):
-      • dias >= 16 e "d+15" já enviado → "escalado_advogado" (uma única vez);
-      • dias >= 15 → "d+15";
-      • 7 <= dias <= 14 → "d+7";
-      • 1 <= dias <= 6 → "d+1";
-      • vence em 1..3 dias (dias em -3..-1) → "d-3";
-      • nenhum degrau novo aplicável → None.
-
-    Sempre o degrau mais avançado da janela atual (parcela que entra na régua
-    já com 20 dias de atraso recebe d+15 direto — os anteriores são "pulados"
-    e nunca reenviados); um degrau já registrado nunca repete.
-    """
+    """Degrau MAIS AVANÇADO aplicável à parcela e ainda não enviado."""
     enviados = set(degraus_enviados or ())
     dias = (hoje - vencimento).days
 
@@ -73,12 +58,10 @@ def degrau_aplicavel(
         return "d+7" if "d+7" not in enviados else None
     if 1 <= dias <= 6:
         return "d+1" if "d+1" not in enviados else None
-    if -3 <= dias <= -1:  # vence em 1..3 dias
+    if -3 <= dias <= -1:
         return "d-3" if "d-3" not in enviados else None
     return None
 
-
-# ── Templates determinísticos (cordiais, escalada sutil de firmeza) ───────────
 
 def _brl(valor: float) -> str:
     txt = f"{valor:,.2f}".replace(",", "@").replace(".", ",").replace("@", ".")
@@ -88,19 +71,11 @@ def _brl(valor: float) -> str:
 def montar_email_cobranca(
     degrau: str, descricao: str, valor: float, vencimento: date,
 ) -> tuple[str, str]:
-    """Template DETERMINÍSTICO (sem IA) do e-mail de cobrança ao cliente.
-
-    Retorna (assunto, corpo_html). Tom SEMPRE cordial e respeitoso; d-3 é
-    lembrete "a vencer", os demais são avisos de pendência com escalada sutil
-    de firmeza. Toda mensagem identifica a parcela (descrição, valor e
-    vencimento) e orienta a contatar o escritório caso o pagamento já tenha
-    sido efetuado. Sem emojis; assinatura de comunicação automática.
-    """
+    """Template determinístico de cobrança; `valor` é o SALDO ainda devido."""
     venc = vencimento.strftime("%d/%m/%Y")
-    # descricao é texto livre (financeiro): escape antes do corpo HTML.
     ident = (
         f"<p><b>Parcela:</b> {html.escape(descricao)}<br>"
-        f"<b>Valor:</b> {_brl(valor)}<br>"
+        f"<b>Saldo:</b> {_brl(valor)}<br>"
         f"<b>Vencimento:</b> {venc}</p>"
     )
     rodape = (
@@ -115,16 +90,16 @@ def montar_email_cobranca(
         assunto = "[De Paula Teixeira Advogados] Lembrete: parcela de honorários a vencer"
         corpo = (
             "<p>Prezado(a) cliente,</p>"
-            "<p>Lembramos, com cordialidade, que a parcela de honorários "
-            f"abaixo vence em <b>{venc}</b>:</p>"
+            "<p>Lembramos, com cordialidade, que há saldo de honorários "
+            f"com vencimento em <b>{venc}</b>:</p>"
             f"{ident}{rodape}"
         )
     elif degrau == "d+1":
         assunto = "[De Paula Teixeira Advogados] Aviso: parcela de honorários em aberto"
         corpo = (
             "<p>Prezado(a) cliente,</p>"
-            "<p>Verificamos que a parcela de honorários abaixo consta em "
-            "aberto em nossos registros:</p>"
+            "<p>Verificamos que o saldo da parcela de honorários abaixo consta "
+            "em aberto em nossos registros:</p>"
             f"{ident}"
             "<p>Pedimos a gentileza de providenciar a regularização ou de "
             "entrar em contato com o escritório para qualquer esclarecimento.</p>"
@@ -134,7 +109,7 @@ def montar_email_cobranca(
         assunto = "[De Paula Teixeira Advogados] Reiteração: parcela de honorários pendente"
         corpo = (
             "<p>Prezado(a) cliente,</p>"
-            "<p>Reiteramos que a parcela de honorários abaixo permanece "
+            "<p>Reiteramos que o saldo da parcela de honorários abaixo permanece "
             "pendente em nossos registros:</p>"
             f"{ident}"
             "<p>Solicitamos, respeitosamente, a regularização do pagamento. "
@@ -142,12 +117,12 @@ def montar_email_cobranca(
             "dificuldades ou ajustes de condições.</p>"
             f"{rodape}"
         )
-    else:  # d+15
+    else:
         assunto = "[De Paula Teixeira Advogados] Pendência de honorários — atenção necessária"
         corpo = (
             "<p>Prezado(a) cliente,</p>"
-            "<p>Apesar dos avisos anteriores, a parcela de honorários abaixo "
-            "segue pendente em nossos registros:</p>"
+            "<p>Apesar dos avisos anteriores, o saldo da parcela de honorários "
+            "abaixo segue pendente em nossos registros:</p>"
             f"{ident}"
             "<p>Solicitamos que a regularização seja tratada com prioridade. "
             "Caso haja qualquer dificuldade, pedimos que entre em contato com "
@@ -157,34 +132,39 @@ def montar_email_cobranca(
     return assunto, corpo
 
 
-# ── Execução ──────────────────────────────────────────────────────────────────
-
 async def executar_regua_cliente(db: AsyncSession, hoje: date | None = None) -> dict:
-    """Varre as parcelas elegíveis e envia NO MÁXIMO 1 degrau por parcela.
+    """Varre cobranças monetárias com SALDO positivo e envia no máximo 1 degrau.
 
-    Elegível: fee status pendente/atrasado, valor e data_vencimento não nulos,
-    deleted_at IS NULL. O degrau é registrado em fee_cobranca_envios (com
-    commit) ANTES de qualquer envio externo — reexecução nunca duplica.
-    Retorna resumo {parcelas, enviados, escalados, erros}.
+    O saldo é `fees.valor - SUM(fee_payments.valor)`. Pagamentos parciais
+    reduzem imediatamente a cobrança; fee integralmente coberto sai da fila
+    mesmo que exista eventual atraso de sincronização no campo `status`.
+    Honorário puramente percentual sem valor monetário realizado não entra na
+    régua, pois não existe quantia segura a cobrar.
     """
     hoje = hoje or date.today()
     resumo = {"parcelas": 0, "enviados": 0, "escalados": 0, "erros": 0}
 
     rows = (await db.execute(sqltext("""
-        SELECT f.id, f.descricao, f.valor, f.data_vencimento,
-               f.client_id, f.case_id,
+        WITH pagamentos AS (
+            SELECT fee_id, COALESCE(SUM(valor), 0) AS total_pago
+            FROM fee_payments
+            GROUP BY fee_id
+        )
+        SELECT f.id, f.descricao, f.valor,
+               GREATEST(f.valor - COALESCE(p.total_pago, 0), 0) AS saldo,
+               f.data_vencimento, f.client_id, f.case_id,
                cl.nome, cl.razao_social, cl.email AS cliente_email,
                cl.responsavel_id AS cliente_responsavel_id,
                c.advogado_responsavel_id, c.numero_interno
         FROM fees f
         JOIN clients cl ON cl.id = f.client_id
         LEFT JOIN cases c ON c.id = f.case_id
+        LEFT JOIN pagamentos p ON p.fee_id = f.id
         WHERE f.status IN ('pendente', 'atrasado')
           AND f.deleted_at IS NULL
           AND f.valor IS NOT NULL
           AND f.data_vencimento IS NOT NULL
-          -- Parcela cuja régua já terminou (escalada ao advogado) sai da fila:
-          -- sem isto, inadimplência antiga ocuparia os 500 slots para sempre.
+          AND GREATEST(f.valor - COALESCE(p.total_pago, 0), 0) > 0
           AND NOT EXISTS (
             SELECT 1 FROM fee_cobranca_envios e
             WHERE e.fee_id = f.id AND e.degrau = 'escalado_advogado'
@@ -204,10 +184,6 @@ async def executar_regua_cliente(db: AsyncSession, hoje: date | None = None) -> 
             if degrau is None:
                 continue
 
-            # 1) REGISTRA o degrau (idempotência) ANTES do envio externo —
-            # commit por parcela: restart/reexecução nunca duplica cobrança.
-            # RETURNING id distingue "registrei agora" de "já existia": se
-            # outra instância do job registrou primeiro, ela é dona do envio.
             registrado = (await db.execute(sqltext(
                 "INSERT INTO fee_cobranca_envios (id, fee_id, degrau) "
                 "VALUES (:id, :fid, :deg) ON CONFLICT (fee_id, degrau) "
@@ -217,7 +193,6 @@ async def executar_regua_cliente(db: AsyncSession, hoje: date | None = None) -> 
             if registrado is None:
                 continue
 
-            # 2) Envio
             if degrau == DEGRAU_ESCALADA:
                 await _escalar_advogado(db, r, hoje)
                 resumo["escalados"] += 1
@@ -238,12 +213,13 @@ async def executar_regua_cliente(db: AsyncSession, hoje: date | None = None) -> 
 
 
 async def _cobrar_cliente(db: AsyncSession, r, degrau: str) -> None:
-    """Degraus d-3/d+1/d+7/d+15: e-mail ao clients.email + sino no Portal
-    (usuários cliente_externo do client_id). Canais fail-safe."""
+    """E-mail e sino do Portal usam somente o saldo ainda devido."""
     from app.services.datajud_sync_service import usuarios_portal_do_cliente
     from app.services.notification_service import enviar_email, notificar
 
-    valor = float(r.valor or 0)
+    valor = float(r.saldo or 0)
+    if valor <= 0:
+        return
     assunto, corpo = montar_email_cobranca(
         degrau, r.descricao or "Honorários", valor, r.data_vencimento,
     )
@@ -251,12 +227,12 @@ async def _cobrar_cliente(db: AsyncSession, r, degrau: str) -> None:
         await enviar_email(r.cliente_email, assunto, corpo)
 
     venc = r.data_vencimento.strftime("%d/%m/%Y")
-    titulo = ("Lembrete: parcela de honorários a vencer" if degrau == "d-3"
-              else "Parcela de honorários em aberto")
+    titulo = ("Lembrete: saldo de honorários a vencer" if degrau == "d-3"
+              else "Saldo de honorários em aberto")
     for uid in await usuarios_portal_do_cliente(db, r.client_id):
         await notificar(
             db, uid, titulo,
-            f"{r.descricao or 'Honorários'} — {_brl(valor)}, "
+            f"{r.descricao or 'Honorários'} — saldo {_brl(valor)}, "
             f"vencimento {venc}. Detalhes na seção Financeiro do Portal.",
             tipo="financeiro", link="/portal/financeiro",
             forcar_sino=True,
@@ -264,9 +240,7 @@ async def _cobrar_cliente(db: AsyncSession, r, degrau: str) -> None:
 
 
 async def _escalar_advogado(db: AsyncSession, r, hoje: date) -> None:
-    """Degrau escalado_advogado: APENAS notificação interna ao advogado
-    responsável do caso (ou, sem caso, ao responsável do cliente). O cliente
-    NÃO é mais contatado."""
+    """Escalada interna após a régua; informa o saldo residual, não o original."""
     from app.services.notification_service import notificar
 
     destino = r.advogado_responsavel_id or r.cliente_responsavel_id
@@ -277,12 +251,14 @@ async def _escalar_advogado(db: AsyncSession, r, hoje: date) -> None:
         return
     nome = r.nome or r.razao_social or "Cliente"
     dias = (hoje - r.data_vencimento).days
-    valor = float(r.valor or 0)
+    valor = float(r.saldo or 0)
+    if valor <= 0:
+        return
     await notificar(
         db, destino,
         "Cobrança esgotou a régua automática",
         f"{nome} (caso {r.numero_interno or '—'}): parcela "
-        f"'{r.descricao or 'Honorários'}' de {_brl(valor)} vencida há "
+        f"'{r.descricao or 'Honorários'}' com saldo de {_brl(valor)} vencida há "
         f"{dias} dia(s). A régua automática ao cliente foi concluída — "
         "avalie tratativa direta.",
         tipo="financeiro", link="/financeiro",
@@ -300,12 +276,12 @@ async def job_regua_cobranca_cliente() -> None:
     if _em_execucao:
         logger.warning("[CobrancaCliente] execução anterior em andamento — pulado")
         return
-    _em_execucao = True  # set SÍNCRONO após o teste — sem janela de TOCTOU
+    _em_execucao = True
     try:
         from app.core.database import AsyncSessionLocal
         async with AsyncSessionLocal() as db:
             await executar_regua_cliente(db)
-    except Exception as e:  # nunca derrubar o scheduler
+    except Exception as e:
         logger.error("[CobrancaCliente] falha: %s", e, exc_info=True)
     finally:
         _em_execucao = False

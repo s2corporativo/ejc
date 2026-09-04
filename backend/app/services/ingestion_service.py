@@ -43,6 +43,12 @@ _CATEGORIAS_RESTRITAS = {
     "andamento_processual",
 }
 
+# Categorias cujo estado de domínio é autoritativo para o estado do RAG. Nelas,
+# uma regressão da peça (ex.: aprovada → em_revisao após edição) DEVE rebaixar
+# `rag_status`, em vez de aplicar a regra genérica dos ingestores periódicos que
+# preserva aprovações humanas contra re-feed automático.
+_CATEGORIAS_RAG_ESTADO_AUTORITATIVO = {"peca_interna", "peca_escritorio"}
+
 # User-Agent realista — portais públicos rejeitam clientes anônimos/bots.
 _UA = (
     "Mozilla/5.0 (compatible; EJC-LegalBot/1.0; "
@@ -299,6 +305,7 @@ async def upsert_documento(
     chunks: list[str] | None = None,
     paginas: list[dict] | None = None,
     forcar_nova_versao: bool = False,
+    preservar_aprovacao_rag: bool | None = None,
 ) -> str:
     """Insere/atualiza um documento com versionamento e isolamento por cliente.
 
@@ -308,6 +315,11 @@ async def upsert_documento(
     chave externa pode existir em clientes diferentes sem que um tenant atualize,
     desative ou reutilize chunks de outro. Documentos públicos usam client_id
     NULL e seguem globalmente únicos.
+
+    Por padrão, ingestores preservam aprovação humana contra re-feed automático.
+    Peças internas são exceção deliberada: seu próprio ciclo de vida é a fonte
+    autoritativa, então aprovação/regressão deve refletir imediatamente no RAG.
+    O parâmetro continua disponível para chamadores com política explícita.
     """
     conteudo = normalizar(conteudo)
     if len(conteudo) < 50:
@@ -319,6 +331,9 @@ async def upsert_documento(
         )
     if not (chave_origem or "").strip():
         raise ValueError("chave_origem é obrigatória para ingestão idempotente")
+
+    if preservar_aprovacao_rag is None:
+        preservar_aprovacao_rag = categoria not in _CATEGORIAS_RAG_ESTADO_AUTORITATIVO
 
     # Gate de confiança (governança de IA): grava no extra JSONB a chave
     # canônica lida por ia_governanca._conf.
@@ -367,7 +382,11 @@ async def upsert_documento(
                         mesclado.pop(campo, None)
             if anterior.get("rag_status") == "recusado":
                 mesclado["rag_status"] = "recusado"
-            elif anterior.get("rag_status") == "aprovado" and extra.get("rag_status") == "pendente":
+            elif (
+                preservar_aprovacao_rag
+                and anterior.get("rag_status") == "aprovado"
+                and extra.get("rag_status") == "pendente"
+            ):
                 # AI-079 (auditoria 2026-07-26): doc que EXIGE revisão humana ainda
                 # não revisada NÃO re-promove 'pendente'→'aprovado' no re-feed —
                 # senão o estoque DataJud aprovado antes do fix nunca seria

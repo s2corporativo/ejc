@@ -97,3 +97,18 @@ def test_quarentena_e_gate_duro_antes_do_ranking():
     assert 'extra.get("quarantine_active")' in fonte
     assert "continue" in fonte
     assert "quarentena ativa" in fonte
+
+
+def test_hidratacao_de_governanca_falha_fechado_para_material_normativo():
+    fonte = inspect.getsource(reranker._hidratar_governanca)
+    assert "mantendo apenas candidatos não normativos" in fonte
+    assert "seguros = [item for item in candidatos if not _candidato_normativo(item)]" in fonte
+    assert "return seguros" in fonte
+
+    assert reranker._candidato_normativo({"categoria": "legislacao_federal"}) is True
+    assert reranker._candidato_normativo({"categoria": "proposicao_legislativa"}) is True
+    assert reranker._candidato_normativo({"categoria": "jurisprudencia_stj"}) is False
+    assert reranker._candidato_normativo({
+        "categoria": "referencia",
+        "extra": {"authority_level": "oficial_normativa"},
+    }) is True
