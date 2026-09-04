@@ -16,6 +16,7 @@
 #  09:00 seg — Procurações vencendo em 30 dias
 #  09:15 — Alertas de vencimento societário
 from __future__ import annotations
+import asyncio
 import logging
 from uuid import uuid4
 from datetime import date, timedelta
@@ -1265,16 +1266,27 @@ async def _reembedar_rag_orfaos():
 async def _job_backup_drive_monitorado():
     """Envelope do backup com heartbeat por RESULTADO (F4): o job canônico
     continua em backup_execution_service; aqui só se registra ok/erro."""
-    from app.services.backup_execution_service import job_backup_drive_exclusivo
     from app.services.heartbeat_service import JOB_BACKUP_DRIVE
+    # Gate ANTES de chamar o motor (antes era depois, e o "pulado" batia ponto
+    # "ok"): com BACKUP_ENABLED=false NÃO EXISTE backup, e painel verde para
+    # backup inexistente é pior que painel vermelho. O heartbeat só entende
+    # "ok"/"erro" (heartbeat_service._STATUS_VALIDOS — qualquer outra palavra é
+    # coagida a "erro" no UPSERT), então o estado honesto de "não está rodando"
+    # é "erro", com o motivo no `detail` para o painel não confundir com falha
+    # do rclone. Desligar o backup é decisão do titular — o painel só deixa de
+    # mentir que ele aconteceu.
+    if not settings.BACKUP_ENABLED:
+        await _bater_ponto(
+            JOB_BACKUP_DRIVE, "erro",
+            "BACKUP_ENABLED=false — nenhum backup foi executado (canal desligado)",
+        )
+        return
+    from app.services.backup_execution_service import job_backup_drive_exclusivo
     try:
         resultado = await job_backup_drive_exclusivo()
     except Exception as e:
         await _bater_ponto(JOB_BACKUP_DRIVE, "erro", str(e)[:200])
         raise
-    if not settings.BACKUP_ENABLED:
-        await _bater_ponto(JOB_BACKUP_DRIVE, "ok", "BACKUP_ENABLED=false — pulado")
-        return
     # O motor de backup NÃO propaga exceção: converte falha em
     # {"ok": False, "status": "erro"} e retorna normalmente. Registrar "ok" só
     # porque não houve exceção transformaria backup quebrado em painel verde —
@@ -1289,9 +1301,30 @@ async def _job_backup_drive_monitorado():
         detalhe = str(dados.get("erro") or status or "backup não confirmou sucesso")
         await _bater_ponto(JOB_BACKUP_DRIVE, "erro", detalhe[:200])
         return
-    # `parcial` conta como ok (os artefatos locais existem), mas o detalhe
-    # precisa dizer o que faltou — tipicamente o envio offsite.
-    detalhe = (f"parcial: {dados.get('offsite_erro') or 'offsite não confirmado'}"
+    # OFFSITE FALHO NÃO É BACKUP SAUDÁVEL — mesma classe do gate desligado
+    # acima, no outro ramo. Com BACKUP_OFFSITE_OBRIGATORIO=false o motor
+    # (backup_service.executar_backup) NÃO propaga a falha do Drive/rclone:
+    # devolve ok=True, status="parcial", offsite_ok=False e offsite_erro=...
+    # Só existe então a cópia LOCAL, no MESMO VPS que o backup deveria
+    # proteger — e o painel "Backup offsite" ficaria verde exatamente no
+    # cenário de perda da VPS. O gatilho é `offsite_ok`, não `status`:
+    # "parcial" também acontece com o offsite OK (uploads acima do teto,
+    # UPLOAD_DIR inexistente), e esse caso continua sendo ok.
+    # `is False` (e não falsy) de propósito: resultado sem a chave — motor
+    # antigo ou duplo de teste — não pode ser reclassificado como falha.
+    if dados.get("offsite_ok") is False:
+        motivo = str(dados.get("offsite_erro") or "envio offsite não confirmado")
+        # Diagnóstico distinto do "backup não rodou": aqui a prova local existe.
+        await _bater_ponto(
+            JOB_BACKUP_DRIVE, "erro",
+            f"local ok, offsite FALHOU: {motivo}"[:200],
+        )
+        return
+    # `parcial` com offsite enviado conta como ok (os artefatos estão no
+    # destino externo), mas o detalhe precisa dizer o que faltou — os avisos
+    # são justamente o que rebaixou o status para "parcial".
+    avisos = [str(a) for a in (dados.get("avisos") or [])]
+    detalhe = (f"parcial: {'; '.join(avisos) or 'ver avisos do backup'}"
                if status == "parcial" else None)
     await _bater_ponto(JOB_BACKUP_DRIVE, "ok", detalhe[:200] if detalhe else None)
 
@@ -1344,9 +1377,11 @@ def start_scheduler():
     s.add_job(_purgar_dados_lgpd, CronTrigger(day_of_week="sun", hour=2, minute=30), id="purga_lgpd", replace_existing=True)
     s.add_job(job_ingestao_camara,   CronTrigger(hour=4, minute=0),          id="ing_camara",   replace_existing=True)
     s.add_job(job_ingestao_senado,   CronTrigger(hour=4, minute=20),         id="ing_senado",   replace_existing=True)
-    # DJEN → RAG: gate interno DJEN_INGEST_ENABLED (default False)
+    # DJEN → RAG: gate interno DJEN_INGEST_ENABLED (default True — LIGADO por
+    # decisão do titular; desligue com DJEN_INGEST_ENABLED=false).
     s.add_job(job_ingestao_djen,     CronTrigger(hour=5, minute=0),          id="ing_djen",     replace_existing=True)
-    # TJMG → RAG: gate interno TJMG_INGEST_ENABLED (default False). Semanal
+    # TJMG → RAG: gate interno TJMG_INGEST_ENABLED (default True — LIGADO por
+    # decisão do titular; desligue com TJMG_INGEST_ENABLED=false). Semanal
     # (sáb 04h30) — crawler de jurisprudência estadual MG por temas curados.
     s.add_job(job_ingestao_tjmg,     CronTrigger(day_of_week="sat", hour=4, minute=30), id="ing_tjmg", replace_existing=True)
     # LexML (federador oficial) → RAG: gate interno LEXML_INGEST_ENABLED
@@ -1360,6 +1395,16 @@ def start_scheduler():
     s.add_job(job_ingestao_conhecimento,
               CronTrigger(day_of_week="sun", hour=3, minute=0, timezone="UTC"),
               id="ing_conhecimento", replace_existing=True)
+
+    # Reaplica o overlay do Cofre de Credenciais enquanto ele NÃO tiver sido
+    # aplicado neste processo (a cada 10 min; no-op barato depois do sucesso).
+    # Sem isso, um overlay que falhou no boot (banco lento estourando o teto do
+    # lifespan) deixaria a API nos valores do `.env` INDEFINIDAMENTE — e o
+    # `.env` não conhece revogação: credencial revogada no cofre voltaria a
+    # funcionar até o próximo restart ou escrita no cofre.
+    s.add_job(_reaplicar_overlay_cofre, IntervalTrigger(minutes=10),
+              id="cofre_overlay_retry", replace_existing=True,
+              max_instances=1, coalesce=True)
 
     # Recarrega feriados municipais/estaduais (00h05) — pega novas inserções
     # na tabela `feriados` sem precisar reiniciar o backend.
@@ -1435,6 +1480,51 @@ def start_scheduler():
 
     s.start()
     logger.info("[Scheduler] Iniciado — %d jobs agendados", len(s.get_jobs()))
+
+
+async def _reaplicar_overlay_cofre():
+    """A cada 10 min — reaplica o overlay do cofre se ele ainda não vingou.
+
+    Enquanto `estado_overlay()["aplicado"]` for False, o processo está usando
+    os valores do `.env`, incluindo credenciais que o cofre REVOGOU (revogação
+    = linha histórica sem linha ativa → aplicar_overlay grava ""). Depois do
+    primeiro sucesso vira no-op sem I/O; as escritas no cofre continuam
+    reaplicando na própria requisição (routers/credential_vault.py).
+    """
+    from app.services import credential_vault_service as cofre
+
+    if cofre.estado_overlay()["aplicado"]:
+        return
+    # TETO POR TENTATIVA (mesmo padrão de main.py::_passo_de_boot e
+    # core/database.py::check_db): o overlay do boot falhou porque uma operação
+    # de banco TRAVOU — travamento não levanta exceção, então `try/except`
+    # sozinho não termina a tentativa. Sem prazo, esta corrotina espera as
+    # MESMAS consultas indefinidamente e, com max_instances=1 (default do
+    # APScheduler), a rodada travada IMPEDE todas as seguintes: a janela de
+    # exposição de credencial revogada deixaria de ser "≤10 min" e viraria
+    # indefinida. Com o teto, a tentativa é cancelada e a próxima roda.
+    limite = settings.STARTUP_STEP_TIMEOUT_SECONDS
+    try:
+        async with asyncio.timeout(limite if limite and limite > 0 else None):
+            async with AsyncSessionLocal() as db:
+                campos = await cofre.aplicar_overlay(db)
+        logger.warning(
+            "[Scheduler] Overlay do cofre REAPLICADO após falha anterior — "
+            "%d campo(s); credenciais do .env deixam de valer agora.",
+            len(campos),
+        )
+    except TimeoutError:
+        # TimeoutError herda de OSError (⊂ Exception) — este ramo precisa vir
+        # ANTES do genérico para o motivo não sair como erro qualquer.
+        logger.error(
+            "[Scheduler] Reaplicação do overlay do cofre ESGOTOU O TEMPO "
+            "(%.1fs) — tentativa abortada para a PRÓXIMA rodada poder rodar; "
+            "até lá o processo segue com o .env, que não conhece revogação.",
+            limite,
+        )
+        cofre.marcar_overlay_falho("TimeoutError")
+    except Exception as e:
+        cofre.marcar_overlay_falho(type(e).__name__)
 
 
 async def _recarregar_feriados():
@@ -1835,7 +1925,8 @@ async def job_ingestao_djen():
     """Diário 05h00 — comunicações processuais do DJEN (API Comunica/CNJ)
     das OABs monitoradas → RAG (arquivo histórico; a retenção da API é curta).
 
-    Gate: DJEN_INGEST_ENABLED (default False — opt-in no .env). Não confundir
+    Gate: DJEN_INGEST_ENABLED (default True — LIGADO por decisão do titular;
+    desligue com DJEN_INGEST_ENABLED=false no .env). Não confundir
     com job_djen_intimacoes (06h30), que alimenta a tela Intimações por
     advogado cadastrado; este job persiste as comunicações no RAG.
     """
@@ -1855,10 +1946,11 @@ async def job_ingestao_tjmg():
     """Sábado 04h30 — crawler da jurisprudência do TJMG (base de acórdãos) →
     RAG, por temas curados e janela de datas.
 
-    Gate: TJMG_INGEST_ENABLED (default False — opt-in no .env; validar contra
-    o site real antes de ativar em produção). O TJMG não tem API aberta, então
-    a coleta depende de scraping: se o HTML mudar ou o portal bloquear, a fonte
-    'tjmg' é marcada 'erro'/'parcial' no painel, sem derrubar o scheduler.
+    Gate: TJMG_INGEST_ENABLED (default True — LIGADO por decisão do titular;
+    desligue com TJMG_INGEST_ENABLED=false no .env). O TJMG não tem API aberta,
+    então a coleta depende de scraping: se o HTML mudar ou o portal bloquear,
+    a fonte 'tjmg' é marcada 'erro'/'parcial' no painel, sem derrubar o
+    scheduler.
     """
     from app.core.config import get_settings as _gs
     if not _gs().TJMG_INGEST_ENABLED:
