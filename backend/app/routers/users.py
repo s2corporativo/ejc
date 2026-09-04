@@ -318,6 +318,29 @@ async def criar(
     return user
 
 
+def _validar_par_oab_djen(user: User, mudancas: dict) -> None:
+    """Recusa gravar metade do par número↔UF da OAB monitorada.
+
+    A captura DJEN lê os DOIS campos, mas o job seleciona o advogado só pelo
+    número (`djen_oab_numero IS NOT NULL`). Com metade do par gravada, o
+    advogado entra na lista, é descartado por falta de UF e o sistema segue
+    "verde" capturando zero — a falha mais cara possível num sistema de
+    prazos. A checagem é sobre o valor RESULTANTE (o já gravado somado ao que
+    veio num PATCH parcial), nunca sobre o payload isolado.
+    """
+    numero = (mudancas.get("djen_oab_numero", user.djen_oab_numero) or "").strip()
+    uf = (mudancas.get("djen_oab_uf", user.djen_oab_uf) or "").strip()
+    if bool(numero) != bool(uf):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Número e UF da OAB formam um par indivisível para a captura "
+                "de intimações: informe os dois, ou limpe os dois para "
+                "desligar o monitoramento."
+            ),
+        )
+
+
 @router.patch("/{user_id}", response_model=UserResponse)
 async def atualizar(
     user_id: str,
@@ -373,6 +396,8 @@ async def atualizar(
             # auto-reativação não faz sentido e mascara manipulação
             raise HTTPException(status_code=400,
                                 detail="Não é permitido ativar o próprio perfil")
+
+    _validar_par_oab_djen(user, mudancas)
 
     for key, value in mudancas.items():
         setattr(user, key, value)
