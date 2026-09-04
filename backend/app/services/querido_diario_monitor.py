@@ -111,8 +111,8 @@ async def _alvos_de_clientes(db: AsyncSession, resultado: dict) -> list[Alvo]:
     tipos = [ClientTipo.PJ] if not incluir_pf else [ClientTipo.PJ, ClientTipo.PF]
     linhas = (
         await db.execute(
-            select(Client.id, Client.nome, Client.razao_social,
-                   Client.cidade, Client.estado)
+            select(Client.id, Client.tipo, Client.nome, Client.razao_social,
+                   Client.nome_fantasia, Client.cidade, Client.estado)
             .where(
                 Client.deleted_at.is_(None),
                 Client.status == ClientStatus.ativo,
@@ -127,8 +127,24 @@ async def _alvos_de_clientes(db: AsyncSession, resultado: dict) -> list[Alvo]:
     cache: dict[tuple[str, str], str | None] = {}
     alvos: list[Alvo] = []
 
-    for cid, nome, razao, cidade, uf in linhas:
-        termo = (razao or nome or "").strip()
+    for cid, tipo, nome, razao, fantasia, cidade, uf in linhas:
+        # Para PJ o termo sai SÓ de razão social / nome fantasia. Cair para
+        # `Client.nome` seria um furo no recorte de sigilo: `razao_social` não
+        # é obrigatória no backend (só um `*` no formulário React), então um
+        # registro `tipo=PJ` criado por API ou importação pode carregar o nome
+        # de uma pessoa natural em `nome` — que iria para a API pública mesmo
+        # com QUERIDO_DIARIO_RADAR_INCLUI_PF desligado. O gate é por `tipo`;
+        # sem isto, a PROCEDÊNCIA do campo escapava do gate.
+        if tipo == ClientTipo.PJ:
+            termo = (razao or fantasia or "").strip()
+            if not termo:
+                resultado["erros"]["cliente_sem_razao_social"] = (
+                    resultado["erros"].get("cliente_sem_razao_social", 0) + 1
+                )
+                continue
+        else:
+            termo = (nome or "").strip()
+
         # Termo curto casa com meio diário: 4 caracteres é o piso que o próprio
         # serviço de conflito usa para busca por nome.
         if len(termo) < 4:
@@ -150,6 +166,16 @@ async def _alvos_de_clientes(db: AsyncSession, resultado: dict) -> list[Alvo]:
 
         alvos.append(Alvo(codigo_ibge=codigo, termo=termo,
                           client_id=cid, origem="cliente"))
+
+    # Teto por execução. Sem ele, o escritório transfere a base INTEIRA de
+    # razões sociais ao agregador todo dia — e o padrão de consultas
+    # reconstrói a carteira do lado de lá, que é por acumulação o mesmo risco
+    # que a flag de PF contém caso a caso. O corte é determinístico (ordem da
+    # query) e fica contabilizado no resultado.
+    teto = int(getattr(s, "QUERIDO_DIARIO_RADAR_MAX_CLIENTES", 50) or 50)
+    if len(alvos) > teto:
+        resultado["alvos_de_clientes_cortados"] = len(alvos) - teto
+        alvos = alvos[:teto]
 
     return alvos
 

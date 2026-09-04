@@ -940,6 +940,11 @@ class Settings(BaseSettings):
     # Razão social de PJ é registro público; nome de PF não é. CPF/CNPJ nunca
     # são usados como termo de busca, em nenhum dos modos.
     QUERIDO_DIARIO_RADAR_INCLUI_PF: bool = False
+    # Teto de clientes consultados por execução do radar. Sem teto, o escritório
+    # transfere a base inteira de razões sociais ao agregador todo dia — e o
+    # padrão de consultas reconstrói a carteira do lado de lá, que é, por
+    # acumulação, o mesmo risco que a flag de PF contém caso a caso.
+    QUERIDO_DIARIO_RADAR_MAX_CLIENTES: int = 50
     # Relatório semanal do dono (segunda-feira, e-mail aos sócios/admins) —
     # services/relatorio_dono_service.py.
     RELATORIO_DONO_ENABLED: bool = False

@@ -8,6 +8,7 @@
 # sucesso normal.
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -44,6 +45,21 @@ _DOU_SECOES_PADRAO = ("do1", "do2", "do3")
 # vez por keyword, e sem isto N keywords custariam N×3 downloads do dia inteiro.
 # Premissa de worker único do EJC (mesma dos rate-limits em memória).
 _INDICE_CACHE: dict[tuple[str, str], list[dict]] = {}
+
+# Teto de download por seção. Maior corpo legítimo medido: ~2,3 MB (DO3).
+_DOU_MAX_BYTES = 8 * 1024 * 1024
+
+
+def _esc(valor: object) -> str:
+    """Escapa para HTML antes de compor e-mail.
+
+    Título e link vêm do JSON do portal (terceiro). O e-mail é enviado como
+    `MIMEText(..., "html")`, então uma aspa no campo quebraria o atributo
+    `href` e permitiria injetar markup na caixa do advogado.
+    """
+    import html as _html
+
+    return _html.escape(str(valor or ''), quote=True)
 
 
 class DOUIndisponivelError(RuntimeError):
@@ -112,17 +128,30 @@ def _extrair_json_do_indice(html: str) -> list[dict]:
     ninguém perceber.
     """
     import json
-    import re
 
-    m = re.search(
-        r'<script[^>]*id="params"[^>]*>(.*?)</script>', html, re.DOTALL
-    )
-    if not m:
+    # Busca por índice, NÃO por regex. A versão anterior usava
+    # `<script[^>]*id="params"[^>]*>(.*?)</script>` com re.DOTALL, que é
+    # quadrática sobre corpo hostil: medido 4,0 s para 0,2 MB, 15,5 s para
+    # 0,39 MB e 63,5 s para 0,78 MB de `<script` sem fechamento. Como este
+    # parse roda no MESMO event loop da API (o AsyncIOScheduler sobe no
+    # lifespan do FastAPI), um corpo patológico do upstream congelaria o EJC
+    # inteiro sob a premissa de worker único — e o timeout do httpx não
+    # protege, porque cobre I/O e não CPU. `find`/`index` não retrocedem.
+    marcador = html.find('id="params"')
+    if marcador == -1:
         raise DOUIndisponivelError(
             "Índice do DOU sem <script id='params'> — contrato do portal mudou"
         )
     try:
-        dados = json.loads(m.group(1).strip())
+        abre = html.index(">", marcador) + 1
+        fecha = html.index("</script>", abre)
+    except ValueError as exc:
+        raise DOUIndisponivelError(
+            "Índice do DOU com <script id='params'> malformado"
+        ) from exc
+
+    try:
+        dados = json.loads(html[abre:fecha].strip())
     except json.JSONDecodeError as exc:
         raise DOUIndisponivelError("Índice do DOU com JSON inválido") from exc
 
@@ -150,11 +179,30 @@ async def _carregar_indice(data_str: str, secao: str) -> list[dict]:
             follow_redirects=True,
             headers={"User-Agent": _DOU_USER_AGENT},
         ) as client:
-            resp = await client.get(
-                DOU_INDEX_URL, params={"data": data_str, "secao": secao}
-            )
-            resp.raise_for_status()
-            html = resp.text
+            # `stream` + teto explícito: `resp.text` leria o corpo inteiro sem
+            # limite, e a fonte não declara tamanho confiável. O maior corpo
+            # legítimo medido foi ~2,3 MB (DO3); 8 MB dá folga larga e ainda
+            # impede que um upstream anômalo (ou drip lento) consuma a memória
+            # do worker. Mesmo padrão de `entrada_universal_service`.
+            async with client.stream(
+                "GET", DOU_INDEX_URL, params={"data": data_str, "secao": secao}
+            ) as resp:
+                resp.raise_for_status()
+                tipo = (resp.headers.get("content-type") or "").lower()
+                if "html" not in tipo:
+                    raise DOUIndisponivelError(
+                        f"Índice do DOU respondeu {tipo!r}, esperado HTML"
+                    )
+                partes: list[bytes] = []
+                total = 0
+                async for bloco in resp.aiter_bytes():
+                    total += len(bloco)
+                    if total > _DOU_MAX_BYTES:
+                        raise DOUIndisponivelError(
+                            "Índice do DOU excedeu o teto de tamanho"
+                        )
+                    partes.append(bloco)
+                html = b"".join(partes).decode(resp.encoding or "utf-8", "replace")
     except DOUIndisponivelError:
         raise
     except Exception as exc:
@@ -164,7 +212,10 @@ async def _carregar_indice(data_str: str, secao: str) -> list[dict]:
             f"Índice do DOU indisponível ({type(exc).__name__})"
         ) from None
 
-    itens = _extrair_json_do_indice(html)
+    # Fora do event loop: o parse é CPU-bound sobre conteúdo de terceiro, e a
+    # API compartilha este loop. Mesmo com o parse não-retrocedente, manter o
+    # loop livre é a defesa que sobrevive a uma mudança futura aqui.
+    itens = await asyncio.to_thread(_extrair_json_do_indice, html)
     _INDICE_CACHE[chave] = itens
     return itens
 
@@ -216,14 +267,17 @@ async def buscar_dou(keyword: str, data_pub: date | None = None) -> list[dict]:
             if not _casa_keyword(item, keyword):
                 continue
             url_title = str(item.get("urlTitle") or "").lstrip("/")
+            if not url_title:
+                # O dedup do alerta é (link, keyword_id). Cair para a URL do
+                # índice faria TODAS as publicações sem `urlTitle` da mesma
+                # keyword colapsarem num só alerta, descartando as demais em
+                # silêncio — e sem link do ato não há conferência possível.
+                continue
             resultados.append(
                 {
                     "titulo": item.get("title") or item.get("titulo") or "",
                     "resumo": item.get("content", ""),
-                    "link": (
-                        f"https://www.in.gov.br/web/dou/-/{url_title}"
-                        if url_title else DOU_INDEX_URL
-                    ),
+                    "link": f"https://www.in.gov.br/web/dou/-/{url_title}",
                     "secao": str(item.get("pubName") or secao).upper(),
                     "data_publicacao": data_alvo,
                     "edicao": item.get("editionNumber", ""),
@@ -247,7 +301,10 @@ async def processar_alertas_dou(db) -> int:
     from app.models.diario_oficial import DiarioOficialAlerta, DiarioOficialKeyword
 
     # Índice do dia é baixado uma vez por seção e reusado por todas as
-    # keywords desta execução; zerar aqui evita servir índice de ontem.
+    # keywords desta execução; zerar aqui evita servir índice de ontem. O
+    # `finally` no fim da função impede que o dia inteiro (~3 seções, até
+    # ~2.167 itens) fique residente na memória do worker até a rodada
+    # seguinte.
     limpar_cache_indice()
     from app.models.user import User
     from app.services.djen_service import (
@@ -369,7 +426,8 @@ async def processar_alertas_dou(db) -> int:
                         await enviar_email(
                             email_dest,
                             f"[EJC] {titulo_n}",
-                            f"<p>{msg_n}</p><p><a href='{r['link']}'>Ver publicação</a></p>",
+                            f"<p>{_esc(msg_n)}</p>"
+                    f'<p><a href="{_esc(r["link"])}">Ver publicação</a></p>',
                         )
             except Exception as exc:
                 logger.warning(
@@ -385,4 +443,7 @@ async def processar_alertas_dou(db) -> int:
     else:
         _registrar_status_dou(ok=True, quantidade=total_resultados)
 
+    # Libera o índice do dia: sem isto ele fica residente até a rodada
+    # seguinte, ocupando memória do worker por 24 h sem serventia.
+    limpar_cache_indice()
     return novos

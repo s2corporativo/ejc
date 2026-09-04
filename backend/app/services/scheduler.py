@@ -1296,6 +1296,29 @@ async def _job_backup_drive_monitorado():
     await _bater_ponto(JOB_BACKUP_DRIVE, "ok", detalhe[:200] if detalhe else None)
 
 
+def _hora_utc_do_job(bruto: str, *, padrao: tuple[int, int],
+                     rotulo: str) -> tuple[int, int]:
+    """Converte "HH:MM" em (hora, minuto), com fallback e warning.
+
+    Mesmo contrato de `backup_service.hora_backup_utc`, e pela mesma razão:
+    `start_scheduler()` é chamado sem `try/except` no lifespan do FastAPI, então
+    um `int("11h00")` aqui levantaria ValueError e derrubaria o BOOT DA
+    APLICAÇÃO INTEIRA — levando junto backup, DJEN, prazos e prescrição. Uma
+    variável de ambiente malformada não pode ter esse poder.
+    """
+    texto = str(bruto or "").strip()
+    try:
+        hora_s, minuto_s = texto.split(":", 1)
+        hora, minuto = int(hora_s), int(minuto_s)
+        if 0 <= hora <= 23 and 0 <= minuto <= 59:
+            return hora, minuto
+    except (ValueError, AttributeError):
+        pass
+    logger.warning("[Scheduler] %s inválida (%r) — usando %02d:%02d UTC",
+                   rotulo, texto, padrao[0], padrao[1])
+    return padrao
+
+
 async def _job_querido_diario_monitor():
     """Varredura diária dos diários oficiais municipais, com heartbeat por
     RESULTADO (V2-3.1): o `detail` carrega o dicionário de contagens, não um
@@ -1402,11 +1425,12 @@ def start_scheduler():
     # com QUERIDO_DIARIO_MONITOR_ENABLED e o monitor ainda respeita a flag da
     # integração (QUERIDO_DIARIO_ENABLED). Registrar sempre mantém o heartbeat
     # visível no diagnóstico.
-    _hora_qd, _, _min_qd = str(
-        getattr(settings, "QUERIDO_DIARIO_MONITOR_HORA_UTC", "11:00")
-    ).partition(":")
+    _h_qd, _m_qd = _hora_utc_do_job(
+        getattr(settings, "QUERIDO_DIARIO_MONITOR_HORA_UTC", "11:00"),
+        padrao=(11, 0), rotulo="QUERIDO_DIARIO_MONITOR_HORA_UTC",
+    )
     s.add_job(_job_querido_diario_monitor,
-              CronTrigger(hour=int(_hora_qd or 11), minute=int(_min_qd or 0)),
+              CronTrigger(hour=_h_qd, minute=_m_qd, timezone="UTC"),
               id="querido_diario_monitor", replace_existing=True)
     s.add_job(_alertar_contratos,     CronTrigger(day_of_week="mon", hour=9, minute=30),  id="contratos",  replace_existing=True)
     # (removido job duplicado id="retencao_ia" — _purgar_logs_ia já agendado em id="purga_ia")

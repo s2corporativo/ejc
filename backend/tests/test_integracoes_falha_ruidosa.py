@@ -156,3 +156,80 @@ def test_aviso_de_proveniencia_nao_engole_o_conteudo_real():
 
     assert "Lei 14.133/2021" in conteudo
     assert "Lei de Licitações e Contratos." in conteudo
+
+
+# ── correções da revisão de segurança (regra 8) ──────────────────────────────
+
+def test_parse_do_indice_nao_retrocede_em_corpo_hostil():
+    """Regressão de ReDoS (P1-1 da revisão de segurança).
+
+    A versão anterior usava `<script[^>]*id="params"[^>]*>(.*?)</script>` com
+    re.DOTALL — quadrática: 0,78 MB de `<script` sem fechamento custavam 63,5 s
+    de CPU, medidos. Como o parse roda no MESMO event loop da API (o scheduler
+    sobe no lifespan do FastAPI), isso congelaria o EJC inteiro sob a premissa
+    de worker único. `find`/`index` não retrocedem — este teste falha por
+    TIMEOUT se alguém reintroduzir a regex.
+    """
+    import time
+
+    from app.services.diario_oficial_service import (
+        DOUIndisponivelError,
+        _extrair_json_do_indice,
+    )
+
+    hostil = "<script" * 200_000          # ~1,4 MB sem nenhum '>' de fechamento
+    inicio = time.monotonic()
+    try:
+        _extrair_json_do_indice(hostil)
+    except DOUIndisponivelError:
+        pass                              # sem o marcador, recusa é o correto
+    decorrido = time.monotonic() - inicio
+
+    assert decorrido < 1.0, (
+        f"parse levou {decorrido:.1f}s em corpo hostil — backtracking de volta?"
+    )
+
+
+def test_indice_sem_script_de_params_e_quebra_de_contrato():
+    from app.services.diario_oficial_service import (
+        DOUIndisponivelError,
+        _extrair_json_do_indice,
+    )
+
+    with pytest.raises(DOUIndisponivelError, match="contrato do portal mudou"):
+        _extrair_json_do_indice("<html><body>portal reformulado</body></html>")
+
+
+def test_script_de_params_malformado_nao_estoura_sem_diagnostico():
+    """`id="params"` presente mas sem fechamento — erro claro, não IndexError."""
+    from app.services.diario_oficial_service import (
+        DOUIndisponivelError,
+        _extrair_json_do_indice,
+    )
+
+    with pytest.raises(DOUIndisponivelError, match="malformado"):
+        _extrair_json_do_indice('<html><script id="params"')
+
+
+def test_hora_do_job_malformada_nao_derruba_o_boot():
+    """Regressão P2-3: `int("11h00")` derrubava a aplicação inteira.
+
+    `start_scheduler()` roda sem try/except no lifespan do FastAPI, então uma
+    variável de ambiente malformada levava junto backup, DJEN, prazos e
+    prescrição. Variável de ambiente não pode ter esse poder.
+    """
+    from app.services.scheduler import _hora_utc_do_job
+
+    assert _hora_utc_do_job("07:30", padrao=(11, 0), rotulo="X") == (7, 30)
+    for ruim in ("11h00", "", None, "25:00", "10:99", "abc", "12"):
+        assert _hora_utc_do_job(ruim, padrao=(11, 0), rotulo="X") == (11, 0)
+
+
+def test_email_do_dou_escapa_conteudo_de_terceiro():
+    """Regressão P3-2: título e link vêm do portal e iam crus para MIMEText."""
+    from app.services.diario_oficial_service import _esc
+
+    assert _esc("Portaria 'X' & <b>Y</b>") == (
+        "Portaria &#x27;X&#x27; &amp; &lt;b&gt;Y&lt;/b&gt;"
+    )
+    assert _esc(None) == ""

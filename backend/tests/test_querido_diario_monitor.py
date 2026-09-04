@@ -270,9 +270,12 @@ def _fake_ibge(monkeypatch, codigo="3106705"):
 
 async def test_radar_gera_alvo_com_vinculo_do_cliente(monkeypatch):
     """O client_id vem da ORIGEM da consulta — o termo é o nome do cliente."""
+    from app.models.client import ClientTipo
+
     _ligar_radar(monkeypatch)
     _fake_ibge(monkeypatch)
-    db = _ClientesFake([("cli-1", None, "Metalúrgica Betim Ltda", "Betim", "MG")])
+    db = _ClientesFake([("cli-1", ClientTipo.PJ, None, "Metalúrgica Betim Ltda",
+                        None, "Betim", "MG")])
 
     alvos = await monitor._alvos_de_clientes(db, {"erros": {}})
 
@@ -312,10 +315,13 @@ async def test_ibge_desligado_vira_erro_visivel_e_nao_lista_vazia(monkeypatch):
 
 
 async def test_municipio_nao_canonicalizado_e_contado(monkeypatch):
+    from app.models.client import ClientTipo
+
     _ligar_radar(monkeypatch)
     _fake_ibge(monkeypatch, codigo=None)   # IBGE não resolve o nome
     resultado = {"erros": {}}
-    db = _ClientesFake([("cli-1", None, "Alguma Empresa SA", "Cidade Inexistente", "MG")])
+    db = _ClientesFake([("cli-1", ClientTipo.PJ, None, "Alguma Empresa SA",
+                        None, "Cidade Inexistente", "MG")])
 
     alvos = await monitor._alvos_de_clientes(db, resultado)
 
@@ -324,9 +330,12 @@ async def test_municipio_nao_canonicalizado_e_contado(monkeypatch):
 
 async def test_termo_curto_demais_e_descartado(monkeypatch):
     """Termo de 3 letras casaria com meio diário — ruído, não sinal."""
+    from app.models.client import ClientTipo
+
     _ligar_radar(monkeypatch)
     _fake_ibge(monkeypatch)
-    db = _ClientesFake([("cli-1", "ABC", None, "Betim", "MG")])
+    # PJ com razão social curta: 3 caracteres casariam com meio diário.
+    db = _ClientesFake([("cli-1", ClientTipo.PJ, None, "ABC", None, "Betim", "MG")])
 
     assert await monitor._alvos_de_clientes(db, {"erros": {}}) == []
 

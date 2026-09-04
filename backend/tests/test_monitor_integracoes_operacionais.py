@@ -27,11 +27,28 @@ def _html_indice(itens: list[dict]) -> str:
 
 
 class _Resposta:
-    def __init__(self, texto: str):
-        self.text = texto
+    """Dublê de resposta em streaming (o cliente lê com teto de bytes)."""
+
+    def __init__(self, texto: str, content_type: str = "text/html; charset=utf-8"):
+        self._bytes = texto.encode("utf-8")
+        self.headers = {"content-type": content_type}
+        self.encoding = "utf-8"
 
     def raise_for_status(self):
         return None
+
+    async def aiter_bytes(self):
+        # Em dois blocos, para exercitar a acumulação com teto.
+        meio = len(self._bytes) // 2 or len(self._bytes)
+        yield self._bytes[:meio]
+        if self._bytes[meio:]:
+            yield self._bytes[meio:]
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
 
 
 class _ClientOK:
@@ -48,17 +65,20 @@ class _ClientOK:
     async def __aexit__(self, *args):
         return False
 
-    async def get(self, *args, **kwargs):
+    def _resposta(self):
         return _Resposta(_html_indice(type(self).itens))
+
+    def stream(self, *args, **kwargs):
+        return self._resposta()
 
 
 class _ClientErro(_ClientOK):
-    async def get(self, *args, **kwargs):
+    def stream(self, *args, **kwargs):
         raise RuntimeError("falha simulada sem conteúdo sensível")
 
 
 class _ClientContratoInvalido(_ClientOK):
-    async def get(self, *args, **kwargs):
+    def _resposta(self):
         # Página sem <script id="params"> — foi assim que o portal mudou.
         return _Resposta("<html><body>portal reformulado</body></html>")
 
@@ -151,7 +171,7 @@ async def test_indice_do_dia_e_baixado_uma_vez_por_secao(monkeypatch):
     chamadas = {"n": 0}
 
     class _Contador(_ClientOK):
-        async def get(self, *args, **kwargs):
+        def stream(self, *args, **kwargs):
             chamadas["n"] += 1
             return _Resposta(_html_indice([]))
 
