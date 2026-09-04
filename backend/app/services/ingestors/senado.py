@@ -56,6 +56,7 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                 ident = m.get("DescricaoIdentificacao") or f"{sigla} {m.get('Numero')}/{ano}"
                 conteudo = (
                     f"{ident} (Senado Federal)\n"
+                    "ATENÇÃO: proposição em tramitação — não é norma vigente.\n"
                     f"Autor: {m.get('Autor','')}\n"
                     f"Data: {m.get('Data','')}\n\n"
                     f"Ementa: {ementa}"
@@ -65,10 +66,21 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                     db, titulo=ident[:500], categoria="proposicao_legislativa",
                     conteudo=conteudo, chave_origem=f"senado:{cod}",
                     fonte=m.get("UrlDetalheMateria") or API,
-                    extra={"sigla": sigla, "ano": ano, "casa": "senado",
-                           "numero": m.get("Numero"), "rag_status": "aprovado",
-                           "tipo_fonte": "proposicao_oficial"},
-                    confianca="alta",   # fonte oficial (Senado Federal)
+                    extra={
+                        "sigla": sigla,
+                        "ano": ano,
+                        "casa": "senado",
+                        "numero": m.get("Numero"),
+                        "rag_status": "aprovado",
+                        "tipo_fonte": "proposicao_oficial",
+                        "source_official": True,
+                        "authority_level": "oficial_informativa",
+                        "proposicao_nao_vigente": True,
+                        "aviso_governanca": "Projeto em tramitação — não é norma vigente.",
+                    },
+                    # Fonte é oficial, mas a matéria é proposição em tramitação,
+                    # não direito vigente; confiança jurídica não pode ser "alta".
+                    confianca="media",
                 )
                 if res in ("novo", "atualizado"):
                     novos += 1

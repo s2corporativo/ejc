@@ -1,7 +1,7 @@
 // ── src/components/EstimadorHonorarios.tsx ───────────────────────────────────
-// P2.1 — Estimador de honorários estruturado, ancorado na tabela OAB/MG (RAG).
-// Três cenários (mínimo/recomendado/estratégico) + memória de cálculo + contrato
-// sugerido. Tudo é referência (HITL): o advogado define o valor final.
+// Estimador de honorários estruturado. A tabela OAB/MG só é tratada como fonte
+// quando o backend confirma que há conteúdo oficial disponível no RAG; sem
+// fonte, a saída é identificada expressamente como referência genérica.
 import { useState } from "react";
 import { Calculator, FileSignature, Info } from "lucide-react";
 import api from "../lib/api";
@@ -70,13 +70,11 @@ export default function EstimadorHonorarios() {
 
   return (
     <div className="max-w-4xl">
-      {/* Título fica no FinanceiroWorkspace (aba "Estimador OAB");
-          aqui apenas a descrição da ferramenta. */}
       <p className="text-sm text-slate-500 mb-5 flex items-start gap-2">
         <Calculator size={16} className="text-bronze mt-0.5 shrink-0" />
-        Calcula três cenários ancorados na tabela OAB/MG, ponderando
-        complexidade, tempo e atos. Referência — o advogado define o valor
-        final.
+        Calcula três cenários de referência. Usa a tabela OAB/MG somente quando
+        a fonte oficial está disponível na base; sem fonte, identifica a saída
+        como estimativa genérica de mercado. O advogado define o valor final.
       </p>
 
       <div className="card p-5 grid sm:grid-cols-2 gap-4">
@@ -108,6 +106,8 @@ export default function EstimadorHonorarios() {
           <input
             className="input"
             type="number"
+            min="0"
+            step="0.01"
             value={form.valor_causa || ""}
             onChange={(e) => set("valor_causa", e.target.value)}
           />
@@ -129,6 +129,7 @@ export default function EstimadorHonorarios() {
           <input
             className="input"
             type="number"
+            min="0"
             value={form.tempo_meses || ""}
             onChange={(e) => set("tempo_meses", e.target.value)}
           />
@@ -138,6 +139,7 @@ export default function EstimadorHonorarios() {
           <input
             className="input"
             type="number"
+            min="0"
             value={form.num_atos || ""}
             onChange={(e) => set("num_atos", e.target.value)}
           />
@@ -173,6 +175,22 @@ export default function EstimadorHonorarios() {
 
       {r && (
         <div className="mt-5 space-y-4">
+          <div
+            className={`rounded-lg p-3 text-xs flex items-start gap-2 ${
+              r.tabela_oficial_disponivel === true
+                ? "bg-success-50 text-success-800"
+                : "bg-warn-50 text-warn-800"
+            }`}
+          >
+            <Info size={14} className="mt-0.5 shrink-0" />
+            <span>
+              <b>Origem da referência:</b>{" "}
+              {r.tabela_oficial_disponivel === true
+                ? "Tabela OAB/MG disponível na base, sujeita à conferência da vigência e do item citado."
+                : "Referência genérica de mercado; não corresponde à Tabela OAB/MG oficial."}
+            </span>
+          </div>
+
           <div className="grid sm:grid-cols-3 gap-3">
             {[
               { l: "Mínimo", v: r.minimo, c: "border-slate-200" },
@@ -220,14 +238,14 @@ export default function EstimadorHonorarios() {
             )}
             {r.tabela_oficial_disponivel === false && (
               <p className="text-xs text-warn-700 bg-warn-50 rounded-lg p-2 flex items-start gap-1">
-                <Info size={13} className="mt-0.5 shrink-0" /> Tabela oficial
-                OAB/MG não está na base — valores são referência genérica de
-                mercado.
+                <Info size={13} className="mt-0.5 shrink-0" />
+                Tabela oficial OAB/MG não está na base — valores são referência
+                genérica de mercado e exigem conferência externa antes do uso.
               </p>
             )}
             {r._aviso && (
               <p className="text-[11px] text-slate-500 border-t border-bronze-50 pt-2">
-                ⚠ {r._aviso}
+                {r._aviso}
               </p>
             )}
           </div>
