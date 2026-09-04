@@ -109,3 +109,87 @@ def test_patch_parcial_que_quebraria_o_par_e_recusado():
 def test_patch_que_nao_toca_oab_nao_e_afetado():
     _validar_par_oab_djen(_user("252599", "MG"), {"phone": "31999999999"})
     _validar_par_oab_djen(_user(), {"full_name": "Fulano"})
+
+
+def test_patch_que_nao_toca_oab_passa_mesmo_com_meio_par_legado():
+    """A coluna não tem constraint e o endpoint gravava sem validação antes
+    deste diff, então linhas legadas podem carregar meio par. Travar
+    `{"is_active": false}` numa dessas contas atrasaria contenção de incidente
+    por defeito de dado em campo alheio."""
+    _validar_par_oab_djen(_user("252599", None), {"is_active": False})
+    _validar_par_oab_djen(_user(None, "MG"), {"role": "estagiario"})
+
+
+# ── exclusividade da inscrição (router, com banco) ───────────────────────────
+#
+# `djen_oab_numero`/`djen_oab_uf` estão em `campos_self`: qualquer usuário
+# interno podia gravar em SI MESMO a inscrição de outro advogado. O job diário
+# grava `DjenComunicacao.advogado_id` com o id de quem tem a OAB e a listagem
+# de intimações é escopada por esse campo — ou seja, quem copiasse a inscrição
+# passava a ver a carteira de publicações do titular dela.
+
+class _ResultadoVazio:
+    def first(self):
+        return None
+
+
+class _ResultadoConflito:
+    def first(self):
+        return ("outro-usuario-id",)
+
+
+class _DBFake:
+    def __init__(self, resultado):
+        self._resultado = resultado
+        self.consultas = 0
+
+    async def execute(self, _stmt):
+        self.consultas += 1
+        return self._resultado
+
+
+async def test_oab_livre_e_aceita():
+    from app.routers.users import _validar_oab_djen_exclusiva
+
+    db = _DBFake(_ResultadoVazio())
+    user = SimpleNamespace(id="u1", djen_oab_numero=None, djen_oab_uf=None)
+    await _validar_oab_djen_exclusiva(
+        db, user, {"djen_oab_numero": "252599", "djen_oab_uf": "MG"}
+    )
+    assert db.consultas == 1
+
+
+async def test_oab_de_outro_usuario_e_recusada_com_409():
+    from app.routers.users import _validar_oab_djen_exclusiva
+
+    db = _DBFake(_ResultadoConflito())
+    user = SimpleNamespace(id="u1", djen_oab_numero=None, djen_oab_uf=None)
+    with pytest.raises(HTTPException) as exc:
+        await _validar_oab_djen_exclusiva(
+            db, user, {"djen_oab_numero": "252599", "djen_oab_uf": "MG"}
+        )
+    assert exc.value.status_code == 409
+    # A mensagem não pode virar oráculo de "quem é o dono desta inscrição"
+    # para quem tentou copiá-la.
+    assert "outro usuário" in exc.value.detail
+    assert "outro-usuario-id" not in exc.value.detail
+
+
+async def test_patch_que_nao_toca_oab_nao_consulta_o_banco():
+    from app.routers.users import _validar_oab_djen_exclusiva
+
+    db = _DBFake(_ResultadoConflito())
+    user = SimpleNamespace(id="u1", djen_oab_numero="252599", djen_oab_uf="MG")
+    await _validar_oab_djen_exclusiva(db, user, {"phone": "31999999999"})
+    assert db.consultas == 0
+
+
+async def test_limpar_a_propria_oab_nao_consulta_conflito():
+    from app.routers.users import _validar_oab_djen_exclusiva
+
+    db = _DBFake(_ResultadoConflito())
+    user = SimpleNamespace(id="u1", djen_oab_numero="252599", djen_oab_uf="MG")
+    await _validar_oab_djen_exclusiva(
+        db, user, {"djen_oab_numero": None, "djen_oab_uf": None}
+    )
+    assert db.consultas == 0

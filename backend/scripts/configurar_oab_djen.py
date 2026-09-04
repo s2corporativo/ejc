@@ -41,13 +41,13 @@
 #
 #     # 2) simular (dry-run — não escreve nada)
 #     docker exec -it ejc_backend python -m scripts.configurar_oab_djen \
-#         --definir "Guilherme=252599/MG" \
-#         --definir "Joao Pedro=251174/MG"
+#         --definir "<e-mail ou fragmento do nome>=<numero>/<UF>" \
+#         --definir "<e-mail ou fragmento do nome>=<numero>/<UF>"
 #
-#     # 3) efetivar
+#     # 3) efetivar (o operador vai para o AuditLog)
 #     docker exec -it ejc_backend python -m scripts.configurar_oab_djen \
-#         --definir "Guilherme=252599/MG" \
-#         --definir "Joao Pedro=251174/MG" --aplicar
+#         --definir "<e-mail ou fragmento do nome>=<numero>/<UF>" \
+#         --aplicar --operador nome@escritorio.adv.br
 #
 # O identificador antes do "=" pode ser o e-mail do usuário (casamento exato,
 # recomendado quando houver homônimos) ou um fragmento do nome, sem acento e
@@ -62,7 +62,7 @@ import sys
 import unicodedata
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.database import AsyncSessionLocal
 from app.core.ufs import UFS_BRASIL as UFS_VALIDAS
@@ -96,15 +96,18 @@ class ItemPlano:
     email: str
     numero_antes: str | None
     uf_antes: str | None
-    oab_number_antes: str | None
-    preenche_oab_number: bool
+    # `oab_number` (o campo do PERFIL) é deliberadamente NÃO escrito por este
+    # script: ele sai impresso na assinatura das peças geradas, e um script de
+    # configuração de captura não deve alterar o que vai assinado num documento
+    # jurídico. Quando está vazio, o plano avisa — preenchê-lo é ato do próprio
+    # advogado, no perfil dele.
+    perfil_vazio: bool
 
     @property
     def ja_configurado(self) -> bool:
         return (
             (self.numero_antes or "") == self.definicao.numero
             and (self.uf_antes or "").upper() == self.definicao.uf
-            and not self.preenche_oab_number
         )
 
 
@@ -115,7 +118,7 @@ def _sem_acento(texto: str) -> str:
 
 
 def parse_definicao(bruto: str) -> Definicao:
-    """Converte "Guilherme=252599/MG" em Definicao, validando número e UF.
+    """Converte "<identificador>=<numero>/<UF>" em Definicao, validando os dois.
 
     Aceita o separador de UF em "/", "-", espaço ou "OAB/UF numero"; o que NÃO
     se aceita é ausência de UF: número de OAB sem UF é ambíguo no país inteiro
@@ -124,20 +127,22 @@ def parse_definicao(bruto: str) -> Definicao:
     if "=" not in bruto:
         raise EntradaInvalida(
             f'--definir {bruto!r}: formato esperado "IDENTIFICADOR=NUMERO/UF" '
-            '(ex.: "Guilherme=252599/MG" ou "guilherme@escritorio.adv.br=252599/MG").'
+            '(ex.: "Silva=123456/MG" ou "silva@escritorio.adv.br=123456/MG").'
         )
     identificador, _, oab = bruto.partition("=")
     identificador = identificador.strip()
     if not identificador:
         raise EntradaInvalida(f"--definir {bruto!r}: identificador vazio antes do '='.")
 
-    numeros = re.findall(r"\d+", oab)
-    ufs = [m.upper() for m in re.findall(r"[A-Za-z]{2}", _sem_acento(oab))]
+    numeros = re.findall(r"[0-9]+", oab)
+    # `\b...\b`: sem as bordas, "SEP" (typo de SP) casaria o pedaço "SE" e o
+    # script gravaria uma inscrição em Sergipe sem acusar nada.
+    ufs = [m.upper() for m in re.findall(r"\b[A-Za-z]{2}\b", _sem_acento(oab))]
     ufs = [u for u in ufs if u in UFS_VALIDAS]
     if len(numeros) != 1 or not ufs:
         raise EntradaInvalida(
             f"--definir {bruto!r}: não consegui ler NUMERO e UF de {oab.strip()!r}. "
-            "Use o formato 252599/MG. A UF precisa ser uma das 27 unidades "
+            "Use o formato 123456/MG. A UF precisa ser uma das 27 unidades "
             "federativas e NUNCA é deduzida."
         )
     if len(set(ufs)) > 1:
@@ -154,11 +159,16 @@ def parse_definicao(bruto: str) -> Definicao:
 
 
 async def _usuarios_ativos(db) -> list[User]:
+    """Espelha exatamente o filtro do job (`is_active` + `deleted_at`).
+
+    Sem `is_active`, um usuário desativado com OAB aparecia como "CAPTURA" no
+    relatório e não era capturado — falso verde no próprio verificador.
+    """
     return list(
         (
             await db.execute(
                 select(User)
-                .where(User.deleted_at.is_(None))
+                .where(User.deleted_at.is_(None), User.is_active.is_(True))
                 .order_by(User.full_name)
             )
         ).scalars().all()
@@ -173,6 +183,31 @@ def localizar(usuarios: list[User], identificador: str) -> list[User]:
         return [u for u in usuarios if (u.email or "").strip().lower() == alvo]
     frag = _sem_acento(alvo)
     return [u for u in usuarios if frag in _sem_acento((u.full_name or "").lower())]
+
+
+def _divergencia_com_o_perfil(perfil: str, d: Definicao) -> str | None:
+    """Descreve a divergência entre a OAB do perfil e a que se quer gravar.
+
+    Comparar só o par resolvido por `oab_para_captura` falhava ABERTO: perfil
+    sem UF legível ("111111") resolve para ("", ""), o que era lido como
+    "sem divergência" — e o script gravava a inscrição nova ao lado de um perfil que
+    diz 111111, exatamente o dano que ele existe para impedir. Por isso o
+    número é comparado mesmo quando a UF do perfil é indeterminável.
+    """
+    if not perfil:
+        return None
+    num_perfil, uf_perfil = oab_para_captura(
+        type("_P", (), {"djen_oab_numero": "", "djen_oab_uf": "", "oab_number": perfil})()
+    )
+    if num_perfil and uf_perfil:
+        if (num_perfil, uf_perfil) == (d.numero, d.uf):
+            return None
+        return f"resolve para {num_perfil}/{uf_perfil}"
+
+    digitos = re.sub(r"\D", "", perfil)
+    if digitos and digitos != d.numero:
+        return f"número {digitos}, sem UF determinável"
+    return None
 
 
 def montar_plano(usuarios: list[User], definicoes: list[Definicao]) -> tuple[list[ItemPlano], list[str]]:
@@ -225,14 +260,12 @@ def montar_plano(usuarios: list[User], definicoes: list[Definicao]) -> tuple[lis
             continue
 
         perfil_atual = (u.oab_number or "").strip()
-        num_perfil, uf_perfil = oab_para_captura(
-            type("_P", (), {"djen_oab_numero": "", "djen_oab_uf": "", "oab_number": perfil_atual})()
-        )
-        if perfil_atual and (num_perfil, uf_perfil) not in {("", ""), (d.numero, d.uf)}:
+        divergencia = _divergencia_com_o_perfil(perfil_atual, d)
+        if divergencia:
             erros.append(
-                f"{u.full_name}: o perfil já traz OAB {perfil_atual!r}, que resolve para "
-                f"{num_perfil}/{uf_perfil} — diferente de {d.numero}/{d.uf}. "
-                "Divergência de dado cadastral: confirme com o titular antes de gravar."
+                f"{u.full_name}: o perfil traz OAB {perfil_atual!r} ({divergencia}), "
+                f"diferente de {d.numero}/{d.uf}. Divergência de dado cadastral: "
+                "confirme com o titular antes de gravar."
             )
             continue
 
@@ -244,8 +277,7 @@ def montar_plano(usuarios: list[User], definicoes: list[Definicao]) -> tuple[lis
                 email=u.email,
                 numero_antes=u.djen_oab_numero,
                 uf_antes=u.djen_oab_uf,
-                oab_number_antes=u.oab_number,
-                preenche_oab_number=not perfil_atual,
+                perfil_vazio=not perfil_atual,
             )
         )
     return plano, erros
@@ -266,7 +298,8 @@ def imprimir_plano(plano: list[ItemPlano]) -> None:
             item.email,
             antes,
             f"{d.numero}/{d.uf}",
-            "  (+ preenche oab_number do perfil)" if item.preenche_oab_number else "",
+            "  (perfil sem OAB — preencha no perfil, é o que assina as peças)"
+            if item.perfil_vazio else "",
         )
 
 
@@ -378,47 +411,58 @@ async def testar_fonte(dias: int = 7) -> int:
     return 1
 
 
-async def executar(definicoes: list[Definicao], aplicar: bool) -> int:
+async def executar(
+    definicoes: list[Definicao], aplicar: bool, operador: str | None = None
+) -> int:
+    # Sessão 1 — LEITURA. Fecha antes do prompt: manter a transação aberta
+    # durante um `input()` deixa a conexão `idle in transaction` pelo tempo que
+    # o operador levar para digitar, segurando VACUUM e um slot do pool do
+    # mesmo banco que atende a aplicação.
     async with AsyncSessionLocal() as db:
         usuarios = await _usuarios_ativos(db)
-        plano, erros = montar_plano(usuarios, definicoes)
+    plano, erros = montar_plano(usuarios, definicoes)
 
-        if erros:
-            for e in erros:
-                logger.error("ERRO: %s", e)
-            logger.error(
-                "Nada foi alterado — %d problema(s) acima. Corrija os argumentos e repita.",
-                len(erros),
-            )
-            return 2
+    if erros:
+        for e in erros:
+            logger.error("ERRO: %s", e)
+        logger.error(
+            "Nada foi alterado — %d problema(s) acima. Corrija os argumentos e repita.",
+            len(erros),
+        )
+        return 2
 
-        logger.info("=== Plano ===")
-        imprimir_plano(plano)
+    logger.info("=== Plano ===")
+    imprimir_plano(plano)
 
-        pendentes = [i for i in plano if not i.ja_configurado]
-        if not pendentes:
-            logger.info("")
-            logger.info("Tudo já está como pedido — nenhuma alteração necessária.")
-            await verificar()
-            return 0
-
+    pendentes = [i for i in plano if not i.ja_configurado]
+    if not pendentes:
         logger.info("")
-        logger.info("%d alteração(ões) pendente(s).", len(pendentes))
-        if not aplicar:
-            logger.info("DRY-RUN — nada foi alterado. Use --aplicar para efetivar.")
-            return 0
+        logger.info("Tudo já está como pedido — nenhuma alteração necessária.")
+        await verificar()
+        return 0
 
-        if not sys.stdin.isatty():
-            logger.error(
-                "--aplicar exige confirmação digitada e o stdin não é um terminal. "
-                "Rode com `docker exec -it ...`."
-            )
-            return 2
-        confirmacao = input(f'Digite "{PALAVRA_CONFIRMACAO}" para confirmar: ').strip()
-        if confirmacao != PALAVRA_CONFIRMACAO:
-            logger.warning("Confirmação incorreta — abortado sem alterar nada.")
-            return 1
+    logger.info("")
+    logger.info("%d alteração(ões) pendente(s).", len(pendentes))
+    if not aplicar:
+        logger.info("DRY-RUN — nada foi alterado. Use --aplicar para efetivar.")
+        return 0
 
+    if not sys.stdin.isatty():
+        logger.error(
+            "--aplicar exige confirmação digitada e o stdin não é um terminal. "
+            "Rode com `docker exec -it ...`."
+        )
+        return 2
+    confirmacao = input(f'Digite "{PALAVRA_CONFIRMACAO}" para confirmar: ').strip()
+    if confirmacao != PALAVRA_CONFIRMACAO:
+        logger.warning("Confirmação incorreta — abortado sem alterar nada.")
+        return 1
+
+    # Sessão 2 — ESCRITA. Recarrega cada usuário: o plano foi montado numa
+    # leitura anterior e o banco pode ter mudado nesse meio-tempo.
+    async with AsyncSessionLocal() as db:
+        ator_id = await _resolver_operador(db, operador)
+        gravados = 0
         for item in pendentes:
             u = (
                 await db.execute(select(User).where(User.id == item.user_id))
@@ -429,33 +473,57 @@ async def executar(definicoes: list[Definicao], aplicar: bool) -> int:
             antes = {
                 "djen_oab_numero": u.djen_oab_numero,
                 "djen_oab_uf": u.djen_oab_uf,
-                "oab_number": u.oab_number,
             }
             u.djen_oab_numero = item.definicao.numero
             u.djen_oab_uf = item.definicao.uf
-            if item.preenche_oab_number:
-                u.oab_number = f"{item.definicao.numero}/{item.definicao.uf}"
             depois = {
                 "djen_oab_numero": u.djen_oab_numero,
                 "djen_oab_uf": u.djen_oab_uf,
-                "oab_number": u.oab_number,
             }
             await criar_audit_log(
                 db,
-                user_id=None,
+                user_id=ator_id,
                 user_role="sistema",
                 acao="UPDATE",
                 entidade="users",
                 registro_id=u.id,
-                detalhes="scripts.configurar_oab_djen — vínculo de OAB para captura DJEN",
+                detalhes=(
+                    "scripts.configurar_oab_djen — vínculo de OAB para captura "
+                    f"DJEN; operador declarado: {operador}"
+                ),
                 dados_antes=antes,
                 dados_depois=depois,
             )
+            gravados += 1
         await db.commit()
-        logger.info("Aplicado: %d usuário(s) atualizado(s).", len(pendentes))
+        logger.info("Aplicado: %d usuário(s) atualizado(s).", gravados)
 
     await verificar()
     return 0
+
+
+async def _resolver_operador(db, operador: str | None) -> str | None:
+    """Casa o `--operador` declarado com um usuário, para o AuditLog ter ator.
+
+    Sem isto o registro guarda bem o QUÊ (antes/depois) e não guarda o QUEM: a
+    alteração por shell fica indistinguível de ação automática do sistema,
+    enquanto a mesma alteração pela API grava o id de quem a fez. O texto
+    declarado vai para `detalhes` de qualquer forma; o id só é preenchido
+    quando o casamento é inequívoco.
+    """
+    if not operador:
+        return None
+    alvo = operador.strip().lower()
+    if "@" not in alvo:
+        return None
+    linha = (
+        await db.execute(
+            select(User.id).where(
+                func.lower(User.email) == alvo, User.deleted_at.is_(None)
+            )
+        )
+    ).first()
+    return linha[0] if linha else None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -471,7 +539,7 @@ def main(argv: list[str] | None = None) -> int:
         default=[],
         metavar="IDENTIFICADOR=NUMERO/UF",
         help=(
-            'par advogado↔OAB, repetível. Ex.: --definir "Guilherme=252599/MG". '
+            'par advogado↔OAB, repetível. Ex.: --definir "Silva=123456/MG". '
             "O identificador é o e-mail (exato) ou um fragmento do nome (que "
             "precisa casar exatamente um usuário)."
         ),
@@ -479,7 +547,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--aplicar",
         action="store_true",
-        help="efetiva a gravação (exige confirmação digitada)",
+        help="efetiva a gravação (exige confirmação digitada e --operador)",
+    )
+    ap.add_argument(
+        "--operador",
+        metavar="EMAIL",
+        help=(
+            "quem está executando (e-mail institucional, de preferência). "
+            "Vai para o AuditLog — obrigatório com --aplicar, para a alteração "
+            "não ficar indistinguível de uma ação automática do sistema."
+        ),
     )
     ap.add_argument(
         "--verificar",
@@ -520,7 +597,16 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("%s", exc)
         return 2
 
-    return asyncio.run(executar(definicoes, aplicar=args.aplicar))
+    if args.aplicar and not (args.operador or "").strip():
+        logger.error(
+            "--aplicar exige --operador (quem responde por esta alteração). "
+            "Ex.: --operador nome@escritorio.adv.br"
+        )
+        return 2
+
+    return asyncio.run(
+        executar(definicoes, aplicar=args.aplicar, operador=args.operador)
+    )
 
 
 if __name__ == "__main__":

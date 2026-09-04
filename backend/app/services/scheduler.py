@@ -23,7 +23,7 @@ from datetime import date, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-from sqlalchemy import func, text, select
+from sqlalchemy import func, or_, select, text
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
@@ -1750,6 +1750,24 @@ def stop_scheduler():
 # JOBS v3.x — DJEN, DataJud, Relatório Mensal
 # ═══════════════════════════════════════════════════════════════════════════
 
+def djen_entra_no_job(advogado) -> bool:
+    """Critério de inclusão do job diário de intimações.
+
+    Nomeado e exportado de propósito: o teste exercita ESTA função, não uma
+    réplica dela — critério duplicado em teste envelhece sem avisar, que é a
+    classe de defeito que esta área inteira trata.
+
+    Entra quem tem o campo dedicado preenchido (mesmo pela metade — configuração
+    quebrada precisa aparecer como `oab_nao_configurada` no diagnóstico, não
+    sumir do relatório) e quem tem OAB de perfil com UF determinável.
+    """
+    from app.services.djen_service import oab_para_captura
+
+    if (getattr(advogado, "djen_oab_numero", "") or "").strip():
+        return True
+    return all(oab_para_captura(advogado))
+
+
 async def job_djen_intimacoes():
     """06h30 — captura intimações DJEN para cada advogado com OAB configurada."""
     from app.models.user import User as _U
@@ -1758,10 +1776,27 @@ async def job_djen_intimacoes():
     _hb_status, _hb_detail = "ok", None
     try:
         async with AsyncSessionLocal() as db:
-            advs = (await db.execute(select(_U).where(
+            # AUD27-P3-9 (2ª metade): `capturar_para_advogado` passou a resolver
+            # a OAB do perfil quando `djen_oab_numero` está vazio, mas a seleção
+            # daqui filtrava só por `djen_oab_numero`, então quem tinha apenas o
+            # campo do perfil nunca chegava a ela — o fallback existia e não
+            # alcançava o job diário. Trazemos os dois casos do banco e deixamos
+            # `oab_para_captura` (a MESMA função que a captura usa) decidir.
+            #
+            # Quem tem OAB registrada mas SEM UF determinável continua de fora:
+            # `oab_para_captura` devolve vazio, e incluí-lo aqui só produziria
+            # `oab_nao_configurada` em massa, pintando o heartbeat de vermelho
+            # sem que nada tivesse mudado. Esse caso é reportado pelo
+            # `scripts/configurar_oab_djen.py --verificar`, que é onde se
+            # conserta cadastro.
+            candidatos = (await db.execute(select(_U).where(
                 _U.is_active == True, _U.deleted_at.is_(None),
-                _U.djen_oab_numero.isnot(None),
+                or_(
+                    _U.djen_oab_numero.isnot(None),
+                    _U.oab_number.isnot(None),
+                ),
             ))).scalars().all()
+            advs = [a for a in candidatos if djen_entra_no_job(a)]
             total = 0
             for a in advs:
                 try:

@@ -103,9 +103,9 @@ def test_plano_grava_os_dois_socios():
         ("1", "252599", "MG"),
         ("2", "251174", "MG"),
     ]
-    # perfil vazio → o script também preenche oab_number, mantendo os dois
-    # campos coerentes (a divergência entre eles é o defeito AUD27-P3-9).
-    assert all(i.preenche_oab_number for i in plano)
+    # O script NÃO escreve `oab_number`: esse campo assina as peças geradas.
+    # Só sinaliza que o perfil está vazio, para o advogado preencher lá.
+    assert all(i.perfil_vazio for i in plano)
 
 
 def test_plano_e_idempotente():
@@ -115,21 +115,31 @@ def test_plano_e_idempotente():
     assert plano[0].ja_configurado is True
 
 
-def test_plano_nao_sobrescreve_oab_number_ja_preenchida_e_coerente():
+def test_plano_aceita_perfil_coerente_e_nao_o_reescreve():
     us = [_user("1", "Guilherme", "g@x.adv.br", oab="OAB/MG 252599")]
     plano, erros = montar_plano(us, [parse_definicao("Guilherme=252599/MG")])
     assert erros == []
-    assert plano[0].preenche_oab_number is False
+    assert plano[0].perfil_vazio is False
     assert plano[0].ja_configurado is False  # djen_* continua vazio
 
 
-def test_plano_aceita_perfil_sem_uf_determinavel():
-    """`oab_number` livre ("252599") não resolve para par nenhum; não é
-    divergência, é dado incompleto — o script completa."""
+def test_plano_aceita_perfil_sem_uf_mas_com_o_mesmo_numero():
+    """`oab_number` livre ("252599") não resolve par nenhum; com o MESMO
+    número não há divergência, só dado incompleto."""
     us = [_user("1", "Guilherme", "g@x.adv.br", oab="252599")]
     plano, erros = montar_plano(us, [parse_definicao("Guilherme=252599/MG")])
     assert erros == []
-    assert plano[0].preenche_oab_number is False
+    assert plano[0].perfil_vazio is False
+
+
+def test_recusa_perfil_sem_uf_com_numero_diferente():
+    """A guarda de divergência falhava ABERTO aqui: "111111" resolve para
+    ("", ""), que era lido como "sem divergência", e o script gravava outra
+    inscrição ao lado — o dano exato que ele existe para impedir."""
+    us = [_user("1", "Guilherme", "g@x.adv.br", oab="111111")]
+    plano, erros = montar_plano(us, [parse_definicao("Guilherme=252599/MG")])
+    assert plano == []
+    assert "Divergência de dado cadastral" in erros[0]
 
 
 # ── plano: recusas ───────────────────────────────────────────────────────────
@@ -226,3 +236,18 @@ def test_cli_recusa_definicao_invalida_antes_de_abrir_o_banco():
     from scripts.configurar_oab_djen import main
 
     assert main(["--definir", "Guilherme=252599", "--aplicar"]) == 2
+
+
+def test_cli_aplicar_exige_operador_declarado():
+    """Sem ator, o AuditLog não distingue alteração por shell de ação
+    automática do sistema (LGPD art. 37)."""
+    from scripts.configurar_oab_djen import main
+
+    assert main(["--definir", "Silva=123456/MG", "--aplicar"]) == 2
+
+
+def test_uf_precisa_ser_token_inteiro():
+    """"SEP" (typo de SP) casava o pedaço "SE" e gravava uma inscrição em
+    Sergipe sem acusar nada."""
+    with pytest.raises(EntradaInvalida):
+        parse_definicao("Silva=123456/SEP")

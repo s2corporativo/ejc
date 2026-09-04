@@ -1,5 +1,8 @@
 # ── app/schemas/auth.py ──────────────────────────────────────────────────────
 from __future__ import annotations
+
+import re
+
 from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 
@@ -51,10 +54,16 @@ class UserUpdate(BaseModel):
         limpo = v.strip()
         if not limpo:
             return None
-        if not limpo.isdigit():
-            raise ValueError("Número da OAB deve conter apenas dígitos.")
-        if len(limpo) > 10:
-            raise ValueError("Número da OAB deve ter no máximo 10 dígitos.")
+        # `str.isdigit()` e `\d` do `re` são Unicode-aware: "²²²²²²" e
+        # "٢٥٢٥٩٩" passariam, e depois `oab_para_captura` (que faz
+        # `re.sub(r"\D", "", ...)`) devolveria vazio — o campo ficaria não-nulo,
+        # o job selecionaria o advogado e a captura resolveria
+        # `oab_nao_configurada` em silêncio. Classe explícita [0-9] fecha isso.
+        if not re.fullmatch(r"[0-9]{1,10}", limpo):
+            raise ValueError(
+                "Número da OAB deve ter de 1 a 10 dígitos (0-9), sem "
+                "pontuação ou letras."
+            )
         return limpo
 
     @field_validator("djen_oab_uf")

@@ -318,16 +318,26 @@ async def criar(
     return user
 
 
+_CAMPOS_OAB_DJEN = frozenset({"djen_oab_numero", "djen_oab_uf"})
+
+
 def _validar_par_oab_djen(user: User, mudancas: dict) -> None:
     """Recusa gravar metade do par número↔UF da OAB monitorada.
 
-    A captura DJEN lê os DOIS campos, mas o job seleciona o advogado só pelo
-    número (`djen_oab_numero IS NOT NULL`). Com metade do par gravada, o
-    advogado entra na lista, é descartado por falta de UF e o sistema segue
-    "verde" capturando zero — a falha mais cara possível num sistema de
-    prazos. A checagem é sobre o valor RESULTANTE (o já gravado somado ao que
-    veio num PATCH parcial), nunca sobre o payload isolado.
+    A captura DJEN lê os DOIS campos, mas o job seleciona o advogado pelo
+    número. Com metade do par gravada, o advogado entra na lista, é descartado
+    por falta de UF e o sistema segue "verde" capturando zero — a falha mais
+    cara possível num sistema de prazos. A checagem é sobre o valor RESULTANTE
+    (o já gravado somado ao que veio num PATCH parcial), nunca sobre o payload
+    isolado.
+
+    Um PATCH que não toca a OAB passa direto: a coluna não tem constraint e
+    linhas legadas podem carregar meio par, e travar `{"is_active": false}`
+    numa dessas contas atrasaria contenção de incidente por um defeito de
+    dado em campo alheio.
     """
+    if not _CAMPOS_OAB_DJEN & mudancas.keys():
+        return
     numero = (mudancas.get("djen_oab_numero", user.djen_oab_numero) or "").strip()
     uf = (mudancas.get("djen_oab_uf", user.djen_oab_uf) or "").strip()
     if bool(numero) != bool(uf):
@@ -337,6 +347,50 @@ def _validar_par_oab_djen(user: User, mudancas: dict) -> None:
                 "Número e UF da OAB formam um par indivisível para a captura "
                 "de intimações: informe os dois, ou limpe os dois para "
                 "desligar o monitoramento."
+            ),
+        )
+
+
+async def _validar_oab_djen_exclusiva(
+    db: AsyncSession, user: User, mudancas: dict
+) -> None:
+    """Uma inscrição da OAB monitora um usuário só.
+
+    `djen_oab_numero`/`djen_oab_uf` estão em `campos_self`: qualquer usuário
+    interno podia gravar em SI MESMO a inscrição de outro advogado. O job
+    diário grava `DjenComunicacao.advogado_id` com o id de quem tem a OAB, e a
+    listagem de intimações é escopada por esse campo — então isso entregava a
+    carteira de publicações do titular da inscrição a quem a copiou, contornando
+    a checagem de acesso por caso. Duas pessoas com a mesma inscrição também
+    dividiriam a captura de forma imprevisível.
+
+    Reatribuição legítima (advogado que sai do escritório) continua possível:
+    limpe a OAB do usuário antigo antes.
+    """
+    if not _CAMPOS_OAB_DJEN & mudancas.keys():
+        return
+    numero = (mudancas.get("djen_oab_numero", user.djen_oab_numero) or "").strip()
+    uf = (mudancas.get("djen_oab_uf", user.djen_oab_uf) or "").strip().upper()
+    if not numero or not uf:
+        return
+    conflito = (
+        await db.execute(
+            select(User.id).where(
+                User.id != user.id,
+                User.deleted_at.is_(None),
+                User.djen_oab_numero == numero,
+                sqlfunc.upper(User.djen_oab_uf) == uf,
+            )
+        )
+    ).first()
+    if conflito:
+        # Sem nome/e-mail do outro usuário: a mensagem não pode virar oráculo
+        # de "quem é o dono desta inscrição" para quem tentou copiá-la.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"A OAB {numero}/{uf} já está vinculada a outro usuário. "
+                "Remova o vínculo anterior antes de reatribuí-la."
             ),
         )
 
@@ -398,6 +452,7 @@ async def atualizar(
                                 detail="Não é permitido ativar o próprio perfil")
 
     _validar_par_oab_djen(user, mudancas)
+    await _validar_oab_djen_exclusiva(db, user, mudancas)
 
     for key, value in mudancas.items():
         setattr(user, key, value)
