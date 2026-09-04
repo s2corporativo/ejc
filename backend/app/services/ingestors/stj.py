@@ -123,6 +123,11 @@ async def _ultimo_json(orgao: str) -> dict | None:
 async def ingerir(db: AsyncSession) -> tuple[int, int]:
     """Ingere o lote mensal mais recente de cada órgão. Retorna (novos, total)."""
     novos = total = 0
+    # Falhas por órgão, contadas para que "todos falharam" não se disfarce de
+    # "não havia acórdão novo". Sem isto, uma mudança de contrato ou uma queda
+    # do portal devolvia (0, 0) — indistinguível de execução sadia e vazia.
+    falhas: list[str] = []
+    contratos_invalidos = 0
     for orgao in ORGAOS:
         try:
             rec_json = await _ultimo_json(orgao)
@@ -131,6 +136,11 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
             r = await fetch(rec_json["url"], timeout=60)
             dados = r.json()
             if not isinstance(dados, list):
+                # Contrato quebrado (a fonte deixou de devolver lista) é FALHA,
+                # não "órgão sem acórdãos": pular em silêncio foi como o LexML
+                # e o DOU passaram meses entregando zero.
+                contratos_invalidos += 1
+                logger.warning("STJ %s: resposta não é lista (contrato mudou)", orgao)
                 continue
             sigla = orgao.replace("espelhos-de-acordaos-", "")
             n_orgao = 0
@@ -175,5 +185,13 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
             logger.info(f"STJ {sigla}: {n_orgao} novos")
         except Exception as e:
             await db.rollback()
+            falhas.append(f"{orgao}:{type(e).__name__}")
             logger.warning(f"STJ {orgao}: {type(e).__name__}: {e}")
+
+    if ORGAOS and (len(falhas) + contratos_invalidos) == len(ORGAOS):
+        raise RuntimeError(
+            f"STJ: todos os {len(ORGAOS)} órgãos falharam "
+            f"({len(falhas)} por erro, {contratos_invalidos} por contrato "
+            "inválido). Nenhuma ingestão foi executada."
+        )
     return novos, total
