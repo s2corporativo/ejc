@@ -1,13 +1,20 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Link } from "react-router";
 import api from "../../lib/api";
 import { asList } from "../../lib/list";
+import { mensagemErroHttp } from "../../lib/iaErro";
+import { useCarregar } from "../../lib/useCarregar";
 import { toast } from "../../components/Toast";
-import { StatusBadge, Modal, Empty, fmtMoney } from "../../components/UI";
+import {
+  StatusBadge,
+  Modal,
+  Empty,
+  ErrorState,
+  fmtMoney,
+} from "../../components/UI";
 import { ConsultaProfundaTJMG } from "../../components/Infosimples";
 
 export default function TabProcessos({ caseId }: { caseId: string }) {
-  const [procs, setProcs] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [arquivo, setArquivo] = useState<"ativos" | "arquivados" | "todos">(
@@ -43,14 +50,16 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
     administrativo: "bg-cyan-100 text-cyan-700",
     extrajudicial: "bg-slate-100 text-slate-600",
   };
-  const carregar = () =>
-    api
-      .get(`/cases/${caseId}/processes`, { params: { arquivo } })
-      .then((r) => setProcs(asList(r.data)))
-      .catch(() => {});
-  useEffect(() => {
-    carregar();
-  }, [caseId, arquivo]);
+  const carga = useCarregar<any[]>(
+    () =>
+      api
+        .get(`/cases/${caseId}/processes`, { params: { arquivo } })
+        .then((r) => asList(r.data)),
+    [caseId, arquivo],
+    { fallbackErro: "Não foi possível carregar os processos do caso." },
+  );
+  const procs = carga.dados ?? [];
+  const carregar = carga.recarregar;
 
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,8 +72,8 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
       setForm(vazio);
       setShowForm(false);
       carregar();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Falha ao criar processo");
+    } catch (err) {
+      toast.error(mensagemErroHttp(err, "Falha ao criar processo"));
     } finally {
       setSaving(false);
     }
@@ -74,8 +83,8 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
     try {
       await api.delete(`/processes/${pid}`);
       carregar();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Falha ao remover");
+    } catch (err) {
+      toast.error(mensagemErroHttp(err, "Falha ao remover"));
     }
   };
   const arquivar = (pid: string) => {
@@ -93,8 +102,8 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
       setArqPid(null);
       setArqMotivo("");
       carregar();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Falha ao arquivar");
+    } catch (err) {
+      toast.error(mensagemErroHttp(err, "Falha ao arquivar"));
     } finally {
       setArqSaving(false);
     }
@@ -104,8 +113,8 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
       await api.post(`/processes/${pid}/desarquivar`);
       toast.success("Processo desarquivado.");
       carregar();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Falha ao desarquivar");
+    } catch (err) {
+      toast.error(mensagemErroHttp(err, "Falha ao desarquivar"));
     }
   };
 
@@ -331,7 +340,14 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
             </div>
           </div>
         ))}
-        {procs.length === 0 && !showForm && (
+        {carga.estado === "falhou" && (
+          <ErrorState
+            title="Não foi possível carregar os processos"
+            message={carga.erro ?? undefined}
+            onRetry={carga.recarregar}
+          />
+        )}
+        {carga.estado === "vazio" && !showForm && (
           <Empty message="Nenhum processo cadastrado neste caso ainda." />
         )}
       </div>

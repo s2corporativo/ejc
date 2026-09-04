@@ -23,6 +23,20 @@ export type IntegrationItem = {
   mode?: string | null;
 };
 
+/**
+ * Estado do overlay do Cofre de Credenciais NESTE processo do backend
+ * (`credential_overlay` em GET /system-modules/integrations). Campo opcional:
+ * backend anterior ao Cofre simplesmente não o envia.
+ */
+export type CredentialOverlayState = {
+  status?: string | null; // aplicado | falho | nao_aplicado | indisponivel
+  aplicado?: boolean;
+  aplicado_em?: string | null;
+  campos?: number | null;
+  erro_tipo?: string | null;
+  falhas?: number | null;
+};
+
 type IntegrationPayload = {
   mode: "configuration_only";
   checked_at: string;
@@ -33,6 +47,7 @@ type IntegrationPayload = {
     disabled: number;
   };
   items: IntegrationItem[];
+  credential_overlay?: CredentialOverlayState | null;
   notice: string;
 };
 
@@ -56,6 +71,40 @@ const STATUS_META = {
     iconClass: "text-slate-500 bg-slate-100",
   },
 } as const;
+
+/**
+ * Aviso do overlay do Cofre — `null` quando não há o que avisar.
+ *
+ * Sem isto o painel MENTE no pior momento: com o overlay falho o backend segue
+ * com os valores do arquivo de ambiente, que não conhece revogação, e cada item
+ * abaixo continua sendo pintado de "Configurada" a partir desse mesmo Settings
+ * — inclusive uma credencial já REVOGADA no cofre. O aviso é de painel (e não
+ * por item) porque a degradação é do processo inteiro, não de uma integração.
+ */
+export function avisoOverlayCofre(
+  overlay?: CredentialOverlayState | null,
+): string | null {
+  if (!overlay) return null; // backend sem o campo — nada a declarar
+  if (overlay.aplicado) return null;
+  if (overlay.status === "indisponivel") {
+    return (
+      "Não foi possível ler o estado do Cofre de Credenciais neste processo — " +
+      "os estados abaixo podem não refletir o cofre."
+    );
+  }
+  const motivo = overlay.erro_tipo ? ` (${overlay.erro_tipo})` : "";
+  const tentativas =
+    overlay.falhas && overlay.falhas > 1
+      ? ` ${overlay.falhas} tentativas falharam até agora.`
+      : "";
+  return (
+    `Cofre de Credenciais NÃO aplicado neste processo${motivo}: o backend está ` +
+    "usando os valores do arquivo de ambiente, que não conhece revogação — uma " +
+    "credencial revogada no cofre continua valendo até a reaplicação " +
+    "(automática, a cada 10 min). Os estados abaixo podem dizer “Configurada” " +
+    `para uma integração que já deveria estar sem credencial.${tentativas}`
+  );
+}
 
 export function groupIntegrationItems(items: IntegrationItem[]) {
   const groups = new Map<string, IntegrationItem[]>();
@@ -94,6 +143,10 @@ export default function IntegrationHealthPanel() {
     () => groupIntegrationItems(data?.items ?? []),
     [data?.items],
   );
+  const avisoOverlay = useMemo(
+    () => avisoOverlayCofre(data?.credential_overlay),
+    [data?.credential_overlay],
+  );
 
   return (
     <div className="space-y-5">
@@ -127,6 +180,21 @@ export default function IntegrationHealthPanel() {
             Atualizar
           </button>
         </div>
+
+        {avisoOverlay && (
+          <div
+            role="alert"
+            className="mb-4 flex items-start gap-2 rounded-xl border border-warn-200 bg-warn-50 p-4 text-sm text-warn-800"
+          >
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <div className="font-semibold">
+                Credenciais do Cofre fora de uso
+              </div>
+              <p className="mt-1 leading-5">{avisoOverlay}</p>
+            </div>
+          </div>
+        )}
 
         <div className="rounded-xl border border-primary-200 bg-primary-50/50 p-4 text-sm text-slate-600">
           <div className="flex items-start gap-2">

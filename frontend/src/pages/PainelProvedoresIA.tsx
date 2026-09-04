@@ -17,6 +17,7 @@ import {
 import api from "../lib/api";
 import { PageHeader, Spinner, fmtMoney } from "../components/UI";
 import { toast } from "../components/Toast";
+import { mensagemErroHttp } from "../lib/iaErro";
 
 type ProviderRow = {
   provider: string;
@@ -106,26 +107,51 @@ const nomeProvider = (provider: string) =>
     ollama: "Ollama",
   })[provider] || provider;
 
-function StatusBadge({ status }: { status: string }) {
-  const classes: Record<string, string> = {
-    operacional: "bg-success-50 text-success-700 ring-success-200",
-    atencao: "bg-warn-50 text-warn-800 ring-warn-200",
-    indisponivel: "bg-danger-50 text-danger-700 ring-danger-200",
-    configurado_sem_uso: "bg-primary-50 text-primary-700 ring-primary-200",
-    desabilitado: "bg-slate-100 text-slate-500 ring-slate-200",
-  };
-  const labels: Record<string, string> = {
-    operacional: "Operacional",
-    atencao: "Atenção",
-    indisponivel: "Indisponível",
-    configurado_sem_uso: "Configurado, sem uso",
-    desabilitado: "Desabilitado",
-  };
+// E3: vocabulário REAL do backend (`ia_governanca.py`, `_status_provedor`):
+// nao_configurado | sem_registro | operacional | degradado | critico.
+// Antes o painel mapeava `atencao/indisponivel/...` e um provedor CRÍTICO
+// aparecia cinza de "desabilitado". Status desconhecido cai em cinza com o
+// próprio texto — nunca some.
+export const STATUS_PROVEDOR: Record<
+  string,
+  { classe: string; rotulo: string }
+> = {
+  operacional: {
+    classe: "bg-success-50 text-success-700 ring-success-200",
+    rotulo: "Operacional",
+  },
+  degradado: {
+    classe: "bg-warn-50 text-warn-800 ring-warn-200",
+    rotulo: "Degradado",
+  },
+  critico: {
+    classe: "bg-danger-50 text-danger-700 ring-danger-200",
+    rotulo: "Crítico",
+  },
+  sem_registro: {
+    classe: "bg-primary-50 text-primary-700 ring-primary-200",
+    rotulo: "Configurado, sem uso",
+  },
+  nao_configurado: {
+    classe: "bg-slate-100 text-slate-500 ring-slate-200",
+    rotulo: "Não configurado",
+  },
+};
+
+const STATUS_DESCONHECIDO = "bg-slate-100 text-slate-500 ring-slate-200";
+
+export function rotuloStatusProvedor(status: string): string {
+  return STATUS_PROVEDOR[status]?.rotulo ?? status.replace(/_/g, " ");
+}
+
+export function StatusBadge({ status }: { status: string }) {
+  const cfg = STATUS_PROVEDOR[status];
   return (
     <span
-      className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ring-1 ${classes[status] || classes.desabilitado}`}
+      data-status={status}
+      className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ring-1 ${cfg?.classe ?? STATUS_DESCONHECIDO}`}
     >
-      {labels[status] || status}
+      {rotuloStatusProvedor(status)}
     </span>
   );
 }
@@ -182,8 +208,10 @@ export default function PainelProvedoresIA() {
         setData(response.data);
       } catch (error: any) {
         toast.error(
-          error?.response?.data?.detail ||
+          mensagemErroHttp(
+            error,
             "Não foi possível carregar as métricas dos provedores.",
+          ),
         );
       } finally {
         setLoading(false);

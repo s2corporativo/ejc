@@ -74,12 +74,18 @@ async def gerar_diagrama(
     dossie_txt: str,
     tipo: DiagramaTipo = "timeline",
     model_override: str | None = None,
+    *,
+    db=None,
+    user_id: str | None = None,
+    case_id: str | None = None,
 ) -> dict:
     """
     Recebe o texto do dossiê (já sanitizado LGPD) e gera código Mermaid.js.
-    Retorna: { tipo, mermaid_code, modelo, provedor, fallback }
+    Retorna: { tipo, mermaid_code, modelo, provedor, fallback } + carimbo HITL.
+    `db`+`user_id` (opcionais) gravam AILog (I9) — o chamador em routers/ai.py
+    passa a informá-los quando integrar.
     """
-    from app.services.ai_gateway import chat as gw_chat
+    from app.services.ai_gateway import chat as gw_chat, registrar_log_resposta
 
     instrucao = _INSTRUCOES.get(tipo, _INSTRUCOES["timeline"])
     user_msg = f"{instrucao}\n\n[DOSSIÊ DO CASO]\n{dossie_txt[:6000]}"
@@ -95,6 +101,18 @@ async def gerar_diagrama(
         model_override=model_override,
     )
 
+    if db is not None and user_id:
+        from app.models.ai_log import AITipoUso
+        # P3-2: `pii_removida=True` era premissa sobre o chamador. Sanitiza aqui
+        # e reporta o que de fato aconteceu.
+        from app.services.sanitizer import sanitizar_pii as _san_log
+        _prompt_log, _pii_log = _san_log(f"[VISUAL_LAW tipo={tipo}]\n" + user_msg)
+        await registrar_log_resposta(
+            db, user_id=user_id, tipo_uso=AITipoUso.outro, resp=resp,
+            prompt_sanitizado=_prompt_log,
+            pii_removida=_pii_log, case_id=case_id,
+        )
+
     # Remove eventuais fences de markdown do output
     codigo = resp.texto.strip()
     for prefix in ("```mermaid", "```"):
@@ -104,11 +122,12 @@ async def gerar_diagrama(
         codigo = codigo[:-3]
     codigo = aplicar_tema_dourado(codigo.strip())
 
-    return {
+    from app.services.ai.core import hitl_policy
+    return hitl_policy.aplicar({
         "tipo":         tipo,
         "mermaid_code": codigo,
         "modelo":       resp.modelo,
         "provedor":     resp.provedor,
         "fallback":     resp.fallback_ativado,
         "aviso":        "⚠️ RASCUNHO — verifique os dados antes de usar o diagrama.",
-    }
+    })

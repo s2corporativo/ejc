@@ -651,6 +651,14 @@ async def verificar_jurisprudencia(
             "data": c.get("data"),
             "fonte_verificacao": fonte,
             "aviso": aviso,
+            # Posição da citação no texto ORIGINAL. Chave aditiva (2026-09-03):
+            # a validação de PERTINÊNCIA precisa recortar a AFIRMAÇÃO que a
+            # citação acompanha, e sem o span teria de reencontrar o trecho por
+            # busca de string — frágil quando a mesma citação aparece duas vezes.
+            "span": list(c.get("span") or ()),
+            # Diploma citado (artigos): a leitura do texto da autoridade é
+            # RESTRITA ao diploma referido, mesmo recorte do AI-056.
+            "diploma": c.get("diploma"),
         })
 
     return _montar_relatorio(resultados, datajud_saturado)

@@ -233,21 +233,28 @@ class TestCriticarPeca:
 # ══════════════════════════════════════════════════════════════════════════════
 
 class _ResEnt:
-    def __init__(self, val):
+    def __init__(self, val, sigilo: bool = False):
         self._val = val
+        self._sigilo = sigilo
 
     def scalar_one_or_none(self):
         return self._val
 
+    def first(self):
+        # `criticar_peca` também consulta o PISO DE SIGILO do caso
+        # (`SELECT sigilo_reforcado …`), que lê a linha por `.first()`.
+        return (self._sigilo,)
+
 
 class _CaseDB:
-    """Sessão fake: execute() (usado por entidades_do_caso) devolve o Case."""
+    """Sessão fake: execute() devolve o Case (entidades_do_caso) e, via
+    `.first()`, o `sigilo_reforcado` do caso (piso de sigilo da crítica)."""
 
     def __init__(self, caso):
         self._caso = caso
 
     async def execute(self, *a, **k):
-        return _ResEnt(self._caso)
+        return _ResEnt(self._caso, bool(getattr(self._caso, "sigilo_reforcado", False)))
 
 
 class TestCriticaProtegeNomesLGPD:
@@ -595,11 +602,13 @@ def critica_spy(monkeypatch):
 
     async def fake_criticar(db, texto_peca, contexto_caso=None,
                             task_type_origem=None, provedor_origem=None,
-                            case_id=None, entidades=None):
+                            case_id=None, entidades=None,
+                            modo_sanitizacao=None):
         calls["criticar"].append({
             "texto_peca": texto_peca, "task_type_origem": task_type_origem,
             "provedor_origem": provedor_origem,
             "case_id": case_id, "entidades": entidades,
+            "modo_sanitizacao": modo_sanitizacao,
         })
         return adversarial.CriticaAdversarial(
             disponivel=True, relatorio=RELATORIO_OK, nota_robustez=72,
@@ -652,6 +661,40 @@ class TestOrchestratorDuasIAs:
         assert r["critica_adversarial"]["nota_robustez"] == 72
         # HITL preservado: peça continua rascunho com revisão obrigatória.
         assert r["is_rascunho"] is True
+
+    async def test_area_sigilosa_propaga_piso_local_para_a_critica(
+        self, nucleo_mocks, critica_spy, monkeypatch,
+    ):
+        """O orquestrador resolvia o piso de sigilo para a GERAÇÃO da peça e não
+        o repassava à CRÍTICA. Como `critica_adversarial` é
+        EXTERNO_PSEUDONIMIZADO na política e a crítica PREFERE provider externo
+        (diversidade), a peça gerada em local saía do VPS na etapa seguinte."""
+        from app.services.ai.core.orchestrator import orchestrator
+        from app.services.ai.sanitization_policy import ModoSanitizacao
+        monkeypatch.setattr(nucleo_mocks, "DUAS_IAS_ENABLED", True)
+        r = await orchestrator.run(
+            db=None, user=_user(), task_type="legal_draft",
+            domain="crimes_sexuais",  # área de SIGILO REFORÇADO
+            mensagem="Redigir peça fictícia para teste de sigilo.",
+        )
+        assert r["conteudo"]
+        chamada = critica_spy["criticar"][0]
+        assert chamada["modo_sanitizacao"] == ModoSanitizacao.LOCAL_COMPLETO
+
+    async def test_area_normal_nao_impoe_piso_local_a_critica(
+        self, nucleo_mocks, critica_spy, monkeypatch,
+    ):
+        """Regressão inversa: fora de área sensível, a crítica segue livre para
+        usar provider externo pseudonimizado (diversidade de modelo preservada)."""
+        from app.services.ai.core.orchestrator import orchestrator
+        from app.services.ai.sanitization_policy import ModoSanitizacao
+        monkeypatch.setattr(nucleo_mocks, "DUAS_IAS_ENABLED", True)
+        await orchestrator.run(
+            db=None, user=_user(), task_type="legal_draft", domain="civel",
+            mensagem="Redigir petição inicial fictícia de cobrança.",
+        )
+        chamada = critica_spy["criticar"][0]
+        assert chamada["modo_sanitizacao"] != ModoSanitizacao.LOCAL_COMPLETO
 
     async def test_flag_ligada_task_inelegivel_nao_dispara(
         self, nucleo_mocks, critica_spy, monkeypatch,

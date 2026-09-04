@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.core.config import Settings
+from app.services.ai.provider_registry import PROVIDERS_SUPORTADOS, provider_elegivel_com
+from app.services.notification_preferences import whatsapp_configurado
 
 
 @dataclass(frozen=True)
@@ -111,6 +113,32 @@ def _status(
     )
 
 
+def _estado_overlay_seguro() -> dict[str, Any]:
+    """Estado do overlay do cofre em formato serializável (sem valores).
+
+    Import LOCAL de propósito: `integration_status` é usado por rotas de
+    diagnóstico que não devem depender da cadeia de import do cofre, e a falha
+    de leitura do estado jamais pode derrubar o painel."""
+    try:
+        from app.services.credential_vault_service import estado_overlay
+
+        estado = estado_overlay()
+        aplicado_em = estado.get("aplicado_em")
+        return {
+            "status": estado.get("status"),
+            "aplicado": bool(estado.get("aplicado")),
+            "aplicado_em": (
+                aplicado_em.isoformat() if isinstance(aplicado_em, datetime)
+                else aplicado_em
+            ),
+            "campos": estado.get("campos"),
+            "erro_tipo": estado.get("erro_tipo"),
+            "falhas": estado.get("falhas"),
+        }
+    except Exception:   # pragma: no cover — painel nunca cai por causa disso
+        return {"status": "indisponivel", "aplicado": False}
+
+
 def build_integration_status(
     settings: Settings, credential_states: dict[str, str] | None = None,
 ) -> dict[str, Any]:
@@ -122,15 +150,16 @@ def build_integration_status(
     para `attention`. Omitido (default) → comportamento e contrato idênticos ao
     histórico (os consumidores atuais chamam sem esse argumento)."""
     items = [
+        # Elegibilidade pela fonte única (provider_registry): antes esta cópia
+        # local ignorava GROQ_ENABLED e AI_EXTERNAL_PROVIDERS_ALLOWED e dizia
+        # "ready" com cadeia vazia no gateway (análise E2E 03/09/2026, A3).
         _status(
             key="ai_core",
             label="Núcleo de IA",
             group="Inteligência",
             enabled=settings.AI_ENABLED,
-            configured=bool(
-                settings.OLLAMA_ENABLED
-                or (settings.ANTHROPIC_ENABLED and settings.ANTHROPIC_API_KEY)
-                or settings.GROQ_API_KEY
+            configured=any(
+                provider_elegivel_com(p, settings) for p in PROVIDERS_SUPORTADOS
             ),
             ready_detail="Há pelo menos um provedor elegível na política central de IA.",
             mode=(
@@ -144,7 +173,7 @@ def build_integration_status(
             label="Anthropic Claude",
             group="Inteligência",
             enabled=settings.AI_ENABLED and settings.ANTHROPIC_ENABLED,
-            configured=bool(settings.ANTHROPIC_API_KEY),
+            configured=provider_elegivel_com("anthropic", settings),
             ready_detail="Provider habilitado e credencial presente no ambiente.",
             mode=settings.ANTHROPIC_MODEL_COMPLEXO,
         ),
@@ -152,8 +181,8 @@ def build_integration_status(
             key="groq",
             label="Groq",
             group="Inteligência",
-            enabled=settings.AI_ENABLED,
-            configured=bool(settings.GROQ_API_KEY),
+            enabled=settings.AI_ENABLED and settings.GROQ_ENABLED,
+            configured=provider_elegivel_com("groq", settings),
             ready_detail="Provider de fallback com credencial presente no ambiente.",
             mode=settings.GROQ_MODEL,
         ),
@@ -285,12 +314,18 @@ def build_integration_status(
             label="WhatsApp",
             group="Comunicação",
             enabled=settings.WHATSAPP_ENABLED,
-            # Vendor Z-API removido: não há mais remetente automático de WhatsApp,
-            # então o canal nunca fica "configurado" aqui (efetivamente off). A
-            # Evolution API é apenas webhook de ENTRADA (routers/evolution_webhook).
-            configured=False,
+            # O remetente voltou pela Evolution API (a mesma instância do
+            # webhook de ENTRADA). Este painel dizia `configured=False` fixo
+            # ("vendor Z-API removido") enquanto as preferências já davam o
+            # canal por disponível com a mesma flag/URL/chave — inventário e
+            # envio real discordavam. A regra agora é ÚNICA:
+            # notification_preferences.whatsapp_configurado.
+            configured=whatsapp_configurado(settings),
             ready_detail="Canal habilitado com configuração completa no ambiente.",
-            missing_detail="Envio automático de WhatsApp indisponível (vendor Z-API removido).",
+            missing_detail=(
+                "Evolution API incompleta (EVOLUTION_API_URL, EVOLUTION_API_KEY "
+                "e EVOLUTION_INSTANCE) — envio automático de WhatsApp indisponível."
+            ),
         ),
         _status(
             key="push",
@@ -356,6 +391,11 @@ def build_integration_status(
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "summary": counts,
         "items": [asdict(item) for item in items],
+        # Estado do overlay do Cofre NESTE processo (só metadados, nunca valor).
+        # `aplicado=False` = o painel acima está lendo o `.env`, que não conhece
+        # revogação — credencial revogada no cofre ainda vale. Chave aditiva:
+        # os consumidores existentes não mudam.
+        "credential_overlay": _estado_overlay_seguro(),
         "notice": (
             "O painel verifica somente habilitação e presença de configuração. "
             "Não revela valores sensíveis e não substitui healthchecks de conectividade."
