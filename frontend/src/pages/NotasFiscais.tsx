@@ -15,6 +15,7 @@ import {
 import api from "../lib/api";
 import { asList } from "../lib/list";
 import { toast } from "../components/Toast";
+import { mensagemErroHttp } from "../lib/iaErro";
 import type {
   Client,
   Fee,
@@ -118,18 +119,31 @@ export default function NotasFiscais() {
   }, [load]);
 
   useEffect(() => {
+    // Listas auxiliares do formulário: falha aqui não derruba a tela (a lista
+    // principal tem seu próprio ErrorState), mas o usuário fica sabendo que o
+    // seletor de cliente/honorário está incompleto.
     api
       .get<NfseStatusInfo>("/nfse/status")
       .then((r) => setStatusInfo(r.data))
-      .catch(() => {});
+      .catch(() => setStatusInfo(null));
     api
       .get("/clients/", { params: { page_size: 100 } })
       .then((r) => setClientes(asList<Client>(r.data)))
-      .catch(() => setClientes([]));
+      .catch((err) => {
+        setClientes([]);
+        toast.error(
+          mensagemErroHttp(err, "Não foi possível carregar a lista de clientes."),
+        );
+      });
     api
       .get<Paged<Fee>>("/fees/", { params: { page_size: 100 } })
       .then((r) => setFees(Array.isArray(r.data.data) ? r.data.data : []))
-      .catch(() => setFees([]));
+      .catch((err) => {
+        setFees([]);
+        toast.error(
+          mensagemErroHttp(err, "Não foi possível carregar os honorários."),
+        );
+      });
   }, []);
 
   // Só aceita URL do domínio oficial do Emissor Nacional; qualquer outro
@@ -187,8 +201,8 @@ export default function NotasFiscais() {
       setPdfFile(null);
       setXmlFile(null);
       recarregarDoInicio();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao registrar a nota.");
+    } catch (e) {
+      toast.error(mensagemErroHttp(e, "Erro ao registrar a nota."));
     } finally {
       setSalvando(false);
     }
@@ -228,8 +242,8 @@ export default function NotasFiscais() {
       setCancelNota(null);
       setMotivo("");
       void load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao cancelar a nota.");
+    } catch (e) {
+      toast.error(mensagemErroHttp(e, "Erro ao cancelar a nota."));
     } finally {
       setCancelando(false);
     }

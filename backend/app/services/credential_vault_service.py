@@ -22,6 +22,7 @@
 #   * auditoria COFRE_* via criar_audit_log sem segredo nos detalhes.
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -346,6 +347,70 @@ async def versao_atual(db) -> tuple[int, str | None]:
 
 # ── Overlay de runtime ────────────────────────────────────────────────────────
 
+# Estado do overlay NESTE processo. Enquanto `aplicado` for False os atributos
+# de Settings ainda vêm do `.env` — e o `.env` NÃO conhece revogação: uma
+# credencial revogada no cofre (linha histórica sem linha ativa, que
+# aplicar_overlay zera para "") volta a valer se o overlay do boot falhar
+# (banco lento estourando o teto do lifespan, por exemplo). O estado é
+# consultável para que isso apareça no painel de integrações em vez de ficar
+# só num log, e o job `cofre_overlay_retry` (scheduler) reaplica até dar certo.
+_OVERLAY_RUNTIME: dict[str, Any] = {
+    "aplicado": False,
+    "aplicado_em": None,
+    "campos": 0,
+    "erro_tipo": None,
+    "falhas": 0,
+}
+
+
+# Serializa aplicar_overlay NESTE processo (premissa do repo: uvicorn com
+# --workers 1 — ver backend/entrypoint.sh e o cabeçalho de services/scheduler.py;
+# o worker Celery é outro processo, com outro Settings, e reconcilia por
+# `versao_atual`, então o escopo em processo é exatamente o do objeto mutado).
+#
+# CORRIDA FECHADA (revisão de 04/09/2026): aplicar_overlay LÊ as linhas ativas,
+# aguarda uma SEGUNDA consulta (histórico) e só então muta o Settings. Durante a
+# janela degradada, o job `cofre_overlay_retry` corre junto com uma requisição de
+# rotação/revogação; se o retry lesse a credencial ativa ANTES do commit da
+# revogação e escrevesse DEPOIS do overlay da própria requisição, ele
+# RESTAURARIA o valor revogado e ainda marcaria `aplicado=True` — deixando os
+# retries seguintes como no-op e a credencial revogada valendo até o restart.
+# Com o lock envolvendo leituras + mutação, quem entra depois lê o estado já
+# commitado: o último a aplicar sempre publica o valor final. Um lock em
+# processo basta e é mais simples que versionar o cofre a cada publicação.
+# A espera pelo lock é limitada porque a outra ponta é limitada: o job de retry
+# aplica o overlay sob `asyncio.timeout` (scheduler._reaplicar_overlay_cofre) e
+# o cancelamento desenrola o `async with`, devolvendo o lock.
+_OVERLAY_LOCK = asyncio.Lock()
+
+
+def estado_overlay() -> dict[str, Any]:
+    """Instantâneo consultável do overlay do cofre neste processo.
+
+    `aplicado=False` significa CREDENCIAL DO .ENV EM USO — inclusive para
+    campos que o cofre revogou. Consumido pelo painel de integrações
+    (integration_status) e pelo job de reaplicação."""
+    estado = dict(_OVERLAY_RUNTIME)
+    estado["status"] = "aplicado" if estado["aplicado"] else (
+        "falho" if estado["falhas"] else "nao_aplicado"
+    )
+    return estado
+
+
+def marcar_overlay_falho(erro_tipo: str) -> None:
+    """Registra que o overlay NÃO foi aplicado (timeout/erro de boot ou de
+    reaplicação). Nunca levanta — é chamada de caminho de falha."""
+    _OVERLAY_RUNTIME["aplicado"] = False
+    _OVERLAY_RUNTIME["erro_tipo"] = erro_tipo
+    _OVERLAY_RUNTIME["falhas"] = int(_OVERLAY_RUNTIME.get("falhas") or 0) + 1
+    logger.error(
+        "[cofre] overlay NÃO aplicado (%s) — o processo segue com os valores "
+        "do .env; credencial REVOGADA no cofre continua valendo até a "
+        "reaplicação. Falhas acumuladas: %s",
+        erro_tipo, _OVERLAY_RUNTIME["falhas"],
+    )
+
+
 async def resolver_overlay(db) -> dict[str, str]:
     """{field_key: valor decifrado} das credenciais ATIVAS do cofre."""
     conhecidos = set(credential_registry.todos_field_keys())
@@ -390,27 +455,42 @@ async def aplicar_overlay(db) -> list[str]:
     NUNCA usar get_settings.cache_clear() — criaria um segundo Settings e
     split-brain entre os módulos que guardaram a referência antiga.
 
+    SERIALIZADO por `_OVERLAY_LOCK`: leituras e mutação formam uma seção
+    crítica, senão uma aplicação com leitura obsoleta (job de retry) pode
+    sobrescrever a de uma revogação já commitada — ver o comentário do lock.
+
     Retorna a lista de field_keys efetivamente escritos (para log — sem valores)."""
-    settings = get_settings()
-    ativos = await resolver_overlay(db)
+    async with _OVERLAY_LOCK:
+        settings = get_settings()
+        # A primeira consulta desta sessão acontece DENTRO do lock — é o que
+        # garante que o snapshot lido seja posterior ao commit de quem aplicou
+        # o overlay antes (revogação/rotação).
+        ativos = await resolver_overlay(db)
 
-    # Campos do catálogo que já tiveram QUALQUER linha (histórico) — os que
-    # estão sem ativa entre eles foram revogados/zerados → "" explícito.
-    res = await db.execute(
-        select(IntegrationCredential.field_key).distinct()
-    )
-    com_historico = {row[0] for row in res.all()}
+        # Campos do catálogo que já tiveram QUALQUER linha (histórico) — os que
+        # estão sem ativa entre eles foram revogados/zerados → "" explícito.
+        res = await db.execute(
+            select(IntegrationCredential.field_key).distinct()
+        )
+        com_historico = {row[0] for row in res.all()}
 
-    aplicados: list[str] = []
-    for field_key in credential_registry.todos_field_keys():
-        if field_key in ativos:
-            setattr(settings, field_key, ativos[field_key])
-            aplicados.append(field_key)
-        elif field_key in com_historico:
-            setattr(settings, field_key, "")   # revogada — sem fallback ao .env
-            aplicados.append(field_key)
-        # else: nunca cadastrado — vale o .env, não toca.
-    return aplicados
+        aplicados: list[str] = []
+        for field_key in credential_registry.todos_field_keys():
+            if field_key in ativos:
+                setattr(settings, field_key, ativos[field_key])
+                aplicados.append(field_key)
+            elif field_key in com_historico:
+                setattr(settings, field_key, "")  # revogada — sem fallback ao .env
+                aplicados.append(field_key)
+            # else: nunca cadastrado — vale o .env, não toca.
+
+        _OVERLAY_RUNTIME.update({
+            "aplicado": True,
+            "aplicado_em": _agora(),
+            "campos": len(aplicados),
+            "erro_tipo": None,
+        })
+        return aplicados
 
 
 # ── Rotação da chave-mestra (PR-6) ───────────────────────────────────────────

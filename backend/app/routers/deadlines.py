@@ -31,6 +31,7 @@ from app.schemas.deadline import (
 from app.services.deadline_calculator import (
     calcular_prazo_processual,
     dias_uteis_restantes,
+    estado_degradacao,
     prazo_dias_corridos,
     prazo_dias_uteis,
 )
@@ -160,13 +161,20 @@ async def calcular(req: CalcularPrazoRequest, cu: User = Depends(get_current_use
             req.data_inicio, req.dias, tribunal=req.tribunal
         )
         modo = "dias corridos c/ prorrogação do termo final (Lei 9.784 art. 66 §1º)"
+    # O prazo administrativo usa as MESMAS funções de dia útil e os MESMOS
+    # feriados do banco que o processual — então degrada pelos mesmos motivos.
+    # Antes estes três campos eram fixos (`False`/`False`/`None`): com a carga
+    # de feriados falha, o prazo saía carimbado como DEFINITIVO sem os feriados
+    # municipais, e ninguém era avisado. Mesma classe de defeito que este PR já
+    # corrigiu em calcular_prazo_processual; agora ambos leem a fonte única.
+    degradado, aviso = estado_degradacao(req.tribunal)
     return {
         "data_vencimento": vencimento,
         "modo": modo,
         "regime_calculo": "administrativo" if req.tipo == "administrativo" else None,
-        "resultado_preliminar": False,
-        "revisao_obrigatoria": False,
-        "aviso": None,
+        "resultado_preliminar": degradado,
+        "revisao_obrigatoria": degradado,
+        "aviso": aviso,
         "dias_uteis_restantes": dias_uteis_restantes(vencimento),
     }
 

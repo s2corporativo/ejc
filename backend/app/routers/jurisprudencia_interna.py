@@ -244,8 +244,22 @@ async def classificar_com_ia(
     j.updated_at = datetime.now(timezone.utc)
     await db.commit()
 
-    return {
+    # I9: trilha de auditoria/custo (ementa é conteúdo público — sem PII de
+    # cliente; ainda assim passa pela sanitização estrutural antes do log).
+    from app.models.ai_log import AITipoUso
+    from app.services.ai_gateway import registrar_log_resposta
+    from app.services.sanitizer import sanitizar_pii
+    prompt_log, pii = sanitizar_pii(user_msg)
+    await registrar_log_resposta(
+        db, user_id=cu.id, tipo_uso=AITipoUso.outro, resp=resp,
+        prompt_sanitizado="[JURISPRUDENCIA_INTERNA classificar]\n" + prompt_log,
+        pii_removida=pii,
+    )
+
+    # S8: vocabulário HITL canônico + chave "aviso" legada.
+    from app.services.ai.core import hitl_policy
+    return hitl_policy.aplicar({
         "classificacao": classificacao,
         "modelo": resp.modelo,
         "aviso": "⚠️ Classificação por IA — valide antes de usar.",
-    }
+    })

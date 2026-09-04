@@ -14,18 +14,6 @@ function normalizePhone(value: string): string {
   return value.replace(/\D/g, "");
 }
 
-function normalizeHttpUrl(value: string): string {
-  if (!value) return "";
-  try {
-    const parsed = new URL(value);
-    const isHttp = parsed.protocol === "https:" || parsed.protocol === "http:";
-    const hasEmbeddedCredentials = Boolean(parsed.username || parsed.password);
-    return isHttp && !hasEmbeddedCredentials ? parsed.toString() : "";
-  } catch {
-    return "";
-  }
-}
-
 function resolveLogoPath(value: string): string {
   // O caminho antigo era o default oficial do EJC e pode ainda existir no .env
   // de ambientes já instalados. Tratá-lo como default evita exigir edição de
@@ -39,9 +27,6 @@ const whatsappNumber = normalizePhone(
   readPublicEnv(import.meta.env.VITE_EJC_WHATSAPP_NUMBER),
 );
 const contactEmail = readPublicEnv(import.meta.env.VITE_EJC_CONTACT_EMAIL);
-const officeAiUrl = normalizeHttpUrl(
-  readPublicEnv(import.meta.env.VITE_EJC_OFFICE_AI_URL),
-);
 const configuredLogoPath = readPublicEnv(import.meta.env.VITE_EJC_LOGO_PATH);
 
 export const officeBranding = Object.freeze({
@@ -54,9 +39,6 @@ export const officeBranding = Object.freeze({
   logoPath: resolveLogoPath(configuredLogoPath),
   whatsappNumber,
   contactEmail,
-  officeAiUrl,
-  officeAiLabel:
-    readPublicEnv(import.meta.env.VITE_EJC_OFFICE_AI_LABEL) || "Claude",
   timezone:
     readPublicEnv(import.meta.env.VITE_EJC_TIMEZONE) || DEFAULT_TIMEZONE,
   dailyMessage:

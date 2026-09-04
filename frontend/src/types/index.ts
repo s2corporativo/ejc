@@ -1,3 +1,4 @@
+import type { DeadlineOrigem } from "./gerado";
 // ── Tipos do EJC ─────────────────────────────────────────
 export interface User {
   id: string;
@@ -107,7 +108,7 @@ export interface Deadline {
   responsavel_id?: string;
   ciencia_confirmada: boolean;
   confirmado: boolean;
-  origem: "manual" | "datajud" | "importacao_ia";
+  origem: DeadlineOrigem;
   origem_documento_id: string | null;
   dias_restantes?: number;
   urgencia?: string;

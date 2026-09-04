@@ -38,7 +38,9 @@ vi.mock("../components/Toast", () => ({
 }));
 
 vi.mock("../stores/auth", () => ({
-  useAuth: () => ({ user: { id: "u1", full_name: "Dra. Advogada" } }),
+  useAuth: () => ({
+    user: { id: "u1", full_name: "Dra. Advogada", role: "advogado" },
+  }),
 }));
 
 vi.mock("../components/Markdown", () => ({
@@ -79,7 +81,7 @@ function rotearGet(preview: unknown = PREVIEW_LIMPO) {
     if (url.endsWith("/conversao/preview")) {
       return Promise.resolve({ data: preview });
     }
-    if (url === "/clients" || url === "/cases") {
+    if (url === "/clients/" || url === "/cases/") {
       return Promise.resolve({ data: { data: [] } });
     }
     return Promise.resolve({ data: {} });
@@ -152,7 +154,7 @@ describe("Sala Jurídica — wizard pré-preenche área e fatos da sessão", () 
         });
       if (url.endsWith("/conversao/preview"))
         return Promise.resolve({ data: PREVIEW_LIMPO });
-      if (url === "/clients" || url === "/cases")
+      if (url === "/clients/" || url === "/cases/")
         return Promise.resolve({ data: { data: [] } });
       return Promise.resolve({ data: {} });
     });
@@ -175,7 +177,7 @@ describe("Sala Jurídica — wizard pré-preenche área e fatos da sessão", () 
         return Promise.resolve({ data: sessaoComEstadoVazio });
       if (url.endsWith("/conversao/preview"))
         return Promise.resolve({ data: PREVIEW_LIMPO });
-      if (url === "/clients" || url === "/cases")
+      if (url === "/clients/" || url === "/cases/")
         return Promise.resolve({ data: { data: [] } });
       return Promise.resolve({ data: {} });
     });
@@ -248,7 +250,7 @@ describe("Sala Jurídica — wizard pré-preenche área e fatos da sessão", () 
         return Promise.resolve({ data: sessaoSoComConversa });
       if (url.endsWith("/conversao/preview"))
         return Promise.resolve({ data: PREVIEW_LIMPO });
-      if (url === "/clients" || url === "/cases")
+      if (url === "/clients/" || url === "/cases/")
         return Promise.resolve({ data: { data: [] } });
       return Promise.resolve({ data: {} });
     });
@@ -504,7 +506,7 @@ describe("Sala Jurídica — wizard de conversão", () => {
     getMock.mockImplementation((url: string) => {
       if (url === "/sala-juridica") return Promise.resolve({ data: [SESSAO] });
       if (url === "/sala-juridica/s1") return Promise.resolve({ data: SESSAO });
-      if (url === "/cases") {
+      if (url === "/cases/") {
         return Promise.resolve({
           data: { data: [{ id: "caso-escolhido", titulo: "Caso A" }] },
         });

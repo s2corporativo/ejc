@@ -139,7 +139,7 @@ SKILL_REGISTRY: dict[str, Skill] = {s.nome: s for s in [
           riscos="médio — sigilo documental",
           pre_condicoes="documento FORA do cofre (confidencialidade normal)",
           handler=None),
-    Skill("retrieve_rag_sources", "Buscar fontes na base de conhecimento (pgvector, 768d)",
+    Skill("retrieve_rag_sources", "Buscar fontes na base de conhecimento (pgvector, 1024d)",
           "db, consulta, limite, categorias", "list[dict{titulo, conteudo, categoria, fonte}]",
           pos_condicoes="fontes retornadas ao usuário para citação",
           handler=_h_retrieve_rag),
