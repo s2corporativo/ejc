@@ -15,7 +15,9 @@ check_http_code() {
   local url="$1"
   local expected="$2"
   local code
-  code="$(curl -k -sS -o /dev/null -w "%{http_code}" "$url" || true)"
+  # --max-time obrigatório: sem teto, uma checagem contra backend travado
+  # (TCP aceito, resposta nunca) pendura o script inteiro em vez de reprovar.
+  code="$(curl -k -sS --max-time 20 -o /dev/null -w "%{http_code}" "$url" || true)"
   [ "$code" = "$expected" ] || fail "$url retornou HTTP $code; esperado $expected"
   echo "OK: $url -> $code"
 }
@@ -42,7 +44,7 @@ check_http_code "${BASE_URL}/" "200"
 check_http_code "${BASE_URL}/api/health" "200"
 check_http_code "${BASE_URL}/api/health/ready" "200"
 
-login_code="$(curl -k -sS -o /tmp/ejc_login_check.json -w "%{http_code}" \
+login_code="$(curl -k -sS --max-time 20 -o /tmp/ejc_login_check.json -w "%{http_code}" \
   -H "Content-Type: application/json" \
   -d '{"email":"healthcheck@invalid.local","password":"invalid"}' \
   "${BASE_URL}/api/auth/login" || true)"
