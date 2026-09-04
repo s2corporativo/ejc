@@ -374,7 +374,15 @@ def test_delete_documento_sem_referencia_segue_soft_delete():
     logs = _audits(db)
     assert len(logs) == 1
     assert logs[0].acao == "DELETE"
-    assert logs[0].dados_depois == {"storage": "local"}
+    # Auditoria factual: o soft-delete é reversível e não faz I/O no storage,
+    # então "preservado" é INTENÇÃO do lifecycle, não fato observado. As duas
+    # dimensões ficam separadas — quem ler a trilha sabe que ninguém conferiu
+    # a existência física do arquivo.
+    assert logs[0].dados_depois == {
+        "storage": "local",
+        "storage_preservacao_intencao": True,
+        "storage_verificado": False,
+    }
     assert db.committed == 1
 
 
