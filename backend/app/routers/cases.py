@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, BackgroundTasks
 from sqlalchemy import select, or_, func as sqlfunc, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -994,10 +994,19 @@ class EncerrarCasoReq(_BM2):
     numero_cnj: Optional[str] = _F2(None, max_length=25)
 
 
-@router.post("/{case_id}/encerrar")
+@router.post(
+    "/{case_id}/encerrar",
+    # Mesmo bucket do POST /processo-eletronico/sincronizar: o encerramento
+    # passou a ser uma segunda superfície para a MESMA chamada ao tribunal, e
+    # `encerrar → reabrir → encerrar` é acessível ao mesmo público. Sem
+    # compartilhar o limite, o laço enfileiraria chamadas SOAP ilimitadas com
+    # a credencial MNI do escritório (risco de bloqueio da conta no tribunal).
+    dependencies=[Depends(rate_limit("processo-eletronico-sync", 10))],
+)
 async def encerrar_caso(
     case_id: str, payload: EncerrarCasoReq,
     background: BackgroundTasks,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -1082,7 +1091,7 @@ async def encerrar_caso(
         event_bus.emitir, "caso.encerrado", "case", case_id,
         {"resultado": payload.resultado}, cu.id,
     )
-    sincronizacao = await _sincronizar_no_encerramento(db, case, cu, payload)
+    sincronizacao = await _sincronizar_no_encerramento(db, case, cu, payload, request)
     return {
         "detail": "Caso encerrado. Conhecimento registrado na base institucional.",
         "sincronizacao_processo_eletronico": sincronizacao,
@@ -1091,6 +1100,7 @@ async def encerrar_caso(
 
 async def _sincronizar_no_encerramento(
     db: AsyncSession, case: Case, cu: User, payload: EncerrarCasoReq,
+    request: Request | None = None,
 ) -> dict:
     """Enfileira a sincronização MNI do caso recém-encerrado.
 
@@ -1130,10 +1140,15 @@ async def _sincronizar_no_encerramento(
                         "Eletrônico quando o serviço voltar."),
         }
 
+    # `ip` na trilha, como no endpoint canônico: a ação toca credencial de
+    # tribunal e precisa ser rastreável até a origem da requisição.
+    from app.services.security_service import obter_ip_real
+
     await criar_audit_log(
         db, cu.id, role_str(cu), "PROCESSO_ELETRONICO_SYNC_ENFILEIRADO",
         "cases", case.id,
         detalhes=f"encerramento numero_cnj={numero} job_id={job_id}",
+        ip=obter_ip_real(request) if request is not None else None,
     )
     await db.commit()
     return {

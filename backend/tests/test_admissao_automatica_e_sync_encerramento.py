@@ -36,7 +36,9 @@ class _FakeDB:
 
 
 class _Cliente:
-    id = "cli-1"
+    def __init__(self, status="ativo"):
+        self.id = "cli-1"
+        self.status = status
 
 
 class _Usuario:
@@ -66,6 +68,43 @@ async def test_cadastro_gera_procuracao_e_contrato(monkeypatch):
     assert db.rollbacks == 0
     # expire_on_commit=False: o commit da emissão não expira o cliente, então
     # o caminho feliz não paga um SELECT extra por cadastro.
+    assert db.refreshes == 0
+
+
+@pytest.mark.asyncio
+async def test_papel_nao_juridico_nao_contorna_o_gate_de_ato_juridico(monkeypatch):
+    """Emitir procuração/contrato é ato jurídico atrás de `requer_advogado`.
+
+    A rota manual e a listagem dos rascunhos exigem advogado+; o disparo
+    automático não pode ser a porta lateral desse mesmo gate.
+    """
+
+    async def _nunca(*a, **kw):  # pragma: no cover - não deve ser chamado
+        raise AssertionError("secretaria não emite kit de admissão")
+
+    monkeypatch.setattr(gdc, "gerar_documentos_cliente", _nunca)
+    monkeypatch.setattr(get_settings(), "CLIENTE_KIT_ADMISSAO_AUTOMATICO", True)
+
+    db = _FakeDB()
+    await clients_router._kit_admissao_automatico(db, _Cliente(), _Usuario("secretaria"))
+    assert db.refreshes == 0
+
+
+@pytest.mark.asyncio
+async def test_lead_nao_recebe_kit(monkeypatch):
+    """Minimização: prospect que talvez nunca contrate não gera documento com
+    a qualificação completa (nome, CPF/CNPJ, endereço) em texto puro."""
+
+    async def _nunca(*a, **kw):  # pragma: no cover - não deve ser chamado
+        raise AssertionError("lead não recebe kit de admissão")
+
+    monkeypatch.setattr(gdc, "gerar_documentos_cliente", _nunca)
+    monkeypatch.setattr(get_settings(), "CLIENTE_KIT_ADMISSAO_AUTOMATICO", True)
+
+    db = _FakeDB()
+    await clients_router._kit_admissao_automatico(
+        db, _Cliente(status="lead"), _Usuario("advogado")
+    )
     assert db.refreshes == 0
 
 
@@ -229,3 +268,75 @@ def test_resultados_aceitos_pelo_encerramento():
     )
     for valor in ("exito", "exito_parcial", "acordo", "derrota", "desistencia", "arquivado"):
         assert valor in padrao
+
+
+# ── Poderes pedidos não podem ser ignorados pela idempotência ────────────────
+
+class _DBComCliente(_FakeDB):
+    """Sessão que devolve sempre o mesmo cliente para o SELECT do handler."""
+
+    def __init__(self, cliente):
+        super().__init__()
+        self._cliente = cliente
+
+    async def execute(self, *_a, **_kw):
+        cliente = self._cliente
+
+        class _Res:
+            def scalar_one_or_none(self):
+                return cliente
+
+        return _Res()
+
+
+async def _chamar_gerar(monkeypatch, payload, resultado_service):
+    from fastapi import HTTPException
+
+    cli = _Cliente()
+
+    async def _pode_ver(*_a, **_kw):
+        return True
+
+    async def _gerar(*_a, **_kw):
+        return resultado_service
+
+    monkeypatch.setattr(clients_router, "_pode_ver_cliente", _pode_ver)
+    monkeypatch.setattr(gdc, "gerar_documentos_cliente", _gerar)
+
+    try:
+        return await clients_router.gerar_documentos_cliente(
+            "cli-1", payload, _DBComCliente(cli), _Usuario("advogado")
+        ), None
+    except HTTPException as e:
+        return None, e
+
+
+@pytest.mark.asyncio
+async def test_poderes_pedidos_sobre_kit_existente_falham_alto(monkeypatch):
+    """Devolver a procuração antiga faria o advogado assinar poderes que não
+    são os que ele pediu — o aviso no corpo da resposta não obriga ninguém."""
+    payload = clients_router.GerarDocsClienteIn(tipo_poderes="ad_judicia_et_extra")
+    ok, erro = await _chamar_gerar(monkeypatch, payload, {"ja_existia": True})
+
+    assert ok is None
+    assert erro is not None and erro.status_code == 409
+    assert "forcar_novo=true" in erro.detail
+    assert "tipo_poderes" in erro.detail
+
+
+@pytest.mark.asyncio
+async def test_kit_existente_sem_poderes_explicitos_ainda_e_idempotente(monkeypatch):
+    """Sem pedido de poderes, reaproveitar o rascunho continua correto."""
+    ok, erro = await _chamar_gerar(
+        monkeypatch, clients_router.GerarDocsClienteIn(), {"ja_existia": True}
+    )
+    assert erro is None
+    assert ok == {"ja_existia": True}
+
+
+@pytest.mark.asyncio
+async def test_primeira_emissao_com_poderes_passa(monkeypatch):
+    payload = clients_router.GerarDocsClienteIn(poderes_especiais="art. 105 CPC")
+    ok, erro = await _chamar_gerar(monkeypatch, payload, {"ja_existia": False})
+    assert erro is None
+    assert ok == {"ja_existia": False}

@@ -415,6 +415,16 @@ def test_paridade_openapi_com_snapshot_anterior():
     # deps não é hashável. Divergência diferente da declarada continua
     # reprovando.
     AUTH_ALTERACOES_INTENCIONAIS = (
+        # Issue #1457 (04/09/2026): o encerramento do caso passou a oferecer a
+        # sincronização MNI/PJe e virou, portanto, uma SEGUNDA superfície para
+        # a mesma chamada ao tribunal. Recebeu o rate limit do bucket
+        # `processo-eletronico-sync` (→ dependência `_dep`), compartilhado com
+        # POST /processo-eletronico/sincronizar: sem isso, o laço
+        # `encerrar → reabrir → encerrar` — acessível ao mesmo público —
+        # enfileiraria chamadas SOAP ilimitadas com a credencial do escritório.
+        # Só ACRESCENTA throttling; os gates de identidade/RBAC do
+        # encerramento (papel + _filtro_visibilidade) permanecem intactos.
+        (("/api/cases/{case_id}/encerrar", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
         # PRs #1348/#1349 (auditoria E2E de clientes, set/2026): rate limit
         # (`rate_limit(...)` → dependência `_dep`) adicionado à análise de IA
         # do cliente e ao export CSV de clientes. Só ACRESCENTA uma

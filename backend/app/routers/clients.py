@@ -550,6 +550,23 @@ async def _kit_admissao_automatico(db: AsyncSession, c: Client, cu: User) -> Non
     """
     if not get_settings().CLIENTE_KIT_ADMISSAO_AUTOMATICO:
         return
+    # RBAC: emitir procuração/contrato é ato jurídico atrás de
+    # `requer_advogado` (gate único do fluxo canônico, §5) — tanto na rota
+    # manual quanto na listagem dos rascunhos. O disparo automático NÃO é
+    # atalho para esse gate: quando quem cadastra não é advogado+ (secretaria
+    # opera o CRM), o cliente entra sem o kit e a pendência fica visível no
+    # checklist de onboarding ("Procuração ativa" / "Contrato de honorários"),
+    # para o advogado emitir pelo caminho próprio.
+    from app.core.security import ROLE_LEVEL
+    from app.core.ownership import role_str
+
+    if ROLE_LEVEL.get(role_str(cu), 0) < ROLE_LEVEL["advogado"]:
+        return
+    # Lead é prospecção, não cliente admitido: emitir o kit ali criaria cópia
+    # da qualificação (nome, CPF/CNPJ, endereço em texto puro no documento)
+    # para quem talvez nunca contrate. Minimização (LGPD art. 6º, III).
+    if getattr(c.status, "value", c.status) == ClientStatus.lead.value:
+        return
     from app.services.geracao_documental_cliente import (
         gerar_documentos_cliente as _gerar,
     )
@@ -568,6 +585,11 @@ async def _kit_admissao_automatico(db: AsyncSession, c: Client, cu: User) -> Non
         # cliente expirado e o acesso a atributo dispararia IO lazy fora do
         # contexto greenlet do SQLAlchemy async.
         await db.refresh(c)
+
+
+# Campos que alteram os PODERES outorgados — se vierem explícitos e já houver
+# kit emitido, a emissão precisa falhar alto em vez de reaproveitar o antigo.
+_CAMPOS_PODERES = {"tipo_poderes", "permite_substabelecimento", "poderes_especiais"}
 
 
 class GerarDocsClienteIn(BaseModel):
@@ -599,7 +621,7 @@ async def gerar_documentos_cliente(
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
     p = payload or GerarDocsClienteIn()
     from app.services.geracao_documental_cliente import gerar_documentos_cliente as _gerar
-    return await _gerar(
+    resultado = await _gerar(
         db,
         c,
         cu,
@@ -608,6 +630,25 @@ async def gerar_documentos_cliente(
         poderes_especiais=p.poderes_especiais,
         forcar_novo=p.forcar_novo,
     )
+    # A idempotência devolve o rascunho ANTERIOR quando já existe kit. Se o
+    # advogado pediu poderes específicos (art. 105 do CPC, substabelecimento),
+    # devolver a procuração antiga com `ja_existia=true` é armadilha: ele
+    # assinaria poderes diferentes dos que pediu, acreditando tê-los outorgado.
+    # O aviso no corpo não basta — nada obriga o consumidor a lê-lo.
+    if resultado.get("ja_existia"):
+        pedidos = _CAMPOS_PODERES & (payload.model_fields_set if payload else set())
+        if pedidos:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Já existe procuração/contrato em rascunho para este cliente, "
+                    "com os poderes definidos na emissão anterior. Os poderes "
+                    f"informados agora ({', '.join(sorted(pedidos))}) NÃO foram "
+                    "aplicados. Envie forcar_novo=true para emitir nova versão "
+                    "com esses poderes."
+                ),
+            )
+    return resultado
 
 
 @router.get(
