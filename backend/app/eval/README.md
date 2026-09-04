@@ -4,7 +4,10 @@ Ciclo **eval-driven**: meça o baseline **antes** de mudar qualquer coisa
 (reranker, embedding, prompt, threshold), depois itere medindo cada passo.
 Sem régua, toda melhoria é aposta.
 
-> Três gold sets, mesma filosofia:
+> Quatro gold sets, mesma filosofia:
+> - **Capacidades** (`run_gold_ia.py`, seção 8): mede as CINCO portas de IA
+>   (`analisar`, `redigir`, `resumir`, `conversar`, `extrair`) — tem modo
+>   `--mock` offline para CI. Casos ainda CANDIDATOS (sem atestação humana).
 > - **RAG** (`run_eval.py`, este documento): mede o *retrieval* e a resposta.
 > - **Trajetória do agente** (`agent_trajectory.py`, seção 6): mede as *decisões*
 >   do loop de tool-use (qual tool chamou, se fundamentou, se respeitou HITL/leitura
@@ -39,7 +42,7 @@ Exemplo resumido de um caso real (os valores de curadoria são ilustrativos):
 
 Regras bloqueantes do corpus real:
 
-- curador e revisor são identidades distintas;
+- curador identificado; revisor opcional e pode coincidir com o curador;
 - consulta da fonte e conferência de vigência não podem ser posteriores à revisão;
 - toda fonte oficial precisa identificar a versão revisada por `identificador_versao` ou `hash_sha256`;
 - o sanitizer de PII examina todo o payload e falha fechado se ficar indisponível;
@@ -48,6 +51,56 @@ Regras bloqueantes do corpus real:
 - placeholders/fonte fictícia são proibidos em `expected_citacoes` e `jurisprudencia_esperada` de casos reais.
 
 O gold set é o ativo mais valioso do processo — só o escritório o produz.
+
+### Coleta verificável das fontes (`coleta_fontes.py`)
+
+Preencher `fontes_oficiais` à mão é onde a curadoria erra: artigo transcrito de
+memória, URL que mudou, versão que não se reconstrói. `coleta_fontes.py` faz só
+a parte mecânica — baixa da fonte oficial, fixa o `sha256` dos bytes recebidos,
+extrai o texto literal dos artigos pedidos e registra a data da consulta.
+
+```bash
+cd backend
+python -m app.eval.coleta_fontes --listar          # o que está registrado
+python -m app.eval.coleta_fontes                   # coleta tudo
+python -m app.eval.coleta_fontes --apelido cdc     # só uma fonte
+```
+
+Registro em `fontes_registro.json`; resultado em `fontes_oficiais.json`. Só entra
+no registro URL cujo **conteúdo** foi conferido — responder 200 não basta, e essa
+regra é do código: cada fonte declara em `verificar_texto` os trechos que o
+documento precisa conter (número e data da norma), e a coleta recusa a fonte se
+faltar qualquer um. Uma URL que responde 200 servindo outra lei falha alto em vez
+de entrar calada no acervo.
+
+**A ferramenta não cura.** Não escolhe tese, não escreve gabarito, não preenche
+`vigencia_conferida_em` e não assina `curador`. Esses campos saem `null` de
+propósito: uma ferramenta que os preenchesse deixaria o gate verde sem que
+ninguém tivesse conferido nada.
+
+### Publicação original não prova vigência
+
+O Planalto (texto compilado) está inacessível de parte dos ambientes de
+execução. `camara.leg.br` e `senado.leg.br` são oficiais e alcançáveis, mas
+grande parte do acervo da Câmara é **publicação original** — prova o texto como
+publicado, não o texto em vigor. Cada fonte carrega `natureza` e
+`prova_vigencia`, e a classificação falha fechada: sem sinal inequívoco na URL,
+`prova_vigencia` é falso.
+
+O acervo penal mostra por que isso não é formalidade. Na publicação original do
+Código Penal de 1940:
+
+| Artigo | Publicação original de 1940 | Código Penal hoje |
+|---|---|---|
+| art. 14 | crime impossível | consumação e tentativa |
+| art. 33 | doença mental superveniente | regimes de cumprimento de pena |
+| art. 59 | revogação do sursis | circunstâncias judiciais (dosimetria) |
+| art. 155 | multa "de quinhentos mil réis a dez contos de réis" | multa em dias-multa |
+
+A Lei 7.209/1984 renumerou a Parte Geral inteira. Um gold set penal montado
+sobre essa fonte erraria **o número do artigo**, não só a redação — com fonte
+oficial, autêntica e íntegra. Confira em texto compilado antes de preencher
+`vigencia_conferida_em`.
 
 ## 2. Rode
 
@@ -204,7 +257,7 @@ Scaffold pronto para o escritório preencher:
 1. Use `gold_set_pecas.template.json` como fonte do schema do caso real; os exemplos não são base para copiar metadados de proveniência.
 2. Pseudonimize nomes, documentos, endereços e valores identificáveis.
 3. Classifique `cenario` como `normal`, `fronteira` ou `excecao`.
-4. Preencha `curadoria` com curador, revisor independente, datas e fonte oficial; a fonte deve ter `identificador_versao` ou `hash_sha256`.
+4. Preencha `curadoria` com curador (revisor opcional), datas e fonte oficial; a fonte deve ter `identificador_versao` ou `hash_sha256`.
 5. Liste apenas jurisprudência real conferida na fonte oficial.
 6. Confirme que `fatos`, `tipo_peca_esperado`, `teses_esperadas` e `criterios` estão preenchidos.
 7. Cresça para 50–150 casos pseudonimizados e marque `ficticio: false` somente nos casos reais revisados.
@@ -220,3 +273,51 @@ python -m app.eval.run_eval --gold app/eval/gold_set.jsonl --k 6
 O CI (`.github/workflows/ci.yml`, job `eval-smoke`) roda `--smoke` +
 `agent_trajectory` em modo não bloqueante; torna-se gate bloqueante quando o gold
 set real existir e o baseline estiver estabelecido.
+
+## 8. Régua das CINCO CAPACIDADES (`run_gold_ia.py`) — item I7
+
+Desde a unificação das portas de IA (item I1: `/ia/analisar`, `/ia/redigir`,
+`/ia/resumir`, `/ia/conversar`, `/ia/extrair`), a pergunta "a IA melhorou?"
+precisa de resposta **por capacidade**, não por endpoint. É o que esta régua faz.
+
+- **Gold set**: `gold_set_ia_candidatos.jsonl` — 10 casos **100% fictícios**
+  (`E2E-FICTICIO-*`), distribuídos em consumidor (4), cível (3), trabalhista (2)
+  e família (1). Cada linha traz `entrada` (fatos + pergunta/pedido),
+  `capacidade`, `area`, `criterios` (os pontos que a resposta tinha de
+  enfrentar), `citacoes_esperadas_tipo` e `nao_deve_conter`.
+- **Citação por TIPO, nunca por número**: o gold set exige *"artigo do CDC sobre
+  vício do produto"*, não *"art. N"*. Número de súmula ou de artigo entra
+  **depois**, pela mão do curador humano, conferido em fonte oficial — inventar
+  numeração para "completar o gabarito" contamina a régua inteira.
+- **Candidato ≠ atestado**: todos os casos são `status: "candidato"`,
+  `atestado_por: null`. `gold_governance.py` os conta à parte
+  (`candidatos_não_atestados`) e **não** os soma à cobertura por área; o
+  relatório da régua repete o aviso. Enquanto ninguém atestar, o número compara
+  execuções entre si e não certifica a qualidade jurídica da IA.
+
+```bash
+cd backend
+
+# Modo MOCK — provedor falso determinístico. Roda em CI: sem rede, sem banco,
+# sem chave de provedor. Mede o HARNESS, não a IA.
+python -m app.eval.run_gold_ia --mock
+
+# Gate de regressão (piso de score e tolerância zero a conteúdo proibido)
+python -m app.eval.run_gold_ia --mock --min-score 0.5 --max-proibidos 0
+
+# Modo REAL — gateway + LLM-juiz sobre os critérios + citation_check
+python -m app.eval.run_gold_ia --juiz --out app/eval/relatorio_gold_ia.json
+```
+
+**Pontuação por caso** (0..1): `0.6 × cobertura dos critérios + 0.4 × cobertura
+das citações por tipo` (sem citação esperada, o peso vai todo para os
+critérios). Citação só conta quando a resposta traz **o assunto e o marcador da
+fonte** (CDC, CLT, Código Civil, súmula, dispositivo constitucional…) — repetir a
+tese não é fundamentar. **Conteúdo proibido zera o caso**: promessa de
+resultado, valor certo de indenização ou dispensa da revisão humana não são
+desconto de pontinho, são reprovação.
+
+Saída em `relatorio_gold_ia.json`: score por caso (com os critérios *não*
+enfrentados, que é o que o curador lê), agregado global, por área e por
+capacidade, mais o bloco `governanca`. Teste offline do modo `--mock`:
+`tests/test_gold_ia_regua.py`.

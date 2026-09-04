@@ -31,6 +31,7 @@ from app.schemas.deadline import (
 from app.services.deadline_calculator import (
     calcular_prazo_processual,
     dias_uteis_restantes,
+    estado_degradacao,
     prazo_dias_corridos,
     prazo_dias_uteis,
 )
@@ -160,13 +161,20 @@ async def calcular(req: CalcularPrazoRequest, cu: User = Depends(get_current_use
             req.data_inicio, req.dias, tribunal=req.tribunal
         )
         modo = "dias corridos c/ prorrogação do termo final (Lei 9.784 art. 66 §1º)"
+    # O prazo administrativo usa as MESMAS funções de dia útil e os MESMOS
+    # feriados do banco que o processual — então degrada pelos mesmos motivos.
+    # Antes estes três campos eram fixos (`False`/`False`/`None`): com a carga
+    # de feriados falha, o prazo saía carimbado como DEFINITIVO sem os feriados
+    # municipais, e ninguém era avisado. Mesma classe de defeito que este PR já
+    # corrigiu em calcular_prazo_processual; agora ambos leem a fonte única.
+    degradado, aviso = estado_degradacao(req.tribunal)
     return {
         "data_vencimento": vencimento,
         "modo": modo,
         "regime_calculo": "administrativo" if req.tipo == "administrativo" else None,
-        "resultado_preliminar": False,
-        "revisao_obrigatoria": False,
-        "aviso": None,
+        "resultado_preliminar": degradado,
+        "revisao_obrigatoria": degradado,
+        "aviso": aviso,
         "dias_uteis_restantes": dias_uteis_restantes(vencimento),
     }
 
@@ -392,6 +400,34 @@ async def atualizar(
         )
     for k, v in mudancas.items():
         setattr(d, k, v)
+
+    # Reagendar para o futuro devolve o prazo a 'pendente' (achado 29, 22/08).
+    # `exclude_unset` faz o PATCH aplicar só o que veio: `CentralAtividades`
+    # reagenda mandando SÓ `data_prazo`, então o status 'vencido' escrito pelo
+    # job das 07:10 (`scheduler._marcar_prazos_vencidos`) sobrevivia à mudança e
+    # o prazo aparecia como vencido com data futura. É a regra inversa do job —
+    # ele faz pendente→vencido quando a data passa; aqui é vencido→pendente
+    # quando a data volta para frente. Sem isso, a aba "Vencidos" mostrava
+    # prazo que não venceu, e o painel (que conta por DATA) discordava da
+    # listagem (que filtra por STATUS) sobre o mesmo prazo.
+    #
+    # Só toca o par (vencido → data futura): status definido explicitamente
+    # nesta chamada manda, e 'concluido'/'cancelado' nunca são reabertos por
+    # uma troca de data.
+    if (
+        "data_prazo" in mudancas
+        and "status" not in mudancas
+        and getattr(d.status, "value", d.status) == "vencido"
+        and d.data_prazo >= date.today()
+    ):
+        d.status = "pendente"
+        await criar_audit_log(
+            db, cu.id, cu.role.value, "PRAZO_REABERTO", "deadlines", deadline_id,
+            dados_antes={"status": "vencido"},
+            dados_depois={"status": "pendente",
+                          "motivo": "reagendado para data futura"},
+        )
+
     if mudancas.get("status") == "concluido" and status_antes != "concluido":
         d.data_conclusao = datetime.now(timezone.utc)
         d.concluido_por = cu.id

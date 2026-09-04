@@ -1,0 +1,149 @@
+{
+  "_leia_me": [
+    "Registro das fontes oficiais que a curadoria do gold set (#1201) usa como prova.",
+    "Só entra aqui URL HTTPS em domínio oficial (.gov.br .jus.br .leg.br .mp.br .def.br)",
+    "que tenha sido efetivamente baixada e cujo conteúdo tenha sido conferido — não",
+    "basta a URL responder 200. Rode `python -m app.eval.coleta_fontes` para atualizar",
+    "hash e texto dos artigos em fontes_oficiais.json.",
+    "",
+    "Planalto (texto compilado) está inacessível de parte dos ambientes de execução; por",
+    "isso o acervo abaixo vem da Câmara, que é oficial mas publica o texto ORIGINAL.",
+    "Publicação original prova o que foi publicado, não o que está em vigor hoje.",
+    "",
+    "`verificar_texto`: trechos que PRECISAM aparecer no documento. A coleta recusa a fonte se faltar qualquer um — assim uma URL que responde 200 servindo outra lei falha alto em vez de entrar calada no acervo."
+  ],
+  "fontes": [
+    {
+      "apelido": "cdc",
+      "titulo": "Lei nº 8.078, de 11 de setembro de 1990 — Código de Defesa do Consumidor",
+      "url": "https://www2.camara.leg.br/legin/fed/lei/1990/lei-8078-11-setembro-1990-365086-publicacaooriginal-1-pl.html",
+      "artigos": [
+        "6",
+        "14",
+        "18",
+        "27",
+        "42",
+        "49"
+      ],
+      "observacao": "Área consumidor. Publicação original — conferir vigência de cada dispositivo em texto compilado.",
+      "verificar_texto": [
+        "LEI N",
+        "8.078",
+        "11 DE SETEMBRO DE 1990"
+      ]
+    },
+    {
+      "apelido": "clt",
+      "titulo": "Decreto-Lei nº 5.452, de 1º de maio de 1943 — Consolidação das Leis do Trabalho",
+      "url": "https://www2.camara.leg.br/legin/fed/declei/1940-1949/decreto-lei-5452-1-maio-1943-415500-publicacaooriginal-1-pe.html",
+      "artigos": [
+        "62",
+        "71",
+        "477",
+        "482",
+        "483"
+      ],
+      "observacao": "Área trabalhista. Texto de 1943: a Reforma Trabalhista (Lei 13.467/2017) alterou vários destes artigos. Conferência de vigência é indispensável.",
+      "verificar_texto": [
+        "DECRETO-LEI N",
+        "5.452",
+        "1º DE MAIO DE 1943"
+      ]
+    },
+    {
+      "apelido": "cc",
+      "titulo": "Lei nº 10.406, de 10 de janeiro de 2002 — Código Civil",
+      "url": "https://www2.camara.leg.br/legin/fed/lei/2002/lei-10406-10-janeiro-2002-432893-publicacaooriginal-1-pl.html",
+      "artigos": [
+        "186",
+        "187",
+        "389",
+        "402",
+        "422",
+        "927"
+      ],
+      "observacao": "Área cível. Publicação original.",
+      "verificar_texto": [
+        "LEI N",
+        "10.406",
+        "10 DE JANEIRO DE 2002"
+      ]
+    },
+    {
+      "apelido": "cp",
+      "titulo": "Decreto-Lei nº 2.848, de 7 de dezembro de 1940 — Código Penal",
+      "url": "https://www2.camara.leg.br/legin/fed/declei/1940-1949/decreto-lei-2848-7-dezembro-1940-412868-publicacaooriginal-1-pe.html",
+      "artigos": [
+        "14",
+        "33",
+        "59",
+        "121",
+        "155",
+        "157"
+      ],
+      "observacao": "Área penal. ATENÇÃO: a publicação original traz a Parte Geral de 1940 e penas de multa em réis, revogadas pela Lei 7.209/1984. Este documento NÃO serve de gabarito sem conferência em texto compilado.",
+      "verificar_texto": [
+        "DECRETO-LEI N",
+        "2.848",
+        "7 DE DEZEMBRO DE 1940"
+      ]
+    },
+    {
+      "apelido": "ctn",
+      "titulo": "Lei nº 5.172, de 25 de outubro de 1966 — Código Tributário Nacional",
+      "url": "https://www2.camara.leg.br/legin/fed/lei/1960-1969/lei-5172-25-outubro-1966-358971-publicacaooriginal-1-pl.html",
+      "artigos": [
+        "113",
+        "142",
+        "150",
+        "156",
+        "173",
+        "174"
+      ],
+      "verificar_texto": [
+        "LEI N",
+        "5.172",
+        "25 DE OUTUBRO DE 1966"
+      ],
+      "observacao": "Área tributária. Publicação original — URL localizada via resolução de URN no LexML (índice, não fonte), conferida antes de registrar. Padrão de pasta do legin é intervalo de anos (1960-1969), não o ano isolado."
+    },
+    {
+      "apelido": "lsa",
+      "titulo": "Lei nº 6.404, de 15 de dezembro de 1976 — Lei das Sociedades por Ações",
+      "url": "https://www2.camara.leg.br/legin/fed/lei/1970-1979/lei-6404-15-dezembro-1976-368447-publicacaooriginal-1-pl.html",
+      "artigos": [
+        "116",
+        "153",
+        "154",
+        "155",
+        "158",
+        "159"
+      ],
+      "verificar_texto": [
+        "LEI N",
+        "6.404",
+        "15 DE DEZEMBRO DE 1976"
+      ],
+      "observacao": "Área empresarial. Publicação original — mesma ressalva de vigência das demais fontes deste registro."
+    },
+    {
+      "apelido": "licitacoes",
+      "titulo": "Lei nº 14.133, de 1º de abril de 2021 — Nova Lei de Licitações e Contratos",
+      "url": "https://www2.camara.leg.br/legin/fed/lei/2021/lei-14133-1-abril-2021-791222-publicacaooriginal-162591-pl.html",
+      "artigos": [
+        "6",
+        "28",
+        "75",
+        "90",
+        "156"
+      ],
+      "verificar_texto": [
+        "LEI N",
+        "14.133",
+        "1",
+        "ABRIL DE 2021"
+      ],
+      "observacao": "Área administrativo. Lei de 2021 — publicação original está mais próxima do texto vigente do que os diplomas de 1940/1943/1966/1976 deste registro, mas ainda não é texto compilado; alterações posteriores precisam ser conferidas."
+    }
+  ]
+}

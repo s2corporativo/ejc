@@ -7,7 +7,7 @@ curado possa contar como gold:
 
 - pseudonimização/LGPD;
 - payload efetivamente avaliável;
-- curador e revisor independentes;
+- curador identificado (revisor opcional, pode ser o mesmo);
 - datas explícitas de revisão e conferência de vigência;
 - ao menos uma fonte oficial HTTPS com referência da versão revisada;
 - ausência de placeholders/fonte fictícia;
@@ -63,6 +63,9 @@ _SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
 class AuditoriaGold:
     arquivos_reais: int = 0
     casos_reais: int = 0
+    # Propostas ainda NÃO atestadas por humano (status="candidato"). Contadas à
+    # parte de propósito: candidato nunca vira cobertura.
+    casos_candidatos: int = 0
     por_area: dict[str, int] = field(default_factory=dict)
     por_cenario: dict[str, int] = field(default_factory=dict)
     erros: list[str] = field(default_factory=list)
@@ -189,17 +192,17 @@ def validar_caso_real(caso: dict) -> list[str]:
     curadoria = caso.get("curadoria")
     if not isinstance(curadoria, dict):
         return erros + [
-            "curadoria deve ser objeto com curador, revisor, datas e fontes_oficiais"
+            "curadoria deve ser objeto com curador, datas e fontes_oficiais"
         ]
 
     curador = str(curadoria.get("curador") or "").strip()
-    revisor = str(curadoria.get("revisor") or "").strip()
     if not curador:
         erros.append("curadoria.curador é obrigatório")
-    if not revisor:
-        erros.append("curadoria.revisor é obrigatório")
-    if curador and revisor and curador.casefold() == revisor.casefold():
-        erros.append("curador e revisor devem ser pessoas/identidades distintas")
+    # `revisor` é opcional e pode coincidir com o curador. A exigência de duas
+    # identidades distintas foi removida por decisão do titular em 23/08/2026:
+    # o escritório opera hoje com um único jurista, e a regra tornava o gate
+    # impossível de satisfazer em vez de elevar a qualidade. Quando houver
+    # segundo par de olhos, registre-o aqui — o campo continua sendo lido.
 
     revisado = _data_iso(
         curadoria.get("revisado_em"), "curadoria.revisado_em", erros
@@ -275,6 +278,15 @@ def _carregar_jsonl(path: Path) -> tuple[list[tuple[int, dict]], list[str]]:
     return casos, erros
 
 
+def _e_candidato(caso: dict) -> bool:
+    """Caso proposto para o gold set, ainda sem atestação humana.
+
+    A marca é explícita (`status: "candidato"`) e vem acompanhada de
+    `atestado_por: null` — nenhum heurístico adivinha isso.
+    """
+    return str(caso.get("status") or "").strip().lower() == "candidato"
+
+
 def auditar_diretorio(base: str | os.PathLike[str]) -> AuditoriaGold:
     """Audita gold sets reais; exemplos/templates não contam como cobertura."""
     raiz = Path(base)
@@ -287,6 +299,14 @@ def auditar_diretorio(base: str | os.PathLike[str]) -> AuditoriaGold:
             continue
         casos, erros_arquivo = _carregar_jsonl(path)
         out.erros.extend(erros_arquivo)
+        # CANDIDATO ≠ ATESTADO (I7, 03/09/2026). Caso marcado
+        # `status: "candidato"` é proposta de gold set — ainda sem curador,
+        # fonte oficial conferida nem vigência. Ele NÃO conta como cobertura
+        # jurídica e NÃO é medido pela régua de proveniência: contá-lo seria
+        # transformar rascunho de máquina em certificação humana.
+        candidatos = [c for _, c in casos if _e_candidato(c)]
+        out.casos_candidatos += len(candidatos)
+        casos = [(n, c) for n, c in casos if not _e_candidato(c)]
         if not casos and not erros_arquivo:
             continue
         out.arquivos_reais += 1
@@ -382,7 +402,8 @@ def main() -> None:
 
     print(
         f"gold real: arquivos={audit.arquivos_reais} "
-        f"casos_válidos={audit.casos_reais}"
+        f"casos_válidos={audit.casos_reais} "
+        f"candidatos_não_atestados={audit.casos_candidatos}"
     )
     for area, n in sorted(audit.por_area.items()):
         print(f"  área {area}: {n}")

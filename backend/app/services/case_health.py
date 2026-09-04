@@ -28,12 +28,28 @@ ABERTOS = [CaseStatus.aberto, CaseStatus.em_instrucao, CaseStatus.em_producao, C
 FECHADOS = [CaseStatus.encerrado, CaseStatus.arquivado]
 
 
+#: Limiares do score de SAÚDE do caso (4 faixas). `services/visual_law_core.py`
+#: também deriva um veredito a partir deste mesmo score (probabilidade de êxito
+#: processual, 3 faixas) — são PERGUNTAS diferentes sobre o mesmo número, não o
+#: mesmo fato, então os limiares não são unificados aqui: unificar limiares que
+#: respondem perguntas diferentes seria a abstração errada. O que é único é a
+#: fonte do score em si (`calcular_score_caso`, abaixo) — nunca recalculado.
+LIMIAR_SAUDAVEL = 80
+LIMIAR_ATENCAO = 60
+LIMIAR_RISCO = 40
+
+
 def _classificar(score: int) -> str:
-    if score >= 80:
+    # `classificacao` é o único veredito de saúde do caso (Classe C do plano-mestre
+    # de padronização, 2026-08-24): existia um segundo campo `saudavel` (= zero
+    # fatores) com limiar PRÓPRIO — um caso com 1 fator de -10 saía "score=90,
+    # classificacao=saudavel, saudavel=False" no mesmo payload. Era lido em 0
+    # lugares do frontend; removido do contrato em vez de consertado.
+    if score >= LIMIAR_SAUDAVEL:
         return "saudavel"
-    if score >= 60:
+    if score >= LIMIAR_ATENCAO:
         return "atencao"
-    if score >= 40:
+    if score >= LIMIAR_RISCO:
         return "risco"
     return "critico"
 
@@ -141,7 +157,6 @@ async def calcular_score_caso(db: AsyncSession, case: Case, hoje: date | None = 
         "score": score,
         "classificacao": _classificar(score),
         "fatores": fatores,
-        "saudavel": not fatores,
         "dias_parado": dias_parado,   # aditivo — consumidores existentes ignoram
     }
 

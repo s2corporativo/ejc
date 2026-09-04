@@ -19,10 +19,14 @@ class _FakeModel:
         self.dim = dim
         self.explode = explode
         self.entradas: list[str] = []
+        # Registra o batch_size de cada chamada — é o contrato que contém a
+        # memória do ONNX (incidente de 2026-08-27, ver teste de regressão).
+        self.lotes: list[int | None] = []
 
-    def embed(self, textos):
+    def embed(self, textos, batch_size=None, **kwargs):
         if self.explode:
             raise RuntimeError("onnx quebrou")
+        self.lotes.append(batch_size)
         self.entradas.extend(textos)
         for _ in textos:
             yield np.zeros(self.dim, dtype=np.float32)
@@ -65,6 +69,37 @@ async def test_local_gera_vetor_dimensao_certa(_local_on):
     assert all(len(v) == es.EMBED_DIM for v in vetores)
     assert all(isinstance(v, list) for v in vetores)
     assert fake.entradas == ["query: dano moral", "query: rescisão indireta"]
+
+
+async def test_encode_sempre_passa_batch_size_explicito(_local_on):
+    """Regressão do incidente de 2026-08-27 (OOM global da VPS).
+
+    `_embed_sync` entregava ao fastembed um lote do tamanho do documento e
+    deixava o `batch_size` no default da biblioteca (256). Com documentos de
+    centenas de chunks, o arena allocator do ONNX crescia até o maior lote já
+    visto e não devolvia a memória: a reindexação chegou a 10 GB de anon-rss e
+    o OOM-killer GLOBAL reiniciou containers de OUTROS sistemas na mesma VPS.
+
+    O contrato defendido aqui é o teto explícito, não o número — por isso o
+    assert é contra `es.EMBED_BATCH` (configurável) e contra um limite superior
+    sanitário, e não contra o valor 16.
+    """
+    fake = _FakeModel()
+    _local_on.setattr(es, "_get_model", lambda: fake)
+
+    # Mais textos que o lote: o teto tem de valer justamente aqui.
+    textos = [f"trecho {i}" for i in range(es.EMBED_BATCH * 3)]
+    vetores = await es.gerar_embeddings(textos, modo="passage")
+
+    assert vetores is not None and len(vetores) == len(textos)
+    assert fake.lotes and all(lote == es.EMBED_BATCH for lote in fake.lotes), (
+        "encode chamado sem batch_size explícito — o default do fastembed "
+        "reabre o caminho do OOM de 2026-08-27"
+    )
+    assert 1 <= es.EMBED_BATCH <= 64, (
+        "EMBED_BATCH alto demais para conter o arena allocator do ONNX numa "
+        "VPS compartilhada com outros sistemas"
+    )
 
 
 async def test_erro_no_modelo_retorna_none_sem_excecao(_local_on, caplog):

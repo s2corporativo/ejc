@@ -5,6 +5,17 @@ top-k, tenant, cliente, processo, permissões, exclusão, reindexação).
 
 Dependências: requests. Dados sintéticos identificados por EJC_QA.
 """
+
+
+def _qa_pw(name: str) -> str:
+    import os
+    v = os.environ.get('EJC_QA_PASSWORD')
+    if not v:
+        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
+    return v
+
+
+SENHA = _qa_pw('M22')
 import os
 import sys
 import time
@@ -53,7 +64,7 @@ def login(email: str) -> str:
     for _ in range(2):
         r = S.post(f"{BASE}/api/auth/login", json={
             "email": email,
-            "password": "<ver EJC_QA_PASSWORD>",
+            "password": SENHA,
         }, headers={"X-Forwarded-For": "127.0.0.1"}, timeout=15)
         if r.status_code == 429:
             time.sleep(45)

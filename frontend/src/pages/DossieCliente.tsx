@@ -29,6 +29,8 @@ import api from "../lib/api";
 import ClientServiceTimeline, {
   type ClientTimelineExtraEvent,
 } from "../components/ClientServiceTimeline";
+import ClienteIaPanel from "../components/ClienteIaPanel";
+import { useAuth } from "../stores/auth";
 import { soDigitos } from "../utils/phone";
 import { toast } from "../components/Toast";
 import { areaLabel } from "../lib/areas";
@@ -44,7 +46,7 @@ import {
 
 interface DossieData {
   cliente: {
-    id: number;
+    id: string;
     nome: string;
     email: string;
     telefone: string;
@@ -65,7 +67,7 @@ interface DossieData {
     area_breakdown: Record<string, number>;
   };
   casos: Array<{
-    id: number;
+    id: string;
     numero_interno: string;
     titulo: string;
     area: string;
@@ -75,8 +77,8 @@ interface DossieData {
     updated_at: string;
   }>;
   prazos: Array<{
-    id: number;
-    case_id: number;
+    id: string;
+    case_id: string;
     descricao: string;
     due_date: string;
     dias_restantes: number;
@@ -84,8 +86,8 @@ interface DossieData {
     urgente: boolean;
   }>;
   documentos_recentes: Array<{
-    id: number;
-    case_id: number;
+    id: string;
+    case_id: string;
     nome: string;
     tipo: string;
     created_at: string;
@@ -215,6 +217,8 @@ type PendingItem = {
   description?: string;
   status: string;
   due_date?: string;
+  impacto?: string | null;
+  providencia?: string | null;
   created_at: string;
 };
 
@@ -231,6 +235,23 @@ const PENDING_STATUS_LABEL: Record<string, string> = {
   recebido: "Recebido",
   em_analise: "Em análise",
   concluido: "Concluído",
+};
+const PENDING_IMPACTO_LABEL: Record<string, string> = {
+  alto: "Impacto alto",
+  medio: "Impacto médio",
+  baixo: "Impacto baixo",
+};
+const PENDING_IMPACTO_COLOR: Record<string, string> = {
+  alto: "bg-red-100 text-red-700",
+  medio: "bg-orange-100 text-orange-700",
+  baixo: "bg-slate-100 text-slate-600",
+};
+const PENDING_PROVIDENCIA_LABEL: Record<string, string> = {
+  solicitar_cliente: "Solicitar ao cliente",
+  obter_processo: "Obter no processo",
+  emitir_certidao: "Emitir certidão",
+  diligencia_externa: "Diligência externa",
+  outro: "Outra providência",
 };
 
 function PendingItemsPanel({
@@ -253,6 +274,8 @@ function PendingItemsPanel({
     type: permitirDocumentoGenerico ? "documento" : "informacao",
     description: "",
     due_date: "",
+    impacto: "",
+    providencia: "",
   });
 
   const load = useCallback(async () => {
@@ -293,12 +316,16 @@ function PendingItemsPanel({
       await api.post(`/clients/${clientId}/pending-items`, {
         ...form,
         due_date: form.due_date || undefined,
+        impacto: form.impacto || undefined,
+        providencia: form.providencia || undefined,
       });
       setForm({
         title: "",
         type: permitirDocumentoGenerico ? "documento" : "informacao",
         description: "",
         due_date: "",
+        impacto: "",
+        providencia: "",
       });
       setShowAdd(false);
       load();
@@ -407,6 +434,34 @@ function PendingItemsPanel({
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
           />
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              className="input py-1.5 text-xs"
+              value={form.impacto}
+              onChange={(e) => setForm({ ...form, impacto: e.target.value })}
+              aria-label="Impacto da pendência"
+            >
+              <option value="">Impacto (não avaliado)</option>
+              <option value="alto">Alto</option>
+              <option value="medio">Médio</option>
+              <option value="baixo">Baixo</option>
+            </select>
+            <select
+              className="input py-1.5 text-xs"
+              value={form.providencia}
+              onChange={(e) =>
+                setForm({ ...form, providencia: e.target.value })
+              }
+              aria-label="Providência recomendada"
+            >
+              <option value="">Providência (a definir)</option>
+              <option value="solicitar_cliente">Solicitar ao cliente</option>
+              <option value="obter_processo">Obter no processo</option>
+              <option value="emitir_certidao">Emitir certidão</option>
+              <option value="diligencia_externa">Diligência externa</option>
+              <option value="outro">Outra</option>
+            </select>
+          </div>
           {!permitirDocumentoGenerico && (
             <p className="text-[11px] text-slate-500">
               Solicitações de documentos são feitas dentro do Caso para chegar
@@ -452,10 +507,24 @@ function PendingItemsPanel({
                 <span className="text-[10px] text-slate-400 uppercase">
                   {item.type}
                 </span>
+                {item.impacto && (
+                  <span
+                    className={`badge text-[10px] ${PENDING_IMPACTO_COLOR[item.impacto] ?? "bg-slate-100 text-slate-500"}`}
+                  >
+                    {PENDING_IMPACTO_LABEL[item.impacto] ?? item.impacto}
+                  </span>
+                )}
               </div>
               {item.description && (
                 <p className="text-xs text-slate-500 mt-0.5 truncate">
                   {item.description}
+                </p>
+              )}
+              {item.providencia && (
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  Providência:{" "}
+                  {PENDING_PROVIDENCIA_LABEL[item.providencia] ??
+                    item.providencia}
                 </p>
               )}
               {item.due_date && (
@@ -906,18 +975,26 @@ function RelatorioFinanceiro({
 }
 
 export default function DossieCliente() {
+  const { user } = useAuth();
   const { clientId } = useParams<{ clientId: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
-  const validTabs = [
-    "resumo",
-    "atendimentos",
-    "casos",
-    "prazos",
-    "financeiro",
-    "documentos",
-  ];
+  const role = user?.role || "";
+  const podeIaCliente = ["superadmin", "admin", "socio", "advogado"].includes(role);
+  const podeCriarAcesso = ["superadmin", "admin", "socio", "advogado"].includes(role);
+  const validTabs = useMemo(
+    () => [
+      "resumo",
+      "atendimentos",
+      "casos",
+      "prazos",
+      "financeiro",
+      "documentos",
+      ...(podeIaCliente ? ["ia_cliente"] : []),
+    ],
+    [podeIaCliente],
+  );
   const [data, setData] = useState<DossieData | null>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
@@ -928,7 +1005,8 @@ export default function DossieCliente() {
   useEffect(() => {
     const tab = searchParams.get("tab");
     if (tab && validTabs.includes(tab)) setAbaAtiva(tab);
-  }, [searchParams]);
+    else if (abaAtiva === "ia_cliente" && !podeIaCliente) setAbaAtiva("resumo");
+  }, [searchParams, validTabs, abaAtiva, podeIaCliente]);
 
   const carregarDossie = useCallback(() => {
     if (!clientId) return;
@@ -1077,8 +1155,12 @@ export default function DossieCliente() {
   const [criandoAcesso, setCriandoAcesso] = useState(false);
 
   const criarAcessoPortal = async () => {
-    if (!acessoForm.email.trim() || acessoForm.senha_inicial.length < 8) {
-      toast.error("Informe e-mail e senha inicial com no mínimo 8 caracteres");
+    if (!podeCriarAcesso) {
+      toast.error("Seu perfil não possui permissão para criar acesso ao Portal");
+      return;
+    }
+    if (!acessoForm.email.trim() || acessoForm.senha_inicial.length < 10) {
+      toast.error("Informe e-mail e senha inicial com no mínimo 10 caracteres");
       return;
     }
     setCriandoAcesso(true);
@@ -1176,6 +1258,9 @@ export default function DossieCliente() {
     { id: "prazos", label: "Prazos", icon: Calendar },
     { id: "financeiro", label: "Financeiro", icon: DollarSign },
     { id: "documentos", label: "Documentos", icon: FileText },
+    ...(podeIaCliente
+      ? [{ id: "ia_cliente", label: "IA Cliente", icon: Bot }]
+      : []),
   ];
 
   return (
@@ -1363,18 +1448,20 @@ export default function DossieCliente() {
               >
                 <Calendar className="w-3.5 h-3.5" /> Agendar reunião
               </Link>
-              <button
-                onClick={() => {
-                  setAcessoForm({
-                    email: cliente.email || "",
-                    senha_inicial: "",
-                  });
-                  setAcessoOpen(true);
-                }}
-                className="btn-outline text-xs"
-              >
-                <KeyRound className="w-3.5 h-3.5" /> Acesso ao portal
-              </button>
+              {podeCriarAcesso && (
+                <button
+                  onClick={() => {
+                    setAcessoForm({
+                      email: cliente.email || "",
+                      senha_inicial: "",
+                    });
+                    setAcessoOpen(true);
+                  }}
+                  className="btn-outline text-xs"
+                >
+                  <KeyRound className="w-3.5 h-3.5" /> Acesso ao portal
+                </button>
+              )}
             </div>
           </div>
 
@@ -1499,19 +1586,9 @@ export default function DossieCliente() {
         </div>
       )}
 
-      {abaAtiva === "ia_cliente" && (
-        <div className="card p-8 text-center space-y-4 animate-fade-in">
-          <Bot className="w-12 h-12 mx-auto text-bronze-pale" />
-          <h3 className="text-lg font-serif">IA do Cliente (Análise 360º)</h3>
-          <p className="text-sm text-slate-500 max-w-md mx-auto">
-            A análise estratégica automática do histórico deste cliente (padrões
-            de litígio, riscos financeiros e oportunidades) ainda está em
-            desenvolvimento. Enquanto isso, use a Pesquisa e IA com o caso do
-            cliente selecionado.
-          </p>
-          <span className="inline-block text-xs font-medium text-slate-400 border border-bronze-pale rounded-full px-3 py-1">
-            Em breve
-          </span>
+      {abaAtiva === "ia_cliente" && podeIaCliente && (
+        <div className="animate-fade-in">
+          <ClienteIaPanel clientId={clientId!} />
         </div>
       )}
 
@@ -1582,7 +1659,7 @@ export default function DossieCliente() {
       </Modal>
 
       <Modal
-        open={acessoOpen}
+        open={podeCriarAcesso && acessoOpen}
         onClose={() => setAcessoOpen(false)}
         title="Acesso ao Portal do Cliente"
       >
@@ -1603,7 +1680,7 @@ export default function DossieCliente() {
             />
           </div>
           <div>
-            <label className="label">Senha inicial (mín. 8) *</label>
+            <label className="label">Senha inicial (mín. 10, letra, número e símbolo) *</label>
             <input
               type="password"
               className="input"

@@ -18,6 +18,8 @@ JOB_PRAZOS_ALERTAS = "prazos_alertas"
 JOB_AUDIENCIAS = "audiencias_agenda"
 JOB_PRESCRICAO = "prescricao"
 JOB_ENTRADA_EXPURGO = "entrada_expurgo"
+JOB_BACKUP_DRIVE = "backup_drive"
+JOB_REEMBED_RAG = "reembed_rag_orfaos"
 
 _MAX_DIARIO = 26
 _MAX_DATAJUD = 14
@@ -58,6 +60,31 @@ JOBS_MONITORADOS: dict[str, dict[str, Any]] = {
         "label": "Alertas de prescrição",
         "max_age_horas": _MAX_SEMANAL,
         "cadencia": "semanal (segundas 09h05)",
+    },
+    # Estava definido (JOB_ENTRADA_EXPURGO) e batendo ponto em
+    # scheduler.job_expurgo_entrada_unica, mas FORA deste dict: o job registrava
+    # execução e o painel nunca o avaliava. Cadência lida do add_job real
+    # (scheduler: CronTrigger(hour=3, minute=50)); o gate interno
+    # ENTRADA_EXPURGO_ENABLED é opt-in (default False) — enquanto desligado, o
+    # job não bate ponto e o painel mostra "nunca_executou", que é a leitura
+    # honesta: o expurgo LGPD não está acontecendo.
+    JOB_ENTRADA_EXPURGO: {
+        "label": "Expurgo LGPD da Entrada Única",
+        "max_age_horas": _MAX_DIARIO,
+        "cadencia": "diário 03h50",
+    },
+    # F4 (análise E2E 03/09/2026): o backup — o job cuja falha é a mais cara —
+    # e o auto-reembed do RAG não tinham heartbeat; o painel mandava "ler o
+    # log". Ambos passam a ser monitorados por resultado.
+    JOB_BACKUP_DRIVE: {
+        "label": "Backup offsite (Drive/rclone)",
+        "max_age_horas": _MAX_DIARIO,
+        "cadencia": "diário (BACKUP_HORA_LOCAL)",
+    },
+    JOB_REEMBED_RAG: {
+        "label": "Auto-reindex do RAG (chunks órfãos)",
+        "max_age_horas": 3,
+        "cadencia": "horário (:20)",
     },
 }
 

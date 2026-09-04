@@ -100,3 +100,32 @@ async def test_caminho_profissional_preserva_tipo_da_tarefa(monkeypatch):
     assert len(gravados) == 1
     assert gravados[0]["task_type"] == "resumo_processual"
     assert gravados[0]["provider"] == "maritaca"
+
+
+@pytest.mark.asyncio
+async def test_registrar_bloqueio_politica_grava_tentativa_pre_gateway(monkeypatch):
+    # V2-5.5 (auditoria): rejeição da AIProviderPolicy (cadeia de provedores
+    # vazia) acontece em orchestrator.run ANTES de qualquer chamada alcançar
+    # `_chamar_com_barreira` — sem este registro explícito, a telemetria de
+    # `/ia-governanca/provedores` nunca vê essa tentativa (0 falhas na tela
+    # mesmo com 100% das chamadas de uma rota bloqueadas).
+    gravados: list[dict] = []
+
+    async def persistir_fake(**dados):
+        gravados.append(dados)
+
+    monkeypatch.setattr(metrics, "_persistir", persistir_fake)
+
+    await metrics.registrar_bloqueio_politica(
+        task_type="document_extraction",
+        motivo="Este conteúdo tem dados pessoais que não podem ir a uma IA externa.",
+    )
+
+    assert len(gravados) == 1
+    grav = gravados[0]
+    assert grav["task_type"] == "document_extraction"
+    assert grav["provider"] == "policy"
+    assert grav["status"] == "bloqueado_politica"
+    assert grav["error_type"] == "PolicyBlock"
+    assert grav["http_status"] == 422
+    assert "dados pessoais" in grav["fallback_reason"]

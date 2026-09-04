@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession  # noqa: F401 (reexport p/ compa
 
 from app.core.config import get_settings  # noqa: F401 (reexport p/ compat)
 from app.core.database import get_db  # noqa: F401 (reexport p/ compat)
-from app.core.security import get_current_user, require_roles  # noqa: F401 (reexport p/ compat)
+from app.core.security import get_current_user, require_roles, require_roles_exact  # noqa: F401 (reexport p/ compat)
 from app.models.user import User  # noqa: F401 (reexport p/ compat)
 from app.models.case import Case  # noqa: F401 (reexport p/ compat)
 from app.models.audit_log import criar_audit_log  # noqa: F401 (reexport p/ compat)
@@ -105,7 +105,7 @@ async def trab_listar(db: AsyncSession = Depends(get_db),
 
 @router.post("/trabalhista-esp", status_code=201)
 async def trab_criar(body: TrabalhistaIn, db: AsyncSession = Depends(get_db),
-                     cu: User = Depends(require_roles(_EQUIPE))):
+                     cu: User = Depends(require_roles_exact(_EQUIPE))):
     await _get_case(db, body.case_id, cu)
     data = body.model_dump()
     # Auto-calcular prazo do Recurso Ordinário se data de demissão fornecida
@@ -119,7 +119,7 @@ async def trab_criar(body: TrabalhistaIn, db: AsyncSession = Depends(get_db),
 
 @router.patch("/trabalhista-esp/{tid}")
 async def trab_atualizar(tid: str, body: TrabalhistaUpdate, db: AsyncSession = Depends(get_db),
-                         cu: User = Depends(require_roles(_EQUIPE))):
+                         cu: User = Depends(require_roles_exact(_EQUIPE))):
     return await _crud_atualizar(TrabalhistaCase, "trabalhista_cases", tid,
                                  body.model_dump(exclude_unset=True), db, cu)
 
@@ -141,7 +141,7 @@ async def trab_prazos(
     data_ciencia: date,
     tipo_prazo: Literal["recurso_ordinario", "embargos_declaracao",
                         "recurso_de_revista", "todos"] = "todos",
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Prazos recursais trabalhistas a partir da CIÊNCIA da decisão — TODOS em dias
@@ -184,7 +184,7 @@ async def trab_prazos(
 async def trab_prescricao(
     data_extincao_contrato: date,
     data_ajuizamento: Optional[date] = None,   # data (real ou prevista) do ajuizamento; default hoje
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Prescrição trabalhista — CF art. 7º XXIX c/c CLT art. 11 e Súm. 308 TST.
@@ -237,7 +237,7 @@ async def trab_prescricao(
 async def trab_deposito(
     valor_condenacao: float,
     data_referencia: Optional[date] = None,   # data do recurso; default hoje
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Calcula depósito recursal para Recurso Ordinário e Recurso de Revista.

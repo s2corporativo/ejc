@@ -231,7 +231,10 @@ export function AvisoCasoEncerrado({ caso }: { caso: Case }) {
         await api.post(`/cases/${caso.id}/desarquivar`);
         toast.success("Caso desarquivado.");
       } else {
-        await api.patch(`/cases/${caso.id}`, { status: "aberto" });
+        // V2-B3 (plano-mestre): endpoint dedicado restaura o estágio real de
+        // trabalho anterior (em_instrucao/em_producao/protocolado) em vez de
+        // sempre forçar "aberto" via PATCH cru.
+        await api.post(`/cases/${caso.id}/reabrir`);
         toast.success("Caso reaberto.");
       }
       window.location.reload();

@@ -97,9 +97,9 @@ def test_legaldoc_update_status_invalido_e_valido():
     assert LegalDocUpdate().status is None
 
 
-# ── Prompt (router prompts-biblioteca) ────────────────────────────────────────
+# ── Prompt (router prompts-juridicos) ─────────────────────────────────────────
 def test_prompt_create_categoria_invalida_e_valida():
-    from app.routers.prompts import PromptCreate
+    from app.routers.prompts_juridicos import PromptCreate
 
     with pytest.raises(ValidationError):
         PromptCreate(titulo="T", categoria="categoria_inexistente", conteudo="c")

@@ -1,9 +1,13 @@
 # ── app/routers/trash.py ─────────────────────────────────────────────────────
-# Lixeira: lista e restaura registros soft-deleted. Admin/sócio apenas.
+# Lixeira: lista, restaura e (V2-4.4, LGPD art. 16/18 VI) purga definitivamente
+# registros soft-deleted. Admin/sócio para listar/restaurar; purgar (irreversível)
+# é superadmin apenas.
 from __future__ import annotations
 
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -156,3 +160,94 @@ async def restaurar(
     )
     await db.commit()
     return {"detail": "Registro restaurado"}
+
+
+class PurgarRequest(BaseModel):
+    motivo: str = Field(..., min_length=5, max_length=500,
+                        description="Motivo da purga (LGPD art. 18, VI) — obrigatório.")
+
+
+@router.post("/{entidade}/{registro_id}/purgar")
+async def purgar(
+    entidade: str,
+    registro_id: str,
+    payload: PurgarRequest,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["superadmin"])),
+):
+    """Exclusão DEFINITIVA (hard delete) — LGPD art. 16 e art. 18, VI.
+
+    Até esta rota, não havia caminho pela aplicação para atender um pedido de
+    eliminação: `DELETE /trash/{entidade}/{id}` e `POST .../purgar` respondiam
+    404 (auditoria V2-4.4). Salvaguardas deliberadas:
+
+    - só `superadmin` (mais restrito que `restaurar`, que aceita admin/socio —
+      irreversível, então o piso de permissão é mais alto);
+    - só purga o que JÁ está na lixeira (`deleted_at` preenchido) — o soft
+      delete continua sendo o único caminho de exclusão de um registro ativo;
+    - `motivo` obrigatório (mín. 5 caracteres), mesmo padrão de
+      `DELETE /cases/{id}` (R2);
+    - audit log ANTES do delete físico (a linha em si vai deixar de existir —
+      a trilha em audit_logs é o único registro que sobra depois da purga);
+    - NÃO tenta cascatear a exclusão para registros dependentes: um
+      IntegrityError vira 409 explícito, e o operador purga a dependência
+      primeiro. Cascatear automaticamente exclusão IRREVERSÍVEL é mais
+      perigoso do que pedir uma segunda chamada.
+
+    Política de retenção (prazo mínimo de guarda antes de permitir purga) NÃO
+    está codificada aqui de propósito — pauta D-pendente com o advogado
+    responsável (auditoria: "peça a política de retenção antes de codificar
+    prazos, não arbitre"). Até essa decisão, a salvaguarda é o julgamento
+    humano do superadmin, registrado no `motivo` obrigatório.
+    """
+    if entidade not in ENTIDADES:
+        raise HTTPException(status_code=422, detail="Entidade inválida")
+    modelo, rotulo = ENTIDADES[entidade]
+    # `with_for_update()`: sem lock, um `restaurar` concorrente (admin/socio,
+    # nível de permissão mais baixo) entre este SELECT e o commit abaixo podia
+    # apagar fisicamente um registro que acabara de ser restaurado (achado da
+    # revisão de segurança, TOCTOU) — o DELETE do ORM não reconfere
+    # `deleted_at` no momento do commit.
+    registro = (
+        await db.execute(
+            select(modelo).where(
+                modelo.id == registro_id, modelo.deleted_at.isnot(None)
+            ).with_for_update()
+        )
+    ).scalar_one_or_none()
+    if not registro:
+        raise HTTPException(
+            status_code=404,
+            detail="Registro não está na lixeira — purga exige exclusão (soft delete) prévia.",
+        )
+
+    excluido_em = registro.deleted_at
+    rotulo_registro = rotulo(registro)
+    await criar_audit_log(
+        db,
+        cu.id,
+        cu.role.value,
+        "PURGE",
+        entidade,
+        registro_id,
+        detalhes=payload.motivo,
+        dados_antes={
+            "rotulo": rotulo_registro,
+            "excluido_em": excluido_em.isoformat() if excluido_em else None,
+        },
+        dados_depois={"purgado": True},
+    )
+    await db.delete(registro)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Não é possível purgar: há registros dependentes vinculados a "
+                f"este {entidade[:-1] if entidade.endswith('s') else entidade}. "
+                "Purgue as dependências primeiro."
+            ),
+        )
+    return {"detail": "Registro purgado definitivamente"}

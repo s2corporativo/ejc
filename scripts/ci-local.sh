@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-MODE="${1:-full}" # full|required|backend|eval|frontend|p0|architecture|continuity|ui-extra|fast
+MODE="${1:-full}" # full|required|backend|eval|frontend|p0|status|architecture|continuity|ui-extra|fast
 PG_PORT_OVERRIDE="${PG_PORT:-}"
 PG_PORT="$PG_PORT_OVERRIDE"
 PG_CONTAINER="${PG_CONTAINER:-ejc_ci_pg_${$}}"
@@ -15,6 +15,12 @@ STATE_ROOT="${EJC_CI_STATE_ROOT:-${XDG_CACHE_HOME:-${HOME:-/tmp}/.cache}/ejc-ci-
 VENV_DIR_OVERRIDE="${VENV_DIR:-}"
 VENV_DIR=""
 PIP_AUDIT_VERSION="${PIP_AUDIT_VERSION:-2.10.0}"
+# Guarda o PYTHON do tool-venv, não o console script: `python -m venv` grava
+# shebang ABSOLUTO, e o venv é construído em $build_dir e só depois movido
+# para $tool_dir — o shebang de bin/pip-audit continua apontando para o
+# caminho de build, que já não existe ("cannot execute: required file not
+# found"). Invocar por módulo é imune ao rename, e é o que o venv principal
+# já fazia ("$PY" -m ruff / -m pytest).
 PIP_AUDIT_BIN=""
 PGDATA="${PGDATA:-$STATE_ROOT/pgdata-${$}}"
 REPORT_ROOT="${EJC_CI_REPORT_ROOT:-$STATE_ROOT/reports}"
@@ -222,7 +228,7 @@ ensure_pip_audit() {
 
   exec {tool_lock_fd}>"$lock_file"
   flock "$tool_lock_fd"
-  if [ ! -x "$tool_dir/bin/pip-audit" ] || [ ! -s "$ready" ]; then
+  if [ ! -x "$tool_dir/bin/python" ] || [ ! -s "$ready" ]; then
     [ ! -e "$tool_dir" ] || safe_remove_tree "$tool_dir"
     safe_remove_tree "$build_dir"
     log "Construindo tool-venv pip-audit==$PIP_AUDIT_VERSION…"
@@ -231,7 +237,7 @@ ensure_pip_audit() {
         && "$build_dir/bin/python" -m pip install -q --upgrade pip \
         && "$build_dir/bin/python" -m pip install -q "pip-audit==$PIP_AUDIT_VERSION" \
         && "$build_dir/bin/python" -m pip check >/dev/null \
-        && "$build_dir/bin/pip-audit" --version > "$build_dir/.ejc-ready"
+        && "$build_dir/bin/python" -m pip_audit --version > "$build_dir/.ejc-ready"
     ); then
       safe_remove_tree "$build_dir"
       flock -u "$tool_lock_fd"; eval "exec ${tool_lock_fd}>&-"
@@ -240,7 +246,7 @@ ensure_pip_audit() {
     chmod 600 "$build_dir/.ejc-ready" 2>/dev/null || true
     mv "$build_dir" "$tool_dir"
   fi
-  PIP_AUDIT_BIN="$tool_dir/bin/pip-audit"
+  PIP_AUDIT_BIN="$tool_dir/bin/python"
   flock -u "$tool_lock_fd"
   eval "exec ${tool_lock_fd}>&-"
 }
@@ -320,7 +326,7 @@ run_backend() {
   (cd backend && "$PY" -c "from app.core.config import get_settings; from fastembed.rerank.cross_encoder import TextCrossEncoder; s=get_settings(); nomes={m['model'] for m in TextCrossEncoder.list_supported_models()}; assert s.RAG_RERANK_MODEL in nomes, s.RAG_RERANK_MODEL; print(s.RAG_RERANK_MODEL)")
   log "Ruff…"; (cd backend && "$PY" -m ruff check app --output-format=concise) | tee "$REPORT_DIR/ruff.log"
   log "pip-audit $PIP_AUDIT_VERSION em tool-venv isolado…"
-  (cd backend && "$PIP_AUDIT_BIN" -r requirements.txt --desc) | tee "$REPORT_DIR/pip-audit.log"
+  (cd backend && "$PIP_AUDIT_BIN" -m pip_audit -r requirements.txt --desc) | tee "$REPORT_DIR/pip-audit.log"
   log "Alembic upgrade head…"; (cd backend && "$PY" -m alembic upgrade head)
   log "Pytest completo com banco + cobertura >=65%…"
   (cd backend && "$PY" -m pytest tests -q --tb=short --maxfail=25 --cov=app --cov-report=term-missing:skip-covered --cov-report="xml:$REPORT_DIR/backend-coverage.xml" --cov-fail-under=65) | tee "$REPORT_DIR/backend-tests.log"
@@ -349,7 +355,15 @@ run_p0() {
   log "Backup wrapper cifrado…"; bash scripts/tests/test_backup_wrapper.sh | tee "$REPORT_DIR/backup-wrapper.log"
   log "Rollback de deploy…"; bash scripts/tests/test_deploy_rollback.sh | tee "$REPORT_DIR/deploy-rollback.log"
   log "Recuperação idempotente de runner…"; bash scripts/tests/test_selfhosted_runner_setup.sh | tee "$REPORT_DIR/runner-recovery.log"
+  log "Bloco remoto de recuperação de runner…"; bash scripts/tests/test_recover_runner_recovery.sh | tee "$REPORT_DIR/runner-remote-block.log"
+  log "Configuração de autenticação do Woodpecker…"; bash scripts/tests/test_woodpecker_compose.sh | tee "$REPORT_DIR/woodpecker-compose.log"
   ok "P0 guard equivalente OK"
+}
+
+run_status() {
+  log "Plano-Mestre: paridade do checklist-mestre…"; bash scripts/tests/test_status_check.sh | tee "$REPORT_DIR/status-check-tests.log"
+  log "Plano-Mestre: validação de docs/PLANO_MESTRE_STATUS.md…"; bash scripts/status_check.sh --resumo | tee "$REPORT_DIR/status-check.log"
+  ok "Plano-Mestre status OK"
 }
 
 run_architecture() {
@@ -402,12 +416,13 @@ case "$MODE" in
   eval) run_eval ;;
   frontend) run_frontend ;;
   p0) run_p0 ;;
+  status) run_status ;;
   architecture) run_architecture ;;
   continuity) run_continuity ;;
   ui-extra) run_ui_extra ;;
   fast) run_fast ;;
-  required) run_backend; run_eval; run_frontend; run_p0 ;;
-  full) run_backend; run_eval; run_frontend; run_p0; run_architecture; run_continuity; run_ui_extra ;;
+  required) run_backend; run_eval; run_frontend; run_p0; run_status ;;
+  full) run_backend; run_eval; run_frontend; run_p0; run_status; run_architecture; run_continuity; run_ui_extra ;;
   *) die "modo inválido: $MODE" ;;
 esac
 ok "CI local concluído com sucesso."

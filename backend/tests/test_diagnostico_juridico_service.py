@@ -92,3 +92,66 @@ async def test_wrapper_recalcula_status_geral(monkeypatch):
     assert payload["status_geral"] == "alerta"
     assert payload["resumo"]["alerta"] == 1
     assert len(payload["subsistemas"]) == 3
+
+
+# ── Captura vazia por muitos dias seguidos ───────────────────────────────────
+# O heartbeat do DOU já media RESULTADO por execução (`ultima_quantidade`), e
+# distinguia "0 publicações" de "fonte fora do ar". O que faltava era a
+# TENDÊNCIA: uma consulta saudável que não traz nada, repetida todo dia,
+# mantinha o painel verde. É a forma exata do defeito que o CLAUDE.md registra
+# ("a captura DJEN reporta ok há meses sem nunca ter capturado nada") — só que
+# aqui o dado para detectá-lo já existia e ninguém o somava.
+
+def _estado_ok(vazias: int, quantidade: int = 0) -> dict:
+    return {
+        "status": "ok",
+        "ultima_execucao": "2026-08-22T06:00:00+00:00",
+        "ultima_quantidade": quantidade,
+        "falhas_consecutivas": 0,
+        "execucoes_sem_resultado": vazias,
+        "ultimo_erro_tipo": None,
+    }
+
+
+def test_uma_execucao_vazia_continua_ok(monkeypatch):
+    """Dia sem publicação é normal — não pode virar alarme."""
+    monkeypatch.setattr(svc, "status_dou", lambda: _estado_ok(1))
+    item = svc._probe_dou_runtime()
+    assert item["status"] == "ok"
+
+
+def test_semana_inteira_sem_capturar_vira_alerta(monkeypatch):
+    monkeypatch.setattr(
+        svc, "status_dou",
+        lambda: _estado_ok(svc.DOU_EXECUCOES_SEM_RESULTADO_ALERTA),
+    )
+    item = svc._probe_dou_runtime()
+    assert item["status"] == "alerta"
+    assert item["execucoes_sem_resultado"] == svc.DOU_EXECUCOES_SEM_RESULTADO_ALERTA
+    assert "keyword" in item["detalhe"]
+    # A ação precisa dizer o que conferir; "verifique o sistema" não serve.
+    assert "keywords ativas" in item["acao_sugerida"]
+
+
+def test_captura_com_resultado_zera_a_sequencia(monkeypatch):
+    """Uma captura que traz publicação limpa o contador — senão o alerta
+    ficaria grudado depois de resolvido."""
+    from app.services import diario_oficial_service as dos
+
+    monkeypatch.setitem(dos._DOU_STATUS, "execucoes_sem_resultado", 9)
+    dos._registrar_status_dou(ok=True, quantidade=3)
+    assert dos._DOU_STATUS["execucoes_sem_resultado"] == 0
+
+    dos._registrar_status_dou(ok=True, quantidade=0)
+    assert dos._DOU_STATUS["execucoes_sem_resultado"] == 1
+
+
+def test_falha_de_fonte_nao_conta_como_execucao_vazia(monkeypatch):
+    """São defeitos diferentes: fonte fora do ar já tem `falhas_consecutivas`.
+    Somar os dois esconderia o que cada um diz."""
+    from app.services import diario_oficial_service as dos
+
+    monkeypatch.setitem(dos._DOU_STATUS, "execucoes_sem_resultado", 4)
+    dos._registrar_status_dou(ok=False, erro=RuntimeError("fonte caiu"))
+    assert dos._DOU_STATUS["execucoes_sem_resultado"] == 4
+    assert dos._DOU_STATUS["falhas_consecutivas"] >= 1

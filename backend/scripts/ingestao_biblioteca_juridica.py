@@ -9,6 +9,7 @@ A escrita do lote é atômica: só existe commit após todos os documentos concl
 from __future__ import annotations
 
 import argparse
+import datetime
 import os
 import re
 import sys
@@ -68,13 +69,27 @@ OFFICIAL_DOMAIN_SUFFIXES = (
 )
 
 
+def _normalizar_datas(valor):
+    """YAML converte data ISO não citada (ex.: 2026-08-14) em datetime.date,
+    o que quebra a serialização JSON do JSONB `extra` na ingestão. Normaliza
+    para string ISO, recursivamente, preservando o valor legível."""
+    if isinstance(valor, (datetime.date, datetime.datetime)):
+        return valor.isoformat()
+    if isinstance(valor, dict):
+        return {k: _normalizar_datas(v) for k, v in valor.items()}
+    if isinstance(valor, list):
+        return [_normalizar_datas(v) for v in valor]
+    return valor
+
+
 def strip_frontmatter(text: str):
     m = re.match(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", text, re.S)
     if not m:
         m = re.match(r"^---\s*\n(.*?)---\s*\n?(.*)$", text, re.S)
     if not m:
         return {}, text
-    return dict(yaml.safe_load(m.group(1)) or {}), m.group(2)
+    meta = _normalizar_datas(dict(yaml.safe_load(m.group(1)) or {}))
+    return meta, m.group(2)
 
 
 def load_piloto(base_dir: str):

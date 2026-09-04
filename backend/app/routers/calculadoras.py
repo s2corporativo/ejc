@@ -9,7 +9,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.core.security import require_roles
+from app.core.security import require_roles_exact
 from app.models.user import User
 from app.services.calc.trabalhista import calcular, EntradaRescisao, TIPOS
 from app.services.calc.tax_tables import inss as calc_inss, irrf as calc_irrf
@@ -57,13 +57,13 @@ class PrescricaoIn(BaseModel):
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 @router.get("/tipos-rescisao")
-async def tipos_rescisao(cu: User = Depends(require_roles(_EQUIPE))):
+async def tipos_rescisao(cu: User = Depends(require_roles_exact(_EQUIPE))):
     """Lista os tipos de rescisão suportados e suas regras."""
     return {k: v["rotulo"] for k, v in TIPOS.items()}
 
 
 @router.post("/trabalhista/rescisao")
-async def rescisao(req: RescisaoIn, cu: User = Depends(require_roles(_EQUIPE))):
+async def rescisao(req: RescisaoIn, cu: User = Depends(require_roles_exact(_EQUIPE))):
     """Calcula verbas rescisórias (CLT) com memória auditável. MINUTA — HITL."""
     try:
         return calcular(EntradaRescisao(
@@ -80,7 +80,7 @@ async def rescisao(req: RescisaoIn, cu: User = Depends(require_roles(_EQUIPE))):
 @router.get("/inss")
 async def inss_endpoint(
     salario: float = Query(..., gt=0),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Contribuição INSS 2026 (progressiva, faixa a faixa)."""
     return calc_inss(salario)
@@ -92,14 +92,14 @@ async def irrf_endpoint(
     inss: float = Query(0.0, ge=0),
     dependentes: int = Query(0, ge=0, le=20),
     pensao: float = Query(0.0, ge=0),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """IRRF 2026 mensal (tabela progressiva + redutor Lei 15.270/2025)."""
     return calc_irrf(rendimento, inss, dependentes=dependentes, pensao=pensao)
 
 
 @router.post("/correcao-monetaria")
-async def correcao_monetaria(req: CorrecaoIn, cu: User = Depends(require_roles(_EQUIPE))):
+async def correcao_monetaria(req: CorrecaoIn, cu: User = Depends(require_roles_exact(_EQUIPE))):
     """Atualização monetária por índice oficial (BCB SGS) + juros de mora.
 
     Índices: ipca/ipca_e/inpc/selic/tr (legado bcb_service) e, com
@@ -129,7 +129,7 @@ async def correcao_monetaria(req: CorrecaoIn, cu: User = Depends(require_roles(_
 
 
 @router.get("/prescricao/tipos")
-async def prescricao_tipos(cu: User = Depends(require_roles(_EQUIPE))):
+async def prescricao_tipos(cu: User = Depends(require_roles_exact(_EQUIPE))):
     """Catálogo de prazos prescricionais/decadenciais com base legal."""
     return {
         k: {"rotulo": v["rotulo"], "tipo": v["tipo"], "base_legal": v["base_legal"],
@@ -139,7 +139,7 @@ async def prescricao_tipos(cu: User = Depends(require_roles(_EQUIPE))):
 
 
 @router.post("/prescricao")
-async def prescricao(req: PrescricaoIn, cu: User = Depends(require_roles(_EQUIPE))):
+async def prescricao(req: PrescricaoIn, cu: User = Depends(require_roles_exact(_EQUIPE))):
     """Calcula data-limite e situação de um prazo prescricional/decadencial.
 
     MINUTA (HITL) — não considera suspensões/interrupções do caso concreto.
@@ -157,7 +157,7 @@ async def custas_tjmg_endpoint(
                        description="Grupo da tabela oficial: 1 cível/fazenda, "
                                    "2 família/JEC, 3 sucessões, 6 cautelar/"
                                    "jurisd. voluntária, 7 mandado de segurança"),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Custas iniciais + Taxa Judiciária TJMG (1ª instância, tabela oficial
     2026 — Anexo I da Lei 14.939/2003). Resultado é MINUTA: a guia oficial

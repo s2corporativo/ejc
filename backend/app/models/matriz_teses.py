@@ -57,6 +57,14 @@ class ThesisCandidate(Base):
     id       = Column(String(36), primary_key=True)
     case_id  = Column(String(36), ForeignKey("cases.id"), nullable=False, index=True)
     issue_id = Column(String(36), ForeignKey("legal_issues.id"), nullable=True)
+    # Tese do Banco institucional da qual esta candidata se originou (migration
+    # 149, Classe A do plano-mestre) -- NULO para candidatas sugeridas pela IA
+    # sem tese catalogada correspondente. Preenchido em
+    # matriz_teses_service.montar_matriz; consumido em aprovar_tese para
+    # materializar o vínculo em tese_caso_links na aprovação (ver
+    # services/tese_vinculo_service.py).
+    tese_banco_id = Column(String(36), ForeignKey("teses.id", ondelete="SET NULL"),
+                           nullable=True)
 
     tese       = Column(Text, nullable=False)
     fundamento = Column(Text, nullable=True)           # artigos/súmulas/princípios

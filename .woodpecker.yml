@@ -1,0 +1,43 @@
+# CI oficial fora do GitHub Actions (Woodpecker self-hosted — infra/woodpecker/).
+# Replica o portão local obrigatório do CLAUDE.md; divergência entre os dois é
+# bug deste arquivo.
+when:
+  - event: push
+    branch: main
+  - event: pull_request
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ejc_user
+      POSTGRES_PASSWORD: ejc_pass
+      POSTGRES_DB: ejc_db
+
+steps:
+  backend:
+    image: python:3.11-bookworm
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@db:5432/ejc_db
+      DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@db:5432/ejc_db
+      SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user:ejc_pass@db:5432/ejc_db
+    commands:
+      # Deps nativas de OCR/PDF exigidas pela suíte (mesma lista do ci.yml).
+      - apt-get update -qq
+      - apt-get install -y -qq --no-install-recommends jq libmagic1 poppler-utils tesseract-ocr libpango-1.0-0 libpangocairo-1.0-0 libcairo2 postgresql-client
+      - cd backend
+      - pip install --quiet -r requirements.txt
+      - ruff check app
+      - python -m alembic heads
+      - until pg_isready -h db -U ejc_user -q; do sleep 1; done
+      - python -m alembic upgrade head
+      - pytest tests -q
+
+  frontend:
+    image: node:22
+    commands:
+      - cd frontend
+      - npm ci
+      - npm run lint
+      - npm test
+      - npm run build

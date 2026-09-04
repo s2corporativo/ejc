@@ -29,6 +29,12 @@ export default function Dashboard() {
 
   return (
     <div>
+      {/* A página inicial não tinha NENHUM h1 — medido em 22/08/2026. Sem ele,
+          quem usa leitor de tela não tem âncora de "onde estou", e a navegação
+          por cabeçalho começa num nível arbitrário. Visualmente oculto porque
+          esta tela é densa de propósito e já se identifica pelo conteúdo; o
+          `sr-only` dá a semântica sem custar pixel. */}
+      <h1 className="sr-only">Início — prioridades, agenda e casos recentes</h1>
       <DeadlineRiskStrip />
 
       {podeUsarPje && (

@@ -58,15 +58,35 @@ def _caso_peca_ok() -> dict:
     return caso
 
 
-def test_caso_real_exige_revisao_independente_e_fonte_oficial():
+def test_caso_real_exige_fonte_oficial():
     caso = _caso_ok()
     assert validar_caso_real(caso) == []
 
-    caso["curadoria"]["revisor"] = "advogado-area"
     caso["curadoria"]["fontes_oficiais"][0]["url"] = "https://example.com/lei"
     erros = validar_caso_real(caso)
-    assert any("distintas" in e for e in erros)
     assert any("domínio oficial" in e for e in erros)
+
+
+def test_curador_pode_acumular_a_revisao():
+    """Escritório com um único jurista não pode ser impedido de curar o gold set.
+
+    A exigência de curador e revisor distintos foi removida em 23/08/2026 por
+    decisão do titular: travava o gate em vez de elevar a qualidade. O campo
+    `revisor` segue aceito para quando existir segundo par de olhos.
+    """
+    caso = _caso_ok()
+    caso["curadoria"]["revisor"] = caso["curadoria"]["curador"]
+    assert validar_caso_real(caso) == []
+
+    del caso["curadoria"]["revisor"]
+    assert validar_caso_real(caso) == []
+
+
+def test_curador_continua_obrigatorio():
+    caso = _caso_ok()
+    caso["curadoria"]["curador"] = ""
+    erros = validar_caso_real(caso)
+    assert any("curador" in e for e in erros)
 
 
 def test_caso_sintetico_nao_pode_se_passar_por_gold_real():

@@ -42,7 +42,7 @@ export default function IaStatusBanner() {
         type="button"
         onClick={dispensar}
         aria-label="Dispensar aviso de IA não ativada"
-        className="shrink-0 rounded p-0.5 text-amber-500 hover:bg-amber-100 hover:text-amber-700"
+        className="inline-flex min-h-[24px] min-w-[24px] shrink-0 items-center justify-center rounded p-0.5 text-amber-500 hover:bg-amber-100 hover:text-amber-700"
       >
         <X className="h-3.5 w-3.5" />
       </button>

@@ -44,6 +44,10 @@ class _FakeDB:
     def __init__(self, resultados: list):
         self._resultados = list(resultados)
         self.commits = 0
+        self.added: list = []   # I9: o AILog do score entra por db.add
+
+    def add(self, obj):
+        self.added.append(obj)
 
     async def execute(self, *a, **k):
         return _Result(self._resultados.pop(0))
@@ -142,7 +146,19 @@ async def test_calcular_usa_gateway_e_persiste_scores(monkeypatch):
     assert out["fundamentacao"] == 18
     assert out["total"] == 15 + 14 + 18 + 16 + 12 + 9 + 5  # 89
     assert out["id"] == "score1"
-    assert db.commits == 1
+    # I9 (análise E2E 03/09): o score gravava sem AILog. Agora o AILog é
+    # commitado (ai_guard) ANTES do INSERT do score → 2 commits, e o registro
+    # carrega o caso, o modelo e o tipo de uso.
+    from app.models.ai_log import AILog, AITipoUso
+    logs = [o for o in db.added if isinstance(o, AILog)]
+    assert len(logs) == 1
+    assert logs[0].case_id == "case1"
+    assert logs[0].tipo_uso == AITipoUso.analise_caso
+    assert "[SCORE_JURIDICO]" in logs[0].prompt_sanitizado
+    assert db.commits == 2
+    # S8: vocabulário HITL canônico somado ao "aviso" legado.
+    assert out["is_rascunho"] is True and out["aviso_hitl"] and out["status_hitl"] == "gerado"
+    assert "aviso" in out
 
 
 # ── Degradação graciosa: IA indisponível não vira 500 ─────────────────────────
@@ -164,3 +180,5 @@ async def test_calcular_ia_indisponivel_fallback_zerado_sem_500(monkeypatch):
     assert out["total"] == 0
     assert "Score calculado manualmente" in out["recomendacoes"]
     assert db.commits == 1  # grava o registro (fallback), sem 500
+    assert db.added == []   # sem resposta de IA não há AILog a gravar
+    assert out["is_rascunho"] is True

@@ -107,7 +107,13 @@ def test_startup_registra_rotas_e_bloqueia_prazo_automatico():
 
     paths = {getattr(route, "path", "") for route in app.routes}
     assert any(path.endswith("/casos/{case_id}/andamentos/inteligencia") for path in paths)
-    assert any(path.endswith("/casos/{case_id}/andamentos/alimentar-ia") for path in paths)
+    # Saneamento 30/08/2026: o endereço antigo /casos/{case_id}/andamentos/
+    # alimentar-ia (redirect 308) foi removido — o canônico é o registrado
+    # explicitamente em app/main.py sob /datajud/intelligence.
+    assert any(
+        path.endswith("/datajud/intelligence/{case_id}/andamentos/alimentar-ia")
+        for path in paths
+    )
     assert datajud_service._detectar_prazos_criticos(
         "Intimação para manifestação",
         datetime(2026, 7, 18, tzinfo=timezone.utc),

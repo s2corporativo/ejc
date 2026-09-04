@@ -27,6 +27,7 @@ from fastapi import HTTPException
 from sqlalchemy import select, text
 from starlette.background import BackgroundTasks
 
+from app.routers.cases import EncerrarCasoReq
 from app.schemas.case import CaseUpdate
 
 pytestmark = pytest.mark.skipif(
@@ -59,7 +60,8 @@ async def _criar_caso(db, client_id: str, titulo: str, resp_id: str, *, status: 
     # `status` é literal fixo do teste (não input externo) — inlinado na
     # query, como nos demais *_dblevel.py, porque o enum casestatus rejeita
     # bind de parâmetro sem cast explícito.
-    assert status in ("em_instrucao", "encerrado", "arquivado", "aberto")
+    assert status in ("aberto", "em_instrucao", "em_producao", "protocolado",
+                      "encerrado", "arquivado")
     case_id = str(uuid4())
     await db.execute(
         text(
@@ -79,6 +81,9 @@ async def _carregar_user(db, uid: str):
 
 async def _limpar(db, *, case_ids=(), user_ids=(), client_ids=()):
     for cid in case_ids:
+        # arquivar/desarquivar/reabrir gravam CaseMovimento (FK real) --
+        # sem isto o DELETE do caso estoura ForeignKeyViolationError.
+        await db.execute(text("DELETE FROM case_movimentos WHERE case_id = :id"), {"id": cid})
         await db.execute(text("DELETE FROM cases WHERE id = :id"), {"id": cid})
     # audit_logs.user_id tem FK real para users.id (sem ON DELETE) e a tabela
     # é WORM (migration 131_audit_logs_worm bloqueia DELETE direto) — o PATCH
@@ -239,5 +244,136 @@ async def test_patch_reabertura_de_arquivado_limpa_metadados_de_arquivo():
             assert row[0] == "aberto"
             assert row[1] is None
             assert row[2] is None
+        finally:
+            await _limpar(db, case_ids=[caso], user_ids=[socio], client_ids=[cli])
+
+
+# ── status_anterior (Classe B, plano-mestre) — migration 148 ─────────────────
+# Antes desta migration, /desarquivar e o PATCH{"status":"aberto"} usado para
+# reabrir um caso encerrado sempre forçavam "aberto", perdendo o estágio real
+# de trabalho (em_instrucao/em_producao/protocolado) em que o caso estava.
+
+async def test_arquivar_captura_status_anterior():
+    from app.core.database import AsyncSessionLocal
+    from app.routers.cases import arquivar_caso
+
+    tok = f"ArqAnt{uuid4().hex[:6]}"
+    async with AsyncSessionLocal() as db:
+        socio = await _criar_user(db, "socio")
+        cli = await _criar_cliente(db, f"Cliente {tok}")
+        caso = await _criar_caso(db, cli, f"Caso {tok}", socio, status="em_producao")
+        await db.commit()
+        try:
+            cu = await _carregar_user(db, socio)
+            await arquivar_caso(caso, BackgroundTasks(), None, db, cu)
+            row = (await db.execute(
+                text("SELECT status, status_anterior FROM cases WHERE id=:id"),
+                {"id": caso},
+            )).one()
+            assert row[0] == "arquivado"
+            assert row[1] == "em_producao"
+        finally:
+            await _limpar(db, case_ids=[caso], user_ids=[socio], client_ids=[cli])
+
+
+async def test_desarquivar_restaura_estagio_de_trabalho_real():
+    """Regressão direta: antes, este ciclo sempre devolvia 'aberto'."""
+    from app.core.database import AsyncSessionLocal
+    from app.routers.cases import arquivar_caso, desarquivar_caso
+
+    tok = f"DesAnt{uuid4().hex[:6]}"
+    async with AsyncSessionLocal() as db:
+        socio = await _criar_user(db, "socio")
+        cli = await _criar_cliente(db, f"Cliente {tok}")
+        caso = await _criar_caso(db, cli, f"Caso {tok}", socio, status="em_instrucao")
+        await db.commit()
+        try:
+            cu = await _carregar_user(db, socio)
+            await arquivar_caso(caso, BackgroundTasks(), None, db, cu)
+            resultado = await desarquivar_caso(caso, BackgroundTasks(), db, cu)
+            assert resultado.status.value == "em_instrucao"
+            row = (await db.execute(
+                text("SELECT status, status_anterior, archived_at, archive_reason "
+                     "FROM cases WHERE id=:id"),
+                {"id": caso},
+            )).one()
+            assert row[0] == "em_instrucao"
+            assert row[1] is None  # limpo pelo event listener ao sair do terminal
+            assert row[2] is None
+            assert row[3] is None
+        finally:
+            await _limpar(db, case_ids=[caso], user_ids=[socio], client_ids=[cli])
+
+
+async def test_desarquivar_sem_status_anterior_legado_cai_em_aberto():
+    """Caso arquivado ANTES da migration 148 não tem status_anterior -- cai no
+    comportamento legado (aberto), nunca quebra."""
+    from app.core.database import AsyncSessionLocal
+    from app.routers.cases import desarquivar_caso
+
+    tok = f"Legado{uuid4().hex[:6]}"
+    async with AsyncSessionLocal() as db:
+        socio = await _criar_user(db, "socio")
+        cli = await _criar_cliente(db, f"Cliente {tok}")
+        caso = await _criar_caso(db, cli, f"Caso {tok}", socio, status="arquivado")
+        await db.commit()
+        try:
+            cu = await _carregar_user(db, socio)
+            resultado = await desarquivar_caso(caso, BackgroundTasks(), db, cu)
+            assert resultado.status.value == "aberto"
+        finally:
+            await _limpar(db, case_ids=[caso], user_ids=[socio], client_ids=[cli])
+
+
+async def test_encerrar_e_reabrir_restaura_estagio_de_trabalho_real():
+    from app.core.database import AsyncSessionLocal
+    from app.routers.cases import encerrar_caso, reabrir_caso
+
+    tok = f"Reopen{uuid4().hex[:6]}"
+    async with AsyncSessionLocal() as db:
+        socio = await _criar_user(db, "socio")
+        cli = await _criar_cliente(db, f"Cliente {tok}")
+        caso = await _criar_caso(db, cli, f"Caso {tok}", socio, status="em_producao")
+        await db.commit()
+        try:
+            cu = await _carregar_user(db, socio)
+            payload = EncerrarCasoReq(
+                resultado="acordo",
+                motivo_resultado="Acordo homologado nesta audiência",
+                provas_determinantes="Contrato assinado",
+                licoes_aprendidas="Documentar cedo evita atraso no acordo",
+                alimentar_rag=False,
+            )
+            await encerrar_caso(caso, payload, BackgroundTasks(), db, cu)
+            resultado = await reabrir_caso(caso, BackgroundTasks(), db, cu)
+            assert resultado.status.value == "em_producao"
+            row = (await db.execute(
+                text("SELECT status, status_anterior, data_encerramento, resultado "
+                     "FROM cases WHERE id=:id"),
+                {"id": caso},
+            )).one()
+            assert row[0] == "em_producao"
+            assert row[1] is None
+            assert row[2] is None
+            assert row[3] is None
+        finally:
+            await _limpar(db, case_ids=[caso], user_ids=[socio], client_ids=[cli])
+
+
+async def test_reabrir_exige_caso_encerrado():
+    from app.core.database import AsyncSessionLocal
+    from app.routers.cases import reabrir_caso
+
+    tok = f"NaoEnc{uuid4().hex[:6]}"
+    async with AsyncSessionLocal() as db:
+        socio = await _criar_user(db, "socio")
+        cli = await _criar_cliente(db, f"Cliente {tok}")
+        caso = await _criar_caso(db, cli, f"Caso {tok}", socio, status="em_producao")
+        await db.commit()
+        try:
+            cu = await _carregar_user(db, socio)
+            with pytest.raises(HTTPException) as exc:
+                await reabrir_caso(caso, BackgroundTasks(), db, cu)
+            assert exc.value.status_code == 409
         finally:
             await _limpar(db, case_ids=[caso], user_ids=[socio], client_ids=[cli])

@@ -16,6 +16,7 @@
 #   • audit log em toda escrita; rate limit por rota.
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 from datetime import datetime, timezone
@@ -208,6 +209,12 @@ async def upload_item_solicitacao(
         case_id=sol.case_id,
         client_id=sol.client_id,
         uploaded_by=cu.id,
+        # Integridade (achado 30): documento enviado PELO CLIENTE tambem grava
+        # o digest. `sha256` e nullable por causa do acervo legado; sem esta
+        # linha, um upload novo do portal gravaria NULL e ficaria
+        # indistinguivel de documento anterior a migration 147 — a prova de
+        # integridade faltaria exatamente na peca que veio de fora.
+        sha256=hashlib.sha256(conteudo).hexdigest(),
     )
     db.add(d)
 
