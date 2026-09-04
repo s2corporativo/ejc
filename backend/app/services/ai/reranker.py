@@ -35,7 +35,9 @@ def _categoria_normativa(candidate: dict[str, Any]) -> bool:
     categoria = str(candidate.get("categoria") or "").strip().lower().replace("_", " ")
     extra_raw = candidate.get("extra")
     extra = extra_raw if isinstance(extra_raw, dict) else {}
-    autoridade = str(extra.get("authority_level") or "").strip().lower()
+    autoridade = str(
+        extra.get("authority_level") or extra.get("nivel_autoridade") or ""
+    ).strip().lower()
     return (
         any(token in categoria for token in ("legisl", "norma", "regulamento"))
         or autoridade == "oficial_normativa"
@@ -178,7 +180,7 @@ async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
     """Carrega governança e falha fechado para material normativo atual."""
     ids = {str(item.get("doc_id")) for item in candidatos if item.get("doc_id")}
     if not ids:
-        return candidatos
+        return [item for item in candidatos if not _categoria_normativa(item)]
     try:
         async with AsyncSessionLocal() as db:
             rows = (
