@@ -228,21 +228,37 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
       .finally(() => setLoading(false));
   };
 
-  // Documentos do caso para vínculo opcional (endpoint existente /documents/)
-  const carregarDocs = () =>
-    api
-      .get("/documents/", { params: { case_id: caseId, page_size: 500 } })
-      .then((r) => {
-        const all = asList(r.data);
-        setDocs(
-          all.map((d: any) => ({
-            id: d.id,
-            label:
-              d.titulo || d.nome_arquivo || d.filename || `Documento ${d.id}`,
-          })),
-        );
-      })
-      .catch(() => setDocs([]));
+  // Documentos do caso para vínculo opcional (endpoint existente /documents/).
+  // O GED limita páginas a 100; percorremos todas as páginas em vez de pedir
+  // 500 de uma vez (que passa a responder 422 no contrato endurecido).
+  const carregarDocs = async () => {
+    try {
+      const pageSize = 100;
+      let page = 1;
+      let total = Number.POSITIVE_INFINITY;
+      const all: any[] = [];
+      while (all.length < total) {
+        const response = await api.get("/documents/", {
+          params: { case_id: caseId, page, page_size: pageSize },
+        });
+        const lote = asList(response.data);
+        all.push(...lote);
+        total = Number(response.data?.total ?? all.length);
+        if (lote.length < pageSize) break;
+        page += 1;
+        if (page > 100) break;
+      }
+      setDocs(
+        all.map((d: any) => ({
+          id: d.id,
+          label:
+            d.titulo || d.nome_arquivo || d.filename || `Documento ${d.id}`,
+        })),
+      );
+    } catch {
+      setDocs([]);
+    }
+  };
 
   // Matriz tese×prova (referência estática). Erro é silencioso: não pode
   // quebrar a tela — degrada para lista vazia (estado vazio discreto).
@@ -283,7 +299,7 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
     setSugeriu(false);
     setSugestaoIdx(null);
     carregar();
-    carregarDocs();
+    void carregarDocs();
     carregarTeses();
     carregarMatriz();
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -114,7 +114,6 @@ export default function Despesas({
 
   async function exportCSV() {
     try {
-      // Reusa o cliente axios (baseURL /api + interceptor de token/refresh).
       const resp = await api.get("/despesas/export/csv", {
         params: filterComp ? { competencia: filterComp } : {},
         responseType: "blob",
@@ -155,6 +154,20 @@ export default function Despesas({
 
   function openNew() {
     setForm({ ...EMPTY_FORM, competencia: filterComp });
+    setEditId(null);
+    setShowForm(true);
+  }
+
+  function openExtra() {
+    // Despesa extra usa o mesmo registro financeiro canônico; apenas começa
+    // como variável, não recorrente e sem criar cadastro/tabela paralelos.
+    setForm({
+      ...EMPTY_FORM,
+      categoria: "outro",
+      tipo: "variavel",
+      recorrente: false,
+      competencia: filterComp,
+    });
     setEditId(null);
     setShowForm(true);
   }
@@ -242,12 +255,14 @@ export default function Despesas({
         <button onClick={exportCSV} className="btn-secondary text-sm">
           <Download className="w-4 h-4" /> CSV
         </button>
+        <button onClick={openExtra} className="btn-secondary text-sm">
+          <Plus className="w-4 h-4" /> Despesa extra
+        </button>
         <button onClick={openNew} className="btn-primary">
           <Plus className="w-4 h-4" /> Nova Despesa
         </button>
       </div>
 
-      {/* Summary cards */}
       <div className="grid grid-cols-3 gap-4">
         {[
           { label: "Pendente", value: totalPendente, cls: "text-warn-600" },
@@ -271,7 +286,6 @@ export default function Despesas({
         ))}
       </div>
 
-      {/* Filters */}
       <div className="card flex flex-wrap gap-3 items-center p-3">
         <Filter className="w-4 h-4 text-slate-400" />
         <select
@@ -296,7 +310,6 @@ export default function Despesas({
           <option value="pago">Pago</option>
           <option value="cancelado">Cancelado</option>
         </select>
-        {/* Competência vem do filtro único no topo do FinanceiroWorkspace. */}
         <Button
           onClick={load}
           variant="ghost"
@@ -309,7 +322,6 @@ export default function Despesas({
         />
       </div>
 
-      {/* Table */}
       {loading ? (
         <Spinner />
       ) : error ? (
@@ -393,7 +405,6 @@ export default function Despesas({
         </div>
       )}
 
-      {/* Modal */}
       <Modal
         open={showForm}
         onClose={() => setShowForm(false)}
@@ -460,16 +471,16 @@ export default function Despesas({
                 <input
                   type="number"
                   step="0.01"
+                  min="0.01"
                   className="input"
                   value={form.valor}
                   onChange={(e) => setForm({ ...form, valor: e.target.value })}
                 />
-                {form.valor.trim() !== "" &&
-                  (parseFloat(form.valor) || 0) === 0 && (
-                    <p className="mt-1 text-xs text-amber-600">
-                      Valor igual a R$ 0,00 — confirme se está correto.
-                    </p>
-                  )}
+                {form.valor.trim() !== "" && (parseFloat(form.valor) || 0) <= 0 && (
+                  <p className="mt-1 text-xs text-amber-600">
+                    Informe um valor maior que R$ 0,00.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">
@@ -553,7 +564,7 @@ export default function Despesas({
             </button>
             <button
               onClick={save}
-              disabled={!form.descricao || !form.valor}
+              disabled={!form.descricao || !form.valor || (parseFloat(form.valor) || 0) <= 0}
               className="btn-primary"
             >
               {editId ? "Salvar alterações" : "Criar despesa"}
