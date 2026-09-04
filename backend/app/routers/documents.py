@@ -499,10 +499,10 @@ async def upload(
 @router.get("/")
 async def listar(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=500),
+    page_size: int = Query(20, ge=1, le=100),
     case_id: Optional[str] = None,
     client_id: Optional[str] = None,
-    search: Optional[str] = None,
+    search: Optional[str] = Query(None, max_length=200),
     tipo: Optional[str] = Query(None, description="Filtra por tipo exato (tipo_key)"),
     confidencialidade: Optional[str] = Query(
         None,
@@ -595,12 +595,19 @@ async def listar(
                 tzinfo=timezone.utc,
             )
         )
-    if search:
-        query = query.where(
-            (Document.titulo.ilike(f"%{search}%"))
-            | (Document.ocr_text.ilike(f"%{search}%"))
+    if search and search.strip():
+        termo = (
+            search.strip()
+            .replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
         )
-    query = query.order_by(Document.created_at.desc())
+        padrao = f"%{termo}%"
+        query = query.where(
+            (Document.titulo.ilike(padrao, escape="\\"))
+            | (Document.ocr_text.ilike(padrao, escape="\\"))
+        )
+    query = query.order_by(Document.created_at.desc(), Document.id.desc())
 
     total = (
         await db.execute(select(sqlfunc.count()).select_from(query.subquery()))
@@ -738,7 +745,7 @@ async def _soft_delete_documento(
         "DELETE",
         "documents",
         document.id,
-        dados_depois={"storage": storage},
+        dados_depois={"storage": storage, "storage_preservado": True},
     )
     await db.commit()
 
@@ -766,31 +773,16 @@ async def remover(
         acao="excluído",
     )
 
-    # Evita o defeito antigo: soft-delete local de metadata sem remover o objeto
-    # remoto. A via canônica por doc_id também remove o objeto Drive antes de
-    # ocultar a linha. Falha remota deixa o documento ativo para nova tentativa.
-    if document.drive_file_id:
-        try:
-            await asyncio.to_thread(
-                gd.delete_file,
-                document.drive_file_id,
-                remote_path=_remote_path_documento(document),
-            )
-        except gd.DriveIndisponivelError as exc:
-            raise HTTPException(
-                status_code=503,
-                detail="Google Drive não configurado/indisponível",
-            ) from exc
-        except gd.DriveObjetoNaoEncontradoError:
-            # Objeto já ausente: não há dado remoto órfão a preservar.
-            logger.warning("Objeto remoto já ausente ao remover documento %s", doc_id)
-        except Exception as exc:
-            logger.error("Falha ao remover objeto remoto do documento %s", doc_id, exc_info=True)
-            raise HTTPException(status_code=502, detail="Falha ao remover arquivo remoto") from exc
-        await _soft_delete_documento(db, cu, document, storage="drive")
-        return MsgResponse(detail="Documento removido")
-
-    await _soft_delete_documento(db, cu, document, storage="local")
+    # Soft-delete deve ser reversível: o storage físico é preservado para que
+    # /trash/.../restaurar possa reativar o documento sem perda de evidência.
+    # A eliminação física pertence exclusivamente ao fluxo de PURGE, que exige
+    # superadmin, motivo e trilha própria.
+    await _soft_delete_documento(
+        db,
+        cu,
+        document,
+        storage="drive" if document.drive_file_id else "local",
+    )
     return MsgResponse(detail="Documento removido")
 
 
@@ -1290,22 +1282,9 @@ async def deletar_documento_drive(
         document.id,
         acao="excluído",
     )
-    try:
-        await asyncio.to_thread(
-            gd.delete_file,
-            file_id,
-            remote_path=_remote_path_documento(document),
-        )
-    except gd.DriveIndisponivelError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="Google Drive não configurado/indisponível",
-        ) from exc
-    except gd.DriveObjetoNaoEncontradoError:
-        logger.warning("Objeto remoto já ausente ao remover documento %s", document.id)
-    except Exception as exc:
-        logger.error("Falha ao remover arquivo Drive", exc_info=True)
-        raise HTTPException(status_code=502, detail="Falha ao remover arquivo remoto") from exc
 
+    # Compatibilidade do endpoint legado: a ação agora segue o mesmo lifecycle
+    # reversível de DELETE /documents/{doc_id}. O arquivo remoto permanece
+    # preservado até a purga definitiva.
     await _soft_delete_documento(db, current_user, document, storage="drive")
     return {"ok": True}
