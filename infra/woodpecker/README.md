@@ -78,11 +78,35 @@ UI e podem ser habilitados quando ganharem um `.woodpecker.yml`.
    entre com a conta GitHub (`s2corporativo`), Repositories → *Enable* em
    `ejc`, `verdelimpclaude`, `s2licit` e `cuidar-vet-plataforma`. O Woodpecker
    cria o webhook em cada repo automaticamente. A partir daí, push em `main`
-   e PR aprovado executam o pipeline e reportam o status no GitHub.
+   e PR interno do próprio repositório executam o pipeline automaticamente;
+   PR vindo de fork continua exigindo aprovação humana e reporta o status no GitHub.
 
-7. Em cada repositório, confirme no painel: modo de aprovação para PRs ativo,
+7. Em cada repositório, confirme no painel: modo de aprovação `forks`,
    repositório não confiável (`trusted` desligado) e nenhum volume privilegiado
    liberado. O Compose também desativa registro de agentes por usuários.
+
+### Repositório já habilitado: aplicar o modo `forks` via API
+
+`WOODPECKER_DEFAULT_APPROVAL_MODE` é valor padrão para novos repositórios; o
+modo de aprovação do repositório já habilitado fica persistido no Woodpecker.
+A API oficial expõe `PATCH /api/repos/{repo_id}` com o campo
+`require_approval`. Para o EJC (`repo_id=2`), use o script versionado:
+
+```bash
+cd /opt/woodpecker-ci/infra/woodpecker
+export WOODPECKER_TOKEN='defina somente nesta sessão'
+bash configure-repo-approval.sh
+unset WOODPECKER_TOKEN
+```
+
+Obtenha o PAT somente na página de perfil do Woodpecker. Não cole o token em
+Issue, PR, chat, README, shell history compartilhado ou logs. O script não
+persiste nem imprime o token e só aceita sucesso quando a resposta da API
+confirma `require_approval=forks`.
+
+O mesmo ajuste pode ser feito pelo Swagger autenticado com
+`PATCH /api/repos/2` e corpo `{"require_approval":"forks"}`. Não altere
+`trusted`, volumes, segredos, `allow_pr` ou qualquer outro campo nesse ajuste.
 
 ## Operação
 
@@ -94,13 +118,15 @@ UI e podem ser habilitados quando ganharem um `.woodpecker.yml`.
   nos pipelines.
 - O pipeline é o mesmo portão local obrigatório do `CLAUDE.md` de cada repo.
 - Pushes para branches diferentes de `main` podem ser descartados por `when`
-  antes da criação do pipeline. Isso é esperado; erro real é push em `main`
-  ou PR aprovado também ser descartado.
+  antes da criação do pipeline. Isso é esperado; erro real é push em `main`,
+  PR interno ou PR de fork já aprovado também ser descartado.
 - Verifique semanalmente `docker system df` e o uso do disco. Não automatize
   remoção de imagens/volumes na VPS de produção: uma imagem antiga pode ser o
   artefato de rollback.
 - O agente idealmente deve migrar para host/VM próprio. Enquanto compartilhar a
-  VPS com produção, concorrência, limites e aprovação de PR são obrigatórios.
+  VPS com produção, mantenha concorrência/limites, `trusted` desligado e
+  aprovação obrigatória para PRs vindos de forks. A execução automática fica
+  restrita aos PRs internos do próprio repositório.
 
 ## Backup antes de atualizar ou recriar
 
@@ -170,9 +196,10 @@ mensagens `individual agent not found by token`.
 
 Os pipelines versionados rodam em push para `main` e em pull requests.
 Portanto, pushes diretos para branches de trabalho são intencionalmente
-ignorados. Investigue somente se o evento descartado for push em `main` ou
-pull request aprovado; nesse caso, habilite log `debug` temporário e confronte
-`event`, `branch` e `ref` recebidos com o `when` do repositório.
+ignorados. Investigue somente se o evento descartado for push em `main`, PR
+interno ou PR de fork já aprovado; nesse caso, habilite log `debug`
+temporário e confronte `event`, `branch` e `ref` recebidos com o `when` do
+repositório.
 
 ## Rollback
 
