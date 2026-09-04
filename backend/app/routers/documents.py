@@ -3,6 +3,7 @@
 # Acesso a docs restritos: audit log obrigatório (LGPD art. 37).
 import asyncio
 import logging
+import hashlib
 import os
 from datetime import date, datetime, time as dtime, timedelta, timezone
 from typing import Optional
@@ -179,6 +180,23 @@ def _remote_path_documento(document: Document) -> str | None:
     if not candidato or candidato == str(document.drive_file_id or ""):
         return None
     return candidato
+
+
+def _serializar_documento(document: Document) -> dict:
+    """Shape público de item de documento (mesmo da listagem).
+
+    Nunca inclui `filepath`/paths internos de storage — download tem rota própria.
+    """
+    return {
+        "id": document.id,
+        "titulo": document.titulo,
+        "tipo": document.tipo,
+        "filename": document.filename,
+        "size_bytes": document.size_bytes,
+        "confidencialidade": document.confidencialidade.value,
+        "case_id": document.case_id,
+        "created_at": document.created_at,
+    }
 
 
 def _content_disposition(filename: str) -> str:
@@ -391,6 +409,14 @@ async def upload(
         filepath=filepath,
         mimetype=mime_real,
         size_bytes=len(conteudo),
+        # Integridade (migration 147). O EJC é sistema de PROVA DOCUMENTAL: o
+        # hash é o que sustenta que o arquivo juntado hoje é o mesmo de amanhã.
+        # A maquinaria de SHA-256 existia inteira desde a 142 (serviço local,
+        # remoto via rclone, rescan, task de backfill) e o upload direto não
+        # chamava nada — o hash só existia em `document_intake_items`, que este
+        # caminho não alimenta. Calculado dos bytes que já estão em memória:
+        # sem I/O extra, sem reler o arquivo do disco.
+        sha256=hashlib.sha256(conteudo).hexdigest(),
         confidencialidade=conf_enum,
         ocr_text=ocr_text,
         case_id=case_id,
@@ -583,23 +609,42 @@ async def listar(
         await db.execute(query.offset((page - 1) * page_size).limit(page_size))
     ).scalars().all()
     return {
-        "data": [
-            {
-                "id": document.id,
-                "titulo": document.titulo,
-                "tipo": document.tipo,
-                "filename": document.filename,
-                "size_bytes": document.size_bytes,
-                "confidencialidade": document.confidencialidade.value,
-                "case_id": document.case_id,
-                "created_at": document.created_at,
-            }
-            for document in rows
-        ],
+        "data": [_serializar_documento(document) for document in rows],
         "total": total,
         "page": page,
         "page_size": page_size,
     }
+
+
+# Detalhe por ID (pente fino E2E 30/08 §5.1): a releitura direta de um documento
+# respondia 405 — só existiam list/download/PATCH/DELETE. Declarada DEPOIS das
+# rotas estáticas de 1 segmento (/tipos, GET /) para não capturá-las; /drive/*
+# tem mais segmentos e não conflita.
+@router.get("/{doc_id}")
+async def detalhar(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Metadados de um documento — mesmo shape do item da listagem."""
+    document = (
+        await db.execute(
+            select(Document).where(
+                Document.id == doc_id,
+                Document.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if not document:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+
+    # Mesmo caminho de autorização do download: gate único por caso/cliente/
+    # uploader + cofre por confidencialidade.
+    await _verificar_acesso_documento(db, cu, document)
+    if not _pode_acessar_confidencial(cu, document.confidencialidade.value):
+        raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
+
+    return _serializar_documento(document)
 
 
 @router.get("/{doc_id}/download")

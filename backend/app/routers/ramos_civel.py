@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession  # noqa: F401 (reexport p/ compa
 
 from app.core.config import get_settings  # noqa: F401 (reexport p/ compat)
 from app.core.database import get_db  # noqa: F401 (reexport p/ compat)
-from app.core.security import get_current_user, require_roles  # noqa: F401 (reexport p/ compat)
+from app.core.security import get_current_user, require_roles, require_roles_exact  # noqa: F401 (reexport p/ compat)
 from app.models.user import User  # noqa: F401 (reexport p/ compat)
 from app.models.case import Case  # noqa: F401 (reexport p/ compat)
 from app.models.audit_log import criar_audit_log  # noqa: F401 (reexport p/ compat)
@@ -109,7 +109,7 @@ async def civ_listar(db: AsyncSession = Depends(get_db),
 
 @router.post("/civel", status_code=201)
 async def civ_criar(body: CivelIn, db: AsyncSession = Depends(get_db),
-                    cu: User = Depends(require_roles(_EQUIPE))):
+                    cu: User = Depends(require_roles_exact(_EQUIPE))):
     await _get_case(db, body.case_id, cu)
     data = body.model_dump()
     # Auto-calcular prazos de contestação e audiência se data_citacao fornecida
@@ -129,7 +129,7 @@ async def civ_criar(body: CivelIn, db: AsyncSession = Depends(get_db),
 
 @router.patch("/civel/{cid}")
 async def civ_atualizar(cid: str, body: CivelUpdate, db: AsyncSession = Depends(get_db),
-                        cu: User = Depends(require_roles(_EQUIPE))):
+                        cu: User = Depends(require_roles_exact(_EQUIPE))):
     return await _crud_atualizar(CivelCase, "civel_cases", cid,
                                  body.model_dump(exclude_unset=True), db, cu)
 
@@ -150,7 +150,7 @@ async def civ_prazo_contestacao(
     rito: Literal["comum", "jec", "fazenda_publica"],
     marco: Optional[Literal["audiencia_conciliacao", "juntada_citacao"]] = None,
     data_marco: Optional[date] = None,
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Prazo de contestação por rito.
@@ -218,7 +218,7 @@ async def civ_alimentos(
     salario_devedor: float = Query(..., ge=0),
     percentual: float = Query(..., ge=0, le=100),
     filhos: int = Query(1, ge=1),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Estimativa aritmética de alimentos a partir do percentual INFORMADO.
@@ -270,7 +270,7 @@ async def civ_usucapiao(
                   "especial_rural", "familiar"],
     anos_posse: float = Query(..., ge=0),
     posse_mansa: bool = True,
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Requisitos de usucapião por modalidade (CC arts. 1.238-1.244 · CF arts. 183 e 191).

@@ -78,7 +78,8 @@ def _resposta_indisponivel(motivo: str, alternativas: Optional[list] = None) -> 
     }
 
 
-async def classificar_documento(db: AsyncSession, texto: str) -> dict:
+async def classificar_documento(db: AsyncSession, texto: str,
+                                user_id: str | None = None) -> dict:
     """
     Sugere o tipo de documento a partir do texto extraído (OCR).
 
@@ -152,6 +153,16 @@ async def classificar_documento(db: AsyncSession, texto: str) -> dict:
     except Exception as e:
         logger.warning("IA indisponível na classificação de documento: %s", e)
         return _resposta_indisponivel("Serviço de IA indisponível no momento.")
+
+    # I9: AILog quando o chamador informa o usuário (routers/documents.py está
+    # em PR aberto — passa a informar quando integrar). Prompt já sanitizado.
+    if user_id:
+        from app.models.ai_log import AITipoUso
+        await ai_gateway.registrar_log_resposta(
+            db, user_id=user_id, tipo_uso=AITipoUso.outro, resp=resp,
+            prompt_sanitizado="[DOCUMENT_CLASSIFIER]\n" + texto_limpo,
+            pii_removida=pii_removida,
+        )
 
     dados = _parse_json(resp.texto) or {}
     tipo = str(dados.get("tipo_sugerido") or "").strip()

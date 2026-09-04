@@ -385,7 +385,7 @@ async def indexar_peca_rag(legal_doc_id: str) -> None:
                 return
 
             # Escopo de isolamento (Fase 3B) + nomes a proteger na sanitização.
-            client_id = None
+            client_id = getattr(d, "client_id", None)
             nomes_proteger: list[str] = []
             if d.case_id:
                 caso = await db.get(Case, d.case_id)
@@ -401,6 +401,16 @@ async def indexar_peca_rag(legal_doc_id: str) -> None:
                                       getattr(cli, "nome_fantasia", None)):
                                 if n:
                                     nomes_proteger.append(n)
+            elif client_id:
+                cli = await db.get(Client, client_id)
+                if cli:
+                    for n in (
+                        getattr(cli, "nome", None),
+                        getattr(cli, "razao_social", None),
+                        getattr(cli, "nome_fantasia", None),
+                    ):
+                        if n:
+                            nomes_proteger.append(n)
 
             # LGPD — NUNCA indexar PII na RAG. Mascara também nomes próprios
             # (cliente, parte contrária) — antes a indexação vazava nomes

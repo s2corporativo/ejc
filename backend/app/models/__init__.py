@@ -97,6 +97,10 @@ from app.models.processo_eletronico import (  # noqa  (MNI 2.2.2 leitura — mig
     Tribunal, CredencialProcessoEletronico, SincronizacaoProcessoEletronico,
     DocumentoProcessoEletronicoDedup,
 )
+from app.models.saneamento import (  # noqa  (schema saneamento — migração 154)
+    TpuMovimento, DatajudSnapshot, ExcecaoNumero, PlanoDedup,
+    IndicativoEncerramento, Divergencia, Execucao,
+)
 
 # Registra normalização defensiva da Sala Jurídica depois que os modelos estão
 # carregados: área sugerida canônica e citações legadas saneadas em memória.

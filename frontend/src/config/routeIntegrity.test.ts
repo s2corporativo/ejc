@@ -14,7 +14,7 @@ import { LEGACY_REDIRECTS, STAFF_ROUTES } from "./moduleRegistry";
 import { isFinanceTab } from "../pages/FinanceiroWorkspace";
 import { isInteligenciaTab } from "../pages/InteligenciaWorkspace";
 import { isCentralTab } from "../pages/Central";
-import { isActivityView } from "../pages/CentralAtividades";
+import { isActivityView, isItemType } from "../pages/CentralAtividades";
 
 // Fonte de verdade das abas/visões navegáveis por deep-link (?tab=/?view=) dos
 // workspaces com sub-navegação por query param. Um LEGACY_REDIRECT que aponte
@@ -24,11 +24,12 @@ import { isActivityView } from "../pages/CentralAtividades";
 type DeepLinkValidators = {
   tab?: (value: string | null) => boolean;
   view?: (value: string | null) => boolean;
+  tipo?: (value: string | null) => boolean;
 };
 const WORKSPACE_DEEP_LINKS: Record<string, DeepLinkValidators> = {
   "/financeiro": { tab: isFinanceTab },
   "/inteligencia": { tab: isInteligenciaTab },
-  "/atividades": { tab: isCentralTab, view: isActivityView },
+  "/atividades": { tab: isCentralTab, view: isActivityView, tipo: isItemType },
 };
 
 const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -154,7 +155,7 @@ describe("integridade App.tsx ↔ moduleRegistry", () => {
     }
   });
 
-  it("todo redirect com ?tab=/?view= cai numa aba REAL do workspace de destino", () => {
+  it("todo redirect com ?tab=/?view=/?tipo= cai numa aba REAL do workspace de destino", () => {
     for (const redirect of LEGACY_REDIRECTS) {
       const [pathname, query] = redirect.to.split("?");
       if (!query) continue; // redirect sem sub-navegação por query
@@ -173,6 +174,13 @@ describe("integridade App.tsx ↔ moduleRegistry", () => {
         expect(
           validators.view?.(view) ?? false,
           `redirect ${redirect.from} → ${redirect.to} usa a visão inexistente "${view}" em ${pathname}`,
+        ).toBe(true);
+      }
+      const tipo = params.get("tipo");
+      if (tipo !== null) {
+        expect(
+          validators.tipo?.(tipo) ?? false,
+          `redirect ${redirect.from} → ${redirect.to} usa o tipo inexistente "${tipo}" em ${pathname}`,
         ).toBe(true);
       }
     }

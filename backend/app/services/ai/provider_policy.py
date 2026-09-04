@@ -141,8 +141,18 @@ class AIProviderPolicy:
             #    elegível (falta ANTHROPIC_API_KEY / AI_EXTERNAL_PROVIDERS_ALLOWED)
             #    nem Ollama local. Não direcionar só para "habilite o Ollama":
             #    o desenho de produção é IA externa com mascaramento de PII.
+            #  • e, desde AUD27-P0-1, a cadeia também fica vazia quando o
+            #    kill-switch GLOBAL está desligado — aí nenhuma chave de
+            #    provedor resolve, e mandar o operador atrás de
+            #    ANTHROPIC_API_KEY o faria perseguir a causa errada.
             removido_por_pii = any("PII residual" in m for m in motivos)
-            if removido_por_pii:
+            if not s.AI_ENABLED:
+                bloqueio = (
+                    "A IA está desligada no sistema (kill-switch AI_ENABLED). "
+                    "Nenhum provedor — nem local — responde enquanto ela estiver "
+                    "desligada; religue em AI_ENABLED=true para voltar a usar."
+                )
+            elif removido_por_pii:
                 bloqueio = (
                     "Este conteúdo tem dados pessoais que não podem ir a uma IA "
                     "externa. Habilite uma IA local (OLLAMA_ENABLED=true) ou "

@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import {
-  PageHeader,
   Modal,
   Empty,
   EmptyState,
@@ -672,23 +671,25 @@ export default function Documentos() {
 
   return (
     <div>
-      <PageHeader
-        title="Documentos"
-        subtitle="GED do escritório"
-        actions={
-          <button
-            className="btn-gold"
-            onClick={() => {
-              if (casoFiltro && !form.case_id) {
-                setForm((f: any) => ({ ...f, case_id: casoFiltro }));
-              }
-              setModal(true);
-            }}
-          >
-            <Upload size={16} /> Enviar
-          </button>
-        }
-      />
+      {/* SEM PageHeader aqui, de propósito. Este componente NÃO é rota: ele é
+          renderizado dentro de `GestaoDocumental`, que já monta o `PageHeader`
+          com o mesmo título "Documentos". Os dois juntos produziam DOIS <h1>
+          idênticos na mesma tela — medido em 22/08/2026 —, o que tira do leitor
+          de tela a âncora de qual é o título da página, além de repetir o
+          cabeçalho visualmente. Fica só a ação, que é desta aba. */}
+      <div className="mb-6 flex flex-wrap items-center justify-end gap-2">
+        <button
+          className="btn-gold"
+          onClick={() => {
+            if (casoFiltro && !form.case_id) {
+              setForm((f: any) => ({ ...f, case_id: casoFiltro }));
+            }
+            setModal(true);
+          }}
+        >
+          <Upload size={16} /> Enviar
+        </button>
+      </div>
 
       <DocumentosStats />
 

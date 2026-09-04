@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import require_roles
+from app.core.security import EQUIPE_JURIDICA, require_roles_exact
 from app.models.user import User
 from app.services.citation_check import verificar_citacoes
 from app.services import ai_gateway
@@ -66,14 +66,14 @@ class AdversarioReq(BaseModel):
 
 @router.post("/verificar-citacoes", dependencies=[Depends(rate_limit("qualidade-citacoes", 15))])
 async def verificar(req: VerificarCitacoesReq, db: AsyncSession = Depends(get_db),
-                    cu: User = Depends(require_roles(["estagiario"]))):
+                    cu: User = Depends(require_roles_exact(EQUIPE_JURIDICA))):
     """Confere cada súmula/artigo citado contra a base oficial (RAG)."""
     return await verificar_citacoes(db, req.texto)
 
 
 @router.post("/consistencia", dependencies=[Depends(rate_limit("qualidade-consistencia", 15))])
 async def consistencia(req: ConsistenciaReq, db: AsyncSession = Depends(get_db),
-                       cu: User = Depends(require_roles(["estagiario"]))):
+                       cu: User = Depends(require_roles_exact(EQUIPE_JURIDICA))):
     """Analisa coerência interna da peça (pedidos × fatos, contradições)."""
     limpo, houve_pii = sanitizar_pii(req.texto)
     resp = await ai_gateway.chat(
@@ -89,7 +89,7 @@ async def consistencia(req: ConsistenciaReq, db: AsyncSession = Depends(get_db),
 
 @router.post("/simular-adversario", dependencies=[Depends(rate_limit("qualidade-adversario", 10))])
 async def simular_adversario(req: AdversarioReq, db: AsyncSession = Depends(get_db),
-                             cu: User = Depends(require_roles(["estagiario"]))):
+                             cu: User = Depends(require_roles_exact(EQUIPE_JURIDICA))):
     """Gera os contra-argumentos da parte contrária para preparar a defesa."""
     limpo, houve_pii = sanitizar_pii(req.tese)
     ctx = f"Área: {req.area}\n\n" if req.area else ""

@@ -1,4 +1,5 @@
 import { ReactNode, useEffect, useState } from "react";
+import { cn } from "../lib/cn";
 import {
   AlertCircle,
   AlertTriangle,
@@ -11,8 +12,6 @@ import {
   Eye,
   FileClock,
   FileText,
-  ChevronDown,
-  Filter,
   Inbox,
   Info,
   Loader2,
@@ -24,7 +23,6 @@ import {
   Send,
   ShieldAlert,
   ShieldCheck,
-  SlidersHorizontal,
   X,
   XCircle,
 } from "lucide-react";
@@ -102,9 +100,9 @@ const buttonClasses: Record<ButtonVariant, string> = {
   ai: "bg-ai-600 text-white hover:bg-ai-500 active:bg-ai-700 focus:ring-ai-500/40",
 };
 
-export function cn(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(" ");
-}
+// Implementação única em src/lib/cn.ts; re-exportada aqui porque diversos
+// consumidores do design system importam `cn` de UI.
+export { cn };
 
 export function Button({
   children,
@@ -434,35 +432,6 @@ export function SearchBar({
   );
 }
 
-export function FilterBar({
-  children,
-  onClear,
-}: {
-  children: ReactNode;
-  onClear?: () => void;
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-black/[0.05] bg-white p-3 shadow-sm">
-      <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
-        <SlidersHorizontal className="h-4 w-4" />
-        Filtros
-      </div>
-      <div className="flex flex-1 flex-wrap items-center gap-2">{children}</div>
-      {onClear && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          icon={<Filter className="h-3.5 w-3.5" />}
-          onClick={onClear}
-        >
-          Limpar
-        </Button>
-      )}
-    </div>
-  );
-}
-
 export function PageHeader({
   title,
   subtitle,
@@ -487,8 +456,23 @@ export function PageHeader({
           <p className="mt-1.5 max-w-3xl text-sm text-slate-500">{subtitle}</p>
         )}
       </div>
+      {/* `shrink-0` incondicional anulava o `flex-wrap`: o container ficava preso
+          à largura de max-content e TRANSBORDAVA em vez de quebrar a linha —
+          116px em /prazos, /agenda, /tarefas e /intimacoes no tablet, e o botão
+          primário cortado em /casos no celular.
+
+          Mas removê-lo por completo custou caro do outro lado: com o container
+          livre para encolher, o subtítulo (`max-w-3xl`) disputava a linha e as
+          ações quebravam em DUAS linhas mesmo a 1440px, onde antes cabiam numa
+          só. Medido: /agenda, /intimacoes, /prazos e /tarefas passavam de 647×34
+          para 540×75 no desktop.
+
+          `lg:shrink-0` fica com os dois lados: abaixo de 1024px o container pode
+          encolher e quebrar a linha (some o transbordo); de 1024px para cima ele
+          volta a não encolher, e quem cede espaço é o título — o comportamento
+          original. Ambos os regimes conferidos por medição em cinco larguras. */}
       {actions && (
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 lg:shrink-0">
           {actions}
         </div>
       )}
@@ -666,59 +650,6 @@ export function TD({
     <td {...props} className={className}>
       {children}
     </td>
-  );
-}
-
-export function Tabs({
-  items,
-  value,
-  onChange,
-}: {
-  items: Array<{ value: string; label: string; icon?: ReactNode }>;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  // Segmentado tonal SEM borda; aba ativa em branco elevado com
-  // indicador dourado FINO (filete 2px) — dourado como acento cirúrgico.
-  return (
-    <div className="flex gap-1 overflow-x-auto rounded-xl bg-slate-900/[0.04] p-1 dark:bg-white/[0.06]">
-      {items.map((item) => (
-        <button
-          key={item.value}
-          type="button"
-          onClick={() => onChange(item.value)}
-          className={cn(
-            "relative flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-all",
-            value === item.value
-              ? "bg-white text-ouro-profundo shadow-sm after:absolute after:inset-x-3 after:bottom-1 after:h-0.5 after:rounded-full after:bg-ouro-claro dark:bg-white/[0.1] dark:text-[#E5CE7F]"
-              : "text-slate-600 hover:bg-slate-900/[0.04] dark:text-slate-300 dark:hover:bg-white/[0.05]",
-          )}
-        >
-          {item.icon}
-          {item.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-export function Dropdown({
-  label,
-  children,
-}: {
-  label: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <details className="relative">
-      <summary className="flex h-10 cursor-pointer list-none items-center gap-2 rounded-lg bg-slate-900/[0.05] px-3 text-sm font-medium text-slate-700 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-200 dark:hover:bg-white/[0.12]">
-        {label}
-        <ChevronDown className="h-4 w-4 text-slate-400" />
-      </summary>
-      <div className="absolute right-0 z-40 mt-2 min-w-48 rounded-xl border border-slate-200 bg-white p-2 shadow-md">
-        {children}
-      </div>
-    </details>
   );
 }
 
@@ -1438,7 +1369,11 @@ export function VisualLawDocument({
             <FileText className="h-5 w-5" />
           </div>
           <div className="min-w-0">
-            <h1>{title}</h1>
+            {/* h2, não h1: este cabeçalho é de um DOCUMENTO exibido
+                dentro de uma página que já tem `PageHeader` como h1.
+                Medido em /documentos: dois h1 idênticos ("Documentos"),
+                e o leitor de tela perde a âncora da página. */}
+            <h2 className="visual-law-document-title">{title}</h2>
             {subtitle && (
               <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
             )}

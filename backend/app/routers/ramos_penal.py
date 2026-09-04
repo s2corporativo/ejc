@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession  # noqa: F401 (reexport p/ compa
 
 from app.core.config import get_settings  # noqa: F401 (reexport p/ compat)
 from app.core.database import get_db  # noqa: F401 (reexport p/ compat)
-from app.core.security import get_current_user, require_roles  # noqa: F401 (reexport p/ compat)
+from app.core.security import get_current_user, require_roles, require_roles_exact  # noqa: F401 (reexport p/ compat)
 from app.models.user import User  # noqa: F401 (reexport p/ compat)
 from app.models.case import Case  # noqa: F401 (reexport p/ compat)
 from app.models.audit_log import criar_audit_log  # noqa: F401 (reexport p/ compat)
@@ -102,7 +102,7 @@ async def pen_listar(db: AsyncSession = Depends(get_db),
 
 @router.post("/penal", status_code=201)
 async def pen_criar(body: PenalIn, db: AsyncSession = Depends(get_db),
-                    cu: User = Depends(require_roles(_EQUIPE))):
+                    cu: User = Depends(require_roles_exact(_EQUIPE))):
     await _get_case(db, body.case_id, cu)
     data = body.model_dump()
     # Auto-calcular prazo de resposta à acusação
@@ -117,7 +117,7 @@ async def pen_criar(body: PenalIn, db: AsyncSession = Depends(get_db),
 
 @router.patch("/penal/{pid}")
 async def pen_atualizar(pid: str, body: PenalUpdate, db: AsyncSession = Depends(get_db),
-                        cu: User = Depends(require_roles(_EQUIPE))):
+                        cu: User = Depends(require_roles_exact(_EQUIPE))):
     return await _crud_atualizar(PenalCase, "penal_cases", pid,
                                  body.model_dump(exclude_unset=True), db, cu)
 
@@ -130,7 +130,7 @@ async def pen_remover(pid: str, db: AsyncSession = Depends(get_db),
 @router.get("/penal/ferramentas/prazos-processuais")
 async def pen_prazos(
     data_citacao: date,
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Prazos do processo penal — contagem em dias CORRIDOS (CPP art. 798: exclui-se
@@ -190,7 +190,7 @@ async def pen_anpp(
     conduta_criminal_habitual_reiterada_profissional: str = Query(...),
     beneficiado_anpp_transacao_sursis_5anos: str = Query(...),
     violencia_domestica_familiar_ou_razao_genero: str = Query(...),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Verifica requisitos do Acordo de Não Persecução Penal — CPP art. 28-A
@@ -268,7 +268,7 @@ async def pen_prescricao(
     marcos_interruptivos: Optional[str] = None,   # datas ISO separadas por vírgula (CP art. 117)
     menor_21_na_data_fato: str = "nao",
     maior_70_na_sentenca: str = "nao",
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Prescrição penal — implementação ÚNICA compartilhada com
     /penal/ferramentas/prescricao-penal (rota canônica). Ver _prescricao_penal_consolidada."""

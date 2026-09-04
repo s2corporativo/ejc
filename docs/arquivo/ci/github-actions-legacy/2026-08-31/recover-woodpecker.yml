@@ -1,0 +1,165 @@
+name: Recover Woodpecker CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/recover-woodpecker.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: recover-woodpecker-production
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    name: Aplicar correção do Woodpecker na VPS
+    runs-on: [self-hosted, ejc-vps]
+    environment: production
+    timeout-minutes: 25
+    steps:
+      - name: Checkout da main aprovada
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Aplicar com backup, validação e rollback
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          PROD_DIR="/opt/woodpecker-ci/infra/woodpecker"
+          SNAP_ROOT="/var/backups/woodpecker-config-recovery"
+          TS="$(date -u +%Y%m%dT%H%M%SZ)"
+          SNAP_DIR="$SNAP_ROOT/$TS"
+
+          fail() { echo "::error::$*"; exit 1; }
+
+          test -d "$PROD_DIR" || fail "Diretório $PROD_DIR não existe."
+          test -f "$PROD_DIR/.env" || fail "Arquivo $PROD_DIR/.env não existe."
+          command -v docker >/dev/null 2>&1 || fail "Docker ausente."
+          command -v python3 >/dev/null 2>&1 || fail "Python 3 ausente."
+          command -v openssl >/dev/null 2>&1 || fail "OpenSSL ausente."
+          docker compose version >/dev/null 2>&1 || fail "Docker Compose ausente."
+
+          # Falha fechada se a VPS estiver sem espaço razoável para imagens + backup.
+          avail_kb="$(df -Pk "$PROD_DIR" | awk 'NR==2 {print $4}')"
+          [ "${avail_kb:-0}" -ge 2097152 ] || fail "Menos de 2 GiB livres na partição do Woodpecker."
+
+          sudo install -d -m 700 "$SNAP_ROOT"
+          sudo install -d -m 700 "$SNAP_DIR"
+          sudo cp -a "$PROD_DIR/.env" "$SNAP_DIR/.env.before"
+          sudo cp -a "$PROD_DIR/docker-compose.yml" "$SNAP_DIR/docker-compose.yml.before"
+          sudo chmod 600 "$SNAP_DIR/.env.before"
+
+          rollback() {
+            rc=$?
+            trap - ERR
+            echo "::warning::Falha na recuperação; restaurando configuração anterior."
+            sudo cp -a "$SNAP_DIR/.env.before" "$PROD_DIR/.env" || true
+            sudo cp -a "$SNAP_DIR/docker-compose.yml.before" "$PROD_DIR/docker-compose.yml" || true
+            sudo chmod 600 "$PROD_DIR/.env" || true
+            (cd "$PROD_DIR" && sudo docker compose up -d) || true
+            exit "$rc"
+          }
+          trap rollback ERR
+
+          # Instala somente os artefatos versionados e revisados pelo PR #1296.
+          sudo install -m 644 infra/woodpecker/docker-compose.yml "$PROD_DIR/docker-compose.yml"
+          sudo install -m 755 infra/woodpecker/backup.sh "$PROD_DIR/backup.sh"
+          sudo install -m 644 infra/woodpecker/.env.example "$PROD_DIR/.env.example"
+          sudo install -m 644 infra/woodpecker/README.md "$PROD_DIR/README.md"
+
+          # Preserva AGENT_SECRET e cria GRPC_SECRET distinto somente se ausente/vazio/igual.
+          # Nenhum valor secreto é impresso.
+          sudo python3 - "$PROD_DIR/.env" <<'PY'
+          import os
+          import secrets
+          import sys
+
+          path = sys.argv[1]
+          with open(path, "r", encoding="utf-8") as f:
+              lines = f.read().splitlines()
+
+          def parse(lines):
+              out = {}
+              for line in lines:
+                  s = line.strip()
+                  if not s or s.startswith("#") or "=" not in s:
+                      continue
+                  k, v = s.split("=", 1)
+                  out[k.strip()] = v.strip()
+              return out
+
+          env = parse(lines)
+          agent = env.get("WOODPECKER_AGENT_SECRET", "")
+          if not agent:
+              raise SystemExit("WOODPECKER_AGENT_SECRET ausente/vazio; abortando sem rotação automática")
+
+          grpc = env.get("WOODPECKER_GRPC_SECRET", "")
+          if not grpc or grpc == agent:
+              new_grpc = secrets.token_hex(32)
+              replaced = False
+              new_lines = []
+              for line in lines:
+                  if line.startswith("WOODPECKER_GRPC_SECRET="):
+                      new_lines.append(f"WOODPECKER_GRPC_SECRET={new_grpc}")
+                      replaced = True
+                  else:
+                      new_lines.append(line)
+              if not replaced:
+                  new_lines.append(f"WOODPECKER_GRPC_SECRET={new_grpc}")
+              lines = new_lines
+
+          with open(path, "w", encoding="utf-8") as f:
+              f.write("\n".join(lines) + "\n")
+          os.chmod(path, 0o600)
+          PY
+
+          cd "$PROD_DIR"
+
+          # Valida o compose sem exibir o render (que contém segredos).
+          sudo docker compose config --quiet
+
+          # Backup frio e verificável dos volumes, conforme PR #1296.
+          sudo env WOODPECKER_BACKUP_DIR=/var/backups/woodpecker bash "$PROD_DIR/backup.sh"
+
+          # Atualização controlada; nunca remove volumes.
+          sudo docker compose pull
+          sudo docker compose up -d
+
+          # Confirma que ambos os serviços permanecem ativos e sem loop de restart.
+          server_id="$(sudo docker compose ps -q woodpecker-server)"
+          agent_id="$(sudo docker compose ps -q woodpecker-agent)"
+          [ -n "$server_id" ] || fail "woodpecker-server não foi criado."
+          [ -n "$agent_id" ] || fail "woodpecker-agent não foi criado."
+
+          for _ in $(seq 1 18); do
+            server_running="$(sudo docker inspect -f '{{.State.Running}}' "$server_id" 2>/dev/null || true)"
+            agent_running="$(sudo docker inspect -f '{{.State.Running}}' "$agent_id" 2>/dev/null || true)"
+            [ "$server_running" = "true" ] && [ "$agent_running" = "true" ] && break
+            sleep 5
+          done
+
+          [ "$(sudo docker inspect -f '{{.State.Running}}' "$server_id")" = "true" ] || fail "woodpecker-server não ficou Running."
+          [ "$(sudo docker inspect -f '{{.State.Running}}' "$agent_id")" = "true" ] || fail "woodpecker-agent não ficou Running."
+
+          r1="$(sudo docker inspect -f '{{.RestartCount}}' "$agent_id")"
+          sleep 10
+          r2="$(sudo docker inspect -f '{{.RestartCount}}' "$agent_id")"
+          [ "$r1" = "$r2" ] || fail "woodpecker-agent continua reiniciando ($r1 -> $r2)."
+
+          if sudo docker logs --since 3m "$agent_id" 2>&1 | grep -Fq 'individual agent not found by token'; then
+            fail "Falha de autenticação do agente ainda aparece nos logs."
+          fi
+
+          # Servidor precisa responder localmente; não depende de DNS externo.
+          curl -fsS --max-time 10 http://127.0.0.1:8100/healthz >/dev/null \
+            || fail "Healthcheck local do Woodpecker falhou."
+
+          trap - ERR
+          echo "Woodpecker recuperado: servidor e agente estáveis; backup e configuração anterior preservados em $SNAP_DIR."

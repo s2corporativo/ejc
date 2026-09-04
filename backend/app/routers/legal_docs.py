@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, Request
 from sqlalchemy import and_, select, func as sqlfunc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +17,11 @@ from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, requer_advogado, ROLE_LEVEL
 from app.core.ownership import verificar_acesso_caso, is_gestao
+from app.core.client_ownership import (
+    cliente_id_visivel,
+    ids_clientes_visiveis,
+    visao_total_clientes,
+)
 from app.core.status_caso import filtrar_pecas_visiveis
 from app.models.case import Case
 from app.models.document import Document
@@ -34,7 +39,35 @@ from app.schemas.legal_doc import (
 )
 from app.schemas.common import MsgResponse
 
-router = APIRouter(prefix="/legal-docs", tags=["Peças Jurídicas"])
+async def _enforce_client_legal_doc_scope(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+) -> None:
+    """Gate transversal de peça avulsa por client_id; usa 404 anti-enumeração."""
+    doc_id = request.path_params.get("doc_id")
+    if not doc_id:
+        return
+    row = (
+        await db.execute(
+            select(LegalDoc.client_id).where(
+                LegalDoc.id == doc_id,
+                LegalDoc.deleted_at.is_(None),
+            )
+        )
+    ).first()
+    if row is None:
+        return
+    client_id = row[0]
+    if client_id and not await cliente_id_visivel(db, cu, client_id):
+        raise HTTPException(status_code=404, detail="Peça não encontrada")
+
+
+router = APIRouter(
+    prefix="/legal-docs",
+    tags=["Peças Jurídicas"],
+    dependencies=[Depends(_enforce_client_legal_doc_scope)],
+)
 
 STATUS_EXIGE_REVISAO = {"aprovada", "final", "protocolada"}
 STATUS_EXIGE_VALIDACAO = {"aprovada", "final", "protocolada"}
@@ -314,8 +347,8 @@ async def listar(
     # vendo peças órfãs e a mesma tela mostrava números diferentes conforme
     # quem olhava. Peça sem `case_id` (minuta avulsa) segue visível.
     q = filtrar_pecas_visiveis(q)
-    # Ownership por caso (IDOR): não-gestão só vê peças dos seus casos
-    # (responsável/auxiliar/sem-dono) ou sem caso vinculado.
+    # Ownership por caso + cliente. Peça avulsa legada sem client_id
+    # preserva a visibilidade histórica; peça vinculada segue a carteira do CRM.
     if not is_gestao(cu):
         casos_visiveis = select(Case.id).where(
             Case.deleted_at.is_(None),
@@ -325,7 +358,22 @@ async def listar(
                 | (Case.advogado_responsavel_id.is_(None) & Case.advogado_auxiliar_id.is_(None))
             ),
         )
-        q = q.where(LegalDoc.case_id.is_(None) | LegalDoc.case_id.in_(casos_visiveis))
+        visiveis = [
+            LegalDoc.case_id.in_(casos_visiveis),
+            and_(LegalDoc.case_id.is_(None), LegalDoc.client_id.is_(None)),
+        ]
+        if visao_total_clientes(cu):
+            visiveis.append(
+                and_(LegalDoc.case_id.is_(None), LegalDoc.client_id.is_not(None))
+            )
+        else:
+            visiveis.append(
+                and_(
+                    LegalDoc.case_id.is_(None),
+                    LegalDoc.client_id.in_(ids_clientes_visiveis(cu)),
+                )
+            )
+        q = q.where(or_(*visiveis))
     if case_id:
         q = q.where(LegalDoc.case_id == case_id)
     if status_f:
@@ -441,7 +489,7 @@ async def validar_peca_juridica(
     d = (await db.execute(select(LegalDoc).where(LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)))).scalar_one_or_none()
     if not d:
         raise HTTPException(status_code=404, detail="Peça não encontrada")
-    escopo_cli = None
+    escopo_cli = getattr(d, "client_id", None)
     if d.case_id:
         await verificar_acesso_caso(db, cu, d.case_id)
         from app.services.ai_service import _escopo_cliente_do_caso
@@ -743,7 +791,7 @@ async def conferir_e_assinar(
             ),
         )
 
-    escopo_cli = None
+    escopo_cli = getattr(d, "client_id", None)
     if d.case_id:
         await verificar_acesso_caso(db, cu, d.case_id)
         from app.services.ai_service import _escopo_cliente_do_caso

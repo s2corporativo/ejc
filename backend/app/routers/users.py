@@ -10,7 +10,9 @@ import aiofiles
 import magic  # python-magic — validação por magic bytes (mesmo padrão de documents.py)
 import pyotp
 import qrcode
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi import (
+    APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile,
+)
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import func as sqlfunc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -420,16 +422,31 @@ async def desativar(
 
 
 # ═══ URL do calendário ICS pessoal (token HMAC) ═══
-from app.routers.calendar_feed import gerar_token_calendario
-from app.core.config import get_settings as _gset
+from app.routers.calendar_feed import _headers_credencial, obter_url_calendario
 
 
 @router.get("/me/calendar-url")
-async def minha_url_calendario(cu: User = Depends(get_current_user)):
-    s = _gset()
-    base = s.FRONTEND_URL.rstrip("/")
-    token = gerar_token_calendario(cu.id)
-    return {"url": f"{base}/api/calendar/{cu.id}/{token}.ics"}
+async def minha_url_calendario(
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Alias histórico de ``GET /calendar/me/url`` — mesma fonte da verdade.
+
+    Medido em 22/08/2026: esta rota montava a URL com
+    ``gerar_token_calendario(cu.id)``, cujo ``version`` tem default 1, sem
+    consultar ``calendar_feed_credentials``. Depois de um
+    ``POST /calendar/me/rotate`` (version=2) ela continuava devolvendo o token
+    v1 — que o próprio ``feed_ics`` recusa com 403. O usuário rotacionava
+    porque o link havia vazado e a API lhe entregava de volta o link morto.
+
+    Duas rotas para o mesmo dado só se sustentam com uma fonte só:
+    ``obter_url_calendario`` lê a versão vigente. E como a resposta carrega uma
+    credencial assinada, vai com os mesmos cabeçalhos ``no-store`` da rota
+    canônica — antes ela era cacheável por qualquer proxy no caminho.
+    """
+    _headers_credencial(response)
+    return await obter_url_calendario(db, cu.id)
 
 
 # ═════════════════════════════════════════════════════════════════════════════

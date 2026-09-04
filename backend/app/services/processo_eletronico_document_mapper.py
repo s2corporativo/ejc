@@ -9,6 +9,7 @@
 # recria o mesmo documento (Fase A, requisito da task Celery).
 from __future__ import annotations
 
+import hashlib
 import base64
 import logging
 import os
@@ -216,6 +217,10 @@ async def _gravar_documentos_novos(
                 mimetype=str(mimetype), size_bytes=len(binario),
                 confidencialidade=confidencialidade,
                 case_id=case.id, uploaded_by=uploaded_by,
+                # Achado 30: documento baixado do tribunal (MNI) e prova
+                # documental — o digest e o que sustenta que o arquivo juntado
+                # e o que veio de la.
+                sha256=hashlib.sha256(binario).hexdigest(),
             )
             db.add(documento_ged)
             await db.flush()

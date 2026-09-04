@@ -17,6 +17,7 @@
 #         datajud-beta.pdf). Dados do DataJud são metadados PÚBLICOS; ainda
 #         assim, NUNCA logar corpo de resposta nem a API key (LGPD/higiene).
 from __future__ import annotations
+import asyncio
 import hashlib
 import logging
 import re
@@ -122,6 +123,44 @@ def _cache_limpar() -> None:
     _CACHE_CONSULTA.clear()
 
 
+# ── Limitador de requisições (premissa de worker único — mesma família do
+# cache acima). Token bucket ingênuo: guarda só o instante da última
+# concessão e espera o intervalo mínimo antes de liberar a próxima. Não
+# distribui entre workers — se o EJC ganhar múltiplos workers, isto precisa
+# virar Redis (mesma nota que já vale para o cache de consulta).
+_ULTIMA_CONCESSAO: float = 0.0
+_RATE_LOCK = asyncio.Lock()
+
+
+def _rate_limit_rps() -> float:
+    try:
+        valor = float(getattr(get_settings(), "DATAJUD_RATE_LIMIT_RPS", 5.0) or 0.0)
+    except (TypeError, ValueError):
+        valor = 5.0
+    return valor if valor > 0 else 0.0
+
+
+async def _aguardar_rate_limit() -> None:
+    """Espaça as chamadas ao DataJud pelo limite configurado (req/s).
+
+    Desliga sozinho se DATAJUD_RATE_LIMIT_RPS <= 0 (sem limite). Cada
+    tentativa de retry passa por aqui de novo — 429/5xx já reduz o ritmo via
+    backoff exponencial do @retry; isto cobre o caso feliz (todas as
+    tentativas bem-sucedidas de uma varredura em lote não estourando o
+    limite desconhecido do CNJ).
+    """
+    global _ULTIMA_CONCESSAO
+    intervalo = 1.0 / _rate_limit_rps() if _rate_limit_rps() else 0.0
+    if intervalo <= 0:
+        return
+    async with _RATE_LOCK:
+        agora = time.monotonic()
+        espera = (_ULTIMA_CONCESSAO + intervalo) - agora
+        if espera > 0:
+            await asyncio.sleep(espera)
+        _ULTIMA_CONCESSAO = time.monotonic()
+
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
@@ -129,6 +168,7 @@ def _cache_limpar() -> None:
     reraise=True,
 )
 async def _datajud_search(alias: str, payload: dict, headers: dict) -> dict:
+    await _aguardar_rate_limit()
     s = get_settings()
     base = (s.DATAJUD_BASE_URL or BASE).rstrip("/")
     async with httpx.AsyncClient(timeout=s.DATAJUD_TIMEOUT_SECONDS) as client:
@@ -137,6 +177,87 @@ async def _datajud_search(alias: str, payload: dict, headers: dict) -> dict:
         )
         response.raise_for_status()
         return response.json()
+
+
+async def buscar_lote_paginado(
+    alias: str,
+    query: dict,
+    headers: dict,
+    *,
+    tamanho_pagina: int = 10,
+    maximo: int = 10_000,
+) -> list[dict]:
+    """Varre um índice do DataJud com paginação `search_after` sobre `@timestamp`.
+
+    Contrato verificado: `size` padrão 10, máximo 10.000; a API Pública não
+    aceita `from`/offset para paginação profunda, só `search_after`. Usada
+    pelo módulo de saneamento (não pela consulta avulsa por número, que
+    continua em `consultar_processo`/`consultar_movimentos`). Levanta o mesmo
+    ``httpx.*`` de ``_datajud_search`` após os retries; não engole erro.
+    """
+    tamanho_pagina = max(1, min(tamanho_pagina, 10_000))
+    payload: dict = {
+        **query,
+        "size": tamanho_pagina,
+        "sort": [{"@timestamp": {"order": "asc"}}],
+    }
+    coletados: list[dict] = []
+    search_after = None
+    while len(coletados) < maximo:
+        # Última página pode pedir menos que tamanho_pagina: evita puxar (e
+        # descartar) itens de mais de uma API externa rate-limited (achado
+        # de revisão — antes sempre pedia a página cheia e truncava no fim).
+        restante = maximo - len(coletados)
+        pagina = dict(payload, size=min(tamanho_pagina, restante))
+        if search_after is not None:
+            pagina["search_after"] = search_after
+        data = await _datajud_search(alias, pagina, headers)
+        hits = (data.get("hits") or {}).get("hits") or []
+        if not hits:
+            break
+        coletados.extend(hits)
+        if len(hits) < pagina["size"]:
+            break
+        search_after = hits[-1].get("sort")
+        if not search_after:
+            break
+    return coletados[:maximo]
+
+
+async def buscar_documento_saneamento(
+    numero_cnj: str, tribunal_alias: str | None = None,
+) -> dict | None:
+    """Documento completo (`_source`) para o painel de reconciliação.
+
+    Diferente de ``consultar_processo`` (que já normaliza para
+    classe/orgao/movimentos, uso do card de andamentos), devolve o `_source`
+    cru — o módulo de saneamento precisa de campos que aquele normalizador
+    descarta: ``dataAjuizamento``, ``tribunal``, ``grau``, ``formato``,
+    ``sistema`` e sobretudo ``nivelSigilo`` (tratamento restrito).
+    """
+    s = get_settings()
+    if not s.DATAJUD_ENABLED or not s.DATAJUD_API_KEY:
+        raise DataJudDesabilitadoError(
+            "Integração DataJud desativada ou sem chave configurada "
+            "(DATAJUD_ENABLED/DATAJUD_API_KEY)."
+        )
+    alias = (tribunal_alias or "").strip() or alias_do_numero(numero_cnj)
+    if not alias:
+        raise TribunalNaoMapeadoError(
+            "Tribunal não mapeado para consulta ao DataJud (segmento J.TR do "
+            "número CNJ fora do mapa atualmente suportado)."
+        )
+    n = re.sub(r"\D", "", numero_cnj or "")
+    payload = {"query": {"match": {"numeroProcesso": n}}, "size": 1}
+    headers = {
+        "Authorization": f"APIKey {s.DATAJUD_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    data = await _datajud_search(alias, payload, headers)
+    hits = (data.get("hits") or {}).get("hits") or []
+    if not hits:
+        return None
+    return hits[0].get("_source") or {}
 
 
 # Segmento J.TR do número CNJ (NNNNNNN-DD.AAAA.J.TR.OOOO) → alias do endpoint.

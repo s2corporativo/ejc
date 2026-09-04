@@ -14,6 +14,17 @@ o endpoint /api/ai/resumir-texto (sys prompt curto: "Não invente nada que
 não esteja no texto" + sanitização na entrada).
 """
 from __future__ import annotations
+
+
+def _qa_pw(name: str) -> str:
+    import os
+    v = os.environ.get('EJC_QA_PASSWORD')
+    if not v:
+        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
+    return v
+
+
+SENHA = _qa_pw('M26')
 import asyncio
 import sys
 
@@ -41,9 +52,9 @@ def _fail(msg):
 
 # ──────────────────────────── Credenciais QA ─────────────────────────────────
 CRED = {
-    "admin": ("ejc_qa_auth_admin@golocal.ejc", "<ver EJC_QA_PASSWORD>"),
-    "advogado": ("ejc_qa_auth_advogado@golocal.ejc", "<ver EJC_QA_PASSWORD>"),
-    "cliente": ("ejc_qa_auth_cliente@golocal.ejc", "<ver EJC_QA_PASSWORD>"),
+    "admin": ("ejc_qa_auth_admin@golocal.ejc", SENHA),
+    "advogado": ("ejc_qa_auth_advogado@golocal.ejc", SENHA),
+    "cliente": ("ejc_qa_auth_cliente@golocal.ejc", SENHA),
 }
 _TOKENS = {}
 

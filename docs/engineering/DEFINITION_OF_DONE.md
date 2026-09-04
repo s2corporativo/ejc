@@ -89,6 +89,10 @@ Após merge/deploy:
 - [ ] nenhuma regressão relevante foi observada;
 - [ ] Issue/PR antigo supersedido foi encerrado ou recebeu vínculo para a continuação.
 
+## Status do plano-mestre
+
+- [ ] se o PR fecha (total ou parcialmente) um item de `docs/PLANO_MESTRE_STATUS.md`, a linha correspondente é atualizada **no mesmo PR** — nunca em PR separado, nunca só na descrição do PR; `mesclado` quando o merge acontece, `em-prod` só após o deploy, `verificado` só após conferência real pós-deploy (`scripts/status_check.sh` reprova item `mesclado+` sem PR preenchido).
+
 ## Regra de evidência
 
 Checkbox sem evidência não substitui teste. Sempre que existir teste automatizado, o resultado do CI é a fonte principal. Itens humanos — validade jurídica, UX, revisão de conteúdo, decisão de risco — devem registrar quem revisou e o que foi conferido, sem expor dados sigilosos.

@@ -39,7 +39,13 @@ def test_meta_estagiario_recebe_catalogo_completo():
     r = client.get("/pecas/meta")
     assert r.status_code == 200, r.text
     body = r.json()
-    assert set(body.keys()) == {"tipos", "areas", "niveis_complexidade"}
+    # "capacidades" entrou em 04/09/2026: o frontend precisa saber ANTES do
+    # clique o que está atrás de flag, senão volta a entregar botão habilitado
+    # que sempre falha (era o caso do "Gerar demonstrativo").
+    # Contrato de capacidades detalhado em test_pecas_meta_capacidades.py.
+    assert set(body.keys()) == {
+        "tipos", "areas", "niveis_complexidade", "capacidades",
+    }
 
     # tipos: cobre TODOS os tipos válidos, cada um com value/label/grupo válido.
     values = [t["value"] for t in body["tipos"]]

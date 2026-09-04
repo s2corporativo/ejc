@@ -86,6 +86,13 @@ CATALOGO: list[dict] = [
      "url": "https://www.planalto.gov.br/ccivil_03/leis/l9605.htm"},
     {"slug": "pnma", "titulo": "Política Nacional do Meio Ambiente (Lei 6.938/1981)", "area": "ambiental",
      "url": "https://www.planalto.gov.br/ccivil_03/leis/l6938.htm"},
+    # Lote 001 — autos de infração ambiental; fontes oficiais verificadas em 2026-08-22.
+    {"slug": "d6514", "titulo": "Infrações e Sanções Administrativas Ambientais (Decreto 6.514/2008)", "area": "ambiental",
+     "url": "https://www.planalto.gov.br/ccivil_03/_ato2007-2010/2008/decreto/d6514.htm"},
+    {"slug": "l9873", "titulo": "Prescrição da Ação Punitiva Federal (Lei 9.873/1999)", "area": "ambiental",
+     "url": "https://www.planalto.gov.br/ccivil_03/leis/l9873.htm"},
+    {"slug": "lcp140", "titulo": "Cooperação e Competência Ambiental (Lei Complementar 140/2011)", "area": "ambiental",
+     "url": "https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp140.htm"},
     # ── Ampliação de volume 2026 — diplomas federais core das áreas do escritório
     # (todas URLs COMPILADAS/oficiais do planalto.gov.br, mesmos padrões acima).
     # NOTA OPERACIONAL: estas URLs seguem os padrões já comprovados das entradas
@@ -194,6 +201,7 @@ _RE_NAO_SUBSTITUI = re.compile(r"^este texto não substitui o publicado", re.IGN
 _RE_ART = re.compile(
     r"^Art\.\s*(\d{1,3}(?:\.\d{3})+|\d{1,4})\s*([ºo°])?\s*(-[A-Za-z]{1,3})?\s*[.\sº°]"
 )
+_RE_ART_BARE = re.compile(r"^Art\.\s*\d{1,4}$")
 
 
 def extrair_texto_planalto(html: str) -> str:
@@ -221,12 +229,32 @@ def extrair_texto_planalto(html: str) -> str:
     txt = re.sub(r"[ \t]+\n", "\n", txt)
     txt = re.sub(r"\n[ \t]+", "\n", txt)
 
+    # Algumas páginas do Planalto isolam o ordinal superscrito em linhas
+    # próprias ("Art. 1" / "o"), especialmente em diplomas antigos. Recompõe
+    # somente esse padrão inequívoco para que a divisão por artigo não perca o
+    # cabeçalho, sem reescrever o conteúdo normativo.
     linhas = []
-    for ln in txt.split("\n"):
+    brutas = txt.split("\n")
+    i = 0
+    while i < len(brutas):
+        ln = brutas[i]
+        if (
+            _RE_ART_BARE.fullmatch(ln.strip())
+            and i + 1 < len(brutas)
+            and brutas[i + 1].strip() in {"o", "º", "°"}
+        ):
+            ln = f"{ln.rstrip()} {brutas[i + 1].strip()}"
+            i += 1
+            if (
+                i + 1 < len(brutas)
+                and re.match(r"-[A-Za-z]{1,3}\.", brutas[i + 1].strip())
+            ):
+                ln = f"{ln} {brutas[i + 1].strip()}"
+                i += 1
         chave = ln.strip().lower()
-        if chave in _BOILERPLATE or _RE_NAO_SUBSTITUI.match(chave):
-            continue
-        linhas.append(ln)
+        if chave not in _BOILERPLATE and not _RE_NAO_SUBSTITUI.match(chave):
+            linhas.append(ln)
+        i += 1
     return normalizar("\n".join(linhas))
 
 

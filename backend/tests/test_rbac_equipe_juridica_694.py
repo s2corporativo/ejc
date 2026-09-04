@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 import pathlib
 import re
 
@@ -31,7 +32,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app.core.database import get_db
-from app.core.security import EQUIPE_JURIDICA, ROLE_LEVEL, get_current_user, requer_equipe_juridica
+from app.core.security import (
+    EQUIPE_JURIDICA,
+    ROLE_LEVEL,
+    get_current_user,
+    require_roles_exact,
+    requer_equipe_juridica,
+)
 from app.models.user import User, UserRole
 
 
@@ -56,6 +63,13 @@ def test_financeiro_tem_nivel_hierarquico_acima_de_estagiario():
     # SEMPRE libera financeiro, porque ROLE_LEVEL o posiciona acima.
     assert ROLE_LEVEL["financeiro"] > ROLE_LEVEL["estagiario"]
     assert "financeiro" not in EQUIPE_JURIDICA
+
+
+def test_require_roles_exact_nao_promove_papel_fora_da_allowlist():
+    checker = require_roles_exact(["estagiario"])
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(checker(_u(UserRole.financeiro)))
+    assert exc.value.status_code == 403
 
 
 @pytest.mark.parametrize("role", PAPEIS_DA_EQUIPE)

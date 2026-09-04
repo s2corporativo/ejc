@@ -10,6 +10,9 @@ services:
     # "No such container".
     container_name: ejc_db
     restart: unless-stopped
+    # Teto de memória — ver a nota em `backend` abaixo. Folga generosa: um
+    # Postgres morto por OOM é pior que um container lento.
+    mem_limit: ${EJC_DB_MEM_LIMIT:-3g}
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -27,6 +30,8 @@ services:
     image: redis:7-alpine
     container_name: ejc_redis
     restart: unless-stopped
+    # Teto de memória — ver a nota em `backend` abaixo.
+    mem_limit: ${EJC_REDIS_MEM_LIMIT:-512m}
     # AOF ligado: tasks enfileiradas sobrevivem a restart do container.
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
@@ -42,6 +47,16 @@ services:
       context: ./backend
     container_name: ejc_backend
     restart: unless-stopped
+    # Teto DURO de memória. Esta VPS não é dedicada ao EJC: hospeda também
+    # Verde Limp, sistema-s2, Evolution API (WhatsApp) e o Woodpecker. Até
+    # 2026-08-27 nenhum container do EJC declarava limite — só o `ollama` —
+    # enquanto os containers dos outros sistemas já tinham teto. Naquele dia a
+    # reindexação do RAG cresceu até 10 GB dentro deste container e disparou o
+    # OOM-killer GLOBAL, que reiniciou o `verdelimp-erp`: um trabalho do EJC
+    # derrubou o sistema de OUTRA empresa. Com o teto, o estouro fica contido
+    # neste container e os vizinhos seguem no ar.
+    # Ver docs/auditoria/relatorios/2026-08-27-verificacao-e-novos-achados.md §9.
+    mem_limit: ${EJC_BACKEND_MEM_LIMIT:-6g}
     ports:
       # Publica só no loopback do host; o Nginx do host faz proxy_pass para 127.0.0.1:8000.
       - "127.0.0.1:8000:8000"
@@ -58,15 +73,10 @@ services:
       UPLOAD_DIR: /app/uploads
       BACKUP_DIR: /app/backups
       # O entrypoint aplica `alembic upgrade head` no boot SOMENTE quando
-      # RUN_MIGRATIONS=1 (ver backend/entrypoint.sh). Default 1 = dev local:
-      # um `docker compose up` cru (sem RUN_MIGRATIONS no ambiente) cria/atualiza
-      # o schema sozinho, como antes.
-      # Em PRODUÇÃO o deploy seguro (scripts/deploy_vps_safe.sh) exporta
-      # RUN_MIGRATIONS (0 por padrão, 1 só no disparo com migração revisada)
-      # ANTES do `docker compose up` e faz backup do banco antes. Assim o boot
-      # herda esse valor gated: sem opt-in explícito, nenhuma migration roda no
-      # boot — a trava do deploy deixa de ser placebo.
-      RUN_MIGRATIONS: "${RUN_MIGRATIONS:-1}"
+      # RUN_MIGRATIONS=1 (ver backend/entrypoint.sh). Fail-closed: o padrão é 0,
+      # inclusive em `docker compose up` manual; migrations só rodam por opt-in
+      # explícito da esteira de deploy, após backup e revisão.
+      RUN_MIGRATIONS: "${RUN_MIGRATIONS:-0}"
       # Fila assíncrona (Fase 3A): worker existe no compose → Celery ligado.
       # Redis fora do ar não quebra nada: o dispatcher cai para BackgroundTasks.
       REDIS_URL: redis://redis:6379/0
@@ -91,11 +101,15 @@ services:
       # legal-tuned PT-BR) como 2º externo; Groq depois.
       # Requer ANTHROPIC_API_KEY no .env do VPS (segredo — nunca versionado).
       AI_PROVIDER_PRIORITY: "anthropic,maritaca,groq,ollama"
-      # Decisão de produto (2026-07-19): Maritaca LIGADA neste stack — a chave
-      # MARITACA_API_KEY vive só no .env do VPS; sem chave o provider continua
-      # inelegível (fail-safe, fora da cadeia). O .env pode sobrepor para
-      # desligar (MARITACA_ENABLED=false) sem tocar neste arquivo.
-      MARITACA_ENABLED: "${MARITACA_ENABLED:-true}"
+      # Maritaca: default alinhado ao código (config.py) e ao .env.example —
+      # DESLIGADA até decisão explícita no .env (MARITACA_ENABLED=true). Antes o
+      # compose ligava por padrão e divergia das outras duas fontes (análise
+      # E2E 03/09/2026, A2); com chave presente, dado jurídico pseudonimizado
+      # saía para um destino não soberano sem ninguém ter habilitado.
+      MARITACA_ENABLED: "${MARITACA_ENABLED:-false}"
+      # Perfil de IA (opcional): externo | local | hibrido | desligado — deriva
+      # os *_ENABLED e a prioridade; vazio = flags manuais (config.py).
+      AI_PROFILE: "${AI_PROFILE:-}"
     volumes:
       - uploads_data:/app/uploads
       - backups_data:/app/backups
@@ -122,10 +136,17 @@ services:
     # configured" e o frontend NUNCA sobe (regressão da reescrita que
     # adicionou o Redis; originalmente adicionado no PR #29).
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      test: ["CMD", "curl", "-fsS", "--max-time", "10", "http://localhost:8000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 5
+      # start_period: janela de graça do BOOT. Sem ela, as 5 tentativas correm
+      # desde o segundo zero e um startup lento (banco frio, carga de feriados,
+      # overlay do cofre) marca o container `unhealthy` antes de ele terminar
+      # de subir — e o `frontend`, que declara `depends_on: backend:
+      # service_healthy`, NUNCA sobe num `up` limpo. Falha marcada aqui dentro
+      # não conta para o `retries`.
+      start_period: 60s
 
   worker:
     # Worker Celery — mesma imagem do backend (mesmo código/dependências).
@@ -133,6 +154,9 @@ services:
       context: ./backend
     container_name: ejc_worker
     restart: unless-stopped
+    # Teto de memória — ver a nota em `backend`. O worker roda o MESMO código
+    # (indexação incluída), então precisa do mesmo tipo de contenção.
+    mem_limit: ${EJC_WORKER_MEM_LIMIT:-2g}
     networks: [default, ia]
     command: celery -A app.core.celery_app.celery_app worker --loglevel=INFO --concurrency=2
     env_file:
@@ -153,8 +177,9 @@ services:
       # sem Ollama local neste stack; IA externa com mascaramento de PII.
       OLLAMA_ENABLED: "false"
       AI_PROVIDER_PRIORITY: "anthropic,maritaca,groq,ollama"
-      # Mesma decisão de produto da API: Maritaca ligada; .env pode sobrepor.
-      MARITACA_ENABLED: "${MARITACA_ENABLED:-true}"
+      # Mesmo default da API: Maritaca desligada até decisão explícita no .env.
+      MARITACA_ENABLED: "${MARITACA_ENABLED:-false}"
+      AI_PROFILE: "${AI_PROFILE:-}"
     volumes:
       - uploads_data:/app/uploads
       - fastembed_cache:/tmp/fastembed_cache
@@ -179,6 +204,8 @@ services:
       context: ./frontend
     container_name: ejc_frontend
     restart: unless-stopped
+    # Teto de memória — ver a nota em `backend`. Nginx servindo estáticos.
+    mem_limit: ${EJC_FRONTEND_MEM_LIMIT:-256m}
     ports:
       # Publica SÓ no loopback do host, atrás do Nginx do host (nginx/ejc.conf
       # faz o TLS/HSTS/CSP e o proxy_pass para 127.0.0.1:8080). Expor 0.0.0.0:80
@@ -205,6 +232,9 @@ services:
     container_name: ejc_langfuse_db
     profiles: ["observability"]
     restart: unless-stopped
+    # Teto de memória — ver a nota em `backend`. Opt-in por profile, mas
+    # nenhum container do EJC fica sem teto nesta VPS compartilhada.
+    mem_limit: ${LANGFUSE_DB_MEM_LIMIT:-1g}
     environment:
       POSTGRES_USER: langfuse
       # Fail-closed em RUNTIME: sem senha no .env o postgres se recusa a subir
@@ -226,6 +256,8 @@ services:
     container_name: ejc_langfuse
     profiles: ["observability"]
     restart: unless-stopped
+    # Teto de memória — ver a nota em `backend`.
+    mem_limit: ${LANGFUSE_MEM_LIMIT:-1g}
     depends_on:
       langfuse-db:
         condition: service_healthy

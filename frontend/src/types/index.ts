@@ -1,3 +1,4 @@
+import type { DeadlineOrigem } from "./gerado";
 // ── Tipos do EJC ─────────────────────────────────────────
 export interface User {
   id: string;
@@ -107,7 +108,7 @@ export interface Deadline {
   responsavel_id?: string;
   ciencia_confirmada: boolean;
   confirmado: boolean;
-  origem: "manual" | "datajud" | "importacao_ia";
+  origem: DeadlineOrigem;
   origem_documento_id: string | null;
   dias_restantes?: number;
   urgencia?: string;
@@ -151,6 +152,10 @@ export interface Fee {
   status: string;
   descricao: string;
   valor?: number;
+  /** Honorário de êxito/misto pode ser contratado só em PERCENTUAL, sem valor
+   *  fixo — `FeeCreate` exige um dos dois. Sem este campo na tipagem, a tela
+   *  mostrava "—" para um lançamento que acabara de ser salvo. */
+  percentual_exito?: number | null;
   data_vencimento?: string;
   data_pagamento?: string;
   client_id: string;

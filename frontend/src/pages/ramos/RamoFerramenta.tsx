@@ -4,8 +4,12 @@ import { Calculator, TrendingUp } from "lucide-react";
 import api from "../../lib/api";
 import {
   AVISO_FERRAMENTA_NAO_HOMOLOGADA,
+  ehBloqueioDeExportacaoDemonstrativo,
+  MENSAGEM_DEMONSTRATIVO_INDISPONIVEL,
+  mensagemErroDemonstrativo,
   mensagemErroFerramenta,
 } from "../../lib/iaErro";
+import { useDemonstrativoDisponivel } from "../../lib/pecasCapacidades";
 import { useCaseContext } from "../../stores/caseContext";
 import { Spinner, fmtMoney } from "../../components/UI";
 import RodapeRegra, { METADADOS_REGRA } from "../../components/RodapeRegra";
@@ -189,10 +193,23 @@ export default function RamoFerramenta({ f }: { f: FerramentaConfig }) {
   const [gerandoDoc, setGerandoDoc] = useState(false);
   const [docMsg, setDocMsg] = useState<string | null>(null);
   const [docLink, setDocLink] = useState<string | null>(null);
+  // Rede de segurança: 403 da trava de homologação em `POST /pecas/demonstrativo`.
+  // Continua necessária mesmo com a capacidade abaixo — a flag pode mudar entre
+  // a carga da tela e o clique, e o 403 de PAPEL é outro motivo (tratado em
+  // `mensagemErroDemonstrativo`).
+  const [exportacaoBloqueada, setExportacaoBloqueada] = useState(false);
+  // Capacidade anunciada por `GET /pecas/meta`: sabemos ANTES do clique se a
+  // exportação está atrás de flag desligada. Fail-open — falha ao carregar
+  // devolve `disponivel: true` e a tela degrada para o comportamento antigo
+  // (botão habilitado + tratamento do 403).
+  const { disponivel: exportacaoDisponivel } = useDemonstrativoDisponivel();
   const casoAtivo = useCaseContext((state) => state.caso);
 
   const naoHomologada = f.homologada === false;
   const bloqueadaParaDocumento = naoHomologada || res?.homologada === false;
+  // Mesma mensagem para os dois caminhos (capacidade anunciada e 403 tardio):
+  // o motivo é o mesmo — a exportação está travada administrativamente.
+  const exportacaoIndisponivel = !exportacaoDisponivel || exportacaoBloqueada;
   const motivoBloqueio = `Bloqueado: ${AVISO_FERRAMENTA_NAO_HOMOLOGADA}`;
   const visiveis = camposVisiveis(f.campos, vals);
 
@@ -265,9 +282,8 @@ export default function RamoFerramenta({ f }: { f: FerramentaConfig }) {
       );
       setDocLink(casoAtivo ? `/pecas?caso=${casoAtivo.id}` : "/pecas");
     } catch (e: any) {
-      setDocMsg(
-        mensagemErroFerramenta(e, "Falha ao salvar o demonstrativo em Peças."),
-      );
+      if (ehBloqueioDeExportacaoDemonstrativo(e)) setExportacaoBloqueada(true);
+      setDocMsg(mensagemErroDemonstrativo(e));
     } finally {
       setGerandoDoc(false);
     }
@@ -401,8 +417,16 @@ export default function RamoFerramenta({ f }: { f: FerramentaConfig }) {
             <div className="mt-3 pt-2 border-t border-gold-200 flex flex-wrap items-center gap-2">
               <button
                 className="btn-ghost text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={gerandoDoc || bloqueadaParaDocumento}
-                title={bloqueadaParaDocumento ? motivoBloqueio : undefined}
+                disabled={
+                  gerandoDoc || bloqueadaParaDocumento || exportacaoIndisponivel
+                }
+                title={
+                  bloqueadaParaDocumento
+                    ? motivoBloqueio
+                    : exportacaoIndisponivel
+                      ? MENSAGEM_DEMONSTRATIVO_INDISPONIVEL
+                      : undefined
+                }
                 onClick={gerarDemonstrativo}
               >
                 {gerandoDoc ? "Gerando..." : "📄 Gerar demonstrativo"}
@@ -413,9 +437,17 @@ export default function RamoFerramenta({ f }: { f: FerramentaConfig }) {
                   jurídica.
                 </span>
               )}
+              {/* Texto de apoio do bloqueio administrativo. Sai de cena quando
+                  já existe `docMsg` (que traz a MESMA mensagem no caso do 403)
+                  para não duplicar o aviso na tela. */}
+              {exportacaoIndisponivel && !bloqueadaParaDocumento && !docMsg && (
+                <span className="text-[11px] text-warn-700">
+                  {MENSAGEM_DEMONSTRATIVO_INDISPONIVEL}
+                </span>
+              )}
               {docMsg && (
                 <span
-                  className={`text-xs ${bloqueadaParaDocumento ? "text-warn-700" : "text-green-700"}`}
+                  className={`text-xs ${bloqueadaParaDocumento || exportacaoIndisponivel ? "text-warn-700" : "text-green-700"}`}
                 >
                   {docMsg}{" "}
                   {docLink && (

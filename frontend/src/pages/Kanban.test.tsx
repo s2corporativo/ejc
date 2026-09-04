@@ -51,7 +51,7 @@ beforeEach(() => {
   patchMock.mockReset();
   toastError.mockReset();
   getMock.mockImplementation((url: string) => {
-    if (url.startsWith("/kanban-columns"))
+    if (url.startsWith("/kanban/columns"))
       return Promise.resolve({ data: COLUNAS });
     if (url.startsWith("/cases/"))
       return Promise.resolve({ data: { data: [CASO] } });
