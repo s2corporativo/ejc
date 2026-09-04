@@ -7,7 +7,9 @@ Correções transitórias de compatibilidade:
 3. resolução server-side do escopo de precedentes de encerramento cuja chave
    canônica é `caso:<id>`, fluxo legado que não passava client_id ao RAG;
 4. listagem de KnowledgeDoc escopada, evitando exposição de títulos/fontes de
-   peças internas a usuários sem acesso ao caso ou cliente correspondente.
+   peças internas a usuários sem acesso ao caso ou cliente correspondente;
+5. HyDE estritamente local: a expansão da consulta nunca usa provedor externo,
+   inclusive quando o caller não propagou o escopo de sigilo do caso.
 
 As correções operam em primitivas consultadas em runtime, alcançando call sites
 que importaram funções antes do startup. A convergência definitiva deve eliminar
@@ -115,6 +117,65 @@ def _instalar_resolucao_escopo_rag() -> None:
     ingestion_service._ejc_scope_resolver_installed = True
 
 
+def _instalar_hyde_local_fail_closed() -> None:
+    """Impõe piso LOCAL_COMPLETO a toda expansão HyDE.
+
+    HyDE recebe a própria consulta jurídica do usuário. Como alguns call sites
+    históricos não propagam o sigilo do caso até a função de expansão, tentar
+    decidir aqui entre externo/local seria fail-open. O hardening escolhe a
+    política conservadora: HyDE é sempre local. Se o provider local estiver
+    indisponível, a expansão falha graciosamente e a busca usa a consulta
+    original; nunca há fallback externo.
+    """
+    from app.services import ai_service
+    from app.services.ai.sanitization_policy import ModoSanitizacao
+
+    if getattr(ai_service, "_ejc_hyde_local_only_installed", False):
+        return
+
+    original = ai_service._hyde_expandir
+
+    @functools.wraps(original)
+    async def hyde_local_only(consulta: str) -> str:
+        if not getattr(ai_service.settings, "RAG_HYDE_ENABLED", False) or not (
+            consulta or ""
+        ).strip():
+            return consulta
+        try:
+            resp = await ai_service.gw_chat(
+                [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Voce e um assistente juridico. Escreva UM paragrafo curto "
+                            "(max. 3 frases) que responderia hipoteticamente a consulta, "
+                            "no vocabulario tecnico-juridico brasileiro (dispositivos, "
+                            "teses, termos). NAO invente numero de processo, sumula ou "
+                            "lei especificos — use linguagem doutrinaria generica."
+                        ),
+                    },
+                    {"role": "user", "content": consulta[:1000]},
+                ],
+                task_type="resumo",
+                temperature=0.3,
+                max_tokens=256,
+                nivel_inteligencia="padrao",
+                modo_sanitizacao=ModoSanitizacao.LOCAL_COMPLETO,
+            )
+            hipotese = (getattr(resp, "texto", "") or "").strip()
+            return f"{consulta}\n{hipotese}" if hipotese else consulta
+        except Exception as exc:
+            # Não registrar consulta, conteúdo do caso ou mensagem bruta da exceção.
+            logger.warning(
+                "HyDE local indisponivel; consulta original preservada (erro=%s)",
+                type(exc).__name__,
+            )
+            return consulta
+
+    ai_service._hyde_expandir = hyde_local_only
+    ai_service._ejc_hyde_local_only_installed = True
+
+
 async def _listar_docs_escopado(
     page: int = 1,
     page_size: int = 20,
@@ -220,6 +281,7 @@ def instalar() -> None:
     _instalar_provider_registry()
     _instalar_resolver_provedores()
     _instalar_resolucao_escopo_rag()
+    _instalar_hyde_local_fail_closed()
     _instalar_listagem_rag_escopada()
     _INSTALADO = True
     logger.info("Hardening do núcleo de IA/RAG instalado")
