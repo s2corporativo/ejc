@@ -155,11 +155,26 @@ def _normalizar_status_legal(extra: dict[str, Any], vigente_no_ejc: bool) -> str
     )
 
 
+def _candidato_normativo(candidate: dict) -> bool:
+    """Identifica material que não pode seguir sem governança canônica."""
+    categoria = str(candidate.get("categoria") or "").strip().lower()
+    extra = candidate.get("extra") if isinstance(candidate.get("extra"), dict) else {}
+    autoridade = str(
+        extra.get("authority_level") or extra.get("nivel_autoridade") or ""
+    ).strip().lower()
+    return (
+        "legisl" in categoria
+        or "norma" in categoria
+        or "regulamento" in categoria
+        or autoridade == "oficial_normativa"
+    )
+
+
 async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
     """Carrega metadados jurídicos e elimina quarentena/revogação do ranking."""
     ids = {str(item.get("doc_id")) for item in candidatos if item.get("doc_id")}
     if not ids:
-        return candidatos
+        return [item for item in candidatos if not _candidato_normativo(item)]
     try:
         async with AsyncSessionLocal() as db:
             rows = (
@@ -220,11 +235,12 @@ async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
             hydrated.append(item)
         return hydrated
     except Exception as exc:
+        seguros = [item for item in candidatos if not _candidato_normativo(item)]
         logger.warning(
-            "Governança documental indisponível no reranking (%s) — mantendo candidatos",
+            "Governança documental indisponível no reranking (%s) — mantendo apenas candidatos não normativos",
             str(exc)[:180],
         )
-        return candidatos
+        return seguros
 
 
 def _confidence_bonus(candidate: dict) -> float:

@@ -516,10 +516,33 @@ export function DocumentosStats() {
   const [d, setD] = useState<any>(null);
   const [erro, setErro] = useState(false);
   useEffect(() => {
-    api
-      .get("/documents/", { params: { page_size: 200 } })
-      .then((r) => setD(r.data))
-      .catch(() => setErro(true));
+    let ativo = true;
+    const carregar = async () => {
+      try {
+        const pageSize = 100;
+        let page = 1;
+        let total = Number.POSITIVE_INFINITY;
+        const data: any[] = [];
+        while (data.length < total) {
+          const response = await api.get("/documents/", {
+            params: { page, page_size: pageSize },
+          });
+          const lote = Array.isArray(response.data?.data) ? response.data.data : [];
+          data.push(...lote);
+          total = Number(response.data?.total ?? data.length);
+          if (lote.length < pageSize) break;
+          page += 1;
+          if (page > 100) break;
+        }
+        if (ativo) setD({ data, total: Number.isFinite(total) ? total : data.length });
+      } catch {
+        if (ativo) setErro(true);
+      }
+    };
+    void carregar();
+    return () => {
+      ativo = false;
+    };
   }, []);
   if (erro) return <StatsErro />;
   if (!d) return null;

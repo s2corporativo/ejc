@@ -57,6 +57,40 @@ def _minimizar_payload_upload(payload: dict | None) -> dict | None:
     return saida
 
 
+def _normalizar_fatos_observados(
+    entidade: str,
+    acao: str,
+    payload: dict | None,
+) -> dict | None:
+    """Impede que intenção operacional seja persistida como fato observado.
+
+    O soft-delete de documentos é deliberadamente reversível e, portanto, não
+    executa I/O no storage. O caller legado de Documentos ainda envia
+    ``storage_preservado=True`` para descrever essa intenção. Sem uma consulta
+    física ao objeto, porém, esse booleano não é evidência de que o arquivo
+    existe. Antes do WORM, convertemos a afirmação em duas dimensões distintas:
+
+    - ``storage_preservacao_intencao``: o lifecycle não pediu remoção física;
+    - ``storage_verificado``: se a existência física foi efetivamente checada.
+
+    Se um fluxo futuro já trouxer ``storage_verificado`` explicitamente, a
+    evidência do chamador é preservada e nenhuma reinterpretação é feita.
+    """
+    if payload is None:
+        return None
+    saida = dict(payload)
+    if (
+        entidade == "documents"
+        and acao.upper() == "DELETE"
+        and "storage_preservado" in saida
+        and "storage_verificado" not in saida
+    ):
+        intencao = bool(saida.pop("storage_preservado"))
+        saida["storage_preservacao_intencao"] = intencao
+        saida["storage_verificado"] = False
+    return saida
+
+
 async def criar_audit_log(
     db,
     user_id: str | None,
@@ -74,12 +108,17 @@ async def criar_audit_log(
     Quando o chamador não passa ``ip``, usa o endereço capturado pelo
     ``ClientIPMiddleware``. Eventos ``UPLOAD`` sofrem minimização adicional
     antes do WORM para não tornar nomes de arquivo/erros por arquivo um dado
-    pessoal permanentemente retido.
+    pessoal permanentemente retido. Afirmações de lifecycle que não representam
+    fatos observados são normalizadas antes da persistência imutável.
     """
     if ip is None:
         from app.core.request_context import get_client_ip
 
         ip = get_client_ip()
+
+    dados_antes = _normalizar_fatos_observados(entidade, acao, dados_antes)
+    dados_depois = _normalizar_fatos_observados(entidade, acao, dados_depois)
+
     if acao.upper() == "UPLOAD":
         dados_antes = _minimizar_payload_upload(dados_antes)
         dados_depois = _minimizar_payload_upload(dados_depois)
