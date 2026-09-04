@@ -151,9 +151,29 @@ ADICOES_INTENCIONAIS = {
     ("/api/saneamento/tpu/cobertura", "GET"),
     ("/api/saneamento/varredura", "POST"),
     ("/api/documents/{doc_id}", "GET"),
+    # PR #1365 (Issue #1075): registro de visualização prévia do documento
+    # pelo signatário antes da assinatura (portal). Publicada sem entrada
+    # neste ledger — o merge deixou a suíte vermelha; regularizada aqui.
+    ("/api/signatures/{sig_id}/documento-visualizado", "POST"),
 }
 
 REMOCOES_INTENCIONAIS = {
+    # `routers/curadoria_renomada.py` REMOVIDO (04/09/2026). Os três endpoints
+    # respondiam 503 INCONDICIONAL desde a auditoria de 19/07: a "base de teses
+    # renomadas" curada nunca existiu, e o 503 substituiu handlers que fingiam
+    # lista vazia e ingestão bem-sucedida. Grep confirmou zero chamadores no
+    # frontend. Um router que só sabe recusar não é funcionalidade desligada —
+    # é superfície de API que promete o que ninguém construiu, e ela aparece no
+    # OpenAPI, no mapa de módulos e na conta de rotas órfãs. Busca real segue em
+    # /api/search e /api/rag (RAG híbrido), como o próprio 503 já indicava.
+    ("/api/curadoria/teses", "GET"),
+    ("/api/curadoria/teses/sincronizar", "POST"),
+    ("/api/curadoria/analise-vencedora/{caso_id}", "GET"),
+    # Bloco 4 do plano de lançamento. Decisão do ESCRITÓRIO, não achado técnico:
+    # "dossiê de pressão" e "análise de magistrado" num sistema de advocacia são
+    # risco reputacional e disciplinar indefensável se expostos numa perícia ou
+    # numa representação — independentemente do que o código faça. Nenhuma tela
+    # do sistema chamava os dois. Não reintroduzir sem decisão escrita do titular.
     ("/api/diplomacia-v3/dossie-pressao", "POST"),
     ("/api/diplomacia-v3/analisar-magistrado", "POST"),
     ("/api/cases/{case_id}/resumo", "GET"),
@@ -236,6 +256,18 @@ ADICOES_INTENCIONAIS |= {
     ("/api/modulos/precificacao/tabela", "GET"),
     ("/api/sumulas/verificar-conflito", "POST"),
 }
+# I1 (análise E2E de 03/09/2026) — UMA PORTA DE IA POR CAPACIDADE.
+# Cinco rotas NOVAS e canônicas (`routers/ia_capacidades.py`), todas resolvidas
+# pelo Núcleo Único (sigilo, escopo, RAG, gate de citações, HITL, AILog). As
+# portas antigas de /ai/* e /ia-especializada/* seguem registradas — nada foi
+# removido aqui, então não há entrada correspondente em REMOCOES_INTENCIONAIS.
+ADICOES_INTENCIONAIS |= {
+    ("/api/ia/analisar", "POST"),
+    ("/api/ia/conversar", "POST"),
+    ("/api/ia/extrair", "POST"),
+    ("/api/ia/redigir", "POST"),
+    ("/api/ia/resumir", "POST"),
+}
 
 
 def test_paridade_openapi_com_snapshot_anterior():
@@ -255,6 +287,23 @@ def test_paridade_openapi_com_snapshot_anterior():
     assert not ressuscitadas, f"rota(s) removida(s) por decisão do escritório voltaram: {ressuscitadas}"
 
     AUTH_ALTERACOES_INTENCIONAIS = (
+        # PRs #1348/#1349 (auditoria E2E de clientes, set/2026): rate limit
+        # (`rate_limit(...)` → dependência `_dep`) adicionado à análise de IA
+        # do cliente e ao export CSV de clientes. Só ACRESCENTA uma
+        # dependência de throttling; os gates de identidade/RBAC existentes
+        # permanecem. Os merges não registraram a alteração aqui e deixaram
+        # a suíte vermelha — regularizado na análise ponta a ponta de 03/09.
+        (("/api/clients/{client_id}/ia-analise", "POST"), ["HTTPBearer", "_dep", "_req_clientes", "get_current_user", "get_db"]),
+        (("/api/export/clientes.csv", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        # Homologação M20 (16/08/2026): correção crítica — o endpoint
+        # substituto _listar_docs_escopado (GET /api/rag/docs) perdia os
+        # Depends de db e cu na substituição por side effect, derrubando a
+        # listagem com 500. Declarou get_db/get_current_user no topo:
+        # a rota deixa de ser anônima e passa a exigir autenticação com
+        # escopo de ownership (gestão vê tudo; demais usuários veem público,
+        # do próprio cliente e de casos sem atribuição ou nos quais atuam).
+        # Decisão deliberada, não achado — a listagem expunha títulos de
+        # documentos internos de qualquer caso.
         (("/api/rag/docs", "GET"), ["HTTPBearer", "get_current_user", "get_db"]),
         (("/api/legal-docs/", "GET"), ["HTTPBearer", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),
         (("/api/legal-docs/", "POST"), ["HTTPBearer", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),

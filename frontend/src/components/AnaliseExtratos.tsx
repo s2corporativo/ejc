@@ -18,6 +18,7 @@ import api from "../lib/api";
 import { authFetch } from "../lib/stream";
 import { Modal, Button } from "./UI";
 import { toast } from "./Toast";
+import { mensagemErroHttp } from "../lib/iaErro";
 
 // Etapas do pipeline de peças (mesma esteira 7 etapas reutilizada pelo backend).
 const ETAPAS_MINUTA: { num: number; titulo: string }[] = [
@@ -89,27 +90,35 @@ export default function AnaliseExtratos() {
 
   const baixarExcel = async () => {
     if (!res?.analise?.id) return;
-    const r = await api.get(`/bank-analysis/${res.analise.id}/excel`, {
-      responseType: "blob",
-    });
-    const url = URL.createObjectURL(r.data as Blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "analise_bancaria.xlsx";
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const r = await api.get(`/bank-analysis/${res.analise.id}/excel`, {
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(r.data as Blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "analise_bancaria.xlsx";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error(mensagemErroHttp(e, "Não foi possível baixar a planilha."));
+    }
   };
 
   const gerarDoc = async (tipo: string) => {
     if (!res?.analise?.id) return;
-    const { data } = await api.post(
-      `/bank-analysis/${res.analise.id}/documento`,
-      { tipo },
-    );
-    const w = window.open("", "_blank");
-    if (w) {
-      w.document.write(data.html);
-      w.document.close();
+    try {
+      const { data } = await api.post(
+        `/bank-analysis/${res.analise.id}/documento`,
+        { tipo },
+      );
+      const w = window.open("", "_blank");
+      if (w) {
+        w.document.write(data.html);
+        w.document.close();
+      }
+    } catch (e) {
+      toast.error(mensagemErroHttp(e, "Não foi possível gerar o documento."));
     }
   };
 

@@ -57,8 +57,28 @@ def _payload(spec) -> dict:
 
 def seed() -> None:
     coverage = native_skill_coverage()
-    if not coverage["complete"]:
-        raise RuntimeError(f"Catálogo nativo incompleto: {coverage}")
+    # PORTÃO = `estrutura_ok`, não `complete`. Com `complete` (que exige método
+    # de ramo para as 25 áreas canônicas), este seed levantava SEMPRE — faltam
+    # 11 métodos, e escrevê-los "exige advogado, não se inventa aqui". O efeito
+    # era que as 48 skills nativas VÁLIDAS nunca chegavam a `ejc_skills`: em
+    # `seed_all` a exceção é engolida como "não-fatal", então o catálogo ficava
+    # mentindo em silêncio (os endpoints de cobertura e `/system-modules/mapa`
+    # reportavam 48 skills que a tabela não tinha). O método seguia aplicado por
+    # outro caminho — `orchestrator` injeta os blocos de prompt —, o que tornava
+    # a divergência ainda mais difícil de perceber.
+    #
+    # Lacuna de CONTEÚDO (área sem método) não pode bloquear o que já está
+    # pronto; defeito de ESTRUTURA (módulo sem método, área fora do enum) pode.
+    if not coverage["estrutura_ok"]:
+        raise RuntimeError(f"Catálogo nativo estruturalmente inválido: {coverage}")
+
+    faltando = coverage["legal_areas"]["missing"]
+    if faltando:
+        print(
+            f"[skills_native_ejc] AVISO: {len(faltando)} área(s) canônica(s) "
+            f"sem método de ramo — {', '.join(faltando)}. As demais são "
+            "semeadas normalmente; escrever esses métodos exige advogado."
+        )
 
     engine = create_engine(_sync_database_url())
     inserted = updated = unchanged = 0

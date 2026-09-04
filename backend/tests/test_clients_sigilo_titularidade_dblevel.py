@@ -262,11 +262,11 @@ async def test_criar_acesso_portal_rejeita_senha_fraca():
         await db.commit()
         try:
             u_socio = await _carregar_user(db, socio)
-            # >= 8 (passa no Field), mas fraca p/ validar_forca_senha → 400.
+            # >= SENHA_MIN_LEN (passa no Field), mas sem número → validar_forca_senha → 400.
             # .local é TLD reservado — EmailStr (email-validator>=2.3) rejeita;
             # usar domínio de documentação (.example).
             payload = CriarAcessoReq(
-                email=f"portal-{tok}@teste.example", senha_inicial="fraca123")
+                email=f"portal-{tok}@teste.example", senha_inicial="fracafracafraca")
             with pytest.raises(HTTPException) as exc:
                 await criar_acesso_portal(cli, payload, db, u_socio)
             assert exc.value.status_code == 400

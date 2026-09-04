@@ -745,7 +745,10 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: HeartPulse,
     component: CentralDiagnostico,
     roles: ROLES.gestores,
-    showInNav: true,
+    // Bloco 4 do plano de lançamento: fora do menu lateral (é administração,
+    // não estação de trabalho). Alcançável por /diagnostico e pelo cartão em
+    // Configurações → Administração. Rota e RBAC inalterados.
+    showInNav: false,
     order: 20,
     helpKey: "autofix",
     sensitive: true,
@@ -788,7 +791,9 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: Users,
     component: Usuarios,
     roles: ROLES.administradores,
-    showInNav: true,
+    // Bloco 4: fora do menu lateral; Configurações → Administração já tinha o
+    // cartão "Usuários e acessos". Rota e RBAC inalterados.
+    showInNav: false,
     order: 10,
     helpKey: "usuarios",
     sensitive: true,

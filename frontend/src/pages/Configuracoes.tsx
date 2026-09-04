@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router";
 import {
+  Activity,
   Bell,
   Check,
   ChevronRight,
@@ -341,6 +342,15 @@ export default function Configuracoes() {
               description: "Trilha das operações críticas do sistema.",
               to: "/auditoria",
               icon: ShieldCheck,
+            },
+            {
+              // Bloco 4 do plano de lançamento: a Central de Diagnóstico saiu
+              // do menu lateral e passa a ser alcançada por aqui — é tarefa de
+              // administração, não estação de trabalho do advogado.
+              title: "Central de diagnóstico",
+              description: "Banco, migrations, IA, integrações e jobs num lugar só.",
+              to: "/diagnostico",
+              icon: Activity,
             },
           ].map(({ title, description, to, icon: Icon }) => (
             <Link

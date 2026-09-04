@@ -175,6 +175,12 @@ REQUIRE_PREDEPLOY_BACKUP=1 \
   bash scripts/deploy_workflow_transaction.sh
 
 # ── 5. Verificação pós-deploy ───────────────────────────────────────────────
-curl -fsS http://127.0.0.1:8000/api/health >/dev/null ||
+# --max-time OBRIGATÓRIO. O curl não tem teto por padrão, e o modo de falha que
+# este deploy mais precisa detectar é justamente o backend que ACEITA a conexão
+# TCP e nunca responde (incidente de 04/09/2026: nginx devolvendo 504 só após
+# 120 s, inclusive para rota inexistente). Sem teto, a verificação que deveria
+# acusar o problema fica pendurada nele — foi exatamente assim que o watchdog
+# monitor_health.sh deixou de funcionar.
+curl -fsS --max-time 15 http://127.0.0.1:8000/api/health >/dev/null ||
   fail "health local reprovou APÓS o deploy — confira o rollback automático"
 log "Health local OK. Deploy manual do SHA $TARGET_SHA concluído."

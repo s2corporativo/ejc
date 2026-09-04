@@ -224,6 +224,7 @@ async def analisar_caso(
     scope_client_id: str | None = None,
     case_id: str | None = None,
     db=None,
+    user_id: str | None = None,
 ) -> dict:
     """
     Análise estratégica completa do caso.
@@ -310,14 +311,8 @@ async def analisar_caso(
         # orchestrator.py/agent/loop.py, que já consultam Case.sigilo_reforcado.
         # Um caso de crime sexual/menor ia pseudonimizado ao externo mesmo com
         # a flag marcada.
-        from sqlalchemy import text as _text
-        _row = (await db.execute(
-            _text("SELECT sigilo_reforcado FROM cases WHERE id = :cid AND deleted_at IS NULL"),
-            {"cid": case_id},
-        )).first()
-        if _row and _row[0]:
-            from app.services.ai.sanitization_policy import ModoSanitizacao
-            modo_sigilo = ModoSanitizacao.LOCAL_COMPLETO
+        from app.services.ai.sanitization_policy import modo_sigilo_por_case_id
+        modo_sigilo = await modo_sigilo_por_case_id(db, case_id)
 
     # LGPD — sanitiza a PII ESTRUTURAL (CPF/CNPJ/processo/e-mail…) e aplica a
     # SEGUNDA BARREIRA (validar_sem_pii) ANTES de qualquer envio ao LLM. Quando há
@@ -353,6 +348,23 @@ async def analisar_caso(
             entidades=entidades,
             modo_sanitizacao=modo_sigilo,
         )
+        # I9: AILog quando há db+user_id (routers/documento_ia.py já informa;
+        # routers/ai.py, cases.py e document_analysis_hook.py passam a informar
+        # quando integrarem — arquivos fora deste pacote/em PR aberto).
+        if db is not None and user_id:
+            from app.models.ai_log import AITipoUso
+            from app.services.ai.core.audit_logger import _fontes_str
+            from app.services.ai_gateway import registrar_log_resposta
+            await registrar_log_resposta(
+                db, user_id=user_id, tipo_uso=AITipoUso.analise_caso, resp=resp,
+                prompt_sanitizado="[ANALISE_ESTRATEGICA]\n" + contexto_sanitizado,
+                pii_removida=bool(
+                    resultado_sanitizacao[1]
+                    if isinstance(resultado_sanitizacao, tuple) and len(resultado_sanitizacao) > 1
+                    else False
+                ) or bool(entidades),
+                case_id=case_id, fontes_rag=_fontes_str(_fontes_rag),
+            )
         resultado = _parse_json_robusto(resp.texto)
         if not resultado:
             logger.warning("Análise estratégica retornou JSON inválido: %s", resp.texto[:200])

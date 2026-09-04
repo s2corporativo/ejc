@@ -1,10 +1,18 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "../components/Toast";
 import Markdown from "../components/Markdown";
 import { Sparkles, Trash2, Plus, Play } from "lucide-react";
 import api from "../lib/api";
-import { PageHeader, Spinner, Modal } from "../components/UI";
+import { PageHeader, Spinner, Modal, ErrorState } from "../components/UI";
 import { asList } from "../lib/list";
+import { mensagemErroHttp, mensagemErroIA } from "../lib/iaErro";
+import { useCarregar } from "../lib/useCarregar";
+import { useAuth } from "../stores/auth";
+import { ROLES } from "../config/moduleRegistry";
+
+// E7: excluir prompt é ato de gestão (superadmin/admin/socio) — espelha o
+// RBAC do backend; os demais papéis só criam, executam e consultam.
+export const PAPEIS_EXCLUIR_PROMPT: readonly string[] = ROLES.gestores;
 
 const CATS = [
   "peticao",
@@ -19,8 +27,15 @@ const CATS = [
 ];
 
 export default function Prompts() {
-  const [prompts, setPrompts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const role = useAuth((s) => s.user?.role);
+  const podeExcluir = Boolean(role && PAPEIS_EXCLUIR_PROMPT.includes(role));
+  const carga = useCarregar<any[]>(
+    () => api.get("/prompts-juridicos").then((r) => asList(r.data)),
+    [],
+    { fallbackErro: "Não foi possível carregar a biblioteca de prompts." },
+  );
+  const prompts = carga.dados ?? [];
+  const loading = carga.carregando && !carga.dados;
   const [show, setShow] = useState(false);
   const [saving, setSaving] = useState(false);
   const [f, setF] = useState({
@@ -28,22 +43,13 @@ export default function Prompts() {
     categoria: "peticao",
     conteudo: "",
     descricao: "",
+    // Prompt novo nasce privado; compartilhar com o escritório é opt-in.
+    publico: false,
   });
   const [exec, setExec] = useState<any>(null); // prompt sendo executado
   const [vars, setVars] = useState<Record<string, string>>({});
   const [out, setOut] = useState("");
   const [running, setRunning] = useState(false);
-
-  const load = () => {
-    api
-      .get("/prompts-juridicos")
-      .then((r) => setPrompts(asList(r.data)))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  };
-  useEffect(() => {
-    load();
-  }, []);
 
   const criar = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,12 +63,17 @@ export default function Prompts() {
         ...f,
         descricao: f.descricao || null,
       });
-      setF({ titulo: "", categoria: "peticao", conteudo: "", descricao: "" });
+      setF({
+        titulo: "",
+        categoria: "peticao",
+        conteudo: "",
+        descricao: "",
+        publico: false,
+      });
       setShow(false);
-      setLoading(true);
-      load();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Falha ao criar");
+      carga.recarregar();
+    } catch (err) {
+      toast.error(mensagemErroHttp(err, "Falha ao criar"));
     } finally {
       setSaving(false);
     }
@@ -72,9 +83,9 @@ export default function Prompts() {
     if (!confirm("Excluir este prompt?")) return;
     try {
       await api.delete(`/prompts-juridicos/${id}`);
-      setPrompts((p) => p.filter((x) => x.id !== id));
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao excluir prompt");
+      carga.recarregar();
+    } catch (e) {
+      toast.error(mensagemErroHttp(e, "Erro ao excluir prompt"));
     }
   };
 
@@ -93,11 +104,18 @@ export default function Prompts() {
         `/prompts-juridicos/${exec.id}/executar`,
         { variaveis: vars },
       );
+      // O backend devolve `resposta` (prompts_juridicos.executar); as demais
+      // chaves ficam por compatibilidade — antes caía sempre no JSON.stringify
+      // e o usuário via o payload cru em vez do texto gerado.
       setOut(
-        data.resultado ?? data.conteudo ?? data.texto ?? JSON.stringify(data),
+        data.resposta ??
+          data.resultado ??
+          data.conteudo ??
+          data.texto ??
+          JSON.stringify(data),
       );
-    } catch (err: any) {
-      setOut("Erro: " + (err.response?.data?.detail || "falha"));
+    } catch (err) {
+      setOut("Erro: " + mensagemErroIA(err));
     } finally {
       setRunning(false);
     }
@@ -172,13 +190,27 @@ export default function Prompts() {
               placeholder="Redija uma petição de {{tipo}} para o cliente {{cliente}} sobre {{assunto}}."
             />
           </div>
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              checked={f.publico}
+              onChange={(e) => setF({ ...f, publico: e.target.checked })}
+            />
+            Compartilhar com todo o escritório (público)
+          </label>
           <button type="submit" disabled={saving} className="btn-primary">
             {saving ? "Salvando…" : "Criar prompt"}
           </button>
         </form>
       )}
 
-      {prompts.length === 0 ? (
+      {carga.estado === "falhou" ? (
+        <ErrorState
+          title="Não foi possível carregar os prompts"
+          message={carga.erro ?? undefined}
+          onRetry={carga.recarregar}
+        />
+      ) : prompts.length === 0 ? (
         <div className="card p-10 text-center text-slate-400">
           <Sparkles size={32} className="mx-auto mb-3 text-bronze-pale" />
           Nenhum prompt salvo. Crie modelos de instrução reutilizáveis para
@@ -192,12 +224,16 @@ export default function Prompts() {
                 <h3 className="font-serif text-base font-semibold text-navy">
                   {p.titulo}
                 </h3>
-                <button
-                  onClick={() => excluir(p.id)}
-                  className="text-slate-300 hover:text-danger-500"
-                >
-                  <Trash2 size={15} />
-                </button>
+                {podeExcluir && (
+                  <button
+                    onClick={() => excluir(p.id)}
+                    className="text-slate-300 hover:text-danger-500"
+                    aria-label="Excluir prompt"
+                    title="Excluir prompt"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                )}
               </div>
               <span className="badge badge-neutral capitalize">
                 {p.categoria}
