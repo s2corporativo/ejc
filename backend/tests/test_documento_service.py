@@ -162,7 +162,9 @@ async def test_gateway_real_provider_externo_recebe_texto_sanitizado(monkeypatch
 
     captured = {}
 
-    async def fake_anthropic_chat(messages, model, temperature, max_tokens):
+    # `timeout_s` (orçamento restante da cadeia) é kwarg novo do provider —
+    # `**kw` mantém o fake compatível com futuras extensões da assinatura.
+    async def fake_anthropic_chat(messages, model, temperature, max_tokens, **kw):
         captured["messages"] = messages
         return ('{"classificacao": {"area": "civil"}}',
                 {"model": "claude-opus-4-8", "input_tokens": 11, "output_tokens": 7})
