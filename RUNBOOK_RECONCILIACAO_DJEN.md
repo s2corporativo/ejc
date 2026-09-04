@@ -13,13 +13,40 @@ DJEN/CNJ) detecta essa classe de falha — é a mesma lição já registrada em 
 real de OAB e a validação operacional exigem responsável humano autorizado — ver "Limite de
 autonomia" na Issue. Nenhum agente de IA certifica sozinho que a captura DJEN está completa.
 
-## Pré-requisito ainda pendente
+## Pré-requisito: cadastrar a OAB monitorada
 
 A reconciliação real só é possível depois que os advogados monitorados tiverem
-`users.djen_oab_numero` / `users.djen_oab_uf` cadastrados — isso é o Bloco 6 do
-`docs/auditoria/plano-lancamento-v3.md`, **ainda não concluído** na data deste runbook
-(2026-08-04). Sem OAB cadastrada, não há o que amostrar: o job de captura
-(`services/scheduler.py`, job `djen_intimacoes`) só roda por advogado com OAB configurada.
+`users.djen_oab_numero` / `users.djen_oab_uf` cadastrados (Bloco 6 do
+`docs/auditoria/plano-lancamento-v3.md`). Sem OAB cadastrada, não há o que amostrar: o
+job de captura (`services/scheduler.py`, job `djen_intimacoes`) seleciona apenas
+advogado com `djen_oab_numero` preenchido.
+
+Dois caminhos, ambos válidos:
+
+1. **Pela interface** — menu do avatar → *Minha OAB (intimações DJEN)*. O modal já abre
+   com o valor gravado; desligar o monitoramento é um botão separado e explícito.
+2. **Em lote, pelo terminal** — `backend/scripts/configurar_oab_djen.py`, dry-run por
+   padrão:
+
+   ```bash
+   # conferir de quem o job vai capturar hoje (somente leitura)
+   docker exec -it ejc_backend python -m scripts.configurar_oab_djen --verificar
+
+   # simular; depois repetir com --aplicar (pede confirmação digitada)
+   docker exec -it ejc_backend python -m scripts.configurar_oab_djen \
+       --definir "<e-mail ou fragmento do nome>=<numero>/<UF>"
+   ```
+
+   O script recusa agir quando o identificador casa zero ou mais de um usuário, quando a
+   OAB já pertence a outro usuário, ou quando diverge da OAB do perfil — e grava
+   `AuditLog` por alteração. Um erro em qualquer definição aborta o lote inteiro: meio
+   cadastro aplicado é pior que nenhum, porque parece configurado.
+
+**Como o cadastro errado se manifesta:** o `heartbeat` do job classifica o resultado, não
+a execução. Zero OAB cadastrada devolve `nenhuma_oab_configurada` com status `erro`; par
+número/UF incompleto devolve `oab_nao_configurada` para aquele advogado. Um painel "verde"
+com `resultado: sucesso_sem_resultados` significa que a fonte respondeu e não havia
+publicação — que é diferente de não ter perguntado.
 
 ## Periodicidade e amostra sugeridas
 
@@ -152,6 +179,9 @@ verdade paralela, não um bug pontual.
 
 ## Ferramental
 
+- `backend/scripts/configurar_oab_djen.py` — CLI de cadastro/conferência da OAB
+  monitorada (`--verificar` é read-only; a gravação exige `--aplicar` + confirmação
+  digitada). Ver a seção *Pré-requisito* acima.
 - `backend/scripts/reconciliar_djen_amostra.py` — CLI read-only, só lê `djen_comunicacoes`
   filtrado por OAB (via `users.djen_oab_numero/uf`) e janela; nunca acessa o DJEN/CNJ. Ver
   cabeçalho do arquivo para os comandos de execução.
