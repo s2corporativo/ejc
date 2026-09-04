@@ -97,11 +97,18 @@ function rotaFluxoHumano(
         to: `/casos/${caseId}?tab=financeiro`,
         label: "Abrir honorários do caso",
       };
+    case "gerar_peca":
+      return {
+        to: `/casos/${caseId}?tab=pecas&acao=produzir`,
+        label: "Produzir peça neste caso",
+      };
     case "aprovar_peca":
     case "confirmar_termo_inicial":
     case "registrar_protocolo":
-    case "gerar_peca":
-      return { to: "/pecas", label: "Abrir módulo de Peças" };
+      return {
+        to: `/casos/${caseId}?tab=pecas`,
+        label: "Abrir produção jurídica do caso",
+      };
     default:
       return null;
   }
