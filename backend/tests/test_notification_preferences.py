@@ -40,8 +40,9 @@ def test_channel_availability_exige_flag_e_configuracao_completa():
     availability = channel_availability(settings)
     assert availability.push is True
     assert availability.email is True
-    # Vendor Z-API removido: o canal WhatsApp automático fica sempre indisponível,
-    # mesmo com WHATSAPP_ENABLED=True (não há mais remetente).
+    # WhatsApp exige configuração COMPLETA da Evolution API: com a flag ligada
+    # mas sem EVOLUTION_API_KEY não há para onde enviar → indisponível.
+    # (Canal disponível: tests/test_whatsapp_evolution.py.)
     assert availability.whatsapp is False
 
 

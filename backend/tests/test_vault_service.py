@@ -326,3 +326,88 @@ async def test_auditoria_gravada_sem_segredo(db, audit, monkeypatch):
         assert "last4=" in r["detalhes"]
         for segredo in (SEGREDO, "sk-teste-cofre-9999wxyz", "env-senha"):
             assert segredo not in (r["detalhes"] or "")
+
+
+# ── Estado do overlay: falha de boot não pode ficar invisível ────────────────
+
+@pytest.fixture
+def overlay_runtime_limpo():
+    """Isola o estado de módulo do overlay (a suíte inteira compartilha)."""
+    anterior = dict(svc._OVERLAY_RUNTIME)
+    svc._OVERLAY_RUNTIME.update({
+        "aplicado": False, "aplicado_em": None, "campos": 0,
+        "erro_tipo": None, "falhas": 0,
+    })
+    yield
+    svc._OVERLAY_RUNTIME.clear()
+    svc._OVERLAY_RUNTIME.update(anterior)
+
+
+async def test_overlay_bem_sucedido_marca_estado_aplicado(db, overlay_runtime_limpo):
+    assert svc.estado_overlay()["status"] == "nao_aplicado"
+
+    await svc.cadastrar(db, "datajud", "DATAJUD_API_KEY", SEGREDO,
+                        "api_key", USER)
+    await svc.aplicar_overlay(db)
+
+    estado = svc.estado_overlay()
+    assert estado["aplicado"] is True
+    assert estado["status"] == "aplicado"
+    assert estado["campos"] == 1
+    assert estado["aplicado_em"] is not None
+    assert estado["erro_tipo"] is None
+
+
+def test_falha_do_overlay_vira_estado_consultavel(overlay_runtime_limpo, caplog):
+    """Achado P1: overlay que estoura o teto do boot deixava a API nos valores
+    do ambiente INDEFINIDAMENTE e em silêncio — e o arquivo de ambiente não
+    conhece revogação (credencial revogada no cofre voltaria a funcionar). A
+    falha agora tem estado consultável e log de erro."""
+    import logging
+
+    with caplog.at_level(logging.ERROR, logger="ejc.cofre"):
+        svc.marcar_overlay_falho("TimeoutError")
+
+    estado = svc.estado_overlay()
+    assert estado["aplicado"] is False
+    assert estado["status"] == "falho"
+    assert estado["erro_tipo"] == "TimeoutError"
+    assert estado["falhas"] == 1
+    assert "revogada" in caplog.text.lower()
+
+
+async def test_reaplicacao_apos_falha_restaura_a_revogacao(db, monkeypatch,
+                                                           overlay_runtime_limpo):
+    """A revogação tem de vingar na reaplicação — é isso que o job
+    `cofre_overlay_retry` do scheduler faz enquanto `aplicado` for False."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "DATAJUD_API_KEY", "valor-do-ambiente")
+
+    await svc.cadastrar(db, "datajud", "DATAJUD_API_KEY", SEGREDO,
+                        "api_key", USER)
+    await svc.revogar(db, "datajud", "DATAJUD_API_KEY", USER)
+
+    # Boot com banco lento: overlay não aplicado → Settings segue no ambiente.
+    svc.marcar_overlay_falho("TimeoutError")
+    assert settings.DATAJUD_API_KEY == "valor-do-ambiente"
+    assert svc.estado_overlay()["aplicado"] is False
+
+    await svc.aplicar_overlay(db)
+
+    assert settings.DATAJUD_API_KEY == ""          # revogação finalmente vale
+    assert svc.estado_overlay()["aplicado"] is True
+
+
+def test_painel_de_integracoes_expoe_o_estado_do_overlay(overlay_runtime_limpo):
+    """Estado consultável de verdade: o painel de saúde mostra que as
+    credenciais em uso vieram do ambiente, não do cofre."""
+    from app.core.config import Settings
+    from app.services.integration_status import build_integration_status
+
+    svc.marcar_overlay_falho("TimeoutError")
+    payload = build_integration_status(Settings(_env_file=None))
+
+    assert payload["credential_overlay"]["aplicado"] is False
+    assert payload["credential_overlay"]["status"] == "falho"
+    assert payload["credential_overlay"]["erro_tipo"] == "TimeoutError"
+    assert SEGREDO not in str(payload)
