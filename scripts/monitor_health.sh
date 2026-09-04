@@ -66,8 +66,20 @@ mkdir -p "$ESTADO_DIR" "$FORENSE_DIR" 2>/dev/null || true
 # ── Sondagem com teto obrigatório ───────────────────────────────────────────
 # Sem `-f`: queremos o código real (500 é diagnóstico diferente de 000).
 # `%{http_code}` devolve 000 quando não houve resposta HTTP alguma.
+#
+# SEM `|| echo 000`: em falha de conexão ou timeout o curl JÁ imprime `000` por
+# causa do `-w` E sai com status != 0, então o `||` acrescentava um segundo
+# valor e o resultado capturado virava `000000` (reproduzido contra uma porta
+# local fechada). O `case` de `descrever` perdia o ramo `000` e o log anunciava
+# um código HTTP inexistente em vez do diagnóstico "SEM RESPOSTA" prometido —
+# justamente no cenário para o qual este arquivo existe. Achado da revisão do PR.
 sondar() {
-  curl -sS -o /dev/null --max-time "$TIMEOUT" -w '%{http_code}' "$1" 2>/dev/null || echo 000
+  local saida
+  saida="$(curl -sS -o /dev/null --max-time "$TIMEOUT" -w '%{http_code}' "$1" 2>/dev/null || true)"
+  # Normaliza qualquer saída inesperada (vazia, ou mais de um código) para o
+  # primeiro token de 3 dígitos; sem correspondência, 000.
+  saida="$(printf '%s' "$saida" | grep -oE '^[0-9]{3}' | head -1 || true)"
+  printf '%s' "${saida:-000}"
 }
 
 descrever() {

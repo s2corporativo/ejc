@@ -21,8 +21,9 @@
 # religar as cargas pesadas. Fazer fora de ordem é trocar um sistema mudo por
 # um sistema mudo com dados a mais para perder.
 #
-# ONDE RODAR: na VPS, como root ou com `sudo -n`, a partir de um CHECKOUT GIT
-# do repositório (NÃO de dentro de /opt/ejc).
+# ONDE RODAR: na VPS, a partir de um CHECKOUT GIT do repositório (NÃO de dentro
+# de /opt/ejc). As fases que editam o .env de produção exigem ROOT — elas leem
+# e escrevem $APP_DIR/.env diretamente e conferem a permissão antes de agir.
 #
 #     git fetch origin main && git checkout origin/main
 #     bash scripts/reanimar_ejc.sh --diagnostico      # só lê, não muta NADA
@@ -86,13 +87,37 @@ case "$ROOT" in
   "$APP_DIR"|"$APP_DIR"/*) erro "rode a partir de um checkout git, não de $APP_DIR" ;;
 esac
 
+# As fases que editam o .env de produção leem e escrevem $APP_DIR/.env
+# DIRETAMENTE, sem passar por sudo. O cabeçalho antes dizia que um operador
+# não-root com `sudo -n` bastava — não basta: ele satisfaz a precondição
+# documentada, consegue rodar o deploy_manual.sh e falha na primeira cópia do
+# .env, no meio do religamento. Em vez de espalhar sudo por cada operação de
+# arquivo (mais superfície, mais chance de erro), a exigência fica EXPLÍCITA e
+# é conferida antes de qualquer trabalho. Achado da revisão do PR.
+exigir_acesso_ao_env() {
+  [ -f "$APP_DIR/.env" ] || erro "$APP_DIR/.env não existe — ambiente não provisionado?"
+  if [ ! -r "$APP_DIR/.env" ] || [ ! -w "$APP_DIR/.env" ]; then
+    erro "sem permissão de leitura/escrita em $APP_DIR/.env (usuário atual: $(id -un)).
+    Esta fase precisa rodar como root:  sudo bash scripts/reanimar_ejc.sh $*"
+  fi
+}
+
 # ── Sondagem HTTP: separa "nginx não alcança" de "backend não responde" ──────
+# A linha legível vai para STDERR e SÓ o código sai em stdout. A versão
+# anterior imprimia as duas no mesmo stdout, então `c="$(sondar_api ...)"`
+# capturava o diagnóstico JUNTO com o código: `interpretar_sonda` recebia um
+# valor multilinha e caía sempre no ramo "código inesperado", inclusive quando
+# o backend respondia 200. Achado da revisão do PR.
 sondar_api() {
-  local caminho="$1" limite="${2:-20}" saida
+  local caminho="$1" limite="${2:-20}" saida codigo
+  # Sem `|| echo`: em falha o curl já imprime `000` por causa do -w; acrescentar
+  # outro valor produziria `000000` (o mesmo defeito estava em monitor_health).
   saida="$(curl -sS -o /dev/null -m "$limite" \
-            -w '%{http_code} %{time_total}' "${BASE_URL}${caminho}" 2>/dev/null || echo "000 timeout")"
-  printf '   %-22s → HTTP %s\n' "$caminho" "$saida"
-  echo "$saida" | awk '{print $1}'
+            -w '%{http_code} %{time_total}' "${BASE_URL}${caminho}" 2>/dev/null || true)"
+  [ -n "$saida" ] || saida="000 (sem resposta em ${limite}s)"
+  printf '   %-22s → HTTP %s\n' "$caminho" "$saida" >&2
+  codigo="$(printf '%s' "$saida" | awk '{print $1}')"
+  echo "${codigo:-000}"
 }
 
 interpretar_sonda() {
@@ -202,6 +227,21 @@ fase_deploy() {
   info "classificação de migration e rollback automático já vivem lá."
 
   git -C "$ROOT" fetch -q origin main || erro "git fetch falhou"
+
+  # O alvo PRECISA estar integrado à main. `git checkout <sha>` aceita qualquer
+  # commit já presente no checkout — inclusive um commit de feature que nunca
+  # foi revisado — e o deploy_manual.sh só confere que o HEAD bate com o SHA
+  # pedido, não a procedência dele. Sem esta trava, "--deploy <sha>" implanta
+  # código não revisado em produção com uma confirmação genérica.
+  # `merge-base --is-ancestor` aceita commit ANTIGO da main (rollback continua
+  # possível) e recusa qualquer coisa fora dela. Achado da revisão do PR.
+  if ! git -C "$ROOT" merge-base --is-ancestor "$TARGET_SHA" origin/main 2>/dev/null; then
+    erro "$TARGET_SHA não é ancestral de origin/main — recuso implantar código
+    não integrado. Se o objetivo é rollback, use um commit que ESTEVE na main.
+    Se é código novo, mescle o PR primeiro."
+  fi
+  info "✅ $TARGET_SHA confirmado como ancestral de origin/main"
+
   git -C "$ROOT" checkout -q "$TARGET_SHA" || erro "checkout de $TARGET_SHA falhou"
 
   log "2.1 · Ensaio (--dry-run): confere tudo e NÃO muta produção"
@@ -214,28 +254,114 @@ fase_deploy() {
   bash "$ROOT/scripts/deploy_manual.sh" --sha "$TARGET_SHA"
 
   log "2.2 · Verificação pós-deploy"
-  bash "$ROOT/scripts/post_deploy_check.sh" || aviso "post_deploy_check acusou problema — leia acima."
+  # Falha aqui é FALHA da fase. A versão anterior usava `|| aviso`, que
+  # convertia qualquer reprovação do post_deploy_check (readiness, rotas
+  # externas, containers, login, compilação de módulo crítico) em saída zero —
+  # um operador de incidente, ou uma automação, leria "deploy concluído" sobre
+  # uma produção parcialmente quebrada. Achado da revisão do PR.
+  if ! bash "$ROOT/scripts/post_deploy_check.sh"; then
+    erro "post_deploy_check REPROVOU — a produção NÃO está validada. Leia a saída
+    acima, corrija, e rode a verificação de novo:
+        bash scripts/post_deploy_check.sh
+    O deploy_manual.sh já tem rollback próprio; se ele não disparou, o código
+    novo está no ar e reprovando a checagem."
+  fi
+  info "✅ verificação pós-deploy aprovada."
 }
 
 # ── Escrita idempotente no .env de produção ─────────────────────────────────
+# Nomes cujo VALOR nunca pode ser impresso: senha, chave, token, segredo.
+# A revisão do PR pegou a versão anterior imprimindo `$atual → $valor` para
+# SMTP_PASSWORD, EVOLUTION_API_KEY, DATAJUD_API_KEY e VAPID_PRIVATE_KEY — ou
+# seja, rodar a recuperação despejava credencial no terminal e em qualquer log
+# de incidente capturado. Aqui só o NOME da chave e o fato de ter mudado saem.
+_e_segredo() {
+  case "$1" in
+    *PASSWORD*|*SENHA*|*SECRET*|*_KEY|*_KEYS|*APIKEY*|*API_KEY*|*TOKEN*|*DSN*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 definir_flag() {
   local chave="$1" valor="$2" arquivo="$APP_DIR/.env"
   [ -f "$arquivo" ] || erro "$arquivo não existe"
+
+  local mostrado="$valor"
+  if _e_segredo "$chave"; then mostrado="(valor não exibido)"; fi
+
+  local atual="" existe=0
   if grep -qE "^${chave}=" "$arquivo"; then
-    local atual; atual="$(grep -E "^${chave}=" "$arquivo" | head -1 | cut -d= -f2-)"
-    if [ "$atual" = "$valor" ]; then info "$chave já é $valor — nada a fazer"; return; fi
-    sed -i "s|^${chave}=.*|${chave}=${valor}|" "$arquivo"
-    info "$chave: $atual → $valor"
-  else
-    printf '%s=%s\n' "$chave" "$valor" >> "$arquivo"
-    info "$chave=$valor (acrescentado)"
+    existe=1
+    atual="$(grep -E "^${chave}=" "$arquivo" | head -1 | cut -d= -f2-)"
+    if [ "$atual" = "$valor" ]; then
+      info "$chave já está no valor desejado — nada a fazer"
+      return
+    fi
   fi
+
+  # Escrita LITERAL. A versão anterior usava `sed -i "s|^K=.*|K=$valor|"`, que
+  # interpreta o valor como programa sed: `&` vira a linha inteira casada, `\`
+  # escapa, e `|` encerra a expressão. Senha de SMTP e chave de API contêm
+  # esses caracteres com frequência — o resultado seria credencial corrompida
+  # em produção, ou o script abortando no meio do religamento.
+  # awk compara por prefixo exato (sem regex) e recebe chave/valor por ambiente,
+  # então nada no valor é interpretado.
+  local tmp
+  tmp="$(mktemp "${TMPDIR:-/tmp}/ejc-env.XXXXXX")" || erro "mktemp falhou"
+  chmod 600 "$tmp" 2>/dev/null || true
+  if ! EJC_CHAVE="$chave" EJC_VALOR="$valor" awk '
+        BEGIN { k = ENVIRON["EJC_CHAVE"]; v = ENVIRON["EJC_VALOR"]; achou = 0 }
+        substr($0, 1, length(k) + 1) == k "=" { if (!achou) { print k "=" v; achou = 1 }; next }
+        { print }
+        END { if (!achou) print k "=" v }
+      ' "$arquivo" > "$tmp"; then
+    rm -f "$tmp"; erro "falha ao reescrever $arquivo (nada foi alterado)"
+  fi
+  # `cat >` em vez de `mv`: preserva inode, dono e permissões do .env original.
+  cat "$tmp" > "$arquivo" || { rm -f "$tmp"; erro "falha ao gravar $arquivo"; }
+  rm -f "$tmp"
+
+  if [ "$existe" = "1" ]; then
+    info "$chave alterado → $mostrado"
+  else
+    info "$chave=$mostrado (acrescentado)"
+  fi
+}
+
+# ── Aplicar mudança de .env: RECRIAR, não reiniciar ─────────────────────────
+# O Docker fixa o ambiente de um container no momento da CRIAÇÃO. `docker
+# restart` reinicia o processo dentro do container existente e NÃO relê o
+# `env_file` do Compose. A versão anterior deste script usava `docker restart`
+# depois de editar o .env — ou seja, gravava tudo certo e não ligava NADA, com
+# o agravante de parecer ter funcionado. Achado da revisão do PR.
+aplicar_env() {
+  log "Aplicando o .env (recriando backend e worker — restart não relê env_file)"
+  if ! (cd "$APP_DIR" && docker compose up -d --no-deps --force-recreate backend worker); then
+    aviso "recriação via compose falhou; tentando só o backend"
+    (cd "$APP_DIR" && docker compose up -d --no-deps --force-recreate backend) \
+      || erro "não consegui recriar os serviços — o .env NÃO está em vigor"
+  fi
+}
+
+# Espera o backend responder 200 e devolve não-zero se não responder.
+aguardar_saudavel() {
+  local tentativas="${1:-20}" i codigo=""
+  for i in $(seq 1 "$tentativas"); do
+    sleep 5
+    codigo="$(curl -sS -o /dev/null -m 10 -w '%{http_code}' "${BASE_URL}/api/health" 2>/dev/null || true)"
+    codigo="${codigo:-000}"
+    printf '   tentativa %2d/%d → HTTP %s\n' "$i" "$tentativas" "$codigo" >&2
+    [ "$codigo" = "200" ] && { echo 200; return 0; }
+  done
+  echo "${codigo:-000}"
+  return 1
 }
 
 # ═════════════════════════ FASE 3 — FLAGS ═══════════════════════════════════
 # Religa o que está desligado e NÃO consome memória. Embeddings fica de fora
 # de propósito — tem fase própria, porque já derrubou a VPS uma vez.
 fase_flags() {
+  exigir_acesso_ao_env
   log "FASE 3 — religar flags leves no $APP_DIR/.env"
   local backup="$APP_DIR/.env.bak.$(date +%Y%m%d%H%M%S)"
   cp -p "$APP_DIR/.env" "$backup" || erro "não consegui fazer backup do .env"
@@ -293,17 +419,24 @@ fase_flags() {
     info "WhatsApp pulado."
   fi
 
-  log "3.5 · Aplicando (restart do backend)"
-  confirmar "Reiniciar o backend para as flags valerem"
-  docker restart "$CONTAINER" >/dev/null
-  sleep 20
-  sondar_api /api/health 30 >/dev/null
-  info "Se algo quebrou, restaure: cp $backup $APP_DIR/.env && docker restart $CONTAINER"
+  log "3.5 · Aplicando"
+  confirmar "Recriar backend e worker para as flags valerem"
+  aplicar_env
+  # Resultado CONFERIDO, não descartado: a versão anterior sondava e jogava o
+  # código fora, então a fase saía com status 0 mesmo com o backend em 500/504.
+  if ! aguardar_saudavel 20 >/dev/null; then
+    aviso "Backend NÃO respondeu 200 após aplicar as flags. Restaurando o .env."
+    cat "$backup" > "$APP_DIR/.env" && aplicar_env
+    erro "flags revertidas — investigue o log antes de tentar de novo"
+  fi
+  info "✅ backend saudável com as flags novas."
+  info "Reverter mesmo assim: cat $backup > $APP_DIR/.env && (cd $APP_DIR && docker compose up -d --no-deps --force-recreate backend worker)"
 }
 
 # ═════════════════════════ FASE 4 — EMBEDDINGS ══════════════════════════════
 # A carga mais pesada do sistema. Fase separada de propósito.
 fase_embeddings() {
+  exigir_acesso_ao_env
   log "FASE 4 — ligar a busca semântica do RAG"
   aviso "LEIA ANTES. Em 27/08/2026 a reindexação do RAG chegou a 10 GB de"
   aviso "anon-rss e disparou o OOM-killer GLOBAL desta VPS, que reiniciou o"
@@ -334,8 +467,11 @@ fase_embeddings() {
   definir_flag EMBEDDINGS_ENABLED true
   # Teto de lote: 16 é o valor que conteve o pico de 27/08. Não aumente sem medir.
   definir_flag EMBEDDINGS_BATCH 16
-  docker restart "$CONTAINER" >/dev/null
-  sleep 20
+  # Recriar, não reiniciar: sem isto o container seguiria com
+  # EMBEDDINGS_ENABLED=false e a reindexação abortaria sem processar nada.
+  aplicar_env
+  aguardar_saudavel 20 >/dev/null \
+    || erro "backend não voltou saudável — não vou reindexar contra um sistema quebrado"
 
   log "4.3 · Reindexação em primeiro plano, sob observação"
   info "Preferir isto a esperar o job horário: aqui você vê o consumo subir e"
@@ -365,11 +501,12 @@ fase_embeddings() {
 #   C. pesado, fase própria (--embeddings);
 #   D. não liga sem decisão sua, com o motivo escrito.
 fase_ligar_tudo() {
+  exigir_acesso_ao_env
   log "LIGAR TUDO — religando o que deve ser religado"
   local backup="$APP_DIR/.env.bak.$(date +%Y%m%d%H%M%S)"
   cp -p "$APP_DIR/.env" "$backup" || erro "não consegui fazer backup do .env"
   info "backup do .env em: $backup"
-  info "reverter tudo: cp $backup $APP_DIR/.env && docker restart $CONTAINER"
+  info "reverter tudo: cat $backup > $APP_DIR/.env && (cd $APP_DIR && docker compose up -d --no-deps --force-recreate backend worker)"
 
   # ── GRUPO A — sem credencial externa ──────────────────────────────────────
   log "GRUPO A · Liga agora, sem depender de ninguém"
@@ -516,10 +653,33 @@ fase_ligar_tudo() {
   printf '    Ligar? [s/N]: '; read -r r
   if [ "$r" = "s" ] || [ "$r" = "S" ]; then definir_flag COBRANCA_ENABLED true; else info "COBRANCA_ENABLED mantido desligado."; fi
 
-  printf '  • Expurgo LGPD da Entrada Única (apaga rascunho abandonado).\n'
-  printf '    É HARD DELETE irreversível — e não fazê-lo é passivo LGPD.\n'
+  # Portão PRÓPRIO de backup: este é o único item da fase que destrói dado.
+  # O backup do .env feito no começo não recupera rascunho nem upload apagado,
+  # e o operador pode ter acabado de PULAR a configuração de backup logo acima.
+  # Achado da revisão do PR: habilitar isto sem prova de restauração testada é
+  # ligar um hard delete agendado sem rede de segurança.
+  printf '  • Expurgo LGPD da Entrada Única — apaga rascunho abandonado.\n'
+  printf '    HARD DELETE IRREVERSÍVEL, agendado para 03:50 todo dia. Não fazê-lo\n'
+  printf '    é passivo LGPD; fazê-lo sem backup restaurável é perda de dado.\n'
   printf '    Ligar? [s/N]: '; read -r r
-  if [ "$r" = "s" ] || [ "$r" = "S" ]; then definir_flag ENTRADA_EXPURGO_ENABLED true; else info "ENTRADA_EXPURGO_ENABLED mantido desligado."; fi
+  if [ "$r" = "s" ] || [ "$r" = "S" ]; then
+    printf '\n    Antes de ligar, responda com honestidade:\n'
+    printf '    Existe backup RECENTE do banco e dos uploads, e a restauração\n'
+    printf '    dele já foi TESTADA (não apenas gerada)?\n'
+    printf '    Digite "restauracao-testada" para confirmar: '
+    local prova; read -r prova
+    if [ "$prova" = "restauracao-testada" ]; then
+      definir_flag ENTRADA_EXPURGO_ENABLED true
+      info "expurgo ligado — a primeira execução é às 03:50."
+      aviso "Confira o resultado da PRIMEIRA execução no painel de jobs antes de"
+      aviso "considerar o expurgo estabilizado."
+    else
+      info "sem confirmação de restauração testada — ENTRADA_EXPURGO_ENABLED mantido desligado."
+      info "Rode scripts/backup.sh, teste o restore, e reexecute esta fase."
+    fi
+  else
+    info "ENTRADA_EXPURGO_ENABLED mantido desligado."
+  fi
 
   printf '  • Verificação de PERTINÊNCIA da citação (confere se a autoridade\n'
   printf '    citada SUSTENTA a tese, não só se existe). Custa uma chamada de IA\n'
@@ -532,19 +692,24 @@ fase_ligar_tudo() {
   printf '    Ligar? [s/N]: '; read -r r
   if [ "$r" = "s" ] || [ "$r" = "S" ]; then definir_flag AUDIO_TRANSCRIPTION_ENABLED true; else info "AUDIO_TRANSCRIPTION_ENABLED mantido desligado."; fi
 
-  log "Aplicando (restart do backend)"
-  confirmar "Reiniciar o backend para tudo isto valer"
-  docker restart "$CONTAINER" >/dev/null
-  sleep 20
-  local codigo; codigo="$(sondar_api /api/health 30)"
-  interpretar_sonda "$codigo"
+  log "Aplicando"
+  confirmar "Recriar backend e worker para tudo isto valer"
+  aplicar_env
+  local codigo
+  if ! codigo="$(aguardar_saudavel 20)"; then
+    interpretar_sonda "$codigo"
+    aviso "Backend NÃO respondeu 200 após o religamento. Restaurando o .env."
+    cat "$backup" > "$APP_DIR/.env" && aplicar_env
+    erro "religamento revertido — investigue o log antes de tentar de novo"
+  fi
+  info "✅ backend saudável com tudo religado."
 
   log "Conferência final — flags EFETIVAS dentro do processo"
   docker exec -i "$CONTAINER" python - < "$ROOT/scripts/check_flags_producao.py" | sed 's/^/   /' || true
 
   log "FALTA AINDA: bash scripts/reanimar_ejc.sh --embeddings"
   info "É a única peça pesada, e a que faz a busca semântica do RAG sair do zero."
-  info "Reverter tudo desta fase: cp $backup $APP_DIR/.env && docker restart $CONTAINER"
+  info "Reverter tudo desta fase: cat $backup > $APP_DIR/.env && (cd $APP_DIR && docker compose up -d --no-deps --force-recreate backend worker)"
 }
 
 case "$ACAO" in
