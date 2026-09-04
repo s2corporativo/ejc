@@ -9,12 +9,18 @@ import api from "../lib/api";
  * usuário sair explicitamente (botão ✕ na faixa de contexto). Módulos
  * globais (Documentos, Peças, Prazos) usam o caso ativo como filtro
  * padrão quando a URL não traz `?caso=` — a URL sempre vence.
+ *
+ * A próxima ação acompanha o contexto porque ela é o principal sinal
+ * operacional do caso: o usuário deve enxergar "o que fazer agora" mesmo
+ * quando navega entre superfícies do mesmo caso.
  */
 export interface CasoAtivo {
   id: string;
   titulo: string;
   cliente?: string;
   numero_processo?: string;
+  proxima_acao?: string;
+  proxima_acao_prazo?: string;
 }
 
 const STORAGE_KEY = "ejc_caso_ativo";
@@ -43,7 +49,7 @@ interface CaseContextState {
   caso: CasoAtivo | null;
   /**
    * Ativa o caso pelo id (idempotente: não refaz nada se já é o ativo).
-   * Busca título/nº do processo e, em segundo plano, o nome do cliente.
+   * Busca título/nº do processo/próxima ação e, em segundo plano, o nome do cliente.
    */
   ativar: (id: string) => Promise<void>;
   /** Sai do modo caso (ação explícita do usuário). */
@@ -70,6 +76,8 @@ export const useCaseContext = create<CaseContextState>((set, get) => ({
           data?.numero_processo ||
           data?.processo_principal?.numero_cnj ||
           undefined,
+        proxima_acao: data?.proxima_acao || undefined,
+        proxima_acao_prazo: data?.proxima_acao_prazo || undefined,
       };
       persist(caso);
       set({ caso });
