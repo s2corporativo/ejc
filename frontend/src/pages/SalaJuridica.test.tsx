@@ -38,7 +38,9 @@ vi.mock("../components/Toast", () => ({
 }));
 
 vi.mock("../stores/auth", () => ({
-  useAuth: () => ({ user: { id: "u1", full_name: "Dra. Advogada" } }),
+  useAuth: () => ({
+    user: { id: "u1", full_name: "Dra. Advogada", role: "advogado" },
+  }),
 }));
 
 vi.mock("../components/Markdown", () => ({

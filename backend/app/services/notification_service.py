@@ -1,13 +1,17 @@
 # ── app/services/notification_service.py ─────────────────────────────────────
-# Notificações: interna (sino) + email (SMTP) + push (VAPID). O envio automático
-# de WhatsApp (antes via Z-API) foi REMOVIDO — enviar_whatsapp degrada
-# graciosamente (ver a função). Email/push só disparam se habilitados no .env.
+# Notificações: interna (sino) + email (SMTP) + push (VAPID) + WhatsApp
+# (Evolution API — a MESMA instância que já atendia o webhook de ENTRADA passa a
+# ser também o remetente de SAÍDA). Todo canal externo é opt-in por .env e
+# degrada em silêncio: falha de canal nunca sobe para quem chamou.
 from __future__ import annotations
 import asyncio
 import logging
+import re
 from datetime import datetime
 from uuid import uuid4
 from zoneinfo import ZoneInfo
+
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -16,8 +20,10 @@ from app.services.notification_preferences import (
     MANDATORY_INTERNAL_TYPES,
     category_enabled,
     channel_availability,
+    channel_opt_in,
     get_notification_preference,
     is_quiet_hours,
+    whatsapp_configurado,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,20 +44,152 @@ async def criar_notificacao_interna(
     return n
 
 
-async def enviar_whatsapp(telefone: str, mensagem: str) -> bool:
-    """Remetente automático de WhatsApp — DESATIVADO.
+# ── WhatsApp (Evolution API) ──────────────────────────────────────────────────
+# LGPD: telefone e conteúdo da mensagem são dado pessoal/sigilo profissional —
+# NUNCA vão para o log. O que se registra é o número mascarado (4 últimos
+# dígitos) e o TAMANHO da mensagem, o bastante para diagnosticar entrega.
+def _mascarar_telefone(numero: str) -> str:
+    """`***1234` — só os 4 últimos dígitos chegam ao log (LGPD)."""
+    d = re.sub(r"\D", "", numero or "")
+    return f"***{d[-4:]}" if len(d) >= 4 else "***"
 
-    O vendor Z-API foi removido do EJC e não há backend de envio no lugar
-    (a Evolution API cobre apenas o webhook de ENTRADA). A assinatura é
-    preservada de propósito para não quebrar os callers (notificar/dispatch);
-    a função degrada graciosamente retornando False, e `notificar` já gateia o
-    canal por channel_availability().whatsapp (hoje sempre False). Plugar um novo
-    provedor de envio é trabalho futuro (fora do escopo desta remoção)."""
+
+# DDDs em uso no Plano Geral de Códigos Nacionais (Anatel). A lista explícita
+# existe para NÃO tratar como brasileiro um número estrangeiro de 10/11 dígitos
+# (ver normalizar_telefone_br): acrescentar "55" a um número já completo entrega
+# alerta sigiloso em OUTRA conta de WhatsApp.
+_DDDS_VALIDOS = frozenset({
+    11, 12, 13, 14, 15, 16, 17, 18, 19,
+    21, 22, 24, 27, 28,
+    31, 32, 33, 34, 35, 37, 38,
+    41, 42, 43, 44, 45, 46, 47, 48, 49,
+    51, 53, 54, 55,
+    61, 62, 63, 64, 65, 66, 67, 68, 69,
+    71, 73, 74, 75, 77, 79,
+    81, 82, 83, 84, 85, 86, 87, 88, 89,
+    91, 92, 93, 94, 95, 96, 97, 98, 99,
+})
+
+
+def _e_nacional_br(digitos: str) -> bool:
+    """`digitos` é um número BRASILEIRO sem DDI (DDD + assinante)?
+
+    Aceita 11 dígitos só quando o assinante começa em 9 (celular pós-9º
+    dígito) e 10 dígitos só quando começa em 2–5 (fixo). Qualquer outra
+    combinação de 10/11 dígitos não é reconhecível como nacional.
+    """
+    if len(digitos) not in (10, 11) or not digitos.isdigit():
+        return False
+    if int(digitos[:2]) not in _DDDS_VALIDOS:
+        return False
+    assinante = digitos[2:]
+    if len(assinante) == 9:
+        return assinante[0] == "9"
+    return assinante[0] in "2345"
+
+
+def normalizar_telefone_br(telefone: str | None) -> str | None:
+    """E.164 SEM "+" (formato que a Evolution API espera em `number`).
+
+    ACEITA:
+      * número nacional com DDD, com ou sem máscara — `(31) 98888-7777`,
+        `31988887777`, `3133334444`: recebe o DDI 55;
+      * número já em E.164, com ou sem "+"/"00" — `5531988887777`,
+        `+55 31 98888-7777`, `00351912345678`, `351912345678`: passa intacto.
+
+    RECUSA (devolve None, o envio degrada para o sino interno em vez de
+    entregar a mensagem à conta errada):
+      * 10/11 dígitos que NÃO são reconhecíveis como brasileiros — DDD fora do
+        Plano Geral da Anatel, celular sem o 9º dígito ou fixo começando em 6-9.
+        É aqui que mora a regressão corrigida: número estrangeiro já completo
+        (ex.: EUA/Canadá `12025550123`, 11 dígitos) virava `5512025550123` e o
+        alerta jurídico sigiloso ia para OUTRO número. Número estrangeiro deve
+        vir com o prefixo internacional ("+" ou "00") ou já em E.164;
+      * `55` + 10/11 dígitos cujo miolo não é um nacional válido (dado já
+        corrompido por esta mesma regra no passado);
+      * lixo/curto/vazio.
+    """
+    bruto = (telefone or "").strip()
+    ddi_declarado = bruto.startswith("+")   # "+" declara o DDI: nunca reinterpretado
+    digitos = re.sub(r"\D", "", bruto)
+    prefixo_00 = digitos.startswith("00")   # prefixo internacional discado
+    if prefixo_00:
+        digitos = digitos[2:]
+    internacional = ddi_declarado or prefixo_00
+
+    # "00" seguido de um nacional válido é erro de digitação comum (o 00 exige
+    # código de país em seguida) — vale a leitura nacional. Já o "+" declara o
+    # DDI e é respeitado como veio.
+    if not ddi_declarado and _e_nacional_br(digitos):
+        return "55" + digitos
+
+    if digitos.startswith("55") and len(digitos) in (12, 13):
+        # Já vem com DDI brasileiro: o miolo tem de ser um nacional válido.
+        return digitos if _e_nacional_br(digitos[2:]) else None
+
+    if internacional:
+        return digitos if 8 <= len(digitos) <= 15 else None
+
+    # Sem marcador internacional, só passa o que já está em formato E.164.
+    return digitos if 12 <= len(digitos) <= 15 else None
+
+
+async def enviar_whatsapp(telefone: str, mensagem: str) -> bool:
+    """Envia WhatsApp pela Evolution API. Falha silenciosa (nunca propaga).
+
+    Opt-in: `WHATSAPP_ENABLED=true` + configuração completa da Evolution API
+    (`EVOLUTION_API_URL` + `EVOLUTION_API_KEY` + `EVOLUTION_INSTANCE`, ver
+    `whatsapp_configurado`). Faltando qualquer um, retorna False SEM tocar a
+    rede — o alerta segue pelo sino interno. `notificar` já gateia o canal por
+    `channel_availability().whatsapp`, que deriva do MESMO predicado; a
+    checagem aqui é a garantia para quem chama a função direta.
+    """
+    if not settings.WHATSAPP_ENABLED:
+        return False
+    base = (settings.EVOLUTION_API_URL or "").strip().rstrip("/")
+    chave = (settings.EVOLUTION_API_KEY or "").strip()
+    instancia = (settings.EVOLUTION_INSTANCE or "").strip()
+    if not whatsapp_configurado(settings):
+        logger.info(
+            "WhatsApp: Evolution API não configurada (URL/chave/instância) — "
+            "envio ignorado."
+        )
+        return False
+
+    numero = normalizar_telefone_br(telefone)
+    if not numero:
+        logger.warning("WhatsApp: telefone inválido — envio ignorado.")
+        return False
+
+    url = f"{base}/message/sendText/{instancia}"
+    try:
+        async with httpx.AsyncClient(timeout=settings.EVOLUTION_TIMEOUT) as client:
+            resposta = await client.post(
+                url,
+                headers={"apikey": chave, "Content-Type": "application/json"},
+                json={"number": numero, "text": mensagem},
+            )
+            resposta.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        # Só o código HTTP: o corpo da resposta da Evolution ecoa o payload
+        # (número + texto) e não pode ir para o log.
+        logger.warning(
+            "WhatsApp: Evolution API recusou o envio para %s (HTTP %s).",
+            _mascarar_telefone(numero), e.response.status_code,
+        )
+        return False
+    except Exception as e:  # noqa: BLE001 — timeout/DNS/conexão: degrada
+        logger.warning(
+            "WhatsApp: envio para %s falhou (%s).",
+            _mascarar_telefone(numero), type(e).__name__,
+        )
+        return False
+
     logger.info(
-        "Canal WhatsApp automático indisponível (vendor Z-API removido) — "
-        "mensagem não enviada."
+        "WhatsApp enviado para %s (%d caracteres).",
+        _mascarar_telefone(numero), len(mensagem or ""),
     )
-    return False
+    return True
 
 
 async def enviar_email(destinatario: str, assunto: str, corpo: str) -> bool:
@@ -197,8 +335,11 @@ async def notificar(
         externos; o sino já foi criado (não é afetado).
       - Canais externos (push/email/whatsapp): só quando a categoria está ativa
         (ou o tipo é mandatório), o canal está disponível no ambiente E
-        habilitado na preferência (ou sem preferência). `forcar_sino` NÃO abre
-        canais externos — apenas garante o registro interno.
+        habilitado na preferência do usuário. SEM linha de preferências vale o
+        DEFAULT DECLARADO (`DEFAULT_PREFERENCES` via `channel_opt_in`): push
+        ligado, e-mail e WhatsApp DESLIGADOS — canal externo é opt-in, e antes
+        `pref is None` liberava todos. `forcar_sino` NÃO abre canais externos —
+        apenas garante o registro interno.
       - Falha de um canal externo nunca derruba os demais nem o fluxo.
     """
     pref = await get_notification_preference(db, user_id)
@@ -233,14 +374,14 @@ async def notificar(
     avail = channel_availability()
 
     # ── Push ──────────────────────────────────────────────────────────────────
-    if avail.push and (pref is None or pref.push_enabled):
+    if avail.push and channel_opt_in(pref, "push_enabled"):
         try:
             await enviar_push(db, user_id, titulo, mensagem, link or "/")
         except Exception as e:
             logger.warning(f"[notificar] push falhou (user={user_id}): {e}")
 
     # ── E-mail ────────────────────────────────────────────────────────────────
-    if email and avail.email and (pref is None or pref.email_enabled):
+    if email and avail.email and channel_opt_in(pref, "email_enabled"):
         try:
             await enviar_email(
                 email,
@@ -251,7 +392,7 @@ async def notificar(
             logger.warning(f"[notificar] email falhou (user={user_id}): {e}")
 
     # ── WhatsApp ──────────────────────────────────────────────────────────────
-    if telefone and avail.whatsapp and (pref is None or pref.whatsapp_enabled):
+    if telefone and avail.whatsapp and channel_opt_in(pref, "whatsapp_enabled"):
         try:
             await enviar_whatsapp(telefone, f"{titulo}\n\n{mensagem}")
         except Exception as e:

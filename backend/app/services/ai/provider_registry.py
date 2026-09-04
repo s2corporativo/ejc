@@ -65,3 +65,18 @@ def motivo_inelegivel(provider: str) -> str | None:
     """O que falta para o provedor ficar elegível (None se já está)."""
     faltas = [motivo for ok, motivo in _requisitos(provider, get_settings()) if not ok]
     return "; ".join(faltas) if faltas else None
+
+
+def provider_elegivel_com(provider: str, s) -> bool:
+    """Mesma regra de `provider_elegivel`, mas contra um Settings explícito.
+
+    Existe para os PAINÉIS (integration_status, ia_saude) que recebem a
+    configuração por parâmetro: eles reimplementavam a regra e divergiam
+    (esqueciam GROQ_ENABLED e AI_EXTERNAL_PROVIDERS_ALLOWED — análise E2E
+    03/09/2026, A3). Agora consultam a fonte única."""
+    return all(ok for ok, _ in _requisitos(provider, s))
+
+
+def motivo_inelegivel_com(provider: str, s) -> str | None:
+    faltas = [motivo for ok, motivo in _requisitos(provider, s) if not ok]
+    return "; ".join(faltas) if faltas else None

@@ -172,10 +172,28 @@ def test_gateway_pula_claude_sem_chave(monkeypatch):
     assert any(p == "groq" for p, _ in cadeia)
 
 
-def test_gateway_tarefa_simples_nao_usa_claude(monkeypatch):
+def test_gateway_tarefa_simples_usa_claude_so_como_ultimo_recurso(monkeypatch):
+    """I8/A1 (análise E2E 03/09): `resumo`/`chat_rapido` passam a ter Anthropic
+    na cadeia — antes, no desenho de produção (Ollama off, Groq/Maritaca sem
+    chave) a cadeia ficava VAZIA com Anthropic saudável. Mas ele não vira o
+    primeiro: o local/grátis continua na frente, e o modelo é o RÁPIDO."""
     _prep(monkeypatch, tem_chave=True)
-    cadeia = g._resolver_cadeia("resumo", provider_force=None, model_override=None)
-    assert all(p != "anthropic" for p, _ in cadeia)        # Groq grátis basta
+    monkeypatch.setattr(g.settings, "ANTHROPIC_MODEL_RAPIDO", "claude-haiku-4-5")
+    monkeypatch.setattr(g.settings, "ANTHROPIC_MODEL_COMPLEXO", "claude-opus-4-8")
+    for task in ("resumo", "chat_rapido"):
+        cadeia = g._resolver_cadeia(task, provider_force=None, model_override=None)
+        provs = [p for p, _ in cadeia]
+        assert cadeia[0][0] == "ollama"                    # local primeiro
+        assert "anthropic" in provs                        # cadeia completa
+        assert dict(cadeia)["anthropic"] == "claude-haiku-4-5"  # modelo rápido
+
+
+def test_gateway_tarefa_simples_sem_locais_cai_no_claude_em_vez_de_vazio(monkeypatch):
+    """Cenário de produção do compose: só Anthropic elegível → cadeia NÃO vazia."""
+    _prep(monkeypatch, tem_chave=True, ollama=False)
+    monkeypatch.setattr(g.settings, "GROQ_API_KEY", "")
+    cadeia = g._resolver_cadeia("chat_rapido", provider_force=None, model_override=None)
+    assert [p for p, _ in cadeia] == ["anthropic"]
 
 
 def test_gateway_force_anthropic_com_chave(monkeypatch):
@@ -208,8 +226,12 @@ def test_precos_oficiais_corrigidos():
     # Tabela de preços Anthropic unificada em ai_cost (fonte única de custo de IA).
     from app.services.ai_cost import _PRECOS_ANTHROPIC_USD_MM
     assert _PRECOS_ANTHROPIC_USD_MM["claude-opus-4-8"] == {"input": 5.00, "output": 25.00}
-    assert _PRECOS_ANTHROPIC_USD_MM["claude-sonnet-5"] == {"input": 3.00, "output": 15.00}
+    # A4 (análise E2E 03/09): Sonnet 5 é 2/10 na tabela vigente (era 3/15 aqui).
+    assert _PRECOS_ANTHROPIC_USD_MM["claude-sonnet-5"] == {"input": 2.00, "output": 10.00}
     assert _PRECOS_ANTHROPIC_USD_MM["claude-haiku-4-5"] == {"input": 1.00, "output": 5.00}
+    assert _PRECOS_ANTHROPIC_USD_MM["claude-opus-5"] == {"input": 5.00, "output": 25.00}
+    assert _PRECOS_ANTHROPIC_USD_MM["claude-fable-5"] == {"input": 10.00, "output": 50.00}
+    assert _PRECOS_ANTHROPIC_USD_MM["claude-fable-5-1"] == {"input": 10.00, "output": 50.00}
 
 
 # ── Revogação de credencial pelo Cofre (auditoria de segurança, 18/08) ───────
