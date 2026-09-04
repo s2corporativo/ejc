@@ -295,14 +295,47 @@ def _sql_executavel(valor: str) -> str | None:
     return candidato if _SQL_START.match(candidato) else None
 
 
+# `WITH nome AS (`, cada `, nome AS (` da lista encadeada, e o `nome AS (` que
+# abre um bloco de CTEs guardado em constante própria (o `WITH` fica no
+# f-string do chamador — ver services/fee_ledger_compat.LEDGER_COMPAT_CTES).
+_RE_CTE = re.compile(
+    r'(?:\bWITH\b|,|\A)\s*"?([a-z_][a-z0-9_]*)"?\s+AS\s*\(', re.I
+)
+
+
+def _nomes_de_cte(texto: str) -> set[str]:
+    """Nomes definidos por CTE — locais ao statement, não tabelas do schema."""
+    return {m.group(1).lower() for m in _RE_CTE.finditer(texto)}
+
+
+def _arvores_do_app() -> list[ast.AST]:
+    arvores = []
+    for path in APP_DIR.rglob("*.py"):
+        try:
+            arvores.append(ast.parse(path.read_text(encoding="utf-8"), filename=str(path)))
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+    return arvores
+
+
 def _tabelas_referenciadas_raw() -> tuple[set[str], dict[str, set[str]]]:
     tabelas: set[str] = set()
     cols_por_tabela: dict[str, set[str]] = {}
-    for path in APP_DIR.rglob("*.py"):
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        except (SyntaxError, UnicodeDecodeError):
-            continue
+    arvores = _arvores_do_app()
+
+    # Primeiro passe: nomes de CTE de TODO o app. Precisa ser global porque um
+    # bloco de CTEs pode morar em constante de um módulo (services/
+    # fee_ledger_compat.LEDGER_COMPAT_CTES) e ser interpolado por f-string em
+    # outro (routers/financeiro_consolidado.py) — no arquivo consumidor o nome
+    # só aparece em FROM/JOIN, nunca em `... AS (`. Nome de CTE é local ao
+    # statement, não é tabela, e não tem — nem deve ter — classificação DR.
+    ctes_do_app: set[str] = set()
+    for tree in arvores:
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                ctes_do_app |= _nomes_de_cte(node.value)
+
+    for tree in arvores:
         for node in ast.walk(tree):
             if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
                 continue
@@ -310,7 +343,16 @@ def _tabelas_referenciadas_raw() -> tuple[set[str], dict[str, set[str]]]:
             if sql is None:
                 continue
             if re.match(r"^(?:SELECT|WITH)\b", sql, re.I):
-                tabelas.update(m.group(1).lower() for m in _RE_REF_FROM.finditer(sql))
+                # CTE não é tabela: `WITH pagamentos_efetivos AS (...)` define um
+                # nome LOCAL ao statement, que aparece depois em FROM/JOIN. Sem
+                # descontá-lo, o scanner exigia classificação DR para algo que
+                # não existe no schema — falso positivo introduzido quando o
+                # Financeiro passou a montar seus agregados com CTE.
+                tabelas.update(
+                    m.group(1).lower()
+                    for m in _RE_REF_FROM.finditer(sql)
+                    if m.group(1).lower() not in ctes_do_app
+                )
             elif re.match(r"^INSERT\s+INTO\b", sql, re.I):
                 tabelas.update(m.group(1).lower() for m in _RE_REF_INSERT.finditer(sql))
                 for match in _RE_INSERT_COLUNAS.finditer(sql):
