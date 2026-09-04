@@ -343,6 +343,7 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
 
     consultas = 0
     bloqueadas = 0
+    falhas_tecnicas = 0
 
     for consulta, tipo, jur in _plano_federacao(cfg):
         consultas += 1
@@ -356,6 +357,12 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
             logger.warning("LexML %s %r bloqueado: %s", tipo, consulta, e)
             continue
         except Exception as e:   # rede/XML — nunca derruba a execução inteira
+            # Contado junto com os bloqueios: consulta que ESTOUROU também não
+            # é "não achei nada". Sem este contador, uma queda de rede em 100%
+            # do plano ainda devolveria (0, 0) como execução bem-sucedida — o
+            # mesmo silêncio que a correção do anti-bot fechou por um lado e
+            # deixou aberto pelo outro.
+            falhas_tecnicas += 1
             logger.warning("LexML %s %r: %s: %s", tipo, consulta, type(e).__name__, e)
             continue
 
@@ -458,6 +465,12 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
         raise LexMLBloqueadoError(
             f"LexML bloqueou as {consultas} consultas do plano (desafio "
             "anti-bot). Nenhuma ingestão foi executada."
+        )
+    if consultas and (bloqueadas + falhas_tecnicas) == consultas:
+        raise RuntimeError(
+            f"LexML: as {consultas} consultas do plano falharam "
+            f"({bloqueadas} bloqueadas, {falhas_tecnicas} por erro técnico). "
+            "Nenhuma ingestão foi executada."
         )
 
     return novos, total

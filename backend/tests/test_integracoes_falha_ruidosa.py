@@ -238,3 +238,64 @@ def test_email_do_dou_escapa_conteudo_de_terceiro():
         "Portaria &#x27;X&#x27; &amp; &lt;b&gt;Y&lt;/b&gt;"
     )
     assert _esc(None) == ""
+
+
+# ── resíduos da própria correção do LexML ────────────────────────────────────
+
+async def test_falha_tecnica_em_todo_o_plano_tambem_nao_vira_sucesso(monkeypatch):
+    """A correção do anti-bot fechou um lado e deixou o outro aberto.
+
+    Se TODAS as consultas estourarem por rede/XML (não por bloqueio), o
+    ingestor ainda devolvia (0, 0) como execução bem-sucedida — o mesmo
+    silêncio, por outra porta.
+    """
+    from app.services.ingestors import lexml as ingestor
+
+    async def _sempre_erro_de_rede(*a, **k):
+        raise ConnectionError("rede fora")
+
+    monkeypatch.setattr(ingestor, "buscar_lexml", _sempre_erro_de_rede)
+
+    with pytest.raises(RuntimeError, match="erro técnico"):
+        await ingestor.ingerir(db=None)
+
+
+async def test_falha_tecnica_parcial_nao_derruba_a_execucao(monkeypatch):
+    from app.services.ingestors import lexml as ingestor
+
+    chamadas = {"n": 0}
+
+    async def _falha_a_primeira(*a, **k):
+        chamadas["n"] += 1
+        if chamadas["n"] == 1:
+            raise ConnectionError("rede instável")
+        return []
+
+    monkeypatch.setattr(ingestor, "buscar_lexml", _falha_a_primeira)
+
+    novos, total = await ingestor.ingerir(db=None)
+    assert (novos, total) == (0, 0)
+    assert chamadas["n"] > 1
+
+
+async def test_busca_distingue_fonte_vazia_de_fonte_que_nao_respondeu(monkeypatch):
+    """Para quem pesquisa, os dois fatos são opostos: "não há precedente"
+    encerra a linha de investigação; "a fonte não respondeu" manda tentar de
+    novo. Achatar ambos em [] fazia o advogado ler bloqueio como ausência."""
+    from app.services import jurisprudencia_externa as je
+
+    async def _lexml_bloqueado(*a, **k):
+        raise LexMLBloqueadoError("desafio anti-bot")
+
+    async def _tjmg_vazio(*a, **k):
+        return []
+
+    monkeypatch.setattr(je, "buscar_lexml", _lexml_bloqueado)
+    monkeypatch.setattr(je, "buscar_tjmg", _tjmg_vazio)
+
+    r = await je.buscar_todas_fontes("dano moral")
+
+    assert r["fontes"]["lexml"]["respondeu"] is False
+    assert r["fontes"]["lexml"]["erro"] == "LexMLBloqueadoError"
+    assert r["fontes"]["tjmg"]["respondeu"] is True, "vazio ≠ indisponível"
+    assert r["fontes_com_falha"] == ["lexml"]

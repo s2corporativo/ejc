@@ -469,15 +469,37 @@ async def buscar_todas_fontes(
 
     resultados = await asyncio.gather(*tasks, return_exceptions=True)
 
-    lexml_res = resultados[0] if not isinstance(resultados[0], Exception) else []
-    tjmg_res  = resultados[1] if not isinstance(resultados[1], Exception) else []
+    # "Não achei nada" e "a fonte não respondeu" são fatos opostos para quem
+    # pesquisa: o primeiro encerra a linha de investigação, o segundo manda
+    # tentar de novo. Achatar os dois em `[]` fazia o advogado ler um LexML
+    # bloqueado como ausência de precedente — e o `LexMLBloqueadoError`, criado
+    # justamente para não falhar em silêncio, morria aqui. O padrão de fonte
+    # com status já existe no repo (`radar_legislativo.buscar_ao_vivo` e
+    # `crawler_precedentes.buscar_precedentes`).
+    def _separar(res) -> tuple[list, str | None]:
+        if isinstance(res, BaseException):
+            return [], type(res).__name__
+        return res, None
+
+    lexml_res, lexml_falha = _separar(resultados[0])
+    tjmg_res, tjmg_falha = _separar(resultados[1])
+
+    falhas = [f for f, erro in (("lexml", lexml_falha), ("tjmg", tjmg_falha)) if erro]
+    for fonte, erro in (("lexml", lexml_falha), ("tjmg", tjmg_falha)):
+        if erro:
+            logger.warning("[%s] busca não respondeu: %s", fonte, erro)
 
     return {
         "palavras": palavras,
         "total": len(lexml_res) + len(tjmg_res),
+        # Campos ADITIVOS: nenhum consumidor existente quebra, e quem exibe
+        # resultado passa a poder distinguir vazio de indisponível.
+        "fontes_com_falha": falhas,
         "fontes": {
-            "lexml": {"total": len(lexml_res), "itens": lexml_res},
-            "tjmg":  {"total": len(tjmg_res),  "itens": tjmg_res},
+            "lexml": {"total": len(lexml_res), "itens": lexml_res,
+                      "respondeu": lexml_falha is None, "erro": lexml_falha},
+            "tjmg":  {"total": len(tjmg_res),  "itens": tjmg_res,
+                      "respondeu": tjmg_falha is None, "erro": tjmg_falha},
         },
         "todos": lexml_res + tjmg_res,
     }
