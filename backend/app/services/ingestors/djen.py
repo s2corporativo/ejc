@@ -168,6 +168,15 @@ def _extrair_itens(payload) -> list[dict]:
     return payload if isinstance(payload, list) else []
 
 
+class DjenContratoError(RuntimeError):
+    """A consulta ao DJEN não foi respondida no contrato esperado.
+
+    Erro PRÓPRIO porque, num sistema de prazos, "a fonte não respondeu" e
+    "não há intimação para esta OAB" levam a condutas opostas — e confundir os
+    dois é a origem documentada da armadilha do JOB_DJEN.
+    """
+
+
 async def _coletar_oab(numero: str, uf: str, ini: str, fim: str) -> list[dict]:
     """Coleta paginada (sequencial + pausa) de uma OAB na janela [ini, fim]."""
     itens: list[dict] = []
@@ -184,6 +193,17 @@ async def _coletar_oab(numero: str, uf: str, ini: str, fim: str) -> list[dict]:
             lote = _extrair_itens(r.json())
         except ValueError:
             logger.warning(f"DJEN OAB {numero}/{uf} p.{pagina}: JSON inválido")
+            if pagina == 1:
+                # Na PRIMEIRA página, JSON inválido significa que a consulta
+                # não foi respondida (mudança de contrato, HTML de bloqueio) —
+                # devolver lista vazia aqui faz "a fonte não respondeu" virar
+                # "este advogado não tem intimação", que num sistema de prazos
+                # é o erro mais caro possível. Nas páginas seguintes já há
+                # itens colhidos, então parar e aproveitá-los é o correto.
+                raise DjenContratoError(
+                    f"DJEN OAB {numero}/{uf}: resposta sem JSON válido na "
+                    "primeira página — consulta não foi respondida."
+                )
             break
         itens.extend(x for x in lote if isinstance(x, dict))
         if len(lote) < ITENS_POR_PAGINA:
