@@ -28,10 +28,12 @@ export const AVISO_FERRAMENTA_NAO_HOMOLOGADA =
 
 // ── Exportação do demonstrativo de cálculo (POST /pecas/demonstrativo) ───────
 // O backend mantém a exportação atrás da flag PECAS_DEMONSTRATIVO_CALCULADORA_
-// ENABLED (default OFF) e responde **403** quando ela está desligada. Não há
-// endpoint de capacidades que exponha essa flag ao frontend — `/pecas/meta` só
-// devolve tipos/áreas/níveis —, então o único caminho honesto é degradar bem no
-// 403 em vez de vazar o texto cru do gate (que cita auditoria e data interna).
+// ENABLED (default OFF) e responde **403** quando ela está desligada. A tela
+// antecipa o bloqueio por `GET /pecas/meta` (`capacidades.demonstrativo_
+// calculadora`, consumido em `lib/pecasCapacidades.ts`); o tratamento do 403
+// permanece como rede de segurança — a flag pode mudar entre a carga da tela e
+// o clique — e evita vazar o texto cru do gate (que cita auditoria e data
+// interna).
 /** Bloqueio administrativo da exportação (flag desligada no backend). */
 export const MENSAGEM_DEMONSTRATIVO_INDISPONIVEL =
   "Demonstrativo de cálculo indisponível: as regras da calculadora ainda não " +
