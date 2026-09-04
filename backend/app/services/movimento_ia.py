@@ -27,13 +27,17 @@ _SYS = (
 )
 
 
-async def traduzir_movimento(db, movimento_id: str, forcar: bool = False) -> str | None:
+async def traduzir_movimento(db, movimento_id: str, forcar: bool = False,
+                             user_id: str | None = None) -> str | None:
     """Gera e persiste o resumo em linguagem simples de um andamento.
 
     Args:
         db: sessão async já aberta (do request ou do event_bus).
         movimento_id: id do CaseMovimento.
         forcar: se True, retraduz mesmo que já exista resumo_ia.
+        user_id: quando informado, grava AILog (I9). O disparo pelo event_bus
+            (event_subscribers.py) não tem usuário — segue sem trilha por
+            usuário; o custo continua visível nos logs do gateway.
     Returns:
         O resumo (str) ou None se não foi possível gerar.
     """
@@ -68,6 +72,13 @@ async def traduzir_movimento(db, movimento_id: str, forcar: bool = False) -> str
     resumo = (resp.texto or "").strip()
     if not resumo:
         return None
+    if user_id:
+        from app.models.ai_log import AITipoUso
+        await ai_gateway.registrar_log_resposta(
+            db, user_id=user_id, tipo_uso=AITipoUso.resumo_documento, resp=resp,
+            prompt_sanitizado="[MOVIMENTO_IA]\n" + texto_limpo, pii_removida=True,
+            case_id=getattr(mov, "case_id", None),
+        )
     mov.resumo_ia = resumo
     await db.commit()
     logger.info(

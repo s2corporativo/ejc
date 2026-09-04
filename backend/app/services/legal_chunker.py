@@ -9,9 +9,52 @@ from __future__ import annotations
 
 import re
 
+from app.core.config import get_settings
 
-_MAX_DEFAULT = 2400
+
+def teto_chars_embedding() -> int:
+    """Teto de caracteres por chunk derivado da janela do modelo de embeddings
+    (config EMBEDDINGS_MAX_CHARS). Piso de 800 para o chunker não degenerar."""
+    try:
+        return max(800, int(get_settings().EMBEDDINGS_MAX_CHARS or 1800))
+    except Exception:  # noqa: BLE001 — config indisponível → default seguro
+        return 1800
+
+
+# C5 (análise E2E de IA 2026-09-03): antes 2.400 chars fixos, acima da janela
+# de 512 tokens do e5-large — a cauda do chunk ficava sem vetor. O default agora
+# NUNCA excede EMBEDDINGS_MAX_CHARS (teste de invariante em
+# tests/test_rag_chunk_janela_modelo.py).
+_MAX_DEFAULT = min(2400, teto_chars_embedding())
 _MIN_SPLIT = 500
+
+# Categorias RAG cuja natureza jurídica é conhecida: entram pelo chunker
+# jurídico (artigo/heading) em vez do corte por tamanho da ingestão.
+_PREFIXOS_CATEGORIA_JURIDICA = ("legislacao", "sumula", "jurisprudencia", "doutrina")
+
+
+def categoria_usa_chunker_juridico(categoria: str | None) -> bool:
+    cat = (categoria or "").strip().lower()
+    return bool(cat) and cat.startswith(_PREFIXOS_CATEGORIA_JURIDICA)
+
+
+def chunks_para_ingestao(texto: str, categoria: str | None) -> list[str] | None:
+    """Chunks para `ingestion_service.upsert_documento(chunks=...)`.
+
+    Devolve a lista quando a categoria é jurídica (legislacao*, sumula*,
+    jurisprudencia*, doutrina) e o chunker produziu algo; senão None — e o
+    upsert cai no corte por tamanho (`chunk_texto`). Nunca levanta: qualquer
+    falha vira None (fallback). O `hash_conteudo` do documento é calculado
+    pelo upsert sobre o CONTEÚDO inteiro normalizado, nunca sobre os chunks —
+    trocar a estratégia de chunking não altera a idempotência.
+    """
+    if not categoria_usa_chunker_juridico(categoria):
+        return None
+    try:
+        chunks = chunk_documento_juridico(texto, categoria=categoria)
+    except Exception:  # noqa: BLE001 — fallback para o corte por tamanho
+        return None
+    return chunks or None
 
 
 def _normalizar(texto: str) -> str:
@@ -98,7 +141,10 @@ def _chunk_markdown(texto: str, max_chars: int) -> list[str]:
                 chunks.append(secao)
             continue
         # Em seção longa, todo subchunk repete o heading para não perder o contexto.
-        chunks.extend(_agrupar_paragrafos(corpo or secao, max_chars=max_chars, prefixo=heading))
+        # O orçamento do corpo desconta o heading (+ "\n\n") para que o subchunk
+        # COM prefixo continue dentro do teto (C5) sem perder o heading.
+        orcamento = max(_MIN_SPLIT + 1, max_chars - len(heading) - 2) if heading else max_chars
+        chunks.extend(_agrupar_paragrafos(corpo or secao, max_chars=orcamento, prefixo=heading))
     return [c for c in chunks if c.strip()]
 
 
@@ -142,17 +188,32 @@ def chunk_documento_juridico(
     texto = _normalizar(texto)
     if not texto:
         return []
-    max_chars = max(800, int(max_chars or _MAX_DEFAULT))
+    # Teto duro = janela do modelo (C5): pedido acima dele é rebaixado.
+    max_chars = max(800, min(int(max_chars or _MAX_DEFAULT), teto_chars_embedding()))
     tipo = (tipo_camada or "").strip().lower()
     cat = (categoria or "").strip().lower()
 
     if tipo == "fonte_primaria" or "legislacao" in cat:
-        return _chunk_legislacao(texto, max_chars)
-
-    if tipo in {
+        chunks = _chunk_legislacao(texto, max_chars)
+    elif tipo in {
         "jurisprudencia_estruturada", "tese_juridica", "bloco_argumentativo",
         "pedido_juridico", "modelo_peca",
     } or any(x in cat for x in ("jurisprud", "sumula", "tese", "argument", "pedido", "modelo")):
-        return _chunk_markdown(texto, max_chars)
+        chunks = _chunk_markdown(texto, max_chars)
+    else:
+        chunks = _agrupar_paragrafos(texto, max_chars)
+    return _garantir_teto(chunks, max_chars)
 
-    return _agrupar_paragrafos(texto, max_chars)
+
+def _garantir_teto(chunks: list[str], max_chars: int) -> list[str]:
+    """Nenhum chunk sai acima de `max_chars`: o prefixo de heading repetido
+    pelo chunker de markdown pode empurrar um trecho além do teto — aqui ele é
+    re-segmentado por parágrafo/frase (o excedente perde o prefixo, mas ganha
+    vetor; o inverso deixava a cauda sem embedding)."""
+    saida: list[str] = []
+    for c in chunks:
+        if len(c) <= max_chars:
+            saida.append(c)
+            continue
+        saida.extend(_agrupar_paragrafos(c, max_chars))
+    return saida

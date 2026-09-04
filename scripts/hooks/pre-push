@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Pre-push do EJC (S6, análise E2E 03/09/2026): roda os portões rápidos da
+# tabela "Verificação" do CLAUDE.md conforme o que o diff contra origin/main
+# toca. Instale com scripts/instalar_hooks.sh. Pular: EJC_SKIP_HOOKS=1 (fica
+# registrado no PR como decisão, não como esquecimento).
+set -euo pipefail
+
+if [ "${EJC_SKIP_HOOKS:-0}" = "1" ]; then
+  echo "[pre-push] EJC_SKIP_HOOKS=1 — portões pulados por decisão explícita."
+  exit 0
+fi
+
+RAIZ="$(git rev-parse --show-toplevel)"
+cd "$RAIZ"
+BASE="$(git merge-base HEAD origin/main 2>/dev/null || echo "")"
+if [ -z "$BASE" ]; then
+  echo "[pre-push] origin/main indisponível — rodando os dois portões."
+  ARQS="backend/x frontend/src/x"
+else
+  ARQS="$(git diff --name-only "$BASE" HEAD)"
+fi
+
+toca() { printf '%s\n' "$ARQS" | grep -qE "$1"; }
+
+if toca '^backend/'; then
+  PY="backend/.venv/bin/python"
+  [ -x "$PY" ] || PY="python"
+  echo "[pre-push] backend: ruff + pytest (sem dblevel)…"
+  (cd backend && "$PY" -m ruff check app)
+  (cd backend && APP_ENV=development "$PY" -m pytest -q -x --ignore-glob='*dblevel*' -p no:cacheprovider)
+fi
+
+if toca '^frontend/src/'; then
+  echo "[pre-push] frontend: tsc + vitest…"
+  (cd frontend && npm run lint --silent)
+  (cd frontend && npm test --silent)
+fi
+
+echo "[pre-push] portões verdes."

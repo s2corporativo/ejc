@@ -39,6 +39,7 @@ from app.routers.ia_governanca import Confianca
 from app.services.embedding_service import disponivel as emb_disponivel
 from app.tasks.dispatcher import agendar_indexacao
 from app.services.ingestion_service import upsert_documento
+from app.services.legal_chunker import chunks_para_ingestao
 
 logger = logging.getLogger("ejc.rag_public")
 
@@ -252,6 +253,56 @@ async def _callback_bg(url: str, lote_id: str, chaves: List[str],
         logger.warning(f"[rag_public] callback_bg erro: {type(e).__name__}: {e}")
 
 
+async def _validar_escopo_lote(db: AsyncSession, itens: list, ak: ApiKey) -> None:
+    """C6 — cross-tenant na API pública.
+
+    - Chave IRRESTRITA (sem client_id): item com `client_id`/`case_id` é
+      recusado (422) — antes era aceito e ficava `pendente` na fila de
+      curadoria de OUTRO cliente.
+    - Chave restrita: `client_id` do payload só é aceito se for IGUAL ao da
+      chave; `case_id` tem de pertencer a esse cliente (Case ativo).
+    O lote inteiro é recusado antes de qualquer gravação; a mensagem cita os
+    itens ofensores (índice) sem ecoar os ids do payload.
+    """
+    problemas: list[str] = []
+    for idx, bruto in enumerate(itens):
+        if not isinstance(bruto, dict):
+            continue
+        cid = bruto.get("client_id")
+        case_id = bruto.get("case_id")
+        if not cid and not case_id:
+            continue
+        if not ak.client_id:
+            problemas.append(
+                f"item {idx}: chave de API irrestrita não pode fixar client_id/case_id"
+            )
+            continue
+        if cid and str(cid) != str(ak.client_id):
+            problemas.append(
+                f"item {idx}: client_id do payload difere do client_id fixado na chave"
+            )
+            continue
+        if case_id:
+            from app.models.case import Case
+            caso = (await db.execute(
+                select(Case).where(
+                    Case.id == str(case_id),
+                    Case.client_id == ak.client_id,
+                    Case.deleted_at.is_(None),
+                )
+            )).scalar_one_or_none()
+            if caso is None:
+                problemas.append(
+                    f"item {idx}: case_id não pertence ao cliente da chave (ou não existe)"
+                )
+    if problemas:
+        extra = f" (+{len(problemas) - 5} itens)" if len(problemas) > 5 else ""
+        raise HTTPException(
+            422,
+            "Escopo de cliente/caso recusado: " + "; ".join(problemas[:5]) + extra,
+        )
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.post(
@@ -298,6 +349,12 @@ async def ingerir_lote(
             f"de conteúdo (recebido: {total_chars}). Divida em lotes menores.",
         )
 
+    # C6 (análise E2E de IA 2026-09-03): escopo de cliente/caso do payload só é
+    # aceito quando coincide com o client_id FIXADO na chave. Chave irrestrita
+    # não pode fixar client_id/case_id (poluiria a fila de curadoria de outro
+    # cliente). Recusa o LOTE inteiro com 422 antes de gravar qualquer item.
+    await _validar_escopo_lote(db, req.itens, ak)
+
     resultados: list[dict] = []
     chaves_lote: list[str] = []
     docs_pendentes: list[str] = []
@@ -318,8 +375,11 @@ async def ingerir_lote(
                                "versao": None, "erro": erros[:300]})
             continue
 
-        # Isolamento LGPD: chave restrita a cliente prevalece sobre o payload.
-        client_id = ak.client_id or item.client_id
+        # Isolamento LGPD: o escopo é SEMPRE o da chave (C6 — payload com
+        # client_id/case_id já foi validado contra a chave em _validar_escopo_lote;
+        # chave irrestrita nunca grava client_id/case_id).
+        client_id = ak.client_id
+        case_id = item.case_id if ak.client_id else None
         try:
             async with db.begin_nested():   # savepoint: erro não poisona o lote
                 resultado = await upsert_documento(
@@ -331,9 +391,12 @@ async def ingerir_lote(
                     # payload tente enviar rag_status=aprovado.
                     extra={**(item.extra or {}), "rag_status": "pendente",
                            "ingestao_api": True},
-                    client_id=client_id, case_id=item.case_id,
+                    client_id=client_id, case_id=case_id,
                     confianca=item.confianca,
                     embutir_vetores=False,   # vetorização adiada p/ background
+                    # C5: categorias jurídicas entram pelo chunker por artigo/
+                    # heading (teto = janela do modelo); demais → corte por tamanho.
+                    chunks=chunks_para_ingestao(item.conteudo, item.categoria),
                 )
         except Exception as e:
             contagem["erro"] += 1

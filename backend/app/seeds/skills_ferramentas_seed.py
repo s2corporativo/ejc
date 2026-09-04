@@ -383,7 +383,10 @@ SKILLS = [
         "area": "juridico", "oab_restricted": True,
         "system_prompt": _BASE + (
             "\n\nTAREFA: DECODIFICAR INDEFERIMENTO INSS. A partir da carta/decisão de indeferimento:\n"
-            "1. MOTIVO REAL da negativa (traduzido)\n2. PRAZOS recursais (recurso ao CRPS em 30 dias; via judicial)\n"
+            "1. MOTIVO REAL da negativa (traduzido)\n"
+            "2. PRAZOS recursais — NÃO afirme o número de dias de memória: "
+            "leia a data de ciência e o prazo NA PRÓPRIA carta e marque [VERIFICAR]; "
+            "o cálculo tempestivo se faz na ferramenta de prazos do EJC, não aqui\n"
             "3. TESES de reversão aplicáveis\n4. MELHOR CAMINHO (recurso administrativo x ação judicial) e por quê\n"
             "5. DOCUMENTOS para fortalecer o pedido."
         ),
@@ -395,7 +398,9 @@ SKILLS = [
         "area": "juridico", "oab_restricted": True,
         "system_prompt": _BASE + (
             "\n\nTAREFA: RECURSO AO CRPS. A partir do indeferimento e do CNIS/documentos:\n"
-            "1. TEMPESTIVIDADE (prazo de 30 dias)\n2. SÍNTESE do indeferimento\n"
+            "1. TEMPESTIVIDADE — extraia a data de ciência do documento e marque o "
+            "prazo como [VERIFICAR]; não afirme quantidade de dias de memória\n"
+            "2. SÍNTESE do indeferimento\n"
             "3. RAZÕES do recurso (rebater o motivo da negativa)\n4. PEDIDOS\n"
             "Esboce a minuta do recurso ordinário. Resultado é MINUTA."
         ),

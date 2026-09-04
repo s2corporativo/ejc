@@ -524,7 +524,7 @@ async def test_signatures_listar_inclui_signatarios():
                              email="cliente@portal.teste", client_id="c1")
     db = _FakeDB(results=[
         _Res(lista=[sr]),                          # solicitações
-        _Res(lista=[("d1", "Procuração (teste)")]),  # títulos dos docs
+        _Res(lista=[("d1", "Procuração (teste)", "application/pdf", "procuracao.pdf")]),  # id/título/mimetype/filename (#1365)
         _Res(lista=[portal]),                      # logins do portal
     ])
     cu = SimpleNamespace(id="adv1", role=UserRole.advogado, client_id=None)
@@ -550,7 +550,7 @@ async def test_signatures_listar_sem_login_de_portal_lista_vazia():
     )
     db = _FakeDB(results=[
         _Res(lista=[sr]),
-        _Res(lista=[("d2", "Contrato (teste)")]),
+        _Res(lista=[("d2", "Contrato (teste)", "application/pdf", "contrato.pdf")]),
         _Res(lista=[]),                            # cliente sem login de portal
     ])
     cu = SimpleNamespace(id="adv1", role=UserRole.advogado, client_id=None)
