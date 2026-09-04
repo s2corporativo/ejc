@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { RefreshCw, Check, AlertCircle, Calendar, Repeat } from "lucide-react";
+import { AlertTriangle, Calendar, Repeat } from "lucide-react";
 import api from "../lib/api";
 import { Spinner, ErrorState } from "../components/UI";
 
@@ -36,8 +36,6 @@ export default function DespesasRecorrentes() {
   const [recorrentes, setRecorrentes] = useState<Despesa[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [gerando, setGerando] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
   const [targetComp, setTargetComp] = useState(() => {
     const now = new Date();
     const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
@@ -67,49 +65,24 @@ export default function DespesasRecorrentes() {
     load();
   }, [load]);
 
-  async function gerarProximoMes() {
-    setGerando(true);
-    setMsg(null);
-    try {
-      let count = 0;
-      for (const d of recorrentes) {
-        await api.post("/despesas", {
-          categoria: d.categoria,
-          descricao: d.descricao,
-          valor: d.valor,
-          tipo: "fixo",
-          recorrente: true,
-          recorrencia: d.recorrencia,
-          status: "pendente",
-          competencia: targetComp,
-        });
-        count++;
-      }
-      setMsg(
-        `${count} despesas geradas para ${targetComp.split("-").reverse().join("/")}`,
-      );
-    } catch (e: any) {
-      setMsg(`Erro: ${e.response?.data?.detail ?? "Falha ao gerar despesas"}`);
-    } finally {
-      setGerando(false);
-    }
-  }
-
   const total = recorrentes.reduce((s, d) => s + d.valor, 0);
 
   return (
     <div className="space-y-5">
-      {/* Cabeçalho fica no FinanceiroWorkspace. A competência-alvo abaixo é
-          intencional e local: é o mês de DESTINO da geração de lançamentos
-          (padrão: próximo mês), não o filtro de visualização compartilhado. */}
-
-      {/* Action card */}
+      {/*
+        Fail-closed temporário: a implementação histórica gerava N POSTs no
+        browser e copiava `recorrente: true` para os novos lançamentos. Sem
+        template_id/run idempotente no banco, um duplo clique/reexecução podia
+        duplicar o mês e os próprios lançamentos passavam a funcionar como
+        novos "templates". A geração fica indisponível até o schema financeiro
+        idempotente previsto na Issue #969 entrar em migration linear.
+      */}
       <div className="card p-5">
         <h2 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
           <Repeat className="w-4 h-4 text-primary-500" />
           Gerar lançamentos para novo mês
         </h2>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <div className="input flex w-auto items-center gap-2">
             <Calendar className="w-4 h-4 text-slate-400" />
             <input
@@ -120,37 +93,25 @@ export default function DespesasRecorrentes() {
             />
           </div>
           <button
-            onClick={gerarProximoMes}
-            disabled={gerando || recorrentes.length === 0}
-            className="btn-primary"
+            type="button"
+            disabled
+            title="Aguardando geração idempotente no backend"
+            className="btn-primary opacity-50 cursor-not-allowed"
           >
-            {gerando ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <Check className="w-4 h-4" />
-            )}
             Gerar {recorrentes.length} lançamentos
           </button>
         </div>
-        {msg && (
-          <div
-            className={`mt-3 flex items-center gap-2 text-sm px-3 py-2 rounded-lg ${
-              msg.startsWith("Erro")
-                ? "bg-danger-50 text-danger-700"
-                : "bg-success-50 text-success-700"
-            }`}
-          >
-            {msg.startsWith("Erro") ? (
-              <AlertCircle className="w-4 h-4" />
-            ) : (
-              <Check className="w-4 h-4" />
-            )}
-            {msg}
-          </div>
-        )}
+        <div className="mt-3 flex items-start gap-2 rounded-lg bg-warn-50 px-3 py-2 text-sm text-warn-800">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Geração automática temporariamente bloqueada para evitar lançamentos
+            duplicados. Os cadastros recorrentes continuam visíveis; a geração
+            será reativada quando o backend tiver template separado e chave
+            idempotente por competência.
+          </span>
+        </div>
       </div>
 
-      {/* Summary */}
       <div className="rounded-xl bg-slate-900/[0.04] p-4 flex items-center justify-between dark:bg-white/[0.06]">
         <span className="text-sm text-slate-600">
           {recorrentes.length} despesas recorrentes cadastradas
@@ -160,7 +121,6 @@ export default function DespesasRecorrentes() {
         </span>
       </div>
 
-      {/* List */}
       {loading ? (
         <Spinner />
       ) : error ? (

@@ -54,7 +54,6 @@ ROTAS_FORA_DE_STAFF_ROUTES: dict[str, str] = {
 BACKEND_SEM_KEY_NO_FRONTEND: set[str] = {
     "atendimento",       # aba de /atividades (?tab=relacionamento)
     "honorarios",        # aba de /financeiro (?tab=honorarios)
-    "sociedade",         # aba de /financeiro (?tab=societaria)
     "ia",                # aba de /inteligencia (?tab=ia)
     "ferramentas-ia",    # aba de /inteligencia (?tab=ferramentas)
     "conhecimento",      # aba de /inteligencia (?tab=conhecimento)

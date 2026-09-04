@@ -5,7 +5,8 @@
 # A IA, via gateway central, lê os fatos e devolve JSON estruturado; preenchemos os campos
 # que JÁ EXISTEM em `cases` (tese_principal, pontos_fortes, pontos_fracos) —
 # SOMENTE se estiverem vazios (nunca sobrescreve o que o advogado escreveu).
-# Tudo é RASCUNHO (Provimento OAB 205/2021): registramos AILog + movimento.
+# Tudo é RASCUNHO: registramos AILog + movimento e exigimos revisão humana antes
+# de qualquer uso jurídico final, sem atribuir esse controle a norma inadequada.
 #
 # Reutiliza primitivas existentes: AI Gateway, sanitizar_pii, AILog, AsyncSessionLocal.
 # Não cria tabela nova. Não reescreve analisar_caso (que faz análise em prosa).
@@ -417,14 +418,24 @@ async def indexar_peca_rag(legal_doc_id: str) -> None:
             # identificáveis na base GLOBAL (laudo RAG-02).
             limpo, _ = sanitizar_pii(conteudo, nomes_proteger or None)
 
+            status_peca = getattr(d.status, "value", None) or str(d.status or "")
+            human_reviewed = bool(getattr(d, "human_reviewed", False))
             meta: dict = {
                 "tipo_peca": getattr(d.tipo_peca, "value", None) or str(d.tipo_peca or ""),
                 "case_id": d.case_id,
-                "human_reviewed": bool(getattr(d, "human_reviewed", False)),
+                "status_peca": status_peca,
+                "human_reviewed": human_reviewed,
                 "fonte_tipo": "producao_interna",
             }
+            # Revisão humana é necessária, mas NÃO suficiente para transformar a
+            # peça em conhecimento institucional aprovado. O caminho legado
+            # `/revisar` deixa a peça em `corrigida`; somente a promoção formal
+            # para aprovada/final/protocolada, após os gates jurídicos, autoriza
+            # `rag_status=aprovado`. Isso evita que um rascunho apenas revisado
+            # contamine a base de conhecimento como se fosse peça final.
+            status_apto_rag = status_peca in {"aprovada", "final", "protocolada"}
             meta["rag_status"] = (
-                "aprovado" if meta["human_reviewed"] else "pendente"
+                "aprovado" if human_reviewed and status_apto_rag else "pendente"
             )
             # Módulo 6 — classificação automática (best effort).
             if settings.AI_ENABLED:
