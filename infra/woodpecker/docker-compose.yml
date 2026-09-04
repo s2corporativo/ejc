@@ -22,8 +22,9 @@ services:
       # GRPC_SECRET assina JWTs das conexões gRPC. Use segredos independentes.
       - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET:?defina WOODPECKER_AGENT_SECRET no .env}
       - WOODPECKER_GRPC_SECRET=${WOODPECKER_GRPC_SECRET:?defina WOODPECKER_GRPC_SECRET no .env}
-      # PRs exigem aprovação e usuários não podem registrar agentes próprios.
-      - WOODPECKER_DEFAULT_APPROVAL_MODE=pull_requests
+      # PRs internos executam automaticamente; PRs vindos de forks continuam
+      # exigindo aprovação humana. Usuários não podem registrar agentes próprios.
+      - WOODPECKER_DEFAULT_APPROVAL_MODE=forks
       - WOODPECKER_DISABLE_USER_AGENT_REGISTRATION=true
 
   woodpecker-agent:

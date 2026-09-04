@@ -97,6 +97,19 @@ async def meta_pecas(
             for area in AREAS_DIREITO
         ],
         "niveis_complexidade": list(NIVEIS_COMPLEXIDADE),
+        # Capacidades — o frontend precisa saber ANTES do clique o que está
+        # atrás de flag, senão entrega botão habilitado que sempre falha. Era o
+        # caso do "Gerar demonstrativo": a UI só descobria a trava pelo 403, e
+        # o advogado levava o erro depois de montar o cálculo inteiro.
+        # Não é vazamento de configuração: diz o que ESTA rota faria com este
+        # usuário, nada mais — mesmo grau de informação que o 403 já dava.
+        "capacidades": {
+            # get_settings() a cada chamada, nunca um snapshot de import: o
+            # overlay do Cofre de Credenciais muta o singleton in-place.
+            "demonstrativo_calculadora": bool(
+                getattr(get_settings(), "PECAS_DEMONSTRATIVO_CALCULADORA_ENABLED", False)
+            ),
+        },
     }
 
 

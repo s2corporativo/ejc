@@ -240,6 +240,17 @@ ADICOES_INTENCIONAIS = {
 # continua reprovando — sumiço silencioso de endpoint é o defeito que esta trava
 # existe para pegar. Cada entrada precisa da decisão que a justifica.
 REMOCOES_INTENCIONAIS = {
+    # `routers/curadoria_renomada.py` REMOVIDO (04/09/2026). Os três endpoints
+    # respondiam 503 INCONDICIONAL desde a auditoria de 19/07: a "base de teses
+    # renomadas" curada nunca existiu, e o 503 substituiu handlers que fingiam
+    # lista vazia e ingestão bem-sucedida. Grep confirmou zero chamadores no
+    # frontend. Um router que só sabe recusar não é funcionalidade desligada —
+    # é superfície de API que promete o que ninguém construiu, e ela aparece no
+    # OpenAPI, no mapa de módulos e na conta de rotas órfãs. Busca real segue em
+    # /api/search e /api/rag (RAG híbrido), como o próprio 503 já indicava.
+    ("/api/curadoria/teses", "GET"),
+    ("/api/curadoria/teses/sincronizar", "POST"),
+    ("/api/curadoria/analise-vencedora/{caso_id}", "GET"),
     # Bloco 4 do plano de lançamento. Decisão do ESCRITÓRIO, não achado técnico:
     # "dossiê de pressão" e "análise de magistrado" num sistema de advocacia são
     # risco reputacional e disciplinar indefensável se expostos numa perícia ou
