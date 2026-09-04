@@ -1,11 +1,21 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import api from "../../lib/api";
 import { asList } from "../../lib/list";
 import { toast } from "../../components/Toast";
-import { Empty, fmtDate } from "../../components/UI";
+import { Empty, ErrorState, Spinner, fmtDate } from "../../components/UI";
+import { mensagemErroHttp } from "../../lib/iaErro";
+import { useCarregar } from "../../lib/useCarregar";
 
 export default function TabMemoria({ caseId }: { caseId: string }) {
-  const [itens, setItens] = useState<any[]>([]);
+  const carga = useCarregar<any[]>(
+    () =>
+      api
+        .get(`/memoria-institucional?case_id=${caseId}`)
+        .then((r) => asList(r.data)),
+    [caseId],
+    { fallbackErro: "Não foi possível carregar a memória institucional." },
+  );
+  const itens = carga.dados ?? [];
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     tipo: "tese_vencedora",
@@ -32,37 +42,48 @@ export default function TabMemoria({ caseId }: { caseId: string }) {
     em_andamento: "text-gray-700 bg-gray-100",
   };
 
-  const carregar = () =>
-    api
-      .get(`/memoria-institucional?case_id=${caseId}`)
-      .then((r) => setItens(asList(r.data)))
-      .catch(() => {});
-  useEffect(() => {
-    carregar();
-  }, [caseId]);
-
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.post("/memoria-institucional", { ...form, case_id: caseId });
-    setShowForm(false);
-    setForm({
-      tipo: "tese_vencedora",
-      titulo: "",
-      conteudo: "",
-      resultado: "favoravel",
-      area_direito: "",
-    });
-    carregar();
+    try {
+      await api.post("/memoria-institucional", { ...form, case_id: caseId });
+      setShowForm(false);
+      setForm({
+        tipo: "tese_vencedora",
+        titulo: "",
+        conteudo: "",
+        resultado: "favoravel",
+        area_direito: "",
+      });
+      toast.success("Registro salvo na memória institucional");
+      carga.recarregar();
+    } catch (err) {
+      toast.error(mensagemErroHttp(err, "Não foi possível salvar o registro."));
+    }
   };
   const remover = async (id: string) => {
     if (!confirm("Remover este registro de memória?")) return;
     try {
       await api.delete(`/memoria-institucional/${id}`);
-      setItens((p) => p.filter((x) => x.id !== id));
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao remover registro");
+      carga.recarregar();
+    } catch (e) {
+      toast.error(mensagemErroHttp(e, "Erro ao remover registro"));
     }
   };
+
+  if (carga.estado === "carregando" && !carga.dados)
+    return (
+      <div className="flex justify-center py-10">
+        <Spinner />
+      </div>
+    );
+  if (carga.estado === "falhou")
+    return (
+      <ErrorState
+        title="Não foi possível carregar a memória institucional"
+        message={carga.erro ?? undefined}
+        onRetry={carga.recarregar}
+      />
+    );
 
   return (
     <div className="space-y-4">

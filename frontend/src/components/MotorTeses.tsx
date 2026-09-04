@@ -2,7 +2,7 @@
 // P2.2 — Motor de Teses (IA). Usa os fatos do caso para gerar teses estruturadas
 // com viabilidade Alta/Média/Baixa, ancoradas em jurisprudência/súmulas/precedentes
 // internos/doutrina (RAG). Tudo é RASCUNHO — revisão obrigatória do advogado.
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Sparkles,
   Scale,
@@ -11,6 +11,7 @@ import {
   Loader2,
 } from "lucide-react";
 import api from "../lib/api";
+import { mensagemErroIA } from "../lib/iaErro";
 
 const VIAB: Record<string, { label: string; cls: string; dot: string }> = {
   alta: {
@@ -36,6 +37,18 @@ export default function MotorTeses({ caso }: { caso: any }) {
   const [polo, setPolo] = useState("autor");
   const [r, setR] = useState<any>(null);
   const [progresso, setProgresso] = useState("");
+  // E8: o polling (até 180 s) precisa parar quando a aba é desmontada —
+  // AbortController cancela a requisição em voo e `montado` impede setState
+  // em componente morto (e a próxima iteração do loop).
+  const abortRef = useRef<AbortController | null>(null);
+  const montadoRef = useRef(true);
+  useEffect(() => {
+    montadoRef.current = true;
+    return () => {
+      montadoRef.current = false;
+      abortRef.current?.abort();
+    };
+  }, []);
 
   const gerar = async () => {
     if (!caso?.descricao_fatos || caso.descricao_fatos.length < 20) {
@@ -56,18 +69,27 @@ export default function MotorTeses({ caso }: { caso: any }) {
     const JANELA_MS = 180_000;
     const POLL_MS = 2_000;
     const started = Date.now();
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const { signal } = controller;
     try {
-      const { data: task } = await api.post("/teses/motor/async", {
-        area: caso.area,
-        descricao_fatos: caso.descricao_fatos,
-        case_id: caso.id,
-        polo,
-      });
+      const { data: task } = await api.post(
+        "/teses/motor/async",
+        {
+          area: caso.area,
+          descricao_fatos: caso.descricao_fatos,
+          case_id: caso.id,
+          polo,
+        },
+        { signal },
+      );
       const task_id: string = task.task_id;
       const aguardar = (ms: number) =>
         new Promise((res) => setTimeout(res, ms));
       let status = "pendente";
       while (status === "pendente" || status === "em_andamento") {
+        if (signal.aborted || !montadoRef.current) return;
         if (Date.now() - started > JANELA_MS) {
           throw Object.assign(new Error("tempo_excedido"), {
             nome: "tempo_excedido",
@@ -79,7 +101,10 @@ export default function MotorTeses({ caso }: { caso: any }) {
             : "Consultando jurisprudência, súmulas e doutrina…",
         );
         await aguardar(POLL_MS);
-        const { data } = await api.get(`/teses/motor/async/${task_id}`);
+        if (signal.aborted || !montadoRef.current) return;
+        const { data } = await api.get(`/teses/motor/async/${task_id}`, {
+          signal,
+        });
         status = data.status;
         if (status === "concluido") {
           setR(data.resultado);
@@ -92,6 +117,7 @@ export default function MotorTeses({ caso }: { caso: any }) {
         nome: "falha_geracao",
       });
     } catch (e: any) {
+      if (signal.aborted || !montadoRef.current) return;
       if (e?.nome === "tempo_excedido") {
         setErro(
           "A geração de teses ultrapassou 3 minutos. A tarefa pode ainda estar em andamento no servidor — tente novamente em alguns instantes.",
@@ -108,13 +134,17 @@ export default function MotorTeses({ caso }: { caso: any }) {
         setErro(
           isTimeout
             ? "A conexão com o servidor foi interrompida. Tente novamente."
-            : e.response?.data?.detail ||
+            : mensagemErroIA(
+                e,
                 "Falha ao gerar teses (a IA pode estar indisponível).",
+              ),
         );
       }
     } finally {
-      setProgresso("");
-      setLoading(false);
+      if (montadoRef.current && abortRef.current === controller) {
+        setProgresso("");
+        setLoading(false);
+      }
     }
   };
 

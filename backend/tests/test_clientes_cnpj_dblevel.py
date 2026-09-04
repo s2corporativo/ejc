@@ -6,9 +6,10 @@ Regressão do teste de usabilidade de 13/08/2026: CNPJs válidos
 uma pessoa jurídica.
 
 Contrato coberto (POST /clients/ e PATCH /clients/:id):
-  - PJ + CNPJ válido (com ou sem máscara) => 201/200.
-  - PJ + CNPJ inválido => 422 com rótulo "CNPJ inválido..." (nunca "CPF").
-  - PF + CPF válido => 201; PF + CPF inválido => 422 "CPF inválido...".
+  - PJ + CNPJ válido (com ou sem máscara) => 201/200;
+  - resposta comum expõe somente `documento_exibicao` mascarado;
+  - PJ + CNPJ inválido => 422 com rótulo "CNPJ inválido..." (nunca "CPF");
+  - PF + CPF válido => 201; PF + CPF inválido => 422 "CPF inválido...";
   - CNPJ 11 dígitos ou CPF 14 dígitos => rejeitado pelo lado certo.
 
 Postgres é OBRIGATÓRIO (mesmo padrão dos *_dblevel.py). Sem
@@ -31,6 +32,7 @@ pytestmark = pytest.mark.skipif(
 
 from app.routers import clients as clients_router  # noqa: E402
 from app.schemas.client import ClientResponse as _CR
+
 
 def _to_dict(obj):
     return _CR.model_validate(obj).model_dump()
@@ -119,7 +121,9 @@ async def test_pj_com_cnpj_valido_e_aceito():
 
         out = _to_dict(resp)
         assert out.get("tipo") == "PJ"
-        assert (out.get("cnpj") or "").replace(".","").replace("/","").replace("-","") == "11222333000181"
+        assert "cpf" not in out
+        assert "cnpj" not in out
+        assert out.get("documento_exibicao") == "**.222.333/****-**"
 
 
 async def test_pj_com_cnpj_invalido_e_rejeitado():

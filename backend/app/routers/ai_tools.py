@@ -4,17 +4,20 @@ Tudo passa pelo ai_gateway; resultado sempre RASCUNHO (HITL/OAB). JWT obrigatór
 Rota: /api/ai/executar e /api/ai/status.
 """
 from __future__ import annotations
-import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.services.system_prompts import TarefaIA
+from app.services.ai.provider_registry import (
+    PROVIDERS_SUPORTADOS, motivo_inelegivel, provider_elegivel,
+)
 from app.services.ai_gateway import executar_tarefa_ia
 from app.services.ai_guard import sanitizar_ou_abortar
 from app.core.rate_limit import rate_limit
@@ -27,7 +30,12 @@ class AiRequest(BaseModel):
     mensagem: str = Field(..., min_length=5, max_length=12000)
     case_id: Optional[str] = Field(None, description="Caso para contexto")
     usar_rag: bool = Field(False, description="Buscar na base de conhecimento (RAG)")
-    nivel_inteligencia: str = Field("alto", description="padrao, alto, maximo ou executivo")
+    # I2: vazio = o PISO por tarefa decide (AI_NIVEL_INTELIGENCIA_MERITO nas
+    # tarefas de mérito, econômico nas demais). O default fixo "alto" fazia esta
+    # porta ignorar o piso — mesmo defeito já corrigido em /ai/core/*.
+    nivel_inteligencia: Optional[str] = Field(
+        None, description="padrao, alto, maximo ou executivo (vazio = piso por tarefa)"
+    )
 
 
 class AiResponse(BaseModel):
@@ -40,17 +48,37 @@ class AiResponse(BaseModel):
     tokens_usados: int
     custo_estimado_brl: float
     aviso: str = "RASCUNHO — revisão humana obrigatória antes de qualquer uso (OAB)."
+    # ── Chaves canônicas (I1, 03/09/2026) ────────────────────────────────────
+    # A porta canônica é `/ia/{capacidade}` (routers/ia_capacidades.py). Esta
+    # rota continua atendendo pelo contrato antigo e passa a devolver TAMBÉM o
+    # envelope único das cinco capacidades — `capacidade` diz em qual porta
+    # aquela TarefaIA cai (`capacidades.capacidade_da_tarefa`).
+    capacidade: str = ""
+    log_id: Optional[str] = None
+    status_hitl: str = "gerado"
+    aviso_hitl: str = ""
+    fontes_rag: list[dict] = []
+    citacoes: list[dict] = []
+    alertas: list[str] = []
+    tokens: dict = {}
+    # Mesmo motivo do schema canônico: sem declarar o campo, o response_model
+    # descartava o relatório da crítica adversarial que `canonizar` devolve.
+    critica_adversarial: Optional[dict] = None
 
 
 def _ai_enabled() -> bool:
-    # Default LIGADO: funcional já com Groq (grátis); Claude entra quando houver
-    # ANTHROPIC_API_KEY (tarefas complexas). Para desligar: AI_ENABLED=false no .env.
-    return os.getenv("AI_ENABLED", "true").lower() == "true"
+    # Kill-switch global lido de Settings — a MESMA fonte do gateway e do
+    # provider_registry. Antes lia os.getenv("AI_ENABLED") e ignorava Settings.
+    return bool(get_settings().AI_ENABLED)
 
 
 def _bloquear_cliente_externo(cu: User) -> None:
     """IA interna não é exposta ao portal do cliente (mesma regra do núcleo)."""
-    if str(getattr(cu, "role", "")) == "cliente_externo":
+    # `UserRole` é `(str, Enum)` sem `__str__`: em Python 3.11 `str(role)` vira
+    # "UserRole.cliente_externo" e o gate nunca disparava (só o middleware
+    # segurava). Compara pelo valor — funciona para enum e para string.
+    role = getattr(cu, "role", "")
+    if getattr(role, "value", role) == "cliente_externo":
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             "Funções de IA internas não estão disponíveis no portal do cliente.")
 
@@ -58,12 +86,22 @@ def _bloquear_cliente_externo(cu: User) -> None:
 @router.get("/status")
 async def status_ia(cu: User = Depends(get_current_user)):
     _bloquear_cliente_externo(cu)
+    # Elegibilidade pela fonte única (provider_registry: AI_ENABLED, *_ENABLED,
+    # chave via Settings/Cofre, AI_EXTERNAL_PROVIDERS_ALLOWED). O painel lia
+    # os.getenv: ignorava o Cofre e os kill-switches por provedor e afirmava
+    # modelo_complexo="(=rapido)" fora do container (o default real é Opus).
+    s = get_settings()
     return {
         "ai_enabled": _ai_enabled(),
-        "anthropic_configurado": bool(os.getenv("ANTHROPIC_API_KEY", "")),
-        "groq_configurado": bool(os.getenv("GROQ_API_KEY", "")),
-        "modelo_rapido": os.getenv("ANTHROPIC_MODEL_RAPIDO", "claude-haiku-4-5-20251001"),
-        "modelo_complexo": os.getenv("ANTHROPIC_MODEL_COMPLEXO", "(=rapido)"),
+        "anthropic_configurado": provider_elegivel("anthropic"),
+        "groq_configurado": provider_elegivel("groq"),
+        "maritaca_configurado": provider_elegivel("maritaca"),
+        "ollama_configurado": provider_elegivel("ollama"),
+        "motivos_inelegiveis": {
+            p: motivo_inelegivel(p) for p in PROVIDERS_SUPORTADOS if not provider_elegivel(p)
+        },
+        "modelo_rapido": s.ANTHROPIC_MODEL_RAPIDO,
+        "modelo_complexo": s.ANTHROPIC_MODEL_COMPLEXO,
         "tarefas": [t.value for t in TarefaIA],
         "niveis_inteligencia": ["padrao", "alto", "maximo", "executivo"],
         "aviso": "Todos os resultados são rascunhos. Revisão humana obrigatória.",
@@ -129,4 +167,9 @@ async def executar_ia(
         from app.core.ai_errors import http_erro_ia
         raise http_erro_ia(e, status.HTTP_503_SERVICE_UNAVAILABLE,
                            contexto="executar_tarefa_ia")
-    return AiResponse(**resultado)
+    # Envelope canônico por cima do contrato antigo: `TarefaIA` → capacidade
+    # (/ia/analisar, /ia/redigir, /ia/resumir, /ia/conversar, /ia/extrair).
+    from app.services.ai.core import capacidades
+    capacidade = capacidades.capacidade_da_tarefa(req.tarefa)
+    canonico = capacidades.canonizar(capacidade, resultado)
+    return AiResponse(**{**resultado, **canonico})

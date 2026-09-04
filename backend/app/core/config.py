@@ -3,6 +3,7 @@
 # NUNCA hardcodar segredos neste arquivo.
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
+import logging
 from functools import lru_cache
 from typing import List
 from pydantic import model_validator
@@ -135,6 +136,23 @@ class Settings(BaseSettings):
     AUDIO_TRANSCRIPTION_DPA_APPROVED: bool = False
     GROQ_TRANSCRIPTION_MODEL: str = "whisper-large-v3"
     AI_ENABLED: bool = True
+    # Perfil de IA (S3 da análise E2E 03/09/2026): UMA variável que deriva os
+    # kill-switches e a prioridade, para código, .env.example e compose nunca
+    # divergirem. Valores: "externo" | "local" | "hibrido" | "desligado" | ""
+    # (vazio = flags manuais abaixo, comportamento histórico). Ver
+    # _aplicar_perfil_ia.
+    AI_PROFILE: str = ""
+    # APScheduler: janela de tolerância para disparo perdido (restart no
+    # horário do job). Sem isso o job do dia simplesmente não roda e nada
+    # reagenda (F4 da análise E2E 03/09/2026).
+    SCHEDULER_MISFIRE_GRACE_SECONDS: int = 3600
+    # Poda de rotas por telemetria (S4): CSV de "METODO /api/caminho" (aceita
+    # sufixo "*" como prefixo) que passam a responder com `Deprecation: true` e
+    # `Sunset` (API_ROTAS_SUNSET, data HTTP) antes da remoção.
+    API_ROTAS_DEPRECIADAS: str = ""
+    # Data HTTP (RFC 7231) enviada em `Sunset`. Validada no boot para não virar
+    # header malformado em runtime (revisão de segurança 03/09/2026, P3-5).
+    API_ROTAS_SUNSET: str = ""
 
     # Documento grande: leitura em blocos + síntese, sem truncamento silencioso.
     # O teto é propositalmente explícito para respeitar TPM/contexto do provedor.
@@ -176,6 +194,12 @@ class Settings(BaseSettings):
     # custam ~10%). True = comportamento atual; False = system como string pura
     # (sem cache_control). Não afeta os demais providers.
     AI_PROMPT_CACHING_ENABLED: bool = True
+    # Dossiê de contexto do caso (context_builder — I3 da análise E2E de IA
+    # 2026-09-03): seções em ordem ESTÁVEL (o que muda pouco vem primeiro, para
+    # aproveitar o prompt caching), cada uma truncada em
+    # AI_CONTEXTO_MAX_CHARS_SECAO e o conjunto em AI_CONTEXTO_MAX_CHARS.
+    AI_CONTEXTO_MAX_CHARS_SECAO: int = 6000
+    AI_CONTEXTO_MAX_CHARS: int = 60000
     # Busca web (verificação ativa) via server-side tool do Anthropic.
     # Padrão de integrações externas do repo: default OFF + degradação graciosa
     # (se a API rejeitar o tool, a chamada repete sem ele). O tool só é anexado
@@ -241,6 +265,11 @@ class Settings(BaseSettings):
     # trabalho jurídico de mérito, a resposta rasa custa mais caro que o token.
     AI_NIVEL_INTELIGENCIA_MERITO: str = "maximo"   # peça, análise, estratégia
     AI_NIVEL_INTELIGENCIA_PADRAO: str = "alto"     # demais tarefas de prosa
+    # Deadline AGREGADO da cadeia de fallback do gateway (I8/A5): a soma dos
+    # timeouts individuais (Ollama 120 s + Maritaca 90 s + Groq 60 s + Anthropic
+    # 180 s) podia passar de 7 min numa única requisição. Ao estourar, o gateway
+    # devolve erro leigo (sem nome de provedor) e loga WARNING. 0 = sem limite.
+    AI_CHAIN_DEADLINE_SECONDS: int = 240
     # Sala Jurídica: extração automática do estado jurídico consolidado após
     # cada resposta (roda no provider LOCAL via task_type "resumo" — custo
     # zero; falha degrada para o merge de fontes, nunca bloqueia a resposta).
@@ -264,6 +293,20 @@ class Settings(BaseSettings):
     # ausência como suspeita). Ligue SÓ quando a base de conhecimento estiver
     # abrangente (senão gera falso-positivo em citação real ainda não ingerida).
     CITACOES_MODO_ESTRITO: bool = False
+    # ── PERTINÊNCIA da citação (opt-in, default OFF) ──────────────────────
+    # O gate acima valida EXISTÊNCIA (o número CNJ tem DV válido, a súmula está
+    # na base, o artigo consta do diploma certo e vigente). Não responde a
+    # pergunta que derruba a peça na audiência: a autoridade citada DIZ o que a
+    # peça afirma que ela diz? Com True, cada citação `verificada` de tipo cujo
+    # texto existe na base curada (súmula/artigo) é confrontada contra a
+    # AFIRMAÇÃO que acompanha — e a verificação só aceita "sustentada" quando
+    # transcreve da autoridade um trecho que EXISTE nela (conferência
+    # programática; ver services/ai/pertinencia.py). Custo: uma chamada de IA
+    # por citação verificável, com teto por chamada. Default OFF porque
+    # acrescenta latência e custo ao fluxo de aprovação; ligue quando a base de
+    # legislação/súmulas estiver abrangente. Veredito "não verificada" NUNCA
+    # bloqueia — só "não sustentada" bloqueia, e só na política `bloquear`.
+    PERTINENCIA_ENABLED: bool = False
     # ── Modo Duas IAs (Fase 5 — validação adversarial) ────────────────────
     # True = peças de alta complexidade geradas pelo Núcleo de IA recebem uma
     # SEGUNDA passada por uma IA Crítica/Adversarial (advogado da parte
@@ -381,11 +424,28 @@ class Settings(BaseSettings):
     LANGFUSE_CAPTURE_CONTENT: bool = False
 
     # ── Notificações ──────────────────────────────────────────────────────
-    # WhatsApp: o vendor Z-API foi REMOVIDO. Não há mais remetente automático de
-    # WhatsApp (o canal fica efetivamente off — ver notification_service.
-    # enviar_whatsapp). A Evolution API (webhook de ENTRADA) permanece em
-    # routers/evolution_webhook.py, controlada por EVOLUTION_* próprias.
+    # WhatsApp: o vendor Z-API foi removido em 2026 e o canal ficou SEM
+    # remetente — `WHATSAPP_ENABLED=true` não religava nada, porque
+    # notification_preferences fixava `whatsapp=False` no código. Como a
+    # Evolution API já roda nesta VPS (era usada só para o webhook de ENTRADA),
+    # ela passa a ser TAMBÉM o remetente de saída: mesma instância, mesma
+    # chave, nenhum vendor novo e nenhum custo novo.
+    #
+    # Continua opt-in e degradando em silêncio: sem `WHATSAPP_ENABLED=true`,
+    # sem `EVOLUTION_API_URL` ou sem `EVOLUTION_API_KEY`, `enviar_whatsapp`
+    # devolve False e o alerta segue pelo sino interno — nunca levanta erro no
+    # caminho de quem chamou.
     WHATSAPP_ENABLED: bool = False
+    # Base da Evolution API. No compose da VPS o serviço responde no nome de
+    # rede `evolution_api`; fora dele, informe a URL alcançável.
+    EVOLUTION_API_URL: str = "http://evolution_api:8080"
+    # Chave de API da instância (header `apikey`). VAZIA = canal desligado.
+    EVOLUTION_API_KEY: str = ""
+    # Nome da instância conectada ao número do escritório.
+    EVOLUTION_INSTANCE: str = "ejc-escritorio"
+    # Teto por requisição de envio. Curto de propósito: alerta de prazo que
+    # demora não serve, e o job não pode ficar preso no laço de destinatários.
+    EVOLUTION_TIMEOUT: float = 15.0
 
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587  # TLS (não usar 465/SSL)
@@ -505,6 +565,13 @@ class Settings(BaseSettings):
     # margem para atraso de disponibilização sem reprocessar demais (o upsert
     # é idempotente por chave_origem, então sobreposição é inofensiva).
     DJEN_INGEST_JANELA_DIAS: int = 2
+    # Captura por advogado (djen_service.capturar_para_advogado): intimação de
+    # processo VINCULADO a caso ativo também entra no RAG como
+    # `comunicacao_processual` restrita ao cliente/caso, com rag_status
+    # 'pendente' (a curadoria decide). Usa a MESMA chave_origem do ingestor
+    # por OAB monitorada (idempotente entre os dois caminhos). False = só a
+    # tela de intimações, sem RAG.
+    DJEN_CAPTURA_INGERIR_RAG: bool = True
 
     # ── TJMG — jurisprudência estadual MG (crawler agendado → RAG) ───────
     # O TJMG NÃO tem API aberta (≠ STJ CKAN): a jurisprudência fica atrás de
@@ -592,12 +659,23 @@ class Settings(BaseSettings):
     # OOM-killer GLOBAL da VPS, que hospeda outros sistemas além do EJC.
     # Lote pequeno e fixo mantém o pico limitado e previsível.
     EMBEDDINGS_BATCH: int = 16
+    # Teto de caracteres por chunk, coerente com a janela do modelo de
+    # embeddings (e5-large: 512 tokens ≈ 1.800 chars em pt-BR). O chunker
+    # jurídico (legal_chunker._MAX_DEFAULT) e o corte por tamanho
+    # (ingestion_service.CHUNK_TAMANHO) NUNCA excedem este valor — a cauda
+    # acima da janela ficaria sem vetor (C5 da análise E2E de IA 2026-09-03).
+    EMBEDDINGS_MAX_CHARS: int = 1800
     # Auto-reindex do RAG (O-2): job periódico do scheduler reembeda chunks órfãos
     # (embedding IS NULL) — assim a troca de modelo/dimensão (migration 096) se
     # AUTO-CURA sem passo manual no deploy. No-op rápido quando não há órfãos.
     # O script manual (scripts.reembedar_chunks_orfaos) segue como fallback.
     RAG_AUTO_REEMBED_ENABLED: bool = True
     RAG_AUTO_REEMBED_BATCH: int = 20
+    # Seed nasce vetorizado (C1): ao final de seeds/seed_all.py, se o provider
+    # de embeddings estiver disponível, os chunks órfãos do seed são
+    # reembedados na hora (idempotente) — sem isto a busca semântica fica vazia
+    # até o job horário. False = comportamento anterior (só o job).
+    SEED_EMBED_ORFAOS: bool = True
 
     # ── Reranking (cross-encoder) do RAG — Fase 1 auditoria IA 2026-07-17 ─
     # Reordena os candidatos do retrieval híbrido (pgvector cosine + RRF pg_trgm)
@@ -897,6 +975,19 @@ class Settings(BaseSettings):
     # Ex.: {"tributario": ["CBS IBS", "split payment"], "agrario": ["MP solo"]}
     RADAR_LEGISLATIVO_TERMOS: str = ""
 
+    # ── Boot da aplicação ────────────────────────────────────────────────
+    # Teto de tempo de CADA passo do `lifespan` (main.py) e da sonda do banco
+    # (core/database.py::check_db). Existe por causa do incidente de 04/09/2026:
+    # nenhum passo do startup tinha timeout, um Postgres alcançável e travado
+    # prendeu o boot indefinidamente e a API ficou muda em produção — o uvicorn
+    # já havia feito bind do socket, então o kernel aceitava a conexão TCP e o
+    # nginx só devolvia 504 depois de 120 s, inclusive para rota inexistente.
+    # A regra passa a ser: NENHUM passo de boot pode ser ilimitado. Estourar o
+    # tempo degrada o passo (loga alto e segue), nunca impede a API de subir —
+    # um sistema de pé com feriados desatualizados é infinitamente melhor que
+    # um sistema mudo. 0 ou negativo desativa o teto (não recomendado).
+    STARTUP_STEP_TIMEOUT_SECONDS: float = 15.0
+
     # ── Scheduler ────────────────────────────────────────────────────────
     ENABLE_SCHEDULER: bool = True   # desligar em workers extras (uvicorn --workers)
 
@@ -998,6 +1089,118 @@ class Settings(BaseSettings):
             )
             if not valor
         ]
+
+    @model_validator(mode="after")
+    def _validar_sunset(self):
+        """`API_ROTAS_SUNSET` precisa ser data HTTP válida (RFC 7231).
+
+        Falhar no boot é melhor que emitir header malformado por meses: quem
+        consome `Sunset` é ferramenta de cliente, e valor inválido é ignorado
+        em silêncio — a poda pareceria anunciada sem estar."""
+        bruto = (self.API_ROTAS_SUNSET or "").strip()
+        if not bruto:
+            return self
+        from email.utils import parsedate_to_datetime
+        try:
+            parsedate_to_datetime(bruto)
+        except (TypeError, ValueError) as e:
+            raise ValueError(
+                f"API_ROTAS_SUNSET inválida: {bruto!r} — use data HTTP, "
+                'ex.: "Wed, 02 Dec 2026 00:00:00 GMT"'
+            ) from e
+        self.API_ROTAS_SUNSET = bruto
+        return self
+
+    @model_validator(mode="after")
+    def _aplicar_perfil_ia(self):
+        """AI_PROFILE deriva as flags de provedor (fonte única de configuração).
+
+        Roda ANTES de _validar_seguranca_producao (ordem de definição), para que
+        a validação de produção enxergue as flags já derivadas. Vazio mantém o
+        comportamento histórico (flags manuais).
+
+        PRECEDÊNCIA — assimétrica, na direção do menor risco (revisão de
+        segurança 03/09/2026, P2-1, corrigida na revisão de 03/09/2026):
+
+        * Derivação PERMISSIVA (liga provedor, libera saída externa, ordena a
+          cadeia) **cede** à flag explícita do operador. Sem isso,
+          `AI_PROFILE=externo` no compose desfazia em silêncio um
+          `AI_EXTERNAL_PROVIDERS_ALLOWED=false` aplicado à mão durante um
+          incidente de LGPD — kill-switch documentado voltando a `true` sem
+          log, sem aviso e sem falha de boot.
+        * Derivação RESTRITIVA (desliga a IA ou um provedor EXTERNO) **vence**
+          a flag explícita. `AI_PROFILE=desligado` é kill-switch: se um
+          `AI_ENABLED=true` esquecido no `.env` o anulasse, o perfil que existe
+          justamente para parar a IA não pararia nada — e o operador leria no
+          painel que a IA está desligada enquanto ela segue chamando provedor.
+
+        Nos dois casos o conflito é registrado em WARNING nomeando a flag
+        (nunca o valor), dizendo qual lado prevaleceu."""
+        perfil = (self.AI_PROFILE or "").strip().lower()
+        if not perfil:
+            return self
+
+        explicitas = set(self.model_fields_set or ())
+
+        def _derivar(campo: str, valor, *, restritivo: bool = False):
+            """Aplica o valor do perfil.
+
+            `restritivo=True` marca a derivação que REDUZ superfície (desliga a
+            IA ou um provedor externo): essa vence o valor explícito, porque é
+            o lado seguro do conflito. As demais preenchem apenas o que o
+            operador não disse.
+            """
+            if campo not in explicitas:
+                setattr(self, campo, valor)
+                return
+            if getattr(self, campo) == valor:
+                return
+            log = logging.getLogger("ejc")
+            if restritivo:
+                setattr(self, campo, valor)
+                log.warning(
+                    "[Config] AI_PROFILE=%s é restritivo em %s e PREVALECE sobre "
+                    "o valor explícito do ambiente.", perfil, campo,
+                )
+            else:
+                log.warning(
+                    "[Config] AI_PROFILE=%s queria %s derivado, mas o valor "
+                    "explícito do ambiente prevalece.", perfil, campo,
+                )
+
+        if perfil == "desligado":
+            _derivar("AI_ENABLED", False, restritivo=True)
+        elif perfil == "local":
+            _derivar("AI_EXTERNAL_PROVIDERS_ALLOWED", False, restritivo=True)
+            _derivar("OLLAMA_ENABLED", True)
+            _derivar("ANTHROPIC_ENABLED", False, restritivo=True)
+            _derivar("GROQ_ENABLED", False, restritivo=True)
+            _derivar("MARITACA_ENABLED", False, restritivo=True)
+            _derivar("AI_PROVIDER_PRIORITY", "ollama")
+        elif perfil == "externo":
+            _derivar("AI_EXTERNAL_PROVIDERS_ALLOWED", True)
+            _derivar("OLLAMA_ENABLED", False)
+            _derivar("ANTHROPIC_ENABLED", True)
+            _derivar("GROQ_ENABLED", True)
+            # Maritaca só entra se o operador a ligou explicitamente (não é
+            # soberana por default — ver comentário de MARITACA_ENABLED).
+            _derivar(
+                "AI_PROVIDER_PRIORITY",
+                "anthropic,maritaca,groq" if self.MARITACA_ENABLED else "anthropic,groq",
+            )
+        elif perfil == "hibrido":
+            _derivar("AI_EXTERNAL_PROVIDERS_ALLOWED", True)
+            _derivar("OLLAMA_ENABLED", True)
+            _derivar("ANTHROPIC_ENABLED", True)
+            _derivar("GROQ_ENABLED", True)
+            _derivar("AI_PROVIDER_PRIORITY", "anthropic,maritaca,groq,ollama")
+        else:
+            raise ValueError(
+                f"AI_PROFILE inválido: {self.AI_PROFILE!r} "
+                "(use externo | local | hibrido | desligado, ou deixe vazio)"
+            )
+        self.AI_PROFILE = perfil
+        return self
 
     @model_validator(mode="after")
     def _validar_seguranca_producao(self):

@@ -13,32 +13,64 @@ import CaseFilterChip from "../components/CaseFilterChip";
 import { PageHeader, Spinner } from "../components/UI";
 import { useCasoFiltro } from "../contexts/useCasoFiltro";
 import api from "../lib/api";
+import { mensagemErroIA } from "../lib/iaErro";
+import { ROTULO_AREA } from "../lib/taxonomia";
 
-type Skill = {
+// Espelha GET /ai/skills/list (routers/ai_skills.py).
+export type Skill = {
   id: string;
   name: string;
   display_name: string;
   description?: string | null;
   area: string;
   oab_restricted: boolean;
+  /** Skill só faz sentido dentro de um caso (usa documentos/prazos dele). */
+  requires_case?: boolean;
+  /** Output nasce rascunho: revisão humana obrigatória antes de qualquer uso. */
+  requires_human_review?: boolean;
+  /** Motor que executa (ex.: "orquestrador", "skill_nativa"). */
+  engine?: string | null;
 };
 
+/** Resposta de POST /ai/skills/execute(-doc|transcribe-media). */
+type ResultadoSkill = {
+  skill?: string;
+  engine?: string | null;
+  tokens_usados?: number;
+  resposta?: string;
+  resultado?: string;
+  transcricao?: string;
+  conteudo?: string;
+  aviso?: string;
+  aviso_hitl?: string;
+  aviso_privacidade?: string;
+  is_rascunho?: boolean;
+  requires_human_review?: boolean;
+  processamento?: { modo?: string; blocos?: number } | null;
+};
+
+/** Skill exige caso e não há caso selecionado → bloqueia a execução. */
+export function bloqueadaSemCaso(
+  skill: Pick<Skill, "requires_case"> | undefined,
+  casoId: string | null | undefined,
+): boolean {
+  return Boolean(skill?.requires_case) && !casoId;
+}
+
+// Rótulos das áreas canônicas vêm do backend (types/gerado.ts via
+// lib/taxonomia); o catálogo de skills usa ainda alguns agrupamentos próprios
+// (civel, estrategia, provas, operacional…) que não são CaseArea — ficam aqui
+// até o catálogo ser normalizado para AREAS_CANONICAS.
 const AREA_LABEL: Record<string, string> = {
-  administrativo: "Administrativo",
+  ...ROTULO_AREA,
   civel: "Cível e processual",
-  consumidor: "Consumidor",
   estrategia: "Estratégia processual",
   familia: "Família e sucessões",
   financeiro: "Financeiro",
-  imobiliario: "Imobiliário",
   juridico: "Jurídico",
   operacional: "Operacional",
   penal: "Penal",
-  previdenciario: "Previdenciário",
   provas: "Provas e audiência",
-  saude: "Saúde",
-  trabalhista: "Trabalhista",
-  tributario: "Tributário",
 };
 
 type FuncionalGrupo = "analisar" | "produzir" | "revisar" | "preparar";
@@ -162,11 +194,8 @@ function isMedia(file: File | null) {
   return MEDIA_EXTENSIONS.some((ext) => nome.endsWith(ext));
 }
 
-function detailErro(error: any): string {
-  const detail = error?.response?.data?.detail;
-  if (typeof detail === "string") return detail;
-  if (detail?.mensagem) return detail.mensagem;
-  return "Falha ao executar a ferramenta.";
+function detailErro(error: unknown): string {
+  return mensagemErroIA(error, "Falha ao executar a ferramenta.");
 }
 
 export default function FerramentasIA() {
@@ -183,7 +212,7 @@ export default function FerramentasIA() {
   const [baseLegalMidia, setBaseLegalMidia] = useState("");
   const [loading, setLoading] = useState(false);
   const [carregando, setCarregando] = useState(true);
-  const [res, setRes] = useState<any>(null);
+  const [res, setRes] = useState<ResultadoSkill | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
@@ -217,6 +246,7 @@ export default function FerramentasIA() {
 
   const skillAtual = skills.find((skill) => skill.name === sel);
   const arquivoMidia = isMedia(file);
+  const semCaso = bloqueadaSemCaso(skillAtual, casoFiltro);
 
   const escolherArquivo = (novo: File | null) => {
     setFile(novo);
@@ -228,6 +258,12 @@ export default function FerramentasIA() {
 
   const executar = async () => {
     if (!sel) return;
+    if (semCaso) {
+      setErro(
+        "Esta ferramenta trabalha sobre um caso: abra-a a partir do caso (Casos → Ferramentas) ou selecione um caso antes de executar.",
+      );
+      return;
+    }
     if (!file && texto.trim().length < 5) {
       setErro("Informe um texto ou anexe um documento/mídia.");
       return;
@@ -400,7 +436,35 @@ export default function FerramentasIA() {
                   Restrito à equipe jurídica
                 </span>
               )}
+              {skillAtual?.requires_human_review && (
+                <span
+                  className="rounded-full bg-warn-50 px-2 py-1 text-[10px] font-semibold text-warn-800"
+                  title="O resultado é rascunho: exige revisão do advogado antes de qualquer uso."
+                >
+                  Revisão humana obrigatória
+                </span>
+              )}
+              {skillAtual?.requires_case && (
+                <span
+                  className={`rounded-full px-2 py-1 text-[10px] font-semibold ${
+                    semCaso
+                      ? "bg-danger-50 text-danger-700"
+                      : "bg-primary-50 text-primary-700"
+                  }`}
+                >
+                  {semCaso ? "Exige um caso selecionado" : "Vinculada ao caso"}
+                </span>
+              )}
             </div>
+            {semCaso && (
+              <p
+                role="alert"
+                className="mt-2 rounded-lg border border-danger-200 bg-danger-50 p-2 text-xs text-danger-700"
+              >
+                Esta ferramenta usa documentos e prazos de um caso. Abra-a a
+                partir do caso ou selecione um caso para liberar a execução.
+              </p>
+            )}
             <p className="mt-1 text-xs text-slate-500">
               A IA primeiro verifica suficiência, lacunas, competência, prazo,
               prova e fontes; a minuta integral só deve ser usada após revisão.
@@ -522,6 +586,7 @@ export default function FerramentasIA() {
               disabled={
                 loading ||
                 !sel ||
+                semCaso ||
                 (arquivoMidia && (!confirmacaoMidia || !baseLegalMidia))
               }
               onClick={executar}

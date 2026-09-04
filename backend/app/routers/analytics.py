@@ -7,11 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.client_ownership import obter_cliente_autorizado
 from app.core.database import get_db
 from app.core.security import require_roles_exact
 from app.models.user import User
 from app.models.case import Case
-from app.models.client import Client
 from app.services import case_health
 from app.services import jurimetria as jurimetria_svc
 from app.services import taskscore as taskscore_svc
@@ -22,6 +22,10 @@ from app.services import onboarding as onb_svc
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 _EQUIPE = ["superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario"]
+# Onboarding identifica clientes e integra o domínio CRM; usa a mesma allowlist
+# exata do router /clients. Não herda `_EQUIPE`, que inclui auxiliar/estagiário
+# e exclui secretaria — matriz incompatível com a superfície de Clientes.
+_CLIENTES = ["superadmin", "admin", "socio", "advogado", "secretaria"]
 
 
 @router.get("/jurimetria")
@@ -72,9 +76,9 @@ async def rentabilidade_endpoint(
 async def onboarding_pendencias(
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(require_roles_exact(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_CLIENTES)),
 ):
-    """Clientes com onboarding incompleto (checklist de entrada). Escopo por perfil."""
+    """Clientes com onboarding incompleto (checklist de entrada). Escopo canônico."""
     return await onb_svc.pendencias(db, cu, limit=limit)
 
 
@@ -82,16 +86,13 @@ async def onboarding_pendencias(
 async def onboarding_cliente(
     client_id: str,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(require_roles_exact(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_CLIENTES)),
 ):
-    """Checklist de onboarding detalhado de um cliente."""
-    client = (await db.execute(
-        select(Client).where(Client.id == client_id, Client.deleted_at.is_(None))
-    )).scalar_one_or_none()
-    if not client:
-        raise HTTPException(status_code=404, detail="Cliente não encontrado")
-    if not onb_svc.pode_ver_todos(cu) and client.responsavel_id != cu.id:
-        raise HTTPException(status_code=403, detail="Sem acesso a este cliente")
+    """Checklist de onboarding detalhado de um cliente autorizado."""
+    # Fonte única de ownership: gestão/secretaria veem toda a base; advogado
+    # passa por responsabilidade direta OU vínculo em caso. 404 uniforme evita
+    # enumeração de UUID de carteira alheia.
+    client = await obter_cliente_autorizado(db, cu, client_id)
     return await onb_svc.status_cliente(db, client)
 
 

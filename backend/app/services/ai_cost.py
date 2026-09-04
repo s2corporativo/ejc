@@ -4,22 +4,55 @@
 # (config via .env). Anthropic = tabela de preços por modelo (USD) × USD_BRL_RATE.
 # Permite auditar o gasto com IA por chamada/caso (AILog.custo_estimado).
 from __future__ import annotations
+import logging
 import os
 from decimal import Decimal
 
 from app.core.config import get_settings
 
 settings = get_settings()
+logger = logging.getLogger("ejc.ai.cost")
 
 # Preços oficiais Anthropic (USD por 1M tokens) — manter em dia com a fatura.
 _PRECOS_ANTHROPIC_USD_MM: dict[str, dict[str, float]] = {
     "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00},
     "claude-haiku-4-5":          {"input": 1.00, "output": 5.00},
     "claude-sonnet-4-6":         {"input": 3.00, "output": 15.00},
-    "claude-sonnet-5":           {"input": 3.00, "output": 15.00},
+    "claude-sonnet-5":           {"input": 2.00, "output": 10.00},
     "claude-opus-4-7":           {"input": 5.00, "output": 25.00},
     "claude-opus-4-8":           {"input": 5.00, "output": 25.00},
+    "claude-opus-5":             {"input": 5.00, "output": 25.00},
+    "claude-fable-5":            {"input": 10.00, "output": 50.00},
+    "claude-fable-5-1":          {"input": 10.00, "output": 50.00},
 }
+
+# Prompt caching (Anthropic): gravação custa 1,25× o input; leitura custa 0,10×.
+_FATOR_CACHE_CRIACAO = Decimal("1.25")
+_FATOR_CACHE_LEITURA = Decimal("0.10")
+
+# Modelos Anthropic já avisados como ausentes da tabela — um WARNING por modelo
+# por processo (A4: custo silenciosamente zerado no AILog era invisível).
+_AVISADOS_SEM_PRECO: set[str] = set()
+
+
+def _preco_anthropic(modelo: str | None) -> dict[str, float]:
+    """Preço do modelo pela tabela; ausente → 0 com WARNING único por modelo."""
+    chave = (modelo or "").strip()
+    preco = _PRECOS_ANTHROPIC_USD_MM.get(chave)
+    if preco is not None:
+        return preco
+    # IDs com sufixo de data ("claude-haiku-4-5-20251001") herdam o preço do
+    # canônico quando o prefixo bate exatamente com uma chave da tabela.
+    for nome, valor in _PRECOS_ANTHROPIC_USD_MM.items():
+        if chave.startswith(nome + "-"):
+            return valor
+    if chave and chave not in _AVISADOS_SEM_PRECO:
+        _AVISADOS_SEM_PRECO.add(chave)
+        logger.warning(
+            "[ai_cost] modelo Anthropic '%s' sem preço na tabela — custo será "
+            "contabilizado como 0 até atualizar _PRECOS_ANTHROPIC_USD_MM.", chave,
+        )
+    return {"input": 0.0, "output": 0.0}
 
 # Preços Maritaca (Sabiá) — R$ por 1M tokens (já em BRL; doc oficial 2026).
 # Variantes "-br-sp" (inferência 100% em território nacional) = +30%.
@@ -38,24 +71,35 @@ def estimar_custo_brl(
     input_tokens: int | None,
     output_tokens: int | None,
     modelo: str | None = None,
+    cache_creation_input_tokens: int | None = None,
+    cache_read_input_tokens: int | None = None,
 ) -> Decimal:
     """
     Retorna o custo estimado da chamada em R$ (Decimal).
     Ollama/local → 0. Groq → tokens × preço/milhão definido na config.
-    Anthropic → tabela de preços por `modelo` (USD/1M) × cotação USD_BRL_RATE.
+    Anthropic → tabela de preços por `modelo` (USD/1M) × cotação USD_BRL_RATE,
+    somando prompt caching (A7): criação × 1,25 × input; leitura × 0,10 × input.
     Modelo/provedor desconhecido → 0. Nunca levanta exceção; tokens ausentes
     contam como 0.
     """
     ti = Decimal(int(input_tokens or 0))
     to = Decimal(int(output_tokens or 0))
+    tcc = Decimal(int(cache_creation_input_tokens or 0))
+    tcr = Decimal(int(cache_read_input_tokens or 0))
     if provedor == "groq":
         p_in = Decimal(str(settings.GROQ_PRECO_INPUT_BRL_POR_MILHAO))
         p_out = Decimal(str(settings.GROQ_PRECO_OUTPUT_BRL_POR_MILHAO))
         custo = (ti / Decimal(1_000_000)) * p_in + (to / Decimal(1_000_000)) * p_out
         return custo.quantize(Decimal("0.000001"))
     if provedor == "anthropic":
-        p = _PRECOS_ANTHROPIC_USD_MM.get(modelo or "", {"input": 0.0, "output": 0.0})
-        usd = (ti * Decimal(str(p["input"])) + to * Decimal(str(p["output"]))) / Decimal(1_000_000)
+        p = _preco_anthropic(modelo)
+        p_in = Decimal(str(p["input"]))
+        usd = (
+            ti * p_in
+            + to * Decimal(str(p["output"]))
+            + tcc * p_in * _FATOR_CACHE_CRIACAO
+            + tcr * p_in * _FATOR_CACHE_LEITURA
+        ) / Decimal(1_000_000)
         cotacao = Decimal(str(os.getenv("USD_BRL_RATE", "5.70")))
         return (usd * cotacao).quantize(Decimal("0.000001"))
     if provedor == "maritaca":

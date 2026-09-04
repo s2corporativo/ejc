@@ -674,7 +674,40 @@ SKILLS = [
 # guardrail DETERMINÍSTICO (`juridico_guardrails.py`) continua corrigindo a
 # resposta da IA independentemente do texto do prompt — a defesa em
 # profundidade não depende só deste seed.
+# Nomes cujo prompt DEVE ser atualizado mesmo já existindo. Mantido nas DUAS
+# skills da Issue #554 de propósito: sobrescrever é a única operação destrutiva
+# deste seed, e um administrador pode ter customizado o prompt à mão.
+#
+# NÃO acrescente nome aqui para "melhorar" um prompt: ver `_COLISOES_CONHECIDAS`
+# logo abaixo, que registra o conflito sem destruir nada.
 _NOMES_FORCAR_ATUALIZACAO = {"prescricao-decadencia", "simulador-defesa-adversarial"}
+
+# ── Colisões de `name` entre seeds (pente fino 03/09) ────────────────────────
+# `seed_all` roda SEIS seeds de skill em ordem fixa e todos são idempotentes por
+# `name`: quem chega primeiro vence. `skills_ferramentas_seed` roda ANTES deste,
+# então para os nomes abaixo a versão dele fica no banco e a daqui é descartada
+# — antes, em SILÊNCIO ABSOLUTO.
+#
+# Comparando as sete, a versão DESTE arquivo é melhor por dois critérios
+# objetivos: cita autoridade por FAMÍLIA com `[VALIDAR FONTE]` (7/7) em vez de
+# congelar número de artigo/súmula no prompt (`CPC art. 1.022`, `Súmula 479
+# STJ`, `CPP art. 396-A`, `CDC art. 42`), e usa a ÁREA canônica (7/7) em vez do
+# `juridico` genérico — que é o que alimenta `_AREA_SKILLS` e `_AREA_TASK`.
+#
+# Mesmo assim NÃO forçamos a sobrescrita: trocar prompt jurídico em produção,
+# possivelmente customizado pelo sócio, é decisão do titular e não julgamento
+# de qualidade de quem escreve o seed. O que muda é que a colisão deixa de ser
+# invisível — o seed avisa, e `test_skills_colisao_entre_seeds.py` falha se
+# aparecer colisão NOVA que ninguém decidiu.
+_COLISOES_CONHECIDAS = {
+    "consumidor-bancario",
+    "contraponto-penal",
+    "detector-contradicoes",
+    "embargos-declaracao",
+    "raio-x-cnis",
+    "raio-x-processual",
+    "resposta-acusacao",
+}
 
 # Onde o backup dos prompts sobrescritos é gravado. Sobrescrevível por env para
 # que o container aponte para volume persistente — o default fica ao lado dos
@@ -726,6 +759,16 @@ def seed() -> None:
                 {"name": skill["name"]},
             ).fetchone()
             if exists:
+                if skill["name"] in _COLISOES_CONHECIDAS:
+                    # Não sobrescreve — mas não cala. Antes, a versão melhor
+                    # deste seed sumia sem deixar rastro no log.
+                    print(
+                        f"[skills_expansion] COLISÃO: '{skill['name']}' já existe "
+                        "(criada por skills_ferramentas_seed, que roda antes). O "
+                        "prompt DESTE seed — que pede [VALIDAR FONTE] em vez de "
+                        "congelar artigo/súmula — NÃO foi aplicado. Decisão do "
+                        "titular: manter o atual ou promover este."
+                    )
                 if skill["name"] in _NOMES_FORCAR_ATUALIZACAO:
                     # BACKUP ANTES DE SOBRESCREVER (review do CodeRabbit no PR
                     # #703). O upsert forçado é a única operação deste seed que

@@ -86,6 +86,9 @@ e escala com o que o diff toca:
 | Banco, models, migrations, seeds | Acima + `alembic upgrade head` do zero em PostgreSQL 16 + pgvector local |
 | Cruza backend e frontend | Ambas as colunas |
 
+- `scripts/instalar_hooks.sh` (uma vez por clone) ativa o pre-push que roda
+  os portões rápidos conforme o diff; `backend/scripts/ledger_rotas.py
+  --verificar` mostra o diff do ledger de rotas antes de declarar no PR.
 - Durante a iteração, rode só os testes da área que está mexendo; o portão
   completo da linha correspondente roda **uma vez, antes do push** (a suíte
   completa já pegou regressões que a análise estática não pegou — por isso ela

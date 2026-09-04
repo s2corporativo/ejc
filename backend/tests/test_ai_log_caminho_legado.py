@@ -1,22 +1,16 @@
 # ── tests/test_ai_log_caminho_legado.py ──────────────────────────────────────
-# Compliance #4a — "AILog obrigatório": endpoints VIVOS que chamam IA pelo
-# caminho LEGADO (shim core.ai_brain → ai_gateway.chat via
-# ai_gateway.processar_demanda) precisam gravar AILog. Antes NÃO gravavam.
+# Compliance #4a — "AILog obrigatório".
 #
-# Cobre o endpoint instrumentado de forma ADITIVA:
-#   - clients.py::ia_analise_cliente         (POST /clients/{id}/ia-analise)
-# e a preservação da semântica de erro: em FALHA da IA o endpoint NÃO grava
-# AILog (mesma semântica dos endpoints de IA já auditados) e NÃO levanta —
-# o comportamento do shim (exceção → status="falha") é preservado.
+# O endpoint clients.py::ia_analise_cliente migrou do caminho legado
+# (ai_gateway.processar_demanda + registrar_ai_log manual) para o
+# SingleAICoreOrchestrator, que é o responsável canônico por sanitização,
+# provider policy, validação, HITL e persistência de AILog.
 #
-# (cases.py::assistente_estrategico_caso, POST /cases/{id}/assistente-estrategico,
-# foi removido em F1a — docs/PLANO_FUSAO_CASO_UNICO.md — por não ter nenhum
-# consumidor no frontend e duplicar, sem rate limit nem piso de papel, o
-# endpoint real de ai.py::assistente_estrategico.)
+# Este arquivo preserva duas garantias distintas:
+#   - Cliente IA usa o orquestrador institucional e propaga seu log_id/HITL;
+#   - intelligence.py::analise_impacto continua cobrindo o caminho legado vivo.
 #
-# Padrão dos testes de IA do projeto (sem Postgres/HTTP): handler chamado
-# direto com fake de sessão; gateway central monkeypatched (exercita o shim
-# legado real ponta a ponta, sem bater em provider).
+# Padrão: handlers chamados diretamente com fake de sessão; nenhuma rede real.
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -78,40 +72,85 @@ def _fake_chat(texto="RASCUNHO: análise estratégica.", provedor="ollama", mode
 
 # ── clients.py :: ia_analise_cliente ──────────────────────────────────────────
 
-async def test_ia_analise_cliente_grava_ailog(monkeypatch):
-    from app.services import ai_gateway
-    monkeypatch.setattr(ai_gateway, "chat", _fake_chat(texto="Perfil de risco moderado."))
+async def test_ia_analise_cliente_usa_orquestrador_e_preserva_ailog_hitl(monkeypatch):
+    from app.services.ai.core.orchestrator import orchestrator
+
+    chamada = {}
+
+    async def run_fake(**kwargs):
+        chamada.update(kwargs)
+        return {
+            "conteudo": "Perfil de risco moderado.",
+            "modelo": "ollama/modelo-x",
+            "requer_revisao": True,
+            "is_rascunho": True,
+            "status_hitl": "gerado",
+            "aviso_hitl": "Rascunho sujeito à revisão humana.",
+            "sem_base_verificavel": False,
+            "alertas": [],
+            "citacoes": [],
+            "log_id": "ailog-123",
+        }
+
+    monkeypatch.setattr(orchestrator, "run", run_fake)
 
     # responsavel_id == caller: satisfaz o gate de titularidade (sigilo interno)
-    # sem tocar no _FakeDB — advogado só analisa o perfil da própria carteira.
+    # sem consulta extra. Os agregados têm os campos efetivamente lidos pela rota.
     cliente = SimpleNamespace(
-        id="cli-1", nome_exibicao="Empresa ACME", tipo="pj", deleted_at=None,
+        id="cli-1", nome_exibicao="Empresa ACME", tipo="PJ", deleted_at=None,
         responsavel_id="user-9",
     )
-    casos = [SimpleNamespace(id="c1", client_id="cli-1")]
-    fees = [SimpleNamespace(id="f1", client_id="cli-1")]
+    casos = [SimpleNamespace(
+        id="c1", client_id="cli-1", area="civil", status="aberto",
+    )]
+    fees = [SimpleNamespace(
+        id="f1", client_id="cli-1", valor=100.0, status="pago",
+    )]
     db = _FakeDB([cliente, casos, fees])
     cu = User(id="user-9", role=UserRole.advogado)
 
     r = await clients_router.ia_analise_cliente("cli-1", db=db, cu=cu)
 
     assert r["status"] == "sucesso"
+    assert r["resposta"] == "Perfil de risco moderado."
+    assert r["modelo_utilizado"] == "ollama/modelo-x"
+    assert r["revisao_obrigatoria"] is True
+    assert r["is_rascunho"] is True
+    assert r["status_hitl"] == "gerado"
+    assert r["log_id"] == "ailog-123"
 
-    logs = [o for o in db.added if isinstance(o, AILog)]
-    assert len(logs) == 1
-    log = logs[0]
-    assert log.user_id == "user-9"
-    assert log.case_id is None  # análise de cliente, não de caso
-    # Perfil de CLIENTE → tipo_uso=outro (não "analise_caso"/sugestão de teses).
-    assert log.tipo_uso == AITipoUso.outro
-    assert log.resposta == "Perfil de risco moderado."
-    assert log.modelo == "ollama/modelo-x"
-    assert db.commits >= 1
+    # O endpoint não mantém mais um segundo logger paralelo: a trilha é do core.
+    assert [o for o in db.added if isinstance(o, AILog)] == []
+    assert chamada["db"] is db
+    assert chamada["user"] is cu
+    assert chamada["task_type"] == "resumo"
+    assert chamada["domain"] == "clientes"
+    assert chamada["usar_rag"] is False
+    assert chamada["params"]["module_key"] == "clientes"
+    assert chamada["params"]["surface"] == "cliente_ia"
+    assert "Empresa ACME" not in chamada["mensagem"]
+    assert "Total de casos não excluídos: 1" in chamada["mensagem"]
+    assert "[INDICADORES AGREGADOS DO CLIENTE]" in chamada["mensagem"]
 
 
-# ── intelligence.py (canônico) :: analise_impacto ─────────────────────────────────────
-# Único endpoint que mudou de execução (generate → processar_demanda) e o único
-# que grava tipo_uso=outro sanitizando o prompt no próprio endpoint.
+def test_categoria_ailog_cliente_nao_contamina_resumo_documental():
+    """O perfil sem RAG continua sendo RESUMO, mas a telemetria da superfície
+    Cliente IA preserva a categoria histórica `outro`. Resumo documental comum
+    continua em `resumo_documento`."""
+    from app.services.ai.core.audit_logger import _tipo_uso
+    from app.services.system_prompts import TarefaIA
+
+    prompt_cliente = (
+        "Analise exclusivamente os indicadores agregados fornecidos.\n"
+        "[INDICADORES AGREGADOS DO CLIENTE]\nTotal de casos não excluídos: 2"
+    )
+    assert _tipo_uso(TarefaIA.RESUMO, prompt_cliente) == AITipoUso.outro
+    assert _tipo_uso(TarefaIA.RESUMO, "Resuma o documento anexado.") == AITipoUso.resumo_documento
+
+
+# ── intelligence.py (legado vivo) :: analise_impacto ──────────────────────────
+# Único endpoint deste arquivo que permanece em processar_demanda e grava
+# tipo_uso=outro sanitizando o prompt no próprio endpoint.
 
 async def test_analise_impacto_grava_ailog(monkeypatch):
     from app.services import ai_gateway

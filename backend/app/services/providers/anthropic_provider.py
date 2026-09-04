@@ -30,6 +30,7 @@ _client_api_key: str | None = None
 _MODERN_PREFIXES = (
     "claude-opus-4-7",
     "claude-opus-4-8",
+    "claude-opus-5",
     "claude-sonnet-5",
     "claude-fable-5",
     "claude-mythos-5",
@@ -223,10 +224,18 @@ async def health() -> bool:
 
 
 async def chat(messages: list[dict], model: str | None,
-               temperature: float, max_tokens: int) -> tuple[str, dict]:
+               temperature: float, max_tokens: int,
+               timeout_s: float | None = None) -> tuple[str, dict]:
     """Mesmo contrato dos demais providers. Nos modelos modernos (Opus 4.7+,
     Sonnet 5, Fable 5) `temperature` é IGNORADA — a API a rejeita com 400; o
-    raciocínio é controlado por thinking adaptativo + effort (ANTHROPIC_EFFORT)."""
+    raciocínio é controlado por thinking adaptativo + effort (ANTHROPIC_EFFORT).
+
+    `timeout_s` é o orçamento RESTANTE da cadeia do gateway. Este SDK é
+    síncrono e roda em `asyncio.to_thread`, que não é cancelável: sem um
+    timeout próprio, o estouro do deadline agregado abandonava a task
+    enquanto a requisição seguia até `ANTHROPIC_TIMEOUT_SECONDS` — chamada
+    cobrada, sem AILog e fora do painel de custo (revisão de segurança
+    03/09/2026, P2-2). Nunca ALARGA o timeout do client, só encurta."""
     settings = get_settings()
     if not settings.ANTHROPIC_ENABLED:
         raise RuntimeError("Provider Anthropic desabilitado (ANTHROPIC_ENABLED=false)")
@@ -271,6 +280,12 @@ async def chat(messages: list[dict], model: str | None,
             # temperature continua válida; effort não é suportado (erra no Haiku).
             kwargs["max_tokens"] = mt
             kwargs["temperature"] = temperature
+
+        # Encurta o timeout desta requisição ao que sobra do deadline da
+        # cadeia (nunca alarga: `min` com o valor do client).
+        if timeout_s is not None:
+            teto = float(get_settings().ANTHROPIC_TIMEOUT_SECONDS)
+            client = client.with_options(timeout=min(float(timeout_s), teto))
 
         def _create():
             try:

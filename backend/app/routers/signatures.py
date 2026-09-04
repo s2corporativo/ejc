@@ -29,6 +29,30 @@ from app.services.security_service import obter_ip_real
 
 router = APIRouter(prefix="/signatures", tags=["Assinatura Eletrônica"])
 
+# O Portal só confirma "visualizado" quando consegue renderizar o conteúdo no
+# próprio visualizador. DOC/DOCX/XLS/XLSX e HTML não são marcados como vistos
+# apenas por terem sido baixados: para assinatura, o escritório deve fornecer
+# versão renderizável (preferencialmente PDF).
+_PREVIEW_MIMES = {
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "text/plain",
+}
+
+
+def _preview_media_type(mimetype: str | None, filename: str | None) -> str | None:
+    mt = (mimetype or "").split(";", 1)[0].strip().lower()
+    if mt in _PREVIEW_MIMES:
+        return mt
+    # Legado pode ter PDF com mimetype ausente/octet-stream. A extensão do
+    # arquivo físico é suficiente apenas para este fallback específico.
+    if (filename or "").lower().endswith(".pdf"):
+        return "application/pdf"
+    return None
+
 
 class CriarSolicitacaoReq(BaseModel):
     document_id: str
@@ -129,7 +153,7 @@ async def criar_solicitacao(
 
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE",
                           "signature_requests", sr.id,
-                          detalhes=f"Doc: {doc.titulo}")
+                          detalhes="solicitação de assinatura criada")
     await db.commit()
     return {"id": sr.id, "hash": h, "detail": "Solicitação criada",
             "signatarios": [_signatario(p, sr) for p in portais]}
@@ -156,14 +180,20 @@ async def listar(
         q.order_by(SignatureRequest.status, SignatureRequest.created_at.desc())
     )).scalars().all()
 
-    # Anexar título do documento — títulos resolvidos em UMA query (evita N+1).
+    # Anexar título/mimetype do documento em UMA query (evita N+1). O mimetype
+    # permite ao Portal explicar quando o formato não suporta visualização
+    # confiável no navegador antes da assinatura.
     doc_ids = {s.document_id for s in rows if s.document_id}
-    titulos: dict[str, str] = {}
+    docs_meta: dict[str, dict] = {}
     if doc_ids:
         docs = (await db.execute(
-            select(Document.id, Document.titulo).where(Document.id.in_(doc_ids))
+            select(Document.id, Document.titulo, Document.mimetype, Document.filename)
+            .where(Document.id.in_(doc_ids))
         )).all()
-        titulos = {did: titulo for did, titulo in docs}
+        docs_meta = {
+            did: {"titulo": titulo, "mimetype": mimetype, "filename": filename}
+            for did, titulo, mimetype, filename in docs
+        }
 
     # Signatários (logins do portal de cada cliente) em UMA query — o frontend
     # (Assinaturas.tsx: isSignatario) exige `signatarios` em CADA item; sem o
@@ -190,9 +220,14 @@ async def listar(
     )
     out = []
     for s in rows:
+        meta = docs_meta.get(s.document_id, {})
         out.append({
             "id": s.id, "document_id": s.document_id,
-            "documento": titulos.get(s.document_id, "—"),
+            "documento": meta.get("titulo", "—"),
+            "mimetype": meta.get("mimetype"),
+            "preview_disponivel": bool(_preview_media_type(
+                meta.get("mimetype"), meta.get("filename")
+            )),
             "client_id": s.client_id,
             "signatarios": [_signatario(u, s)
                             for u in por_cliente.get(s.client_id, [])],
@@ -200,6 +235,7 @@ async def listar(
             # `hash` abreviado mantido por compatibilidade.
             "hash": s.hash_sha256[:16] + "…",
             "hash_completo": s.hash_sha256 if ve_hash_completo else None,
+            "documento_visualizado_em": s.documento_visualizado_em,
             "assinado_em": s.assinado_em, "created_at": s.created_at,
         })
     return {"data": out}
@@ -211,23 +247,19 @@ async def visualizar_documento(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """
-    Serve o CONTEÚDO do documento vinculado à solicitação — pressuposto de
-    qualquer manifestação de vontade válida (MP 2.200-2/2001, art. 10 §2º: o
-    meio alternativo de assinatura só vale quando admitido pelas partes, o que
-    pressupõe acesso ao que se admite). Antes deste endpoint, o Portal listava
-    só título + hash abreviado (GET /signatures/) e o cliente confirmava
-    "li e concordo" sem ter como ler (achado ASS-00).
+    """Serve conteúdo renderizável ao visualizador do Portal.
 
-    Mesmo gate de isolamento de `assinar` — client_id da solicitação bate com
-    o client_id do login (defesa contra IDOR entre clientes do portal).
+    Este GET NÃO marca a solicitação como visualizada. A confirmação só ocorre
+    em POST /documento-visualizado depois que o iframe/imagem do Portal dispara
+    o evento de carga. Assim, download iniciado, popup bloqueado ou formato não
+    renderizável não satisfaz o gate de assinatura por si só.
     """
     if cu.role != UserRole.cliente_externo:
         raise HTTPException(status_code=403,
                             detail="Apenas o cliente acessa pelo Portal")
     sr = (await db.execute(select(SignatureRequest).where(
         SignatureRequest.id == sig_id,
-        SignatureRequest.client_id == cu.client_id,   # isolamento
+        SignatureRequest.client_id == cu.client_id,
         SignatureRequest.deleted_at.is_(None),
     ))).scalar_one_or_none()
     if not sr:
@@ -238,11 +270,6 @@ async def visualizar_documento(
     ))).scalar_one_or_none()
     if not doc:
         raise HTTPException(status_code=404, detail="Documento não encontrado")
-
-    # Defesa em profundidade: `criar_solicitacao` já exige confidencialidade
-    # "normal" para aceitar a solicitação, mas o documento pode ter sido
-    # reclassificado (PATCH /documents/{id}) depois da criação — confere de
-    # novo aqui, no momento de servir o conteúdo (achado do review Codex).
     if doc.confidencialidade.value != "normal":
         raise HTTPException(
             status_code=403,
@@ -250,28 +277,70 @@ async def visualizar_documento(
                    f"(confidencialidade={doc.confidencialidade.value})",
         )
 
+    preview_mime = _preview_media_type(doc.mimetype, doc.filename)
+    if preview_mime is None:
+        raise HTTPException(
+            status_code=415,
+            detail="Este formato não pode ser visualizado com segurança no Portal. "
+                   "Solicite ao escritório uma versão PDF para assinatura.",
+        )
+
     from app.core.config import get_settings as _gs
     full_path = f"{_gs().UPLOAD_DIR}/{doc.filepath}"
     if not os.path.exists(full_path):
         raise HTTPException(status_code=410, detail="Arquivo físico não encontrado")
 
-    # Registro do acesso ANTES da assinatura — próprio audit_log já existente
-    # (LGPD/MP 2.200-2: evidência de que o signatário teve acesso ao conteúdo)
-    # MAIS a coluna dedicada `documento_visualizado_em` (ASS-01, Issue #1081):
-    # só a 1ª visualização fixa o timestamp (defesa contra forjar
-    # visualização véspera da assinatura repetindo GET /documento).
+    return FileResponse(
+        full_path,
+        filename=doc.filename,
+        media_type=preview_mime,
+        content_disposition_type="inline",
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@router.post("/{sig_id}/documento-visualizado")
+async def confirmar_visualizacao_documento(
+    sig_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Confirma que o visualizador do Portal terminou de carregar o conteúdo."""
+    if cu.role != UserRole.cliente_externo:
+        raise HTTPException(status_code=403,
+                            detail="Apenas o cliente confirma visualização pelo Portal")
+    sr = (await db.execute(select(SignatureRequest).where(
+        SignatureRequest.id == sig_id,
+        SignatureRequest.client_id == cu.client_id,
+        SignatureRequest.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if not sr:
+        raise HTTPException(status_code=404, detail="Solicitação não encontrada")
+    if sr.status != SignatureStatus.pendente:
+        raise HTTPException(status_code=409, detail="Solicitação já processada")
+
+    # Confirma novamente a elegibilidade do documento no instante da marcação.
+    doc = (await db.execute(select(Document).where(
+        Document.id == sr.document_id, Document.deleted_at.is_(None)
+    ))).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+    if doc.confidencialidade.value != "normal":
+        raise HTTPException(status_code=403, detail="Documento não elegível para o Portal")
+    if _preview_media_type(doc.mimetype, doc.filename) is None:
+        raise HTTPException(status_code=415, detail="Formato sem visualização segura no Portal")
+
     if sr.documento_visualizado_em is None:
         sr.documento_visualizado_em = datetime.now(timezone.utc)
-    await criar_audit_log(
-        db, cu.id, cu.role.value, "VISUALIZAR", "signature_requests", sig_id,
-        detalhes=f"acesso ao documento antes da assinatura: {doc.titulo}",
-    )
-    await db.commit()
-
-    return FileResponse(
-        full_path, filename=doc.filename,
-        media_type=doc.mimetype or "application/octet-stream",
-    )
+        await criar_audit_log(
+            db, cu.id, cu.role.value, "VISUALIZAR", "signature_requests", sig_id,
+            detalhes="visualização pré-assinatura confirmada pelo Portal",
+        )
+        await db.commit()
+    return {
+        "ok": True,
+        "documento_visualizado_em": sr.documento_visualizado_em.isoformat(),
+    }
 
 
 @router.post("/{sig_id}/assinar")
@@ -296,17 +365,13 @@ async def assinar(
         raise HTTPException(status_code=404, detail="Solicitação não encontrada")
     if sr.status != SignatureStatus.pendente:
         raise HTTPException(status_code=409, detail="Já processada")
-    # ASS-01 (Issue #1081): exige que o documento tenha sido visualizado NESTA
-    # solicitação — a checagem antiga vivia só no frontend (client-side) e
-    # qualquer chamada direta (curl/devtools) a assinava sem consentimento
-    # informado. O timestamp é gravado pelo GET /documento (1ª visualização)
-    # e o comprovante repete a data para rastreabilidade da evidência.
+    # ASS-01: o timestamp só é gravado após o visualizador do Portal confirmar
+    # carga bem-sucedida; mero GET/download do arquivo não satisfaz este gate.
     if sr.documento_visualizado_em is None:
         raise HTTPException(
             status_code=422,
-            detail="Assinatura recusada: o documento ainda não foi "
-                   "visualizado. Abra o documento antes de assinar "
-                   "(GET /signatures/{id}/documento).",
+            detail="Assinatura recusada: o documento ainda não foi visualizado. "
+                   "Abra o documento no visualizador do Portal antes de assinar.",
         )
     sr.status = SignatureStatus.assinado
     sr.assinado_em = datetime.now(timezone.utc)
@@ -327,7 +392,6 @@ async def assinar(
                 "assinado_em": sr.assinado_em.isoformat(),
                 "hash_documento": sr.hash_sha256,
                 "ip": sr.ip,
-                # ASS-01 (Issue #1081): a visualização prévia comprovada
                 "documento_visualizado_em": (
                     sr.documento_visualizado_em.isoformat()
                     if sr.documento_visualizado_em else None
