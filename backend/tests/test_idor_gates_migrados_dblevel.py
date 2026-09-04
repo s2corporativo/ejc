@@ -107,11 +107,11 @@ async def test_extrato_caso_respeita_ownership():
                           user_ids=[resp_adv, outro_adv], client_ids=[cli])
 
 
-# ── honorarios_calc: GET /honorarios-calc/cases/{case_id}/provisionamento ───────
+# ── honorarios_oab: GET /honorarios-oab/cases/{case_id}/provisionamento ─────────
 
 async def test_provisionamento_respeita_ownership():
     from app.core.database import AsyncSessionLocal
-    from app.routers.honorarios_calc import provisionamento
+    from app.routers.honorarios_oab import provisionamento
 
     async with AsyncSessionLocal() as db:
         resp_adv, outro_adv, cli, caso = await _cenario(db, f"Prov{uuid4().hex[:6]}")

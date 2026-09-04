@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession  # noqa: F401 (reexport p/ compa
 
 from app.core.config import get_settings  # noqa: F401 (reexport p/ compat)
 from app.core.database import get_db  # noqa: F401 (reexport p/ compat)
-from app.core.security import get_current_user, require_roles  # noqa: F401 (reexport p/ compat)
+from app.core.security import get_current_user, require_roles, require_roles_exact  # noqa: F401 (reexport p/ compat)
 from app.models.user import User  # noqa: F401 (reexport p/ compat)
 from app.models.case import Case  # noqa: F401 (reexport p/ compat)
 from app.models.audit_log import criar_audit_log  # noqa: F401 (reexport p/ compat)
@@ -106,7 +106,7 @@ async def ban_listar(db: AsyncSession = Depends(get_db),
 
 @router.post("/bancario", status_code=201)
 async def ban_criar(body: BancarioIn, db: AsyncSession = Depends(get_db),
-                    cu: User = Depends(require_roles(_EQUIPE))):
+                    cu: User = Depends(require_roles_exact(_EQUIPE))):
     await _get_case(db, body.case_id, cu)
     data = body.model_dump()
     # Prazo para purga da mora em busca e apreensão: 5 dias (Dec.-Lei 911/69 art. 3º §2º)
@@ -124,7 +124,7 @@ async def ban_criar(body: BancarioIn, db: AsyncSession = Depends(get_db),
 
 @router.patch("/bancario/{bid}")
 async def ban_atualizar(bid: str, body: BancarioUpdate, db: AsyncSession = Depends(get_db),
-                        cu: User = Depends(require_roles(_EQUIPE))):
+                        cu: User = Depends(require_roles_exact(_EQUIPE))):
     return await _crud_atualizar(BancarioCase, "bancario_cases", bid,
                                  body.model_dump(exclude_unset=True), db, cu)
 
@@ -139,7 +139,7 @@ async def ban_juros(
     taxa_mensal_contratada: float = Query(..., description="Taxa ao mês em %"),
     taxa_mensal_referencia: float = Query(..., description="Taxa de referência BCB/mercado %"),
     valor_contratado: float = Query(..., gt=0),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Análise de spreads e abusividade de juros.
@@ -183,7 +183,7 @@ async def ban_juros(
 async def ban_superendiv(
     renda_mensal: float = Query(..., gt=0),
     total_parcelas_mes: float = Query(..., gt=0),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Triagem de superendividamento (CDC art. 54-A, incl. Lei 14.181/2021).
@@ -233,7 +233,7 @@ async def ban_ba(
     data_notificacao: date,
     valor_divida: float,
     bem_descricao: str,
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Prazos e estratégias em busca e apreensão de bem alienado fiduciariamente.

@@ -18,9 +18,11 @@
 # Quando AI_PROVIDER="auto" → Ollama (local) tem prioridade; Groq como fallback.
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
+import asyncio
+import contextvars
 import logging
-import os
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -87,7 +89,15 @@ def _normalizar_task_type(task_type: str) -> str:
 # Tarefas cujo prompt exige "SAÍDA OBRIGATÓRIA — JSON" (parse downstream):
 # triagem/prazos/honorarios (system_prompts/*.py). O modo executivo impõe prosa
 # em 3 blocos — mutuamente exclusivo com JSON; aplicá-lo quebraria o parse.
-_TAREFAS_SAIDA_ESTRUTURADA = {"triagem", "prazos", "honorarios"}
+# `verificacao_pertinencia` entra aqui porque o contrato da resposta é um
+# formato EXATO (`VEREDITO:/TRECHO:/MOTIVO:`) conferido por regex: sem isto o
+# piso da tarefa seria "alto", que injeta o método FIRAC ("(1) FATOS … (5)
+# CONCLUSÃO") num prompt que pede pergunta fechada — o parse falharia e TODA
+# citação viraria `indeterminada`, deixando a verificação silenciosamente
+# inútil (defeito achado no pente fino de 03/09).
+_TAREFAS_SAIDA_ESTRUTURADA = {
+    "triagem", "prazos", "honorarios", "verificacao_pertinencia",
+}
 
 # Tarefas de MÉRITO jurídico: raciocínio sobre direito aplicado ao caso. São as
 # que justificam o nível mais alto — e eram as que mais caíam em "padrao",
@@ -170,15 +180,35 @@ TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
         ("maritaca",  None),  # MARITACA_MODEL (só se ENABLED+chave; redação PT-BR)
         ("groq",      None),
     ],
+    # I8/A1 (análise E2E 03/09): `resumo` e `chat_rapido` são o destino de
+    # TarefaIA.DEFAULT/TRIAGEM/RESUMO do orquestrador e da conversa livre da
+    # Sala Jurídica. No desenho de produção (Ollama desligado, Maritaca/Groq
+    # sem chave) a cadeia ficava VAZIA com Anthropic saudável. Anthropic entra
+    # ao FIM, com o modelo RÁPIDO (ANTHROPIC_MODEL_RAPIDO — custo Haiku); a
+    # ordem final ainda obedece AI_PROVIDER_PRIORITY e a elegibilidade.
     "resumo": [
         ("ollama", None),    # OLLAMA_MODEL_RESUMO
         ("maritaca", None),  # MARITACA_MODEL_RAPIDO (só se ENABLED+chave)
         ("groq",   None),
+        ("anthropic", None), # ANTHROPIC_MODEL_RAPIDO (último recurso pago)
     ],
     "chat_rapido": [
         ("ollama", None),    # OLLAMA_MODEL_CHAT
         ("maritaca", None),  # MARITACA_MODEL_RAPIDO (só se ENABLED+chave)
         ("groq",   None),
+        ("anthropic", None), # ANTHROPIC_MODEL_RAPIDO (último recurso pago)
+    ],
+    # Verificação de PERTINÊNCIA (services/ai/pertinencia.py): pergunta FECHADA
+    # de 400 tokens, temperatura 0, executada UMA VEZ POR CITAÇÃO verificável.
+    # Sem entrada própria caía no default `analise_juridica` — a cadeia mais
+    # CARA (ANTHROPIC_MODEL_COMPLEXO) — multiplicada pelo número de citações da
+    # peça. Cadeia econômica, mesma forma de `resumo`: local primeiro, pago por
+    # último e com o modelo rápido.
+    "verificacao_pertinencia": [
+        ("ollama", None),
+        ("maritaca", None),
+        ("groq",   None),
+        ("anthropic", None), # ANTHROPIC_MODEL_RAPIDO (ver _resolver_modelo)
     ],
     "analise_contrato": [
         ("ollama",    None),  # OLLAMA_MODEL_CONTRATO
@@ -242,12 +272,11 @@ _ANTHROPIC_MODEL_BY_TASK = {
     "auditoria_peca":   lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
     "jurimetria":       lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
     "critica_adversarial": lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
+    # Pergunta fechada com conferência programática do trecho: o modelo caro
+    # não acerta mais um "sim/não" lastreado — e aqui roda por citação.
+    "verificacao_pertinencia": lambda: settings.ANTHROPIC_MODEL_RAPIDO,
 }
 
-
-def _anthropic_key() -> str:
-    """Mesma resolução do provider: Settings tipada → os.getenv (docker env_file)."""
-    return settings.ANTHROPIC_API_KEY or os.getenv("ANTHROPIC_API_KEY", "")
 
 
 @dataclass
@@ -258,6 +287,10 @@ class GatewayResponse:
     task_type: str
     input_tokens: int | None = None
     output_tokens: int | None = None
+    # A7 — prompt caching (Anthropic): tokens gravados/lidos do cache de prompt.
+    # Entram no custo (ai_cost) e na trilha do AILog; None nos demais provedores.
+    cache_creation_input_tokens: int | None = None
+    cache_read_input_tokens: int | None = None
     duracao_ms: int = 0
     fallback_ativado: bool = False
     fallback_motivo: str | None = None
@@ -276,6 +309,68 @@ class GatewayResponse:
     timestamp: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
+
+
+# I8/A5 — deadline AGREGADO da cadeia de fallback. Mensagem LEIGA (sem nome
+# de provedor nem variável de ambiente): quem lê é o advogado na tela.
+_MSG_DEADLINE_CADEIA = (
+    "A IA demorou além do limite para responder. Tente novamente em instantes "
+    "ou reduza o tamanho do texto enviado."
+)
+
+
+# Prazo ABSOLUTO da cadeia em curso (loop.time()), para que cada provedor
+# receba o orçamento RESTANTE. Revisão de segurança 03/09/2026 (P2-2): o
+# provider Anthropic usa o SDK síncrono dentro de `asyncio.to_thread`, que NÃO
+# é cancelável — sem um timeout próprio derivado do que sobrou, o estouro do
+# deadline abandonava a task enquanto a thread seguia até 120 s, gerando
+# chamada cobrada, sem AILog e sem custo no painel. Com o orçamento restante,
+# o próprio SDK aborta a requisição.
+_DEADLINE_ABS: contextvars.ContextVar[float | None] = contextvars.ContextVar(
+    "ai_gateway_deadline_abs", default=None
+)
+
+
+@asynccontextmanager
+async def _deadline_cadeia():
+    """Timeout do laço de provedores (0/None = sem limite) + prazo absoluto."""
+    segundos = int(getattr(get_settings(), "AI_CHAIN_DEADLINE_SECONDS", 0) or 0)
+    if segundos <= 0:
+        async with asyncio.timeout(None):
+            yield
+        return
+    token = _DEADLINE_ABS.set(asyncio.get_running_loop().time() + segundos)
+    try:
+        async with asyncio.timeout(segundos):
+            yield
+    finally:
+        _DEADLINE_ABS.reset(token)
+
+
+def _orcamento_restante() -> float | None:
+    """Segundos que ainda cabem no deadline da cadeia (None = sem deadline).
+
+    Nunca devolve valor não positivo: um timeout <= 0 no SDK viraria erro de
+    validação em vez de deixar o `asyncio.timeout` externo encerrar o laço."""
+    alvo = _DEADLINE_ABS.get()
+    if alvo is None:
+        return None
+    try:
+        restante = alvo - asyncio.get_running_loop().time()
+    except RuntimeError:  # sem loop em execução (chamada síncrona de teste)
+        return None
+    return max(restante, 1.0)
+
+
+def _tokens_cache(usage: dict) -> tuple[int | None, int | None]:
+    """(cache_creation_input_tokens, cache_read_input_tokens) do usage, ou None."""
+    def _int(v):
+        try:
+            return int(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+    return (_int(usage.get("cache_creation_input_tokens")),
+            _int(usage.get("cache_read_input_tokens")))
 
 
 class _ProviderPulado(Exception):
@@ -390,37 +485,6 @@ async def chat(
         task_label=task_type_original,
     )
 
-    # ── Cache de resposta (opt-in): dedup de requisição idêntica dentro do TTL.
-    # Chaveado pelas messages FINAIS + parâmetros que afetam a saída. Nunca
-    # quebra o fluxo (ai_cache engole erros) e só serve respostas gravadas de
-    # chamadas bem-sucedidas anteriores.
-    from app.services import ai_cache
-    _cache_key = ai_cache.chave(
-        task_type, messages, temperature=temperature, max_tokens=max_tokens,
-        model_override=model_override, provider_override=provider_override,
-        nivel_inteligencia=nivel_inteligencia,
-        # AI_PROVIDER global entra na chave: se a config trocar (ex.: auto→groq)
-        # sem override explícito, não serve resposta de outro provedor no TTL.
-        ai_provider=settings.AI_PROVIDER,
-    )
-    _cached = await ai_cache.obter(_cache_key)
-    if _cached:
-        logger.info("[Gateway] cache HIT → %s (sem chamada ao provedor)", task_type)
-        # Tokens/custo ZERADOS no hit: não houve chamada real ao provedor, então
-        # contabilizá-los (AILog/dashboards) inflaria o gasto de IA (dupla
-        # contagem). cache_hit=True sinaliza a origem; texto é o cacheado.
-        return GatewayResponse(
-            texto=_cached.get("texto", ""),
-            modelo=_cached.get("modelo", ""),
-            provedor=_cached.get("provedor", ""),
-            task_type=task_type,
-            input_tokens=0,
-            output_tokens=0,
-            duracao_ms=0,
-            custo_estimado_brl=0.0,
-            cache_hit=True,
-        )
-
     # AI_PROVIDER="groq" → ignora Ollama; "ollama" → falha se Ollama down
     provider_force = provider_override or (
         settings.AI_PROVIDER if settings.AI_PROVIDER != "auto" else None
@@ -463,7 +527,8 @@ async def chat(
         # local disponível. Falha honesta, sem tocar em rede externa.
         raise RuntimeError(
             f"Nenhum provedor de IA elegível para task={task_type}. "
-            "Verifique AI_EXTERNAL_PROVIDERS_ALLOWED e a disponibilidade do Ollama."
+            "Verifique AI_ENABLED (kill-switch global), "
+            "AI_EXTERNAL_PROVIDERS_ALLOWED e a disponibilidade do Ollama."
         )
 
     # ── Modo 1 (LOCAL_COMPLETO) — sigilo reforçado: a tarefa NUNCA pode ir a
@@ -473,6 +538,40 @@ async def chat(
         cadeia = _restringir_cadeia_local_completo(cadeia, modo_sanitizacao, task_type_original)
         if not cadeia:
             raise RuntimeError(_MSG_BLOQUEIO_LOCAL_COMPLETO)
+
+    # ── Cache de resposta (opt-in): dedup de requisição idêntica dentro do TTL.
+    # A6: consultado SÓ DEPOIS de confirmada uma cadeia elegível — com o
+    # kill-switch (AI_ENABLED / AI_EXTERNAL_PROVIDERS_ALLOWED) desligado, o
+    # cache não pode continuar entregando respostas durante o TTL. Chaveado
+    # pelas messages FINAIS + parâmetros que afetam a saída. Nunca quebra o
+    # fluxo (ai_cache engole erros) e só serve respostas de chamadas
+    # bem-sucedidas anteriores.
+    from app.services import ai_cache
+    _cache_key = ai_cache.chave(
+        task_type, messages, temperature=temperature, max_tokens=max_tokens,
+        model_override=model_override, provider_override=provider_override,
+        nivel_inteligencia=nivel_inteligencia,
+        # AI_PROVIDER global entra na chave: se a config trocar (ex.: auto→groq)
+        # sem override explícito, não serve resposta de outro provedor no TTL.
+        ai_provider=settings.AI_PROVIDER,
+    )
+    _cached = await ai_cache.obter(_cache_key)
+    if _cached:
+        logger.info("[Gateway] cache HIT → %s (sem chamada ao provedor)", task_type)
+        # Tokens/custo ZERADOS no hit: não houve chamada real ao provedor, então
+        # contabilizá-los (AILog/dashboards) inflaria o gasto de IA (dupla
+        # contagem). cache_hit=True sinaliza a origem; texto é o cacheado.
+        return GatewayResponse(
+            texto=_cached.get("texto", ""),
+            modelo=_cached.get("modelo", ""),
+            provedor=_cached.get("provedor", ""),
+            task_type=task_type,
+            input_tokens=0,
+            output_tokens=0,
+            duracao_ms=0,
+            custo_estimado_brl=0.0,
+            cache_hit=True,
+        )
 
     # ── Fase 6 — Observabilidade (Langfuse self-hosted, NO-OP se desligado) ──
     from app.services.observability import langfuse_client as _lf
@@ -484,114 +583,131 @@ async def chat(
 
     ultimo_erro: str = "Nenhum provedor disponível"
     bloqueado_por_pii = False
-    for i, (provider, model) in enumerate(cadeia):
-        if i > 0:
-            fallback_ativado = True
-        try:
-            # #39: barreira LGPD + chamada ao provider + reidratação num ÚNICO
-            # ponto (fonte compartilhada com executar_tarefa_ia). Se o provider
-            # externo é PULADO por PII residual, _chamar_com_barreira levanta
-            # _ProviderPulado (tratado abaixo — tenta o próximo da cadeia).
-            texto, texto_para_log, usage, messages_envio, _ = await _chamar_com_barreira(
-                provider, model, messages, modo_sanitizacao, entidades,
-                temperature, max_tokens,
-            )
-            duracao = int((time.monotonic() - t0) * 1000)
-            modelo_real = usage.get("model", model or "")
-            inp = usage.get("input_tokens")
-            out = usage.get("output_tokens")
-            # Metadado de auditoria: nº de buscas web (verificação ativa) que o
-            # provedor executou — registrado no log e na observabilidade.
-            buscas_web = int(usage.get("web_search_requests") or 0)
-            fontes_web = list(usage.get("web_search_fontes") or [])
-            if buscas_web:
-                logger.info(
-                    "[Gateway] %s → %s usou busca web (%d consulta(s))",
-                    task_type, provider, buscas_web,
-                )
-            # Custo pela fonte ÚNICA (ai_cost): tokens (ciente do provedor real)
-            # + busca web (cobrada À PARTE pela Anthropic — US$/1.000 buscas).
-            # Vai ao AILog/governança/alerta de budget via custo_estimado_brl.
-            custo_brl = float(
-                estimar_custo_brl(provider, inp or 0, out or 0, modelo_real)
-                + custo_busca_web_brl(buscas_web)
-            )
-            resp = GatewayResponse(
-                texto=texto,
-                modelo=modelo_real,
-                provedor=provider,
-                task_type=task_type,
-                input_tokens=inp,
-                output_tokens=out,
-                duracao_ms=duracao,
-                fallback_ativado=fallback_ativado,
-                fallback_motivo=fallback_motivo if fallback_ativado else None,
-                custo_estimado_brl=custo_brl,
-                roteamento_tier=roteamento_tier,
-                roteamento_score=roteamento_score,
-                web_search_requests=buscas_web,
-                web_search_fontes=fontes_web,
-            )
-            if fallback_ativado:
-                logger.warning(
-                    f"[Gateway] Fallback ativado → {provider}/{model}. "
-                    f"Motivo: {fallback_motivo}"
-                )
-            else:
-                logger.info(
-                    f"[Gateway] {task_type} → {provider}/{usage.get('model')} "
-                    f"({duracao}ms)"
-                )
-            _lf.registrar_generation(
-                _trace, name=task_type, model=modelo_real,
-                input_messages=messages_envio, output_text=texto_para_log,
-                input_tokens=inp, output_tokens=out,
-                metadata=_lf.montar_metadata(
-                    provider=provider, model=modelo_real, task_type=task_type,
-                    input_tokens=inp, output_tokens=out, duracao_ms=duracao,
-                    fallback_ativado=fallback_ativado, fallback_motivo=fallback_motivo,
-                    custo_estimado_brl=custo_brl, sucesso=True,
-                    tier=roteamento_tier, roteamento_score=roteamento_score,
-                    web_search_requests=buscas_web,
-                    web_search_fontes=[f.get("url") for f in fontes_web] or None,
-                ),
-            )
-            _lf.flush()
-            # Grava no cache apenas respostas bem-sucedidas (TTL curto).
-            await ai_cache.gravar(_cache_key, {
-                "texto": texto, "modelo": modelo_real, "provedor": provider,
-                "input_tokens": inp, "output_tokens": out,
-                "custo_estimado_brl": custo_brl,
-            })
-            return resp
-        except _ProviderPulado as _pulado:
-            # Barreira LGPD pulou este provider (PII residual) → tenta o próximo.
-            bloqueado_por_pii = True
-            ultimo_erro = f"PII residual ({', '.join(_pulado.residual)}) bloqueou provider externo"
-            fallback_motivo = f"{provider}: bloqueado por PII residual (LGPD)"
-            logger.warning(
-                f"[Gateway] {provider} pulado — PII residual ({', '.join(_pulado.residual)}) "
-                "após sanitização (LGPD)."
-            )
-            _lf.registrar_evento(_trace, name=f"pii_bloqueio:{provider}",
-                                 metadata={"provider": provider, "task_type": task_type})
-            continue
-        except Exception as e:
-            ultimo_erro = str(e)[:200]  # trilha INTERNA (logger + RuntimeError)
-            # B1: no que sai ao Langfuse (fallback_motivo → metadata; evento),
-            # nunca o str(e) cru (pode conter PII/detalhe do provider): só a
-            # CLASSE do erro (+ status HTTP quando houver).
-            _status = getattr(e, "status_code", None) or getattr(
-                getattr(e, "response", None), "status_code", None
-            )
-            erro_traco = type(e).__name__ + (f" (HTTP {_status})" if _status else "")
-            fallback_motivo = f"{provider}: {erro_traco}"
-            logger.warning(
-                f"[Gateway] {provider}/{model} falhou, tentando próximo: {ultimo_erro}"
-            )
-            _lf.registrar_evento(_trace, name=f"fallback:{provider}",
-                                 metadata={"provider": provider, "model": model,
-                                           "task_type": task_type, "erro": erro_traco})
+    # I8/A5: deadline AGREGADO sobre a cadeia inteira (não só por provedor).
+    try:
+        async with _deadline_cadeia():
+            for i, (provider, model) in enumerate(cadeia):
+                if i > 0:
+                    fallback_ativado = True
+                try:
+                    # #39: barreira LGPD + chamada ao provider + reidratação num ÚNICO
+                    # ponto (fonte compartilhada com executar_tarefa_ia). Se o provider
+                    # externo é PULADO por PII residual, _chamar_com_barreira levanta
+                    # _ProviderPulado (tratado abaixo — tenta o próximo da cadeia).
+                    texto, texto_para_log, usage, messages_envio, _ = await _chamar_com_barreira(
+                        provider, model, messages, modo_sanitizacao, entidades,
+                        temperature, max_tokens,
+                    )
+                    duracao = int((time.monotonic() - t0) * 1000)
+                    modelo_real = usage.get("model", model or "")
+                    inp = usage.get("input_tokens")
+                    out = usage.get("output_tokens")
+                    # Metadado de auditoria: nº de buscas web (verificação ativa) que o
+                    # provedor executou — registrado no log e na observabilidade.
+                    buscas_web = int(usage.get("web_search_requests") or 0)
+                    fontes_web = list(usage.get("web_search_fontes") or [])
+                    if buscas_web:
+                        logger.info(
+                            "[Gateway] %s → %s usou busca web (%d consulta(s))",
+                            task_type, provider, buscas_web,
+                        )
+                    # Custo pela fonte ÚNICA (ai_cost): tokens (ciente do provedor real)
+                    # + busca web (cobrada À PARTE pela Anthropic — US$/1.000 buscas).
+                    # Vai ao AILog/governança/alerta de budget via custo_estimado_brl.
+                    cache_cria, cache_le = _tokens_cache(usage)
+                    custo_brl = float(
+                        estimar_custo_brl(
+                            provider, inp or 0, out or 0, modelo_real,
+                            cache_creation_input_tokens=cache_cria,
+                            cache_read_input_tokens=cache_le,
+                        )
+                        + custo_busca_web_brl(buscas_web)
+                    )
+                    resp = GatewayResponse(
+                        texto=texto,
+                        modelo=modelo_real,
+                        provedor=provider,
+                        task_type=task_type,
+                        input_tokens=inp,
+                        output_tokens=out,
+                        cache_creation_input_tokens=cache_cria,
+                        cache_read_input_tokens=cache_le,
+                        duracao_ms=duracao,
+                        fallback_ativado=fallback_ativado,
+                        fallback_motivo=fallback_motivo if fallback_ativado else None,
+                        custo_estimado_brl=custo_brl,
+                        roteamento_tier=roteamento_tier,
+                        roteamento_score=roteamento_score,
+                        web_search_requests=buscas_web,
+                        web_search_fontes=fontes_web,
+                    )
+                    if fallback_ativado:
+                        logger.warning(
+                            f"[Gateway] Fallback ativado → {provider}/{model}. "
+                            f"Motivo: {fallback_motivo}"
+                        )
+                    else:
+                        logger.info(
+                            f"[Gateway] {task_type} → {provider}/{usage.get('model')} "
+                            f"({duracao}ms)"
+                        )
+                    _lf.registrar_generation(
+                        _trace, name=task_type, model=modelo_real,
+                        input_messages=messages_envio, output_text=texto_para_log,
+                        input_tokens=inp, output_tokens=out,
+                        metadata=_lf.montar_metadata(
+                            provider=provider, model=modelo_real, task_type=task_type,
+                            input_tokens=inp, output_tokens=out, duracao_ms=duracao,
+                            fallback_ativado=fallback_ativado, fallback_motivo=fallback_motivo,
+                            custo_estimado_brl=custo_brl, sucesso=True,
+                            tier=roteamento_tier, roteamento_score=roteamento_score,
+                            web_search_requests=buscas_web,
+                            web_search_fontes=[f.get("url") for f in fontes_web] or None,
+                        ),
+                    )
+                    _lf.flush()
+                    # Grava no cache apenas respostas bem-sucedidas (TTL curto).
+                    await ai_cache.gravar(_cache_key, {
+                        "texto": texto, "modelo": modelo_real, "provedor": provider,
+                        "input_tokens": inp, "output_tokens": out,
+                        "custo_estimado_brl": custo_brl,
+                    })
+                    return resp
+                except _ProviderPulado as _pulado:
+                    # Barreira LGPD pulou este provider (PII residual) → tenta o próximo.
+                    bloqueado_por_pii = True
+                    ultimo_erro = f"PII residual ({', '.join(_pulado.residual)}) bloqueou provider externo"
+                    fallback_motivo = f"{provider}: bloqueado por PII residual (LGPD)"
+                    logger.warning(
+                        f"[Gateway] {provider} pulado — PII residual ({', '.join(_pulado.residual)}) "
+                        "após sanitização (LGPD)."
+                    )
+                    _lf.registrar_evento(_trace, name=f"pii_bloqueio:{provider}",
+                                         metadata={"provider": provider, "task_type": task_type})
+                    continue
+                except Exception as e:
+                    ultimo_erro = str(e)[:200]  # trilha INTERNA (logger + RuntimeError)
+                    # B1: no que sai ao Langfuse (fallback_motivo → metadata; evento),
+                    # nunca o str(e) cru (pode conter PII/detalhe do provider): só a
+                    # CLASSE do erro (+ status HTTP quando houver).
+                    _status = getattr(e, "status_code", None) or getattr(
+                        getattr(e, "response", None), "status_code", None
+                    )
+                    erro_traco = type(e).__name__ + (f" (HTTP {_status})" if _status else "")
+                    fallback_motivo = f"{provider}: {erro_traco}"
+                    logger.warning(
+                        f"[Gateway] {provider}/{model} falhou, tentando próximo: {ultimo_erro}"
+                    )
+                    _lf.registrar_evento(_trace, name=f"fallback:{provider}",
+                                         metadata={"provider": provider, "model": model,
+                                                   "task_type": task_type, "erro": erro_traco})
+    except TimeoutError:
+        _lf.flush()
+        logger.warning(
+            "[Gateway] deadline da cadeia (%ss) estourado para task=%s após %d provedor(es)",
+            get_settings().AI_CHAIN_DEADLINE_SECONDS, task_type, len(cadeia),
+        )
+        raise RuntimeError(_MSG_DEADLINE_CADEIA)
 
     _lf.flush()
     if bloqueado_por_pii:
@@ -682,20 +798,41 @@ async def transcrever_audio(
 
 
 async def health() -> dict:
-    """Retorna status de saúde de cada provedor."""
-    from app.services.providers import groq_provider, ollama_provider, anthropic_provider, maritaca_provider
-    groq_ok   = await groq_provider.health()   if settings.GROQ_API_KEY else False
-    ollama_ok = await ollama_provider.health() if settings.OLLAMA_ENABLED else False
-    anthropic_ok = await anthropic_provider.health()
-    maritaca_ok = await maritaca_provider.health() if settings.MARITACA_ENABLED else False
-    modelos_ollama = await ollama_provider.modelos_disponiveis() if settings.OLLAMA_ENABLED else []
+    """Status de cada provedor pela FONTE ÚNICA de elegibilidade (provider_registry).
+
+    A8/A3 (análise E2E 03/09): esta função tinha a quinta cópia da regra de
+    elegibilidade e ainda GASTAVA COTA batendo no Groq (chat real de 1 token)
+    a cada consulta de painel. Agora `disponivel` = elegível pela configuração
+    (kill-switches, ENABLED, chave) e `motivo` diz o que falta; só o Ollama
+    (local, custo zero) é sondado de verdade para listar os modelos instalados.
+    """
+    from app.services.ai.provider_registry import motivo_inelegivel, provider_elegivel
+    from app.services.providers import ollama_provider
+    s = get_settings()
+
+    ollama_ok = False
+    modelos_ollama: list = []
+    if provider_elegivel("ollama"):
+        try:
+            modelos_ollama = list(await ollama_provider.modelos_disponiveis() or [])
+            ollama_ok = len(modelos_ollama) > 0
+        except Exception as e:  # sonda local nunca derruba o painel
+            logger.debug("[Gateway] health do Ollama falhou: %s", str(e)[:120])
+
+    def _externo(nome: str, modelo: str | None) -> dict:
+        return {
+            "disponivel": provider_elegivel(nome),
+            "motivo": motivo_inelegivel(nome),
+            "modelo": modelo,
+        }
 
     return {
-        "groq":      {"disponivel": groq_ok, "modelo": settings.GROQ_MODEL},
-        "ollama":    {"disponivel": ollama_ok, "modelos": modelos_ollama},
-        "anthropic": {"disponivel": anthropic_ok, "modelo": settings.ANTHROPIC_MODEL_RAPIDO},
-        "maritaca":  {"disponivel": maritaca_ok, "modelo": settings.MARITACA_MODEL},
-        "provider_mode": settings.AI_PROVIDER,
+        "groq":      _externo("groq", s.GROQ_MODEL),
+        "ollama":    {"disponivel": ollama_ok, "motivo": motivo_inelegivel("ollama"),
+                      "modelos": modelos_ollama},
+        "anthropic": _externo("anthropic", s.ANTHROPIC_MODEL_RAPIDO),
+        "maritaca":  _externo("maritaca", s.MARITACA_MODEL),
+        "provider_mode": s.AI_PROVIDER,
     }
 
 
@@ -754,8 +891,11 @@ def _resolver_modelo(provider: str, task_type: str, model_override: str | None) 
     if provider == "ollama":
         return _OLLAMA_MODEL_BY_TASK.get(task_type, lambda: settings.OLLAMA_MODEL_ANALISE)()
     if provider == "anthropic":
-        # Tarefas roteadas para Anthropic aqui são as complexas → modelo COMPLEXO.
-        return settings.ANTHROPIC_MODEL_COMPLEXO or settings.ANTHROPIC_MODEL_RAPIDO
+        # Complexas → COMPLEXO; econômicas (resumo/chat_rapido, I8) → RAPIDO.
+        # Tarefa fora do mapa cai no COMPLEXO (qualidade por padrão).
+        modelo = _ANTHROPIC_MODEL_BY_TASK.get(
+            task_type, lambda: settings.ANTHROPIC_MODEL_COMPLEXO)()
+        return modelo or settings.ANTHROPIC_MODEL_COMPLEXO or settings.ANTHROPIC_MODEL_RAPIDO
     if provider == "maritaca":
         # Redação/volume por default; tarefas simples → modelo rápido/barato.
         if task_type in ("resumo", "chat_rapido", "triagem"):
@@ -947,19 +1087,77 @@ async def _chamar_provedor(
         )
     elif provider == "anthropic":
         from app.services.providers import anthropic_provider
-        return await anthropic_provider.chat(messages, model, temperature, max_tokens)
+        # timeout_s = orçamento RESTANTE da cadeia: o SDK síncrono roda em
+        # thread não cancelável, então quem precisa abortar é ele (P2-2).
+        return await anthropic_provider.chat(
+            messages, model, temperature, max_tokens,
+            timeout_s=_orcamento_restante(),
+        )
     elif provider == "maritaca":
         from app.services.providers import maritaca_provider
         return await maritaca_provider.chat(messages, model, temperature, max_tokens)
-    else:  # groq
+    elif provider == "groq":
         from app.services.providers import groq_provider
         return await groq_provider.chat(messages, model, temperature, max_tokens)
+    # A8 — FAIL-CLOSED: provedor desconhecido NÃO cai no Groq (externo) por
+    # acidente de despacho; erro explícito, sem chamada de rede.
+    raise RuntimeError(f"Provedor de IA desconhecido: '{provider}'")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MÓDULO IA PROFISSIONAL — agente por tarefa (system_prompts + Anthropic/Groq).
 # Reusa _chamar_provedor (mesmo dispatch). HITL/LGPD/auditoria preservados.
 # ══════════════════════════════════════════════════════════════════════════════
+async def registrar_log_resposta(
+    db, *, user_id: str, tipo_uso, resp: "GatewayResponse",
+    prompt_sanitizado: str, pii_removida: bool = False,
+    case_id: str | None = None, fontes_rag: str | None = None,
+) -> str | None:
+    """I9 — AILog canônico a partir de um GatewayResponse (call sites com db+user).
+
+    Concentra o que os routers/serviços repetiam à mão (modelo canônico
+    `provedor/modelo`, tokens, custo já calculado pelo gateway, marcador de
+    cache hit e trilha de prompt caching). Erro de gravação PROPAGA (mesma
+    regra de ai_guard.registrar_ai_log). Sem db ou user → None, sem gravar.
+    """
+    if db is None or not user_id:
+        return None
+    from app.services.ai_guard import registrar_ai_log
+    # Duck-typing deliberado: testes e adaptadores legados passam objetos
+    # parciais no lugar de GatewayResponse — campos opcionais degradam a None.
+    provedor = getattr(resp, "provedor", None) or ""
+    modelo = getattr(resp, "modelo", None) or ""
+    cache_cria = getattr(resp, "cache_creation_input_tokens", None)
+    cache_le = getattr(resp, "cache_read_input_tokens", None)
+    trilha = [t for t in (
+        fontes_rag,
+        _fontes_rag_busca_web(
+            int(getattr(resp, "web_search_requests", 0) or 0),
+            list(getattr(resp, "web_search_fontes", None) or []), provedor),
+        (f"[prompt_cache] criacao={cache_cria or 0} leitura={cache_le or 0} tokens ({provedor})"
+         if (cache_cria or cache_le) else None),
+        ("[cache_hit] resposta servida do cache — tokens/custo zero"
+         if getattr(resp, "cache_hit", False) else None),
+    ) if t]
+    return await registrar_ai_log(
+        db, user_id=user_id, tipo_uso=tipo_uso, case_id=case_id,
+        prompt_sanitizado=(prompt_sanitizado or "")[:8000], pii_removida=pii_removida,
+        # `resp.texto` é o texto JÁ REIDRATADO (marcadores trocados de volta
+        # pelos nomes reais) — é o que o usuário lê. A barreira de auditoria
+        # está uma camada abaixo, no `@validates("resposta")` de AILog, que
+        # pseudonimiza antes de persistir preservando citação jurisprudencial
+        # completa e marcador estrutural. Travado em
+        # tests/test_ailog_pseudonimiza_resposta_reidratada.py: trocar este
+        # caminho por INSERT em lote (sem ORM) fura a barreira em silêncio.
+        resposta=(getattr(resp, "texto", None) or "")[:8000],
+        modelo=(f"{provedor}/{modelo}" if provedor else modelo)[:50],
+        fontes_rag="\n".join(trilha) or None,
+        tokens_input=getattr(resp, "input_tokens", None),
+        tokens_output=getattr(resp, "output_tokens", None),
+        custo_estimado=float(getattr(resp, "custo_estimado_brl", 0.0) or 0.0),
+    )
+
+
 def _custo_brl(model: str, inp: int, out: int) -> float:
     """Shim de compatibilidade → ai_cost.estimar_custo_brl (fonte única de preço).
 
@@ -973,7 +1171,7 @@ def _custo_brl(model: str, inp: int, out: int) -> float:
 async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
                              contexto_rag: list[str] | None = None,
                              user_id: str | None = None, db=None,
-                             nivel_inteligencia: str = "alto",
+                             nivel_inteligencia: str | None = None,
                              entidades: dict[str, list[str]] | None = None,
                              modo_sanitizacao=None) -> dict:
     """Entrada do MÓDULO IA por tarefa. Resultado SEMPRE rascunho (HITL/OAB).
@@ -1003,32 +1201,13 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
     if contexto_rag:
         trechos = "\n\n---\n\n".join(f"Trecho {i+1}:\n{c}" for i, c in enumerate(contexto_rag))
         system_prompt += f"\n\n## CONHECIMENTO RECUPERADO (BASE INTERNA):\n{trechos}"
+    # I2: sem nível explícito vale o PISO da tarefa (mérito → maximo/FIRAC;
+    # econômicas/estruturadas → padrao). O nível EFETIVO é o que volta ao
+    # chamador e entra na chave de cache — nunca o "None" cru.
+    nivel_efetivo = (nivel_inteligencia or _nivel_piso(tarefa_label)).strip().lower()
     messages = _aplicar_nivel([{ "role": "system", "content": system_prompt },
-                {"role": "user", "content": mensagem}], nivel_inteligencia,
+                {"role": "user", "content": mensagem}], nivel_efetivo,
                 task_label=tarefa_label)
-
-    # #40: dedup de chamada de IA no caminho por tarefa — reusa o mesmo ai_cache
-    # que o chat() já usa. Requisições idênticas (mesma tarefa/mensagem/contexto/
-    # nível) servem do cache no TTL, sem bater o provedor (economia de tokens e
-    # latência). A chave usa as mensagens REAIS (pré-sanitização), então inputs
-    # distintos nunca colidem.
-    from app.services import ai_cache
-    _cache_key = ai_cache.chave(
-        tarefa_label, messages, temperature=cfg.temperature, max_tokens=cfg.max_tokens,
-        model_override=cfg.model, provider_override=cfg.provider,
-        nivel_inteligencia=nivel_inteligencia, ai_provider=settings.AI_PROVIDER,
-    )
-    _cached = await ai_cache.obter(_cache_key)
-    if _cached:
-        logger.info("[Gateway] cache HIT (tarefa) → %s (sem chamada ao provedor)", tarefa_label)
-        return {
-            "conteudo": _cached.get("texto", ""), "modelo": _cached.get("modelo", ""),
-            "provider": _cached.get("provedor", ""),
-            "nivel_inteligencia": nivel_inteligencia, "tarefa": tarefa_label,
-            "is_rascunho": True, "requer_revisao": True,
-            "tokens_usados": 0, "custo_estimado_brl": 0.0, "cache_hit": True,
-            "fallback_ativado": False, "fallback_motivo": None,
-        }
 
     # Cadeia: provedor da tarefa → Ollama (LOCAL) → Groq (externo).
     # LGPD (minimização de transferência internacional, art. 33/46): o LOCAL vem
@@ -1054,6 +1233,57 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
             )
             raise RuntimeError(_MSG_BLOQUEIO_LOCAL_COMPLETO)
 
+    # A6: kill-switch ANTES do cache — sem provedor elegível (AI_ENABLED=false,
+    # externos bloqueados sem Ollama…) a tarefa falha honestamente, mesmo que
+    # exista resposta cacheada dentro do TTL.
+    if not any(_provider_elegivel(p) for p, _ in cadeia):
+        raise RuntimeError(
+            "Nenhum provedor disponível para a tarefa. Último erro: nenhum "
+            "provedor elegível (habilitação/chave/soberania)"
+        )
+
+    # #40: dedup de chamada de IA no caminho por tarefa — reusa o mesmo ai_cache
+    # que o chat() já usa. Requisições idênticas (mesma tarefa/mensagem/contexto/
+    # nível) servem do cache no TTL, sem bater o provedor (economia de tokens e
+    # latência). A chave usa as mensagens REAIS (pré-sanitização), então inputs
+    # distintos nunca colidem.
+    from app.services import ai_cache
+    _cache_key = ai_cache.chave(
+        tarefa_label, messages, temperature=cfg.temperature, max_tokens=cfg.max_tokens,
+        model_override=cfg.model, provider_override=cfg.provider,
+        nivel_inteligencia=nivel_efetivo, ai_provider=settings.AI_PROVIDER,
+    )
+    _cached = await ai_cache.obter(_cache_key)
+    if _cached:
+        logger.info("[Gateway] cache HIT (tarefa) → %s (sem chamada ao provedor)", tarefa_label)
+        # A6: o hit também deixa trilha (LGPD/auditoria) — tokens/custo ZERO e
+        # marcador explícito de cache, para o painel não contar duas vezes.
+        if db is not None and user_id:
+            from app.services.ai_guard import registrar_ai_log
+            from app.services.ai.core.audit_logger import _tipo_uso
+            # Revisão de segurança 03/09/2026 (P3-1): o prompt do hit é o texto
+            # PRÉ-barreira e o hit não sabe se a chamada original foi
+            # pseudonimizada — gravá-lo cru marcado como `pii_removida=False`
+            # deixava PII no registro de auditoria. Sanitiza antes de gravar.
+            from app.services.sanitizer import sanitizar_pii as _san_log
+            _prompt_log, _pii_log = _san_log(mensagem or "")
+            await registrar_ai_log(
+                db, user_id=user_id, tipo_uso=_tipo_uso(tarefa), case_id=case_id,
+                prompt_sanitizado=_prompt_log[:8000], pii_removida=_pii_log,
+                resposta=(_cached.get("texto") or "")[:8000],
+                modelo=str(_cached.get("modelo") or "")[:50],
+                fontes_rag="[cache_hit] resposta servida do cache — tokens/custo zero",
+                tokens_input=0, tokens_output=0, custo_estimado=0.0,
+            )
+        return {
+            "conteudo": _cached.get("texto", ""), "modelo": _cached.get("modelo", ""),
+            "provider": _cached.get("provedor", ""),
+            "nivel_inteligencia": nivel_efetivo, "tarefa": tarefa_label,
+            "is_rascunho": True, "requer_revisao": True,
+            "tokens_usados": 0, "custo_estimado_brl": 0.0, "cache_hit": True,
+            "fallback_ativado": False, "fallback_motivo": None,
+        }
+
     texto = usage = provedor_usado = None
     ultimo_erro = "nenhum provedor elegível"
     bloqueado_por_pii = False
@@ -1066,47 +1296,56 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
     resposta_log = None
     prompt_log = mensagem[:8000]
     pii_removida_log = False
-    for provider, model in cadeia:
-        if not _provider_elegivel(provider):
-            ultimo_erro = f"{provider} inelegível (habilitação/chave/soberania)"
-            if fallback_motivo is None:
-                fallback_motivo = f"{provider}: inelegível (habilitação/chave/soberania)"
-            continue
-        try:
-            # #39: barreira LGPD + chamada + reidratação — fonte única (idem chat).
-            texto, resposta_log, usage, messages_envio, pii_removida = await _chamar_com_barreira(
-                provider, model, messages, modo_sanitizacao, entidades,
-                cfg.temperature, cfg.max_tokens,
-            )
-        except _ProviderPulado as _pulado:
-            bloqueado_por_pii = True
-            ultimo_erro = f"PII residual ({', '.join(_pulado.residual)}) bloqueou provider externo"
-            if fallback_motivo is None:
-                # Não ecoa as CATEGORIAS residuais no motivo exposto (só no log).
-                fallback_motivo = f"{provider}: bloqueado por PII residual (LGPD)"
-            logger.warning(f"[Gateway] {provider} pulado em executar_tarefa_ia — "
-                           f"PII residual ({', '.join(_pulado.residual)}) após sanitização (LGPD).")
-            continue
-        except Exception as e:
-            ultimo_erro = str(e)[:120]  # trilha INTERNA (logger) — pode ter PII
-            if fallback_motivo is None:
-                # Só a CLASSE do erro (+ status HTTP) no motivo exposto — PII-safe.
-                _status = getattr(e, "status_code", None) or getattr(
-                    getattr(e, "response", None), "status_code", None
-                )
-                fallback_motivo = f"{provider}: " + type(e).__name__ + (
-                    f" (HTTP {_status})" if _status else ""
-                )
-            logger.warning(f"[Gateway] {provider} falhou em executar_tarefa_ia; "
-                           f"tentando próximo: {ultimo_erro}")
-            continue
-        provedor_usado = provider
-        # resposta_log = versão PSEUDONIMIZADA (sem PII real); no modo reversível
-        # o prompt logado também é o sanitizado.
-        if pii_removida:
-            prompt_log = (messages_envio[-1].get("content", "") if messages_envio else mensagem)[:8000]
-            pii_removida_log = True
-        break
+    # I8/A5: deadline AGREGADO sobre a cadeia inteira (espelha o chat()).
+    try:
+        async with _deadline_cadeia():
+            for provider, model in cadeia:
+                if not _provider_elegivel(provider):
+                    ultimo_erro = f"{provider} inelegível (habilitação/chave/soberania)"
+                    if fallback_motivo is None:
+                        fallback_motivo = f"{provider}: inelegível (habilitação/chave/soberania)"
+                    continue
+                try:
+                    # #39: barreira LGPD + chamada + reidratação — fonte única (idem chat).
+                    texto, resposta_log, usage, messages_envio, pii_removida = await _chamar_com_barreira(
+                        provider, model, messages, modo_sanitizacao, entidades,
+                        cfg.temperature, cfg.max_tokens,
+                    )
+                except _ProviderPulado as _pulado:
+                    bloqueado_por_pii = True
+                    ultimo_erro = f"PII residual ({', '.join(_pulado.residual)}) bloqueou provider externo"
+                    if fallback_motivo is None:
+                        # Não ecoa as CATEGORIAS residuais no motivo exposto (só no log).
+                        fallback_motivo = f"{provider}: bloqueado por PII residual (LGPD)"
+                    logger.warning(f"[Gateway] {provider} pulado em executar_tarefa_ia — "
+                                   f"PII residual ({', '.join(_pulado.residual)}) após sanitização (LGPD).")
+                    continue
+                except Exception as e:
+                    ultimo_erro = str(e)[:120]  # trilha INTERNA (logger) — pode ter PII
+                    if fallback_motivo is None:
+                        # Só a CLASSE do erro (+ status HTTP) no motivo exposto — PII-safe.
+                        _status = getattr(e, "status_code", None) or getattr(
+                            getattr(e, "response", None), "status_code", None
+                        )
+                        fallback_motivo = f"{provider}: " + type(e).__name__ + (
+                            f" (HTTP {_status})" if _status else ""
+                        )
+                    logger.warning(f"[Gateway] {provider} falhou em executar_tarefa_ia; "
+                                   f"tentando próximo: {ultimo_erro}")
+                    continue
+                provedor_usado = provider
+                # resposta_log = versão PSEUDONIMIZADA (sem PII real); no modo reversível
+                # o prompt logado também é o sanitizado.
+                if pii_removida:
+                    prompt_log = (messages_envio[-1].get("content", "") if messages_envio else mensagem)[:8000]
+                    pii_removida_log = True
+                break
+    except TimeoutError:
+        logger.warning(
+            "[Gateway] deadline da cadeia (%ss) estourado em executar_tarefa_ia task=%s",
+            get_settings().AI_CHAIN_DEADLINE_SECONDS, tarefa_label,
+        )
+        raise RuntimeError(_MSG_DEADLINE_CADEIA)
     if provedor_usado is None:
         if bloqueado_por_pii:
             raise RuntimeError(
@@ -1124,8 +1363,13 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
     fontes_web = list(usage.get("web_search_fontes") or [])
     # Fonte única (ai_cost): tokens (ciente do provedor) + busca web (cobrada
     # À PARTE — US$/1.000 buscas). Persiste no AILog e nos totais de governança.
+    cache_cria, cache_le = _tokens_cache(usage)
     custo = float(
-        estimar_custo_brl(provedor_usado, inp, out, modelo_real)
+        estimar_custo_brl(
+            provedor_usado, inp, out, modelo_real,
+            cache_creation_input_tokens=cache_cria,
+            cache_read_input_tokens=cache_le,
+        )
         + custo_busca_web_brl(buscas_web)
     )
     if db is not None and user_id:
@@ -1141,7 +1385,11 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
             # Auditoria da verificação ativa: registra no AILog (fontes_rag,
             # campo de fontes já existente — sem migration) que a resposta usou
             # busca web, quantas consultas e QUAIS fontes (título — URL).
-            fontes_rag=_fontes_rag_busca_web(buscas_web, fontes_web, provedor_usado),
+            fontes_rag="\n".join(t for t in (
+                _fontes_rag_busca_web(buscas_web, fontes_web, provedor_usado),
+                (f"[prompt_cache] criacao={cache_cria or 0} leitura={cache_le or 0} "
+                 f"tokens ({provedor_usado})") if (cache_cria or cache_le) else None,
+            ) if t) or None,
             tokens_input=inp, tokens_output=out, custo_estimado=custo,
         )
     # #40: cacheia só sucesso e SEM PII reidratada — no modo reversível o `texto`
@@ -1162,7 +1410,7 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
     fallback_ativado = provedor_usado != cadeia[0][0]
     return {
         "conteudo": texto, "modelo": f"{provedor_usado}/{modelo_real}", "provider": provedor_usado,
-        "nivel_inteligencia": nivel_inteligencia,
+        "nivel_inteligencia": nivel_efetivo,
         "tarefa": getattr(tarefa, "value", str(tarefa)),
         "is_rascunho": True, "requer_revisao": True,
         "tokens_usados": inp + out, "custo_estimado_brl": custo,

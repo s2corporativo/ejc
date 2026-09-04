@@ -23,13 +23,35 @@ const ENTRADA_CONSOLIDATED_NAV_KEYS = new Set([
   "raio-x-processo",
 ]);
 
+/**
+ * Onde a lista vai ser exibida.
+ *
+ * - `navegacao` (default): menu lateral. Um módulo marcado `status: "hidden"`
+ *   no manifesto, ou com `menu_visible: false` na administração, não aparece.
+ * - `catalogo`: o hub /ferramentas. Ele existe JUSTAMENTE para os módulos que
+ *   foram tirados do menu (todos com `status: "hidden"` no registry), então o
+ *   status do manifesto e o `menu_visible` não podem escondê-los ali — seria
+ *   esvaziar o hub inteiro. O que vale é o mesmo critério do
+ *   ModuleLifecycleGate: módulo desligado pela administração não é oferecido,
+ *   porque o clique só levaria à tela de "módulo indisponível".
+ */
+export type EscopoLifecycle = "navegacao" | "catalogo";
+
+function desligadoPelaAdministracao(
+  override: ModuleLifecycleOverride,
+): boolean {
+  return !override.enabled || override.status === "disabled";
+}
+
 function visibleByLifecycle<T extends ModuleLike>(
   module: T,
   settings: Record<string, ModuleLifecycleOverride>,
+  escopo: EscopoLifecycle,
 ): boolean {
   const override = settings[module.key];
-  if (!override) return module.status !== "hidden";
-  if (!override.enabled || override.status === "disabled") return false;
+  if (!override) return escopo === "catalogo" || module.status !== "hidden";
+  if (desligadoPelaAdministracao(override)) return false;
+  if (escopo === "catalogo") return true;
   if (!override.menu_visible || override.status === "hidden") return false;
   return true;
 }
@@ -37,10 +59,11 @@ function visibleByLifecycle<T extends ModuleLike>(
 export function filterModulesByLifecycle<T extends ModuleLike>(
   modules: T[],
   settings: Record<string, ModuleLifecycleOverride>,
+  escopo: EscopoLifecycle = "navegacao",
 ): T[] {
   const entradaVisivel = modules.some(
     (module) =>
-      module.key === "entrada" && visibleByLifecycle(module, settings),
+      module.key === "entrada" && visibleByLifecycle(module, settings, escopo),
   );
   const result: T[] = [];
 
@@ -49,7 +72,7 @@ export function filterModulesByLifecycle<T extends ModuleLike>(
     if (entradaVisivel && ENTRADA_CONSOLIDATED_NAV_KEYS.has(module.key)) {
       continue;
     }
-    if (!visibleByLifecycle(module, settings)) continue;
+    if (!visibleByLifecycle(module, settings, escopo)) continue;
 
     if (entradaVisivel && module.key === "entrada") {
       result.push({

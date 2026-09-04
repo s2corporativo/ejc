@@ -49,10 +49,38 @@ def test_pip_audit_nao_muta_venv_da_aplicacao():
 
     assert 'tool_dir="$STATE_ROOT/tools/pip-audit-${PIP_AUDIT_VERSION}-py${py_key}"' in audit
     assert '"$build_dir/bin/python" -m pip install -q "pip-audit==$PIP_AUDIT_VERSION"' in audit
-    assert 'PIP_AUDIT_BIN="$tool_dir/bin/pip-audit"' in audit
+    assert 'PIP_AUDIT_BIN="$tool_dir/bin/python"' in audit
     assert 'ensure_venv; ensure_pip_audit; start_pg' in backend
-    assert '"$PIP_AUDIT_BIN" -r requirements.txt --desc' in backend
+    assert '"$PIP_AUDIT_BIN" -m pip_audit -r requirements.txt --desc' in backend
     assert '"$PY" -m pip install -q' not in backend
+
+
+def test_pip_audit_e_invocado_por_modulo_e_nao_pelo_console_script():
+    """Regressão: o tool-venv do pip-audit é construído em `$build_dir` e só
+    depois movido para `$tool_dir`. `python -m venv` grava shebang ABSOLUTO,
+    então `bin/pip-audit` continuava apontando para o caminho de build, que
+    já não existe — o gate local morria com
+
+        bin/pip-audit: cannot execute: required file not found
+
+    logo após o ruff, antes de rodar migrations e pytest. Invocar por módulo
+    é imune ao rename, e é a disciplina que o venv da aplicação já seguia
+    (`"$PY" -m ruff`, `"$PY" -m pytest`).
+    """
+    src = CI_LOCAL.read_text(encoding="utf-8")
+    audit = src[src.index("ensure_pip_audit() {") : src.index("check_node() {")]
+    backend = src[src.index("run_backend() {") : src.index("run_eval() {")]
+
+    # Nada pode depender do console script, cujo shebang o `mv` invalida.
+    assert "bin/pip-audit" not in audit
+    assert "bin/pip-audit" not in backend
+
+    # A prontidão também é aferida pelo interpretador, não pelo console script.
+    assert '[ ! -x "$tool_dir/bin/python" ]' in audit
+    assert '"$build_dir/bin/python" -m pip_audit --version' in audit
+
+    # E o venv continua sendo promovido por rename atômico.
+    assert 'mv "$build_dir" "$tool_dir"' in audit
 
 
 def test_mudanca_de_requirements_separa_ambiente_python():

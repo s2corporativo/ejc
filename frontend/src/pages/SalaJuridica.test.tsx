@@ -38,7 +38,9 @@ vi.mock("../components/Toast", () => ({
 }));
 
 vi.mock("../stores/auth", () => ({
-  useAuth: () => ({ user: { id: "u1", full_name: "Dra. Advogada" } }),
+  useAuth: () => ({
+    user: { id: "u1", full_name: "Dra. Advogada", role: "advogado" },
+  }),
 }));
 
 vi.mock("../components/Markdown", () => ({
@@ -79,7 +81,7 @@ function rotearGet(preview: unknown = PREVIEW_LIMPO) {
     if (url.endsWith("/conversao/preview")) {
       return Promise.resolve({ data: preview });
     }
-    if (url === "/clients" || url === "/cases") {
+    if (url === "/clients/" || url === "/cases/") {
       return Promise.resolve({ data: { data: [] } });
     }
     return Promise.resolve({ data: {} });
@@ -152,7 +154,7 @@ describe("Sala Jurídica — wizard pré-preenche área e fatos da sessão", () 
         });
       if (url.endsWith("/conversao/preview"))
         return Promise.resolve({ data: PREVIEW_LIMPO });
-      if (url === "/clients" || url === "/cases")
+      if (url === "/clients/" || url === "/cases/")
         return Promise.resolve({ data: { data: [] } });
       return Promise.resolve({ data: {} });
     });
@@ -175,7 +177,7 @@ describe("Sala Jurídica — wizard pré-preenche área e fatos da sessão", () 
         return Promise.resolve({ data: sessaoComEstadoVazio });
       if (url.endsWith("/conversao/preview"))
         return Promise.resolve({ data: PREVIEW_LIMPO });
-      if (url === "/clients" || url === "/cases")
+      if (url === "/clients/" || url === "/cases/")
         return Promise.resolve({ data: { data: [] } });
       return Promise.resolve({ data: {} });
     });
@@ -189,6 +191,82 @@ describe("Sala Jurídica — wizard pré-preenche área e fatos da sessão", () 
       "Fatos do caso (pré-preenchidos da análise — confira e ajuste)",
     ) as HTMLTextAreaElement;
     expect(fatos.value).toBe("Relato do cliente colado na área de trabalho.");
+  });
+
+  it("cai para as mensagens do advogado quando resumo e workspace faltam", async () => {
+    // Achado 27-b da auditoria de 22/08/2026 (Issue #1237), §71 prioridade 1.
+    // `estado.resumo` vem de `_extrair_estado`, extração de IA declarada
+    // fail-soft no backend: devolve None se o provider estiver fora, e no EJC
+    // integração de IA nasce desligada. Se ninguém digitou no workspace, os
+    // dois degraus anteriores falham juntos — e a caixa de fatos abria VAZIA,
+    // com `descricao: null` indo para o backend e o caso nascendo com
+    // `descricao_fatos = NULL`. O relato estava ali o tempo todo, nas
+    // mensagens; perdê-lo é perder o insumo de case_context, do dossiê e da
+    // geração de peça.
+    const sessaoSoComConversa = {
+      ...SESSAO,
+      estado: null,
+      workspace_texto: "",
+      mensagens: [
+        {
+          id: "m1",
+          autor: "user",
+          modo: "consulta",
+          conteudo: "Cliente demitido sem justa causa em 03/2026.",
+          fontes: [],
+          alertas: [],
+          citacoes: [],
+          skills: [],
+          created_at: "2026-08-22T10:00:00Z",
+        },
+        {
+          id: "m2",
+          autor: "ia",
+          modo: "consulta",
+          conteudo: "Resposta da IA que NÃO deve virar fato do caso.",
+          fontes: [],
+          alertas: [],
+          citacoes: [],
+          skills: [],
+          created_at: "2026-08-22T10:00:05Z",
+        },
+        {
+          id: "m3",
+          autor: "user",
+          modo: "consulta",
+          conteudo: "Verbas rescisórias não pagas até hoje.",
+          fontes: [],
+          alertas: [],
+          citacoes: [],
+          skills: [],
+          created_at: "2026-08-22T10:01:00Z",
+        },
+      ],
+    };
+    getMock.mockImplementation((url: string) => {
+      if (url === "/sala-juridica")
+        return Promise.resolve({ data: [sessaoSoComConversa] });
+      if (url === "/sala-juridica/s1")
+        return Promise.resolve({ data: sessaoSoComConversa });
+      if (url.endsWith("/conversao/preview"))
+        return Promise.resolve({ data: PREVIEW_LIMPO });
+      if (url === "/clients/" || url === "/cases/")
+        return Promise.resolve({ data: { data: [] } });
+      return Promise.resolve({ data: {} });
+    });
+    renderizar();
+    await abrirWizard();
+
+    const fatos = screen.getByPlaceholderText(
+      "Fatos do caso (pré-preenchidos da análise — confira e ajuste)",
+    ) as HTMLTextAreaElement;
+    expect(fatos.value).toBe(
+      "Cliente demitido sem justa causa em 03/2026.\n\n" +
+        "Verbas rescisórias não pagas até hoje.",
+    );
+    // A resposta da IA fica de fora: fato do caso é o que a parte relata,
+    // não o que o modelo respondeu.
+    expect(fatos.value).not.toContain("Resposta da IA");
   });
 });
 
@@ -428,7 +506,7 @@ describe("Sala Jurídica — wizard de conversão", () => {
     getMock.mockImplementation((url: string) => {
       if (url === "/sala-juridica") return Promise.resolve({ data: [SESSAO] });
       if (url === "/sala-juridica/s1") return Promise.resolve({ data: SESSAO });
-      if (url === "/cases") {
+      if (url === "/cases/") {
         return Promise.resolve({
           data: { data: [{ id: "caso-escolhido", titulo: "Caso A" }] },
         });

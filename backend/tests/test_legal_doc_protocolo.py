@@ -152,6 +152,9 @@ def _montar(db: _FakeDB, role: str = "advogado"):
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
         id="u1", role=SimpleNamespace(value=role)
     )
+    # Estes testes exercitam protocolo/assinatura, não o novo gate transversal
+    # Client -> LegalDoc. O gate tem suíte própria em test_client_legal_doc_scope.py.
+    app.dependency_overrides[legal_docs_router._enforce_client_legal_doc_scope] = lambda: None
     return TestClient(app)
 
 

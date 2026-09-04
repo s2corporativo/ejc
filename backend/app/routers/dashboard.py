@@ -99,7 +99,14 @@ async def dashboard(
               COUNT(*) FILTER (WHERE data_prazo BETWEEN :hoje AND :d3) AS criticos,
               COUNT(*) FILTER (WHERE data_prazo BETWEEN :hoje AND :d7) AS proximos7
             FROM deadlines
-            WHERE status='pendente' AND deleted_at IS NULL
+            -- `status='pendente'` zerava o contador de VENCIDOS: o job das 07:10
+            -- (`scheduler._marcar_prazos_vencidos`) move exatamente essas linhas
+            -- para status='vencido', e elas saíam deste filtro. O prazo estourado
+            -- ficava correto até as 07:10 e virava 0 depois — o job que existe para
+            -- dar visibilidade ao vencido era o que o escondia daqui.
+            -- Critério alinhado ao de `routers/relatorio.py` e `services/case_health.py`:
+            -- vencido é o que passou da data e NÃO foi cumprido nem cancelado.
+            WHERE status NOT IN ('concluido','cancelado') AND deleted_at IS NULL
         """), {"hoje": hoje, "d3": d3, "d7": d7})
         pv, pc, p7 = r.one()
     except Exception:

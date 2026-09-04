@@ -6,7 +6,7 @@
 #   POST /previdenciario/ferramentas/parecer-pdf        → {"download_url": ...}
 #   GET  /previdenciario/ferramentas/parecer/{id}/download → FileResponse (PDF)
 #
-# Auth: require_roles(_EQUIPE) — mesma das demais ferramentas previdenciárias em
+# Auth: require_roles_exact(_EQUIPE) — mesma das demais ferramentas previdenciárias em
 # routers/ramos.py. GET simples segue o padrão delas; POST+PDF diverge (com
 # hardening) copiando routers/tributario_fiscal.py: rate_limit, UUID no download
 # (sem traversal), TTL/LGPD dos PDFs e Field limits no payload.
@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
 from app.core.rate_limit import rate_limit
-from app.core.security import require_roles
+from app.core.security import require_roles_exact
 from app.models.user import User
 from app.services.calc.previdenciario_beneficio import simular_aposentadoria
 
@@ -87,7 +87,7 @@ async def regras_transicao(
     media_salarios_contribuicao: Optional[float] = Query(
         None, ge=0, description="Média dos salários de contribuição (CNIS). "
                                 "Se omitida, a RMI não é calculada — só o coeficiente."),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Compara as 5 regras de transição da EC 103/2019 e devolve a consolidação
     (elegibilidade, coeficiente da RMI e melhor regra). SIMULAÇÃO — HITL."""
@@ -205,7 +205,7 @@ def _html_parecer(c: SimulacaoPrevidOut) -> str:
              dependencies=[Depends(rate_limit("previdenciario-parecer-pdf", 10))])
 async def parecer_pdf(
     simulacao: SimulacaoPrevidOut,
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Gera o PDF Visual Law da simulação a partir da consolidação devolvida pelo
     frontend e retorna a URL de download (padrão tributario_fiscal)."""
@@ -231,7 +231,7 @@ async def parecer_pdf(
             dependencies=[Depends(rate_limit("previdenciario-parecer-download", 30))])
 async def download_parecer(
     arquivo_id: str,
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Download do PDF gerado pelo POST acima. `arquivo_id` é validado como UUID
     (nunca interpolado livre no path — sem traversal)."""

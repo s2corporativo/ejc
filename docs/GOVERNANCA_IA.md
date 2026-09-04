@@ -3,167 +3,125 @@
 > **Documento canônico.** `CLAUDE.md`, `AGENTS.md` e os demais documentos de processo
 > traduzem estas regras para cada agente. Em caso de divergência, este arquivo prevalece.
 
-Versão: 3.0 — 2026-08-08 — **fluxo autônomo**: merge e deploy automáticos quando todos os
-gates automatizados estiverem verdes; intervenção humana reservada às exceções do §6-A.
+Versão: 4.0 — 2026-08-25 — decisão do titular: **otimização para desempenho**. Consolida o
+adendo local-first (Issue #1000, 2026-08-09) e institui a **verificação proporcional ao diff**
+(Issue #1286). Nenhuma proteção de produção, dados, LGPD, validade jurídica ou rastreabilidade
+foi reduzida; o que mudou foi o custo fixo por tarefa.
 
 ## 1. Princípio
 
-A governança do EJC existe para proteger produção, dados, validade jurídica e rastreabilidade.
-Ela **não pode impedir diagnóstico, auditoria, revisão ou correção autorizada pelo titular**.
-
-O GitHub é a fonte permanente de verdade do projeto. Pedido direto do titular por chat é
-autorização válida para iniciar diagnóstico somente de leitura; antes de qualquer escrita, a
-decisão, os achados e o escopo devem estar registrados no GitHub por Issue ou Issue-guarda-chuva.
-As decisões, os achados e o escopo devem permanecer rastreáveis por Issue, comentário de revisão
-ou documento versionado. Toda mudança de arquivo deve ocorrer em branch identificável e terminar
-registrada em Pull Request.
-
-A governança deve ser aplicada de forma proporcional ao risco:
+A governança do EJC protege produção, dados, validade jurídica e rastreabilidade. Ela **não
+pode impedir diagnóstico, auditoria, revisão ou correção autorizada pelo titular** — e também
+não pode custar mais do que o risco que mitiga. Aplicação proporcional ao risco:
 
 - leitura e diagnóstico têm ampla liberdade;
-- escrita exige Issue, branch, rastreabilidade e testes;
+- escrita exige Issue, branch, rastreabilidade e testes proporcionais ao diff;
 - mudança irreversível exige decisão humana específica;
 - produção, segredos e dados reais permanecem fora do alcance operacional dos agentes.
 
+O GitHub é o versionamento, o histórico e o meio de colaboração — **quando disponível**. A
+operação é **local-first**: indisponibilidade de GitHub/Actions/runner é problema de
+sincronização, não de validade do código, e nunca interrompe edição, checkpoint e validação
+(ver §6-B). Toda mudança de arquivo ocorre em branch identificável e termina registrada em
+Pull Request; decisões e achados permanecem rastreáveis por Issue, comentário de revisão ou
+documento versionado.
+
 ## 2. Papéis definidos pela tarefa, não pelo modelo
 
-ChatGPT, Claude Code, Codex ou outro agente podem atuar como **auditor**, **executor**,
-**revisor** ou **verificador**, conforme a tarefa e a autorização do titular. Nenhum fornecedor
-de IA fica permanentemente impedido de implementar ou revisar.
+Qualquer agente pode atuar como auditor, executor, revisor ou verificador, conforme a tarefa e
+a autorização do titular.
 
-| Papel da tarefa | Responsabilidade | Limite principal |
+| Papel | Responsabilidade | Limite principal |
 |---|---|---|
-| **Titular** | Define objetivo, prioridade, decisões jurídicas e decide as exceções do §6-A | Não intervém no ciclo normal: merge e deploy são automáticos com gates verdes |
-| **Auditor** | Lê todo o escopo necessário, executa diagnóstico, testes e produz achados verificáveis | Não altera produção nem apresenta hipótese como fato |
-| **Executor** | Implementa correções ou funcionalidades, escreve testes e registra decisões | Não força integração de mudança retida por exceção do §6-A |
-| **Revisor independente** | Revisa diff, segurança, LGPD, validade jurídica, UX e regressão | Não aprova por confiança; exige evidência |
-| **CI/GitHub** | Mantém histórico e executa controles automáticos | Não substitui homologação humana |
+| **Titular** | Objetivo, prioridade, decisões jurídicas e exceções do §6-A | Não intervém no ciclo normal com gates verdes |
+| **Auditor** | Diagnóstico, testes e achados verificáveis | Não altera produção nem apresenta hipótese como fato |
+| **Executor** | Implementa, testa e registra decisões | Não força integração de mudança retida pelo §6-A |
+| **Revisor independente** | Diff, segurança, LGPD, validade jurídica, UX, regressão | Não aprova por confiança; exige evidência |
+| **CI/GitHub** | Histórico e controles automáticos | Não substitui homologação humana |
 
-O mesmo agente pode auditar e implementar quando isso for expressamente autorizado, desde que
-registre as duas etapas. Toda entrega de risco relevante ou significativo deve receber revisão
-independente antes do merge.
+O mesmo agente pode auditar e implementar quando autorizado, registrando as duas etapas.
+Entrega de risco relevante recebe revisão independente antes do merge.
 
 ## 3. Modos de trabalho
 
-### 3.1 Auditoria ou revisão somente leitura
-
-Pode começar imediatamente, sem Issue e sem branch. O auditor pode:
-
-- ler todo o repositório, documentação, histórico e PRs abertos;
-- examinar arquivos já tocados por outras branches;
-- executar buscas, lint, testes, builds, análise estática e inspeção de dependências;
-- comparar código, documentação, rotas, banco, UX, segurança e regras jurídicas;
-- produzir relatório em chat, Issue, comentário de PR ou documento versionado.
-
-A sobreposição com outro PR **não impede leitura nem diagnóstico**.
-
-### 3.2 Auditoria corretiva ampla
-
-Quando o titular pede “pente fino”, “corrija tudo”, “auditoria completa com correção” ou comando
-equivalente, o pedido autoriza o diagnóstico sistêmico. Antes de criar branch de implementação,
-alterar arquivo ou produzir commit, deve existir uma **Issue-guarda-chuva**. O trabalho pode usar
-um ou mais PRs organizados por dependência técnica, risco ou facilidade de revisão.
-
-Achados podem ser corrigidos no mesmo trabalho quando forem:
-
-1. confirmados por evidência;
-2. relacionados ao objetivo sistêmico;
-3. necessários para que a correção principal funcione, seja testável ou não deixe regressão;
-4. documentados no PR, com impacto e rollback.
-
-Achado sem relação causal ou que aumente materialmente o risco deve ser registrado para
-continuidade, mas não precisa interromper o trabalho atual.
-
-### 3.3 Desenvolvimento focal
-
-Para funcionalidade ou bug específico, permanece o fluxo normal:
-
-```text
-pedido/Issue → branch → implementação → testes locais → PR → gates automatizados verdes
-            → merge automático → deploy automático (staging quando ativo → produção)
-            → health-check + smoke → rollback automático em falha
-```
-
-Uma Issue pode originar mais de um PR quando a divisão reduzir risco, conflito ou tamanho do diff.
-Um PR pode atender mais de uma Issue quando as correções forem tecnicamente inseparáveis.
+- **Somente leitura** (auditoria, revisão, diagnóstico): começa imediatamente, sem Issue e sem
+  branch. Pode ler tudo — inclusive arquivos de outros PRs —, executar buscas, lint, testes e
+  builds, e reportar em chat, Issue, PR ou documento. Sobreposição com PR não impede leitura.
+- **Auditoria corretiva ampla** ("pente fino", "corrija tudo"): o pedido autoriza o diagnóstico
+  sistêmico; antes da primeira escrita deve existir **Issue-guarda-chuva**. Achado confirmado,
+  relacionado ao objetivo e documentado pode ser corrigido no mesmo trabalho; achado sem relação
+  causal é registrado para continuidade sem interromper o escopo atual.
+- **Desenvolvimento focal**: `pedido/Issue → branch → implementação → testes proporcionais →
+  PR → gates → merge → deploy pela esteira`. Uma Issue pode gerar mais de um PR; um PR pode
+  fechar Issues tecnicamente inseparáveis.
 
 ## 4. Prioridades
 
 | Nível | Significado | Efeito |
 |---|---|---|
-| **P0** | Segurança, LGPD, validade jurídica, perda de dado ou prova | Bloqueia release afetado e recebe prioridade máxima |
+| **P0** | Segurança, LGPD, validade jurídica, perda de dado/prova | Bloqueia o release afetado; prioridade máxima |
 | **P1** | Integridade funcional, contrato divergente, regressão relevante | Bloqueia a funcionalidade afetada |
-| **P2** | UX, desempenho, organização e dívida técnica | Planejamento normal |
+| **P2** | UX, desempenho, dívida técnica | Planejamento normal |
 | **P3** | Evolução futura | Backlog |
 
-P0 aberto **não proíbe auditoria, correção ou trabalho independente em outra área**. Ele impede
-apenas liberar mudança que dependa do risco não resolvido.
+P0 aberto não proíbe trabalho independente em outra área; impede apenas liberar mudança que
+dependa do risco não resolvido.
 
 ## 5. Concorrência e sobreposição
 
-Leitura e auditoria podem ocorrer em paralelo sem restrição de arquivos.
+Leitura em paralelo é livre. Para escrita, arquivo de PR ativo funciona como **lock lógico**:
+não se modifica em outra branch sem estratégia explícita — consolidar na branch do PR ativo,
+aguardar a integração, dividir por arquivos sem sobreposição ou adiar só a parte incompatível.
+Nunca sobrescrever silenciosamente trabalho concorrente.
 
-Para escrita, arquivo pertencente a PR ativo **não deve ser modificado em outra branch**. Antes de
-editar, o executor deve verificar os PRs concorrentes e escolher uma destas opções:
-
-1. consolidar a alteração na mesma branch do PR ativo;
-2. aguardar a integração do PR ativo e atualizar a branch seguinte;
-3. dividir o trabalho por arquivos sem sobreposição;
-4. adiar somente a parte incompatível.
-
-Não é permitido sobrescrever silenciosamente trabalho concorrente. A tarefa deve parar quando a
-escrita alcançar arquivo de outro PR ativo e ainda não existir estratégia explícita de
-consolidação ou sequência.
-
-### Migrations
-
-O repositório deve chegar ao merge com **head único e cadeia linear**. Mais de uma branch pode
-analisar ou preparar mudança de banco, mas somente uma migration é integrada por vez. A branch
-seguinte deve atualizar a base, conferir o head, ajustar número e `down_revision` e repetir os
-testes antes de ficar pronta para merge.
+**Migrations**: o repositório chega ao merge com head único e cadeia linear; somente uma
+migration é integrada por vez. A branch seguinte atualiza a base, confere o head, ajusta
+número/`down_revision` e repete os testes.
 
 ## 6. Regras de execução
 
 1. Não alterar, commitar ou empurrar diretamente na `main`/`master`.
-2. Merge e deploy ocorrem **automaticamente** quando todos os gates automatizados estiverem
-   verdes e o diff não alcançar exceção do §6-A. Fora dessas condições, a integração espera
-   decisão humana; o agente jamais a contorna.
-3. Toda escrita ocorre em branch identificável e termina registrada em PR. Antes do push, o
-   executor roda os testes locais existentes das áreas afetadas; teste que falhar é investigado
-   e corrigido dentro do escopo antes de o PR ficar elegível.
-4. Auditoria ampla exige Issue-guarda-chuva antes da primeira escrita; não é obrigatório criar uma
-   Issue por achado.
-5. Escopo pode ser ampliado para achados relacionados, desde que a ampliação seja registrada.
-6. Correção de bug deve ter teste de regressão quando tecnicamente possível.
-7. Regra jurídica exige fonte oficial, vigência, versão e revisão humana.
-8. Migration exige conferência do head, reserva e validação da cadeia antes do merge.
+2. Merge e deploy são automáticos com todos os gates verdes e diff fora das exceções do §6-A;
+   fora disso a integração espera decisão humana, que o agente jamais contorna.
+3. Toda escrita ocorre em branch e termina em PR. Antes do push rodam os **portões locais
+   proporcionais ao diff** (§6-B); teste que falhar é investigado e corrigido dentro do escopo.
+4. Auditoria ampla exige Issue-guarda-chuva antes da primeira escrita; não é preciso uma Issue
+   por achado.
+5. Ampliação de escopo para achado relacionado é permitida e registrada no PR.
+6. Correção de bug tem teste de regressão quando tecnicamente possível.
+7. Regra jurídica exige fonte oficial, vigência, versão e revisão humana (§9).
+8. Migration segue o §8 (head, reserva, cadeia validada).
 9. Não versionar credencial, token, senha, PII real ou documento de cliente.
 10. Não usar comandos destrutivos ou atalhos que eliminem controles de permissão.
-11. Toda entrega de escrita termina com arquivos, comandos, testes, riscos, limitações e rollback.
-12. Chamadas de IA passam pelo gateway; HITL, gate de citações, sanitização de PII e kill-switch
-    não podem ser contornados incidentalmente.
+11. **O PR com template preenchido é o relatório da entrega** — sem documento duplicado;
+    acrescente ao corpo apenas o que o template não cobre (suposições, riscos residuais,
+    decisões que exigem ação humana).
+12. Chamadas de IA passam pelo gateway; HITL, gate de citações, sanitização de PII e
+    kill-switch não podem ser contornados nem incidentalmente.
 13. Rota nova nasce protegida; endpoint público exige justificativa registrada.
-14. Mudança sensível envolvendo autenticação, permissões, uploads, CI/CD ou configuração exige
-    execução e registro do `security-auditor` antes da finalização e do merge.
+14. Mudança em autenticação, permissões, uploads, CI/CD ou configuração exige execução e
+    registro do `security-auditor` antes da finalização e do merge.
 
 ## 6-A. Fluxo autônomo — gates e exceções
 
-Decisão permanente do titular (2026-08-08): no ciclo normal de desenvolvimento, **nenhuma
-autorização intermediária é exigida** para análise, Issue, branch, implementação, testes,
-commits, push, abertura/atualização de PR, merge e deploy. O GitHub atua como versionamento,
-auditoria e CI/CD — não como ponto de espera humana.
+Decisão permanente do titular (2026-08-08): no ciclo normal, **nenhuma autorização
+intermediária** é exigida para análise, Issue, branch, implementação, testes, commits, push,
+PR, merge e deploy.
 
-**Gates automatizados obrigatórios (todos verdes para integrar):**
+**Gates obrigatórios (todos verdes para integrar):**
 
-1. testes locais executados antes do push;
-2. CI completa (backend + banco/migrations + frontend);
-3. travas de governança (`governanca.yml`) e release gate (`ci_guard.sh`);
-4. pós-merge: deploy com backup prévio, health-check com confirmação de SHA e smoke test
+1. portões locais proporcionais ao diff, executados antes do push (§6-B);
+2. CI completa (backend + banco/migrations + frontend) — **enquanto o Actions estiver
+   indisponível no nível da conta (estado desde ~22/08), este gate é substituído pela
+   evidência local registrada no corpo do PR, e o merge é manual, do titular**; quando a
+   esteira voltar, o fluxo automático retoma sem novo pedido;
+3. travas de governança (`governanca.yml`) e release gate (`ci_guard.sh`) — mesma substituição
+   temporária acima;
+4. pós-merge: deploy com backup prévio, health-check com confirmação de SHA e smoke
    (`scripts/post_deploy_check.sh`); staging com gates próprios quando `STAGING_ENABLED=1`;
 5. rollback automático para a última versão estável em falha de deploy.
 
-**Exceções — intervenção humana obrigatória** (o workflow `auto-integracao.yml` retém e
-registra o motivo no PR):
+**Exceções — intervenção humana obrigatória** (a automação retém e registra o motivo no PR):
 
 1. migration destrutiva ou irreversível;
 2. risco concreto de perda ou corrupção de dados;
@@ -174,92 +132,94 @@ registra o motivo no PR):
    qualquer mudança em workflows, governança, configuração de agentes, nginx, compose,
    `scripts/` (esteira executada na VPS), Dockerfiles, dependências (`requirements*.txt`,
    `package*.json`), núcleo `backend/app/core/`, middlewares, rotas de auth/usuários,
-   `pii_crypto` e `ai_gateway` (a automação não integra mudanças em si mesma nem no que
-   roda com privilégio em produção);
+   `pii_crypto` e `ai_gateway`;
 7. falha persistente que o agente não consiga resolver autonomamente.
 
-**Concorrência:** segue o §5 — dois agentes não alteram os mesmos arquivos sem estratégia
-explícita de consolidação; arquivo de PR ativo funciona como lock lógico.
-
 **Rastreabilidade mínima por ciclo:** Issue, PR, commits, resultado de cada gate, artefato de
-decisão de migration, SHA implantado (`.deployed_sha`), tags de rollback e versão anterior.
-Alterações pequenas e relacionadas podem compartilhar Issue e PR — coerência operacional
-prevalece sobre fragmentação.
+decisão de migration, SHA implantado, tags de rollback. Alterações pequenas e relacionadas
+podem compartilhar Issue e PR — coerência prevalece sobre fragmentação.
 
-Nada neste modo reduz backup, rollback, integridade de banco, proteção de segredos, HITL,
-citation gate, sanitização de PII ou isolamento entre ambientes.
+## 6-B. Local-first e verificação proporcional ao diff
+
+Consolida o adendo de 2026-08-09 (Issue #1000) como texto canônico.
+
+**Local-first:**
+
+1. Falha de GitHub, Actions, runner ou API não interrompe edição, checkpoint e validação; o
+   agente executa o caminho local seguro antes de reportar bloqueio, sem insistir em runner
+   morto e sem sondar o Actions — registra o estado uma vez e segue.
+2. O gate técnico local de referência é `scripts/ci-local.sh`; workspace sempre em
+   branch/worktree/cópia isolada, nunca `/opt/ejc`.
+3. Sincronização remota é oportunista e não destrutiva: sem force-push, reset ou rewrite; se o
+   remoto divergiu, reconcilia-se em branch segura.
+4. Produção continua exclusivamente pela esteira endurecida; local-first não cria deploy
+   paralelo nem copia/linka `.env` para contornar a esteira.
+
+**Verificação proporcional** (tabela operacional no `CLAUDE.md`):
+
+| Diff toca | Portão antes do push |
+|---|---|
+| Só documentação/comentários | Nenhum (declarar docs-only no PR) |
+| Só frontend | lint + testes + build do frontend |
+| Só backend sem banco | ruff + testes dirigidos na iteração; suíte backend completa uma vez antes do push |
+| Banco/models/migrations/seeds | Acima + `alembic upgrade head` do zero em Postgres+pgvector local |
+| Backend e frontend | As duas colunas |
+
+Durante a iteração rodam-se só os testes da área em trabalho; o portão completo da linha
+correspondente roda **uma vez, antes do push**. A suíte completa da área alterada permanece
+obrigatória porque já capturou regressões invisíveis à análise estática; o que esta versão
+elimina é o custo da área **não** tocada. O PR declara o que foi testado e o que não foi.
 
 ## 7. Proteções não negociáveis
 
 Permanecem proibidos:
 
-- operar em `/opt/ejc` ou contra banco de produção;
+- operar em `/opt/ejc` ou contra banco de produção; apontar teste para banco de produção;
 - `git push --force`, `git reset --hard`, `git clean -fd`, `rm -rf` fora de área temporária,
   `docker compose down -v`, `docker volume rm`, `dropdb`, `alembic downgrade base`;
 - `claude --dangerously-skip-permissions`;
 - expor segredo, credencial ou PII em código, log, teste, prompt ou provedor externo;
-- desligar silenciosamente RBAC, isolamento de dados, HITL, citation gate, sanitização de PII ou
-  controles de auditoria;
-- usar massa real de cliente em teste ou homologação.
+- desligar silenciosamente RBAC, isolamento de dados, HITL, citation gate, sanitização de PII
+  ou controles de auditoria;
+- usar massa real de cliente em teste ou homologação;
+- expor publicamente Postgres, Redis ou Ollama.
 
-Mudança deliberada de política de segurança pode ocorrer somente por pedido explícito do titular,
+Mudança deliberada de política de segurança ocorre somente por pedido explícito do titular,
 com risco, justificativa, teste e rollback documentados.
 
 ## 8. Controle de migrations
 
-Antes de uma migration ficar pronta para merge:
-
-1. atualizar a base da branch;
-2. consultar PRs com migrations;
-3. executar `cd backend && python -m alembic heads`;
-4. reservar ou ajustar o identificador em `backend/alembic/MIGRATION_RESERVATIONS.md`;
-5. confirmar `down_revision`, head único, upgrade e rollback aplicável.
-
-Migration aplicada em produção não é reescrita para mudar schema. Correção estrutural entra em
-nova migration. Alteração puramente não funcional em migration histórica deve ser excepcional,
-justificada e demonstrada como incapaz de alterar `upgrade()`/`downgrade()`.
-
-Autogenerate não autoriza `DROP`. Migration destrutiva exige backup, plano de rollback e decisão
-humana registrada.
+Antes de ficar pronta para merge: atualizar a base; consultar PRs com migrations; executar
+`cd backend && python -m alembic heads`; reservar/ajustar o identificador em
+`backend/alembic/MIGRATION_RESERVATIONS.md`; confirmar `down_revision`, head único, upgrade e
+rollback aplicável. Migration aplicada em produção não é reescrita — correção estrutural entra
+em nova migration. Autogenerate não autoriza `DROP`; migration destrutiva exige backup, plano
+de rollback e decisão humana registrada.
 
 ## 9. Regras jurídicas
 
-Funcionalidade que produza prazo, cálculo, tese, orientação ou documento jurídico deve conter:
-
-1. fonte oficial;
-2. vigência e versão da regra;
-3. testes de caso normal, borda e exceção aplicável;
-4. aviso visível de revisão humana;
-5. rastreabilidade da origem do cálculo ou fundamento;
-6. linguagem não absoluta quando houver incerteza ou dependência fática.
-
-Regra não homologada pode apoiar análise, mas não deve virar documento formal automaticamente.
+Funcionalidade que produza prazo, cálculo, tese, orientação ou documento jurídico contém:
+fonte oficial; vigência e versão; testes de caso normal, borda e exceção; aviso visível de
+revisão humana; rastreabilidade do fundamento; linguagem não absoluta sob incerteza. Regra não
+homologada pode apoiar análise, mas não vira documento formal automaticamente.
 
 ## 10. Autonomia operacional
 
-O pedido direto do titular autoriza todas as ações de diagnóstico e leitura **razoavelmente
-necessárias** ao objetivo. A escrita pode incluir API, migration, autenticação, RBAC, CI/CD,
-Docker, dependência, rota ou código, desde que exista Issue ou Issue-guarda-chuva e a mudança:
+O pedido direto do titular autoriza as ações de diagnóstico e leitura razoavelmente
+necessárias ao objetivo. A escrita pode incluir API, migration, autenticação, RBAC, CI/CD,
+Docker, dependência, rota ou código, desde que exista Issue ou Issue-guarda-chuva e a mudança
+permaneça fora de produção, em branch, reversível (ou com decisão humana específica), com
+testes e impacto documentados, sem extrapolar para assunto sem relação, e com
+`security-auditor` quando tocar área sensível. Pedido que **implica** um desses itens já é a
+autorização daquele item — e só dele.
 
-- permaneça fora de produção;
-- seja feita em branch;
-- seja reversível ou tenha decisão humana específica quando irreversível;
-- tenha testes e impacto documentados;
-- não extrapole para assunto sem relação com o objetivo;
-- passe por `security-auditor` quando envolver autenticação, permissões, uploads, CI/CD ou
-  configuração.
-
-O agente não precisa pedir autorização repetida para cada arquivo, comando seguro, teste ou
-refatoração necessária. Deve parar e pedir decisão apenas quando:
-
-1. duas interpretações plausíveis produzirem resultados materialmente diferentes;
-2. houver exclusão ou transformação irreversível de dado;
-3. a mudança contrariar decisão permanente do titular;
-4. a execução depender de credencial, produção ou dado real não disponibilizado com segurança.
-
-Toda tarefa deve terminar em relatório com arquivos alterados ou “nenhum”, comandos, testes,
-evidências, riscos residuais, limitações, rollback e decisões que exigem ação humana. Tarefa com
-escrita deve começar vinculada a Issue ou Issue-guarda-chuva e terminar em PR.
+Sem autorização repetida por arquivo, comando seguro, teste ou refatoração. Parar e perguntar
+apenas quando: duas interpretações plausíveis produzem resultados materialmente diferentes;
+há exclusão ou transformação irreversível de dado; a mudança contraria decisão permanente do
+titular (§11); a execução depende de credencial, produção ou dado real não disponibilizado
+com segurança. Fora disso: assumir a leitura mais provável, registrar a suposição no PR e
+seguir. Tarefa com escrita começa vinculada a Issue e termina em PR — que, preenchido, **é**
+o relatório (§6, regra 11).
 
 ## 11. Decisões permanentes do titular
 
@@ -267,21 +227,22 @@ Decisão permanente só é reaberta por novo pedido explícito do titular.
 
 | Decisão | Estado | Observação |
 |---|---|---|
-| **Fluxo autônomo — merge/deploy automáticos com gates verdes** | Vigente desde 2026-08-08 | Ciclo normal sem intervenção humana; exceções fechadas no §6-A. Reverter exige novo pedido explícito do titular. |
-| **2FA — não implementar por padrão** | Vigente desde 2026-07-26 | `TWO_FACTOR_AUTH_ENABLED` permanece desligado por padrão e o kill-switch é preservado. Auditoria pode registrar o risco, mas não tratá-lo como correção obrigatória contra a decisão do titular. |
+| **Fluxo autônomo — merge/deploy automáticos com gates verdes** | Vigente desde 2026-08-08 | Exceções fechadas no §6-A. |
+| **Operação local-first** | Vigente desde 2026-08-09 (Issue #1000) | Consolidada no §6-B desta versão. |
+| **Verificação proporcional ao diff + relatório unificado no PR** | Vigente desde 2026-08-25 (Issue #1286) | Portões escalonados pelo que o diff toca; suíte completa apenas da área alterada. |
+| **2FA — não implementar por padrão** | Vigente desde 2026-07-26 | `TWO_FACTOR_AUTH_ENABLED` desligado por padrão; kill-switch preservado. Auditoria registra o risco, sem tratá-lo como correção obrigatória. |
 
 ## 12. Exceção de bot de manutenção de dependências
 
-O step “Descricao do PR preenchida” de `.github/workflows/governanca.yml` é pulado somente quando
-o autor original do PR **e** o ator do evento pertencem à lista fechada abaixo:
+O step "Descricao do PR preenchida" de `.github/workflows/governanca.yml` é pulado somente
+quando o autor original do PR **e** o ator do evento pertencem à lista fechada:
 
 ```json
 ["dependabot[bot]"]
 ```
 
-A exceção dispensa apenas Issue vinculada e preenchimento manual do modelo. Não dispensa controle
-de migration, segredo, branch ou demais verificações. A lista do workflow e deste documento deve
-coincidir exatamente. Ampliá-la exige decisão do titular.
+A exceção dispensa apenas Issue vinculada e preenchimento manual do modelo — nada mais. A
+lista do workflow e deste documento devem coincidir; ampliá-la exige decisão do titular.
 
 ## 13. Documentos relacionados
 
@@ -291,4 +252,5 @@ coincidir exatamente. Ampliá-la exige decisão do titular.
 - `docs/CRITERIOS_DE_ACEITE.md` — critérios de auditoria do resultado;
 - `docs/RELEASE_CHECKLIST.md` — controles de liberação;
 - `backend/alembic/MIGRATION_RESERVATIONS.md` — coordenação de migrations;
-- `docs/GOVERNANCA_FASE2.md` — automações de governança.
+- `docs/GOVERNANCA_FASE2.md` — automações de governança;
+- `docs/GOVERNANCA_IA_ADDENDUM_LOCAL_FIRST.md` — histórico; consolidado no §6-B.

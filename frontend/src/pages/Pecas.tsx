@@ -705,7 +705,7 @@ export default function Pecas() {
         title="Peças Jurídicas"
         subtitle={`${data?.total ?? 0} peças`}
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button className="btn-ghost" onClick={abrirTpl}>
               <LayoutTemplate size={16} /> De template
             </button>

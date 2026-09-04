@@ -203,11 +203,74 @@ _RE_SUMULA = re.compile(
 )
 
 # Artigo de lei (mantido do citation_check — conferido no RAG de legislação).
+#
+# Auditoria de 22/08/2026: o padrão anterior exigia SIGLA e número de até 4
+# dígitos sem separador. Medido, isso deixava o gate antialucinação cego para a
+# forma mais natural de citar num texto jurídico — 5 de 12 formas testadas
+# passavam sem serem sequer extraídas:
+#
+#     'artigo 927 do Código Civil'   -> []   (e 927 é a cláusula geral de
+#                                             responsabilidade civil)
+#     'artigo 300 do Código de Processo Civil' -> []
+#     'artigo 5º da Constituição Federal'      -> []
+#     'art. 1.234 do CPC'            -> []   (separador de milhar)
+#     'artigo 42.789 do Código Civil'-> []   (FABRICADO, e passava)
+#
+# Citação não extraída é citação não verificada: o gate só bloqueia o que
+# enxerga. Um gate cego para a forma dominante é um gate desligado na prática,
+# e `CLAUDE.md` (regra 4) trata contornar o citation gate como inegociável.
+#
+# Duas ampliações, ambas medidas contra falso positivo:
+#   1. diploma por extenso, normalizado à sigla logo abaixo (`_DIPLOMA_CANONICO`)
+#      — sem normalizar, `citation_check._restringir_ao_diploma` não encontra a
+#      chave e a citação vira inconfirmável, bloqueando pelo motivo errado;
+#   2. número com separador de milhar, capturado DENTRO do grupo do número.
+#
+# A janela entre número e diploma continua PROIBINDO ponto, de propósito:
+# aceitá-lo faria o padrão atravessar fim de frase ("Vendeu o art. 42 ontem. O
+# Código Civil regula...") e parear artigo de uma frase com diploma de outra.
+# O custo é a forma com abreviação no meio ("art. 5º, inc. II, da CF"), que
+# segue não extraída — limitação conhecida, preferida a pareamento errado.
+_DIPLOMA_EXTENSO = (
+    r"constitui[çc][ãa]o\s+(?:federal"
+    r"|da\s+rep[úu]blica(?:\s+federativa(?:\s+do\s+brasil)?)?)"
+    r"|c[óo]digo\s+de\s+processo\s+civil"
+    r"|c[óo]digo\s+de\s+processo\s+penal"
+    r"|c[óo]digo\s+de\s+defesa\s+do\s+consumidor"
+    r"|c[óo]digo\s+tribut[áa]rio\s+nacional"
+    r"|consolida[çc][ãa]o\s+das\s+leis\s+do\s+trabalho"
+    r"|c[óo]digo\s+civil"
+    r"|c[óo]digo\s+penal"
+)
 _RE_ARTIGO = re.compile(
-    r"\bart(?:igo)?s?\.?\s*(\d{1,4})[º°ªa]?(?:[\-,]?[A-Z])?\b[^.;\n]{0,45}?"
-    r"\b(cf|cpc|cc|clt|cdc|cpp|cp|ctn|lei\s*n?[ºo°.]*\s*[\d.]+\/?\d*)\b",
+    r"\bart(?:igo)?s?\.?\s*(\d{1,3}(?:\.\d{3})+|\d{1,4})[º°ªa]?(?:[\-,]?[A-Z])?\b"
+    r"[^.;\n]{0,45}?\b(" + _DIPLOMA_EXTENSO +
+    r"|cf|cpc|cc|clt|cdc|cpp|cp|ctn|lei\s*n?[ºo°.]*\s*[\d.]+\/?\d*)\b",
     re.IGNORECASE,
 )
+
+# Diploma por extenso → sigla que `citation_check._SLUG_POR_DIPLOMA` conhece.
+# Sem isto o lookup falha e a citação legítima é tratada como não confirmada.
+_DIPLOMA_CANONICO = {
+    "constituicao federal": "CF",
+    "constituicao da republica": "CF",
+    "constituicao da republica federativa": "CF",
+    "constituicao da republica federativa do brasil": "CF",
+    "codigo civil": "CC",
+    "codigo penal": "CP",
+    "codigo de processo civil": "CPC",
+    "codigo de processo penal": "CPP",
+    "codigo de defesa do consumidor": "CDC",
+    "codigo tributario nacional": "CTN",
+    "consolidacao das leis do trabalho": "CLT",
+}
+
+
+def _canonizar_diploma(bruto: str) -> str:
+    """Sigla canônica para o diploma citado; devolve o original se não mapear
+    (o caso `Lei 8.078/90`, que `_restringir_ao_diploma` resolve por conta)."""
+    chave = " ".join(_normalizar(bruto).split())
+    return _DIPLOMA_CANONICO.get(chave, bruto.upper())
 
 # Contexto: tribunal, órgão julgador, relator, data.
 _RE_TRIBUNAL_CTX = re.compile(
@@ -351,7 +414,10 @@ def analisar_texto(texto: str) -> list[dict]:
 
     # 4. Artigos de lei (legado citation_check — conferidos no RAG).
     for m in _RE_ARTIGO.finditer(texto):
-        num, dipl = m.group(1), (m.group(2) or "").upper()
+        # Número sem separador: `_regex_artigo` já limpa não-dígitos no lookup,
+        # e normalizar aqui faz "1.234" e "1234" deduplicarem como um só artigo.
+        num = m.group(1).replace(".", "")
+        dipl = _canonizar_diploma(m.group(2) or "")
         _add({
             "tipo": "artigo",
             "trecho": m.group(0).strip()[:120],
@@ -585,6 +651,14 @@ async def verificar_jurisprudencia(
             "data": c.get("data"),
             "fonte_verificacao": fonte,
             "aviso": aviso,
+            # Posição da citação no texto ORIGINAL. Chave aditiva (2026-09-03):
+            # a validação de PERTINÊNCIA precisa recortar a AFIRMAÇÃO que a
+            # citação acompanha, e sem o span teria de reencontrar o trecho por
+            # busca de string — frágil quando a mesma citação aparece duas vezes.
+            "span": list(c.get("span") or ()),
+            # Diploma citado (artigos): a leitura do texto da autoridade é
+            # RESTRITA ao diploma referido, mesmo recorte do AI-056.
+            "diploma": c.get("diploma"),
         })
 
     return _montar_relatorio(resultados, datajud_saturado)

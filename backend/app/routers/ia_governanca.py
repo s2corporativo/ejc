@@ -256,16 +256,21 @@ async def dashboard_governanca(
     # LegalDoc.human_reviewed (controle realmente imposto por código em
     # legal_docs.py), nunca em AILog.status_hitl. A métrica que reflete o
     # controle HITL efetivo é a cobertura de revisão das PEÇAS geradas por IA.
+    # `_peca_de_caso_vivo()` (não só `deleted_at IS NULL`): peça de caso
+    # EXCLUÍDO não é trabalho pendente. Mesma condição do `/guardrails` de
+    # propósito — dois painéis do mesmo controle HITL com filtros diferentes
+    # dariam duas verdades sobre a mesma cobertura de revisão.
+    _viva_dash = _peca_de_caso_vivo()
     pecas_ia_total = (await db.execute(
         select(sqlfunc.count()).select_from(LegalDoc).where(
-            LegalDoc.deleted_at.is_(None),
+            *_viva_dash,
             LegalDoc.ai_generated.is_(True),
             LegalDoc.created_at >= desde,
         )
     )).scalar() or 0
     pecas_ia_revisadas = (await db.execute(
         select(sqlfunc.count()).select_from(LegalDoc).where(
-            LegalDoc.deleted_at.is_(None),
+            *_viva_dash,
             LegalDoc.ai_generated.is_(True),
             LegalDoc.human_reviewed.is_(True),
             LegalDoc.created_at >= desde,
@@ -552,11 +557,32 @@ async def coletar_tjmg_agora(
     }
 
 
+def _peca_de_caso_vivo():
+    """Condição: peça não excluída E cujo caso também não foi excluído.
+
+    AUD27-P2-1 (reincidência de V2-3.3): os contadores olhavam só o
+    `deleted_at` da própria peça, então uma peça de caso EXCLUÍDO seguia
+    contando nas métricas de guardrail — o painel de governança relatava
+    pendência de revisão humana sobre trabalho que já não existe. Peça
+    avulsa (`case_id` nulo, vínculo por cliente) é legítima e continua
+    contando; só o filho de caso excluído sai.
+    """
+    from app.models.case import Case
+
+    caso_excluido = (
+        select(Case.id)
+        .where(Case.id == LegalDoc.case_id, Case.deleted_at.isnot(None))
+        .exists()
+    )
+    return (LegalDoc.deleted_at.is_(None), ~caso_excluido)
+
+
 @router.get("/guardrails")
 async def guardrails(db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     _require_admin_socio(cu)
-    total_pecas = (await db.execute(select(sqlfunc.count()).select_from(LegalDoc).where(LegalDoc.deleted_at.is_(None)))).scalar() or 0
-    ia_sem_revisao = (await db.execute(select(sqlfunc.count()).select_from(LegalDoc).where(LegalDoc.deleted_at.is_(None), LegalDoc.ai_generated.is_(True), LegalDoc.human_reviewed.is_(False)))).scalar() or 0
+    _viva = _peca_de_caso_vivo()
+    total_pecas = (await db.execute(select(sqlfunc.count()).select_from(LegalDoc).where(*_viva))).scalar() or 0
+    ia_sem_revisao = (await db.execute(select(sqlfunc.count()).select_from(LegalDoc).where(*_viva, LegalDoc.ai_generated.is_(True), LegalDoc.human_reviewed.is_(False)))).scalar() or 0
     logs_pendentes = (await db.execute(select(sqlfunc.count()).select_from(AILog).where(AILog.status_hitl == "gerado"))).scalar() or 0
     return {
         "regras_ativas": [
@@ -747,7 +773,10 @@ async def listar_jurisprudencia_mg(
 # ── IA — Provedores (incorporado de ia_provider_metrics.py, D2 19/08/2026) ──
 
 def _require_gestao(user: User) -> None:
-    if _role(user) not in ("admin", "socio"):
+    # superadmin está ACIMA de admin (ROLE_LEVEL) e é o mesmo conjunto do
+    # _require_admin_socio deste arquivo — a omissão barrava o superadmin da
+    # fonte canônica de provedores (403 no pente fino de 29/08/2026).
+    if _role(user) not in ("superadmin", "admin", "socio"):
         raise HTTPException(status_code=403, detail="Somente admin/sócio")
 
 def _modelo_configurado(provider: str) -> str | None:

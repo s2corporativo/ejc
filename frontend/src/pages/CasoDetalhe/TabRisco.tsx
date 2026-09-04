@@ -1,11 +1,18 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "../../components/Toast";
 import api from "../../lib/api";
 import MatrizRisco from "../../components/visual/MatrizRisco";
-import { fmtDate } from "../../components/UI";
+import { ErrorState, Spinner, fmtDate } from "../../components/UI";
+import { mensagemErroHttp } from "../../lib/iaErro";
+import { useCarregar } from "../../lib/useCarregar";
 
 export default function TabRisco({ caseId }: { caseId: string }) {
-  const [data, setData] = useState<any>(null);
+  const carga = useCarregar<any>(
+    () => api.get(`/cases/${caseId}/indice-risco`).then((r) => r.data),
+    [caseId],
+    { fallbackErro: "Não foi possível carregar o índice de risco." },
+  );
+  const data = carga.dados;
   const [recalc, setRecalc] = useState(false);
   const NIVEL: Record<
     string,
@@ -45,27 +52,32 @@ export default function TabRisco({ caseId }: { caseId: string }) {
     processo_antigo: "Processo Antigo (+3 anos)",
   };
 
-  useEffect(() => {
-    api
-      .get(`/cases/${caseId}/indice-risco`)
-      .then((r) => setData(r.data))
-      .catch(() => {});
-  }, [caseId]);
-
   const recalcular = async () => {
     setRecalc(true);
     try {
       await api.post(`/cases/${caseId}/indice-risco/recalcular`);
-      api
-        .get(`/cases/${caseId}/indice-risco`)
-        .then((r) => setData(r.data))
-        .catch(() => {});
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha no recálculo");
+      carga.recarregar();
+    } catch (e) {
+      toast.error(mensagemErroHttp(e, "Falha no recálculo"));
     } finally {
       setRecalc(false);
     }
   };
+
+  if (carga.estado === "carregando" && !carga.dados)
+    return (
+      <div className="flex justify-center py-10">
+        <Spinner />
+      </div>
+    );
+  if (carga.estado === "falhou")
+    return (
+      <ErrorState
+        title="Não foi possível carregar o índice de risco"
+        message={carga.erro ?? undefined}
+        onRetry={carga.recarregar}
+      />
+    );
 
   const nivel = data?.atual?.risco_nivel as string | undefined;
   const cfg = nivel ? NIVEL[nivel] : null;

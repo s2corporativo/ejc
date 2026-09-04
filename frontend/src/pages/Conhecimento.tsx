@@ -5,8 +5,6 @@ import {
   Search,
   BookOpen,
   Trash2,
-  FileText,
-  Scale,
   Gavel,
   ScrollText,
   Library,
@@ -27,21 +25,14 @@ import {
   fmtDate,
 } from "../components/UI";
 import { asList } from "../lib/list";
+import { mensagemErroHttp } from "../lib/iaErro";
 
 // ── Categorias ────────────────────────────────────────────────────────────────
+// Sem `peca_escritorio`/`precedente_interno`: são categorias RESTRITAS no
+// backend (ai_service._RESTRICTED_CATS) — a ingestão manual responde 422 e
+// manda usar o fluxo dedicado de documento de cliente/caso. Antes eram a
+// opção padrão do formulário e o caminho feliz da tela falhava sempre.
 const CATS: { value: string; label: string; icon: any; cor: string }[] = [
-  {
-    value: "peca_escritorio",
-    label: "Peça do escritório",
-    icon: FileText,
-    cor: "bg-navy/10 text-navy",
-  },
-  {
-    value: "precedente_interno",
-    label: "Tese vencedora",
-    icon: Scale,
-    cor: "bg-bronze-50 text-bronze-deep",
-  },
   {
     value: "sumula_tst",
     label: "Súmula TST",
@@ -131,7 +122,7 @@ function ModalIngestao({
 }) {
   const [form, setForm] = useState({
     titulo: "",
-    categoria: "peca_escritorio",
+    categoria: "jurisprudencia",
     fonte: "",
     tribunal: "",
     conteudo: "",
@@ -144,7 +135,7 @@ function ModalIngestao({
     if (open) {
       setForm({
         titulo: "",
-        categoria: "peca_escritorio",
+        categoria: "jurisprudencia",
         fonte: "",
         tribunal: "",
         conteudo: "",
@@ -183,7 +174,7 @@ function ModalIngestao({
       onSalvo();
       onClose();
     } catch (e: any) {
-      setErro(e.response?.data?.detail || "Erro ao ingerir");
+      setErro(mensagemErroHttp(e, "Erro ao ingerir"));
     } finally {
       setSalvando(false);
     }
@@ -395,7 +386,7 @@ function ModalIngestPdf({
       }
       onSalvo();
     } catch (e: any) {
-      setErro(e.response?.data?.detail ?? "Erro ao ingerir");
+      setErro(mensagemErroHttp(e, "Erro ao ingerir"));
     } finally {
       setSalvando(false);
     }
@@ -459,8 +450,6 @@ function ModalIngestPdf({
                   <option value="sumula_tst">Súmula TST</option>
                   <option value="legislacao">Legislação</option>
                   <option value="doutrina">Doutrina</option>
-                  <option value="precedente_interno">Precedente interno</option>
-                  <option value="peca_escritorio">Peça do escritório</option>
                 </select>
               </div>
               <div>
@@ -639,10 +628,7 @@ function SecaoImportarJuris({ onImportado }: { onImportado: () => void }) {
         setErro(fim.erro || "Falha na importação — tente novamente");
       }
     } catch (e: any) {
-      setErro(
-        e.response?.data?.detail?.toString?.() ||
-          "Erro ao iniciar a importação",
-      );
+      setErro(mensagemErroHttp(e, "Erro ao iniciar a importação"));
     } finally {
       if (vivoRef.current) setImportando(false);
     }

@@ -1,6 +1,6 @@
 # Homologação H01–H15 (roteiro P0)
 
-Ativos da **P0 "Homologação H01–H15"** do `RELATORIO_MELHORIA_GERAL_EJC_2026-07-22.md` (§6, §10).
+Ativos da **P0 "Homologação H01–H15"** do `docs/arquivo/relatorios/RELATORIO_MELHORIA_GERAL_EJC_2026-07-22.md` (§6, §10).
 Espelha `qa/e2e/run_fictitious_smoke.py`: HTTP contra a API real, com massa fictícia
 (marcador `HOMOLOG-FICTICIO`).
 

@@ -6,7 +6,7 @@ Padronizar a interface do EJC como um SaaS jurídico profissional, moderno e con
 
 O projeto já possui tokens visuais globais em `frontend/src/index.css`, incluindo paleta jurídica marrom, bronze e dourado, além de classes base como `card`, `btn`, `badge`, `table`, `input` e variações.
 
-Esta fundação adiciona componentes React oficiais em `frontend/src/components/ui` e uma camada visual complementar em `frontend/src/styles/site-system.css` para que as novas telas e refatorações usem os mesmos padrões.
+Esta fundação adiciona componentes React oficiais em `frontend/src/components/UI.tsx` e uma camada visual complementar em `frontend/src/styles/site-system.css` para que as novas telas e refatorações usem os mesmos padrões.
 
 ## Direção visual
 
@@ -26,7 +26,7 @@ Isso evita que apenas uma tela fique moderna enquanto o restante do sistema mant
 - `Card`: contêiner padrão para blocos de conteúdo — branco, borda 1px visível, raio 12px e sombra mínima.
 - `Badge`: status visuais padronizados.
 - `Input`, `Select` e `Textarea`: campos oficiais com label, hint, erro e suporte a ícones.
-- `Page`: estrutura de página, cabeçalho, descrição, ações e grid.
+- `PageHeader`: cabeçalho de página com título e ações.
 
 ## Regra de evolução
 
@@ -37,7 +37,7 @@ Ao migrar telas antigas, fazer por PRs pequenos, módulo por módulo, sem mistur
 ## Importação recomendada
 
 ```tsx
-import { Badge, Button, Card, Input, Page, PageHeader, PageTitle } from "../components/ui";
+import { Badge, Button, Card, Input, PageHeader } from "../components/UI";
 ```
 
 Ajustar o caminho relativo conforme a pasta da tela.

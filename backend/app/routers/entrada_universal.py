@@ -198,6 +198,10 @@ async def _salvar_original(db: AsyncSession, *, batch: DocumentIntakeBatch, virt
         descricao=f"Entrada Universal — lote {batch.id}", filename=virtual["nome"][:255],
         filepath=filepath, mimetype=mime_real, size_bytes=len(raw), ocr_text=None,
         confidencialidade=conf, case_id=batch.case_id, client_id=batch.client_id, uploaded_by=cu.id,
+        # Achado 30: o digest ja era calculado logo abaixo, para o
+        # DocumentIntakeItem, sobre estes mesmos bytes — e nao chegava ao
+        # Document. Mesma fonte, um `sha256_bytes(raw)` so.
+        sha256=sha256_bytes(raw),
     )
     item = DocumentIntakeItem(
         id=str(uuid4()), batch_id=batch.id, document_id=doc_id, filename=virtual["nome"][:255],
@@ -232,6 +236,16 @@ async def _analisar_ia(db: AsyncSession, cu: User, *, modalidade: str | None,
             db=db, user=cu, task_type="document_extraction", domain=f"entrada_universal:{modalidade or 'geral'}",
             mensagem=prompt, case_id=case_id, usar_rag=True, nivel_inteligencia="alto",
         )
+    except HTTPException as exc:
+        # V2-5.5 (auditoria): rejeição da policy central (ex.: PII sem provider
+        # local elegível) chegava aqui com o MESMO alerta genérico de qualquer
+        # outra falha — indistinguível de um provider fora do ar. `exc.detail`
+        # já é o texto SEGURO que a policy prepara para o usuário final (nunca
+        # ecoa PII nem segredo); é o mesmo texto que vazaria de qualquer forma
+        # se esta rota não capturasse a exceção.
+        logger.warning("Análise do lote pelo núcleo bloqueada: %s", exc.detail)
+        return {"alertas": [f"Interpretação por IA bloqueada: {exc.detail}"],
+                "requer_revisao_humana": True, "estrutura_valida": False, "ia_disponivel": False}
     except Exception as exc:
         logger.warning("Análise do lote pelo núcleo falhou: %s", exc)
         return {"alertas": ["A interpretação por IA ficou indisponível; a extração determinística foi preservada."],
@@ -586,6 +600,10 @@ def _clonar_documento_local(documento: Document, caso_id: str, client_id: str | 
         case_id=caso_id,
         client_id=client_id,
         uploaded_by=cu.id,
+        # Copia isolada por `shutil.copy2` dos MESMOS bytes: o digest do
+        # original vale para a copia. Recalcular leria o arquivo de novo sem
+        # ganho; propagar mantem as duas linhas conferiveis entre si.
+        sha256=documento.sha256,
     )
 
 

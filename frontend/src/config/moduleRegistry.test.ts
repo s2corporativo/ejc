@@ -20,6 +20,17 @@ describe("moduleRegistry", () => {
     expect(new Set(paths).size).toBe(paths.length);
   });
 
+  it("declara backendPrefixes só com o prefixo canônico /api (nunca /api/v1)", () => {
+    // /api/v1 é alias de compatibilidade reescrito por middleware; o metadado
+    // descreve endereços canônicos — resíduo já induziu auditoria a erro.
+    for (const route of STAFF_ROUTES) {
+      for (const prefix of route.backendPrefixes ?? []) {
+        expect(prefix, `${route.key}: ${prefix}`).toMatch(/^\/api\//);
+        expect(prefix, `${route.key}: ${prefix}`).not.toMatch(/^\/api\/v1\//);
+      }
+    }
+  });
+
   it("expõe o módulo jurídico como Áreas de Atuação", () => {
     const areas = STAFF_ROUTES.find((route) => route.key === "ramos");
     expect(areas?.label).toBe("Áreas de Atuação");
@@ -182,6 +193,12 @@ describe("moduleRegistry", () => {
     expect(map.get("/tarefas")).toBe("/atividades?tipo=tarefa");
     expect(map.get("/intimacoes")).toBe("/atividades?tipo=intimacao");
     expect(map.get("/suspensoes")).toBe("/atividades?tipo=suspensao");
+    // Consolidação 2026-08: as telas /legado/* foram aposentadas e viraram
+    // redirects diretos para o destino final (nunca redirect → redirect).
+    expect(map.get("/legado/prazos")).toBe("/atividades?tipo=prazo");
+    expect(map.get("/legado/tarefas")).toBe("/atividades?tipo=tarefa");
+    expect(map.get("/legado/intimacoes")).toBe("/atividades?tipo=intimacao");
+    expect(map.get("/legado/suspensoes")).toBe("/atividades?tipo=suspensao");
     expect(map.get("/ramos")).toBe("/areas-de-atuacao");
     expect(map.get("/central-relacionamento")).toBe(
       "/atividades?tab=relacionamento",
@@ -217,10 +234,6 @@ describe("moduleRegistry", () => {
 
     const canonical = new Set(STAFF_ROUTES.map((route) => route.path));
     for (const path of [
-      "/legado/prazos",
-      "/legado/intimacoes",
-      "/legado/tarefas",
-      "/legado/suspensoes",
       "/crm-leads",
       "/assinaturas",
       "/workflow",

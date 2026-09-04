@@ -56,6 +56,16 @@ def test_module_registry_tem_campos_essenciais():
         assert modulo["status"] in {"ativo", "beta", "legado", "oculto", "descontinuado"}
 
 
+def test_backend_prefixes_usam_prefixo_canonico():
+    # /api/v1 é alias de compatibilidade servido por middleware; o catálogo
+    # descreve endereços canônicos (/api/...) — auditoria de jul/2026 já leu
+    # esse resíduo errado uma vez.
+    for modulo in MODULE_REGISTRY:
+        for prefixo in modulo["backend_prefixes"]:
+            assert prefixo.startswith("/api/"), (modulo["module_key"], prefixo)
+            assert not prefixo.startswith("/api/v1/"), (modulo["module_key"], prefixo)
+
+
 def test_module_keys_registradas():
     assert "clientes" in module_keys_registradas()
     assert "mapa-modulos" in module_keys_registradas()
