@@ -12,6 +12,16 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner, fmtDate, fmtMoney } from "../components/UI";
+import { mensagemErroHttp } from "../lib/iaErro";
+import {
+  RevisaoConhecimentoDialog,
+  type DecisaoRevisao,
+} from "../components/RevisaoConhecimentoDialog";
+
+// C8: importação de jurisprudência nasce PENDENTE; aprovar direto para o RAG é
+// opt-in explícito do revisor (o backend ainda exige fonte validada).
+export const APROVAR_DIRETO_PADRAO = false;
+export const EMENTA_MIN = 50;
 
 type Tab =
   "visao" | "curadoria" | "mgjec" | "prompts" | "fontes" | "guardrails";
@@ -78,6 +88,15 @@ export default function GovernancaIA() {
   const [salvando, setSalvando] = useState<string | null>(null);
   const [urlImportacao, setUrlImportacao] = useState("");
   const [previewExtracao, setPreviewExtracao] = useState("");
+  const [avisoExtracao, setAvisoExtracao] = useState("");
+  const [aprovarDireto, setAprovarDireto] = useState(APROVAR_DIRETO_PADRAO);
+  // C9: Alta/Média abrem o diálogo de revisão (mostra o documento, exige
+  // notas, registra via POST /rag/governanca/docs/{id}/revisar).
+  const [revisao, setRevisao] = useState<{
+    docId: string;
+    decisao: DecisaoRevisao;
+    confidence: "alta" | "media";
+  } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -119,6 +138,8 @@ export default function GovernancaIA() {
     load();
   }, []);
 
+  // PATCH legado: só ajusta confiança/status de "baixa"/"bloqueado" — aprovar
+  // para o RAG passa pelo diálogo de revisão (C9).
   const atualizarCuradoria = async (
     doc: any,
     confidence_level: string,
@@ -130,7 +151,10 @@ export default function GovernancaIA() {
         confidence_level,
         rag_status,
       });
+      toast.success("Curadoria atualizada");
       await load();
+    } catch (e) {
+      toast.error(mensagemErroHttp(e, "Falha ao atualizar a curadoria"));
     } finally {
       setSalvando(null);
     }
@@ -158,20 +182,36 @@ export default function GovernancaIA() {
         rito: data.data.rito || jurisForm.rito,
       });
       setPreviewExtracao(data.texto_extraido_preview || "");
+      setAvisoExtracao(typeof data.aviso === "string" ? data.aviso : "");
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao extrair URL oficial");
+      toast.error(mensagemErroHttp(e, "Falha ao extrair URL oficial"));
     } finally {
       setSalvando(null);
     }
   };
 
   const importarJurisprudencia = async () => {
+    if (jurisForm.ementa.trim().length < EMENTA_MIN) {
+      toast.error(
+        `A ementa precisa ter ao menos ${EMENTA_MIN} caracteres para ser indexada.`,
+      );
+      return;
+    }
     setSalvando("mgjec");
     try {
-      await api.post("/ia-governanca/jurisprudencia-mg", {
+      const { data } = await api.post("/ia-governanca/jurisprudencia-mg", {
         ...jurisForm,
-        aprovar_para_rag: true,
+        aprovar_para_rag: aprovarDireto,
       });
+      toast.success(
+        typeof data?.aviso === "string"
+          ? data.aviso
+          : aprovarDireto
+            ? "Jurisprudência salva e liberada para a IA."
+            : "Jurisprudência salva — pendente de revisão humana.",
+      );
+      setAvisoExtracao("");
+      setAprovarDireto(APROVAR_DIRETO_PADRAO);
       setJurisForm({
         titulo: "",
         ementa: "",
@@ -183,6 +223,8 @@ export default function GovernancaIA() {
         tipo_fonte: "turma_recursal",
       });
       await load();
+    } catch (e) {
+      toast.error(mensagemErroHttp(e, "Falha ao salvar a jurisprudência"));
     } finally {
       setSalvando(null);
     }
@@ -388,7 +430,11 @@ export default function GovernancaIA() {
                         className="btn-ghost px-2 py-1 text-xs text-success-700"
                         disabled={salvando === d.id}
                         onClick={() =>
-                          atualizarCuradoria(d, "alta", "aprovado")
+                          setRevisao({
+                            docId: d.id,
+                            decisao: "aprovar",
+                            confidence: "alta",
+                          })
                         }
                       >
                         Alta
@@ -397,7 +443,11 @@ export default function GovernancaIA() {
                         className="btn-ghost px-2 py-1 text-xs"
                         disabled={salvando === d.id}
                         onClick={() =>
-                          atualizarCuradoria(d, "media", "aprovado")
+                          setRevisao({
+                            docId: d.id,
+                            decisao: "aprovar",
+                            confidence: "media",
+                          })
                         }
                       >
                         Média
@@ -549,6 +599,35 @@ export default function GovernancaIA() {
                     setJurisForm({ ...jurisForm, ementa: e.target.value })
                   }
                 />
+                {jurisForm.ementa.length > 0 &&
+                  jurisForm.ementa.trim().length < EMENTA_MIN && (
+                    <p className="text-xs text-warn-700">
+                      Ementa curta demais: {jurisForm.ementa.trim().length}/
+                      {EMENTA_MIN} caracteres.
+                    </p>
+                  )}
+                {avisoExtracao && (
+                  <p
+                    role="status"
+                    className="rounded-lg border border-warn-200 bg-warn-50 p-2 text-xs text-warn-800"
+                  >
+                    {avisoExtracao}
+                  </p>
+                )}
+                <label className="flex items-start gap-2 text-xs text-slate-600">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={aprovarDireto}
+                    onChange={(e) => setAprovarDireto(e.target.checked)}
+                    aria-label="Aprovar direto para o RAG"
+                  />
+                  <span>
+                    Aprovar direto para o RAG (sem passar pela curadoria). Só
+                    marque se conferiu a fonte oficial — o sistema mantém
+                    pendente quando a fonte não é validada.
+                  </span>
+                </label>
                 <textarea
                   className="input min-h-20"
                   placeholder="Tese extraida / uso estrategico"
@@ -565,7 +644,7 @@ export default function GovernancaIA() {
                   disabled={
                     salvando === "mgjec" ||
                     jurisForm.titulo.length < 5 ||
-                    jurisForm.ementa.length < 50
+                    jurisForm.ementa.trim().length < EMENTA_MIN
                   }
                   onClick={importarJurisprudencia}
                 >
@@ -758,6 +837,17 @@ export default function GovernancaIA() {
           </div>
         </div>
       )}
+      <RevisaoConhecimentoDialog
+        docId={revisao?.docId ?? null}
+        decisao={revisao?.decisao ?? "aprovar"}
+        confidenceLevel={revisao?.confidence}
+        onFechar={() => setRevisao(null)}
+        onConcluido={() => {
+          setRevisao(null);
+          toast.success("Revisão registrada");
+          void load();
+        }}
+      />
     </div>
   );
 }

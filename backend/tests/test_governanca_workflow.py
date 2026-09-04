@@ -16,6 +16,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WOODPECKER_PATH = REPO_ROOT / ".woodpecker.yml"
 COMPOSE_PATH = REPO_ROOT / "infra" / "woodpecker" / "docker-compose.yml"
+APPROVAL_SCRIPT_PATH = REPO_ROOT / "infra" / "woodpecker" / "configure-repo-approval.sh"
 GOV_DOC = REPO_ROOT / "docs" / "GOVERNANCA_IA.md"
 ACTIONS_DIR = REPO_ROOT / ".github" / "workflows"
 
@@ -86,8 +87,23 @@ def test_segredos_de_agente_e_grpc_sao_contratos_distintos():
 
 def test_governanca_de_pr_e_registro_de_agente_estao_restritos():
     texto = _texto(COMPOSE_PATH)
-    assert "WOODPECKER_DEFAULT_APPROVAL_MODE=pull_requests" in texto
+    # PR interno não precisa de aprovação repetitiva; PR de fork continua
+    # bloqueado até aprovação humana, conforme ApprovalMode=forks do Woodpecker.
+    assert "WOODPECKER_DEFAULT_APPROVAL_MODE=forks" in texto
+    assert "WOODPECKER_DEFAULT_APPROVAL_MODE=pull_requests" not in texto
     assert "WOODPECKER_DISABLE_USER_AGENT_REGISTRATION=true" in texto
+
+
+def test_script_api_aplica_o_mesmo_modo_sem_expor_token():
+    texto = _texto(APPROVAL_SCRIPT_PATH)
+    assert 'WOODPECKER_API_BASE:-https://ci.depaulateixeira.adv.br/api' in texto
+    assert 'WOODPECKER_REPO_ID:-2' in texto
+    assert '"require_approval":"forks"' in texto
+    assert 'read -r -s -p "Woodpecker PAT: " WOODPECKER_TOKEN' in texto
+    assert 'Authorization: Bearer %s' in texto
+    assert "curl --config -" in texto
+    assert '--header "Authorization: Bearer ${WOODPECKER_TOKEN}"' not in texto
+    assert 'echo "${WOODPECKER_TOKEN}"' not in texto
 
 
 def test_documentacao_de_governanca_permanece_versionada():

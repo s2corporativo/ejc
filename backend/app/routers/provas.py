@@ -410,6 +410,11 @@ async def sugerir_provas_faltantes(
     from app.services.ai.entidades_caso import entidades_do_caso
     from app.services.ai_gateway import chat as gw_chat
     entidades = await entidades_do_caso(db, case_id)
+    # PISO DE SIGILO: pseudonimizar nomes não basta num caso marcado
+    # `sigilo_reforcado` — ali o conteúdo não pode sair do VPS de forma
+    # alguma. `case` já veio de `verificar_acesso_caso`, sem consulta extra.
+    from app.services.ai.sanitization_policy import modo_sigilo_do_caso
+    modo_sigilo = modo_sigilo_do_caso(case)
 
     aviso: Optional[str] = None
     try:
@@ -422,13 +427,16 @@ async def sugerir_provas_faltantes(
             temperature=0.2,
             max_tokens=1800,
             entidades=entidades,
+            modo_sanitizacao=modo_sigilo,
         )
     except Exception as e:  # provider indisponível NUNCA vira 500 aqui
         # Detalhe do provider só no log — não vaza infraestrutura na UI.
         logging.getLogger("ejc.provas").warning(
             f"sugerir-faltantes: gateway indisponível: {e}")
-        return {"data": [], "total": 0, "modelo": None, "provedor": None,
-                "aviso": "IA indisponível no momento — tente novamente em instantes."}
+        from app.services.ai.core import hitl_policy
+        return hitl_policy.aplicar(
+            {"data": [], "total": 0, "modelo": None, "provedor": None,
+             "aviso": "IA indisponível no momento — tente novamente em instantes."})
 
     sugestoes = _parse_sugestoes(resp.texto, [p.titulo for p in provas])
     if not sugestoes:
@@ -456,8 +464,12 @@ async def sugerir_provas_faltantes(
     ))
     await db.commit()
 
-    return {"data": sugestoes, "total": len(sugestoes),
-            "modelo": resp.modelo, "provedor": resp.provedor, "aviso": aviso}
+    # S8: vocabulário HITL canônico (is_rascunho/requer_revisao/status_hitl/
+    # aviso_hitl) somado às chaves legadas — último passo da rota.
+    from app.services.ai.core import hitl_policy
+    return hitl_policy.aplicar(
+        {"data": sugestoes, "total": len(sugestoes),
+         "modelo": resp.modelo, "provedor": resp.provedor, "aviso": aviso})
 
 
 @router.get("/matriz",

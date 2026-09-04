@@ -49,7 +49,12 @@ async def buscar_precedentes(args: dict, ctx: AgentContext) -> dict:
     trechos = await buscar_contexto_rag(
         ctx.db, consulta, limite=6, categorias=categorias,
         modo_or=True, scope_client_id=scope,
+        # C4: conteúdo privado restrito ao CASO em contexto (não só ao cliente).
+        scope_case_id=ctx.case_id,
     )
+    # I5/B4: as fontes ficam no contexto do agente para o gate de citações
+    # final e para a trilha do AILog (fontes_rag).
+    ctx.registrar_fontes(trechos)
     resumo = [{
         "titulo": t.get("titulo"),
         "categoria": t.get("categoria"),

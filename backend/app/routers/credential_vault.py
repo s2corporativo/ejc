@@ -220,6 +220,10 @@ async def _aplicar_overlay_sinalizando(
             "propagada ao Settings; worker de sync deve reconciliar via "
             "versao_atual", contexto, extra=safe_exception_log(e),
         )
+        # Estado consultável + reconciliação na API: enquanto não vingar, o
+        # processo está com o `.env`, que não conhece revogação. O job
+        # `cofre_overlay_retry` (scheduler) reaplica em minutos.
+        credential_vault_service.marcar_overlay_falho(type(e).__name__)
         try:
             await criar_audit_log(
                 db, cu.id, cu.role.value, "COFRE_OVERLAY_FALHA", ENTIDADE_AUDIT,
