@@ -136,10 +136,17 @@ services:
     # configured" e o frontend NUNCA sobe (regressão da reescrita que
     # adicionou o Redis; originalmente adicionado no PR #29).
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      test: ["CMD", "curl", "-fsS", "--max-time", "10", "http://localhost:8000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 5
+      # start_period: janela de graça do BOOT. Sem ela, as 5 tentativas correm
+      # desde o segundo zero e um startup lento (banco frio, carga de feriados,
+      # overlay do cofre) marca o container `unhealthy` antes de ele terminar
+      # de subir — e o `frontend`, que declara `depends_on: backend:
+      # service_healthy`, NUNCA sobe num `up` limpo. Falha marcada aqui dentro
+      # não conta para o `retries`.
+      start_period: 60s
 
   worker:
     # Worker Celery — mesma imagem do backend (mesmo código/dependências).
