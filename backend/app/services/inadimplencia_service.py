@@ -2,6 +2,10 @@
 services/inadimplencia_service.py
 Verifica honorários vencidos e cria/atualiza alertas escalonados:
   leve (15d) → medio (30d) → critico (60d) → cobranca_formal (90d)
+
+`amount_due` sempre representa SALDO ainda devido, apurado a partir de
+fee_payments. Alertas são resolvidos automaticamente quando o saldo zera,
+quando a cobrança é cancelada ou removida.
 """
 from __future__ import annotations
 import logging
@@ -23,18 +27,51 @@ def _nivel(days: int) -> str:
 
 
 async def varrer_inadimplencia(db: AsyncSession) -> dict:
-    """Varre fees vencidas e insere/atualiza inadimplencia_alerts. Chamado pelo scheduler."""
+    """Recalcula inadimplência monetária pelo saldo efetivamente em aberto."""
     now = datetime.now(timezone.utc)
 
-    # Fees vencidas e não pagas
-    # NB: o schema real usa f.valor / f.data_vencimento (não amount/due_date).
-    r = await db.execute(text("""
-        SELECT f.id AS fee_id, f.case_id, f.client_id,
-               f.valor AS amount_due, f.data_vencimento AS due_date
+    # Primeiro reconcilia alertas que deixaram de representar dívida atual.
+    # A ação é automática/derivada e não altera o ledger financeiro.
+    await db.execute(text("""
+        WITH pagamentos AS (
+            SELECT fee_id, COALESCE(SUM(valor), 0) AS total_pago
+            FROM fee_payments
+            GROUP BY fee_id
+        )
+        UPDATE inadimplencia_alerts a
+        SET resolved = TRUE,
+            resolved_at = COALESCE(a.resolved_at, NOW()),
+            action_taken = COALESCE(a.action_taken, 'reconciliado_pagamentos'),
+            updated_at = NOW()
         FROM fees f
-        WHERE f.status IN ('pendente','atrasado')
+        LEFT JOIN pagamentos p ON p.fee_id = f.id
+        WHERE a.fee_id = f.id
+          AND a.resolved = FALSE
+          AND (
+              f.deleted_at IS NOT NULL
+              OR CAST(f.status AS text) IN ('pago', 'cancelado')
+              OR (f.valor IS NOT NULL
+                  AND GREATEST(f.valor - COALESCE(p.total_pago, 0), 0) <= 0)
+          )
+    """))
+    await db.commit()
+
+    r = await db.execute(text("""
+        WITH pagamentos AS (
+            SELECT fee_id, COALESCE(SUM(valor), 0) AS total_pago
+            FROM fee_payments
+            GROUP BY fee_id
+        )
+        SELECT f.id AS fee_id, f.case_id, f.client_id,
+               GREATEST(f.valor - COALESCE(p.total_pago, 0), 0) AS amount_due,
+               f.data_vencimento AS due_date
+        FROM fees f
+        LEFT JOIN pagamentos p ON p.fee_id = f.id
+        WHERE CAST(f.status AS text) IN ('pendente','atrasado')
           AND f.data_vencimento < NOW()
           AND f.deleted_at IS NULL
+          AND f.valor IS NOT NULL
+          AND GREATEST(f.valor - COALESCE(p.total_pago, 0), 0) > 0
         ORDER BY f.data_vencimento ASC
         LIMIT 500
     """))
@@ -44,16 +81,11 @@ async def varrer_inadimplencia(db: AsyncSession) -> dict:
     updated = 0
     falhas = 0
 
-    # Commit por item (isolamento, padrão de `_alertar_prazos`): antes, um único
-    # commit no fim do lote de até 500 fees fazia uma linha ruim descartar a
-    # varredura inteira. Agora cada fee é processada em sua própria transação —
-    # a que falha é logada, revertida e o lote segue.
     for fee in fees:
         try:
             days = (now.date() - fee.due_date).days if fee.due_date else 0
             nivel = _nivel(days)
 
-            # Verificar se já existe alerta não resolvido
             existing = await db.execute(text("""
                 SELECT id, alert_level FROM inadimplencia_alerts
                 WHERE fee_id = :fee_id AND resolved = FALSE
@@ -61,20 +93,19 @@ async def varrer_inadimplencia(db: AsyncSession) -> dict:
             """), {"fee_id": fee.fee_id})
             row = existing.fetchone()
 
+            amount_due = float(fee.amount_due or 0)
             if row:
-                # SEMPRE refresca days_overdue/amount_due (não só na troca de
-                # nível): antes, um alerta que permanecia na mesma faixa (ex.:
-                # "medio", 30-59d) congelava days_overdue no valor do dia em que
-                # entrou na faixa — o painel de cobrança (ordenado por
-                # days_overdue) mostrava dias em atraso desatualizados até o
-                # nível mudar.
                 await db.execute(text("""
                     UPDATE inadimplencia_alerts
                     SET alert_level = :nivel, days_overdue = :days,
                         amount_due = :amount, updated_at = NOW()
                     WHERE id = :id
-                """), {"nivel": nivel, "days": days,
-                       "amount": float(fee.amount_due or 0), "id": row.id})
+                """), {
+                    "nivel": nivel,
+                    "days": days,
+                    "amount": amount_due,
+                    "id": row.id,
+                })
                 acao = "updated"
             else:
                 await db.execute(text("""
@@ -84,16 +115,15 @@ async def varrer_inadimplencia(db: AsyncSession) -> dict:
                         (gen_random_uuid()::text, :fee_id, :case_id, :client_id,
                          :days, :amount, :nivel)
                 """), {
-                    "fee_id":    fee.fee_id,
-                    "case_id":   fee.case_id,
+                    "fee_id": fee.fee_id,
+                    "case_id": fee.case_id,
                     "client_id": fee.client_id,
-                    "days":      days,
-                    "amount":    float(fee.amount_due or 0),
-                    "nivel":     nivel,
+                    "days": days,
+                    "amount": amount_due,
+                    "nivel": nivel,
                 })
                 acao = "inserted"
 
-            # Atualizar status da fee
             if days >= 15:
                 await db.execute(text("""
                     UPDATE fees SET status='atrasado', updated_at=NOW()
@@ -101,9 +131,6 @@ async def varrer_inadimplencia(db: AsyncSession) -> dict:
                 """), {"id": fee.fee_id})
 
             await db.commit()
-            # Só contabiliza após o commit bem-sucedido: se o commit falhar, a
-            # linha não é contada como inserida/atualizada (evita resumo
-            # incoerente onde inseridas+atualizadas+falhas excede varridas).
             if acao == "inserted":
                 inserted += 1
             else:
@@ -154,11 +181,16 @@ async def listar_alertas(
 
 
 async def resolver_alerta(db: AsyncSession, alert_id: str, action: str) -> dict:
-    await db.execute(text("""
+    result = await db.execute(text("""
         UPDATE inadimplencia_alerts
         SET resolved = TRUE, resolved_at = NOW(),
             action_taken = :action, updated_at = NOW()
-        WHERE id = :id
+        WHERE id = :id AND resolved = FALSE
+        RETURNING id
     """), {"id": alert_id, "action": action})
+    row = result.first()
+    if row is None:
+        await db.rollback()
+        return {"resolved": False, "alert_id": alert_id, "reason": "not_found_or_already_resolved"}
     await db.commit()
     return {"resolved": True, "alert_id": alert_id}
