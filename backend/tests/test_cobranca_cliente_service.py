@@ -123,7 +123,11 @@ def test_template_d3_e_lembrete_a_vencer():
     assunto, corpo = montar_email_cobranca("d-3", "Parcela", 100.0,
                                            date(2026, 7, 14))
     assert "Lembrete" in assunto
-    assert "vence em" in corpo
+    # O template foi reescrito para tom formal ("com vencimento em <data>").
+    # O que importa e continua garantido: o lembrete diz que é a vencer e
+    # mostra a data exata, para o cliente conseguir agir.
+    assert "vencimento em" in corpo
+    assert "14/07/2026" in corpo
 
 
 def test_template_d15_escala_firmeza_sem_perder_cordialidade():

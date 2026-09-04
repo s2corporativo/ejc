@@ -70,11 +70,32 @@ def _install_datajud_cognitive_feed() -> None:
         logger.error("Feed cognitivo DataJud indisponível: %s", exc, exc_info=True)
 
 
+def _install_financial_scheduler_hardening() -> None:
+    """Instala callbacks financeiros consolidados antes do scheduler iniciar.
+
+    É um adapter isolado: preserva IDs/horários do scheduler central e corrige
+    apenas as fontes de verdade do Morning Brief e a auditoria da transição de
+    honorários para atrasado. Falhar aqui não deve derrubar todo o EJC, mas fica
+    explícito em log para diagnóstico.
+    """
+    try:
+        from app.services.scheduler_financeiro import instalar
+
+        instalar()
+    except Exception as exc:  # pragma: no cover
+        logger.error(
+            "Hardening financeiro do scheduler indisponível: %s",
+            exc,
+            exc_info=True,
+        )
+
+
 # Routers são registrados explicitamente em app/main.py. Aqui permanecem apenas
 # subscribers e patches/adapters de comportamento já necessários ao runtime.
 _install_document_analysis_hook()
 _install_ai_core_hardening()
 _install_datajud_cognitive_feed()
+_install_financial_scheduler_hardening()
 
 
 @on("movimento.criado")
