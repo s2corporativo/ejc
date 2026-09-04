@@ -20,8 +20,10 @@ from app.services.notification_preferences import (
     MANDATORY_INTERNAL_TYPES,
     category_enabled,
     channel_availability,
+    channel_opt_in,
     get_notification_preference,
     is_quiet_hours,
+    whatsapp_configurado,
 )
 
 logger = logging.getLogger(__name__)
@@ -52,32 +54,94 @@ def _mascarar_telefone(numero: str) -> str:
     return f"***{d[-4:]}" if len(d) >= 4 else "***"
 
 
+# DDDs em uso no Plano Geral de Códigos Nacionais (Anatel). A lista explícita
+# existe para NÃO tratar como brasileiro um número estrangeiro de 10/11 dígitos
+# (ver normalizar_telefone_br): acrescentar "55" a um número já completo entrega
+# alerta sigiloso em OUTRA conta de WhatsApp.
+_DDDS_VALIDOS = frozenset({
+    11, 12, 13, 14, 15, 16, 17, 18, 19,
+    21, 22, 24, 27, 28,
+    31, 32, 33, 34, 35, 37, 38,
+    41, 42, 43, 44, 45, 46, 47, 48, 49,
+    51, 53, 54, 55,
+    61, 62, 63, 64, 65, 66, 67, 68, 69,
+    71, 73, 74, 75, 77, 79,
+    81, 82, 83, 84, 85, 86, 87, 88, 89,
+    91, 92, 93, 94, 95, 96, 97, 98, 99,
+})
+
+
+def _e_nacional_br(digitos: str) -> bool:
+    """`digitos` é um número BRASILEIRO sem DDI (DDD + assinante)?
+
+    Aceita 11 dígitos só quando o assinante começa em 9 (celular pós-9º
+    dígito) e 10 dígitos só quando começa em 2–5 (fixo). Qualquer outra
+    combinação de 10/11 dígitos não é reconhecível como nacional.
+    """
+    if len(digitos) not in (10, 11) or not digitos.isdigit():
+        return False
+    if int(digitos[:2]) not in _DDDS_VALIDOS:
+        return False
+    assinante = digitos[2:]
+    if len(assinante) == 9:
+        return assinante[0] == "9"
+    return assinante[0] in "2345"
+
+
 def normalizar_telefone_br(telefone: str | None) -> str | None:
     """E.164 SEM "+" (formato que a Evolution API espera em `number`).
 
-    Mantém só os dígitos, descarta o prefixo internacional discado (`00`) e
-    acrescenta o DDI 55 quando falta — 10 dígitos (fixo com DDD) ou 11
-    (celular com DDD). Número já normalizado (`5531...`) passa intacto, e DDI
-    estrangeiro é preservado. Devolve None quando não resta número plausível,
-    para o envio degradar em vez de bater na API com lixo.
+    ACEITA:
+      * número nacional com DDD, com ou sem máscara — `(31) 98888-7777`,
+        `31988887777`, `3133334444`: recebe o DDI 55;
+      * número já em E.164, com ou sem "+"/"00" — `5531988887777`,
+        `+55 31 98888-7777`, `00351912345678`, `351912345678`: passa intacto.
+
+    RECUSA (devolve None, o envio degrada para o sino interno em vez de
+    entregar a mensagem à conta errada):
+      * 10/11 dígitos que NÃO são reconhecíveis como brasileiros — DDD fora do
+        Plano Geral da Anatel, celular sem o 9º dígito ou fixo começando em 6-9.
+        É aqui que mora a regressão corrigida: número estrangeiro já completo
+        (ex.: EUA/Canadá `12025550123`, 11 dígitos) virava `5512025550123` e o
+        alerta jurídico sigiloso ia para OUTRO número. Número estrangeiro deve
+        vir com o prefixo internacional ("+" ou "00") ou já em E.164;
+      * `55` + 10/11 dígitos cujo miolo não é um nacional válido (dado já
+        corrompido por esta mesma regra no passado);
+      * lixo/curto/vazio.
     """
-    digitos = re.sub(r"\D", "", telefone or "")
-    if digitos.startswith("00"):
+    bruto = (telefone or "").strip()
+    ddi_declarado = bruto.startswith("+")   # "+" declara o DDI: nunca reinterpretado
+    digitos = re.sub(r"\D", "", bruto)
+    prefixo_00 = digitos.startswith("00")   # prefixo internacional discado
+    if prefixo_00:
         digitos = digitos[2:]
-    if len(digitos) in (10, 11):
-        digitos = "55" + digitos
-    if not 12 <= len(digitos) <= 15:
-        return None
-    return digitos
+    internacional = ddi_declarado or prefixo_00
+
+    # "00" seguido de um nacional válido é erro de digitação comum (o 00 exige
+    # código de país em seguida) — vale a leitura nacional. Já o "+" declara o
+    # DDI e é respeitado como veio.
+    if not ddi_declarado and _e_nacional_br(digitos):
+        return "55" + digitos
+
+    if digitos.startswith("55") and len(digitos) in (12, 13):
+        # Já vem com DDI brasileiro: o miolo tem de ser um nacional válido.
+        return digitos if _e_nacional_br(digitos[2:]) else None
+
+    if internacional:
+        return digitos if 8 <= len(digitos) <= 15 else None
+
+    # Sem marcador internacional, só passa o que já está em formato E.164.
+    return digitos if 12 <= len(digitos) <= 15 else None
 
 
 async def enviar_whatsapp(telefone: str, mensagem: str) -> bool:
     """Envia WhatsApp pela Evolution API. Falha silenciosa (nunca propaga).
 
-    Opt-in triplo: `WHATSAPP_ENABLED=true` + `EVOLUTION_API_URL` +
-    `EVOLUTION_API_KEY`. Faltando qualquer um, retorna False SEM tocar a rede —
-    o alerta segue pelo sino interno. `notificar` já gateia o canal por
-    `channel_availability().whatsapp`, que calcula a mesma condição; a
+    Opt-in: `WHATSAPP_ENABLED=true` + configuração completa da Evolution API
+    (`EVOLUTION_API_URL` + `EVOLUTION_API_KEY` + `EVOLUTION_INSTANCE`, ver
+    `whatsapp_configurado`). Faltando qualquer um, retorna False SEM tocar a
+    rede — o alerta segue pelo sino interno. `notificar` já gateia o canal por
+    `channel_availability().whatsapp`, que deriva do MESMO predicado; a
     checagem aqui é a garantia para quem chama a função direta.
     """
     if not settings.WHATSAPP_ENABLED:
@@ -85,7 +149,7 @@ async def enviar_whatsapp(telefone: str, mensagem: str) -> bool:
     base = (settings.EVOLUTION_API_URL or "").strip().rstrip("/")
     chave = (settings.EVOLUTION_API_KEY or "").strip()
     instancia = (settings.EVOLUTION_INSTANCE or "").strip()
-    if not base or not chave or not instancia:
+    if not whatsapp_configurado(settings):
         logger.info(
             "WhatsApp: Evolution API não configurada (URL/chave/instância) — "
             "envio ignorado."
@@ -271,8 +335,11 @@ async def notificar(
         externos; o sino já foi criado (não é afetado).
       - Canais externos (push/email/whatsapp): só quando a categoria está ativa
         (ou o tipo é mandatório), o canal está disponível no ambiente E
-        habilitado na preferência (ou sem preferência). `forcar_sino` NÃO abre
-        canais externos — apenas garante o registro interno.
+        habilitado na preferência do usuário. SEM linha de preferências vale o
+        DEFAULT DECLARADO (`DEFAULT_PREFERENCES` via `channel_opt_in`): push
+        ligado, e-mail e WhatsApp DESLIGADOS — canal externo é opt-in, e antes
+        `pref is None` liberava todos. `forcar_sino` NÃO abre canais externos —
+        apenas garante o registro interno.
       - Falha de um canal externo nunca derruba os demais nem o fluxo.
     """
     pref = await get_notification_preference(db, user_id)
@@ -307,14 +374,14 @@ async def notificar(
     avail = channel_availability()
 
     # ── Push ──────────────────────────────────────────────────────────────────
-    if avail.push and (pref is None or pref.push_enabled):
+    if avail.push and channel_opt_in(pref, "push_enabled"):
         try:
             await enviar_push(db, user_id, titulo, mensagem, link or "/")
         except Exception as e:
             logger.warning(f"[notificar] push falhou (user={user_id}): {e}")
 
     # ── E-mail ────────────────────────────────────────────────────────────────
-    if email and avail.email and (pref is None or pref.email_enabled):
+    if email and avail.email and channel_opt_in(pref, "email_enabled"):
         try:
             await enviar_email(
                 email,
@@ -325,7 +392,7 @@ async def notificar(
             logger.warning(f"[notificar] email falhou (user={user_id}): {e}")
 
     # ── WhatsApp ──────────────────────────────────────────────────────────────
-    if telefone and avail.whatsapp and (pref is None or pref.whatsapp_enabled):
+    if telefone and avail.whatsapp and channel_opt_in(pref, "whatsapp_enabled"):
         try:
             await enviar_whatsapp(telefone, f"{titulo}\n\n{mensagem}")
         except Exception as e:

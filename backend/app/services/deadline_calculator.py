@@ -14,6 +14,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 
+import asyncio
 from datetime import date, timedelta
 from functools import lru_cache
 from typing import Literal
@@ -34,6 +35,21 @@ _CALENDARIO_RUNTIME: dict[str, bool | str | None] = {
     "feriados_erro_tipo": None,
     "suspensoes_erro_tipo": None,
 }
+
+
+def marcar_calendario_falho(alvo: str, erro_tipo: str) -> None:
+    """Marca `feriados`/`suspensoes` como FALHO (carga não concluída).
+
+    Existe porque a falha nem sempre chega como exceção ao loader: o teto de
+    tempo do boot (`asyncio.timeout` em main.py) CANCELA a corrotina, e
+    `CancelledError` herda de BaseException — sem marcação explícita o estado
+    ficaria `None` ("nao_inicializado") e o cálculo sairia sem o aviso de
+    degradação. Idempotente e nunca levanta.
+    """
+    if alvo not in ("feriados", "suspensoes"):
+        return
+    _CALENDARIO_RUNTIME[f"{alvo}_ok"] = False
+    _CALENDARIO_RUNTIME[f"{alvo}_erro_tipo"] = erro_tipo
 
 
 def calendario_runtime_status() -> dict[str, bool | str | None]:
@@ -76,9 +92,16 @@ async def carregar_feriados_db() -> int:
         _CALENDARIO_RUNTIME["feriados_ok"] = True
         _CALENDARIO_RUNTIME["feriados_erro_tipo"] = None
         return len(_FERIADOS_DB)
+    except asyncio.CancelledError as exc:
+        # Teto de tempo do boot: `asyncio.timeout` injeta CancelledError AQUI
+        # (BaseException — o `except Exception` abaixo não pega). Sem esta
+        # marcação a carga ficaria "nao_inicializado" e o prazo sairia sem
+        # feriados locais e SEM aviso de degradação. Marca e re-levanta: o
+        # cancelamento tem de seguir sua propagação.
+        marcar_calendario_falho("feriados", type(exc).__name__)
+        raise
     except Exception as exc:
-        _CALENDARIO_RUNTIME["feriados_ok"] = False
-        _CALENDARIO_RUNTIME["feriados_erro_tipo"] = type(exc).__name__
+        marcar_calendario_falho("feriados", type(exc).__name__)
         return 0
 
 
@@ -116,9 +139,13 @@ async def carregar_suspensoes_db() -> int:
         _CALENDARIO_RUNTIME["suspensoes_ok"] = True
         _CALENDARIO_RUNTIME["suspensoes_erro_tipo"] = None
         return sum(len(v) for v in _SUSPENSOES_TRIB.values())
+    except asyncio.CancelledError as exc:
+        # Ver carregar_feriados_db: cancelamento por teto de boot precisa
+        # marcar o estado ANTES de re-levantar.
+        marcar_calendario_falho("suspensoes", type(exc).__name__)
+        raise
     except Exception as exc:
-        _CALENDARIO_RUNTIME["suspensoes_ok"] = False
-        _CALENDARIO_RUNTIME["suspensoes_erro_tipo"] = type(exc).__name__
+        marcar_calendario_falho("suspensoes", type(exc).__name__)
         return 0
 
 
@@ -329,12 +356,13 @@ def calcular_prazo_processual(
         raise ValueError("regime processual não suportado")
 
     calendario = calendario_runtime_status()
+    # Feriado municipal/estadual entra em `eh_dia_util` SEM depender de
+    # tribunal informado (_FERIADOS_DB é global): falha na carga dos feriados
+    # degrada QUALQUER cálculo. Suspensão é por tribunal — só degrada quando há
+    # tribunal na conta.
     degradado = bool(
-        tribunal
-        and (
-            calendario.get("feriados_ok") is False
-            or calendario.get("suspensoes_ok") is False
-        )
+        calendario.get("feriados_ok") is False
+        or (tribunal and calendario.get("suspensoes_ok") is False)
     )
     return {
         "data_vencimento": vencimento,

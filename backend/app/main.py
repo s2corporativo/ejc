@@ -209,7 +209,7 @@ from app.core.observability import (
 init_sentry()
 
 
-async def _passo_de_boot(nome: str, coro_factory, padrao=None):
+async def _passo_de_boot(nome: str, coro_factory, padrao=None, ao_falhar=None):
     """Executa um passo do startup com teto de tempo e degradação.
 
     REGRA DE BOOT (incidente de 04/09/2026): nenhum passo do `lifespan` pode
@@ -224,8 +224,25 @@ async def _passo_de_boot(nome: str, coro_factory, padrao=None):
     aqui há timeout E except — e a falha de um passo nunca impede a API de
     subir. Um sistema de pé com feriados desatualizados é infinitamente melhor
     que um sistema mudo.
+
+    `ao_falhar(tipo_do_erro)` (opcional, síncrono) deixa o passo REGISTRAR sua
+    própria degradação: "seguir degradado" só é aceitável quando o estado
+    degradado é consultável depois. Note que no timeout o `asyncio.timeout`
+    CANCELA a corrotina — `CancelledError` herda de BaseException e não é pego
+    por `except Exception` DENTRO do passo, então quem depende de marcação
+    interna precisa tratar o cancelamento lá (ver deadline_calculator).
     """
     limite = settings.STARTUP_STEP_TIMEOUT_SECONDS
+
+    def _sinalizar(tipo: str) -> None:
+        if ao_falhar is None:
+            return
+        try:
+            ao_falhar(tipo)
+        except Exception:   # pragma: no cover — sinalização nunca derruba o boot
+            logger.error("[EJC] Sinalização de falha do passo '%s' falhou",
+                         nome, exc_info=True)
+
     try:
         async with asyncio.timeout(limite if limite and limite > 0 else None):
             return await coro_factory()
@@ -235,12 +252,14 @@ async def _passo_de_boot(nome: str, coro_factory, padrao=None):
             "modo degradado para a API responder. Investigue a dependência "
             "desse passo (banco, disco, rede).", nome, limite,
         )
+        _sinalizar("TimeoutError")
         return padrao
     except Exception as e:
         logger.error(
             f"[EJC] Passo de boot '{nome}' FALHOU — seguindo em modo degradado",
             extra=safe_exception_log(e),
         )
+        _sinalizar(type(e).__name__)
         return padrao
 
 
@@ -297,11 +316,21 @@ async def lifespan(app: FastAPI):
         async with AsyncSessionLocal() as db_cofre:
             return await credential_vault_service.aplicar_overlay(db_cofre)
 
-    campos_cofre = await _passo_de_boot("cofre_credenciais", _overlay_cofre)
+    from app.services.credential_vault_service import marcar_overlay_falho
+
+    campos_cofre = await _passo_de_boot(
+        "cofre_credenciais", _overlay_cofre, ao_falhar=marcar_overlay_falho,
+    )
     if campos_cofre is None:
+        # O .env NÃO conhece revogação: sem overlay, uma credencial revogada no
+        # cofre (que aplicar_overlay zeraria para "") volta a funcionar. Por
+        # isso a falha vira estado consultável (credential_vault_service.
+        # estado_overlay → painel de integrações) e o job `cofre_overlay_retry`
+        # reaplica em minutos, em vez de a API ficar no .env indefinidamente.
         logger.error(
             "[EJC] Overlay do cofre de credenciais NÃO aplicado — seguindo com "
-            "os valores do .env"
+            "os valores do .env; credencial REVOGADA no cofre segue válida até "
+            "a reaplicação (job cofre_overlay_retry)."
         )
     else:
         logger.info(

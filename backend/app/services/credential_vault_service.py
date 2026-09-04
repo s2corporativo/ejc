@@ -346,6 +346,49 @@ async def versao_atual(db) -> tuple[int, str | None]:
 
 # ── Overlay de runtime ────────────────────────────────────────────────────────
 
+# Estado do overlay NESTE processo. Enquanto `aplicado` for False os atributos
+# de Settings ainda vêm do `.env` — e o `.env` NÃO conhece revogação: uma
+# credencial revogada no cofre (linha histórica sem linha ativa, que
+# aplicar_overlay zera para "") volta a valer se o overlay do boot falhar
+# (banco lento estourando o teto do lifespan, por exemplo). O estado é
+# consultável para que isso apareça no painel de integrações em vez de ficar
+# só num log, e o job `cofre_overlay_retry` (scheduler) reaplica até dar certo.
+_OVERLAY_RUNTIME: dict[str, Any] = {
+    "aplicado": False,
+    "aplicado_em": None,
+    "campos": 0,
+    "erro_tipo": None,
+    "falhas": 0,
+}
+
+
+def estado_overlay() -> dict[str, Any]:
+    """Instantâneo consultável do overlay do cofre neste processo.
+
+    `aplicado=False` significa CREDENCIAL DO .ENV EM USO — inclusive para
+    campos que o cofre revogou. Consumido pelo painel de integrações
+    (integration_status) e pelo job de reaplicação."""
+    estado = dict(_OVERLAY_RUNTIME)
+    estado["status"] = "aplicado" if estado["aplicado"] else (
+        "falho" if estado["falhas"] else "nao_aplicado"
+    )
+    return estado
+
+
+def marcar_overlay_falho(erro_tipo: str) -> None:
+    """Registra que o overlay NÃO foi aplicado (timeout/erro de boot ou de
+    reaplicação). Nunca levanta — é chamada de caminho de falha."""
+    _OVERLAY_RUNTIME["aplicado"] = False
+    _OVERLAY_RUNTIME["erro_tipo"] = erro_tipo
+    _OVERLAY_RUNTIME["falhas"] = int(_OVERLAY_RUNTIME.get("falhas") or 0) + 1
+    logger.error(
+        "[cofre] overlay NÃO aplicado (%s) — o processo segue com os valores "
+        "do .env; credencial REVOGADA no cofre continua valendo até a "
+        "reaplicação. Falhas acumuladas: %s",
+        erro_tipo, _OVERLAY_RUNTIME["falhas"],
+    )
+
+
 async def resolver_overlay(db) -> dict[str, str]:
     """{field_key: valor decifrado} das credenciais ATIVAS do cofre."""
     conhecidos = set(credential_registry.todos_field_keys())
@@ -410,6 +453,13 @@ async def aplicar_overlay(db) -> list[str]:
             setattr(settings, field_key, "")   # revogada — sem fallback ao .env
             aplicados.append(field_key)
         # else: nunca cadastrado — vale o .env, não toca.
+
+    _OVERLAY_RUNTIME.update({
+        "aplicado": True,
+        "aplicado_em": _agora(),
+        "campos": len(aplicados),
+        "erro_tipo": None,
+    })
     return aplicados
 
 

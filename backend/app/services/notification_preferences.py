@@ -53,6 +53,27 @@ CATEGORY_FIELD_BY_TYPE = {
 }
 
 
+def whatsapp_configurado(settings: Settings | None = None) -> bool:
+    """Configuração COMPLETA do remetente WhatsApp, SEM olhar `WHATSAPP_ENABLED`.
+
+    Fonte ÚNICA da regra de "configurado" para o canal: a disponibilidade das
+    preferências (`channel_availability`), a guarda do envio real
+    (`notification_service.enviar_whatsapp`) e o inventário de integrações
+    (`integration_status.build_integration_status`) derivam TODOS daqui —
+    duplicar a regra já produziu painel e envio discordando.
+
+    Exige URL + chave + INSTÂNCIA: `enviar_whatsapp` recusa instância vazia
+    antes de tocar a rede, então ambiente com `EVOLUTION_INSTANCE` em branco
+    não é canal funcional (todo envio devolveria False em silêncio).
+    """
+    settings = settings or get_settings()
+    return bool(
+        (settings.EVOLUTION_API_URL or "").strip()
+        and (settings.EVOLUTION_API_KEY or "").strip()
+        and (settings.EVOLUTION_INSTANCE or "").strip()
+    )
+
+
 def channel_availability(
     settings: Settings | None = None,
 ) -> NotificationChannelAvailability:
@@ -71,14 +92,29 @@ def channel_availability(
         ),
         # Remetente = Evolution API (a mesma instância do webhook de ENTRADA
         # passou a cobrir também a SAÍDA). Mesma forma do e-mail acima: a flag
-        # sozinha não basta, a configuração precisa estar completa — sem URL ou
-        # sem chave não há para onde enviar e o canal fica indisponível.
-        whatsapp=bool(
-            settings.WHATSAPP_ENABLED
-            and settings.EVOLUTION_API_URL
-            and settings.EVOLUTION_API_KEY
-        ),
+        # sozinha não basta, a configuração precisa estar completa (URL, chave
+        # e instância — ver whatsapp_configurado).
+        whatsapp=bool(settings.WHATSAPP_ENABLED and whatsapp_configurado(settings)),
     )
+
+
+def channel_opt_in(
+    preference: NotificationPreference | NotificationPreferenceResponse | None,
+    field: str,
+) -> bool:
+    """Opt-in do USUÁRIO para um canal externo (push/email/whatsapp).
+
+    Sem linha de preferências vale o DEFAULT DECLARADO em
+    `DEFAULT_PREFERENCES` — que é o mesmo que a API devolve ao usuário em
+    `preference_response`. Antes o dispatch tratava `pref is None` como "pode
+    tudo": todo usuário que nunca abriu a tela de preferências passaria a
+    receber WhatsApp/e-mail externo assim que o canal fosse habilitado no
+    ambiente, contrariando o default exibido a ele (opt-in, não opt-out).
+    """
+    padrao = bool(DEFAULT_PREFERENCES.get(field, False))
+    if preference is None:
+        return padrao
+    return bool(getattr(preference, field, padrao))
 
 
 async def get_notification_preference(

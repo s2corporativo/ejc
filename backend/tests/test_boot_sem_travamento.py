@@ -203,3 +203,103 @@ def test_timeout_de_boot_e_configuravel_e_tem_default_util():
         "teto acima de 60 s aproxima do proxy_read_timeout de 120 s do nginx — "
         "o boot precisa terminar MUITO antes de o usuário ver 504"
     )
+
+
+# ── Degradar sem sinalizar é degradar em silêncio ────────────────────────────
+
+@pytest.mark.asyncio
+async def test_passo_de_boot_sinaliza_quem_degradou_por_timeout():
+    """`ao_falhar` recebe o tipo do erro quando o passo estoura o teto.
+
+    O passo que degrada precisa poder REGISTRAR sua degradação: o
+    `asyncio.timeout` cancela a corrotina de dentro (CancelledError herda de
+    BaseException), então o `except Exception` do próprio passo pode nunca
+    rodar — sem este gancho a degradação some (achado P1: cofre de credenciais
+    e calendário jurídico ficavam degradados sem estado consultável).
+    """
+    from app.core.config import get_settings
+    from app.main import _passo_de_boot
+
+    sinais: list[str] = []
+
+    async def _travado():
+        await asyncio.Event().wait()
+
+    settings = get_settings()
+    original = settings.STARTUP_STEP_TIMEOUT_SECONDS
+    settings.STARTUP_STEP_TIMEOUT_SECONDS = 0.05
+    try:
+        resultado = await asyncio.wait_for(
+            _passo_de_boot("travado", _travado, padrao=None,
+                           ao_falhar=sinais.append),
+            timeout=5,
+        )
+    finally:
+        settings.STARTUP_STEP_TIMEOUT_SECONDS = original
+
+    assert resultado is None
+    assert sinais == ["TimeoutError"]
+
+
+@pytest.mark.asyncio
+async def test_passo_de_boot_sinaliza_excecao_com_o_tipo_do_erro():
+    from app.main import _passo_de_boot
+
+    sinais: list[str] = []
+
+    async def _quebrado():
+        raise RuntimeError("cofre indisponível")
+
+    assert await _passo_de_boot("quebrado", _quebrado, padrao=0,
+                                ao_falhar=sinais.append) == 0
+    assert sinais == ["RuntimeError"]
+
+
+@pytest.mark.asyncio
+async def test_passo_de_boot_nao_sinaliza_no_caminho_feliz():
+    from app.main import _passo_de_boot
+
+    sinais: list[str] = []
+
+    async def _ok():
+        return 42
+
+    assert await _passo_de_boot("ok", _ok, ao_falhar=sinais.append) == 42
+    assert sinais == []
+
+
+@pytest.mark.asyncio
+async def test_sinalizacao_quebrada_nao_derruba_o_boot():
+    """O gancho é diagnóstico: se ELE falhar, o boot segue degradando."""
+    from app.main import _passo_de_boot
+
+    def _sinal_quebrado(_tipo: str) -> None:
+        raise RuntimeError("sinalização quebrada")
+
+    async def _quebrado():
+        raise RuntimeError("passo quebrado")
+
+    assert await _passo_de_boot("quebrado", _quebrado, padrao="degradado",
+                                ao_falhar=_sinal_quebrado) == "degradado"
+
+
+def test_passo_do_cofre_registra_a_propria_falha():
+    """O passo `cofre_credenciais` do lifespan passa `ao_falhar`.
+
+    Sem overlay a API roda com as credenciais do ambiente — que não conhecem
+    revogação. A falha tem de virar estado consultável
+    (credential_vault_service.estado_overlay), não só uma linha de log.
+    """
+    arvore = ast.parse((RAIZ / "app" / "main.py").read_text(encoding="utf-8"))
+    chamadas = [
+        no for no in ast.walk(arvore)
+        if isinstance(no, ast.Call)
+        and getattr(no.func, "id", None) == "_passo_de_boot"
+        and no.args
+        and isinstance(no.args[0], ast.Constant)
+        and no.args[0].value == "cofre_credenciais"
+    ]
+    assert chamadas, "passo de boot do cofre sumiu do lifespan"
+    assert any(
+        kw.arg == "ao_falhar" for chamada in chamadas for kw in chamada.keywords
+    ), "o passo do cofre precisa sinalizar a falha (ao_falhar=...)"

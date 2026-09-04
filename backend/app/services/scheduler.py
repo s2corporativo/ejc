@@ -1374,6 +1374,15 @@ def start_scheduler():
               CronTrigger(day_of_week="sun", hour=3, minute=0, timezone="UTC"),
               id="ing_conhecimento", replace_existing=True)
 
+    # Reaplica o overlay do Cofre de Credenciais enquanto ele NÃO tiver sido
+    # aplicado neste processo (a cada 10 min; no-op barato depois do sucesso).
+    # Sem isso, um overlay que falhou no boot (banco lento estourando o teto do
+    # lifespan) deixaria a API nos valores do `.env` INDEFINIDAMENTE — e o
+    # `.env` não conhece revogação: credencial revogada no cofre voltaria a
+    # funcionar até o próximo restart ou escrita no cofre.
+    s.add_job(_reaplicar_overlay_cofre, IntervalTrigger(minutes=10),
+              id="cofre_overlay_retry", replace_existing=True)
+
     # Recarrega feriados municipais/estaduais (00h05) — pega novas inserções
     # na tabela `feriados` sem precisar reiniciar o backend.
     s.add_job(_recarregar_feriados,   CronTrigger(hour=0, minute=5),  id="feriados",  replace_existing=True)
@@ -1448,6 +1457,31 @@ def start_scheduler():
 
     s.start()
     logger.info("[Scheduler] Iniciado — %d jobs agendados", len(s.get_jobs()))
+
+
+async def _reaplicar_overlay_cofre():
+    """A cada 10 min — reaplica o overlay do cofre se ele ainda não vingou.
+
+    Enquanto `estado_overlay()["aplicado"]` for False, o processo está usando
+    os valores do `.env`, incluindo credenciais que o cofre REVOGOU (revogação
+    = linha histórica sem linha ativa → aplicar_overlay grava ""). Depois do
+    primeiro sucesso vira no-op sem I/O; as escritas no cofre continuam
+    reaplicando na própria requisição (routers/credential_vault.py).
+    """
+    from app.services import credential_vault_service as cofre
+
+    if cofre.estado_overlay()["aplicado"]:
+        return
+    try:
+        async with AsyncSessionLocal() as db:
+            campos = await cofre.aplicar_overlay(db)
+        logger.warning(
+            "[Scheduler] Overlay do cofre REAPLICADO após falha anterior — "
+            "%d campo(s); credenciais do .env deixam de valer agora.",
+            len(campos),
+        )
+    except Exception as e:
+        cofre.marcar_overlay_falho(type(e).__name__)
 
 
 async def _recarregar_feriados():

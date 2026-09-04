@@ -90,10 +90,29 @@ async def test_sem_url_nao_envia_e_nao_toca_rede(monkeypatch):
     assert await ns.enviar_whatsapp(TELEFONE, MENSAGEM) is False
 
 
+async def test_sem_instancia_nao_envia_e_nao_toca_rede(monkeypatch):
+    _config_completa(monkeypatch)
+    monkeypatch.setattr(ns.settings, "EVOLUTION_INSTANCE", "")
+    _httpx_proibido(monkeypatch)
+    assert await ns.enviar_whatsapp(TELEFONE, MENSAGEM) is False
+
+
 async def test_telefone_invalido_nao_toca_rede(monkeypatch):
     _config_completa(monkeypatch)
     _httpx_proibido(monkeypatch)
     assert await ns.enviar_whatsapp("123", MENSAGEM) is False
+
+
+async def test_numero_estrangeiro_sem_ddi_nao_toca_rede(monkeypatch):
+    """Achado P1: `12025550123` (EUA, já completo) virava `5512025550123`.
+
+    Prefixar 55 por contagem de dígitos entregava alerta jurídico sigiloso em
+    OUTRA conta de WhatsApp. Sem reconhecer o número como nacional, o envio
+    degrada (o sino interno segue registrando o alerta).
+    """
+    _config_completa(monkeypatch)
+    _httpx_proibido(monkeypatch)
+    assert await ns.enviar_whatsapp("1 202 555 0123", MENSAGEM) is False
 
 
 # ── Envio efetivo ─────────────────────────────────────────────────────────────
@@ -125,6 +144,18 @@ async def test_envio_monta_requisicao_da_evolution_api(monkeypatch):
         ("", None),
         (None, None),
         ("sem digitos", None),
+        # ── Regressão P1: DDI 55 por contagem de dígitos ──────────────────────
+        # Estrangeiro de 10/11 dígitos NÃO é número nacional: prefixar 55
+        # entregava a mensagem sigilosa em outra conta.
+        ("12025550123", None),              # EUA/Canadá em E.164 sem "+"
+        ("14155550123", None),              # DDD 14 existe, mas assinante "1…"
+        ("+12025550123", "12025550123"),    # com DDI declarado, passa intacto
+        ("0012025550123", "12025550123"),   # prefixo internacional discado
+        ("5512025550123", None),            # dado já corrompido pela regra antiga
+        ("2299999999", None),               # DDD válido, fixo começando em 9
+        ("2033334444", None),               # DDD 20 não existe no plano nacional
+        ("31933334444", "5531933334444"),   # celular com 9º dígito
+        ("+55 (31) 3333-4444", "553133334444"),
     ],
 )
 def test_normalizacao_de_telefone(entrada, esperado):
@@ -202,3 +233,65 @@ def test_canal_disponivel_com_flag_e_configuracao_completa():
 def test_canal_indisponivel_sem_flag_ou_sem_configuracao(over):
     disponivel = channel_availability(Settings(_env_file=None, **over))
     assert disponivel.whatsapp is False
+
+
+@pytest.mark.parametrize(
+    "over,esperado",
+    [
+        ({"EVOLUTION_INSTANCE": ""}, False),
+        ({"EVOLUTION_INSTANCE": "   "}, False),
+        ({"EVOLUTION_INSTANCE": "ejc-escritorio"}, True),
+    ],
+)
+def test_instancia_entra_no_predicado_de_disponibilidade(over, esperado):
+    """Achado P2: `enviar_whatsapp` recusa instância vazia ANTES da rede, mas o
+    predicado de disponibilidade só olhava flag+URL+chave — o canal aparecia
+    funcional e todo envio devolvia False em silêncio."""
+    disponivel = channel_availability(
+        Settings(
+            _env_file=None,
+            WHATSAPP_ENABLED=True,
+            EVOLUTION_API_KEY="chave",
+            EVOLUTION_API_URL="http://evolution_api:8080",
+            **over,
+        )
+    )
+    assert disponivel.whatsapp is esperado
+
+
+def test_inventario_e_preferencias_usam_o_mesmo_predicado():
+    """Achado P2: `build_integration_status` fixava `configured=False` para
+    WhatsApp ("vendor removido") enquanto as preferências davam o canal por
+    disponível com a mesma configuração — painel de saúde e envio real
+    discordavam. As duas visões derivam de `whatsapp_configurado`."""
+    from app.services.integration_status import build_integration_status
+    from app.services.notification_preferences import whatsapp_configurado
+
+    def _item(settings):
+        return next(
+            item for item in build_integration_status(settings)["items"]
+            if item["key"] == "whatsapp"
+        )
+
+    completo = Settings(
+        _env_file=None,
+        WHATSAPP_ENABLED=True,
+        EVOLUTION_API_KEY="chave",
+        EVOLUTION_API_URL="http://evolution_api:8080",
+        EVOLUTION_INSTANCE="ejc-escritorio",
+    )
+    incompleto = Settings(
+        _env_file=None,
+        WHATSAPP_ENABLED=True,
+        EVOLUTION_API_KEY="chave",
+        EVOLUTION_API_URL="http://evolution_api:8080",
+        EVOLUTION_INSTANCE="",
+    )
+
+    assert _item(completo)["configured"] is whatsapp_configurado(completo) is True
+    assert _item(completo)["status"] == "ready"
+    assert channel_availability(completo).whatsapp is True
+
+    assert _item(incompleto)["configured"] is whatsapp_configurado(incompleto) is False
+    assert _item(incompleto)["status"] == "attention"
+    assert channel_availability(incompleto).whatsapp is False
