@@ -185,7 +185,12 @@ def test_parse_do_indice_nao_retrocede_em_corpo_hostil():
         pass                              # sem o marcador, recusa é o correto
     decorrido = time.monotonic() - inicio
 
-    assert decorrido < 1.0, (
+    # Limiar folgado de propósito: o alvo é backtracking QUADRÁTICO (63,5 s
+    # medidos para 0,78 MB), não desempenho sub-segundo. Um teto apertado
+    # tornaria este teste sensível à carga da máquina — assertiva de tempo que
+    # falha por ruído é pior que assertiva nenhuma, porque ensina a equipe a
+    # ignorar o vermelho. 5 s separa "linear" de "quadrático" com sobra.
+    assert decorrido < 5.0, (
         f"parse levou {decorrido:.1f}s em corpo hostil — backtracking de volta?"
     )
 
