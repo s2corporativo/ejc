@@ -9,6 +9,7 @@ from decimal import Decimal
 # Deve casar com Case.numero_processo (String(30) em models/case.py) — um
 # limite maior aqui passaria na validação e estouraria no INSERT (500).
 _NUMERO_PROCESSO_MAX = 30
+_CASE_TYPES = {"judicial", "extrajudicial", "consultoria"}
 
 
 def _validar_numero_processo_cnj(v: Optional[str]) -> Optional[str]:
@@ -43,6 +44,15 @@ def _validar_numero_processo_cnj(v: Optional[str]) -> Optional[str]:
             f"Número de processo muito longo (máximo {_NUMERO_PROCESSO_MAX} caracteres)"
         )
     return v
+
+
+def _validar_case_type(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return None
+    value = v.strip().lower()
+    if value not in _CASE_TYPES:
+        raise ValueError(f"Tipo de caso inválido. Use um de {sorted(_CASE_TYPES)}")
+    return value
 
 
 class HonorariosCreate(BaseModel):
@@ -83,24 +93,24 @@ class HonorariosCreate(BaseModel):
 
 
 class CaseCreate(BaseModel):
-    titulo: str
+    titulo: str = Field(min_length=1, max_length=255)
     area: str
-    client_id: str
+    client_id: str = Field(min_length=1, max_length=36)
     prioridade: str = "media"
     proxima_acao: Optional[str] = None
     proxima_acao_prazo: Optional[datetime] = None
     numero_processo: Optional[str] = None
-    tribunal: Optional[str] = None
-    comarca: Optional[str] = None
-    vara: Optional[str] = None
-    parte_contraria: Optional[str] = None
+    tribunal: Optional[str] = Field(default=None, max_length=20)
+    comarca: Optional[str] = Field(default=None, max_length=100)
+    vara: Optional[str] = Field(default=None, max_length=100)
+    parte_contraria: Optional[str] = Field(default=None, max_length=255)
     valor_causa: Optional[Decimal] = None
     descricao_fatos: Optional[str] = None
-    advogado_responsavel_id: Optional[str] = None
-    tipo_acao_prescricao: Optional[str] = None
+    advogado_responsavel_id: Optional[str] = Field(default=None, max_length=36)
+    tipo_acao_prescricao: Optional[str] = Field(default=None, max_length=100)
     data_fato_prescricao: Optional[date] = None  # p/ cálculo automático
     case_type: Optional[str] = "judicial"
-    extrajudicial_type: Optional[str] = None
+    extrajudicial_type: Optional[str] = Field(default=None, max_length=50)
     has_judicial_process: Optional[bool] = False
     # Sigilo reforçado de IA (migration 146, Issue #1194): marcado pelo
     # advogado na triagem quando o caso envolve crime sexual ou menor —
@@ -128,30 +138,36 @@ class CaseCreate(BaseModel):
     def _numero_processo_valido(cls, v: Optional[str]) -> Optional[str]:
         return _validar_numero_processo_cnj(v)
 
+    @field_validator("case_type")
+    @classmethod
+    def _case_type_valido(cls, v: Optional[str]) -> Optional[str]:
+        return _validar_case_type(v)
+
+
 class CaseUpdate(BaseModel):
-    titulo: Optional[str] = None
+    titulo: Optional[str] = Field(default=None, min_length=1, max_length=255)
     status: Optional[str] = None
     fase: Optional[str] = None
     prioridade: Optional[str] = None
-    risco: Optional[str] = None
+    risco: Optional[str] = Field(default=None, max_length=20)
     proxima_acao: Optional[str] = None
     proxima_acao_prazo: Optional[datetime] = None
     numero_processo: Optional[str] = None
-    tribunal: Optional[str] = None
-    comarca: Optional[str] = None
-    vara: Optional[str] = None
-    parte_contraria: Optional[str] = None
+    tribunal: Optional[str] = Field(default=None, max_length=20)
+    comarca: Optional[str] = Field(default=None, max_length=100)
+    vara: Optional[str] = Field(default=None, max_length=100)
+    parte_contraria: Optional[str] = Field(default=None, max_length=255)
     valor_causa: Optional[Decimal] = None
     descricao_fatos: Optional[str] = None
     tese_principal: Optional[str] = None
     pontos_fortes: Optional[str] = None
     pontos_fracos: Optional[str] = None
     observacoes: Optional[str] = None
-    advogado_responsavel_id: Optional[str] = None
+    advogado_responsavel_id: Optional[str] = Field(default=None, max_length=36)
     case_type: Optional[str] = None
-    extrajudicial_type: Optional[str] = None
+    extrajudicial_type: Optional[str] = Field(default=None, max_length=50)
     has_judicial_process: Optional[bool] = None
-    kanban_column: Optional[str] = None
+    kanban_column: Optional[str] = Field(default=None, max_length=100)
     kanban_position: Optional[int] = None
     sigilo_reforcado: Optional[bool] = None
 
@@ -159,6 +175,11 @@ class CaseUpdate(BaseModel):
     @classmethod
     def _numero_processo_valido(cls, v: Optional[str]) -> Optional[str]:
         return _validar_numero_processo_cnj(v)
+
+    @field_validator("case_type")
+    @classmethod
+    def _case_type_valido(cls, v: Optional[str]) -> Optional[str]:
+        return _validar_case_type(v)
 
     @field_validator("fase")
     @classmethod
@@ -198,6 +219,7 @@ class CaseUpdate(BaseModel):
             raise ValueError(f"prioridade inválida: use um de {sorted(validos)}")
         return v
 
+
 class ProcessoPrincipalSchema(BaseModel):
     """Snapshot do processo principal (is_principal=True) — fonte canonica."""
     id: str
@@ -212,6 +234,7 @@ class ProcessoPrincipalSchema(BaseModel):
     status: Optional[str] = None
     class Config:
         from_attributes = True
+
 
 class CaseResponse(BaseModel):
     id: str
@@ -250,6 +273,7 @@ class CaseResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class CaseDetail(CaseResponse):
     comarca: Optional[str] = None
     vara: Optional[str] = None
@@ -260,10 +284,12 @@ class CaseDetail(CaseResponse):
     observacoes: Optional[str] = None
     tipo_acao_prescricao: Optional[str] = None
 
+
 class MovimentoCreate(BaseModel):
     tipo: str
     descricao: str
     data_evento: Optional[datetime] = None  # M12: data do evento; default = now()
+
 
 class MovimentoUpdate(BaseModel):
     """Edição parcial de um movimento: apenas campos informados mudam. M12."""
