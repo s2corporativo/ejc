@@ -64,7 +64,16 @@ def _patch(monkeypatch, pref, avail):
     monkeypatch.setattr(ns, "channel_availability", lambda settings=None: avail)
 
 
-async def test_pref_none_dispara_sino_e_todos_os_canais(monkeypatch):
+async def test_pref_none_segue_os_defaults_declarados(monkeypatch):
+    """Usuário SEM linha de preferências recebe o que o default declara.
+
+    Regressão do achado P1: `pref is None` liberava TODOS os canais externos,
+    embora DEFAULT_PREFERENCES declare `whatsapp_enabled=False` e
+    `email_enabled=False` (e seja isso que a API mostra ao usuário em
+    /notificacoes/preferencias). Efeito: bastaria habilitar o canal no
+    ambiente para todo usuário que nunca abriu a tela passar a receber
+    WhatsApp externo sem ter optado. Push (default True) continua saindo.
+    """
     spy = _spy(monkeypatch)
     _patch(monkeypatch, None, _availability())
     await ns.notificar(
@@ -72,8 +81,36 @@ async def test_pref_none_dispara_sino_e_todos_os_canais(monkeypatch):
         email="a@x.com", telefone="5531999999999",
     )
     assert len(spy["sino"]) == 1
-    assert len(spy["push"]) == 1
-    assert len(spy["email"]) == 1
+    assert len(spy["push"]) == 1          # DEFAULT_PREFERENCES: push ligado
+    assert spy["email"] == []             # DEFAULT_PREFERENCES: e-mail off
+    assert spy["whatsapp"] == []          # DEFAULT_PREFERENCES: whatsapp off
+
+
+async def test_pref_none_nao_manda_whatsapp_nem_em_tipo_mandatorio(monkeypatch):
+    """Nem alerta mandatório abre canal externo sem opt-in do usuário.
+
+    `prazo` ignora a categoria (o sino é obrigatório), mas não pode driblar o
+    default do CANAL: sem preferência gravada, WhatsApp/e-mail seguem fechados.
+    """
+    spy = _spy(monkeypatch)
+    _patch(monkeypatch, None, _availability())
+    await ns.notificar(
+        None, "u1", "Prazo", "vence amanhã", tipo="prazo",
+        email="a@x.com", telefone="5531999999999",
+    )
+    assert len(spy["sino"]) == 1
+    assert spy["whatsapp"] == []
+    assert spy["email"] == []
+
+
+async def test_opt_in_explicito_libera_whatsapp(monkeypatch):
+    """Contraprova: com opt-in gravado, o canal dispara normalmente."""
+    spy = _spy(monkeypatch)
+    _patch(monkeypatch, _pref(whatsapp_enabled=True), _availability())
+    await ns.notificar(
+        None, "u1", "T", "M", tipo="tarefa",
+        email="a@x.com", telefone="5531999999999",
+    )
     assert len(spy["whatsapp"]) == 1
 
 

@@ -11,20 +11,18 @@ import {
   StatusBadge,
 } from "../components/UI";
 import { asList } from "../lib/list";
-import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
+import {
+  mensagemErroHttp,
+  mensagemErroIA,
+  ROTULO_IA_NAO_ATIVADA,
+} from "../lib/iaErro";
+import { toast } from "../components/Toast";
+import { useOverrideCitacoes } from "../components/OverrideCitacoesDialog";
 import { MENSAGEM_IA_NAO_ATIVADA, useIaStatus } from "../lib/iaStatus";
+import { AREAS_OPCOES_DESTAQUE } from "../lib/taxonomia";
 
-const AREAS = [
-  "civil",
-  "trabalhista",
-  "consumidor",
-  "familia",
-  "ambiental",
-  "criminal",
-  "previdenciario",
-  "empresarial",
-  "tributario",
-];
+// S1: áreas vêm do backend (types/gerado.ts) — sem lista local.
+const AREAS = AREAS_OPCOES_DESTAQUE;
 
 type Tab = "analise" | "resumo" | "validacao" | "logs";
 
@@ -153,11 +151,27 @@ export default function IA() {
     }
   };
 
-  const marcarHitl = async (id: string, status: string) => {
-    await api.patch(`/ai/logs/${id}/hitl`, { status });
+  // E5/D6: 409 do gate de citações abre o diálogo de override justificado;
+  // 403/422 e demais erros viram toast em vez de silêncio.
+  const override = useOverrideCitacoes();
+  const recarregarLogs = () =>
     api
       .get("/ai/logs", { params: { page_size: 30 } })
-      .then((r) => setLogs(asList(r.data)));
+      .then((r) => setLogs(asList(r.data)))
+      .catch((e) =>
+        toast.error(mensagemErroHttp(e, "Não foi possível atualizar o histórico.")),
+      );
+  const marcarHitl = async (id: string, status: string) => {
+    try {
+      const aplicado = await override.executar((extra) =>
+        api.patch(`/ai/logs/${id}/hitl`, { status, ...extra }),
+      );
+      if (!aplicado) return; // aguardando justificativa no diálogo
+      toast.success(`Revisão registrada: ${status}.`);
+      await recarregarLogs();
+    } catch (e) {
+      toast.error(mensagemErroHttp(e, "Não foi possível registrar a revisão."));
+    }
   };
 
   const tabs = [
@@ -247,8 +261,8 @@ export default function IA() {
                 onChange={(e) => setArea(e.target.value)}
               >
                 {AREAS.map((a) => (
-                  <option key={a} value={a}>
-                    {a}
+                  <option key={a.slug} value={a.slug}>
+                    {a.nome}
                   </option>
                 ))}
               </select>
@@ -338,8 +352,8 @@ export default function IA() {
                 onChange={(e) => setArea(e.target.value)}
               >
                 {AREAS.map((a) => (
-                  <option key={a} value={a}>
-                    {a}
+                  <option key={a.slug} value={a.slug}>
+                    {a.nome}
                   </option>
                 ))}
               </select>
@@ -527,6 +541,10 @@ export default function IA() {
           <Markdown source={resp.resposta} className="text-sm text-slate-700" />
         </div>
       )}
+      {override.dialogo(() => {
+        toast.success("Revisão registrada com override justificado.");
+        void recarregarLogs();
+      })}
     </div>
   );
 }

@@ -115,7 +115,7 @@ def _sig(client_id="c1"):
 def _db_uma_solicitacao():
     return _FakeDB([
         _Res([_sig()]),                    # solicitações
-        _Res([("d1", "Procuração")]),      # títulos
+        _Res([("d1", "Procuração", "application/pdf", "procuracao.pdf")]),  # id/título/mimetype/filename (#1365)
         _Res([]),                          # logins do portal
     ])
 

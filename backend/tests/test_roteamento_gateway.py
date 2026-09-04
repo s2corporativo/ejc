@@ -60,13 +60,16 @@ def test_cadeia_ignora_preferido_inelegivel(monkeypatch):
 
 
 def test_cadeia_preferido_fora_do_task_routing_e_ignorado(monkeypatch):
-    # 'resumo' não tem anthropic no TASK_ROUTING → não inventa provedor.
+    # Provedor proposto pelo roteador que NÃO participa da cadeia da tarefa não
+    # é inventado. Desde I8 (03/09) `resumo` já inclui anthropic, então o caso
+    # de "fora do TASK_ROUTING" é exercitado com um provedor inexistente.
     _prep(monkeypatch)
     cadeia = g._resolver_cadeia(
         "resumo", provider_force=None, model_override=None,
-        provider_preferido="anthropic", model_preferido="claude-opus-4-8",
+        provider_preferido="provedor_inexistente", model_preferido="x",
     )
-    assert all(p != "anthropic" for p, _ in cadeia)
+    assert all(p != "provedor_inexistente" for p, _ in cadeia)
+    assert cadeia and cadeia[0][0] == "ollama"
 
 
 # ── chat() on/off ─────────────────────────────────────────────────────────────

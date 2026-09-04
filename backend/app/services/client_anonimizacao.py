@@ -76,6 +76,25 @@ async def anonimizar_cliente(
             "bloqueios": bloqueios,
         })
 
+    motivo_limpo = (motivo or "").strip()
+    if bloqueios and forcar and not motivo_limpo:
+        # Transformação irreversível + override de representação ativa exige
+        # fundamento explícito. O texto livre é exigido como confirmação humana,
+        # mas NÃO é persistido no WORM, pois pode conter PII/dado sensível.
+        raise HTTPException(
+            422,
+            "Justificativa obrigatória para anonimização forçada com bloqueios ativos",
+        )
+
+    # Auditoria usa somente vocabulário controlado. Nunca persiste o teor livre
+    # de `motivo`: sanitização por regex não garante remoção de nomes de terceiros,
+    # saúde ou outros dados sensíveis que poderiam ficar imutáveis no WORM.
+    codigo_justificativa = (
+        "OVERRIDE_REPRESENTACAO_ATIVA"
+        if bloqueios and forcar
+        else "ANONIMIZACAO_SEM_BLOQUEIO"
+    )
+
     agora = datetime.now(timezone.utc)
 
     # Sobrescreve PII. Mantém: id, tipo, status, created_at, relacionamentos
@@ -111,18 +130,29 @@ async def anonimizar_cliente(
     for u in usuarios_portal:
         u.is_active = False
 
-    # Log de auditoria WORM SEM texto livre: `motivo` é campo fornecido pelo
-    # operador e pode conter PII, dado sensível ou conteúdo de caso. O rastro
-    # precisa provar que houve justificativa, não perpetuar o teor dela.
+    # WORM: somente metadados controlados, suficientes para comprovar o tipo da
+    # decisão sem reter texto livre potencialmente pessoal/sensível.
     detalhes = (
         "Anonimização LGPD art.17; "
-        f"justificativa_informada={'sim' if bool((motivo or '').strip()) else 'nao'}"
+        f"justificativa_informada={'sim' if bool(motivo_limpo) else 'nao'}; "
+        f"codigo={codigo_justificativa}"
     )
     if bloqueios:
         detalhes += f"; FORÇADO apesar de {len(bloqueios)} bloqueio(s) ativo(s)"
     await criar_audit_log(
-        db, executor_id, executor_role, "ANONIMIZAR_LGPD", "clients", client_id,
+        db,
+        executor_id,
+        executor_role,
+        "ANONIMIZAR_LGPD",
+        "clients",
+        client_id,
         detalhes=detalhes,
+        dados_depois={
+            "forcado": bool(forcar and bloqueios),
+            "bloqueios_ignorados": len(bloqueios),
+            "justificativa_informada": bool(motivo_limpo),
+            "codigo_justificativa": codigo_justificativa,
+        },
     )
     await db.commit()
 

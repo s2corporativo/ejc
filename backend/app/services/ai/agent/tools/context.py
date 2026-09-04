@@ -5,7 +5,7 @@
 # local e confiável do handler.
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -23,3 +23,23 @@ class AgentContext:
     client_id: str | None
     role: str
     area: str | None = None
+    # I5/B4: fontes devolvidas pelas tools de leitura (buscar_precedentes) ao
+    # longo do laço — o validador final recebe-as em `fontes=` (antes recebia
+    # None e carimbava "SEM BASE VERIFICÁVEL" mesmo com RAG usado) e o AILog
+    # grava a trilha (fontes_rag). Dicts no formato de buscar_contexto_rag.
+    fontes_rag: list[dict] = field(default_factory=list)
+
+    def registrar_fontes(self, trechos: list[dict] | None) -> None:
+        """Acumula fontes sem duplicar (chave doc_id/chunk_id, senão título+fonte)."""
+        vistos = {
+            (f.get("doc_id"), f.get("chunk_id"), f.get("titulo"), f.get("fonte"))
+            for f in self.fontes_rag
+        }
+        for t in (trechos or []):
+            if not isinstance(t, dict):
+                continue
+            chave = (t.get("doc_id"), t.get("chunk_id"), t.get("titulo"), t.get("fonte"))
+            if chave in vistos:
+                continue
+            vistos.add(chave)
+            self.fontes_rag.append(t)

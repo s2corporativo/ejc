@@ -261,15 +261,18 @@ def test_batch_item_invalido_nao_derruba_lote(ctx):
     assert body["itens"][3]["chave_origem"] == "lexml:curto"
 
 
-def test_batch_chave_com_client_id_forca_isolamento_lgpd(ctx):
+def test_batch_chave_com_client_id_recusa_payload_de_outro_cliente(ctx):
+    """C6 (análise E2E de IA 2026-09-03): antes o payload era silenciosamente
+    FORÇADO ao escopo da chave; agora client_id divergente é recusado com 422
+    claro e NADA é gravado (ver tests/test_api_key_batch_escopo_c6.py)."""
     chave, ak = _nova_chave(client_id="cli-123")
     ctx["db"].store[ApiKey].append(ak)
     r = ctx["client"].post(
         BATCH, json={"itens": [_item("lexml:lgpd", client_id="outro-cliente")]},
         headers={"X-API-Key": chave})
-    assert r.status_code == 201
-    doc = [d for d in ctx["db"].store[KnowledgeDoc] if d.chave_origem == "lexml:lgpd"][0]
-    assert doc.client_id == "cli-123"   # payload NÃO consegue escapar do escopo
+    assert r.status_code == 422
+    assert "difere do client_id fixado na chave" in r.json()["detail"]
+    assert not [d for d in ctx["db"].store[KnowledgeDoc] if d.chave_origem == "lexml:lgpd"]
 
 
 def test_batch_limite_de_100_itens(ctx):

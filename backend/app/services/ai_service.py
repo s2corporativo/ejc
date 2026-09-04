@@ -192,11 +192,19 @@ _FILTRO_VIGENCIA_VERIFICADA_RAG = (
 )
 
 
-def _filtros_gate_rag(incluir_ficticio: bool = False) -> str:
-    """Fragmento SQL (sem bind params) com o gate de governança/quarentena
-    aplicado a TODAS as consultas de recuperação RAG. A decisão é feita em
-    Python a partir das flags de config, então não há parâmetros novos para
-    propagar aos dicionários de params das queries. Fail-closed."""
+def filtros_gate_rag(incluir_ficticio: bool = False) -> str:
+    """Fragmento SQL (sem bind params; alias obrigatório `kd` para
+    knowledge_docs) com o gate de governança/quarentena aplicado a TODAS as
+    consultas de recuperação RAG. A decisão é feita em Python a partir das
+    flags de config, então não há parâmetros novos para propagar aos
+    dicionários de params das queries. Fail-closed.
+
+    FONTE ÚNICA (C3 da análise E2E de IA 2026-09-03): as métricas de cobertura
+    (`rag_coverage`) e de saúde da base (`knowledge_governance.usable_docs`)
+    contam documentos com ESTE mesmo fragmento — o painel nunca conta o que a
+    recuperação exclui (rag_status ausente, vigência não verificada, súmula em
+    quarentena, corpus fictício).
+    """
     partes = [_FILTRO_GATE_RAG, _FILTRO_REVOGADA_RAG]
     if settings.RAG_EXIGIR_APROVADO:
         partes.append(_FILTRO_APROVADO_RAG)
@@ -207,6 +215,10 @@ def _filtros_gate_rag(incluir_ficticio: bool = False) -> str:
     if not incluir_ficticio:
         partes.append(_FILTRO_FICTICIO_RAG)
     return "\n              ".join(partes)
+
+
+# Nome histórico mantido para os call sites e testes existentes.
+_filtros_gate_rag = filtros_gate_rag
 
 # RAG-04: limiar mínimo de similaridade na busca semântica — evita que matches
 # fracos/irrelevantes entrem como "fonte" e poluam o contexto da IA (risco de
@@ -244,18 +256,13 @@ async def _modo_sigilo_caso(db: AsyncSession, case_id: str | None):
     fazia essa checagem. Um caso de crime sexual/menor analisado por aqui
     (`analisar_caso`, `detectar_teses_ocultas`, `auditar_peca`,
     `preparar_audiencia`, `analisar_contrato`) ia pseudonimizado ao externo
-    mesmo com a flag marcada. Lookup leve (mesmo padrão de
-    `_escopo_cliente_do_caso`), não o ORM inteiro."""
-    if not case_id:
-        return None
-    row = (await db.execute(
-        text("SELECT sigilo_reforcado FROM cases WHERE id = :cid AND deleted_at IS NULL"),
-        {"cid": case_id},
-    )).first()
-    if not row or not row[0]:
-        return None
-    from app.services.ai.sanitization_policy import ModoSanitizacao
-    return ModoSanitizacao.LOCAL_COMPLETO
+    mesmo com a flag marcada.
+
+    Consolidação: a consulta vive em `sanitization_policy.modo_sigilo_por_case_id`
+    (ponto único, junto da política que ela alimenta). Este wrapper permanece
+    porque é o nome usado pelos chamadores deste módulo."""
+    from app.services.ai.sanitization_policy import modo_sigilo_por_case_id
+    return await modo_sigilo_por_case_id(db, case_id)
 
 
 async def _escopo_cliente_do_caso(db: AsyncSession, case_id: str | None) -> str | None:
@@ -441,6 +448,14 @@ async def buscar_contexto_rag(
     REVOGADA nunca é recuperada e, sob RAG_EXIGIR_VIGENCIA_VERIFICADA (default),
     legislação com vigência não conferida também fica de fora.
     """
+    if scope_client_id and not scope_case_id:
+        # C4 (análise E2E de IA 2026-09-03): sem caso no escopo, a comunicação
+        # processual de OUTRO processo do mesmo cliente entra como contexto.
+        # Call sites que conhecem o caso devem propagar `scope_case_id`.
+        logger.debug(
+            "buscar_contexto_rag: scope_client_id sem scope_case_id — "
+            "comunicações de outros casos do cliente podem entrar no contexto"
+        )
     # Tentativa 0: busca SEMÂNTICA via pgvector (se embeddings habilitados).
     # Usa distância de cosseno (operador <=> do pgvector). Cai no textual se
     # indisponível ou em erro. Esta é a busca "por significado" — encontra
@@ -732,6 +747,7 @@ async def analisar_caso(
         db, texto_limpo, limite=6,
         categorias=None,  # busca em todas; filtrar por área em fase 2
         scope_client_id=escopo_cli,
+        scope_case_id=case_id,   # C4: comunicação de OUTRO caso do cliente fica fora
     )
     contexto = _formatar_fontes(fontes)
 
@@ -743,6 +759,7 @@ async def analisar_caso(
         db, texto_limpo, limite=3, categorias=["precedente_interno"],
         modo_or=True,   # relevância parcial é útil: poucos precedentes, vocabulário variado
         scope_client_id=escopo_cli,
+        scope_case_id=case_id,
     )
     contexto_precedentes = ""
     if precedentes:
@@ -1041,7 +1058,11 @@ async def detectar_teses_ocultas(
     if residual:
         return {"erro": f"Sanitização incompleta: {residual}. Revise o texto."}
 
-    fontes = await buscar_contexto_rag(db, f"{area} {texto[:200]}", limite=6, scope_client_id=scope_client_id)
+    fontes = await buscar_contexto_rag(
+        db, f"{area} {texto[:200]}", limite=6,
+        scope_client_id=scope_client_id,
+        scope_case_id=case_id,   # C4: isolamento por caso quando o caso é conhecido
+    )
     contexto = _formatar_fontes(fontes)
 
     user_msg = (
@@ -1214,7 +1235,8 @@ async def analisar_contrato(
     # 2) Recuperação no RAG — legislação relevante (CC, CDC) por termos do contrato
     consulta = f"{tipo_contrato} contrato cláusula abusiva rescisão multa garantia"
     fontes = await buscar_contexto_rag(
-        db, consulta, limite=6, categorias=["legislacao"]
+        db, consulta, limite=6, categorias=["legislacao"],
+        scope_case_id=case_id,   # C4: caso conhecido → escopo por caso propagado
     )
     bloco_fontes = _formatar_fontes(fontes)
 

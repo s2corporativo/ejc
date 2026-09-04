@@ -98,7 +98,9 @@ describe("TabTimeline — composer de andamentos e timesheet", () => {
 
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     const [url, payload] = post.mock.calls[0];
-    expect(url).toBe("/timesheet");
+    // Barra final = rota canônica; sem ela o backend responde 307 para o
+    // prefixo legado (análise E2E 03/09/2026).
+    expect(url).toBe("/timesheet/");
     expect(payload).toMatchObject({
       case_id: "case-1",
       minutos: 90,

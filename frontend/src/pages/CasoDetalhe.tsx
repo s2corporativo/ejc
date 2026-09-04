@@ -14,7 +14,11 @@ import {
 import api from "../lib/api";
 import { asList } from "../lib/list";
 import { areaLabel, useAreas } from "../lib/areas";
-import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
+import {
+  mensagemErroHttp,
+  mensagemErroIA,
+  ROTULO_IA_NAO_ATIVADA,
+} from "../lib/iaErro";
 import { useIaStatus } from "../lib/iaStatus";
 import ContextualAIAssistant from "../components/ContextualAIAssistant";
 import IntakeAnalise from "../components/IntakeAnalise";
@@ -466,25 +470,33 @@ function TabEtiquetas({ caseId }: { caseId: string }) {
   }, [caseId]);
 
   const atribuir = async (id: string) => {
-    await api.post(`/cases/${caseId}/etiquetas`, { etiqueta_id: id });
-    carregar();
+    try {
+      await api.post(`/cases/${caseId}/etiquetas`, { etiqueta_id: id });
+      carregar();
+    } catch (e) {
+      toast.error(mensagemErroHttp(e, "Erro ao atribuir etiqueta"));
+    }
   };
   const remover = async (id: string) => {
     if (!confirm("Remover esta etiqueta do caso?")) return;
     try {
       await api.delete(`/cases/${caseId}/etiquetas/${id}`);
       setDoCaso((p) => p.filter((x) => x.id !== id));
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao remover etiqueta");
+    } catch (e) {
+      toast.error(mensagemErroHttp(e, "Erro ao remover etiqueta"));
     }
   };
   const criar = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nome.trim()) return;
-    const { data } = await api.post("/etiquetas", { nome, cor });
-    setNome("");
-    await api.post(`/cases/${caseId}/etiquetas`, { etiqueta_id: data.id });
-    carregar();
+    try {
+      const { data } = await api.post("/etiquetas", { nome, cor });
+      setNome("");
+      await api.post(`/cases/${caseId}/etiquetas`, { etiqueta_id: data.id });
+      carregar();
+    } catch (e) {
+      toast.error(mensagemErroHttp(e, "Erro ao criar etiqueta"));
+    }
   };
   const disponiveis = todas.filter((t) => !doCaso.some((d) => d.id === t.id));
   const Chip = ({ e, onX }: { e: any; onX?: () => void }) => (
