@@ -96,23 +96,54 @@ def test_duplicidade_e_conflito_sao_separados():
 
 
 @pytest.mark.asyncio
+def _candidato_legislacao() -> dict:
+    return {
+        "doc_id": "d1",
+        "chunk_id": "c1",
+        "titulo": "Lei oficial",
+        "categoria": "legislacao",
+        "fonte": "https://www.planalto.gov.br/lei",
+        "versao": 2,
+        "conteudo": "conteúdo",
+        "confianca": "alta",
+    }
+
+
 async def test_reranker_enriquece_citacao_mesmo_desabilitado(monkeypatch):
     monkeypatch.setattr(reranker, "disponivel", lambda: False)
-    candidates = [
-        {
-            "doc_id": "d1",
-            "chunk_id": "c1",
-            "titulo": "Lei oficial",
-            "categoria": "legislacao",
-            "fonte": "https://www.planalto.gov.br/lei",
-            "versao": 2,
-            "conteudo": "conteúdo",
-            "confianca": "alta",
-        }
-    ]
+    # A hidratação de governança abre sessão própria (AsyncSessionLocal) e não
+    # tem banco aqui. Este teste é sobre o ENRIQUECIMENTO com o cross-encoder
+    # desligado, não sobre o gate — então a hidratação é neutralizada para não
+    # confundir as duas coisas. O gate tem teste próprio logo abaixo.
+    async def _passa_direto(candidatos):
+        return candidatos
 
-    result = await reranker.rerank("consulta", candidates, 1)
+    monkeypatch.setattr(reranker, "_hidratar_governanca", _passa_direto)
+
+    result = await reranker.rerank("consulta", [_candidato_legislacao()], 1)
 
     assert result[0]["autoridade"]["code"] == "oficial_normativa"
     assert result[0]["citacao"]["versao"] == 2
     assert result[0]["citacao"]["documento_id"] == "d1"
+
+
+async def test_reranker_descarta_normativo_sem_governanca(monkeypatch):
+    """Fail-closed: sem conseguir carregar a governança, material NORMATIVO sai
+    do ranking em vez de seguir sem verificação.
+
+    Norma revogada ou em quarentena que passasse por aqui viraria fundamentação
+    de peça. Conteúdo não normativo (doutrina, jurisprudência) não corre esse
+    risco e continua passando — o gate é recortado, não um apagão."""
+    monkeypatch.setattr(reranker, "disponivel", lambda: False)
+
+    doutrina = dict(_candidato_legislacao(), doc_id="d2", chunk_id="c2",
+                    categoria="doutrina", titulo="Comentário doutrinário")
+
+    # Sem banco, `_hidratar_governanca` cai no except e aplica o recorte.
+    result = await reranker.rerank(
+        "consulta", [_candidato_legislacao(), doutrina], 5
+    )
+
+    ids = [item["doc_id"] for item in result]
+    assert "d1" not in ids, "legislação sem governança não pode ser recuperada"
+    assert ids == ["d2"], "doutrina não é normativa e deve seguir no ranking"
