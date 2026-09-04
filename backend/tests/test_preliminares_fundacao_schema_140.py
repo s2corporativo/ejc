@@ -71,8 +71,9 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
     script = _script_directory()
     # Issue #1272 (24/08/2026): 148/149 do plano-mestre renumeradas para
     # 151/152 ao mesclar a main (149/150 ocupadas pelo #1238). A migration
-    # 153 de isolamento cliente-documento é a extensão aditiva desta branch.
-    assert script.get_heads() == ["153_legal_doc_client_id"]
+    # 153 (isolamento cliente-documento), 154 (módulo de saneamento processual,
+    # PROMPT 1) e 155 (índices parciais de listagem) são as extensões aditivas.
+    assert script.get_heads() == ["155_indices_listagem_espinha"]
     revisao = script.get_revision("140_preliminares_fundacao_schema")
     assert revisao.down_revision == "139_dpt360_ciclo_vida_lgpd"
     assert (

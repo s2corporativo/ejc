@@ -1,5 +1,12 @@
 # Deploy do EJC sem GitHub Actions
 
+> **Atualização 2026-09-01.** O quadro abaixo descreve a origem do problema
+> (cota esgotada). O desfecho foi outro: em 2026-08-31 o commit `b77ff4c3`
+> **arquivou o GitHub Actions** e promoveu o Woodpecker a CI oficial. Não há
+> mais esteira automática de publicação — este runbook descreve o caminho de
+> deploy, não uma contingência. O checkout dedicado na VPS é
+> `/opt/ejc-deploy-src`; ele não existia e foi criado em 2026-09-01.
+
 **Por que este runbook existe.** Em 2026-08-22T07:41Z a cota de Actions da conta
 se esgotou e **nenhum workflow do repositório passou a executar**. Em
 2026-08-23T11:51Z um `workflow_dispatch` do `deploy-vps.yml` na `main` terminou
@@ -24,7 +31,7 @@ repositório. O Actions é o gatilho, não o mecanismo.
 Na VPS, com um usuário que tenha `sudo -n` e acesso ao socket do Docker:
 
 ```bash
-cd /caminho/do/checkout            # NÃO use /opt/ejc: é o destino, não a origem
+cd /opt/ejc-deploy-src             # NÃO use /opt/ejc: é o destino, não a origem
 git fetch origin main
 git checkout <SHA>                 # o SHA já integrado à main
 

@@ -4,7 +4,7 @@ from pydantic import AliasChoices, BaseModel, EmailStr, Field, field_validator, 
 from typing import Optional
 from datetime import datetime, date
 
-from app.models.client import ClientStatus, ClientTipo, ClientOrigem
+from app.models.client import ClientStatus, ClientTipo, ClientOrigem, PII_INDECIFRAVEL
 
 # Etapas do funil de leads (CRM) — mesmas colunas do board CRMLeads.tsx.
 ETAPAS_FUNIL = {"lead", "contato", "reuniao", "proposta", "convertido", "perdido"}
@@ -194,40 +194,40 @@ class ClientResponse(ClientBase):
     area_interesse: Optional[str] = None
     responsavel_id: Optional[str] = None
     created_at: datetime
-    # Cutover C6/LGPD: as colunas cpf/cnpj em texto puro não existem mais no
-    # model. Ao serializar a partir do ORM (from_attributes), lê as propriedades
-    # cpf_plain/cnpj_plain (decrypt de cpf_enc/cnpj_enc) — NUNCA o ciphertext.
-    # AliasChoices mantém compatibilidade caso um dia seja validado de um dict
-    # com a chave "cpf"/"cnpj".
+    # Contrato público explícito: este é o ÚNICO documento exposto na resposta
+    # comum. CPF/CNPJ abaixo existem apenas como campos internos de validação para
+    # ler cpf_plain/cnpj_plain do ORM e produzir a máscara; `exclude=True` os
+    # retira também do JSON Schema/OpenAPI de SERIALIZAÇÃO, não só do payload.
+    documento_exibicao: Optional[str] = None
     cpf: Optional[str] = Field(
-        default=None, validation_alias=AliasChoices("cpf_plain", "cpf"))
+        default=None,
+        validation_alias=AliasChoices("cpf_plain", "cpf"),
+        exclude=True,
+    )
     cnpj: Optional[str] = Field(
-        default=None, validation_alias=AliasChoices("cnpj_plain", "cnpj"))
+        default=None,
+        validation_alias=AliasChoices("cnpj_plain", "cnpj"),
+        exclude=True,
+    )
 
     class Config:
         from_attributes = True
 
-    # F-15 (auditoria funcional 16/08/2026): a listagem de clientes expunha
-    # cpf/cnpj DECIFRADOS a qualquer perfil com leitura (minimização LGPD —
-    # art. 6º, III), enquanto a busca global já mascarava. Agora a
-    # listagem devolve SOMENTE o documento mascarado (mesma máscara canônica
-    # da busca global); a revelação completa fica restrita à ficha individual
-    # com gate de titularidade — lá o frontend consulta /clients/{id} com o
-    # mesmo schema, MAS o detalhe pode pedir documento_plain sob demanda.
-    # Nota: ClientResponse é usada em listagem E detalhe; para não quebrar
-    # consumidores internos legítimos do documento completo, o mask aqui se
-    # aplica APENAS ao campo de exibição `documento_exibicao`; cpf/cnpj
-    # continuam disponíveis nos campos originais para uso controlado.
     @model_serializer(mode="wrap")
-    def _mask_documento_listagem(self, handler):
+    def _minimizar_documento(self, handler):
         data = handler(self)
-        # Listagem/leitura comum: expõe o mascarado; CPF/CNPJ em claro
-        # continuam no payload apenas para rotas de detalhe autenticado.
         mascara = None
-        if data.get("cpf"):
-            mascara = self._mascarar(str(data["cpf"]))
-        elif data.get("cnpj"):
-            mascara = self._mascarar(str(data["cnpj"]))
+        documento = self.cpf or self.cnpj
+        if documento == PII_INDECIFRAVEL:
+            # Falha de decifragem é sinal operacional e não pode virar ausência
+            # silenciosa de documento; o marcador não contém PII.
+            mascara = PII_INDECIFRAVEL
+        elif documento:
+            mascara = self._mascarar(str(documento))
+        # Defesa em profundidade: `exclude=True` já remove os campos do handler;
+        # os pops preservam a garantia mesmo se configuração futura mudar.
+        data.pop("cpf", None)
+        data.pop("cnpj", None)
         data["documento_exibicao"] = mascara
         return data
 

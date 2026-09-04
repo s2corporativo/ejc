@@ -21,6 +21,7 @@ def _cfg_provedores(*, ai_enabled: bool = True, ai_provider: str = "auto"):
         ANTHROPIC_API_KEY="anthropic-configurada",
         MARITACA_ENABLED=False,
         MARITACA_API_KEY="",
+        GROQ_ENABLED=True,  # fonte única (provider_registry) exige a flag
         GROQ_API_KEY="groq-configurada",
         OLLAMA_ENABLED=True,
         AI_PROVIDER_PRIORITY="ollama,anthropic,maritaca,groq",

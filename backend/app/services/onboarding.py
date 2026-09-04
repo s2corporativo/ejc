@@ -9,7 +9,7 @@ from datetime import date
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import ROLE_LEVEL
+from app.core.client_ownership import ids_clientes_visiveis, visao_total_clientes
 from app.models.user import User
 from app.models.client import Client, ClientTipo, ClientStatus
 from app.models.procuracao import Procuracao
@@ -18,7 +18,8 @@ from app.models.fee import Fee
 
 
 def pode_ver_todos(user: User) -> bool:
-    return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["admin"]
+    """Compatibilidade: delega à fonte canônica de visibilidade de Clientes."""
+    return visao_total_clientes(user)
 
 
 async def _checklist(db: AsyncSession, client: Client, hoje: date) -> dict:
@@ -95,21 +96,25 @@ async def status_cliente(db: AsyncSession, client: Client) -> dict:
 
 
 async def pendencias(db: AsyncSession, user: User, limit: int = 50) -> dict:
-    """Clientes com onboarding incompleto (mais incompletos primeiro)."""
+    """Clientes visíveis com onboarding incompleto (mais incompletos primeiro)."""
     hoje = date.today()
     q = select(Client).where(
         Client.deleted_at.is_(None),
         Client.status != ClientStatus.arquivado,
     )
-    if not pode_ver_todos(user):
-        q = q.where(Client.responsavel_id == user.id)
+    if not visao_total_clientes(user):
+        # Fonte única com Clientes/Dossiê/Pendências: responsável direto OU
+        # advogado responsável/auxiliar em caso não excluído. A implementação
+        # anterior usava só `responsavel_id`, ocultando cliente legitimamente
+        # visível por vínculo em caso e divergindo do restante do CRM.
+        q = q.where(Client.id.in_(ids_clientes_visiveis(user)))
     clientes = (await db.execute(q.limit(500))).scalars().all()
 
     checklists = [await _checklist(db, c, hoje) for c in clientes]
     incompletos = [c for c in checklists if not c["onboarding_completo"]]
     incompletos.sort(key=lambda c: c["percentual_completo"])
     return {
-        "escopo": "toda a base" if pode_ver_todos(user) else "clientes do usuário",
+        "escopo": "toda a base" if visao_total_clientes(user) else "clientes visíveis do usuário",
         "total_clientes": len(checklists),
         "completos": sum(1 for c in checklists if c["onboarding_completo"]),
         "incompletos": len(incompletos),

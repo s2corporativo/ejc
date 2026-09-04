@@ -172,6 +172,11 @@ async def list_pending_items(
     current_user=Depends(get_current_user),
 ):
     await _exigir_cliente_visivel(db, current_user, client_id)
+    if status is not None and status not in _STATUS_VALIDOS:
+        raise HTTPException(
+            422,
+            f"status inválido; use um de: {sorted(_STATUS_VALIDOS)}",
+        )
     q = "SELECT * FROM client_pending_items WHERE client_id=:cid AND deleted_at IS NULL"
     params = {"cid": client_id}
     if status:
@@ -250,8 +255,13 @@ async def update_pending_item(
     for field, value in mudancas.items():
         sets.append(f"{field}=:{field}")
         params[field] = value
-    if mudancas.get("status") == "concluido":
-        sets.append("completed_at=NOW()")
+    if "status" in mudancas:
+        if mudancas["status"] == "concluido":
+            sets.append("completed_at=NOW()")
+        else:
+            # Reabertura precisa remover o marco de conclusão anterior. Sem
+            # isso, a mesma linha ficava simultaneamente pendente e concluída.
+            sets.append("completed_at=NULL")
     sets.append("updated_at=NOW()")
 
     await db.execute(text(f"UPDATE client_pending_items SET {','.join(sets)} WHERE id=:id"), params)

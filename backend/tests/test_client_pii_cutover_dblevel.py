@@ -5,7 +5,8 @@ cutover:
   (a) criar cliente NÃO grava documento em texto puro — a coluna nem existe e o
       valor guardado (cpf_enc) é ciphertext, não o número;
   (b) buscar por CPF/CNPJ COMPLETO acha o cliente via índice cego (hash);
-  (c) a resposta de API (ClientResponse) devolve o CPF DECIFRADO, não o cipher;
+  (c) a resposta comum de API (ClientResponse) NÃO devolve CPF/CNPJ em claro e
+      expõe somente `documento_exibicao` mascarado;
   (d) a checagem de conflito de interesses (EOAB) acha o cliente pelo hash.
 
 Sem RUN_DB_TESTS=1, pula (nunca conecta em produção).
@@ -59,9 +60,9 @@ async def _limpar(db, *, user_ids=None, client_ids=None):
     await db.commit()
 
 
-async def test_criar_nao_grava_plaintext_e_api_decifra():
-    """(a) + (c): o POST /clients cifra o CPF (sem coluna em texto puro) e a
-    resposta serializada devolve o número DECIFRADO — nunca o ciphertext."""
+async def test_criar_nao_grava_plaintext_e_api_mascara():
+    """(a) + (c): o POST /clients cifra o CPF e a resposta comum expõe apenas
+    a máscara canônica — nunca plaintext nem ciphertext."""
     from app.core.database import AsyncSessionLocal
     from app.routers.clients import criar, detalhe
     from app.schemas.client import ClientCreate, ClientResponse
@@ -95,15 +96,16 @@ async def test_criar_nao_grava_plaintext_e_api_decifra():
             )).mappings().first()
             assert row["cpf_enc"] and cpf_norm not in row["cpf_enc"], "vazou plaintext no cpf_enc"
             assert cpf_digitado not in row["cpf_enc"]
-            assert decrypt(row["cpf_enc"]) == cpf_norm      # decifra p/ o normalizado
+            assert decrypt(row["cpf_enc"]) == cpf_norm
             assert row["cpf_hash"] == hash_documento(cpf_norm)
-            assert row["cnpj_enc"] is None                  # PF não tem CNPJ
+            assert row["cnpj_enc"] is None
 
-            # (c) a resposta de API (ClientResponse) traz o CPF DECIFRADO.
+            # (c) contrato HTTP comum: somente máscara; chaves brutas nem existem.
             fresh = await detalhe(cid, db, cu)
             resp = ClientResponse.model_validate(fresh).model_dump()
-            assert resp["cpf"] == cpf_norm
-            assert resp["cnpj"] is None
+            assert "cpf" not in resp
+            assert "cnpj" not in resp
+            assert resp["documento_exibicao"] == "***.982.247-**"
         finally:
             await _limpar(db, user_ids=[uid], client_ids=[cid] if cid else None)
 
@@ -169,7 +171,8 @@ async def test_conflito_de_interesses_acha_por_hash():
             achados_ids = {a["id"] for a in resultado["achados"]
                            if a["tipo"] == "cliente_existente"}
             assert cid in achados_ids
-            # E o "documento" do achado vem DECIFRADO (não ciphertext).
+            # O service interno usa o documento decifrado para a checagem; os
+            # endpoints públicos do conflito aplicam a máscara antes de responder.
             doc = next(a["documento"] for a in resultado["achados"] if a.get("id") == cid)
             assert doc == cpf_norm
         finally:
