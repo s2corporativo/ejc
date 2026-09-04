@@ -238,12 +238,12 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
             </p>
           )}
           <p className="text-xs text-slate-400">
-            PDF, DOCX, DOC, JPG, PNG, XLSX, XLS, TXT e XML.
+            PDF, DOCX, DOC, JPG, PNG, XLSX, XLS, TXT, MD e XML.
           </p>
           <input
             ref={inputRef}
             type="file"
-            accept=".pdf,.docx,.doc,.jpg,.jpeg,.png,.xlsx,.xls,.txt,.xml"
+            accept=".pdf,.docx,.doc,.jpg,.jpeg,.png,.xlsx,.xls,.txt,.md,.xml"
             className="hidden"
             onChange={(e) => selecionarArquivo(e.target.files?.[0] ?? null)}
           />

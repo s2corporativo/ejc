@@ -114,7 +114,7 @@ async def test_admin_pode_alterar_socio_e_gera_auditoria():
     alteração fica registrada em AuditLog com dados_antes/dados_depois,
     na mesma transação (um único commit)."""
     s = _socio()
-    db = _FakeDB([s])
+    db = _FakeDB([None, s, 0])            # lock, socio, soma do cap table
     out = await atualizar_socio(
         socio_id="socio1",
         req=SocioPatch(participacao_percentual=0.6, pro_labore=15000),
@@ -142,7 +142,7 @@ async def test_admin_pode_alterar_socio_e_gera_auditoria():
 
 async def test_superadmin_pode_alterar_socio():
     s = _socio()
-    db = _FakeDB([s])
+    db = _FakeDB([None, s, 0])            # lock, socio, soma do cap table
     out = await atualizar_socio(
         socio_id="socio1",
         req=SocioPatch(observacoes="revisado"),
@@ -157,7 +157,7 @@ async def test_auditoria_reflete_campos_realmente_alterados():
     snapshot de auditoria — não participação/pró-labore inalterados (achado
     de review em PR #1071: snapshot fixo escondia a real mudança feita)."""
     s = _socio()
-    db = _FakeDB([s])
+    db = _FakeDB([None, s])               # ativo=False pula a validacao de cap table
     await atualizar_socio(
         socio_id="socio1",
         req=SocioPatch(regime=RegimeSocio.resultado, ativo=False),
@@ -190,7 +190,7 @@ async def test_patch_campo_sem_coluna_no_banco_rejeitado_422():
     # que o FastAPI converte em 422 no endpoint real — ANTES de qualquer
     # consulta, commit ou auditoria (payload nunca chega ao handler).
     s = _socio()
-    db = _FakeDB([s])
+    db = _FakeDB([None, s, 0])            # lock, socio, soma do cap table
     for ruim in [{"meta_produtividade": 5000.0, "regime": "misto"},
                  {"meta_produtividade": 5000.0}]:
         with pytest.raises(_PydanticVE):
@@ -205,7 +205,7 @@ async def test_patch_campo_sem_coluna_no_banco_rejeitado_422():
     assert not hasattr(s, "meta_produtividade")
     # Reload do banco: o sócio recarregado segue sem o campo
     s2 = _socio()
-    db = _FakeDB([s2])
+    db = _FakeDB([None, s2, 0])           # lock, socio, soma do cap table
     await atualizar_socio(
         socio_id="socio1",
         req=SocioPatch(regime=RegimeSocio.resultado),
@@ -217,7 +217,7 @@ async def test_patch_campo_sem_coluna_no_banco_rejeitado_422():
 
 
 async def test_socio_inexistente_404():
-    db = _FakeDB([None])
+    db = _FakeDB([None, None])            # lock, socio inexistente -> 404 antes do cap table
     with pytest.raises(HTTPException) as exc:
         await atualizar_socio(
             socio_id="nao-existe",
@@ -251,7 +251,7 @@ async def test_cadastro_socio_commit_unico_com_auditoria():
         data_entrada=date(2026, 1, 1),
     )
     # execute: consulta do "existe?" retorna None; add registra o sócio
-    db = _FakeDB([None])
+    db = _FakeDB(["novosocio", None, None, 0])  # usuario existe, lock, nao e socio, soma
     out = await cadastrar_socio(req=req, db=db, cu=_user(UserRole.admin, "admin1"))
     assert out["user_id"] == "novosocio"
     assert out["participacao_percentual"] == 0.1
@@ -271,7 +271,7 @@ async def test_cadastro_socio_commit_unico_com_auditoria():
 async def test_cadastro_socio_duplicado_nao_audita():
     """Usuário já sócio → 409 e NADA é adicionado à sessão (nem audit log),
     com zero commits."""
-    db = _FakeDB([_socio(user_id="duplicado", id="s2")])
+    db = _FakeDB(["duplicado", None, _socio(user_id="duplicado", id="s2")])  # 409 antes do cap table
     with pytest.raises(HTTPException) as exc:
         await cadastrar_socio(
             req=SocioIn(user_id="duplicado", participacao_percentual=0.05,
