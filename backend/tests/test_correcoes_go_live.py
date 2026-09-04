@@ -476,14 +476,31 @@ async def test_drive_delete_sem_rclone_503(monkeypatch):
         docs_mod, "exigir_documento_sem_referencias_bloqueantes",
         _sem_referencias)
 
+    chamou_delete = []
+
     def indisponivel(*a, **k):
+        chamou_delete.append(True)
         raise docs_mod.gd.DriveIndisponivelError("rclone não configurado")
     monkeypatch.setattr(docs_mod.gd, "delete_file", indisponivel)
 
-    with pytest.raises(HTTPException) as exc:
-        await docs_mod.deletar_documento_drive(
-            "drv1", db=_FakeDB(), current_user=_cu_socio())
-    assert exc.value.status_code == 503
+    # O endpoint legado passou a seguir o lifecycle REVERSÍVEL: soft-delete no
+    # banco, arquivo remoto preservado até a purga definitiva. Logo, ele nem
+    # toca o Drive — e uma indisponibilidade do rclone deixou de ser motivo de
+    # 503 aqui. O que este teste passa a travar é justamente isso: exclusão
+    # reversível não pode destruir o objeto remoto nem depender dele.
+    db = _FakeDB()
+    resultado = await docs_mod.deletar_documento_drive(
+        "drv1", db=db, current_user=_cu_socio())
+
+    assert resultado == {"ok": True}
+    assert not chamou_delete, "soft-delete não pode apagar o arquivo no Drive"
+    logs = [o for o in db.added if isinstance(o, AuditLog)]
+    assert len(logs) == 1
+    assert logs[0].acao == "DELETE"
+    # Auditoria factual: o lifecycle não pediu remoção física, e ninguém checou
+    # o objeto — as duas coisas ficam registradas separadamente.
+    assert logs[0].dados_depois["storage_preservacao_intencao"] is True
+    assert logs[0].dados_depois["storage_verificado"] is False
 
 
 async def test_drive_download_content_disposition_sanitizado(monkeypatch):
