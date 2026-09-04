@@ -374,7 +374,15 @@ def test_delete_documento_sem_referencia_segue_soft_delete():
     logs = _audits(db)
     assert len(logs) == 1
     assert logs[0].acao == "DELETE"
-    assert logs[0].dados_depois == {"storage": "local"}
+    # Auditoria factual: o soft-delete é reversível e não faz I/O no storage,
+    # então "preservado" é INTENÇÃO do lifecycle, não fato observado. As duas
+    # dimensões ficam separadas — quem ler a trilha sabe que ninguém conferiu
+    # a existência física do arquivo.
+    assert logs[0].dados_depois == {
+        "storage": "local",
+        "storage_preservacao_intencao": True,
+        "storage_verificado": False,
+    }
     assert db.committed == 1
 
 
@@ -403,6 +411,17 @@ async def test_buscar_contexto_rag_textual_expoe_doc_id(monkeypatch):
         async def execute(self, sql, params=None):
             del sql, params
             return [linha]
+
+    # A hidratação de governança do reranker abre sessão própria e, sem banco,
+    # aplica o recorte fail-closed que descarta material NORMATIVO — comportamento
+    # correto, com teste próprio em test_knowledge_governance.py. Aqui o alvo é
+    # outro: provar que o fallback textual carrega doc_id/chunk_id no resultado.
+    from app.services.ai import reranker as _reranker
+
+    async def _passa_direto(candidatos):
+        return candidatos
+
+    monkeypatch.setattr(_reranker, "_hidratar_governanca", _passa_direto)
 
     result = await buscar_contexto_rag(
         _DBTxt(), "responsabilidade civil objetiva"
