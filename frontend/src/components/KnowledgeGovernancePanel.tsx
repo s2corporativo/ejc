@@ -16,6 +16,11 @@ import api from "../lib/api";
 import { toast } from "./Toast";
 import { Spinner, fmtDate } from "./UI";
 import { asList } from "../lib/list";
+import { mensagemErroHttp } from "../lib/iaErro";
+import {
+  RevisaoConhecimentoDialog,
+  type DecisaoRevisao,
+} from "./RevisaoConhecimentoDialog";
 
 type TabKey = "saude" | "cobertura" | "laboratorio";
 
@@ -238,6 +243,9 @@ export default function KnowledgeGovernancePanel() {
   const [smoke, setSmoke] = useState<SmokeResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  // C9: aprovar/rejeitar passa pelo diálogo de revisão (documento visível +
+  // notas obrigatórias + POST /rag/governanca/docs/{id}/revisar).
+  const [revisao, setRevisao] = useState<DecisaoRevisao | null>(null);
 
   const loadOverview = async () => {
     setLoading(true);
@@ -254,8 +262,7 @@ export default function KnowledgeGovernancePanel() {
       setSelectedId((current) => current || list[0]?.id || "");
     } catch (error: any) {
       toast.error(
-        error?.response?.data?.detail ||
-          "Falha ao carregar a governança da base.",
+        mensagemErroHttp(error, "Falha ao carregar a governança da base."),
       );
     } finally {
       setLoading(false);
@@ -295,7 +302,7 @@ export default function KnowledgeGovernancePanel() {
       })
       .catch((error: any) =>
         toast.error(
-          error?.response?.data?.detail || "Falha ao abrir o documento.",
+          mensagemErroHttp(error, "Falha ao abrir o documento."),
         ),
       )
       .finally(() => setBusy(null));
@@ -335,7 +342,7 @@ export default function KnowledgeGovernancePanel() {
       await loadOverview();
     } catch (error: any) {
       toast.error(
-        error?.response?.data?.detail || "Falha ao salvar a governança.",
+        mensagemErroHttp(error, "Falha ao salvar a governança."),
       );
     } finally {
       setBusy(null);
@@ -360,7 +367,7 @@ export default function KnowledgeGovernancePanel() {
       else toast.error("Documento não recuperado; consulte o diagnóstico.");
     } catch (error: any) {
       toast.error(
-        error?.response?.data?.detail || "Falha no teste de recuperação.",
+        mensagemErroHttp(error, "Falha no teste de recuperação."),
       );
     } finally {
       setBusy(null);
@@ -377,10 +384,14 @@ export default function KnowledgeGovernancePanel() {
       );
       setComparison(data as VersionComparison);
       if (!data.available)
-        toast.error(data.detail || "Não existe versão anterior.");
+        toast.error(
+          typeof data.detail === "string"
+            ? data.detail
+            : "Não existe versão anterior.",
+        );
     } catch (error: any) {
       toast.error(
-        error?.response?.data?.detail || "Falha ao comparar versões.",
+        mensagemErroHttp(error, "Falha ao comparar versões."),
       );
     } finally {
       setBusy(null);
@@ -398,7 +409,7 @@ export default function KnowledgeGovernancePanel() {
       else toast.error(`${data.failed} teste(s) jurídico(s) exigem atenção.`);
     } catch (error: any) {
       toast.error(
-        error?.response?.data?.detail || "Falha nos testes jurídicos.",
+        mensagemErroHttp(error, "Falha nos testes jurídicos."),
       );
     } finally {
       setBusy(null);
@@ -1012,6 +1023,25 @@ export default function KnowledgeGovernancePanel() {
                             Conferir fonte agora
                           </button>
                         </div>
+                        <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-2">
+                          <button
+                            className="btn btn-primary text-sm"
+                            disabled={busy === "save"}
+                            onClick={() => setRevisao("aprovar")}
+                          >
+                            Aprovar para a IA
+                          </button>
+                          <button
+                            className="btn btn-ghost text-sm text-danger-700"
+                            disabled={busy === "save"}
+                            onClick={() => setRevisao("rejeitar")}
+                          >
+                            Rejeitar
+                          </button>
+                          <span className="self-center text-[11px] text-slate-400">
+                            Revisão humana registrada em auditoria; exige notas.
+                          </span>
+                        </div>
                         <p className="text-[11px] text-slate-400">
                           “Aprovado” autoriza consulta pela IA; não presume
                           autoridade oficial nem vigência.
@@ -1025,6 +1055,20 @@ export default function KnowledgeGovernancePanel() {
           </div>
         </>
       )}
+      <RevisaoConhecimentoDialog
+        docId={revisao && selectedId ? selectedId : null}
+        decisao={revisao ?? "aprovar"}
+        onFechar={() => setRevisao(null)}
+        onConcluido={() => {
+          setRevisao(null);
+          toast.success(
+            revisao === "rejeitar"
+              ? "Documento rejeitado."
+              : "Documento aprovado para a IA.",
+          );
+          void loadOverview();
+        }}
+      />
     </section>
   );
 }

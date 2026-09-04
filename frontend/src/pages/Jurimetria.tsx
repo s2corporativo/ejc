@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Database } from "lucide-react";
 import api from "../lib/api";
-import { PageHeader, Spinner } from "../components/UI";
+import { ErrorState, PageHeader, Spinner } from "../components/UI";
+import { toast } from "../components/Toast";
 import { asList } from "../lib/list";
+import { mensagemErroHttp } from "../lib/iaErro";
+import { useCarregar } from "../lib/useCarregar";
 
 const TRIBUNAIS = ["TJMG", "STJ", "STF", "TRF1", "TRT3"];
 
@@ -76,11 +79,6 @@ function fmtData(value: string | null | undefined) {
 }
 
 export default function Jurimetria() {
-  const [ov, setOv] = useState<any>(null);
-  const [area, setArea] = useState<any[]>([]);
-  const [trib, setTrib] = useState<any[]>([]);
-  const [tese, setTese] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [desfechos, setDesfechos] = useState<any>(null);
   const [ragCoverage, setRagCoverage] = useState<any>(null);
   const [mgCoverage, setMgCoverage] = useState<any>(null);
@@ -101,8 +99,11 @@ export default function Jurimetria() {
         `/jurimetria/interno/analise-prospectiva?classe=${predForm.classe}&tribunal=${predForm.tribunal}&dias_estimados=${predForm.dias}`,
       );
       setPredicao(r.data);
-    } catch {
+    } catch (err) {
       setPredicao(null);
+      toast.error(
+        mensagemErroHttp(err, "Não foi possível calcular o histórico."),
+      );
     } finally {
       setLoadingPred(false);
     }
@@ -115,30 +116,50 @@ export default function Jurimetria() {
   const [loadingExt, setLoadingExt] = useState(false);
   const benchmarkRequestRef = useRef(0);
 
+  // Carga principal: os quatro painéis são independentes; a tela só "falha"
+  // quando NENHUM deles responde (senão mostra o que chegou). Os blocos
+  // secundários (desfechos, stats internos, cobertura) são decorativos e
+  // seguem best-effort — ausência deles não é erro para o usuário.
+  const carga = useCarregar(
+    async () => {
+      const [a, b, c, d] = await Promise.allSettled([
+        api.get("/jurimetria/overview"),
+        api.get("/jurimetria/por-area"),
+        api.get("/jurimetria/por-tribunal"),
+        api.get("/jurimetria/por-tese"),
+      ]);
+      const todos = [a, b, c, d];
+      if (todos.every((r) => r.status === "rejected")) {
+        throw (a as PromiseRejectedResult).reason;
+      }
+      return {
+        ov: a.status === "fulfilled" ? a.value.data : null,
+        area: b.status === "fulfilled" ? asList(b.value.data) : [],
+        trib: c.status === "fulfilled" ? asList(c.value.data) : [],
+        tese: d.status === "fulfilled" ? asList(d.value.data) : [],
+      };
+    },
+    [],
+    {
+      vazio: () => false,
+      fallbackErro: "Não foi possível carregar a jurimetria.",
+    },
+  );
+  const loading = carga.carregando;
+  const ov = carga.dados?.ov ?? null;
+  const area = carga.dados?.area ?? [];
+  const trib = carga.dados?.trib ?? [];
+  const tese = carga.dados?.tese ?? [];
+
   useEffect(() => {
     api
       .get("/jurimetria/desfechos")
       .then((r: any) => setDesfechos(r.data))
-      .catch(() => {});
-    Promise.allSettled([
-      api.get("/jurimetria/overview"),
-      api.get("/jurimetria/por-area"),
-      api.get("/jurimetria/por-tribunal"),
-      api.get("/jurimetria/por-tese"),
-    ])
-      .then(([a, b, c, d]) => {
-        if (a.status === "fulfilled") setOv(a.value.data);
-        if (b.status === "fulfilled") setArea(asList(b.value.data));
-        if (c.status === "fulfilled") setTrib(asList(c.value.data));
-        if (d.status === "fulfilled") setTese(asList(d.value.data));
-      })
-      .finally(() => setLoading(false));
-
+      .catch(() => setDesfechos(null));
     api
       .get("/jurimetria/interno/stats")
       .then((r: any) => setInternalStats(r.data))
-      .catch(() => {});
-
+      .catch(() => setInternalStats(null));
     Promise.allSettled([
       api.get("/jurimetria/cobertura-rag"),
       api.get("/jurimetria/cobertura-mg-jec"),
@@ -177,6 +198,20 @@ export default function Jurimetria() {
     return (
       <div className="flex justify-center py-16">
         <Spinner />
+      </div>
+    );
+  if (carga.estado === "falhou")
+    return (
+      <div>
+        <PageHeader
+          title="Jurimetria"
+          subtitle="Desempenho e histórico interno do escritório — sem benchmark externo ativo"
+        />
+        <ErrorState
+          title="Não foi possível carregar a jurimetria"
+          message={carga.erro ?? undefined}
+          onRetry={carga.recarregar}
+        />
       </div>
     );
 

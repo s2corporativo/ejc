@@ -4,6 +4,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from typing import Any
@@ -68,24 +69,43 @@ async def get_db() -> AsyncSession:
             raise
 
 
-async def check_db() -> bool:
+async def check_db(timeout: float | None = None) -> bool:
     """Verifica conectividade e a extensão pgvector.
 
     O fallback de descarte do pool cobre processos de desenvolvimento que
     executem verificações em loops diferentes. Em CI com NullPool, a primeira
     tentativa já usa uma conexão nova.
+
+    TIMEOUT OBRIGATÓRIO (incidente de 04/09/2026): esta função é a PRIMEIRA
+    coisa que o `lifespan` do FastAPI executa. Sem teto de tempo, um Postgres
+    alcançável mas travado (lock, disco cheio, saturação da VPS compartilhada)
+    prende o startup para sempre — o uvicorn já fez o bind do socket, então o
+    kernel ACEITA a conexão TCP e nunca a serve. Sintoma medido em produção:
+    nginx devolvendo 504 após os 120 s de `proxy_read_timeout` até para rota
+    inexistente, enquanto o SPA estático respondia em 0,5 s. O `except Exception`
+    abaixo NÃO cobria isso: travamento não levanta exceção.
     """
+    limite = settings.STARTUP_STEP_TIMEOUT_SECONDS if timeout is None else timeout
 
     async def _probe() -> None:
-        async with engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
-            await conn.execute(
-                text("SELECT 1 FROM pg_extension WHERE extname='vector'")
-            )
+        # limite <= 0 desativa o teto (asyncio.timeout(None) = sem prazo).
+        async with asyncio.timeout(limite if limite and limite > 0 else None):
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+                await conn.execute(
+                    text("SELECT 1 FROM pg_extension WHERE extname='vector'")
+                )
 
     try:
         await _probe()
         return True
+    except TimeoutError:
+        logger.error(
+            "Database check ESGOTOU O TEMPO (%.1fs) — banco alcançável porém "
+            "sem resposta. O boot segue em modo degradado para a API responder; "
+            "investigue o Postgres (locks, disco, carga).", limite,
+        )
+        return False
     except Exception as exc:
         if "loop" in str(exc).lower():
             try:

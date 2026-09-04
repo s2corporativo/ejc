@@ -8,7 +8,13 @@
 // foi retirada. Este teste prova que o painel de triagem não expõe mais o
 // percentual nem a justificativa, mesmo quando a resposta os traz.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 const postMock = vi.fn();

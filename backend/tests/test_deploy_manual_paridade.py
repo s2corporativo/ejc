@@ -34,9 +34,26 @@ def workflow() -> str:
     return WORKFLOW.read_text(encoding="utf-8")
 
 
+# Skip por TESTE, aplicado só a quem lê o YAML arquivado. A primeira versão
+# desta correção pulava dentro da fixture — mas os testes de paridade afirmam,
+# na MESMA função, sobre o workflow E sobre o `deploy_manual.sh`, que continua
+# sendo o caminho oficial de deploy. Pular a fixture derrubava as duas metades
+# e apagava justamente as travas de produção que eu dizia estar preservando:
+# backup pré-deploy, bloqueio de migration não expand-only, verificação
+# `/api/health` e idempotência por SHA. Onde as duas metades dividem a mesma
+# função, a função se divide (achado do review do Codex no PR #1328).
+sem_workflow = pytest.mark.skipif(
+    not WORKFLOW.is_file(),
+    reason=("GitHub Actions arquivado em 31/08 (b77ff4c) — workflows movidos "
+            "para docs/arquivo/ci/github-actions-legacy/; Woodpecker é o CI oficial"),
+)
+
+
 # ── 1. Paridade de travas ────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("trava, porque", [
+# As travas de produção, em um lugar só: a metade VIVA confere que o
+# `deploy_manual.sh` as tem, a metade DORMENTE que o workflow não as perdeu.
+TRAVAS = [
     ("check_migration_compatibility.py",
      "sem o classificador, migration destrutiva passaria direto"),
     ("--versions-dir backend/alembic/versions",
@@ -54,21 +71,39 @@ def workflow() -> str:
      "gate de vigência ambíguo não pode tocar produção"),
     ("/api/health",
      "sem verificação pós-deploy, rollback silencioso passa por sucesso"),
-])
-def test_manual_repete_as_travas_do_workflow(manual, workflow, trava, porque):
-    assert trava in workflow, f"o workflow perdeu a trava {trava!r} — {porque}"
+]
+
+
+@pytest.mark.parametrize("trava, porque", TRAVAS)
+def test_manual_tem_a_trava(manual, trava, porque):
+    """Metade VIVA: a trava tem que estar no script que faz o deploy hoje."""
     assert trava in manual, f"o deploy manual não tem a trava {trava!r} — {porque}"
 
 
-def test_backup_pre_deploy_e_obrigatorio_nos_dois_caminhos(manual, workflow):
+@sem_workflow
+@pytest.mark.parametrize("trava, porque", TRAVAS)
+def test_workflow_tem_a_mesma_trava(workflow, trava, porque):
+    """Metade de PARIDADE, dormente: só vale enquanto houver workflow."""
+    assert trava in workflow, f"o workflow perdeu a trava {trava!r} — {porque}"
+
+
+def test_backup_pre_deploy_e_obrigatorio_no_manual(manual):
     """A trava que protege contra o pior caso: deploy sem backup."""
-    assert 'REQUIRE_PREDEPLOY_BACKUP: "1"' in workflow
     assert "REQUIRE_PREDEPLOY_BACKUP=1" in manual
 
 
-def test_migration_nao_expand_only_bloqueia_nos_dois(manual, workflow):
-    assert "não é expand-only" in workflow or "Migration pendente não é expand-only" in workflow
+@sem_workflow
+def test_backup_pre_deploy_e_obrigatorio_no_workflow(workflow):
+    assert 'REQUIRE_PREDEPLOY_BACKUP: "1"' in workflow
+
+
+def test_migration_nao_expand_only_bloqueia_no_manual(manual):
     assert "NÃO é expand-only" in manual
+
+
+@sem_workflow
+def test_migration_nao_expand_only_bloqueia_no_workflow(workflow):
+    assert "não é expand-only" in workflow or "Migration pendente não é expand-only" in workflow
 
 
 def test_run_migrations_vem_da_classificacao_e_nao_e_fixo(manual):
@@ -80,9 +115,28 @@ def test_run_migrations_vem_da_classificacao_e_nao_e_fixo(manual):
     assert 'if [ "$pendentes" -gt 0 ]' in manual
 
 
-def test_idempotencia_por_sha_preservada(manual, workflow):
+def test_idempotencia_por_sha_preservada_no_manual(manual):
+    # `.deploy_last_sha` nunca foi escrito por ninguem: quem grava e o
+    # `deploy_vps_safe.sh`, em `.deployed_sha`. Ler o arquivo fantasma fazia
+    # a comparacao ser sempre falsa — a trava anunciada no runbook nao
+    # existia e um deploy repetido refazia tudo em silencio.
+    assert ".deployed_sha" in manual
+    assert ".deploy_last_sha" not in manual
+
+
+def test_sha_alvo_chega_a_quem_carimba_o_release(manual):
+    """Sem propagar TARGET_SHA, o `deploy_vps_safe.sh` cai no fallback
+    `git rev-parse HEAD` dentro de /opt/ejc — cujo `.git` e excluido do rsync
+    e fica congelado no commit anterior. O deploy publica o codigo certo com
+    a identidade errada: em 2026-09-01 o /api/health declarou
+    `commit: 0189b277` com o `c22de08` no ar, e a transacao registrou
+    `sha-indisponivel`."""
+    assert "TARGET_SHA=\"$TARGET_SHA\"" in manual
+
+
+@sem_workflow
+def test_idempotencia_por_sha_preservada_no_workflow(workflow):
     assert ".deploy_last_sha" in workflow
-    assert ".deploy_last_sha" in manual
 
 
 # ── 2. Recusas, exercitadas de verdade ──────────────────────────────────────

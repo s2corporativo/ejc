@@ -83,18 +83,22 @@ describe("Dpt360Workspace — Empresa 360 fora do teto do dashboard", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("mostra 'não encontrada' apenas quando a API responde 404", async () => {
+  it("trata 404 como estado de negócio: cliente fora do programa DPT 360", async () => {
     getProfileMock.mockRejectedValue({ response: { status: 404 } });
     await act(async () => {
-      renderEm("/dpt360/empresas/inexistente");
+      renderEm("/dpt360/empresas/nao-enquadrado");
     });
     await waitFor(() =>
       expect(
-        screen.getByText(
-          /Empresa não encontrada na carteira empresarial visível/i,
-        ),
+        screen.getByText(/Cliente não acompanhado no DPT Empresarial 360/i),
       ).toBeTruthy(),
     );
+    // Orientação de enquadramento + saída para o cadastro canônico.
+    expect(screen.getByText(/clientes pessoa jurídica ativos/i)).toBeTruthy();
+    const link = screen.getByRole("link", {
+      name: /Abrir cadastro do cliente/i,
+    });
+    expect(link.getAttribute("href")).toBe("/clientes/nao-enquadrado");
   });
 
   it("distingue falha de rede/servidor de empresa inexistente, e permite tentar novamente", async () => {

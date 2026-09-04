@@ -1,5 +1,6 @@
 # ── tests/test_migracao_gateway_fase1b.py ────────────────────────────────────
-# FASE 1b — Orquestrador Jurídico (MAPA_PROMPTS_IA03 §5 Passo 2): a camada
+# FASE 1b — Orquestrador Jurídico (docs/arquivo/planos/MAPA_PROMPTS_IA03.md §5
+# Passo 2): a camada
 # legada de IA (ai_service 6 funções vivas + ia_extra 5 fluxos + case_intel)
 # passa INTEIRAMENTE pelo gateway central com task_type coberto pela barreira
 # anti-alucinação (legal_base):
@@ -239,19 +240,99 @@ async def test_resumir_texto_task_de_prosa_coberto(ia_extra_consolidado, monkeyp
     assert _log_unico(db).modelo == "fake/fake-model"
 
 
-async def test_gerar_minuta_task_coberto(ia_extra_consolidado, monkeypatch):
-    calls: list = []
-    monkeypatch.setattr(ia_extra_consolidado, "_gw_chat_consolidacao", _gw_recorder(calls))
+# ── /ai/gerar-minuta: consolidada na porta canônica (Legal Drafting 2.0 §3) ──
+# Esta rota tinha PIPELINE PRÓPRIO e era a menos protegida das quatro que
+# geravam peça (sem response_validator, sem reforço de sigilo pelo caso real,
+# sem scope_case_id), COM consumidor ativo em produção. O invariante que
+# importa deixou de ser "qual system prompt ela manda ao gateway" e passou a
+# ser "ela delega ao Núcleo Único, herdando todos os gates".
+async def test_gerar_minuta_delega_a_porta_canonica(ia_extra_consolidado, monkeypatch):
+    from app.services.ai.core import capacidades
+
+    chamadas: list = []
+    gw: list = []
+
+    async def _redigir_recorder(db, user, **kw):
+        chamadas.append(kw)
+        return {
+            "conteudo": "minuta simulada", "capacidade": "redigir",
+            "tarefa": "minutas", "modelo": "anthropic/claude", "provider": "anthropic",
+            "log_id": "log-canonico", "fontes_rag": [{"titulo": "CDC", "categoria": "legislacao"}],
+            "citacoes": [], "alertas": ["conferir citação"], "custo_estimado_brl": 0.1,
+            "tokens": {"input": 11, "output": 22, "total": 33},
+            "is_rascunho": True, "requer_revisao": True, "status_hitl": "gerado",
+            "aviso_hitl": "Rascunho sujeito à revisão humana (HITL obrigatório — OAB).",
+        }
+
+    monkeypatch.setattr(capacidades, "redigir", _redigir_recorder)
+    # Prova negativa: o gateway NÃO deve mais ser chamado direto por esta rota.
+    monkeypatch.setattr(ia_extra_consolidado, "_gw_chat_consolidacao", _gw_recorder(gw))
+
     db = _FakeDB()
     out = await ia_extra_consolidado.gerar_minuta(
-        ia_extra_consolidado.MinutaIn(tema="cobrança indevida fictícia", fatos=FATOS),
+        ia_extra_consolidado.MinutaIn(
+            tema="cobrança indevida fictícia", fatos=FATOS, tipo_peca="contestação",
+            area="consumidor",
+        ),
         db=db, cu=_cu(),
     )
-    assert out["resposta"] == "resposta simulada"
-    assert calls[0]["task_type"] == "elaboracao_peca"
-    assert calls[0]["task_type"] in _TASKS_COM_BASE
-    assert "NÃO invente jurisprudência" in calls[0]["messages"][0]["content"]
-    assert _log_unico(db).modelo == "fake/fake-model"
+
+    # REGRESSÃO DE ENTRADA (pente fino 03/09): `tipo_peca` e `area` iam em
+    # `opcoes`, que cai em `params` do orquestrador — e o orquestrador lê APENAS
+    # `module_key`, `surface`, `nomes_proteger` e `prompt_extra`. O tipo era
+    # descartado em silêncio: o consumidor de produção
+    # (`frontend/src/pages/ramos/RamoAnalise.tsx`) manda o tipo escolhido pelo
+    # advogado, que pedia CONTESTAÇÃO e recebia rascunho genérico. O contrato de
+    # RESPOSTA estava preservado; faltava o de REQUISIÇÃO.
+    mensagem = chamadas[0]["mensagem"]
+    assert "TIPO DE PEÇA: contestação" in mensagem
+    assert "ÁREA: consumidor" in mensagem
+    assert "TEMA: cobrança indevida fictícia" in mensagem
+
+    # 1. Passou pelo Núcleo Único, não pelo gateway direto.
+    assert len(chamadas) == 1, "a rota deve delegar a capacidades.redigir"
+    assert gw == [], "não pode mais chamar o gateway direto (perderia os gates)"
+
+    # 2. O contrato antigo do request chegou íntegro à porta canônica.
+    kw = chamadas[0]
+    assert kw["area"] == "consumidor"
+    assert kw["opcoes"] == {"tipo_peca": "contestação"}
+    assert "cobrança indevida fictícia" in kw["mensagem"]
+    assert FATOS in kw["mensagem"]
+
+    # 3. O contrato antigo da RESPOSTA foi preservado — `resposta` é o único
+    #    campo que o consumidor (RamoAnalise.tsx) lê.
+    assert out["resposta"] == "minuta simulada"
+    assert out["ai_log_id"] == "log-canonico"
+    assert out["tokens_input"] == 11 and out["tokens_output"] == 22
+    assert out["fontes"] == [{"titulo": "CDC", "categoria": "legislacao"}]
+
+    # 4. O envelope canônico (carimbo HITL) vem junto.
+    assert out["is_rascunho"] is True
+    assert out["status_hitl"] == "gerado"
+    assert "revisão humana" in out["aviso_hitl"]
+
+    # 5. Não grava AILog em duplicidade: quem registra é o orquestrador.
+    assert db.added == [], "AILog duplicado — o orquestrador já registrou"
+
+
+async def test_gerar_minuta_propaga_403_de_ownership(ia_extra_consolidado, monkeypatch):
+    """Ownership passou a ser do orquestrador; o 403/404 dele não pode virar 502."""
+    from fastapi import HTTPException
+
+    from app.services.ai.core import capacidades
+
+    async def _nega(db, user, **kw):
+        raise HTTPException(403, "caso de outro cliente")
+
+    monkeypatch.setattr(capacidades, "redigir", _nega)
+    with pytest.raises(HTTPException) as e:
+        await ia_extra_consolidado.gerar_minuta(
+            ia_extra_consolidado.MinutaIn(tema="tema fictício", fatos=FATOS,
+                                          case_id="caso-de-terceiro"),
+            db=_FakeDB(), cu=_cu(),
+        )
+    assert e.value.status_code == 403
 
 
 async def test_pesquisar_task_de_prosa_coberto(ia_extra_consolidado, monkeypatch):

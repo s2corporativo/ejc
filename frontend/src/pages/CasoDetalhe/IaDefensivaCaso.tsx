@@ -4,6 +4,8 @@ import api from "../../lib/api";
 import { toast } from "../../components/Toast";
 import Markdown from "../../components/Markdown";
 import { Spinner, Empty, fmtDate } from "../../components/UI";
+import { mensagemErroHttp, mensagemErroIA } from "../../lib/iaErro";
+import { useOverrideCitacoes } from "../../components/OverrideCitacoesDialog";
 import type { Case } from "../../types";
 
 export default function IaDefensivaCaso({ caso }: { caso: Case }) {
@@ -56,13 +58,22 @@ export default function IaDefensivaCaso({ caso }: { caso: Case }) {
     carregarHistorico();
   }, [caso.id]);
 
+  // E5: o 409 do gate de citações abre o diálogo de override justificado
+  // (mesmo contrato de PATCH /ai/logs/{id}/hitl) em vez de travar o fluxo.
+  const override = useOverrideCitacoes();
   const atualizarStatus = async (logId: string, status: string) => {
     try {
-      await api.patch(`/ia-defensiva/historico/${logId}/status`, { status });
-      toast.error(`Status atualizado para ${status}.`);
+      const aplicado = await override.executar((extra) =>
+        api.patch(`/ia-defensiva/historico/${logId}/status`, {
+          status,
+          ...extra,
+        }),
+      );
+      if (!aplicado) return; // aguardando justificativa no diálogo
+      toast.success(`Status atualizado para ${status}.`);
       await carregarHistorico();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao atualizar status");
+    } catch (e) {
+      toast.error(mensagemErroHttp(e, "Falha ao atualizar status"));
     }
   };
 
@@ -110,7 +121,7 @@ export default function IaDefensivaCaso({ caso }: { caso: Case }) {
       setResultado(data);
     } catch (e: any) {
       setResultado({
-        erro: e.response?.data?.detail || "Falha ao executar IA defensiva",
+        erro: mensagemErroIA(e, "Falha ao executar IA defensiva"),
       });
     } finally {
       setLoading(false);
@@ -420,6 +431,10 @@ export default function IaDefensivaCaso({ caso }: { caso: Case }) {
           </div>
         )}
       </div>
+      {override.dialogo(() => {
+        toast.success("Status atualizado com override justificado.");
+        void carregarHistorico();
+      })}
     </div>
   );
 }

@@ -37,6 +37,10 @@ class _Res:
     def scalar(self):
         return self._val
 
+    def first(self):
+        # client_ownership.pode_ver_cliente usa .first() (#1348)
+        return self._val
+
 
 class _FakeDB:
     """Sessão fake: fila de resultados para execute(); registra add/delete."""

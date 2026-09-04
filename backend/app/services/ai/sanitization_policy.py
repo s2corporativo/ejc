@@ -117,6 +117,11 @@ _MODO_DEFAULT_POR_TASK: dict[str, ModoSanitizacao] = {
     "auditoria_peca": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
     "jurimetria": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
     "critica_adversarial": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    # Verificação de PERTINÊNCIA: envia a AFIRMAÇÃO da peça (com fatos do caso)
+    # e o texto da autoridade. Explícita aqui, e não pelo fallback, para deixar
+    # registrado que o piso do CASO ainda a reforça — `validar_citacoes` propaga
+    # `modo_sanitizacao` justamente porque a afirmação carrega fatos.
+    "verificacao_pertinencia": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
     # Modo 4 — extração estruturada local (importação/OCR de documento).
     "intake": ModoSanitizacao.EXTRACAO_LOCAL,
     "importacao_documento": ModoSanitizacao.EXTRACAO_LOCAL,
@@ -301,6 +306,36 @@ def modo_sigilo_do_caso(caso) -> ModoSanitizacao | None:
     modo certo. `caso` é lido de forma duck-typed (`getattr`) para não acoplar
     este módulo ao model `Case`."""
     return ModoSanitizacao.LOCAL_COMPLETO if getattr(caso, "sigilo_reforcado", False) else None
+
+
+async def modo_sigilo_por_case_id(db, case_id: str | None) -> ModoSanitizacao | None:
+    """Irmã ASSÍNCRONA de `modo_sigilo_do_caso` para quem tem o `case_id`, não o
+    objeto `Case`: LOCAL_COMPLETO se o caso está marcado `sigilo_reforcado`.
+
+    Consolidação: a mesma consulta (`SELECT sigilo_reforcado FROM cases …`)
+    estava copiada em `ai_service`, `validador_juridico_service`,
+    `ia_defensiva_service` e `analise_estrategica` — quatro cópias que teriam de
+    ser editadas juntas a cada mudança de política, e um quinto chamador novo
+    (crítica adversarial) simplesmente não tinha checagem alguma. Lookup leve,
+    não o ORM inteiro.
+
+    Semântica deliberada, idêntica às cópias que substitui:
+    - `case_id` vazio ou caso inexistente/excluído → None (não há caso em
+      contexto; o ownership já foi verificado pelo chamador).
+    - falha de banco → a exceção PROPAGA. Sem `try/except`: não saber se o caso
+      é sigiloso não pode virar "pode ir ao externo" (§27 — nunca degradar
+      silenciosamente a proteção).
+    """
+    if not case_id:
+        return None
+    from sqlalchemy import text as _text
+    row = (await db.execute(
+        _text("SELECT sigilo_reforcado FROM cases WHERE id = :cid AND deleted_at IS NULL"),
+        {"cid": case_id},
+    )).first()
+    if not row or not row[0]:
+        return None
+    return ModoSanitizacao.LOCAL_COMPLETO
 
 
 def modo_para_task(task_type: str) -> ModoSanitizacao:

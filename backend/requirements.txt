@@ -92,9 +92,6 @@ opencv-python-headless==4.11.0.86  # correção de perspectiva sem dependência 
 pdf2image==1.17.0
 pytesseract==0.3.13
 defusedxml==0.7.1  # parse SEGURO de XML de terceiros (NF-e) — mitiga XXE/billion laughs (ocr_service.py, services/fiscal/nfe_parser.py)
-jinja2==3.1.6  # core/document_template_engine.py (import direto). Antes vinha
-               # por transitividade do fastapi 0.111 "gordo"; o 0.115 (slim)
-               # não a arrasta mais — dependência direta declarada aqui.
 weasyprint==69.0
 pydyf==0.11.0
 reportlab==4.2.0  # relatorio_visual_law.py, visual_law_templates.py
@@ -137,6 +134,24 @@ APScheduler==3.11.3
 celery[redis]==5.4.0  # fila assíncrona (Fase 3A) — worker no docker-compose
 redis==5.0.7          # broker/backend do Celery + ping de disponibilidade (dispatcher)
 sentry-sdk[fastapi]==2.13.0
+# REQUISITO REAL do sentry-sdk[fastapi] acima — não é template engine órfã.
+# Removi esta linha no #1316 ao apagar `core/document_template_engine.py`
+# (único importador DIRETO) e reintroduzi um defeito de 56 testes na `main`:
+#
+#   `StarletteIntegration.setup_once()` chama `patch_templates()`, que decide se
+#   há Jinja2 testando `import markupsafe` — assumindo "markupsafe presente logo
+#   Jinja2 presente". A premissa é falsa aqui: `markupsafe` continua no ambiente
+#   puxado por `Mako` (dependência do Alembic). Sem jinja2 a função segue para
+#   `from starlette.templating import Jinja2Templates`, que levanta
+#   `ImportError: jinja2 must be installed`. O erro escapa do `setup_once()`, a
+#   integração NÃO registra — mas os patches dela já foram instalados —, e todo
+#   request que passa pelo handler de exceção patcheado lê
+#   `integration.failed_request_status_codes` de um `None`.
+#
+# Não some sozinha do ambiente de quem já a tinha instalada: só aparece em
+# instalação limpa, que é o que o CI faz. Guardado por
+# tests/test_sentry_starlette_jinja2.py.
+jinja2==3.1.6
 langfuse==4.14.2
 
 # Tests/dev

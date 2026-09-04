@@ -21,6 +21,12 @@ vps-tools/
 *.orig
 uploads/
 backups/
+# Credenciais OAuth em runtime. Hoje é redundante (os builds usam
+# `context: ./backend` e `./frontend`, e o Dockerfile faz COPY de
+# subdiretórios explícitos, nunca `COPY . .`), mas fecha a simetria com
+# `backups/` acima: no dia em que alguém adicionar um build com `context: .`,
+# a proteção já está aqui em vez de virar incidente.
+secrets/
 _QUARENTENA/
 _session_componentes_bronze/
 ejc_frontend_current.tgz

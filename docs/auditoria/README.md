@@ -19,6 +19,13 @@ são reproduzíveis pela API, mas as causas no código precisam ser confirmadas 
 
 **Se quer a evidência de um achado específico:** procure em `relatorios/`.
 
+**Se quer saber o que mudou desde 21/08:** leia
+`relatorios/2026-08-27-verificacao-e-novos-achados.md` — não é uma nova auditoria forense,
+é uma verificação de código (sem acesso a produção) sobre os 111 commits que aconteceram
+desde a Parte 13, com 21 achados novos (IDs `AUD27-*`, já na tabela de
+`docs/PLANO_MESTRE_STATUS.md`) e a reprodução do estado atual de 12 itens do backlog
+canônico.
+
 ---
 
 ## Os documentos

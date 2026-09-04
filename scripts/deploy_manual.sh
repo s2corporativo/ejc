@@ -20,7 +20,7 @@
 #     com o mesmo bloqueio quando a migration pendente não é expand-only;
 #   • mesma transação sob mutex host-level, com backup pré-deploy OBRIGATÓRIO,
 #     health-poll e rollback automático;
-#   • mesma idempotência por SHA (`/opt/ejc/.deploy_last_sha`).
+#   • mesma idempotência por SHA (`/opt/ejc/.deployed_sha`).
 #
 # QUANDO USAR: cota do Actions esgotada, incidente na plataforma, ou qualquer
 # situação em que a esteira não aloca runner. NÃO é atalho para pular revisão:
@@ -116,7 +116,7 @@ log "Pré-voo aprovado — HEAD $TARGET_SHA, $APP_DIR e runtime presentes."
 
 # ── 2. Idempotência por SHA ─────────────────────────────────────────────────
 ultimo=""
-sudo -n test -f "$APP_DIR/.deploy_last_sha" && ultimo="$(sudo -n cat "$APP_DIR/.deploy_last_sha")" || true
+sudo -n test -f "$APP_DIR/.deployed_sha" && ultimo="$(sudo -n cat "$APP_DIR/.deployed_sha")" || true
 if [ "$ultimo" = "$TARGET_SHA" ]; then
   log "SHA $TARGET_SHA já implantado no último deploy bem-sucedido; nada a fazer."
   exit 0
@@ -166,6 +166,7 @@ if [ -z "${RUNNER_TEMP:-}" ]; then
 fi
 
 log "Iniciando transação sob mutex host-level (backup obrigatório, health e rollback ativos)."
+TARGET_SHA="$TARGET_SHA" \
 RUNNER_TEMP="$RUNNER_TEMP" \
 RUN_MIGRATIONS="$RUN_MIGRATIONS" \
 MIGRATIONS_BACKWARD_COMPATIBLE="$MIGRATIONS_BACKWARD_COMPATIBLE" \
@@ -174,6 +175,12 @@ REQUIRE_PREDEPLOY_BACKUP=1 \
   bash scripts/deploy_workflow_transaction.sh
 
 # ── 5. Verificação pós-deploy ───────────────────────────────────────────────
-curl -fsS http://127.0.0.1:8000/api/health >/dev/null ||
+# --max-time OBRIGATÓRIO. O curl não tem teto por padrão, e o modo de falha que
+# este deploy mais precisa detectar é justamente o backend que ACEITA a conexão
+# TCP e nunca responde (incidente de 04/09/2026: nginx devolvendo 504 só após
+# 120 s, inclusive para rota inexistente). Sem teto, a verificação que deveria
+# acusar o problema fica pendurada nele — foi exatamente assim que o watchdog
+# monitor_health.sh deixou de funcionar.
+curl -fsS --max-time 15 http://127.0.0.1:8000/api/health >/dev/null ||
   fail "health local reprovou APÓS o deploy — confira o rollback automático"
 log "Health local OK. Deploy manual do SHA $TARGET_SHA concluído."

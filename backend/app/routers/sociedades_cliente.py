@@ -8,10 +8,9 @@
 # Segurança (padrão do CRM de clientes + ownership de casos):
 #   • escrita: mesmos papéis do CRM (_CLIENTES de clients.py);
 #   • leitura: equipe interna (cliente_externo bloqueado);
-#   • visibilidade: gestão (socio+) vê tudo; advogado comum só vê sociedades
-#     de clientes que "enxerga" — é responsável pelo cliente OU atua em caso
-#     do cliente (mesma matriz de cases._filtro_visibilidade / core/ownership).
-#     Sociedade fora do escopo responde 404 (não vaza existência);
+#   • visibilidade: fonte única em core/client_ownership.py; gestão e secretaria
+#     veem a carteira institucional, demais perfis dependem de responsabilidade
+#     direta ou vínculo em caso. Sociedade fora do escopo responde 404;
 #   • audit log em toda escrita (criar_audit_log); soft delete na sociedade;
 #   • LGPD: documento do sócio cifrado em repouso (services/pii_crypto, padrão
 #     Bloco 6a de clients) — a API só expõe `documento_mascarado`.
@@ -20,14 +19,17 @@ from typing import Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, or_, func as sqlfunc, text
+from sqlalchemy import select, func as sqlfunc, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.client_ownership import (
+    ids_clientes_visiveis,
+    pode_ver_cliente,
+    visao_total_clientes,
+)
 from app.core.database import get_db
-from app.core.ownership import is_gestao
 from app.core.security import get_current_user, require_roles
 from app.models.audit_log import criar_audit_log
-from app.models.case import Case
 from app.models.client import Client
 from app.models.sociedade_cliente import (
     EventoSocietario, SociedadeCliente, SocioSociedade, TipoEventoSocietario,
@@ -55,48 +57,37 @@ def _req_escrita(cu: User = Depends(get_current_user)) -> User:
 
 
 def _req_leitura(cu: User = Depends(get_current_user)) -> User:
-    """Leitura restrita à equipe interna — padrão clients._req_clientes_leitura."""
+    """Leitura restrita à equipe interna.
+
+    A autorização por registro continua obrigatória; este gate apenas exclui o
+    portal externo da superfície societária interna.
+    """
     if cu.role.value == "cliente_externo":
         raise HTTPException(status_code=403, detail="Sem permissão para consultar sociedades")
     return cu
 
 
-# ── Visibilidade (padrão do cliente) ──────────────────────────────────────────
+# ── Visibilidade (fonte única do CRM) ─────────────────────────────────────────
 
 def _cond_cliente_visivel(cu: User):
-    """Condição SQL de visibilidade do cliente para NÃO-gestão: responsável
-    direto pelo cliente OU advogado (responsável/auxiliar) em caso do cliente."""
-    atua_em_caso = (
-        select(Case.id)
-        .where(
-            Case.client_id == Client.id,
-            Case.deleted_at.is_(None),
-            or_(Case.advogado_responsavel_id == cu.id,
-                Case.advogado_auxiliar_id == cu.id),
-        )
-        .exists()
-    )
-    return or_(Client.responsavel_id == cu.id, atua_em_caso)
+    """Condição SQL reutilizável por listagens de sociedades/LGPD.
+
+    Mantém este wrapper por compatibilidade com `lgpd_registros.py`, mas a regra
+    vem de `core.client_ownership`; não há mais uma segunda implementação de
+    ownership neste router.
+    """
+    if visao_total_clientes(cu):
+        # Condição tautológica sobre a linha já joinada, para callers legados que
+        # ainda aplicam `_cond_cliente_visivel` à secretaria.
+        return Client.id.is_not(None)
+    return Client.id.in_(ids_clientes_visiveis(cu))
 
 
 async def _cliente_visivel(db: AsyncSession, cu: User, client: Client | None) -> bool:
-    """Gate pontual (detalhe/escritas): gestão vê tudo; demais precisam ser
-    responsáveis pelo cliente ou atuar em caso dele."""
+    """Gate pontual canônico para detalhe/escritas."""
     if client is None:
         return False
-    if is_gestao(cu):
-        return True
-    if client.responsavel_id == cu.id:
-        return True
-    caso = (await db.execute(
-        select(Case.id).where(
-            Case.client_id == client.id,
-            Case.deleted_at.is_(None),
-            or_(Case.advogado_responsavel_id == cu.id,
-                Case.advogado_auxiliar_id == cu.id),
-        ).limit(1)
-    )).scalar_one_or_none()
-    return caso is not None
+    return await pode_ver_cliente(db, cu, client)
 
 
 async def _carregar_sociedade(db: AsyncSession, cu: User, sociedade_id: str) -> SociedadeCliente:
@@ -211,7 +202,7 @@ async def listar(
         .join(Client, Client.id == SociedadeCliente.client_id)
         .where(SociedadeCliente.deleted_at.is_(None), Client.deleted_at.is_(None))
     )
-    if not is_gestao(cu):
+    if not visao_total_clientes(cu):
         q = q.where(_cond_cliente_visivel(cu))
     if client_id:
         q = q.where(SociedadeCliente.client_id == client_id)
@@ -259,8 +250,10 @@ async def criar(
         capital_social=payload.capital_social,
     )
     db.add(soc)
-    await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "sociedades_cliente",
-                          soc.id, detalhes=f"cliente {payload.client_id}: {soc.razao_social}")
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "CREATE", "sociedades_cliente", soc.id,
+        detalhes=f"cliente {payload.client_id}; tipo_societario={soc.tipo_societario}",
+    )
     await db.commit()
     return {
         "id": soc.id, "client_id": soc.client_id,
@@ -375,10 +368,12 @@ async def adicionar_socio(
         **pii,
     )
     db.add(s)
-    await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "socios_sociedade",
-                          s.id, detalhes=f"sociedade {soc.id}: sócio {s.nome}")
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "CREATE", "socios_sociedade", s.id,
+        detalhes=f"sociedade {soc.id}; sócio adicionado",
+    )
     await db.commit()
-    return _out_socio(s, None)  # percentual definitivo sai no GET do detalhe
+    return _out_socio(s, None)
 
 
 async def _carregar_socio(db: AsyncSession, cu: User, socio_id: str) -> SocioSociedade:
@@ -440,9 +435,10 @@ async def remover_socio(
     )
     db.add(evento)
     await db.delete(s)
-    await criar_audit_log(db, cu.id, cu.role.value, "DELETE", "socios_sociedade",
-                          socio_id, detalhes=f"sociedade {s.sociedade_id}: saída de "
-                                             f"{s.nome} (evento {evento.id})")
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "DELETE", "socios_sociedade", socio_id,
+        detalhes=f"sociedade {s.sociedade_id}; saída registrada no evento {evento.id}",
+    )
     await db.commit()
     return MsgResponse(detail="Sócio removido — evento 'saida_socio' registrado")
 

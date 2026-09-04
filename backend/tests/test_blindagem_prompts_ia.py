@@ -1,5 +1,5 @@
 # ── tests/test_blindagem_prompts_ia.py ───────────────────────────────────────
-# Blindagem anti-alucinação P0.1/P0.2 (MAPA_PROMPTS_IA03.md):
+# Blindagem anti-alucinação P0.1/P0.2 (docs/arquivo/planos/MAPA_PROMPTS_IA03.md):
 #
 #   P0.1 — routers/prompts_juridicos.py::executar_prompt SEMPRE injeta system
 #          message com a base canônica (garantir_identidade) e NÃO confia no

@@ -28,8 +28,21 @@ _TAREFA_PARA_TIPO_USO: dict[TarefaIA, AITipoUso] = {
     TarefaIA.RESUMO: AITipoUso.resumo_documento,
 }
 
+# A análise agregada de Clientes usa deliberadamente o DocumentAgent/TarefaIA.RESUMO
+# apenas para obter um agente sem `exige_fonte` e, assim, respeitar `usar_rag=False`.
+# Isso NÃO transforma a operação em resumo de documento. O marcador abaixo é
+# inserido pelo backend em clients.py e não contém PII. Mantemos o override aqui,
+# na ponte de auditoria, sem alterar agente, provider, HITL ou retrieval.
+_CLIENTE_ANALISE_MARKER = "[INDICADORES AGREGADOS DO CLIENTE]"
 
-def _tipo_uso(tarefa: TarefaIA) -> AITipoUso:
+
+def _tipo_uso(tarefa: TarefaIA, prompt_sanitizado: str | None = None) -> AITipoUso:
+    if (
+        tarefa == TarefaIA.RESUMO
+        and prompt_sanitizado
+        and _CLIENTE_ANALISE_MARKER in prompt_sanitizado
+    ):
+        return AITipoUso.outro
     return _TAREFA_PARA_TIPO_USO.get(tarefa, AITipoUso.outro)
 
 
@@ -86,7 +99,7 @@ async def registrar(
     return await registrar_ai_log(
         db,
         user_id=str(user.id),
-        tipo_uso=_tipo_uso(tarefa),
+        tipo_uso=_tipo_uso(tarefa, prompt_sanitizado),
         case_id=case_id,
         prompt_sanitizado=prompt_sanitizado,
         pii_removida=pii_removida,

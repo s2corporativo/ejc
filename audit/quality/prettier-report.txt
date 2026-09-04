@@ -1,8 +1,0 @@
-
-> ejc-frontend@3.0.0 format:check
-> prettier --check "src/**/*.{ts,tsx,css}"
-
-Checking formatting...
-All matched files use Prettier code style!
-
-exit_code=0

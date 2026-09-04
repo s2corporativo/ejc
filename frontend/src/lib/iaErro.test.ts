@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  ehBloqueioDeExportacaoDemonstrativo,
+  MENSAGEM_DEMONSTRATIVO_INDISPONIVEL,
+  MENSAGEM_DEMONSTRATIVO_SEM_PERMISSAO,
   MENSAGEM_FERRAMENTA_NAO_HOMOLOGADA,
   MENSAGEM_IA_INDISPONIVEL,
+  mensagemErroDemonstrativo,
   mensagemErroFerramenta,
   mensagemErroIA,
 } from "./iaErro";
@@ -88,5 +92,40 @@ describe("mensagemErroIA", () => {
       "Caso sem descrição.",
     );
     expect(mensagemErroIA(erroCom(null), "Falha X")).toBe("Falha X");
+  });
+});
+
+describe("mensagemErroDemonstrativo", () => {
+  const bloqueio403 = erroCom(
+    "Exportação de demonstrativo bloqueada: as regras das calculadoras estão " +
+      "em revisão (não homologadas — auditoria 2026-07-26).",
+    403,
+  );
+
+  it("traduz o 403 da trava de homologação para mensagem de advogado", () => {
+    expect(mensagemErroDemonstrativo(bloqueio403)).toBe(
+      MENSAGEM_DEMONSTRATIVO_INDISPONIVEL,
+    );
+    expect(ehBloqueioDeExportacaoDemonstrativo(bloqueio403)).toBe(true);
+  });
+
+  it("não confunde 403 de papel com a trava de homologação", () => {
+    const semPermissao = erroCom("Acesso negado", 403);
+    expect(mensagemErroDemonstrativo(semPermissao)).toBe(
+      MENSAGEM_DEMONSTRATIVO_SEM_PERMISSAO,
+    );
+    expect(ehBloqueioDeExportacaoDemonstrativo(semPermissao)).toBe(false);
+  });
+
+  it("mantém o tratamento comum nos demais status", () => {
+    expect(
+      mensagemErroDemonstrativo(
+        erroCom({ codigo: "ferramenta_nao_homologada", mensagem: "x" }, 422),
+      ),
+    ).toBe("x");
+    expect(mensagemErroDemonstrativo(undefined)).toBe(
+      "Falha ao salvar o demonstrativo em Peças.",
+    );
+    expect(ehBloqueioDeExportacaoDemonstrativo(undefined)).toBe(false);
   });
 });
