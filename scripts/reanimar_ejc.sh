@@ -28,8 +28,13 @@
 #     bash scripts/reanimar_ejc.sh --diagnostico      # só lê, não muta NADA
 #     bash scripts/reanimar_ejc.sh --destravar        # fase 1
 #     bash scripts/reanimar_ejc.sh --deploy <SHA>     # fase 2
-#     bash scripts/reanimar_ejc.sh --flags            # fase 3
+#     bash scripts/reanimar_ejc.sh --ligar-tudo       # fase 3 — RELIGA TUDO
 #     bash scripts/reanimar_ejc.sh --embeddings       # fase 4 (a mais pesada)
+#
+# `--ligar-tudo` religa, de uma vez, tudo que deve ser religado, e diz o motivo
+# do que NÃO religa. Três gates ficam de fora por padrão porque ligá-los cria
+# passivo jurídico ou violação de licença — `--assumir-riscos` liga também.
+# `--flags` continua existindo como subconjunto conservador de `--ligar-tudo`.
 #
 # O QUE ESTE SCRIPT NUNCA FAZ, em nenhuma fase:
 #   `docker compose down -v`, `docker volume rm`, `docker system prune`,
@@ -62,10 +67,13 @@ confirmar() {
 
 usage() { sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
+ASSUMIR_RISCOS=0
+
 while [ $# -gt 0 ]; do
   case "$1" in
-    --diagnostico|--destravar|--flags|--embeddings) ACAO="${1#--}"; shift ;;
+    --diagnostico|--destravar|--flags|--embeddings|--ligar-tudo) ACAO="${1#--}"; shift ;;
     --deploy) ACAO="deploy"; TARGET_SHA="${2:-}"; shift 2 || usage ;;
+    --assumir-riscos) ASSUMIR_RISCOS=1; shift ;;
     -h|--help) usage ;;
     *) erro "argumento desconhecido: $1 (use --help)" ;;
   esac
@@ -342,8 +350,206 @@ fase_embeddings() {
   info "Meta: knowledge_chunks_com_embedding == knowledge_chunks_total."
 }
 
+# ═══════════════════ LIGAR TUDO — o que deve mesmo ser ligado ═══════════════
+#
+# "Ligar tudo" literalmente é a instrução errada, e vale dizer por quê antes de
+# executar: parte do que está desligado NÃO é desleixo, é contenção deliberada.
+# Três desses gates, se ligados, criam passivo jurídico ou de licença — e um
+# sistema que emite documento com cálculo não homologado não é "200% operante",
+# é 200% exposto.
+#
+# Esta fase divide o mundo em quatro:
+#   A. liga sozinho, sem credencial nenhuma;
+#   B. liga assim que você digitar a credencial (é AQUI que está a maior parte
+#      do que falta — é tarefa de credencial, não de código);
+#   C. pesado, fase própria (--embeddings);
+#   D. não liga sem decisão sua, com o motivo escrito.
+fase_ligar_tudo() {
+  log "LIGAR TUDO — religando o que deve ser religado"
+  local backup="$APP_DIR/.env.bak.$(date +%Y%m%d%H%M%S)"
+  cp -p "$APP_DIR/.env" "$backup" || erro "não consegui fazer backup do .env"
+  info "backup do .env em: $backup"
+  info "reverter tudo: cp $backup $APP_DIR/.env && docker restart $CONTAINER"
+
+  # ── GRUPO A — sem credencial externa ──────────────────────────────────────
+  log "GRUPO A · Liga agora, sem depender de ninguém"
+
+  info "Push (PWA): as chaves VAPID são geradas localmente — não há vendor."
+  if grep -qE '^VAPID_PUBLIC_KEY=.+' "$APP_DIR/.env"; then
+    info "VAPID já configurada — mantendo a chave existente (trocar derruba as"
+    info "inscrições já feitas nos navegadores)."
+    definir_flag PUSH_ENABLED true
+  else
+    local vapid
+    if vapid="$(docker exec -i "$CONTAINER" python - < "$ROOT/scripts/gen_vapid.py" 2>/dev/null)"; then
+      local pub priv
+      pub="$(echo "$vapid"  | grep '^VAPID_PUBLIC_KEY='  | cut -d= -f2-)"
+      priv="$(echo "$vapid" | grep '^VAPID_PRIVATE_KEY=' | cut -d= -f2-)"
+      if [ -n "$pub" ] && [ -n "$priv" ]; then
+        definir_flag VAPID_PUBLIC_KEY "$pub"
+        definir_flag VAPID_PRIVATE_KEY "$priv"
+        definir_flag PUSH_ENABLED true
+        info "chaves VAPID geradas e gravadas (a privada não é impressa aqui)."
+      else
+        aviso "gen_vapid não devolveu o par esperado — PUSH segue desligado."
+      fi
+    else
+      aviso "não consegui rodar gen_vapid no container — PUSH segue desligado."
+    fi
+  fi
+
+  info "Cache de resposta de IA e rate limit distribuído: o Redis já sobe neste"
+  info "stack; ambos degradam sozinhos se ele cair."
+  definir_flag AI_RESPONSE_CACHE_ENABLED true
+  definir_flag RATE_LIMIT_REDIS_ENABLED true
+
+  info "Qualidade da peça: autocrítica adversarial e pesquisa por questão."
+  info "Custam tokens a mais e melhoram a minuta — nenhum risco jurídico."
+  definir_flag PECAS_AUTOCRITICA_ENABLED true
+  definir_flag PECAS_PESQUISA_QUESTOES_ENABLED true
+
+  info "Auto-reindexação do RAG (só tem efeito após a fase --embeddings)."
+  definir_flag RAG_AUTO_REEMBED_ENABLED true
+
+  info "Busca web de verificação: usa a chave Anthropic que já existe e só é"
+  info "anexada a chamadas que JÁ passaram pela sanitização do gateway."
+  definir_flag AI_WEB_SEARCH_ENABLED true
+
+  # ── GRUPO B — depende de credencial que só você tem ───────────────────────
+  log "GRUPO B · Depende de credencial — é aqui que mora a maior parte do que falta"
+  info "Cada item abaixo é uma pergunta. Enter em branco = pula e segue."
+
+  printf '\n  [1/4] SMTP — sem isto NENHUM alerta de prazo sai por e-mail,\n'
+  printf '        e nem o e-mail de reset de senha/2FA.\n'
+  printf '        Configurar? [s/N]: '; local r; read -r r
+  if [ "$r" = "s" ] || [ "$r" = "S" ]; then
+    local host porta usuario senha
+    printf '    SMTP_HOST [smtp.gmail.com]: '; read -r host; host="${host:-smtp.gmail.com}"
+    printf '    SMTP_PORT [587]: ';            read -r porta; porta="${porta:-587}"
+    printf '    SMTP_USER: ';                  read -r usuario
+    printf '    SMTP_PASSWORD (sem eco): ';    read -rs senha; echo
+    if [ -n "$usuario" ] && [ -n "$senha" ]; then
+      definir_flag SMTP_HOST "$host";     definir_flag SMTP_PORT "$porta"
+      definir_flag SMTP_USER "$usuario";  definir_flag SMTP_PASSWORD "$senha"
+      definir_flag EMAIL_ENABLED true
+      definir_flag RELATORIO_DONO_ENABLED true
+      info "e-mail ligado; relatório semanal do dono ligado junto (depende dele)."
+    else
+      aviso "usuário/senha vazios — e-mail segue desligado."
+    fi
+  fi
+
+  printf '\n  [2/4] WhatsApp pela Evolution API (já instalada nesta VPS).\n'
+  printf '        Configurar? [s/N]: '; read -r r
+  if [ "$r" = "s" ] || [ "$r" = "S" ]; then
+    local url chave instancia
+    printf '    EVOLUTION_API_URL [http://evolution_api:8080]: '; read -r url
+    url="${url:-http://evolution_api:8080}"
+    printf '    EVOLUTION_INSTANCE [ejc-escritorio]: '; read -r instancia
+    instancia="${instancia:-ejc-escritorio}"
+    printf '    EVOLUTION_API_KEY (sem eco): '; read -rs chave; echo
+    if [ -n "$chave" ]; then
+      definir_flag EVOLUTION_API_URL "$url"
+      definir_flag EVOLUTION_INSTANCE "$instancia"
+      definir_flag EVOLUTION_API_KEY "$chave"
+      definir_flag WHATSAPP_ENABLED true
+    else
+      aviso "chave vazia — WhatsApp segue desligado."
+    fi
+  fi
+
+  printf '\n  [3/4] Backup diário cifrado. HOJE NÃO EXISTE NENHUM BACKUP OFFSITE.\n'
+  printf '        Exige BACKUP_GOOGLE_DRIVE_* ou BACKUP_RCLONE_REMOTE já configurados.\n'
+  printf '        Ligar BACKUP_ENABLED? [s/N]: '; read -r r
+  if [ "$r" = "s" ] || [ "$r" = "S" ]; then
+    definir_flag BACKUP_ENABLED true
+    aviso "Confira a PRIMEIRA execução do job: sem credencial ele falha, e agora"
+    aviso "o painel acusa (antes registrava 'ok' para backup que não aconteceu)."
+  fi
+
+  printf '\n  [4/4] DataJud/CNJ — sem isto a movimentação processual NUNCA atualiza\n'
+  printf '        e o cliente não recebe aviso de andamento novo.\n'
+  printf '        Tem a chave da API pública do CNJ? [s/N]: '; read -r r
+  if [ "$r" = "s" ] || [ "$r" = "S" ]; then
+    local dj
+    printf '    DATAJUD_API_KEY (sem eco): '; read -rs dj; echo
+    if [ -n "$dj" ]; then
+      definir_flag DATAJUD_API_KEY "$dj"
+      definir_flag DATAJUD_ENABLED true
+      definir_flag DATAJUD_SYNC_ENABLED true
+      definir_flag AI_GROUNDING_DATAJUD_ENABLED true
+      info "DataJud ligado: consulta, sync diário e grounding de IA."
+    else
+      aviso "chave vazia — DataJud segue desligado."
+    fi
+  fi
+
+  # ── GRUPO D — decisão sua, com o motivo na mesa ───────────────────────────
+  log "GRUPO D · NÃO ligados — cada um com o motivo"
+
+  printf '\n  • PECAS_DEMONSTRATIVO_CALCULADORA_ENABLED — MANTIDO DESLIGADO.\n'
+  printf '    As regras das calculadoras não foram homologadas (fonte/vigência/\n'
+  printf '    revisor). Ligar faz o sistema emitir DOCUMENTO com aparência\n'
+  printf '    oficial sobre cálculo possivelmente errado, que circula fora do\n'
+  printf '    escritório. É passivo jurídico, não funcionalidade.\n'
+  printf '  • RAG_RERANK_ENABLED — MANTIDO DESLIGADO.\n'
+  printf '    O único reranker multilíngue suportado nesta versão tem licença\n'
+  printf '    CC-BY-NC-4.0: uso comercial é violação de licença. Ligar num\n'
+  printf '    escritório de advocacia é infração, não melhoria.\n'
+  printf '  • AI_AGENT_ENABLED — MANTIDO DESLIGADO.\n'
+  printf '    Libera write-tools da IA (criar prazo fatal, nota, kit documental)\n'
+  printf '    antes da homologação do HITL. IA gravando prazo sozinha é o risco\n'
+  printf '    que o sistema inteiro existe para evitar.\n'
+  if [ "$ASSUMIR_RISCOS" = "1" ]; then
+    aviso "--assumir-riscos presente: os TRÊS acima serão ligados."
+    confirmar "Ligar os três gates de risco jurídico/licença acima"
+    definir_flag PECAS_DEMONSTRATIVO_CALCULADORA_ENABLED true
+    definir_flag RAG_RERANK_ENABLED true
+    definir_flag AI_AGENT_ENABLED true
+  else
+    info "Para ligá-los mesmo assim: reexecute com --assumir-riscos."
+  fi
+
+  printf '\n  Decisões de negócio (pergunto, não decido por você):\n'
+  printf '  • Régua de cobrança AUTOMÁTICA ao cliente (d-3/d+1/d+7/d+15 +\n'
+  printf '    escalada). Manda mensagem ao seu cliente sem ninguém revisar.\n'
+  printf '    Ligar? [s/N]: '; read -r r
+  if [ "$r" = "s" ] || [ "$r" = "S" ]; then definir_flag COBRANCA_ENABLED true; else info "COBRANCA_ENABLED mantido desligado."; fi
+
+  printf '  • Expurgo LGPD da Entrada Única (apaga rascunho abandonado).\n'
+  printf '    É HARD DELETE irreversível — e não fazê-lo é passivo LGPD.\n'
+  printf '    Ligar? [s/N]: '; read -r r
+  if [ "$r" = "s" ] || [ "$r" = "S" ]; then definir_flag ENTRADA_EXPURGO_ENABLED true; else info "ENTRADA_EXPURGO_ENABLED mantido desligado."; fi
+
+  printf '  • Verificação de PERTINÊNCIA da citação (confere se a autoridade\n'
+  printf '    citada SUSTENTA a tese, não só se existe). Custa uma chamada de IA\n'
+  printf '    por citação. O código pede base de legislação/súmulas abrangente\n'
+  printf '    antes — o que só se resolve depois da fase --embeddings.\n'
+  printf '    Ligar? [s/N]: '; read -r r
+  if [ "$r" = "s" ] || [ "$r" = "S" ]; then definir_flag PERTINENCIA_ENABLED true; else info "PERTINENCIA_ENABLED mantido desligado."; fi
+
+  printf '  • Transcrição de áudio/vídeo (envia mídia a provedor externo).\n'
+  printf '    Ligar? [s/N]: '; read -r r
+  if [ "$r" = "s" ] || [ "$r" = "S" ]; then definir_flag AUDIO_TRANSCRIPTION_ENABLED true; else info "AUDIO_TRANSCRIPTION_ENABLED mantido desligado."; fi
+
+  log "Aplicando (restart do backend)"
+  confirmar "Reiniciar o backend para tudo isto valer"
+  docker restart "$CONTAINER" >/dev/null
+  sleep 20
+  local codigo; codigo="$(sondar_api /api/health 30)"
+  interpretar_sonda "$codigo"
+
+  log "Conferência final — flags EFETIVAS dentro do processo"
+  docker exec -i "$CONTAINER" python - < "$ROOT/scripts/check_flags_producao.py" | sed 's/^/   /' || true
+
+  log "FALTA AINDA: bash scripts/reanimar_ejc.sh --embeddings"
+  info "É a única peça pesada, e a que faz a busca semântica do RAG sair do zero."
+  info "Reverter tudo desta fase: cp $backup $APP_DIR/.env && docker restart $CONTAINER"
+}
+
 case "$ACAO" in
   diagnostico) fase_diagnostico ;;
+  ligar-tudo)  fase_ligar_tudo ;;
   destravar)   fase_destravar ;;
   deploy)      fase_deploy ;;
   flags)       fase_flags ;;
