@@ -170,12 +170,20 @@ def test_valor_do_enum_permanece_rascunho():
 
 
 def test_frontend_mantem_a_chave_do_enum_no_filtro_da_fila():
-    """O rótulo mudou no frontend; a chave enviada ao backend, não."""
+    """O rótulo e o agrupamento da fila mudam; a chave do ENUM que vai ao
+    backend, não.
+
+    A fila deixou de ser um cartão por status e passou a agrupar status
+    correlatos (`statuses: [...]`), mas os valores continuam sendo os do enum
+    do backend — é isso que não pode derivar, sob pena de o filtro devolver
+    vazio silenciosamente."""
     fonte = (
         Path(__file__).parents[2] / "frontend" / "src" / "pages" / "Pecas.tsx"
     ).read_text(encoding="utf-8")
-    assert 'key: "rascunho"' in fonte
-    assert 'label: "Minuta final"' in fonte
+    assert 'statuses: ["rascunho", "em_revisao"]' in fonte
+    assert 'statuses: ["corrigida"]' in fonte
+    assert 'statuses: ["aprovada", "final"]' in fonte
+    assert 'statuses: ["protocolada"]' in fonte
 
 
 # ── 4. Review PR #622 — invariantes estruturais das correções ────────────────
