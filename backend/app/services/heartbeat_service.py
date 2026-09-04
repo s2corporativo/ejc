@@ -63,6 +63,18 @@ JOBS_MONITORADOS: dict[str, dict[str, Any]] = {
         "max_age_horas": _MAX_SEMANAL,
         "cadencia": "semanal (segundas 09h05)",
     },
+    # Estava definido (JOB_ENTRADA_EXPURGO) e batendo ponto em
+    # scheduler.job_expurgo_entrada_unica, mas FORA deste dict: o job registrava
+    # execução e o painel nunca o avaliava. Cadência lida do add_job real
+    # (scheduler: CronTrigger(hour=3, minute=50)); o gate interno
+    # ENTRADA_EXPURGO_ENABLED é opt-in (default False) — enquanto desligado, o
+    # job não bate ponto e o painel mostra "nunca_executou", que é a leitura
+    # honesta: o expurgo LGPD não está acontecendo.
+    JOB_ENTRADA_EXPURGO: {
+        "label": "Expurgo LGPD da Entrada Única",
+        "max_age_horas": _MAX_DIARIO,
+        "cadencia": "diário 03h50",
+    },
     # F4 (análise E2E 03/09/2026): o backup — o job cuja falha é a mais cara —
     # e o auto-reembed do RAG não tinham heartbeat; o painel mandava "ler o
     # log". Ambos passam a ser monitorados por resultado.

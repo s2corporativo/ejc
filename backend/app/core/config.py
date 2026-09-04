@@ -424,11 +424,28 @@ class Settings(BaseSettings):
     LANGFUSE_CAPTURE_CONTENT: bool = False
 
     # ── Notificações ──────────────────────────────────────────────────────
-    # WhatsApp: o vendor Z-API foi REMOVIDO. Não há mais remetente automático de
-    # WhatsApp (o canal fica efetivamente off — ver notification_service.
-    # enviar_whatsapp). A Evolution API (webhook de ENTRADA) permanece em
-    # routers/evolution_webhook.py, controlada por EVOLUTION_* próprias.
+    # WhatsApp: o vendor Z-API foi removido em 2026 e o canal ficou SEM
+    # remetente — `WHATSAPP_ENABLED=true` não religava nada, porque
+    # notification_preferences fixava `whatsapp=False` no código. Como a
+    # Evolution API já roda nesta VPS (era usada só para o webhook de ENTRADA),
+    # ela passa a ser TAMBÉM o remetente de saída: mesma instância, mesma
+    # chave, nenhum vendor novo e nenhum custo novo.
+    #
+    # Continua opt-in e degradando em silêncio: sem `WHATSAPP_ENABLED=true`,
+    # sem `EVOLUTION_API_URL` ou sem `EVOLUTION_API_KEY`, `enviar_whatsapp`
+    # devolve False e o alerta segue pelo sino interno — nunca levanta erro no
+    # caminho de quem chamou.
     WHATSAPP_ENABLED: bool = False
+    # Base da Evolution API. No compose da VPS o serviço responde no nome de
+    # rede `evolution_api`; fora dele, informe a URL alcançável.
+    EVOLUTION_API_URL: str = "http://evolution_api:8080"
+    # Chave de API da instância (header `apikey`). VAZIA = canal desligado.
+    EVOLUTION_API_KEY: str = ""
+    # Nome da instância conectada ao número do escritório.
+    EVOLUTION_INSTANCE: str = "ejc-escritorio"
+    # Teto por requisição de envio. Curto de propósito: alerta de prazo que
+    # demora não serve, e o job não pode ficar preso no laço de destinatários.
+    EVOLUTION_TIMEOUT: float = 15.0
 
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587  # TLS (não usar 465/SSL)
@@ -989,6 +1006,19 @@ class Settings(BaseSettings):
     # SOBREPÕE os termos default do ramo; ramos extras são aditivos.
     # Ex.: {"tributario": ["CBS IBS", "split payment"], "agrario": ["MP solo"]}
     RADAR_LEGISLATIVO_TERMOS: str = ""
+
+    # ── Boot da aplicação ────────────────────────────────────────────────
+    # Teto de tempo de CADA passo do `lifespan` (main.py) e da sonda do banco
+    # (core/database.py::check_db). Existe por causa do incidente de 04/09/2026:
+    # nenhum passo do startup tinha timeout, um Postgres alcançável e travado
+    # prendeu o boot indefinidamente e a API ficou muda em produção — o uvicorn
+    # já havia feito bind do socket, então o kernel aceitava a conexão TCP e o
+    # nginx só devolvia 504 depois de 120 s, inclusive para rota inexistente.
+    # A regra passa a ser: NENHUM passo de boot pode ser ilimitado. Estourar o
+    # tempo degrada o passo (loga alto e segue), nunca impede a API de subir —
+    # um sistema de pé com feriados desatualizados é infinitamente melhor que
+    # um sistema mudo. 0 ou negativo desativa o teto (não recomendado).
+    STARTUP_STEP_TIMEOUT_SECONDS: float = 15.0
 
     # ── Scheduler ────────────────────────────────────────────────────────
     ENABLE_SCHEDULER: bool = True   # desligar em workers extras (uvicorn --workers)
