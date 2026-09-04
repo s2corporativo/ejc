@@ -95,6 +95,111 @@ async def test_backup_ligado_e_bem_sucedido_continua_ok(monkeypatch):
     assert batidas[-1][:2] == (hb.JOB_BACKUP_DRIVE, "ok")
 
 
+# ── 1-B. Backup sem cópia OFFSITE também não pode pintar de verde ────────────
+# Achado P1 (revisão do Codex, 04/09/2026): mesma classe do item 1, no OUTRO
+# ramo. Com BACKUP_OFFSITE_OBRIGATORIO=false o motor não propaga a falha do
+# Drive/rclone — devolve ok=True, status="parcial", offsite_ok=False — e o
+# envelope registrava "ok". O painel "Backup offsite" ficava VERDE exatamente
+# quando não existe cópia fora da VPS: falsa segurança antes de uma perda.
+async def test_backup_com_offsite_falho_nao_bate_ponto_ok(monkeypatch):
+    monkeypatch.setattr(sch.settings, "BACKUP_ENABLED", True)
+    batidas = _espionar_ponto(monkeypatch)
+    from app.services import backup_execution_service as bes
+
+    async def _parcial_sem_offsite():
+        # Formato REAL de backup_service.executar_backup com o offsite falhando
+        # e BACKUP_OFFSITE_OBRIGATORIO=false.
+        return {
+            "ok": True,
+            "status": "parcial",
+            "local_ok": True,
+            "offsite_ok": False,
+            "offsite_erro": "HttpError: 403 storageQuotaExceeded",
+            "avisos": ["AVISO GRAVE: backup offsite falhou (destino gdrive)"],
+        }
+
+    monkeypatch.setattr(bes, "job_backup_drive_exclusivo", _parcial_sem_offsite)
+    await sch._job_backup_drive_monitorado()
+
+    job, status, detalhe = batidas[-1]
+    assert job == hb.JOB_BACKUP_DRIVE
+    assert status != "ok", "sem cópia offsite o painel não pode ficar verde"
+    assert status in hb._STATUS_VALIDOS
+    # Diagnóstico preservado: "local ok, offsite falhou" ≠ "backup não rodou".
+    assert "offsite" in (detalhe or "").lower()
+    assert "local ok" in (detalhe or "").lower()
+    assert "storageQuotaExceeded" in (detalhe or "")
+    assert "BACKUP_ENABLED=false" not in (detalhe or "")
+
+
+async def test_backup_parcial_com_offsite_ok_continua_ok(monkeypatch):
+    """`parcial` NÃO é o gatilho: uploads acima do teto rebaixam o status com o
+    envio offsite concluído — isso segue sendo backup saudável, com o aviso no
+    detalhe."""
+    monkeypatch.setattr(sch.settings, "BACKUP_ENABLED", True)
+    batidas = _espionar_ponto(monkeypatch)
+    from app.services import backup_execution_service as bes
+
+    async def _parcial_com_offsite():
+        return {
+            "ok": True,
+            "status": "parcial",
+            "local_ok": True,
+            "offsite_ok": True,
+            "offsite_erro": None,
+            "avisos": ["uploads ignorados: 900000000 bytes excede BACKUP_UPLOADS_MAX_MB=512"],
+        }
+
+    monkeypatch.setattr(bes, "job_backup_drive_exclusivo", _parcial_com_offsite)
+    await sch._job_backup_drive_monitorado()
+
+    job, status, detalhe = batidas[-1]
+    assert (job, status) == (hb.JOB_BACKUP_DRIVE, "ok")
+    assert "uploads ignorados" in (detalhe or "")
+
+
+async def test_offsite_falho_e_lido_como_problema_pelo_painel(monkeypatch):
+    """Ponta a ponta do vocabulário, como no teste do gate desligado."""
+    monkeypatch.setattr(sch.settings, "BACKUP_ENABLED", True)
+    from app.services import backup_execution_service as bes
+
+    async def _parcial_sem_offsite():
+        return {"ok": True, "status": "parcial", "local_ok": True,
+                "offsite_ok": False, "offsite_erro": "TimeoutError: rclone"}
+
+    monkeypatch.setattr(bes, "job_backup_drive_exclusivo", _parcial_sem_offsite)
+    registrados: list[tuple] = []
+
+    async def _ponto(job, status, detail=None):
+        db = _FakeDB()
+        await hb.registrar_heartbeat(db, job, status, detail)
+        registrados.append((db.execucoes[-1]["status"], db.execucoes[-1]["detail"]))
+
+    monkeypatch.setattr(sch, "_bater_ponto", _ponto)
+    await sch._job_backup_drive_monitorado()
+
+    status_persistido, detalhe = registrados[-1]
+    avaliacao = hb.avaliar_job(
+        datetime.now(timezone.utc), status_persistido, max_age_horas=26
+    )
+    assert avaliacao["status"] != "ok"
+    assert "offsite" in (detalhe or "").lower()
+
+
+async def test_resultado_sem_a_chave_offsite_nao_e_reclassificado(monkeypatch):
+    """`offsite_ok` ausente (motor antigo/duplo) não vira falha inventada."""
+    monkeypatch.setattr(sch.settings, "BACKUP_ENABLED", True)
+    batidas = _espionar_ponto(monkeypatch)
+    from app.services import backup_execution_service as bes
+
+    async def _ok():
+        return {"ok": True, "status": "sucesso"}
+
+    monkeypatch.setattr(bes, "job_backup_drive_exclusivo", _ok)
+    await sch._job_backup_drive_monitorado()
+    assert batidas[-1][:2] == (hb.JOB_BACKUP_DRIVE, "ok")
+
+
 async def test_status_do_backup_desligado_e_lido_como_problema(monkeypatch):
     """Ponta a ponta do vocabulário: o que o job registra é o que o painel lê."""
     monkeypatch.setattr(sch.settings, "BACKUP_ENABLED", False)

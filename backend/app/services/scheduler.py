@@ -16,6 +16,7 @@
 #  09:00 seg — Procurações vencendo em 30 dias
 #  09:15 — Alertas de vencimento societário
 from __future__ import annotations
+import asyncio
 import logging
 from uuid import uuid4
 from datetime import date, timedelta
@@ -1300,9 +1301,30 @@ async def _job_backup_drive_monitorado():
         detalhe = str(dados.get("erro") or status or "backup não confirmou sucesso")
         await _bater_ponto(JOB_BACKUP_DRIVE, "erro", detalhe[:200])
         return
-    # `parcial` conta como ok (os artefatos locais existem), mas o detalhe
-    # precisa dizer o que faltou — tipicamente o envio offsite.
-    detalhe = (f"parcial: {dados.get('offsite_erro') or 'offsite não confirmado'}"
+    # OFFSITE FALHO NÃO É BACKUP SAUDÁVEL — mesma classe do gate desligado
+    # acima, no outro ramo. Com BACKUP_OFFSITE_OBRIGATORIO=false o motor
+    # (backup_service.executar_backup) NÃO propaga a falha do Drive/rclone:
+    # devolve ok=True, status="parcial", offsite_ok=False e offsite_erro=...
+    # Só existe então a cópia LOCAL, no MESMO VPS que o backup deveria
+    # proteger — e o painel "Backup offsite" ficaria verde exatamente no
+    # cenário de perda da VPS. O gatilho é `offsite_ok`, não `status`:
+    # "parcial" também acontece com o offsite OK (uploads acima do teto,
+    # UPLOAD_DIR inexistente), e esse caso continua sendo ok.
+    # `is False` (e não falsy) de propósito: resultado sem a chave — motor
+    # antigo ou duplo de teste — não pode ser reclassificado como falha.
+    if dados.get("offsite_ok") is False:
+        motivo = str(dados.get("offsite_erro") or "envio offsite não confirmado")
+        # Diagnóstico distinto do "backup não rodou": aqui a prova local existe.
+        await _bater_ponto(
+            JOB_BACKUP_DRIVE, "erro",
+            f"local ok, offsite FALHOU: {motivo}"[:200],
+        )
+        return
+    # `parcial` com offsite enviado conta como ok (os artefatos estão no
+    # destino externo), mas o detalhe precisa dizer o que faltou — os avisos
+    # são justamente o que rebaixou o status para "parcial".
+    avisos = [str(a) for a in (dados.get("avisos") or [])]
+    detalhe = (f"parcial: {'; '.join(avisos) or 'ver avisos do backup'}"
                if status == "parcial" else None)
     await _bater_ponto(JOB_BACKUP_DRIVE, "ok", detalhe[:200] if detalhe else None)
 
@@ -1381,7 +1403,8 @@ def start_scheduler():
     # `.env` não conhece revogação: credencial revogada no cofre voltaria a
     # funcionar até o próximo restart ou escrita no cofre.
     s.add_job(_reaplicar_overlay_cofre, IntervalTrigger(minutes=10),
-              id="cofre_overlay_retry", replace_existing=True)
+              id="cofre_overlay_retry", replace_existing=True,
+              max_instances=1, coalesce=True)
 
     # Recarrega feriados municipais/estaduais (00h05) — pega novas inserções
     # na tabela `feriados` sem precisar reiniciar o backend.
@@ -1472,14 +1495,34 @@ async def _reaplicar_overlay_cofre():
 
     if cofre.estado_overlay()["aplicado"]:
         return
+    # TETO POR TENTATIVA (mesmo padrão de main.py::_passo_de_boot e
+    # core/database.py::check_db): o overlay do boot falhou porque uma operação
+    # de banco TRAVOU — travamento não levanta exceção, então `try/except`
+    # sozinho não termina a tentativa. Sem prazo, esta corrotina espera as
+    # MESMAS consultas indefinidamente e, com max_instances=1 (default do
+    # APScheduler), a rodada travada IMPEDE todas as seguintes: a janela de
+    # exposição de credencial revogada deixaria de ser "≤10 min" e viraria
+    # indefinida. Com o teto, a tentativa é cancelada e a próxima roda.
+    limite = settings.STARTUP_STEP_TIMEOUT_SECONDS
     try:
-        async with AsyncSessionLocal() as db:
-            campos = await cofre.aplicar_overlay(db)
+        async with asyncio.timeout(limite if limite and limite > 0 else None):
+            async with AsyncSessionLocal() as db:
+                campos = await cofre.aplicar_overlay(db)
         logger.warning(
             "[Scheduler] Overlay do cofre REAPLICADO após falha anterior — "
             "%d campo(s); credenciais do .env deixam de valer agora.",
             len(campos),
         )
+    except TimeoutError:
+        # TimeoutError herda de OSError (⊂ Exception) — este ramo precisa vir
+        # ANTES do genérico para o motivo não sair como erro qualquer.
+        logger.error(
+            "[Scheduler] Reaplicação do overlay do cofre ESGOTOU O TEMPO "
+            "(%.1fs) — tentativa abortada para a PRÓXIMA rodada poder rodar; "
+            "até lá o processo segue com o .env, que não conhece revogação.",
+            limite,
+        )
+        cofre.marcar_overlay_falho("TimeoutError")
     except Exception as e:
         cofre.marcar_overlay_falho(type(e).__name__)
 
