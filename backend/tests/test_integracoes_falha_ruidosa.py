@@ -116,3 +116,43 @@ def test_timeout_cobre_a_latencia_medida_do_host_novo():
     from app.integrations.querido_diario_client import QueridoDiarioClient
 
     assert QueridoDiarioClient().timeout.read >= 30.0
+
+
+# ── proveniência do LexML: ementa ≠ inteiro teor ─────────────────────────────
+
+def test_conteudo_lexml_avisa_que_nao_e_inteiro_teor():
+    """O aviso vai no CONTEÚDO porque é o conteúdo que chega ao modelo.
+
+    Sem ele, o trecho recuperado é indistinguível de um documento lido por
+    inteiro, e a IA pode afirmar o que a decisão decidiu tendo visto só a
+    ementa — que é resumo redigido pelo tribunal, não o julgado.
+    """
+    from app.services.ingestors.lexml import _monta_conteudo
+
+    conteudo = _monta_conteudo(
+        {
+            "titulo": "RE 1.234.567/MG",
+            "tribunal": "STF",
+            "relator": "Min. Fulano",
+            "ementa": "Trata-se de recurso extraordinário em que se discute...",
+        },
+        "jurisprudencia",
+    )
+
+    assert "NÃO É O INTEIRO TEOR" in conteudo
+    assert "inteiro teor na fonte oficial" in conteudo
+    # O aviso precede o texto: quem lê o trecho vê a ressalva antes da ementa.
+    assert conteudo.index("PROVENIÊNCIA") < conteudo.index("recurso extraordinário")
+
+
+def test_aviso_de_proveniencia_nao_engole_o_conteudo_real():
+    """A ressalva é acréscimo, não substituição — os metadados seguem citáveis."""
+    from app.services.ingestors.lexml import _monta_conteudo
+
+    conteudo = _monta_conteudo(
+        {"titulo": "Lei 14.133/2021", "ementa": "Lei de Licitações e Contratos."},
+        "legislacao",
+    )
+
+    assert "Lei 14.133/2021" in conteudo
+    assert "Lei de Licitações e Contratos." in conteudo

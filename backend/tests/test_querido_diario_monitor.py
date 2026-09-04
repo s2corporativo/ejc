@@ -216,3 +216,128 @@ async def test_varre_o_produto_municipios_x_termos(monkeypatch, _sem_pausa):
 
     assert r["consultas"] == 6
     assert len(cliente.chamadas) == 6
+
+
+# ── radar vinculado a clientes ───────────────────────────────────────────────
+
+class _ClientesFake:
+    """Sessão que devolve linhas de cliente para `_alvos_de_clientes`."""
+
+    def __init__(self, linhas):
+        self._linhas = linhas
+        self.filtros_tipo = None
+
+    async def execute(self, stmt):
+        # Guarda os VALORES vinculados do WHERE (o `IN` vira placeholder na
+        # string compilada, então checar `str(stmt)` não provaria nada).
+        self.filtros_tipo = list(stmt.compile().params.values())
+
+        class _R:
+            def __init__(self, linhas):
+                self._l = linhas
+
+            def all(self_inner):
+                return self_inner._l
+
+        return _R(self._linhas)
+
+
+def _ligar_radar(monkeypatch, *, incluir_pf=False, ibge_ligado=True):
+    from app.core.config import get_settings
+    from app.integrations import feature_flags
+
+    st = get_settings()
+    monkeypatch.setattr(st, "QUERIDO_DIARIO_RADAR_CLIENTES_ENABLED", True,
+                        raising=False)
+    monkeypatch.setattr(st, "QUERIDO_DIARIO_RADAR_INCLUI_PF", incluir_pf,
+                        raising=False)
+    monkeypatch.setattr(
+        feature_flags, "enabled",
+        lambda fonte: ibge_ligado if fonte == "ibge" else True,
+        raising=False,
+    )
+
+
+def _fake_ibge(monkeypatch, codigo="3106705"):
+    import app.integrations.ibge_localidades_client as ibge_mod
+
+    class _Fake:
+        async def canonicalizar(self, nome, uf):
+            return {"id": codigo, "nome": nome} if codigo else None
+
+    monkeypatch.setattr(ibge_mod, "IbgeLocalidadesClient", lambda *a, **k: _Fake())
+
+
+async def test_radar_gera_alvo_com_vinculo_do_cliente(monkeypatch):
+    """O client_id vem da ORIGEM da consulta — o termo é o nome do cliente."""
+    _ligar_radar(monkeypatch)
+    _fake_ibge(monkeypatch)
+    db = _ClientesFake([("cli-1", None, "Metalúrgica Betim Ltda", "Betim", "MG")])
+
+    alvos = await monitor._alvos_de_clientes(db, {"erros": {}})
+
+    assert len(alvos) == 1
+    assert alvos[0].client_id == "cli-1"
+    assert alvos[0].termo == "Metalúrgica Betim Ltda"
+    assert alvos[0].codigo_ibge == "3106705"
+    assert alvos[0].origem == "cliente"
+
+
+async def test_pessoa_fisica_fica_de_fora_por_padrao(monkeypatch):
+    """Sigilo profissional: nome de PF só entra com o segundo interruptor."""
+    from app.models.client import ClientTipo
+
+    _ligar_radar(monkeypatch, incluir_pf=False)
+    _fake_ibge(monkeypatch)
+    db = _ClientesFake([])
+
+    await monitor._alvos_de_clientes(db, {"erros": {}})
+
+    # A checagem é sobre a query montada, porque é ela que impede a PF de sair
+    # do banco: o dado sensível não deve nem ser carregado.
+    valores = [v for p in db.filtros_tipo for v in (p if isinstance(p, list) else [p])]
+    assert ClientTipo.PJ in valores
+    assert ClientTipo.PF not in valores
+
+
+async def test_ibge_desligado_vira_erro_visivel_e_nao_lista_vazia(monkeypatch):
+    """Sem IBGE não há como virar 'Betim/MG' em código: erro, não silêncio."""
+    _ligar_radar(monkeypatch, ibge_ligado=False)
+    resultado = {"erros": {}}
+
+    alvos = await monitor._alvos_de_clientes(_ClientesFake([]), resultado)
+
+    assert alvos == []
+    assert resultado["erros"] == {"ibge_desabilitado": 1}
+
+
+async def test_municipio_nao_canonicalizado_e_contado(monkeypatch):
+    _ligar_radar(monkeypatch)
+    _fake_ibge(monkeypatch, codigo=None)   # IBGE não resolve o nome
+    resultado = {"erros": {}}
+    db = _ClientesFake([("cli-1", None, "Alguma Empresa SA", "Cidade Inexistente", "MG")])
+
+    alvos = await monitor._alvos_de_clientes(db, resultado)
+
+    assert alvos == []
+
+
+async def test_termo_curto_demais_e_descartado(monkeypatch):
+    """Termo de 3 letras casaria com meio diário — ruído, não sinal."""
+    _ligar_radar(monkeypatch)
+    _fake_ibge(monkeypatch)
+    db = _ClientesFake([("cli-1", "ABC", None, "Betim", "MG")])
+
+    assert await monitor._alvos_de_clientes(db, {"erros": {}}) == []
+
+
+def test_achado_de_cliente_fica_restrito_aquele_cliente():
+    """Documento vinculado é material DAQUELE cliente, não acervo público."""
+    doc = monitor._montar_documento(
+        "3106705", "Metalúrgica Betim Ltda", _payload()["gazettes"][0],
+        client_id="cli-1", origem="cliente",
+    )
+    assert doc["client_id"] == "cli-1"
+    assert doc["extra"]["origem_alvo"] == "cliente"
+    # Mesmo vinculado, segue pendente de curadoria humana.
+    assert doc["extra"]["rag_status"] == "pendente"

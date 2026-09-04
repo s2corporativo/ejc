@@ -930,6 +930,16 @@ class Settings(BaseSettings):
     # Horário DIÁRIO da varredura em UTC ("HH:MM"). 11:00 UTC = 08:00 BRT,
     # depois da publicação matinal dos diários municipais.
     QUERIDO_DIARIO_MONITOR_HORA_UTC: str = "11:00"
+    # RADAR VINCULADO: além dos termos fixos, pesquisa o NOME DO PRÓPRIO
+    # cliente ativo no município dele (derivado de Client.cidade/estado pela
+    # API de localidades do IBGE — exige IBGE_LOCALIDADES_ENABLED).
+    QUERIDO_DIARIO_RADAR_CLIENTES_ENABLED: bool = False
+    # Estende o radar a clientes PESSOA FÍSICA. Interruptor SEPARADO porque
+    # pesquisar o nome de uma PF numa API pública revela a terceiro que ela se
+    # relaciona com o escritório — sigilo profissional (EOAB art. 34, VII).
+    # Razão social de PJ é registro público; nome de PF não é. CPF/CNPJ nunca
+    # são usados como termo de busca, em nenhum dos modos.
+    QUERIDO_DIARIO_RADAR_INCLUI_PF: bool = False
     # Relatório semanal do dono (segunda-feira, e-mail aos sócios/admins) —
     # services/relatorio_dono_service.py.
     RELATORIO_DONO_ENABLED: bool = False

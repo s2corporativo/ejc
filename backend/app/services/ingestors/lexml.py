@@ -282,10 +282,32 @@ def situacao_juridica(item: dict, tipo: str) -> str | None:
     return "revogada" if _RE_ATO_REVOGADO.search(titulo) else None
 
 
+# Aviso de proveniência gravado NO CONTEÚDO, não só no `extra`.
+#
+# O LexML devolve ementa/resumo e metadados — NUNCA o inteiro teor. Sem este
+# aviso, o trecho recuperado pelo RAG chega ao modelo indistinguível de um
+# documento lido por inteiro, e a IA pode afirmar o que a decisão "decidiu" ou
+# o que a norma "dispõe" tendo visto apenas a ementa. Ementa é resumo redigido
+# pelo tribunal: ela indica o julgado, não o substitui.
+#
+# O aviso vai no conteúdo (e não apenas em metadado) porque é o conteúdo que
+# entra no contexto do modelo; metadado em `extra` não é lido por ele.
+_AVISO_PROVENIENCIA = (
+    "[PROVENIÊNCIA — LEXML: EMENTA E METADADOS, NÃO É O INTEIRO TEOR. "
+    "Este registro traz o resumo oficial e os dados de identificação do "
+    "documento. Não afirme o conteúdo integral da decisão ou da norma a partir "
+    "daqui: consulte o inteiro teor na fonte oficial indicada em 'fonte' antes "
+    "de fundamentar.]"
+)
+
+
 def _monta_conteudo(item: dict, tipo: str) -> str:
     """Concatena as partes citáveis do registro LexML (título + metadados +
-    ementa/resumo). Não inventa texto: usa só o que o federador retornou."""
-    partes: list[str] = []
+    ementa/resumo), com o aviso de proveniência à frente.
+
+    Não inventa texto: usa só o que o federador retornou.
+    """
+    partes: list[str] = [_AVISO_PROVENIENCIA]
     if item.get("titulo"):
         partes.append(item["titulo"])
     if tipo == "jurisprudencia" and item.get("tribunal"):
@@ -399,6 +421,14 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                         "origem": "lexml",
                         "rag_status": "aprovado",
                         "tipo_fonte": _TIPO_FONTE[tipo],
+                        # Proveniência explícita: o LexML federa ementa e
+                        # metadados, nunca o inteiro teor. Marcado também aqui
+                        # (além do aviso no conteúdo) para que painéis, gate de
+                        # citações e curadoria possam filtrar por isso sem
+                        # precisar reprocessar texto.
+                        "inteiro_teor": False,
+                        "natureza_conteudo": "ementa_e_metadados",
+                        "consultar_inteiro_teor_em": it.get("link_original") or fonte,
                         **extra_vigencia,
                     },
                     confianca="alta",   # federador oficial (Senado/LexML)
