@@ -155,6 +155,11 @@ ADICOES_INTENCIONAIS = {
     # pelo signatário antes da assinatura (portal). Publicada sem entrada
     # neste ledger — o merge deixou a suíte vermelha; regularizada aqui.
     ("/api/signatures/{sig_id}/documento-visualizado", "POST"),
+    # Estabilização do Financeiro (este PR): fila curta de pendências que
+    # exigem decisão financeira (honorários vencidos, despesas a vencer).
+    # Autenticada e atrás do gate de papel `_exigir_financeiro`; o resumo é
+    # agregado — contagem e total — sem expor PII de cliente.
+    ("/api/financeiro/atencao", "GET"),
 }
 
 REMOCOES_INTENCIONAIS = {
@@ -295,6 +300,13 @@ def test_paridade_openapi_com_snapshot_anterior():
         # a suíte vermelha — regularizado na análise ponta a ponta de 03/09.
         (("/api/clients/{client_id}/ia-analise", "POST"), ["HTTPBearer", "_dep", "_req_clientes", "get_current_user", "get_db"]),
         (("/api/export/clientes.csv", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        # Estabilização do Financeiro (este PR): precificação e proposta de
+        # honorários passam a exigir `_req_advogado` (advogado+), não apenas
+        # autenticação. É ato jurídico privativo — estagiário e secretaria
+        # não estimam honorário. Alteração RESTRITIVA: só ACRESCENTA gate,
+        # nenhum controle existente foi removido.
+        (("/api/honorarios-oab/estimar", "POST"), ["HTTPBearer", "_dep", "_req_advogado", "get_current_user", "get_db"]),
+        (("/api/honorarios-oab/tabela", "GET"), ["HTTPBearer", "_req_advogado", "get_current_user", "get_db"]),
         # Homologação M20 (16/08/2026): correção crítica — o endpoint
         # substituto _listar_docs_escopado (GET /api/rag/docs) perdia os
         # Depends de db e cu na substituição por side effect, derrubando a

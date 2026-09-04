@@ -44,7 +44,10 @@ def test_pagamento_exige_valor_positivo_e_forma_controlada():
     with pytest.raises(ValidationError):
         FeePaymentCreate(**base, forma="cripto")
     with pytest.raises(ValidationError):
-        FeePaymentCreate(**base, valor=Decimal("0"))
+        # `base` já traz `valor`: passá-lo de novo como kwarg estourava
+        # TypeError do Python ANTES do Pydantic, e o teste nunca chegou a
+        # exercitar a rejeição de valor zero que ele existe para provar.
+        FeePaymentCreate(**{**base, "valor": Decimal("0")})
     with pytest.raises(ValidationError):
         FeePaymentCreate(**base, forma_pagamento="pix")
 
