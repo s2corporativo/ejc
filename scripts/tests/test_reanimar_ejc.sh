@@ -213,6 +213,36 @@ for fase in fase_flags fase_ligar_tudo fase_embeddings; do
 done
 ok "fases que editam .env falham cedo e claro sem permissão"
 
+# ── Deploy recusa checkout SUJO ─────────────────────────────────────────────
+# O que vai para produção é a ÁRVORE DE TRABALHO: deploy_workflow_transaction.sh
+# faz `rsync -a --delete "$ROOT/" "$APP_DIR/"`. A checagem de ancestralidade
+# prova que o HEAD pertence à main, NÃO que os bytes no disco pertencem — um
+# arquivo não rastreado entra em produção sem revisão nenhuma.
+corpo_deploy2="$(awk '/^fase_deploy\(\) \{/,/^}/' "$SCRIPT")"
+printf '%s' "$corpo_deploy2" | grep -q 'status --porcelain' \
+  || fail "--deploy não recusa árvore de trabalho suja"
+# E recusa em vez de limpar: apagar trabalho de alguém durante um incidente é
+# pior que abortar o deploy.
+for destrutivo in 'checkout -f' 'clean -fd' 'reset --hard'; do
+  if printf '%s' "$corpo_deploy2" | grep -v '^\s*#' | grep -Fq -- "$destrutivo"; then
+    fail "--deploy usa '$destrutivo' para limpar a árvore em vez de abortar"
+  fi
+done
+ok "deploy recusa checkout sujo sem destruir trabalho local"
+
+# ── Toda fase que edita .env tem backup E restaura ao falhar a saúde ────────
+# A fase de embeddings não tinha backup: se a saúde reprovasse, ela saía com
+# EMBEDDINGS_ENABLED=true gravado e o job horário voltava a disparar a carga
+# que estourou 10 GB — contra uma produção que acabou de falhar o health.
+for fase in fase_flags fase_ligar_tudo fase_embeddings; do
+  corpo="$(awk "/^${fase}\(\) \{/,/^}/" "$SCRIPT")"
+  printf '%s' "$corpo" | grep -q 'cp -p "\$APP_DIR/.env"' \
+    || fail "$fase edita o .env sem fazer backup antes"
+  printf '%s' "$corpo" | grep -q 'cat "\$backup" > "\$APP_DIR/.env"' \
+    || fail "$fase não restaura o .env quando o backend não volta saudável"
+done
+ok "as 3 fases que editam .env fazem backup e restauram ao reprovar a saúde"
+
 # ── Recusa rodar de dentro de /opt/ejc ──────────────────────────────────────
 # O script se auto-substituiria durante o checkout da fase de deploy.
 grep -q 'rode a partir de um checkout git' "$SCRIPT" || fail "sem guarda de APP_DIR"

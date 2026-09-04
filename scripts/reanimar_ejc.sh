@@ -244,6 +244,31 @@ fase_deploy() {
 
   git -C "$ROOT" checkout -q "$TARGET_SHA" || erro "checkout de $TARGET_SHA falhou"
 
+  # O que vai para produção NÃO é o objeto git do SHA: é a ÁRVORE DE TRABALHO.
+  # `deploy_workflow_transaction.sh:64` faz `rsync -a --delete "$ROOT/" "$APP_DIR/"`,
+  # e a lista de --exclude cobre .git, .env, uploads e afins — não cobre arquivo
+  # novo que alguém deixou no checkout. Então a checagem de ancestralidade acima
+  # prova que o HEAD pertence à main, e NÃO que os bytes no disco pertencem:
+  # uma edição não commitada ou um arquivo não rastreado entra em produção sem
+  # ter passado por revisão nenhuma. Achado da revisão do PR.
+  #
+  # `--porcelain` cobre rastreado modificado E não rastreado (sem
+  # --untracked-files=no). Recuso em vez de limpar: `git checkout -f` ou
+  # `git clean -fd` aqui apagariam trabalho de quem estiver no console durante
+  # um incidente — e destruir dado é o que este script existe para não fazer.
+  local sujeira
+  sujeira="$(git -C "$ROOT" status --porcelain 2>/dev/null || true)"
+  if [ -n "$sujeira" ]; then
+    printf '\n%s\n' "$sujeira" | sed 's/^/     /' >&2
+    erro "checkout SUJO — o deploy copia a árvore de trabalho inteira para
+    produção, então o que está listado acima iria junto, sem revisão.
+    Guarde ou remova essas alterações (o que for seu) e rode de novo:
+        git -C $ROOT stash --include-untracked
+    Não faço isso por você: apagar trabalho de alguém durante um incidente é
+    pior que abortar o deploy."
+  fi
+  info "✅ árvore de trabalho limpa — só o conteúdo do SHA vai para produção"
+
   log "2.1 · Ensaio (--dry-run): confere tudo e NÃO muta produção"
   bash "$ROOT/scripts/deploy_manual.sh" --sha "$TARGET_SHA" --dry-run
 
@@ -464,14 +489,29 @@ fase_embeddings() {
     | sed 's/^/   /' || aviso "a sonda acusou problema — leia antes de seguir"
 
   confirmar "Ligar EMBEDDINGS_ENABLED=true"
+
+  # Snapshot ANTES de editar. Esta fase não tinha backup, ao contrário das duas
+  # outras que mexem no .env — então, se a saúde reprovasse, ela saía deixando
+  # EMBEDDINGS_ENABLED=true gravado. Consequência concreta: o job horário de
+  # reindexação volta a disparar a carga que em 27/08 estourou 10 GB, contra uma
+  # produção que acabou de falhar o health. Achado da revisão do PR.
+  local backup="$APP_DIR/.env.bak.$(date +%Y%m%d%H%M%S)"
+  cp -p "$APP_DIR/.env" "$backup" || erro "não consegui fazer backup do .env"
+  info "backup do .env em: $backup"
+
   definir_flag EMBEDDINGS_ENABLED true
   # Teto de lote: 16 é o valor que conteve o pico de 27/08. Não aumente sem medir.
   definir_flag EMBEDDINGS_BATCH 16
   # Recriar, não reiniciar: sem isto o container seguiria com
   # EMBEDDINGS_ENABLED=false e a reindexação abortaria sem processar nada.
   aplicar_env
-  aguardar_saudavel 20 >/dev/null \
-    || erro "backend não voltou saudável — não vou reindexar contra um sistema quebrado"
+  if ! aguardar_saudavel 20 >/dev/null; then
+    aviso "Backend NÃO respondeu 200 após ligar os embeddings. Restaurando o .env"
+    aviso "para EMBEDDINGS_ENABLED não ficar ligado num sistema doente."
+    cat "$backup" > "$APP_DIR/.env" && aplicar_env
+    erro "embeddings revertidos — não reindexo contra um sistema quebrado.
+    Investigue o log do backend antes de tentar de novo."
+  fi
 
   log "4.3 · Reindexação em primeiro plano, sob observação"
   info "Preferir isto a esperar o job horário: aqui você vê o consumo subir e"
