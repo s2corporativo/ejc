@@ -10,6 +10,7 @@
 #    (Dockerfile usa --workers 1; nunca aumentar sem desligar o gate).
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -62,7 +63,6 @@ from app.routers import conteudo
 from app.routers import contratos_societarios
 from app.routers import conversao_caso
 from app.routers import credential_vault  # Cofre de Credenciais (superadmin)
-from app.routers import curadoria_renomada
 from app.routers import dashboard
 from app.routers import data_room
 from app.routers import datajud
@@ -209,10 +209,64 @@ from app.core.observability import (
 init_sentry()
 
 
+async def _passo_de_boot(nome: str, coro_factory, padrao=None, ao_falhar=None):
+    """Executa um passo do startup com teto de tempo e degradação.
+
+    REGRA DE BOOT (incidente de 04/09/2026): nenhum passo do `lifespan` pode
+    ser ilimitado. O uvicorn faz o bind do socket ANTES de rodar o lifespan —
+    então, enquanto o startup não termina, o kernel aceita a conexão TCP e
+    ninguém a serve. Em produção isso apareceu como nginx devolvendo 504 após
+    os 120 s de `proxy_read_timeout` até para rota inexistente, enquanto o SPA
+    estático respondia em 0,5 s: sintoma de boot preso, não de container caído
+    (container caído daria 502 imediato).
+
+    `try/except` sozinho NÃO resolvia: travamento não levanta exceção. Por isso
+    aqui há timeout E except — e a falha de um passo nunca impede a API de
+    subir. Um sistema de pé com feriados desatualizados é infinitamente melhor
+    que um sistema mudo.
+
+    `ao_falhar(tipo_do_erro)` (opcional, síncrono) deixa o passo REGISTRAR sua
+    própria degradação: "seguir degradado" só é aceitável quando o estado
+    degradado é consultável depois. Note que no timeout o `asyncio.timeout`
+    CANCELA a corrotina — `CancelledError` herda de BaseException e não é pego
+    por `except Exception` DENTRO do passo, então quem depende de marcação
+    interna precisa tratar o cancelamento lá (ver deadline_calculator).
+    """
+    limite = settings.STARTUP_STEP_TIMEOUT_SECONDS
+
+    def _sinalizar(tipo: str) -> None:
+        if ao_falhar is None:
+            return
+        try:
+            ao_falhar(tipo)
+        except Exception:   # pragma: no cover — sinalização nunca derruba o boot
+            logger.error("[EJC] Sinalização de falha do passo '%s' falhou",
+                         nome, exc_info=True)
+
+    try:
+        async with asyncio.timeout(limite if limite and limite > 0 else None):
+            return await coro_factory()
+    except TimeoutError:
+        logger.error(
+            "[EJC] Passo de boot '%s' ESGOTOU O TEMPO (%.1fs) — seguindo em "
+            "modo degradado para a API responder. Investigue a dependência "
+            "desse passo (banco, disco, rede).", nome, limite,
+        )
+        _sinalizar("TimeoutError")
+        return padrao
+    except Exception as e:
+        logger.error(
+            f"[EJC] Passo de boot '{nome}' FALHOU — seguindo em modo degradado",
+            extra=safe_exception_log(e),
+        )
+        _sinalizar(type(e).__name__)
+        return padrao
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    db_ok = await check_db()
+    db_ok = await _passo_de_boot("check_db", check_db, padrao=False)
     logger.info(f"[EJC] Banco de dados: {'OK' if db_ok else 'FALHA'}")
     # Timbre dos documentos: setting institucional vazia FAZ SUMIR o segmento da
     # peça (não imprime mais "[CEP - preencher em .env]" no papel que o cliente
@@ -248,38 +302,55 @@ async def lifespan(app: FastAPI):
     # Carrega feriados municipais/estaduais da tabela `feriados` para o
     # calculador de prazos (caso contrário só os nacionais entram na conta).
     from app.services.deadline_calculator import carregar_feriados_db
-    try:
-        n_fer = await carregar_feriados_db()
-    except Exception as e:
-        logger.warning("[EJC] Feriados não carregados", extra=safe_exception_log(e))
-        n_fer = 0
+    n_fer = await _passo_de_boot("feriados", carregar_feriados_db, padrao=0)
     logger.info(f"[EJC] Feriados municipais/estaduais carregados: {n_fer}")
     from app.services.deadline_calculator import carregar_suspensoes_db
-    try:
-        n_susp = await carregar_suspensoes_db()
-    except Exception as e:
-        logger.warning("[EJC] Suspensões não carregadas", extra=safe_exception_log(e))
-        n_susp = 0
+    n_susp = await _passo_de_boot("suspensoes", carregar_suspensoes_db, padrao=0)
     logger.info(f"[EJC] Suspensões de tribunal carregadas: {n_susp} dia(s)")
     # Cofre de Credenciais (PR-2): aplica o overlay das credenciais ativas
     # sobre o SINGLETON get_settings() (mutação in-place — nunca cache_clear).
     # Falha do overlay NÃO pode derrubar o boot: loga alto e segue com o .env.
-    try:
+    async def _overlay_cofre():
         from app.core.database import AsyncSessionLocal
         from app.services import credential_vault_service
         async with AsyncSessionLocal() as db_cofre:
-            campos_cofre = await credential_vault_service.aplicar_overlay(db_cofre)
+            return await credential_vault_service.aplicar_overlay(db_cofre)
+
+    from app.services.credential_vault_service import marcar_overlay_falho
+
+    campos_cofre = await _passo_de_boot(
+        "cofre_credenciais", _overlay_cofre, ao_falhar=marcar_overlay_falho,
+    )
+    if campos_cofre is None:
+        # O .env NÃO conhece revogação: sem overlay, uma credencial revogada no
+        # cofre (que aplicar_overlay zeraria para "") volta a funcionar. Por
+        # isso a falha vira estado consultável (credential_vault_service.
+        # estado_overlay → painel de integrações) e o job `cofre_overlay_retry`
+        # reaplica em minutos, em vez de a API ficar no .env indefinidamente.
+        logger.error(
+            "[EJC] Overlay do cofre de credenciais NÃO aplicado — seguindo com "
+            "os valores do .env; credencial REVOGADA no cofre segue válida até "
+            "a reaplicação (job cofre_overlay_retry)."
+        )
+    else:
         logger.info(
             f"[EJC] Cofre de credenciais: overlay aplicado em "
             f"{len(campos_cofre)} campo(s)"
         )
-    except Exception as e:
-        logger.error(
-            "[EJC] Overlay do cofre de credenciais FALHOU — mantendo valores "
-            "do .env", extra=safe_exception_log(e),
-        )
+    # `start_scheduler()` é SÍNCRONO e não bloqueia (o AsyncIOScheduler só
+    # registra os jobs e se pendura no loop já rodando), então teto de tempo
+    # aqui seria falsa segurança — `asyncio.timeout` não interrompe código
+    # síncrono. O que faltava era o try/except: uma exceção ao registrar
+    # qualquer um dos 41 jobs abortava o lifespan inteiro e deixava a API muda.
     if settings.ENABLE_SCHEDULER:
-        start_scheduler()
+        try:
+            start_scheduler()
+        except Exception as e:
+            logger.error(
+                "[EJC] Scheduler NÃO iniciou — a API sobe sem os jobs "
+                "agendados (prazos, backup, ingestão). Corrija e reinicie.",
+                extra=safe_exception_log(e),
+            )
     logger.info(f"[EJC] v3.0 iniciado — ambiente: {settings.APP_ENV}")
     yield
     # Shutdown
@@ -367,7 +438,6 @@ app.include_router(conteudo.router, prefix=API)
 app.include_router(contratos_societarios.router, prefix=API)
 app.include_router(conversao_caso.router, prefix=API)
 app.include_router(credential_vault.router, prefix=API)  # cofre de credenciais (superadmin)
-app.include_router(curadoria_renomada.router, prefix=API)
 app.include_router(dashboard.router, prefix=API)
 app.include_router(dpt360_router, prefix=API)
 app.include_router(data_room.router, prefix=API)
