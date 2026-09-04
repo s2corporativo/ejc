@@ -24,6 +24,9 @@ _AGENTES_NORMATIVOS = {
     "AgribusinessLawAgent", "ElectoralLawAgent", "InternationalLawAgent",
     "ContractLawAgent",
     "RAGResearchAgent", "LegalWritingAgent", "JurimetryAgent",
+    # I5/B5 (análise E2E 03/09): prazo (CPC/CLT/regimento) e base legal
+    # LGPD/OAB são afirmação normativa — exigem fonte e gate de citações.
+    "ProcessAgent", "SecurityLGPDOABAgent",
 }
 
 # TarefaIA que correspondem a uma ÁREA jurídica com prompt DEDICADO. Cada uma

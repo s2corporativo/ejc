@@ -523,6 +523,49 @@ async def _emails_usuarios(
     return {str(user_id): email for user_id, email in rows if email}
 
 
+async def _ingerir_rag_do_caso(db: AsyncSession, item: dict, caso: Case) -> str | None:
+    """DJEN → RAG por caso (I4 da análise E2E de IA 2026-09-03).
+
+    O ingestor por OAB monitorada (`ingestors/djen.py`) já grava a comunicação
+    como `comunicacao_processual` restrita ao cliente/caso — mas só para as
+    OABs de DJEN_OABS_MONITORADAS. A captura por advogado (esta função) não
+    ingeria nada: a intimação ficava só na tela de Intimações. Aqui ela entra
+    no RAG com `rag_status='pendente'` (a curadoria decide), reutilizando a
+    MESMA `chave_origem` e o mesmo `montar_documento` do ingestor — os dois
+    caminhos são idempotentes entre si (`upsert_documento` faz o dedup).
+
+    Vetorização adiada (`embutir_vetores=False`): os chunks nascem sem vetor e
+    o job horário `reembed_rag_orfaos` os completa. Best-effort: qualquer
+    falha vira log (classe do erro) e a captura da intimação segue.
+    """
+    from app.core.config import get_settings
+
+    if not get_settings().DJEN_CAPTURA_INGERIR_RAG:
+        return None
+    try:
+        from app.services import ingestion_service
+        from app.services.ingestors.djen import montar_documento
+
+        doc = montar_documento(item)
+        if not doc:
+            return None
+        doc["case_id"] = caso.id
+        doc["client_id"] = caso.client_id
+        doc["extra"]["rag_status"] = "pendente"
+        doc["extra"]["tipo_fonte"] = "comunicacao_processual_oficial"
+        doc["extra"]["origem_captura"] = "djen_service"
+        async with db.begin_nested():   # savepoint: erro não derruba a captura
+            return await ingestion_service.upsert_documento(
+                db, embutir_vetores=False, **doc
+            )
+    except Exception as exc:  # noqa: BLE001 — RAG é acessório da captura
+        logger.warning(
+            "DJEN→RAG: ingestão da comunicação do caso %s pulada (%s)",
+            caso.id, type(exc).__name__,
+        )
+        return None
+
+
 async def _capturar_configurado(
     db: AsyncSession,
     adv: User,
@@ -603,6 +646,9 @@ async def _capturar_configurado(
             continue
 
         if caso:
+            # Intimação de processo vinculado a caso ativo também vira
+            # conhecimento DO CASO no RAG (comunicacao_processual, pendente).
+            await _ingerir_rag_do_caso(db, item, caso)
             db.add(
                 CaseMovimento(
                     id=str(uuid4()),

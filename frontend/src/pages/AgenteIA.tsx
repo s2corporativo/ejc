@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Ban,
@@ -80,6 +80,9 @@ export default function AgenteIA() {
   const [erro, setErro] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
+  // E8: stream SSE não sobrevive à desmontagem — sem isto o loop de tool-use
+  // seguia consumindo eventos (e setState em componente morto) após navegar.
+  useEffect(() => () => abortRef.current?.abort(), []);
   const seqRef = useRef(0);
   // Mensagem enviada na execução em curso — congelada para a retomada HITL.
   const mensagemRunRef = useRef("");

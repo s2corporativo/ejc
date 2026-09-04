@@ -32,7 +32,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 import api from "../lib/api";
-import { AREAS_FALLBACK } from "../lib/areaCatalog";
+import { AREAS_OPCOES_DESTAQUE } from "../lib/taxonomia";
 import { mensagemErroHttp } from "../lib/iaErro";
 import { LatestRequestGate } from "../lib/latestRequest";
 import Markdown from "../components/Markdown";
@@ -254,8 +254,21 @@ const CLASSIFICACAO_COR: Record<string, string> = {
   superado: "bg-gray-200 text-gray-500 line-through",
 };
 
+// E7: converter/vincular sessão a caso é ato privativo de advogado ou sócio
+// (mesmo critério do backend); estagiário/auxiliar/secretaria continuam
+// analisando na sala, mas não criam nem vinculam caso a partir dela.
+export const PAPEIS_CONVERTER_SESSAO: readonly string[] = [
+  "superadmin",
+  "admin",
+  "socio",
+  "advogado",
+];
+
 export default function SalaJuridica() {
   const { user } = useAuth();
+  const podeConverter = Boolean(
+    user?.role && PAPEIS_CONVERTER_SESSAO.includes(user.role),
+  );
   const navigate = useNavigate();
   const [sessoes, setSessoes] = useState<Sessao[]>([]);
   const [ativa, setAtiva] = useState<Sessao | null>(null);
@@ -400,11 +413,15 @@ export default function SalaJuridica() {
   };
 
   const novaSessao = async () => {
-    const { data } = await api.post<Sessao>("/sala-juridica", {
-      titulo: `Nova análise — ${new Date().toLocaleDateString("pt-BR")}`,
-    });
-    await carregarLista();
-    await abrirSessao(data.id);
+    try {
+      const { data } = await api.post<Sessao>("/sala-juridica", {
+        titulo: `Nova análise — ${new Date().toLocaleDateString("pt-BR")}`,
+      });
+      await carregarLista();
+      await abrirSessao(data.id);
+    } catch (e) {
+      toast.error(mensagemErroHttp(e, "Não foi possível criar a análise."));
+    }
   };
 
   const aoEditarWorkspace = (valor: string) => {
@@ -868,26 +885,30 @@ export default function SalaJuridica() {
             >
               <Archive className="h-4 w-4" /> Arquivar
             </Button>
-            <Button
-              variant="secondary"
-              disabled={!ativa || ativa.frozen}
-              onClick={() => {
-                setVincCaseId(null);
-                setVincRevisado(false);
-                setVincBusca("");
-                setVincCasos([]);
-                setVincAberto(true);
-              }}
-            >
-              <Link2 className="h-4 w-4" /> Vincular a caso
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={!ativa || ativa.frozen}
-              onClick={abrirWizard}
-            >
-              <FolderInput className="h-4 w-4" /> Transformar em caso
-            </Button>
+            {podeConverter && (
+              <Button
+                variant="secondary"
+                disabled={!ativa || ativa.frozen}
+                onClick={() => {
+                  setVincCaseId(null);
+                  setVincRevisado(false);
+                  setVincBusca("");
+                  setVincCasos([]);
+                  setVincAberto(true);
+                }}
+              >
+                <Link2 className="h-4 w-4" /> Vincular a caso
+              </Button>
+            )}
+            {podeConverter && (
+              <Button
+                variant="secondary"
+                disabled={!ativa || ativa.frozen}
+                onClick={abrirWizard}
+              >
+                <FolderInput className="h-4 w-4" /> Transformar em caso
+              </Button>
+            )}
             <Button onClick={novaSessao}>
               <Plus className="h-4 w-4" /> Nova análise
             </Button>
@@ -1572,7 +1593,7 @@ export default function SalaJuridica() {
                 value={convArea}
                 onChange={(e) => setConvArea(e.target.value)}
               >
-                {AREAS_FALLBACK.map((a) => (
+                {AREAS_OPCOES_DESTAQUE.map((a) => (
                   <option key={a.slug} value={a.slug}>
                     {a.nome}
                   </option>

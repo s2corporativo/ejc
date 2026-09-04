@@ -66,7 +66,11 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         dominios=["processo", "prazos", "andamento"],
         tarefa_padrao=TarefaIA.PRAZOS,
         prompt_key="processo",
-        skills=_skills("build_case_context", "build_process_context", "analyze_deadline"),
+        # I5/B5: prazo é afirmação normativa (CPC/CLT/regimento) — exige fonte
+        # verificável e passa pelo gate de citações como os agentes de ramo.
+        exige_fonte=True,
+        skills=_skills("build_case_context", "build_process_context", "analyze_deadline",
+                       "retrieve_rag_sources", "validate_citations"),
     ),
     "DocumentAgent": AgenteInterno(
         nome="DocumentAgent",
@@ -208,7 +212,7 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         tarefa_padrao=TarefaIA.CRIMINAL,
         prompt_key="criminal",
         exige_fonte=True,
-        skills=_skills("ramo_penal", "build_case_context", "retrieve_rag_sources", "validate_citations"),
+        skills=_skills("ramo_criminal", "build_case_context", "retrieve_rag_sources", "validate_citations"),
     ),
     "FamilyLawAgent": AgenteInterno(
         nome="FamilyLawAgent",
@@ -272,7 +276,7 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         tarefa_padrao=TarefaIA.CIVEL,
         prompt_key="civel",
         exige_fonte=True,
-        skills=_skills("ramo_civel", "build_case_context", "retrieve_rag_sources", "validate_citations"),
+        skills=_skills("ramo_civil", "build_case_context", "retrieve_rag_sources", "validate_citations"),
     ),
     "TrafficLawAgent": AgenteInterno(
         nome="TrafficLawAgent",
@@ -388,7 +392,9 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         dominios=["seguranca", "auditoria_acesso", "etica_oab"],
         tarefa_padrao=TarefaIA.ANALISE_CASO,
         prompt_key="seguranca_lgpd",
-        skills=_skills("retrieve_rag_sources", "generate_report"),
+        # I5/B5: base legal (LGPD/Código de Ética OAB) é afirmação normativa.
+        exige_fonte=True,
+        skills=_skills("retrieve_rag_sources", "generate_report", "validate_citations"),
     ),
 }
 
