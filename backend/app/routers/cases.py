@@ -2,6 +2,7 @@
 # Gestão de casos: CRUD + numeração DPT-AAAA-NNNN + prescrição automática
 # + movimentos (timeline) + endpoint de análise IA integrado.
 from __future__ import annotations
+import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 from typing import Optional
@@ -17,6 +18,8 @@ from app.core.security import (get_current_user, require_roles, ROLE_LEVEL,
 from app.models.user import User
 from app.models.case import Case, CaseMovimento, CaseStatus
 from app.models.audit_log import criar_audit_log
+
+logger = logging.getLogger(__name__)
 # Alocador canônico de numero_interno extraído para service compartilhado
 # (fonte única com a conversão da Sala Jurídica). Alias fino preserva os
 # chamadores internos deste router.
@@ -34,7 +37,7 @@ from app.models.case_parte import CaseParte
 from app.models.caso_area import CasoArea
 from app.models.deadline import Deadline, DeadlineTipo, DeadlineStatus
 from app.services.extracao_estruturada import parse_data_br
-from app.core.ownership import verificar_acesso_caso
+from app.core.ownership import role_str, verificar_acesso_caso
 from app.core.status_caso import (
     STATUS_ABERTOS,
     validar_area_caso,
@@ -980,6 +983,15 @@ class EncerrarCasoReq(_BM2):
     provas_determinantes: str = _F2(min_length=10)
     licoes_aprendidas: str = _F2(min_length=20)
     alimentar_rag: bool = True
+    # Sincronização com o processo eletrônico (MNI 2.2.2 — PJe e demais
+    # tribunais cadastrados) no ato do encerramento: fecha o caso no EJC já
+    # puxando a movimentação/documentos finais do tribunal, que é quando o
+    # acervo do caso precisa estar completo (arquivo do escritório, prestação
+    # de contas ao cliente). Opt-in explícito: só sincroniza quando marcado.
+    sincronizar_processo_eletronico: bool = False
+    # Vazio → usa o `numero_processo` do próprio caso. Só informar aqui quando
+    # o número no tribunal divergir do cadastrado.
+    numero_cnj: Optional[str] = _F2(None, max_length=25)
 
 
 @router.post("/{case_id}/encerrar")
@@ -1070,7 +1082,64 @@ async def encerrar_caso(
         event_bus.emitir, "caso.encerrado", "case", case_id,
         {"resultado": payload.resultado}, cu.id,
     )
-    return {"detail": "Caso encerrado. Conhecimento registrado na base institucional."}
+    sincronizacao = await _sincronizar_no_encerramento(db, case, cu, payload)
+    return {
+        "detail": "Caso encerrado. Conhecimento registrado na base institucional.",
+        "sincronizacao_processo_eletronico": sincronizacao,
+    }
+
+
+async def _sincronizar_no_encerramento(
+    db: AsyncSession, case: Case, cu: User, payload: EncerrarCasoReq,
+) -> dict:
+    """Enfileira a sincronização MNI do caso recém-encerrado.
+
+    Reusa o MESMO caminho do `POST /processo-eletronico/sincronizar` (task
+    Celery `sincronizar_processo_task`, leitura via MNI 2.2.2) — nada de
+    chamada SOAP na request, que levaria segundos e bloquearia o worker.
+
+    Degradação graciosa em todos os ramos: o caso JÁ está encerrado e
+    commitado. Sem número do processo, ou com o broker fora do ar, o
+    encerramento permanece válido e a resposta diz por que não sincronizou —
+    o operador reenvia por `POST /processo-eletronico/sincronizar`.
+    """
+    if not payload.sincronizar_processo_eletronico:
+        return {"solicitada": False, "status": None, "detalhe": None}
+
+    numero = (payload.numero_cnj or case.numero_processo or "").strip()
+    if not numero:
+        return {
+            "solicitada": True, "status": "sem_numero", "job_id": None,
+            "detalhe": ("Caso sem número de processo — cadastre o número no "
+                        "caso e sincronize por Processo Eletrônico."),
+        }
+
+    try:
+        from app.tasks.processo_eletronico_tasks import sincronizar_processo_task
+
+        job = sincronizar_processo_task.delay(case.id, numero)
+        job_id = getattr(job, "id", None)
+    except Exception:
+        logger.warning(
+            "Sincronização MNI não enfileirada no encerramento do caso %s",
+            case.id, exc_info=True,
+        )
+        return {
+            "solicitada": True, "status": "falha_ao_enfileirar", "job_id": None,
+            "detalhe": ("Fila indisponível — sincronize por Processo "
+                        "Eletrônico quando o serviço voltar."),
+        }
+
+    await criar_audit_log(
+        db, cu.id, role_str(cu), "PROCESSO_ELETRONICO_SYNC_ENFILEIRADO",
+        "cases", case.id,
+        detalhes=f"encerramento numero_cnj={numero} job_id={job_id}",
+    )
+    await db.commit()
+    return {
+        "solicitada": True, "status": "enfileirado", "job_id": job_id,
+        "detalhe": "Sincronização com o tribunal enfileirada.",
+    }
 
 
 # ── Importação inteligente → Caso núcleo (P1) ─────────────────────────────────

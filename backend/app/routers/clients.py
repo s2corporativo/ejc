@@ -16,6 +16,7 @@ from app.core.client_ownership import (
     pode_ver_cliente as _pode_ver_cliente_canonico,
     visao_total_clientes,
 )
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, require_roles, requer_advogado
@@ -529,7 +530,44 @@ async def criar(
             detail="Dados inválidos — verifique o formato/tamanho dos campos (datas, textos longos, etc.).",
         )
     await db.refresh(c)
+    await _kit_admissao_automatico(db, c, cu)
     return c
+
+
+async def _kit_admissao_automatico(db: AsyncSession, c: Client, cu: User) -> None:
+    """Procuração + contrato de honorários no ato do cadastro do cliente.
+
+    Regra de negócio do escritório: a admissão do cliente já entrega os dois
+    documentos, sem depender de o operador lembrar de pedir. São os MESMOS
+    rascunhos determinísticos do fluxo manual (mesmo service, mesma
+    idempotência por `client_id` + `client_admission_kind`), então cadastrar e
+    depois clicar em "gerar documentos" não duplica nada.
+
+    Degradação graciosa e deliberada: o cliente JÁ foi commitado acima. Uma
+    falha na geração (banco, tabela OAB indisponível) não pode desfazer o
+    cadastro nem devolver erro para quem só quis cadastrar — fica registrada no
+    log e o operador regenera pelo endpoint manual.
+    """
+    if not get_settings().CLIENTE_KIT_ADMISSAO_AUTOMATICO:
+        return
+    from app.services.geracao_documental_cliente import (
+        gerar_documentos_cliente as _gerar,
+    )
+
+    try:
+        await _gerar(db, c, cu)
+    except Exception:
+        logger.warning(
+            "Kit de admissão automático falhou para client_id=%s "
+            "(cadastro preservado; regenerar por POST /clients/{id}/gerar-documentos)",
+            c.id, exc_info=True,
+        )
+        await db.rollback()
+        # `rollback` expira os objetos da sessão (o commit não — a sessão usa
+        # expire_on_commit=False). Sem o refresh, a rota serializaria um
+        # cliente expirado e o acesso a atributo dispararia IO lazy fora do
+        # contexto greenlet do SQLAlchemy async.
+        await db.refresh(c)
 
 
 class GerarDocsClienteIn(BaseModel):

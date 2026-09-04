@@ -302,11 +302,17 @@ export default function TabResumo({
   const [encLoading, setEncLoading] = useState(false);
   const [sigiloSalvando, setSigiloSalvando] = useState(false);
   const [enc, setEnc] = useState({
-    resultado: "exito_total",
+    // Vocabulário CANÔNICO do backend (EncerrarCasoReq) — é o mesmo que a
+    // jurimetria consome. "exito_total"/"improcedente" não existem lá e o
+    // encerramento voltava 422 já no valor default do formulário.
+    resultado: "exito",
     motivo_resultado: "",
     provas_determinantes: "",
     licoes_aprendidas: "",
     alimentar_rag: true,
+    // Puxa a movimentação final do tribunal (MNI/PJe) ao encerrar, para o
+    // acervo do caso fechar completo. Opt-in.
+    sincronizar_processo_eletronico: false,
   });
   const [gerando, setGerando] = useState(false);
   const [honModal, setHonModal] = useState(false);
@@ -390,11 +396,24 @@ export default function TabResumo({
   const encerrar = async () => {
     setEncLoading(true);
     try {
-      await api.post(`/cases/${caso.id}/encerrar`, enc);
+      const { data } = await api.post(`/cases/${caso.id}/encerrar`, enc);
       setEncModal(false);
       toast.success(
         "Caso encerrado. Conhecimento registrado na base institucional (precedente + memória + tese).",
       );
+      // A sincronização é assíncrona e degrada graciosamente no backend: o
+      // encerramento vale mesmo quando ela não sai. Reporta o que de fato
+      // aconteceu, em vez de prometer o que foi apenas pedido.
+      const sinc = data?.sincronizacao_processo_eletronico;
+      if (sinc?.solicitada) {
+        if (sinc.status === "enfileirado") {
+          toast.success(
+            "Sincronização com o tribunal enfileirada — acompanhe em Processo Eletrônico.",
+          );
+        } else {
+          toast.error(sinc.detalhe || "Não foi possível sincronizar com o tribunal.");
+        }
+      }
       window.location.reload();
     } catch (e: any) {
       toast.error(e.response?.data?.detail || "Falha ao encerrar");
@@ -880,10 +899,12 @@ export default function TabResumo({
                 value={enc.resultado}
                 onChange={(e) => setEnc({ ...enc, resultado: e.target.value })}
               >
-                <option value="exito_total">Êxito total</option>
+                <option value="exito">Êxito</option>
                 <option value="exito_parcial">Êxito parcial</option>
                 <option value="acordo">Acordo</option>
-                <option value="improcedente">Improcedente</option>
+                <option value="derrota">Derrota</option>
+                <option value="desistencia">Desistência</option>
+                <option value="arquivado">Arquivado</option>
               </select>
             </div>
             <div>
@@ -928,6 +949,33 @@ export default function TabResumo({
                 }
               />
               Alimentar a base de conhecimento
+            </label>
+            <label className="flex items-start gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={enc.sincronizar_processo_eletronico}
+                onChange={(e) =>
+                  setEnc({
+                    ...enc,
+                    sincronizar_processo_eletronico: e.target.checked,
+                  })
+                }
+              />
+              <span>
+                Sincronizar com o tribunal (PJe/MNI) antes de arquivar
+                {caso.numero_processo ? (
+                  <span className="block text-xs text-slate-400">
+                    Processo {caso.numero_processo} — puxa a movimentação e os
+                    documentos finais para o acervo do caso.
+                  </span>
+                ) : (
+                  <span className="block text-xs text-amber-600">
+                    Caso sem número de processo cadastrado — não há o que
+                    sincronizar.
+                  </span>
+                )}
+              </span>
             </label>
             <button
               onClick={encerrar}

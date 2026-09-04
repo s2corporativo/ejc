@@ -62,6 +62,23 @@ def _titulos(nome_cliente: str) -> dict[str, str]:
     }
 
 
+def _nome_advogado(cu: User) -> str:
+    """Nome que assina o CONTRATO como contratado.
+
+    Só um papel jurídico (advogado+) pode figurar como contratado — o cadastro
+    de cliente também é feito por secretaria, e antes o nome de quem digitou ia
+    para a linha de assinatura do contrato. Fora do papel jurídico, o documento
+    sai com o placeholder, que o advogado preenche na revisão do rascunho.
+    (A procuração não depende disto: o outorgado é fixo, o sócio-titular.)
+    """
+    from app.core.security import ROLE_LEVEL
+
+    placeholder = "[advogado responsável]"
+    if ROLE_LEVEL.get(_role_str(cu), 0) < ROLE_LEVEL["advogado"]:
+        return placeholder
+    return (getattr(cu, "full_name", None) or "").strip() or placeholder
+
+
 def _doc_dict(doc: LegalDoc) -> dict:
     return {
         "id": doc.id,
@@ -259,7 +276,7 @@ async def gerar_documentos_cliente(
                 },
             }
 
-    advogado = getattr(cu, "full_name", None) or "[advogado responsável]"
+    advogado = _nome_advogado(cu)
     area = (getattr(cli, "area_interesse", None) or "").strip()
     itens = await _itens_oab_vigentes(db, area, date.today()) if area else []
     if itens:

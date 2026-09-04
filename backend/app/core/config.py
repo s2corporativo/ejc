@@ -1027,6 +1027,14 @@ class Settings(BaseSettings):
     ESCRITORIO_ENDERECO: str = "Av. Gov. Valadares nº 851, sala 405, Centro, Betim"
     ESCRITORIO_CEP: str = ""
 
+    # Admissão do cliente: procuração + contrato de honorários nascem JUNTO com
+    # o cadastro (decisão do titular — é a base do sistema, não um extra sob
+    # demanda). São rascunhos determinísticos (sem LLM), idempotentes por
+    # cliente e sujeitos aos mesmos gates de revisão do kit manual. Ligado por
+    # padrão; ON/OFF por instalação via .env. Falha na geração NUNCA derruba o
+    # cadastro (degradação graciosa — o cliente é gravado de qualquer forma).
+    CLIENTE_KIT_ADMISSAO_AUTOMATICO: bool = True
+
     def escritorio_oab(self) -> str:
         return (self.ESCRITORIO_OAB or "").strip()
 
