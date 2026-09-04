@@ -97,7 +97,10 @@ def test_fluxos_internos_e_externos_declaram_estado_de_curadoria():
     peca = (app / "services/case_intel.py").read_text(encoding="utf-8")
     assert '"rag_status": "aprovado"' in encerramento
     assert 'extra["rag_status"] = "pendente"' in drive
-    assert '"aprovado" if meta["human_reviewed"] else "pendente"' in peca
+    # O critério ficou MAIS estrito: além da revisão humana, a peça precisa
+    # estar em status apto ao RAG — rascunho apenas revisado não vira
+    # fundamentação. O que continua invariante: sem revisão humana, `pendente`.
+    assert '"aprovado" if human_reviewed and status_apto_rag else "pendente"' in peca
 
 
 # ── Revisão automatizada do PR (03/09/2026) ─────────────────────────────────

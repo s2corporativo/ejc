@@ -44,20 +44,26 @@ export default function PortalFinanceiro() {
     load();
   }, [load]);
 
-  const total = rows.reduce((s, r) => s + (r.valor ?? 0), 0);
-  const pago = rows
-    .filter((r) => r.status === "pago")
-    .reduce((s, r) => s + (r.valor ?? 0), 0);
+  const total = rows.reduce(
+    (s, r) => s + (r.valor_contratado ?? r.valor ?? 0),
+    0,
+  );
+  // Recebimentos são lançamentos de FeePayment, inclusive parcelas de um fee
+  // ainda pendente; filtrar somente status=pago esconderia caixa parcial.
+  const pago = rows.reduce((s, r) => s + (r.total_pago ?? 0), 0);
   const pendente = rows
     .filter((r) => r.status === "pendente")
-    .reduce((s, r) => s + (r.valor ?? 0), 0);
+    .reduce((s, r) => s + (r.saldo ?? 0), 0);
   const atrasado = rows
     .filter((r) => r.status === "atrasado")
-    .reduce((s, r) => s + (r.valor ?? 0), 0);
+    .reduce((s, r) => s + (r.saldo ?? 0), 0);
+  const percentuaisAExecutar = rows.filter(
+    (r) => r.valor_contratado == null && r.percentual_exito != null,
+  ).length;
 
   const kpis = [
     {
-      label: "Total honorários",
+      label: "Total contratado",
       value: fmtMoney(total),
       icon: TrendingUp,
       color: "text-primary-500",
@@ -91,11 +97,10 @@ export default function PortalFinanceiro() {
       <div>
         <h1 className="text-xl font-bold text-slate-800">Financeiro</h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          Seus honorários e pagamentos
+          Seus honorários, pagamentos registrados e saldos
         </p>
       </div>
 
-      {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {kpis.map((k) => (
           <div key={k.label} className="card p-4">
@@ -112,7 +117,14 @@ export default function PortalFinanceiro() {
         ))}
       </div>
 
-      {/* Alert for overdue */}
+      {percentuaisAExecutar > 0 && (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600">
+          {percentuaisAExecutar} honorário(s) de êxito percentual dependem da
+          base econômica do resultado e, por isso, não entram no total em reais
+          até que o valor seja apurado pelo escritório.
+        </div>
+      )}
+
       {atrasado > 0 && (
         <div className="bg-danger-50 border border-danger-200 rounded-xl p-4 flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-danger-500 flex-shrink-0 mt-0.5" />
@@ -121,14 +133,13 @@ export default function PortalFinanceiro() {
               Pagamento em atraso
             </p>
             <p className="text-xs text-danger-600 mt-0.5">
-              Você possui {fmtMoney(atrasado)} em honorários vencidos. Entre em
-              contato com o escritório para regularizar.
+              Você possui {fmtMoney(atrasado)} de saldo vencido. Entre em contato
+              com o escritório para regularizar.
             </p>
           </div>
         </div>
       )}
 
-      {/* Table */}
       <div className="card overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100">
           <h2 className="font-semibold text-slate-700 flex items-center gap-2">
@@ -144,7 +155,7 @@ export default function PortalFinanceiro() {
           />
         ) : rows.length === 0 ? (
           <div className="p-10 text-center text-slate-400 text-sm">
-            Nenhum lançamento — você está em dia com o escritório.
+            Nenhum lançamento financeiro disponível.
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
@@ -154,6 +165,14 @@ export default function PortalFinanceiro() {
                 "text-slate-500",
                 "bg-slate-50",
               ];
+              const valorLinha =
+                f.status === "pago"
+                  ? (f.valor_contratado ?? f.total_pago)
+                  : f.saldo;
+              const parcial =
+                (f.total_pago ?? 0) > 0 &&
+                f.saldo != null &&
+                f.saldo > 0;
               return (
                 <div
                   key={i}
@@ -176,11 +195,26 @@ export default function PortalFinanceiro() {
                         {f.tipo.replace(/_/g, " ")}
                       </p>
                     )}
+                    {f.valor_contratado == null && f.percentual_exito != null && (
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {Number(f.percentual_exito).toLocaleString("pt-BR")}% de
+                        êxito — base monetária ainda não apurada
+                      </p>
+                    )}
+                    {parcial && (
+                      <p className="text-xs text-success-600 mt-0.5">
+                        Já registrado: {fmtMoney(f.total_pago)} de{" "}
+                        {fmtMoney(f.valor_contratado)}
+                      </p>
+                    )}
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="text-sm font-bold text-slate-800">
-                      {fmtMoney(f.valor ?? 0)}
+                      {valorLinha == null ? "Valor a apurar" : fmtMoney(valorLinha)}
                     </p>
+                    {f.status !== "pago" && f.saldo != null && (
+                      <p className="text-[11px] text-slate-400">saldo atual</p>
+                    )}
                     <span
                       className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full mt-1 ${cor} ${bgcor}`}
                     >
@@ -202,7 +236,6 @@ export default function PortalFinanceiro() {
         )}
       </div>
 
-      {/* Confirmação de pagamento — apenas os dados que o escritório registrou */}
       <Modal
         open={recibo !== null}
         onClose={() => setRecibo(null)}
@@ -221,9 +254,9 @@ export default function PortalFinanceiro() {
                 <p className="text-slate-800 font-medium">{recibo.descricao}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-400">Valor</p>
+                <p className="text-xs text-slate-400">Total recebido</p>
                 <p className="text-slate-800 font-bold">
-                  {fmtMoney(recibo.valor ?? 0)}
+                  {fmtMoney(recibo.total_pago ?? recibo.valor ?? 0)}
                 </p>
               </div>
               {recibo.vencimento && (
@@ -234,8 +267,9 @@ export default function PortalFinanceiro() {
               )}
             </div>
             <p className="text-xs text-slate-400">
-              Confirmação emitida pelo Portal do Cliente com base nos registros
-              do escritório. Para um recibo formal, solicite pelas Mensagens.
+              Confirmação emitida pelo Portal do Cliente com base nos pagamentos
+              registrados pelo escritório. Para um recibo formal, solicite pelas
+              Mensagens.
             </p>
           </div>
         )}
