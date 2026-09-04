@@ -22,6 +22,14 @@ import { useAuth } from "../stores/auth";
 import { THEME_LABELS, useThemeStore, type ThemeMode } from "../stores/theme";
 import UserAvatar from "./UserAvatar";
 
+// 26 estados + DF (IBGE). Antes o select oferecia só 10 UFs: advogado
+// inscrito fora dessa lista simplesmente não conseguia configurar a captura.
+const UFS_BRASIL = [
+  "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS",
+  "MT", "PA", "PB", "PE", "PI", "PR", "RJ", "RN", "RO", "RR", "RS", "SC",
+  "SE", "SP", "TO",
+];
+
 const THEME_OPTIONS: Array<{
   mode: ThemeMode;
   icon: typeof Sun;
@@ -71,8 +79,18 @@ export default function SecurityMenu({ user }: { user: any }) {
     }
   };
 
-  const [oabNum, setOabNum] = useState("");
-  const [oabUf, setOabUf] = useState("MG");
+  // O modal nasce com o que JÁ está gravado. Antes ele abria vazio e o
+  // "Salvar" mandava string vazia: quem só abria para conferir apagava a
+  // própria OAB e continuava vendo "OAB salva" — a captura parava em
+  // silêncio. Num sistema de prazos, isso é perda de intimação.
+  const [oabNum, setOabNum] = useState(user?.djen_oab_numero ?? "");
+  const [oabUf, setOabUf] = useState(user?.djen_oab_uf ?? "MG");
+
+  const abrirModalOab = () => {
+    setOabNum(user?.djen_oab_numero ?? "");
+    setOabUf(user?.djen_oab_uf ?? "MG");
+    setModal("oab");
+  };
 
   const ativarPush = async () => {
     try {
@@ -100,15 +118,32 @@ export default function SecurityMenu({ user }: { user: any }) {
     }
   };
 
-  const salvarOab = async () => {
+  const salvarOab = async (remover = false) => {
+    const numero = remover ? "" : oabNum.trim();
+    const uf = remover ? "" : oabUf;
+    if (!remover && !numero) {
+      toast.error(
+        "Informe o número da OAB, ou use “Parar de monitorar” para desligar.",
+      );
+      return;
+    }
     try {
       await api.patch(`/users/${user.id}`, {
-        djen_oab_numero: oabNum,
-        djen_oab_uf: oabUf,
+        djen_oab_numero: numero,
+        djen_oab_uf: uf,
       });
+      // Sem isto, o menu continuaria exibindo o valor antigo até o próximo
+      // login — e o modal reabriria com um dado que não está mais no banco.
+      updateUser({
+        djen_oab_numero: numero || null,
+        djen_oab_uf: uf || null,
+      });
+      setOabNum(numero);
       setModal(null);
       toast.success(
-        "OAB salva — intimações DJEN serão capturadas diariamente às 06h30.",
+        remover
+          ? "Monitoramento desligado — o DJEN não será mais consultado pela sua OAB."
+          : `OAB ${numero}/${uf} salva — intimações DJEN serão capturadas diariamente às 06h30.`,
       );
     } catch (e) {
       toast.error(mensagemErroHttp(e, "Não foi possível salvar a OAB."));
@@ -218,7 +253,7 @@ export default function SecurityMenu({ user }: { user: any }) {
           <button
             className="menu-item"
             onClick={() => {
-              setModal("oab");
+              abrirModalOab();
               setOpen(false);
             }}
           >
@@ -314,28 +349,25 @@ export default function SecurityMenu({ user }: { user: any }) {
                 value={oabUf}
                 onChange={(event) => setOabUf(event.target.value)}
               >
-                {[
-                  "MG",
-                  "SP",
-                  "RJ",
-                  "ES",
-                  "BA",
-                  "DF",
-                  "GO",
-                  "PR",
-                  "RS",
-                  "SC",
-                ].map((uf) => (
+                {UFS_BRASIL.map((uf) => (
                   <option key={uf}>{uf}</option>
                 ))}
               </select>
             </div>
             <button
               className="btn-primary w-full justify-center mt-4"
-              onClick={salvarOab}
+              onClick={() => salvarOab(false)}
             >
               Salvar
             </button>
+            {user?.djen_oab_numero ? (
+              <button
+                className="w-full justify-center mt-2 text-xs text-slate-500 hover:text-red-600"
+                onClick={() => salvarOab(true)}
+              >
+                Parar de monitorar minha OAB
+              </button>
+            ) : null}
           </div>
         </div>
       )}
