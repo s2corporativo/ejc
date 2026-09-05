@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.deadline import Deadline, DeadlineStatus
 from app.models.fee import Fee, FeeStatus
 from app.models.legal_doc import LegalDoc, PecaStatus
+from app.models.process import Process
 from app.models.task import Task, TaskStatus
 from app.services.case_mutation_guard import (
     garantir_caso_editavel,
@@ -35,7 +36,8 @@ async def diagnosticar_fechamento(db: AsyncSession, caso: Any) -> dict[str, Any]
     - tarefas abertas;
     - honorários pendentes/atrasados;
     - peças ainda não protocoladas em estados de produção/revisão;
-    - próxima ação ainda preenchida no caso.
+    - próxima ação ainda preenchida no caso;
+    - processo judicial ainda ativo (sugere "sincronizar antes de encerrar").
 
     Conteúdo retornado é limitado a metadados operacionais já pertencentes ao
     caso. O chamador deve aplicar ownership antes de expor o resultado.
@@ -168,6 +170,42 @@ async def diagnosticar_fechamento(db: AsyncSession, caso: Any) -> dict[str, Any]
             }
         )
 
+    processos = (
+        await db.execute(
+            select(Process).where(
+                Process.case_id == case_id,
+                Process.deleted_at.is_(None),
+                Process.status == "ativo",
+            )
+        )
+    ).scalars().all()
+    for processo in processos:
+        alertas.append(
+            {
+                "codigo": "processo_ativo",
+                "tipo": "processo",
+                "id": processo.id,
+                "titulo": processo.numero_cnj or "Processo sem número CNJ",
+                "descricao": (
+                    "Processo judicial ainda ativo no caso — sincronize e "
+                    "confirme o desfecho (trânsito/arquivamento) antes de encerrar"
+                ),
+                "destino": f"/casos/{case_id}?tab=processos",
+            }
+        )
+
+    numero_processo = (getattr(caso, "numero_processo", None) or "").strip()
+    last_synced_at = getattr(caso, "last_synced_at", None)
+    processo_info = {
+        "numero_processo": numero_processo or None,
+        "processos_ativos": len(processos),
+        "pode_sincronizar": bool(numero_processo),
+        "ultima_sincronizacao": (
+            last_synced_at.isoformat() if hasattr(last_synced_at, "isoformat") else last_synced_at
+        ),
+        "erro_sincronizacao": getattr(caso, "sync_error", None),
+    }
+
     resumo = {
         "prazos_ativos": len(prazos),
         "prazos_nao_confirmados": sum(1 for p in prazos if not bool(p.confirmado)),
@@ -175,6 +213,7 @@ async def diagnosticar_fechamento(db: AsyncSession, caso: Any) -> dict[str, Any]
         "financeiro_pendente": len(honorarios),
         "pecas_nao_protocoladas": len(pecas),
         "proxima_acao_pendente": bool(proxima_acao),
+        "processos_ativos": len(processos),
     }
     return {
         "case_id": case_id,
@@ -183,4 +222,5 @@ async def diagnosticar_fechamento(db: AsyncSession, caso: Any) -> dict[str, Any]
         "bloqueios": bloqueios,
         "alertas": alertas,
         "resumo": resumo,
+        "processo": processo_info,
     }

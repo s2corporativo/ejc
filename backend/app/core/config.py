@@ -1101,6 +1101,10 @@ class Settings(BaseSettings):
     ESCRITORIO_OAB: str = "251174"   # só o número; o rótulo "OAB/MG " já é aposto pelos consumidores (timbre PDF/DOCX)
     ESCRITORIO_ENDERECO: str = "Av. Gov. Valadares nº 851, sala 405, Centro, Betim"
     ESCRITORIO_CEP: str = ""
+    # Sócio-titular: OUTORGADO fixo da procuração do escritório (documental.py).
+    # A OAB é a mesma ESCRITORIO_OAB; só o nome é dado próprio da pessoa.
+    ESCRITORIO_SOCIO_TITULAR: str = "JOÃO PEDRO RODRIGUES TEIXEIRA"
+    ESCRITORIO_SITE: str = "https://depaulateixeira.adv.br"
 
     # Admissão do cliente: procuração + contrato de honorários nascem JUNTO com
     # o cadastro (decisão do titular — é a base do sistema, não um extra sob

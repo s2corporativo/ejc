@@ -285,6 +285,10 @@ ADICOES_INTENCIONAIS |= {
     ("/api/ia/extrair", "POST"),
     ("/api/ia/redigir", "POST"),
     ("/api/ia/resumir", "POST"),
+    # Consolidação do fluxo principal (encerramento): diagnóstico determinístico
+    # de pendências ANTES do POST /encerrar. Autenticada, mesmo gate de papel e
+    # visibilidade do encerramento (advogado+ e carteira); só leitura.
+    ("/api/cases/{case_id}/encerrar/diagnostico", "GET"),
 }
 
 

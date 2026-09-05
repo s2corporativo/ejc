@@ -992,6 +992,48 @@ class EncerrarCasoReq(_BM2):
     # Vazio → usa o `numero_processo` do próprio caso. Só informar aqui quando
     # o número no tribunal divergir do cadastrado.
     numero_cnj: Optional[str] = _F2(None, max_length=25)
+    # Fechamento inteligente (case_closure_service): pendências não fatais
+    # (tarefas, financeiro, peças, processo ativo, próxima ação) exigem esta
+    # confirmação explícita; sem ela o encerramento devolve 422 com a lista.
+    confirmar_alertas: bool = False
+    # Bloqueio (prazo pendente/vencido) só cede com justificativa AUTORIZADA:
+    # papel de gestão (sócio+) e texto mínimo — fica na trilha de auditoria e
+    # no movimento do caso. Também vale como confirmação dos alertas.
+    justificativa_bloqueio: Optional[str] = _F2(None, max_length=1000)
+
+
+_JUSTIFICATIVA_ROLES = ("superadmin", "admin", "socio")
+_JUSTIFICATIVA_MIN = 20
+
+
+async def _caso_para_encerrar(db: AsyncSession, cu: User, case_id: str) -> Case:
+    _role = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
+    if _role not in ("superadmin", "admin", "socio", "advogado"):
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
+    q = _filtro_visibilidade(q, cu)
+    case = (await db.execute(q)).scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Caso não encontrado")
+    if case.status in (CaseStatus.encerrado, CaseStatus.arquivado):
+        raise HTTPException(status_code=409, detail="Caso já encerrado")
+    return case
+
+
+@router.get("/{case_id}/encerrar/diagnostico")
+async def diagnostico_encerramento(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Pré-encerramento: prazos/tarefas/audiências/peças/financeiro/processo
+    ativo do caso, sem persistir nada. Prazo pendente BLOQUEIA (cede só com
+    justificativa de gestão); o resto vira alerta a confirmar. Informa se há
+    processo para "sincronizar antes de encerrar"."""
+    from app.services.case_closure_service import diagnosticar_fechamento
+
+    case = await _caso_para_encerrar(db, cu, case_id)
+    return await diagnosticar_fechamento(db, case)
 
 
 # O rate limit da sincronização MNI NÃO entra como dependency desta rota: o
@@ -1012,17 +1054,43 @@ async def encerrar_caso(
     """
     Encerramento com Pós-Mortem obrigatório: o conhecimento do caso
     vira ativo institucional (ingestão automática na base RAG).
+
+    Antes de fechar, o diagnóstico determinístico (case_closure_service) é
+    aplicado: prazo ativo bloqueia (422) salvo justificativa autorizada de
+    gestão; demais pendências exigem `confirmar_alertas`. O advisory lock do
+    diagnóstico fica retido até o commit — nenhum prazo entra no meio.
     """
+    from app.services.case_closure_service import diagnosticar_fechamento
+
     _role = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
-    if _role not in ("superadmin", "admin", "socio", "advogado"):
-        raise HTTPException(status_code=403, detail="Acesso negado")
-    q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
-    q = _filtro_visibilidade(q, cu)
-    case = (await db.execute(q)).scalar_one_or_none()
-    if not case:
-        raise HTTPException(status_code=404, detail="Caso não encontrado")
-    if case.status in (CaseStatus.encerrado, CaseStatus.arquivado):
-        raise HTTPException(status_code=409, detail="Caso já encerrado")
+    case = await _caso_para_encerrar(db, cu, case_id)
+
+    diag = await diagnosticar_fechamento(db, case)
+    justificativa = (payload.justificativa_bloqueio or "").strip()
+    justificativa_valida = (
+        len(justificativa) >= _JUSTIFICATIVA_MIN and _role in _JUSTIFICATIVA_ROLES
+    )
+    if diag["bloqueios"] and not justificativa_valida:
+        raise HTTPException(status_code=422, detail={
+            "mensagem": (
+                "Encerramento bloqueado — há prazo pendente/vencido. Conclua ou "
+                "cancele os prazos, ou (gestão) informe justificativa_bloqueio "
+                f"com ao menos {_JUSTIFICATIVA_MIN} caracteres."
+            ),
+            "bloqueios": diag["bloqueios"],
+            "alertas": diag["alertas"],
+            "processo": diag["processo"],
+        })
+    if diag["alertas"] and not (payload.confirmar_alertas or justificativa_valida):
+        raise HTTPException(status_code=422, detail={
+            "mensagem": (
+                "Há pendências no caso — revise-as e reenvie com "
+                "confirmar_alertas=true para encerrar mesmo assim."
+            ),
+            "bloqueios": [],
+            "alertas": diag["alertas"],
+            "processo": diag["processo"],
+        })
 
     case.status_anterior = case.status.value
     case.status = CaseStatus.encerrado
@@ -1072,14 +1140,28 @@ async def encerrar_caso(
             },
         )
 
+    pendencias_txt = ""
+    if diag["bloqueios"] or diag["alertas"]:
+        pendencias_txt = (
+            f" — {len(diag['bloqueios'])} bloqueio(s) e {len(diag['alertas'])} "
+            "alerta(s) confirmados"
+            + (f"; justificativa: {justificativa}" if justificativa_valida else "")
+        )
     db.add(CaseMovimento(
         id=str(uuid4()), case_id=case.id, tipo="encerramento",
-        descricao=f"Caso encerrado: {payload.resultado}",
+        descricao=f"Caso encerrado: {payload.resultado}{pendencias_txt}",
         created_by=cu.id,
     ))
     await criar_audit_log(
         db, cu.id, cu.role.value, "UPDATE", "cases", case_id,
-        detalhes=f"Encerramento ({payload.resultado}) com pós-mortem",
+        detalhes=f"Encerramento ({payload.resultado}) com pós-mortem{pendencias_txt}",
+        dados_depois={
+            "status": CaseStatus.encerrado.value,
+            "fechamento": diag["resumo"],
+            "bloqueios_justificados": [b["codigo"] for b in diag["bloqueios"]],
+            "alertas_confirmados": [a["codigo"] for a in diag["alertas"]],
+            "justificativa_bloqueio": justificativa if justificativa_valida else None,
+        },
     )
     await db.commit()
     # NÚCLEO COGNITIVO — complementa o precedente-RAG acima com Memória
