@@ -6,6 +6,8 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="$REPO_ROOT/infra/woodpecker/docker-compose.yml"
 BACKUP_SCRIPT="$REPO_ROOT/infra/woodpecker/backup.sh"
+RECOVERY_SCRIPT="$REPO_ROOT/infra/woodpecker/recover-agent.sh"
+API_SCRIPT="$REPO_ROOT/infra/woodpecker/diagnose-api.sh"
 
 fail() {
   printf 'ERRO: %s\n' "$*" >&2
@@ -14,7 +16,11 @@ fail() {
 
 [ -f "$COMPOSE_FILE" ] || fail "compose do Woodpecker ausente"
 [ -f "$BACKUP_SCRIPT" ] || fail "script de backup do Woodpecker ausente"
+[ -f "$RECOVERY_SCRIPT" ] || fail "script de recuperação do Woodpecker ausente"
+[ -f "$API_SCRIPT" ] || fail "script de diagnóstico API do Woodpecker ausente"
 bash -n "$BACKUP_SCRIPT"
+bash -n "$RECOVERY_SCRIPT"
+bash -n "$API_SCRIPT"
 grep -Fq -- "busybox:1.37.0" "$BACKUP_SCRIPT" || fail "imagem auxiliar de backup não está fixada"
 grep -Fq -- '[ "$agent_secret" != "$grpc_secret" ]' "$BACKUP_SCRIPT" \
   || fail "backup não bloqueia segredos de agente e gRPC iguais"
@@ -24,6 +30,18 @@ grep -Fq -- 'verify_restore "$server_archive"' "$BACKUP_SCRIPT" \
   || fail "backup não testa restauração do volume do servidor"
 grep -Fq -- 'server_image_id=' "$BACKUP_SCRIPT" \
   || fail "backup não registra identidade da imagem no manifesto"
+
+grep -Fq -- 'bash backup.sh' "$RECOVERY_SCRIPT" \
+  || fail "recuperação não cria backup antes de recriar serviços"
+grep -Fq -- 'docker compose up -d --force-recreate woodpecker-server woodpecker-agent' "$RECOVERY_SCRIPT" \
+  || fail "recuperação não limita recriação a server/agent"
+grep -Fq -- 'http://127.0.0.1:8100/healthz' "$RECOVERY_SCRIPT" \
+  || fail "recuperação não valida healthz local do servidor"
+grep -Fq -- 'individual agent not found by token' "$RECOVERY_SCRIPT" \
+  || fail "recuperação não detecta rejeição de identidade do agente"
+if grep -Eq -- 'docker compose down|down -v|docker volume (rm|prune)|openssl rand' "$RECOVERY_SCRIPT"; then
+  fail "recuperação contém operação destrutiva ou rotação automática de segredo"
+fi
 
 server_block="$(
   awk '
@@ -87,4 +105,4 @@ grep -Eq -- 'WOODPECKER_BACKEND_DOCKER_LIMIT_MEM: "?3221225472"?$' "$rendered" \
 grep -Eq -- 'WOODPECKER_BACKEND_DOCKER_LIMIT_CPU_QUOTA: "?100000"?$' "$rendered" \
   || fail "limite de CPU não chegou à configuração renderizada"
 
-printf 'Woodpecker compose: autenticação, versão, limites e persistência válidos.\n'
+printf 'Woodpecker compose: autenticação, versão, limites, persistência, API e recuperação válidos.\n'
