@@ -71,6 +71,8 @@ done
 [ -n "$TARGET_SHA" ] || usage
 
 cd "$ROOT"
+# shellcheck source=scripts/lib/sha_prefix.sh
+. "$ROOT/scripts/lib/sha_prefix.sh"
 
 # ── 1. Pré-voo — paridade com o passo homônimo do deploy-vps.yml ─────────────
 erros=0
@@ -79,8 +81,14 @@ reprovar() { printf '[deploy-manual] PRÉ-VOO: %s\n' "$1" >&2; erros=1; }
 dono="$(stat -c %u "$ROOT" 2>/dev/null || echo desconhecido)"
 if [ "$dono" = "$(id -u)" ] || [ "$dono" = "0" ]; then
   if head_local="$(git -c safe.directory="$ROOT" rev-parse HEAD 2>&1)"; then
-    [ "$head_local" = "$TARGET_SHA" ] ||
+    # Aceita SHA completo ou prefixo (>= 7 hex), como o git. Daqui em diante
+    # TARGET_SHA passa a ser o HEAD COMPLETO — é o que a transação registra em
+    # .deployed_sha e compara com o /api/health.
+    if ejc_sha_confere "$head_local" "$TARGET_SHA"; then
+      TARGET_SHA="$head_local"
+    else
       reprovar "checkout está em '$head_local', esperado '$TARGET_SHA'"
+    fi
   else
     reprovar "git rev-parse HEAD falhou — $head_local"
   fi
