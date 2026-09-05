@@ -54,6 +54,9 @@ describe("Peças — Banco de Teses canônico no contexto do caso", () => {
     expect(fonte).toContain("Não foi possível carregar as teses vinculadas");
     expect(fonte).toContain("Tentar novamente");
     expect(fonte).toContain("Nenhuma tese está vinculada a este caso");
-    expect(fonte).toContain("Consulte o Banco de Teses para localizar conteúdo institucional");
+    // O JSX quebra a frase em duas linhas — compara a fonte com espaços normalizados.
+    expect(fonte.replace(/\s+/g, " ")).toContain(
+      "Consulte o Banco de Teses para localizar conteúdo institucional",
+    );
   });
 });

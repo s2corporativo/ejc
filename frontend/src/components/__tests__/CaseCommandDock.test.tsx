@@ -55,7 +55,7 @@ describe("CaseCommandDock", () => {
     for (const rotulo of [
       "Visão",
       "Atividades",
-      "Arquivos",
+      "Documentos",
       "Estratégia",
       "Financeiro",
     ]) {

@@ -47,7 +47,7 @@ describe("CaseContextBar", () => {
       screen.getByRole("link", { name: "Atividades" }).getAttribute("href"),
     ).toBe("/casos/case-1?tab=timeline");
     expect(
-      screen.getByRole("link", { name: "Arquivos" }).getAttribute("href"),
+      screen.getByRole("link", { name: "Documentos" }).getAttribute("href"),
     ).toBe("/casos/case-1?tab=documentos");
     expect(
       screen.getByRole("link", { name: "Estratégia" }).getAttribute("href"),
@@ -57,7 +57,7 @@ describe("CaseContextBar", () => {
     ).toBe("/casos/case-1?tab=financeiro");
     expect(
       screen
-        .getByRole("link", { name: "Arquivos" })
+        .getByRole("link", { name: "Documentos" })
         .getAttribute("aria-current"),
     ).toBe("page");
   });
