@@ -64,7 +64,10 @@ async def _localizar_advogado(oab_numero: str, oab_uf: str) -> tuple[str, str] |
     async with AsyncSessionLocal() as db:
         row = (
             await db.execute(
-                select(User.id, User.name).where(
+                # O modelo expõe o nome como `full_name`; `User.name` não existe
+                # e levantava AttributeError em TODA execução — a reconciliação
+                # do RUNBOOK nunca chegou a rodar de fato.
+                select(User.id, User.full_name).where(
                     User.djen_oab_numero == oab_numero.strip(),
                     User.djen_oab_uf == oab_uf.strip().upper(),
                 )
