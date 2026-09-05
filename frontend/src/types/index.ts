@@ -11,6 +11,10 @@ export interface User {
   is_active?: boolean;
   /** Path da foto de perfil (ex.: "/users/{id}/avatar", sem prefixo /api). */
   avatar_url?: string | null;
+  /** OAB usada pela captura diária de intimações do DJEN. Número e UF formam
+   *  um par indivisível — metade do par não monitora nada. */
+  djen_oab_numero?: string | null;
+  djen_oab_uf?: string | null;
 }
 export interface Client {
   id: string;

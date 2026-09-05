@@ -943,6 +943,38 @@ class Settings(BaseSettings):
     # Horário DIÁRIO do sync, em UTC ("HH:MM") — mesmo padrão de BACKUP_HORA_UTC.
     # 09:30 UTC = 06:30 BRT (antes do expediente; DataJud atualiza de madrugada).
     DATAJUD_SYNC_HORA_UTC: str = "09:30"
+    # ── Monitor de diários oficiais MUNICIPAIS (Querido Diário) ───────────
+    # Varredura diária dos municípios/termos declarados abaixo; cada achado
+    # entra na base de conhecimento com `rag_status='pendente'` (curadoria
+    # humana decide). Exige também QUERIDO_DIARIO_ENABLED — o job respeita a
+    # flag da integração, não a contorna (services/querido_diario_monitor.py).
+    QUERIDO_DIARIO_MONITOR_ENABLED: bool = False
+    # Códigos IBGE de 7 dígitos, separados por vírgula (ex.: Betim 3106705).
+    QUERIDO_DIARIO_MONITOR_MUNICIPIOS: str = ""
+    # Termos de busca, separados por vírgula. Sem termos o monitor não roda:
+    # varrer diário inteiro sem recorte gera ruído, não informação.
+    QUERIDO_DIARIO_MONITOR_TERMOS: str = ""
+    # Janela retroativa de cada varredura, em dias. 2 cobre feriado/fim de
+    # semana sem depender de o job da véspera ter rodado.
+    QUERIDO_DIARIO_MONITOR_JANELA_DIAS: int = 2
+    # Horário DIÁRIO da varredura em UTC ("HH:MM"). 11:00 UTC = 08:00 BRT,
+    # depois da publicação matinal dos diários municipais.
+    QUERIDO_DIARIO_MONITOR_HORA_UTC: str = "11:00"
+    # RADAR VINCULADO: além dos termos fixos, pesquisa o NOME DO PRÓPRIO
+    # cliente ativo no município dele (derivado de Client.cidade/estado pela
+    # API de localidades do IBGE — exige IBGE_LOCALIDADES_ENABLED).
+    QUERIDO_DIARIO_RADAR_CLIENTES_ENABLED: bool = False
+    # Estende o radar a clientes PESSOA FÍSICA. Interruptor SEPARADO porque
+    # pesquisar o nome de uma PF numa API pública revela a terceiro que ela se
+    # relaciona com o escritório — sigilo profissional (EOAB art. 34, VII).
+    # Razão social de PJ é registro público; nome de PF não é. CPF/CNPJ nunca
+    # são usados como termo de busca, em nenhum dos modos.
+    QUERIDO_DIARIO_RADAR_INCLUI_PF: bool = False
+    # Teto de clientes consultados por execução do radar. Sem teto, o escritório
+    # transfere a base inteira de razões sociais ao agregador todo dia — e o
+    # padrão de consultas reconstrói a carteira do lado de lá, que é, por
+    # acumulação, o mesmo risco que a flag de PF contém caso a caso.
+    QUERIDO_DIARIO_RADAR_MAX_CLIENTES: int = 50
     # Relatório semanal do dono (segunda-feira, e-mail aos sócios/admins) —
     # services/relatorio_dono_service.py.
     RELATORIO_DONO_ENABLED: bool = False
