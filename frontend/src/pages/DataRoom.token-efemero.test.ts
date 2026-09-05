@@ -1,11 +1,11 @@
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const source = readFileSync(
-  fileURLToPath(new URL("./DataRoom.tsx", import.meta.url)),
-  "utf8",
-);
+// `import.meta.url` não é `file:` no ambiente jsdom do vitest — o teste original
+// (#1491) quebrava na carga com "The URL must be of scheme file". Mesmo padrão
+// dos demais testes de contrato que leem a fonte da tela.
+const source = readFileSync(join(__dirname, "DataRoom.tsx"), "utf8");
 
 describe("Data Room — token de link efêmero", () => {
   it("não presume que a listagem devolve o token secreto", () => {

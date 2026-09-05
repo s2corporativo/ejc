@@ -271,6 +271,15 @@ ADICOES_INTENCIONAIS |= {
 # portas antigas de /ai/* e /ia-especializada/* seguem registradas — nada foi
 # removido aqui, então não há entrada correspondente em REMOCOES_INTENCIONAIS.
 ADICOES_INTENCIONAIS |= {
+    # Composição de 2026-09-05 dos PRs empilhados promovidos à main:
+    # #1490 (Data Room público token-bound) e #1492/#1493 (despesas
+    # processuais — router registrado em main.py neste PR).
+    ("/api/data-rooms/acesso/{token}/arquivos/{arquivo_id}", "GET"),
+    ("/api/data-rooms/acesso/{token}/manifesto", "GET"),
+    ("/api/despesas-processuais/casos/{case_id}", "GET"),
+    ("/api/despesas-processuais/", "POST"),
+    ("/api/despesas-processuais/caso/{case_id}/faturar", "POST"),
+    ("/api/despesas-processuais/{entry_id}", "DELETE"),
     ("/api/ia/analisar", "POST"),
     ("/api/ia/conversar", "POST"),
     ("/api/ia/extrair", "POST"),
