@@ -832,7 +832,7 @@ async def analisar_caso(
         "fontes_usadas": len(fontes),
         "pii_removida": houve_pii,
         "aviso": "⚠️ RASCUNHO gerado por IA — revisão por advogado OBRIGATÓRIA "
-                 "antes de qualquer uso (Provimento OAB 205/2021).",
+                 "antes de qualquer uso.",
         "status_hitl": "gerado",
     }
 

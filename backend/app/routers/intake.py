@@ -39,8 +39,8 @@ logger = logging.getLogger("ejc.intake")
 router = APIRouter(prefix="/intake", tags=["Intake — Orquestração"])
 
 AVISO_RASCUNHO = (
-    "Sugestões geradas por IA — sujeitas a revisão do advogado responsável "
-    "(OAB Prov. 205/2021)"
+    "Sugestões geradas por IA — sujeitas a revisão obrigatória do advogado "
+    "responsável"
 )
 RESSALVA_OAB = (
     "Valor de referência mínimo da tabela OAB/MG — não vinculante, "
