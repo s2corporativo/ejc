@@ -198,10 +198,31 @@ async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
         hydrated: list[dict] = []
         for candidate in candidatos:
             item = dict(candidate)
-            extra, vigente, tribunal, atualizado_em = metadata.get(
-                str(item.get("doc_id")),
-                (dict(item.get("extra") or {}), True, item.get("tribunal"), None),
-            )
+            registro = metadata.get(str(item.get("doc_id")))
+            if registro is None:
+                # Sem registro de governança o material normativo NÃO entra no
+                # ranking. O padrão anterior assumia `vigente=True` e o mantinha,
+                # o que é fail-OPEN justamente na classe que este gate protege:
+                # a consulta filtra `deleted_at IS NULL`, então um KnowledgeDoc
+                # apagado cujos chunks continuam indexados caía nesse padrão e
+                # virava fundamentação de peça como norma vigente.
+                #
+                # Mesmo recorte do `except` abaixo, pelo mesmo motivo: doutrina e
+                # jurisprudência não correm esse risco e continuam passando — o
+                # gate é recortado, não um apagão.
+                if _candidato_normativo(item):
+                    logger.info(
+                        "RAG excluiu normativo sem registro de governança: doc_id=%s",
+                        item.get("doc_id"),
+                    )
+                    continue
+                registro = (
+                    dict(item.get("extra") or {}),
+                    True,
+                    item.get("tribunal"),
+                    None,
+                )
+            extra, vigente, tribunal, atualizado_em = registro
             if bool(extra.get("quarantine_active")):
                 logger.info(
                     "RAG excluiu documento em quarentena ativa: doc_id=%s",
