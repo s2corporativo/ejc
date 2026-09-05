@@ -163,6 +163,10 @@ ADICOES_INTENCIONAIS = {
 }
 
 REMOCOES_INTENCIONAIS = {
+    # `routers/noticias.py` REMOVIDO (05/09/2026, CORTE-4 do plano-mestre,
+    # decisão D3 do titular): feed ConJur/JOTA não é gestão de casos; a tela
+    # já estava `hidden` e o card do Dashboard foi retirado junto.
+    ("/api/noticias", "GET"),
     # `routers/curadoria_renomada.py` REMOVIDO (04/09/2026). Os três endpoints
     # respondiam 503 INCONDICIONAL desde a auditoria de 19/07: a "base de teses
     # renomadas" curada nunca existiu, e o 503 substituiu handlers que fingiam

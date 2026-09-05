@@ -44,7 +44,7 @@ export const CATEGORIAS_FERRAMENTAS: {
   {
     title: "Monitoramento",
     description: "Dados públicos e publicações acompanhados pelo escritório.",
-    keys: ["datajud", "diario-oficial", "noticias"],
+    keys: ["datajud", "diario-oficial"],
   },
   {
     title: "Produtividade e operações",

@@ -630,7 +630,9 @@ class TestAnthropicProvider:
         texto, usage = await anthropic_provider.chat(
             [{"role": "system", "content": "instruções"},
              {"role": "user", "content": "pergunta fictícia"}],
-            None, 0.2, 2000,  # pedido acima do teto
+            # Modelo LEGADO explícito: nos modernos (default desde 2026-09-05 =
+            # Sonnet 5) o piso de 8192 do thinking adaptativo domina o teto.
+            "claude-haiku-4-5-20251001", 0.2, 2000,  # pedido acima do teto
         )
         assert box["max_tokens"] == 500  # min(2000, 500)
         assert texto == "resposta fake"
@@ -638,7 +640,7 @@ class TestAnthropicProvider:
 
         # Pedido abaixo do teto passa intacto.
         await anthropic_provider.chat(
-            [{"role": "user", "content": "outra pergunta"}], None, 0.2, 100
+            [{"role": "user", "content": "outra pergunta"}], "claude-haiku-4-5-20251001", 0.2, 100
         )
         assert box["max_tokens"] == 100  # min(100, 500)
 

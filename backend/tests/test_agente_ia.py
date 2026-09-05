@@ -282,6 +282,9 @@ _TOOLS_LEITURA = {
     "montar_cronologia", "identificar_rito_e_fase", "detectar_providencias",
     "calcular_prazo", "consultar_tabela_oab", "ler_checklist_peca",
     "classificar_area",
+    # 2026-09-05 — leitura profunda dos autos (sem HITL).
+    "listar_documentos", "ler_documento", "buscar_nos_autos",
+    "verificar_citacoes", "consultar_movimentacao",
 }
 _TOOLS_ESCRITA = {
     "gerar_minuta_peca", "registrar_nota_caso",
