@@ -84,7 +84,12 @@ describe("useOverrideCitacoes (E5)", () => {
     fireEvent.click(
       screen.getByRole("button", { name: /Aprovar com justificativa/ }),
     );
-    expect(screen.getByRole("alert").textContent).toContain(ERRO_JUSTIFICATIVA_OBRIGATORIA);
+    // Espera explícita: o `getByRole` síncrono falhava de forma intermitente
+    // sob a carga da suíte completa ("Unable to find an accessible element with
+    // the role 'alert'"), passando isolado e no reteste. `findByRole` tolera o
+    // tick de render sem afrouxar a asserção — o alerta continua obrigatório.
+    const alerta = await screen.findByRole("alert");
+    expect(alerta.textContent).toContain(ERRO_JUSTIFICATIVA_OBRIGATORIA);
     expect(enviar).toHaveBeenCalledTimes(1);
 
     fireEvent.change(screen.getByLabelText("Justificativa do override"), {
