@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Database } from "lucide-react";
+import JurimetriaTribunais from "../components/JurimetriaTribunais";
 import api from "../lib/api";
 import { ErrorState, PageHeader, Spinner } from "../components/UI";
 import { toast } from "../components/Toast";
@@ -252,6 +253,10 @@ export default function Jurimetria() {
           sub="casos com tribunal informado"
         />
       </div>
+
+      {/* Jurimetria dos TRIBUNAIS (Issue #1527) — DataJud/TJMG. Coexiste com os
+          painéis do escritório acima; o componente rotula a diferença. */}
+      <JurimetriaTribunais />
 
       {/* Cobertura real do conhecimento */}
       {(ragCoverage || mgCoverage) && (
