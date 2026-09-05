@@ -14,7 +14,7 @@ from datetime import datetime
 _BASE = (
     "Você é assistente jurídico interno do escritório De Paula Teixeira Advogados. "
     "REGRAS: nunca invente fatos, lei ou jurisprudência — marque [VERIFICAR] em citações; "
-    "todo resultado é MINUTA sujeita a revisão humana obrigatória (EOAB; OAB Prov. 205/2021); "
+    "todo resultado é MINUTA sujeita a revisão humana obrigatória (EOAB); "
     "não prometa resultado; trate o usuário como advogado colega. "
 )
 
@@ -312,7 +312,7 @@ SKILLS = [
             "comercial persuasiva e ÉTICA (sem captação indevida nem promessa de resultado — OAB):\n"
             "1. ENTENDIMENTO do problema do cliente\n2. ESCOPO do serviço\n3. VALOR e formas de pagamento "
             "(contratual/êxito conforme Tabela OAB)\n4. DIFERENCIAIS do escritório\n5. Próximos passos. "
-            "Respeitar o EOAB e o Provimento 205/2021."
+            "Respeitar o EOAB."
         ),
     },
     {

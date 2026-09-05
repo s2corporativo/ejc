@@ -100,7 +100,9 @@ def test_formatar_fontes_tolera_metadados_ausentes():
     "funcao", ["revisar", "aprovar", "conferir_e_assinar"]
 )
 def test_revisao_e_aprovacao_de_peca_exigem_advogado(funcao):
-    """Provimento OAB 205/2021: a revisão humana é ato privativo de advogado."""
+    """A revisão humana da peça é ato privativo do advogado (D5, 2026-09-05:
+    citação normativa incorreta removida — Provimento 205/2021 trata de
+    publicidade, não de HITL)."""
     from app.routers import legal_docs
 
     fonte = inspect.getsource(getattr(legal_docs, funcao))

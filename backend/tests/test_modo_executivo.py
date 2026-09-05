@@ -99,10 +99,14 @@ def sink(monkeypatch):
 
 def test_prompt_modo_executivo_contem_marcadores_obrigatorios():
     p = PROMPT_MODO_EXECUTIVO
-    # Rascunho/HITL (OAB Provimento 205/2021)
+    # Rascunho/HITL
     assert AVISO_RASCUNHO_EXECUTIVO in p
     assert "RASCUNHO GERADO POR IA" in p
-    assert "205/2021" in p
+    # D5 (2026-09-05): "Provimento OAB 205/2021" removido — trata de
+    # publicidade, não de vedação de promessa de resultado; "Código de
+    # Ética OAB" é a citação que sobra e nunca mais deve reintroduzir 205/2021.
+    assert "Código de Ética OAB" in p
+    assert "205/2021" not in p
     # Honestidade epistêmica: marcador de verificação pendente
     assert MARCADOR_PENDENTE_VERIFICACAO in p
     assert "PENDENTE DE VERIFICAÇÃO" in p

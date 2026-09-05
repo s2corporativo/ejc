@@ -102,7 +102,8 @@ async def aprovar(
     """HITL: advogado aprova o snapshot → congelado (imutável) + AuditLog.
 
     409 se já congelado. Snapshot automático nunca nasce aprovado — este
-    endpoint é o ÚNICO caminho de aprovação (ato humano, OAB Prov. 205/2021).
+    endpoint é o ÚNICO caminho de aprovação (ato humano, revisão obrigatória
+    do advogado responsável).
     """
     requer_advogado(cu, detail="Aprovação de snapshot restrita a advogados")
     await verificar_acesso_caso(db, cu, case_id)
