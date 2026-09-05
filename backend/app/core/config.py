@@ -172,13 +172,16 @@ class Settings(BaseSettings):
     # indisponível e o gateway faz fallback para Groq.
     ANTHROPIC_API_KEY: str = ""
     # Modelos configuráveis sem deploy (via .env).
-    # RAPIDO  = tarefas factuais/médias (Haiku — barato: $1/$5 por 1M tokens).
-    # COMPLEXO = análise estratégica, dossiês, minutas, pesquisa (Opus 4.8 —
-    #            máxima qualidade jurídica: $5/$25 por 1M tokens). Para reduzir
-    #            custo, definir no .env: claude-sonnet-5 ($3/$15, quase Opus)
-    #            ou claude-haiku-4-5-20251001.
-    ANTHROPIC_MODEL_RAPIDO: str = "claude-haiku-4-5-20251001"
-    ANTHROPIC_MODEL_COMPLEXO: str = "claude-opus-4-8"
+    # RAPIDO  = tarefas factuais/médias e conversa livre da Sala Jurídica.
+    #            Sonnet 5 ($2/$10 por 1M tokens): em trabalho jurídico a resposta
+    #            rasa custa mais que o token — Haiku fica como opção de .env.
+    # COMPLEXO = análise estratégica, dossiês, minutas, pesquisa. Opus 5 —
+    #            mesma faixa de preço do Opus 4.8 ($5/$25) com uma geração a
+    #            mais de raciocínio (decisão do titular, 2026-09-05). Para
+    #            reduzir custo, definir no .env: claude-sonnet-5 ou
+    #            claude-haiku-4-5-20251001.
+    ANTHROPIC_MODEL_RAPIDO: str = "claude-sonnet-5"
+    ANTHROPIC_MODEL_COMPLEXO: str = "claude-opus-5"
     # Profundidade de raciocínio nos modelos modernos (Opus 4.7+/Sonnet 5):
     # low | medium | high. "high" = mais rigor em tarefas jurídicas sensíveis.
     ANTHROPIC_EFFORT: str = "high"
@@ -188,7 +191,8 @@ class Settings(BaseSettings):
     ANTHROPIC_TIMEOUT_SECONDS: int = 120
     # Teto DURO de tokens de saída por chamada (controle de custo).
     # Qualquer max_tokens acima disto é rebaixado no provider.
-    ANTHROPIC_MAX_TOKENS: int = 8000
+    # 16000: uma petição inicial complexa não cabe em 8000 (limite antigo).
+    ANTHROPIC_MAX_TOKENS: int = 16000
     # Prompt caching Anthropic: envia o bloco system com
     # cache_control={"type": "ephemeral"} (leituras repetidas do mesmo prefixo
     # custam ~10%). True = comportamento atual; False = system como string pura
@@ -199,12 +203,12 @@ class Settings(BaseSettings):
     # aproveitar o prompt caching), cada uma truncada em
     # AI_CONTEXTO_MAX_CHARS_SECAO e o conjunto em AI_CONTEXTO_MAX_CHARS.
     AI_CONTEXTO_MAX_CHARS_SECAO: int = 6000
-    AI_CONTEXTO_MAX_CHARS: int = 60000
+    AI_CONTEXTO_MAX_CHARS: int = 150000
     # Busca web (verificação ativa) via server-side tool do Anthropic.
     # Padrão de integrações externas do repo: default OFF + degradação graciosa
     # (se a API rejeitar o tool, a chamada repete sem ele). O tool só é anexado
     # no caminho que JÁ passou pela pseudonimização/sanitização do gateway.
-    AI_WEB_SEARCH_ENABLED: bool = False
+    AI_WEB_SEARCH_ENABLED: bool = True
     # Máximo de buscas por chamada (max_uses do tool web_search).
     AI_WEB_SEARCH_MAX_USES: int = 3
     # Preço da busca web Anthropic (server tool web_search), cobrado À PARTE dos
@@ -361,7 +365,11 @@ class Settings(BaseSettings):
     ROTEAMENTO_INTELIGENTE_ENABLED: bool = True
     # Provedor preferido por TIER de complexidade (o roteador só PROPÕE; se
     # inelegível, o gateway ignora e usa a cadeia normal por prioridade).
-    ROTEAMENTO_PROVIDER_LEVE: str = "groq"       # rápido/barato p/ tarefas leves
+    # leve = anthropic (modelo RÁPIDO): a conversa livre da Sala Jurídica cai
+    # neste tier e é onde o erro jurídico nasce — não vai a provedor de
+    # raciocínio inferior (decisão do titular, 2026-09-05). groq segue como
+    # fallback da cadeia se elegível.
+    ROTEAMENTO_PROVIDER_LEVE: str = "anthropic"
     # médio = anthropic: o stack de produção não sobe ollama (compose:
     # OLLAMA_ENABLED=false) — apontar o tier médio para provider morto só gerava
     # tentativa-e-fallback a cada tarefa. O MODELO do tier médio é COMPLEXO
@@ -381,9 +389,14 @@ class Settings(BaseSettings):
     # router (ia_agente.py) sempre documentou. A IA opera como agente (decide →
     # chama ferramenta → lê resultado → decide), reusando o núcleo e TODOS os
     # guardrails (barreira LGPD, RBAC, AILog, gate de citações, HITL).
-    AI_AGENT_ENABLED: bool = False
-    # Teto de PASSOS do loop (nunca infinito).
-    AI_AGENT_MAX_STEPS: int = 8
+    # LIGADO por default desde 2026-09-05 (decisão do titular): HITL retomável
+    # e fail-closed já homologados (AI-030/031); sem Redis nenhuma escrita
+    # executa. Desligar via .env continua possível.
+    AI_AGENT_ENABLED: bool = True
+    # Teto de PASSOS do loop (nunca infinito). 8 não bastava para um ciclo
+    # completo dossiê → precedentes → cronologia → rito → providências → prazo
+    # → OAB → minuta sem nenhuma iteração de correção.
+    AI_AGENT_MAX_STEPS: int = 20
     # Teto de TOKENS acumulados (input+output de TODOS os turnos) por execução do
     # agente. O budget conta o input de CADA turno — que cresce a cada passo,
     # pois o histórico inteiro é reenviado — somado ao output. Um teto baixo
@@ -391,11 +404,11 @@ class Settings(BaseSettings):
     # (achado M3). Elevado para comportar AI_AGENT_MAX_STEPS turnos com folga
     # (piso real de saída por turno × passos + input acumulado). Ajuste fino via
     # .env; o teto DURO por chamada continua em ANTHROPIC_MAX_TOKENS.
-    AI_AGENT_MAX_TOKENS: int = 120000
+    AI_AGENT_MAX_TOKENS: int = 300000
     # Teto de CUSTO (R$) por execução do agente (Sugestão 2). Acumula o custo
     # estimado de cada turno (ai_cost.estimar_custo_brl); ao exceder, o loop
     # encerra com aviso (igual ao teto de tokens). Default conservador.
-    AI_AGENT_MAX_CUSTO_BRL: float = 2.00
+    AI_AGENT_MAX_CUSTO_BRL: float = 15.00
     # TTL (segundos) do estado retomável de HITL no Redis (achado H1). O estado
     # contém a transcrição em ESPAÇO REAL (PII) — fica no VPS (Redis interno),
     # com TTL curto e NUNCA é logado. Curto para minimizar a janela de retenção.

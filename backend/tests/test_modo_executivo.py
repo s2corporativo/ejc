@@ -170,8 +170,10 @@ async def test_caching_desligado_envia_system_string(sink, monkeypatch):
 
 # ── 3) Busca web (verificação ativa) — flag OFF por default ──────────────────
 
-async def test_web_search_default_off_nao_envia_tools(sink):
-    assert get_settings().AI_WEB_SEARCH_ENABLED is False  # default do repo
+async def test_web_search_desligado_nao_envia_tools(sink, monkeypatch):
+    # Default LIGADO desde 2026-09-05 (decisão do titular); o caminho OFF segue
+    # coberto — quem desliga via .env não pode receber o tool.
+    monkeypatch.setattr(get_settings(), "AI_WEB_SEARCH_ENABLED", False)
     await ap.chat(
         messages=[{"role": "user", "content": "fatos"}],
         model="claude-opus-4-8", temperature=0.1, max_tokens=1000,

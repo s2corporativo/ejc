@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from app.schemas.visual_law import BreakevenIn
 from app.services import visual_law_core as vl
 from app.services import bcb_service
-from app.services.diplomacia_digital import DiplomaciaDigital
+from app.services.calculo_acordo import CalculoAcordo
 
 
 # ── Linha do tempo: fases e status ────────────────────────────────────────────
@@ -250,9 +250,9 @@ def test_calcular_breakeven_sem_custos_igual_vpl_simples():
     assert r["custos_estimados"] == 0.0
 
 
-def test_diplomacia_digital_retrocompativel():
-    # Contrato antigo de /diplomacia-v3/calcular-acordo intacto com os defaults
-    r = DiplomaciaDigital().calcular_ponto_equilibrio(100_000.0, 0.7, 2.0)
+def test_calculo_acordo_retrocompativel():
+    # Contrato numérico do cálculo de acordo intacto com os defaults
+    r = CalculoAcordo().calcular_ponto_equilibrio(100_000.0, 0.7, 2.0)
     vpl = 70_000.0 / (1.1075 ** 2)
     assert r["valor_causa"] == 100_000.0
     assert r["probabilidade_exito"] == 0.7
@@ -352,4 +352,4 @@ async def test_selic_anualizada_sucesso_limpa_cache_negativo(monkeypatch):
     assert bcb_service._fallback_ate == 0.0
 
 
-# ── /diplomacia-v3/calcular-acordo — Selic viva do BCB, não mais fixa ─────────
+# ── Cálculo de acordo — Selic viva do BCB, não mais fixa ──────────────────────

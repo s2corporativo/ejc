@@ -27,7 +27,6 @@ import re
 import unicodedata
 from typing import List, Optional
 
-from app.core.victory_vault import VictoryVault
 from app.models.ai_log import AITipoUso
 from app.schemas.veredito_ia_schema import (
     AnaliseTeseResponse, TeseVitoriosaSimilar,
@@ -117,7 +116,10 @@ def _parse_sugestoes(texto: str) -> Optional[List[SugestaoContextualizada]]:
 
 class VereditoIA:
     def __init__(self):
-        self.victory_vault = VictoryVault()
+        # CORTE-3 (2026-09-05): Victory Vault removido — teses vinculadas vivem
+        # em tese_caso_links (decisão D1); o campo teses_vitoriosas_similares fica
+        # vazio por contrato até a consulta ser ligada ao Banco de Teses.
+        pass
 
     async def predict_success(
         self,
@@ -167,20 +169,8 @@ class VereditoIA:
             avisos.append("Jurimetria interna indisponível no momento — "
                           "probabilidade não calculada.")
 
-        # ── 2. Teses vitoriosas reais do Victory Vault (Postgres) ────────────
+        # ── 2. Teses vitoriosas: Victory Vault removido (CORTE-3) — lista vazia ──
         teses_similares: List[TeseVitoriosaSimilar] = []
-        try:
-            teses_raw = await self.victory_vault.get_teses_vitoriosas(
-                area_juridica=area_juridica)
-            teses_similares = [
-                TeseVitoriosaSimilar(
-                    id=str(t.id), titulo=t.titulo, ementa=t.ementa,
-                    area_juridica=t.area_juridica, data_vitoria=t.data_vitoria,
-                    link=t.link,
-                ) for t in teses_raw[:5]
-            ]
-        except Exception as e:
-            logger.warning(f"Veredito IA: Victory Vault indisponível: {e}")
 
         # ── 3. Jurisprudência REAL: RAG interno (escopo do cliente do caso) ──
         jurisprudencia: List[JurisprudenciaSuporte] = []

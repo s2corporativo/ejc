@@ -73,9 +73,6 @@ def _setup(monkeypatch, *, jurimetria_data, rag_chunks, gw_texto=_GW_JSON,
         calls["ai_log"] = kw
         return "log-1"
 
-    async def fake_teses(self, area_juridica=None, query=None):
-        return []
-
     async def fake_chat(*, messages, **kw):
         calls["gw"] = {"messages": messages, **kw}
         class _R:
@@ -93,8 +90,6 @@ def _setup(monkeypatch, *, jurimetria_data, rag_chunks, gw_texto=_GW_JSON,
     monkeypatch.setattr("app.core.veredito_ia.registrar_ai_log", fake_log)
     # gw_chat é importado em runtime dentro do método → patch no módulo fonte.
     monkeypatch.setattr("app.services.ai_gateway.chat", fake_chat)
-    monkeypatch.setattr(
-        "app.core.victory_vault.VictoryVault.get_teses_vitoriosas", fake_teses)
     return calls
 
 

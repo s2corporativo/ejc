@@ -19,7 +19,6 @@ import {
   LayoutDashboard,
   LayoutGrid,
   ListChecks,
-  Newspaper,
   Plus,
   Library,
   Scale,
@@ -121,7 +120,6 @@ const DiarioOficial = lazy(() => import("../pages/DiarioOficial"));
 // Os componentes originais seguem no repositório — a casca os renderiza
 // embutidos, e as rotas antigas viram LEGACY_REDIRECTS.
 const Radar = lazy(() => import("../pages/Radar"));
-const Noticias = lazy(() => import("../pages/Noticias"));
 const Checklists = lazy(() => import("../pages/Checklists"));
 const Workflow = lazy(() => import("../pages/Workflow"));
 const Assinaturas = lazy(() => import("../pages/Assinaturas"));
@@ -648,18 +646,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     backendPrefixes: ["/api/compliance/radar", "/api/regulatorio"],
   },
   {
-    key: "noticias",
-    path: "/noticias",
-    label: "Notícias Jurídicas",
-    description: "Atualizações e conteúdo jurídico externo.",
-    group: "Pesquisar & IA",
-    icon: Newspaper,
-    component: Noticias,
-    status: "hidden",
-    helpKey: "noticias",
-    sensitive: false,
-  },
-  {
     key: "financeiro",
     path: "/financeiro",
     label: "Financeiro",
@@ -689,7 +675,12 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: Users,
     component: SociedadeWorkspace,
     roles: ROLES.gestores,
-    showInNav: true,
+    // 2026-09-05 (CORTE-5 reenquadrado): o módulo NÃO foi removido porque a
+    // tabela partner_withdrawals é escrita por honorarios_oab.py e lida por
+    // extratos.py — cortar quebraria o fluxo de honorários. Sai só do menu;
+    // a rota segue viva (deep-link) até haver quadro societário cadastrado.
+    showInNav: false,
+    status: "hidden",
     essential: false,
     order: 20,
     helpKey: "financeiro",

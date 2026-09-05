@@ -56,13 +56,13 @@ def test_catalogo_cobre_todos_os_ramos_e_modulos() -> None:
     assert set(LEGAL_AREA_SPECS) == EXPECTED_LEGAL_AREAS
     assert set(MODULE_SKILL_SPECS) == module_keys
     assert len(LEGAL_AREA_SPECS) == 14
-    # 34 módulos = 35 anteriores - biblioteca - whatsapp + sala-juridica
-    # (pente fino 2026-07, onda 2 — paridade com o moduleRegistry do frontend).
-    assert len(MODULE_SKILL_SPECS) == 34
-    assert len(native_skill_specs()) == 48
+    # 32 módulos = 34 (onda 2) - noticias (CORTE-4) - victory-vault (CORTE-3),
+    # cortes de 2026-09-05 — paridade com o moduleRegistry do frontend.
+    assert len(MODULE_SKILL_SPECS) == 32
+    assert len(native_skill_specs()) == 46
 
     coverage = native_skill_coverage()
-    assert coverage["total_native_skills"] == 48
+    assert coverage["total_native_skills"] == 46
     assert coverage["modules"]["missing"] == []
     # C7: a cobertura agora é medida contra a taxonomia CANÔNICA — e acusa as
     # áreas sem método de ramo em vez de comparar o catálogo consigo mesmo.
@@ -195,11 +195,10 @@ def test_roteamento_dedica_ambiental_digital_e_transito() -> None:
 
 
 def test_rota_compartilhada_resolve_para_modulo_canonico() -> None:
-    """Regressão da onda 2: conhecimento e victory-vault compartilham a rota
-    /inteligencia?tab=conhecimento — o alias de rota deve resolver para o
-    módulo CANÔNICO (primeiro no MODULE_REGISTRY), nunca para o carona."""
+    """Regressão da onda 2 (victory-vault removido em 2026-09-05, CORTE-3): a
+    rota /inteligencia?tab=conhecimento resolve para o módulo CANÔNICO."""
     from app.services.ai.core.ejc_skill_catalog import MODULE_ALIASES, _normalize
 
     assert MODULE_ALIASES[_normalize("/inteligencia?tab=conhecimento")] == "conhecimento"
     # Chaves e nomes continuam resolvendo para si mesmos.
-    assert MODULE_ALIASES["victory_vault"] == "victory-vault"
+    assert MODULE_ALIASES["conhecimento"] == "conhecimento"

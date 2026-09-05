@@ -11,6 +11,7 @@ from app.models.document_rescan import DocumentHashRescanBatch, DocumentHashResc
 from app.models.raio_x import RaioXAnalise, RaioXDocumento
 from app.models.legal_doc import LegalDoc, PecaTipo, PecaStatus
 from app.models.fee import Fee, FeePayment, FeeTipo, FeeStatus
+from app.models.case_despesa import CaseDespesa  # migration 156 (#1486/#1492)
 from app.models.environmental import EnvironmentalCase, OrgaoAutuador, StatusDefesa
 from app.models.especializado import (
     EmpresarialCase, EmpresarialTipo, EmpresarialStatus,

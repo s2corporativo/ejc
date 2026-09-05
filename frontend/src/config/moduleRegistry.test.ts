@@ -244,7 +244,6 @@ describe("moduleRegistry", () => {
       "/datajud",
       "/diario-oficial",
       "/radar",
-      "/noticias",
       "/produtividade",
       "/ia-governanca",
       "/auditoria",
