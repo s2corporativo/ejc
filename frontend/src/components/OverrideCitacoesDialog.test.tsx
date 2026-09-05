@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
   ERRO_JUSTIFICATIVA_OBRIGATORIA,
@@ -80,6 +80,17 @@ describe("useOverrideCitacoes (E5)", () => {
     expect(await screen.findByText("Citações não confirmadas")).toBeTruthy();
     expect(screen.getByText(/Súmula 999 do STJ não localizada/)).toBeTruthy();
     expect(onOk).not.toHaveBeenCalled();
+
+    // O diálogo tem um efeito de montagem que limpa `justificativa` e o erro
+    // local sempre que `bloqueio` muda (para não vazar texto de um documento
+    // para o próximo). `findByText` do RTL não passa pelo `act`, então sob
+    // carga da suíte completa ele pode resolver ANTES desse efeito passivo
+    // rodar. O clique abaixo entra num `act` que processa o `setErroLocal`
+    // do handler e, na sequência, o reset pendente — e o alerta nunca chega
+    // ao DOM ("Unable to find role=alert", intermitente). Forçar o flush aqui
+    // garante que o clique interage com o diálogo já estabilizado, que é o
+    // único estado que um usuário consegue alcançar.
+    await act(async () => {});
 
     fireEvent.click(
       screen.getByRole("button", { name: /Aprovar com justificativa/ }),
