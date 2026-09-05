@@ -2,9 +2,9 @@
 
 Este arquivo é o ledger canônico de **reservas futuras** e do trecho recente da cadeia Alembic. O histórico detalhado de reservas antigas permanece preservado no Git.
 
-**Head canônico atual da `main`:** `155_indices_listagem_espinha`
-**Próximo prefixo livre:** `156`
-Após o merge desta PR, o próximo prefixo livre será `156` — a `154` e a `155` estão aplicadas e **não podem ser reutilizadas**.
+**Head canônico atual da `main`:** `156_case_despesas_processuais`
+**Próximo prefixo livre:** `157`
+Base desta PR: `main` em `155_indices_listagem_espinha`. A declaração acima representa o head canônico **que esta PR propõe à main**, conforme o contrato dos gates `test_migration_reservations_head.py`; enquanto a PR não for mesclada, a `main` publicada permanece em 155. A `156` está reservada por esta PR e **não pode ser reutilizada enquanto a PR estiver aberta**.
 
 > Nunca reutilize um número menor ou igual ao head atual, mesmo quando houver lacuna histórica. A ordem numérica precisa crescer junto com `down_revision`.
 
@@ -47,7 +47,8 @@ gh pr list --state open
 | `152_thesis_candidate_tese_banco` | `151_case_status_anterior` | Mesclada | Ponte Matriz de Teses → Banco de Teses canônico. |
 | `153_legal_doc_client_id` | `152_thesis_candidate_tese_banco` | Mesclada | Isolamento estável cliente → peça avulsa, reconstruído a partir do #1231 sem reutilizar a antiga migration 147. |
 | `154_saneamento_schema` | `153_legal_doc_client_id` | Mesclada | Módulo de saneamento de base processual (PROMPT 1). Encadeada sobre 153 porque era o head real no momento (`alembic heads`) — não pressupõe que 153 já tenha sido mesclada; conferir o head real de novo antes do merge. 7 tabelas próprias, **prefixadas `saneamento_*` no schema `public`** — nenhuma alteração em tabela existente do EJC. Um schema Postgres dedicado (`CREATE SCHEMA`) foi cogitado e descartado: `scripts/check_migration_compatibility.py` (gate de deploy) e os testes de paridade schema↔ORM (`test_schema_dr_parity.py`, `test_schema_sync.py`) extraem nomes de tabela por regex/AST sem suporte a qualificação de schema — mudar essas ferramentas para um caso de uso isolado era desproporcional ao módulo. Prefixo de tabela entrega o mesmo isolamento prático. |
-| `155_indices_listagem_espinha` | `154_saneamento_schema` | **Em PR — HEAD desta branch** | Índices parciais de listagem em `cases`/`clients`/`documents` (AUD27-P3-11). `deadlines` fora de propósito: já coberta por `ix_deadlines_data_prazo`, medido. **Renumerada de 154 para 155** ao mesclar a `main`: o #1318 chegou primeiro e ocupou a 154 — mesma colisão que renumerou a 150 (era 148). |
+| `155_indices_listagem_espinha` | `154_saneamento_schema` | Mesclada | Índices parciais de listagem em `cases`/`clients`/`documents` (AUD27-P3-11). `deadlines` fora de propósito: já coberta por `ix_deadlines_data_prazo`, medido. |
+| `156_case_despesas_processuais` | `155_indices_listagem_espinha` | **Em PR** | Issue #809: tabela `case_despesas` para custos processuais reembolsáveis do caso, distinta de `office_expenses`; faturamento explícito gera `FeeTipo.custas_despesas`. Migration aditiva e reversível. |
 
 ## Banco de Teses — decisão canônica
 
