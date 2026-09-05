@@ -62,9 +62,11 @@ describe("CaseCommandDock", () => {
       expect(screen.getByText(rotulo)).toBeTruthy();
     }
     // "Peças" deixou de ser um sexto destino de navegação: virou ação de
-    // produção, ao lado de Áreas do caso e Anexar documento.
+    // produção, ao lado de Áreas do caso e Anexar documento — hoje desdobrada
+    // em produzir (gerador já no contexto do caso) e fila.
     expect(screen.queryByText("Jornada e próxima ação")).toBeNull();
-    expect(screen.getByRole("button", { name: /Peças do caso/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Produzir peça/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Fila de peças/ })).toBeTruthy();
   });
 
   it("usa a taxonomia canônica e vincula uma área ao caso", async () => {

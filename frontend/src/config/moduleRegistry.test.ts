@@ -180,8 +180,11 @@ describe("moduleRegistry", () => {
     const map = new Map(
       LEGACY_REDIRECTS.map((redirect) => [redirect.from, redirect.to]),
     );
+    // PR #1378: Sociedade saiu de dentro do Financeiro e virou módulo próprio
+    // (`/gestao-escritorio/sociedade`, RBAC de gestão). O redirect legado
+    // acompanha o novo destino — retirada de sócio não é caixa operacional.
     expect(map.get("/partner-withdrawals")).toBe(
-      "/financeiro?tab=societaria&sub=saques",
+      "/gestao-escritorio/sociedade?sub=saques",
     );
     expect(map.get("/office-contracts")).toContain("contratos");
     expect(map.get("/agenda")).toBe("/atividades?view=calendario");
