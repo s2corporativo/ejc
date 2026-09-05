@@ -374,13 +374,17 @@ _PADRAO_PISO_ESTAGIARIO = re.compile(
 # estável sob deslocamento e continua específico o bastante para que uma
 # ocorrência NOVA numa função diferente do mesmo arquivo seja pega.
 _GRANDFATHER_ISSUE_694: dict[str, frozenset[str]] = {
-    "bank_analysis.py": frozenset({"gerar_peca"}),
-    "entrada_universal.py": frozenset({"meta", "processar"}),
-    "checklists.py": frozenset({"_pode_editar"}),
-    "prompts_juridicos.py": frozenset({"listar_prompts"}),
     # ai.py::assistente_estrategico e ai.py::visual_law corrigidos na
     # auditoria de segurança das APIs de IA (18/08) — migrados para
     # requer_equipe_juridica (allowlist exata).
+    #
+    # bank_analysis.py::gerar_peca, entrada_universal.py::meta e ::processar,
+    # checklists.py::_pode_editar e prompts_juridicos.py::listar_prompts
+    # corrigidos NESTE PR: o piso hierárquico `>= ROLE_LEVEL["estagiario"]`
+    # deu lugar à allowlist exata EQUIPE_JURIDICA, fechando a promoção de
+    # `financeiro` (nível 4) à superfície jurídica. Removidos daqui porque o
+    # baseline só admite ocorrência que ainda exista — é o que o assert
+    # `baseline_desatualizado` cobra de quem corrige.
     "users.py": frozenset({"obter_avatar"}),
 }
 
