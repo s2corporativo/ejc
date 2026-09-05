@@ -1,0 +1,12 @@
+[Unit]
+Description=Verifica periodicamente se ha novo SHA EJC aprovado
+
+[Timer]
+OnBootSec=5m
+OnUnitActiveSec=5m
+RandomizedDelaySec=45s
+Persistent=true
+Unit=ejc-deploy-approved.service
+
+[Install]
+WantedBy=timers.target
