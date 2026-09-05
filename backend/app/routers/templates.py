@@ -58,6 +58,9 @@ def _render(conteudo: str, ctx: dict) -> str:
     return re.sub(r"\{\{\s*([a-z_]+)\s*\}\}", repl, conteudo)
 
 
+_TIPOS_ADMISSAO = (PecaTipo.contrato.value, PecaTipo.procuracao.value)
+_ROLES_GESTAO = ("superadmin", "admin", "socio")
+
 _MESES_PT = [
     "janeiro", "fevereiro", "março", "abril", "maio", "junho",
     "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
@@ -162,6 +165,13 @@ async def criar(
     tipos_validos = [t.value for t in PecaTipo]
     if payload.tipo_peca not in tipos_validos:
         raise HTTPException(status_code=422, detail=f"tipo_peca inválido. Use: {tipos_validos}")
+    # Modelos de contrato/procuração substituem o texto institucional da
+    # admissão de TODOS os clientes — só gestão pode cadastrá-los.
+    if payload.tipo_peca in _TIPOS_ADMISSAO and cu.role.value not in _ROLES_GESTAO:
+        raise HTTPException(
+            status_code=403,
+            detail="Modelos de contrato e procuração são restritos a sócios/gestão",
+        )
     t = DocTemplate(id=str(uuid4()), created_by=cu.id, **payload.model_dump())
     db.add(t)
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "doc_templates", t.id)

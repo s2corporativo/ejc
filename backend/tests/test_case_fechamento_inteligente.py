@@ -168,3 +168,27 @@ async def test_processo_ativo_vira_alerta_com_sugestao_de_sincronizar():
     assert diagnostico["processo"]["pode_sincronizar"] is True
     assert diagnostico["processo"]["processos_ativos"] == 1
     assert diagnostico["resumo"]["processos_ativos"] == 1
+
+
+async def test_diagnostico_somente_leitura_nao_adquire_lock():
+    db = _DB([], [], [], [], [])
+
+    diagnostico = await diagnosticar_fechamento(db, _caso(), somente_leitura=True)
+
+    assert diagnostico["pode_encerrar"] is True
+    # 5 consultas (prazo/tarefa/fee/peça/processo), nenhuma de advisory lock
+    assert db.execute_calls == 5
+
+
+async def test_erro_de_sincronizacao_nao_expoe_url_upstream():
+    db = _DB([], [], [], [], [])
+    erro = "HTTPError 502 ao consultar https://api-publica.datajud.cnj.jus.br/x " + "y" * 300
+
+    diagnostico = await diagnosticar_fechamento(
+        db, _caso(numero_processo="0001234-56.2026.8.13.0027", last_synced_at=None,
+                  sync_error=erro),
+    )
+
+    resumo = diagnostico["processo"]["erro_sincronizacao"]
+    assert "datajud" not in resumo and "<url>" in resumo
+    assert len(resumo) <= 201

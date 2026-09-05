@@ -10,6 +10,7 @@ encerramento; persistência e AuditLog continuam pertencendo ao router.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from sqlalchemy import select
@@ -26,7 +27,20 @@ from app.services.case_mutation_guard import (
 )
 
 
-async def diagnosticar_fechamento(db: AsyncSession, caso: Any) -> dict[str, Any]:
+_URL_RE = re.compile(r"https?://\S+")
+
+
+def _resumir_erro(erro: Any) -> str | None:
+    """Erro de sync sem host/URL upstream e truncado — vai para a UI."""
+    if not erro:
+        return None
+    texto = _URL_RE.sub("<url>", str(erro)).strip()
+    return texto[:200] + ("…" if len(texto) > 200 else "")
+
+
+async def diagnosticar_fechamento(
+    db: AsyncSession, caso: Any, *, somente_leitura: bool = False
+) -> dict[str, Any]:
     """Retorna bloqueios e alertas operacionais do caso sem persistir nada.
 
     Bloqueio fatal:
@@ -46,8 +60,10 @@ async def diagnosticar_fechamento(db: AsyncSession, caso: Any) -> dict[str, Any]
 
     # O mesmo lock é usado pelas mutações fatais de prazo. No POST /encerrar ele
     # permanece retido até o commit do router, fechando a janela de corrida entre
-    # "diagnóstico limpo" e a troca de status para encerrado.
-    await serializar_mutacao_caso(db, case_id)
+    # "diagnóstico limpo" e a troca de status para encerrado. No GET de
+    # diagnóstico não há mutação — sem lock, para não serializar o caso.
+    if not somente_leitura:
+        await serializar_mutacao_caso(db, case_id)
     refresh = getattr(db, "refresh", None)
     if refresh is not None:
         await refresh(caso)
@@ -203,7 +219,7 @@ async def diagnosticar_fechamento(db: AsyncSession, caso: Any) -> dict[str, Any]
         "ultima_sincronizacao": (
             last_synced_at.isoformat() if hasattr(last_synced_at, "isoformat") else last_synced_at
         ),
-        "erro_sincronizacao": getattr(caso, "sync_error", None),
+        "erro_sincronizacao": _resumir_erro(getattr(caso, "sync_error", None)),
     }
 
     resumo = {

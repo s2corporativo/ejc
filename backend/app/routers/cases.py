@@ -1033,7 +1033,7 @@ async def diagnostico_encerramento(
     from app.services.case_closure_service import diagnosticar_fechamento
 
     case = await _caso_para_encerrar(db, cu, case_id)
-    return await diagnosticar_fechamento(db, case)
+    return await diagnosticar_fechamento(db, case, somente_leitura=True)
 
 
 # O rate limit da sincronização MNI NÃO entra como dependency desta rota: o
