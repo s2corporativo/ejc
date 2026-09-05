@@ -21,6 +21,10 @@ steps:
       DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@db:5432/ejc_db
       DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@db:5432/ejc_db
       SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user:ejc_pass@db:5432/ejc_db
+      # O CI já sobe PostgreSQL+pgvector e aplica `alembic upgrade head`.
+      # Sem esta flag, os testes DB-level se auto-pulam e o gate fica mais
+      # fraco que o portão local obrigatório do repositório.
+      RUN_DB_TESTS: "1"
     commands:
       # Deps nativas de OCR/PDF exigidas pela suíte (mesma lista do ci.yml).
       - apt-get update -qq

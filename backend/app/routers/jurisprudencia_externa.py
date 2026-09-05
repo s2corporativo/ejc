@@ -18,7 +18,12 @@ from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL, EQUIPE_JURIDICA
 from app.models.user import User
 from app.models.jurisprudencia_interna import JurisprudenciaInterna
-from app.services.jurisprudencia_externa import buscar_todas_fontes, buscar_lexml, buscar_tjmg
+from app.services.jurisprudencia_externa import (
+    LexMLBloqueadoError,
+    buscar_lexml,
+    buscar_tjmg,
+    buscar_todas_fontes,
+)
 
 router = APIRouter(prefix="/jurisprudencia-externa", tags=["Jurisprudência Externa"])
 
@@ -63,7 +68,16 @@ async def buscar_lexml_endpoint(
     """Busca exclusiva no LexML.gov.br com suporte a tipos (lei, jurisprudência, doutrina)."""
     if not _is_staff(cu):
         raise HTTPException(403)
-    itens = await buscar_lexml(q, tipo=tipo, pagina=pagina, por_pagina=por_pagina)
+    try:
+        itens = await buscar_lexml(q, tipo=tipo, pagina=pagina, por_pagina=por_pagina)
+    except LexMLBloqueadoError as exc:
+        # 503 controlado, não 500. `buscar_lexml` passou a levantar quando o
+        # LexML devolve desafio anti-bot (antes virava lista vazia silenciosa);
+        # sem este tratamento, o advogado receberia erro genérico e cada busca
+        # poluiria o sinal de "erro não tratado" usado no diagnóstico. Mesmo
+        # contrato de `feature_flags.require_enabled` para fonte que não
+        # respondeu.
+        raise HTTPException(status_code=503, detail=str(exc)) from None
     return {"total": len(itens), "fonte": "LexML", "itens": itens}
 
 

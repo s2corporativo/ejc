@@ -302,11 +302,17 @@ export default function TabResumo({
   const [encLoading, setEncLoading] = useState(false);
   const [sigiloSalvando, setSigiloSalvando] = useState(false);
   const [enc, setEnc] = useState({
-    resultado: "exito_total",
+    // Vocabulário CANÔNICO do backend (EncerrarCasoReq) — é o mesmo que a
+    // jurimetria consome. "exito_total"/"improcedente" não existem lá e o
+    // encerramento voltava 422 já no valor default do formulário.
+    resultado: "exito",
     motivo_resultado: "",
     provas_determinantes: "",
     licoes_aprendidas: "",
     alimentar_rag: true,
+    // Puxa a movimentação final do tribunal (MNI/PJe) ao encerrar, para o
+    // acervo do caso fechar completo. Opt-in.
+    sincronizar_processo_eletronico: false,
   });
   const [gerando, setGerando] = useState(false);
   const [honModal, setHonModal] = useState(false);
@@ -390,11 +396,30 @@ export default function TabResumo({
   const encerrar = async () => {
     setEncLoading(true);
     try {
-      await api.post(`/cases/${caso.id}/encerrar`, enc);
+      const { data } = await api.post(`/cases/${caso.id}/encerrar`, enc);
       setEncModal(false);
       toast.success(
         "Caso encerrado. Conhecimento registrado na base institucional (precedente + memória + tese).",
       );
+      // A sincronização é assíncrona e degrada graciosamente no backend: o
+      // encerramento vale mesmo quando ela não sai. Reporta o que de fato
+      // aconteceu, em vez de prometer o que foi apenas pedido.
+      const sinc = data?.sincronizacao_processo_eletronico;
+      if (sinc?.solicitada && sinc.status !== "enfileirado") {
+        // O caso ESTÁ encerrado; só a sincronização falhou. Recarregar aqui
+        // apagaria o toast antes de ele renderizar e o operador acharia que o
+        // tribunal foi consultado. Mantém a página e fixa o motivo na tela.
+        setSincFalhou(
+          sinc.detalhe || "Não foi possível sincronizar com o tribunal.",
+        );
+        toast.error(sinc.detalhe || "Não foi possível sincronizar com o tribunal.");
+        return;
+      }
+      if (sinc?.solicitada) {
+        toast.success(
+          "Sincronização com o tribunal enfileirada — acompanhe em Processo Eletrônico.",
+        );
+      }
       window.location.reload();
     } catch (e: any) {
       toast.error(e.response?.data?.detail || "Falha ao encerrar");
@@ -509,6 +534,10 @@ export default function TabResumo({
 
   // #R8 — conversão em judicial passa pelo checklist bloqueante (ConversaoChecklist)
   const [convModal, setConvModal] = useState(false);
+  // Motivo pelo qual a sincronização pedida no encerramento não saiu. Fica na
+  // tela porque é a ÚNICA indicação de que o tribunal não foi consultado — um
+  // toast morreria no reload que segue o encerramento.
+  const [sincFalhou, setSincFalhou] = useState<string | null>(null);
 
   const casoEncerrado =
     caso.status === "encerrado" || caso.status === "arquivado";
@@ -517,6 +546,17 @@ export default function TabResumo({
     <div className="space-y-5">
       {casoEncerrado && !ocultarAvisoEncerramento && (
         <AvisoCasoEncerrado caso={caso} />
+      )}
+      {sincFalhou && (
+        <Alert variant="warning" title="Caso encerrado, sem sincronização">
+          <p>{sincFalhou}</p>
+          <button
+            className="mt-2 underline hover:no-underline"
+            onClick={() => window.location.reload()}
+          >
+            Atualizar a página
+          </button>
+        </Alert>
       )}
       <div className="flex gap-2 flex-wrap">
         <button
@@ -880,10 +920,12 @@ export default function TabResumo({
                 value={enc.resultado}
                 onChange={(e) => setEnc({ ...enc, resultado: e.target.value })}
               >
-                <option value="exito_total">Êxito total</option>
+                <option value="exito">Êxito</option>
                 <option value="exito_parcial">Êxito parcial</option>
                 <option value="acordo">Acordo</option>
-                <option value="improcedente">Improcedente</option>
+                <option value="derrota">Derrota</option>
+                <option value="desistencia">Desistência</option>
+                <option value="arquivado">Arquivado</option>
               </select>
             </div>
             <div>
@@ -928,6 +970,33 @@ export default function TabResumo({
                 }
               />
               Alimentar a base de conhecimento
+            </label>
+            <label className="flex items-start gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={enc.sincronizar_processo_eletronico}
+                onChange={(e) =>
+                  setEnc({
+                    ...enc,
+                    sincronizar_processo_eletronico: e.target.checked,
+                  })
+                }
+              />
+              <span>
+                Sincronizar com o tribunal (PJe/MNI) antes de arquivar
+                {caso.numero_processo ? (
+                  <span className="block text-xs text-slate-400">
+                    Processo {caso.numero_processo} — puxa a movimentação e os
+                    documentos finais para o acervo do caso.
+                  </span>
+                ) : (
+                  <span className="block text-xs text-amber-600">
+                    Caso sem número de processo cadastrado — não há o que
+                    sincronizar.
+                  </span>
+                )}
+              </span>
             </label>
             <button
               onClick={encerrar}

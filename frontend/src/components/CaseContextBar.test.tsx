@@ -10,6 +10,8 @@ vi.mock("../stores/caseContext", () => {
       titulo: "Caso Teste",
       cliente: "Cliente X",
       numero_processo: null,
+      proxima_acao: "Protocolar manifestação",
+      proxima_acao_prazo: "2026-09-05T12:00:00-03:00",
     },
     ativar: vi.fn(),
     sair: vi.fn(),
@@ -24,7 +26,7 @@ import CaseContextBar from "./CaseContextBar";
 afterEach(cleanup);
 
 describe("CaseContextBar — cinco destinos canônicos do modo caso", () => {
-  it("exibe exatamente os rótulos Visão/Atividades/Arquivos/Estratégia/Financeiro", () => {
+  it("exibe exatamente os rótulos Visão/Atividades/Documentos/Estratégia/Financeiro", () => {
     render(
       <MemoryRouter initialEntries={["/casos/case-1?tab=resumo"]}>
         <CaseContextBar />
@@ -40,10 +42,21 @@ describe("CaseContextBar — cinco destinos canônicos do modo caso", () => {
     expect(rotulos).toEqual([
       "Visão",
       "Atividades",
-      "Arquivos",
+      "Documentos",
       "Estratégia",
       "Financeiro",
     ]);
+  });
+
+  it("mantém a próxima ação visível em qualquer superfície do caso", () => {
+    render(
+      <MemoryRouter initialEntries={["/casos/case-1?tab=documentos"]}>
+        <CaseContextBar />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("Protocolar manifestação")).toBeTruthy();
+    expect(screen.getByText("05/09/2026")).toBeTruthy();
   });
 
   it("aponta cada destino para a aba padrão da seção", () => {

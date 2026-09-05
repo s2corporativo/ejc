@@ -159,6 +159,9 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
     # do parser tolerante: ele nunca falha, então nunca avisa. Com o número
     # bruto no log, um zero passa a ser diagnosticável.
     brutos = 0
+    # Temas cuja BUSCA estourou. O parser já distingue os três zeros; o que
+    # faltava era o caso em que nenhuma busca chegou a acontecer.
+    temas_com_falha = 0
 
     for tema in temas:
         met: dict = {}
@@ -169,6 +172,7 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                 metricas=met,
             )
         except Exception as e:   # rede/HTML — nunca derruba a execução inteira
+            temas_com_falha += 1
             logger.warning("TJMG tema %r: %s: %s", tema, type(e).__name__, e)
             continue
 
@@ -248,6 +252,12 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
             "TJMG: %d itens vieram da origem e NENHUM passou no parsing — "
             "provável mudança de layout na origem, não ausência de julgados.",
             brutos,
+        )
+
+    if temas and temas_com_falha == len(temas):
+        raise RuntimeError(
+            f"TJMG: a busca falhou em todos os {len(temas)} temas do plano. "
+            "Nenhuma ingestão foi executada."
         )
 
     return novos, total
