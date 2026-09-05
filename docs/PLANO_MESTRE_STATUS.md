@@ -95,10 +95,10 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | CL-D1 | Classe D — rótulo corrigido para "Base fática registrada" (a checagem aceitar descrição digitada é deliberada, não bug) | F2 | #1272 | em-andamento | #1259 | 2026-08-24 |
 | CL-D2 | Classe D — golden test das 16 etapas + cenário caso-recém-criado documentado; ponte `case_checklists`→`checklist_criado` fica para depois (refinamento, não bug) | F2 | #1272 | em-andamento | #1259 | 2026-08-24 |
 | CORTE-1 | Cortar jurimetria / predição de êxito | F5 | — | pendente | — | — |
-| CORTE-2 | Remover código de `diplomacia-v3` (risco disciplinar) | F5 | — | pendente | — | — |
-| CORTE-3 | Cortar Victory Vault | F5 | — | pendente | — | — |
-| CORTE-4 | Cortar radar de notícias / `/noticias` | F5 | — | pendente | — | — |
-| CORTE-5 | Cortar módulo sociedade / retiradas de sócio | F5 | — | pendente | — | — |
+| CORTE-2 | Remover código de `diplomacia-v3` (risco disciplinar) — `diplomacia_digital.py` virou `calculo_acordo.py` (só o VPL usado por visual_law); `gerar_dossie_pressao` e os pares `/diplomacia` do route_registry removidos | F5 | #1522 | mesclado | #1531 | 2026-09-05 |
+| CORTE-3 | Cortar Victory Vault — `core/victory_vault.py`, schema e `data/mock_db` removidos; `veredito_ia` sem o passo; módulo/skill fora do catálogo. Tabelas `teses_vitoriosas`/`modelos_documentos` seguem no banco até migration de contração (regra 2) | F5 | #1522 | mesclado | #1531 | 2026-09-05 |
+| CORTE-4 | Cortar radar de notícias / `/noticias` — router, página, card do Dashboard, guia, módulo e skill removidos | F5 | #1522 | mesclado | #1531 | 2026-09-05 |
+| CORTE-5 | REENQUADRADO (2026-09-05): não cortar — `partner_withdrawals` é escrito por `honorarios_oab.py` e lido por `extratos.py`; cortar quebraria honorários. Sociedade saiu do menu (`hidden`), rota viva por deep-link | F5 | — | mesclado | #1531 | 2026-09-05 |
 | CORTE-6 | Arquivar skills de IA sem uso registrado em log | F5 | — | pendente | — | — |
 | CORTE-7 | Desmontar `UI.tsx` (1437 linhas) em `components/ui/*` + consolidar 8 CSS globais | F5 | — | pendente | — | — |
 | AUD27-P0-1 | CORRIGIDO — `_requisitos()`, a fonte única de elegibilidade, checava as flags por provedor e a de externos mas **nunca `AI_ENABLED`**: com Ollama ligado, `/ai/core/*` gerava com a IA "desligada". O kill-switch global virou requisito de todo provedor; cadeia vazia falha antes de tocar rede, e `motivo_inelegivel` distingue kill-switch de chave ausente `[era CRÍTICO]` | F1 | — | mesclado | #1316 | 2026-08-31 |
@@ -125,7 +125,7 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | AUD27-P2-11 | Cópia do CPP com `categoria=peca_escritorio` (restrita por cliente) e `client_id` nulo — irrecuperável pela busca; há 4 cópias corretas, então o caminho é remover, não recategorizar | F3 | #1313 | pendente | — | 2026-08-27 |
 | AUD27-P3-14 | Zumbis do host: 158 processos (`node`/`chromium`/`chrome_crashpad`) sob um único pai no container do **s2licit** (puppeteer-extra-stealth) — não é o EJC; raspagem travando em laço há 24h sugere coleta de editais quebrada | F5 | #1313 | pendente | — | 2026-08-27 |
 | AUD27-P3-1 | REENQUADRADO em 01/09: o `b77ff4c` arquivou o Actions e `.github/workflows` **não existe mais**, então nada pode disparar sozinho — o risco imediato acabou. O latente permanece na cópia arquivada (`docs/arquivo/ci/github-actions-legacy/2026-08-31/`): restaurar a pasta traz os dois gatilhos armados junto. Desarmar na cópia, ou exigir desarme no procedimento de restauração | F6 (gate) | — | pendente | — | 2026-09-01 |
-| AUD27-P3-2 | CORTE-2/CORTE-3: camada de router já cortada (12/08), services (`diplomacia_digital.py`, `victory_vault.py`) seguem ativos — status do plano não reflete a nuance | F5 | — | pendente | — | 2026-08-27 |
+| AUD27-P3-2 | CORTE-2/CORTE-3: camada de router já cortada (12/08), services (`diplomacia_digital.py`, `victory_vault.py`) seguiam ativos — fechado com os cortes de 2026-09-05 (ver CORTE-2/3) | F5 | — | mesclado | #1531 | 2026-09-05 |
 | AUD27-P3-3 | Aba morta inalcançável `"ia_cliente"` em `DossieCliente.tsx` | F5 | — | pendente | — | 2026-08-27 |
 | AUD27-P3-4 | `components/Layout.tsx` (669 linhas) código morto, substituído por `LayoutReference.tsx`. **Já removido**: o arquivo não existe mais na árvore desde o `bbc6944`. Status obsoleto, não código — corrigido na varredura de 01/09 | F5 | — | mesclado | #1316 | 2026-09-01 |
 | AUD27-P3-5 | `DashboardLegalTechPremium.tsx` (480 linhas) componente de demonstração morto. **Já removido** no `bbc6944`; nenhum arquivo com esse nome existe na árvore. Status obsoleto, não código — corrigido na varredura de 01/09 | F5 | — | mesclado | #1316 | 2026-09-01 |
