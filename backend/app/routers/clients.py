@@ -16,6 +16,7 @@ from app.core.client_ownership import (
     pode_ver_cliente as _pode_ver_cliente_canonico,
     visao_total_clientes,
 )
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, require_roles, requer_advogado
@@ -529,7 +530,66 @@ async def criar(
             detail="Dados inválidos — verifique o formato/tamanho dos campos (datas, textos longos, etc.).",
         )
     await db.refresh(c)
+    await _kit_admissao_automatico(db, c, cu)
     return c
+
+
+async def _kit_admissao_automatico(db: AsyncSession, c: Client, cu: User) -> None:
+    """Procuração + contrato de honorários no ato do cadastro do cliente.
+
+    Regra de negócio do escritório: a admissão do cliente já entrega os dois
+    documentos, sem depender de o operador lembrar de pedir. São os MESMOS
+    rascunhos determinísticos do fluxo manual (mesmo service, mesma
+    idempotência por `client_id` + `client_admission_kind`), então cadastrar e
+    depois clicar em "gerar documentos" não duplica nada.
+
+    Degradação graciosa e deliberada: o cliente JÁ foi commitado acima. Uma
+    falha na geração (banco, tabela OAB indisponível) não pode desfazer o
+    cadastro nem devolver erro para quem só quis cadastrar — fica registrada no
+    log e o operador regenera pelo endpoint manual.
+    """
+    if not get_settings().CLIENTE_KIT_ADMISSAO_AUTOMATICO:
+        return
+    # RBAC: emitir procuração/contrato é ato jurídico atrás de
+    # `requer_advogado` (gate único do fluxo canônico, §5) — tanto na rota
+    # manual quanto na listagem dos rascunhos. O disparo automático NÃO é
+    # atalho para esse gate: quando quem cadastra não é advogado+ (secretaria
+    # opera o CRM), o cliente entra sem o kit e a pendência fica visível no
+    # checklist de onboarding ("Procuração ativa" / "Contrato de honorários"),
+    # para o advogado emitir pelo caminho próprio.
+    from app.core.security import ROLE_LEVEL
+    from app.core.ownership import role_str
+
+    if ROLE_LEVEL.get(role_str(cu), 0) < ROLE_LEVEL["advogado"]:
+        return
+    # Lead é prospecção, não cliente admitido: emitir o kit ali criaria cópia
+    # da qualificação (nome, CPF/CNPJ, endereço em texto puro no documento)
+    # para quem talvez nunca contrate. Minimização (LGPD art. 6º, III).
+    if getattr(c.status, "value", c.status) == ClientStatus.lead.value:
+        return
+    from app.services.geracao_documental_cliente import (
+        gerar_documentos_cliente as _gerar,
+    )
+
+    try:
+        await _gerar(db, c, cu)
+    except Exception:
+        logger.warning(
+            "Kit de admissão automático falhou para client_id=%s "
+            "(cadastro preservado; regenerar por POST /clients/{id}/gerar-documentos)",
+            c.id, exc_info=True,
+        )
+        await db.rollback()
+        # `rollback` expira os objetos da sessão (o commit não — a sessão usa
+        # expire_on_commit=False). Sem o refresh, a rota serializaria um
+        # cliente expirado e o acesso a atributo dispararia IO lazy fora do
+        # contexto greenlet do SQLAlchemy async.
+        await db.refresh(c)
+
+
+# Campos que alteram os PODERES outorgados — se vierem explícitos e já houver
+# kit emitido, a emissão precisa falhar alto em vez de reaproveitar o antigo.
+_CAMPOS_PODERES = {"tipo_poderes", "permite_substabelecimento", "poderes_especiais"}
 
 
 class GerarDocsClienteIn(BaseModel):
@@ -561,7 +621,7 @@ async def gerar_documentos_cliente(
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
     p = payload or GerarDocsClienteIn()
     from app.services.geracao_documental_cliente import gerar_documentos_cliente as _gerar
-    return await _gerar(
+    resultado = await _gerar(
         db,
         c,
         cu,
@@ -570,6 +630,25 @@ async def gerar_documentos_cliente(
         poderes_especiais=p.poderes_especiais,
         forcar_novo=p.forcar_novo,
     )
+    # A idempotência devolve o rascunho ANTERIOR quando já existe kit. Se o
+    # advogado pediu poderes específicos (art. 105 do CPC, substabelecimento),
+    # devolver a procuração antiga com `ja_existia=true` é armadilha: ele
+    # assinaria poderes diferentes dos que pediu, acreditando tê-los outorgado.
+    # O aviso no corpo não basta — nada obriga o consumidor a lê-lo.
+    if resultado.get("ja_existia"):
+        pedidos = _CAMPOS_PODERES & (payload.model_fields_set if payload else set())
+        if pedidos:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Já existe procuração/contrato em rascunho para este cliente, "
+                    "com os poderes definidos na emissão anterior. Os poderes "
+                    f"informados agora ({', '.join(sorted(pedidos))}) NÃO foram "
+                    "aplicados. Envie forcar_novo=true para emitir nova versão "
+                    "com esses poderes."
+                ),
+            )
+    return resultado
 
 
 @router.get(
@@ -739,6 +818,10 @@ async def atualizar(
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
     mudancas = payload.model_dump(exclude_unset=True)
+    # Guardado ANTES do setattr genérico: a saída de `lead` é o momento em que
+    # o cliente passa a ser admitido, e é lá que o kit precisa nascer (ver
+    # `_kit_admissao_automatico` no fim deste handler).
+    status_antes = getattr(c.status, "value", c.status)
 
     # Cutover C6/LGPD: cpf/cnpj não são mais colunas do model. Extrai antes do
     # setattr genérico e regrava SOMENTE cifrado + hash do campo alterado.
@@ -789,6 +872,16 @@ async def atualizar(
             detail="Dados inválidos — verifique o formato/tamanho dos campos (datas, textos longos, etc.).",
         )
     await db.refresh(c)
+    # Conversão do lead é O caminho de admissão do escritório: o board do CRM
+    # move o card para "convertido" e manda `status: "ativo"` por este PATCH
+    # (CRMLeads.tsx). Como o cadastro de lead não emite o kit (minimização), sem
+    # este disparo o cliente convertido — justamente o que assina procuração e
+    # contrato — ficaria dependendo da ação manual que esta feature existe para
+    # eliminar. Mesmas travas do cadastro: flag, papel jurídico, idempotência
+    # por cliente e falha que não derruba a atualização.
+    status_depois = getattr(c.status, "value", c.status)
+    if status_antes == ClientStatus.lead.value and status_depois != status_antes:
+        await _kit_admissao_automatico(db, c, cu)
     return c
 
 

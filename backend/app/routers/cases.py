@@ -2,21 +2,24 @@
 # Gestão de casos: CRUD + numeração DPT-AAAA-NNNN + prescrição automática
 # + movimentos (timeline) + endpoint de análise IA integrado.
 from __future__ import annotations
+import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, BackgroundTasks
 from sqlalchemy import select, or_, func as sqlfunc, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.rate_limit import rate_limit
+from app.core.rate_limit import consumir, rate_limit
 from app.core.security import (get_current_user, require_roles, ROLE_LEVEL,
                                  require_roles_exact, requer_equipe_juridica)
 from app.models.user import User
 from app.models.case import Case, CaseMovimento, CaseStatus
 from app.models.audit_log import criar_audit_log
+
+logger = logging.getLogger(__name__)
 # Alocador canônico de numero_interno extraído para service compartilhado
 # (fonte única com a conversão da Sala Jurídica). Alias fino preserva os
 # chamadores internos deste router.
@@ -34,7 +37,7 @@ from app.models.case_parte import CaseParte
 from app.models.caso_area import CasoArea
 from app.models.deadline import Deadline, DeadlineTipo, DeadlineStatus
 from app.services.extracao_estruturada import parse_data_br
-from app.core.ownership import verificar_acesso_caso
+from app.core.ownership import role_str, verificar_acesso_caso
 from app.core.status_caso import (
     STATUS_ABERTOS,
     validar_area_caso,
@@ -980,12 +983,29 @@ class EncerrarCasoReq(_BM2):
     provas_determinantes: str = _F2(min_length=10)
     licoes_aprendidas: str = _F2(min_length=20)
     alimentar_rag: bool = True
+    # Sincronização com o processo eletrônico (MNI 2.2.2 — PJe e demais
+    # tribunais cadastrados) no ato do encerramento: fecha o caso no EJC já
+    # puxando a movimentação/documentos finais do tribunal, que é quando o
+    # acervo do caso precisa estar completo (arquivo do escritório, prestação
+    # de contas ao cliente). Opt-in explícito: só sincroniza quando marcado.
+    sincronizar_processo_eletronico: bool = False
+    # Vazio → usa o `numero_processo` do próprio caso. Só informar aqui quando
+    # o número no tribunal divergir do cadastrado.
+    numero_cnj: Optional[str] = _F2(None, max_length=25)
 
 
+# O rate limit da sincronização MNI NÃO entra como dependency desta rota: o
+# FastAPI resolve dependencies antes do handler, e a cota do tribunal seria
+# consumida em TODO encerramento, inclusive nos que não pedem sincronização —
+# dez encerramentos comuns em um minuto derrubariam o décimo primeiro com 429 e
+# ainda esgotariam a cota do endpoint dedicado. O limite é consumido dentro de
+# `_sincronizar_no_encerramento`, no caminho opt-in, onde de fato há chamada ao
+# tribunal.
 @router.post("/{case_id}/encerrar")
 async def encerrar_caso(
     case_id: str, payload: EncerrarCasoReq,
     background: BackgroundTasks,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -1070,7 +1090,110 @@ async def encerrar_caso(
         event_bus.emitir, "caso.encerrado", "case", case_id,
         {"resultado": payload.resultado}, cu.id,
     )
-    return {"detail": "Caso encerrado. Conhecimento registrado na base institucional."}
+    sincronizacao = await _sincronizar_no_encerramento(db, case, cu, payload, request)
+    return {
+        "detail": "Caso encerrado. Conhecimento registrado na base institucional.",
+        "sincronizacao_processo_eletronico": sincronizacao,
+    }
+
+
+async def _sincronizar_no_encerramento(
+    db: AsyncSession, case: Case, cu: User, payload: EncerrarCasoReq,
+    request: Request | None = None,
+) -> dict:
+    """Enfileira a sincronização MNI do caso recém-encerrado.
+
+    Reusa o MESMO caminho do `POST /processo-eletronico/sincronizar` (task
+    Celery `sincronizar_processo_task`, leitura via MNI 2.2.2) — nada de
+    chamada SOAP na request, que levaria segundos e bloquearia o worker.
+
+    Degradação graciosa em todos os ramos: o caso JÁ está encerrado e
+    commitado. Sem número do processo, ou com o broker fora do ar, o
+    encerramento permanece válido e a resposta diz por que não sincronizou —
+    o operador reenvia por `POST /processo-eletronico/sincronizar`.
+    """
+    if not payload.sincronizar_processo_eletronico:
+        return {"solicitada": False, "status": None, "detalhe": None}
+
+    # `strip` ANTES da escolha: um override só com espaços é truthy e venceria
+    # o `or`, virando string vazia depois — o caso perderia a sincronização
+    # tendo `numero_processo` válido. Vazio (ou em branco) cai no do caso.
+    numero = (payload.numero_cnj or "").strip() or (case.numero_processo or "").strip()
+    if not numero:
+        return {
+            "solicitada": True, "status": "sem_numero", "job_id": None,
+            "detalhe": ("Caso sem número de processo — cadastre o número no "
+                        "caso e sincronize por Processo Eletrônico."),
+        }
+
+    # Cota compartilhada com `POST /processo-eletronico/sincronizar`: o
+    # encerramento é uma segunda superfície para a MESMA chamada ao tribunal, e
+    # `encerrar → reabrir → encerrar` é acessível ao mesmo público — sem o
+    # limite, o laço enfileiraria chamadas SOAP ilimitadas com a credencial MNI
+    # do escritório (risco de bloqueio da conta no tribunal). Estourar a cota
+    # NÃO derruba o encerramento, que já está commitado: vira mais um estado
+    # reportado, como os demais ramos.
+    try:
+        await consumir("processo-eletronico-sync", f"user:{cu.id}", 10)
+    except HTTPException:
+        return {
+            "solicitada": True, "status": "limite_excedido", "job_id": None,
+            "detalhe": ("Limite de sincronizações por minuto atingido — "
+                        "sincronize por Processo Eletrônico em instantes."),
+        }
+
+    try:
+        from app.tasks.processo_eletronico_tasks import sincronizar_processo_task
+
+        job = sincronizar_processo_task.delay(case.id, numero)
+        job_id = getattr(job, "id", None)
+    except Exception:
+        logger.warning(
+            "Sincronização MNI não enfileirada no encerramento do caso %s",
+            case.id, exc_info=True,
+        )
+        return {
+            "solicitada": True, "status": "falha_ao_enfileirar", "job_id": None,
+            "detalhe": ("Fila indisponível — sincronize por Processo "
+                        "Eletrônico quando o serviço voltar."),
+        }
+
+    # `ip` na trilha, como no endpoint canônico: a ação toca credencial de
+    # tribunal e precisa ser rastreável até a origem da requisição.
+    from app.services.security_service import obter_ip_real
+
+    # A task JÁ está na fila e o caso JÁ está encerrado e commitado. Falha ao
+    # gravar a trilha não pode virar 500: a UI diria "falha ao encerrar" para um
+    # caso encerrado, e o retry devolveria "Caso já encerrado" — o operador
+    # ficaria sem saber o que aconteceu de fato. Registra no log do servidor e
+    # reporta o estado real, sinalizando a trilha que não foi gravada.
+    try:
+        await criar_audit_log(
+            db, cu.id, role_str(cu), "PROCESSO_ELETRONICO_SYNC_ENFILEIRADO",
+            "cases", case.id,
+            detalhes=f"encerramento numero_cnj={numero} job_id={job_id}",
+            ip=obter_ip_real(request) if request is not None else None,
+        )
+        await db.commit()
+        auditada = True
+    except Exception:
+        logger.warning(
+            "Trilha do enfileiramento MNI não gravada (caso %s, job %s)",
+            case.id, job_id, exc_info=True,
+        )
+        await db.rollback()
+        auditada = False
+
+    return {
+        "solicitada": True, "status": "enfileirado", "job_id": job_id,
+        "auditada": auditada,
+        "detalhe": (
+            "Sincronização com o tribunal enfileirada."
+            if auditada
+            else ("Sincronização enfileirada; o registro de auditoria falhou "
+                  "e está no log do servidor.")
+        ),
+    }
 
 
 # ── Importação inteligente → Caso núcleo (P1) ─────────────────────────────────
