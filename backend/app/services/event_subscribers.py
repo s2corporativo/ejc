@@ -90,35 +90,12 @@ def _install_financial_scheduler_hardening() -> None:
         )
 
 
-def _install_legal_doc_admission_access_hardening() -> None:
-    """Alinha leitura/mutação da peça de admissão ao piso advogado+ (#1460).
-
-    A falha aqui é tratada como crítica: manter o boot com dois gates
-    contraditórios sobre o mesmo LegalDoc restauraria exatamente a exposição
-    que este adapter fecha.
-    """
-    try:
-        from app.services.legal_doc_access_hardening import instalar
-
-        instalar()
-    except Exception as exc:
-        logger.critical(
-            "Hardening de acesso a LegalDoc de admissão indisponível: %s",
-            exc,
-            exc_info=True,
-        )
-        raise RuntimeError(
-            "Hardening de acesso a LegalDoc de admissão indisponível"
-        ) from exc
-
-
 # Routers são registrados explicitamente em app/main.py. Aqui permanecem apenas
 # subscribers e patches/adapters de comportamento já necessários ao runtime.
 _install_document_analysis_hook()
 _install_ai_core_hardening()
 _install_datajud_cognitive_feed()
 _install_financial_scheduler_hardening()
-_install_legal_doc_admission_access_hardening()
 
 
 @on("movimento.criado")
