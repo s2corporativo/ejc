@@ -4,11 +4,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { post } = vi.hoisted(() => ({ post: vi.fn() }));
 
+// `acoesLegadas` importa a store de auth, que lê `getAccessToken()` já na
+// avaliação do módulo. Um mock só com o default derruba o arquivo inteiro na
+// coleta ("No 'getAccessToken' export is defined"), sem rodar teste nenhum.
 vi.mock("../../lib/api", () => ({
   default: {
     post,
     get: vi.fn(),
   },
+  getAccessToken: () => null,
+  logout: vi.fn(),
+  refreshAccessToken: vi.fn(),
 }));
 
 vi.mock("../../components/Toast", () => ({
