@@ -447,7 +447,42 @@ CORS, backup, Redis), `backend/app/main.py` (middlewares, health,
 `docs/auditoria/relatorios/2026-08-27-verificacao-e-novos-achados.md`,
 `docs/PLANO_MESTRE_STATUS.md` (linhas AUD27-P1-3/4), Issues #1030, #1192, #1236.
 
-## 8. Ordem sugerida de execução
+## 8. Adendo — estado observado da esteira em 06/09/2026
+
+Observação feita durante a própria auditoria, pela única superfície pública
+do Woodpecker (badges, sem token):
+
+| Consulta | Resultado |
+|---|---|
+| `GET /api/badges/2/status.svg?branch=main` | `failure` |
+| `GET /api/badges/2/cc.xml` | último pipeline `869`, `lastBuildStatus=Failure`, 06:58 UTC |
+| PR #1552 (docs-only, dois `.md`) | `ci/woodpecker/pr/woodpecker` = `failure` (pipeline 835) |
+| `GET /api/repos/2/logs/835/1` | HTTP 401 (log exige token) |
+
+Consequências:
+
+- O commit `3c4f938` ("suíte DB-level verde e baseline do semgrep —
+  destravar o deploy automático", #1549) está na `main`, mas a `main` segue
+  vermelha no Woodpecker. Enquanto isso durar, `woodpecker-approved-sha.sh`
+  (`infra/host-automation/woodpecker-approved-sha.sh:63-66`) não autoriza
+  deploy automático de SHA algum: o timer de 5 min roda e sai sem publicar.
+  Correções de segurança ficam retidas até alguém ler o log e consertar o
+  passo reprovado.
+- Um PR que não toca código reprova pelo mesmo motivo, o que zera o valor
+  do sinal de CI em PRs durante o período.
+- O log do passo reprovado é inacessível sem token. Não há evidência pública
+  de *qual* passo reprova (backend, frontend, semgrep, trivy, gitleaks ou
+  ops-contracts). O titular deve abrir
+  `https://ci.depaulateixeira.adv.br/repos/2/pipeline/869` e registrar o
+  passo e a primeira linha de erro na Issue #1551.
+
+**Recomendação.** Tratar "main vermelha" como incidente de esteira, com o
+mesmo peso de produção fora do ar para fins de correção, porque bloqueia a
+publicação de qualquer correção. Considerar um monitor no Uptime Kuma sobre
+o badge de `main` (HTTP keyword `success`) para que a regressão da esteira
+gere alerta em vez de ser descoberta no próximo deploy.
+
+## 9. Ordem sugerida de execução
 
 1. INF-18 (rotação da credencial) — imediato, fora do repositório.
 2. INF-01 + INF-02 — um PR de infra, sem migration, com teste de shell.
