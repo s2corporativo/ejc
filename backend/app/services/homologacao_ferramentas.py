@@ -32,6 +32,17 @@ FERRAMENTAS_NAO_HOMOLOGADAS: dict[str, str] = {
         "a LC 236/2026, vigente desde 04/09/2026, inclusive alterações dos arts. "
         "150/151/168/174 do CTN; revisão jurídica P0 #1553 obrigatória",
 
+    # P1 tributário #1553 (2026-09-06): o simulador mistura programas históricos
+    # encerrados (PERT/REFIS) com parâmetros genéricos de transação atual. Em 2026,
+    # número de parcelas, entrada, desconto, limite, elegibilidade e parcela mínima
+    # variam por edital/órgão/perfil/natureza do débito e capacidade de pagamento.
+    # O Simples possui regra própria e não valida a simulação genérica das demais
+    # modalidades. Consultável para referência, nunca demonstrativo profissional.
+    "/tributario/ferramentas/parcelamento":
+        "simulador mistura PERT/REFIS históricos e parâmetros fixos com transações "
+        "tributárias de 2026 que variam por edital, órgão, perfil, natureza do débito "
+        "e capacidade de pagamento; confirmar modalidade oficial vigente antes de uso profissional",
+
     # P1 tributário #1553 (2026-09-06): o cronograma geral da RTC está
     # materialmente alinhado, porém a ferramenta ainda usa 26,5% da receita
     # bruta como estimativa informativa de IVA pleno e generalizações de impacto
