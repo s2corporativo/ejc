@@ -81,6 +81,9 @@ async def buscar_sumulas(
         params["tribunal"] = tribunal
 
     where = " AND ".join(conditions)
+    # SQL literal com bind params; a regra marca todo text(), sem olhar
+    # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     rows = (await db.execute(text(f"""
         SELECT id, titulo, descricao, area_juridica, tribunal, tags, vezes_usada
         FROM teses

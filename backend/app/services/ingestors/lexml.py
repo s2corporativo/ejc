@@ -239,6 +239,9 @@ def _chave(item: dict, tipo: str) -> str:
     if ident:
         return f"lexml:{ns}:{ident}"[:120]
     base = ((item.get("titulo") or "") + "|" + (item.get("ementa") or ""))[:500]
+    # SHA-1 usado como chave de deduplicacao/identidade, nunca como
+    # assinatura, token ou senha. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
     h = hashlib.sha1(base.encode("utf-8")).hexdigest()[:16]
     return f"lexml:{ns}:{h}"
 

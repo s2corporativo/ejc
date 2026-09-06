@@ -233,6 +233,9 @@ def chunk_texto_com_paginas(
 
 
 def _sha1(s: str) -> str:
+    # SHA-1 usado como chave de deduplicacao/identidade, nunca como
+    # assinatura, token ou senha. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
     return hashlib.sha1(s.encode("utf-8")).hexdigest()
 
 

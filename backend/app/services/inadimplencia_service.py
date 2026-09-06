@@ -164,6 +164,9 @@ async def listar_alertas(
         params["nivel"] = nivel
     where = " AND ".join(filters)
 
+    # SQL literal com bind params; a regra marca todo text(), sem olhar
+    # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     r = await db.execute(text(f"""
         SELECT a.id, a.fee_id, a.case_id, a.client_id,
                a.days_overdue, a.amount_due, a.alert_level,

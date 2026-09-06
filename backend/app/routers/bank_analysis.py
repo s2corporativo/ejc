@@ -128,9 +128,15 @@ async def listar(
     if not is_gestao(cu):
         params["uid"] = cu.id
     total = (await db.execute(
+        # SQL literal com bind params; a regra marca todo text(), sem olhar
+        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         text(f"SELECT count(*) FROM bank_analyses WHERE deleted_at IS NULL{escopo}"),
         ({"uid": cu.id} if not is_gestao(cu) else {}),
     )).scalar()
+    # SQL literal com bind params; a regra marca todo text(), sem olhar
+    # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     rows = (await db.execute(text(f"""
         SELECT id, banco, formato, arquivo_nome, periodo_inicio, periodo_fim,
                total_transacoes, total_abusivo, qtd_abusivas, status, created_at

@@ -260,6 +260,9 @@ async def _alertar_prazos():
                                      (1, 0, "alerta_1d_enviado")]:
                 alvo = hoje + timedelta(days=dias)
                 piso_data = hoje + timedelta(days=piso)
+                # SQL literal com bind params; a regra marca todo text(), sem olhar
+                # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+                # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
                 rows = await db.execute(text(f"""
                     SELECT d.id, d.titulo, d.data_prazo, d.responsavel_id, u.email, u.phone
                     FROM deadlines d
@@ -290,6 +293,9 @@ async def _alertar_prazos():
                                 f"<p>Acesse o EJC para os detalhes do caso.</p>"
                             ),
                         )
+                        # SQL literal com bind params; a regra marca todo text(), sem olhar
+                        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+                        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
                         await db.execute(text(
                             f"UPDATE deadlines SET {flag}=true WHERE id=:id"
                         ), {"id": r.id})
