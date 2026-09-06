@@ -34,7 +34,6 @@ TEXTO_SUAVE = "#4b5563"
 RODAPE_COR = "#6b7280"
 
 _LOGO_CANDIDATOS = (
-    Path(__file__).resolve().parents[1] / "assets" / "de-paula-teixeira-logo.jpg",
     Path(__file__).resolve().parents[1] / "static" / "brand" / "de-paula-teixeira-logo.jpg",
 )
 
