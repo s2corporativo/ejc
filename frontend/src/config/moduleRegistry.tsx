@@ -92,6 +92,8 @@ const DossieCliente = lazy(() => import("../pages/DossieCliente"));
 const Casos = lazy(() => import("../pages/Casos"));
 const CasoDetalhe = lazy(() => import("../pages/CasoDetalhe"));
 const RaioXProcesso = lazy(() => import("../pages/RaioXProcesso"));
+const Ajuizamento = lazy(() => import("../pages/Ajuizamento"));
+const AjuizamentoPerfis = lazy(() => import("../pages/AjuizamentoPerfis"));
 const SalaJuridica = lazy(() => import("../pages/SalaJuridica"));
 const EntrevistaInteligente = lazy(
   () => import("../pages/EntrevistaInteligente"),
@@ -390,6 +392,38 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "casos",
     status: "hidden",
     sensitive: true,
+  },
+  {
+    key: "ajuizamento",
+    path: "/ajuizamento",
+    label: "Ajuizamento",
+    description:
+      "Do caso ao protocolo: validação, revisão humana, assinatura e registro do protocolo.",
+    group: "Trabalhar um caso",
+    icon: Gavel,
+    component: Ajuizamento,
+    roles: ROLES.juridico,
+    showInNav: true,
+    order: 25,
+    helpKey: "casos",
+    sensitive: true,
+    backendPrefixes: ["/api/ajuizamento"],
+  },
+  {
+    key: "ajuizamento-perfis",
+    path: "/ajuizamento/perfis",
+    label: "Perfis de tribunal",
+    description:
+      "Endpoint, versão, capacidades e homologação por tribunal (segredos só por referência).",
+    group: "Administrar",
+    icon: ShieldCheck,
+    component: AjuizamentoPerfis,
+    roles: ROLES.administradores,
+    showInNav: false,
+    status: "hidden",
+    helpKey: "casos",
+    sensitive: true,
+    backendPrefixes: ["/api/ajuizamento/perfis"],
   },
   {
     key: "caso-entrevista",

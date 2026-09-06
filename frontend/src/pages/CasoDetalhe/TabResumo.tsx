@@ -700,6 +700,14 @@ export default function TabResumo({
           📝 Peças do caso
         </Link>
         <ExtratoCaso caso={caso} />
+        {/* Ajuizamento: mesma entidade Caso, sem redigitação — o wizard lê
+            cliente, partes, documentos e peças deste caso. */}
+        <Link
+          to={`/ajuizamento?caso=${caso.id}`}
+          className="btn-secondary flex items-center gap-1"
+        >
+          ⚖️ Ajuizar ação
+        </Link>
         {(caso as any).case_type === "extrajudicial" &&
           !(caso as any).linked_judicial_case_id && (
             <button
