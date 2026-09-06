@@ -5,6 +5,7 @@ import {
   BookOpen,
   Briefcase,
   Calculator,
+  ExternalLink,
   FileSearch,
   Landmark,
   Receipt,
@@ -15,6 +16,59 @@ import api from "../lib/api";
 import type { Case } from "../types";
 
 const STATUS_FECHADOS = new Set(["encerrado", "arquivado"]);
+
+const FONTES_OFICIAIS = [
+  {
+    nome: "Receita Federal — Serviços",
+    esfera: "Federal",
+    url: "https://www.gov.br/receitafederal/pt-br/servicos",
+  },
+  {
+    nome: "PGFN — REGULARIZE",
+    esfera: "Federal",
+    url: "https://www.regularize.pgfn.gov.br/",
+  },
+  {
+    nome: "CARF",
+    esfera: "Federal",
+    url: "https://www.gov.br/carf/pt-br",
+  },
+  {
+    nome: "SEF/MG",
+    esfera: "Minas Gerais",
+    url: "https://www.fazenda.mg.gov.br/",
+  },
+  {
+    nome: "SIARE/MG",
+    esfera: "Minas Gerais",
+    url: "https://www2.fazenda.mg.gov.br/sol/",
+  },
+  {
+    nome: "TRF6",
+    esfera: "Justiça Federal — MG",
+    url: "https://portal.trf6.jus.br/",
+  },
+  {
+    nome: "Fazenda — Betim",
+    esfera: "Municipal",
+    url: "https://www.betim.mg.gov.br/portal/secretarias/14/secretaria-municipal-de-fazenda/",
+  },
+  {
+    nome: "Receita Municipal — Contagem",
+    esfera: "Municipal",
+    url: "https://receita.contagem.mg.gov.br/",
+  },
+  {
+    nome: "Fazenda — Belo Horizonte",
+    esfera: "Municipal",
+    url: "https://fazenda.pbh.gov.br/",
+  },
+  {
+    nome: "NFS-e Nacional",
+    esfera: "Nacional",
+    url: "https://www.nfse.gov.br/EmissorNacional/",
+  },
+] as const;
 
 export function casoTributarioAtivo(caso: Pick<Case, "status">): boolean {
   return !STATUS_FECHADOS.has(caso.status);
@@ -221,6 +275,37 @@ export default function TributarioWorkspace() {
             <p className="mt-2 text-xs leading-5 text-slate-500">{descricao}</p>
           </Link>
         ))}
+      </section>
+
+      <section className="card p-4">
+        <div className="flex items-start gap-3">
+          <Landmark size={18} className="mt-0.5 shrink-0 text-gold-600" />
+          <div>
+            <h2 className="font-serif font-semibold text-navy">Fontes oficiais</h2>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Atalhos externos verificados. Abrir um portal não significa que exista API pública ou integração automática no EJC. A PGFN Dados Abertos é integração própria já existente; os demais links abaixo são acessos oficiais de consulta/serviço.
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          {FONTES_OFICIAIS.map((fonte) => (
+            <a
+              key={fonte.url}
+              href={fonte.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-xl border border-slate-200 p-3 transition hover:border-gold-300 hover:bg-gold-50/20"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium text-navy">{fonte.nome}</p>
+                  <p className="mt-1 text-[11px] text-slate-400">{fonte.esfera}</p>
+                </div>
+                <ExternalLink size={14} className="shrink-0 text-slate-400" />
+              </div>
+            </a>
+          ))}
+        </div>
       </section>
 
       <section className="card overflow-hidden">
