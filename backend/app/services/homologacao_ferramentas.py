@@ -4,33 +4,47 @@ Fonte única, em módulo neutro, para evitar acoplamento router→router:
 - routers/ramos.py aplica o bloqueio (503) e o selo (homologada=False);
 - routers/peca_geracao.py aplica o gate do demonstrativo (422).
 
-As regras jurídicas em si serão corrigidas na Onda 2, ferramenta a ferramenta,
-com fonte oficial, vigência e testes; aqui apenas bloqueamos o risco de uso
-profissional de resultado errado.
+As regras jurídicas em si serão corrigidas ferramenta a ferramenta, com fonte
+oficial, vigência e testes; aqui bloqueamos o risco de promover resultado ainda
+não revisado a demonstrativo profissional.
 """
 from urllib.parse import unquote
 
 from fastapi import HTTPException
 
 FERRAMENTAS_NAO_HOMOLOGADAS: dict[str, str] = {
-    # P0 tributário #1553 (2026-09-06): a LC 227/2026 alterou o art. 15 e o
-    # art. 33 do Decreto 70.235/72 para 20 dias úteis no PAF federal. O handler
-    # legado ainda calcula 30 dias corridos e também generaliza prazo local para
-    # estados/municípios. Até a regra ser corrigida e versionada, o resultado
-    # NÃO pode ser promovido a demonstrativo/peça profissional.
+    # P0 tributário #1553 (2026-09-06): a rota do PAF federal foi corrigida no
+    # PR #1554 para a LC 227/2026/ADI RFB 2/2026 e deixou de calcular prazo local
+    # por analogia. Ainda assim permanece não homologada até revisão jurídica
+    # integral das reduções, transição, proveniência e integração com a UI.
     "/tributario/ferramentas/auto-infracao-prazos":
-        "regra federal desatualizada após LC 227/2026 e prazo estadual/municipal "
-        "dependente da legislação do ente; revisão jurídica P0 #1553 em andamento",
+        "regra do PAF federal corrigida para LC 227/2026, porém ainda em revisão "
+        "jurídica integral #1553; não promover resultado a documento profissional",
+
+    # P0 tributário #1553 (2026-09-06): o handler legado recebe um único campo
+    # `data_fato_gerador` e, conforme o modo, o trata como fato gerador OU como
+    # constituição definitiva. Isso não fornece marcos suficientes para concluir
+    # prescrição. Além disso, a LC 236/2026 (vigente desde 04/09/2026) alterou
+    # CTN arts. 150, 151, 168 e 174 e introduziu novas hipóteses que o handler
+    # atual não modela. Resultado pode servir somente como referência de estudo.
+    "/tributario/ferramentas/prescricao-decadencia":
+        "calculadora não modela marcos suficientes e ainda não incorpora integralmente "
+        "a LC 236/2026, vigente desde 04/09/2026, inclusive alterações dos arts. "
+        "150/151/168/174 do CTN; revisão jurídica P0 #1553 obrigatória",
+
     # P1 tributário #1553 (2026-09-06): o cronograma geral da RTC está
     # materialmente alinhado, porém a ferramenta ainda usa 26,5% da receita
     # bruta como estimativa informativa de IVA pleno e generalizações de impacto
     # por atividade. Em 2026 a proveniência também deve incorporar LC 227/2026,
     # Decreto 12.955/2026, atos RFB/CGIBS e normas específicas do Simples/regimes.
-    # O resultado permanece consultável, mas não vira demonstrativo profissional.
+    # A LC 236/2026 é transversal ao CTN e também deve ser considerada quando a
+    # simulação gerar efeitos procedimentais. O resultado permanece consultável,
+    # mas não vira demonstrativo profissional.
     "/tributario/ferramentas/reforma-tributaria":
         "simulação geral da reforma ainda usa alíquota indicativa sobre receita bruta "
         "e premissas setoriais sem créditos/redutores/regime específico; atualizar "
-        "proveniência para LC 227/2026 e atos de 2026 antes de homologação",
+        "proveniência para LC 227/2026, atos de 2026 e impactos transversais da LC 236/2026",
+
     # Onda 2 — Fase A (2026-07): corrigidas e REMOVIDAS da matriz:
     #   /empresarial/ferramentas/prazos-rj · /empresarial/ferramentas/juros-mora
     #   /penal/ferramentas/prazos-processuais · /penal/ferramentas/verificar-anpp
@@ -52,8 +66,8 @@ FERRAMENTAS_NAO_HOMOLOGADAS: dict[str, str] = {
 }
 
 # Subconjunto que fica INDISPONÍVEL (503) até revisão jurídica.
-# Onda 2 — Fase A: as 4 ferramentas bloqueadas na Onda 1 foram corrigidas e
-# desbloqueadas; o mecanismo permanece para bloqueios futuros.
+# O mecanismo permanece para bloqueios futuros; as rotas acima respondem com
+# selo `homologada=False`, mas ficam impedidas de virar demonstrativo/peça.
 FERRAMENTAS_BLOQUEADAS: frozenset[str] = frozenset()
 
 
