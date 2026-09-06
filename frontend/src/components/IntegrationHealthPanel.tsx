@@ -21,7 +21,30 @@ export type IntegrationItem = {
   status: IntegrationState;
   detail: string;
   mode?: string | null;
+  /** Conectores judiciais: o que a integração oferece ao fluxo do caso
+   * (`capacidades` em GET /system-modules/integrations). Ausente nos demais. */
+  capacidades?: Record<string, boolean> | null;
 };
+
+const ROTULO_CAPACIDADE: Record<string, string> = {
+  consultar_processo: "consultar processo",
+  sincronizar_movimentacoes: "movimentações",
+  partes: "partes",
+  audiencias: "audiências",
+  baixar_documentos: "documentos",
+  intimacoes: "intimações",
+  protocolar: "protocolar",
+};
+
+export function capacidadesDoItem(item: IntegrationItem) {
+  const caps = item.capacidades;
+  if (!caps) return [];
+  return Object.keys(ROTULO_CAPACIDADE).map((chave) => ({
+    chave,
+    rotulo: ROTULO_CAPACIDADE[chave],
+    ativa: Boolean(caps[chave]),
+  }));
+}
 
 /**
  * Estado do overlay do Cofre de Credenciais NESTE processo do backend
@@ -246,6 +269,25 @@ export default function IntegrationHealthPanel() {
                         <div className="mt-2 text-[11px] text-slate-400">
                           Modo: {item.mode}
                         </div>
+                      )}
+                      {item.capacidades && (
+                        <ul
+                          className="mt-2 flex flex-wrap gap-1"
+                          aria-label={`Capacidades de ${item.label}`}
+                        >
+                          {capacidadesDoItem(item).map((cap) => (
+                            <li
+                              key={cap.chave}
+                              className={`rounded-full border px-2 py-0.5 text-[11px] ${
+                                cap.ativa
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  : "border-slate-200 text-slate-400 line-through"
+                              }`}
+                            >
+                              {cap.rotulo}
+                            </li>
+                          ))}
+                        </ul>
                       )}
                     </div>
                   </div>

@@ -36,7 +36,10 @@ class _Result:
 
 
 class _DB:
-    """Entrega, em ordem, resultados para prazo, tarefa, fee e peça."""
+    """Entrega, em ordem, resultados para prazo, tarefa, fee, peça e processo.
+
+    Lote ausente → lista vazia (a consulta de processos ativos é a última e a
+    maioria dos cenários não a exercita)."""
 
     def __init__(self, *batches):
         self._batches = list(batches)
@@ -47,7 +50,7 @@ class _DB:
         self.execute_calls += 1
         if "pg_advisory_xact_lock" in str(stmt):
             return _Result([])
-        return _Result(self._batches.pop(0))
+        return _Result(self._batches.pop(0) if self._batches else [])
 
     async def refresh(self, _obj):
         self.refresh_calls += 1
@@ -80,7 +83,7 @@ async def test_prazo_ativo_bloqueia_fechamento_mesmo_sem_confirmacao():
     assert diagnostico["resumo"]["prazos_nao_confirmados"] == 1
     assert diagnostico["bloqueios"][0]["codigo"] == "prazo_ativo"
     assert "a confirmar" in diagnostico["bloqueios"][0]["descricao"]
-    assert db.execute_calls == 5
+    assert db.execute_calls == 6  # lock + prazo, tarefa, fee, peça, processo
     assert db.refresh_calls == 1
 
 
@@ -134,6 +137,7 @@ async def test_caso_sem_pendencias_fica_pronto_para_encerrar():
         "financeiro_pendente": 0,
         "pecas_nao_protocoladas": 0,
         "proxima_acao_pendente": False,
+        "processos_ativos": 0,
     }
 
 
@@ -146,3 +150,45 @@ async def test_caso_terminal_e_rechecado_apos_lock():
     assert exc.value.status_code == 409
     assert db.execute_calls == 1
     assert db.refresh_calls == 1
+
+
+async def test_processo_ativo_vira_alerta_com_sugestao_de_sincronizar():
+    processo = SimpleNamespace(id="proc-1", numero_cnj="0001234-56.2026.8.13.0027")
+    db = _DB([], [], [], [], [processo])
+
+    diagnostico = await diagnosticar_fechamento(
+        db,
+        _caso(numero_processo="0001234-56.2026.8.13.0027", last_synced_at=None,
+              sync_error=None),
+    )
+
+    assert diagnostico["pode_encerrar"] is True
+    assert diagnostico["requer_confirmacao_alertas"] is True
+    assert [a["codigo"] for a in diagnostico["alertas"]] == ["processo_ativo"]
+    assert diagnostico["processo"]["pode_sincronizar"] is True
+    assert diagnostico["processo"]["processos_ativos"] == 1
+    assert diagnostico["resumo"]["processos_ativos"] == 1
+
+
+async def test_diagnostico_somente_leitura_nao_adquire_lock():
+    db = _DB([], [], [], [], [])
+
+    diagnostico = await diagnosticar_fechamento(db, _caso(), somente_leitura=True)
+
+    assert diagnostico["pode_encerrar"] is True
+    # 5 consultas (prazo/tarefa/fee/peça/processo), nenhuma de advisory lock
+    assert db.execute_calls == 5
+
+
+async def test_erro_de_sincronizacao_nao_expoe_url_upstream():
+    db = _DB([], [], [], [], [])
+    erro = "HTTPError 502 ao consultar https://api-publica.datajud.cnj.jus.br/x " + "y" * 300
+
+    diagnostico = await diagnosticar_fechamento(
+        db, _caso(numero_processo="0001234-56.2026.8.13.0027", last_synced_at=None,
+                  sync_error=erro),
+    )
+
+    resumo = diagnostico["processo"]["erro_sincronizacao"]
+    assert "datajud" not in resumo and "<url>" in resumo
+    assert len(resumo) <= 201

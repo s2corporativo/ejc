@@ -98,6 +98,10 @@ from app.models.processo_eletronico import (  # noqa  (MNI 2.2.2 leitura — mig
     Tribunal, CredencialProcessoEletronico, SincronizacaoProcessoEletronico,
     DocumentoProcessoEletronicoDedup,
 )
+from app.models.ajuizamento import (  # noqa  (núcleo de ajuizamento — migração 157)
+    JudicialIntegrationProfile, JudicialFiling, JudicialFilingTransicao,
+    JudicialFilingAttempt, JudicialProtocol, JudicialSyncEvent, JudicialTpuItem,
+)
 from app.models.saneamento import (  # noqa  (schema saneamento — migração 154)
     TpuMovimento, DatajudSnapshot, ExcecaoNumero, PlanoDedup,
     IndicativoEncerramento, Divergencia, Execucao,

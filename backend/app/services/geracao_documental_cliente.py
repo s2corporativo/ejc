@@ -19,6 +19,7 @@ from app.models.audit_log import criar_audit_log
 from app.models.client import Client
 from app.models.legal_doc import LegalDoc, PecaStatus, PecaTipo
 from app.models.redesign import TabelaOABHonorario
+from app.models.template import DocTemplate
 from app.models.user import User
 from app.services.document_format import padronizar_documento_juridico
 from app.services.documental import (
@@ -176,6 +177,48 @@ def _referencia_oab(item: TabelaOABHonorario) -> str:
     )
 
 
+async def _modelo_por_area(
+    db: AsyncSession, tipo_peca: str, area: str
+) -> DocTemplate | None:
+    """Modelo cadastrado em Templates de Peças para (tipo_peca, área).
+
+    Preferência: modelo da área do cliente; senão, modelo genérico (área
+    vazia). Nenhum modelo cadastrado → texto determinístico do escritório.
+    """
+    q = (
+        select(DocTemplate)
+        .where(
+            DocTemplate.deleted_at.is_(None),
+            DocTemplate.ativo.is_(True),
+            DocTemplate.tipo_peca == tipo_peca,
+        )
+        .order_by(DocTemplate.updated_at.desc().nullslast())
+    )
+    modelos = list((await db.execute(q)).scalars().all())
+    aliases = set(_aliases_area(area))
+    for m in modelos:
+        if (m.area or "").strip().lower() in aliases:
+            return m
+    for m in modelos:
+        if not (m.area or "").strip():
+            return m
+    return None
+
+
+def _render_modelo(modelo: DocTemplate, ctx: dict) -> str:
+    """Renderiza {{variaveis}} com o MESMO substituidor literal do módulo de
+    Templates (sem Jinja, sem código) e mantém a marca de minuta/rascunho."""
+    from app.routers.templates import _render
+
+    return padronizar_documento_juridico(_MARCA + _render(modelo.conteudo, ctx))
+
+
+def _modelo_dict(modelo: DocTemplate | None) -> dict | None:
+    if modelo is None:
+        return None
+    return {"id": modelo.id, "titulo": modelo.titulo, "area": modelo.area}
+
+
 def _contrato_cliente(
     cli: Client, advogado: str, area: str, referencia_oab: str | None
 ) -> str:
@@ -279,6 +322,7 @@ async def gerar_documentos_cliente(
     advogado = _nome_advogado(cu)
     area = (getattr(cli, "area_interesse", None) or "").strip()
     itens = await _itens_oab_vigentes(db, area, date.today()) if area else []
+    referencia: str | None
     if itens:
         referencia = _referencia_oab(itens[0])
         valor_sugerido = {
@@ -298,26 +342,48 @@ async def gerar_documentos_cliente(
 
     nome_cliente = cli.razao_social or cli.nome or "Cliente"
     titulos = _titulos(nome_cliente)
+
+    # Modelos por área jurídica (módulo Templates de Peças): quando o
+    # escritório cadastrou um modelo ativo de contrato/procuração para a área
+    # do cliente (ou genérico), ele prevalece sobre o texto determinístico.
+    modelo_proc = await _modelo_por_area(db, PecaTipo.procuracao.value, area)
+    modelo_contr = await _modelo_por_area(db, PecaTipo.contrato.value, area)
+    ctx: dict = {}
+    if modelo_proc or modelo_contr:
+        from app.routers.templates import contexto_cliente
+
+        ctx = {
+            **contexto_cliente(cli),
+            "area": area or "—",
+            "advogado_nome": advogado,
+            "advogado_oab": getattr(cu, "oab_number", None) or "—",
+            "tipo_poderes": tipo,
+            "poderes_especiais": (poderes_especiais or "").strip() or "—",
+            "referencia_oab": referencia or "—",
+            "numero_processo": "—", "parte_contraria": "—",
+            "comarca": _settings.ESCRITORIO_CIDADE, "vara": "—", "valor_causa": "—",
+        }
+
+    texto_proc = (
+        _render_modelo(modelo_proc, ctx) if modelo_proc else
+        _procuracao(
+            None,
+            cli,
+            advogado,
+            tipo_poderes=tipo,
+            permite_substabelecimento=permite_substabelecimento,
+            poderes_especiais=poderes_especiais,
+        )
+    )
+    texto_contr = (
+        _render_modelo(modelo_contr, ctx) if modelo_contr else
+        _contrato_cliente(cli, advogado, area, referencia)
+    )
     conteudos = [
-        (
-            titulos[ADMISSION_KIND_PROCURACAO],
-            PecaTipo.procuracao,
-            ADMISSION_KIND_PROCURACAO,
-            _procuracao(
-                None,
-                cli,
-                advogado,
-                tipo_poderes=tipo,
-                permite_substabelecimento=permite_substabelecimento,
-                poderes_especiais=poderes_especiais,
-            ),
-        ),
-        (
-            titulos[ADMISSION_KIND_CONTRATO],
-            PecaTipo.contrato,
-            ADMISSION_KIND_CONTRATO,
-            _contrato_cliente(cli, advogado, area, referencia),
-        ),
+        (titulos[ADMISSION_KIND_PROCURACAO], PecaTipo.procuracao,
+         ADMISSION_KIND_PROCURACAO, texto_proc),
+        (titulos[ADMISSION_KIND_CONTRATO], PecaTipo.contrato,
+         ADMISSION_KIND_CONTRATO, texto_contr),
     ]
 
     criados: list[LegalDoc] = []
@@ -355,6 +421,8 @@ async def gerar_documentos_cliente(
         dados_depois={
             "legal_doc_ids": [doc.id for doc in criados],
             "oab_item_aplicado": valor_sugerido["sugerido"] is not None,
+            "modelo_procuracao": _modelo_dict(modelo_proc),
+            "modelo_contrato": _modelo_dict(modelo_contr),
         },
     )
     await db.commit()
@@ -370,12 +438,14 @@ async def gerar_documentos_cliente(
             "titulo": proc.titulo,
             "tipo_poderes": tipo,
             "permite_substabelecimento": permite_substabelecimento,
+            "modelo": _modelo_dict(modelo_proc),
             "conteudo": proc.conteudo,
         },
         "contrato": {
             "legal_doc_id": contrato.id,
             "titulo": contrato.titulo,
             "valor_sugerido": valor_sugerido,
+            "modelo": _modelo_dict(modelo_contr),
             "conteudo": contrato.conteudo,
         },
     }

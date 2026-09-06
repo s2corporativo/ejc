@@ -343,8 +343,11 @@ async def test_encerrar_e_reabrir_restaura_estagio_de_trabalho_real():
                 provas_determinantes="Contrato assinado",
                 licoes_aprendidas="Documentar cedo evita atraso no acordo",
                 alimentar_rag=False,
+                # O caso do teste nasce com proxima_acao — alerta do fechamento
+                # inteligente que exige confirmação explícita.
+                confirmar_alertas=True,
             )
-            await encerrar_caso(caso, payload, BackgroundTasks(), db, cu)
+            await encerrar_caso(caso, payload, BackgroundTasks(), None, db, cu)
             resultado = await reabrir_caso(caso, BackgroundTasks(), db, cu)
             assert resultado.status.value == "em_producao"
             row = (await db.execute(
