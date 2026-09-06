@@ -13,6 +13,14 @@ from urllib.parse import unquote
 from fastapi import HTTPException
 
 FERRAMENTAS_NAO_HOMOLOGADAS: dict[str, str] = {
+    # P0 tributário #1553 (2026-09-06): a LC 227/2026 alterou o art. 15 e o
+    # art. 33 do Decreto 70.235/72 para 20 dias úteis no PAF federal. O handler
+    # legado ainda calcula 30 dias corridos e também generaliza prazo local para
+    # estados/municípios. Até a regra ser corrigida e versionada, o resultado
+    # NÃO pode ser promovido a demonstrativo/peça profissional.
+    "/tributario/ferramentas/auto-infracao-prazos":
+        "regra federal desatualizada após LC 227/2026 e prazo estadual/municipal "
+        "dependente da legislação do ente; revisão jurídica P0 #1553 em andamento",
     # Onda 2 — Fase A (2026-07): corrigidas e REMOVIDAS da matriz:
     #   /empresarial/ferramentas/prazos-rj · /empresarial/ferramentas/juros-mora
     #   /penal/ferramentas/prazos-processuais · /penal/ferramentas/verificar-anpp
