@@ -33,8 +33,9 @@ describe("guia tributário normativo", () => {
   it("não reintroduz empate automaticamente favorável ao contribuinte", () => {
     const carf = texto(REGRAS_CARF);
     expect(carf).toContain("voto de qualidade");
+    expect(carf).toContain("não é proclamado automaticamente em favor do contribuinte");
     expect(carf).not.toContain("empate → favorável ao contribuinte");
-    expect(carf).not.toContain("automaticamente em favor do contribuinte");
+    expect(carf).not.toContain("voto de qualidade invertido");
   });
 
   it("usa TRF6 para a Justiça Federal em Minas Gerais", () => {
