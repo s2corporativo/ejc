@@ -114,9 +114,14 @@ exit 0
 EOF
 cat > "$BIN/curl" <<'EOF'
 #!/usr/bin/env bash
+# INF-01: toda sondagem HTTP do deploy PRECISA ter teto de tempo. O stub
+# registra os argumentos; o teste reprova qualquer chamada sem --max-time.
+printf '%s\n' "$*" >> "${CURL_ARGS_LOG:?}"
 printf '%s\n' "{\"status\":\"ok\",\"commit\":\"${EXPECTED_HEALTH_SHA:?}\"}"
 EOF
 chmod +x "$BIN/docker" "$BIN/sleep" "$BIN/curl"
+export CURL_ARGS_LOG="$TMP/curl-args.log"
+: > "$CURL_ARGS_LOG"
 
 fail() {
   echo "[rollback-test] FALHA: $*" >&2
@@ -320,4 +325,10 @@ bash -n "$ROOT/scripts/deploy_lock.sh"
 bash -n "$ROOT/scripts/deploy_workflow_transaction.sh"
 bash -n "$ROOT/scripts/deploy_vps_safe.sh"
 bash -n "$ROOT/scripts/migrar_env_obsoletos.sh"
-echo "[rollback-test] OK — lock host-level/inode, backup fail-closed, env transacional, migration e rollback comprovados."
+# INF-01: nenhuma sondagem sem teto.
+[ -s "$CURL_ARGS_LOG" ] || fail "nenhuma sondagem curl registrada — stub não foi exercitado"
+if grep -v -- '--max-time' "$CURL_ARGS_LOG" | grep -q .; then
+  fail "sondagem curl sem --max-time no deploy: $(grep -v -- '--max-time' "$CURL_ARGS_LOG" | head -1)"
+fi
+
+echo "[rollback-test] OK — lock host-level/inode, backup fail-closed, env transacional, migration, rollback e sondas com teto comprovados."

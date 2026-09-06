@@ -111,9 +111,10 @@ Closes #
 
 ## Evidências de CI
 
-- [ ] CI completo aprovado no HEAD exato
-- [ ] P0 Guard aprovado
-- [ ] Release/continuity gates aplicáveis aprovados
+<!-- Verificação oficial é LOCAL e proporcional ao diff (CLAUDE.md §Verificação); o Woodpecker complementa. -->
+
+- [ ] Portões locais da linha correspondente ao diff executados e colados acima (comando + resultado)
+- [ ] `ci/woodpecker` verde no HEAD exato (ou justificativa: base vermelha, docs-only)
 - [ ] Evidência humana anexada quando o critério não for automatizável
 - [ ] `mergeable=true` não foi usado como substituto de checks verdes
 

@@ -52,7 +52,9 @@ FOLDER_ID="${BACKUP_DRIVE_FOLDER_ID:-$(get_env_var BACKUP_DRIVE_FOLDER_ID)}"
 HORA_UTC="${BACKUP_HORA_UTC:-$(get_env_var BACKUP_HORA_UTC)}"
 HORA_UTC="${HORA_UTC:-05:00}"
 RETENCAO_DIAS="${BACKUP_RETENCAO_DIAS:-$(get_env_var BACKUP_RETENCAO_DIAS)}"
-RETENCAO_DIAS="${RETENCAO_DIAS:-14}"
+# Default alinhado a config.py (BACKUP_RETENCAO_DIAS=30) e à decisão em
+# docs/auditoria/decisoes-bloco0-2026-08-08.md — antes este script dizia 14.
+RETENCAO_DIAS="${RETENCAO_DIAS:-30}"
 
 AUTH_MODE="${BACKUP_GOOGLE_DRIVE_AUTH_MODE:-$(get_env_var BACKUP_GOOGLE_DRIVE_AUTH_MODE)}"
 AUTH_MODE="${AUTH_MODE:-auto}"
@@ -164,8 +166,8 @@ fi
 log "aguardando health-check do backend..."
 BACKEND_OK=0
 for _ in $(seq 1 30); do
-  if curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1 || \
-     docker exec "$APP_CONTAINER" curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+  if curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health >/dev/null 2>&1 || \
+     docker exec "$APP_CONTAINER" curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
     BACKEND_OK=1
     break
   fi

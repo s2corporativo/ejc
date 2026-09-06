@@ -33,7 +33,9 @@ TARGET_SHA="$(git -C "$SOURCE_DIR" rev-parse HEAD)"
 
 DEPLOYED_SHA=""
 [ -f "$APP_DIR/.deployed_sha" ] && DEPLOYED_SHA="$(cat "$APP_DIR/.deployed_sha" 2>/dev/null || true)"
-if [ "$DEPLOYED_SHA" = "$TARGET_SHA" ] && curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+# Toda sondagem com teto (mesma regra de monitor_health.sh e deploy_manual.sh).
+CURL_SONDA=(curl -fsS --connect-timeout 5 --max-time 15)
+if [ "$DEPLOYED_SHA" = "$TARGET_SHA" ] && "${CURL_SONDA[@]}" http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
   log "producao ja esta saudavel no SHA $TARGET_SHA; nada a fazer"
   exit 0
 fi
@@ -44,6 +46,17 @@ log "exigindo pipeline Woodpecker push/main verde para $TARGET_SHA"
 [ -f "$SOURCE_DIR/scripts/check_migration_compatibility.py" ] || fail "checker de migration ausente no SHA aprovado"
 [ -f "$SOURCE_DIR/scripts/deploy_lock.sh" ] || fail "deploy_lock.sh ausente no SHA aprovado"
 [ -f "$SOURCE_DIR/scripts/deploy_vps_safe.sh" ] || fail "deploy_vps_safe.sh ausente no SHA aprovado"
+
+# Gate de vigência do RAG — PARIDADE com scripts/deploy_manual.sh: se o marker
+# de ativação existe, o .env precisa estar canonicamente em true. Antes, só o
+# caminho manual tinha esta trava; o caminho automático (este) a pulava.
+activated_marker="$APP_DIR/data/.rag_vigencia_activated_v1"
+if [ -f "$activated_marker" ]; then
+  total="$(grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$APP_DIR/.env" || true)"
+  verdadeiro="$(grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=true$' "$APP_DIR/.env" || true)"
+  { [ "$total" = "1" ] && [ "$verdadeiro" = "1" ]; } ||
+    fail "marker de ativação do RAG existe, mas RAG_EXIGIR_VIGENCIA_VERIFICADA nao esta canonicamente true no .env"
+fi
 
 # A partir daqui, decisao de migration, sincronizacao e cutover compartilham o
 # mesmo mutex. Isso impede que outro deploy altere schema/runtime entre a leitura
@@ -131,8 +144,8 @@ REQUIRE_PREDEPLOY_BACKUP=1 \
 ENSURE_DAILY_BACKUP=1 \
 bash scripts/deploy_vps_safe.sh
 
-curl -fsS http://127.0.0.1:8000/api/health >/dev/null
-curl -fsS https://ejc.depaulateixeira.adv.br/api/health >/dev/null
+"${CURL_SONDA[@]}" http://127.0.0.1:8000/api/health >/dev/null
+"${CURL_SONDA[@]}" https://ejc.depaulateixeira.adv.br/api/health >/dev/null
 printf '%s\n' "$TARGET_SHA" > "$APP_DIR/.deploy_last_sha"
 chmod 600 "$APP_DIR/.deploy_last_sha"
 log "deploy concluido e health local/publico confirmados: $TARGET_SHA"

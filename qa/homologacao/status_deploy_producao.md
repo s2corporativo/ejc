@@ -15,8 +15,8 @@
 
 ## Mecanismo de deploy existente (scripts no repo)
 
-- `scripts/deploy-vps.sh` — instalação inicial da VPS (Contabo), cria .env com segredos, docker compose up
-- `scripts/atualizar-vps.sh` — **atualização de produção** (rodar DENTRO da VPS em `/opt/ejc`):
+- `scripts/deploy-vps.sh` — ARQUIVADO em `docs/arquivo/scripts-legados/` (2026-09-06); instalação inicial: `scripts/vps_setup.sh` com `FIRST_INSTALL=1`
+- `scripts/atualizar-vps.sh` — ARQUIVADO (2026-09-06); atualização de produção: `RUNBOOK_DEPLOY_MANUAL.md`:
   1. pré-checagens (docker, .env, segredos)
   2. backup do banco ANTES de qualquer mudança
   3. `git reset --hard origin/main` — pinna produção na branch `main`
@@ -33,7 +33,7 @@
 ## Próximos passos para publicar
 
 1. **Merge da branch homologada em main** (sem conflitos — base comum, zero divergência)
-2. Na VPS Contabo: `cd /opt/ejc && git fetch && bash scripts/atualizar-vps.sh`
+2. Na VPS Contabo: `ver RUNBOOK_DEPLOY_MANUAL.md (deploy_manual.sh --sha <SHA>)`
    (requer acesso SSH à VPS — credenciais NÃO armazenadas no sandbox; pedir takeover ou o usuário roda o script)
 3. Smoke final: `/api/health`, `/api/health/ready`, frontend 200; retestar F-01/F-02 (500s apontados na auditoria, presumivelmente corrigidos pela versão homologada)
 

@@ -22,35 +22,51 @@ systemctl enable --now docker
 usermod -aG docker "$USER" 2>/dev/null || true
 
 # ── 2. Firewall ────────────────────────────────────────────────────────────────
-echo "[2/8] Configurando UFW firewall..."
-ufw --force reset
-ufw default deny incoming
-ufw default allow outgoing
+echo "[2/8] Configurando UFW firewall (aditivo)..."
+# NUNCA `ufw --force reset` aqui: a VPS é COMPARTILHADA com outros sistemas
+# (Verde Limp, S2, Evolution API, Woodpecker, Uptime Kuma) e o reset apagava
+# as regras deles (INF-03). Só garante as regras que o EJC precisa; `ufw allow`
+# é idempotente. Se o UFW ainda estiver inativo, o operador decide ativar.
 ufw allow 22/tcp   comment "SSH"
 ufw allow 80/tcp   comment "HTTP"
 ufw allow 443/tcp  comment "HTTPS"
-ufw --force enable
+if ufw status | grep -q "^Status: active"; then
+    echo "  UFW ativo — regras do EJC garantidas."
+else
+    echo "  AVISO: UFW inativo. Ative manualmente após conferir as regras dos outros sistemas: ufw enable"
+fi
 
 # ── 3. Verificar .env ──────────────────────────────────────────────────────────
 echo "[3/8] Verificando .env..."
 if [ ! -f "$APP_DIR/.env" ]; then
     cp "$APP_DIR/.env.example" "$APP_DIR/.env"
-    echo "⚠️  .env criado a partir do exemplo. EDITE ANTES DE CONTINUAR:"
+    chmod 600 "$APP_DIR/.env"
+    echo "⚠️  .env criado a partir do exemplo. EDITE e rode este script de novo:"
     echo "   nano $APP_DIR/.env"
     echo ""
     echo "   Campos obrigatórios:"
     echo "   - SECRET_KEY (python3 -c \"import secrets; print(secrets.token_urlsafe(64))\")"
-    echo "   - POSTGRES_PASSWORD"
+    echo "   - POSTGRES_PASSWORD, PII_ENCRYPTION_KEY, PII_HASH_KEY"
     echo "   - ADMIN_EMAIL / ADMIN_PASSWORD"
     echo "   - CORS_ORIGINS=https://$DOMAIN"
     echo "   - FRONTEND_URL=https://$DOMAIN"
-    echo ""
-    read -p "Pressione ENTER após editar o .env para continuar..." _
+    # Não interativo (INF-03): este script pode ser chamado por automação.
+    exit 1
+fi
+if grep -q "TROCAR" "$APP_DIR/.env"; then
+    echo "ERRO: ainda há valores TROCAR em $APP_DIR/.env — corrija antes de continuar." >&2
+    exit 1
 fi
 
 # Injetar domínio no .env se ainda genérico
 sed -i "s|CORS_ORIGINS=https://SEU_DOMINIO|CORS_ORIGINS=https://$DOMAIN|g" "$APP_DIR/.env"
 sed -i "s|FRONTEND_URL=https://SEU_DOMINIO|FRONTEND_URL=https://$DOMAIN|g" "$APP_DIR/.env"
+
+# Migração de valores OBSOLETOS no .env preservado — implementação única em
+# scripts/migrar_env_obsoletos.sh, compartilhada com deploy_vps_safe.sh (o
+# bootstrap manual antigo, deploy-vps.sh, foi arquivado; esta chamada mantém
+# o caminho manual coberto — tests/test_migrar_env_obsoletos.py).
+bash "$APP_DIR/scripts/migrar_env_obsoletos.sh" "$APP_DIR/.env"
 
 # ── 4. Build Docker ────────────────────────────────────────────────────────────
 echo "[4/8] Build das imagens Docker..."
@@ -71,11 +87,19 @@ for i in $(seq 1 30); do
 done
 
 # ── 6. Migrations + Seed ───────────────────────────────────────────────────────
-echo "[6/8] Aplicando migrations Alembic..."
-docker compose exec -T backend alembic upgrade head
-
-echo "  Rodando seed (admin + feriados + súmulas)..."
-docker compose exec -T backend python seeds/seed_all.py
+# Primeira instalação = banco vazio: o schema é criado aqui, uma única vez,
+# sob a flag explícita FIRST_INSTALL=1. Em instalação já existente, migrations
+# só pela esteira (scripts/deploy_manual.sh / ejc-deploy-approved.sh), que
+# faz backup e classificação expand-only antes (INF-03).
+if [ "${FIRST_INSTALL:-0}" = "1" ]; then
+    echo "[6/8] Primeira instalação: aplicando migrations Alembic..."
+    docker compose exec -T backend alembic upgrade head
+    echo "  Rodando seed (admin + feriados + súmulas)..."
+    docker compose exec -T backend python seeds/seed_all.py
+else
+    echo "[6/8] Migrations NÃO aplicadas (instalação existente). Use a esteira de deploy;"
+    echo "      para banco novo rode com FIRST_INSTALL=1."
+fi
 
 # ── 7. Nginx + SSL ─────────────────────────────────────────────────────────────
 echo "[7/8] Configurando Nginx e SSL..."

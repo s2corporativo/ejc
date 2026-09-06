@@ -213,7 +213,9 @@ class TestWiringNosDeploys:
         assert '--backup-path "$ENV_ROLLBACK_FILE"' in conteudo
 
     def test_bootstrap_manual_chama_a_migracao(self):
-        conteudo = (RAIZ / "scripts" / "deploy-vps.sh").read_text(encoding="utf-8")
+        # deploy-vps.sh foi arquivado (INF-03, 2026-09-06); o bootstrap manual
+        # vivo é vps_setup.sh.
+        conteudo = (RAIZ / "scripts" / "vps_setup.sh").read_text(encoding="utf-8")
         assert "migrar_env_obsoletos.sh" in conteudo
 
     def test_transacao_de_deploy_usa_o_script_seguro(self):

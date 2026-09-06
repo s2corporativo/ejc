@@ -1,11 +1,11 @@
-# Copie este arquivo na VPS como docker-compose.override.yml
-# Ele monta a pasta local ./secrets dentro do backend/worker em modo somente leitura.
-# Não coloque arquivos de credencial no GitHub.
-
+# Override carregado automaticamente por `docker compose` (produção e dev).
+# Monta ./secrets (credenciais OAuth de runtime, NUNCA versionadas — ver
+# .gitignore `/secrets/`) em backend/worker, somente leitura. Sem `ports`
+# aqui: o compose base já publica 127.0.0.1:8000 e repetir gerava lista
+# duplicada (INF-15). Em máquina de desenvolvimento sem ./secrets o Docker
+# cria o diretório vazio — inofensivo.
 services:
   backend:
-    ports:
-      - "127.0.0.1:8000:8000"
     volumes:
       - uploads_data:/app/uploads
       - backups_data:/app/backups

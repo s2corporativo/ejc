@@ -21,7 +21,7 @@
 
 ### Próximo passo (fora do escopo do sandbox)
 
-- Atualizar produção na VPS Contabo: `scripts/atualizar-vps.sh` (requer SSH na VPS — credenciais não disponíveis no sandbox)
+- Atualizar produção na VPS Contabo: `RUNBOOK_DEPLOY_MANUAL.md` (`atualizar-vps.sh` foi arquivado em 2026-09-06) (requer SSH na VPS — credenciais não disponíveis no sandbox)
 - Roteiro seguro de deploy: git pull → backup.sh → build backend/frontend → migrations (alembic upgrade head) → restart backend+worker → healthcheck
 
 ## Estado atual

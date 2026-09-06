@@ -1,3 +1,17 @@
+# ── Rotação de logs (INF-02) ──────────────────────────────────────────────────
+# O driver json-file NÃO limita tamanho por padrão. Numa VPS compartilhada com
+# outros sistemas, log sem teto enche /var/lib/docker e derruba o Postgres de
+# todos. Declarado por serviço (não depende de daemon.json do host).
+x-ejc-logging: &ejc-logging
+  driver: json-file
+  options:
+    max-size: "${EJC_LOG_MAX_SIZE:-50m}"
+    max-file: "${EJC_LOG_MAX_FILE:-5}"
+
+# Sem escalada de privilégio por binários setuid dentro do container (INF-14).
+x-ejc-security: &ejc-security
+  - no-new-privileges:true
+
 services:
   db:
     # pgvector/pgvector:pg16 — Postgres 16 COM a extensão `vector` já instalada.
@@ -10,6 +24,21 @@ services:
     # "No such container".
     container_name: ejc_db
     restart: unless-stopped
+    logging: *ejc-logging
+    security_opt: *ejc-security
+    # /dev/shm padrão do Docker é 64 MB: consultas paralelas e construção de
+    # índices pgvector falham com "could not resize shared memory segment"
+    # (INF-06). Parâmetros de memória conservadores para o teto de 3 GB;
+    # ajuste após medir (EXPLAIN/pg_stat) — nunca acima do mem_limit.
+    shm_size: ${EJC_DB_SHM_SIZE:-256m}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${EJC_DB_SHARED_BUFFERS:-256MB}
+      - -c
+      - effective_cache_size=${EJC_DB_EFFECTIVE_CACHE_SIZE:-1GB}
+      - -c
+      - maintenance_work_mem=${EJC_DB_MAINTENANCE_WORK_MEM:-128MB}
     # Teto de memória — ver a nota em `backend` abaixo. Folga generosa: um
     # Postgres morto por OOM é pior que um container lento.
     mem_limit: ${EJC_DB_MEM_LIMIT:-3g}
@@ -30,14 +59,35 @@ services:
     image: redis:7-alpine
     container_name: ejc_redis
     restart: unless-stopped
+    logging: *ejc-logging
+    security_opt: *ejc-security
     # Teto de memória — ver a nota em `backend` abaixo.
     mem_limit: ${EJC_REDIS_MEM_LIMIT:-512m}
     # AOF ligado: tasks enfileiradas sobrevivem a restart do container.
-    command: ["redis-server", "--appendonly", "yes"]
+    # --maxmemory ABAIXO do mem_limit com noeviction (INF-07): ao encher, o
+    # Redis recusa escritas com erro claro em vez de ser morto por OOM e perder
+    # o que a AOF ainda não sincronizou. noeviction é a semântica correta para
+    # broker (evict = perder tarefa).
+    # --requirepass opcional (INF-05): com REDIS_PASSWORD no .env, o broker
+    # exige senha; vazio = sem auth (comportamento anterior). Ao definir a
+    # senha, ajuste REDIS_URL no .env para redis://:<senha>@redis:6379/0.
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - ${EJC_REDIS_MAXMEMORY:-400mb}
+      - --maxmemory-policy
+      - noeviction
+      - --requirepass
+      - "${REDIS_PASSWORD:-}"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # $$ = escape do compose: avaliado pelo shell DO CONTAINER.
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping; else redis-cli ping; fi"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -47,6 +97,11 @@ services:
       context: ./backend
     container_name: ejc_backend
     restart: unless-stopped
+    logging: *ejc-logging
+    security_opt: *ejc-security
+    # Teto de CPU (INF-07): a VPS é compartilhada; a reindexação do RAG não
+    # pode monopolizar os núcleos dos outros sistemas. Ajuste após medir.
+    cpus: ${EJC_BACKEND_CPUS:-2}
     # Teto DURO de memória. Esta VPS não é dedicada ao EJC: hospeda também
     # Verde Limp, sistema-s2, Evolution API (WhatsApp) e o Woodpecker. Até
     # 2026-08-27 nenhum container do EJC declarava limite — só o `ollama` —
@@ -60,7 +115,10 @@ services:
     ports:
       # Publica só no loopback do host; o Nginx do host faz proxy_pass para 127.0.0.1:8000.
       - "127.0.0.1:8000:8000"
-    networks: [default, ia]
+    # `web`: rede exclusiva frontend<->backend (INF-05). O frontend NÃO integra
+    # mais a `default`, então um Nginx comprometido não alcança Redis nem
+    # Postgres.
+    networks: [default, ia, web]
     env_file:
       - .env
     environment:
@@ -79,7 +137,9 @@ services:
       RUN_MIGRATIONS: "${RUN_MIGRATIONS:-0}"
       # Fila assíncrona (Fase 3A): worker existe no compose → Celery ligado.
       # Redis fora do ar não quebra nada: o dispatcher cai para BackgroundTasks.
-      REDIS_URL: redis://redis:6379/0
+      # Com REDIS_PASSWORD definido, o .env DEVE trazer
+      # REDIS_URL=redis://:<senha>@redis:6379/0 (o default abaixo é sem auth).
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       CELERY_ENABLED: "true"
       # Rate limit distribuído: com o Redis já disponível aqui, contar no Redis
       # torna seguro subir uvicorn com >1 worker (o contador em memória só vale
@@ -154,6 +214,9 @@ services:
       context: ./backend
     container_name: ejc_worker
     restart: unless-stopped
+    logging: *ejc-logging
+    security_opt: *ejc-security
+    cpus: ${EJC_WORKER_CPUS:-1.5}
     # Teto de memória — ver a nota em `backend`. O worker roda o MESMO código
     # (indexação incluída), então precisa do mesmo tipo de contenção.
     mem_limit: ${EJC_WORKER_MEM_LIMIT:-2g}
@@ -169,7 +232,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       DATABASE_URL_SYNC: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       UPLOAD_DIR: /app/uploads
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       CELERY_ENABLED: "true"
       # Scheduler APScheduler só no processo da API — nunca no worker.
       ENABLE_SCHEDULER: "false"
@@ -204,6 +267,11 @@ services:
       context: ./frontend
     container_name: ejc_frontend
     restart: unless-stopped
+    logging: *ejc-logging
+    security_opt: *ejc-security
+    # Só a rede `web` (INF-05): alcança o backend (proxy_pass de fallback),
+    # nunca Redis/Postgres.
+    networks: [web]
     # Teto de memória — ver a nota em `backend`. Nginx servindo estáticos.
     mem_limit: ${EJC_FRONTEND_MEM_LIMIT:-256m}
     ports:
@@ -232,6 +300,7 @@ services:
     container_name: ejc_langfuse_db
     profiles: ["observability"]
     restart: unless-stopped
+    logging: *ejc-logging
     # Teto de memória — ver a nota em `backend`. Opt-in por profile, mas
     # nenhum container do EJC fica sem teto nesta VPS compartilhada.
     mem_limit: ${LANGFUSE_DB_MEM_LIMIT:-1g}
@@ -256,6 +325,7 @@ services:
     container_name: ejc_langfuse
     profiles: ["observability"]
     restart: unless-stopped
+    logging: *ejc-logging
     # Teto de memória — ver a nota em `backend`.
     mem_limit: ${LANGFUSE_MEM_LIMIT:-1g}
     depends_on:
@@ -296,6 +366,7 @@ services:
     container_name: ejc_ollama
     profiles: ["ia-local"]
     restart: unless-stopped
+    logging: *ejc-logging
     # Rede dedicada: só backend/worker alcançam a API sem auth do Ollama —
     # frontend/langfuse ficam fora (menor superfície em caso de comprometimento).
     networks: [ia]
@@ -369,6 +440,8 @@ networks:
   default:
   # Rede interna da IA local: backend/worker <-> ollama. Nenhuma porta no host.
   ia:
+  # Frontend <-> backend apenas (INF-05). Nenhuma porta no host.
+  web:
 
 volumes:
   postgres_data:

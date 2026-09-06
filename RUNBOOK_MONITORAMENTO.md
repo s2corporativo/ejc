@@ -30,6 +30,29 @@ despercebida até um usuário reclamar.
    um segundo monitor em `/api/health/ready` para pegar degradação de
    dependência (banco/redis) antes de virar queda total.
 
+## O que já roda na VPS (além do Sentry/UptimeRobot)
+
+- **Uptime Kuma** self-hosted (`infra/monitoring/uptime-kuma/`, só em
+  `127.0.0.1:3001`): monitores HTTP dos sistemas da VPS. Como roda na MESMA
+  VPS, não detecta queda total do host — o UptimeRobot externo continua
+  obrigatório. Adicione: monitor de certificado TLS com aviso a 14 dias
+  (INF-09) e monitor *keyword* no badge do Woodpecker
+  `https://ci.depaulateixeira.adv.br/api/badges/2/status.svg?branch=main`
+  esperando `success` — `main` vermelha bloqueia o deploy automático e precisa
+  virar alerta, não descoberta no próximo deploy.
+- **Watchdog local** `scripts/monitor_health.sh` (cron): reinicia backend/
+  frontend com cooldown e guarda log forense antes do restart. Registra só em
+  `/var/log/ejc_health_monitor.log`; para receber o evento fora da VPS, aponte
+  um monitor *push* do Kuma nesse script ou envie a linha ao WhatsApp via
+  integrador.
+- **Disco e memória do host** (INF-13): não há alerta nativo. Mínimo
+  recomendado — cron de 5 min que chama um monitor *push* do Kuma quando
+  `df /var/lib/docker` passar de 85% ou `free` mostrar swap acima de 50%. O
+  incidente de 27/08 foi detectado por um humano olhando `free`.
+- **Backup**: o scheduler produz resultado por ciclo (`backup_drive_state`,
+  `/admin/backup/status`, com `offsite_ok` e `retencao_local_ok`); exponha
+  como heartbeat *push* no Kuma para que dois ciclos sem offsite virem alerta.
+
 ## Sinais para observar no primeiro dia de operação
 
 - **Erros 5xx** no Sentry — meta: zero. Qualquer pico investigar na hora.

@@ -170,15 +170,20 @@ BACKUP_SAIDA=""
 if BACKUP_SAIDA="$(bash scripts/backup.sh)"; then
   [ -n "$BACKUP_SAIDA" ] && printf '%s\n' "$BACKUP_SAIDA"
   log "Backup pré-deploy concluído."
-if printf '%s' "$BACKUP_SAIDA" | grep -Eq '"offsite_ok"[[:space:]]*:[[:space:]]*false'; then
-  log "ERRO CRÍTICO: backup retornou offsite_ok=false; retenção recuperável fora da VPS não foi comprovada."
+# Prova recuperável (INF-04): offsite confirmado OU retenção local cifrada em
+# BACKUP_DIR. Sem NENHUMA das duas confirmadas explicitamente, bloqueia antes
+# de qualquer mutação. offsite_ok=false com retenção local OK segue com AVISO
+# (o alerta do backup já cobre o offsite; o deploy não fica refém dele — #1236).
+OFFSITE_TRUE=0; LOCAL_TRUE=0
+printf '%s' "$BACKUP_SAIDA" | grep -Eq '"offsite_ok"[[:space:]]*:[[:space:]]*true' && OFFSITE_TRUE=1
+printf '%s' "$BACKUP_SAIDA" | grep -Eq '"retencao_local_ok"[[:space:]]*:[[:space:]]*true' && LOCAL_TRUE=1
+if [ "$OFFSITE_TRUE" != "1" ] && [ "$LOCAL_TRUE" != "1" ]; then
+  log "ERRO CRÍTICO: backup sem prova recuperável (offsite_ok=false e retencao_local_ok=false ou ausentes)."
   log "Deploy bloqueado antes de qualquer mutação de .env/imagens/runtime."
   exit 1
 fi
-if ! printf '%s' "$BACKUP_SAIDA" | grep -Eq '"offsite_ok"[[:space:]]*:[[:space:]]*true'; then
-  log "ERRO CRÍTICO: saída do backup não contém confirmação explícita offsite_ok=true."
-  log "Deploy bloqueado antes de qualquer mutação de .env/imagens/runtime."
-  exit 1
+if [ "$OFFSITE_TRUE" != "1" ]; then
+  log "AVISO GRAVE: offsite_ok=false — deploy segue com a retenção local cifrada em BACKUP_DIR; corrija o destino offsite."
 fi
 else
   [ -n "$BACKUP_SAIDA" ] && printf '%s\n' "$BACKUP_SAIDA"
@@ -250,16 +255,20 @@ DEPLOY_MUTATED=1
 log "Subindo backend novo sem migration automática no entrypoint"
 RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate backend
 backend_ok=0
+# --max-time OBRIGATÓRIO em toda sondagem (incidente de 04/09/2026: backend
+# aceita TCP e nunca responde; sem teto o laço abaixo nunca expira, o rollback
+# não dispara e o mutex host-level fica preso até o TimeoutStartSec do systemd).
+CURL_SONDA=(curl -fsS --connect-timeout 5 --max-time 15)
 for _ in $(seq 1 12); do
   sleep 5
-  if curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+  if "${CURL_SONDA[@]}" http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
     backend_ok=1
     break
   fi
 done
 [ "$backend_ok" = "1" ] || { log "Backend não respondeu em 60s"; exit 1; }
 
-COMMIT_NO_AR="$(curl -fsS http://127.0.0.1:8000/api/health 2>/dev/null \
+COMMIT_NO_AR="$("${CURL_SONDA[@]}" http://127.0.0.1:8000/api/health 2>/dev/null \
   | sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
 if [ "$COMMIT_NO_AR" = "$GIT_SHA" ]; then
   log "Versão publicada confirmada pelo /api/health: ${COMMIT_NO_AR}"
@@ -308,8 +317,17 @@ else
   log "Seeds não executados neste deploy."
 fi
 
-log "Aprovando e indexando pendências da Base de Conhecimento"
-docker compose exec -T backend python -m scripts.reparar_conhecimento_rag --batch-size 50
+# Não fatal e com teto: este passo envolve embeddings e possivelmente
+# provedores externos de IA. Uma falha de rede aqui NÃO pode reverter um
+# backend já verificado saudável, e uma execução longa não pode estender a
+# janela em que frontend antigo e backend novo coexistem (INF-10).
+log "Aprovando e indexando pendências da Base de Conhecimento (não fatal, teto ${RAG_REPARO_TIMEOUT:-600}s)"
+if timeout "${RAG_REPARO_TIMEOUT:-600}" docker compose exec -T backend \
+     python -m scripts.reparar_conhecimento_rag --batch-size 50; then
+  log "Pendências da Base de Conhecimento processadas."
+else
+  log "AVISO: reparo da Base de Conhecimento falhou ou excedeu o teto (rc=$?); o job agendado reprocessa. Deploy segue."
+fi
 
 log "Subindo frontend"
 docker rm -f ejc_frontend >/dev/null 2>&1 || true
