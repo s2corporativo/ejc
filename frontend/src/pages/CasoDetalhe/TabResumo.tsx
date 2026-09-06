@@ -47,6 +47,15 @@ interface DiagnosticoFechamento {
   requer_confirmacao_alertas: boolean;
   bloqueios: PendenciaFechamento[];
   alertas: PendenciaFechamento[];
+  resumo?: {
+    prazos_ativos: number;
+    prazos_nao_confirmados: number;
+    tarefas_abertas: number;
+    financeiro_pendente: number;
+    pecas_nao_protocoladas: number;
+    proxima_acao_pendente: boolean;
+    processos_ativos?: number;
+  };
   processo?: {
     numero_processo: string | null;
     processos_ativos: number;
@@ -1013,11 +1022,26 @@ export default function TabResumo({
             {encDiag && encDiag.bloqueios.length > 0 && (
               <Alert variant="error" title="Encerramento bloqueado">
                 <ul className="list-disc pl-4 text-xs">
-                  {encDiag.bloqueios.map((b) => (
-                    <li key={`${b.codigo}-${b.id}`}>
-                      <b>{b.titulo}</b> — {b.descricao}
-                    </li>
-                  ))}
+                  {encDiag.bloqueios.map((b) => {
+                    const destino = b.destino;
+                    return (
+                      <li key={`${b.codigo}-${b.id}`}>
+                        <b>{b.titulo}</b> — {b.descricao}
+                        {destino && (
+                          <button
+                            type="button"
+                            className="ml-1 underline underline-offset-2 hover:no-underline"
+                            onClick={() => {
+                              setEncModal(false);
+                              navigate(destino);
+                            }}
+                          >
+                            Resolver
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
                 <p className="mt-1 text-xs">
                   Conclua ou cancele os prazos antes de encerrar
@@ -1030,11 +1054,26 @@ export default function TabResumo({
             {encDiag && encDiag.alertas.length > 0 && (
               <Alert variant="warning" title="Pendências do caso">
                 <ul className="list-disc pl-4 text-xs">
-                  {encDiag.alertas.map((a) => (
-                    <li key={`${a.codigo}-${a.id}`}>
-                      <b>{a.titulo}</b> — {a.descricao}
-                    </li>
-                  ))}
+                  {encDiag.alertas.map((a) => {
+                    const destino = a.destino;
+                    return (
+                      <li key={`${a.codigo}-${a.id}`}>
+                        <b>{a.titulo}</b> — {a.descricao}
+                        {destino && (
+                          <button
+                            type="button"
+                            className="ml-1 underline underline-offset-2 hover:no-underline"
+                            onClick={() => {
+                              setEncModal(false);
+                              navigate(destino);
+                            }}
+                          >
+                            Ver
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </Alert>
             )}
@@ -1042,6 +1081,21 @@ export default function TabResumo({
               <Alert variant="success" title="Sem pendências">
                 Nenhum prazo, tarefa, honorário, peça ou processo em aberto.
               </Alert>
+            )}
+            {encDiag?.resumo && (
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-400 sm:grid-cols-3">
+                {[
+                  ["Prazos ativos", encDiag.resumo.prazos_ativos],
+                  ["Tarefas abertas", encDiag.resumo.tarefas_abertas],
+                  ["Financeiro pendente", encDiag.resumo.financeiro_pendente],
+                  ["Peças não protocoladas", encDiag.resumo.pecas_nao_protocoladas],
+                ].map(([rotulo, valor]) => (
+                  <div key={String(rotulo)} className="flex justify-between gap-2">
+                    <dt>{rotulo}</dt>
+                    <dd className="font-semibold text-slate-200">{valor}</dd>
+                  </div>
+                ))}
+              </dl>
             )}
             {encDiag && encDiag.bloqueios.length > 0 && podeJustificarBloqueio && (
               <div>

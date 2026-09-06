@@ -18,7 +18,7 @@ export { AREAS_CANONICAS, AREAS_DESTAQUE, ROTULO_AREA };
 export type AreaOpcao = { slug: CaseArea; nome: string };
 
 /** Opções de área na ordem canônica do backend (para <select>/chips). */
-export const AREAS_OPCOES: readonly AreaOpcao[] = AREAS_CANONICAS.map(
+const AREAS_OPCOES: readonly AreaOpcao[] = AREAS_CANONICAS.map(
   (slug) => ({ slug, nome: ROTULO_AREA[slug] }),
 );
 

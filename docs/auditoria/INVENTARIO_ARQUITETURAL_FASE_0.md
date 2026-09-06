@@ -40,7 +40,7 @@ Executar:
 python scripts/generate_architecture_inventory.py --check
 ```
 
-Saída padrão: `docs/audit/inventory/`.
+Saída padrão: `docs/auditoria/inventory/`.
 
 | Arquivo | Finalidade |
 |---|---|

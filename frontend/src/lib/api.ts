@@ -6,7 +6,7 @@ import axios from "axios";
 import { toast } from "../components/Toast";
 import type { AuthTokens, Deadline } from "../types";
 
-export const API_BASE_URL = "/api/v1";
+const API_BASE_URL = "/api/v1";
 const api = axios.create({ baseURL: API_BASE_URL, withCredentials: true });
 
 /** Access token curto atualmente em localStorage (ou null). */

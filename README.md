@@ -10,7 +10,7 @@ Fontes canônicas:
 
 - `docs/EJC_10_10_ACCEPTANCE_GATE.md` — critérios oficiais de certificação;
 - `docs/EJC_ROTEIRO_HOMOLOGACAO_FINAL.md` — cenários de homologação;
-- `docs/audit/INVENTARIO_ARQUITETURAL_FASE_0.md` — inventário gerado do código;
+- `docs/auditoria/INVENTARIO_ARQUITETURAL_FASE_0.md` — inventário gerado do código;
 - `docs/arquivo/relatorios/RELATORIO_ESTADO_PRODUTO.md` — estado funcional consolidado;
 - `docs/BACKUP_RESTORE_RUNBOOK.md` — continuidade, backup e restauração;
 - `docs/GOVERNANCA_IA.md` — governança dos agentes de IA (papéis, limites, fluxo e merge).

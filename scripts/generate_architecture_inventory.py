@@ -848,7 +848,7 @@ def main() -> int:
     args = parser.parse_args()
 
     root = args.root.resolve()
-    output = (args.output or root / "docs/audit/inventory").resolve()
+    output = (args.output or root / "docs/auditoria/inventory").resolve()
     manifest = generate(root, output)
     print(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True))
     if args.check and not manifest["gate"]["all_items_classified"]:
