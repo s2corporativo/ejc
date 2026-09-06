@@ -94,7 +94,7 @@ export default function CaseClosureModal({
     setConfirmouAlertas(false);
     setDiagnostico(null);
     api
-      .get(`/cases/${caseId}/fechamento/diagnostico`)
+      .get(`/cases/${caseId}/encerrar/diagnostico`)
       .then(({ data }) => {
         if (!cancelado) setDiagnostico(data as DiagnosticoFechamento);
       })
