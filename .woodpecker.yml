@@ -1,4 +1,4 @@
-# CI oficial self-hosted (Woodpecker — infra/woodpecker/). Não depende de GitHub Actions.
+# CI oficial fora do GitHub Actions: self-hosted (Woodpecker — infra/woodpecker/).
 # Replica os portões locais e adiciona SAST, vulnerabilidades, secret scanning
 # e validação determinística dos contratos operacionais de backup/deploy.
 when:
