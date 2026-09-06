@@ -264,6 +264,9 @@ async def update_pending_item(
             sets.append("completed_at=NULL")
     sets.append("updated_at=NOW()")
 
+    # SQL literal com bind params; a regra marca todo text(), sem olhar
+    # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     await db.execute(text(f"UPDATE client_pending_items SET {','.join(sets)} WHERE id=:id"), params)
     await criar_audit_log(db, current_user.id, current_user.role.value,
                           "UPDATE", "client_pending_items", item_id,

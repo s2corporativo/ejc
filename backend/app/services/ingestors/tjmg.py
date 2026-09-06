@@ -106,6 +106,9 @@ def _chave(item: dict, tema: str) -> str:
     if reg:
         return f"tjmg:{reg}"
     base = (item.get("ementa") or "")[:500]
+    # SHA-1 usado como chave de deduplicacao/identidade, nunca como
+    # assinatura, token ou senha. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
     h = hashlib.sha1(base.encode("utf-8")).hexdigest()[:16]
     return f"tjmg:ementa:{h}"
 

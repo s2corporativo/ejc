@@ -186,6 +186,9 @@ async def atualizar_parte(
             )
     sets = ["updated_at = now()"] + [f"{k} = :{k}" for k in campos]
     res = await db.execute(
+        # SQL literal com bind params; a regra marca todo text(), sem olhar
+        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         text("UPDATE case_partes SET " + ", ".join(sets)
              + " WHERE id = :pid AND case_id = :cid AND ativo = true "
              + "RETURNING id"),

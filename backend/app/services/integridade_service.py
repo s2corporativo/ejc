@@ -40,6 +40,10 @@ async def _achado(
 
     total = (
         await db.execute(
+            # `consulta` vem so dos construtores literais privados deste modulo
+            # (_sql_*), nunca de request; os valores sao bind params.
+            # Ver docs/seguranca/SAST_BASELINE.md
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             text(f"SELECT COUNT(*) FROM ( {consulta} ) AS diagnostico"),
             parametros,
         )
@@ -51,6 +55,10 @@ async def _achado(
         str(valor)
         for valor in (
             await db.execute(
+                # `consulta` vem so dos construtores literais privados deste modulo
+                # (_sql_*), nunca de request; os valores sao bind params.
+                # Ver docs/seguranca/SAST_BASELINE.md
+                # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
                 text(f"{consulta}\nLIMIT :_limite_ids"),
                 parametros_ids,
             )

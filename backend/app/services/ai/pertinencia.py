@@ -269,6 +269,9 @@ async def texto_da_autoridade(db, citacao: dict) -> tuple[str | None, str | None
             return None, None
         chaves = [f"sumula:{tribunal}:{numero}"]
         linha = (await db.execute(
+            # SQL literal com bind params; a regra marca todo text(), sem olhar
+            # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             _text(
                 "SELECT kd.titulo, string_agg(kc.conteudo, E'\\n' ORDER BY kc.ordem) "
                 "FROM knowledge_docs kd JOIN knowledge_chunks kc ON kc.doc_id = kd.id "
@@ -295,6 +298,9 @@ async def texto_da_autoridade(db, citacao: dict) -> tuple[str | None, str | None
         # travava. O mesmo regex de localização do verificador seleciona o
         # chunk certo; sem chunk correspondente, `(None, None)` → indeterminada.
         linha = (await db.execute(
+            # SQL literal com bind params; a regra marca todo text(), sem olhar
+            # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             _text(
                 "SELECT kd.titulo, string_agg(kc.conteudo, E'\\n' ORDER BY kc.ordem) "
                 "FROM knowledge_docs kd JOIN knowledge_chunks kc ON kc.doc_id = kd.id "

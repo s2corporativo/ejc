@@ -101,6 +101,9 @@ def chave_origem(it: dict) -> str:
         _campo(it, "tipoComunicacao", "tipo_comunicacao"),
         _campo(it, "texto"),
     ])
+    # SHA-1 usado como chave de deduplicacao/identidade, nunca como
+    # assinatura, token ou senha. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
     return "djen:" + hashlib.sha1(base.encode("utf-8")).hexdigest()
 
 

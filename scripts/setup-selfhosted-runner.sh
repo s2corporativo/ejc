@@ -96,6 +96,9 @@ systemctl enable --now docker >/dev/null 2>&1 || true
 
 if ! command -v node >/dev/null 2>&1; then
   log "Node ausente — instalando Node 20…"
+  # Instalador oficial do fornecedor, sobre HTTPS, rodado a mao pelo
+  # operador ao provisionar host novo. Ver docs/seguranca/SAST_BASELINE.md
+  # nosemgrep: bash.curl.security.curl-pipe-bash.curl-pipe-bash
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
   apt-get install -y nodejs
 fi

@@ -108,6 +108,9 @@ async def _db_metrics() -> dict[str, Any]:
         ).one()
         governed = (
             await db.execute(
+                # SQL literal com bind params; a regra marca todo text(), sem olhar
+                # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+                # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
                 text(
                     "SELECT "
                     "COUNT(*) AS total, "
@@ -191,6 +194,9 @@ async def _probe_semantic_search() -> bool:
     async with AsyncSessionLocal() as db:
         seed = (
             await db.execute(
+                # SQL literal com bind params; a regra marca todo text(), sem olhar
+                # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+                # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
                 text(
                     "SELECT kc.embedding::text AS vector_text, "
                     "CASE WHEN kd.categoria = ANY(:restr_cats) "
@@ -212,6 +218,9 @@ async def _probe_semantic_search() -> bool:
 
         row = (
             await db.execute(
+                # SQL literal com bind params; a regra marca todo text(), sem olhar
+                # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+                # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
                 text(
                     "SELECT 1 "
                     "FROM knowledge_chunks kc "
@@ -302,6 +311,9 @@ async def canary(max_docs: int) -> int:
             async with db.begin():
                 docs = (
                     await db.execute(
+                        # SQL literal com bind params; a regra marca todo text(), sem olhar
+                        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+                        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
                         text(
                             "SELECT kd.id "
                             "FROM knowledge_docs kd "

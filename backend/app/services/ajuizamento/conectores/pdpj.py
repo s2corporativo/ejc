@@ -123,7 +123,9 @@ class PdpjAuthProvider:
             raise PdpjAuthError(f"SSO PDPJ indisponível ({type(exc).__name__})") from exc
         if resp.status_code != 200:
             # Nunca logar corpo (pode ecoar client_id) — só o status.
-            logger.warning("[PDPJ] token recusado (status=%s)", resp.status_code)
+            # A regra casa a palavra "token" na string LITERAL; só o status HTTP
+            # (int) é interpolado — nenhum segredo, header ou corpo vai ao log.
+            logger.warning("[PDPJ] token recusado (status=%s)", resp.status_code)  # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
             raise PdpjAuthError(f"SSO PDPJ recusou a credencial (HTTP {resp.status_code})")
         corpo = resp.json()
         agora = time.monotonic()

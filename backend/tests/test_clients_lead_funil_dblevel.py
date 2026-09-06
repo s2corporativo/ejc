@@ -26,6 +26,8 @@ from sqlalchemy import text
 
 from app.schemas.client import ClientCreate, ClientUpdate
 
+from _limpeza_cliente import limpar_dependencias_de_clientes
+
 pytestmark = pytest.mark.skipif(
     not os.getenv("RUN_DB_TESTS"),
     reason="requer Postgres com migrations (defina RUN_DB_TESTS=1)",
@@ -49,6 +51,10 @@ async def _carregar_user(db, uid: str):
 
 
 async def _limpar(db, *, client_ids=(), user_ids=()):
+    # Converter lead em cliente dispara o kit de admissão (procuração +
+    # contrato em legal_docs); sem apagar essas dependências, o DELETE de
+    # clients viola FK e o cliente sobrevive para contaminar outros testes.
+    await limpar_dependencias_de_clientes(db, client_ids)
     for cid in client_ids:
         await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
         await db.execute(text("DELETE FROM audit_logs WHERE registro_id = :id"), {"id": cid})

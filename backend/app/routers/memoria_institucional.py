@@ -78,6 +78,9 @@ async def listar(
     if q:
         cond.append("(titulo ILIKE :q OR conteudo ILIKE :q)"); params["q"] = f"%{q}%"
     result = await db.execute(
+        # SQL literal com bind params; a regra marca todo text(), sem olhar
+        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         text(f"SELECT {_COLS} FROM memoria_institucional "
              f"WHERE {' AND '.join(cond)} ORDER BY created_at DESC LIMIT :limit"),
         params,
@@ -128,6 +131,9 @@ async def obter(
     cu: User = Depends(get_current_user),
 ):
     result = await db.execute(
+        # SQL literal com bind params; a regra marca todo text(), sem olhar
+        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         text(f"SELECT {_COLS} FROM memoria_institucional "
              f"WHERE id = :id AND deleted_at IS NULL"),
         {"id": mem_id},
@@ -157,6 +163,9 @@ async def atualizar(
         raise HTTPException(422, "Nada para atualizar")
     sets.append("updated_at = now()")
     result = await db.execute(
+        # SQL literal com bind params; a regra marca todo text(), sem olhar
+        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         text(f"UPDATE memoria_institucional SET {', '.join(sets)} "
              f"WHERE id = :id AND deleted_at IS NULL RETURNING id"),
         params,
