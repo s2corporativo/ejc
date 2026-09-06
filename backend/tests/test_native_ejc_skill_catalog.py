@@ -32,6 +32,11 @@ EXPECTED_LEGAL_AREAS = {
     "transito",
 }
 
+# Só as áreas com agente dedicado sobrevivem à consolidação 38→8 de
+# 2026-09-06 (escopo definido pelo titular). As demais áreas canônicas
+# (ambiental, família, imobiliário, previdenciário, digital_lgpd, trânsito)
+# continuam com método de ramo/skill nativa em LEGAL_AREA_SPECS — só não têm
+# mais agente de IA dedicado no núcleo (caem no fallback determinístico).
 AREA_AGENTS = {
     "empresarial": "CorporateLawAgent",
     "civil": "CivilLawAgent",
@@ -40,13 +45,7 @@ AREA_AGENTS = {
     "administrativo": "AdministrativeLawAgent",
     "bancario": "BankForensicsAgent",
     "tributario": "TaxLawAgent",
-    "ambiental": "EnvironmentalLawAgent",
     "consumidor": "ConsumerLawAgent",
-    "familia": "FamilyLawAgent",
-    "imobiliario": "RealEstateLawAgent",
-    "previdenciario": "SocialSecurityAgent",
-    "digital_lgpd": "DigitalLGPDAgent",
-    "transito": "TrafficLawAgent",
 }
 
 
@@ -188,10 +187,13 @@ def test_empate_de_keywords_nao_escolhe_ramo() -> None:
     assert _best_keyword_match("nada", {"a": ("x",)}) is None
 
 
-def test_roteamento_dedica_ambiental_digital_e_transito() -> None:
-    assert classify_intent("chat", "ambiental", "").agente == "EnvironmentalLawAgent"
-    assert classify_intent("chat", "digital_lgpd", "").agente == "DigitalLGPDAgent"
-    assert classify_intent("chat", "transito", "").agente == "TrafficLawAgent"
+def test_roteamento_de_areas_sem_agente_dedicado_cai_no_fallback() -> None:
+    # EnvironmentalLawAgent/DigitalLGPDAgent/TrafficLawAgent foram retirados na
+    # consolidação 38→8 (2026-09-06, escopo definido pelo titular) — sem
+    # keyword na mensagem, o domain sozinho cai no fallback determinístico.
+    assert classify_intent("chat", "ambiental", "").agente == "CaseAgent"
+    assert classify_intent("chat", "digital_lgpd", "").agente == "CaseAgent"
+    assert classify_intent("chat", "transito", "").agente == "CaseAgent"
     assert classify_intent("modulo", None, "Abrir o módulo").agente == "EJCCoordinatorAgent"
 
 
