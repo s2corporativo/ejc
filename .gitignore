@@ -113,3 +113,5 @@ backend/app/seeds/backups/
 # Saída de execução do gold set de IA (backend/app/eval/run_gold_ia.py):
 # é resultado de rodada, não fonte — o número muda a cada execução.
 backend/app/eval/relatorio_gold_ia.json
+# Worktrees efêmeros criados por agentes de IA para trabalho isolado.
+.claude/worktrees/
