@@ -1,0 +1,265 @@
+/* ==========================================================================
+ * AppShell do EJC — barra superior, navegação lateral e área de trabalho.
+ *
+ * Camada de apresentação do shell: não altera rotas, RBAC, contratos de API
+ * nem regra de negócio. Sucede `saas-ultra-v2.css`, cujo bloco "Dashboard
+ * Ultra" (1.025 linhas) foi removido por estar inalcançável — o dashboard
+ * migrou para utilitários Tailwind e nenhuma classe `.ejc-ultra-*` é
+ * renderizada. Conferir com `npm run audit:css`.
+ * ========================================================================== */
+
+:root {
+  --ejc-v2-ink: #111923;
+  --ejc-v2-ink-soft: #263442;
+  --ejc-v2-muted: #718096;
+  --ejc-v2-line: rgba(20, 32, 43, 0.09);
+  --ejc-v2-line-strong: rgba(20, 32, 43, 0.14);
+  --ejc-v2-canvas: #f6f7f8;
+  --ejc-v2-card: rgba(255, 255, 255, 0.92);
+  --ejc-v2-night: #09121b;
+  --ejc-v2-night-soft: #101c27;
+  --ejc-v2-gold: #c9a227;
+  --ejc-v2-gold-deep: #8f7117;
+  --ejc-v2-gold-pale: #f5edcf;
+  --ejc-v2-tech: #2f6f8f;
+  --ejc-v2-danger: #b94a48;
+  --ejc-v2-warn: #b7791f;
+  --ejc-v2-success: #36705a;
+  --ejc-v2-shadow: 0 18px 48px -32px rgba(8, 20, 31, 0.26);
+  --ejc-v2-shadow-hover: 0 24px 60px -34px rgba(8, 20, 31, 0.34);
+}
+
+.dark {
+  --ejc-v2-ink: #eef2f6;
+  --ejc-v2-ink-soft: #d3dae1;
+  --ejc-v2-muted: #98a4af;
+  --ejc-v2-line: rgba(255, 255, 255, 0.08);
+  --ejc-v2-line-strong: rgba(255, 255, 255, 0.13);
+  --ejc-v2-canvas: #0c1218;
+  --ejc-v2-card: rgba(17, 25, 34, 0.94);
+  --ejc-v2-shadow: 0 18px 48px -32px rgba(0, 0, 0, 0.7);
+  --ejc-v2-shadow-hover: 0 24px 60px -34px rgba(0, 0, 0, 0.86);
+}
+
+/* ========================================================================== */
+/* AppShell v2 — uma barra superior, navegação escura e área de trabalho limpa */
+/* ========================================================================== */
+
+header.fixed.inset-x-0.top-0 {
+  border-bottom: 1px solid var(--ejc-v2-line) !important;
+  background: rgba(255, 255, 255, 0.88) !important;
+  box-shadow: 0 10px 32px -28px rgba(8, 20, 31, 0.55);
+  backdrop-filter: blur(18px) saturate(145%);
+}
+
+.dark header.fixed.inset-x-0.top-0 {
+  background: rgba(12, 18, 24, 0.9) !important;
+}
+
+header.fixed.inset-x-0.top-0 > div {
+  height: 64px;
+}
+
+header.fixed.inset-x-0.top-0 .icon-btn {
+  border: 1px solid transparent;
+  background: rgba(17, 25, 35, 0.035);
+}
+
+header.fixed.inset-x-0.top-0 .icon-btn:hover {
+  border-color: rgba(143, 113, 23, 0.16);
+  background: rgba(201, 162, 39, 0.08);
+  color: var(--ejc-v2-gold-deep);
+}
+
+header.fixed.inset-x-0.top-0 kbd {
+  border: 1px solid var(--ejc-v2-line);
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: none;
+}
+
+.dark header.fixed.inset-x-0.top-0 kbd {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.sidebar-bronze {
+  color: #d9e0e6;
+  border-right: 1px solid rgba(229, 206, 127, 0.16) !important;
+  background:
+    radial-gradient(
+      circle at 24% 0%,
+      rgba(201, 162, 39, 0.12),
+      transparent 18rem
+    ),
+    linear-gradient(180deg, #08121b 0%, #0b1620 58%, #09121b 100%) !important;
+  box-shadow: 16px 0 44px -38px rgba(3, 9, 14, 0.85);
+}
+
+.sidebar-bronze > div:first-child {
+  min-height: 78px;
+  border-color: rgba(229, 206, 127, 0.13) !important;
+  background: rgba(255, 255, 255, 0.012);
+}
+
+.sidebar-bronze > div:first-child > a {
+  padding: 5px 10px;
+  border: 1px solid rgba(201, 162, 39, 0.15);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 12px 28px -22px rgba(0, 0, 0, 0.9);
+}
+
+.sidebar-bronze > div:first-child button {
+  color: #9da9b4 !important;
+}
+
+.sidebar-bronze > div:first-child button:hover {
+  color: #f6e8ad !important;
+  background: rgba(201, 162, 39, 0.08) !important;
+}
+
+.sidebar-bronze nav {
+  padding-top: 14px;
+}
+
+.sidebar-bronze .sidebar-group-label {
+  color: #6f7d89 !important;
+  font-size: 9px !important;
+  letter-spacing: 0.21em !important;
+}
+
+.sidebar-bronze .sidebar-group-label:hover {
+  color: #d9c779 !important;
+}
+
+.sidebar-bronze .sidebar-tree {
+  border-color: rgba(201, 162, 39, 0.11) !important;
+}
+
+.sidebar-bronze .sidebar-nav-item {
+  position: relative;
+  min-height: 38px;
+  color: #b9c3cc !important;
+  border: 1px solid transparent;
+  border-radius: 11px !important;
+}
+
+.sidebar-bronze .sidebar-nav-item svg {
+  color: #9da9b4 !important;
+  transition:
+    color 150ms ease,
+    transform 150ms ease;
+}
+
+.sidebar-bronze .sidebar-nav-item:hover {
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.045) !important;
+}
+
+.sidebar-bronze .sidebar-nav-item:hover svg {
+  color: #e5ce7f !important;
+  transform: translateX(1px);
+}
+
+.sidebar-bronze .sidebar-nav-item.is-active {
+  color: #ffffff !important;
+  border-color: rgba(229, 206, 127, 0.18);
+  background: linear-gradient(
+    90deg,
+    rgba(201, 162, 39, 0.2),
+    rgba(201, 162, 39, 0.06)
+  ) !important;
+  box-shadow: inset 3px 0 0 #c9a227;
+}
+
+.sidebar-bronze .sidebar-nav-item.is-active svg {
+  color: #e5ce7f !important;
+}
+
+.sidebar-bronze > div:last-child {
+  border-color: rgba(229, 206, 127, 0.1) !important;
+  background: rgba(3, 9, 14, 0.22);
+}
+
+.sidebar-bronze > div:last-child > div {
+  border-color: rgba(229, 206, 127, 0.11) !important;
+  background: rgba(255, 255, 255, 0.025) !important;
+}
+
+.sidebar-bronze > div:last-child .text-slate-700,
+.sidebar-bronze > div:last-child .text-slate-500 {
+  color: #c7d0d8 !important;
+}
+
+.sidebar-bronze > div:last-child .text-slate-400 {
+  color: #76838f !important;
+}
+
+main.ejc-modern-scope {
+  min-height: calc(100vh - 64px);
+  background:
+    radial-gradient(
+      circle at 88% 3%,
+      rgba(201, 162, 39, 0.065),
+      transparent 25rem
+    ),
+    radial-gradient(
+      circle at 15% 18%,
+      rgba(47, 111, 143, 0.045),
+      transparent 28rem
+    ),
+    var(--ejc-v2-canvas) !important;
+}
+
+main.ejc-modern-scope > div {
+  max-width: 1540px !important;
+}
+
+.ejc-modern-scope .card,
+.ejc-modern-scope .section-card {
+  border-color: var(--ejc-v2-line) !important;
+  background: var(--ejc-v2-card) !important;
+  box-shadow: var(--ejc-v2-shadow) !important;
+}
+
+.ejc-modern-scope .card:hover {
+  border-color: rgba(201, 162, 39, 0.22) !important;
+  box-shadow: var(--ejc-v2-shadow-hover) !important;
+}
+
+.ejc-modern-scope .input,
+.ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]),
+.ejc-modern-scope select,
+.ejc-modern-scope textarea {
+  border-color: var(--ejc-v2-line-strong);
+}
+
+.ejc-modern-scope .input:focus,
+.ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]):focus,
+.ejc-modern-scope select:focus,
+.ejc-modern-scope textarea:focus {
+  border-color: rgba(143, 113, 23, 0.48);
+  box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.09);
+}
+
+/* ========================================================================== */
+/* Responsividade e acessibilidade do shell                                   */
+/* ========================================================================== */
+
+@media (max-width: 700px) {
+  main.ejc-modern-scope {
+    padding: 14px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-bronze .sidebar-nav-item svg {
+    transition: none;
+  }
+
+  /* Incorporado de `saas-ultra-accessibility.css`: neutraliza também o
+     transform de hover, que a regra acima não cobre. */
+  .sidebar-bronze .sidebar-nav-item:hover svg {
+    transform: none;
+  }
+}

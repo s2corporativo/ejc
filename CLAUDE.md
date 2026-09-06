@@ -81,7 +81,7 @@ e escala com o que o diff toca:
 | Mudança | Portão antes do push |
 |---|---|
 | Só documentação/`.md`/comentários | Nenhum (declare docs-only no PR) |
-| Só `frontend/src` | `cd frontend && npm run lint && npm test && npm run build` |
+| Só `frontend/src` | `cd frontend && npm run lint && npm test && npm run build && npm run audit:css:verificar` |
 | Só backend, sem tocar banco/models/services/routers compartilhados | `cd backend && ruff check app && pytest <área alterada>` + suíte completa `pytest` uma vez antes do push |
 | Banco, models, migrations, seeds | Acima + `alembic upgrade head` do zero em PostgreSQL 16 + pgvector local |
 | Cruza backend e frontend | Ambas as colunas |

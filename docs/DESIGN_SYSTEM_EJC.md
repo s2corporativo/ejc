@@ -1,54 +1,123 @@
 # Design System EJC
 
-## Objetivo
+Documento canônico do idioma visual do EJC. Substitui e consolida
+`docs/FRONTEND_DESIGN_SYSTEM.md` e `frontend/LEGAL_TECH_PREMIUM.md`, que
+descreviam camadas divergentes entre si e já não correspondiam ao produto.
 
-Padronizar a interface do EJC como um SaaS jurídico profissional, moderno e consistente, evitando que cada tela seja construída com combinações próprias de classes Tailwind.
+## Fonte única de verdade
 
-O projeto já possui tokens visuais globais em `frontend/src/index.css`, incluindo paleta jurídica marrom, bronze e dourado, além de classes base como `card`, `btn`, `badge`, `table`, `input` e variações.
+| Assunto                                            | Arquivo                                                          |
+| -------------------------------------------------- | ---------------------------------------------------------------- |
+| Tokens da marca, base Tailwind e utilitários       | `frontend/src/index.css`                                         |
+| Tokens de cor/tipografia/espaçamento do Tailwind   | `frontend/tailwind.config.js`                                    |
+| Componentes React oficiais                         | `frontend/src/components/UI.tsx`                                 |
+| Shell (topbar, sidebar, área de trabalho)          | `frontend/src/styles/app-shell.css`                              |
+| Acabamento global (cards, inputs, tabelas, badges) | `frontend/src/styles/site-system.css`                            |
+| Idioma de referência das páginas                   | `frontend/src/styles/ejc-reference-2026.css` e `-systemwide.css` |
+| Polimento do workspace Financeiro                  | `frontend/src/styles/workspace-executive.css`                    |
+| Tema (claro/escuro/sistema)                        | `frontend/src/stores/theme.ts`                                   |
 
-Esta fundação adiciona componentes React oficiais em `frontend/src/components/UI.tsx` e uma camada visual complementar em `frontend/src/styles/site-system.css` para que as novas telas e refatorações usem os mesmos padrões.
+Não criar paleta local nem um segundo mecanismo de tema dentro de páginas.
+
+## Ordem das camadas
+
+A ordem de importação está declarada e comentada em `frontend/src/main.tsx`.
+É a única ordem válida: `fonts → index → app-shell → site-system →
+ejc-reference-2026 → ejc-reference-systemwide → workspace-executive`.
+
+**Regra de evolução — a mais importante deste documento.** Não criar uma nova
+"camada final" para corrigir aparência. Foi assim que o sistema acumulou onze
+folhas sobrepostas, 313 declarações `!important` e 2.9 mil linhas de CSS que
+nenhum elemento alcançava. Ajuste se faz na camada que já é dona do elemento,
+ou nos tokens. Camada nova exige justificativa no PR.
 
 ## Direção visual
 
-O EJC segue um idioma **flat e compacto** (padrão Verdelimp, mantendo a paleta dourada da casa): cards brancos com borda de 1px visível e raio 10–12px, sombras mínimas (sem elevação no hover), tipografia densa (títulos de página ~20px/700, labels 11px/600, inputs compactos com raio 8px e fonte 13px) e hierarquia clara.
+Idioma **flat e compacto**: superfícies brancas com borda de 1px visível,
+raio 10–12px, sombras mínimas, tipografia densa e hierarquia por contraste
+e espaçamento — não por decoração.
 
-Evitar gradientes decorativos, véus/blobs, glassmorphism e sombras chamativas. Destaques por cor chapada da paleta: botão primário ouro chapado, KPI cards com borda superior de 3px na cor do indicador, cabeçalho de tabela em faixa clara da marca (ouro palha) com texto escuro da marca.
+- Sem gradientes decorativos, véus, glassmorphism ou sombras chamativas.
+- Destaques por cor chapada da paleta (marrom/bronze/ouro da casa).
+- Sidebar clara no tema claro, escura no tema escuro.
+- Números de tabelas e KPIs em `tabular-nums`.
 
-## Aplicação global
+## Semântica de cor
 
-O layout interno envolve as páginas com `ejc-modern-scope`. A camada `site-system.css` aplica acabamento global em cards, superfícies, inputs, tabelas, badges e blocos antigos, inclusive telas que ainda não foram migradas para componentes React oficiais.
+`primary` marca e ações principais · `success` concluído/regular/recebido ·
+`warn` pendência ou proximidade de prazo · `danger` vencimento, bloqueio ou
+ação destrutiva · `ai` recursos de inteligência artificial · `slate`
+informação neutra.
 
-Isso evita que apenas uma tela fique moderna enquanto o restante do sistema mantém aparência antiga.
+Cor nunca é o único portador de significado: sempre acompanhada de texto,
+ícone ou rótulo.
 
-## Componentes iniciais
+## Componentes oficiais
 
-- `Button`: ações primárias, secundárias, outline e ghost.
-- `Card`: contêiner padrão para blocos de conteúdo — branco, borda 1px visível, raio 12px e sombra mínima.
-- `Badge`: status visuais padronizados.
-- `Input`, `Select` e `Textarea`: campos oficiais com label, hint, erro e suporte a ícones.
-- `PageHeader`: cabeçalho de página com título e ações.
+`frontend/src/components/UI.tsx` já fornece `Button`, `Card`, `SectionCard`,
+`Badge`, `StatusBadge`, `RiskBadge`, `PriorityBadge`, `Input`, `Select`,
+`Textarea`, `SearchBar`, `PageHeader`, `StatCard`, `Table` (+`THead`, `TR`,
+`TH`, `TD`), `Tooltip`, `Modal`, `ConfirmModal`, `Drawer`, `Alert`,
+`EmptyState`, `ErrorState`, `Spinner`, `SkeletonTable`, `IANotice`,
+`AISurface`, `ConfidenceBadge`, `SourceCitation` e `VisualLawDocument`.
 
-## Regra de evolução
+Tela nova não recria botão, card, badge ou input com classes soltas quando já
+existe componente oficial equivalente.
 
-Novas telas não devem criar botões, cards, badges e inputs manualmente com classes soltas quando já houver componente oficial equivalente.
+## Estrutura obrigatória de página
 
-Ao migrar telas antigas, fazer por PRs pequenos, módulo por módulo, sem misturar regra de negócio com alteração visual.
+`PageHeader` com título/descrição/ações · filtros em `FilterBar` · conteúdo em
+`SectionCard`/`Card` · estado de carregamento · estado vazio com `EmptyState` ·
+erro controlado · confirmação para ação destrutiva · responsividade ·
+autorização correspondente no backend.
 
-## Importação recomendada
+## Responsividade — media query vs. container query
 
-```tsx
-import { Badge, Button, Card, Input, PageHeader } from "../components/UI";
+Media query enxerga a **viewport**; não sabe que um cartão ficou estreito
+porque o grid trocou de colunas. Quando o conteúdo depende da largura do
+próprio contêiner (fluxos em etapas, grids internos, tabelas embutidas), use
+**container query**: `.ejc-reference-card` já declara
+`container-type: inline-size`.
+
+Grids não devem impor largura mínima rígida abaixo de 1280px — a sidebar fixa
+consome ~250px. Prefira `minmax(0, Nfr)` a `minmax(360px, Nfr)`.
+
+## Regras jurídicas e LGPD
+
+- Não exibir CPF, CNPJ, telefone, e-mail ou dado processual sensível em cards
+  gerais sem necessidade operacional.
+- Indicadores financeiros respeitam o mesmo conjunto de roles das rotas.
+- Resultado de IA sempre indica que exige conferência de fontes e revisão
+  humana.
+- Exclusão, envio, assinatura, compartilhamento e alteração processual
+  relevante exigem confirmação e auditoria.
+- O frontend complementa a autorização; nunca substitui o RBAC do backend.
+
+## Portões de verificação
+
+```bash
+cd frontend
+npm run lint                 # tsc --noEmit
+npm test                     # vitest
+npm run build
+npm run audit:css            # relatório de CSS inalcançável
+npm run audit:css:verificar  # falha se houver regressão acima do teto
+npm run test:shell-responsive  # Chromium real, 7 viewports + reduced-motion
 ```
 
-Ajustar o caminho relativo conforme a pasta da tela.
+`npm run audit:css:verificar` compara com `frontend/scripts/css-orfao-teto.json`.
+Ao remover CSS órfão, baixe o teto no mesmo PR; ele nunca sobe sem
+justificativa registrada.
 
-## Primeira tela migrada
+## Critérios de aceite
 
-- `frontend/src/pages/RamosHub.tsx`: modernizada para padrão SaaS/site, com header editorial, cards sem borda pesada, sombra, ícones limpos e CTA discreto.
-
-## Próximas etapas
-
-1. Migrar primeiro telas críticas e muito acessadas: Dashboard, Clientes, Casos/Processos e Financeiro.
-2. Criar componentes oficiais para `Table`, `EmptyState`, `Modal`, `Tabs`, `StatCard` e `AiPanel`.
-3. Remover duplicidades visuais progressivamente.
-4. Manter cada PR visual pequeno, com CI verde e sem alteração de backend.
+- [ ] Frontend compila sem erro
+- [ ] Rotas preservadas
+- [ ] Autorização validada
+- [ ] Temas claro, escuro e sistema funcionais e persistidos
+- [ ] Loading, erro e estado vazio tratados
+- [ ] Sem exposição adicional de dados pessoais
+- [ ] Sem alteração de contrato de API
+- [ ] Responsividade validada (7 viewports, sem overflow e sem corte)
+- [ ] Auditoria de CSS órfão dentro do teto
+- [ ] Rollback possível por commit ou pull request

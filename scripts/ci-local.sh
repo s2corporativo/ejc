@@ -346,6 +346,7 @@ run_frontend() {
   log "Frontend: Prettier…"; (cd frontend && npm run format:check) | tee "$REPORT_DIR/prettier.log"
   log "Frontend: Vitest…"; (cd frontend && npm run test -- --reporter=dot) | tee "$REPORT_DIR/vitest.log"
   log "Frontend: npm audit high…"; (cd frontend && npm audit --audit-level=high) | tee "$REPORT_DIR/npm-audit.log"
+  log "Frontend: auditoria de CSS órfão…"; (cd frontend && npm run audit:css:verificar) | tee "$REPORT_DIR/css-orfao.log"
   log "Frontend: typecheck/build…"; (cd frontend && npm run build) | tee "$REPORT_DIR/frontend-build.log"
   ok "Frontend CI equivalente OK"
 }
@@ -396,9 +397,9 @@ run_ui_extra() {
   log "Frontend extra: Playwright/Chromium sem instalação privilegiada de pacotes do SO…"
   (cd frontend && npm install --no-save --package-lock=false playwright@1.56.1)
   (cd frontend && npx playwright install chromium)
-  mkdir -p "$REPORT_DIR/browser/login" "$REPORT_DIR/browser/premium-dashboard"
+  mkdir -p "$REPORT_DIR/browser/login" "$REPORT_DIR/browser/shell-dashboard"
   (cd frontend && SCREENSHOT_DIR="$REPORT_DIR/browser/login" npm run test:responsive)
-  (cd frontend && PREMIUM_SCREENSHOT_DIR="$REPORT_DIR/browser/premium-dashboard" npm run test:premium-responsive)
+  (cd frontend && SHELL_SCREENSHOT_DIR="$REPORT_DIR/browser/shell-dashboard" npm run test:shell-responsive)
   ok "Frontend browser responsivo OK"
 }
 

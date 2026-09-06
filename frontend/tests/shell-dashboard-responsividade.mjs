@@ -1,4 +1,4 @@
-// Homologação visual do AppShell v2 e dashboard ultra em Chromium real.
+// Homologação visual do AppShell e do dashboard em Chromium real.
 // As respostas abaixo existem somente no contexto Playwright e não alteram o produto.
 import http from "node:http";
 import { existsSync, mkdirSync } from "node:fs";
@@ -10,8 +10,9 @@ import { chromium } from "playwright";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.resolve(__dirname, "..", "dist");
 const OUT =
+  process.env.SHELL_SCREENSHOT_DIR ||
   process.env.PREMIUM_SCREENSHOT_DIR ||
-  path.resolve(__dirname, "__out__", "premium-dashboard");
+  path.resolve(__dirname, "__out__", "shell-dashboard");
 const CHROMIUM = process.env.PW_CHROMIUM || chromium.executablePath();
 
 const VIEWPORTS = [
@@ -177,11 +178,11 @@ const FIXTURES = {
 };
 
 if (!existsSync(DIST)) {
-  console.error(`[premium-dashboard] dist/ não encontrado em ${DIST}.`);
+  console.error(`[shell-dashboard] dist/ não encontrado em ${DIST}.`);
   process.exit(2);
 }
 if (!CHROMIUM || !existsSync(CHROMIUM)) {
-  console.error("[premium-dashboard] Chromium não encontrado.");
+  console.error("[shell-dashboard] Chromium não encontrado.");
   process.exit(2);
 }
 
@@ -235,13 +236,13 @@ async function installApiFixtures(page) {
 }
 
 async function inspectDashboard(page, viewport, failures) {
-  await page.waitForSelector(".ejc-ultra-dashboard", { timeout: 15000 });
-  await page.getByText("Legal Operations Command Center").waitFor();
-  await page.getByText("Casos ativos").waitFor();
+  await page.waitForSelector(".ejc-reference-dashboard", { timeout: 15000 });
+  await page.getByText("Prioridades").first().waitFor();
+  await page.getByText("Agenda e Prazos").first().waitFor();
 
   const layout = await page.evaluate(() => {
     const topbar = document.querySelector("header.fixed.inset-x-0.top-0");
-    const dashboard = document.querySelector(".ejc-ultra-dashboard");
+    const dashboard = document.querySelector(".ejc-reference-dashboard");
     return {
       scrollWidth: document.documentElement.scrollWidth,
       innerWidth: window.innerWidth,
@@ -263,7 +264,7 @@ async function inspectDashboard(page, viewport, failures) {
     failures.push(`${viewport.name}: topbar principal não está visível`);
   }
   if (!layout.dashboardVisible) {
-    failures.push(`${viewport.name}: dashboard ultra não está visível`);
+    failures.push(`${viewport.name}: dashboard não está visível`);
   }
 
   const normalizedMainText = layout.mainText.toLocaleLowerCase("pt-BR");
@@ -286,38 +287,45 @@ async function inspectDashboard(page, viewport, failures) {
     }
   }
 
+  // Seções e dados operacionais do dashboard atual. Os dois últimos vêm das
+  // fixtures acima: provam que o stub da API chegou até a tela, e não apenas
+  // que o esqueleto renderizou.
   for (const expected of [
-    "126",
+    "Prioridades",
+    "Tarefas e Intimações",
+    "Radar Operacional",
+    "Agenda e Prazos",
     "98",
-    "Tarefas pendentes",
-    "Prazos em 7 dias",
-    "Movimentações recentes",
-    "Próximos compromissos",
-    "Áreas de atuação",
-    "Distribuição dos casos",
-    "Publicação de recurso especial no processo",
+    "Audiência trabalhista",
+    "Revisar contestação",
   ]) {
     if (!normalizedMainText.includes(expected.toLocaleLowerCase("pt-BR"))) {
-      failures.push(`${viewport.name}: conteúdo operacional ausente: ${expected}`);
+      failures.push(
+        `${viewport.name}: conteúdo operacional ausente: ${expected}`,
+      );
     }
   }
 
   // O contexto inteiro roda com reducedMotion="reduce". O hover não pode
   // deslocar o cartão quando o usuário solicitou redução de movimento.
-  const metric = page.locator(".ejc-ultra-metric").first();
+  const metric = page.locator(".ejc-reference-card").first();
   await metric.hover();
   const transformReduzido = await metric.evaluate(
     (element) => getComputedStyle(element).transform,
   );
   if (transformReduzido !== "none") {
     failures.push(
-      `${viewport.name}: hover desloca métrica com reduced-motion (${transformReduzido})`,
+      `${viewport.name}: hover desloca cartão com reduced-motion (${transformReduzido})`,
     );
   }
 
   const sidebar = page.locator("aside.sidebar-bronze");
   if (viewport.width < 768) {
-    await page.getByRole("button", { name: "Abrir menu" }).click();
+    await page
+      .locator("header.fixed.inset-x-0.top-0")
+      .getByRole("button", { name: /menu/i })
+      .first()
+      .click();
     if (!(await sidebar.isVisible())) {
       failures.push(`${viewport.name}: drawer da sidebar não abriu`);
     }
@@ -396,19 +404,19 @@ async function main() {
 
   if (failures.length) {
     console.error(
-      `\nDASHBOARD ULTRA RESPONSIVO: FALHOU\n - ${failures.join("\n - ")}`,
+      `\nSHELL E DASHBOARD RESPONSIVOS: FALHOU\n - ${failures.join("\n - ")}`,
     );
     process.exit(1);
   }
 
   console.log(
-    "\nDASHBOARD ULTRA RESPONSIVO: OK — sete larguras, sem overflow, " +
+    "\nSHELL E DASHBOARD RESPONSIVOS: OK — sete larguras, sem overflow, " +
       "sem erro de console, sem movimento indevido e sem sentinelas financeiras renderizadas.",
   );
 }
 
 main().catch((error) => {
-  console.error("[dashboard-ultra] erro:", error);
+  console.error("[shell-dashboard] erro:", error);
   server.close();
   process.exit(1);
 });

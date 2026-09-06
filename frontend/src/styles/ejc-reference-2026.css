@@ -563,6 +563,8 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
 
 .ejc-reference-dashboard {
   display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   padding-bottom: 10px;
   color: var(--ejc-ref-ink);
@@ -591,6 +593,11 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
 
 .ejc-reference-card {
   min-width: 0;
+  /* Contexto de container query: o conteúdo do cartão precisa reagir à
+     largura REAL do cartão, não à da viewport. Uma media query não sabe que
+     o cartão ficou estreito porque o grid mudou de colunas — foi assim que
+     o fluxo de 4 etapas passou a ser cortado pelo `overflow: hidden` abaixo. */
+  container-type: inline-size;
   overflow: hidden;
   border: 1px solid var(--ejc-ref-line);
   border-radius: 11px;
@@ -1118,6 +1125,26 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
   color: #64748b;
 }
 
+/* Fallback por viewport permanece em `max-width: 900px`; estas regras cobrem
+   o caso que ele não alcança: cartão estreito em viewport larga. */
+@container (max-width: 460px) {
+  .ejc-reference-workflow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-content: stretch;
+    row-gap: 16px;
+  }
+
+  .ejc-reference-workflow__arrow {
+    display: none;
+  }
+}
+
+@container (max-width: 300px) {
+  .ejc-reference-workflow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .ejc-reference-workflow__arrow svg {
   width: 15px;
   height: 15px;
@@ -1211,8 +1238,12 @@ html:not(.dark)
 /* -------------------------------------------------------------------------- */
 
 @media (max-width: 1280px) {
+  /* Abaixo de 1280px a sidebar fixa consome ~250px, então as colunas não
+     podem manter largura mínima rígida: `minmax(0, …)` preserva a proporção
+     e deixa o grid encolher. Sem isso o `__bottom` impunha 854px de
+     min-content ao dashboard inteiro e estourava a viewport em 1024px. */
   .ejc-reference-dashboard__top {
-    grid-template-columns: 1fr 1.2fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
   }
 
   .ejc-reference-dashboard__top > :last-child {
@@ -1220,7 +1251,11 @@ html:not(.dark)
   }
 
   .ejc-reference-dashboard__middle {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .ejc-reference-dashboard__bottom {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.2fr);
   }
 }
 
