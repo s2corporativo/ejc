@@ -160,6 +160,30 @@ ADICOES_INTENCIONAIS = {
     # Autenticada e atrás do gate de papel `_exigir_financeiro`; o resumo é
     # agregado — contagem e total — sem expor PII de cliente.
     ("/api/financeiro/atencao", "GET"),
+    # Núcleo de ajuizamento (PR #1536): fluxo CLIENTE → CASO → … → PROTOCOLO →
+    # SINCRONIZAÇÃO. Todas autenticadas; atos jurídicos (aprovar/assinar/
+    # protocolar/confirmar) exigem advogado+ dentro do handler; perfis de
+    # tribunal e carga TPU exigem admin. Nenhuma rota pública.
+    ("/api/ajuizamento/capacidades", "GET"),
+    ("/api/ajuizamento/perfis", "GET"),
+    ("/api/ajuizamento/perfis", "POST"),
+    ("/api/ajuizamento/perfis/{perfil_id}", "PATCH"),
+    ("/api/ajuizamento/tpu/{tipo}", "GET"),
+    ("/api/ajuizamento/tpu/sincronizar", "POST"),
+    ("/api/ajuizamento/tpu/importar", "POST"),
+    ("/api/ajuizamento/filings", "GET"),
+    ("/api/ajuizamento/filings", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}", "GET"),
+    ("/api/ajuizamento/filings/{filing_id}", "PATCH"),
+    ("/api/ajuizamento/filings/{filing_id}/validar", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}/aprovar", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}/assinar", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}/protocolar", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}/confirmar-manual", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}/sincronizar", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}/cancelar", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}/transicoes", "GET"),
+    ("/api/ajuizamento/protocolos", "GET"),
 }
 
 REMOCOES_INTENCIONAIS = {

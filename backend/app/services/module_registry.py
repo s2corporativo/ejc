@@ -77,6 +77,20 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         usa_ia=True, responsavel_operacional="juridico",
     ),
     _mod(
+        "ajuizamento", "Ajuizamento", "Jurídico", "/ajuizamento",
+        ["/api/ajuizamento"],
+        perfis=PERFIS_JURIDICO,
+        dependencias=["cases", "clients", "documents", "pecas", "audit", "external_api"],
+        responsavel_operacional="juridico",
+    ),
+    _mod(
+        "ajuizamento-perfis", "Perfis de tribunal", "Administração", "/ajuizamento/perfis",
+        ["/api/ajuizamento/perfis"],
+        perfis=["superadmin", "admin"],
+        dependencias=["ajuizamento", "vault", "audit"],
+        responsavel_operacional="gestao",
+    ),
+    _mod(
         "datajud", "Processos / DataJud", "Jurídico", "/datajud",
         ["/api/datajud", "/api/processes", "/api/movimentos"],
         perfis=PERFIS_JURIDICO, dependencias=["cases", "external_api"],

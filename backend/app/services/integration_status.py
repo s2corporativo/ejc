@@ -61,6 +61,11 @@ CAPACIDADES_CONECTORES: dict[str, dict[str, bool]] = {
     "djen": _caps(intimacoes=True),
     # Infosimples (agregador pago): consulta processual TJMG por número/parte.
     "infosimples": _caps(consultar_processo=True, partes=True),
+    # Núcleo de ajuizamento: prepara/valida/revisa/assina e REGISTRA o
+    # protocolo; `protocolar` eletrônico segue False até perfil de tribunal
+    # homologado (matriz fina em GET /ajuizamento/capacidades).
+    "ajuizamento": _caps(consultar_processo=True, sincronizar_movimentacoes=True,
+                         partes=True),
 }
 
 
@@ -284,6 +289,23 @@ def build_integration_status(
             ),
             missing_detail="CELERY habilitado sem REDIS_URL — a fila MNI não sobe.",
             mode="somente leitura (sem peticionamento)",
+        ),
+        _status(
+            key="ajuizamento",
+            label="Ajuizamento (PDPJ / PJe-MNI / eproc)",
+            group="Jurídico",
+            enabled=settings.JUDICIAL_FILING_ENABLED,
+            # Sem credencial PDPJ o fluxo funciona até o registro manual do
+            # protocolo; o painel fino por tribunal é /ajuizamento/capacidades.
+            configured=True,
+            ready_detail=(
+                "Wizard de ajuizamento com validação, revisão humana e registro de "
+                "protocolo; protocolo eletrônico exige perfil de tribunal homologado."
+            ),
+            mode=(
+                "PDPJ " + ("credencial presente" if settings.PDPJ_CLIENT_ID and settings.PDPJ_CLIENT_SECRET
+                           else "REQUIRES_AUTHORIZATION")
+            ),
         ),
         _status(
             key="djen",

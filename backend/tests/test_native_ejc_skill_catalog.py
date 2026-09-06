@@ -56,13 +56,14 @@ def test_catalogo_cobre_todos_os_ramos_e_modulos() -> None:
     assert set(LEGAL_AREA_SPECS) == EXPECTED_LEGAL_AREAS
     assert set(MODULE_SKILL_SPECS) == module_keys
     assert len(LEGAL_AREA_SPECS) == 14
-    # 32 módulos = 34 (onda 2) - noticias (CORTE-4) - victory-vault (CORTE-3),
-    # cortes de 2026-09-05 — paridade com o moduleRegistry do frontend.
-    assert len(MODULE_SKILL_SPECS) == 32
-    assert len(native_skill_specs()) == 46
+    # 34 módulos = 34 (onda 2) - noticias (CORTE-4) - victory-vault (CORTE-3)
+    # + ajuizamento e ajuizamento-perfis (PR #1536) — paridade com o
+    # moduleRegistry do frontend.
+    assert len(MODULE_SKILL_SPECS) == 34
+    assert len(native_skill_specs()) == 48
 
     coverage = native_skill_coverage()
-    assert coverage["total_native_skills"] == 46
+    assert coverage["total_native_skills"] == 48
     assert coverage["modules"]["missing"] == []
     # C7: a cobertura agora é medida contra a taxonomia CANÔNICA — e acusa as
     # áreas sem método de ramo em vez de comparar o catálogo consigo mesmo.
