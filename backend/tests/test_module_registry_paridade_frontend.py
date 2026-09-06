@@ -75,6 +75,9 @@ FRONTEND_SEM_MODULO_NO_BACKEND: set[str] = {
     # Detalhe/edição de registros (sub-rotas do módulo pai já catalogado)
     "caso-novo", "caso-detalhe", "caso-jornada", "caso-entrevista",
     "cliente-detalhe", "cadastro-manual", "ramo-detalhe",
+    # Atalho de primeira classe para o ramo já canônico. O backend tributário
+    # continua pertencendo a `ramos`; não nasce um segundo módulo/API paralela.
+    "tributario",
     # Workspaces/casca cujo conteúdo já está catalogado por módulo
     "atividades", "atividades-dia", "radar", "entrada",
     "dpt360", "dpt360-subroutes", "dpt360-company-detail",
