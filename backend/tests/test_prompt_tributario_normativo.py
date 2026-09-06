@@ -25,12 +25,32 @@ def test_prompt_paf_federal_reflete_lc_227_2026() -> None:
     assert "nunca usar \"geralmente 30 dias\"" in texto
 
 
+def test_prompt_incorpora_lc_236_2026_na_redacao_vigente_do_ctn() -> None:
+    texto = PROMPT_TRIBUTARIO.casefold()
+    assert "lc 236/2026" in texto
+    assert "vigente desde 04/09/2026" in texto
+    assert "ctn art. 150 §§5º-6º" in texto
+    assert "ctn art. 165-a" in texto
+    assert "art. 168 §§2º-3º" in texto
+    assert "mediação" in texto
+    assert "arbitragem" in texto
+    assert "protesto extrajudicial da cda" in texto
+    assert "não use lista antiga de interrupções como exaustiva" in texto
+
+
+def test_prompt_prescricao_intercorrente_nao_e_soma_automatica() -> None:
+    texto = PROMPT_TRIBUTARIO.casefold()
+    assert "temas 566-571" in texto
+    assert "não converter a tese em simples soma automática" in texto
+
+
 def test_prompt_reforma_usa_base_normativa_2026_e_rejeita_aliquota_generica() -> None:
     texto = PROMPT_TRIBUTARIO.casefold()
     for referencia in (
         "ec 132/2023",
         "lc 214/2025",
         "lc 227/2026",
+        "lc 236/2026",
         "decreto 12.955/2026",
         "atos rfb/cgibs",
     ):
@@ -44,4 +64,11 @@ def test_prompt_trata_credito_como_hipotese_e_nao_promessa() -> None:
     texto = PROMPT_TRIBUTARIO.casefold()
     assert "oportunidades potenciais" in texto
     assert "não escrever \"últimos 5 anos são recuperáveis\"" in texto
+    assert "não usar data de emissão da nf-e como termo inicial universal" in texto
     assert "portal autenticado\n   não é api pública" in texto
+
+
+def test_prompt_nao_confunde_previsao_de_mediacao_arbitragem_com_disponibilidade() -> None:
+    texto = PROMPT_TRIBUTARIO.casefold()
+    assert "dependem de legislação específica para operação" in texto
+    assert "distinguir previsão normativa de mecanismo efetivamente disponível" in texto
