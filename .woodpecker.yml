@@ -51,6 +51,9 @@ steps:
       - npm run lint
       - npm test
       - npm run build
+      # Impede a reintrodução de camadas CSS inalcançáveis: compara com o teto
+      # registrado em frontend/scripts/css-orfao-teto.json.
+      - npm run audit:css:verificar
 
   ops-contracts:
     image: python:3.11-bookworm
