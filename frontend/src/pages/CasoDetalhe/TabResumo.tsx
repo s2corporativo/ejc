@@ -31,6 +31,31 @@ interface PendenciaExclusao {
   descricao: string;
 }
 
+// Fechamento inteligente (GET /cases/{id}/encerrar/diagnostico): prazo ativo
+// bloqueia; tarefas/financeiro/peças/processo ativo/próxima ação são alertas
+// que o operador confirma. Gestão (sócio+) pode justificar o bloqueio.
+interface PendenciaFechamento {
+  codigo: string;
+  tipo: string;
+  id: string | number;
+  titulo: string;
+  descricao: string;
+  destino?: string;
+}
+interface DiagnosticoFechamento {
+  pode_encerrar: boolean;
+  requer_confirmacao_alertas: boolean;
+  bloqueios: PendenciaFechamento[];
+  alertas: PendenciaFechamento[];
+  processo?: {
+    numero_processo: string | null;
+    processos_ativos: number;
+    pode_sincronizar: boolean;
+    ultima_sincronizacao: string | null;
+    erro_sincronizacao: string | null;
+  };
+}
+
 function detalheErro(e: unknown, fallback: string): string {
   const detail = (e as { response?: { data?: { detail?: unknown } } })?.response
     ?.data?.detail;
@@ -313,7 +338,11 @@ export default function TabResumo({
     // Puxa a movimentação final do tribunal (MNI/PJe) ao encerrar, para o
     // acervo do caso fechar completo. Opt-in.
     sincronizar_processo_eletronico: false,
+    confirmar_alertas: false,
+    justificativa_bloqueio: "",
   });
+  const [encDiag, setEncDiag] = useState<DiagnosticoFechamento | null>(null);
+  const [encDiagLoading, setEncDiagLoading] = useState(false);
   const [gerando, setGerando] = useState(false);
   const [honModal, setHonModal] = useState(false);
   const [honLoading, setHonLoading] = useState(false);
@@ -393,10 +422,54 @@ export default function TabResumo({
       .catch(() => {});
   }, [caso.id]);
 
+  // Diagnóstico ao abrir o modal: o operador vê prazos/tarefas/financeiro/
+  // processo ativo ANTES de confirmar, e "sincronizar antes de encerrar" já
+  // vem marcado quando há processo vinculado.
+  const abrirEncerrar = async () => {
+    setEncModal(true);
+    setEncDiag(null);
+    setEncDiagLoading(true);
+    try {
+      const { data } = await api.get<DiagnosticoFechamento>(
+        `/cases/${caso.id}/encerrar/diagnostico`,
+      );
+      setEncDiag(data);
+      setEnc((prev) => ({
+        ...prev,
+        confirmar_alertas: false,
+        justificativa_bloqueio: "",
+        sincronizar_processo_eletronico: Boolean(
+          data.processo?.pode_sincronizar && data.processo?.processos_ativos,
+        ),
+      }));
+    } catch (e: any) {
+      toast.error(
+        detalheErro(e, "Não foi possível verificar as pendências do caso."),
+      );
+    } finally {
+      setEncDiagLoading(false);
+    }
+  };
+
+  const podeJustificarBloqueio = ["superadmin", "admin", "socio"].includes(
+    user?.role || "",
+  );
+  const encBloqueado =
+    Boolean(encDiag?.bloqueios.length) &&
+    !(podeJustificarBloqueio && enc.justificativa_bloqueio.trim().length >= 20);
+  const encPrecisaConfirmar =
+    Boolean(encDiag?.alertas.length) &&
+    !enc.confirmar_alertas &&
+    !(podeJustificarBloqueio && enc.justificativa_bloqueio.trim().length >= 20);
+
   const encerrar = async () => {
     setEncLoading(true);
     try {
-      const { data } = await api.post(`/cases/${caso.id}/encerrar`, enc);
+      const payload = {
+        ...enc,
+        justificativa_bloqueio: enc.justificativa_bloqueio.trim() || null,
+      };
+      const { data } = await api.post(`/cases/${caso.id}/encerrar`, payload);
       setEncModal(false);
       toast.success(
         "Caso encerrado. Conhecimento registrado na base institucional (precedente + memória + tese).",
@@ -422,7 +495,20 @@ export default function TabResumo({
       }
       window.location.reload();
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao encerrar");
+      // 422 do fechamento inteligente traz a lista atualizada de pendências.
+      const detail = e.response?.data?.detail;
+      if (detail && typeof detail === "object" && Array.isArray(detail.alertas)) {
+        setEncDiag((prev) => ({
+          pode_encerrar: !detail.bloqueios?.length,
+          requer_confirmacao_alertas: detail.alertas.length > 0,
+          bloqueios: detail.bloqueios || [],
+          alertas: detail.alertas,
+          processo: detail.processo ?? prev?.processo,
+        }));
+        toast.error(detail.mensagem || "Caso com pendências");
+      } else {
+        toast.error(detalheErro(e, "Falha ao encerrar"));
+      }
     } finally {
       setEncLoading(false);
     }
@@ -614,6 +700,14 @@ export default function TabResumo({
           📝 Peças do caso
         </Link>
         <ExtratoCaso caso={caso} />
+        {/* Ajuizamento: mesma entidade Caso, sem redigitação — o wizard lê
+            cliente, partes, documentos e peças deste caso. */}
+        <Link
+          to={`/ajuizamento?caso=${caso.id}`}
+          className="btn-secondary flex items-center gap-1"
+        >
+          ⚖️ Ajuizar ação
+        </Link>
         {(caso as any).case_type === "extrajudicial" &&
           !(caso as any).linked_judicial_case_id && (
             <button
@@ -643,7 +737,7 @@ export default function TabResumo({
           <div className="flex flex-wrap gap-2">
             {caso.status !== "encerrado" && caso.status !== "arquivado" && (
               <button
-                onClick={() => setEncModal(true)}
+                onClick={abrirEncerrar}
                 className="btn-secondary flex items-center gap-1"
               >
                 ✓ Encerrar caso
@@ -913,6 +1007,55 @@ export default function TabResumo({
               <b>memória institucional</b> + <b>tese no banco</b>. Tudo como
               rascunho revisável (OAB).
             </p>
+            {encDiagLoading && (
+              <p className="text-xs text-slate-400">Verificando pendências…</p>
+            )}
+            {encDiag && encDiag.bloqueios.length > 0 && (
+              <Alert variant="error" title="Encerramento bloqueado">
+                <ul className="list-disc pl-4 text-xs">
+                  {encDiag.bloqueios.map((b) => (
+                    <li key={`${b.codigo}-${b.id}`}>
+                      <b>{b.titulo}</b> — {b.descricao}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1 text-xs">
+                  Conclua ou cancele os prazos antes de encerrar
+                  {podeJustificarBloqueio
+                    ? ", ou registre abaixo uma justificativa (mínimo 20 caracteres) — ela fica na auditoria."
+                    : ". Somente sócio/administração pode encerrar com justificativa."}
+                </p>
+              </Alert>
+            )}
+            {encDiag && encDiag.alertas.length > 0 && (
+              <Alert variant="warning" title="Pendências do caso">
+                <ul className="list-disc pl-4 text-xs">
+                  {encDiag.alertas.map((a) => (
+                    <li key={`${a.codigo}-${a.id}`}>
+                      <b>{a.titulo}</b> — {a.descricao}
+                    </li>
+                  ))}
+                </ul>
+              </Alert>
+            )}
+            {encDiag && !encDiag.bloqueios.length && !encDiag.alertas.length && (
+              <Alert variant="success" title="Sem pendências">
+                Nenhum prazo, tarefa, honorário, peça ou processo em aberto.
+              </Alert>
+            )}
+            {encDiag && encDiag.bloqueios.length > 0 && podeJustificarBloqueio && (
+              <div>
+                <label className="label">Justificativa para encerrar com prazo aberto</label>
+                <textarea
+                  rows={2}
+                  className="input w-full"
+                  value={enc.justificativa_bloqueio}
+                  onChange={(e) =>
+                    setEnc({ ...enc, justificativa_bloqueio: e.target.value })
+                  }
+                />
+              </div>
+            )}
             <div>
               <label className="label">Resultado</label>
               <select
@@ -971,6 +1114,18 @@ export default function TabResumo({
               />
               Alimentar a base de conhecimento
             </label>
+            {encDiag && encDiag.alertas.length > 0 && (
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={enc.confirmar_alertas}
+                  onChange={(e) =>
+                    setEnc({ ...enc, confirmar_alertas: e.target.checked })
+                  }
+                />
+                Estou ciente das pendências acima e desejo encerrar mesmo assim
+              </label>
+            )}
             <label className="flex items-start gap-2 text-sm text-slate-600">
               <input
                 type="checkbox"
@@ -1000,8 +1155,8 @@ export default function TabResumo({
             </label>
             <button
               onClick={encerrar}
-              disabled={encLoading}
-              className="btn-primary w-full"
+              disabled={encLoading || encDiagLoading || encBloqueado || encPrecisaConfirmar}
+              className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
               {encLoading ? "Encerrando..." : "Confirmar encerramento"}
             </button>

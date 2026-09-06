@@ -85,6 +85,14 @@ async def _limpar_dados_de_teste():
                  "(SELECT id FROM clients WHERE nome LIKE 'Empresa Fictícia Teste%' "
                  "OR razao_social LIKE 'Empresa%'))")
         )
+        # O kit de admissão nasce junto com o cliente (procuração + contrato de
+        # honorários), então a cadeia inclui os documentos antes de cases.
+        for tabela in ("signature_requests", "legal_docs", "procuracoes"):
+            await db.execute(
+                text(f"DELETE FROM {tabela} WHERE client_id IN "  # noqa: S608
+                     "(SELECT id FROM clients WHERE nome LIKE 'Empresa Fictícia Teste%' "
+                     "OR razao_social LIKE 'Empresa%')")
+            )
         await db.execute(
             text("DELETE FROM cases WHERE client_id IN "
                  "(SELECT id FROM clients WHERE nome LIKE 'Empresa Fictícia Teste%' "

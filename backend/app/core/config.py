@@ -493,6 +493,33 @@ class Settings(BaseSettings):
     # (consultar_processo/consultar_movimentos) raramente o encosta.
     DATAJUD_RATE_LIMIT_RPS: float = 5.0
 
+    # ── Ajuizamento e integração judicial (núcleo de protocolo) ──────────
+    # Tudo opt-in, default OFF, degradação graciosa. Nenhum conector protocola
+    # sem perfil de tribunal (judicial_integration_profiles) AUTORIZADO +
+    # HOMOLOGADO + endpoint de produção verificado + credencial válida.
+    # Fluxo de ajuizamento (wizard, validação, revisão humana, registro de
+    # protocolo). Desligado → rotas /ajuizamento respondem 503.
+    JUDICIAL_FILING_ENABLED: bool = False
+    # PDPJ-Br / Jus.br — Portal de Serviços (petição inicial). Sem habilitação
+    # institucional (integracaopdpj@cnj.jus.br) o conector fica em
+    # REQUIRES_AUTHORIZATION e nunca faz chamada remota.
+    PDPJ_INTEGRATION_ENABLED: bool = False
+    # Ambiente do SSO Keycloak PDPJ ("homologacao" | "producao") — os endpoints
+    # de token são os documentados oficialmente (services/ajuizamento/
+    # conectores/pdpj.py); nenhum outro host é aceito.
+    PDPJ_ENVIRONMENT: str = "homologacao"
+    # client_id/client_secret emitidos pelo CNJ (client_credentials). O
+    # secret NUNCA sai daqui (não vai para log, resposta nem frontend).
+    PDPJ_CLIENT_ID: str = ""
+    PDPJ_CLIENT_SECRET: str = ""
+    PDPJ_TIMEOUT_SECONDS: float = 20.0
+    # PJe via MNI Client REST (entregarManifestacaoProcessual) — host/versão
+    # vêm do perfil do tribunal; só ativa com perfil homologado.
+    PJE_MNI_ENABLED: bool = False
+    PJE_MNI_TIMEOUT_SECONDS: float = 60.0
+    # eproc — sem API pública documentada; CONDITIONAL por tribunal/perfil.
+    EPROC_INTEGRATION_ENABLED: bool = False
+
     # ── Infosimples — consultas PAGAS a sites públicos (TJMG, Receita…) ──
     # Agregador comercial (https://infosimples.com/consultas/): cada consulta
     # EXECUTADA é cobrada. Integração opt-in, desligada por padrão, com teto
@@ -1101,6 +1128,10 @@ class Settings(BaseSettings):
     ESCRITORIO_OAB: str = "251174"   # só o número; o rótulo "OAB/MG " já é aposto pelos consumidores (timbre PDF/DOCX)
     ESCRITORIO_ENDERECO: str = "Av. Gov. Valadares nº 851, sala 405, Centro, Betim"
     ESCRITORIO_CEP: str = ""
+    # Sócio-titular: OUTORGADO fixo da procuração do escritório (documental.py).
+    # A OAB é a mesma ESCRITORIO_OAB; só o nome é dado próprio da pessoa.
+    ESCRITORIO_SOCIO_TITULAR: str = "JOÃO PEDRO RODRIGUES TEIXEIRA"
+    ESCRITORIO_SITE: str = "https://depaulateixeira.adv.br"
 
     # Admissão do cliente: procuração + contrato de honorários nascem JUNTO com
     # o cadastro (decisão do titular — é a base do sistema, não um extra sob
