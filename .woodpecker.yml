@@ -1,6 +1,6 @@
 # DIAGNÓSTICO TEMPORÁRIO #1556 — branch diag/woodpecker-failure-1556
-# Não mergear. Executa apenas o gate backend para identificar a camada que
-# mantém a main vermelha. O .woodpecker.yml oficial da main permanece intacto.
+# Não mergear. Rodada 2: executa somente os checks rápidos/estruturais do backend.
+# O .woodpecker.yml oficial da main permanece intacto.
 when:
   - event: pull_request
   - event: manual
@@ -14,7 +14,7 @@ services:
       POSTGRES_DB: ejc_db
 
 steps:
-  backend:
+  backend-fast:
     image: python:3.11-bookworm
     environment:
       DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@db:5432/ejc_db
@@ -32,4 +32,3 @@ steps:
       - until pg_isready -h db -U ejc_user -q; do sleep 1; done
       - python -m alembic upgrade head
       - pytest tests/test_alembic_single_head.py tests/test_rotas_registro_explicito.py -q
-      - pytest tests -q
