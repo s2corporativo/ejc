@@ -41,8 +41,8 @@ descreve gates de um CI que não existe mais.
 |---|---|---|
 | P0 | 0 | — |
 | P1 | 4 | INF-01 sondas sem `--max-time` na esteira automática · INF-02 logs de container sem rotação · INF-03 scripts legados que contornam os gates · INF-04 offsite como cópia única do backup |
-| P2 | 8 | INF-05 a INF-12 (rede/Redis, Postgres `shm`, Nginx host×container, `curl -k`, passo fatal de RAG no deploy, dois caminhos de deploy, retenção divergente, observabilidade do host) |
-| P3 | 5 | INF-13 a INF-17 (imagens, override versionado, documentação, CI, credencial de acesso) |
+| P2 | 9 | INF-05 a INF-13 (rede/Redis, Postgres `shm`, Redis `maxmemory`/CPU, Nginx host×container, `curl -k`, passo fatal de RAG no deploy, dois caminhos de deploy, retenção divergente, observabilidade do host) |
+| P3 | 5 | INF-14 a INF-18 (imagens, override versionado, documentação, CI, credencial de acesso) |
 
 Nenhum achado exige janela de manutenção. Os quatro P1 são corrigíveis em
 scripts e no compose, sem migration e sem tocar o banco.
