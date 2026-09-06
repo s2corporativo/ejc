@@ -1,9 +1,8 @@
 """Regressões dos gates jurídicos tributários do Issue #1553.
 
-O PAF federal possui correção temporal própria no PR #1554, mas permanece
-não homologado até fechamento da revisão jurídica. A simulação geral da Reforma
-Tributária também fica fora da cadeia de demonstrativo enquanto usar premissas
-genéricas de alíquota/atividade sem proveniência completa de 2026.
+PAF, prescrição/decadência e a simulação geral da Reforma permanecem fora da
+cadeia de demonstrativo até revisão jurídica completa. O objetivo destes testes
+é impedir promoção silenciosa de cálculo ainda não homologado.
 """
 from app.services.homologacao_ferramentas import (
     FERRAMENTAS_NAO_HOMOLOGADAS,
@@ -12,6 +11,7 @@ from app.services.homologacao_ferramentas import (
 )
 
 ROTA_PAF = "/tributario/ferramentas/auto-infracao-prazos"
+ROTA_PRESCRICAO = "/tributario/ferramentas/prescricao-decadencia"
 ROTA_REFORMA = "/tributario/ferramentas/reforma-tributaria"
 
 
@@ -22,16 +22,25 @@ def test_prazo_auto_infracao_tributario_permanece_nao_homologado() -> None:
     assert "LC 227/2026" in motivo
 
 
+def test_prescricao_decadencia_desomologada_apos_lc236() -> None:
+    assert ROTA_PRESCRICAO in FERRAMENTAS_NAO_HOMOLOGADAS
+    motivo = motivo_nao_homologada(ROTA_PRESCRICAO)
+    assert motivo is not None
+    assert "LC 236/2026" in motivo
+    assert "150/151/168/174" in motivo
+
+
 def test_reforma_tributaria_permanece_nao_homologada_ate_versionamento_2026() -> None:
     assert ROTA_REFORMA in FERRAMENTAS_NAO_HOMOLOGADAS
     motivo = motivo_nao_homologada(ROTA_REFORMA)
     assert motivo is not None
     assert "LC 227/2026" in motivo
+    assert "LC 236/2026" in motivo
     assert "receita bruta" in motivo
 
 
 def test_normalizacao_nao_contorna_gates_tributarios() -> None:
-    for rota in (ROTA_PAF, ROTA_REFORMA):
+    for rota in (ROTA_PAF, ROTA_PRESCRICAO, ROTA_REFORMA):
         for caminho in (
             rota,
             f"/api{rota}",
@@ -43,12 +52,18 @@ def test_normalizacao_nao_contorna_gates_tributarios() -> None:
 
 
 def test_selo_impede_promocao_silenciosa_do_resultado() -> None:
-    paf = selo_homologacao(ROTA_PAF, {"prazo_impugnacao": "20 dias úteis"})
-    reforma = selo_homologacao(
-        ROTA_REFORMA,
-        {"estimativa_informativa_iva_pleno": {"aliquota_referencia_pct": 26.5}},
-    )
+    respostas = [
+        selo_homologacao(ROTA_PAF, {"prazo_impugnacao": "20 dias úteis"}),
+        selo_homologacao(
+            ROTA_PRESCRICAO,
+            {"instituto": "PRESCRIÇÃO", "prazo": "5 anos"},
+        ),
+        selo_homologacao(
+            ROTA_REFORMA,
+            {"estimativa_informativa_iva_pleno": {"aliquota_referencia_pct": 26.5}},
+        ),
+    ]
 
-    for resposta in (paf, reforma):
+    for resposta in respostas:
         assert resposta["homologada"] is False
         assert "não homologado" in resposta["aviso_homologacao"]
