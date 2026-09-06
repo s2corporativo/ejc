@@ -138,7 +138,7 @@ no valor total de <b>R$ {total:.2f}</b>, que se passa a discriminar:</p>
 <p>Diante do exposto, <b>NOTIFICA-SE</b> a instituição para que, no prazo de <b>10 (dez) dias</b>, promova a
 restituição/estorno dos valores apontados ou apresente justificativa documental, sob pena de adoção das
 medidas judiciais cabíveis.</p>
-<p>{(dados.get('cidade') or 'Betim/MG')}, {hoje}.</p>
+<p>{html.escape(dados.get('cidade') or 'Betim/MG')}, {hoje}.</p>
 <div class="assin">_______________________________<br>{adv} — {oab}</div>"""
     elif tipo == "peticao":
         corpo = f"""<h1>Petição Inicial — Repetição de Indébito c/c Danos</h1>
@@ -153,7 +153,7 @@ CMN/BCB indicadas no quadro acima — a serem confirmadas e fundamentadas pelo a
 <p><b>DOS PEDIDOS.</b> Requer-se: (a) a declaração de inexigibilidade das cobranças indevidas; (b) a restituição
 na forma do art. 42, parágrafo único, do CDC; (c) o que mais for de direito.</p>
 <p>Dá-se à causa o valor de R$ {total:.2f}.</p>
-<p>{(dados.get('cidade') or 'Betim/MG')}, {hoje}.</p>
+<p>{html.escape(dados.get('cidade') or 'Betim/MG')}, {hoje}.</p>
 <div class="assin">_______________________________<br>{adv} — {oab}</div>"""
     elif tipo == "bacen":
         corpo = f"""<h1>Reclamação — Banco Central (RDR)</h1>

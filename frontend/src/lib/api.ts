@@ -1,17 +1,79 @@
 // ── API client com refresh automático ────────────────────
-// O access token curto vive em localStorage (ejc_access). O refresh token
-// vive num cookie httpOnly (ejc_refresh) setado/lido pelo backend — por isso
-// TODAS as chamadas usam withCredentials para o navegador enviar o cookie.
+// O access token curto vive SÓ EM MEMÓRIA (FE-02 da auditoria de 2026-09-06):
+// nunca em localStorage, para que um XSS não vire sequestro de sessão pelo
+// tempo de vida do access. Ao recarregar a página ele é reidratado por
+// POST /api/auth/refresh (stores/auth.ts → bootstrap). O refresh token vive
+// num cookie httpOnly (ejc_refresh) setado/lido pelo backend — por isso TODAS
+// as chamadas usam withCredentials para o navegador enviar o cookie.
 import axios from "axios";
 import { toast } from "../components/Toast";
 import type { AuthTokens, Deadline } from "../types";
 
 export const API_BASE_URL = "/api/v1";
-const api = axios.create({ baseURL: API_BASE_URL, withCredentials: true });
 
-/** Access token curto atualmente em localStorage (ou null). */
+/** Tempo máximo padrão de uma requisição (FE-03): backend travado não deixa
+ *  a tela pendurada para sempre. */
+export const API_TIMEOUT_MS = 30_000;
+/** Override para upload (multipart) e rotas de IA, que legitimamente demoram. */
+export const API_TIMEOUT_LONGO_MS = 180_000;
+/** Prefixos (sem /api/v1) cujas chamadas usam o timeout longo. */
+export const PREFIXOS_TIMEOUT_LONGO: readonly string[] = [
+  "/ai",
+  "/ia",
+  "/legal-docs",
+  "/peca",
+  "/raio-x",
+  "/documentos-ia",
+  "/dossie",
+  "/jurimetria",
+  "/analise-bancaria",
+  "/bank-analysis",
+  "/entrada-universal",
+];
+
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  withCredentials: true,
+  timeout: API_TIMEOUT_MS,
+});
+
+// Chave legada do access em localStorage. Só é REMOVIDA (nunca lida): a
+// sessão volta pelo cookie de refresh, e um token deixado por versão antiga
+// não pode continuar exposto ao DOM.
+const CHAVE_ACCESS_LEGADA = "ejc_access";
+try {
+  localStorage.removeItem(CHAVE_ACCESS_LEGADA);
+} catch {
+  /* storage indisponível (SSR/teste) não impede o cliente */
+}
+
+let accessToken: string | null = null;
+
+/** Access token curto atualmente em memória (ou null). */
 export function getAccessToken(): string | null {
-  return localStorage.getItem("ejc_access");
+  return accessToken;
+}
+
+/** Define/limpa o access token em memória (login, refresh, 2FA, logout). */
+export function setAccessToken(token: string | null): void {
+  accessToken = token && token.trim() ? token : null;
+}
+
+function usaTimeoutLongo(config: {
+  url?: string;
+  data?: unknown;
+  headers?: { [key: string]: unknown } | undefined;
+}): boolean {
+  const url = String(config.url || "");
+  if (PREFIXOS_TIMEOUT_LONGO.some((p) => url === p || url.startsWith(`${p}/`)))
+    return true;
+  if (typeof FormData !== "undefined" && config.data instanceof FormData)
+    return true;
+  const headers = (config.headers ?? {}) as Record<string, unknown>;
+  const contentType = String(
+    headers["Content-Type"] ?? headers["content-type"] ?? "",
+  );
+  return contentType.toLowerCase().startsWith("multipart/");
 }
 
 api.interceptors.request.use((config) => {
@@ -22,6 +84,12 @@ api.interceptors.request.use((config) => {
   else if (url.startsWith("/api/")) config.url = url.slice("/api".length);
   else if (url.startsWith("/v1/")) config.url = url.slice("/v1".length);
 
+  // Só eleva quando o chamador NÃO definiu um timeout próprio (o valor que
+  // chega aqui é o default do cliente). Quem passa `timeout` explícito vence.
+  if (config.timeout === API_TIMEOUT_MS && usaTimeoutLongo(config)) {
+    config.timeout = API_TIMEOUT_LONGO_MS;
+  }
+
   const token = getAccessToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
@@ -31,8 +99,8 @@ let refreshing: Promise<string> | null = null;
 
 /**
  * Renova o access token usando o refresh que está no cookie httpOnly
- * `ejc_refresh`. Sem body — o cookie carrega o refresh. Grava apenas o novo
- * access em localStorage. Chamadas concorrentes compartilham a mesma Promise.
+ * `ejc_refresh`. Sem body — o cookie carrega o refresh. Guarda apenas o novo
+ * access em memória. Chamadas concorrentes compartilham a mesma Promise.
  */
 export function refreshAccessToken(): Promise<string> {
   refreshing ??= axios
@@ -44,13 +112,32 @@ export function refreshAccessToken(): Promise<string> {
     .post<AuthTokens>("/api/auth/refresh", {}, { withCredentials: true })
     .then((res) => {
       const token = res.data.access_token;
-      localStorage.setItem("ejc_access", token);
+      setAccessToken(token);
       return token;
     })
     .finally(() => {
       refreshing = null;
     });
   return refreshing;
+}
+
+/** Segundos de espera a partir do header `Retry-After` (segundos ou HTTP-date). */
+export function segundosRetryAfter(valor: unknown): number | null {
+  if (valor === undefined || valor === null || valor === "") return null;
+  const texto = String(valor).trim();
+  if (/^\d+$/.test(texto)) return Number(texto);
+  const data = Date.parse(texto);
+  if (Number.isNaN(data)) return null;
+  return Math.max(0, Math.ceil((data - Date.now()) / 1000));
+}
+
+/** Mensagem pt-BR do toast de 429, com o tempo de espera quando conhecido. */
+export function mensagemRateLimit(retryAfter: unknown): string {
+  const segundos = segundosRetryAfter(retryAfter);
+  if (segundos === null || segundos <= 0) {
+    return "Muitas requisições em pouco tempo. Aguarde um instante e tente novamente.";
+  }
+  return `Muitas requisições em pouco tempo. Tente novamente em ${segundos} segundo${segundos === 1 ? "" : "s"}.`;
 }
 
 api.interceptors.response.use(
@@ -98,6 +185,15 @@ api.interceptors.response.use(
       !isAuthenticationRequest
     ) {
       toast.error("Sem permissão para esta ação");
+      return Promise.reject(error);
+    }
+
+    // 429 (rate limit): antes chegava como erro genérico. Avisa com o tempo de
+    // espera do `Retry-After` quando o backend o envia (slowapi manda em
+    // segundos; HTTP-date também é aceito). Requisições de autenticação ficam
+    // de fora — a tela de login mostra o `detail` do backend por conta própria.
+    if (error.response?.status === 429 && !isAuthenticationRequest) {
+      toast.error(mensagemRateLimit(error.response?.headers?.["retry-after"]));
       return Promise.reject(error);
     }
 
@@ -415,6 +511,17 @@ export async function avancarOrquestrador(
   return data;
 }
 
+/** Chave do caso ativo (stores/caseContext.ts) — limpa pela CHAVE para não
+ *  importar a store aqui (ciclo: caseContext importa api). */
+export const CHAVE_CASO_ATIVO = "ejc_caso_ativo";
+export function limparCasoAtivo(): void {
+  try {
+    sessionStorage.removeItem(CHAVE_CASO_ATIVO);
+  } catch {
+    /* storage indisponível não pode quebrar o logout */
+  }
+}
+
 // `redirectTo` permite chegar ao /login com contexto (ex.: ?motivo=senha-alterada
 // após a troca de senha obrigatória) — o redirect é hard, então toasts não
 // sobrevivem. Tipado como `unknown` porque logout também é usado direto como
@@ -422,12 +529,16 @@ export async function avancarOrquestrador(
 export function logout(redirectTo?: unknown) {
   // O backend limpa o cookie httpOnly ejc_refresh; o cookie vai junto via withCredentials.
   axios.post("/api/auth/logout", {}, { withCredentials: true }).catch(() => {});
-  localStorage.removeItem("ejc_access");
+  setAccessToken(null);
+  localStorage.removeItem(CHAVE_ACCESS_LEGADA);
   localStorage.removeItem("ejc_user");
   // Rascunho de intake carrega dados pessoais extraídos de documentos — não
   // pode sobreviver ao fim da sessão (LGPD). Limpa pela CHAVE para não criar
   // ciclo de import em runtime (intakeRascunho importa apenas types daqui).
   localStorage.removeItem("ejc_intake_rascunho");
+  // FE-07: o caso ativo (id, título, nº do processo, cliente) fica em
+  // sessionStorage e reidratava para o PRÓXIMO usuário da mesma aba.
+  limparCasoAtivo();
   window.location.href =
     typeof redirectTo === "string" && redirectTo.startsWith("/login?")
       ? redirectTo

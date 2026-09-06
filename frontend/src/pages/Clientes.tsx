@@ -1,7 +1,13 @@
 import { toast } from "../components/Toast";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
-import { Plus, Search, ShieldAlert, KeyRound, FileSignature } from "lucide-react";
+import {
+  Plus,
+  Search,
+  ShieldAlert,
+  KeyRound,
+  FileSignature,
+} from "lucide-react";
 import api from "../lib/api";
 import { soDigitos } from "../utils/phone";
 import type { Client, Paged } from "../types";
@@ -84,16 +90,15 @@ export default function Clientes() {
   const seq = useRef(0);
 
   const role = user?.role || "";
-  const podeCriarAcesso = ["superadmin", "admin", "socio", "advogado"].includes(role);
+  const podeCriarAcesso = ["superadmin", "admin", "socio", "advogado"].includes(
+    role,
+  );
   const podeRelatorioLgpd = ["superadmin", "admin", "socio"].includes(role);
   // Emissão/consulta de procuração e contrato é ato jurídico: o backend exige
   // advogado+ (requer_advogado). O botão espelha esse gate — não o substitui.
-  const podeVerAdmissao = [
-    "superadmin",
-    "admin",
-    "socio",
-    "advogado",
-  ].includes(role);
+  const podeVerAdmissao = ["superadmin", "admin", "socio", "advogado"].includes(
+    role,
+  );
   const [admissaoModal, setAdmissaoModal] = useState<Client | null>(null);
   const [admissaoPecas, setAdmissaoPecas] = useState<PecaAdmissao[] | null>(
     null,
@@ -181,7 +186,8 @@ export default function Clientes() {
       if (req !== admissaoReq.current) return;
       setAdmissaoPecas([]);
       toast.error(
-        e.response?.data?.detail || "Falha ao carregar os documentos de admissão",
+        e.response?.data?.detail ||
+          "Falha ao carregar os documentos de admissão",
       );
     } finally {
       if (req === admissaoReq.current) setAdmissaoLoading(false);
@@ -290,6 +296,8 @@ export default function Clientes() {
         <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
         <input
           className="input pl-9"
+          type="search"
+          aria-label="Buscar clientes por nome, CPF ou CNPJ"
           placeholder="Buscar por nome, CPF, CNPJ..."
           value={search}
           onChange={(e) => {
@@ -799,9 +807,9 @@ export default function Clientes() {
               Poderes da nova procuração
             </p>
             <p className="mb-3 text-xs text-slate-500">
-              Gerar novamente cria uma versão nova <strong>com estes
-              poderes</strong> — confira antes, porque é o que o cliente
-              assinará. A versão anterior continua no histórico.
+              Gerar novamente cria uma versão nova{" "}
+              <strong>com estes poderes</strong> — confira antes, porque é o que
+              o cliente assinará. A versão anterior continua no histórico.
             </p>
             <div className="space-y-2">
               <select
@@ -835,6 +843,7 @@ export default function Clientes() {
               </label>
               <input
                 className="input w-full"
+                aria-label="Poderes especiais (art. 105 do CPC), opcional"
                 placeholder="Poderes especiais (art. 105 do CPC) — opcional"
                 value={admissaoPoderes.poderes_especiais}
                 onChange={(e) =>
@@ -879,6 +888,7 @@ export default function Clientes() {
               <input
                 className="input"
                 type="email"
+                aria-label="E-mail de login do cliente"
                 placeholder="E-mail de login"
                 value={acessoForm.email}
                 onChange={(e) =>
@@ -889,6 +899,7 @@ export default function Clientes() {
                 className="input"
                 type="password"
                 autoComplete="new-password"
+                aria-label="Senha inicial do acesso ao portal"
                 placeholder="Senha inicial (mín. 10, com letra, número e símbolo)"
                 value={acessoForm.senha_inicial}
                 onChange={(e) =>

@@ -1,5 +1,10 @@
 import { create } from "zustand";
-import api, { getAccessToken } from "../lib/api";
+import api, {
+  getAccessToken,
+  limparCasoAtivo,
+  refreshAccessToken,
+  setAccessToken,
+} from "../lib/api";
 import { RASCUNHO_KEY } from "../lib/intakeRascunho";
 import { limparCadastroManual } from "./cadastroManual";
 import type { User } from "../types";
@@ -27,24 +32,67 @@ function limparRascunhosEntrada() {
   }
 }
 
+// FE-08: só o necessário para montar o shell antes do bootstrap fica em
+// localStorage. E-mail, telefone, OAB e OAB do DJEN são dados pessoais que
+// não precisam sobreviver ao reload — o /users/me repõe tudo em memória.
+export const CAMPOS_USUARIO_PERSISTIDOS = [
+  "id",
+  "full_name",
+  "role",
+  "permissions",
+  "avatar_url",
+] as const satisfies readonly (keyof User)[];
+
+export type StoredUser = Pick<
+  User,
+  (typeof CAMPOS_USUARIO_PERSISTIDOS)[number]
+>;
+
 function readStoredUser(): User | null {
   try {
-    return JSON.parse(
-      localStorage.getItem("ejc_user") || "null",
-    ) as User | null;
+    const raw = localStorage.getItem("ejc_user");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<User> | null;
+    if (!parsed || typeof parsed.id !== "string" || !parsed.id) return null;
+    return parsed as User;
   } catch {
     localStorage.removeItem("ejc_user");
     return null;
   }
 }
 
+/** Recorta o usuário aos campos persistíveis (FE-08). */
+export function partializeUser(user: User): StoredUser {
+  const out: Partial<User> = {};
+  for (const campo of CAMPOS_USUARIO_PERSISTIDOS) {
+    if (user[campo] !== undefined) {
+      (out as Record<string, unknown>)[campo] = user[campo];
+    }
+  }
+  return out as StoredUser;
+}
+
 function persistUser(user: User | null) {
   try {
-    if (user) localStorage.setItem("ejc_user", JSON.stringify(user));
-    else localStorage.removeItem("ejc_user");
+    if (user) {
+      localStorage.setItem("ejc_user", JSON.stringify(partializeUser(user)));
+    } else localStorage.removeItem("ejc_user");
   } catch {
     // Storage indisponível não deve derrubar a sessão em memória.
   }
+}
+
+/** Limpa TUDO que identifica a sessão anterior (token, usuário, rascunhos,
+ *  caso ativo). Fonte única para o logout da store e a queda de sessão. */
+function limparSessaoLocal() {
+  setAccessToken(null);
+  localStorage.removeItem(RASCUNHO_KEY);
+  limparRascunhosEntrada();
+  limparCadastroManual();
+  // FE-07: o caso ativo vive em sessionStorage e reidratava para o próximo
+  // usuário da mesma aba (id, título, nº do processo, nome do cliente).
+  limparCasoAtivo();
+  persistUser(null);
 }
 
 interface AuthState {
@@ -59,18 +107,35 @@ interface AuthState {
 }
 
 const storedUser = readStoredUser();
-const initialStatus: AuthStatus = getAccessToken()
-  ? "initializing"
-  : "unauthenticated";
+// FE-02: o access token não sobrevive ao reload (só memória). Um usuário
+// persistido é o indício de sessão anterior — o bootstrap tenta reidratar o
+// access pelo cookie httpOnly de refresh antes de decidir.
+const initialStatus: AuthStatus =
+  getAccessToken() || storedUser ? "initializing" : "unauthenticated";
 
 export const useAuth = create<AuthState>((set, get) => ({
   user: storedUser,
   status: initialStatus,
   bootstrap: async () => {
     if (!getAccessToken()) {
-      persistUser(null);
-      set({ user: null, status: "unauthenticated" });
-      return;
+      // Sem indício de sessão anterior: não bate no /auth/refresh à toa
+      // (anônimo na tela de login).
+      if (!get().user && !readStoredUser()) {
+        persistUser(null);
+        set({ user: null, status: "unauthenticated" });
+        return;
+      }
+      set({ status: "initializing" });
+      try {
+        // Reidrata o access em memória pelo cookie httpOnly `ejc_refresh`.
+        // Promise compartilhada em api.ts: chamadas concorrentes não rotacionam
+        // o refresh duas vezes.
+        await refreshAccessToken();
+      } catch {
+        limparSessaoLocal();
+        set({ user: null, status: "unauthenticated" });
+        return;
+      }
     }
 
     set({ status: "initializing" });
@@ -121,11 +186,7 @@ export const useAuth = create<AuthState>((set, get) => ({
       }
 
       if (responseStatus === 401 || responseStatus === 403) {
-        localStorage.removeItem("ejc_access");
-        localStorage.removeItem(RASCUNHO_KEY);
-        limparRascunhosEntrada();
-        limparCadastroManual();
-        persistUser(null);
+        limparSessaoLocal();
         set({ user: null, status: "unauthenticated" });
         return;
       }
@@ -144,12 +205,9 @@ export const useAuth = create<AuthState>((set, get) => ({
     set({ user, status: "authenticated" });
   },
   clearSession: () => {
-    localStorage.removeItem("ejc_access");
     // O rascunho de intake carrega dados pessoais extraídos de documentos —
     // não pode sobreviver ao fim da sessão em estação compartilhada (LGPD).
-    localStorage.removeItem(RASCUNHO_KEY);
-    limparRascunhosEntrada();
-    persistUser(null);
+    limparSessaoLocal();
     set({ user: null, status: "unauthenticated" });
   },
   loadUser: () => {

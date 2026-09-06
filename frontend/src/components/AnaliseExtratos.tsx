@@ -34,6 +34,26 @@ const ETAPAS_MINUTA: { num: number; titulo: string }[] = [
 type StatusEtapa = "aguardando" | "em_andamento" | "concluido";
 type FaseMinuta = "gerando" | "concluido" | "erro";
 
+/**
+ * FE-01: abre o HTML gerado pelo backend numa aba nova via Blob/objectURL —
+ * sem `document.write` numa janela `about:blank` (que herdava a origem da SPA
+ * e podia executar script contra a sessão). `noopener` corta a referência
+ * à janela de origem. O backend escapa os campos interpolados
+ * (bank_report.py) e o CSP `script-src 'self'` vale para o documento blob.
+ */
+export function abrirHtmlEmNovaAba(html: string): boolean {
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const aberta = window.open(url, "_blank", "noopener,noreferrer");
+  // Revoga depois que a aba já carregou o documento (o objeto vive na aba).
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  if (!aberta) {
+    toast.info("Permita pop-ups para visualizar o documento gerado.");
+    return false;
+  }
+  return true;
+}
+
 function fmt(v: any) {
   return Number(v || 0).toLocaleString("pt-BR", {
     minimumFractionDigits: 2,
@@ -112,11 +132,7 @@ export default function AnaliseExtratos() {
         `/bank-analysis/${res.analise.id}/documento`,
         { tipo },
       );
-      const w = window.open("", "_blank");
-      if (w) {
-        w.document.write(data.html);
-        w.document.close();
-      }
+      abrirHtmlEmNovaAba(String(data?.html ?? ""));
     } catch (e) {
       toast.error(mensagemErroHttp(e, "Não foi possível gerar o documento."));
     }

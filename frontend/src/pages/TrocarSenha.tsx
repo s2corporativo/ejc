@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import api, { logout } from "../lib/api";
+import api, { logout, setAccessToken } from "../lib/api";
 import { toast } from "../components/Toast";
 import { useAuth } from "../stores/auth";
 
@@ -38,7 +38,7 @@ export default function TrocarSenha() {
         // Backend devolve tokens novos (mesmo formato do login): mantém a
         // sessão em vez de derrubar o usuário de volta ao /login logo após
         // ele criar a senha. O refresh novo vem no cookie httpOnly.
-        localStorage.setItem("ejc_access", data.access_token);
+        setAccessToken(data.access_token);
         if (data.precisa_configurar_2fa) {
           toast.success("Senha alterada. Agora proteja a conta com o 2FA.");
           nav("/configurar-2fa", { replace: true });

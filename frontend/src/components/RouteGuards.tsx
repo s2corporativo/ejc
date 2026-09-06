@@ -1,7 +1,18 @@
-import type { ReactElement } from "react";
+import { useEffect, type ReactElement } from "react";
 import { Navigate, useLocation } from "react-router";
 import { Spinner } from "./UI";
+import { toast } from "./Toast";
 import { useAuth } from "../stores/auth";
+
+export const MENSAGEM_ACESSO_NEGADO =
+  "Você não tem permissão para acessar esta área. Voltamos para a página inicial.";
+
+/** FE-06: avisa UMA vez (efeito, não no render) antes do redirect silencioso. */
+function useAvisoAcessoNegado(negado: boolean) {
+  useEffect(() => {
+    if (negado) toast.info(MENSAGEM_ACESSO_NEGADO);
+  }, [negado]);
+}
 
 function RouteLoading() {
   return (
@@ -54,10 +65,11 @@ export function RoleOnly({
   children: ReactElement;
 }) {
   const { status, user } = useAuth();
+  const negado =
+    status !== "initializing" && (!user?.role || !roles.includes(user.role));
+  useAvisoAcessoNegado(negado);
   if (status === "initializing") return <RouteLoading />;
-  if (!user?.role || !roles.includes(user.role)) {
-    return <Navigate to="/" replace />;
-  }
+  if (negado) return <Navigate to="/" replace />;
   return children;
 }
 
@@ -69,11 +81,13 @@ export function PermissionOnly({
   children: ReactElement;
 }) {
   const { status, user } = useAuth();
-  if (status === "initializing") return <RouteLoading />;
-  if (user?.role === "superadmin") return children;
   const current = new Set(user?.permissions ?? []);
-  if (!permissions.every((permission) => current.has(permission))) {
-    return <Navigate to="/" replace />;
-  }
+  const negado =
+    status !== "initializing" &&
+    user?.role !== "superadmin" &&
+    !permissions.every((permission) => current.has(permission));
+  useAvisoAcessoNegado(negado);
+  if (status === "initializing") return <RouteLoading />;
+  if (negado) return <Navigate to="/" replace />;
   return children;
 }

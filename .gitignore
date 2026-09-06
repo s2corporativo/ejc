@@ -115,3 +115,7 @@ backend/app/seeds/backups/
 backend/app/eval/relatorio_gold_ia.json
 # Worktrees efêmeros criados por agentes de IA para trabalho isolado.
 .claude/worktrees/
+
+# TQ-01: o frontend usa npm (package-lock.json + `npm ci` no Dockerfile/CI);
+# um lockfile pnpm paralelo diverge com o tempo e testa outra árvore.
+pnpm-lock.yaml

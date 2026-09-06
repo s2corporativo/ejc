@@ -27,7 +27,7 @@ const APP_LITERAL_ROUTES = [
   "/portal/assinaturas",
   "/portal/mensagens",
   "/portal/documentos",
-  "/ia-governanca/provedores",
+  // FE-05: /ia-governanca/provedores agora vive no moduleRegistry (hidden).
 ];
 
 const KNOWN_ROUTES: string[] = [

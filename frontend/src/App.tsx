@@ -21,11 +21,7 @@ import {
   RoleOnly,
   StaffOnly,
 } from "./components/RouteGuards";
-import {
-  LEGACY_REDIRECTS,
-  ROLES,
-  STAFF_ROUTES,
-} from "./config/moduleRegistry";
+import { LEGACY_REDIRECTS, STAFF_ROUTES } from "./config/moduleRegistry";
 import { useAuth } from "./stores/auth";
 import Login from "./pages/LoginModern";
 
@@ -44,7 +40,6 @@ const PortalAssinaturas = lazy(
 );
 const PortalMensagens = lazy(() => import("./pages/portal/PortalMensagens"));
 const PortalDocumentos = lazy(() => import("./pages/portal/PortalDocumentos"));
-const PainelProvedoresIA = lazy(() => import("./pages/PainelProvedoresIA"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Alias antigo /clientes/:clientId/dossie removido de STAFF_ROUTES; como
@@ -180,17 +175,6 @@ export default function App() {
                   />
                 );
               })}
-
-              {/* Subrota contextual da Governança da IA: deliberadamente não é
-                  um novo módulo/menu; permanece protegida pelos mesmos papéis. */}
-              <Route
-                path="/ia-governanca/provedores"
-                element={
-                  <RoleOnly roles={ROLES.gestores}>
-                    <PainelProvedoresIA />
-                  </RoleOnly>
-                }
-              />
 
               {/* FLX-029: LegacyRedirect mescla a query/hash de origem com o
                   destino (params embutidos no destino vencem em conflito). */}

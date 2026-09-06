@@ -54,10 +54,11 @@ export const PORTAL_APP_ROUTES = [
   "/portal/mensagens",
   "/portal/documentos",
 ] as const;
-// Subrotas contextuais de módulos existentes: não viram módulo/menu independente.
-export const CONTEXTUAL_STAFF_APP_ROUTES = [
-  "/ia-governanca/provedores", // painel técnico dentro da Governança da IA
-] as const;
+// Subrotas contextuais de módulos existentes montadas literalmente no App.
+// FE-05: `/ia-governanca/provedores` migrou para o registry (entrada hidden
+// `governanca-ia-provedores`); a lista fica vazia de propósito — toda rota de
+// staff nasce no moduleRegistry.
+export const CONTEXTUAL_STAFF_APP_ROUTES = [] as const;
 // Aliases legados com segmento dinâmico: LEGACY_REDIRECTS só suporta `to`
 // estático (Navigate não interpola :params), então precisam de uma <Route>
 // dedicada no App montando um pequeno redirect component em vez de entrar

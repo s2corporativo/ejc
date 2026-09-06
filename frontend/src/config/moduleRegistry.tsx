@@ -48,6 +48,10 @@ export const ROLES = {
     "estagiario",
   ],
   compliance: ["superadmin", "admin", "socio", "advogado"],
+  // "advogado+" hierárquico do backend (ROLE_LEVEL >= advogado): gates
+  // `_pode_editar` de diario_oficial.py e `require_roles(["advogado"])` de
+  // datajud.py. Mesmo conjunto de `compliance`, nomeado pelo que espelha.
+  advogados: ["superadmin", "admin", "socio", "advogado"],
   // Espelha a matriz `_CLIENTES` do backend (routers/clients.py): gestão e
   // consulta de clientes. financeiro/estagiario/advogado_auxiliar recebem 403.
   clientes: ["superadmin", "admin", "socio", "advogado", "secretaria"],
@@ -111,6 +115,7 @@ const InteligenciaWorkspace = lazy(
   () => import("../pages/InteligenciaWorkspace"),
 );
 const GovernancaIA = lazy(() => import("../pages/GovernancaIA"));
+const PainelProvedoresIA = lazy(() => import("../pages/PainelProvedoresIA"));
 // CONSOLIDAÇÃO CONHECIMENTO 2026-07: as superfícies KnowledgeHub, Biblioteca,
 // MemoriaInstitucional e Wiki foram unificadas na aba canônica
 // "Conhecimento" da Inteligência (/inteligencia?tab=conhecimento). As rotas
@@ -264,6 +269,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Gerir o escritório",
     icon: Users,
     component: CRMLeads,
+    // FE-04: GET /clients/ exige a matriz `_CLIENTES` (routers/clients.py).
+    roles: ROLES.clientes,
     helpKey: "crm",
     status: "hidden",
     sensitive: true,
@@ -361,6 +368,11 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Trabalhar um caso",
     icon: Gavel,
     component: Casos,
+    // FE-04: GET /cases/ chama requer_equipe_juridica (allowlist EXATA,
+    // Issue #694) — financeiro e secretaria recebem 403 na listagem. O
+    // detalhe (/casos/:id) segue sem papel: o backend só filtra por
+    // ownership e a secretaria abre o caso que acabou de criar.
+    roles: ROLES.juridico,
     showInNav: true,
     essential: true,
     order: 20,
@@ -577,6 +589,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Trabalhar um caso",
     icon: ListChecks,
     component: Checklists,
+    // FE-04: listagem exige EQUIPE_JURIDICA (`_pode_editar`, checklists.py).
+    roles: ROLES.juridico,
     status: "hidden",
     helpKey: "checklists",
     sensitive: true,
@@ -644,6 +658,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Pesquisar & IA",
     icon: Scale,
     component: DataJudBusca,
+    // FE-04: require_roles(["advogado"]) hierárquico (datajud.py).
+    roles: ROLES.advogados,
     status: "hidden",
     helpKey: "datajud",
     sensitive: true,
@@ -657,6 +673,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Pesquisar & IA",
     icon: ScrollText,
     component: DiarioOficial,
+    // FE-04: todos os GETs exigem advogado+ (`_pode_editar`, diario_oficial.py).
+    roles: ROLES.advogados,
     status: "hidden",
     helpKey: "diario-oficial",
     sensitive: true,
@@ -683,7 +701,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     key: "financeiro",
     path: "/financeiro",
     label: "Financeiro",
-    description: "Recebimentos, despesas, NFS-e, contratos e caixa do escritório.",
+    description:
+      "Recebimentos, despesas, NFS-e, contratos e caixa do escritório.",
     group: "Gerir o escritório",
     icon: Wallet,
     component: FinanceiroWorkspace,
@@ -729,9 +748,12 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Gerir o escritório",
     icon: BarChart3,
     component: Produtividade,
+    // FE-04: /analytics/produtividade exige socio+ (`_req_gestao`).
+    roles: ROLES.gestores,
     status: "hidden",
     helpKey: "produtividade",
     sensitive: true,
+    backendPrefixes: ["/api/analytics"],
   },
   {
     key: "configuracoes",
@@ -754,6 +776,23 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Administrar",
     icon: Sparkles,
     component: GovernancaIA,
+    roles: ROLES.gestores,
+    status: "hidden",
+    helpKey: "governanca-ia",
+    sensitive: true,
+    usesAI: true,
+    backendPrefixes: ["/api/ia-governanca"],
+  },
+  {
+    // FE-05: subrota contextual da Governança da IA (antes montada literal
+    // no App.tsx). Continua sem menu (hidden) e sob os mesmos papéis.
+    key: "governanca-ia-provedores",
+    path: "/ia-governanca/provedores",
+    label: "Provedores de IA",
+    description: "Painel técnico dos provedores de IA configurados.",
+    group: "Administrar",
+    icon: Sparkles,
+    component: PainelProvedoresIA,
     roles: ROLES.gestores,
     status: "hidden",
     helpKey: "governanca-ia",
@@ -899,7 +938,8 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   {
     from: "/honorarios",
     to: "/financeiro?tab=honorarios",
-    reason: "Honorários contratados e recebimentos vivem no workspace financeiro.",
+    reason:
+      "Honorários contratados e recebimentos vivem no workspace financeiro.",
   },
   {
     from: "/nfse",
@@ -909,17 +949,20 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   {
     from: "/sociedade",
     to: "/gestao-escritorio/sociedade",
-    reason: "Gestão societária foi separada do caixa operacional do escritório.",
+    reason:
+      "Gestão societária foi separada do caixa operacional do escritório.",
   },
   {
     from: "/office-contracts",
     to: "/financeiro?tab=contratos",
-    reason: "Contratos do escritório ficam disponíveis no menu Mais do Financeiro.",
+    reason:
+      "Contratos do escritório ficam disponíveis no menu Mais do Financeiro.",
   },
   {
     from: "/partner-withdrawals",
     to: "/gestao-escritorio/sociedade?sub=saques",
-    reason: "Retiradas pertencem à gestão societária, separada do caixa operacional.",
+    reason:
+      "Retiradas pertencem à gestão societária, separada do caixa operacional.",
   },
   {
     from: "/financeiro-dashboard",
@@ -934,7 +977,8 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   {
     from: "/despesas-recorrentes",
     to: "/financeiro?tab=recorrentes",
-    reason: "O deep-link histórico é preservado enquanto a recorrência migra para o formulário único de despesas.",
+    reason:
+      "O deep-link histórico é preservado enquanto a recorrência migra para o formulário único de despesas.",
   },
   {
     from: "/agenda",

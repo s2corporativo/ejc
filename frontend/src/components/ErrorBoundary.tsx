@@ -1,5 +1,8 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { AlertTriangle } from "lucide-react";
+// Só a leitura do token em memória (FE-02); o envio segue em fetch cru para
+// não passar pelo interceptor do axios (evita recursão se a falha for nele).
+import { getAccessToken } from "../lib/api";
 
 interface Props {
   children: ReactNode;
@@ -43,7 +46,7 @@ export default class ErrorBoundary extends Component<Props, State> {
     // depender de leitura manual de console. fetch cru (sem o interceptor do
     // axios) para não arriscar recursão caso a falha seja no próprio client.
     try {
-      const token = localStorage.getItem("ejc_access");
+      const token = getAccessToken();
       if (!token) return; // o endpoint exige autenticação
       fetch("/api/observabilidade/frontend-error", {
         method: "POST",
