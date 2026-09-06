@@ -56,14 +56,16 @@ export default function TributarioWorkspace() {
   const [casos, setCasos] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState(false);
+  const [truncado, setTruncado] = useState(false);
 
   useEffect(() => {
     let ativo = true;
     setLoading(true);
     setErro(false);
+    setTruncado(false);
 
     api
-      .get("/cases/", { params: { area: "tributario", page_size: 100 } })
+      .get("/cases/", { params: { area: "tributario", page_size: 500 } })
       .then((resposta) => {
         if (!ativo) return;
         const data = Array.isArray(resposta.data)
@@ -71,11 +73,14 @@ export default function TributarioWorkspace() {
           : Array.isArray(resposta.data?.data)
             ? resposta.data.data
             : [];
+        const total = Number(resposta.data?.total);
+        setTruncado(Number.isFinite(total) && total > data.length);
         setCasos(filtrarCasosTributarios(data as Case[], clientId));
       })
       .catch(() => {
         if (!ativo) return;
         setCasos([]);
+        setTruncado(false);
         setErro(true);
       })
       .finally(() => {
@@ -121,13 +126,21 @@ export default function TributarioWorkspace() {
         }
       />
 
+      {truncado && (
+        <section className="rounded-xl border border-warn-200 bg-warn-50 p-4 text-xs leading-5 text-warn-900">
+          <strong>Visão parcial:</strong> existem mais de 500 casos tributários acessíveis para este perfil. Os indicadores abaixo refletem apenas os registros carregados. Use o núcleo técnico/lista geral de Casos para consulta exaustiva.
+        </section>
+      )}
+
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           {
-            label: "Casos tributários",
+            label: truncado ? "Casos carregados" : "Casos tributários",
             value: resumo.total,
             icon: Briefcase,
-            descricao: "Fonte única: cadastro central de Casos do EJC.",
+            descricao: truncado
+              ? "Amostra limitada ao teto de 500 registros da consulta."
+              : "Fonte única: cadastro central de Casos do EJC.",
           },
           {
             label: "Em andamento",
