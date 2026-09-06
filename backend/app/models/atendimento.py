@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    text,
 )
 from app.core.database import Base
 
@@ -38,6 +39,14 @@ class Atendimento(Base):
             "ix_atendimentos_solicitacao_sla",
             "solicitacao_atendida",
             "solicitacao_prazo",
+        ),
+        # Índice PARCIAL dos atendimentos vivos por cliente (migration 160,
+        # DB-05). Declarado para o autogenerate não emitir DROP INDEX.
+        Index(
+            "ix_atendimentos_vivos_client_data",
+            "client_id",
+            text("data_atendimento DESC"),
+            postgresql_where=text("deleted_at IS NULL"),
         ),
     )
 
@@ -91,3 +100,6 @@ class Atendimento(Base):
     created_at           = Column(DateTime(timezone=True), server_default=func.now())
     updated_at           = Column(DateTime(timezone=True), server_default=func.now(),
                                   onupdate=func.now())
+    # Soft-delete (migration 160, DB-05). NULL = vivo. Nenhuma listagem filtra
+    # por isto ainda — ver relatório do PR (routers a ajustar).
+    deleted_at           = Column(DateTime(timezone=True), nullable=True)

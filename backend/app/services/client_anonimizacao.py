@@ -13,11 +13,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.client import Client
 from app.models.case import Case, CaseStatus
+from app.models.case_parte import CaseParte
+from app.models.especializado import TrabalhistaCase
 from app.models.user import User
 from app.models.legal_doc import LegalDoc, PecaStatus
 from app.models.audit_log import criar_audit_log
@@ -176,6 +178,40 @@ async def anonimizar_cliente(
     cliente.observacoes = None
     cliente.anonimizado_em = agora
 
+    # DB-03 (auditoria de camadas 06/09/2026): as PARTES vinculadas ao cliente
+    # (`case_partes.client_id`) — o cadastro manual e a Entrada Única criam a
+    # parte "autor" apontando para o cliente, com nome, documento e contato
+    # copiados. Sem isto, após o "esquecimento" sobrava PII do titular
+    # amarrada ao caso. Partes SEM client_id (adversas, testemunhas) são
+    # terceiros e não são tocadas: o pedido é do cliente, não delas.
+    partes = (await db.execute(
+        select(CaseParte).where(CaseParte.client_id == client_id)
+    )).scalars().all()
+    for parte in partes:
+        parte.nome = _MARCADOR
+        # Coluna em claro (legado), cifra e hash — os três, senão fica
+        # documento decifrável/comparável (mesma regra de clients).
+        parte.cpf_cnpj_plain = None
+        parte.cpf_cnpj_enc = None
+        parte.cpf_cnpj_hash = None
+        parte.email = None
+        parte.telefone = None
+        parte.qualificacao = None
+        parte.representante_legal = None
+    partes_anonimizadas = len(partes)
+
+    # Dado de SAÚDE (LGPD art. 11): o CID do satélite trabalhista dos casos do
+    # cliente. Não há finalidade que sobreviva ao esquecimento; o restante do
+    # satélite (valores, datas) é histórico processual e fica.
+    casos_do_cliente = select(Case.id).where(Case.client_id == client_id)
+    res_cid = await db.execute(
+        update(TrabalhistaCase)
+        .where(TrabalhistaCase.case_id.in_(casos_do_cliente), TrabalhistaCase.cid.is_not(None))
+        .values(cid=None)
+        .execution_options(synchronize_session=False)
+    )
+    cids_removidos = int(res_cid.rowcount or 0)
+
     # Rascunhos/documentos de admissão ainda não consolidados podem conter a
     # qualificação completa em texto puro. Soft-delete sozinho não bastaria:
     # preservaria a PII no banco/lixeira. Por isso o conteúdo é sobrescrito e a
@@ -205,7 +241,8 @@ async def anonimizar_cliente(
         "Anonimização LGPD art.17; "
         f"justificativa_informada={'sim' if bool(motivo_limpo) else 'nao'}; "
         f"codigo={codigo_justificativa}; "
-        f"docs_admissao_redigidos={docs_redigidos}"
+        f"docs_admissao_redigidos={docs_redigidos}; "
+        f"partes_anonimizadas={partes_anonimizadas}; cids_removidos={cids_removidos}"
     )
     if bloqueios:
         detalhes += f"; FORÇADO apesar de {len(bloqueios)} bloqueio(s) operacional(is)"
@@ -223,6 +260,8 @@ async def anonimizar_cliente(
             "justificativa_informada": bool(motivo_limpo),
             "codigo_justificativa": codigo_justificativa,
             "docs_admissao_redigidos": docs_redigidos,
+            "partes_anonimizadas": partes_anonimizadas,
+            "cids_removidos": cids_removidos,
         },
     )
     await db.commit()
@@ -233,4 +272,6 @@ async def anonimizar_cliente(
         "portal_desativado_para": [u.id for u in usuarios_portal],
         "bloqueios_ignorados": bloqueios if bloqueios else None,
         "documentos_admissao_anonimizados": docs_redigidos,
+        "partes_anonimizadas": partes_anonimizadas,
+        "cids_removidos": cids_removidos,
     }

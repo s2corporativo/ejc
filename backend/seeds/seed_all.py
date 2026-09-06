@@ -14,6 +14,13 @@ Segurança: NÃO contém senha hardcoded. Lê do ambiente:
   - ADMIN_PASSWORD (se ausente, gera senha aleatória e a imprime UMA vez)
 O admin é criado com must_change_password=True (troca obrigatória no 1º login).
 
+Gate SEED_ON_BOOT (DB-13, auditoria de camadas 06/09/2026): default "1"
+roda tudo (admin + catálogos + skills + base jurídica + reembed). Com "0"
+(ou false/no/off) roda SOMENTE o admin — para produção, onde o boot não
+aplica migrations (RUN_MIGRATIONS=0) e um seed contra schema atrasado podia
+derrubar o container. Os demais seeds passam a ser passo do deploy, depois
+do `alembic upgrade head`.
+
 Uso (dentro do container, WORKDIR /app):  python seeds/seed_all.py
 """
 from __future__ import annotations
@@ -111,6 +118,17 @@ async def _rodar_seed_async(nome: str, coro_fn) -> None:
         print(f"[seed] AVISO: seed '{nome}' falhou (não-fatal): {exc}")
 
 
+_SEED_ON_BOOT_DESLIGADO = {"0", "false", "no", "off"}
+
+
+def seed_on_boot_ativo(valor: str | None = None) -> bool:
+    """True = roda todos os seeds; False = só o admin. Lê SEED_ON_BOOT
+    (default "1"). Valor não reconhecido conta como LIGADO — o modo seguro
+    para dev/CI, que dependem dos catálogos."""
+    bruto = os.environ.get("SEED_ON_BOOT", "1") if valor is None else valor
+    return bruto.strip().lower() not in _SEED_ON_BOOT_DESLIGADO
+
+
 def _em_pytest() -> bool:
     """True quando o seed roda dentro de uma sessão pytest (nunca baixa modelo)."""
     return bool(os.environ.get("PYTEST_CURRENT_TEST"))
@@ -156,6 +174,11 @@ async def vetorizar_orfaos_pos_seed() -> dict:
 
 async def main() -> None:
     await seed_admin()
+
+    if not seed_on_boot_ativo():
+        print("[seed] SEED_ON_BOOT desligado — só o admin foi semeado; rode os "
+              "demais seeds no deploy, após as migrations.")
+        return
 
     from app.seeds.redesign_seed import seed as seed_document_types
 

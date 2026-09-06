@@ -247,6 +247,17 @@ docker compose build backend worker
 if [ "$RUN_MIGRATIONS" = "1" ]; then
   log "Aplicando migration expand-only antes da troca da API"
   docker compose run --rm --no-deps -T backend alembic upgrade head
+  # Backfill idempotente das colunas cifradas de case_partes (migration 159,
+  # DB-03). Fica FORA da migration por causa da catraca de expand-only e o
+  # `compose run ... alembic` acima não passa pelo bloco RUN_MIGRATIONS do
+  # entrypoint — por isso a chamada explícita aqui. Não fatal: sem backfill o
+  # model cai para a coluna em claro na leitura; o próximo deploy reprocessa.
+  if timeout "${PII_BACKFILL_TIMEOUT:-900}" docker compose run --rm --no-deps -T backend \
+       python scripts/backfill_case_partes_pii.py; then
+    log "Backfill PII de case_partes concluído."
+  else
+    log "AVISO: backfill PII de case_partes falhou ou excedeu o teto (rc=$?); reprocessa no próximo deploy."
+  fi
 else
   log "Nenhuma migration pendente; schema preservado."
 fi

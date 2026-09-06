@@ -3,12 +3,33 @@
 from __future__ import annotations
 
 import logging
+from contextvars import ContextVar, Token
 from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
+
+# BE-04: marca "este job já bateu ponto por conta própria" dentro da execução
+# corrente (uma Task do APScheduler = um contexto). O wrapper
+# scheduler._job_monitorado consulta a marca ao final: se o job já registrou
+# heartbeat por RESULTADO (ex.: DJEN normaliza produtividade real), o wrapper
+# não sobrescreve com um "ok" de mera execução.
+_execucao_monitorada: ContextVar[dict | None] = ContextVar(
+    "ejc_hb_execucao_monitorada", default=None
+)
+
+
+def iniciar_execucao_monitorada() -> Token:
+    return _execucao_monitorada.set({"reportado": False})
+
+
+def finalizar_execucao_monitorada(token: Token) -> bool:
+    """Encerra a marcação e devolve se o job reportou heartbeat sozinho."""
+    ctx = _execucao_monitorada.get()
+    _execucao_monitorada.reset(token)
+    return bool(ctx and ctx.get("reportado"))
 
 JOB_DJEN = "djen_intimacoes"
 JOB_DATAJUD = "datajud_sync"
@@ -22,6 +43,7 @@ JOB_BACKUP_DRIVE = "backup_drive"
 JOB_REEMBED_RAG = "reembed_rag_orfaos"
 JOB_QUERIDO_DIARIO = "querido_diario_monitor"
 JOB_RADAR_LEGISLATIVO = "radar_legislativo"
+JOB_RETENCAO_LGPD = "retencao_lgpd"
 
 _MAX_DIARIO = 26
 _MAX_DATAJUD = 14
@@ -97,6 +119,14 @@ JOBS_MONITORADOS: dict[str, dict[str, Any]] = {
         "label": "Radar Legislativo (Câmara, Senado, ALMG)",
         "max_age_horas": _MAX_DIARIO,
         "cadencia": "diário 07h00 UTC",
+    },
+    # DB-14 (auditoria de camadas 06/09/2026): relatório semanal de retenção
+    # LGPD de clientes/casos (services/retencao_lgpd_service.py). SÓ
+    # identifica e reporta — o `detail` carrega as contagens por categoria.
+    JOB_RETENCAO_LGPD: {
+        "label": "Retenção LGPD — clientes/casos além do prazo (relatório)",
+        "max_age_horas": _MAX_SEMANAL,
+        "cadencia": "semanal (domingos 02h45)",
     },
 }
 
@@ -193,6 +223,9 @@ async def registrar_heartbeat(
     detail: str | None = None,
 ) -> bool:
     """UPSERT best-effort da última execução do job."""
+    ctx = _execucao_monitorada.get()
+    if ctx is not None:
+        ctx["reportado"] = True
     st = (status or "").strip().lower()
     if st not in _STATUS_VALIDOS:
         st = "erro" if st else "ok"

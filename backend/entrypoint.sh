@@ -5,8 +5,18 @@
 #   1) alembic upgrade head  → cria/atualiza TODAS as tabelas (idempotente).
 #   2) seeds/seed_all.py      → cria o admin inicial se ainda não existir
 #                               (idempotente; lê ADMIN_EMAIL/ADMIN_PASSWORD).
+#                               Os DEMAIS seeds (document_types, skills, base
+#                               jurídica, reembed) só rodam com SEED_ON_BOOT=1
+#                               (default) — SEED_ON_BOOT=0 deixa só o admin.
 # Só então executa o uvicorn. Sem este passo o container subia com o banco
 # vazio (nenhuma tabela) e toda requisição falhava.
+#
+# SEED_ON_BOOT (DB-13, auditoria de camadas 06/09/2026): todo boot rodava
+# admin + document_types + seis seeds de skills + base jurídica + reembed. Com
+# schema atrasado (RUN_MIGRATIONS=0 em produção é o normal), um seed que
+# esbarra em coluna inexistente podia derrubar o container antes do uvicorn.
+# Em produção, defina SEED_ON_BOOT=0 e rode os seeds no deploy, após as
+# migrations (`python seeds/seed_all.py` com SEED_ON_BOOT=1).
 set -e
 
 # Garante que o pacote `app` seja importável a partir do WORKDIR, tanto pelo
@@ -37,6 +47,11 @@ case "${RUN_MIGRATIONS:-}" in
     1|true|TRUE|True|yes|YES)
         echo "[entrypoint] RUN_MIGRATIONS ativo — aplicando migrations (alembic upgrade head)..."
         python -m alembic upgrade head
+        # Migration 159 (DB-03): cifra o CPF/CNPJ legado das partes. Fora da
+        # migration por exigência do gate de deploy; idempotente, best-effort
+        # (sai 0 se o schema ainda não tem a 159). Não derruba o boot.
+        echo "[entrypoint] Backfill PII de case_partes (idempotente)..."
+        python scripts/backfill_case_partes_pii.py || echo "[entrypoint] AVISO: backfill PII de case_partes falhou (não-fatal)"
         ;;
     *)
         echo "[entrypoint] RUN_MIGRATIONS não setado (=${RUN_MIGRATIONS:-<vazio>}) — pulando migrations no boot."
@@ -44,7 +59,7 @@ case "${RUN_MIGRATIONS:-}" in
         ;;
 esac
 
-echo "[entrypoint] Semeando usuário admin (idempotente)..."
+echo "[entrypoint] Semeando usuário admin (idempotente; demais seeds conforme SEED_ON_BOOT=${SEED_ON_BOOT:-1})..."
 python seeds/seed_all.py
 
 echo "[entrypoint] Iniciando uvicorn..."

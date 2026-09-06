@@ -188,3 +188,119 @@ def test_heads_multiplos_e_caminho_ramificado_falham(tmp_path: Path):
     _write(tmp_path / "002b.py", "002b", "001", "pass")
     with pytest.raises(RuntimeError, match="head único"):
         evaluate(tmp_path, "001")
+
+
+# ── DB-08 (auditoria de camadas 06/09/2026): FK/CHECK exigem NOT VALID ──────
+# ``create_foreign_key``/``create_check_constraint`` em tabela existente validam
+# a tabela inteira sob lock no ALTER TABLE — não é expand-only. Só passam com
+# ``postgresql_not_valid=True`` (ou ``ALTER TABLE ... NOT VALID`` literal), ou
+# quando a tabela nasce no mesmo ``upgrade()``. ``create_index`` continua
+# expand-only. Arquivos ``NNN_nome.py`` abaixo de 158 ficam na catraca antiga.
+
+def test_fk_e_check_sem_not_valid_exigem_revisao(tmp_path: Path):
+    _base(tmp_path)
+    _write(
+        tmp_path / "002.py",
+        "002",
+        "001",
+        'op.create_foreign_key("fk_base_x", "base", "outra", ["x"], ["id"])',
+    )
+    result = evaluate(tmp_path, "001")
+    assert result["compatible"] is False
+    assert any(
+        "create_foreign_key" in r and "not_valid" in r
+        for r in result["migrations"][0]["reasons"]
+    )
+
+    _write(
+        tmp_path / "002.py",
+        "002",
+        "001",
+        'op.create_check_constraint("ck_base_status", "base", "status IN (\'a\')")',
+    )
+    result = evaluate(tmp_path, "001")
+    assert result["compatible"] is False
+    assert any("create_check_constraint" in r for r in result["migrations"][0]["reasons"])
+
+
+def test_fk_e_check_com_postgresql_not_valid_sao_expand_only(tmp_path: Path):
+    _base(tmp_path)
+    _write(
+        tmp_path / "002.py",
+        "002",
+        "001",
+        'op.create_foreign_key("fk_base_x", "base", "outra", ["x"], ["id"], postgresql_not_valid=True)',
+    )
+    assert evaluate(tmp_path, "001")["compatible"] is True
+
+    _write(
+        tmp_path / "002.py",
+        "002",
+        "001",
+        'op.create_check_constraint("ck_base_status", "base", "status IN (\'a\')", postgresql_not_valid=True)',
+    )
+    assert evaluate(tmp_path, "001")["compatible"] is True
+
+
+def test_alter_table_add_constraint_not_valid_literal_e_expand_only(tmp_path: Path):
+    _base(tmp_path)
+    _write(
+        tmp_path / "002.py",
+        "002",
+        "001",
+        'op.execute("ALTER TABLE base ADD CONSTRAINT ck_base_status '
+        'CHECK (status IN (\'a\', \'b\')) NOT VALID")',
+    )
+    assert evaluate(tmp_path, "001")["compatible"] is True
+
+    # Sem NOT VALID o mesmo ALTER continua exigindo revisão.
+    _write(
+        tmp_path / "002.py",
+        "002",
+        "001",
+        'op.execute("ALTER TABLE base ADD CONSTRAINT ck_base_status CHECK (status IN (\'a\'))")',
+    )
+    assert evaluate(tmp_path, "001")["compatible"] is False
+
+
+def test_constraint_em_tabela_criada_no_mesmo_upgrade_e_expand_only(tmp_path: Path):
+    _base(tmp_path)
+    _write(
+        tmp_path / "002.py",
+        "002",
+        "001",
+        'op.create_table("nova", sa.Column("id", sa.String()), sa.Column("base_id", sa.String()))\n'
+        '    op.create_foreign_key("fk_nova_base", "nova", "base", ["base_id"], ["id"])\n'
+        '    op.create_check_constraint("ck_nova_id", "nova", "id <> \'\'")',
+    )
+    assert evaluate(tmp_path, "001")["compatible"] is True
+
+
+def test_create_index_continua_expand_only_e_catraca_poupa_historico(tmp_path: Path):
+    _base(tmp_path)
+    _write(
+        tmp_path / "002.py",
+        "002",
+        "001",
+        'op.create_index("ix_base_x", "base", ["x"])',
+    )
+    assert evaluate(tmp_path, "001")["compatible"] is True
+
+    # Arquivo numerado ABAIXO da catraca (153_*): FK sem NOT VALID passa, como
+    # já passou na main. Numerado a partir de 158: reprova.
+    _write(
+        tmp_path / "153_legado.py",
+        "153",
+        "001",
+        'op.create_foreign_key("fk_base_x", "base", "outra", ["x"], ["id"])',
+    )
+    (tmp_path / "002.py").unlink()
+    assert evaluate(tmp_path, "001")["compatible"] is True
+    (tmp_path / "153_legado.py").unlink()
+    _write(
+        tmp_path / "158_novo.py",
+        "158",
+        "001",
+        'op.create_foreign_key("fk_base_x", "base", "outra", ["x"], ["id"])',
+    )
+    assert evaluate(tmp_path, "001")["compatible"] is False

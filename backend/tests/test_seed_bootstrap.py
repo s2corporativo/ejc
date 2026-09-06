@@ -32,3 +32,41 @@ async def test_rodar_seed_sync_ok_nao_interfere():
     marcas = []
     await _rodar_seed_sync("seed-ok", lambda: marcas.append(1))
     assert marcas == [1]
+
+
+# ── SEED_ON_BOOT (DB-13, auditoria de camadas 06/09/2026) ───────────────────
+
+def test_seed_on_boot_interpreta_valores(monkeypatch):
+    from seeds.seed_all import seed_on_boot_ativo
+
+    for ligado in ("1", "true", "yes", "", "qualquer-coisa"):
+        assert seed_on_boot_ativo(ligado) is True, ligado
+    for desligado in ("0", "false", "FALSE", " no ", "off"):
+        assert seed_on_boot_ativo(desligado) is False, desligado
+
+    monkeypatch.delenv("SEED_ON_BOOT", raising=False)
+    assert seed_on_boot_ativo() is True  # default: tudo roda (dev/CI)
+    monkeypatch.setenv("SEED_ON_BOOT", "0")
+    assert seed_on_boot_ativo() is False
+
+
+async def test_main_com_seed_on_boot_desligado_roda_so_o_admin(monkeypatch):
+    """Com SEED_ON_BOOT=0, main() semeia o admin e PARA antes de importar
+    qualquer outro seed (document_types, skills, base jurídica, reembed)."""
+    import seeds.seed_all as seed_all
+
+    chamadas = []
+
+    async def _admin_fake():
+        chamadas.append("admin")
+
+    async def _nunca(*_a, **_k):
+        raise AssertionError("seed além do admin rodou com SEED_ON_BOOT=0")
+
+    monkeypatch.setattr(seed_all, "seed_admin", _admin_fake)
+    monkeypatch.setattr(seed_all, "_rodar_seed_sync", _nunca)
+    monkeypatch.setattr(seed_all, "_rodar_seed_async", _nunca)
+    monkeypatch.setenv("SEED_ON_BOOT", "0")
+
+    await seed_all.main()
+    assert chamadas == ["admin"]

@@ -6,7 +6,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # Atualizar este identificador no mesmo PR que adicionar uma nova migration.
-HEAD_REVISION = "157_ajuizamento_judicial"
+HEAD_REVISION = "160_soft_delete_satelites"
 MERGE_REVISION = "104_merge_entrada_orquestrador"
 EXPECTED_PARENTS = {
     "101_entrada_universal_documentos",
@@ -169,3 +169,12 @@ def test_despesas_processuais_encadeiam_no_head_155():
 def test_ajuizamento_encadeia_no_head_156():
     revision = _script_directory().get_revision("157_ajuizamento_judicial")
     assert revision.down_revision == "156_case_despesas_processuais"
+
+
+def test_auditoria_camadas_encadeia_158_159_160_apos_157():
+    """Auditoria de camadas 06/09/2026: índices (158) → PII de partes (159) →
+    soft-delete de satélites (160), em cadeia linear sobre o ajuizamento."""
+    script = _script_directory()
+    assert script.get_revision("158_indices_fk_negocio").down_revision == "157_ajuizamento_judicial"
+    assert script.get_revision("159_case_partes_pii_expand").down_revision == "158_indices_fk_negocio"
+    assert script.get_revision("160_soft_delete_satelites").down_revision == "159_case_partes_pii_expand"

@@ -19,6 +19,17 @@ from typing import Iterable
 
 ADDITIVE_DATA_BACKFILL = "additive_data_backfill"
 HUMAN_REVIEWED_DROP = "human_reviewed_drop"
+
+# DB-08 (auditoria de camadas 06/09/2026): ``create_foreign_key`` e
+# ``create_check_constraint`` em tabela EXISTENTE validam a tabela inteira sob
+# lock (SHARE ROW EXCLUSIVE) no ``ALTER TABLE`` — não são expand-only. Passam
+# a exigir ``postgresql_not_valid=True`` (Alembic emite ``NOT VALID``; a
+# validação vai para migration separada) ou tabela criada no mesmo
+# ``upgrade()`` (vazia — nada a varrer). Catraca por número de arquivo: as
+# revisões 152 e 153 já mesclaram FK sem NOT VALID e não se reescreve migration
+# aplicada; a partir da 158 a regra vale.
+NOT_VALID_OBRIGATORIO_A_PARTIR_DE = 158
+_CONSTRAINTS_COM_VALIDACAO = {"create_foreign_key", "create_check_constraint"}
 _FORBIDDEN_SQL = {
     "ALTER",
     "CALL",
@@ -264,6 +275,14 @@ def _is_safe_expand_ddl(sql: str) -> bool:
     # CREATE INDEX IF NOT EXISTS
     if re.match(r"\s*CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\b", upper):
         return True
+    # ALTER TABLE t ADD CONSTRAINT c CHECK (...) NOT VALID  /  FOREIGN KEY ... NOT VALID
+    # (DB-08): constraint declarada sem varrer a tabela — expand-only.
+    if re.match(
+        r"\s*ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?[\w.\"]+\s+ADD\s+CONSTRAINT\s+[\w\"]+\s+"
+        r"(?:CHECK|FOREIGN\s+KEY)\b[\s\S]*\bNOT\s+VALID\s*;?\s*$",
+        upper,
+    ):
+        return True
     return False
 
 
@@ -378,6 +397,52 @@ def _safe_backfill_sql_findings(
     return findings, used_targets
 
 
+def _numero_da_revisao(path: Path) -> int | None:
+    """Prefixo numérico do arquivo (``158_x.py`` → 158); None se não numerado."""
+    match = re.match(r"(\d+)_", path.name)
+    return int(match.group(1)) if match else None
+
+
+def _tabelas_criadas_no_upgrade(upgrade: ast.FunctionDef) -> set[str]:
+    """Tabelas que ``op.create_table("x", ...)`` cria no próprio ``upgrade()``:
+    constraint sobre elas não varre linha nenhuma."""
+    criadas: set[str] = set()
+    for node in ast.walk(upgrade):
+        if isinstance(node, ast.Call) and _op_call_name(node) == "create_table":
+            nome = _extract_string_from_call(node)
+            if nome:
+                criadas.add(nome.lower())
+    return criadas
+
+
+def _constraint_com_validacao_findings(
+    call: ast.Call,
+    op_name: str,
+    tabelas_novas: set[str],
+    numero_revisao: int | None,
+) -> str | None:
+    """DB-08: FK/CHECK só é expand-only com ``NOT VALID`` ou em tabela nova."""
+    if numero_revisao is not None and numero_revisao < NOT_VALID_OBRIGATORIO_A_PARTIR_DE:
+        return None  # catraca: histórico já aplicado não é reescrito
+    if _keyword_literal(call, "postgresql_not_valid") is True:
+        return None
+    # op.create_foreign_key(name, source_table, ...) / op.create_check_constraint(name, table, ...)
+    tabela = None
+    if len(call.args) >= 2 and isinstance(call.args[1], ast.Constant) and isinstance(call.args[1].value, str):
+        tabela = call.args[1].value.lower()
+    else:
+        tabela_kw = _keyword_literal(call, "source_table") or _keyword_literal(call, "table_name")
+        if isinstance(tabela_kw, str):
+            tabela = tabela_kw.lower()
+    if tabela and tabela in tabelas_novas:
+        return None
+    line = getattr(call, "lineno", 0)
+    return (
+        f"linha {line}: op.{op_name} sem postgresql_not_valid=True valida a tabela "
+        "inteira sob lock — exige revisão humana (ou NOT VALID + VALIDATE em migration separada)"
+    )
+
+
 def _classify(revision: Revision) -> tuple[list[str], str]:
     tree = ast.parse(
         revision.path.read_text(encoding="utf-8"),
@@ -385,6 +450,8 @@ def _classify(revision: Revision) -> tuple[list[str], str]:
     )
     upgrade = _upgrade_function(tree, revision.path)
     findings = _static_upgrade_shape_findings(upgrade)
+    tabelas_novas = _tabelas_criadas_no_upgrade(upgrade)
+    numero_revisao = _numero_da_revisao(revision.path)
     policy = _assignment(tree, "deployment_policy")
     policy_name = policy if isinstance(policy, str) else "expand_only"
     declared_targets = _declared_backfill_targets(tree)
@@ -448,6 +515,12 @@ def _classify(revision: Revision) -> tuple[list[str], str]:
                 findings.append(
                     f"linha {line}: índice UNIQUE exige revisão de dados/lock"
                 )
+        elif op_name in _CONSTRAINTS_COM_VALIDACAO:
+            motivo = _constraint_com_validacao_findings(
+                node, op_name, tabelas_novas, numero_revisao
+            )
+            if motivo:
+                findings.append(motivo)
         elif op_name == "alter_column":
             # Expansão pura de tamanho (VARCHAR(n)→VARCHAR(m), n<m) é
             # expand-only por construção: PostgreSQL nunca recusa dados

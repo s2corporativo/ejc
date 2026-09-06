@@ -2,9 +2,9 @@
 
 Este arquivo é o ledger canônico de **reservas futuras** e do trecho recente da cadeia Alembic. O histórico detalhado de reservas antigas permanece preservado no Git.
 
-**Head canônico atual da `main`:** `157_ajuizamento_judicial`
-**Próximo prefixo livre:** `158`
-Base desta PR: `main` em `156_case_despesas_processuais`. A declaração acima representa o head canônico **que esta PR propõe à main**, conforme o contrato dos gates `test_migration_reservations_head.py`; enquanto a PR não for mesclada, a `main` publicada permanece em 156. A `157` está reservada por esta PR (#1536) e **não pode ser reutilizada enquanto a PR estiver aberta**.
+**Head canônico atual da `main`:** `160_soft_delete_satelites`
+**Próximo prefixo livre:** `161`
+Base desta PR: `main` em `157_ajuizamento_judicial` (#1536 mesclado, `c94d520`). A declaração acima representa o head canônico **que esta PR propõe à main**, conforme o contrato dos gates `test_migration_reservations_head.py`; enquanto a PR não for mesclada, a `main` publicada permanece em 157. As `158`, `159` e `160` estão reservadas por esta PR (auditoria de camadas 06/09/2026, itens DB-02/DB-12, DB-03 e DB-05) e **não podem ser reutilizadas enquanto a PR estiver aberta**.
 
 > Nunca reutilize um número menor ou igual ao head atual, mesmo quando houver lacuna histórica. A ordem numérica precisa crescer junto com `down_revision`.
 
@@ -49,7 +49,14 @@ gh pr list --state open
 | `154_saneamento_schema` | `153_legal_doc_client_id` | Mesclada | Módulo de saneamento de base processual (PROMPT 1). Encadeada sobre 153 porque era o head real no momento (`alembic heads`) — não pressupõe que 153 já tenha sido mesclada; conferir o head real de novo antes do merge. 7 tabelas próprias, **prefixadas `saneamento_*` no schema `public`** — nenhuma alteração em tabela existente do EJC. Um schema Postgres dedicado (`CREATE SCHEMA`) foi cogitado e descartado: `scripts/check_migration_compatibility.py` (gate de deploy) e os testes de paridade schema↔ORM (`test_schema_dr_parity.py`, `test_schema_sync.py`) extraem nomes de tabela por regex/AST sem suporte a qualificação de schema — mudar essas ferramentas para um caso de uso isolado era desproporcional ao módulo. Prefixo de tabela entrega o mesmo isolamento prático. |
 | `155_indices_listagem_espinha` | `154_saneamento_schema` | Mesclada | Índices parciais de listagem em `cases`/`clients`/`documents` (AUD27-P3-11). `deadlines` fora de propósito: já coberta por `ix_deadlines_data_prazo`, medido. |
 | `156_case_despesas_processuais` | `155_indices_listagem_espinha` | Mesclada | Issue #809: tabela `case_despesas` para custos processuais reembolsáveis do caso, distinta de `office_expenses`; faturamento explícito gera `FeeTipo.custas_despesas`. Migration aditiva e reversível. |
-| `157_ajuizamento_judicial` | `156_case_despesas_processuais` | **Em PR** | PR #1536: núcleo de ajuizamento — `judicial_integration_profiles`, `judicial_filings`, `judicial_filing_transicoes`, `judicial_filing_attempts`, `judicial_protocols`, `judicial_sync_events`, `judicial_tpu_itens`. Expand-only, sem alterar tabela existente; downgrade remove só o que criou. Nenhum segredo persistido (só referências ao cofre). |
+| `157_ajuizamento_judicial` | `156_case_despesas_processuais` | Mesclada | PR #1536 (`c94d520`, confirmado em `origin/main` por `merge-base` — DB-01 da auditoria 06/09/2026): núcleo de ajuizamento — `judicial_integration_profiles`, `judicial_filings`, `judicial_filing_transicoes`, `judicial_filing_attempts`, `judicial_protocols`, `judicial_sync_events`, `judicial_tpu_itens`. Expand-only; downgrade remove só o que criou. |
+| `158_indices_fk_negocio` | `157_ajuizamento_judicial` | **Em PR** | DB-02 + DB-12: 12 índices em FKs de caminho de negócio (autoria fica de fora, critério da 150) + GIN `gin_trgm_ops` em `clients.nome` e `cases.titulo`. Só `create_index`; downgrade remove os 14. Declarados no ORM. |
+| `159_case_partes_pii_expand` | `158_indices_fk_negocio` | **Em PR** | DB-03 (P1): EXPAND de `case_partes.cpf_cnpj_enc` (Fernet) + `cpf_cnpj_hash` (HMAC, indexado). Coluna em claro permanece (CONTRACT futuro). Backfill fora da migration (`scripts/backfill_case_partes_pii.py`) por exigência do gate ≥132. Downgrade decifra de volta antes de dropar. |
+| `160_soft_delete_satelites` | `159_case_partes_pii_expand` | **Em PR** | DB-05: `deleted_at` em `atendimentos` e `case_partes` + índices parciais de vivos. Nenhuma listagem filtra ainda (PR de aplicação). O número 160 era o previsto para o CHECK de status (DB-04), descartado: `cases.status`, `clients.status` e `deadlines.status` são ENUM nativo e `documents.status` não existe. |
+
+## Lacuna 040–044 e `053_reconcile_schema` (DB-11)
+
+`044_recover_head.py` tem `upgrade()`/`downgrade()` vazios: as revisões 040–044 foram perdidas do histórico e a 044 existe só para religar a cadeia. Um banco criado do zero **depende de `053_reconcile_schema`** para chegar ao schema que aquelas revisões produziam — é a 053 que reconcilia tabelas/colunas ausentes, com `IF NOT EXISTS`. Consequências práticas: (1) nunca "recuperar" 040–044 reescrevendo-as — a 053 já cobre o resultado e uma reconstrução colidiria; (2) qualquer alteração de schema nesse trecho recebe número novo após o head; (3) a paridade banco-do-zero × ORM é a guarda (`tests/test_schema_dr_parity.py`, modo `RUN_DB_TESTS`), não a leitura das migrations. Registrado pela auditoria de camadas de 06/09/2026.
 
 ## Banco de Teses — decisão canônica
 
