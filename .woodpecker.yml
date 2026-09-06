@@ -1,9 +1,7 @@
-# CI oficial fora do GitHub Actions: self-hosted (Woodpecker — infra/woodpecker/).
-# Replica os portões locais e adiciona SAST, vulnerabilidades, secret scanning
-# e validação determinística dos contratos operacionais de backup/deploy.
+# DIAGNÓSTICO TEMPORÁRIO #1556 — branch diag/woodpecker-failure-1556
+# Não mergear. Executa apenas o gate backend para identificar a camada que
+# mantém a main vermelha. O .woodpecker.yml oficial da main permanece intacto.
 when:
-  - event: push
-    branch: main
   - event: pull_request
   - event: manual
 
@@ -22,63 +20,16 @@ steps:
       DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@db:5432/ejc_db
       DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@db:5432/ejc_db
       SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user:ejc_pass@db:5432/ejc_db
-      # O CI já sobe PostgreSQL+pgvector e aplica `alembic upgrade head`.
-      # Sem esta flag, os testes DB-level se auto-pulam e o gate fica mais
-      # fraco que o portão local obrigatório do repositório.
       RUN_DB_TESTS: "1"
     commands:
       - apt-get update -qq
       - apt-get install -y -qq --no-install-recommends jq libmagic1 poppler-utils tesseract-ocr libpango-1.0-0 libpangocairo-1.0-0 libcairo2 postgresql-client
       - cd backend
       - pip install --quiet -r requirements.txt
-      # Fast gate: falhas estruturais baratas interrompem antes da suíte total.
-      # Não substitui testes de módulo nem o pytest completo.
       - ruff check app
       - python -m compileall app -q
       - python -m alembic heads
       - until pg_isready -h db -U ejc_user -q; do sleep 1; done
       - python -m alembic upgrade head
       - pytest tests/test_alembic_single_head.py tests/test_rotas_registro_explicito.py -q
-      # Gate completo obrigatório, agora com DB-level habilitado.
       - pytest tests -q
-
-  frontend:
-    image: node:22
-    commands:
-      - cd frontend
-      - npm ci
-      # Ordenado do mais barato para o mais caro; qualquer falha interrompe.
-      - npm run lint
-      - npm test
-      - npm run build
-
-  ops-contracts:
-    image: python:3.11-bookworm
-    commands:
-      - bash -n scripts/backup.sh scripts/backup/ativar_backup.sh scripts/deploy_vps_safe.sh scripts/deploy_workflow_transaction.sh scripts/tests/test_backup_wrapper.sh scripts/tests/test_deploy_rollback.sh infra/host-automation/woodpecker-approved-sha.sh infra/host-automation/ejc-deploy-approved.sh infra/host-automation/install.sh infra/host-automation/install-ejc-deploy.sh infra/host-automation/tests/test_gate.sh infra/selfhosted/bootstrap.sh
-      - python -m py_compile scripts/check_migration_compatibility.py
-      - bash scripts/tests/test_backup_wrapper.sh
-      - bash scripts/tests/test_deploy_rollback.sh
-      - bash infra/host-automation/tests/test_gate.sh
-
-  security-sast:
-    image: semgrep/semgrep:1.172.0
-    commands:
-      - semgrep scan --config=auto --error .
-
-  security-vulnerabilities:
-    image: aquasec/trivy:0.74.0
-    commands:
-      - trivy fs --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 .
-
-  security-misconfig-audit:
-    image: aquasec/trivy:0.74.0
-    commands:
-      # Auditoria inicialmente não bloqueante: há findings legados conhecidos.
-      # Promover para exit-code 1 somente após saneamento/baseline explícito.
-      - trivy fs --scanners misconfig --severity HIGH,CRITICAL --exit-code 0 .
-
-  security-secrets:
-    image: ghcr.io/gitleaks/gitleaks:v8.30.1
-    commands:
-      - gitleaks git . --redact --verbose --exit-code 1
