@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from sqlalchemy import select, text
 from starlette.background import BackgroundTasks
 
@@ -34,6 +34,20 @@ pytestmark = pytest.mark.skipif(
     not os.getenv("RUN_DB_TESTS"),
     reason="requer Postgres com migrations (defina RUN_DB_TESTS=1)",
 )
+
+
+def _req() -> Request:
+    """Request mínimo para `POST /cases/{id}/encerrar`.
+
+    O handler recebe `request` (repassado a `_sincronizar_no_encerramento`,
+    que só o usa no caminho opt-in de sincronização MNI). Chamando o handler
+    direto, como fazem os demais *_dblevel.py, é preciso construir um Request
+    de um scope ASGI mínimo — mesmo padrão de test_search_dblevel.py.
+    """
+    return Request({
+        "type": "http", "method": "POST", "path": "/cases/encerrar",
+        "headers": [], "query_string": b"", "client": ("127.0.0.1", 50000),
+    })
 
 
 async def _criar_user(db, role: str = "socio") -> str:
@@ -347,8 +361,11 @@ async def test_encerrar_e_reabrir_restaura_estagio_de_trabalho_real():
                 # inteligente que exige confirmação explícita.
                 confirmar_alertas=True,
             )
-            await encerrar_caso(caso, payload, BackgroundTasks(), None, db, cu)
-            resultado = await reabrir_caso(caso, BackgroundTasks(), db, cu)
+            # `db`/`cu` por nome: `encerrar_caso` tem `request` entre os
+            # posicionais; nomeando, uma nova inserção posicional não quebra.
+            await encerrar_caso(caso, payload, BackgroundTasks(), _req(),
+                                db=db, cu=cu)
+            resultado = await reabrir_caso(caso, BackgroundTasks(), db=db, cu=cu)
             assert resultado.status.value == "em_producao"
             row = (await db.execute(
                 text("SELECT status, status_anterior, data_encerramento, resultado "
