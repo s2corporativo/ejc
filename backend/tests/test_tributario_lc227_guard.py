@@ -1,8 +1,7 @@
 """Regressões dos gates jurídicos tributários do Issue #1553.
 
-PAF, prescrição/decadência, parcelamento genérico e simulação geral da Reforma
-permanecem fora da cadeia de demonstrativo até revisão jurídica completa. O
-objetivo destes testes é impedir promoção silenciosa de cálculo não homologado.
+PAF, prescrição/decadência, parcelamento, comparativo de regimes e Reforma
+permanecem fora da cadeia de demonstrativo até revisão jurídica completa.
 """
 from app.services.homologacao_ferramentas import (
     FERRAMENTAS_NAO_HOMOLOGADAS,
@@ -13,36 +12,45 @@ from app.services.homologacao_ferramentas import (
 ROTA_PAF = "/tributario/ferramentas/auto-infracao-prazos"
 ROTA_PRESCRICAO = "/tributario/ferramentas/prescricao-decadencia"
 ROTA_PARCELAMENTO = "/tributario/ferramentas/parcelamento"
+ROTA_REGIME = "/tributario/ferramentas/regime-tributario"
 ROTA_REFORMA = "/tributario/ferramentas/reforma-tributaria"
 
 
 def test_prazo_auto_infracao_tributario_permanece_nao_homologado() -> None:
-    assert ROTA_PAF in FERRAMENTAS_NAO_HOMOLOGADAS
     motivo = motivo_nao_homologada(ROTA_PAF)
-    assert motivo is not None
-    assert "LC 227/2026" in motivo
+    assert ROTA_PAF in FERRAMENTAS_NAO_HOMOLOGADAS
+    assert motivo is not None and "LC 227/2026" in motivo
 
 
 def test_prescricao_decadencia_desomologada_apos_lc236() -> None:
-    assert ROTA_PRESCRICAO in FERRAMENTAS_NAO_HOMOLOGADAS
     motivo = motivo_nao_homologada(ROTA_PRESCRICAO)
+    assert ROTA_PRESCRICAO in FERRAMENTAS_NAO_HOMOLOGADAS
     assert motivo is not None
     assert "LC 236/2026" in motivo
     assert "150/151/168/174" in motivo
 
 
 def test_parcelamento_generico_nao_vira_demonstrativo_com_parametros_congelados() -> None:
-    assert ROTA_PARCELAMENTO in FERRAMENTAS_NAO_HOMOLOGADAS
     motivo = motivo_nao_homologada(ROTA_PARCELAMENTO)
+    assert ROTA_PARCELAMENTO in FERRAMENTAS_NAO_HOMOLOGADAS
     assert motivo is not None
     assert "PERT/REFIS" in motivo
     assert "2026" in motivo
     assert "edital" in motivo
 
 
+def test_comparativo_regimes_desomologado_apos_lc224() -> None:
+    motivo = motivo_nao_homologada(ROTA_REGIME)
+    assert ROTA_REGIME in FERRAMENTAS_NAO_HOMOLOGADAS
+    assert motivo is not None
+    assert "LC 224/2025" in motivo
+    assert "IRPJ/CSLL" in motivo
+    assert "período" in motivo
+
+
 def test_reforma_tributaria_permanece_nao_homologada_ate_versionamento_2026() -> None:
-    assert ROTA_REFORMA in FERRAMENTAS_NAO_HOMOLOGADAS
     motivo = motivo_nao_homologada(ROTA_REFORMA)
+    assert ROTA_REFORMA in FERRAMENTAS_NAO_HOMOLOGADAS
     assert motivo is not None
     assert "LC 227/2026" in motivo
     assert "LC 236/2026" in motivo
@@ -50,7 +58,8 @@ def test_reforma_tributaria_permanece_nao_homologada_ate_versionamento_2026() ->
 
 
 def test_normalizacao_nao_contorna_gates_tributarios() -> None:
-    for rota in (ROTA_PAF, ROTA_PRESCRICAO, ROTA_PARCELAMENTO, ROTA_REFORMA):
+    rotas = (ROTA_PAF, ROTA_PRESCRICAO, ROTA_PARCELAMENTO, ROTA_REGIME, ROTA_REFORMA)
+    for rota in rotas:
         for caminho in (
             rota,
             f"/api{rota}",
@@ -71,6 +80,10 @@ def test_selo_impede_promocao_silenciosa_do_resultado() -> None:
         selo_homologacao(
             ROTA_PARCELAMENTO,
             {"parcelas_simuladas": 120, "reducoes_potenciais": {"juros_pct": 65}},
+        ),
+        selo_homologacao(
+            ROTA_REGIME,
+            {"lucro_presumido": {"carga_anual_estimada": 1000}},
         ),
         selo_homologacao(
             ROTA_REFORMA,
