@@ -163,6 +163,9 @@ async def financeiro(
     client_id = _exigir_cliente(cu)
 
     ledger = await db.execute(
+        # SQL literal com bind params; a regra marca todo text(), sem olhar
+        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         text(
             f"""
             WITH {LEDGER_COMPAT_CTES}

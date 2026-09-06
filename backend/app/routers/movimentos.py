@@ -32,6 +32,9 @@ async def recentes(
         """
         params["uid"] = cu.id
     res = await db.execute(
+        # SQL literal com bind params; a regra marca todo text(), sem olhar
+        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         text(f"""
             SELECT m.id, m.case_id, m.tipo, m.descricao,
                    COALESCE(m.data_evento, m.created_at) AS quando,

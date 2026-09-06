@@ -75,6 +75,9 @@ async def consolidado(
 
     fees = (
         await db.execute(
+            # SQL literal com bind params; a regra marca todo text(), sem olhar
+            # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             text(
                 f"""
                 WITH {LEDGER_COMPAT_CTES},
@@ -286,6 +289,9 @@ async def pendencias_operacionais(
 
     hon = (
         await db.execute(
+            # SQL literal com bind params; a regra marca todo text(), sem olhar
+            # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             text(
                 f"""
                 WITH {LEDGER_COMPAT_CTES}
@@ -487,6 +493,9 @@ async def demonstrativo_gerencial(
 
     entradas_caixa = (
         await db.execute(
+            # SQL literal com bind params; a regra marca todo text(), sem olhar
+            # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             text(
                 f"""
                 WITH {LEDGER_COMPAT_CTES}
@@ -564,6 +573,9 @@ async def fechamento_inteligente(
 
     fee_integridade = (
         await db.execute(
+            # SQL literal com bind params; a regra marca todo text(), sem olhar
+            # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             text(
                 f"""
                 WITH {LEDGER_COMPAT_CTES}

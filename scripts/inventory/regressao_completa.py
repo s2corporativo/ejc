@@ -105,9 +105,15 @@ def main():
             if not subprocess.run(
                     ["pgrep", "-f", "uvicorn app.main:app"],
                     capture_output=True).returncode == 0:
+                # `shell=True` aqui é o próprio recurso usado: encadeamento
+                # (`&&`), redirecionamento (`>`) e background (`&`) só existem
+                # no shell. A linha é montada apenas com as constantes de
+                # módulo BASE e DIR (literais no topo do arquivo) — não há
+                # nenhuma entrada externa nesta string.
                 subprocess.Popen(
                     f"cd {BASE}/backend && nohup {DIR}/env_shell.sh uvicorn "
                     "app.main:app --host 0.0.0.0 --port 8000 > /tmp/uvicorn.log 2>&1 &",
+                    # nosemgrep: python.lang.security.audit.subprocess-shell-true.subprocess-shell-true
                     shell=True)
             time.sleep(passo)
         return False
@@ -132,11 +138,15 @@ def main():
         # env_shell.sh carrega o .env do repositório (necessário para
         # baterias que criam AsyncEngine com os.environ["DATABASE_URL"],
         # ex.: M22). Roda em bash para o export por linha funcionar.
-        cmd = (
-            f'bash {DIR}/env_shell.sh python3 -u {DIR}/{script}'
-        )
+        # argv explícito, sem shell: não há redirecionamento nem encadeamento
+        # aqui, então `shell=True` só acrescentava um interpretador entre este
+        # processo e o script (e um caminho com espaço quebraria a invocação).
+        cmd = [
+            "bash", os.path.join(DIR, "env_shell.sh"),
+            "python3", "-u", os.path.join(DIR, script),
+        ]
         proc = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True,
+            cmd, capture_output=True, text=True,
             env=env, cwd=BASE, timeout=900,
         )
         # retry único em falha de conexão (queda transitória do uvicorn)
@@ -147,7 +157,7 @@ def main():
             time.sleep(30)
             if aguarda_servidor():
                 proc = subprocess.run(
-                    cmd, shell=True, capture_output=True, text=True,
+                    cmd, capture_output=True, text=True,
                     env=env, cwd=BASE, timeout=900,
                 )
                 out_tmp = proc.stdout + "\n" + proc.stderr

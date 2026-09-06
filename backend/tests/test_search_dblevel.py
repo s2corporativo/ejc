@@ -20,6 +20,8 @@ import pytest
 from fastapi import HTTPException, Request
 from sqlalchemy import select, text
 
+from _limpeza_cliente import limpar_dependencias_de_clientes
+
 pytestmark = pytest.mark.skipif(
     not os.getenv("RUN_DB_TESTS"),
     reason="requer Postgres com migrations (defina RUN_DB_TESTS=1)",
@@ -114,6 +116,7 @@ async def _limpar(db, *, case_ids=(), user_ids=(), client_ids=()):
         await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
         await db.execute(text("DELETE FROM audit_logs WHERE user_id = :id"), {"id": uid})
         await db.execute(text("DELETE FROM users WHERE id = :id"), {"id": uid})
+    await limpar_dependencias_de_clientes(db, client_ids)
     for cid in client_ids:
         await db.execute(text("DELETE FROM clients WHERE id = :id"), {"id": cid})
     await db.commit()

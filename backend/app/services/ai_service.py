@@ -306,6 +306,9 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
         if categorias:
             filtro = "AND kd.categoria = ANY(:cats)"
             params["cats"] = categorias
+        # SQL literal com bind params; a regra marca todo text(), sem olhar
+        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         sql = _text(f"""
             SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
                    {_SQL_CONFIANCA},
@@ -351,6 +354,9 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
             if categorias:
                 filtro_f = "AND kd.categoria = ANY(:cats)"
                 params_f["cats"] = categorias
+            # SQL literal com bind params; a regra marca todo text(), sem olhar
+            # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             sql_f = _text(f"""
                 SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
                        {_SQL_CONFIANCA},
@@ -495,6 +501,9 @@ async def buscar_contexto_rag(
             if categorias:
                 filtro_cat_v = "AND kd.categoria = ANY(:cats)"
                 params_v["cats"] = categorias
+            # SQL literal com bind params; a regra marca todo text(), sem olhar
+            # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             sql_v = text(f"""
                 SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
                        {_SQL_CONFIANCA},
@@ -567,6 +576,9 @@ async def buscar_contexto_rag(
     params["incl_hist"] = incluir_historico
     params.update(_params_caso_rag(scope_case_id))
 
+    # SQL literal com bind params; a regra marca todo text(), sem olhar
+    # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     sql = text(f"""
         SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
                {_SQL_CONFIANCA}

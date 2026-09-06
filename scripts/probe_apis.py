@@ -21,6 +21,11 @@ def get(url: str, headers: dict | None = None, data: bytes | None = None,
     req = urllib.request.Request(url, headers={**UA, **(headers or {})}, data=data)
     t0 = time.time()
     try:
+        # Sonda de viabilidade rodada a mao pelo operador: as URLs sao todas
+        # literais neste arquivo (lista do catalogo, mais abaixo). Nao ha
+        # request nem servico chamando isto, entao nao ha SSRF a alcancar.
+        # Ver docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
         with urllib.request.urlopen(req, timeout=timeout) as r:
             body = r.read(4000).decode("utf-8", "replace")
             return r.status, time.time() - t0, body

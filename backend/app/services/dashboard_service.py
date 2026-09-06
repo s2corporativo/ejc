@@ -52,6 +52,9 @@ async def coletar_dados_mes(db: AsyncSession, mes: int, ano: int) -> dict:
     """), {"m": mes, "a": ano})
     recebido, pendente, atrasado = r.one()
 
+    # SQL literal com bind params; a regra marca todo text(), sem olhar
+    # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     r = await db.execute(text("""
         SELECT u.full_name,
           COUNT(DISTINCT c.id) FILTER (WHERE c.status IN ({abertos})) AS casos,
