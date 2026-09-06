@@ -85,10 +85,3 @@ def install_fastapi_route_introspection() -> None:
     FastAPI.routes = property(_flat_routes)  # type: ignore[assignment]
     FastAPI.openapi = _openapi_with_native_tree  # type: ignore[method-assign]
     setattr(FastAPI, _INSTALL_FLAG, True)
-
-
-class EJCFastAPI(FastAPI):
-    """Variante explícita para testes e novas aplicações internas."""
-
-    routes = property(_flat_routes)
-    openapi = _openapi_with_native_tree

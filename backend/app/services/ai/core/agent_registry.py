@@ -397,8 +397,3 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         skills=_skills("retrieve_rag_sources", "generate_report", "validate_citations"),
     ),
 }
-
-
-def get_agente(nome: str) -> AgenteInterno:
-    """Busca agente por nome; KeyError explícito se não registrado."""
-    return AGENT_REGISTRY[nome]

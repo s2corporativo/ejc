@@ -118,11 +118,6 @@ def _cache_gravar(numero_limpo: str, valor: dict | None) -> None:
     _CACHE_CONSULTA[numero_limpo] = (time.monotonic(), valor)
 
 
-def _cache_limpar() -> None:
-    """Uso em testes (e eventual troca de chave/config em runtime)."""
-    _CACHE_CONSULTA.clear()
-
-
 # ── Limitador de requisições (premissa de worker único — mesma família do
 # cache acima). Token bucket ingênuo: guarda só o instante da última
 # concessão e espera o intervalo mínimo antes de liberar a próxima. Não

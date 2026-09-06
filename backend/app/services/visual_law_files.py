@@ -59,9 +59,3 @@ def validar_uuid(arquivo_id: str) -> None:
     (o id é interpolado no nome do arquivo servido ao cliente)."""
     if not _UUID_RE.fullmatch(arquivo_id or ""):
         raise HTTPException(status_code=422, detail="Identificador de relatório inválido.")
-
-
-def caminho_pdf(subdir: str, prefixo: str, arquivo_id: str) -> str:
-    """Valida o UUID e devolve o caminho seguro do PDF (subdir/prefixo+id.pdf)."""
-    validar_uuid(arquivo_id)
-    return os.path.join(preparar_dir(subdir), f"{prefixo}{arquivo_id}.pdf")

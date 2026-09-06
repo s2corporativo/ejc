@@ -68,13 +68,6 @@ def status_mutex_backup() -> BackupLockStatus:
         lock.release()
 
 
-def em_execucao_global() -> bool:
-    """Estado best-effort para UI; combina mutex global e fast-path local."""
-    if backup_service.em_execucao():
-        return True
-    return status_mutex_backup() == "ocupado"
-
-
 async def executar_backup_exclusivo(
     db: AsyncSession,
     *,

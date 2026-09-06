@@ -105,16 +105,6 @@ async def gravar_snapshot_seguro(db, **kwargs) -> CaseIntelligenceSnapshot | Non
         return None
 
 
-async def ultimo_snapshot(db, case_id: str) -> CaseIntelligenceSnapshot | None:
-    """Último snapshot (maior versão) do caso, ou None."""
-    return (await db.execute(
-        select(CaseIntelligenceSnapshot)
-        .where(CaseIntelligenceSnapshot.case_id == case_id)
-        .order_by(CaseIntelligenceSnapshot.versao.desc())
-        .limit(1)
-    )).scalar_one_or_none()
-
-
 async def historico(db, case_id: str) -> list[CaseIntelligenceSnapshot]:
     """Todos os snapshots do caso, mais recente primeiro."""
     return list((await db.execute(

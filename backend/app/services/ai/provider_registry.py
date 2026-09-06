@@ -75,8 +75,3 @@ def provider_elegivel_com(provider: str, s) -> bool:
     (esqueciam GROQ_ENABLED e AI_EXTERNAL_PROVIDERS_ALLOWED — análise E2E
     03/09/2026, A3). Agora consultam a fonte única."""
     return all(ok for ok, _ in _requisitos(provider, s))
-
-
-def motivo_inelegivel_com(provider: str, s) -> str | None:
-    faltas = [motivo for ok, motivo in _requisitos(provider, s) if not ok]
-    return "; ".join(faltas) if faltas else None

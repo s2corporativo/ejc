@@ -47,12 +47,6 @@ function obterStatus(): Promise<IaStatus> {
   return inflight;
 }
 
-/** Somente para testes: limpa o cache de sessão. */
-export function _resetIaStatusCache() {
-  cache = null;
-  inflight = null;
-}
-
 /**
  * Hook de status da IA. Enquanto carrega (e em qualquer falha) devolve
  * `disponivel: true` — o estado "indisponível" só aparece com resposta

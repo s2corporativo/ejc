@@ -28,14 +28,6 @@ export function rotuloArea(slug?: string | null): string {
   return (ROTULO_AREA as Record<string, string>)[slug] ?? slug;
 }
 
-/** `true` quando o slug pertence ao enum CaseArea do backend. */
-export function ehAreaCanonica(slug: unknown): slug is CaseArea {
-  return (
-    typeof slug === "string" &&
-    (AREAS_CANONICAS as readonly string[]).includes(slug)
-  );
-}
-
 /** Opções com as áreas de destaque (consumidor, cível) primeiro. */
 export const AREAS_OPCOES_DESTAQUE: readonly AreaOpcao[] = [
   ...AREAS_DESTAQUE.map((slug) => ({ slug, nome: ROTULO_AREA[slug] })),

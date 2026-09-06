@@ -16,10 +16,9 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import func as sqlfunc, select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.case import Case
 from app.models.user import User
 from app.schemas.process import ProcessCreate, ProcessUpdate
 from app.services.processo_service import (
@@ -27,7 +26,6 @@ from app.services.processo_service import (
     criar_processo,
     processo_principal,
 )
-from app.services.validators_service import normalizar_cnj
 
 
 RESPONSAVEL_JURIDICO_ROLES: frozenset[str] = frozenset(
@@ -103,56 +101,6 @@ async def resolver_responsavel_juridico(
             ),
         )
     return str(responsavel.id)
-
-
-async def garantir_numero_processo_unico(
-    db: AsyncSession,
-    *,
-    client_id: str,
-    numero_processo: str | None,
-    excluir_case_id: str | None = None,
-) -> None:
-    """Impede dois casos vivos do mesmo cliente com o mesmo número processual.
-
-    O advisory lock serializa create/update concorrentes com a mesma chave.
-    Números CNJ são comparados pelos 20 dígitos; numeração administrativa é
-    comparada por texto normalizado, preservando o comportamento histórico.
-    """
-    numero = (numero_processo or "").strip()
-    if not numero:
-        return
-
-    digitos_cnj = normalizar_cnj(numero)
-    numero_chave = digitos_cnj if len(digitos_cnj) == 20 else numero.casefold()
-    await db.execute(
-        text("SELECT pg_advisory_xact_lock(hashtext(:chave))"),
-        {"chave": f"case_duplicate:{client_id}:{numero_chave}"},
-    )
-
-    if len(digitos_cnj) == 20:
-        numero_igual = (
-            sqlfunc.regexp_replace(Case.numero_processo, r"\D", "", "g")
-            == digitos_cnj
-        )
-    else:
-        numero_igual = (
-            sqlfunc.lower(sqlfunc.trim(Case.numero_processo)) == numero.casefold()
-        )
-
-    stmt = select(Case.id).where(
-        Case.client_id == client_id,
-        Case.deleted_at.is_(None),
-        numero_igual,
-    )
-    if excluir_case_id:
-        stmt = stmt.where(Case.id != excluir_case_id)
-
-    existente = (await db.execute(stmt.limit(1))).scalar_one_or_none()
-    if existente:
-        raise HTTPException(
-            status_code=409,
-            detail="Já existe caso ativo para este cliente e número processual",
-        )
 
 
 async def sincronizar_processo_principal_do_caso(

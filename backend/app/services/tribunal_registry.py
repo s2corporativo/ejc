@@ -35,20 +35,6 @@ def extrair_codigo_tribunal(numero_cnj: str) -> str | None:
     return None
 
 
-def extrair_grau(numero_cnj: str) -> str | None:
-    """Extrai o dígito "J" (segmento de justiça) — usado só como pista; o grau
-    real (1º/2º) na Justiça Estadual normalmente sai do órgão julgador, não
-    do número. Fase A assume 1º grau por padrão quando não há outra pista;
-    quem chamar pode sobrescrever explicitamente."""
-    if not numero_cnj:
-        return None
-    limpo = numero_cnj.strip()
-    m = _PADRAO_CNJ.match(limpo)
-    if m:
-        return m.group("j")
-    return None
-
-
 async def resolver_tribunal(
     db: AsyncSession, numero_cnj: str, grau: str = "1",
 ) -> Tribunal | None:

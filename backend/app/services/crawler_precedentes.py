@@ -181,10 +181,5 @@ class CrawlerPrecedentes:
     def __init__(self):
         self.headers = {"User-Agent": "EJC-Jurimetria-Bot/3.0"}
 
-    async def buscar_precedentes_magistrado(self, nome_magistrado: str, tema: str):
-        """Compatibilidade legada: usa o agregador disponível sem simular STJ."""
-        termo = " ".join(p for p in [nome_magistrado, tema] if p).strip()
-        return await buscar_precedentes(termo, fontes=["lexml", "tjmg"])
-
 
 crawler = CrawlerPrecedentes()
