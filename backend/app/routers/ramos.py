@@ -4,12 +4,20 @@
 # módulo monta todos SEM prefixo adicional — paridade do snapshot de rotas
 # preservada por construção. HITL: todas as saídas de cálculo são minutas.
 
-from fastapi import APIRouter
+from functools import wraps
 import logging
+
+from fastapi import APIRouter
+
+from app.services.homologacao_ferramentas import (
+    motivo_nao_homologada,
+    selo_homologacao,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Áreas de Atuação"])
+
 
 from app.routers import ramos_empresarial as _ramos_empresarial
 for _r in _ramos_empresarial.router.routes:
@@ -94,10 +102,32 @@ for _r in _ramos_tributario_paf.router.routes:
                              tags=_r.tags, summary=_r.summary,
                              deprecated=getattr(_r, "deprecated", False))
 
+
+def _selar_endpoint_nao_homologado(endpoint, caminho: str):
+    """Aplica o selo da matriz à resposta real da API sem alterar a assinatura.
+
+    O gate de `/pecas/demonstrativo` já impede promoção profissional usando a
+    mesma matriz. Este wrapper fecha a outra metade do contrato: a própria rota
+    consultada passa a devolver `homologada=false`, permitindo que a UI avise o
+    usuário e desabilite o demonstrativo antes de qualquer tentativa de exportar.
+    """
+    @wraps(endpoint)
+    async def endpoint_selado(*args, **kwargs):
+        out = await endpoint(*args, **kwargs)
+        if isinstance(out, dict):
+            return selo_homologacao(caminho, out)
+        return out
+
+    return endpoint_selado
+
+
 from app.routers import ramos_ferramentas_complementares as _ramos_ferramentas_complementares
 for _r in _ramos_ferramentas_complementares.router.routes:
     if getattr(_r, "path", None) and _r.path != _ramos_tributario_paf.ROTA_AUTO_INFRACAO:
-        router.add_api_route(_r.path, _r.endpoint, methods=_r.methods,
+        _endpoint = _r.endpoint
+        if motivo_nao_homologada(_r.path):
+            _endpoint = _selar_endpoint_nao_homologado(_endpoint, _r.path)
+        router.add_api_route(_r.path, _endpoint, methods=_r.methods,
                              dependencies=_r.dependencies,
                              response_model=_r.response_model,
                              status_code=_r.status_code,
