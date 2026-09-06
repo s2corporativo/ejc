@@ -660,12 +660,15 @@ class TestIntentClassifier:
         assert r.agente == "LegalWritingAgent"
         assert r.exige_fonte is True
 
-    def test_domain_ambiental_usa_tarefa_ambiental(self):
+    def test_domain_ambiental_sem_agente_dedicado_cai_no_default(self):
+        # EnvironmentalLawAgent foi retirado na consolidação 38→8 (2026-09-06,
+        # escopo definido pelo titular) — domain "ambiental" sem keyword na
+        # mensagem cai no fallback determinístico (CaseAgent/analise_caso).
         from app.services.ai.core.intent_classifier import classify_intent
         from app.services.system_prompts import TarefaIA
         r = classify_intent("task_desconhecida", domain="ambiental")
-        assert r.agente == "EnvironmentalLawAgent"
-        assert r.tarefa == TarefaIA.AMBIENTAL
+        assert r.agente == "CaseAgent"
+        assert r.tarefa == TarefaIA.ANALISE_CASO
 
     def test_keywords_na_mensagem_redigir_peticao(self):
         from app.services.ai.core.intent_classifier import classify_intent
@@ -836,20 +839,18 @@ class TestOrchestrator:
 # 9. Registries (agentes e skills)
 # ══════════════════════════════════════════════════════════════════════════════
 
+# 8 agentes de área (escopo definido pelo titular na consolidação 38→8 de
+# 2026-09-06: civil, consumidor, tributário, penal, administrativo,
+# trabalhista, empresarial, juizado especial) + agentes funcionais/técnicos.
 AGENTES_CANONICOS = {
     "EJCCoordinatorAgent", "CaseAgent", "ProcessAgent", "DocumentAgent",
     "DocumentExtractionAgent", "LegalWritingAgent",
     "RAGResearchAgent", "JurimetryAgent", "FinanceAgent", "BankForensicsAgent",
-    "ConsumerLawAgent", "TaxLawAgent", "SocialSecurityAgent", "CorporateLawAgent",
-    "LaborLawAgent", "CriminalLawAgent", "FamilyLawAgent",
-    "AdministrativeLawAgent", "SuccessionLawAgent", "RealEstateLawAgent",
-    "ConstitutionalLawAgent", "SpecialCourtsAgent", "CivilLawAgent",
-    "TrafficLawAgent", "HealthLawAgent", "MedicalLawAgent", "AgrarianLawAgent",
-    "AgribusinessLawAgent", "ElectoralLawAgent", "InternationalLawAgent",
-    "ContractLawAgent",
+    "ConsumerLawAgent", "TaxLawAgent", "CorporateLawAgent",
+    "LaborLawAgent", "CriminalLawAgent",
+    "AdministrativeLawAgent", "SpecialCourtsAgent", "CivilLawAgent",
     "ClientCommunicationAgent", "SystemHealthAgent",
     "RepairAgent", "UIUXAgent", "SecurityLGPDOABAgent",
-    "EnvironmentalLawAgent", "DigitalLGPDAgent", "TrafficLawAgent",
 }
 
 
