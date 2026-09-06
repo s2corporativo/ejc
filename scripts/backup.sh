@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # EJC — wrapper operacional do backup nativo cifrado para pré-deploy.
 #
-# IMPORTANTE: o motor atual gera os artefatos `.enc` em TemporaryDirectory e
-# remove esse diretório ao concluir. Portanto `local_ok` prova apenas que a
-# cifragem ocorreu durante o ciclo; NÃO prova retenção local recuperável após o
-# retorno da função. Até o motor persistir cópia cifrada em BACKUP_DIR, o
-# pré-deploy exige `offsite_ok=true` para existir prova recuperável.
+# PROVA RECUPERÁVEL (INF-04): o motor persiste os `.enc` do ciclo em
+# BACKUP_DIR (volume `backups_data`, rotação por BACKUP_RETENTION_DAYS) e
+# devolve `retencao_local_ok`. O gate pré-deploy aceita como prova QUALQUER
+# cópia recuperável: offsite confirmado OU retenção local cifrada. `local_ok`
+# sozinho (artefatos gerados no diretório temporário) continua NÃO bastando.
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/ejc}"
@@ -116,11 +116,17 @@ async def main() -> int:
     encrypted_generated = bool(result.get("local_ok")) and has_db and has_uploads
     offsite_ok = bool(result.get("offsite_ok"))
     offsite_erro = str(result.get("offsite_erro") or "") or None
+    retencao_local_ok = bool(result.get("retencao_local_ok"))
+    retencao_local_erro = str(result.get("retencao_local_erro") or "") or None
 
     # Prova promovível = ciclo do motor OK + artefatos cifrados produzidos +
-    # retenção OFFSITE confirmada. `local_ok` sozinho não é suficiente enquanto
-    # backup_service usar TemporaryDirectory para os artefatos `.enc`.
-    complete = bool(result.get("ok")) and encrypted_generated and offsite_ok
+    # pelo menos UMA cópia recuperável fora do diretório temporário: offsite
+    # confirmado OU retenção local cifrada em BACKUP_DIR. `local_ok` sozinho
+    # (artefatos só no TemporaryDirectory) não é suficiente.
+    complete = (
+        bool(result.get("ok")) and encrypted_generated
+        and (offsite_ok or retencao_local_ok)
+    )
 
     safe = {
         "ok": complete,
@@ -137,6 +143,8 @@ async def main() -> int:
         "destino": destino,
         "offsite_ok": offsite_ok,
         "offsite_erro": offsite_erro,
+        "retencao_local_ok": retencao_local_ok,
+        "retencao_local_erro": retencao_local_erro,
     }
     print(json.dumps(safe, ensure_ascii=False, sort_keys=True))
     return 0 if complete else 1

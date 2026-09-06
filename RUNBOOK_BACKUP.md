@@ -61,22 +61,29 @@ publique, copie para documentação ou registre a chave em logs.
 O motor suporta destino externo configurado pelo EJC. A credencial de backup
 deve ser segregada da credencial de leitura do RAG.
 
-### Estado transitório importante
+### Retenção local cifrada (desde 2026-09-06 — INF-04)
 
-No motor atual, `local_ok` significa que os artefatos cifrados foram gerados
-durante o ciclo. Enquanto os `.enc` ainda forem criados dentro de
-`TemporaryDirectory`, isso **não prova retenção local recuperável após o
-retorno**.
+Os `.enc` de cada ciclo são gerados em diretório temporário e, antes do envio
+offsite, **copiados para `BACKUP_DIR`** (volume `backups_data`, permissão
+0600), com rotação por `BACKUP_RETENTION_DAYS` (default 7 dias, só arquivos
+`ejc_backup_*.enc`). O resultado do motor expõe `retencao_local_ok`,
+`retencao_local_erro` e `retencao_local_removidos`; o estado
+(`backup_drive_state.retencao_local_ok`) e `GET /admin/backup/status` refletem
+o último ciclo.
 
-Consequentemente, o gate de pré-deploy exige:
+`local_ok` continua significando apenas "artefatos gerados no temporário" e
+**não** conta como prova. O gate de pré-deploy exige:
 
 - artefato cifrado do banco gerado;
 - artefato cifrado de uploads gerado;
-- `offsite_ok=true`.
+- **uma** cópia recuperável confirmada: `offsite_ok=true` **ou**
+  `retencao_local_ok=true`.
 
-Essa exigência pode ser relaxada somente quando a Issue #1030 persistir e
-validar uma cópia cifrada real em `BACKUP_DIR`, com retenção e restore
-homologados.
+Com `offsite_ok=false` e retenção local OK, o deploy segue com aviso grave e
+o alerta do backup cobre o offsite — o deploy não fica refém de token
+expirado no destino externo (#1236). Com as duas falsas, bloqueia antes de
+qualquer mutação. A retenção local está na MESMA VPS: não substitui o offsite
+para desastre de host, só para indisponibilidade do destino externo.
 
 ## Validação de restore sem tocar produção
 
@@ -132,6 +139,7 @@ segredo, conteúdo de documentos, CPF/CNPJ ou dados de cliente.
 ## Checklist de continuidade
 
 - [ ] `BACKUP_DIR` está montado no volume esperado e não é group/world-writable.
+- [ ] `ls -la` em `BACKUP_DIR` mostra só `ejc_backup_*.enc` (0600) dentro de `BACKUP_RETENTION_DAYS`.
 - [ ] `BACKUP_ENCRYPTION_KEY` configurada fora do repositório.
 - [ ] Credencial offsite dedicada configurada.
 - [ ] Apenas um job canônico de backup está agendado.

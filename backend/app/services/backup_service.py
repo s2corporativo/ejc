@@ -272,6 +272,44 @@ def _upload_rclone_sync(caminho: str, nome: str, remote: str) -> None:
         )
 
 
+def _persistir_local_sync(
+    artefatos: list[dict[str, Any]], backup_dir: str, retencao_dias: int,
+) -> int:
+    """Retenção LOCAL cifrada (INF-04): copia os `.enc` do ciclo para
+    BACKUP_DIR (volume `backups_data`) e apaga os `.enc` do prefixo EJC mais
+    antigos que `retencao_dias`. Antes, os artefatos nasciam e morriam num
+    TemporaryDirectory e o destino offsite era a ÚNICA cópia recuperável —
+    token expirado no offsite = sem backup E deploy bloqueado (#1236).
+
+    Só arquivos com o prefixo do EJC e sufixo `.enc` entram na rotação; nada
+    em claro é gravado aqui. Devolve o número de arquivos removidos."""
+    if not backup_dir:
+        raise RuntimeError("BACKUP_DIR vazio — retenção local desabilitada")
+    os.makedirs(backup_dir, mode=0o700, exist_ok=True)
+    for art in artefatos:
+        caminho = art.get("caminho")
+        if not caminho:
+            continue
+        destino = os.path.join(backup_dir, art["nome"])
+        shutil.copy2(caminho, destino)
+        os.chmod(destino, 0o600)
+        art["retido_localmente"] = True
+    removidos = 0
+    if retencao_dias and retencao_dias > 0:
+        limite = time.time() - retencao_dias * 86400
+        for nome in os.listdir(backup_dir):
+            if not (nome.startswith(PREFIXO_BACKUP) and nome.endswith(".enc")):
+                continue
+            caminho = os.path.join(backup_dir, nome)
+            try:
+                if os.path.isfile(caminho) and os.path.getmtime(caminho) < limite:
+                    os.unlink(caminho)
+                    removidos += 1
+            except OSError as exc:
+                logger.warning("[Backup] rotação local: não removeu %s: %s", nome, exc)
+    return removidos
+
+
 def _listar_backups_sync(service, folder_id: str) -> list[dict[str, Any]]:
     """Lista arquivos da pasta com o prefixo do EJC (paginado)."""
     itens: list[dict[str, Any]] = []
@@ -350,6 +388,10 @@ async def _ensure_state_table(db: AsyncSession) -> None:
         "ALTER TABLE backup_drive_state "
         "ADD COLUMN IF NOT EXISTS offsite_ok BOOLEAN NULL"
     ))
+    await db.execute(sqltext(
+        "ALTER TABLE backup_drive_state "
+        "ADD COLUMN IF NOT EXISTS retencao_local_ok BOOLEAN NULL"
+    ))
 
 
 async def _persistir_estado(db: AsyncSession, resultado: dict[str, Any]) -> None:
@@ -358,10 +400,10 @@ async def _persistir_estado(db: AsyncSession, resultado: dict[str, Any]) -> None
         await db.execute(sqltext("""
             INSERT INTO backup_drive_state (
                 id, last_run_at, last_status, last_error, last_origem,
-                duracao_segundos, detalhes, offsite_ok, updated_at
+                duracao_segundos, detalhes, offsite_ok, retencao_local_ok, updated_at
             ) VALUES (
                 1, NOW(), :status, :erro, :origem,
-                :duracao, CAST(:detalhes AS JSONB), :offsite_ok, NOW()
+                :duracao, CAST(:detalhes AS JSONB), :offsite_ok, :retencao_local_ok, NOW()
             )
             ON CONFLICT (id) DO UPDATE SET
                 last_run_at = EXCLUDED.last_run_at,
@@ -371,6 +413,7 @@ async def _persistir_estado(db: AsyncSession, resultado: dict[str, Any]) -> None
                 duracao_segundos = EXCLUDED.duracao_segundos,
                 detalhes = EXCLUDED.detalhes,
                 offsite_ok = EXCLUDED.offsite_ok,
+                retencao_local_ok = EXCLUDED.retencao_local_ok,
                 updated_at = NOW()
         """), {
             "status": resultado.get("status"),
@@ -379,6 +422,7 @@ async def _persistir_estado(db: AsyncSession, resultado: dict[str, Any]) -> None
             "duracao": resultado.get("duracao_segundos"),
             "detalhes": json.dumps(resultado.get("artefatos") or []),
             "offsite_ok": resultado.get("offsite_ok"),
+            "retencao_local_ok": resultado.get("retencao_local_ok"),
         })
         await db.commit()
     except Exception as exc:  # estado é telemetria — nunca derruba o backup
@@ -389,7 +433,7 @@ async def obter_estado(db: AsyncSession) -> dict[str, Any] | None:
     await _ensure_state_table(db)
     row = (await db.execute(sqltext(
         "SELECT last_run_at, last_status, last_error, last_origem, "
-        "duracao_segundos, detalhes, offsite_ok, updated_at "
+        "duracao_segundos, detalhes, offsite_ok, retencao_local_ok, updated_at "
         "FROM backup_drive_state WHERE id = 1"
     ))).mappings().first()
     return dict(row) if row else None
@@ -471,6 +515,11 @@ async def executar_backup(
         local_ok = False
         offsite_ok = False
         offsite_erro: str | None = None
+        # Retenção local cifrada (INF-04): cópia recuperável em BACKUP_DIR,
+        # independente do destino offsite.
+        retencao_local_ok = False
+        retencao_local_erro: str | None = None
+        retencao_local_removidos = 0
         destino = (settings.BACKUP_DESTINO or "gdrive").strip().lower()
 
         try:
@@ -543,6 +592,25 @@ async def executar_backup(
 
                 # Artefatos cifrados prontos no disco = prova LOCAL do backup.
                 local_ok = True
+
+                # 3b) Retenção LOCAL cifrada em BACKUP_DIR (INF-04). Falha aqui
+                #     não derruba o ciclo: vira aviso grave e o offsite segue.
+                try:
+                    retencao_local_removidos = await asyncio.to_thread(
+                        _persistir_local_sync, artefatos,
+                        settings.BACKUP_DIR, settings.BACKUP_RETENTION_DAYS,
+                    )
+                    retencao_local_ok = True
+                except Exception as exc:
+                    retencao_local_erro = f"{type(exc).__name__}: {str(exc)[:300]}"
+                    avisos.append(
+                        "AVISO GRAVE: retenção local cifrada falhou "
+                        f"(BACKUP_DIR={settings.BACKUP_DIR}): {retencao_local_erro}"
+                    )
+                    logger.error(
+                        "[Backup] retenção local falhou em %s: %s",
+                        settings.BACKUP_DIR, retencao_local_erro,
+                    )
 
                 # 4) Envio OFFSITE — Google Drive (fluxo original) ou rclone
                 #    (ex.: OneDrive). Falha aqui NÃO invalida a prova local:
@@ -624,6 +692,10 @@ async def executar_backup(
             "local_ok": local_ok,
             "offsite_ok": offsite_ok,
             "offsite_erro": offsite_erro,
+            "retencao_local_ok": retencao_local_ok,
+            "retencao_local_erro": retencao_local_erro,
+            "retencao_local_removidos": retencao_local_removidos,
+            "retencao_local_dir": settings.BACKUP_DIR if retencao_local_ok else None,
             "artefatos": [
                 {k: v for k, v in a.items() if k != "caminho"} for a in artefatos
             ],
@@ -635,9 +707,9 @@ async def executar_backup(
         # Log estruturado do resultado (sucesso e falha).
         logger.info(
             "[Backup] status=%s origem=%s destino=%s duracao=%.1fs artefatos=%d "
-            "local_ok=%s offsite_ok=%s erro=%s",
+            "local_ok=%s retencao_local_ok=%s offsite_ok=%s erro=%s",
             status, origem, destino, duracao, len(resultado["artefatos"]),
-            local_ok, offsite_ok, erro or "-",
+            local_ok, retencao_local_ok, offsite_ok, erro or "-",
         )
 
         # Estado + auditoria + alerta — todos fail-safe.

@@ -80,15 +80,16 @@ run_case() {
   [ "$config_line" -lt "$execute_line" ] || \
     fail "backup é iniciado antes do gate de configuração"
 
-  # P0 Staff: os `.enc` atuais nascem em TemporaryDirectory; portanto
-  # `local_ok`/artefatos gerados NÃO provam persistência local após retorno.
-  # O pré-deploy só fica verde com transferência offsite confirmada pelo motor.
-  # Política de retenção do remote e teste de restauração são controles separados.
+  # `local_ok`/artefatos gerados (TemporaryDirectory) NÃO provam persistência.
+  # O pré-deploy só fica verde com UMA cópia recuperável confirmada pelo motor:
+  # offsite OU retenção local cifrada em BACKUP_DIR (INF-04).
   grep -q 'encrypted_generated' "$TMP/stdin.py" || fail "produção dos artefatos cifrados não é conferida"
   grep -q 'offsite_ok = bool(result.get("offsite_ok"))' "$TMP/stdin.py" || \
     fail "confirmação de transferência offsite não é lida do resultado"
-  grep -q 'and offsite_ok' "$TMP/stdin.py" || \
-    fail "gate pré-deploy ainda pode aprovar sem transferência offsite confirmada"
+  grep -q 'retencao_local_ok = bool(result.get("retencao_local_ok"))' "$TMP/stdin.py" || \
+    fail "confirmação de retenção local cifrada não é lida do resultado"
+  grep -q 'and (offsite_ok or retencao_local_ok)' "$TMP/stdin.py" || \
+    fail "gate pré-deploy não exige cópia recuperável (offsite ou retenção local)"
   grep -q 'artefatos_cifrados_gerados' "$TMP/stdin.py" || \
     fail "saída não diferencia geração temporária de envio offsite"
   if grep -q 'deploy prossegue com prova local\|BACKUP_OFFSITE_OBRIGATORIO' "$TMP/stdin.py"; then
@@ -138,9 +139,9 @@ ENSURE_DAILY_BACKUP=1 \
 bash "$DEPLOY_CASE/deploy.sh" >"$TMP/deploy-out" 2>"$TMP/deploy-err"
 deploy_rc=$?
 set -e
-[ "$deploy_rc" -ne 0 ] || fail "deploy aceitou offsite_ok=false"
-grep -q 'offsite_ok=false' "$TMP/deploy-out" || \
-  fail "deploy não registrou bloqueio por ausência de transferência offsite confirmada"
+[ "$deploy_rc" -ne 0 ] || fail "deploy aceitou backup sem prova recuperável (offsite e retenção local ausentes)"
+grep -q 'sem prova recuperável' "$TMP/deploy-out" || \
+  fail "deploy não registrou bloqueio por ausência de cópia recuperável"
 if grep -Eq '^compose build|^compose up|^tag ' "$TMP/deploy-docker.log"; then
   fail "deploy iniciou mutação de imagem/runtime após offsite_ok=false"
 fi
@@ -194,3 +195,30 @@ PY_DOCKERFILE
 
 bash -n "$ROOT/scripts/backup.sh" "$DEPLOY" "$ACTIVATOR"
 echo "[backup-wrapper-test] OK — pré-deploy exige cifragem + transferência offsite confirmada, sem falso local_ok."
+
+# INF-04: offsite_ok=false COM retencao_local_ok=true é prova recuperável —
+# o gate passa (com aviso) e o deploy chega à mutação (build).
+cat > "$DEPLOY_APP/scripts/backup.sh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' '{"ok":true,"offsite_ok":false,"retencao_local_ok":true,"destino":"rclone"}'
+exit 0
+EOF
+: > "$TMP/deploy-docker.log"
+set +e
+PATH="$BIN:$PATH" \
+FAKE_DOCKER_LOG="$TMP/deploy-docker.log" \
+FAKE_STDIN_LOG="$TMP/deploy-stdin.py" \
+APP_DIR="$DEPLOY_APP" \
+TARGET_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+REQUIRE_PREDEPLOY_BACKUP=1 \
+ENSURE_DAILY_BACKUP=1 \
+bash "$DEPLOY_CASE/deploy.sh" >"$TMP/deploy-out2" 2>"$TMP/deploy-err2"
+set -e
+grep -q 'AVISO GRAVE: offsite_ok=false' "$TMP/deploy-out2" || \
+  fail "deploy não avisou sobre offsite ausente com retenção local OK"
+grep -q 'sem prova recuperável' "$TMP/deploy-out2" && \
+  fail "deploy bloqueou mesmo com retenção local cifrada confirmada"
+grep -Eq '^compose build' "$TMP/deploy-docker.log" || \
+  fail "deploy não avançou até o build com retenção local cifrada confirmada"
+
+echo "[backup-wrapper-test] OK — retenção local cifrada aceita como prova recuperável (INF-04)."

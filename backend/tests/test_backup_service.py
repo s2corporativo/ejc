@@ -301,3 +301,88 @@ async def test_uploads_acima_do_limite_gera_parcial(monkeypatch, tmp_path):
     assert resultado["ok"] is True
     assert len(enviados) == 1 and enviados[0].endswith("_db.dump.enc")
     assert any("BACKUP_UPLOADS_MAX_MB" in a for a in resultado["avisos"])
+
+
+# ── Retenção local cifrada (INF-04) ──────────────────────────────────────────
+
+def test_persistir_local_copia_enc_e_rotaciona(tmp_path):
+    """Os .enc do ciclo vão para BACKUP_DIR (0600) e só os `ejc_backup_*.enc`
+    mais antigos que a retenção são apagados — nada em claro é tocado."""
+    import os
+    import time as _time
+
+    origem = tmp_path / "tmp"
+    origem.mkdir()
+    (origem / "db.dump.enc").write_bytes(b"cifrado-db")
+    (origem / "uploads.tar.gz.enc").write_bytes(b"cifrado-up")
+    backup_dir = tmp_path / "backups"
+    backup_dir.mkdir()
+    antigo = backup_dir / "ejc_backup_20200101T000000Z_db.dump.enc"
+    antigo.write_bytes(b"velho")
+    velho_ts = _time.time() - 40 * 86400
+    os.utime(antigo, (velho_ts, velho_ts))
+    em_claro = backup_dir / "outra_coisa.sql"
+    em_claro.write_bytes(b"nao-e-do-ejc")
+    os.utime(em_claro, (velho_ts, velho_ts))
+
+    artefatos = [
+        {"nome": "ejc_backup_20260906T120000Z_db.dump.enc", "caminho": str(origem / "db.dump.enc")},
+        {"nome": "ejc_backup_20260906T120000Z_uploads.tar.gz.enc", "caminho": str(origem / "uploads.tar.gz.enc")},
+    ]
+    removidos = backup_service._persistir_local_sync(artefatos, str(backup_dir), 30)
+
+    assert removidos == 1
+    assert not antigo.exists()
+    assert em_claro.exists(), "rotação só toca artefatos do prefixo EJC"
+    for art in artefatos:
+        destino = backup_dir / art["nome"]
+        assert destino.exists()
+        assert oct(destino.stat().st_mode & 0o777) == "0o600"
+        assert art["retido_localmente"] is True
+
+
+def test_persistir_local_sem_backup_dir_falha_claro():
+    with pytest.raises(RuntimeError, match="BACKUP_DIR"):
+        backup_service._persistir_local_sync([], "", 30)
+
+
+@pytest.mark.asyncio
+async def test_ciclo_persiste_retencao_local_mesmo_com_offsite_falho(monkeypatch, tmp_path):
+    """Offsite indisponível NÃO deixa o ciclo sem cópia recuperável: os .enc
+    ficam em BACKUP_DIR e o resultado expõe retencao_local_ok=True (o gate
+    pré-deploy aceita essa prova — INF-04)."""
+    uploads_dir = tmp_path / "uploads"
+    uploads_dir.mkdir()
+    (uploads_dir / "doc.txt").write_text("conteudo")
+    backup_dir = tmp_path / "backups"
+    monkeypatch.setattr(backup_service.settings, "BACKUP_ENCRYPTION_KEY", CHAVE)
+    monkeypatch.setattr(backup_service.settings, "BACKUP_DESTINO", "gdrive")
+    monkeypatch.setattr(backup_service.settings, "BACKUP_DRIVE_FOLDER_ID", "pasta123")
+    monkeypatch.setattr(backup_service.settings, "BACKUP_OFFSITE_OBRIGATORIO", False)
+    monkeypatch.setattr(backup_service.settings, "BACKUP_UPLOADS_MAX_MB", 10)
+    monkeypatch.setattr(backup_service.settings, "UPLOAD_DIR", str(uploads_dir))
+    monkeypatch.setattr(backup_service.settings, "BACKUP_DIR", str(backup_dir))
+    monkeypatch.setattr(backup_service.settings, "BACKUP_RETENTION_DAYS", 7)
+
+    def _fake_pg_dump(destino):
+        with open(destino, "wb") as f:
+            f.write(b"PGDMP fake")
+        return 10
+
+    def _drive_indisponivel():
+        raise RuntimeError("token expirado")
+
+    monkeypatch.setattr(backup_service, "_pg_dump_para", _fake_pg_dump)
+    monkeypatch.setattr(backup_service, "_drive_client_escrita", _drive_indisponivel)
+
+    resultado = await backup_service.executar_backup(_FakeDB(), origem="pre_deploy")
+
+    assert resultado["ok"] is True
+    assert resultado["status"] == "parcial"
+    assert resultado["offsite_ok"] is False
+    assert resultado["retencao_local_ok"] is True
+    assert resultado["retencao_local_dir"] == str(backup_dir)
+    nomes = sorted(p.name for p in backup_dir.iterdir())
+    assert any(n.endswith("_db.dump.enc") for n in nomes)
+    assert any(n.endswith("_uploads.tar.gz.enc") for n in nomes)
+    assert not any(n.endswith((".dump", ".tar.gz")) for n in nomes), "nada em claro em BACKUP_DIR"

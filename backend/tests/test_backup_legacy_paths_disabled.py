@@ -82,4 +82,7 @@ def test_wrapper_operacional_nao_implementa_dump_ou_tar_proprio():
     )
     assert "pg_dump" not in corpo, "wrapper não deve executar pg_dump"
     assert "tar cz" not in corpo, "wrapper não deve executar tar cz"
-    assert "and offsite_ok" in wrapper
+    # INF-04: prova recuperável = offsite confirmado OU retenção local cifrada
+    # em BACKUP_DIR; `local_ok` (temporário) continua não bastando.
+    assert "and (offsite_ok or retencao_local_ok)" in wrapper
+    assert 'retencao_local_ok = bool(result.get("retencao_local_ok"))' in wrapper
