@@ -17,6 +17,7 @@ import {
   GUIA_TRIBUTARIO_DATA_BASE,
   REGRAS_CARF,
   REGRAS_CREDITOS,
+  REGRAS_CTN_2026,
   REGRAS_JUDICIAIS,
   REGRAS_MG,
   REGRAS_MUNICIPAIS,
@@ -122,7 +123,8 @@ export default function GuiaTributario() {
             <b>Regra de segurança:</b> nunca reutilize “30 dias” por hábito. Desde
             2026, o PAF federal possui regra geral de 20 dias úteis para impugnação
             e recurso voluntário, com transição própria. Estados e municípios têm
-            processo administrativo próprio e exigem norma específica.
+            processo administrativo próprio e exigem norma específica. O CTN foi
+            novamente alterado em 04/09/2026 pela LC 236/2026.
           </div>
         </div>
       </div>
@@ -135,7 +137,8 @@ export default function GuiaTributario() {
             análise por XML/NF-e é pré-auditoria. O resultado deve ser tratado como
             oportunidade potencial e confirmado com escrituração, declarações,
             pagamentos, regime, documentação e regra jurídica aplicável antes de
-            qualquer compensação, restituição ou ação.
+            qualquer compensação, restituição ou ação. Data da NF-e não é termo
+            inicial universal de prescrição/restituição.
           </div>
         </div>
       </div>
@@ -178,7 +181,11 @@ export default function GuiaTributario() {
           </div>
         </Sec>
 
-        <Sec icon={Scale} titulo="3. CARF — voto de qualidade e recursos">
+        <Sec icon={ShieldCheck} titulo="3. CTN após LC 236/2026 — vigência 04/09/2026">
+          <Regras regras={REGRAS_CTN_2026} />
+        </Sec>
+
+        <Sec icon={Scale} titulo="4. CARF — voto de qualidade e recursos">
           <Regras regras={REGRAS_CARF} />
           <p className="rounded-lg border border-warn-200 bg-warn-50 p-3 text-[11px] leading-5 text-warn-900">
             O antigo texto do EJC dizia que o empate era automaticamente favorável
@@ -188,7 +195,7 @@ export default function GuiaTributario() {
           </p>
         </Sec>
 
-        <Sec icon={Building2} titulo="4. Minas Gerais — RPTA, e-PTA e competência">
+        <Sec icon={Building2} titulo="5. Minas Gerais — RPTA, e-PTA e competência">
           <Regras regras={REGRAS_MG} />
           <p className="rounded-lg border border-slate-200 bg-white p-3 text-[11px] leading-5 text-slate-600">
             <b>Correção de competência:</b> causas tributárias federais em Minas
@@ -197,16 +204,18 @@ export default function GuiaTributario() {
           </p>
         </Sec>
 
-        <Sec icon={Landmark} titulo="5. Municípios — Betim, Contagem, BH e outros">
+        <Sec icon={Landmark} titulo="6. Municípios — Betim, Contagem, BH e outros">
           <Regras regras={REGRAS_MUNICIPAIS} />
           <p className="rounded-lg border border-warn-200 bg-warn-50 p-3 text-[11px] leading-5 text-warn-900">
             O EJC não deve exibir “geralmente 30 dias” para defesa municipal. O
             prazo deve vir do Código Tributário/regulamento vigente do Município e
-            do ato de ciência do caso concreto.
+            do ato de ciência do caso concreto. A LC 236/2026 cria parâmetros
+            nacionais mínimos e dever de atualização, mas não torna o rito local
+            idêntico ao federal.
           </p>
         </Sec>
 
-        <Sec icon={FileText} titulo="6. Judicialização, execução fiscal e repetição">
+        <Sec icon={FileText} titulo="7. Judicialização, execução fiscal e repetição">
           <Regras regras={REGRAS_JUDICIAIS} />
           <p className="rounded-lg border border-slate-200 bg-white p-3 text-[11px] leading-5 text-slate-600">
             Mandado de segurança, ação anulatória, declaratória e repetição de
@@ -216,7 +225,7 @@ export default function GuiaTributario() {
           </p>
         </Sec>
 
-        <Sec icon={ShieldCheck} titulo="7. Recuperação de créditos — gate profissional">
+        <Sec icon={ShieldCheck} titulo="8. Recuperação de créditos — gate profissional">
           <Regras regras={REGRAS_CREDITOS} />
           <div className="grid gap-2 sm:grid-cols-2">
             <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
@@ -236,7 +245,7 @@ export default function GuiaTributario() {
           </div>
         </Sec>
 
-        <Sec icon={BookOpen} titulo="8. Fontes oficiais prioritárias">
+        <Sec icon={BookOpen} titulo="9. Fontes oficiais prioritárias">
           <ul className="space-y-1.5">
             {FONTES_OFICIAIS_GUIA.map((fonte) => (
               <li key={fonte} className="flex gap-2">
