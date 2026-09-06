@@ -1,19 +1,272 @@
-import { Navigate, useLocation } from "react-router";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router";
+import {
+  AlertTriangle,
+  BookOpen,
+  Briefcase,
+  Calculator,
+  FileSearch,
+  Landmark,
+  Receipt,
+  Scale,
+} from "lucide-react";
+import { Empty, PageHeader, Spinner, StatusBadge } from "../components/UI";
+import api from "../lib/api";
+import type { Case } from "../types";
 
-/**
- * Atalho de primeira classe para o núcleo tributário canônico.
- *
- * A implementação tributária continua em Áreas de Atuação/RamoBase para não
- * duplicar casos, ferramentas, RAG, guias ou motores fiscais. Esta página
- * existe somente para dar ao Tributário uma porta própria no menu do EJC.
- */
+const STATUS_FECHADOS = new Set(["encerrado", "arquivado"]);
+
+export function casoTributarioAtivo(caso: Pick<Case, "status">): boolean {
+  return !STATUS_FECHADOS.has(caso.status);
+}
+
+export function filtrarCasosTributarios(
+  casos: Case[],
+  clientId?: string | null,
+): Case[] {
+  return casos.filter(
+    (caso) =>
+      caso.area === "tributario" &&
+      (!clientId || String(caso.client_id) === String(clientId)),
+  );
+}
+
+export function resumoCarteiraTributaria(casos: Case[]) {
+  return {
+    total: casos.length,
+    ativos: casos.filter(casoTributarioAtivo).length,
+    altaPrioridade: casos.filter(
+      (caso) => caso.prioridade === "alta" || caso.prioridade === "urgente",
+    ).length,
+    altoRisco: casos.filter(
+      (caso) => caso.risco === "alto" || caso.risco_nivel === "alto",
+    ).length,
+  };
+}
+
+function rotulo(value?: string | null) {
+  return (value || "—")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
 export default function TributarioWorkspace() {
-  const { search, hash } = useLocation();
+  const [searchParams] = useSearchParams();
+  const clientId = searchParams.get("client_id");
+  const [casos, setCasos] = useState<Case[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState(false);
+
+  useEffect(() => {
+    let ativo = true;
+    setLoading(true);
+    setErro(false);
+
+    api
+      .get("/cases/", { params: { area: "tributario", page_size: 100 } })
+      .then((resposta) => {
+        if (!ativo) return;
+        const data = Array.isArray(resposta.data)
+          ? resposta.data
+          : Array.isArray(resposta.data?.data)
+            ? resposta.data.data
+            : [];
+        setCasos(filtrarCasosTributarios(data as Case[], clientId));
+      })
+      .catch(() => {
+        if (!ativo) return;
+        setCasos([]);
+        setErro(true);
+      })
+      .finally(() => {
+        if (ativo) setLoading(false);
+      });
+
+    return () => {
+      ativo = false;
+    };
+  }, [clientId]);
+
+  const resumo = useMemo(() => resumoCarteiraTributaria(casos), [casos]);
+  const recentes = useMemo(
+    () =>
+      [...casos]
+        .sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        )
+        .slice(0, 8),
+    [casos],
+  );
 
   return (
-    <Navigate
-      to={`/areas-de-atuacao/tributario${search}${hash}`}
-      replace
-    />
+    <div className="space-y-5">
+      <PageHeader
+        eyebrow="Inteligência Tributária"
+        title="Tributário"
+        subtitle={
+          clientId
+            ? "Visão tributária filtrada pelo cliente selecionado."
+            : "Carteira tributária, contencioso, créditos potenciais, planejamento e reforma tributária."
+        }
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Link to="/areas-de-atuacao/tributario" className="btn-gold text-sm">
+              Abrir núcleo técnico
+            </Link>
+            <Link to="/entrada" className="btn-secondary text-sm">
+              Novo caso
+            </Link>
+          </div>
+        }
+      />
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          {
+            label: "Casos tributários",
+            value: resumo.total,
+            icon: Briefcase,
+            descricao: "Fonte única: cadastro central de Casos do EJC.",
+          },
+          {
+            label: "Em andamento",
+            value: resumo.ativos,
+            icon: Receipt,
+            descricao: "Casos não encerrados nem arquivados.",
+          },
+          {
+            label: "Alta prioridade",
+            value: resumo.altaPrioridade,
+            icon: AlertTriangle,
+            descricao: "Prioridade alta ou urgente no caso canônico.",
+          },
+          {
+            label: "Alto risco",
+            value: resumo.altoRisco,
+            icon: Scale,
+            descricao: "Classificação de risco registrada no caso.",
+          },
+        ].map(({ label, value, icon: Icon, descricao }) => (
+          <div key={label} className="card p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                  {label}
+                </p>
+                <p className="mt-1 text-2xl font-semibold text-navy">{value}</p>
+              </div>
+              <div className="grid h-9 w-9 place-items-center rounded-xl bg-slate-50 text-slate-600">
+                <Icon size={17} />
+              </div>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-slate-500">{descricao}</p>
+          </div>
+        ))}
+      </section>
+
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {[
+          {
+            title: "Diagnóstico e contencioso",
+            descricao:
+              "Autos, prescrição/decadência, parcelamento, Simples e demais ferramentas homologadas.",
+            icon: Calculator,
+            to: "/areas-de-atuacao/tributario",
+          },
+          {
+            title: "Créditos potenciais",
+            descricao:
+              "Análise fiscal por XML/NF-e como pré-auditoria, sempre sujeita a validação profissional.",
+            icon: FileSearch,
+            to: "/areas-de-atuacao/tributario",
+          },
+          {
+            title: "Pesquisa e jurisprudência",
+            descricao:
+              "Use a pesquisa jurídica canônica, com fontes e contexto do EJC.",
+            icon: Landmark,
+            to: "/inteligencia",
+          },
+          {
+            title: "Banco de teses",
+            descricao:
+              "Teses tributárias permanecem no repositório central do escritório, sem duplicação.",
+            icon: BookOpen,
+            to: "/teses",
+          },
+        ].map(({ title, descricao, icon: Icon, to }) => (
+          <Link
+            key={title}
+            to={to}
+            className="card p-4 transition hover:border-gold-300 hover:bg-gold-50/20"
+          >
+            <div className="flex items-center gap-2">
+              <Icon size={17} className="text-gold-600" />
+              <h2 className="font-serif font-semibold text-navy">{title}</h2>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-slate-500">{descricao}</p>
+          </Link>
+        ))}
+      </section>
+
+      <section className="card overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+          <div>
+            <h2 className="font-serif font-semibold text-navy">
+              Carteira tributária recente
+            </h2>
+            <p className="text-xs text-slate-500">
+              O painel apenas consolida casos já existentes; não cria registro tributário paralelo.
+            </p>
+          </div>
+          <Link to="/areas-de-atuacao/tributario" className="btn-secondary text-xs">
+            Ver núcleo completo
+          </Link>
+        </div>
+
+        {loading ? (
+          <div className="p-6">
+            <Spinner />
+          </div>
+        ) : erro ? (
+          <div className="p-6">
+            <Empty message="Não foi possível carregar a carteira tributária. O cadastro central de Casos permanece disponível." />
+          </div>
+        ) : recentes.length === 0 ? (
+          <div className="p-6">
+            <Empty message="Nenhum caso tributário encontrado para esta visão." />
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {recentes.map((caso) => (
+              <div key={caso.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+                <Link to={`/casos/${caso.id}`} className="min-w-[220px] flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-medium text-navy">{caso.titulo}</p>
+                    <StatusBadge value={caso.status} />
+                  </div>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {caso.numero_interno || "Sem número interno"} · {rotulo(caso.fase)} · Prioridade {rotulo(caso.prioridade)}
+                  </p>
+                </Link>
+                <div className="flex gap-2">
+                  <Link to={`/clientes/${caso.client_id}?tab=casos`} className="btn-secondary text-xs">
+                    Cliente
+                  </Link>
+                  <Link to={`/casos/${caso.id}`} className="btn-secondary text-xs">
+                    Abrir caso
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-warn-200 bg-warn-50 p-4 text-xs leading-5 text-warn-900">
+        <strong>Gate profissional:</strong> indicação de crédito, decadência, prescrição, prazo, regime ou impacto da reforma tributária é apoio técnico. Nenhum valor ou tese deve ser tratado como recuperável, devido ou definitivo sem conferência documental, normativa e revisão humana.
+      </section>
+    </div>
   );
 }
