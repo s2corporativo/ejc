@@ -3,6 +3,11 @@
 PAF, prescrição/decadência, parcelamento, comparativo de regimes e Reforma
 permanecem fora da cadeia de demonstrativo até revisão jurídica completa.
 """
+from datetime import date
+
+import pytest
+
+from app.routers import ramos
 from app.services.homologacao_ferramentas import (
     FERRAMENTAS_NAO_HOMOLOGADAS,
     motivo_nao_homologada,
@@ -14,6 +19,17 @@ ROTA_PRESCRICAO = "/tributario/ferramentas/prescricao-decadencia"
 ROTA_PARCELAMENTO = "/tributario/ferramentas/parcelamento"
 ROTA_REGIME = "/tributario/ferramentas/regime-tributario"
 ROTA_REFORMA = "/tributario/ferramentas/reforma-tributaria"
+
+
+def _endpoint_get(caminho: str):
+    rotas = [
+        rota
+        for rota in ramos.router.routes
+        if getattr(rota, "path", None) == caminho
+        and "GET" in getattr(rota, "methods", set())
+    ]
+    assert len(rotas) == 1, caminho
+    return rotas[0].endpoint
 
 
 def test_prazo_auto_infracao_tributario_permanece_nao_homologado() -> None:
@@ -94,3 +110,56 @@ def test_selo_impede_promocao_silenciosa_do_resultado() -> None:
     for resposta in respostas:
         assert resposta["homologada"] is False
         assert "não homologado" in resposta["aviso_homologacao"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("caminho", "kwargs"),
+    [
+        (
+            ROTA_PRESCRICAO,
+            {
+                "data_fato_gerador": date(2024, 1, 15),
+                "tipo": "homologacao",
+                "cu": None,
+            },
+        ),
+        (
+            ROTA_PARCELAMENTO,
+            {
+                "valor_total_debito": 12_000.0,
+                "parcelas": 12,
+                "modalidade": "parcelamento_comum",
+                "cu": None,
+            },
+        ),
+        (
+            ROTA_REGIME,
+            {
+                "receita_bruta_anual": 1_000_000.0,
+                "lucro_estimado_pct": 20.0,
+                "atividade": "servicos",
+                "cu": None,
+            },
+        ),
+        (
+            ROTA_REFORMA,
+            {
+                "receita_bruta_anual": 1_000_000.0,
+                "regime_atual": "lucro_presumido",
+                "atividade": "servicos",
+                "ano_analise": "2026",
+                "cu": None,
+            },
+        ),
+    ],
+)
+async def test_resposta_real_da_api_carrega_selo_de_nao_homologacao(
+    caminho: str,
+    kwargs: dict,
+) -> None:
+    endpoint = _endpoint_get(caminho)
+    resposta = await endpoint(**kwargs)
+
+    assert resposta["homologada"] is False
+    assert "não homologado" in resposta["aviso_homologacao"]
