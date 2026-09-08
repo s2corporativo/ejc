@@ -1,10 +1,17 @@
 # Woodpecker CI — servidor + agente, self-hosted na VPS.
 # Substituto do GitHub Actions (conta sem alocação de runner desde ~22/08/2026).
 # Runbook completo: README.md ao lado. Variáveis: copie .env.example para .env.
+x-logging: &woodpecker-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
 services:
   woodpecker-server:
     image: woodpeckerci/woodpecker-server:v3.18.0
     restart: unless-stopped
+    logging: *woodpecker-logging
     ports:
       # Só loopback: o Nginx do host faz o TLS e o proxy público.
       - "127.0.0.1:8100:8000"
@@ -36,6 +43,7 @@ services:
   woodpecker-agent:
     image: woodpeckerci/woodpecker-agent:v3.18.0
     restart: unless-stopped
+    logging: *woodpecker-logging
     depends_on:
       - woodpecker-server
     volumes:
