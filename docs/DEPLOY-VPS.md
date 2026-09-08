@@ -97,9 +97,9 @@ mantenha em sincronia com os `OLLAMA_MODEL_*`). A porta 11434 **não** é
 publicada no host: só o backend alcança o Ollama pela rede interna.
 
 Verificação: `docker compose exec ollama ollama list` e, como admin,
-`POST /api/ai/gateway/health` (status de cada provedor). No deploy,
-`IA_LOCAL=1 ./scripts/atualizar-vps.sh` inclui a subida do profile (e ele
-re-sobe sozinho nas atualizações seguintes enquanto o container existir).
+`POST /api/ai/gateway/health` (status de cada provedor). A IA local é operada
+separadamente por `./scripts/subir-ia-local.sh`; o caminho canônico de deploy
+não usa `atualizar-vps.sh`.
 
 A extração de PII de documentos roda **só em modelo local (Ollama)** por LGPD —
 se não houver Ollama, esse recurso específico falha fechado (o resto do sistema
@@ -107,10 +107,18 @@ funciona normalmente). Recursos de IA em nuvem (Groq) exigem `GROQ_API_KEY` no `
 
 ## Atualizar para uma nova versão
 
+O fluxo normal é CI Woodpecker verde + promoção pelo gate host-level. Para
+contingência/manual, use somente o wrapper transacional e confira primeiro em
+`--dry-run`:
+
 ```bash
-git pull
-docker compose up -d --build   # migrations reaplicam automaticamente (idempotente)
+git fetch origin main
+SHA="$(git rev-parse origin/main)"
+bash scripts/deploy_manual.sh --sha "$SHA" --dry-run
+bash scripts/deploy_manual.sh --sha "$SHA"
 ```
+
+Não use `docker compose up --build` nem scripts legados como substituto do gate.
 
 ## Verificação rápida
 
