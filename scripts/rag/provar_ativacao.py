@@ -66,18 +66,25 @@ def _config_metrics() -> tuple[dict[str, Any], list[str]]:
     return data, problems
 
 
-def _governance_contract() -> tuple[str, list[str]]:
-    """Retorna o mesmo gate SQL usado pela recuperação real do EJC."""
+def _governance_contract(
+    scope_client_id: str | None = None,
+    scope_case_id: str | None = None,
+) -> tuple[str, str, dict[str, object]]:
+    """Retorna os mesmos gates e binds usados pela recuperação real do EJC."""
     from app.services import ai_service as ai
 
-    return ai._filtros_gate_rag(False), list(ai._RESTRICTED_CATS)
+    return (
+        ai._filtros_gate_rag(False),
+        ai._FILTRO_ESCOPO_RAG,
+        ai._params_escopo_rag(scope_client_id, scope_case_id),
+    )
 
 
 async def _db_metrics() -> dict[str, Any]:
     from app.core.database import AsyncSessionLocal
     from app.services import ai_service as ai
 
-    gate_sql, restricted = _governance_contract()
+    gate_sql, scope_sql, scope_params = _governance_contract()
     async with AsyncSessionLocal() as db:
         column_type = (
             await db.execute(
@@ -120,10 +127,10 @@ async def _db_metrics() -> dict[str, Any]:
                     "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
                     "WHERE kd.deleted_at IS NULL "
                     "AND (kd.vigente = TRUE OR :incl_hist) "
-                    "AND (kd.categoria <> ALL(:restr_cats) OR kd.client_id IS NOT NULL) "
+                    f"{scope_sql} "
                     f"{gate_sql}"
                 ),
-                {"incl_hist": False, "restr_cats": restricted},
+                {"incl_hist": False, **scope_params},
             )
         ).one()
 
@@ -190,7 +197,7 @@ async def _probe_semantic_search() -> bool:
     from app.core.database import AsyncSessionLocal
     from app.services import ai_service as ai
 
-    gate_sql, restricted = _governance_contract()
+    gate_sql, scope_sql, scope_params = _governance_contract()
     async with AsyncSessionLocal() as db:
         seed = (
             await db.execute(
@@ -198,19 +205,17 @@ async def _probe_semantic_search() -> bool:
                 # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
                 # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
                 text(
-                    "SELECT kc.embedding::text AS vector_text, "
-                    "CASE WHEN kd.categoria = ANY(:restr_cats) "
-                    "THEN kd.client_id::text ELSE '' END AS scope_cli "
+                    "SELECT kc.embedding::text AS vector_text "
                     "FROM knowledge_chunks kc "
                     "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
                     "WHERE kd.deleted_at IS NULL "
                     "AND kc.embedding IS NOT NULL "
                     "AND (kd.vigente = TRUE OR :incl_hist) "
-                    "AND (kd.categoria <> ALL(:restr_cats) OR kd.client_id IS NOT NULL) "
+                    f"{scope_sql} "
                     f"{gate_sql} "
                     "ORDER BY kc.id LIMIT 1"
                 ),
-                {"incl_hist": False, "restr_cats": restricted},
+                {"incl_hist": False, **scope_params},
             )
         ).first()
         if seed is None:
@@ -228,7 +233,7 @@ async def _probe_semantic_search() -> bool:
                     "WHERE kd.deleted_at IS NULL "
                     "AND kc.embedding IS NOT NULL "
                     "AND (kc.embedding <=> CAST(:vec AS vector(1024))) <= :max_dist "
-                    f"{ai._FILTRO_ESCOPO_RAG} "
+                    f"{scope_sql} "
                     f"{ai._FILTRO_VIGENTE_RAG} "
                     f"{gate_sql} "
                     "ORDER BY kc.embedding <=> CAST(:vec AS vector(1024)) "
@@ -237,9 +242,8 @@ async def _probe_semantic_search() -> bool:
                 {
                     "vec": seed.vector_text,
                     "max_dist": ai._rag_max_dist(),
-                    "restr_cats": restricted,
-                    "scope_cli": seed.scope_cli or "",
                     "incl_hist": False,
+                    **scope_params,
                 },
             )
         ).first()
@@ -304,7 +308,7 @@ async def canary(max_docs: int) -> int:
         problems.append(f"sonda pré-canário falhou:{_exception_code(exc)}")
         return _emit("canary", data, problems)
 
-    gate_sql, restricted = _governance_contract()
+    gate_sql, scope_sql, scope_params = _governance_contract()
     processed = succeeded = failed = 0
     try:
         async with AsyncSessionLocal() as db:
@@ -319,7 +323,7 @@ async def canary(max_docs: int) -> int:
                             "FROM knowledge_docs kd "
                             "WHERE kd.deleted_at IS NULL "
                             "AND (kd.vigente = TRUE OR :incl_hist) "
-                            "AND (kd.categoria <> ALL(:restr_cats) OR kd.client_id IS NOT NULL) "
+                            f"{scope_sql} "
                             f"{gate_sql} "
                             "AND EXISTS ("
                             "  SELECT 1 FROM knowledge_chunks kc "
@@ -332,7 +336,7 @@ async def canary(max_docs: int) -> int:
                         {
                             "limit": max_docs,
                             "incl_hist": False,
-                            "restr_cats": restricted,
+                            **scope_params,
                         },
                     )
                 ).scalars().all()
