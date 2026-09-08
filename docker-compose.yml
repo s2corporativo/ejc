@@ -77,6 +77,10 @@ services:
       # inclusive em `docker compose up` manual; migrations só rodam por opt-in
       # explícito da esteira de deploy, após backup e revisão.
       RUN_MIGRATIONS: "${RUN_MIGRATIONS:-0}"
+      # 2FA é recurso opcional por decisão do titular (#1580). O default não
+      # exige nenhum papel e não reativa TOTP por acidente em recreate/deploy.
+      TWO_FACTOR_AUTH_ENABLED: "${TWO_FACTOR_AUTH_ENABLED:-false}"
+      REQUIRE_2FA_ROLES: "${REQUIRE_2FA_ROLES:-}"
       # Fila assíncrona (Fase 3A): worker existe no compose → Celery ligado.
       # Redis fora do ar não quebra nada: o dispatcher cai para BackgroundTasks.
       REDIS_URL: redis://redis:6379/0
