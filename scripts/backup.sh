@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 # EJC — wrapper operacional do backup nativo cifrado para pré-deploy.
 #
-# IMPORTANTE: o motor atual gera os artefatos `.enc` em TemporaryDirectory e
-# remove esse diretório ao concluir. Portanto `local_ok` prova apenas que a
-# cifragem ocorreu durante o ciclo; NÃO prova retenção local recuperável após o
-# retorno da função. Até o motor persistir cópia cifrada em BACKUP_DIR, o
-# pré-deploy exige `offsite_ok=true` para existir prova recuperável.
+# `local_ok=true` significa que banco/uploads cifrados foram persistidos e
+# fsyncados no BACKUP_DIR. Offsite continua desejável e torna-se bloqueante
+# somente quando BACKUP_OFFSITE_OBRIGATORIO=true.
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/ejc}"
@@ -51,6 +49,7 @@ def _safe_artifact(item: dict) -> dict:
         "nome": item.get("nome"),
         "bytes_original": item.get("bytes_original"),
         "bytes_cifrado": item.get("bytes_cifrado"),
+        "local_persistido": bool(item.get("local_persistido")),
     }
 
 
@@ -69,15 +68,17 @@ async def main() -> int:
         if not bool(config.get(field)):
             problems.append(message)
 
-    # O gate pré-deploy exige destino offsite utilizável SEM depender do valor
-    # sinalizador de obrigatoriedade offsite. Hoje o motor não mantém os `.enc` em
-    # BACKUP_DIR após o retorno; aceitar offsite indisponível seria falso verde.
-    if destino == "rclone":
+    offsite_required = bool(config.get("offsite_obrigatorio"))
+
+    # O destino externo só é pré-condição quando a política o torna obrigatório.
+    # Com offsite opcional, o motor ainda tenta enviar e sinaliza status parcial,
+    # mas a cópia local cifrada/persistente sustenta o gate de deploy.
+    if offsite_required and destino == "rclone":
         if not bool(config.get("rclone_remote_configurado")):
             problems.append("remote rclone ausente (BACKUP_RCLONE_REMOTE)")
         if not bool(config.get("rclone_disponivel")):
             problems.append("binário rclone indisponível")
-    else:
+    elif offsite_required:
         if not bool(config.get("pasta_configurada")):
             problems.append("pasta de destino ausente")
         if not bool(config.get("credencial_dedicada_configurada")):
@@ -113,14 +114,22 @@ async def main() -> int:
     names = [str(item.get("nome") or "") for item in artifacts]
     has_db = any(name.endswith("_db.dump.enc") for name in names)
     has_uploads = any(name.endswith("_uploads.tar.gz.enc") for name in names)
-    encrypted_generated = bool(result.get("local_ok")) and has_db and has_uploads
+    local_persisted = (
+        bool(result.get("local_ok"))
+        and has_db
+        and has_uploads
+        and all(bool(item.get("local_persistido")) for item in artifacts)
+    )
     offsite_ok = bool(result.get("offsite_ok"))
     offsite_erro = str(result.get("offsite_erro") or "") or None
 
-    # Prova promovível = ciclo do motor OK + artefatos cifrados produzidos +
-    # retenção OFFSITE confirmada. `local_ok` sozinho não é suficiente enquanto
-    # backup_service usar TemporaryDirectory para os artefatos `.enc`.
-    complete = bool(result.get("ok")) and encrypted_generated and offsite_ok
+    # Prova promovível = ciclo OK + par cifrado persistido localmente; offsite
+    # também é exigido quando a política BACKUP_OFFSITE_OBRIGATORIO estiver ativa.
+    complete = (
+        bool(result.get("ok"))
+        and local_persisted
+        and (offsite_ok or not offsite_required)
+    )
 
     safe = {
         "ok": complete,
@@ -131,7 +140,10 @@ async def main() -> int:
         "duracao_segundos": result.get("duracao_segundos"),
         "banco_cifrado": has_db,
         "uploads_cifrados": has_uploads,
-        "artefatos_cifrados_gerados": encrypted_generated,
+        "artefatos_cifrados_gerados": local_persisted,
+        "artefatos_cifrados_persistidos": local_persisted,
+        "local_ok": bool(result.get("local_ok")),
+        "offsite_required": offsite_required,
         "credencial_dedicada": bool(config.get("credencial_dedicada_configurada")),
         "auth_mode": auth_mode,
         "destino": destino,

@@ -28,6 +28,14 @@ class _FakeResult:
         return self
 
 
+@pytest.fixture(autouse=True)
+def _backup_dir_isolado(monkeypatch, tmp_path):
+    backup_dir = tmp_path / "backups"
+    backup_dir.mkdir(mode=0o700)
+    monkeypatch.setattr(backup_service.settings, "BACKUP_DIR", str(backup_dir))
+    monkeypatch.setattr(backup_service.settings, "BACKUP_RETENTION_DAYS", 7)
+
+
 class _FakeDB:
     """Sessão mínima: aceita execute/commit/rollback/add sem banco real."""
 

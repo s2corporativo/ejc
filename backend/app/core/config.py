@@ -913,11 +913,13 @@ class Settings(BaseSettings):
     AI_BUDGET_ALERTA_BRL: float = 0.0
 
     # ── Backup ────────────────────────────────────────────────────────────
-    # (a) Legado: pg_dump local + rclone (scheduler._backup_banco, 02h00).
-    BACKUP_REMOTE: str = ""         # ex: "b2:ejc-backups" (rclone remote)
-    BACKUP_DIR: str = "/app/backups"  # diretório local de dumps dentro do container postgres
-    BACKUP_RETENTION_DAYS: int = 7  # dumps locais mais antigos que isto são apagados na rotação
-    # (b) Backup diário cifrado → Google Drive (services/backup_service.py).
+    # Continuidade local canônica: o motor persiste SOMENTE artefatos `.enc`
+    # neste volume. BACKUP_REMOTE permanece legado/telemetria e não é caminho
+    # autoritativo de backup.
+    BACKUP_REMOTE: str = ""
+    BACKUP_DIR: str = "/app/backups"
+    BACKUP_RETENTION_DAYS: int = 7  # retenção da cópia cifrada local "quente"
+    # Backup diário cifrado → local + Google Drive/rclone (backup_service.py).
     # Prefere identidade exclusiva BACKUP_GOOGLE_DRIVE_* com escrita. O modo
     # herdado GOOGLE_DRIVE_* existe apenas para compatibilidade explícita.
     # Opt-in: default False mantém tudo desligado.

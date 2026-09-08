@@ -82,4 +82,5 @@ def test_wrapper_operacional_nao_implementa_dump_ou_tar_proprio():
     )
     assert "pg_dump" not in corpo, "wrapper não deve executar pg_dump"
     assert "tar cz" not in corpo, "wrapper não deve executar tar cz"
-    assert "and offsite_ok" in wrapper
+    assert "local_persisted" in wrapper
+    assert "offsite_ok or not offsite_required" in wrapper
