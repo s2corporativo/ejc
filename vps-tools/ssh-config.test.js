@@ -22,8 +22,10 @@ function envBase(extra = {}) {
   const env = { ...process.env };
   for (const key of [
     'VPS_HOST', 'VPS_USER', 'VPS_PORT', 'VPS_PASSWORD',
-    'VPS_SSH_KEY_PATH', 'VPS_SSH_KEY', 'VPS_SSH_PASSPHRASE'
+    'VPS_SSH_KEY_PATH', 'VPS_SSH_KEY', 'VPS_SSH_PASSPHRASE', 'VPS_ENV_FILE'
   ]) delete env[key];
+  // Isola os testes de qualquer vps-tools/.env real presente na máquina.
+  env.VPS_ENV_FILE = '';
   return { ...env, ...extra };
 }
 
@@ -101,4 +103,21 @@ test('rejeita porta SSH inválida', () => {
   });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /VPS_PORT deve ser um inteiro/);
+});
+
+test('rejeita arquivo de chave legível por grupo ou outros', { skip: process.platform === 'win32' }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ejc-ssh-key-mode-'));
+  const keyPath = path.join(dir, 'id_insecure');
+  fs.writeFileSync(keyPath, 'TEST-PRIVATE-KEY', { mode: 0o644 });
+  try {
+    fs.chmodSync(keyPath, 0o644);
+    const result = run({
+      VPS_HOST: 'example.invalid',
+      VPS_SSH_KEY_PATH: keyPath
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /permissões 0600/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
