@@ -61,7 +61,7 @@ CREATE TABLE pipelines (
   id INTEGER PRIMARY KEY,
   repo_id INTEGER NOT NULL,
   number INTEGER NOT NULL,
-  commit TEXT NOT NULL,
+  \"commit\" TEXT NOT NULL,
   branch TEXT NOT NULL,
   event TEXT NOT NULL,
   status TEXT NOT NULL,
@@ -70,7 +70,7 @@ CREATE TABLE pipelines (
 """)
 con.execute("INSERT INTO repos(id, full_name) VALUES(?, ?)", (7, "s2corporativo/test"))
 con.execute(
-    "INSERT INTO pipelines(repo_id, number, commit, branch, event, status, finished) VALUES(?,?,?,?,?,?,?)",
+    "INSERT INTO pipelines(repo_id, number, \"commit\", branch, event, status, finished) VALUES(?,?,?,?,?,?,?)",
     (7, 77, sha, "main", "push", "success", 654321),
 )
 con.commit()
