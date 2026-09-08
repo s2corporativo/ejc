@@ -1,3 +1,5 @@
+> **DOCUMENTO HISTÓRICO.** Registra o estado de 17/08/2026 e não é runbook operacional. O deploy atual usa Woodpecker + host-automation ou `scripts/deploy_manual.sh`; não execute os comandos legados descritos abaixo.
+
 # Status do Merge em main — 17/08/2026
 
 ## ✅ MERGE CONCLUÍDO (17/08/2026 01:37 UTC)
