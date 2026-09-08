@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # EJC — wrapper operacional do backup nativo cifrado para pré-deploy.
 #
-# `local_ok=true` significa que banco/uploads cifrados foram persistidos e
-# fsyncados no BACKUP_DIR. Offsite continua desejável e torna-se bloqueante
-# somente quando BACKUP_OFFSITE_OBRIGATORIO=true.
+# Contrato atual: `local_ok=true` + `local_persistido=true` nos artefatos prova
+# que banco/uploads cifrados foram persistidos e fsyncados no BACKUP_DIR.
+# Durante o PRIMEIRO deploy desta mudança, porém, o wrapper novo pode executar
+# contra a imagem backend anterior (que ainda não emite `local_persistido`).
+# Nesse bootstrap o gate aceita somente o contrato legado MAIS ESTRITO:
+# par cifrado gerado + offsite_ok=true. Depois do recreate, o contrato local
+# persistente passa a ser obrigatório e o offsite só bloqueia quando a política
+# BACKUP_OFFSITE_OBRIGATORIO=true.
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/ejc}"
@@ -45,12 +50,17 @@ from app.services import backup_service
 
 
 def _safe_artifact(item: dict) -> dict:
-    return {
+    safe = {
         "nome": item.get("nome"),
         "bytes_original": item.get("bytes_original"),
         "bytes_cifrado": item.get("bytes_cifrado"),
-        "local_persistido": bool(item.get("local_persistido")),
     }
+    # A PRESENÇA da chave faz parte do handshake de versão. Não sintetize
+    # `False` quando ela não existe, senão o primeiro deploy não consegue
+    # distinguir o motor legado do contrato persistente novo.
+    if "local_persistido" in item:
+        safe["local_persistido"] = bool(item.get("local_persistido"))
+    return safe
 
 
 async def main() -> int:
@@ -70,9 +80,9 @@ async def main() -> int:
 
     offsite_required = bool(config.get("offsite_obrigatorio"))
 
-    # O destino externo só é pré-condição quando a política o torna obrigatório.
-    # Com offsite opcional, o motor ainda tenta enviar e sinaliza status parcial,
-    # mas a cópia local cifrada/persistente sustenta o gate de deploy.
+    # O destino externo só é pré-condição de CONFIGURAÇÃO no contrato novo
+    # quando a política o torna obrigatório. No bootstrap legado ele será
+    # exigido depois como PROVA (offsite_ok=true), independentemente da flag.
     if offsite_required and destino == "rclone":
         if not bool(config.get("rclone_remote_configurado")):
             problems.append("remote rclone ausente (BACKUP_RCLONE_REMOTE)")
@@ -114,22 +124,36 @@ async def main() -> int:
     names = [str(item.get("nome") or "") for item in artifacts]
     has_db = any(name.endswith("_db.dump.enc") for name in names)
     has_uploads = any(name.endswith("_uploads.tar.gz.enc") for name in names)
-    local_persisted = (
-        bool(result.get("local_ok"))
-        and has_db
-        and has_uploads
-        and all(bool(item.get("local_persistido")) for item in artifacts)
-    )
+    encrypted_pair = has_db and has_uploads
     offsite_ok = bool(result.get("offsite_ok"))
     offsite_erro = str(result.get("offsite_erro") or "") or None
 
-    # Prova promovível = ciclo OK + par cifrado persistido localmente; offsite
-    # também é exigido quando a política BACKUP_OFFSITE_OBRIGATORIO estiver ativa.
-    complete = (
-        bool(result.get("ok"))
-        and local_persisted
-        and (offsite_ok or not offsite_required)
+    # Handshake do contrato: motores novos marcam explicitamente cada artefato.
+    # Se a chave não existe em TODOS os itens, estamos no primeiro deploy sobre
+    # runtime legado e aceitamos somente a prova histórica mais forte: offsite.
+    persistent_contract = bool(artifacts) and all(
+        "local_persistido" in item for item in artifacts
     )
+    local_persisted = (
+        persistent_contract
+        and bool(result.get("local_ok"))
+        and encrypted_pair
+        and all(bool(item.get("local_persistido")) for item in artifacts)
+    )
+
+    if persistent_contract:
+        contract = "local_persistente_v1"
+        complete = (
+            bool(result.get("ok"))
+            and local_persisted
+            and (offsite_ok or not offsite_required)
+        )
+    else:
+        # Compatibilidade de CUTOVER somente. O motor antigo usa
+        # TemporaryDirectory; portanto `local_ok` NÃO é retenção recuperável.
+        # Exigir offsite_ok=true impede que a compatibilidade relaxe o gate.
+        contract = "bootstrap_legado_offsite_estrito"
+        complete = bool(result.get("ok")) and encrypted_pair and offsite_ok
 
     safe = {
         "ok": complete,
@@ -140,8 +164,9 @@ async def main() -> int:
         "duracao_segundos": result.get("duracao_segundos"),
         "banco_cifrado": has_db,
         "uploads_cifrados": has_uploads,
-        "artefatos_cifrados_gerados": local_persisted,
+        "artefatos_cifrados_gerados": encrypted_pair,
         "artefatos_cifrados_persistidos": local_persisted,
+        "backup_contract": contract,
         "local_ok": bool(result.get("local_ok")),
         "offsite_required": offsite_required,
         "credencial_dedicada": bool(config.get("credencial_dedicada_configurada")),
