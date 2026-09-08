@@ -15,10 +15,16 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-// Carregador mínimo de .env local (sem dependência externa).
+// Carregador mínimo de .env local (sem dependência externa). Para testes ou
+// automação isolada, definir VPS_ENV_FILE='' desabilita a leitura implícita do
+// arquivo local; um caminho explícito carrega somente aquele arquivo.
 (function loadLocalEnv() {
-  const envPath = path.join(__dirname, '.env');
-  if (!fs.existsSync(envPath)) return;
+  const explicitEnvFile = Object.prototype.hasOwnProperty.call(process.env, 'VPS_ENV_FILE');
+  if (explicitEnvFile && process.env.VPS_ENV_FILE === '') return;
+  const envPath = explicitEnvFile
+    ? process.env.VPS_ENV_FILE
+    : path.join(__dirname, '.env');
+  if (!envPath || !fs.existsSync(envPath)) return;
   for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
     const m = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*)\s*$/);
     if (!m || line.trim().startsWith('#')) continue;
@@ -56,6 +62,16 @@ function carregarChavePrivada() {
     if (!stat.isFile()) {
       console.error('[vps-tools] VPS_SSH_KEY_PATH precisa apontar para um arquivo regular.');
       process.exit(1);
+    }
+    if (process.platform !== 'win32') {
+      const permissaoGrupoOuOutros = (stat.mode & 0o077) !== 0;
+      const donoIncorreto = typeof process.getuid === 'function' && stat.uid !== process.getuid();
+      if (permissaoGrupoOuOutros || donoIncorreto) {
+        console.error(
+          '[vps-tools] VPS_SSH_KEY_PATH deve pertencer ao usuário atual e ter permissões 0600 (sem acesso de grupo/outros).'
+        );
+        process.exit(1);
+      }
     }
     return fs.readFileSync(caminho, 'utf8');
   }
