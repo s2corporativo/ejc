@@ -55,11 +55,12 @@ steps:
   ops-contracts:
     image: python:3.11-bookworm
     commands:
-      - bash -n scripts/backup.sh scripts/backup/ativar_backup.sh scripts/deploy_vps_safe.sh scripts/deploy_workflow_transaction.sh scripts/tests/test_backup_wrapper.sh scripts/tests/test_deploy_rollback.sh infra/host-automation/woodpecker-approved-sha.sh infra/host-automation/ejc-deploy-approved.sh infra/host-automation/install.sh infra/host-automation/install-ejc-deploy.sh infra/host-automation/tests/test_gate.sh infra/selfhosted/bootstrap.sh
+      - bash -n scripts/backup.sh scripts/backup/ativar_backup.sh scripts/deploy_vps_safe.sh scripts/deploy_workflow_transaction.sh scripts/tests/test_backup_wrapper.sh scripts/tests/test_deploy_rollback.sh infra/host-automation/woodpecker-approved-sha.sh infra/host-automation/ejc-deploy-approved.sh infra/host-automation/install.sh infra/host-automation/install-ejc-deploy.sh infra/host-automation/tests/test_gate.sh infra/selfhosted/bootstrap.sh scripts/tests/test_ci_secret_gate.sh
       - python -m py_compile scripts/check_migration_compatibility.py
       - bash scripts/tests/test_backup_wrapper.sh
       - bash scripts/tests/test_deploy_rollback.sh
       - bash infra/host-automation/tests/test_gate.sh
+      - bash scripts/tests/test_ci_secret_gate.sh
 
   security-sast:
     image: semgrep/semgrep:1.172.0
@@ -81,4 +82,6 @@ steps:
   security-secrets:
     image: ghcr.io/gitleaks/gitleaks:v8.30.1
     commands:
-      - gitleaks git . --redact --verbose --exit-code 1
+      # O clone Woodpecker é parcial (um commit grafted); git-mode reinterpreta a árvore inteira e torna fingerprints dependentes do SHA.
+      # dir-mode preserva a cobertura efetiva do checkout atual sem baseline por commit.
+      - gitleaks dir . --redact --verbose --exit-code 1
