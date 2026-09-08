@@ -4,6 +4,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PIPE="$ROOT/.woodpecker.yml"
 
 grep -Fq "gitleaks dir . --redact --verbose --exit-code 1" "$PIPE" 
+grep -Fq "useDefault = true" "$ROOT/.gitleaks.toml"
+grep -Fq "moduleRegistry-[^/]+\\.js" "$ROOT/.gitleaks.toml"
+grep -Fq "dpt360-subroutes" "$ROOT/.gitleaks.toml"
 if grep -Fq "gitleaks git ." "$PIPE"; then
   echo "secret gate voltou ao modo git SHA-dependente" >&2
   exit 1
