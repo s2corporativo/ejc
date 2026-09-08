@@ -7,19 +7,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIGS = {
-    "docker-compose.yml": (
-        "ejc-logging",
-        {"db", "redis", "backend", "worker", "frontend", "langfuse-db", "langfuse", "ollama", "ollama-init"},
-    ),
-    "infra/woodpecker/docker-compose.yml": (
-        "woodpecker-logging",
-        {"woodpecker-server", "woodpecker-agent"},
-    ),
-    "infra/monitoring/uptime-kuma/docker-compose.yml": (
-        "kuma-logging",
-        {"uptime-kuma"},
-    ),
+    # Valor = (anchor, exclusões explícitas). O contrato percorre TODOS os
+    # serviços descobertos; adicionar serviço novo sem logging deve falhar.
+    "docker-compose.yml": ("ejc-logging", set()),
+    "infra/woodpecker/docker-compose.yml": ("woodpecker-logging", set()),
+    "infra/monitoring/uptime-kuma/docker-compose.yml": ("kuma-logging", set()),
 }
+
 
 
 def service_blocks(text: str) -> dict[str, str]:
@@ -48,7 +42,7 @@ def service_blocks(text: str) -> dict[str, str]:
 
 errors: list[str] = []
 covered = 0
-for rel, (anchor, required_services) in CONFIGS.items():
+for rel, (anchor, exclusions) in CONFIGS.items():
     text = (ROOT / rel).read_text(encoding="utf-8")
     anchor_pattern = re.compile(
         rf"x-logging:\s*&{re.escape(anchor)}\n"
@@ -60,16 +54,19 @@ for rel, (anchor, required_services) in CONFIGS.items():
     if not anchor_pattern.search(text):
         errors.append(f"{rel}: política 50m × 5 ausente ou alterada")
     blocks = service_blocks(text)
-    missing = required_services - blocks.keys()
-    if missing:
-        errors.append(f"{rel}: serviços esperados ausentes: {sorted(missing)}")
-    for service in sorted(required_services & blocks.keys()):
+    if not blocks:
+        errors.append(f"{rel}: nenhum serviço Docker descoberto")
+        continue
+    unknown_exclusions = exclusions - blocks.keys()
+    if unknown_exclusions:
+        errors.append(f"{rel}: exclusões não correspondem a serviços: {sorted(unknown_exclusions)}")
+    for service, block in sorted(blocks.items()):
+        if service in exclusions:
+            continue
         covered += 1
-        if f"logging: *{anchor}" not in blocks[service]:
+        if f"logging: *{anchor}" not in block:
             errors.append(f"{rel}:{service}: logging não referencia *{anchor}")
 
 if errors:
     raise SystemExit("\n".join(errors))
-if covered != 12:
-    raise SystemExit(f"cobertura inesperada: {covered} serviços, esperado 12")
-print(f"docker log rotation contract: {covered} serviços cobertos com json-file 50m × 5")
+print(f"docker log rotation contract: {covered} serviços descobertos cobertos com json-file 50m × 5")
