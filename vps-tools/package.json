@@ -4,7 +4,7 @@
   "description": "Utilitários locais de acesso e operação da VPS do EJC",
   "main": "index.js",
   "scripts": {
-    "test": "node --test *.test.js"
+    "test": "node --test ssh-config.test.js"
   },
   "keywords": [],
   "author": "",
