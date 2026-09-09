@@ -1,6 +1,6 @@
 # ── app/models/user.py ───────────────────────────────────────────────────────
 from __future__ import annotations
-from sqlalchemy import Column, String, Boolean, DateTime, Enum as SAEnum, func, ForeignKey, Numeric, Index, text
+from sqlalchemy import Column, String, Boolean, DateTime, Enum as SAEnum, func, ForeignKey, Numeric, Index, Text, text
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 import enum
@@ -32,6 +32,8 @@ class User(Base):
     __table_args__ = (
         Index("uq_users_email_active", "email", unique=True,
               postgresql_where=text("deleted_at IS NULL")),
+        Index("ux_users_cpf_hash_active", "cpf_hash", unique=True,
+              postgresql_where=text("cpf_hash IS NOT NULL AND deleted_at IS NULL")),
     )
 
     id             = Column(String(36), primary_key=True)   # UUID string
@@ -41,6 +43,10 @@ class User(Base):
     role           = Column(SAEnum(UserRole), nullable=False, default=UserRole.advogado)
     phone          = Column(String(30),  nullable=True)
     oab_number     = Column(String(50),  nullable=True)
+    # CPF profissional: nunca armazenar em texto puro. A fonte da verdade é o
+    # ciphertext Fernet; cpf_hash é índice cego HMAC para dedup exato.
+    cpf_enc        = Column(Text, nullable=True)
+    cpf_hash       = Column(String(64), nullable=True)
     avatar_url     = Column(String(500), nullable=True)
     # Portal do Cliente: se role=cliente_externo, vincula ao cadastro
     client_id      = Column(String(36), ForeignKey("clients.id"), nullable=True, index=True)
@@ -75,6 +81,14 @@ class User(Base):
     audit_logs           = relationship("AuditLog", back_populates="user")
     ai_logs              = relationship("AILog",    foreign_keys="AILog.user_id", back_populates="user")
     legal_docs_revisados = relationship("LegalDoc", foreign_keys="LegalDoc.revisor_id", back_populates="revisor")
+
+    @property
+    def cpf_mascarado(self) -> str | None:
+        """CPF mascarado para UI/serialização administrativa."""
+        if not self.cpf_enc:
+            return None
+        from app.services.pii_crypto import decrypt, mascarar_documento
+        return mascarar_documento(decrypt(self.cpf_enc))
 
     def __repr__(self):
         return f"<User {self.email} [{self.role}]>"
