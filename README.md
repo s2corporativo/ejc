@@ -74,9 +74,12 @@ O GitHub Actions legado não é o mecanismo de promoção do EJC.
 
 ### Frontend
 
-- ESLint;
+- type-check TypeScript (`npm run lint` → `tsc --noEmit`);
 - Vitest;
 - build Vite em Node 22.
+
+O ESLint permanece disponível em `npm run lint:eslint`/`ci-local ui-extra`, mas
+não é hoje um gate bloqueante do Woodpecker; não o trate como evidência de promoção.
 
 ### Contratos operacionais e segurança
 

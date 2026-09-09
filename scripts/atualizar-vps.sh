@@ -19,7 +19,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=legacy_script_guard.sh
 source "$SCRIPT_DIR/legacy_script_guard.sh"
-ejc_legacy_script_guard "scripts/atualizar-vps.sh" "bash scripts/deploy_manual.sh --sha <SHA>"
+ejc_legacy_script_guard "scripts/atualizar-vps.sh" "/opt/s2-automation/host/ejc-deploy-approved.sh"
 cd /opt/ejc
 
 log() { printf '\n===== %s =====\n' "$*"; }

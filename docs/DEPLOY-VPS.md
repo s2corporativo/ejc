@@ -107,18 +107,27 @@ funciona normalmente). Recursos de IA em nuvem (Groq) exigem `GROQ_API_KEY` no `
 
 ## Atualizar para uma nova versão
 
-O fluxo normal é CI Woodpecker verde + promoção pelo gate host-level. Para
-contingência/manual, use somente o wrapper transacional e confira primeiro em
-`--dry-run`:
+O fluxo normal é CI Woodpecker verde + promoção pelo gate host-level:
+
+```bash
+sudo /opt/s2-automation/host/ejc-deploy-approved.sh
+```
+
+Se o serviço de automação estiver indisponível e houver contingência manual
+formalmente autorizada, use o checkout operacional do SHA atual de `main`. O
+`deploy_manual.sh` também exige `origin/main == HEAD` e a prova Woodpecker antes
+de qualquer transação de produção:
 
 ```bash
 git fetch origin main
 SHA="$(git rev-parse origin/main)"
+git checkout --detach "$SHA"
 bash scripts/deploy_manual.sh --sha "$SHA" --dry-run
 bash scripts/deploy_manual.sh --sha "$SHA"
 ```
 
-Não use `docker compose up --build` nem scripts legados como substituto do gate.
+Não use `docker compose up --build`, `deploy_manual.sh` de branch arbitrária nem
+scripts legados como substituto do gate.
 
 ## Verificação rápida
 
