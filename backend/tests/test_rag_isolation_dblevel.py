@@ -309,3 +309,104 @@ async def test_categoria_legada_restrita_sem_ids_permanece_invisivel_rowlevel():
             assert "LEGADO_RESTRITO_SEM_IDS" not in {r["titulo"] for r in res_scope}
         finally:
             await _limpar_docs_escopo(db, [doc])
+
+
+
+async def test_base_rag_caso_com_cliente_sem_case_id_falha_fechado_rowlevel():
+    """base_rag=caso precisa do par client+case; client sozinho não basta."""
+    from app.core.database import AsyncSessionLocal
+    from app.services.ai_service import buscar_contexto_rag
+
+    cli, doc = str(uuid4()), str(uuid4())
+    async with AsyncSessionLocal() as db:
+        await _inserir_doc_escopo(
+            db, doc_id=doc, titulo="CASO_COM_CLIENTE_SEM_CASE",
+            categoria="categoria_privada_nova", client_id=cli, base_rag="caso",
+        )
+        await db.commit()
+        try:
+            res = await buscar_contexto_rag(
+                db, _TERMO, limite=10, modo_or=True, scope_client_id=cli,
+            )
+            assert "CASO_COM_CLIENTE_SEM_CASE" not in {r["titulo"] for r in res}
+        finally:
+            await _limpar_docs_escopo(db, [doc])
+
+
+def _carregar_probe_ativacao():
+    import importlib.util
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[2] / "scripts" / "rag" / "provar_ativacao.py"
+    spec = importlib.util.spec_from_file_location("ejc_provar_ativacao_test", path)
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    return mod
+
+
+async def test_canary_1_prioriza_documento_de_caso_pendente_rowlevel():
+    """Se há pendência privada, `canary 1` precisa exercitar o caso, não só público."""
+    from app.core.database import AsyncSessionLocal
+
+    cli, caso = str(uuid4()), str(uuid4())
+    ids = [str(uuid4()) for _ in range(3)]
+    async with AsyncSessionLocal() as db:
+        await _inserir_doc_escopo(
+            db, doc_id=ids[0], titulo="CANARIO_PUBLICO",
+            categoria="categoria_publica_teste",
+        )
+        await _inserir_doc_escopo(
+            db, doc_id=ids[1], titulo="CANARIO_CLIENTE",
+            categoria="categoria_privada_nova", client_id=cli,
+        )
+        await _inserir_doc_escopo(
+            db, doc_id=ids[2], titulo="CANARIO_CASO",
+            categoria="categoria_privada_nova", client_id=cli,
+            case_id=caso, base_rag="caso",
+        )
+        await db.commit()
+        try:
+            mod = _carregar_probe_ativacao()
+            async with db.begin():
+                docs = await mod._select_canary_docs(db, 1)
+                assert len(docs) == 1
+                assert docs[0].id == ids[2]
+                assert docs[0].client_id == cli
+                assert docs[0].case_id == caso
+        finally:
+            await _limpar_docs_escopo(db, ids)
+
+
+async def test_probe_semantico_exercita_publico_cliente_e_caso_rowlevel():
+    """O probe deve recuperar cada classe pelo próprio ownership persistido."""
+    from app.core.database import AsyncSessionLocal
+
+    cli, caso = str(uuid4()), str(uuid4())
+    ids = [str(uuid4()) for _ in range(3)]
+    async with AsyncSessionLocal() as db:
+        await _inserir_doc_escopo(
+            db, doc_id=ids[0], titulo="PROBE_PUBLICO",
+            categoria="categoria_publica_teste",
+        )
+        await _inserir_doc_escopo(
+            db, doc_id=ids[1], titulo="PROBE_CLIENTE",
+            categoria="categoria_privada_nova", client_id=cli,
+        )
+        await _inserir_doc_escopo(
+            db, doc_id=ids[2], titulo="PROBE_CASO",
+            categoria="categoria_privada_nova", client_id=cli,
+            case_id=caso, base_rag="caso",
+        )
+        # Vetor sintético 1024d; o probe usa o próprio vetor do chunk, distância 0.
+        vec = "[" + ",".join(["1"] + ["0"] * 1023) + "]"
+        for doc_id in ids:
+            await db.execute(
+                text("UPDATE knowledge_chunks SET embedding = CAST(:v AS vector(1024)) WHERE doc_id = :d"),
+                {"v": vec, "d": doc_id},
+            )
+        await db.commit()
+        try:
+            mod = _carregar_probe_ativacao()
+            assert await mod._probe_semantic_search() is True
+        finally:
+            await _limpar_docs_escopo(db, ids)

@@ -113,6 +113,7 @@ async def _buscar_contexto(
     *,
     usar_rag: bool,
     escopo_cliente: str | None,
+    escopo_caso: str | None,
 ) -> list[str] | None:
     if not usar_rag:
         return None
@@ -124,6 +125,7 @@ async def _buscar_contexto(
             consulta[:4_000],
             limite=5,
             scope_client_id=escopo_cliente,
+            scope_case_id=escopo_caso,
         )
         return [
             str(item.get("conteudo") or "")
@@ -279,6 +281,7 @@ async def executar_skill(
         req.query,
         usar_rag=req.usar_rag,
         escopo_cliente=escopo,
+        escopo_caso=req.case_id,
     )
     try:
         resultado = await ai_skill_service.executar_skill(
@@ -405,6 +408,7 @@ async def executar_skill_documento(
         consulta_rag,
         usar_rag=usar_rag,
         escopo_cliente=escopo,
+        escopo_caso=case_id,
     )
 
     try:

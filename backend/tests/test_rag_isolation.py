@@ -10,6 +10,7 @@ import pytest
 from app.services.ai_service import (
     _RESTRICTED_CATS,
     _FILTRO_ESCOPO_RAG,
+    _FILTRO_ELIGIBILIDADE_RAG,
     _params_escopo_rag,
     buscar_contexto_rag,
 )
@@ -177,3 +178,40 @@ def test_call_sites_com_caso_repassam_o_escopo_de_caso():
     for modulo in (context_builder, analise_estrategica, peca_service,
                    anexos_service, checklist_ia):
         assert "scope_case_id=" in _inspect.getsource(modulo), modulo.__name__
+
+
+
+def test_base_caso_exige_case_id_no_contrato_elegivel():
+    assert "base_rag::text" in _FILTRO_ELIGIBILIDADE_RAG
+    assert "kd.client_id IS NOT NULL" in _FILTRO_ELIGIBILIDADE_RAG
+    assert "<> 'caso' OR kd.case_id IS NOT NULL" in _FILTRO_ESCOPO_RAG
+    assert "<> 'caso' OR kd.case_id IS NOT NULL" in _FILTRO_ELIGIBILIDADE_RAG
+
+
+def test_callers_case_bound_propagam_case_id_explicitamente():
+    """Regressão do P1 #1579: caso conhecido não pode ser descartado no RAG."""
+    from app.core import veredito_ia
+    from app.routers import ai, ai_skills, ai_tools, intake
+    from app.services import ai_service, matriz_teses_service, validador_juridico_service
+
+    checks = {
+        "veredito": (inspect.getsource(veredito_ia), "scope_case_id=case_id"),
+        "router_ai": (inspect.getsource(ai), "scope_case_id=case_id"),
+        "ai_tools": (inspect.getsource(ai_tools), "scope_case_id=req.case_id"),
+        "ai_skills": (inspect.getsource(ai_skills), "scope_case_id=escopo_caso"),
+        "intake": (inspect.getsource(intake), "scope_case_id=case.id"),
+        "matriz": (inspect.getsource(matriz_teses_service), "scope_case_id=case_id"),
+        "validador": (
+            inspect.getsource(validador_juridico_service),
+            "scope_case_id=payload.case_id",
+        ),
+        "contrato": (inspect.getsource(ai_service.analisar_contrato), "scope_case_id=case_id"),
+    }
+    for nome, (fonte, marcador) in checks.items():
+        assert marcador in fonte, f"{nome} perdeu propagação de case_id"
+
+
+def test_ai_skills_helper_exige_escopo_de_caso():
+    from app.routers.ai_skills import _buscar_contexto
+    sig = inspect.signature(_buscar_contexto)
+    assert "escopo_caso" in sig.parameters

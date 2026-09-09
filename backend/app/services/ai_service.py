@@ -79,7 +79,26 @@ _FILTRO_ESCOPO_RAG = (
     "AND kd.categoria <> ALL(:restr_cats)"
     ") OR ("
     "kd.client_id = NULLIF(:scope_cli, '') "
-    "AND (kd.case_id IS NULL OR kd.case_id = NULLIF(:scope_case, ''))"
+    "AND (kd.case_id IS NULL OR kd.case_id = NULLIF(:scope_case, '')) "
+    # `base_rag=caso` sem case_id é estruturalmente inválido: nem mesmo o
+    # escopo correto de cliente pode promovê-lo a documento de cliente.
+    "AND (COALESCE(kd.base_rag::text, '') <> 'caso' OR kd.case_id IS NOT NULL)"
+    "))"
+)
+
+# Elegibilidade NEUTRA usada apenas por métricas/canário: responde se existe
+# ALGUM escopo legítimo capaz de recuperar o documento. Não autoriza usuário e
+# nunca substitui `_FILTRO_ESCOPO_RAG` no runtime. Permite que a homologação
+# exercite corpus público, de cliente e de caso sem fingir que escopo vazio pode
+# enxergar conteúdo privado.
+_FILTRO_ELIGIBILIDADE_RAG = (
+    "AND (("
+    "COALESCE(kd.base_rag::text, '') = 'publica' "
+    "AND kd.client_id IS NULL AND kd.case_id IS NULL "
+    "AND kd.categoria <> ALL(:restr_cats)"
+    ") OR ("
+    "kd.client_id IS NOT NULL "
+    "AND (COALESCE(kd.base_rag::text, '') <> 'caso' OR kd.case_id IS NOT NULL)"
     "))"
 )
 
@@ -1231,11 +1250,15 @@ async def analisar_contrato(
             return {"erro": "Não foi possível sanitizar dados pessoais com segurança."}
         pii = pii or pii2
 
-    # 2) Recuperação no RAG — legislação relevante (CC, CDC) por termos do contrato
+    # 2) Recuperação no RAG — legislação relevante (CC, CDC) por termos do contrato.
+    # Se há caso, propaga o par client+case; `scope_case_id` isolado não autoriza
+    # documento privado no contrato de ownership.
     consulta = f"{tipo_contrato} contrato cláusula abusiva rescisão multa garantia"
+    escopo_cli = await _escopo_cliente_do_caso(db, case_id)
     fontes = await buscar_contexto_rag(
         db, consulta, limite=6, categorias=["legislacao"],
-        scope_case_id=case_id,   # C4: caso conhecido → escopo por caso propagado
+        scope_client_id=escopo_cli,
+        scope_case_id=case_id,
     )
     bloco_fontes = _formatar_fontes(fontes)
 
