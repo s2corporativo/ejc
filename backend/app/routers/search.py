@@ -158,13 +158,24 @@ async def busca_global(
                         }
                     )
 
+        try:
+            parte_blind = hash_documento(digitos)
+        except RuntimeError as exc:
+            # Busca exata por documento não pode retornar resultado parcial:
+            # registros novos existem somente no índice HMAC/ciphertext.
+            raise HTTPException(
+                status_code=503,
+                detail="Índice protegido de PII indisponível para busca por documento",
+            ) from exc
+        legacy_match = _so_digitos(CaseParte._cpf_cnpj_legacy) == digitos
+        doc_match = or_(CaseParte.cpf_cnpj_hash == parte_blind, legacy_match)
         parte_query = _escopo_casos(
             select(CaseParte, Case)
             .join(Case, Case.id == CaseParte.case_id)
             .where(
                 Case.deleted_at.is_(None),
                 CaseParte.ativo.is_(True),
-                _so_digitos(CaseParte.cpf_cnpj) == digitos,
+                doc_match,
             )
             .order_by(Case.updated_at.desc()),
             cu,
