@@ -31,6 +31,8 @@ from app.models.audit_log import criar_audit_log
 from app.models.user import RefreshToken, User
 from app.schemas.auth import UserCreate, UserResponse, UserUpdate
 from app.services.security_service import obter_ip_real, validar_forca_senha
+from app.services.pii_crypto import encrypt as pii_encrypt, hash_documento, normalizar_documento
+from app.services.validators_service import validar_cpf
 from app.schemas.common import MsgResponse
 
 settings = get_settings()
@@ -48,6 +50,29 @@ def _nivel(role) -> int:
 
 def _permissoes(role) -> list[str]:
     return list(ROLES_PERMISSOES.get(_role_value(role), []))
+
+
+def _preparar_cpf_usuario(cpf: str | None) -> tuple[str | None, str | None]:
+    """Normaliza, valida e protege CPF de profissional."""
+    doc = normalizar_documento(cpf)
+    if doc is None:
+        return None, None
+    if len(doc) != 11 or not validar_cpf(doc):
+        raise HTTPException(status_code=422, detail="CPF inválido")
+    return pii_encrypt(doc), hash_documento(doc)
+
+
+async def _validar_cpf_usuario_exclusivo(
+    db: AsyncSession, user_id: str | None, cpf_hash: str | None
+) -> None:
+    if not cpf_hash:
+        return
+    filtros = [User.cpf_hash == cpf_hash, User.deleted_at.is_(None)]
+    if user_id:
+        filtros.append(User.id != user_id)
+    conflito = (await db.execute(select(User.id).where(*filtros))).first()
+    if conflito:
+        raise HTTPException(status_code=409, detail="CPF já vinculado a outro usuário ativo")
 
 
 def _refresh_jti_atual(request: Request) -> str | None:
@@ -301,6 +326,11 @@ async def criar(
         validar_forca_senha(payload.password, payload.email)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    try:
+        cpf_enc, cpf_hash = _preparar_cpf_usuario(payload.cpf)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail="Proteção de CPF indisponível") from e
+    await _validar_cpf_usuario_exclusivo(db, None, cpf_hash)
     user = User(
         id=str(uuid4()),
         email=payload.email.lower(),
@@ -309,6 +339,8 @@ async def criar(
         role=payload.role,
         phone=payload.phone,
         oab_number=payload.oab_number,
+        cpf_enc=cpf_enc,
+        cpf_hash=cpf_hash,
         must_change_password=True,
     )
     db.add(user)
@@ -453,6 +485,18 @@ async def atualizar(
 
     _validar_par_oab_djen(user, mudancas)
     await _validar_oab_djen_exclusiva(db, user, mudancas)
+
+    if "cpf" in mudancas:
+        if not eh_admin:
+            raise HTTPException(status_code=403, detail="CPF é restrito à gestão de usuários")
+        cpf = mudancas.pop("cpf")
+        try:
+            cpf_enc, cpf_hash = _preparar_cpf_usuario(cpf)
+        except RuntimeError as e:
+            raise HTTPException(status_code=503, detail="Proteção de CPF indisponível") from e
+        await _validar_cpf_usuario_exclusivo(db, user.id, cpf_hash)
+        user.cpf_enc = cpf_enc
+        user.cpf_hash = cpf_hash
 
     for key, value in mudancas.items():
         setattr(user, key, value)
