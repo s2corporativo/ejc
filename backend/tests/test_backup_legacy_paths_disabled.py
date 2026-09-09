@@ -64,6 +64,14 @@ def test_runbook_nao_ensina_reter_backup_em_claro():
         assert marker not in runbook, f"runbook voltou a instruir fluxo legado: {marker}"
 
 
+
+def test_backend_pina_cliente_postgres_16_para_backup_e_restore():
+    dockerfile = _text("backend/Dockerfile")
+    assert "postgresql-client-16" in dockerfile
+    assert "pg_dump --version | grep -Eq '^pg_dump \\(PostgreSQL\\) 16\\.'" in dockerfile
+    assert "pg_restore --version | grep -Eq '^pg_restore \\(PostgreSQL\\) 16\\.'" in dockerfile
+
+
 def test_wrapper_operacional_nao_implementa_dump_ou_tar_proprio():
     wrapper = _text("scripts/backup.sh")
     assert "backup_execution_service.executar_backup_exclusivo" in wrapper

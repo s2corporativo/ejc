@@ -6,9 +6,10 @@ O EJC possui um **único fluxo operacional permitido** para novos backups:
 
 `caller → backup_execution_service → backup_lock → backup_service → retenção local cifrada → destino offsite`
 
-Banco, uploads e GED contêm dados jurídicos e pessoais. Artefato de backup em
-claro **não é permitido** em retenção local, cron, diretório persistente ou
-destino offsite.
+Banco, uploads e GED contêm dados jurídicos e pessoais. Todo **backup cifrado**
+persistente deve seguir o fluxo canônico abaixo; artefato de backup em claro
+**não é permitido** em retenção local, cron, diretório persistente ou destino
+offsite.
 
 A Issue #1030 consolidou a exclusão mútua dessa arquitetura. A remediação
 INF-04/#1572 acrescenta a cópia local cifrada recuperável; ela não autoriza
