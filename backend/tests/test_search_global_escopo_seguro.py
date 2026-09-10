@@ -17,17 +17,26 @@ def _user(role: str, uid: str = "u-adv"):
     return SimpleNamespace(id=uid, role=SimpleNamespace(value=role))
 
 
-def test_tarefa_e_prazo_nao_ganham_excecao_global_para_avulsos():
+def test_tarefa_e_prazo_so_usam_ownership_direto_quando_avulsos():
     user = _user("advogado")
 
     tarefa_sql = str(search_router._escopo_tarefas(select(Task), user))
     prazo_sql = str(search_router._escopo_prazos(select(Deadline), user))
 
+    # Com caso, a carteira é soberana; atribuição direta não concede acesso.
+    assert "tasks.case_id IN" in tarefa_sql
+    assert "deadlines.case_id IN" in prazo_sql
+    assert "cases.advogado_responsavel_id" in tarefa_sql
+    assert "cases.advogado_auxiliar_id" in tarefa_sql
+    assert "cases.advogado_responsavel_id" in prazo_sql
+    assert "cases.advogado_auxiliar_id" in prazo_sql
+
+    # Sem caso, responsabilidade/autoria direta continuam válidas.
+    assert "tasks.case_id IS NULL" in tarefa_sql
     assert "tasks.responsavel_id" in tarefa_sql
     assert "tasks.criado_por" in tarefa_sql
-    assert "tasks.case_id IS NULL" not in tarefa_sql
+    assert "deadlines.case_id IS NULL" in prazo_sql
     assert "deadlines.responsavel_id" in prazo_sql
-    assert "deadlines.case_id IS NULL" not in prazo_sql
 
 
 def test_documento_busca_respeita_cofre_e_ownership():
