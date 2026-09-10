@@ -5,7 +5,7 @@ processual até existir candidato + motor canônico + HITL auditável.
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 
 import pytest
 from fastapi import HTTPException
@@ -69,5 +69,5 @@ async def test_sync_prazos_preserva_ownership_e_falha_com_409(monkeypatch):
 
     assert excinfo.value.status_code == 409
     assert "motor canônico" in excinfo.value.detail
-    acesso.assert_awaited_once_with(db, pytest.ANY, "case-1")
+    acesso.assert_awaited_once_with(db, ANY, "case-1")
     sync_prazos.assert_not_awaited()
