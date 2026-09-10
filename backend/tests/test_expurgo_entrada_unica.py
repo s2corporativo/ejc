@@ -178,6 +178,7 @@ async def test_batch_expirado_hard_delete_fica_bloqueado(sessao_db, upload_dir, 
 
     assert resultado["bloqueado"] is True
     assert resultado["motivo"] == "retencao_legal_hold_nao_codificados"
+    assert resultado["erro"] == "retencao_legal_hold_nao_codificados"
     assert resultado["batches_removidos"] == 0
     assert resultado["documentos_removidos"] == 0
     assert resultado["bytes_liberados"] == 0
@@ -199,7 +200,7 @@ async def test_hard_delete_bloqueia_antes_de_tocar_arquivo(sessao_db, upload_dir
     )
 
     assert resultado["bloqueado"] is True
-    assert "erro" not in resultado
+    assert resultado["erro"] == "retencao_legal_hold_nao_codificados"
     assert await sessao_db.get(DocumentIntakeBatch, "b1") is not None
     assert await sessao_db.get(Document, "d1") is not None
 
