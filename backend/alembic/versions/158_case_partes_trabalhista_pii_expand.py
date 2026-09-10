@@ -9,24 +9,33 @@ Revision ID: 158_case_partes_trabalhista_pii_expand
 Revises: 157_ajuizamento_judicial
 """
 from alembic import op
+import sqlalchemy as sa
 
 revision = "158_case_partes_trabalhista_pii_expand"
 down_revision = "157_ajuizamento_judicial"
 branch_labels = None
 depends_on = None
+deployment_policy = "human_reviewed_unique_index"
 
 
 def upgrade() -> None:
-    op.execute("ALTER TABLE case_partes ADD COLUMN IF NOT EXISTS cpf_cnpj_enc text")
-    op.execute("ALTER TABLE case_partes ADD COLUMN IF NOT EXISTS cpf_cnpj_hash varchar(64)")
-    op.execute("ALTER TABLE case_partes ADD COLUMN IF NOT EXISTS email_enc text")
-    op.execute("ALTER TABLE case_partes ADD COLUMN IF NOT EXISTS telefone_enc text")
-    op.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS ux_case_partes_case_doc_hash_active "
-        "ON case_partes (case_id, cpf_cnpj_hash) "
-        "WHERE cpf_cnpj_hash IS NOT NULL AND ativo = true"
+    # As cinco colunas são nullable e aditivas. O índice UNIQUE parcial foi
+    # revisado explicitamente: em produção, antes desta migration, não havia
+    # CPF/CNPJ preenchido nas 5 case_partes medidas, logo não há backfill que
+    # possa colidir; ainda assim o banco continua sendo a barreira final contra
+    # corrida de deduplicação entre escritas concorrentes.
+    op.add_column("case_partes", sa.Column("cpf_cnpj_enc", sa.Text(), nullable=True))
+    op.add_column("case_partes", sa.Column("cpf_cnpj_hash", sa.String(length=64), nullable=True))
+    op.add_column("case_partes", sa.Column("email_enc", sa.Text(), nullable=True))
+    op.add_column("case_partes", sa.Column("telefone_enc", sa.Text(), nullable=True))
+    op.create_index(
+        "ux_case_partes_case_doc_hash_active",
+        "case_partes",
+        ["case_id", "cpf_cnpj_hash"],
+        unique=True,
+        postgresql_where=sa.text("cpf_cnpj_hash IS NOT NULL AND ativo = true"),
     )
-    op.execute("ALTER TABLE trabalhista_cases ADD COLUMN IF NOT EXISTS cid_enc text")
+    op.add_column("trabalhista_cases", sa.Column("cid_enc", sa.Text(), nullable=True))
 
 
 def downgrade() -> None:
