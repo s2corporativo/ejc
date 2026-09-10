@@ -363,6 +363,37 @@ export function SuspensaoFormModal({
 
 type RegimeProcessual = "civel" | "trabalhista" | "penal";
 
+type RegraProcessualAuditavel = {
+  rotulo: string;
+  fonteOficial: string;
+  fonteConsultadaEm: string;
+  versaoMotor: string;
+};
+
+const REGRAS_PROCESSUAIS: Record<RegimeProcessual, RegraProcessualAuditavel> = {
+  civel: {
+    rotulo: "CPC, arts. 219 e 220",
+    fonteOficial:
+      "https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2015/lei/l13105.htm",
+    fonteConsultadaEm: "10/09/2026",
+    versaoMotor: "prazos-2026-09-10",
+  },
+  trabalhista: {
+    rotulo: "CLT, arts. 775 e 775-A",
+    fonteOficial:
+      "https://www.planalto.gov.br/ccivil_03/decreto-lei/del5452.htm",
+    fonteConsultadaEm: "10/09/2026",
+    versaoMotor: "prazos-2026-09-10",
+  },
+  penal: {
+    rotulo: "CPP, arts. 798 e 798-A",
+    fonteOficial:
+      "https://www.planalto.gov.br/ccivil_03/decreto-lei/del3689compilado.htm",
+    fonteConsultadaEm: "10/09/2026",
+    versaoMotor: "prazos-2026-09-10",
+  },
+};
+
 export function SimularPrazoModal({
   open,
   onClose,
@@ -375,6 +406,8 @@ export function SimularPrazoModal({
     dias: 15,
     regime_calculo: "civel" as RegimeProcessual,
     tribunal: "",
+    dobro: false,
+    excecao_recesso_penal: false,
   });
   const [res, setRes] = useState<any>(null);
   const [erro, setErro] = useState("");
@@ -395,11 +428,14 @@ export function SimularPrazoModal({
         tipo: "processual",
         regime_calculo: sim.regime_calculo,
         dias_uteis: sim.regime_calculo !== "penal",
-        dobro: false,
+        dobro: sim.dobro,
         tribunal: sim.tribunal || null,
-        excecao_recesso_penal: false,
+        excecao_recesso_penal: sim.excecao_recesso_penal,
       });
-      setRes(data);
+      setRes({
+        ...data,
+        regra_auditavel: REGRAS_PROCESSUAIS[sim.regime_calculo],
+      });
     } catch (e) {
       setErro(erroDetalhe(e, "Não foi possível simular o prazo."));
     } finally {
@@ -412,8 +448,8 @@ export function SimularPrazoModal({
       <div className="space-y-3">
         <p className="text-xs text-slate-500">
           Usa o motor canônico CPC/CLT/CPP e o calendário disponível no EJC.
-          É uma simulação de apoio: o resultado não cria prazo e deve ser
-          conferido quando marcado como preliminar.
+          É uma simulação de apoio: o resultado não cria prazo e deve sempre ser
+          conferido por profissional antes de qualquer cadastro ou uso processual.
         </p>
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -440,12 +476,19 @@ export function SimularPrazoModal({
             <select
               className="input"
               value={sim.regime_calculo}
-              onChange={(e) =>
+              onChange={(e) => {
+                const regime_calculo = e.target.value as RegimeProcessual;
                 setSim({
                   ...sim,
-                  regime_calculo: e.target.value as RegimeProcessual,
-                })
-              }
+                  regime_calculo,
+                  dobro: regime_calculo === "penal" ? false : sim.dobro,
+                  excecao_recesso_penal:
+                    regime_calculo === "penal"
+                      ? sim.excecao_recesso_penal
+                      : false,
+                });
+                setRes(null);
+              }}
             >
               <option value="civel">Cível — CPC</option>
               <option value="trabalhista">Trabalhista — CLT</option>
@@ -462,6 +505,44 @@ export function SimularPrazoModal({
             />
           </div>
         </div>
+
+        {sim.regime_calculo !== "penal" && (
+          <label className="flex items-start gap-2 rounded-lg border border-slate-200 p-2 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={sim.dobro}
+              onChange={(e) =>
+                setSim({ ...sim, dobro: e.target.checked })
+              }
+            />
+            <span>
+              <strong>Aplicar contagem em dobro.</strong> Marque somente depois
+              de confirmar a hipótese legal aplicável ao caso. O motor não infere
+              automaticamente a incidência do benefício.
+            </span>
+          </label>
+        )}
+
+        {sim.regime_calculo === "penal" && (
+          <label className="flex items-start gap-2 rounded-lg border border-slate-200 p-2 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={sim.excecao_recesso_penal}
+              onChange={(e) =>
+                setSim({ ...sim, excecao_recesso_penal: e.target.checked })
+              }
+            />
+            <span>
+              <strong>Aplicar exceção ao recesso do CPP art. 798-A.</strong> Use
+              somente após conferir se o ato envolve réu preso, procedimento da
+              Lei Maria da Penha ou medida urgente reconhecida por despacho
+              fundamentado. O EJC não presume essa exceção.
+            </span>
+          </label>
+        )}
+
         {erro && <p className="text-xs text-danger-600">{erro}</p>}
         {res && (
           <div className="rounded-lg border border-gold-200 bg-gold-50 p-3 text-sm">
@@ -472,16 +553,42 @@ export function SimularPrazoModal({
               </span>
             </div>
             {res.modo && (
-              <p className="text-[11px] text-slate-500 mt-2">{res.modo}</p>
+              <p className="text-[11px] text-slate-500 mt-2">
+                Regra aplicada pelo motor: {String(res.modo)}
+              </p>
             )}
             {res.regime_calculo && (
               <p className="text-[11px] text-slate-500 mt-1">
-                Regime: {String(res.regime_calculo)} · calendário: {String(res.calendario_status || "não informado")}
+                Regime: {String(res.regime_calculo)} · calendário:{" "}
+                {String(res.calendario_status || "não informado")}
               </p>
             )}
+            {res.regra_auditavel && (
+              <div className="mt-2 border-t border-gold-200 pt-2 text-[11px] text-slate-500">
+                <p>
+                  Referência normativa: {String(res.regra_auditavel.rotulo)} ·
+                  snapshot do motor: {String(res.regra_auditavel.versaoMotor)} ·
+                  fonte oficial consultada em {String(res.regra_auditavel.fonteConsultadaEm)}.
+                </p>
+                <a
+                  href={String(res.regra_auditavel.fonteOficial)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-medium text-primary-700 hover:underline"
+                >
+                  Abrir texto oficial no Planalto
+                </a>
+              </div>
+            )}
+            <div className="mt-2 rounded border border-warn-200 bg-warn-50 p-2 text-[11px] text-warn-800">
+              Revisão humana obrigatória — confira publicação, termo inicial,
+              regime, tribunal, feriados, suspensões e exceções antes de usar o
+              vencimento ou criar um prazo no caso.
+            </div>
             {res.revisao_obrigatoria && (
-              <div className="mt-2 rounded border border-warn-200 bg-warn-50 p-2 text-[11px] text-warn-800">
-                Resultado preliminar — revisão humana obrigatória.
+              <div className="mt-2 rounded border border-danger-200 bg-danger-50 p-2 text-[11px] text-danger-800">
+                Resultado preliminar/degradado — há informação operacional
+                incompleta no cálculo.
                 {res.aviso ? ` ${String(res.aviso)}` : ""}
               </div>
             )}
