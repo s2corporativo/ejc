@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -113,6 +113,13 @@ def _filtro_visibilidade_atendimento(q, cu: User):
     em que ele é advogado responsável/auxiliar."""
     if is_gestao(cu) or _role_str(cu) in _ATENDIMENTO_VISAO_TOTAL:
         return q
+    casos_do_advogado = select(Case.id).where(
+        Case.deleted_at.is_(None),
+        or_(
+            Case.advogado_responsavel_id == cu.id,
+            Case.advogado_auxiliar_id == cu.id,
+        ),
+    )
     clientes_do_advogado = (
         select(Client.id).where(
             or_(
@@ -130,22 +137,39 @@ def _filtro_visibilidade_atendimento(q, cu: User):
             )
         )
     )
-    # Inclui atendimentos SEM cliente vinculado (avulsos) — coerente com o gate
-    # row-level _pode_ver_atendimento, que libera registro sem client_id.
+    # Caso vinculado é soberano. Sem caso, preserva o contrato histórico de
+    # carteira do cliente e atendimentos avulsos sem client_id.
     return q.where(
         or_(
-            Atendimento.client_id.is_(None),
-            Atendimento.client_id.in_(clientes_do_advogado),
+            Atendimento.case_id.in_(casos_do_advogado),
+            and_(
+                Atendimento.case_id.is_(None),
+                or_(
+                    Atendimento.client_id.is_(None),
+                    Atendimento.client_id.in_(clientes_do_advogado),
+                ),
+            ),
         )
     )
 
 
 async def _pode_ver_atendimento(db: AsyncSession, cu: User, a: Atendimento) -> bool:
     """Versão row-level de _filtro_visibilidade_atendimento (detalhe/histórico).
-    Gestão/recepção veem tudo; demais só o próprio registro (criador/responsável)
-    ou atendimentos de clientes da própria carteira."""
+
+    Quando há ``case_id``, o caso é a autoridade de acesso: ser criador ou
+    responsável da solicitação não concede, por si só, acesso ao conteúdo de
+    uma carteira alheia. Gestão/recepção preservam a visão operacional total.
+    """
     if is_gestao(cu) or _role_str(cu) in _ATENDIMENTO_VISAO_TOTAL:
         return True
+    if a.case_id:
+        try:
+            await verificar_acesso_caso(db, cu, a.case_id)
+            return True
+        except HTTPException as exc:
+            if exc.status_code in (403, 404):
+                return False
+            raise
     if cu.id in {a.created_by, a.advogado_responsavel_id, a.solicitacao_responsavel_id}:
         return True
     if not a.client_id:
@@ -295,6 +319,27 @@ async def _validar_responsavel(
     if responsavel is None or _role_str(responsavel) not in _ATENDIMENTO_ROLES:
         raise HTTPException(status_code=422, detail="Responsável inválido")
     return responsavel
+
+
+def _validar_responsavel_no_caso(
+    responsavel: Optional[User],
+    caso: Optional[Case],
+) -> None:
+    """Impede que atribuição de solicitação funcione como concessão de acesso."""
+    if responsavel is None or caso is None:
+        return
+    if is_gestao(responsavel) or responsavel.id in {
+        caso.advogado_responsavel_id,
+        caso.advogado_auxiliar_id,
+    }:
+        return
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            "solicitacao_responsavel_id sem acesso ao caso: atribua a gestão, "
+            "responsável ou auxiliar do próprio caso"
+        ),
+    )
 
 
 def _aplicar_status_solicitacao(
@@ -495,6 +540,7 @@ async def criar_atendimento(
         raise HTTPException(status_code=403, detail="Sem permissão para atendimentos")
 
     await _validar_cliente(db, req.client_id)
+    caso: Optional[Case] = None
     if req.case_id:
         caso = await verificar_acesso_caso(db, cu, req.case_id)
         if caso.client_id != req.client_id:
@@ -529,6 +575,7 @@ async def criar_atendimento(
         db,
         data.get("solicitacao_responsavel_id"),
     )
+    _validar_responsavel_no_caso(responsavel_solicitacao, caso)
 
     if req.criar_tarefa and not data["solicitacao"]:
         raise HTTPException(
@@ -935,6 +982,8 @@ async def atualizar_atendimento(
     if not _is_staff(cu):
         raise HTTPException(status_code=403, detail="Sem permissão para atendimentos")
     atendimento = await _obter_atendimento(atendimento_id, db)
+    if not await _pode_ver_atendimento(db, cu, atendimento):
+        raise HTTPException(status_code=404, detail="Atendimento não encontrado")
     if not _pode_editar_atendimento(atendimento, cu):
         raise HTTPException(status_code=403, detail="Sem permissão para editar este atendimento")
 
@@ -949,7 +998,22 @@ async def atualizar_atendimento(
     if "advogado_responsavel_id" in data:
         await _validar_responsavel(db, data["advogado_responsavel_id"])
     if "solicitacao_responsavel_id" in data:
-        await _validar_responsavel(db, data["solicitacao_responsavel_id"])
+        novo_responsavel_solicitacao = await _validar_responsavel(
+            db, data["solicitacao_responsavel_id"]
+        )
+        caso_vinculado = None
+        if atendimento.case_id:
+            caso_vinculado = (
+                await db.execute(
+                    select(Case).where(
+                        Case.id == atendimento.case_id,
+                        Case.deleted_at.is_(None),
+                    )
+                )
+            ).scalar_one_or_none()
+            if caso_vinculado is None:
+                raise HTTPException(status_code=422, detail="Caso vinculado não encontrado")
+        _validar_responsavel_no_caso(novo_responsavel_solicitacao, caso_vinculado)
     if "solicitacao_prioridade" in data:
         if data["solicitacao_prioridade"] is None:
             raise HTTPException(status_code=422, detail="Prioridade não pode ser nula")
