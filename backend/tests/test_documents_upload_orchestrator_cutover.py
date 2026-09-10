@@ -108,6 +108,9 @@ async def test_mesmo_titulo_no_caso_vira_predecessor_explicitamente(
     async def _acesso(_db, _cu, _case_id):
         return caso
 
+    async def _lock(_db, *, case_id, titulo):
+        capturado["lock"] = (case_id, titulo)
+
     async def _ingerir(_db, _upload_obj, **kwargs):
         capturado["dados"] = kwargs["dados"]
         return _resultado()
@@ -118,6 +121,7 @@ async def test_mesmo_titulo_no_caso_vira_predecessor_explicitamente(
     from app.services import status_transicao
 
     monkeypatch.setattr(documents, "verificar_acesso_caso", _acesso)
+    monkeypatch.setattr(documents, "bloquear_versionamento_por_titulo", _lock)
     monkeypatch.setattr(documents, "ingerir_documento_local", _ingerir)
     monkeypatch.setattr(status_transicao, "avancar_status_pos_commit", _status)
     monkeypatch.setattr(documents.settings, "UPLOAD_DIR", str(tmp_path))
@@ -139,6 +143,7 @@ async def test_mesmo_titulo_no_caso_vira_predecessor_explicitamente(
     assert dados.case_id == "case-1"
     assert dados.client_id == "client-1"
     assert dados.documento_anterior_id == "doc-anterior"
+    assert capturado["lock"] == ("case-1", "Contrato social")
     assert db.executed == 1
     assert "status" in capturado
 
@@ -155,7 +160,11 @@ async def test_concorrencia_de_versao_vira_409_sem_vazar_erro_interno(
     async def _ingerir(*args, **kwargs):
         raise DocumentoAnteriorObsoletoError("detalhe interno do predecessor")
 
+    async def _lock(*args, **kwargs):
+        return None
+
     monkeypatch.setattr(documents, "verificar_acesso_caso", _acesso)
+    monkeypatch.setattr(documents, "bloquear_versionamento_por_titulo", _lock)
     monkeypatch.setattr(documents, "ingerir_documento_local", _ingerir)
     monkeypatch.setattr(documents.settings, "UPLOAD_DIR", str(tmp_path))
 

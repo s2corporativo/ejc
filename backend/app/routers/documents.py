@@ -39,7 +39,10 @@ from app.services.document_persistence_service import (
     PersistenciaDocumentoInvalidaError,
 )
 from app.services.document_upload_stream import UploadExcedeLimiteError, UploadVazioError
-from app.services.document_version_service import DocumentoVersaoError
+from app.services.document_version_service import (
+    DocumentoVersaoError,
+    bloquear_versionamento_por_titulo,
+)
 from app.services.malware_scan_service import MalwareScanIndisponivelError
 from app.services.document_format import ascii_seguro
 from app.services.document_reference_guard import exigir_documento_sem_referencias_bloqueantes
@@ -392,6 +395,9 @@ async def upload(
     # e falha fechada com 409. Documentos avulsos preservam versão raiz.
     documento_anterior_id: str | None = None
     if case_id:
+        await bloquear_versionamento_por_titulo(
+            db, case_id=case_id, titulo=titulo
+        )
         documento_anterior_id = (
             await db.execute(
                 select(Document.id)
