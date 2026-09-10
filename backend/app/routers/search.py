@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.client_ownership import ids_clientes_visiveis, visao_total_clientes
 from app.core.database import get_db
 from app.core.rate_limit import limiter
 from app.core.security import ROLE_LEVEL, get_current_user
@@ -31,6 +32,13 @@ router = APIRouter(prefix="/search", tags=["Busca global"])
 
 def _ve_todos(user: User) -> bool:
     return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["socio"]
+
+
+def _escopo_clientes(stmt, cu: User):
+    """Aplica a mesma segregação de carteira do CRM à busca identificável."""
+    if visao_total_clientes(cu):
+        return stmt
+    return stmt.where(Client.id.in_(ids_clientes_visiveis(cu)))
 
 
 def _ids_casos_do_usuario(user: User):
@@ -242,11 +250,10 @@ async def busca_global(
                     if len(digitos) == 11
                     else Client.cnpj_hash == blind_index
                 )
-                client_query = (
-                    select(Client)
-                    .where(Client.deleted_at.is_(None), cond_cli)
-                    .order_by(Client.updated_at.desc())
-                )
+                client_query = _escopo_clientes(
+                    select(Client).where(Client.deleted_at.is_(None), cond_cli),
+                    cu,
+                ).order_by(Client.updated_at.desc())
                 for client in (
                     await db.execute(client_query.limit(limit))
                 ).scalars().all():
@@ -346,19 +353,17 @@ async def busca_global(
 
     # Busca geral: clientes somente para perfis do CRM e somente por nome/razão.
     if cu.role.value in _CLIENTES:
-        clients = (
-            await db.execute(
-                select(Client)
-                .where(
-                    Client.deleted_at.is_(None),
-                    or_(
-                        Client.nome.ilike(termo),
-                        Client.razao_social.ilike(termo),
-                    ),
-                )
-                .limit(limit)
-            )
-        ).scalars().all()
+        client_query = _escopo_clientes(
+            select(Client).where(
+                Client.deleted_at.is_(None),
+                or_(
+                    Client.nome.ilike(termo),
+                    Client.razao_social.ilike(termo),
+                ),
+            ),
+            cu,
+        )
+        clients = (await db.execute(client_query.limit(limit))).scalars().all()
         for client in clients:
             out.append(
                 {

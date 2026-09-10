@@ -93,3 +93,18 @@ def test_deep_links_novos_usam_superficies_canonicas():
     assert '"/atividades?tipo=prazo"' in source
     assert '?tab=documentos' in source
     assert '?tab=financeiro' in source
+
+
+def test_cliente_identificavel_usa_gate_canonico_de_carteira():
+    user = _user("advogado")
+    sql = str(search_router._escopo_clientes(select(search_router.Client), user))
+    assert "clients.id IN" in sql
+    assert "clients.responsavel_id" in sql
+    assert "cases.advogado_responsavel_id" in sql
+    assert "cases.advogado_auxiliar_id" in sql
+
+
+def test_secretaria_preserva_visao_total_do_crm():
+    user = _user("secretaria")
+    sql = str(search_router._escopo_clientes(select(search_router.Client), user))
+    assert "clients.id IN" not in sql
