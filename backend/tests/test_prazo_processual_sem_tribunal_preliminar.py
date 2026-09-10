@@ -53,3 +53,16 @@ def test_estado_degradacao_processual_exige_tribunal_quando_solicitado():
 
     assert degradado is True
     assert "Tribunal não informado" in (aviso or "")
+
+def test_sem_tribunal_combina_falha_de_suspensoes_no_aviso():
+    _set_calendario_validado()
+    dc._CALENDARIO_RUNTIME["suspensoes_ok"] = False
+    dc._CALENDARIO_RUNTIME["suspensoes_erro_tipo"] = "RuntimeError"
+
+    degradado, aviso = dc.estado_degradacao(None, exigir_tribunal=True)
+
+    assert degradado is True
+    assert "Tribunal não informado" in (aviso or "")
+    assert "Calendário local/suspensões indisponível" in (aviso or "")
+
+    _set_calendario_validado()

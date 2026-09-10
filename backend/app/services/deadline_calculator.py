@@ -79,9 +79,13 @@ def estado_degradacao(
     """
     calendario = calendario_runtime_status()
     tribunal_informado = bool((tribunal or "").strip())
+    suspensoes_relevantes = tribunal_informado or exigir_tribunal
     calendario_degradado = bool(
         calendario.get("feriados_ok") is False
-        or (tribunal_informado and calendario.get("suspensoes_ok") is False)
+        or (
+            suspensoes_relevantes
+            and calendario.get("suspensoes_ok") is False
+        )
     )
     sem_tribunal = exigir_tribunal and not tribunal_informado
 

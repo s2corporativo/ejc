@@ -398,7 +398,10 @@ async def criar(
             )
             if calculo_audit["resultado_preliminar"]:
                 confirmado = False
-                base += " · CALENDÁRIO DEGRADADO: conferência humana obrigatória"
+                aviso_preliminar = calculo_audit.get("aviso") or (
+                    "Resultado preliminar: conferência humana obrigatória antes da confirmação."
+                )
+                base += f" · RESULTADO PRELIMINAR: {aviso_preliminar}"
         elif payload.dias_uteis:
             data_prazo = prazo_dias_uteis(
                 payload.data_intimacao,
