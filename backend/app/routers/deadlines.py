@@ -612,11 +612,17 @@ async def atualizar(
                 "Alertas reiniciados após alteração: "
                 + ", ".join(campos_reset_alerta)
             ),
-            dados_antes=flags_antes,
+            dados_antes={
+                **flags_antes,
+                "data_prazo": str(d.data_prazo),
+                "responsavel_id": d.responsavel_id,
+            },
             dados_depois={
                 "alerta_7d_enviado": False,
                 "alerta_3d_enviado": False,
                 "alerta_1d_enviado": False,
+                "data_prazo": str(mudancas.get("data_prazo", d.data_prazo)),
+                "responsavel_id": mudancas.get("responsavel_id", d.responsavel_id),
                 "motivo_campos": campos_reset_alerta,
             },
         )

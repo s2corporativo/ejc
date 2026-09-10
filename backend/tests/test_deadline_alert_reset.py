@@ -119,8 +119,13 @@ async def test_patch_reagenda_resseta_flags_e_audita_motivo(monkeypatch):
     eventos = {args[3]: kwargs for args, kwargs in audits}
     assert "PRAZO_ALTERADO" in eventos
     assert "PRAZO_ALERTAS_REINICIADOS" in eventos
-    detalhes = eventos["PRAZO_ALERTAS_REINICIADOS"].get("detalhes", "")
+    reset = eventos["PRAZO_ALERTAS_REINICIADOS"]
+    detalhes = reset.get("detalhes", "")
     assert "data_prazo" in detalhes
+    assert reset["dados_antes"]["data_prazo"] != reset["dados_depois"]["data_prazo"]
+    assert reset["dados_antes"]["responsavel_id"] == "u1"
+    assert reset["dados_depois"]["responsavel_id"] == "u1"
+    assert reset["dados_depois"]["motivo_campos"] == ["data_prazo"]
 
 
 @pytest.mark.asyncio
@@ -173,4 +178,41 @@ async def test_reatribuicao_vencida_notifica_novo_responsavel_apos_commit(monkey
     eventos = {args[3]: kwargs for args, kwargs in audits}
     assert "PRAZO_RESPONSAVEL_ALTERADO" in eventos
     assert "PRAZO_ALERTAS_REINICIADOS" in eventos
-    assert "responsavel_id" in eventos["PRAZO_ALERTAS_REINICIADOS"]["detalhes"]
+    reset = eventos["PRAZO_ALERTAS_REINICIADOS"]
+    assert "responsavel_id" in reset["detalhes"]
+    assert reset["dados_antes"]["responsavel_id"] == "u1"
+    assert reset["dados_depois"]["responsavel_id"] == "u2"
+    assert reset["dados_antes"]["data_prazo"] == reset["dados_depois"]["data_prazo"]
+    assert reset["dados_depois"]["motivo_campos"] == ["responsavel_id"]
+
+
+@pytest.mark.asyncio
+async def test_patch_irrelevante_nao_resseta_alertas(monkeypatch):
+    prazo = _prazo()
+    db = _FakeDB([prazo])
+    audits = []
+
+    async def _audit(*args, **kwargs):
+        audits.append((args, kwargs))
+
+    monkeypatch.setattr(deadlines, "criar_audit_log", _audit)
+    monkeypatch.setattr(
+        deadlines.DeadlineResponse,
+        "model_validate",
+        staticmethod(lambda obj: obj),
+    )
+
+    out = await deadlines.atualizar(
+        "d1",
+        DeadlineUpdate(descricao="ajuste sem impacto nos alertas"),
+        db=db,
+        cu=_user(),
+    )
+
+    assert out is prazo
+    assert prazo.alerta_7d_enviado is True
+    assert prazo.alerta_3d_enviado is True
+    assert prazo.alerta_1d_enviado is True
+    assert db.commits == 1
+    assert db.refreshes == 1
+    assert all(args[3] != "PRAZO_ALERTAS_REINICIADOS" for args, _kwargs in audits)
