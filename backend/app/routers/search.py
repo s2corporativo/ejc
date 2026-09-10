@@ -102,26 +102,31 @@ def _escopo_documentos(stmt, cu: User):
 
 
 def _escopo_tarefas(stmt, cu: User):
-    """Busca não replica a exceção legada de caso órfão do router de tarefas."""
+    """Com caso vale a carteira; sem caso, responsabilidade/autoria direta."""
     if _ve_todos(cu):
         return stmt
     return stmt.where(
         or_(
             Task.case_id.in_(_ids_casos_do_usuario(cu)),
-            Task.responsavel_id == cu.id,
-            Task.criado_por == cu.id,
+            (
+                Task.case_id.is_(None)
+                & or_(Task.responsavel_id == cu.id, Task.criado_por == cu.id)
+            ),
         )
     )
 
 
 def _escopo_prazos(stmt, cu: User):
-    """Prazo avulso é pessoal; prazo de caso segue carteira canônica."""
+    """Prazo com caso segue carteira; prazo avulso é pessoal ao responsável."""
     if _ve_todos(cu):
         return stmt
     return stmt.where(
         or_(
             Deadline.case_id.in_(_ids_casos_do_usuario(cu)),
-            Deadline.responsavel_id == cu.id,
+            (
+                Deadline.case_id.is_(None)
+                & (Deadline.responsavel_id == cu.id)
+            ),
         )
     )
 
