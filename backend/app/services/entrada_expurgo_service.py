@@ -43,6 +43,17 @@ logger = logging.getLogger(__name__)
 _STATUS_EXPURGAVEIS = ("erro", "concluido")
 
 
+def _expurgo_documental_real_disponivel() -> bool:
+    """Fail-closed enquanto retenção/legal hold não puderem ser provados.
+
+    O schema canônico de `Document` ainda não fornece atributos que permitam a
+    esta rotina demonstrar, antes do hard delete, o término da retenção e a
+    inexistência de legal hold. O dry-run continua disponível para inventário e
+    planejamento; a exclusão irreversível fica bloqueada até #1359.
+    """
+    return False
+
+
 async def expurgar_rascunhos_entrada_unica(
     db, dias: int = 30, dry_run: bool = True
 ) -> dict[str, Any]:
@@ -63,14 +74,26 @@ async def expurgar_rascunhos_entrada_unica(
 
     `dry_run=True` (default): só conta — não apaga nada. Relatório com
     quantos batches, quantos documentos, bytes totais e idade do rascunho
-    mais antigo. `dry_run=False`: apaga o arquivo físico de cada Document
-    (best-effort — `FileNotFoundError` não é fatal), depois os registros —
-    `DocumentIntakeItem`, `Document` e por fim `DocumentIntakeBatch`, nessa
-    ordem, todos explicitamente via ORM.
+    mais antigo. `dry_run=False`: permanece BLOQUEADO enquanto a política
+    canônica de retenção/legal hold não estiver codificada e verificável.
 
     Nunca deixa uma exceção não tratada derrubar o job — captura, loga, e
     devolve `{"erro": ...}`.
     """
+    if not dry_run and not _expurgo_documental_real_disponivel():
+        logger.warning(
+            "[entrada_expurgo] hard delete documental bloqueado: retenção/legal hold "
+            "ainda não verificáveis no schema canônico"
+        )
+        return {
+            "dry_run": False,
+            "bloqueado": True,
+            "motivo": "retencao_legal_hold_nao_codificados",
+            "batches_removidos": 0,
+            "documentos_removidos": 0,
+            "bytes_liberados": 0,
+        }
+
     try:
         corte = datetime.now(timezone.utc) - timedelta(days=dias)
 
