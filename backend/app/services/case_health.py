@@ -1,50 +1,43 @@
 # ── app/services/case_health.py ──────────────────────────────────────────────
-# Case Health Score (Bloco D) — score 0–100 por caso a partir de dados que já
-# existem no banco (prazos, movimentação, procuração, honorários, pós-mortem).
-# Não inventa nada: cada dedução aponta o fato concreto que a originou.
-#
-# Pesos (partindo de 100, descontando):
-#   prazo vencido ........................ −20
-#   prazo crítico (≤7d) sem ciência ...... −10
-#   > 30 dias sem movimentação ........... −15
-#   cliente sem procuração ativa ......... −10
-#   honorário atrasado ................... −10
-#   encerrado/arquivado sem pós-mortem ... −5
+# Saúde operacional do caso, derivada exclusivamente de fatos existentes no
+# banco. O score legado 0–100 é preservado por compatibilidade de contrato, mas
+# novas telas devem preferir `estado_operacional` (normal|atencao|critico), que
+# não sugere probabilidade de êxito nem cria falsa precisão jurídica.
 from __future__ import annotations
 
-from datetime import date, datetime, timezone, timedelta
+from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ownership import pode_ver_todos
-from app.models.user import User
-from app.models.case import Case, CaseStatus, CaseMovimento
+from app.models.case import Case, CaseMovimento, CaseStatus
 from app.models.deadline import Deadline, DeadlineStatus
 from app.models.fee import Fee, FeeStatus
 from app.models.procuracao import Procuracao
+from app.models.user import User
 
-ABERTOS = [CaseStatus.aberto, CaseStatus.em_instrucao, CaseStatus.em_producao, CaseStatus.protocolado]
+ABERTOS = [
+    CaseStatus.aberto,
+    CaseStatus.em_instrucao,
+    CaseStatus.em_producao,
+    CaseStatus.protocolado,
+]
 FECHADOS = [CaseStatus.encerrado, CaseStatus.arquivado]
 
-
-#: Limiares do score de SAÚDE do caso (4 faixas). `services/visual_law_core.py`
-#: também deriva um veredito a partir deste mesmo score (probabilidade de êxito
-#: processual, 3 faixas) — são PERGUNTAS diferentes sobre o mesmo número, não o
-#: mesmo fato, então os limiares não são unificados aqui: unificar limiares que
-#: respondem perguntas diferentes seria a abstração errada. O que é único é a
-#: fonte do score em si (`calcular_score_caso`, abaixo) — nunca recalculado.
+# Contrato legado. Mantido enquanto consumidores ainda dependem de
+# `score`/`classificacao`; não usar como chance de êxito.
 LIMIAR_SAUDAVEL = 80
 LIMIAR_ATENCAO = 60
 LIMIAR_RISCO = 40
 
+# Bloqueadores operacionais que justificam estado crítico independentemente da
+# soma do score. A lista deve conter apenas fatos verificáveis nesta camada.
+_FATORES_CRITICOS = frozenset({"prazo_vencido"})
+
 
 def _classificar(score: int) -> str:
-    # `classificacao` é o único veredito de saúde do caso (Classe C do plano-mestre
-    # de padronização, 2026-08-24): existia um segundo campo `saudavel` (= zero
-    # fatores) com limiar PRÓPRIO — um caso com 1 fator de -10 saía "score=90,
-    # classificacao=saudavel, saudavel=False" no mesmo payload. Era lido em 0
-    # lugares do frontend; removido do contrato em vez de consertado.
+    """Classificação histórica do score, preservada por compatibilidade."""
     if score >= LIMIAR_SAUDAVEL:
         return "saudavel"
     if score >= LIMIAR_ATENCAO:
@@ -54,29 +47,57 @@ def _classificar(score: int) -> str:
     return "critico"
 
 
+def _estado_operacional(fatores: list[dict]) -> str:
+    """Retorna normal|atencao|critico sem inferir probabilidade jurídica.
+
+    - `critico`: existe ao menos um bloqueador operacional comprovado;
+    - `atencao`: há pendência/fator relevante, mas nenhum bloqueador crítico;
+    - `normal`: nenhum fator objetivo foi encontrado por este serviço.
+
+    Este helper deliberadamente não usa o valor numérico do score. Assim um
+    ajuste futuro de pesos não muda silenciosamente a severidade operacional.
+    """
+    codigos = {str(item.get("fator") or "") for item in fatores}
+    if codigos & _FATORES_CRITICOS:
+        return "critico"
+    if codigos:
+        return "atencao"
+    return "normal"
+
+
 def _filtro_acesso(user: User):
     """Advogado/auxiliar enxergam apenas casos próprios; admin+ vê todos."""
     if pode_ver_todos(user):
         return None
-    return or_(Case.advogado_responsavel_id == user.id,
-               Case.advogado_auxiliar_id == user.id)
+    return or_(
+        Case.advogado_responsavel_id == user.id,
+        Case.advogado_auxiliar_id == user.id,
+    )
 
 
-async def calcular_score_caso(db: AsyncSession, case: Case, hoje: date | None = None) -> dict:
-    """Score 0–100 de um caso, com a memória de cada dedução."""
+async def calcular_score_caso(
+    db: AsyncSession,
+    case: Case,
+    hoje: date | None = None,
+) -> dict:
+    """Calcula saúde do caso com memória factual de cada achado.
+
+    `score` e `classificacao` são mantidos para consumidores legados.
+    `estado_operacional` é o contrato recomendado para decisão operacional.
+    """
     hoje = hoje or date.today()
     agora = datetime.now(timezone.utc)
     score = 100
     fatores: list[dict] = []
     fechado = case.status in FECHADOS
 
-    # Dias sem movimentação — calculado UMA vez, para todo status (fechado
-    # incluso), e devolvido no resultado (evita query duplicada nos routers
-    # que também precisam do dado, ex.: /visual-law/casos/{id}/alertas).
-    # None quando não há referência alguma (sem movimento e sem created_at).
-    ult_mov = (await db.execute(
-        select(func.max(CaseMovimento.data_evento)).where(CaseMovimento.case_id == case.id)
-    )).scalar()
+    ult_mov = (
+        await db.execute(
+            select(func.max(CaseMovimento.data_evento)).where(
+                CaseMovimento.case_id == case.id
+            )
+        )
+    ).scalar()
     referencia = ult_mov or case.created_at
     dias_parado: int | None = None
     if referencia is not None:
@@ -85,68 +106,134 @@ async def calcular_score_caso(db: AsyncSession, case: Case, hoje: date | None = 
         dias_parado = (agora - referencia).days
 
     if not fechado:
-        # 1) Prazos vencidos (vencido explícito OU pendente com data passada)
-        venc = (await db.execute(
-            select(func.count()).select_from(Deadline).where(
-                Deadline.case_id == case.id, Deadline.deleted_at.is_(None),
-                or_(Deadline.status == DeadlineStatus.vencido,
-                    and_(Deadline.status == DeadlineStatus.pendente,
-                         Deadline.data_prazo < hoje)),
-            ))).scalar() or 0
+        # Prazo vencido: fato crítico e não mero redutor estatístico.
+        venc = (
+            await db.execute(
+                select(func.count())
+                .select_from(Deadline)
+                .where(
+                    Deadline.case_id == case.id,
+                    Deadline.deleted_at.is_(None),
+                    or_(
+                        Deadline.status == DeadlineStatus.vencido,
+                        and_(
+                            Deadline.status == DeadlineStatus.pendente,
+                            Deadline.data_prazo < hoje,
+                        ),
+                    ),
+                )
+            )
+        ).scalar() or 0
         if venc > 0:
             score -= 20
-            fatores.append({"fator": "prazo_vencido", "impacto": -20,
-                            "detalhe": f"{venc} prazo(s) vencido(s) em aberto"})
+            fatores.append(
+                {
+                    "fator": "prazo_vencido",
+                    "impacto": -20,
+                    "detalhe": f"{venc} prazo(s) vencido(s) em aberto",
+                }
+            )
 
-        # 2) Prazo crítico (≤ 7 dias) sem ciência confirmada
-        criticos = (await db.execute(
-            select(func.count()).select_from(Deadline).where(
-                Deadline.case_id == case.id, Deadline.deleted_at.is_(None),
-                Deadline.status == DeadlineStatus.pendente,
-                Deadline.data_prazo >= hoje,
-                Deadline.data_prazo <= hoje + timedelta(days=7),
-                Deadline.ciencia_confirmada.is_(False),
-            ))).scalar() or 0
+        # Prazo próximo sem ciência confirmada: atenção, não confirmação de
+        # perda de prazo. A origem do prazo continua governada pelo módulo de
+        # Prazos/HITL.
+        criticos = (
+            await db.execute(
+                select(func.count())
+                .select_from(Deadline)
+                .where(
+                    Deadline.case_id == case.id,
+                    Deadline.deleted_at.is_(None),
+                    Deadline.status == DeadlineStatus.pendente,
+                    Deadline.data_prazo >= hoje,
+                    Deadline.data_prazo <= hoje + timedelta(days=7),
+                    Deadline.ciencia_confirmada.is_(False),
+                )
+            )
+        ).scalar() or 0
         if criticos > 0:
             score -= 10
-            fatores.append({"fator": "prazo_critico_sem_ciencia", "impacto": -10,
-                            "detalhe": f"{criticos} prazo(s) ≤7 dias sem confirmação de ciência"})
+            fatores.append(
+                {
+                    "fator": "prazo_critico_sem_ciencia",
+                    "impacto": -10,
+                    "detalhe": (
+                        f"{criticos} prazo(s) ≤7 dias sem confirmação de ciência"
+                    ),
+                }
+            )
 
-        # 3) Mais de 30 dias sem movimentação (fator não se aplica a fechados)
         if dias_parado is not None and dias_parado > 30:
             score -= 15
-            fatores.append({"fator": "sem_movimentacao", "impacto": -15,
-                            "detalhe": f"{dias_parado} dias sem movimentação"})
+            fatores.append(
+                {
+                    "fator": "sem_movimentacao",
+                    "impacto": -15,
+                    "detalhe": f"{dias_parado} dias sem movimentação",
+                }
+            )
 
-    # 4) Cliente sem procuração ativa (procuração é por cliente)
-    proc_ativa = (await db.execute(
-        select(func.count()).select_from(Procuracao).where(
-            Procuracao.client_id == case.client_id, Procuracao.deleted_at.is_(None),
-            Procuracao.revogada.is_(False),
-            or_(Procuracao.data_validade.is_(None), Procuracao.data_validade >= hoje),
-        ))).scalar() or 0
+    proc_ativa = (
+        await db.execute(
+            select(func.count())
+            .select_from(Procuracao)
+            .where(
+                Procuracao.client_id == case.client_id,
+                Procuracao.deleted_at.is_(None),
+                Procuracao.revogada.is_(False),
+                or_(
+                    Procuracao.data_validade.is_(None),
+                    Procuracao.data_validade >= hoje,
+                ),
+            )
+        )
+    ).scalar() or 0
     if proc_ativa == 0:
         score -= 10
-        fatores.append({"fator": "sem_procuracao", "impacto": -10,
-                        "detalhe": "Cliente sem procuração ativa/vigente"})
+        fatores.append(
+            {
+                "fator": "sem_procuracao",
+                "impacto": -10,
+                "detalhe": "Cliente sem procuração ativa/vigente",
+            }
+        )
 
-    # 5) Honorário atrasado vinculado ao caso
-    hon_atraso = (await db.execute(
-        select(func.count()).select_from(Fee).where(
-            Fee.case_id == case.id, Fee.deleted_at.is_(None),
-            or_(Fee.status == FeeStatus.atrasado,
-                and_(Fee.status == FeeStatus.pendente, Fee.data_vencimento < hoje)),
-        ))).scalar() or 0
+    hon_atraso = (
+        await db.execute(
+            select(func.count())
+            .select_from(Fee)
+            .where(
+                Fee.case_id == case.id,
+                Fee.deleted_at.is_(None),
+                or_(
+                    Fee.status == FeeStatus.atrasado,
+                    and_(
+                        Fee.status == FeeStatus.pendente,
+                        Fee.data_vencimento < hoje,
+                    ),
+                ),
+            )
+        )
+    ).scalar() or 0
     if hon_atraso > 0:
         score -= 10
-        fatores.append({"fator": "honorario_atrasado", "impacto": -10,
-                        "detalhe": f"{hon_atraso} honorário(s) em atraso"})
+        fatores.append(
+            {
+                "fator": "honorario_atrasado",
+                "impacto": -10,
+                "detalhe": f"{hon_atraso} honorário(s) em atraso",
+            }
+        )
 
-    # 6) Encerrado/arquivado sem pós-mortem (lições aprendidas)
     if fechado and not (case.licoes_aprendidas or "").strip():
         score -= 5
-        fatores.append({"fator": "sem_posmortem", "impacto": -5,
-                        "detalhe": "Caso encerrado sem lições aprendidas registradas"})
+        fatores.append(
+            {
+                "fator": "sem_posmortem",
+                "impacto": -5,
+                "detalhe": "Caso encerrado sem lições aprendidas registradas",
+            }
+        )
 
     score = max(0, min(100, score))
     return {
@@ -156,14 +243,19 @@ async def calcular_score_caso(db: AsyncSession, case: Case, hoje: date | None = 
         "status": case.status.value,
         "score": score,
         "classificacao": _classificar(score),
+        "estado_operacional": _estado_operacional(fatores),
         "fatores": fatores,
-        "dias_parado": dias_parado,   # aditivo — consumidores existentes ignoram
+        "dias_parado": dias_parado,
     }
 
 
-async def ranking_saude(db: AsyncSession, user: User, limit: int = 50,
-                        apenas_abertos: bool = True) -> dict:
-    """Ranking de saúde dos casos (piores primeiro), respeitando acesso."""
+async def ranking_saude(
+    db: AsyncSession,
+    user: User,
+    limit: int = 50,
+    apenas_abertos: bool = True,
+) -> dict:
+    """Ranking de saúde dos casos, respeitando o mesmo ownership canônico."""
     q = select(Case).where(Case.deleted_at.is_(None))
     if apenas_abertos:
         q = q.where(Case.status.in_(ABERTOS))
@@ -174,12 +266,23 @@ async def ranking_saude(db: AsyncSession, user: User, limit: int = 50,
 
     scores = [await calcular_score_caso(db, c) for c in casos]
     scores.sort(key=lambda s: s["score"])
+
+    # Contrato legado.
     distribuicao = {"saudavel": 0, "atencao": 0, "risco": 0, "critico": 0}
-    for s in scores:
-        distribuicao[s["classificacao"]] += 1
+    # Contrato recomendado para UX operacional.
+    distribuicao_operacional = {"normal": 0, "atencao": 0, "critico": 0}
+    for item in scores:
+        distribuicao[item["classificacao"]] += 1
+        distribuicao_operacional[item["estado_operacional"]] += 1
+
     return {
         "total_casos": len(scores),
         "distribuicao": distribuicao,
-        "score_medio": round(sum(s["score"] for s in scores) / len(scores), 1) if scores else None,
+        "distribuicao_operacional": distribuicao_operacional,
+        "score_medio": (
+            round(sum(s["score"] for s in scores) / len(scores), 1)
+            if scores
+            else None
+        ),
         "casos": scores[:limit],
     }
