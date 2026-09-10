@@ -1,16 +1,17 @@
-"""DataJud CNJ public API endpoints"""
+"""DataJud CNJ public API endpoints."""
 import logging
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
+from app.core.ownership import verificar_acesso_caso
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, require_roles
-from app.core.ownership import verificar_acesso_caso
-from app.services import datajud_service
 from app.models.case import Case
+from app.services import datajud_service
 
 log = logging.getLogger(__name__)
 
@@ -20,16 +21,33 @@ router = APIRouter(prefix="/datajud", tags=["datajud"])
 _ADVOGADO_MAIS = require_roles(["advogado"])
 
 
+def _prazos_datajud_bloqueados() -> dict[str, object]:
+    """Contrato transitório enquanto o motor auditável de prazos não é canônico.
+
+    DataJud pode alimentar movimentações e contexto processual, mas não deve
+    materializar prazo fatal a partir da data genérica de movimento. Mantemos o
+    campo ``prazos`` na resposta do sync por compatibilidade, explicitando que a
+    criação automática está suspensa até candidato + cálculo + HITL.
+    """
+    return {
+        "criados": 0,
+        "ignorados": 0,
+        "bloqueado": True,
+        "motivo": "prazo_datajud_requer_motor_canonico_e_hitl",
+    }
+
+
 @router.get(
     "/process/{numero_cnj}",
-    dependencies=[Depends(rate_limit("datajud_process", 20))],  # [B4] anti-abuso
+    dependencies=[Depends(rate_limit("datajud_process", 20))],
 )
 async def lookup_process(
     numero_cnj: str,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(_ADVOGADO_MAIS),
 ):
-    """Busca processo pelo número CNJ"""
+    """Busca processo pelo número CNJ."""
+    del db, current_user
     try:
         result = await datajud_service.consultar_processo(numero_cnj)
         if result is None:
@@ -70,8 +88,15 @@ async def sync_case(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """Sincroniza movimentações de um caso com o DataJud"""
-    result = await db.execute(select(Case).where(Case.id == case_id, Case.deleted_at.is_(None)))
+    """Sincroniza somente movimentações/contexto de um caso com o DataJud.
+
+    A sincronização automática de prazos foi retirada deste fluxo. O contrato
+    ainda devolve ``prazos`` com estado bloqueado para que consumidores atuais
+    não precisem inferir ausência do campo como sucesso.
+    """
+    result = await db.execute(
+        select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
+    )
     case = result.scalar_one_or_none()
     if not case:
         raise HTTPException(404, "Case not found")
@@ -80,15 +105,11 @@ async def sync_case(
         raise HTTPException(400, "Case has no numero_processo")
     try:
         synced = await datajud_service.sincronizar_caso(db, case)
-        # BUG-16: ao sincronizar o caso, também sincroniza os PRAZOS (rascunho/HITL).
-        prazos = await datajud_service.sincronizar_prazos_datajud(
-            case.id, case.numero_processo, db
-        )
         await db.commit()
         return {
             "synced": synced,
             "numero_processo": case.numero_processo,
-            "prazos": prazos,
+            "prazos": _prazos_datajud_bloqueados(),
         }
     except datajud_service.DataJudDesabilitadoError as exc:
         await db.rollback()
@@ -112,10 +133,12 @@ async def sync_prazos(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """BUG-16: sincronização MANUAL de prazos do caso a partir do DataJud.
+    """Compatibilidade: endpoint preservado, mas materialização está bloqueada.
 
-    Cria prazos (deadlines) preliminares — rascunho, exigem revisão do advogado
-    (HITL/OAB). Dedup por referencia_datajud: reexecutar não duplica.
+    O acesso ao caso é validado antes da resposta para não transformar esta rota
+    em oráculo de existência. O retorno 409 é deliberado: o cliente precisa
+    tratar o estado como operação indisponível, nunca como sincronização vazia
+    bem-sucedida.
     """
     result = await db.execute(
         select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
@@ -126,8 +149,10 @@ async def sync_prazos(
     await verificar_acesso_caso(db, current_user, case_id)
     if not case.numero_processo:
         raise HTTPException(400, "Case has no numero_processo")
-    prazos = await datajud_service.sincronizar_prazos_datajud(
-        case.id, case.numero_processo, db
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            "Sincronização automática de prazos via DataJud suspensa: "
+            "o prazo precisa passar pelo motor canônico de cálculo e revisão humana."
+        ),
     )
-    await db.commit()
-    return {"numero_processo": case.numero_processo, "prazos": prazos}
