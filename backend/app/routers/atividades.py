@@ -22,14 +22,46 @@ async def listar_atividades(
     params: dict = {}
     if apenas_pendentes:
         where += " AND COALESCE(v.status,'') NOT IN ('concluido','concluida','tratada','cancelado')"
-    # Visibilidade: gestão vê tudo; equipe só as atividades das quais é responsável
-    # OU vinculadas a casos em que atua (responsável/auxiliar). Evita vazar prazos/
-    # tarefas/intimações de casos alheios na central de atividades.
+    # Visibilidade: gestão vê tudo. Para tarefa, o vínculo com caso é soberano:
+    # uma atribuição inconsistente nunca concede acesso a metadados do caso.
+    # Tarefa avulsa permanece pessoal ao responsável. Para os demais tipos,
+    # preservamos o contrato anterior: responsabilidade direta OU carteira.
     if not is_gestao(cu):
-        where += """ AND (v.responsavel_id = :uid OR EXISTS (
-            SELECT 1 FROM cases cc WHERE cc.id = v.case_id
-              AND (cc.advogado_responsavel_id = :uid OR cc.advogado_auxiliar_id = :uid)
-        ))"""
+        where += """ AND (
+            (
+                v.tipo = 'tarefa'
+                AND (
+                    (v.case_id IS NULL AND v.responsavel_id = :uid)
+                    OR (
+                        v.case_id IS NOT NULL
+                        AND EXISTS (
+                            SELECT 1 FROM cases cc
+                            WHERE cc.id = v.case_id
+                              AND cc.deleted_at IS NULL
+                              AND (
+                                  cc.advogado_responsavel_id = :uid
+                                  OR cc.advogado_auxiliar_id = :uid
+                              )
+                        )
+                    )
+                )
+            )
+            OR (
+                v.tipo <> 'tarefa'
+                AND (
+                    v.responsavel_id = :uid
+                    OR EXISTS (
+                        SELECT 1 FROM cases cc
+                        WHERE cc.id = v.case_id
+                          AND cc.deleted_at IS NULL
+                          AND (
+                              cc.advogado_responsavel_id = :uid
+                              OR cc.advogado_auxiliar_id = :uid
+                          )
+                    )
+                )
+            )
+        )"""
         params["uid"] = cu.id
     # (v.data::date - CURRENT_DATE) força diferença em DIAS inteiros mesmo se a
     # coluna for TIMESTAMP (senão vem interval → int() estoura 500).
