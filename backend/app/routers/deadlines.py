@@ -132,6 +132,22 @@ async def _validar_responsavel_prazo(
         )
 
 
+def _campos_que_reiniciam_alertas(
+    prazo: Deadline,
+    mudancas: dict,
+) -> list[str]:
+    """Mudanças materiais que invalidam a deduplicação 7d/3d/1d anterior."""
+    campos: list[str] = []
+    if "data_prazo" in mudancas and mudancas["data_prazo"] != prazo.data_prazo:
+        campos.append("data_prazo")
+    if (
+        "responsavel_id" in mudancas
+        and mudancas["responsavel_id"] != prazo.responsavel_id
+    ):
+        campos.append("responsavel_id")
+    return campos
+
+
 def _resolver_regime_processual(regime: str | None, dias_uteis: bool) -> tuple[str, bool]:
     """Resolve o regime sem permitir que contagem corrida ambígua vire CPC.
 
@@ -470,13 +486,50 @@ async def atualizar(
         if novo_responsavel != d.responsavel_id:
             await _validar_responsavel_prazo(db, cu, novo_responsavel)
 
+    campos_reset_alerta = _campos_que_reiniciam_alertas(d, mudancas)
     status_antes = getattr(d.status, "value", d.status)
-    if "data_prazo" in mudancas and mudancas["data_prazo"] != d.data_prazo:
+    if "data_prazo" in campos_reset_alerta:
         await criar_audit_log(
             db, cu.id, cu.role.value, "PRAZO_ALTERADO", "deadlines", deadline_id,
             dados_antes={"data_prazo": str(d.data_prazo)},
             dados_depois={"data_prazo": str(mudancas["data_prazo"])},
         )
+    if "responsavel_id" in campos_reset_alerta:
+        await criar_audit_log(
+            db,
+            cu.id,
+            cu.role.value,
+            "PRAZO_RESPONSAVEL_ALTERADO",
+            "deadlines",
+            deadline_id,
+            dados_antes={"responsavel_id": d.responsavel_id},
+            dados_depois={"responsavel_id": mudancas["responsavel_id"]},
+        )
+    if campos_reset_alerta:
+        flags_antes = {
+            "alerta_7d_enviado": bool(d.alerta_7d_enviado),
+            "alerta_3d_enviado": bool(d.alerta_3d_enviado),
+            "alerta_1d_enviado": bool(d.alerta_1d_enviado),
+        }
+        d.alerta_7d_enviado = False
+        d.alerta_3d_enviado = False
+        d.alerta_1d_enviado = False
+        await criar_audit_log(
+            db,
+            cu.id,
+            cu.role.value,
+            "PRAZO_ALERTAS_REINICIADOS",
+            "deadlines",
+            deadline_id,
+            dados_antes=flags_antes,
+            dados_depois={
+                "alerta_7d_enviado": False,
+                "alerta_3d_enviado": False,
+                "alerta_1d_enviado": False,
+                "motivo_campos": campos_reset_alerta,
+            },
+        )
+
     for k, v in mudancas.items():
         setattr(d, k, v)
 
