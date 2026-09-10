@@ -56,29 +56,44 @@ AVISO_CALENDARIO_DEGRADADO = (
     "Calendário local/suspensões indisponível: resultado preliminar, "
     "exige conferência humana antes de confirmação."
 )
+AVISO_TRIBUNAL_NAO_INFORMADO = (
+    "Tribunal não informado: suspensões e feriados específicos da jurisdição "
+    "não puderam ser aplicados; resultado preliminar e sujeito a conferência humana."
+)
 
 
-def estado_degradacao(tribunal: str | None = None) -> tuple[bool, str | None]:
-    """`(degradado, aviso)` do calendário para QUALQUER cálculo de prazo.
+def estado_degradacao(
+    tribunal: str | None = None,
+    *,
+    exigir_tribunal: bool = False,
+) -> tuple[bool, str | None]:
+    """Retorna ``(degradado, aviso)`` sem produzir falso definitivo.
 
-    FONTE ÚNICA, de propósito. A regra já existia dentro de
-    `calcular_prazo_processual`, e `routers/deadlines.py` — que calcula o prazo
-    administrativo pelas MESMAS funções de dia útil, sobre os MESMOS feriados do
-    banco — devolvia `resultado_preliminar: False` fixo. Ou seja: com a carga de
-    feriados falha, o prazo administrativo saía carimbado como DEFINITIVO sem
-    os feriados municipais. Duas cópias da regra viram duas verdades; esta é a
-    terceira ocorrência da mesma classe de defeito neste PR.
+    Feriados do banco afetam qualquer cálculo. Suspensões são específicas do
+    tribunal: quando o cálculo processual exige esse contexto e o tribunal não
+    foi informado, o resultado é necessariamente preliminar mesmo que a carga
+    global do calendário tenha concluído com sucesso.
 
-    `_FERIADOS_DB` é global e entra em `eh_dia_util` sem depender de tribunal:
-    falha na carga dos feriados degrada todo cálculo. Suspensão é POR tribunal —
-    só degrada quando há tribunal na conta.
+    ``exigir_tribunal=False`` preserva cálculos administrativos/genéricos que
+    legitimamente não dependem de calendário de um tribunal específico.
     """
     calendario = calendario_runtime_status()
-    degradado = bool(
+    tribunal_informado = bool((tribunal or "").strip())
+    calendario_degradado = bool(
         calendario.get("feriados_ok") is False
-        or (tribunal and calendario.get("suspensoes_ok") is False)
+        or (tribunal_informado and calendario.get("suspensoes_ok") is False)
     )
-    return degradado, (AVISO_CALENDARIO_DEGRADADO if degradado else None)
+    sem_tribunal = exigir_tribunal and not tribunal_informado
+
+    if not calendario_degradado and not sem_tribunal:
+        return False, None
+
+    avisos: list[str] = []
+    if sem_tribunal:
+        avisos.append(AVISO_TRIBUNAL_NAO_INFORMADO)
+    if calendario_degradado:
+        avisos.append(AVISO_CALENDARIO_DEGRADADO)
+    return True, " ".join(avisos)
 
 
 def calendario_runtime_status() -> dict[str, bool | str | None]:
@@ -188,7 +203,7 @@ def calcular_pascoa(ano: int) -> date:
     e = b % 4
     f = (b + 8) // 25
     g = (b - f + 1) // 3
-    h = (19 * a + b - d - g + 15) % 30
+    h = (19 * a + b - d + 15) % 30
     i = c // 4
     k = c % 4
     l = (32 + 2 * e + 2 * i - h - k) % 7
@@ -385,7 +400,7 @@ def calcular_prazo_processual(
         raise ValueError("regime processual não suportado")
 
     calendario = calendario_runtime_status()
-    degradado, aviso = estado_degradacao(tribunal)
+    degradado, aviso = estado_degradacao(tribunal, exigir_tribunal=True)
     return {
         "data_vencimento": vencimento,
         "regime_calculo": regime,
@@ -436,17 +451,17 @@ PRESCRICAO_TABELA: dict[str, dict] = {
     "pretensao_geral":      {"anos": 10, "base": "CC art. 205"},
     "responsabilidade_medica": {"anos": 3, "base": "CC art. 206, §3º, V c/c STJ Súm. 278"},
     "negativacao_indevida":    {"anos": 5, "base": "CDC art. 43, §5º"},
-    "acao_trabalhista":        {"anos": 2, "base": "CF art. 7º, XXIX (bienal — pós-extinção)"},
-    "creditos_trabalhistas":   {"anos": 5, "base": "CF art. 7º, XXIX (quinquenal — na vigência)"},
-    "vicio_consumidor":        {"anos": 5, "base": "CDC art. 27"},
+    "acao_trabalhista":        {"anos": 2,  "base": "CF art. 7º, XXIX (bienal — pós-extinção)"},
+    "creditos_trabalhistas":   {"anos": 5,  "base": "CF art. 7º, XXIX (quinquenal — na vigência)"},
+    "vicio_consumidor":        {"anos": 5,  "base": "CDC art. 27"},
     "prescricao_penal_2anos":  {"anos": 2,  "base": "CP art. 109, VI (pena máx ≤ 1 ano / multa)"},
     "prescricao_penal_4anos":  {"anos": 4,  "base": "CP art. 109, V (pena máx 1-2 anos)"},
     "prescricao_penal_8anos":  {"anos": 8,  "base": "CP art. 109, IV (pena máx 2-4 anos)"},
     "prescricao_penal_12anos": {"anos": 12, "base": "CP art. 109, III (pena máx 4-8 anos)"},
     "prescricao_penal_16anos": {"anos": 16, "base": "CP art. 109, II (pena máx 8-12 anos)"},
-    "acao_rescisoria":         {"anos": 2, "base": "CPC art. 975 (do trânsito em julgado)"},
-    "execucao_fiscal":         {"anos": 5, "base": "CTN art. 174"},
-    "multa_ambiental_adm":     {"anos": 5, "base": "Lei 9.873/99 art. 1º"},
+    "acao_rescisoria":         {"anos": 2,  "base": "CPC art. 975 (do trânsito em julgado)"},
+    "execucao_fiscal":         {"anos": 5,  "base": "CTN art. 174"},
+    "multa_ambiental_adm":     {"anos": 5,  "base": "Lei 9.873/99 art. 1º"},
 }
 
 
