@@ -107,8 +107,15 @@ async def _validar_responsavel_prazo(
     db: AsyncSession,
     cu: User,
     responsavel_id: str,
+    *,
+    case_id: str | None = None,
 ) -> None:
-    """Transferir prazo para terceiro é ato de gestão; alvo deve estar ativo."""
+    """Valida transferência sem transformar atribuição em concessão de acesso.
+
+    Transferir prazo para terceiro é ato de gestão. O alvo precisa existir,
+    estar ativo, ser usuário interno e, quando o prazo pertence a um caso,
+    possuir acesso real ao mesmo caso pelo gate canônico de ownership.
+    """
     if responsavel_id == cu.id:
         return
     if not is_gestao(cu):
@@ -118,7 +125,7 @@ async def _validar_responsavel_prazo(
         )
     alvo = (
         await db.execute(
-            select(User.id).where(
+            select(User).where(
                 User.id == responsavel_id,
                 User.is_active.is_(True),
                 User.deleted_at.is_(None),
@@ -130,6 +137,21 @@ async def _validar_responsavel_prazo(
             status_code=422,
             detail="responsavel_id inválido: usuário ativo não encontrado",
         )
+    if getattr(alvo.role, "value", alvo.role) == "cliente_externo":
+        raise HTTPException(
+            status_code=422,
+            detail="responsavel_id inválido: prazo interno não pode ser atribuído a cliente externo",
+        )
+    if case_id:
+        try:
+            await verificar_acesso_caso(db, alvo, case_id)
+        except HTTPException as exc:
+            if exc.status_code not in (403, 404):
+                raise
+            raise HTTPException(
+                status_code=422,
+                detail="responsavel_id sem acesso ao caso informado",
+            ) from exc
 
 
 def _campos_que_reiniciam_alertas(
@@ -422,7 +444,12 @@ async def criar(
 
     responsavel_id = payload.responsavel_id or cu.id
     if responsavel_id != cu.id:
-        await _validar_responsavel_prazo(db, cu, responsavel_id)
+        await _validar_responsavel_prazo(
+            db,
+            cu,
+            responsavel_id,
+            case_id=payload.case_id,
+        )
 
     d = Deadline(
         id=str(uuid4()),
@@ -484,7 +511,12 @@ async def atualizar(
                 detail="responsavel_id não pode ser vazio",
             )
         if novo_responsavel != d.responsavel_id:
-            await _validar_responsavel_prazo(db, cu, novo_responsavel)
+            await _validar_responsavel_prazo(
+                db,
+                cu,
+                novo_responsavel,
+                case_id=d.case_id,
+            )
 
     campos_reset_alerta = _campos_que_reiniciam_alertas(d, mudancas)
     status_antes = getattr(d.status, "value", d.status)

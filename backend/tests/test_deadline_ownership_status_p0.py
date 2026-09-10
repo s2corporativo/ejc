@@ -63,6 +63,60 @@ async def test_nao_gestao_nao_pode_atribuir_prazo_a_terceiro_sem_oraculo():
     assert exc.value.status_code == 403
 
 
+@pytest.mark.asyncio
+async def test_gestao_nao_pode_atribuir_prazo_interno_a_cliente_externo():
+    class Resultado:
+        def scalar_one_or_none(self):
+            return _user("cliente", "cliente_externo")
+
+    class DB:
+        async def execute(self, _query):
+            return Resultado()
+
+    with pytest.raises(HTTPException) as exc:
+        await deadlines._validar_responsavel_prazo(
+            DB(), _user("gestao", "socio"), "cliente", case_id="caso-1"
+        )
+    assert exc.value.status_code == 422
+    assert "cliente externo" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_atribuicao_de_prazo_de_caso_revalida_acesso_do_alvo(monkeypatch):
+    alvo = _user("u2", "advogado")
+
+    class Resultado:
+        def scalar_one_or_none(self):
+            return alvo
+
+    class DB:
+        async def execute(self, _query):
+            return Resultado()
+
+    chamados = []
+
+    async def acesso(_db, user, case_id):
+        chamados.append((user.id, case_id))
+        raise HTTPException(status_code=403, detail="caso fora da carteira")
+
+    monkeypatch.setattr(deadlines, "verificar_acesso_caso", acesso)
+
+    with pytest.raises(HTTPException) as exc:
+        await deadlines._validar_responsavel_prazo(
+            DB(), _user("gestao", "socio"), "u2", case_id="caso-1"
+        )
+    assert exc.value.status_code == 422
+    assert chamados == [("u2", "caso-1")]
+
+
+def test_criacao_e_patch_passam_case_id_ao_gate_do_responsavel():
+    fonte_criar = inspect.getsource(deadlines.criar)
+    fonte_atualizar = inspect.getsource(deadlines.atualizar)
+
+    assert "case_id=payload.case_id" in fonte_criar
+    assert "case_id=d.case_id" in fonte_atualizar
+
+
 def test_mutacoes_usam_gate_unico_de_ownership():
     for handler in (
         deadlines.atualizar,
