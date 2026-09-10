@@ -203,7 +203,7 @@ def calcular_pascoa(ano: int) -> date:
     e = b % 4
     f = (b + 8) // 25
     g = (b - f + 1) // 3
-    h = (19 * a + b - d + 15) % 30
+    h = (19 * a + b - d - g + 15) % 30
     i = c // 4
     k = c % 4
     l = (32 + 2 * e + 2 * i - h - k) % 7
@@ -451,17 +451,17 @@ PRESCRICAO_TABELA: dict[str, dict] = {
     "pretensao_geral":      {"anos": 10, "base": "CC art. 205"},
     "responsabilidade_medica": {"anos": 3, "base": "CC art. 206, §3º, V c/c STJ Súm. 278"},
     "negativacao_indevida":    {"anos": 5, "base": "CDC art. 43, §5º"},
-    "acao_trabalhista":        {"anos": 2,  "base": "CF art. 7º, XXIX (bienal — pós-extinção)"},
-    "creditos_trabalhistas":   {"anos": 5,  "base": "CF art. 7º, XXIX (quinquenal — na vigência)"},
-    "vicio_consumidor":        {"anos": 5,  "base": "CDC art. 27"},
+    "acao_trabalhista":        {"anos": 2, "base": "CF art. 7º, XXIX (bienal — pós-extinção)"},
+    "creditos_trabalhistas":   {"anos": 5, "base": "CF art. 7º, XXIX (quinquenal — na vigência)"},
+    "vicio_consumidor":        {"anos": 5, "base": "CDC art. 27"},
     "prescricao_penal_2anos":  {"anos": 2,  "base": "CP art. 109, VI (pena máx ≤ 1 ano / multa)"},
     "prescricao_penal_4anos":  {"anos": 4,  "base": "CP art. 109, V (pena máx 1-2 anos)"},
     "prescricao_penal_8anos":  {"anos": 8,  "base": "CP art. 109, IV (pena máx 2-4 anos)"},
     "prescricao_penal_12anos": {"anos": 12, "base": "CP art. 109, III (pena máx 4-8 anos)"},
     "prescricao_penal_16anos": {"anos": 16, "base": "CP art. 109, II (pena máx 8-12 anos)"},
-    "acao_rescisoria":         {"anos": 2,  "base": "CPC art. 975 (do trânsito em julgado)"},
+    "acao_rescisoria":         {"anos": 2, "base": "CPC art. 975 (do trânsito em julgado)"},
     "execucao_fiscal":         {"anos": 5,  "base": "CTN art. 174"},
-    "multa_ambiental_adm":     {"anos": 5,  "base": "Lei 9.873/99 art. 1º"},
+    "multa_ambiental_adm":     {"anos": 5, "base": "Lei 9.873/99 art. 1º"},
 }
 
 
