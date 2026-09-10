@@ -358,6 +358,7 @@ run_p0() {
   log "Bloco remoto de recuperação de runner…"; bash scripts/tests/test_recover_runner_recovery.sh | tee "$REPORT_DIR/runner-remote-block.log"
   log "Configuração de autenticação do Woodpecker…"; bash scripts/tests/test_woodpecker_compose.sh | tee "$REPORT_DIR/woodpecker-compose.log"
   log "Rotação de logs Docker…"; python scripts/tests/test_docker_log_rotation.py | tee "$REPORT_DIR/docker-log-rotation.log"
+  log "Contrato de ativação RAG…"; bash scripts/tests/test_rag_activation.sh | tee "$REPORT_DIR/rag-activation.log"
   ok "P0 guard equivalente OK"
 }
 

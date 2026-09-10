@@ -4,7 +4,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ACTIVATE="$ROOT/scripts/rag/ativar_embeddings.sh"
 PROBE="$ROOT/scripts/rag/provar_ativacao.py"
-WORKFLOW="$ROOT/.github/workflows/rag-production-activation.yml"
+ACTIVE_WORKFLOW="$ROOT/.github/workflows/rag-production-activation.yml"
+WORKFLOW="$ROOT/docs/arquivo/ci/github-actions-legacy/2026-08-31/rag-production-activation.yml"
+WOODPECKER="$ROOT/.woodpecker.yml"
 COMPOSE="$ROOT/docker-compose.yml"
 REAL_PYTHON="$(command -v python3)"
 TMP="$(mktemp -d)"
@@ -32,7 +34,9 @@ count_lines() { [ -f "$1" ] && wc -l < "$1" || printf '0\n'; }
 
 bash -n "$ACTIVATE"
 python3 -m py_compile "$PROBE"
-[ -f "$WORKFLOW" ] || fail "workflow ausente"
+[ ! -f "$ACTIVE_WORKFLOW" ] || fail "workflow GitHub Actions legado foi reativado; Woodpecker é o CI oficial"
+[ -f "$WORKFLOW" ] || fail "workflow histórico de ativação ausente"
+[ -f "$WOODPECKER" ] || fail "Woodpecker canônico ausente"
 
 # Contratos estáticos de governança, isolamento e segurança.
 [ "$(grep -Ec '^set_env_enabled_true$' "$ACTIVATE")" -eq 1 ]
@@ -56,12 +60,16 @@ assert_file_contains "$WORKFLOW" 'ref: ${{ github.sha }}'
 assert_file_contains "$WORKFLOW" 'test "$target_sha" = "${{ github.sha }}"'
 assert_file_contains "$WORKFLOW" 'cmp -s scripts/rag/ativar_embeddings.sh /opt/ejc/scripts/rag/ativar_embeddings.sh'
 ! grep -Fq 'sudo install' "$WORKFLOW"
+assert_file_contains "$WOODPECKER" 'bash scripts/tests/test_rag_activation.sh'
 
 assert_file_contains "$PROBE" 'knowledge_chunks_governados_com_embedding'
 assert_file_contains "$PROBE" 'FOR UPDATE OF kd SKIP LOCKED'
 assert_file_contains "$PROBE" '_probe_semantic_search'
 assert_file_contains "$PROBE" '_filtros_gate_rag(False)'
 assert_file_contains "$PROBE" '_FILTRO_ESCOPO_RAG'
+assert_file_contains "$PROBE" '_FILTRO_ELIGIBILIDADE_RAG'
+assert_file_contains "$PROBE" '_select_canary_docs'
+assert_file_contains "$PROBE" 'scope_case_id'
 assert_file_contains "$PROBE" '_rag_max_dist()'
 assert_file_contains "$PROBE" '--skip-continuity'
 
