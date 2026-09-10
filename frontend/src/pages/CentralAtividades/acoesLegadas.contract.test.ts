@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const source = readFileSync(
-  new URL("./acoesLegadas.tsx", import.meta.url),
+  resolve(process.cwd(), "src/pages/CentralAtividades/acoesLegadas.tsx"),
   "utf8",
 );
 
@@ -16,15 +17,19 @@ describe("Central de Atividades — contratos jurídicos de prazo", () => {
   it("usa somente o motor canônico de cálculo para o simulador", () => {
     expect(source).toContain('api.post("/deadlines/calcular"');
     expect(source).not.toContain('api.post("/suspensoes/simular"');
-    expect(source).toContain('regime_calculo: sim.regime_calculo');
+    expect(source).toContain("regime_calculo: sim.regime_calculo");
     expect(source).toContain('<option value="civel">Cível — CPC</option>');
-    expect(source).toContain('<option value="trabalhista">Trabalhista — CLT</option>');
+    expect(source).toContain(
+      '<option value="trabalhista">Trabalhista — CLT</option>',
+    );
     expect(source).toContain('<option value="penal">Penal — CPP</option>');
   });
 
   it("expõe as exceções jurídicas suportadas em vez de fixá-las em false", () => {
     expect(source).toContain("dobro: sim.dobro");
-    expect(source).toContain("excecao_recesso_penal: sim.excecao_recesso_penal");
+    expect(source).toContain(
+      "excecao_recesso_penal: sim.excecao_recesso_penal",
+    );
     expect(source).toContain("Aplicar contagem em dobro.");
     expect(source).toContain("Aplicar exceção ao recesso do CPP art. 798-A.");
     expect(source).not.toContain("dobro: false,\n        tribunal:");
