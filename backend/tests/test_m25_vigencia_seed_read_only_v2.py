@@ -1,4 +1,4 @@
-"""Regressão P0: M25 não promove vigência e não depende de path da VPS."""
+"""Regressão P0: M25 é read-only, público e rastreável."""
 from __future__ import annotations
 
 import ast
@@ -37,6 +37,39 @@ def test_m25_sql_e_somente_leitura():
     assert "UPDATE KNOWLEDGE_DOCS" not in sql
     assert "INSERT INTO" not in sql
     assert "DELETE FROM" not in sql
+
+
+def test_m25_restringe_a_base_publica_global():
+    sql = _sql_auditoria().upper()
+
+    assert "CLIENT_ID IS NULL" in sql
+    assert "CASE_ID IS NULL" in sql
+    assert "BASE_RAG = 'PUBLICA'" in sql
+
+
+def test_m25_identifica_versao_e_vigencia_do_registro():
+    sql = _sql_auditoria().upper()
+
+    assert "VERSAO" in sql
+    assert "VIGENTE" in sql
+    assert "ORDER BY CHAVE_ORIGEM, VERSAO DESC" in sql
+
+
+def test_m25_marcador_inferencia_espelha_gate_rag():
+    sql = _sql_auditoria().upper()
+
+    assert "NULLIF(BTRIM" in sql
+    assert "LEGAL_STATUS_INFERIDO_EM" in sql
+    assert "IS NOT NULL" in sql
+
+
+def test_m25_nao_expoe_id_de_curador_na_saida():
+    source = _source()
+    sql = _sql_auditoria()
+
+    assert "legal_status_origem_categoria" in source
+    assert "THEN 'curadoria'" in sql
+    assert 'row["legal_status_origem"]' not in source
 
 
 def test_m25_nao_mantem_patch_de_promocao():
