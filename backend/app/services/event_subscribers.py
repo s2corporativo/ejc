@@ -61,13 +61,27 @@ def _install_ai_core_hardening() -> None:
 
 
 def _install_datajud_cognitive_feed() -> None:
-    """Ativa DataJud → RAG nativo sem tornar o conector requisito de boot."""
+    """Ativa o hardening DataJud antes de liberar o runtime.
+
+    O patch ainda é um adaptador transitório, mas contém uma invariante jurídica
+    P0: `_detectar_prazos_criticos` não pode materializar prazo fatal a partir da
+    data genérica de um movimento DataJud. Portanto, enquanto essa invariante não
+    estiver incorporada diretamente ao serviço canônico, falha na instalação do
+    adaptador precisa impedir o boot em vez de reativar silenciosamente o fluxo
+    legado inseguro. O feed cognitivo continua sendo efeito secundário; o motivo
+    do fail-closed é exclusivamente a proteção de prazo/HITL.
+    """
     try:
         from app.services.datajud_cognitive_patch import instalar
 
         instalar()
     except Exception as exc:
-        logger.error("Feed cognitivo DataJud indisponível: %s", exc, exc_info=True)
+        logger.critical(
+            "Hardening crítico DataJud/prazos não pôde ser instalado: %s",
+            exc,
+            exc_info=True,
+        )
+        raise RuntimeError("Hardening crítico DataJud/prazos indisponível") from exc
 
 
 def _install_financial_scheduler_hardening() -> None:
