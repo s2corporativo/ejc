@@ -8,7 +8,6 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
 
-from app.models.case import Case
 from app.models.task import Task
 from app.routers import tasks as tasks_router
 
