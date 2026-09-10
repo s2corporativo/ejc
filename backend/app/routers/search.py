@@ -11,10 +11,15 @@ from app.models.audit_log import criar_audit_log
 from app.models.case import Case
 from app.models.case_parte import CaseParte
 from app.models.client import Client
+from app.models.deadline import Deadline
+from app.models.document import Document
+from app.models.fee import Fee
 from app.models.legal_doc import LegalDoc
 from app.models.process import Process
+from app.models.task import Task
 from app.models.user import User
 from app.routers.clients import _CLIENTES
+from app.services.module_registry import PERFIS_FINANCEIRO
 from app.services.pii_crypto import (
     hash_documento,
     mascarar_documento,
@@ -28,6 +33,35 @@ def _ve_todos(user: User) -> bool:
     return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["socio"]
 
 
+def _ids_casos_do_usuario(user: User):
+    return (
+        select(Case.id)
+        .where(
+            Case.deleted_at.is_(None),
+            or_(
+                Case.advogado_responsavel_id == user.id,
+                Case.advogado_auxiliar_id == user.id,
+            ),
+        )
+        .scalar_subquery()
+    )
+
+
+def _ids_clientes_dos_casos_do_usuario(user: User):
+    return (
+        select(Case.client_id)
+        .where(
+            Case.deleted_at.is_(None),
+            Case.client_id.is_not(None),
+            or_(
+                Case.advogado_responsavel_id == user.id,
+                Case.advogado_auxiliar_id == user.id,
+            ),
+        )
+        .scalar_subquery()
+    )
+
+
 def _escopo_casos(stmt, cu: User):
     if not _ve_todos(cu):
         stmt = stmt.where(
@@ -37,6 +71,66 @@ def _escopo_casos(stmt, cu: User):
             )
         )
     return stmt
+
+
+def _escopo_documentos(stmt, cu: User):
+    """Espelha a listagem do GED sem pesquisar conteúdo/OCR.
+
+    A busca global retorna somente metadados de documentos visíveis. Perfis
+    abaixo de sócio não recebem documentos restritos/confidenciais e, sem
+    gestão, o escopo é carteira, cliente de caso próprio ou upload realmente
+    avulso feito pelo próprio usuário.
+    """
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
+        stmt = stmt.where(Document.confidencialidade.in_(["normal", "interno"]))
+    if _ve_todos(cu):
+        return stmt
+    return stmt.where(
+        or_(
+            Document.case_id.in_(_ids_casos_do_usuario(cu)),
+            (
+                Document.case_id.is_(None)
+                & Document.client_id.in_(_ids_clientes_dos_casos_do_usuario(cu))
+            ),
+            (
+                Document.case_id.is_(None)
+                & Document.client_id.is_(None)
+                & (Document.uploaded_by == cu.id)
+            ),
+        )
+    )
+
+
+def _escopo_tarefas(stmt, cu: User):
+    """Busca não replica a exceção legada de caso órfão do router de tarefas."""
+    if _ve_todos(cu):
+        return stmt
+    return stmt.where(
+        or_(
+            Task.case_id.in_(_ids_casos_do_usuario(cu)),
+            Task.responsavel_id == cu.id,
+            Task.criado_por == cu.id,
+        )
+    )
+
+
+def _escopo_prazos(stmt, cu: User):
+    """Prazo avulso é pessoal; prazo de caso segue carteira canônica."""
+    if _ve_todos(cu):
+        return stmt
+    return stmt.where(
+        or_(
+            Deadline.case_id.in_(_ids_casos_do_usuario(cu)),
+            Deadline.responsavel_id == cu.id,
+        )
+    )
+
+
+def _escopo_fees(stmt, cu: User):
+    """Espelha `fees._filtro_fees_lista` sem expor valores na busca."""
+    if cu.role.value in PERFIS_FINANCEIRO:
+        return stmt
+    return stmt.where(Fee.case_id.in_(_ids_casos_do_usuario(cu)))
 
 
 def _so_digitos(coluna):
@@ -60,6 +154,10 @@ def _item_caso(caso: Case, subtitulo: str) -> dict:
         "subtitulo": subtitulo,
         "link": f"/casos/{caso.id}",
     }
+
+
+def _status_texto(value) -> str:
+    return str(value.value) if hasattr(value, "value") else str(value or "")
 
 
 async def _auditar_busca_pii(
@@ -298,13 +396,9 @@ async def busca_global(
         LegalDoc.titulo.ilike(termo),
     )
     if not _ve_todos(cu):
-        case_ids = select(Case.id).where(
-            or_(
-                Case.advogado_responsavel_id == cu.id,
-                Case.advogado_auxiliar_id == cu.id,
-            )
+        legal_doc_query = legal_doc_query.where(
+            LegalDoc.case_id.in_(_ids_casos_do_usuario(cu))
         )
-        legal_doc_query = legal_doc_query.where(LegalDoc.case_id.in_(case_ids))
     for legal_doc in (
         await db.execute(legal_doc_query.limit(limit))
     ).scalars().all():
@@ -313,8 +407,105 @@ async def busca_global(
                 "tipo": "peca",
                 "id": legal_doc.id,
                 "titulo": legal_doc.titulo,
-                "subtitulo": str(legal_doc.status.value),
-                "link": "/pecas",
+                "subtitulo": _status_texto(legal_doc.status),
+                "link": (
+                    f"/casos/{legal_doc.case_id}?tab=pecas"
+                    if legal_doc.case_id
+                    else "/pecas"
+                ),
+            }
+        )
+
+    # GED: título apenas. OCR/conteúdo fica fora da busca global para impedir
+    # snippets ou inferência de conteúdo sensível em uma superfície transversal.
+    document_query = _escopo_documentos(
+        select(Document).where(
+            Document.deleted_at.is_(None),
+            Document.titulo.ilike(termo),
+        ),
+        cu,
+    ).order_by(Document.created_at.desc())
+    for document in (
+        await db.execute(document_query.limit(limit))
+    ).scalars().all():
+        out.append(
+            {
+                "tipo": "documento",
+                "id": document.id,
+                "titulo": document.titulo,
+                "subtitulo": document.tipo or "Documento",
+                "link": (
+                    f"/casos/{document.case_id}?tab=documentos"
+                    if document.case_id
+                    else "/documentos"
+                ),
+            }
+        )
+
+    task_query = _escopo_tarefas(
+        select(Task).where(
+            Task.deleted_at.is_(None),
+            Task.titulo.ilike(termo),
+        ),
+        cu,
+    ).order_by(Task.updated_at.desc())
+    for task in (await db.execute(task_query.limit(limit))).scalars().all():
+        subtitulo = _status_texto(task.status)
+        if task.data_limite:
+            subtitulo = f"{subtitulo} · {task.data_limite.isoformat()}"
+        out.append(
+            {
+                "tipo": "tarefa",
+                "id": task.id,
+                "titulo": task.titulo,
+                "subtitulo": subtitulo,
+                "link": "/atividades?tipo=tarefa",
+            }
+        )
+
+    deadline_query = _escopo_prazos(
+        select(Deadline).where(
+            Deadline.deleted_at.is_(None),
+            Deadline.titulo.ilike(termo),
+        ),
+        cu,
+    ).order_by(Deadline.data_prazo.asc())
+    for deadline in (
+        await db.execute(deadline_query.limit(limit))
+    ).scalars().all():
+        out.append(
+            {
+                "tipo": "prazo",
+                "id": deadline.id,
+                "titulo": deadline.titulo,
+                "subtitulo": (
+                    f"{_status_texto(deadline.status)} · {deadline.data_prazo.isoformat()}"
+                ),
+                "link": "/atividades?tipo=prazo",
+            }
+        )
+
+    # Financeiro: mesma visibilidade do router de honorários, sem valor,
+    # percentual, observação ou dados de pagamento na superfície global.
+    fee_query = _escopo_fees(
+        select(Fee).where(
+            Fee.deleted_at.is_(None),
+            Fee.descricao.ilike(termo),
+        ),
+        cu,
+    ).order_by(Fee.updated_at.desc())
+    for fee in (await db.execute(fee_query.limit(limit))).scalars().all():
+        out.append(
+            {
+                "tipo": "financeiro",
+                "id": fee.id,
+                "titulo": fee.descricao,
+                "subtitulo": _status_texto(fee.status),
+                "link": (
+                    f"/casos/{fee.case_id}?tab=financeiro"
+                    if fee.case_id
+                    else "/financeiro"
+                ),
             }
         )
 
