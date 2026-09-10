@@ -170,6 +170,61 @@ def _campos_que_reiniciam_alertas(
     return campos
 
 
+async def _notificar_reatribuicao_prazo_vencido(
+    db: AsyncSession,
+    prazo: Deadline,
+) -> None:
+    """Avisa o novo responsável quando a reatribuição termina ainda vencida.
+
+    É chamado somente DEPOIS do commit da mutação. `notificar()` pode efetuar
+    commit interno ao criar o sino; isolá-lo aqui impede que uma entrega de
+    notificação confirme parcialmente a alteração do prazo.
+    """
+    if not prazo.responsavel_id or prazo.data_prazo >= date.today():
+        return
+    alvo = (
+        await db.execute(
+            select(User).where(
+                User.id == prazo.responsavel_id,
+                User.is_active.is_(True),
+                User.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if alvo is None:
+        return
+
+    from app.services.notification_service import notificar
+
+    vencimento = prazo.data_prazo.strftime("%d/%m/%Y")
+    dias_atraso = (date.today() - prazo.data_prazo).days
+    try:
+        await notificar(
+            db,
+            alvo.id,
+            "Prazo vencido reatribuído",
+            f"{prazo.titulo} venceu em {vencimento} (há {dias_atraso} dia(s)).",
+            tipo="prazo",
+            link="/atividades?tipo=prazo",
+            email=alvo.email or None,
+            telefone=getattr(alvo, "phone", None) or None,
+            email_assunto=f"[EJC] Prazo vencido reatribuído: {prazo.titulo}",
+            email_corpo=(
+                f"<p>O prazo <b>{prazo.titulo}</b> foi reatribuído a você e "
+                f"venceu em <b>{vencimento}</b> (há {dias_atraso} dia(s)).</p>"
+                "<p>Acesse a Central de Atividades do EJC para conferir e "
+                "regularizar a pendência.</p>"
+            ),
+        )
+    except Exception as exc:
+        logger.error(
+            "[deadlines] falha ao notificar reatribuição de prazo vencido "
+            "deadline=%s erro=%s",
+            prazo.id,
+            type(exc).__name__,
+        )
+
+
 def _resolver_regime_processual(regime: str | None, dias_uteis: bool) -> tuple[str, bool]:
     """Resolve o regime sem permitir que contagem corrida ambígua vire CPC.
 
@@ -553,6 +608,10 @@ async def atualizar(
             "PRAZO_ALERTAS_REINICIADOS",
             "deadlines",
             deadline_id,
+            detalhes=(
+                "Alertas reiniciados após alteração: "
+                + ", ".join(campos_reset_alerta)
+            ),
             dados_antes=flags_antes,
             dados_depois={
                 "alerta_7d_enviado": False,
@@ -604,8 +663,16 @@ async def atualizar(
                 "data_conclusao": d.data_conclusao.isoformat(),
             },
         )
+
+    notificar_reatribuicao_vencida = (
+        "responsavel_id" in campos_reset_alerta
+        and getattr(d.status, "value", d.status) == "vencido"
+        and d.data_prazo < date.today()
+    )
     await db.commit()
     await db.refresh(d)
+    if notificar_reatribuicao_vencida:
+        await _notificar_reatribuicao_prazo_vencido(db, d)
     return DeadlineResponse.model_validate(d)
 
 
