@@ -98,6 +98,24 @@ def _filtro_documento_exato(doc_normalizado: str):
     )
 
 
+_DOC_HASH_UNIQUE_CONSTRAINT = "ux_case_partes_case_doc_hash_active"
+
+
+def _integrity_e_duplicidade_documento(exc: IntegrityError) -> bool:
+    """Reconhece somente a constraint do HMAC; demais integridades não viram 409 falso."""
+    orig = getattr(exc, "orig", None)
+    candidatos = (orig, getattr(orig, "__cause__", None))
+    for candidato in candidatos:
+        if candidato is None:
+            continue
+        nome = getattr(candidato, "constraint_name", None)
+        if not nome:
+            nome = getattr(getattr(candidato, "diag", None), "constraint_name", None)
+        if nome == _DOC_HASH_UNIQUE_CONSTRAINT:
+            return True
+    return False
+
+
 def _serializar(parte: CaseParte) -> dict:
     return {
         "id": parte.id,
@@ -194,10 +212,12 @@ async def criar_parte(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail="Já existe parte ativa neste caso com este CPF/CNPJ",
-        ) from exc
+        if _integrity_e_duplicidade_documento(exc):
+            raise HTTPException(
+                status_code=409,
+                detail="Já existe parte ativa neste caso com este CPF/CNPJ",
+            ) from exc
+        raise
     return {"id": parte.id, "message": "Parte criada"}
 
 
@@ -300,8 +320,10 @@ async def atualizar_parte(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail="Já existe parte ativa neste caso com este CPF/CNPJ",
-        ) from exc
+        if _integrity_e_duplicidade_documento(exc):
+            raise HTTPException(
+                status_code=409,
+                detail="Já existe parte ativa neste caso com este CPF/CNPJ",
+            ) from exc
+        raise
     return {"id": parte_id, "message": "Parte atualizada"}
