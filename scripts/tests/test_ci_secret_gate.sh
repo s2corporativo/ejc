@@ -7,6 +7,8 @@ grep -Fq "gitleaks dir . --redact --verbose --exit-code 1" "$PIPE"
 grep -Fq "useDefault = true" "$ROOT/.gitleaks.toml"
 grep -Fq "moduleRegistry-[^/]+\\.js" "$ROOT/.gitleaks.toml"
 grep -Fq "dpt360-subroutes" "$ROOT/.gitleaks.toml"
+grep -Fq 'description = "pytest cache gerado no CI — não é fonte versionável"' "$ROOT/.gitleaks.toml"
+grep -Fq "paths = ['''^backend/\\.pytest_cache/''']" "$ROOT/.gitleaks.toml"
 if grep -Fq "gitleaks git ." "$PIPE"; then
   echo "secret gate voltou ao modo git SHA-dependente" >&2
   exit 1
