@@ -15,6 +15,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import func as sqlfunc, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -73,6 +74,38 @@ async def _validar_cpf_usuario_exclusivo(
     conflito = (await db.execute(select(User.id).where(*filtros))).first()
     if conflito:
         raise HTTPException(status_code=409, detail="CPF já vinculado a outro usuário ativo")
+
+
+_CPF_HASH_UNIQUE_CONSTRAINT = "ux_users_cpf_hash_active"
+
+
+def _integrity_e_duplicidade_cpf_usuario(exc: IntegrityError) -> bool:
+    """Reconhece somente a constraint do CPF protegido; demais erros propagam."""
+    orig = getattr(exc, "orig", None)
+    candidatos = (orig, getattr(orig, "__cause__", None))
+    for candidato in candidatos:
+        if candidato is None:
+            continue
+        nome = getattr(candidato, "constraint_name", None)
+        if not nome:
+            nome = getattr(getattr(candidato, "diag", None), "constraint_name", None)
+        if nome == _CPF_HASH_UNIQUE_CONSTRAINT:
+            return True
+    return False
+
+
+async def _commit_usuario_com_cpf_guard(db: AsyncSession) -> None:
+    """Fecha corrida após o precheck sem mascarar integridades não relacionadas."""
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        if _integrity_e_duplicidade_cpf_usuario(exc):
+            raise HTTPException(
+                status_code=409,
+                detail="CPF já vinculado a outro usuário ativo",
+            ) from exc
+        raise
 
 
 def _refresh_jti_atual(request: Request) -> str | None:
@@ -345,7 +378,7 @@ async def criar(
     )
     db.add(user)
     await criar_audit_log(db, cu.id, _role_value(cu.role), "CREATE", "users", user.id)
-    await db.commit()
+    await _commit_usuario_com_cpf_guard(db)
     await db.refresh(user)
     return user
 
@@ -508,7 +541,7 @@ async def atualizar(
         "users",
         user_id,
     )
-    await db.commit()
+    await _commit_usuario_com_cpf_guard(db)
     await db.refresh(user)
     return user
 

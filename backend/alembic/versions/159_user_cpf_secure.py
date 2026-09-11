@@ -24,6 +24,26 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Rollback físico só é seguro enquanto a migration 159 ainda não tiver
+    # recebido CPF cifrado. Falha fechado ANTES de qualquer DROP para impedir
+    # perda irreversível de PII cujo plaintext não existe no banco.
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM users
+                WHERE cpf_enc IS NOT NULL
+                   OR cpf_hash IS NOT NULL
+            ) THEN
+                RAISE EXCEPTION
+                    'downgrade 159 bloqueado: existem CPFs protegidos; preserve os dados antes do rollback físico';
+            END IF;
+        END
+        $$;
+        """
+    )
     op.execute("DROP INDEX IF EXISTS ux_users_cpf_hash_active")
     op.execute("ALTER TABLE users DROP COLUMN IF EXISTS cpf_hash")
     op.execute("ALTER TABLE users DROP COLUMN IF EXISTS cpf_enc")

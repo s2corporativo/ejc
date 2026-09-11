@@ -10,6 +10,8 @@ import pytest
 from app.services.ai_service import (
     _RESTRICTED_CATS,
     _FILTRO_ESCOPO_RAG,
+    _FILTRO_ELIGIBILIDADE_RAG,
+    _params_escopo_rag,
     buscar_contexto_rag,
 )
 
@@ -26,8 +28,23 @@ def test_categorias_restritas():
 
 
 def test_fragmento_de_filtro():
-    assert "kd.client_id = :scope_cli" in _FILTRO_ESCOPO_RAG
+    assert "base_rag::text" in _FILTRO_ESCOPO_RAG
+    assert "kd.client_id IS NULL" in _FILTRO_ESCOPO_RAG
+    assert "kd.case_id IS NULL" in _FILTRO_ESCOPO_RAG
     assert "kd.categoria <> ALL(:restr_cats)" in _FILTRO_ESCOPO_RAG
+    assert "kd.client_id = NULLIF(:scope_cli, '')" in _FILTRO_ESCOPO_RAG
+    assert "kd.case_id = NULLIF(:scope_case, '')" in _FILTRO_ESCOPO_RAG
+
+
+def test_binds_de_escopo_sao_fail_closed():
+    assert _params_escopo_rag(None, None) == {
+        "restr_cats": _RESTRICTED_CATS,
+        "scope_cli": "",
+        "scope_case": "",
+    }
+    params = _params_escopo_rag("cliente-A", "caso-X")
+    assert params["scope_cli"] == "cliente-A"
+    assert params["scope_case"] == "caso-X"
 
 
 def test_assinatura_tem_escopo():
@@ -62,11 +79,13 @@ async def test_consulta_aplica_escopo():
     db = _CaptureDB()
     # Sem embeddings (default) cai na busca textual — que deve conter o filtro.
     await buscar_contexto_rag(db, "consulta de teste sobre tese qualquer", limite=3)
-    assert "client_id = :scope_cli" in db.sql
+    assert "kd.client_id = NULLIF(:scope_cli, '')" in db.sql
     assert "scope_cli" in db.params
+    assert "scope_case" in db.params
     assert "restr_cats" in db.params
-    # Fail-closed: sem escopo, scope_cli é string vazia (nunca casa um UUID).
+    # Fail-closed: sem escopo, ambos os binds são vazios e NULLIF vira NULL.
     assert db.params["scope_cli"] == ""
+    assert db.params["scope_case"] == ""
 
 
 # ── Bloco 5 — isolamento por cliente aplicado nas chamadas ────────────────────
@@ -114,47 +133,39 @@ async def test_escopo_nao_vazio_propaga_ao_param_sql():
     assert db.params["scope_cli"] == "cliente-A"
 
 
-# ── Isolamento por CASO (auditoria de IA 2026-08-15, dívida 5.5) ─────────────
-# O ingestor do DJEN grava `case_id` na comunicação processual porque ela "só
-# pode ser recuperável dentro do caso e do cliente donos do processo" — mas a
-# recuperação ignorava esse campo, e a intimação do caso A entrava como
-# contexto do caso B do MESMO cliente. Estes testes fixam o contrato.
+# ── Isolamento por CASO via ownership persistido ─────────────────────────────
 
-def test_comunicacao_processual_e_escopada_por_caso():
-    from app.services.ai_service import _CASE_SCOPED_CATS
-
-    assert "comunicacao_processual" in _CASE_SCOPED_CATS
-
-
-def test_fragmento_de_filtro_por_caso():
-    from app.services.ai_service import _FILTRO_CASO_RAG
-
-    assert "kd.case_id = :scope_case" in _FILTRO_CASO_RAG
-    # Documento sem case_id (acervo antigo) continua visível no escopo do
-    # cliente — o recuo de recall seria pior que o ruído que se quer evitar.
-    assert "kd.case_id IS NULL" in _FILTRO_CASO_RAG
-
-
-async def test_consulta_com_caso_aplica_filtro_de_caso():
+async def test_consulta_com_caso_usa_mesmo_contrato_de_ownership():
     db = _CaptureDB()
     await buscar_contexto_rag(
         db, "consulta de teste sobre tese qualquer", limite=3,
         scope_client_id="cli-1", scope_case_id="caso-1",
     )
-    assert "kd.case_id = :scope_case" in db.sql
+    assert "kd.client_id = NULLIF(:scope_cli, '')" in db.sql
+    assert "kd.case_id = NULLIF(:scope_case, '')" in db.sql
+    assert db.params["scope_cli"] == "cli-1"
     assert db.params["scope_case"] == "caso-1"
-    assert "comunicacao_processual" in db.params["case_cats"]
 
 
-async def test_consulta_sem_caso_nao_muda_de_comportamento():
-    """Sem caso no escopo, a consulta é exatamente a de antes (sem o filtro)."""
+async def test_consulta_sem_caso_mantem_bind_fail_closed_para_case_id():
     db = _CaptureDB()
     await buscar_contexto_rag(
         db, "consulta de teste sobre tese qualquer", limite=3,
         scope_client_id="cli-1",
     )
-    assert "scope_case" not in db.sql
-    assert "scope_case" not in db.params
+    assert "kd.case_id = NULLIF(:scope_case, '')" in db.sql
+    assert db.params["scope_case"] == ""
+
+
+def test_todas_as_pernas_usam_o_mesmo_contrato_de_escopo():
+    from app.services import ai_service
+
+    fonte = inspect.getsource(ai_service)
+    # vetor, trigram, FTS e fallback textual compartilham o mesmo fragmento.
+    assert fonte.count("{_FILTRO_ESCOPO_RAG}") == 4
+    assert fonte.count("_params_escopo_rag(scope_client_id, scope_case_id)") >= 4
+    assert "_FILTRO_CASO_RAG" not in fonte
+    assert "_CASE_SCOPED_CATS" not in fonte
 
 
 def test_call_sites_com_caso_repassam_o_escopo_de_caso():
@@ -167,3 +178,40 @@ def test_call_sites_com_caso_repassam_o_escopo_de_caso():
     for modulo in (context_builder, analise_estrategica, peca_service,
                    anexos_service, checklist_ia):
         assert "scope_case_id=" in _inspect.getsource(modulo), modulo.__name__
+
+
+
+def test_base_caso_exige_case_id_no_contrato_elegivel():
+    assert "base_rag::text" in _FILTRO_ELIGIBILIDADE_RAG
+    assert "kd.client_id IS NOT NULL" in _FILTRO_ELIGIBILIDADE_RAG
+    assert "<> 'caso' OR kd.case_id IS NOT NULL" in _FILTRO_ESCOPO_RAG
+    assert "<> 'caso' OR kd.case_id IS NOT NULL" in _FILTRO_ELIGIBILIDADE_RAG
+
+
+def test_callers_case_bound_propagam_case_id_explicitamente():
+    """Regressão do P1 #1579: caso conhecido não pode ser descartado no RAG."""
+    from app.core import veredito_ia
+    from app.routers import ai, ai_skills, ai_tools, intake
+    from app.services import ai_service, matriz_teses_service, validador_juridico_service
+
+    checks = {
+        "veredito": (inspect.getsource(veredito_ia), "scope_case_id=case_id"),
+        "router_ai": (inspect.getsource(ai), "scope_case_id=case_id"),
+        "ai_tools": (inspect.getsource(ai_tools), "scope_case_id=req.case_id"),
+        "ai_skills": (inspect.getsource(ai_skills), "scope_case_id=escopo_caso"),
+        "intake": (inspect.getsource(intake), "scope_case_id=case.id"),
+        "matriz": (inspect.getsource(matriz_teses_service), "scope_case_id=case_id"),
+        "validador": (
+            inspect.getsource(validador_juridico_service),
+            "scope_case_id=payload.case_id",
+        ),
+        "contrato": (inspect.getsource(ai_service.analisar_contrato), "scope_case_id=case_id"),
+    }
+    for nome, (fonte, marcador) in checks.items():
+        assert marcador in fonte, f"{nome} perdeu propagação de case_id"
+
+
+def test_ai_skills_helper_exige_escopo_de_caso():
+    from app.routers.ai_skills import _buscar_contexto
+    sig = inspect.signature(_buscar_contexto)
+    assert "escopo_caso" in sig.parameters

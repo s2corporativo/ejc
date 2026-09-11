@@ -298,3 +298,39 @@ async def test_db03_crud_trabalhista_cid_cifrado_sem_vazar_ciphertext():
             await db.execute(text("DELETE FROM trabalhista_cases WHERE case_id = :id"), {"id": case_id})
             await _limpar_executor(db, executor)
             await _limpar(db, client_id, case_id)
+
+
+async def test_db03_anonimizacao_limpa_cid_de_caso_soft_deleted():
+    """Lixeira não pode fazer CID do titular reaparecer após anonimização."""
+    from app.core.database import AsyncSessionLocal
+    from app.models.especializado import TrabalhistaCase
+    from app.services.client_anonimizacao import anonimizar_cliente
+
+    client_id, case_id = str(uuid4()), str(uuid4())
+    async with AsyncSessionLocal() as db:
+        await _criar_cliente(db, client_id)
+        await _criar_caso(db, case_id, client_id, status="encerrado")
+        executor = await _criar_executor(db)
+        trab = TrabalhistaCase(
+            id=str(uuid4()), case_id=case_id, tipo="acidente_trabalho",
+            polo="reclamante", cid="S93.4",
+        )
+        db.add(trab)
+        await db.flush()
+        await db.execute(text("UPDATE cases SET deleted_at = now() WHERE id = :id"), {"id": case_id})
+        await db.commit()
+        try:
+            resultado = await anonimizar_cliente(
+                db, client_id, executor_id=executor, executor_role="socio",
+                motivo="teste DB03 caso em lixeira",
+            )
+            assert resultado["cids_cliente_anonimizados"] == 1
+            row = (await db.execute(
+                text("SELECT cid, cid_enc FROM trabalhista_cases WHERE id = :id"),
+                {"id": trab.id},
+            )).mappings().one()
+            assert row["cid"] is None and row["cid_enc"] is None
+        finally:
+            await db.execute(text("DELETE FROM trabalhista_cases WHERE case_id = :id"), {"id": case_id})
+            await _limpar_executor(db, executor)
+            await _limpar(db, client_id, case_id)

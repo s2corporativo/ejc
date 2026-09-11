@@ -19,13 +19,14 @@ from __future__ import annotations
 import asyncio
 import logging
 from uuid import uuid4
-from datetime import date, timedelta
+from datetime import timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import func, or_, select, text
 
+from app.core.clock import hoje_operacional
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 
@@ -76,7 +77,7 @@ async def _morning_brief():
 
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
+            hoje = hoje_operacional()
             d3 = hoje + timedelta(days=3)
             d7 = hoje + timedelta(days=7)
 
@@ -189,7 +190,7 @@ async def _marcar_prazos_vencidos():
     _hb_status, _hb_detail = "ok", None
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
+            hoje = hoje_operacional()
             rows = await db.execute(text("""
                 SELECT d.id, d.titulo, d.data_prazo, d.responsavel_id, u.email, u.phone
                 FROM deadlines d
@@ -248,7 +249,7 @@ async def _alertar_prazos():
     _hb_status, _hb_detail = "ok", None
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
+            hoje = hoje_operacional()
             # Faixas DISJUNTAS (teto, piso, flag): 7d cobre [hoje+4, hoje+7],
             # 3d cobre [hoje+2, hoje+3], 1d cobre [hoje, hoje+1]. Antes cada faixa
             # usava só `<= alvo AND >= hoje`, então um prazo criado a poucos dias
@@ -327,7 +328,7 @@ async def _alertar_ambiental():
     from app.services.notification_service import notificar
     try:
         async with AsyncSessionLocal() as db:
-            limite = date.today() + timedelta(days=5)
+            limite = hoje_operacional() + timedelta(days=5)
             rows = await db.execute(text("""
                 SELECT ec.numero_auto, ec.data_prazo_defesa,
                        c.advogado_responsavel_id, u.phone
@@ -405,7 +406,7 @@ async def _alertar_audiencias_agenda():
     _hb_status, _hb_detail = "ok", None
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
+            hoje = hoje_operacional()
             corte = datetime.now(timezone.utc) - timedelta(hours=20)
             for dias in (3, 1, 0):
                 alvo = hoje + timedelta(days=dias)
@@ -539,7 +540,8 @@ async def _alertar_prescricao():
     _hb_status, _hb_detail = "ok", None
     try:
         async with AsyncSessionLocal() as db:
-            limite = date.today() + timedelta(days=90)
+            hoje = hoje_operacional()
+            limite = hoje + timedelta(days=90)
             rows = await db.execute(text("""
                 SELECT c.id, c.titulo, c.tipo_acao_prescricao,
                        c.data_prescricao, c.advogado_responsavel_id
@@ -547,13 +549,13 @@ async def _alertar_prescricao():
                 WHERE c.deleted_at IS NULL
                   AND c.data_prescricao IS NOT NULL
                   AND c.data_prescricao::date <= :lim
-                  AND c.data_prescricao::date >= CURRENT_DATE
+                  AND c.data_prescricao::date >= :hoje
                   AND c.status NOT IN ('encerrado','arquivado')
-            """), {"lim": limite})
+            """), {"lim": limite, "hoje": hoje})
             for r in rows:
                 if not r.advogado_responsavel_id:
                     continue
-                dias = (r.data_prescricao.date() - date.today()).days
+                dias = (r.data_prescricao.date() - hoje).days
                 await notificar(
                     db, r.advogado_responsavel_id,
                     "\u23f3 PRESCRIÇÃO SE APROXIMANDO",
@@ -610,7 +612,7 @@ async def _verificar_sla_workflows():
 
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
+            hoje = hoje_operacional()
             agora = datetime.now(_tz.utc)
             cws = (await db.execute(select(CaseWorkflow).where(
                 CaseWorkflow.status == WorkflowStatus.ativo,
@@ -814,8 +816,8 @@ async def _alertar_honorarios():
             await db.execute(text("""
                 UPDATE fees SET status='atrasado'
                 WHERE status='pendente' AND deleted_at IS NULL
-                AND data_vencimento < CURRENT_DATE
-            """))
+                AND data_vencimento < :hoje
+            """), {"hoje": hoje_operacional()})
             await db.commit()
     except Exception as e:
         logger.error(f"[Scheduler] honorarios: {e}")
@@ -955,7 +957,7 @@ async def _alertar_vencimento_societario():
     from app.services.notification_service import notificar
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
+            hoje = hoje_operacional()
 
             # (a) Contratos societários vencendo — marcos 30/15/7/1
             contratos = (await db.execute(text("""
@@ -1037,7 +1039,7 @@ async def _briefing_matinal_advogado():
     from app.services.notification_service import notificar
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
+            hoje = hoje_operacional()
             d7 = hoje + timedelta(days=7)
 
             advs = (await db.execute(text("""
@@ -1150,7 +1152,7 @@ async def _alertar_procuracoes():
     from app.services.notification_service import criar_notificacao_interna
     try:
         async with AsyncSessionLocal() as db:
-            limite = date.today() + timedelta(days=30)
+            limite = hoje_operacional() + timedelta(days=30)
             rows = await db.execute(text("""
                 SELECT p.id, cl.nome, cl.razao_social, cl.responsavel_id,
                        p.data_validade
@@ -1640,9 +1642,9 @@ async def _alertar_contratos():
                 WHERE c.deleted_at IS NULL
                   AND c.status IN ('vigente', 'assinado')
                   AND c.data_fim IS NOT NULL
-                  AND c.data_fim <= CURRENT_DATE + c.alertar_dias_antes * INTERVAL '1 day'
-                  AND c.data_fim >= CURRENT_DATE
-            """))).all()
+                  AND c.data_fim <= :hoje + c.alertar_dias_antes * INTERVAL '1 day'
+                  AND c.data_fim >= :hoje
+            """), {"hoje": hoje_operacional()})).all()
             if rows:
                 logger.warning(
                     f"[Contratos] {len(rows)} contrato(s) próximos do vencimento: "
@@ -1716,7 +1718,7 @@ async def _auditoria_processos():
     """
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
+            hoje = hoje_operacional()
             limite_30 = hoje - timedelta(days=30)
             limite_60 = hoje - timedelta(days=60)
 

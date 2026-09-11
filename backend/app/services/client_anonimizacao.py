@@ -218,10 +218,10 @@ async def anonimizar_cliente(
     # deve ser apagado por este pedido; permanece cifrado em repouso.
     cids_anonimizados = 0
     if cliente.tipo == ClientTipo.PF:
-        case_ids = select(Case.id).where(
-            Case.client_id == client_id,
-            Case.deleted_at.is_(None),
-        )
+        # Inclui casos soft-deleted: a lixeira permite restauração e o satélite
+        # trabalhista permanece no banco. Excluir esses casos deixaria CID
+        # decryptável reaparecer após uma anonimização já declarada concluída.
+        case_ids = select(Case.id).where(Case.client_id == client_id)
         trab_rows = (
             await db.execute(
                 select(TrabalhistaCase).where(
