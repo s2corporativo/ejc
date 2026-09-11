@@ -14,6 +14,7 @@ from fastapi.responses import Response
 from sqlalchemy import func as sqlfunc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clock import hoje_operacional
 from app.core.database import get_db
 from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.core.security import get_current_user, requer_advogado
@@ -208,7 +209,7 @@ async def listar(
         q.offset((page - 1) * page_size).limit(page_size)
     )).scalars().all()
 
-    hoje = date.today()
+    hoje = hoje_operacional()
     data = []
     for d in rows:
         item = DeadlineResponse.model_validate(d).model_dump()
@@ -246,7 +247,7 @@ async def exportar_csv(
         logger.warning("[export.csv] resultado truncado em %d linhas", _MAX_EXPORT)
 
     return Response(
-        content=_prazos_para_csv(rows, date.today()),
+        content=_prazos_para_csv(rows, hoje_operacional()),
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="prazos.csv"'},
     )
@@ -418,7 +419,7 @@ async def atualizar(
         "data_prazo" in mudancas
         and "status" not in mudancas
         and getattr(d.status, "value", d.status) == "vencido"
-        and d.data_prazo >= date.today()
+        and d.data_prazo >= hoje_operacional()
     ):
         d.status = "pendente"
         await criar_audit_log(

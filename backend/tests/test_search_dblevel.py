@@ -441,3 +441,39 @@ async def test_tudo_estagiario_nao_recebe_clientes():
             assert [(i["tipo"], i["id"]) for i in resp["resultados"]] == [("caso", caso)]
         finally:
             await _limpar(db, case_ids=[caso], user_ids=[estagiario], client_ids=[cli])
+
+
+async def test_busca_cliente_por_nome_e_cpf_respeita_carteira():
+    """Busca transversal não pode identificar cliente de outra carteira."""
+    from app.core.database import AsyncSessionLocal
+
+    tok = f"Zzcarteira{uuid4().hex[:6]}"
+    cpf_outro = "529.982.247-25"
+    async with AsyncSessionLocal() as db:
+        adv1 = await _criar_user(db, "advogado")
+        adv2 = await _criar_user(db, "advogado")
+        secretaria = await _criar_user(db, "secretaria")
+        cli1 = await _criar_cliente(db, f"Meu Cliente {tok}")
+        cli2 = await _criar_cliente(db, f"Cliente Alheio {tok}", cpf=cpf_outro)
+        caso1 = await _criar_caso(db, cli1, f"Meu caso {tok}", resp_id=adv1)
+        caso2 = await _criar_caso(db, cli2, f"Caso alheio {tok}", resp_id=adv2)
+        await db.commit()
+        try:
+            cu1 = await _carregar_user(db, adv1)
+            geral = await _buscar(db, cu1, f"Cliente Alheio {tok}", "tudo")
+            assert all(i.get("id") != cli2 for i in geral["resultados"])
+
+            cpf = await _buscar(db, cu1, "52998224725", "cpf")
+            assert all(i.get("id") != cli2 for i in cpf["resultados"])
+
+            # Secretaria mantém a visão institucional definida pelo CRM.
+            sec = await _carregar_user(db, secretaria)
+            geral_sec = await _buscar(db, sec, f"Cliente Alheio {tok}", "tudo")
+            assert any(i.get("id") == cli2 for i in geral_sec["resultados"])
+            cpf_sec = await _buscar(db, sec, "52998224725", "cpf")
+            assert any(i.get("id") == cli2 for i in cpf_sec["resultados"])
+        finally:
+            await _limpar(
+                db, case_ids=[caso1, caso2],
+                user_ids=[adv1, adv2, secretaria], client_ids=[cli1, cli2],
+            )
