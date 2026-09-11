@@ -2,10 +2,10 @@
 
 Este arquivo é o ledger canônico de **reservas futuras** e do trecho recente da cadeia Alembic. O histórico detalhado de reservas antigas permanece preservado no Git.
 
-**Head canônico atual da `main`:** `158_case_partes_trabalhista_pii_expand`
-**Próximo prefixo livre:** `159`
+**Head canônico atual da `main`:** `159_user_cpf_secure`
+**Próximo prefixo livre:** `160`
 
-> Estado descrito por esta PR após integração. A base verificada usada para construir a migration é `157_ajuizamento_judicial`.
+> Estado desta branch após reconstrução sobre a `main` que já contém `158_case_partes_trabalhista_pii_expand`. A migration 159 parte diretamente desse head integrado.
 
 > Nunca reutilize um número menor ou igual ao head atual, mesmo quando houver lacuna histórica. A ordem numérica precisa crescer junto com `down_revision`.
 
@@ -51,12 +51,13 @@ gh pr list --state open
 | `155_indices_listagem_espinha` | `154_saneamento_schema` | Mesclada | Índices parciais de listagem em `cases`/`clients`/`documents` (AUD27-P3-11). `deadlines` fora de propósito: já coberta por `ix_deadlines_data_prazo`, medido. |
 | `156_case_despesas_processuais` | `155_indices_listagem_espinha` | Mesclada | Issue #809: tabela `case_despesas` para custos processuais reembolsáveis do caso, distinta de `office_expenses`; faturamento explícito gera `FeeTipo.custas_despesas`. Migration aditiva e reversível. |
 | `157_ajuizamento_judicial` | `156_case_despesas_processuais` | **Mesclada** | Núcleo de ajuizamento: perfis de integração, ajuizamentos, transições, tentativas, protocolos, sync e TPU. A migration existe na `main` e é o head canônico atual. |
-| `158_case_partes_trabalhista_pii_expand` | `157_ajuizamento_judicial` | **Em PR — HEAD desta branch** | DB-03 Fase A: adiciona PII cifrada/HMAC em `case_partes` e CID cifrado em `trabalhista_cases`; upgrade não remove plaintext legado. Downgrade físico falha fechado se já houver valores cifrados. |
+| `158_case_partes_trabalhista_pii_expand` | `157_ajuizamento_judicial` | **Mesclada** | DB-03 Fase A integrada na `main` pelo PR #1586; adiciona PII cifrada/HMAC em `case_partes` e CID cifrado em `trabalhista_cases`, preservando plaintext legado no expand. |
+| `159_user_cpf_secure` | `158_case_partes_trabalhista_pii_expand` | **Em PR — HEAD desta branch** | DB-03 perfis profissionais: CPF somente cifrado + HMAC, índice único parcial para ativos e resposta apenas mascarada. Reconstruída diretamente sobre a `main` pós-#1586. |
 
-### Reservas concorrentes a partir do head 157
+### Reserva atual a partir do head 158 integrado
 
-- O PR **#1586** contém `158_case_partes_trabalhista_pii_expand` sobre `157_ajuizamento_judicial`; enquanto permanecer aberto e compatível com o head real, o prefixo `158` está ocupado por essa frente e **não pode ser reutilizado** por outra migration.
-- O PR **#1587** está empilhado sobre #1586 e propõe `159_user_cpf_secure`. Pela regra de branches empilhadas, `159` não deve ser tratado como prefixo independente disponível/promovível antes da integração e revalidação do `158`; ele permanece condicionado ao pai.
+- O PR **#1586** foi integrado; o prefixo `158` faz parte da cadeia canônica e nunca pode ser reutilizado.
+- Esta branch reconstrói o conteúdo funcional do antigo #1587 diretamente sobre a `main` pós-#1586 e reserva legitimamente `159_user_cpf_secure` como sucessor imediato de `158_case_partes_trabalhista_pii_expand`.
 - Frentes de Documentos/Legal Hold/Outbox que ainda carreguem migrations históricas `156_*` são incompatíveis com a cadeia atual e devem ser reconstruídas somente depois do avanço efetivo do head, usando o próximo número então confirmado.
 
 ## Banco de Teses — decisão canônica

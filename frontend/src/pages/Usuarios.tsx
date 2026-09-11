@@ -114,9 +114,15 @@ export default function Usuarios() {
         role: editForm.role,
         phone: String(editForm.phone || "").trim() || null,
         oab_number: String(editForm.oab_number || "").trim() || null,
-        djen_oab_numero: String(editForm.djen_oab_numero || "").trim() || null,
-        djen_oab_uf: String(editForm.djen_oab_uf || "").trim() || null,
       };
+      const djenNumero = String(editForm.djen_oab_numero || "").trim();
+      const djenUf = String(editForm.djen_oab_uf || "").trim();
+      const djenNumeroAtual = String(editando.djen_oab_numero || "").trim();
+      const djenUfAtual = String(editando.djen_oab_uf || "").trim();
+      if (djenNumero !== djenNumeroAtual || djenUf !== djenUfAtual) {
+        payload.djen_oab_numero = djenNumero || null;
+        payload.djen_oab_uf = djenUf || null;
+      }
       if (String(editForm.cpf || "").trim()) payload.cpf = String(editForm.cpf).trim();
       await api.patch(`/users/${editando.id}`, payload);
       toast.success("Perfil atualizado");

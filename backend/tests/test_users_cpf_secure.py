@@ -44,6 +44,18 @@ def test_user_response_expoe_apenas_cpf_mascarado(monkeypatch):
     assert not hasattr(u, "cpf")
 
 
+def test_cpf_ciphertext_invalido_nao_quebra_serializacao(monkeypatch):
+    _keys(monkeypatch)
+    u = User(
+        id="u-corrompido",
+        email="corrompido@teste.local",
+        hashed_password="x",
+        full_name="Usuário",
+        cpf_enc="token-invalido",
+    )
+    assert u.cpf_mascarado is None
+
+
 def test_migration_159_nao_cria_coluna_plaintext():
     from pathlib import Path
     text = Path("alembic/versions/159_user_cpf_secure.py").read_text()

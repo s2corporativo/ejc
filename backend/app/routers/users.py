@@ -15,6 +15,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import func as sqlfunc, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -345,7 +346,16 @@ async def criar(
     )
     db.add(user)
     await criar_audit_log(db, cu.id, _role_value(cu.role), "CREATE", "users", user.id)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        if cpf_hash and "ux_users_cpf_hash_active" in str(exc.orig):
+            raise HTTPException(
+                status_code=409,
+                detail="CPF já vinculado a outro usuário ativo",
+            ) from exc
+        raise
     await db.refresh(user)
     return user
 
@@ -508,7 +518,16 @@ async def atualizar(
         "users",
         user_id,
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        if user.cpf_hash and "ux_users_cpf_hash_active" in str(exc.orig):
+            raise HTTPException(
+                status_code=409,
+                detail="CPF já vinculado a outro usuário ativo",
+            ) from exc
+        raise
     await db.refresh(user)
     return user
 
