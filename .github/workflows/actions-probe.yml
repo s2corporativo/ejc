@@ -1,0 +1,29 @@
+name: EJC Actions Probe
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/actions-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ejc-actions-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  startup-probe:
+    name: Startup probe
+    runs-on: ubuntu-slim
+    timeout-minutes: 3
+    steps:
+      - name: Confirmar inicializacao real do runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "GitHub Actions runner iniciou corretamente."
+          echo "event=${GITHUB_EVENT_NAME}"
+          echo "sha=${GITHUB_SHA}"
