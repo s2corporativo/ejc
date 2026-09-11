@@ -540,7 +540,8 @@ async def _alertar_prescricao():
     _hb_status, _hb_detail = "ok", None
     try:
         async with AsyncSessionLocal() as db:
-            limite = hoje_operacional() + timedelta(days=90)
+            hoje = hoje_operacional()
+            limite = hoje + timedelta(days=90)
             rows = await db.execute(text("""
                 SELECT c.id, c.titulo, c.tipo_acao_prescricao,
                        c.data_prescricao, c.advogado_responsavel_id
@@ -550,11 +551,11 @@ async def _alertar_prescricao():
                   AND c.data_prescricao::date <= :lim
                   AND c.data_prescricao::date >= :hoje
                   AND c.status NOT IN ('encerrado','arquivado')
-            """), {"lim": limite, "hoje": hoje_operacional()})
+            """), {"lim": limite, "hoje": hoje})
             for r in rows:
                 if not r.advogado_responsavel_id:
                     continue
-                dias = (r.data_prescricao.date() - hoje_operacional()).days
+                dias = (r.data_prescricao.date() - hoje).days
                 await notificar(
                     db, r.advogado_responsavel_id,
                     "\u23f3 PRESCRIÇÃO SE APROXIMANDO",
