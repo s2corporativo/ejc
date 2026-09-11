@@ -110,3 +110,14 @@ async def test_commit_guard_nao_mascara_integrity_error_nao_relacionado():
         await _commit_usuario_com_cpf_guard(db)
     assert exc.value is original
     assert db.rollback_executado is True
+
+
+def test_cpf_mascarado_isola_ciphertext_invalido():
+    u = User(
+        id="u-corrompido",
+        email="corrompido@teste.local",
+        hashed_password="x",
+        full_name="Usuário Corrompido",
+        cpf_enc="ciphertext-invalido",
+    )
+    assert u.cpf_mascarado == "[dado indisponível]"

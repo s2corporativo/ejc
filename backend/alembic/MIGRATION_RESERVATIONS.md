@@ -2,10 +2,10 @@
 
 Este arquivo é o ledger canônico de **reservas futuras** e do trecho recente da cadeia Alembic. O histórico detalhado de reservas antigas permanece preservado no Git.
 
-**Head canônico atual da `main`:** `158_case_partes_trabalhista_pii_expand`
-**Próximo prefixo livre:** `159`
+**Head canônico atual da `main`:** `159_user_cpf_secure`
+**Próximo prefixo livre:** `160`
 
-> Estado descrito por esta PR após integração. A base verificada usada para construir a migration é `157_ajuizamento_judicial`.
+> Estado descrito por esta PR após integração. A base verificada usada para construir a migration é `158_case_partes_trabalhista_pii_expand`.
 
 > Nunca reutilize um número menor ou igual ao head atual, mesmo quando houver lacuna histórica. A ordem numérica precisa crescer junto com `down_revision`.
 
@@ -50,13 +50,14 @@ gh pr list --state open
 | `154_saneamento_schema` | `153_legal_doc_client_id` | Mesclada | Módulo de saneamento de base processual (PROMPT 1). Encadeada sobre 153 porque era o head real no momento (`alembic heads`). 7 tabelas próprias, **prefixadas `saneamento_*` no schema `public`** — nenhuma alteração em tabela existente do EJC. Um schema Postgres dedicado (`CREATE SCHEMA`) foi cogitado e descartado porque os gates de compatibilidade/paridade existentes não suportavam qualificação de schema sem alteração mais ampla. |
 | `155_indices_listagem_espinha` | `154_saneamento_schema` | Mesclada | Índices parciais de listagem em `cases`/`clients`/`documents` (AUD27-P3-11). `deadlines` fora de propósito: já coberta por `ix_deadlines_data_prazo`, medido. |
 | `156_case_despesas_processuais` | `155_indices_listagem_espinha` | Mesclada | Issue #809: tabela `case_despesas` para custos processuais reembolsáveis do caso, distinta de `office_expenses`; faturamento explícito gera `FeeTipo.custas_despesas`. Migration aditiva e reversível. |
-| `157_ajuizamento_judicial` | `156_case_despesas_processuais` | **Mesclada** | Núcleo de ajuizamento: perfis de integração, ajuizamentos, transições, tentativas, protocolos, sync e TPU. A migration existe na `main` e é o head canônico atual. |
-| `158_case_partes_trabalhista_pii_expand` | `157_ajuizamento_judicial` | **Em PR — HEAD desta branch** | DB-03 Fase A: adiciona PII cifrada/HMAC em `case_partes` e CID cifrado em `trabalhista_cases`; upgrade não remove plaintext legado. Downgrade físico falha fechado se já houver valores cifrados. |
+| `157_ajuizamento_judicial` | `156_case_despesas_processuais` | **Mesclada** | Núcleo de ajuizamento: perfis de integração, ajuizamentos, transições, tentativas, protocolos, sync e TPU. |
+| `158_case_partes_trabalhista_pii_expand` | `157_ajuizamento_judicial` | **Mesclada** | DB-03 Fase A: adiciona PII cifrada/HMAC em `case_partes` e CID cifrado em `trabalhista_cases`; upgrade não remove plaintext legado. Downgrade físico falha fechado se já houver valores cifrados. |
+| `159_user_cpf_secure` | `158_case_partes_trabalhista_pii_expand` | **Em PR — HEAD desta branch** | CPF profissional cifrado/HMAC em `users`, sem coluna plaintext; índice único parcial para ativos; downgrade físico falha fechado se já houver valores protegidos. |
 
-### Reservas concorrentes a partir do head 157
+### Reconciliação das reservas 158/159
 
-- O PR **#1586** contém `158_case_partes_trabalhista_pii_expand` sobre `157_ajuizamento_judicial`; enquanto permanecer aberto e compatível com o head real, o prefixo `158` está ocupado por essa frente e **não pode ser reutilizado** por outra migration.
-- O PR **#1587** está empilhado sobre #1586 e propõe `159_user_cpf_secure`. Pela regra de branches empilhadas, `159` não deve ser tratado como prefixo independente disponível/promovível antes da integração e revalidação do `158`; ele permanece condicionado ao pai.
+- O PR **#1586** foi integrado à `main`; `158_case_partes_trabalhista_pii_expand` é o predecessor canônico desta migration e não pode ser reescrito ou reutilizado.
+- O PR **#1587** foi rebaseado/reconciliado sobre a `main` que já contém 158 e reserva validamente `159_user_cpf_secure`; enquanto este PR permanecer aberto e compatível, o prefixo `159` está ocupado.
 - Frentes de Documentos/Legal Hold/Outbox que ainda carreguem migrations históricas `156_*` são incompatíveis com a cadeia atual e devem ser reconstruídas somente depois do avanço efetivo do head, usando o próximo número então confirmado.
 
 ## Banco de Teses — decisão canônica

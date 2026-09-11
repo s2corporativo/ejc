@@ -88,7 +88,12 @@ class User(Base):
         if not self.cpf_enc:
             return None
         from app.services.pii_crypto import decrypt, mascarar_documento
-        return mascarar_documento(decrypt(self.cpf_enc))
+        try:
+            return mascarar_documento(decrypt(self.cpf_enc))
+        except (ValueError, RuntimeError):
+            # Corrupção/chave divergente não pode derrubar a listagem inteira e
+            # nunca deve provocar fallback para qualquer plaintext legado.
+            return "[dado indisponível]"
 
     def __repr__(self):
         return f"<User {self.email} [{self.role}]>"
