@@ -2,8 +2,10 @@
 
 Este arquivo é o ledger canônico de **reservas futuras** e do trecho recente da cadeia Alembic. O histórico detalhado de reservas antigas permanece preservado no Git.
 
-**Head canônico atual da `main`:** `157_ajuizamento_judicial`
-**Próximo prefixo livre:** `158`
+**Head canônico atual da `main`:** `158_case_partes_trabalhista_pii_expand`
+**Próximo prefixo livre:** `159`
+
+> Estado descrito por esta PR após integração. A base verificada usada para construir a migration é `157_ajuizamento_judicial`.
 
 > Nunca reutilize um número menor ou igual ao head atual, mesmo quando houver lacuna histórica. A ordem numérica precisa crescer junto com `down_revision`.
 
@@ -49,6 +51,7 @@ gh pr list --state open
 | `155_indices_listagem_espinha` | `154_saneamento_schema` | Mesclada | Índices parciais de listagem em `cases`/`clients`/`documents` (AUD27-P3-11). `deadlines` fora de propósito: já coberta por `ix_deadlines_data_prazo`, medido. |
 | `156_case_despesas_processuais` | `155_indices_listagem_espinha` | Mesclada | Issue #809: tabela `case_despesas` para custos processuais reembolsáveis do caso, distinta de `office_expenses`; faturamento explícito gera `FeeTipo.custas_despesas`. Migration aditiva e reversível. |
 | `157_ajuizamento_judicial` | `156_case_despesas_processuais` | **Mesclada** | Núcleo de ajuizamento: perfis de integração, ajuizamentos, transições, tentativas, protocolos, sync e TPU. A migration existe na `main` e é o head canônico atual. |
+| `158_case_partes_trabalhista_pii_expand` | `157_ajuizamento_judicial` | **Em PR — HEAD desta branch** | DB-03 Fase A: adiciona PII cifrada/HMAC em `case_partes` e CID cifrado em `trabalhista_cases`; upgrade não remove plaintext legado. Downgrade físico falha fechado se já houver valores cifrados. |
 
 ### Reservas concorrentes a partir do head 157
 
