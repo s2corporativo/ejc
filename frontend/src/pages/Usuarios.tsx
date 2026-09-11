@@ -3,6 +3,7 @@ import { toast } from "../components/Toast";
 import { Pencil, Plus, UserX } from "lucide-react";
 import api from "../lib/api";
 import type { Paged, User } from "../types";
+import { useAuth } from "../stores/auth";
 import {
   PageHeader,
   Modal,
@@ -39,6 +40,17 @@ function detalheErro(e: unknown, fallback: string): string {
     : fallback;
 }
 
+const ROLE_LEVEL: Record<string, number> = {
+  superadmin: 9,
+  admin: 8,
+  socio: 7,
+  advogado: 6,
+  advogado_auxiliar: 5,
+  estagiario: 4,
+  secretaria: 3,
+  financeiro: 2,
+};
+
 const ROLES = [
   "admin",
   "socio",
@@ -50,6 +62,7 @@ const ROLES = [
 ];
 
 export default function Usuarios() {
+  const operador = useAuth((state) => state.user);
   const [data, setData] = useState<Paged<User> | null>(null);
   const [erro, setErro] = useState(false);
   const [modal, setModal] = useState(false);
@@ -58,6 +71,12 @@ export default function Usuarios() {
   const [editando, setEditando] = useState<User | null>(null);
   const [editForm, setEditForm] = useState<EditUsuarioForm>({});
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
+  const [removerCpf, setRemoverCpf] = useState(false);
+
+  const podeGerenciar = (u: User) =>
+    Boolean(operador) &&
+    (operador!.id === u.id ||
+      (ROLE_LEVEL[operador!.role] || 0) > (ROLE_LEVEL[u.role] || 0));
 
   const load = () => {
     setErro(false);
@@ -89,6 +108,7 @@ export default function Usuarios() {
   };
 
   const abrirEdicao = (u: User) => {
+    setRemoverCpf(false);
     setEditando(u);
     setEditForm({
       full_name: u.full_name,
@@ -123,7 +143,8 @@ export default function Usuarios() {
         payload.djen_oab_numero = djenNumero || null;
         payload.djen_oab_uf = djenUf || null;
       }
-      if (String(editForm.cpf || "").trim()) payload.cpf = String(editForm.cpf).trim();
+      if (removerCpf) payload.cpf = null;
+      else if (String(editForm.cpf || "").trim()) payload.cpf = String(editForm.cpf).trim();
       await api.patch(`/users/${editando.id}`, payload);
       toast.success("Perfil atualizado");
       setEditando(null);
@@ -195,13 +216,15 @@ export default function Usuarios() {
                   <td className="px-4 py-3 text-xs text-slate-500">{u.cpf_mascarado || "—"}</td>
                   <td className="px-4 py-3">{u.is_active ? "✅" : "—"}</td>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <button
-                      title="Editar perfil"
-                      className="btn-ghost px-2 py-1"
-                      onClick={() => abrirEdicao(u)}
-                    >
-                      <Pencil size={15} />
-                    </button>
+                    {podeGerenciar(u) && (
+                      <button
+                        title="Editar perfil"
+                        className="btn-ghost px-2 py-1"
+                        onClick={() => abrirEdicao(u)}
+                      >
+                        <Pencil size={15} />
+                      </button>
+                    )}
                     {u.is_active && (
                       <button
                         title="Desativar usuário"
@@ -338,7 +361,11 @@ export default function Usuarios() {
           </div>
           <div>
             <label className="label">CPF</label>
-            <input className="input" placeholder={editando?.cpf_mascarado || "000.000.000-00"} inputMode="numeric" value={editForm.cpf || ""} onChange={(e) => setEditForm({ ...editForm, cpf: e.target.value })} />
+            <input className="input" disabled={removerCpf} placeholder={editando?.cpf_mascarado || "000.000.000-00"} inputMode="numeric" value={editForm.cpf || ""} onChange={(e) => setEditForm({ ...editForm, cpf: e.target.value })} />
+            <label className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+              <input type="checkbox" checked={removerCpf} onChange={(e) => setRemoverCpf(e.target.checked)} />
+              Remover CPF cadastrado
+            </label>
             <p className="mt-1 text-xs text-slate-400">Deixe em branco para manter o CPF atual. O valor completo nunca é devolvido pela API.</p>
           </div>
           <div>

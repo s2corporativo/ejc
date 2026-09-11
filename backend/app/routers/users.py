@@ -496,6 +496,7 @@ async def atualizar(
     _validar_par_oab_djen(user, mudancas)
     await _validar_oab_djen_exclusiva(db, user, mudancas)
 
+    cpf_hash_tentado: str | None = None
     if "cpf" in mudancas:
         if not eh_admin:
             raise HTTPException(status_code=403, detail="CPF é restrito à gestão de usuários")
@@ -507,6 +508,7 @@ async def atualizar(
         await _validar_cpf_usuario_exclusivo(db, user.id, cpf_hash)
         user.cpf_enc = cpf_enc
         user.cpf_hash = cpf_hash
+        cpf_hash_tentado = cpf_hash
 
     for key, value in mudancas.items():
         setattr(user, key, value)
@@ -522,7 +524,7 @@ async def atualizar(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        if user.cpf_hash and "ux_users_cpf_hash_active" in str(exc.orig):
+        if cpf_hash_tentado and "ux_users_cpf_hash_active" in str(exc.orig):
             raise HTTPException(
                 status_code=409,
                 detail="CPF já vinculado a outro usuário ativo",
