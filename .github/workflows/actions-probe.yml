@@ -1,6 +1,11 @@
 name: EJC Actions Probe
 
 on:
+  push:
+    branches:
+      - chore/github-actions-probe-20260911
+    paths:
+      - ".github/workflows/actions-probe.yml"
   pull_request:
     branches: [main]
     paths:
