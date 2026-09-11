@@ -26,6 +26,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import func, or_, select, text
 
+from app.core.clock import hoje_operacional
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 
@@ -76,7 +77,7 @@ async def _morning_brief():
 
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
+            hoje = hoje_operacional()
             d3 = hoje + timedelta(days=3)
             d7 = hoje + timedelta(days=7)
 
@@ -189,7 +190,7 @@ async def _marcar_prazos_vencidos():
     _hb_status, _hb_detail = "ok", None
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
+            hoje = hoje_operacional()
             rows = await db.execute(text("""
                 SELECT d.id, d.titulo, d.data_prazo, d.responsavel_id, u.email, u.phone
                 FROM deadlines d
@@ -248,7 +249,7 @@ async def _alertar_prazos():
     _hb_status, _hb_detail = "ok", None
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
+            hoje = hoje_operacional()
             # Faixas DISJUNTAS (teto, piso, flag): 7d cobre [hoje+4, hoje+7],
             # 3d cobre [hoje+2, hoje+3], 1d cobre [hoje, hoje+1]. Antes cada faixa
             # usava só `<= alvo AND >= hoje`, então um prazo criado a poucos dias
