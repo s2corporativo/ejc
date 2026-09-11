@@ -156,3 +156,69 @@ async def test_patch_bloqueia_reatribuicao_da_solicitacao_para_usuario_fora_do_c
         )
     assert exc.value.status_code == 422
     assert "sem acesso ao caso" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_sincronizar_tarefa_legada_revalida_responsavel_do_caso(monkeypatch):
+    caso = _caso()
+    atendimento = SimpleNamespace(
+        id="at-legado",
+        task_id="task-1",
+        case_id="case-1",
+        solicitacao="Pedido legado",
+        solicitacao_prioridade="normal",
+        solicitacao_prazo=None,
+        solicitacao_responsavel_id="adv-fora",
+        solicitacao_atendida=False,
+        atendida_em=None,
+    )
+    tarefa = SimpleNamespace(
+        titulo="x", descricao=None, prioridade="media", data_limite=None,
+        case_id="case-1", responsavel_id="adv-fora",
+        status=atendimentos.TaskStatus.a_fazer, concluida_em=None,
+    )
+
+    async def _obter(_atendimento, _db):
+        return tarefa
+
+    async def _responsavel(_db, _uid):
+        return _user("adv-fora")
+
+    class _Result:
+        def scalar_one_or_none(self):
+            return caso
+
+    class _DB:
+        async def execute(self, _stmt):
+            return _Result()
+
+    monkeypatch.setattr(atendimentos, "_obter_tarefa_vinculada", _obter)
+    monkeypatch.setattr(atendimentos, "_validar_responsavel", _responsavel)
+
+    with pytest.raises(HTTPException) as exc:
+        await atendimentos._sincronizar_tarefa(atendimento, _DB())
+    assert exc.value.status_code == 422
+    assert "sem acesso ao caso" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_notificacao_de_solicitacao_usa_link_neutro_sem_ids(monkeypatch):
+    atendimento = SimpleNamespace(
+        id="at-1", client_id="cliente-secreto", solicitacao_atendida=False
+    )
+    responsavel = _user("adv-dono")
+    enviados = []
+
+    async def _notificar(db, user_id, titulo, mensagem, **kwargs):
+        enviados.append((user_id, titulo, mensagem, kwargs))
+
+    monkeypatch.setattr(atendimentos, "notificar", _notificar)
+
+    await atendimentos._notificar_nova_solicitacao(
+        atendimento, responsavel, db=object()
+    )
+
+    assert len(enviados) == 1
+    _uid, _titulo, _mensagem, kwargs = enviados[0]
+    assert kwargs["link"] == "/atividades?tipo=tarefa"
+    assert "cliente-secreto" not in kwargs["link"]

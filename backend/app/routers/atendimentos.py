@@ -387,6 +387,26 @@ async def _sincronizar_tarefa(
     tarefa = await _obter_tarefa_vinculada(atendimento, db)
     if tarefa is None:
         return
+
+    # Fail-closed também para registros legados: sincronizar uma tarefa não pode
+    # perpetuar uma atribuição antiga que não tenha acesso ao caso vinculado.
+    responsavel = await _validar_responsavel(
+        db, atendimento.solicitacao_responsavel_id
+    )
+    caso = None
+    if atendimento.case_id:
+        caso = (
+            await db.execute(
+                select(Case).where(
+                    Case.id == atendimento.case_id,
+                    Case.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+        if caso is None:
+            raise HTTPException(status_code=422, detail="Caso vinculado não encontrado")
+    _validar_responsavel_no_caso(responsavel, caso)
+
     tarefa.titulo = _titulo_tarefa(atendimento.solicitacao or "Solicitação")
     tarefa.descricao = (
         "Tarefa originada na linha do tempo de atendimento. "
@@ -425,7 +445,9 @@ async def _notificar_nova_solicitacao(
             "Solicitação de cliente atribuída",
             "Há uma solicitação pendente na linha do tempo de atendimento.",
             tipo="tarefa",
-            link=f"/clientes/{atendimento.client_id}?tab=atendimentos",
+            # Link neutro: evita expor identificador de cliente/caso na própria
+            # notificação; o read-model canônico aplica ownership ao abrir a fila.
+            link="/atividades?tipo=tarefa",
             forcar_sino=True,
         )
     except Exception:
