@@ -7,19 +7,24 @@ Adiciona somente storage cifrado (Fernet) e índice cego HMAC. Não existe
 coluna plaintext de CPF em `users` e não há backfill automático.
 """
 from alembic import op
+import sqlalchemy as sa
 
 revision = "159_user_cpf_secure"
 down_revision = "158_case_partes_trabalhista_pii_expand"
 branch_labels = None
 depends_on = None
+deployment_policy = "human_reviewed_unique_index"
 
 
 def upgrade() -> None:
-    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS cpf_enc text")
-    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS cpf_hash varchar(64)")
-    op.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS ux_users_cpf_hash_active "
-        "ON users (cpf_hash) WHERE cpf_hash IS NOT NULL AND deleted_at IS NULL"
+    op.add_column("users", sa.Column("cpf_enc", sa.Text(), nullable=True))
+    op.add_column("users", sa.Column("cpf_hash", sa.String(length=64), nullable=True))
+    op.create_index(
+        "ux_users_cpf_hash_active",
+        "users",
+        ["cpf_hash"],
+        unique=True,
+        postgresql_where=sa.text("cpf_hash IS NOT NULL AND deleted_at IS NULL"),
     )
 
 
