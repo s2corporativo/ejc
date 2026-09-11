@@ -60,6 +60,26 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         skills=_skills("build_case_context", "retrieve_rag_sources",
                        "validate_citations"),
     ),
+    "EvidenceAgent": AgenteInterno(
+        nome="EvidenceAgent",
+        descricao=("Auditoria probatória transversal: separa alegação, fato comprovado, "
+                   "prova existente, lacuna, ônus e diligência necessária."),
+        dominios=["provas", "evidencias", "lacunas_probatorias", "onus_prova"],
+        tarefa_padrao=TarefaIA.ANALISE_CASO,
+        prompt_key="provas",
+        exige_fonte=True,
+        skills=_skills("build_case_context", "retrieve_rag_sources", "validate_citations"),
+    ),
+    "JudicialReviewAgent": AgenteInterno(
+        nome="JudicialReviewAgent",
+        descricao=("Revisão judicial simulada e não preditiva: examina admissibilidade, "
+                   "ônus, prova, teses contrapostas e perguntas que exigiriam saneamento."),
+        dominios=["revisao_judicial", "perspectiva_magistrado", "analise_judicial"],
+        tarefa_padrao=TarefaIA.ANALISE_CASO,
+        prompt_key="revisao_judicial",
+        exige_fonte=True,
+        skills=_skills("build_case_context", "retrieve_rag_sources", "validate_citations"),
+    ),
     "ProcessAgent": AgenteInterno(
         nome="ProcessAgent",
         descricao="Andamento processual e prazos: fases, movimentos e datas fatais.",
