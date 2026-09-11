@@ -16,3 +16,12 @@ def test_hoje_operacional_segue_data_civil_de_sao_paulo():
 def test_meia_noite_utc_nao_implica_novo_dia_operacional():
     instante_utc = datetime(2026, 9, 11, 0, 5, tzinfo=timezone.utc)
     assert instante_utc.astimezone(FUSO_OPERACIONAL).date().isoformat() == "2026-09-10"
+
+
+def test_scheduler_nao_depende_da_data_civil_do_container_ou_banco():
+    from pathlib import Path
+
+    fonte = (Path(__file__).resolve().parents[1] / "app/services/scheduler.py").read_text()
+    assert "date.today()" not in fonte
+    assert "CURRENT_DATE" not in fonte
+    assert "hoje_operacional" in fonte
