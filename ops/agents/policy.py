@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 
 _FRAGMENTOS_BLOQUEADOS = (
@@ -20,6 +21,12 @@ _FRAGMENTOS_BLOQUEADOS = (
     "--dangerously-skip-permissions",
     "/opt/ejc",
     "/opt/verdelimp-erp",
+)
+
+_RAIZES_REPOSITORIO_PRODUCAO = (
+    Path("/opt/ejc"),
+    Path("/srv/ejc"),
+    Path("/var/www/ejc"),
 )
 
 _PADROES_SEGREDO = (
@@ -77,6 +84,8 @@ _INDICADORES_REVISAO_SEGURANCA = (
 
 @dataclass(frozen=True, slots=True)
 class DecisaoPolitica:
+    """Resultado imutável de uma decisão determinística da política operacional."""
+
     permitido: bool
     motivo: str
 
@@ -111,6 +120,16 @@ def caminho_sensivel_repositorio(caminho: str) -> bool:
     if nome.startswith(".env.") and not nome.endswith(".example"):
         return True
     return nome.endswith(_SUFIXOS_SENSIVEIS)
+
+
+def caminho_checkout_producao(caminho: Path) -> bool:
+    """Reconhece checkout de produção pelo caminho real, inclusive subdiretórios e symlinks."""
+    resolvido = caminho.expanduser().resolve()
+    for raiz in _RAIZES_REPOSITORIO_PRODUCAO:
+        raiz_resolvida = raiz.resolve()
+        if resolvido == raiz_resolvida or raiz_resolvida in resolvido.parents:
+            return True
+    return False
 
 
 def requer_revisao_seguranca(tarefa: str) -> bool:
