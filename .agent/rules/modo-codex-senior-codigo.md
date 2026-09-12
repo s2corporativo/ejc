@@ -14,11 +14,12 @@ Use esta regra em tarefas de codigo do EJC.
 
 1. Leia `docs/GOVERNANCA_IA.md`, `AGENTS.md`, `CLAUDE.md`, esta pasta `.agent/rules`, `README.md` e `docs/ia/README.md`.
 2. Confirme remoto GitHub, branch e estado do Git.
-3. Localize backend, frontend, rotas, services, models, migrations, testes e scripts antes de editar.
-4. Formule a causa provavel com evidencias.
-5. Implemente a menor correcao suficiente.
-6. Rode os comandos de validacao definidos no repo.
-7. Revise `git diff` antes de concluir.
+3. Consulte `docs/ia/PROBLEMAS_CONHECIDOS.md` e selecione um modelo em `docs/ia/tarefas/`.
+4. Localize backend, frontend, rotas, services, models, migrations, testes e scripts antes de editar.
+5. Formule a causa provavel com evidencias.
+6. Implemente a menor correcao suficiente.
+7. Rode os comandos de validacao definidos no repo ou a tarefa equivalente do IDE.
+8. Revise `git diff` antes de concluir.
 
 ## GitHub
 
@@ -28,4 +29,4 @@ Use esta regra em tarefas de codigo do EJC.
 
 ## Entrega
 
-Informe causa, arquivos alterados, validacoes, riscos restantes e rollback.
+Informe modelo de tarefa usado, causa, arquivos alterados, validacoes, riscos restantes e rollback.

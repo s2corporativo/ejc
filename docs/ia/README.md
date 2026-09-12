@@ -23,12 +23,24 @@ O EJC e um sistema juridico full-stack para casos/processos, clientes, prazos, d
 1. Confirme repositorio, remoto, branch e estado do Git.
 2. Verifique PRs concorrentes antes de editar arquivos.
 3. Leia as instrucoes canonicas do projeto.
-4. Localize backend, frontend, rotas, services, models, migrations, testes e scripts existentes.
-5. Identifique causa raiz antes de editar.
-6. Faca a menor alteracao suficiente.
-7. Revise `git diff`.
-8. Rode a validacao proporcional ao diff.
-9. Use Issue, branch e Pull Request; nao faca push direto em `main`.
+4. Consulte `docs/ia/PROBLEMAS_CONHECIDOS.md`.
+5. Escolha o modelo adequado em `docs/ia/tarefas/`.
+6. Localize backend, frontend, rotas, services, models, migrations, testes e scripts existentes.
+7. Identifique causa raiz antes de editar.
+8. Faca a menor alteracao suficiente.
+9. Revise `git diff`.
+10. Rode a validacao proporcional ao diff.
+11. Use Issue, branch e Pull Request; nao faca push direto em `main`.
+
+## Materiais operacionais
+
+| Arquivo | Uso |
+|---|---|
+| `docs/ia/tarefas/README.md` | Escolher o modelo correto antes de iniciar uma tarefa |
+| `docs/ia/VALIDACOES_IDE.md` | Ver quais tarefas do Antigravity/VS Code executar |
+| `docs/ia/PROBLEMAS_CONHECIDOS.md` | Registrar falhas comprovadas, recorrentes ou pendentes |
+| `docs/ia/MCP_E_AGENTES.md` | Orientar MCPs e agentes especializados sem versionar credenciais |
+| `.agent/workflows/` | Fluxos prontos para inventário, correção e revisão de PR |
 
 ## Comandos de verificacao
 
@@ -49,7 +61,8 @@ O EJC e um sistema juridico full-stack para casos/processos, clientes, prazos, d
 - Toda chamada de IA passa pelo gateway institucional.
 - Migration destrutiva exige backup, teste de restauracao e decisao humana registrada.
 - Nao apresentar hipotese juridica ou tecnica como fato sem evidencia.
+- Nao fazer merge ou deploy sem CI verde, evidencias e criterios de aceite comprovados.
 
 ## Entrega esperada
 
-O template de PR e a evidencia local sao o relatorio da entrega. Informe causa, escopo, arquivos alterados, validacoes, impacto juridico/LGPD, riscos residuais e rollback.
+O template de PR e a evidencia local sao o relatorio da entrega. Informe causa, escopo, modelo de tarefa usado, arquivos alterados, validacoes, impacto juridico/LGPD, riscos residuais e rollback.

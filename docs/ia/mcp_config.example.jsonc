@@ -1,0 +1,31 @@
+{
+  // Exemplo seguro: não cole tokens reais neste arquivo.
+  // Copie para a configuração local do Antigravity e use variáveis de ambiente.
+  "mcpServers": {
+    "github-readonly": {
+      "command": "<comando-do-servidor-mcp-github>",
+      "args": [],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      }
+    },
+    "workspace-files": {
+      "command": "<comando-do-servidor-mcp-filesystem>",
+      "args": [
+        "${workspaceFolder}"
+      ]
+    },
+    "postgres-local-readonly": {
+      "command": "<comando-do-servidor-mcp-postgres>",
+      "args": [
+        "${EJC_DATABASE_URL_READONLY}"
+      ],
+      "disabled": true
+    },
+    "browser-validation": {
+      "command": "<comando-do-servidor-mcp-browser-ou-playwright>",
+      "args": [],
+      "disabled": true
+    }
+  }
+}

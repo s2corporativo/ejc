@@ -8,6 +8,10 @@ Leitura conforme a tarefa: `docs/GOVERNANCA_IA.md` → `CLAUDE.md` (mapa técnic
 portões) → `docs/FLUXO_DE_DESENVOLVIMENTO.md` → `docs/CRITERIOS_DE_ACEITE.md` → o pedido,
 Issue ou PR que originou o trabalho.
 
+Para tarefas conduzidas por Antigravity, Codex ou Claude, consulte também
+`docs/ia/README.md`, `docs/ia/PROBLEMAS_CONHECIDOS.md`, `docs/ia/VALIDACOES_IDE.md` e o
+modelo aplicável em `docs/ia/tarefas/` antes da primeira escrita.
+
 ## Modos de trabalho
 
 - **Somente leitura**: começa sem Issue e sem branch; pode ler tudo (inclusive arquivos de
@@ -17,6 +21,8 @@ Issue ou PR que originou o trabalho.
   no mesmo trabalho, achado sem relação causal é registrado sem interromper.
 - **Desenvolvimento focal**: branch própria, testes proporcionais ao diff, PR vinculado à
   Issue. Uma Issue pode gerar vários PRs; um PR pode fechar Issues inseparáveis.
+- **Execução assistida por IDE**: use as tarefas em `.vscode/tasks.json` como atalhos para
+  validação local e registre no PR exatamente o que foi executado.
 
 ## Regras de escrita
 
@@ -31,6 +37,8 @@ Issue ou PR que originou o trabalho.
   registrar ali suposições, riscos residuais e decisões que exigem ação humana.
 - Mudança em autenticação, permissões, uploads, CI/CD ou configuração → `security-auditor`
   antes da finalização e do merge.
+- Problema recorrente, bloqueador ou ainda não resolvido deve ser registrado em
+  `docs/ia/PROBLEMAS_CONHECIDOS.md` com evidência sanitizada.
 
 ## Proteções que nenhum agente ultrapassa
 
@@ -48,6 +56,8 @@ Issue ou PR que originou o trabalho.
    verificável, restauração testada e decisão humana registrada.
 9. Toda chamada de IA passa pelo gateway institucional; rota nova nasce protegida; endpoint
    público exige justificativa registrada.
+10. MCPs com acesso a GitHub, banco, documentos ou logs devem usar menor privilégio e nunca
+    gravar credenciais ou dados reais no repositório.
 
 ## Migrations
 

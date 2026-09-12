@@ -13,9 +13,10 @@ Use esta regra quando eu pedir ao Antigravity para corrigir o EJC ou qualquer ou
 1. Identifique o repositorio alvo pelo nome, pasta aberta ou remoto GitHub.
 2. Confirme caminho local, remoto `origin`, branch atual e estado do Git.
 3. Leia `docs/GOVERNANCA_IA.md`, `AGENTS.md`, `CLAUDE.md`, `.agent/rules/*.md`, `.agents/rules/*.md`, `README.md` e `docs/ia/README.md` quando existirem.
-4. Pesquise backend, frontend, rotas, services, models, migrations, scripts e workflows existentes antes de alterar.
-5. Corrija a causa do defeito com a menor mudanca suficiente.
-6. Rode a validacao definida no repositorio.
+4. Consulte `docs/ia/PROBLEMAS_CONHECIDOS.md` e escolha o modelo adequado em `docs/ia/tarefas/`.
+5. Pesquise backend, frontend, rotas, services, models, migrations, scripts e workflows existentes antes de alterar.
+6. Corrija a causa do defeito com a menor mudanca suficiente.
+7. Rode a validacao definida no repositorio ou a tarefa equivalente em `.vscode/tasks.json`.
 
 ## GitHub
 
@@ -32,4 +33,4 @@ Use esta regra quando eu pedir ao Antigravity para corrigir o EJC ou qualquer ou
 
 ## Entrega
 
-Informe causa, arquivos alterados, testes/validacoes, riscos restantes e rollback quando aplicavel.
+Informe modelo de tarefa usado, causa, arquivos alterados, testes/validacoes, riscos restantes e rollback quando aplicavel.
