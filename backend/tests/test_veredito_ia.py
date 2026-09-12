@@ -54,9 +54,11 @@ def _setup(monkeypatch, *, jurimetria_data, rag_chunks, gw_texto=_GW_JSON,
         return jurimetria_data
 
     async def fake_rag(db, consulta, limite=6, categorias=None,
-                       modo_or=False, scope_client_id=None):
+                       modo_or=False, scope_client_id=None,
+                       scope_case_id=None, **kwargs):
         calls["rag"] = {"consulta": consulta, "categorias": categorias,
-                        "scope": scope_client_id, "modo_or": modo_or}
+                        "scope": scope_client_id, "scope_case": scope_case_id,
+                        "modo_or": modo_or}
         return rag_chunks
 
     async def fake_escopo(db, case_id):
@@ -138,6 +140,7 @@ async def test_jurisprudencia_vem_do_rag_e_nunca_do_mock_antigo(monkeypatch):
     # busca escopada e nas categorias públicas de jurisprudência
     assert calls["escopo_case_id"] == "case-1"
     assert calls["rag"]["scope"] == "cli-1"
+    assert calls["rag"]["scope_case"] == "case-1"
     assert "jurisprudencia" in calls["rag"]["categorias"]
 
 

@@ -139,10 +139,15 @@ async def test_conversao_concorrente_vence_a_corrida_documento_sobrevive():
 
     case_id_criado, _ = await asyncio.gather(_tarefa_conversao(), _tarefa_expurgo())
 
-    assert "erro" not in resultado_expurgo, resultado_expurgo
-    # O batch estava travado pela conversão durante toda a janela do sleep —
-    # o expurgo deve ter revalidado sob lock, visto case_id preenchido após
-    # o commit da task A, e pulado (0 removidos), NUNCA apagado.
+    # Enquanto retenção/legal hold não forem verificáveis, a barreira P0
+    # antecede inclusive a antiga corrida TOCTOU. O scheduler trata esse estado
+    # como erro operacional de propósito: job habilitado não pode reportar "ok"
+    # quando a exclusão irreversível está bloqueada.
+    assert resultado_expurgo["bloqueado"] is True, resultado_expurgo
+    assert resultado_expurgo["erro"] == "retencao_legal_hold_nao_codificados"
+    assert resultado_expurgo["motivo"] == "retencao_legal_hold_nao_codificados"
+    # A propriedade de segurança original permanece: a corrida nunca pode
+    # apagar batch/documento que está sendo convertido em caso.
     assert resultado_expurgo["batches_removidos"] == 0, (
         "expurgo removeu batch vinculado a caso recém-criado — corrida não fechada"
     )
