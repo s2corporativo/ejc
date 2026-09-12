@@ -16,8 +16,10 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.client import Client
+from app.models.client import Client, ClientTipo
 from app.models.case import Case, CaseStatus
+from app.models.case_parte import CaseParte
+from app.models.especializado import TrabalhistaCase
 from app.models.user import User
 from app.models.legal_doc import LegalDoc, PecaStatus
 from app.models.audit_log import criar_audit_log
@@ -191,6 +193,49 @@ async def anonimizar_cliente(
         doc.deleted_at = agora
         docs_redigidos += 1
 
+    # DB-03 / Fase A: partes estruturadas vinculadas DIRETAMENTE ao cliente
+    # também podem conter nome, documento, contato e qualificação. Não tocar em
+    # partes contrárias/terceiros apenas por pertencerem ao mesmo caso: isso
+    # apagaria dados de outra pessoa sem base neste pedido de anonimização.
+    partes_cliente = (
+        await db.execute(select(CaseParte).where(CaseParte.client_id == client_id))
+    ).scalars().all()
+    partes_anonimizadas = 0
+    for parte in partes_cliente:
+        parte.nome = _MARCADOR
+        parte.cpf_cnpj = None
+        parte.email = None
+        parte.telefone = None
+        parte.qualificacao = None
+        parte.representante_legal = None
+        parte.observacoes = None
+        partes_anonimizadas += 1
+
+    # CID é dado relacionado à saúde. No satélite trabalhista, só o removemos
+    # automaticamente quando o cliente é PF e figura como reclamante — cenário
+    # em que o dado de saúde pertence, em regra, ao próprio cliente. Para cliente
+    # reclamado/empresa, o CID pode ser de terceiro (empregado/adversário) e não
+    # deve ser apagado por este pedido; permanece cifrado em repouso.
+    cids_anonimizados = 0
+    if cliente.tipo == ClientTipo.PF:
+        # Inclui casos soft-deleted: a lixeira permite restauração e o satélite
+        # trabalhista permanece no banco. Excluir esses casos deixaria CID
+        # decryptável reaparecer após uma anonimização já declarada concluída.
+        case_ids = select(Case.id).where(Case.client_id == client_id)
+        trab_rows = (
+            await db.execute(
+                select(TrabalhistaCase).where(
+                    TrabalhistaCase.case_id.in_(case_ids),
+                    TrabalhistaCase.deleted_at.is_(None),
+                    TrabalhistaCase.polo == "reclamante",
+                )
+            )
+        ).scalars().all()
+        for trab in trab_rows:
+            if trab.cid is not None:
+                trab.cid = None
+                cids_anonimizados += 1
+
     # Portal do cliente: desativa qualquer login vinculado — a identidade que
     # existia (nome/e-mail) não corresponde mais aos dados reais.
     usuarios_portal = (await db.execute(
@@ -205,7 +250,9 @@ async def anonimizar_cliente(
         "Anonimização LGPD art.17; "
         f"justificativa_informada={'sim' if bool(motivo_limpo) else 'nao'}; "
         f"codigo={codigo_justificativa}; "
-        f"docs_admissao_redigidos={docs_redigidos}"
+        f"docs_admissao_redigidos={docs_redigidos}; "
+        f"partes_cliente_anonimizadas={partes_anonimizadas}; "
+        f"cids_cliente_anonimizados={cids_anonimizados}"
     )
     if bloqueios:
         detalhes += f"; FORÇADO apesar de {len(bloqueios)} bloqueio(s) operacional(is)"
@@ -223,6 +270,8 @@ async def anonimizar_cliente(
             "justificativa_informada": bool(motivo_limpo),
             "codigo_justificativa": codigo_justificativa,
             "docs_admissao_redigidos": docs_redigidos,
+            "partes_cliente_anonimizadas": partes_anonimizadas,
+            "cids_cliente_anonimizados": cids_anonimizados,
         },
     )
     await db.commit()
@@ -233,4 +282,6 @@ async def anonimizar_cliente(
         "portal_desativado_para": [u.id for u in usuarios_portal],
         "bloqueios_ignorados": bloqueios if bloqueios else None,
         "documentos_admissao_anonimizados": docs_redigidos,
+        "partes_cliente_anonimizadas": partes_anonimizadas,
+        "cids_cliente_anonimizados": cids_anonimizados,
     }

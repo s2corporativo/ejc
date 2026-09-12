@@ -264,7 +264,7 @@ async def checar_conflito(
     lá o gate de titularidade se aplica normalmente.
     """
     from app.services.conflito_service import _padrao_like, detectar_conflito
-    from app.services.pii_crypto import mascarar_documento, normalizar_documento
+    from app.services.pii_crypto import hash_documento, mascarar_documento, normalizar_documento
     from app.models.case_parte import CaseParte
 
     matches: list[dict] = []
@@ -320,21 +320,32 @@ async def checar_conflito(
             _elevar("critico")
 
     # ── 2. case_partes: pessoa já é parte em algum caso? (status-aware) ──────
-    # cpf_cnpj em case_partes é texto (pode vir formatado) → compara normalizado.
+    # case_partes novo usa HMAC; plaintext normalizado existe apenas como fallback legado.
     cpf_norm = normalizar_documento(req.cpf)
     cnpj_norm = normalizar_documento(req.cnpj)
     doc_norm = cpf_norm or cnpj_norm
 
     conds = []
     if doc_norm:
-        norm_expr = sqlfunc.replace(
+        try:
+            blind = hash_documento(doc_norm)
+        except RuntimeError as exc:
+            # Registros novos não possuem documento em claro; degradar para o
+            # legado faria a checagem de conflito produzir falso negativo.
+            raise HTTPException(
+                status_code=503,
+                detail="Índice protegido de PII indisponível para checagem de conflito",
+            ) from exc
+        # DB-03 Fase A: HMAC é a fonte para registros novos. A expressão sobre
+        # plaintext existe SOMENTE para localizar legado ainda não migrado.
+        legacy_norm = sqlfunc.replace(
             sqlfunc.replace(
                 sqlfunc.replace(
-                    sqlfunc.replace(CaseParte.cpf_cnpj, ".", ""),
+                    sqlfunc.replace(CaseParte._cpf_cnpj_legacy, ".", ""),
                     "-", ""),
                 "/", ""),
             " ", "")
-        conds.append(norm_expr == doc_norm)
+        conds.append(or_(CaseParte.cpf_cnpj_hash == blind, legacy_norm == doc_norm))
     if req.nome and len(req.nome.strip()) >= 4:
         # Wildcards do input escapados (mesmo helper de conflito_service e
         # raio_x_service) — sem isto, "____" casa qualquer nome com 4+
