@@ -11,7 +11,16 @@ ENV_FILE=/etc/s2-automation/woodpecker.env
 [ -x "$TARGET/woodpecker-approved-sha.sh" ] || { echo "Instale primeiro o gate central com infra/host-automation/install.sh" >&2; exit 2; }
 [ -f "$ENV_FILE" ] || { echo "$ENV_FILE ausente" >&2; exit 2; }
 [ "$(stat -c '%u:%a' "$ENV_FILE")" = "0:600" ] || { echo "$ENV_FILE deve ser root:root 0600" >&2; exit 2; }
-grep -q '^WOODPECKER_TOKEN=TROCAR$' "$ENV_FILE" && { echo "WOODPECKER_TOKEN ainda e placeholder" >&2; exit 2; }
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
+if [ -z "${WOODPECKER_LOCAL_DB:-}" ]; then
+  [ -n "${WOODPECKER_TOKEN:-}" ] && [ "${WOODPECKER_TOKEN:-}" != "TROCAR" ] || {
+    echo "Configure WOODPECKER_LOCAL_DB ou WOODPECKER_TOKEN antes de habilitar o deploy" >&2
+    exit 2
+  }
+fi
 [ -d "$SOURCE_DIR/.git" ] || {
   cat >&2 <<EOF
 Checkout privado ausente em $SOURCE_DIR.

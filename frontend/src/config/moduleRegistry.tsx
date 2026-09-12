@@ -185,7 +185,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     backendPrefixes: ["/api/clients", "/api/cases", "/api/deadlines"],
   },
   {
-    key: "dpt360-subroutes",
+    key: "dpt360-subroutes", // gitleaks:allow -- chave semântica do registry, não credencial
     path: "/dpt360/*",
     label: "DPT Empresarial 360",
     description: "Navegação interna do workspace empresarial.",

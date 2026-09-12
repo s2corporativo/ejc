@@ -68,6 +68,10 @@ grep -Fq -- '- WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET:?' <<<"$server_
   || fail "servidor sem WOODPECKER_AGENT_SECRET obrigatório"
 grep -Fq -- '- WOODPECKER_GRPC_SECRET=${WOODPECKER_GRPC_SECRET:?' <<<"$server_block" \
   || fail "servidor sem WOODPECKER_GRPC_SECRET independente e obrigatório"
+grep -Fq -- '- WOODPECKER_DATABASE_MAX_CONNECTIONS=${WOODPECKER_DATABASE_MAX_CONNECTIONS:-1}' <<<"$server_block" \
+  || fail "SQLite do Woodpecker sem serialização do pool"
+grep -Fq -- '- WOODPECKER_DATABASE_IDLE_CONNECTIONS=${WOODPECKER_DATABASE_IDLE_CONNECTIONS:-1}' <<<"$server_block" \
+  || fail "SQLite do Woodpecker mantém mais de uma conexão idle por padrão"
 grep -Fq -- '- WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET:?' <<<"$agent_block" \
   || fail "agente sem WOODPECKER_AGENT_SECRET obrigatório"
 grep -Fq -- '- woodpecker-agent-config:/etc/woodpecker' <<<"$agent_block" \
@@ -100,9 +104,13 @@ grep -Eq -- 'WOODPECKER_AGENT_SECRET: "?test-agent-secret"?$' "$rendered" \
   || fail "segredo do agente não chegou à configuração renderizada"
 grep -Eq -- 'WOODPECKER_GRPC_SECRET: "?test-grpc-secret"?$' "$rendered" \
   || fail "segredo gRPC independente não chegou à configuração renderizada"
+grep -Eq -- 'WOODPECKER_DATABASE_MAX_CONNECTIONS: "?1"?$' "$rendered" \
+  || fail "limite serial do pool SQLite não chegou à configuração renderizada"
+grep -Eq -- 'WOODPECKER_DATABASE_IDLE_CONNECTIONS: "?1"?$' "$rendered" \
+  || fail "limite idle do pool SQLite não chegou à configuração renderizada"
 grep -Eq -- 'WOODPECKER_BACKEND_DOCKER_LIMIT_MEM: "?3221225472"?$' "$rendered" \
   || fail "limite de memória não chegou à configuração renderizada"
 grep -Eq -- 'WOODPECKER_BACKEND_DOCKER_LIMIT_CPU_QUOTA: "?100000"?$' "$rendered" \
   || fail "limite de CPU não chegou à configuração renderizada"
 
-printf 'Woodpecker compose: autenticação, versão, limites, persistência, API e recuperação válidos.\n'
+printf 'Woodpecker compose: autenticação, versão, SQLite serializado, limites, persistência, API e recuperação válidos.\n'

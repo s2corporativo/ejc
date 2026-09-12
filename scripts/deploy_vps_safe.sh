@@ -252,14 +252,14 @@ RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate backend
 backend_ok=0
 for _ in $(seq 1 12); do
   sleep 5
-  if curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+  if curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
     backend_ok=1
     break
   fi
 done
 [ "$backend_ok" = "1" ] || { log "Backend não respondeu em 60s"; exit 1; }
 
-COMMIT_NO_AR="$(curl -fsS http://127.0.0.1:8000/api/health 2>/dev/null \
+COMMIT_NO_AR="$(curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health 2>/dev/null \
   | sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
 if [ "$COMMIT_NO_AR" = "$GIT_SHA" ]; then
   log "Versão publicada confirmada pelo /api/health: ${COMMIT_NO_AR}"
