@@ -49,6 +49,7 @@ from app.services.ajuizamento.orquestrador import (
 
 CPF = "529.982.247-25"
 CNPJ = "11.222.333/0001-81"
+CNPJ_OUTRO = "44.556.677/0001-86"
 HASH_PDF = "e" * 64
 # Números CNJ fictícios com dígito verificador VÁLIDO (mód. 97, Res. CNJ 65/2008)
 # — o registro de protocolo recusa DV inválido, então o teste não pode usar
@@ -290,7 +291,7 @@ async def test_aprovacao_recusa_quando_dados_mudaram_apos_validacao(db):
     f, _ = await _ate_validado(db, svc, dados["advogado"])
     # Alteração externa (parte nova) invalida o snapshot revisado.
     db.add(CaseParte(id="parte-2", case_id="caso-1", tipo="reu", nome="Outro Réu",
-                     cpf_cnpj=CNPJ, ativo=True))
+                     cpf_cnpj=CNPJ_OUTRO, ativo=True))
     await db.commit()
     with pytest.raises(AjuizamentoError, match="mudaram desde a validação"):
         await svc.aprovar(f, cu=dados["advogado"], confirmacao=CONFIRMACAO_REVISAO, observacoes=None)

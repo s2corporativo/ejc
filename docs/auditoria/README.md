@@ -26,6 +26,10 @@ desde a Parte 13, com 21 achados novos (IDs `AUD27-*`, já na tabela de
 `docs/PLANO_MESTRE_STATUS.md`) e a reprodução do estado atual de 12 itens do backlog
 canônico.
 
+**Se quer o estado da infraestrutura (compose, Nginx, deploy, backup, monitoramento):** leia `relatorios/2026-09-06-auditoria-infraestrutura.md` — auditoria estática do repositório, sem acesso à VPS, com 18 achados (`INF-*`, Issue #1551) e um checklist de comandos para o titular fechar na VPS o que não era verificável daqui.
+
+**Se quer o estado das demais camadas (dados, backend, IA/LGPD, frontend, testes):** leia `relatorios/2026-09-06-auditoria-camadas.md` — mesma data e método, 38 achados (`DB-*`, `BE-*`, `IA-*`, `FE-*`, `TQ-*`, mesma Issue #1551), com os P1/P2 conferidos no código por amostragem.
+
 ---
 
 ## Os documentos

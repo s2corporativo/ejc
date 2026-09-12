@@ -55,12 +55,16 @@ steps:
   ops-contracts:
     image: python:3.11-bookworm
     commands:
-      - bash -n scripts/backup.sh scripts/backup/ativar_backup.sh scripts/deploy_vps_safe.sh scripts/deploy_workflow_transaction.sh scripts/tests/test_backup_wrapper.sh scripts/tests/test_deploy_rollback.sh infra/host-automation/woodpecker-approved-sha.sh infra/host-automation/ejc-deploy-approved.sh infra/host-automation/install.sh infra/host-automation/install-ejc-deploy.sh infra/host-automation/tests/test_gate.sh infra/selfhosted/bootstrap.sh scripts/tests/test_ci_secret_gate.sh
+      - bash -n scripts/backup.sh scripts/backup/ativar_backup.sh scripts/deploy_vps_safe.sh scripts/deploy_workflow_transaction.sh scripts/tests/test_backup_wrapper.sh scripts/tests/test_deploy_rollback.sh infra/host-automation/woodpecker-approved-sha.sh infra/host-automation/ejc-deploy-approved.sh infra/host-automation/install.sh infra/host-automation/install-ejc-deploy.sh infra/host-automation/tests/test_gate.sh infra/selfhosted/bootstrap.sh scripts/tests/test_ci_secret_gate.sh scripts/tests/test_rag_activation.sh
       - python -m py_compile scripts/check_migration_compatibility.py
       - bash scripts/tests/test_backup_wrapper.sh
       - bash scripts/tests/test_deploy_rollback.sh
       - bash infra/host-automation/tests/test_gate.sh
       - bash scripts/tests/test_ci_secret_gate.sh
+      - python scripts/tests/test_docker_log_rotation.py
+      - bash -n scripts/legacy_script_guard.sh scripts/deploy.sh scripts/deploy-vps.sh scripts/atualizar-vps.sh scripts/vps_setup.sh scripts/tests/test_legacy_script_guards.sh
+      - bash scripts/tests/test_legacy_script_guards.sh
+      - bash scripts/tests/test_rag_activation.sh
 
   security-sast:
     image: semgrep/semgrep:1.172.0
