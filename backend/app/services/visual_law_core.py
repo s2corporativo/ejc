@@ -3,7 +3,7 @@
 #   · linha do tempo visual (fases + eventos + próximos passos + estagnação)
 #   · matriz de risco probabilidade × impacto (tratamento contábil CPC 25)
 #   · badges de alerta (conversão dos fatores do case_health)
-#   · calculadora de breakeven/VPL de acordo (reusa DiplomaciaDigital)
+#   · calculadora de breakeven/VPL de acordo (reusa CalculoAcordo)
 #
 # Obs.: app/services/visual_law.py é OUTRO serviço (diagramas Mermaid via IA);
 # este módulo é 100% determinístico, por isso vive em arquivo próprio.
@@ -20,7 +20,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.case import Case, CaseMovimento
-from app.services.diplomacia_digital import DiplomaciaDigital
+from app.services.calculo_acordo import CalculoAcordo
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Linha do tempo visual — fases, próximos passos e estagnação
@@ -383,8 +383,8 @@ def calcular_breakeven(
     VPL do litígio = (valor esperado − custos) / (1 + selic)^tempo.
     O breakeven é o valor de acordo HOJE que equivale financeiramente ao
     litígio (o próprio VPL do litígio — piso racional do acordo).
-    Reusa o motor da DiplomaciaDigital com os parâmetros injetados."""
-    base = DiplomaciaDigital(selic_atual=selic_anual).calcular_ponto_equilibrio(
+    Reusa o motor de CalculoAcordo com os parâmetros injetados."""
+    base = CalculoAcordo(selic_atual=selic_anual).calcular_ponto_equilibrio(
         valor_causa, prob_exito, tempo_anos,
         custas_pct=custas_pct,
         honorarios_sucumbencia_pct=honorarios_sucumbencia_pct,

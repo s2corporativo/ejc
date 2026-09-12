@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { toast } from "../components/Toast";
-import { Plus, UserX } from "lucide-react";
+import { Pencil, Plus, UserX } from "lucide-react";
 import api from "../lib/api";
-import type { User } from "../types";
+import type { Paged, User } from "../types";
+import { useAuth } from "../stores/auth";
 import {
   PageHeader,
   Modal,
@@ -10,6 +11,45 @@ import {
   Spinner,
   ErrorState,
 } from "../components/UI";
+
+
+type NovoUsuarioForm = {
+  email?: string;
+  password?: string;
+  full_name?: string;
+  role: string;
+  phone?: string;
+  oab_number?: string;
+  cpf?: string;
+};
+
+type EditUsuarioForm = {
+  full_name?: string;
+  role?: string;
+  phone?: string;
+  oab_number?: string;
+  djen_oab_numero?: string;
+  djen_oab_uf?: string;
+  cpf?: string;
+};
+
+function detalheErro(e: unknown, fallback: string): string {
+  const maybe = e as { response?: { data?: { detail?: unknown } } };
+  return typeof maybe.response?.data?.detail === "string"
+    ? maybe.response.data.detail
+    : fallback;
+}
+
+const ROLE_LEVEL: Record<string, number> = {
+  superadmin: 9,
+  admin: 8,
+  socio: 7,
+  advogado: 6,
+  advogado_auxiliar: 5,
+  estagiario: 4,
+  secretaria: 3,
+  financeiro: 2,
+};
 
 const ROLES = [
   "admin",
@@ -22,11 +62,21 @@ const ROLES = [
 ];
 
 export default function Usuarios() {
-  const [data, setData] = useState<any>(null);
+  const operador = useAuth((state) => state.user);
+  const [data, setData] = useState<Paged<User> | null>(null);
   const [erro, setErro] = useState(false);
   const [modal, setModal] = useState(false);
-  const [form, setForm] = useState<any>({ role: "advogado" });
+  const [form, setForm] = useState<NovoUsuarioForm>({ role: "advogado" });
   const [salvando, setSalvando] = useState(false);
+  const [editando, setEditando] = useState<User | null>(null);
+  const [editForm, setEditForm] = useState<EditUsuarioForm>({});
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false);
+  const [removerCpf, setRemoverCpf] = useState(false);
+
+  const podeGerenciar = (u: User) =>
+    Boolean(operador) &&
+    (operador!.id === u.id ||
+      (ROLE_LEVEL[operador!.role] || 0) > (ROLE_LEVEL[u.role] || 0));
 
   const load = () => {
     setErro(false);
@@ -50,10 +100,60 @@ export default function Usuarios() {
       setModal(false);
       setForm({ role: "advogado" });
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro"));
     } finally {
       setSalvando(false);
+    }
+  };
+
+  const abrirEdicao = (u: User) => {
+    setRemoverCpf(false);
+    setEditando(u);
+    setEditForm({
+      full_name: u.full_name,
+      role: u.role,
+      phone: u.phone || "",
+      oab_number: u.oab_number || "",
+      djen_oab_numero: u.djen_oab_numero || "",
+      djen_oab_uf: u.djen_oab_uf || "",
+      cpf: "",
+    });
+  };
+
+  const salvarEdicao = async () => {
+    if (!editando) return;
+    if (!String(editForm.full_name || "").trim()) {
+      toast.error("Nome completo é obrigatório");
+      return;
+    }
+    setSalvandoEdicao(true);
+    try {
+      const payload: Record<string, unknown> = {
+        full_name: String(editForm.full_name).trim(),
+        role: editForm.role,
+        phone: String(editForm.phone || "").trim() || null,
+        oab_number: String(editForm.oab_number || "").trim() || null,
+      };
+      const djenNumero = String(editForm.djen_oab_numero || "").trim();
+      const djenUf = String(editForm.djen_oab_uf || "").trim();
+      const djenNumeroAtual = String(editando.djen_oab_numero || "").trim();
+      const djenUfAtual = String(editando.djen_oab_uf || "").trim();
+      if (djenNumero !== djenNumeroAtual || djenUf !== djenUfAtual) {
+        payload.djen_oab_numero = djenNumero || null;
+        payload.djen_oab_uf = djenUf || null;
+      }
+      if (removerCpf) payload.cpf = null;
+      else if (String(editForm.cpf || "").trim()) payload.cpf = String(editForm.cpf).trim();
+      await api.patch(`/users/${editando.id}`, payload);
+      toast.success("Perfil atualizado");
+      setEditando(null);
+      setEditForm({});
+      await load();
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao atualizar perfil"));
+    } finally {
+      setSalvandoEdicao(false);
     }
   };
 
@@ -62,8 +162,8 @@ export default function Usuarios() {
     try {
       await api.delete(`/users/${u.id}`);
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao desativar usuário");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao desativar usuário"));
     }
   };
 
@@ -97,6 +197,7 @@ export default function Usuarios() {
                 <th className="px-4 py-3">E-mail</th>
                 <th className="px-4 py-3">Perfil</th>
                 <th className="px-4 py-3">OAB</th>
+                <th className="px-4 py-3">CPF</th>
                 <th className="px-4 py-3">Ativo</th>
                 <th className="px-4 py-3"></th>
               </tr>
@@ -112,10 +213,21 @@ export default function Usuarios() {
                     {u.role.replace(/_/g, " ")}
                   </td>
                   <td className="px-4 py-3 text-xs">{u.oab_number || "—"}</td>
+                  <td className="px-4 py-3 text-xs text-slate-500">{u.cpf_mascarado || "—"}</td>
                   <td className="px-4 py-3">{u.is_active ? "✅" : "—"}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    {podeGerenciar(u) && (
+                      <button
+                        title="Editar perfil"
+                        className="btn-ghost px-2 py-1"
+                        onClick={() => abrirEdicao(u)}
+                      >
+                        <Pencil size={15} />
+                      </button>
+                    )}
                     {u.is_active && (
                       <button
+                        title="Desativar usuário"
                         className="btn-ghost px-2 py-1 text-danger-500"
                         onClick={() => desativar(u)}
                       >
@@ -186,6 +298,17 @@ export default function Usuarios() {
             </div>
           </div>
           <div>
+            <label className="label">CPF</label>
+            <input
+              className="input"
+              placeholder="000.000.000-00"
+              inputMode="numeric"
+              value={form.cpf || ""}
+              onChange={(e) => setForm({ ...form, cpf: e.target.value })}
+            />
+            <p className="mt-1 text-xs text-slate-400">Armazenado cifrado; a listagem exibe apenas máscara.</p>
+          </div>
+          <div>
             <label className="label">WhatsApp (p/ alertas)</label>
             <input
               className="input"
@@ -200,6 +323,57 @@ export default function Usuarios() {
             onClick={salvar}
           >
             {salvando ? "Criando..." : "Criar usuário"}
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={Boolean(editando)}
+        onClose={() => { setEditando(null); setEditForm({}); }}
+        title="Editar perfil"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="label">Nome completo *</label>
+            <input className="input" value={editForm.full_name || ""} onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Perfil</label>
+              <select className="input" value={editForm.role || "advogado"} onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}>
+                {ROLES.map((r) => <option key={r} value={r}>{r.replace(/_/g, " ")}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">OAB</label>
+              <input className="input" value={editForm.oab_number || ""} onChange={(e) => setEditForm({ ...editForm, oab_number: e.target.value })} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">OAB DJEN — número</label>
+              <input className="input" inputMode="numeric" value={editForm.djen_oab_numero || ""} onChange={(e) => setEditForm({ ...editForm, djen_oab_numero: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">OAB DJEN — UF</label>
+              <input className="input" maxLength={2} value={editForm.djen_oab_uf || ""} onChange={(e) => setEditForm({ ...editForm, djen_oab_uf: e.target.value.toUpperCase() })} />
+            </div>
+          </div>
+          <div>
+            <label className="label">CPF</label>
+            <input className="input" disabled={removerCpf} placeholder={editando?.cpf_mascarado || "000.000.000-00"} inputMode="numeric" value={editForm.cpf || ""} onChange={(e) => setEditForm({ ...editForm, cpf: e.target.value })} />
+            <label className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+              <input type="checkbox" checked={removerCpf} onChange={(e) => setRemoverCpf(e.target.checked)} />
+              Remover CPF cadastrado
+            </label>
+            <p className="mt-1 text-xs text-slate-400">Deixe em branco para manter o CPF atual. O valor completo nunca é devolvido pela API.</p>
+          </div>
+          <div>
+            <label className="label">WhatsApp / telefone</label>
+            <input className="input" value={editForm.phone || ""} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
+          </div>
+          <button className="btn-primary w-full justify-center" disabled={salvandoEdicao} onClick={salvarEdicao}>
+            {salvandoEdicao ? "Salvando..." : "Salvar perfil"}
           </button>
         </div>
       </Modal>

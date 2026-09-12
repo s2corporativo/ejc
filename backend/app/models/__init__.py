@@ -11,6 +11,7 @@ from app.models.document_rescan import DocumentHashRescanBatch, DocumentHashResc
 from app.models.raio_x import RaioXAnalise, RaioXDocumento
 from app.models.legal_doc import LegalDoc, PecaTipo, PecaStatus
 from app.models.fee import Fee, FeePayment, FeeTipo, FeeStatus
+from app.models.case_despesa import CaseDespesa  # migration 156 (#1486/#1492)
 from app.models.environmental import EnvironmentalCase, OrgaoAutuador, StatusDefesa
 from app.models.especializado import (
     EmpresarialCase, EmpresarialTipo, EmpresarialStatus,
@@ -96,6 +97,10 @@ from app.models.integration_credential import IntegrationCredential  # noqa  (Co
 from app.models.processo_eletronico import (  # noqa  (MNI 2.2.2 leitura — migração 132)
     Tribunal, CredencialProcessoEletronico, SincronizacaoProcessoEletronico,
     DocumentoProcessoEletronicoDedup,
+)
+from app.models.ajuizamento import (  # noqa  (núcleo de ajuizamento — migração 157)
+    JudicialIntegrationProfile, JudicialFiling, JudicialFilingTransicao,
+    JudicialFilingAttempt, JudicialProtocol, JudicialSyncEvent, JudicialTpuItem,
 )
 from app.models.saneamento import (  # noqa  (schema saneamento — migração 154)
     TpuMovimento, DatajudSnapshot, ExcecaoNumero, PlanoDedup,

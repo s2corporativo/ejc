@@ -59,50 +59,61 @@ Não invente informações ausentes do texto. Marque incertezas explicitamente."
 
 _AVISOU_SEM_EMBEDDINGS = False  # warning único de degradação p/ ILIKE
 
-# ── Isolamento por cliente (Fase 3B / LGPD / EOAB art. 25) ────────────────────
-# Categorias RESTRITAS = conteúdo derivado de casos de clientes (peças/precedentes
-# internos): só recuperáveis no escopo do próprio cliente. Demais categorias
-# (legislação, súmulas, jurisprudência, doutrina) são públicas/globais.
-# "comunicacao_processual" (DJEN/intimações): fail-closed por cliente — sem
-# client_id do escopo, a comunicação NÃO é recuperável (só dentro do escopo do
-# cliente dono, populado no ingestor djen.py).
+# ── Isolamento por ownership/base (LGPD / sigilo profissional) ────────────────
+# A categoria NÃO é a fronteira de autorização. A fonte de verdade é o escopo
+# persistido em base_rag/client_id/case_id. `_RESTRICTED_CATS` permanece apenas
+# como trava residual para legado malclassificado sem identificadores.
 _RESTRICTED_CATS = ["peca_interna", "peca_escritorio", "precedente_interno",
                     "comunicacao_processual"]
-# Fail-closed: sem escopo de cliente (scope_cli=""), o conteúdo restrito é
-# EXCLUÍDO da busca — fecha o vazamento cruzado entre clientes.
-_FILTRO_ESCOPO_RAG = "AND (kd.categoria <> ALL(:restr_cats) OR kd.client_id = :scope_cli)"
 
-# ── Isolamento por CASO (dívida 5.2/5.5 da auditoria de IA 2026-08-15) ────────
-# O isolamento por cliente não basta para a comunicação processual: o ingestor
-# (ingestors/djen.py) grava case_id justamente porque a intimação "só pode ser
-# recuperável dentro do caso e do cliente donos do processo" — mas a
-# recuperação nunca usava esse campo. Resultado: a intimação do caso A do
-# cliente X entrava como contexto do caso B do MESMO cliente X. Contexto de
-# outro processo é ruído no melhor caso e erro de fato no pior (prazo/ato de
-# outro processo citado como se fosse deste).
-#
-# Quando o call site sabe em que caso está (`scope_case_id`), a comunicação
-# processual de OUTRO caso é excluída. Documento sem case_id (acervo antigo,
-# ingestão manual) continua visível no escopo do cliente — recuo de recall aqui
-# seria pior que o ruído, e o vínculo por cliente permanece garantido pelo
-# filtro acima. Sem `scope_case_id`, o comportamento é o de antes.
-_CASE_SCOPED_CATS = ["comunicacao_processual"]
-_FILTRO_CASO_RAG = (
-    "AND (kd.categoria <> ALL(:case_cats) OR kd.case_id IS NULL "
-    "OR kd.case_id = :scope_case)"
+# Contrato único, aplicado a TODAS as pernas de retrieval:
+# 1) global: base_rag=publica + nenhum ownership + categoria não-legada-restrita;
+# 2) cliente: client_id presente exige exatamente o scope_client_id;
+# 3) caso: case_id presente exige, além do cliente, exatamente o scope_case_id;
+# 4) base_rag=escritorio|caso sem IDs mínimos não casa nenhuma perna (fail-closed);
+# 5) IDs presentes restringem mesmo se base_rag/categoria estiverem inconsistentes.
+_FILTRO_ESCOPO_RAG = (
+    "AND (("
+    "COALESCE(kd.base_rag::text, '') = 'publica' "
+    "AND kd.client_id IS NULL AND kd.case_id IS NULL "
+    "AND kd.categoria <> ALL(:restr_cats)"
+    ") OR ("
+    "kd.client_id = NULLIF(:scope_cli, '') "
+    "AND (kd.case_id IS NULL OR kd.case_id = NULLIF(:scope_case, '')) "
+    # `base_rag=caso` sem case_id é estruturalmente inválido: nem mesmo o
+    # escopo correto de cliente pode promovê-lo a documento de cliente.
+    "AND (COALESCE(kd.base_rag::text, '') <> 'caso' OR kd.case_id IS NOT NULL)"
+    "))"
+)
+
+# Elegibilidade NEUTRA usada apenas por métricas/canário: responde se existe
+# ALGUM escopo legítimo capaz de recuperar o documento. Não autoriza usuário e
+# nunca substitui `_FILTRO_ESCOPO_RAG` no runtime. Permite que a homologação
+# exercite corpus público, de cliente e de caso sem fingir que escopo vazio pode
+# enxergar conteúdo privado.
+_FILTRO_ELIGIBILIDADE_RAG = (
+    "AND (("
+    "COALESCE(kd.base_rag::text, '') = 'publica' "
+    "AND kd.client_id IS NULL AND kd.case_id IS NULL "
+    "AND kd.categoria <> ALL(:restr_cats)"
+    ") OR ("
+    "kd.client_id IS NOT NULL "
+    "AND (COALESCE(kd.base_rag::text, '') <> 'caso' OR kd.case_id IS NOT NULL)"
+    "))"
 )
 
 
-def _filtro_caso_rag(scope_case_id: str | None) -> str:
-    """Fragmento SQL de isolamento por caso — vazio quando não há caso no escopo."""
-    return _FILTRO_CASO_RAG if scope_case_id else ""
+def _params_escopo_rag(
+    scope_client_id: str | None,
+    scope_case_id: str | None,
+) -> dict[str, object]:
+    """Binds canônicos do contrato de ownership; sempre presentes em cada perna."""
+    return {
+        "restr_cats": _RESTRICTED_CATS,
+        "scope_cli": scope_client_id or "",
+        "scope_case": scope_case_id or "",
+    }
 
-
-def _params_caso_rag(scope_case_id: str | None) -> dict:
-    return (
-        {"case_cats": _CASE_SCOPED_CATS, "scope_case": scope_case_id}
-        if scope_case_id else {}
-    )
 
 # Versionamento (migration 068): por padrão só a versão VIGENTE de cada
 # documento entra na busca RAG. `:incl_hist` (bool) permite incluir versões
@@ -301,11 +312,14 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
         params = {"q": consulta[:300], "lim": max(limite * 3, 12),
                   "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or "",
                   "incl_hist": incluir_historico,
-                  **_params_caso_rag(scope_case_id)}
+                  **_params_escopo_rag(scope_client_id, scope_case_id)}
         filtro = ""
         if categorias:
             filtro = "AND kd.categoria = ANY(:cats)"
             params["cats"] = categorias
+        # SQL literal com bind params; a regra marca todo text(), sem olhar
+        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         sql = _text(f"""
             SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
                    {_SQL_CONFIANCA},
@@ -316,7 +330,6 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
               AND similarity(kc.conteudo, :q) > 0.05
               {filtro}
               {_FILTRO_ESCOPO_RAG}
-              {_filtro_caso_rag(scope_case_id)}
               {_FILTRO_VIGENTE_RAG}
               {_filtros_gate_rag(incluir_ficticio)}
             ORDER BY sim DESC
@@ -346,11 +359,14 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
             params_f = {"q": consulta[:300], "lim": max(limite * 3, 12),
                         "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or "",
                         "incl_hist": incluir_historico,
-                        **_params_caso_rag(scope_case_id)}
+                        **_params_escopo_rag(scope_client_id, scope_case_id)}
             filtro_f = ""
             if categorias:
                 filtro_f = "AND kd.categoria = ANY(:cats)"
                 params_f["cats"] = categorias
+            # SQL literal com bind params; a regra marca todo text(), sem olhar
+            # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             sql_f = _text(f"""
                 SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
                        {_SQL_CONFIANCA},
@@ -363,8 +379,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
                       @@ plainto_tsquery('portuguese', :q)
                   {filtro_f}
                   {_FILTRO_ESCOPO_RAG}
-                  {_filtro_caso_rag(scope_case_id)}
-                  {_FILTRO_VIGENTE_RAG}
+                      {_FILTRO_VIGENTE_RAG}
                   {_filtros_gate_rag(incluir_ficticio)}
                 ORDER BY rank DESC
                 LIMIT :lim
@@ -449,12 +464,11 @@ async def buscar_contexto_rag(
     legislação com vigência não conferida também fica de fora.
     """
     if scope_client_id and not scope_case_id:
-        # C4 (análise E2E de IA 2026-09-03): sem caso no escopo, a comunicação
-        # processual de OUTRO processo do mesmo cliente entra como contexto.
-        # Call sites que conhecem o caso devem propagar `scope_case_id`.
+        # Fail-closed: documentos que possuem case_id ficam fora quando o caller
+        # conhece apenas o cliente. Call sites com caso devem propagar scope_case_id.
         logger.debug(
-            "buscar_contexto_rag: scope_client_id sem scope_case_id — "
-            "comunicações de outros casos do cliente podem entrar no contexto"
+            "buscar_contexto_rag: escopo de cliente sem caso — "
+            "documentos vinculados a caso serão excluídos"
         )
     # Tentativa 0: busca SEMÂNTICA via pgvector (se embeddings habilitados).
     # Usa distância de cosseno (operador <=> do pgvector). Cai no textual se
@@ -490,11 +504,14 @@ async def buscar_contexto_rag(
             params_v: dict = {"vec": str(vec), "lim": _n_pool, "max_dist": _rag_max_dist(),
                               "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or "",
                               "incl_hist": incluir_historico,
-                              **_params_caso_rag(scope_case_id)}
+                              **_params_escopo_rag(scope_client_id, scope_case_id)}
             filtro_cat_v = ""
             if categorias:
                 filtro_cat_v = "AND kd.categoria = ANY(:cats)"
                 params_v["cats"] = categorias
+            # SQL literal com bind params; a regra marca todo text(), sem olhar
+            # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             sql_v = text(f"""
                 SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
                        {_SQL_CONFIANCA},
@@ -506,8 +523,7 @@ async def buscar_contexto_rag(
                   AND (kc.embedding <=> :vec) <= :max_dist
                   {filtro_cat_v}
                   {_FILTRO_ESCOPO_RAG}
-                  {_filtro_caso_rag(scope_case_id)}
-                  {_FILTRO_VIGENTE_RAG}
+                      {_FILTRO_VIGENTE_RAG}
                   {_filtros_gate_rag(incluir_ficticio)}
                 ORDER BY kc.embedding <=> :vec
                 LIMIT :lim
@@ -565,8 +581,11 @@ async def buscar_contexto_rag(
     params["restr_cats"] = _RESTRICTED_CATS
     params["scope_cli"] = scope_client_id or ""
     params["incl_hist"] = incluir_historico
-    params.update(_params_caso_rag(scope_case_id))
+    params.update(_params_escopo_rag(scope_client_id, scope_case_id))
 
+    # SQL literal com bind params; a regra marca todo text(), sem olhar
+    # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     sql = text(f"""
         SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
                {_SQL_CONFIANCA}
@@ -576,7 +595,6 @@ async def buscar_contexto_rag(
           {cond_termos}
           {filtro_cat}
           {_FILTRO_ESCOPO_RAG}
-          {_filtro_caso_rag(scope_case_id)}
           {_FILTRO_VIGENTE_RAG}
           {_filtros_gate_rag(incluir_ficticio)}
         LIMIT :lim
@@ -832,7 +850,7 @@ async def analisar_caso(
         "fontes_usadas": len(fontes),
         "pii_removida": houve_pii,
         "aviso": "⚠️ RASCUNHO gerado por IA — revisão por advogado OBRIGATÓRIA "
-                 "antes de qualquer uso (Provimento OAB 205/2021).",
+                 "antes de qualquer uso.",
         "status_hitl": "gerado",
     }
 
@@ -1232,11 +1250,15 @@ async def analisar_contrato(
             return {"erro": "Não foi possível sanitizar dados pessoais com segurança."}
         pii = pii or pii2
 
-    # 2) Recuperação no RAG — legislação relevante (CC, CDC) por termos do contrato
+    # 2) Recuperação no RAG — legislação relevante (CC, CDC) por termos do contrato.
+    # Se há caso, propaga o par client+case; `scope_case_id` isolado não autoriza
+    # documento privado no contrato de ownership.
     consulta = f"{tipo_contrato} contrato cláusula abusiva rescisão multa garantia"
+    escopo_cli = await _escopo_cliente_do_caso(db, case_id)
     fontes = await buscar_contexto_rag(
         db, consulta, limite=6, categorias=["legislacao"],
-        scope_case_id=case_id,   # C4: caso conhecido → escopo por caso propagado
+        scope_client_id=escopo_cli,
+        scope_case_id=case_id,
     )
     bloco_fontes = _formatar_fontes(fontes)
 

@@ -361,6 +361,9 @@ _alias_do_numero = alias_do_numero
 
 
 def _hash_mov(data: str, descricao: str) -> str:
+    # SHA-1 usado como chave de deduplicacao/identidade, nunca como
+    # assinatura, token ou senha. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
     return hashlib.sha1(f"{data}|{descricao}".encode()).hexdigest()[:16]
 
 
@@ -756,6 +759,9 @@ async def _criar_deadline_automatico(
 def _ref_datajud(numero_cnj: str, data: str, titulo: str) -> str:
     """Chave estável de dedup de prazo: hash(CNJ|data|titulo)."""
     n = re.sub(r"\D", "", numero_cnj or "")
+    # SHA-1 usado como chave de deduplicacao/identidade, nunca como
+    # assinatura, token ou senha. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
     return hashlib.sha1(f"{n}|{data}|{titulo}".encode()).hexdigest()[:32]
 
 

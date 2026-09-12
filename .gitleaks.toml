@@ -1,0 +1,27 @@
+title = "EJC Gitleaks configuration"
+
+[extend]
+useDefault = true
+
+
+# `gitleaks dir` examina também artefatos ignorados pelo Git. O pytest grava
+# node ids e parâmetros sintéticos em `.pytest_cache`; esses arquivos não são
+# fonte, não são versionados e podem conter strings aleatórias com formato JWT.
+# A exceção é deliberadamente restrita ao cache do backend — testes, código,
+# bundles e demais artefatos continuam sob o scan normal.
+[[allowlists]]
+description = "pytest cache gerado no CI — não é fonte versionável"
+paths = ['''^backend/\.pytest_cache/''']
+
+# O build do frontend minifica `moduleRegistry.tsx` em um bundle de nome hash.
+# A chave semântica `dpt360-subroutes` é classificada pelo rule genérico como API key.
+# A exceção exige simultaneamente a regra, o caminho gerado e o valor semântico;
+# qualquer outro finding nesse bundle continua bloqueante.
+[[rules]]
+id = "generic-api-key"
+
+  [[rules.allowlists]]
+  description = "moduleRegistry: chave semântica dpt360-subroutes no bundle gerado"
+  condition = "AND"
+  paths = ['^frontend/dist/assets/moduleRegistry-[^/]+\.js$']
+  stopwords = ["dpt360-subroutes"]

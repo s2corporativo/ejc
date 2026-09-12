@@ -5,6 +5,10 @@
 #
 # Idempotente — pode ser reexecutado para atualizar.
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=legacy_script_guard.sh
+source "$SCRIPT_DIR/legacy_script_guard.sh"
+ejc_legacy_script_guard "scripts/vps_setup.sh" "infra/selfhosted/bootstrap.sh (setup) ou /opt/s2-automation/host/ejc-deploy-approved.sh (deploy)"
 DOMAIN="ejc.depaulateixeira.adv.br"
 APP_DIR="/opt/ejc"
 

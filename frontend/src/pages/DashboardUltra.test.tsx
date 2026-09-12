@@ -79,19 +79,6 @@ const clientesOk = {
   },
 };
 
-const noticiasOk = {
-  data: {
-    itens: [
-      {
-        titulo: "STJ publica nova atualização",
-        resumo: "Resumo da notícia",
-        fonte: "STJ",
-        link: "https://example.com/noticia",
-      },
-    ],
-  },
-};
-
 const defesasOk = {
   data: {
     modalidades: [
@@ -116,7 +103,6 @@ function mockSucesso() {
     if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
     if (url === "/clients/?page_size=4&status=ativo")
       return Promise.resolve(clientesOk);
-    if (url === "/noticias?limit=4") return Promise.resolve(noticiasOk);
     if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
     return Promise.reject(new Error(`URL inesperada: ${url}`));
   });
@@ -168,7 +154,6 @@ describe("DashboardUltra — referência 2026", () => {
     ).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText("Tarefa concluída")).toBeNull();
     expect(screen.getByText("Cliente Alfa")).toBeTruthy();
-    expect(screen.getByText("STJ publica nova atualização")).toBeTruthy();
     expect(screen.getByText("Ativo")).toBeTruthy();
   });
 
@@ -180,8 +165,7 @@ describe("DashboardUltra — referência 2026", () => {
       if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
       if (url === "/clients/?page_size=4&status=ativo")
         return Promise.resolve(clientesOk);
-      if (url === "/noticias?limit=4") return Promise.resolve(noticiasOk);
-      if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
+        if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
       return Promise.reject(new Error("inesperado"));
     });
 
@@ -200,8 +184,7 @@ describe("DashboardUltra — referência 2026", () => {
       if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
       if (url === "/clients/?page_size=4&status=ativo")
         return Promise.resolve(clientesOk);
-      if (url === "/noticias?limit=4") return Promise.resolve(noticiasOk);
-      if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
+        if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
       return Promise.reject(new Error("inesperado"));
     });
 
@@ -222,8 +205,7 @@ describe("DashboardUltra — referência 2026", () => {
         return Promise.reject(new Error("agenda off"));
       if (url === "/clients/?page_size=4&status=ativo")
         return Promise.resolve(clientesOk);
-      if (url === "/noticias?limit=4") return Promise.resolve(noticiasOk);
-      if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
+        if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
       return Promise.reject(new Error("inesperado"));
     });
 
@@ -236,15 +218,13 @@ describe("DashboardUltra — referência 2026", () => {
     ).toBeGreaterThanOrEqual(1);
   });
 
-  it("mantém estados de erro independentes para clientes e notícias", async () => {
+  it("mantém estado de erro de clientes isolado dos demais blocos", async () => {
     getMock.mockImplementation((url: string) => {
       if (url === "/dashboard/") return Promise.resolve(dashboardOk);
       if (url === "/atividades") return Promise.resolve(atividadesOk);
       if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
       if (url === "/clients/?page_size=4&status=ativo")
         return Promise.reject(new Error("clients off"));
-      if (url === "/noticias?limit=4")
-        return Promise.reject(new Error("news off"));
       if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
       return Promise.reject(new Error("inesperado"));
     });
@@ -252,9 +232,6 @@ describe("DashboardUltra — referência 2026", () => {
     renderizar();
     expect(
       await screen.findByText("Clientes temporariamente indisponíveis."),
-    ).toBeTruthy();
-    expect(
-      screen.getByText("Notícias temporariamente indisponíveis."),
     ).toBeTruthy();
   });
 });

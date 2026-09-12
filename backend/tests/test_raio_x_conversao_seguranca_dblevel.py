@@ -22,6 +22,8 @@ from sqlalchemy import select, text
 
 from app.schemas.raio_x import CasoConversao, ClienteConversao, RaioXConverterRequest
 
+from _limpeza_cliente import limpar_dependencias_de_clientes
+
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("RUN_DB_TESTS"),
@@ -160,6 +162,7 @@ async def _limpar(db, *, analise_ids=(), case_ids=(), client_ids=(), user_ids=()
             {"id": case_id},
         )
         await db.execute(text("DELETE FROM cases WHERE id = :id"), {"id": case_id})
+    await limpar_dependencias_de_clientes(db, client_ids)
     for client_id in client_ids:
         await db.execute(text("DELETE FROM cases WHERE client_id = :id"), {"id": client_id})
         await db.execute(text("DELETE FROM clients WHERE id = :id"), {"id": client_id})

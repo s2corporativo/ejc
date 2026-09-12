@@ -46,7 +46,7 @@ logger = logging.getLogger("ejc.motor_peca")
 
 AVISO_HITL = (
     "Rascunho gerado pelo Motor de Peça — revisão do advogado responsável é "
-    "OBRIGATÓRIA antes de qualquer protocolo (OAB Prov. 205/2021)."
+    "OBRIGATÓRIA antes de qualquer protocolo."
 )
 
 CONTAGENS_VALIDAS = ("uteis", "corridos", "verificar")

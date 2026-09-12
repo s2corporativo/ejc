@@ -64,7 +64,7 @@ describe("CasoDetalhe — GROUPS batem com a barra canônica", () => {
     expect(GROUPS.map((g) => g.label)).toEqual([
       "Visão",
       "Atividades",
-      "Arquivos",
+      "Documentos",
       "Estratégia",
       "Financeiro",
     ]);

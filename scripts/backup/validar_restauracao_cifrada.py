@@ -161,30 +161,35 @@ def inspect_pg_dump(path: Path, timeout: int) -> int:
     return object_count
 
 
+def _validar_membro(member: tarfile.TarInfo) -> None:
+    """Recusa toda entrada que possa escapar de `uploads/` na extração."""
+    posix = PurePosixPath(member.name)
+    parts = posix.parts
+    if posix.is_absolute() or ".." in parts:
+        raise RestoreValidationError(
+            f"Entrada insegura no arquivo de uploads: {member.name}"
+        )
+    if not parts or parts[0] != "uploads":
+        raise RestoreValidationError(
+            "Arquivo de uploads contém entrada fora da raiz uploads/"
+        )
+    if member.issym() or member.islnk():
+        raise RestoreValidationError(
+            f"Links não são permitidos no backup de uploads: {member.name}"
+        )
+    if not (member.isfile() or member.isdir()):
+        raise RestoreValidationError(
+            f"Tipo especial não permitido no backup: {member.name}"
+        )
+
+
 def inspect_uploads_tar(path: Path) -> tuple[int, int]:
     file_count = 0
     total_bytes = 0
     try:
         with tarfile.open(path, mode="r:gz") as archive:
             for member in archive.getmembers():
-                posix = PurePosixPath(member.name)
-                parts = posix.parts
-                if posix.is_absolute() or ".." in parts:
-                    raise RestoreValidationError(
-                        f"Entrada insegura no arquivo de uploads: {member.name}"
-                    )
-                if not parts or parts[0] != "uploads":
-                    raise RestoreValidationError(
-                        "Arquivo de uploads contém entrada fora da raiz uploads/"
-                    )
-                if member.issym() or member.islnk():
-                    raise RestoreValidationError(
-                        f"Links não são permitidos no backup de uploads: {member.name}"
-                    )
-                if not (member.isfile() or member.isdir()):
-                    raise RestoreValidationError(
-                        f"Tipo especial não permitido no backup: {member.name}"
-                    )
+                _validar_membro(member)
                 if member.isfile():
                     file_count += 1
                     total_bytes += member.size
@@ -323,9 +328,24 @@ def extract_uploads(path: Path, output_dir: Path) -> int:
         )
     output_dir.mkdir(parents=True, exist_ok=True)
     output_dir.chmod(0o700)
-    file_count, _ = inspect_uploads_tar(path)
+    # Antes: `inspect_uploads_tar` validava numa abertura e `extractall()`
+    # extraía TUDO numa segunda abertura — a validação e a extração podiam
+    # enxergar conteúdos diferentes (o .tar.gz é um arquivo em disco que outro
+    # processo pode trocar entre as duas leituras). Agora a extração acontece
+    # na MESMA abertura que validou, e só sobre a lista de membros aprovados;
+    # `filter="data"` acrescenta a checagem nativa do tarfile (traversal,
+    # links, permissões) como segunda barreira.
+    file_count = 0
     with tarfile.open(path, mode="r:gz") as archive:
-        archive.extractall(output_dir)
+        aprovados: list[tarfile.TarInfo] = []
+        for member in archive.getmembers():
+            _validar_membro(member)
+            aprovados.append(member)
+            if member.isfile():
+                file_count += 1
+        archive.extractall(  # nosemgrep: trailofbits.python.tarfile-extractall-traversal.tarfile-extractall-traversal
+            output_dir, members=aprovados, filter="data"
+        )
     return file_count
 
 

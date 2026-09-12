@@ -25,7 +25,7 @@ from typing import Any
 
 from app.core.config import get_settings
 from app.services.document_format import juntar_segmentos, marca_minuta_ia
-from app.services.visual_law_theme import OURO
+from app.services.visual_law_theme import OURO, logo_path
 
 logger = logging.getLogger("ejc.docx")
 
@@ -208,6 +208,19 @@ def gerar_docx(titulo: str, conteudo_md: str, meta: dict | None = None) -> bytes
     header = section.header
     ph = header.paragraphs[0]
     ph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # Logomarca no timbre — MESMA fonte única do PDF (visual_law_theme), para
+    # que PDF e DOCX do mesmo documento saiam com a identidade idêntica. Sem o
+    # arquivo, o timbre permanece textual: o DOCX nunca falha pela imagem.
+    caminho_logo = logo_path()
+    if caminho_logo is not None:
+        try:
+            ph.add_run().add_picture(str(caminho_logo), height=Cm(1.2))
+            ph = header.add_paragraph()
+            ph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        except Exception:
+            logger.warning("Logo não inserida no timbre do DOCX", exc_info=True)
+
     run = ph.add_run(ESCRITORIO_NOME)
     run.bold = True
     run.font.name = fonte

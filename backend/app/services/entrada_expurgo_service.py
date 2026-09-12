@@ -43,6 +43,17 @@ logger = logging.getLogger(__name__)
 _STATUS_EXPURGAVEIS = ("erro", "concluido")
 
 
+def _expurgo_documental_real_disponivel() -> bool:
+    """Fail-closed enquanto retenção/legal hold não puderem ser provados.
+
+    O schema canônico de `Document` ainda não fornece atributos que permitam a
+    esta rotina demonstrar, antes do hard delete, o término da retenção e a
+    inexistência de legal hold. O dry-run continua disponível para inventário e
+    planejamento; a exclusão irreversível fica bloqueada até #1359.
+    """
+    return False
+
+
 async def expurgar_rascunhos_entrada_unica(
     db, dias: int = 30, dry_run: bool = True
 ) -> dict[str, Any]:
@@ -63,14 +74,27 @@ async def expurgar_rascunhos_entrada_unica(
 
     `dry_run=True` (default): só conta — não apaga nada. Relatório com
     quantos batches, quantos documentos, bytes totais e idade do rascunho
-    mais antigo. `dry_run=False`: apaga o arquivo físico de cada Document
-    (best-effort — `FileNotFoundError` não é fatal), depois os registros —
-    `DocumentIntakeItem`, `Document` e por fim `DocumentIntakeBatch`, nessa
-    ordem, todos explicitamente via ORM.
+    mais antigo. `dry_run=False`: permanece BLOQUEADO enquanto a política
+    canônica de retenção/legal hold não estiver codificada e verificável.
 
     Nunca deixa uma exceção não tratada derrubar o job — captura, loga, e
     devolve `{"erro": ...}`.
     """
+    if not dry_run and not _expurgo_documental_real_disponivel():
+        logger.warning(
+            "[entrada_expurgo] hard delete documental bloqueado: retenção/legal hold "
+            "ainda não verificáveis no schema canônico"
+        )
+        return {
+            "dry_run": False,
+            "bloqueado": True,
+            "erro": "retencao_legal_hold_nao_codificados",
+            "motivo": "retencao_legal_hold_nao_codificados",
+            "batches_removidos": 0,
+            "documentos_removidos": 0,
+            "bytes_liberados": 0,
+        }
+
     try:
         corte = datetime.now(timezone.utc) - timedelta(days=dias)
 
@@ -123,10 +147,6 @@ async def expurgar_rascunhos_entrada_unica(
                 doc = await db.get(Document, item.document_id)
                 if doc is None:
                     continue
-                # Defesa em profundidade (regra inegociável da issue): mesmo
-                # que o batch esteja "órfão", o Document pode ter sido
-                # vinculado a um caso/cliente por caminho independente do
-                # batch — NUNCA remove Document com case_id/client_id.
                 if doc.case_id is not None or doc.client_id is not None:
                     logger.warning(
                         "[entrada_expurgo] batch %s órfão mas Document %s tem "
@@ -150,23 +170,6 @@ async def expurgar_rascunhos_entrada_unica(
                 )
                 continue
 
-            # Revalidação sob lock — fecha a janela TOCTOU entre a seleção
-            # acima (sem lock) e o delete abaixo: uma conversão concorrente
-            # (POST /entrada/{id}/criar-caso, que grava case_id sob
-            # with_for_update em entrada_service.py) pode commitar bem no
-            # meio dessa função. Sem revalidar SOB LOCK imediatamente antes
-            # de apagar, o expurgo apagaria documento e batch já vinculados
-            # a um caso recém-criado com sucesso — achado crítico da
-            # auditoria de segurança do PR #685. O SELECT ... FOR UPDATE
-            # aqui bloqueia até a transação concorrente (que faz UPDATE nessa
-            # mesma linha) commitar ou desfazer, e então relê o valor
-            # JÁ COMMITADO — não o snapshot de antes.
-            # populate_existing=True é obrigatório aqui (mesmo padrão de
-            # criar_caso_do_rascunho): sem ele, o SQLAlchemy acha o objeto
-            # já carregado no identity map desta Session (pela seleção sem
-            # lock, mais acima) e devolve os atributos ANTIGOS em memória —
-            # mesmo com o lock corretamente adquirido e a linha do banco já
-            # atualizada. O lock sozinho não basta; precisa forçar o reload.
             batch_travado = (
                 await db.execute(
                     select(DocumentIntakeBatch)
@@ -216,24 +219,11 @@ async def expurgar_rascunhos_entrada_unica(
             if pular_batch:
                 continue
 
-            # Ordem: Items → Documents → Batch, todos apagados EXPLICITAMENTE
-            # pelo ORM nesta função — não depende de cascade implícita (FK
-            # ondelete="CASCADE" existe em produção, mas a suíte de testes
-            # roda em aiosqlite sem PRAGMA foreign_keys=ON; o relationship
-            # `items` também tem cascade="all, delete-orphan", mas cascatear
-            # via lazy-load do ORM dentro de uma AsyncSession é uma
-            # dependência frágil demais para uma rotina de expurgo
-            # irreversível). Deletar o Item antes evita erro de "already
-            # deleted" quando o batch for removido em seguida.
             for item in itens:
                 await db.delete(item)
 
             upload_root = os.path.realpath(settings.UPLOAD_DIR)
             for doc in documentos_travados:
-                # Contido em UPLOAD_DIR: defesa em profundidade contra um
-                # filepath corrompido/absoluto (o campo é sempre gerado pelo
-                # servidor hoje, mas o job roda sem revisão humana — não
-                # confiar cegamente em dado de banco antes de os.remove()).
                 full_path = os.path.realpath(
                     os.path.join(settings.UPLOAD_DIR, doc.filepath or "")
                 )
@@ -248,7 +238,7 @@ async def expurgar_rascunhos_entrada_unica(
                     try:
                         os.remove(full_path)
                     except FileNotFoundError:
-                        pass  # já removido antes (não-fatal)
+                        pass
                     except OSError as exc:
                         logger.warning(
                             "[entrada_expurgo] falha ao remover arquivo "
@@ -286,7 +276,7 @@ async def expurgar_rascunhos_entrada_unica(
                 bytes_liberados,
             )
         return resultado
-    except Exception as exc:  # nunca derruba o job (padrão route_usage.expurgar_antigos)
+    except Exception as exc:
         try:
             await db.rollback()
         except Exception:

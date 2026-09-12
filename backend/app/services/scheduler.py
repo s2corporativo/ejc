@@ -19,13 +19,14 @@ from __future__ import annotations
 import asyncio
 import logging
 from uuid import uuid4
-from datetime import date, timedelta
+from datetime import timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-from sqlalchemy import func, text, select
+from sqlalchemy import func, or_, select, text
 
+from app.core.clock import hoje_operacional
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 
@@ -76,7 +77,7 @@ async def _morning_brief():
 
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
+            hoje = hoje_operacional()
             d3 = hoje + timedelta(days=3)
             d7 = hoje + timedelta(days=7)
 
@@ -189,7 +190,7 @@ async def _marcar_prazos_vencidos():
     _hb_status, _hb_detail = "ok", None
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
+            hoje = hoje_operacional()
             rows = await db.execute(text("""
                 SELECT d.id, d.titulo, d.data_prazo, d.responsavel_id, u.email, u.phone
                 FROM deadlines d
@@ -248,7 +249,7 @@ async def _alertar_prazos():
     _hb_status, _hb_detail = "ok", None
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
+            hoje = hoje_operacional()
             # Faixas DISJUNTAS (teto, piso, flag): 7d cobre [hoje+4, hoje+7],
             # 3d cobre [hoje+2, hoje+3], 1d cobre [hoje, hoje+1]. Antes cada faixa
             # usava só `<= alvo AND >= hoje`, então um prazo criado a poucos dias
@@ -260,6 +261,9 @@ async def _alertar_prazos():
                                      (1, 0, "alerta_1d_enviado")]:
                 alvo = hoje + timedelta(days=dias)
                 piso_data = hoje + timedelta(days=piso)
+                # SQL literal com bind params; a regra marca todo text(), sem olhar
+                # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+                # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
                 rows = await db.execute(text(f"""
                     SELECT d.id, d.titulo, d.data_prazo, d.responsavel_id, u.email, u.phone
                     FROM deadlines d
@@ -290,6 +294,9 @@ async def _alertar_prazos():
                                 f"<p>Acesse o EJC para os detalhes do caso.</p>"
                             ),
                         )
+                        # SQL literal com bind params; a regra marca todo text(), sem olhar
+                        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+                        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
                         await db.execute(text(
                             f"UPDATE deadlines SET {flag}=true WHERE id=:id"
                         ), {"id": r.id})
@@ -321,7 +328,7 @@ async def _alertar_ambiental():
     from app.services.notification_service import notificar
     try:
         async with AsyncSessionLocal() as db:
-            limite = date.today() + timedelta(days=5)
+            limite = hoje_operacional() + timedelta(days=5)
             rows = await db.execute(text("""
                 SELECT ec.numero_auto, ec.data_prazo_defesa,
                        c.advogado_responsavel_id, u.phone
@@ -399,7 +406,7 @@ async def _alertar_audiencias_agenda():
     _hb_status, _hb_detail = "ok", None
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
+            hoje = hoje_operacional()
             corte = datetime.now(timezone.utc) - timedelta(hours=20)
             for dias in (3, 1, 0):
                 alvo = hoje + timedelta(days=dias)
@@ -533,7 +540,8 @@ async def _alertar_prescricao():
     _hb_status, _hb_detail = "ok", None
     try:
         async with AsyncSessionLocal() as db:
-            limite = date.today() + timedelta(days=90)
+            hoje = hoje_operacional()
+            limite = hoje + timedelta(days=90)
             rows = await db.execute(text("""
                 SELECT c.id, c.titulo, c.tipo_acao_prescricao,
                        c.data_prescricao, c.advogado_responsavel_id
@@ -541,13 +549,13 @@ async def _alertar_prescricao():
                 WHERE c.deleted_at IS NULL
                   AND c.data_prescricao IS NOT NULL
                   AND c.data_prescricao::date <= :lim
-                  AND c.data_prescricao::date >= CURRENT_DATE
+                  AND c.data_prescricao::date >= :hoje
                   AND c.status NOT IN ('encerrado','arquivado')
-            """), {"lim": limite})
+            """), {"lim": limite, "hoje": hoje})
             for r in rows:
                 if not r.advogado_responsavel_id:
                     continue
-                dias = (r.data_prescricao.date() - date.today()).days
+                dias = (r.data_prescricao.date() - hoje).days
                 await notificar(
                     db, r.advogado_responsavel_id,
                     "\u23f3 PRESCRIÇÃO SE APROXIMANDO",
@@ -604,7 +612,7 @@ async def _verificar_sla_workflows():
 
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
+            hoje = hoje_operacional()
             agora = datetime.now(_tz.utc)
             cws = (await db.execute(select(CaseWorkflow).where(
                 CaseWorkflow.status == WorkflowStatus.ativo,
@@ -808,8 +816,8 @@ async def _alertar_honorarios():
             await db.execute(text("""
                 UPDATE fees SET status='atrasado'
                 WHERE status='pendente' AND deleted_at IS NULL
-                AND data_vencimento < CURRENT_DATE
-            """))
+                AND data_vencimento < :hoje
+            """), {"hoje": hoje_operacional()})
             await db.commit()
     except Exception as e:
         logger.error(f"[Scheduler] honorarios: {e}")
@@ -949,7 +957,7 @@ async def _alertar_vencimento_societario():
     from app.services.notification_service import notificar
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
+            hoje = hoje_operacional()
 
             # (a) Contratos societários vencendo — marcos 30/15/7/1
             contratos = (await db.execute(text("""
@@ -1031,7 +1039,7 @@ async def _briefing_matinal_advogado():
     from app.services.notification_service import notificar
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
+            hoje = hoje_operacional()
             d7 = hoje + timedelta(days=7)
 
             advs = (await db.execute(text("""
@@ -1144,7 +1152,7 @@ async def _alertar_procuracoes():
     from app.services.notification_service import criar_notificacao_interna
     try:
         async with AsyncSessionLocal() as db:
-            limite = date.today() + timedelta(days=30)
+            limite = hoje_operacional() + timedelta(days=30)
             rows = await db.execute(text("""
                 SELECT p.id, cl.nome, cl.razao_social, cl.responsavel_id,
                        p.data_validade
@@ -1329,6 +1337,55 @@ async def _job_backup_drive_monitorado():
     await _bater_ponto(JOB_BACKUP_DRIVE, "ok", detalhe[:200] if detalhe else None)
 
 
+def _hora_utc_do_job(bruto: str, *, padrao: tuple[int, int],
+                     rotulo: str) -> tuple[int, int]:
+    """Converte "HH:MM" em (hora, minuto), com fallback e warning.
+
+    Mesmo contrato de `backup_service.hora_backup_utc`, e pela mesma razão:
+    `start_scheduler()` é chamado sem `try/except` no lifespan do FastAPI, então
+    um `int("11h00")` aqui levantaria ValueError e derrubaria o BOOT DA
+    APLICAÇÃO INTEIRA — levando junto backup, DJEN, prazos e prescrição. Uma
+    variável de ambiente malformada não pode ter esse poder.
+    """
+    texto = str(bruto or "").strip()
+    try:
+        hora_s, minuto_s = texto.split(":", 1)
+        hora, minuto = int(hora_s), int(minuto_s)
+        if 0 <= hora <= 23 and 0 <= minuto <= 59:
+            return hora, minuto
+    except (ValueError, AttributeError):
+        pass
+    logger.warning("[Scheduler] %s inválida (%r) — usando %02d:%02d UTC",
+                   rotulo, texto, padrao[0], padrao[1])
+    return padrao
+
+
+async def _job_querido_diario_monitor():
+    """Varredura diária dos diários oficiais municipais, com heartbeat por
+    RESULTADO (V2-3.1): o `detail` carrega o dicionário de contagens, não um
+    "ok" mudo. Monitor configurado mas sem produzir nada aparece como tal no
+    diagnóstico, em vez de passar por saudável.
+    """
+    import json
+
+    from app.core.database import AsyncSessionLocal
+    from app.services.heartbeat_service import JOB_QUERIDO_DIARIO
+    from app.services.querido_diario_monitor import executar_monitoramento
+
+    if not getattr(settings, "QUERIDO_DIARIO_MONITOR_ENABLED", False):
+        return
+    try:
+        async with AsyncSessionLocal() as db:
+            resultado = await executar_monitoramento(db)
+    except Exception as e:
+        await _bater_ponto(JOB_QUERIDO_DIARIO, "erro", str(e)[:200])
+        raise
+    # Erro dentro do resultado (integração desligada, configuração incompleta,
+    # falha de consulta) não é sucesso: o job rodou, mas não entregou.
+    status = "erro" if resultado.get("erros") else "ok"
+    await _bater_ponto(JOB_QUERIDO_DIARIO, status, json.dumps(resultado)[:200])
+
+
 def start_scheduler():
     """Inicia jobs APENAS se ENABLE_SCHEDULER=true (evita duplicação)."""
     if not settings.ENABLE_SCHEDULER:
@@ -1417,6 +1474,17 @@ def start_scheduler():
               id="feriados_brasilapi", replace_existing=True)
     s.add_job(_auditoria_processos,   CronTrigger(day_of_week="mon", hour=8, minute=15),  id="auditoria",  replace_existing=True)
     s.add_job(_monitor_diario_oficial, CronTrigger(hour=6, minute=0),                      id="dou_monitor", replace_existing=True)
+    # Diários oficiais MUNICIPAIS (Querido Diário) — gate duplo: o job só age
+    # com QUERIDO_DIARIO_MONITOR_ENABLED e o monitor ainda respeita a flag da
+    # integração (QUERIDO_DIARIO_ENABLED). Registrar sempre mantém o heartbeat
+    # visível no diagnóstico.
+    _h_qd, _m_qd = _hora_utc_do_job(
+        getattr(settings, "QUERIDO_DIARIO_MONITOR_HORA_UTC", "11:00"),
+        padrao=(11, 0), rotulo="QUERIDO_DIARIO_MONITOR_HORA_UTC",
+    )
+    s.add_job(_job_querido_diario_monitor,
+              CronTrigger(hour=_h_qd, minute=_m_qd, timezone="UTC"),
+              id="querido_diario_monitor", replace_existing=True)
     s.add_job(_alertar_contratos,     CronTrigger(day_of_week="mon", hour=9, minute=30),  id="contratos",  replace_existing=True)
     # (removido job duplicado id="retencao_ia" — _purgar_logs_ia já agendado em id="purga_ia")
 
@@ -1574,9 +1642,9 @@ async def _alertar_contratos():
                 WHERE c.deleted_at IS NULL
                   AND c.status IN ('vigente', 'assinado')
                   AND c.data_fim IS NOT NULL
-                  AND c.data_fim <= CURRENT_DATE + c.alertar_dias_antes * INTERVAL '1 day'
-                  AND c.data_fim >= CURRENT_DATE
-            """))).all()
+                  AND c.data_fim <= :hoje + c.alertar_dias_antes * INTERVAL '1 day'
+                  AND c.data_fim >= :hoje
+            """), {"hoje": hoje_operacional()})).all()
             if rows:
                 logger.warning(
                     f"[Contratos] {len(rows)} contrato(s) próximos do vencimento: "
@@ -1650,7 +1718,7 @@ async def _auditoria_processos():
     """
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
+            hoje = hoje_operacional()
             limite_30 = hoje - timedelta(days=30)
             limite_60 = hoje - timedelta(days=60)
 
@@ -1780,6 +1848,24 @@ def stop_scheduler():
 # JOBS v3.x — DJEN, DataJud, Relatório Mensal
 # ═══════════════════════════════════════════════════════════════════════════
 
+def djen_entra_no_job(advogado) -> bool:
+    """Critério de inclusão do job diário de intimações.
+
+    Nomeado e exportado de propósito: o teste exercita ESTA função, não uma
+    réplica dela — critério duplicado em teste envelhece sem avisar, que é a
+    classe de defeito que esta área inteira trata.
+
+    Entra quem tem o campo dedicado preenchido (mesmo pela metade — configuração
+    quebrada precisa aparecer como `oab_nao_configurada` no diagnóstico, não
+    sumir do relatório) e quem tem OAB de perfil com UF determinável.
+    """
+    from app.services.djen_service import oab_para_captura
+
+    if (getattr(advogado, "djen_oab_numero", "") or "").strip():
+        return True
+    return all(oab_para_captura(advogado))
+
+
 async def job_djen_intimacoes():
     """06h30 — captura intimações DJEN para cada advogado com OAB configurada."""
     from app.models.user import User as _U
@@ -1788,10 +1874,27 @@ async def job_djen_intimacoes():
     _hb_status, _hb_detail = "ok", None
     try:
         async with AsyncSessionLocal() as db:
-            advs = (await db.execute(select(_U).where(
+            # AUD27-P3-9 (2ª metade): `capturar_para_advogado` passou a resolver
+            # a OAB do perfil quando `djen_oab_numero` está vazio, mas a seleção
+            # daqui filtrava só por `djen_oab_numero`, então quem tinha apenas o
+            # campo do perfil nunca chegava a ela — o fallback existia e não
+            # alcançava o job diário. Trazemos os dois casos do banco e deixamos
+            # `oab_para_captura` (a MESMA função que a captura usa) decidir.
+            #
+            # Quem tem OAB registrada mas SEM UF determinável continua de fora:
+            # `oab_para_captura` devolve vazio, e incluí-lo aqui só produziria
+            # `oab_nao_configurada` em massa, pintando o heartbeat de vermelho
+            # sem que nada tivesse mudado. Esse caso é reportado pelo
+            # `scripts/configurar_oab_djen.py --verificar`, que é onde se
+            # conserta cadastro.
+            candidatos = (await db.execute(select(_U).where(
                 _U.is_active == True, _U.deleted_at.is_(None),
-                _U.djen_oab_numero.isnot(None),
+                or_(
+                    _U.djen_oab_numero.isnot(None),
+                    _U.oab_number.isnot(None),
+                ),
             ))).scalars().all()
+            advs = [a for a in candidatos if djen_entra_no_job(a)]
             total = 0
             for a in advs:
                 try:

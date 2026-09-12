@@ -163,6 +163,42 @@ def test_not_null_sem_default_e_indice_unique_nao_sao_aprovados(tmp_path: Path):
     assert any("UNIQUE" in reason for reason in result["migrations"][0]["reasons"])
 
 
+
+def test_indice_unique_revisado_exige_politica_estreita_e_nao_libera_drop(tmp_path: Path):
+    _base(tmp_path)
+    (tmp_path / "002.py").write_text(
+        "from alembic import op\n"
+        "import sqlalchemy as sa\n"
+        "revision = '002'\n"
+        "down_revision = '001'\n"
+        "deployment_policy = 'human_reviewed_unique_index'\n"
+        "def upgrade():\n"
+        "    op.add_column('base', sa.Column('codigo', sa.String(), nullable=True))\n"
+        "    op.create_index('uq_base_codigo', 'base', ['codigo'], unique=True)\n"
+        "def downgrade():\n"
+        "    op.drop_index('uq_base_codigo', table_name='base')\n"
+        "    op.drop_column('base', 'codigo')\n",
+        encoding="utf-8",
+    )
+    result = evaluate(tmp_path, "001")
+    assert result["compatible"] is True
+    assert result["migrations"][0]["policy"] == "human_reviewed_unique_index"
+
+    (tmp_path / "002.py").write_text(
+        "from alembic import op\n"
+        "revision = '002'\n"
+        "down_revision = '001'\n"
+        "deployment_policy = 'human_reviewed_unique_index'\n"
+        "def upgrade():\n"
+        "    op.drop_table('base')\n"
+        "def downgrade():\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    result = evaluate(tmp_path, "001")
+    assert result["compatible"] is False
+    assert any("drop_table" in reason for reason in result["migrations"][0]["reasons"])
+
 def test_not_null_com_server_default_estatico_e_aprovado(tmp_path: Path):
     _base(tmp_path)
     _write(
