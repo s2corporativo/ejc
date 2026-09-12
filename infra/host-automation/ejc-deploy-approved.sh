@@ -33,7 +33,7 @@ TARGET_SHA="$(git -C "$SOURCE_DIR" rev-parse HEAD)"
 
 DEPLOYED_SHA=""
 [ -f "$APP_DIR/.deployed_sha" ] && DEPLOYED_SHA="$(cat "$APP_DIR/.deployed_sha" 2>/dev/null || true)"
-if [ "$DEPLOYED_SHA" = "$TARGET_SHA" ] && curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+if [ "$DEPLOYED_SHA" = "$TARGET_SHA" ] && curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
   log "producao ja esta saudavel no SHA $TARGET_SHA; nada a fazer"
   exit 0
 fi
@@ -131,8 +131,8 @@ REQUIRE_PREDEPLOY_BACKUP=1 \
 ENSURE_DAILY_BACKUP=1 \
 bash scripts/deploy_vps_safe.sh
 
-curl -fsS http://127.0.0.1:8000/api/health >/dev/null
-curl -fsS https://ejc.depaulateixeira.adv.br/api/health >/dev/null
+curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health >/dev/null
+curl -fsS --connect-timeout 5 --max-time 15 https://ejc.depaulateixeira.adv.br/api/health >/dev/null
 printf '%s\n' "$TARGET_SHA" > "$APP_DIR/.deploy_last_sha"
 chmod 600 "$APP_DIR/.deploy_last_sha"
 log "deploy concluido e health local/publico confirmados: $TARGET_SHA"

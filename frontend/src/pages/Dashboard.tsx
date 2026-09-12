@@ -1,6 +1,7 @@
 import { BellRing, ChevronRight, Network } from "lucide-react";
 import { Link } from "react-router";
 import DeadlineRiskStrip from "../components/DeadlineRiskStrip";
+import JurisprudentialAlertsStrip from "../components/JurisprudentialAlertsStrip";
 import { useAuth } from "../stores/auth";
 import DashboardUltra from "./DashboardUltra";
 
@@ -70,6 +71,7 @@ export default function Dashboard() {
         </div>
       )}
 
+      <JurisprudentialAlertsStrip />
       <DashboardUltra />
     </div>
   );

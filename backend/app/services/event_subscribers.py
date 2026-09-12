@@ -61,13 +61,18 @@ def _install_ai_core_hardening() -> None:
 
 
 def _install_datajud_cognitive_feed() -> None:
-    """Ativa DataJud → RAG nativo sem tornar o conector requisito de boot."""
+    """Instala a barreira crítica DataJud; falha impede boot juridicamente inseguro."""
     try:
         from app.services.datajud_cognitive_patch import instalar
 
         instalar()
     except Exception as exc:
-        logger.error("Feed cognitivo DataJud indisponível: %s", exc, exc_info=True)
+        logger.critical(
+            "Barreira crítica DataJud para prazos não pôde ser instalada: %s",
+            exc,
+            exc_info=True,
+        )
+        raise RuntimeError("Barreira crítica DataJud indisponível") from exc
 
 
 def _install_financial_scheduler_hardening() -> None:
