@@ -20,6 +20,7 @@ from app.core.security import require_roles
 from app.models.rag import KnowledgeDoc
 from app.models.user import User
 from app.services.ingestion_service import ORIGEM_VIGENCIA_CURADORIA
+from app.services.rag_vigencia_queue import listar_pendencias_vigencia
 from app.services.knowledge_governance import (
     AUTHORITY_LABELS,
     LEGAL_STATUS_VALUES,
@@ -41,6 +42,7 @@ GOVERNANCE_ROLES = ["superadmin", "admin", "socio"]
 
 AuthorityLevel = Literal[
     "oficial_normativa",
+    "proposicao_legislativa",
     "precedente_vinculante",
     "jurisprudencia_oficial",
     "oficial_informativa",
@@ -213,6 +215,21 @@ async def cobertura_juridica(
 ):
     """Matriz de cobertura por área e tipo de conhecimento jurídico."""
     return await coverage_matrix(db)
+
+
+@router.get("/vigencia/pendencias")
+async def pendencias_vigencia_normativa(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _cu: User = Depends(require_roles(GOVERNANCE_ROLES)),
+):
+    """Fila read-only de normas públicas que exigem conferência de vigência."""
+    return await listar_pendencias_vigencia(
+        db,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get("/docs/{doc_id}")
