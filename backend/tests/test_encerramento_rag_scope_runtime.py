@@ -1,12 +1,13 @@
 """Regressões do escopo/isolamento RAG no encerramento de caso (#1466).
 
-O fluxo legado de `cases.encerrar_caso` usa `chave_origem="caso:<id>"` e não
-passa `client_id` diretamente. O hardening obrigatório do boot deve:
+O fluxo legado de `cases.encerrar_caso` usa `chave_origem="caso:<id>"`. O
+hardening obrigatório do boot deve:
 
 1. resolver o escopo somente pelo caso canônico server-side;
-2. jamais inventar escopo para chave/caso inválido;
-3. executar a memória acessória em SAVEPOINT;
-4. conter falha real do RAG sem invalidar a transação externa do encerramento.
+2. aceitar escopo explícito apenas se coincidir com o caso;
+3. jamais inventar escopo para chave/caso inválido;
+4. executar a memória acessória em SAVEPOINT;
+5. conter falha real do RAG sem invalidar a transação externa do encerramento.
 """
 from __future__ import annotations
 
@@ -103,6 +104,77 @@ async def test_precedente_caso_resolve_client_case_e_usa_savepoint(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_escopo_explicito_correto_tambem_usa_caso_canonico_e_savepoint(monkeypatch):
+    capturado = {}
+
+    async def fake_upsert(db, **kwargs):
+        del db
+        capturado.update(kwargs)
+        return "atualizado"
+
+    case = SimpleNamespace(
+        id="case-explicito",
+        client_id="client-explicito",
+        deleted_at=None,
+        numero_interno="EJC-EXPLICITO",
+    )
+    db = _DBFake(case)
+    ingestion_service = _instalar_sobre(monkeypatch, fake_upsert)
+
+    resultado = await ingestion_service.upsert_documento(
+        db,
+        titulo="Precedente já escopado",
+        categoria="precedente_interno",
+        conteudo="Conteúdo fictício suficiente apenas para testar o escopo explícito.",
+        chave_origem="caso:case-explicito",
+        fonte="caso:case-explicito",
+        client_id="client-explicito",
+        case_id="case-explicito",
+    )
+
+    assert resultado == "atualizado"
+    assert capturado["client_id"] == "client-explicito"
+    assert capturado["case_id"] == "case-explicito"
+    assert len(db.get_calls) == 1
+    assert db.begin_nested_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_client_id_explicito_divergente_do_caso_e_bloqueado(monkeypatch):
+    chamado = False
+
+    async def fake_upsert(db, **kwargs):
+        nonlocal chamado
+        del db, kwargs
+        chamado = True
+        return "novo"
+
+    case = SimpleNamespace(
+        id="case-seguro",
+        client_id="client-correto",
+        deleted_at=None,
+        numero_interno="EJC-SEGURO",
+    )
+    db = _DBFake(case)
+    ingestion_service = _instalar_sobre(monkeypatch, fake_upsert)
+
+    with pytest.raises(ValueError, match="client_id divergente"):
+        await ingestion_service.upsert_documento(
+            db,
+            titulo="Precedente com escopo adulterado",
+            categoria="precedente_interno",
+            conteudo="Conteúdo fictício suficiente apenas para testar bloqueio cross-client.",
+            chave_origem="caso:case-seguro",
+            fonte="caso:case-seguro",
+            client_id="client-incorreto",
+            case_id="case-seguro",
+        )
+
+    assert chamado is False
+    assert db.begin_nested_calls == 0
+
+
+@pytest.mark.asyncio
 async def test_resolver_nao_inventa_escopo_para_chave_nao_canonica(monkeypatch):
     capturado = {}
 
@@ -138,10 +210,12 @@ async def test_resolver_nao_inventa_escopo_para_chave_nao_canonica(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_caso_deletado_permanece_fail_closed_sem_fallback_global(monkeypatch):
+    chamado = False
+
     async def fake_upsert(db, **kwargs):
-        del db
-        if kwargs.get("categoria") == "precedente_interno" and not kwargs.get("client_id"):
-            raise ValueError("categoria restrita exige client_id")
+        nonlocal chamado
+        del db, kwargs
+        chamado = True
         return "novo"
 
     db = _DBFake(
@@ -154,7 +228,7 @@ async def test_caso_deletado_permanece_fail_closed_sem_fallback_global(monkeypat
     )
     ingestion_service = _instalar_sobre(monkeypatch, fake_upsert)
 
-    with pytest.raises(ValueError, match="exige client_id"):
+    with pytest.raises(ValueError, match="caso canônico inválido"):
         await ingestion_service.upsert_documento(
             db,
             titulo="Precedente inválido",
@@ -164,6 +238,7 @@ async def test_caso_deletado_permanece_fail_closed_sem_fallback_global(monkeypat
             fonte="caso:case-deletado",
         )
 
+    assert chamado is False
     assert db.begin_nested_calls == 0
 
 
