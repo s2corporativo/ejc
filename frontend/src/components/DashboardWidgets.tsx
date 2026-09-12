@@ -267,8 +267,8 @@ export function ProximaAcaoWidget({
         </div>
       </BentoGridContent>
       <BentoGridFooter>
-        <Button size="sm" variant={nextAction.tone === "danger" ? "danger" : "secondary"} as={Link} to={nextAction.to}>
-          {nextAction.cta}
+        <Button size="sm" variant={nextAction.tone === "danger" ? "danger" : "secondary"} asChild>
+          <Link to={nextAction.to}>{nextAction.cta}</Link>
         </Button>
       </BentoGridFooter>
     </BentoGridCell>

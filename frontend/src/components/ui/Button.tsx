@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode, ElementType } from "react";
+import React from "react";
 import { Link } from "react-router-dom";
 import { cn } from "../../lib/cn";
 
@@ -27,6 +28,7 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
   rightIcon?: ReactNode;
   as?: ElementType;
   to?: string;
+  asChild?: boolean;
 }
 
 export function Button({
@@ -39,8 +41,14 @@ export function Button({
   type = "button",
   as: Component,
   to,
+  asChild,
   ...props
 }: ButtonProps) {
+  // asChild mode: render first child directly (for Radix-like composition)
+  if (asChild && React.isValidElement(children)) {
+    return children;
+  }
+
   const content = (
     <>
       {leftIcon}

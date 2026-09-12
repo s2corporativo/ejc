@@ -1,4 +1,5 @@
 import { ReactNode, useEffect, useState } from "react";
+import React from "react";
 import { Link } from "react-router-dom";
 import {
   AlertCircle,
@@ -107,6 +108,7 @@ export function Button({
   className,
   as: Component,
   to,
+  asChild,
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
   children?: ReactNode;
@@ -115,7 +117,13 @@ export function Button({
   size?: "sm" | "md" | "lg" | "icon";
   as?: typeof Link;
   to?: string;
+  asChild?: boolean;
 }) {
+  // asChild mode: render first child directly (for Radix-like composition)
+  if (asChild && React.isValidElement(children)) {
+    return children;
+  }
+
   const sizeClass = {
     sm: "h-8 px-3 text-xs",
     md: "h-9 px-4 text-[13px]",
