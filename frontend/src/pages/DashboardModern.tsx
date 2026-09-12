@@ -44,6 +44,24 @@ import {
   fmtDate,
   fmtMoney,
 } from "../components/UI";
+import {
+  BentoGrid,
+  BentoGridCell,
+  BentoGridContent,
+  BentoGridFooter,
+  BentoGridHeader,
+} from "../components/ui/BentoGrid";
+import {
+  PrioridadesHojeWidget,
+  ProximaAcaoWidget,
+  CarteiraCasosWidget,
+  IAAutomacaoWidget,
+  PrazosSemanaWidget,
+  AreasAtuacaoWidget,
+  JurimetriaWidget,
+  MovimentacoesRecentesWidget,
+  DashboardSkeleton,
+} from "../components/DashboardWidgets";
 
 const MANAGER_ROLES = new Set(["superadmin", "admin", "socio"]);
 const CASE_CREATOR_ROLES = new Set([
@@ -476,7 +494,7 @@ export default function DashboardModern() {
   const NextActionIcon = nextAction?.icon;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <PageHeader
         eyebrow="Meu dia"
         title={`Bom trabalho, ${firstName}`}
@@ -484,163 +502,41 @@ export default function DashboardModern() {
         actions={<ThemeSelector className="w-full sm:min-w-[330px]" />}
       />
 
-      {/* ===================== MEU DIA ===================== */}
-      {/* Prioridade operacional do advogado: ações, pendências, agenda e
-          casos recentes. KPIs/indicadores gerenciais saem do topo. */}
-      <section aria-label="Meu dia" className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-ouro/15 text-ouro">
-            <CalendarClock className="h-4 w-4" />
-          </span>
-          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-            Meu dia
-          </h2>
-          <span className="text-sm text-slate-500 dark:text-slate-400">
-            O que precisa de você agora
-          </span>
-        </div>
+      {loading ? (
+        <DashboardSkeleton />
+      ) : (
+        <BentoGrid>
+          {/* Linha 1: Prioridades + Próxima Ação */}
+          <PrioridadesHojeWidget
+            criticalDeadlines={criticalDeadlines.length}
+            deadlinesToday={deadlinesToday}
+            solicitacoesPendentes={Number(solicitacoes?.pendentes ?? 0)}
+            canSeeCRM={canSeeCRM}
+          />
+          <ProximaAcaoWidget
+            prazos={prazos}
+            solicitacoes={solicitacoes}
+            canSeeCRM={canSeeCRM}
+          />
 
-      {/* Próxima ação recomendada — UM item, o mais urgente, derivado dos
-          dados já carregados (prazo crítico/vencido → cliente aguardando).
-          Sem nada urgente, mostra o estado calmo com atalho para a agenda. */}
-      {!loading &&
-        (nextAction ? (
-          <Link
-            to={nextAction.to}
-            aria-label={`Próxima ação recomendada: ${nextAction.title}`}
-            className={cn(
-              "group flex flex-col gap-4 rounded-xl border p-4 transition sm:flex-row sm:items-center sm:justify-between",
-              NEXT_ACTION_TONE[nextAction.tone].wrap,
-            )}
-          >
-            <div className="flex items-start gap-4">
-              <span
-                className={cn(
-                  "shrink-0 rounded-xl p-3 ring-1 ring-inset",
-                  NEXT_ACTION_TONE[nextAction.tone].badge,
-                )}
-              >
-                {NextActionIcon && <NextActionIcon className="h-6 w-6" />}
-              </span>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className={cn(
-                      "text-[11px] font-semibold uppercase tracking-[0.16em]",
-                      NEXT_ACTION_TONE[nextAction.tone].eyebrow,
-                    )}
-                  >
-                    {nextAction.eyebrow}
-                  </span>
-                  <Badge tone="ouro">Próxima ação recomendada</Badge>
-                </div>
-                <h3
-                  className={cn(
-                    "mt-1 truncate text-lg font-semibold",
-                    NEXT_ACTION_TONE[nextAction.tone].title,
-                  )}
-                >
-                  {nextAction.title}
-                </h3>
-                <p
-                  className={cn(
-                    "mt-1 text-sm leading-6",
-                    NEXT_ACTION_TONE[nextAction.tone].desc,
-                  )}
-                >
-                  {nextAction.desc}
-                </p>
-              </div>
-            </div>
-            <span
-              className={cn(
-                "inline-flex shrink-0 items-center justify-center gap-2 rounded-lg px-4 py-2 text-[13px] font-bold transition",
-                NEXT_ACTION_TONE[nextAction.tone].cta,
-              )}
-            >
-              {nextAction.cta}
-              <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
-            </span>
-          </Link>
-        ) : (
-          <Link
-            to="/atividades"
-            aria-label="Nada urgente para agora — ver agenda"
-            className="group flex items-center justify-between gap-4 rounded-xl border border-success-100 bg-success-50 p-4 transition dark:border-success-500/20 dark:bg-success-500/10"
-          >
-            <div className="flex items-center gap-4">
-              <span className="shrink-0 rounded-xl bg-success-100 p-3 text-success-700 ring-1 ring-inset ring-success-200 dark:bg-success-500/15 dark:text-success-300">
-                <CheckCircle2 className="h-6 w-6" />
-              </span>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-success-700 dark:text-success-300">
-                    Tudo sob controle
-                  </span>
-                  <Badge tone="ouro">Próxima ação recomendada</Badge>
-                </div>
-                <h3 className="mt-1 text-lg font-semibold text-success-800 dark:text-success-200">
-                  Nada urgente para agora
-                </h3>
-                <p className="mt-1 text-sm leading-6 text-success-700 dark:text-success-300/80">
-                  Nenhum prazo crítico ou cliente aguardando. Aproveite para
-                  revisar a agenda com calma.
-                </p>
-              </div>
-            </div>
-            <span className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-success-700 dark:text-success-300">
-              Ver agenda
-              <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
-            </span>
-          </Link>
-        ))}
+          {/* Linha 2: Carteira de Casos + IA */}
+          <CarteiraCasosWidget casos={casos} />
+          <IAAutomacaoWidget iaSaude={iaSaude} />
 
-      {/* Faixa "Prioridades de hoje" — o que exige atenção agora, com atalho.
-          Vem ANTES do painel de ações: "o que preciso resolver?" primeiro. */}
-      <section
-        aria-label="Prioridades de hoje"
-        className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]"
-      >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex shrink-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-            <ListChecks className="h-4 w-4 text-ouro" />
-            Prioridades de hoje
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {loading ? (
-              <span className="text-sm text-slate-400">
-                Carregando prioridades…
-              </span>
-            ) : activePriorities.length ? (
-              activePriorities.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.key}
-                    to={item.to}
-                    className={cn(
-                      "group inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium ring-1 ring-inset transition",
-                      PRIORITY_CHIP_TONE[item.tone],
-                    )}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                    <span className="text-base font-semibold tabular-nums">
-                      {item.count}
-                    </span>
-                    <span>{item.label}</span>
-                    <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-0 transition group-hover:translate-x-0.5 group-hover:opacity-100" />
-                  </Link>
-                );
-              })
-            ) : (
-              <span className="inline-flex items-center gap-2 rounded-xl bg-success-50 px-3 py-1.5 text-sm font-medium text-success-700 ring-1 ring-inset ring-success-200">
-                <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-                Sem pendências críticas para hoje
-              </span>
-            )}
-          </div>
-        </div>
-      </section>
+          {/* Linha 3: Prazos da Semana (wide) */}
+          <PrazosSemanaWidget prazos={prazos} />
+
+          {/* Linha 4: Áreas + Jurimetria */}
+          <AreasAtuacaoWidget casos={casos} />
+          <JurimetriaWidget jurimetria={jurimetria} />
+
+          {/* Linha 5: Movimentações Recentes (tall) */}
+          <MovimentacoesRecentesWidget movimentos={movimentos} />
+        </BentoGrid>
+      )}
+
+      {/* Seção de Ações Rápidas - Mantida do original */}
+      <section aria-label="Ações rápidas" className="space-y-4">
 
       {/* Painel de AÇÕES — vem DEPOIS das prioridades: resolvido o urgente,
           "o que quero iniciar?". Mantém as 4 ações principais do Command

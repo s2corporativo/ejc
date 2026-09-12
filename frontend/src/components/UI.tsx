@@ -1,4 +1,5 @@
 import { ReactNode, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   AlertCircle,
   AlertTriangle,
@@ -104,12 +105,16 @@ export function Button({
   variant = "primary",
   size = "md",
   className,
+  as: Component,
+  to,
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
   children?: ReactNode;
   icon?: ReactNode;
   variant?: ButtonVariant;
   size?: "sm" | "md" | "lg" | "icon";
+  as?: typeof Link;
+  to?: string;
 }) {
   const sizeClass = {
     sm: "h-8 px-3 text-xs",
@@ -117,6 +122,31 @@ export function Button({
     lg: "h-10 px-5 text-sm",
     icon: "h-9 w-9 p-0",
   }[size];
+
+  const content = (
+    <>
+      {icon}
+      {children}
+    </>
+  );
+
+  if (Component && to) {
+    return (
+      <Component
+        to={to}
+        className={cn(
+          "inline-flex items-center justify-center gap-2 rounded-lg font-bold transition-all duration-150 ease-out active:scale-[.98]",
+          "focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50",
+          sizeClass,
+          buttonClasses[variant],
+          className,
+        )}
+      >
+        {content}
+      </Component>
+    );
+  }
+
   return (
     <button
       {...props}
