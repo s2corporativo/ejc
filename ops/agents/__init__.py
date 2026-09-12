@@ -1,1 +1,1 @@
-"""Guarded OpenAI Agents SDK maintenance tooling for EJC."""
+"""Ferramentas protegidas de manutenção do EJC com OpenAI Agents SDK."""
