@@ -8,6 +8,7 @@ export interface User {
   permissions?: string[];
   phone?: string;
   oab_number?: string;
+  cpf_mascarado?: string | null;
   is_active?: boolean;
   /** Path da foto de perfil (ex.: "/users/{id}/avatar", sem prefixo /api). */
   avatar_url?: string | null;
