@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 
 
-_BLOCKED_FRAGMENTS = (
+_FRAGMENTOS_BLOQUEADOS = (
     "git push",
     "force push",
     "git reset --hard",
@@ -22,7 +22,7 @@ _BLOCKED_FRAGMENTS = (
     "/opt/verdelimp-erp",
 )
 
-_SECRET_PATTERNS = (
+_PADROES_SEGREDO = (
     re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
@@ -30,7 +30,7 @@ _SECRET_PATTERNS = (
     re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{20,}\b"),
 )
 
-_SENSITIVE_FILENAMES = {
+_ARQUIVOS_SENSIVEIS = {
     ".env",
     "credentials.json",
     "service-account.json",
@@ -38,39 +38,82 @@ _SENSITIVE_FILENAMES = {
     "id_ed25519",
 }
 
-_SENSITIVE_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
+_SUFIXOS_SENSIVEIS = (".pem", ".key", ".p12", ".pfx")
+
+_INDICADORES_REVISAO_SEGURANCA = (
+    "autenticação",
+    "autenticacao",
+    "authentication",
+    "autorização",
+    "autorizacao",
+    "authorization",
+    "rbac",
+    "permiss",
+    "upload",
+    "ci/cd",
+    "workflow",
+    "woodpecker",
+    "github actions",
+    "dependência",
+    "dependencia",
+    "dependency",
+    "requirements",
+    "docker",
+    "nginx",
+    "compose",
+    "middleware",
+    "backend/app/core",
+    "ai_gateway",
+    "pii",
+    "segredo",
+    "secret",
+    "migration",
+    "alembic",
+    "produção",
+    "producao",
+    "production",
+)
 
 
 @dataclass(frozen=True, slots=True)
-class PolicyDecision:
-    allowed: bool
-    reason: str
+class DecisaoPolitica:
+    permitido: bool
+    motivo: str
 
 
-def evaluate_task(task: str) -> PolicyDecision:
-    """Reject maintenance prompts that explicitly request protected/destructive actions."""
-    normalized = " ".join(task.lower().split())
-    for fragment in _BLOCKED_FRAGMENTS:
-        if fragment in normalized:
-            return PolicyDecision(
-                allowed=False,
-                reason=f"blocked maintenance action: {fragment}",
+def avaliar_tarefa(tarefa: str) -> DecisaoPolitica:
+    """Bloqueia pedidos que solicitem explicitamente ações protegidas ou destrutivas."""
+    normalizada = " ".join(tarefa.lower().split())
+    for fragmento in _FRAGMENTOS_BLOQUEADOS:
+        if fragmento in normalizada:
+            return DecisaoPolitica(
+                permitido=False,
+                motivo=f"ação de manutenção bloqueada: {fragmento}",
             )
-    return PolicyDecision(allowed=True, reason="task accepted by deterministic policy")
+    return DecisaoPolitica(
+        permitido=True,
+        motivo="tarefa aceita pela política determinística",
+    )
 
 
-def contains_likely_secret(text: str) -> bool:
-    """Detect common high-confidence credential shapes before returning agent output."""
-    return any(pattern.search(text) is not None for pattern in _SECRET_PATTERNS)
+def contem_segredo_provavel(texto: str) -> bool:
+    """Detecta formatos de credenciais com alta confiança antes de devolver a saída do agente."""
+    return any(padrao.search(texto) is not None for padrao in _PADROES_SEGREDO)
 
 
-def is_sensitive_repo_path(path: str) -> bool:
-    """Exclude likely secret-bearing tracked files from the sandbox materialization."""
-    normalized = path.replace("\\", "/").lower()
-    name = normalized.rsplit("/", 1)[-1]
+def caminho_sensivel_repositorio(caminho: str) -> bool:
+    """Exclui do sandbox arquivos rastreados que provavelmente contenham segredos."""
+    normalizado = caminho.replace("\\", "/").lower()
+    nome = normalizado.rsplit("/", 1)[-1]
 
-    if name in _SENSITIVE_FILENAMES:
+    if nome in _ARQUIVOS_SENSIVEIS:
         return True
-    if name.startswith(".env.") and not name.endswith(".example"):
+    if nome.startswith(".env.") and not nome.endswith(".example"):
         return True
-    return name.endswith(_SENSITIVE_SUFFIXES)
+    return nome.endswith(_SUFIXOS_SENSIVEIS)
+
+
+def requer_revisao_seguranca(tarefa: str) -> bool:
+    """Exige handoff de segurança quando a tarefa toca áreas sensíveis do EJC."""
+    normalizada = " ".join(tarefa.lower().split())
+    return any(indicador in normalizada for indicador in _INDICADORES_REVISAO_SEGURANCA)
