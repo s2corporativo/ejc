@@ -77,20 +77,21 @@ def _instalar_resolver_provedores() -> None:
 
 
 def _instalar_resolucao_escopo_rag() -> None:
-    """Compatibiliza o encerramento legado sem aceitar escopo do cliente.
+    """Protege o precedente interno cuja identidade canônica é ``caso:<id>``.
 
-    `cases.encerrar_caso` usa chave `caso:<uuid>` e import local da função; a
-    identidade do caso é, portanto, verificável no servidor. Somente esse padrão
-    canônico pode ser auto-resolvido. Qualquer outra categoria/chave sem client_id
-    continua bloqueada pelo write gate de `ingestion_service`.
+    Para esse padrão, o próprio ``Case`` carregado server-side é a única fonte
+    de verdade do escopo. ``client_id``/``case_id`` ausentes são preenchidos;
+    valores explícitos só são aceitos quando coincidem exatamente com o caso.
+    Caso inexistente, deletado ou sem cliente é recusado antes do upsert — nunca
+    há fallback global nem possibilidade de criar precedente órfão/cross-client.
 
     O precedente do encerramento é memória institucional ACESSÓRIA: uma falha de
     embedding/RAG não pode transformar em HTTP 500 um encerramento juridicamente
-    válido. Depois que o caso canônico foi resolvido e escopado, o upsert roda em
-    SAVEPOINT (`begin_nested`). Se ele falhar, só o trabalho do RAG é revertido;
-    a transação externa do encerramento continua apta a registrar movimento,
-    auditoria e commit. Caso inexistente/deletado/sem cliente NÃO entra nesse
-    caminho tolerante: segue fail-closed no gate normal, sem fallback global.
+    válido. Depois de validar o escopo canônico, o upsert roda em SAVEPOINT
+    (``begin_nested``). Se ele falhar, só o trabalho do RAG é revertido; a
+    transação externa continua apta a registrar movimento, auditoria e commit.
+    Chaves não canônicas permanecem submetidas ao comportamento normal do
+    ``ingestion_service`` e não recebem tolerância ou escopo inventado.
     """
     from app.services import ingestion_service
 
@@ -105,27 +106,37 @@ def _instalar_resolucao_escopo_rag() -> None:
     @functools.wraps(original)
     async def upsert_com_escopo_canonico(db, **kwargs):
         categoria = kwargs.get("categoria")
-        client_id = kwargs.get("client_id")
         chave = str(kwargs.get("chave_origem") or "")
         escopo_canonico_resolvido = False
 
-        if categoria == "precedente_interno" and not client_id and chave.startswith("caso:"):
-            case_id = chave.removeprefix("caso:").strip()
-            if case_id:
-                from app.models.case import Case
-                case = await db.get(Case, case_id)
-                if case is not None and case.deleted_at is None and case.client_id:
-                    kwargs["client_id"] = str(case.client_id)
-                    kwargs["case_id"] = str(case.id)
-                    escopo_canonico_resolvido = True
-                    logger.info(
-                        "Escopo RAG resolvido pelo caso canônico %s para precedente interno",
-                        getattr(case, "numero_interno", None) or case.id,
-                    )
+        if categoria == "precedente_interno" and chave.startswith("caso:"):
+            case_id_chave = chave.removeprefix("caso:").strip()
+            if not case_id_chave:
+                raise ValueError("chave canônica de precedente sem identificador de caso")
+
+            from app.models.case import Case
+
+            case = await db.get(Case, case_id_chave)
+            if case is None or case.deleted_at is not None or not case.client_id:
+                raise ValueError("caso canônico inválido para precedente interno")
+
+            client_id_canonico = str(case.client_id)
+            case_id_canonico = str(case.id)
+            client_id_informado = kwargs.get("client_id")
+            case_id_informado = kwargs.get("case_id")
+
+            if client_id_informado is not None and str(client_id_informado) != client_id_canonico:
+                raise ValueError("client_id divergente do caso canônico")
+            if case_id_informado is not None and str(case_id_informado) != case_id_canonico:
+                raise ValueError("case_id divergente da chave canônica")
+
+            kwargs["client_id"] = client_id_canonico
+            kwargs["case_id"] = case_id_canonico
+            escopo_canonico_resolvido = True
+            logger.info("Escopo RAG canônico resolvido para precedente interno")
 
         if not escopo_canonico_resolvido:
-            # Fail-closed: chave não canônica, caso inexistente/deletado ou sem
-            # cliente continua sujeito ao gate normal de categoria restrita.
+            # Chave não canônica não ganha escopo nem semântica tolerante.
             return await original(db, **kwargs)
 
         try:
@@ -134,10 +145,8 @@ def _instalar_resolucao_escopo_rag() -> None:
             async with db.begin_nested():
                 return await original(db, **kwargs)
         except Exception as exc:
-            # Não logar conteúdo, chave completa, cliente, caso, prompt ou
-            # mensagem bruta da exceção. A trilha técnica precisa apenas da
-            # classe do erro; o encerramento segue e a memória poderá ser
-            # reprocessada posteriormente.
+            # Não logar conteúdo, chave, cliente, caso, prompt ou mensagem bruta
+            # da exceção. A trilha técnica precisa apenas da classe do erro.
             logger.warning(
                 "Precedente interno não persistido no encerramento; "
                 "transação principal preservada (erro=%s)",
