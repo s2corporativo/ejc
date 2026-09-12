@@ -16,13 +16,9 @@ from app.services.ai.core.intent_classifier import (
 # portanto, DEVEM exigir fonte e validar citações. Técnicos e de comunicação
 # ficam de fora por natureza (não citam jurisprudência).
 _AGENTES_NORMATIVOS = {
-    "ConsumerLawAgent", "TaxLawAgent", "SocialSecurityAgent", "CorporateLawAgent",
-    "LaborLawAgent", "CriminalLawAgent", "FamilyLawAgent",
-    "AdministrativeLawAgent", "SuccessionLawAgent", "RealEstateLawAgent",
-    "ConstitutionalLawAgent", "SpecialCourtsAgent", "CivilLawAgent",
-    "TrafficLawAgent", "HealthLawAgent", "MedicalLawAgent", "AgrarianLawAgent",
-    "AgribusinessLawAgent", "ElectoralLawAgent", "InternationalLawAgent",
-    "ContractLawAgent",
+    "ConsumerLawAgent", "TaxLawAgent", "CorporateLawAgent",
+    "LaborLawAgent", "CriminalLawAgent",
+    "AdministrativeLawAgent", "SpecialCourtsAgent", "CivilLawAgent",
     "RAGResearchAgent", "LegalWritingAgent", "JurimetryAgent",
     # I5/B5 (análise E2E 03/09): prazo (CPC/CLT/regimento) e base legal
     # LGPD/OAB são afirmação normativa — exigem fonte e gate de citações.

@@ -58,7 +58,6 @@ BACKEND_SEM_KEY_NO_FRONTEND: set[str] = {
     "ferramentas-ia",    # aba de /inteligencia (?tab=ferramentas)
     "conhecimento",      # aba de /inteligencia (?tab=conhecimento)
     "jurimetria",        # aba de /inteligencia (?tab=jurimetria)
-    "victory-vault",     # consolidado na aba Conhecimento de /inteligencia
     "radar-regulatorio", # modo de /radar (?modo=digest)
     "portal",            # superfície do cliente externo (ver exceção acima)
     # Consolidação 30/08/2026: as páginas /legado/* viraram LEGACY_REDIRECTS

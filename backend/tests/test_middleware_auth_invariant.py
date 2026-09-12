@@ -31,6 +31,25 @@ def test_gestao_data_room_continua_protegida():
     assert _is_publica("/api/data-rooms") is False
 
 
+def test_calendar_feed_assinado_e_publico():
+    # O feed ICS é uma capability URL: o token HMAC no próprio path substitui
+    # JWT somente para a leitura do calendário. Compatibilidade /api/v1 também
+    # precisa continuar sujeita à mesma regra após normalização.
+    token = "a" * 32
+    assert _is_publica(f"/api/calendar/user-123/{token}.ics") is True
+    assert _is_publica(f"/api/v1/calendar/user-123/{token}.ics") is True
+
+
+def test_gestao_calendar_continua_protegida():
+    # A whitelist antiga liberava a subárvore inteira /calendar/, fazendo estas
+    # rotas autenticadas escaparem dos gates globais de senha, 2FA e Portal.
+    assert _is_publica("/api/calendar/me/url") is False
+    assert _is_publica("/api/calendar/me/rotate") is False
+    # Tokens com shape diferente não podem ampliar a exceção pública.
+    assert _is_publica("/api/calendar/user-123/token-curto.ics") is False
+    assert _is_publica("/api/calendar/user-123/" + ("a" * 32) + ".ics/extra") is False
+
+
 def test_routers_nao_autorizam_por_request_state():
     infratores = []
     for arq in _ROUTERS.glob("*.py"):

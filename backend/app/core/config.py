@@ -172,13 +172,16 @@ class Settings(BaseSettings):
     # indisponível e o gateway faz fallback para Groq.
     ANTHROPIC_API_KEY: str = ""
     # Modelos configuráveis sem deploy (via .env).
-    # RAPIDO  = tarefas factuais/médias (Haiku — barato: $1/$5 por 1M tokens).
-    # COMPLEXO = análise estratégica, dossiês, minutas, pesquisa (Opus 4.8 —
-    #            máxima qualidade jurídica: $5/$25 por 1M tokens). Para reduzir
-    #            custo, definir no .env: claude-sonnet-5 ($3/$15, quase Opus)
-    #            ou claude-haiku-4-5-20251001.
-    ANTHROPIC_MODEL_RAPIDO: str = "claude-haiku-4-5-20251001"
-    ANTHROPIC_MODEL_COMPLEXO: str = "claude-opus-4-8"
+    # RAPIDO  = tarefas factuais/médias e conversa livre da Sala Jurídica.
+    #            Sonnet 5 ($2/$10 por 1M tokens): em trabalho jurídico a resposta
+    #            rasa custa mais que o token — Haiku fica como opção de .env.
+    # COMPLEXO = análise estratégica, dossiês, minutas, pesquisa. Opus 5 —
+    #            mesma faixa de preço do Opus 4.8 ($5/$25) com uma geração a
+    #            mais de raciocínio (decisão do titular, 2026-09-05). Para
+    #            reduzir custo, definir no .env: claude-sonnet-5 ou
+    #            claude-haiku-4-5-20251001.
+    ANTHROPIC_MODEL_RAPIDO: str = "claude-sonnet-5"
+    ANTHROPIC_MODEL_COMPLEXO: str = "claude-opus-5"
     # Profundidade de raciocínio nos modelos modernos (Opus 4.7+/Sonnet 5):
     # low | medium | high. "high" = mais rigor em tarefas jurídicas sensíveis.
     ANTHROPIC_EFFORT: str = "high"
@@ -188,7 +191,8 @@ class Settings(BaseSettings):
     ANTHROPIC_TIMEOUT_SECONDS: int = 120
     # Teto DURO de tokens de saída por chamada (controle de custo).
     # Qualquer max_tokens acima disto é rebaixado no provider.
-    ANTHROPIC_MAX_TOKENS: int = 8000
+    # 16000: uma petição inicial complexa não cabe em 8000 (limite antigo).
+    ANTHROPIC_MAX_TOKENS: int = 16000
     # Prompt caching Anthropic: envia o bloco system com
     # cache_control={"type": "ephemeral"} (leituras repetidas do mesmo prefixo
     # custam ~10%). True = comportamento atual; False = system como string pura
@@ -199,12 +203,12 @@ class Settings(BaseSettings):
     # aproveitar o prompt caching), cada uma truncada em
     # AI_CONTEXTO_MAX_CHARS_SECAO e o conjunto em AI_CONTEXTO_MAX_CHARS.
     AI_CONTEXTO_MAX_CHARS_SECAO: int = 6000
-    AI_CONTEXTO_MAX_CHARS: int = 60000
+    AI_CONTEXTO_MAX_CHARS: int = 150000
     # Busca web (verificação ativa) via server-side tool do Anthropic.
     # Padrão de integrações externas do repo: default OFF + degradação graciosa
     # (se a API rejeitar o tool, a chamada repete sem ele). O tool só é anexado
     # no caminho que JÁ passou pela pseudonimização/sanitização do gateway.
-    AI_WEB_SEARCH_ENABLED: bool = False
+    AI_WEB_SEARCH_ENABLED: bool = True
     # Máximo de buscas por chamada (max_uses do tool web_search).
     AI_WEB_SEARCH_MAX_USES: int = 3
     # Preço da busca web Anthropic (server tool web_search), cobrado À PARTE dos
@@ -361,7 +365,11 @@ class Settings(BaseSettings):
     ROTEAMENTO_INTELIGENTE_ENABLED: bool = True
     # Provedor preferido por TIER de complexidade (o roteador só PROPÕE; se
     # inelegível, o gateway ignora e usa a cadeia normal por prioridade).
-    ROTEAMENTO_PROVIDER_LEVE: str = "groq"       # rápido/barato p/ tarefas leves
+    # leve = anthropic (modelo RÁPIDO): a conversa livre da Sala Jurídica cai
+    # neste tier e é onde o erro jurídico nasce — não vai a provedor de
+    # raciocínio inferior (decisão do titular, 2026-09-05). groq segue como
+    # fallback da cadeia se elegível.
+    ROTEAMENTO_PROVIDER_LEVE: str = "anthropic"
     # médio = anthropic: o stack de produção não sobe ollama (compose:
     # OLLAMA_ENABLED=false) — apontar o tier médio para provider morto só gerava
     # tentativa-e-fallback a cada tarefa. O MODELO do tier médio é COMPLEXO
@@ -381,9 +389,14 @@ class Settings(BaseSettings):
     # router (ia_agente.py) sempre documentou. A IA opera como agente (decide →
     # chama ferramenta → lê resultado → decide), reusando o núcleo e TODOS os
     # guardrails (barreira LGPD, RBAC, AILog, gate de citações, HITL).
-    AI_AGENT_ENABLED: bool = False
-    # Teto de PASSOS do loop (nunca infinito).
-    AI_AGENT_MAX_STEPS: int = 8
+    # LIGADO por default desde 2026-09-05 (decisão do titular): HITL retomável
+    # e fail-closed já homologados (AI-030/031); sem Redis nenhuma escrita
+    # executa. Desligar via .env continua possível.
+    AI_AGENT_ENABLED: bool = True
+    # Teto de PASSOS do loop (nunca infinito). 8 não bastava para um ciclo
+    # completo dossiê → precedentes → cronologia → rito → providências → prazo
+    # → OAB → minuta sem nenhuma iteração de correção.
+    AI_AGENT_MAX_STEPS: int = 20
     # Teto de TOKENS acumulados (input+output de TODOS os turnos) por execução do
     # agente. O budget conta o input de CADA turno — que cresce a cada passo,
     # pois o histórico inteiro é reenviado — somado ao output. Um teto baixo
@@ -391,11 +404,11 @@ class Settings(BaseSettings):
     # (achado M3). Elevado para comportar AI_AGENT_MAX_STEPS turnos com folga
     # (piso real de saída por turno × passos + input acumulado). Ajuste fino via
     # .env; o teto DURO por chamada continua em ANTHROPIC_MAX_TOKENS.
-    AI_AGENT_MAX_TOKENS: int = 120000
+    AI_AGENT_MAX_TOKENS: int = 300000
     # Teto de CUSTO (R$) por execução do agente (Sugestão 2). Acumula o custo
     # estimado de cada turno (ai_cost.estimar_custo_brl); ao exceder, o loop
     # encerra com aviso (igual ao teto de tokens). Default conservador.
-    AI_AGENT_MAX_CUSTO_BRL: float = 2.00
+    AI_AGENT_MAX_CUSTO_BRL: float = 15.00
     # TTL (segundos) do estado retomável de HITL no Redis (achado H1). O estado
     # contém a transcrição em ESPAÇO REAL (PII) — fica no VPS (Redis interno),
     # com TTL curto e NUNCA é logado. Curto para minimizar a janela de retenção.
@@ -479,6 +492,33 @@ class Settings(BaseSettings):
     # ao varrer lotes de processos — a consulta avulsa de um único número
     # (consultar_processo/consultar_movimentos) raramente o encosta.
     DATAJUD_RATE_LIMIT_RPS: float = 5.0
+
+    # ── Ajuizamento e integração judicial (núcleo de protocolo) ──────────
+    # Tudo opt-in, default OFF, degradação graciosa. Nenhum conector protocola
+    # sem perfil de tribunal (judicial_integration_profiles) AUTORIZADO +
+    # HOMOLOGADO + endpoint de produção verificado + credencial válida.
+    # Fluxo de ajuizamento (wizard, validação, revisão humana, registro de
+    # protocolo). Desligado → rotas /ajuizamento respondem 503.
+    JUDICIAL_FILING_ENABLED: bool = False
+    # PDPJ-Br / Jus.br — Portal de Serviços (petição inicial). Sem habilitação
+    # institucional (integracaopdpj@cnj.jus.br) o conector fica em
+    # REQUIRES_AUTHORIZATION e nunca faz chamada remota.
+    PDPJ_INTEGRATION_ENABLED: bool = False
+    # Ambiente do SSO Keycloak PDPJ ("homologacao" | "producao") — os endpoints
+    # de token são os documentados oficialmente (services/ajuizamento/
+    # conectores/pdpj.py); nenhum outro host é aceito.
+    PDPJ_ENVIRONMENT: str = "homologacao"
+    # client_id/client_secret emitidos pelo CNJ (client_credentials). O
+    # secret NUNCA sai daqui (não vai para log, resposta nem frontend).
+    PDPJ_CLIENT_ID: str = ""
+    PDPJ_CLIENT_SECRET: str = ""
+    PDPJ_TIMEOUT_SECONDS: float = 20.0
+    # PJe via MNI Client REST (entregarManifestacaoProcessual) — host/versão
+    # vêm do perfil do tribunal; só ativa com perfil homologado.
+    PJE_MNI_ENABLED: bool = False
+    PJE_MNI_TIMEOUT_SECONDS: float = 60.0
+    # eproc — sem API pública documentada; CONDITIONAL por tribunal/perfil.
+    EPROC_INTEGRATION_ENABLED: bool = False
 
     # ── Infosimples — consultas PAGAS a sites públicos (TJMG, Receita…) ──
     # Agregador comercial (https://infosimples.com/consultas/): cada consulta
@@ -930,6 +970,38 @@ class Settings(BaseSettings):
     # Horário DIÁRIO do sync, em UTC ("HH:MM") — mesmo padrão de BACKUP_HORA_UTC.
     # 09:30 UTC = 06:30 BRT (antes do expediente; DataJud atualiza de madrugada).
     DATAJUD_SYNC_HORA_UTC: str = "09:30"
+    # ── Monitor de diários oficiais MUNICIPAIS (Querido Diário) ───────────
+    # Varredura diária dos municípios/termos declarados abaixo; cada achado
+    # entra na base de conhecimento com `rag_status='pendente'` (curadoria
+    # humana decide). Exige também QUERIDO_DIARIO_ENABLED — o job respeita a
+    # flag da integração, não a contorna (services/querido_diario_monitor.py).
+    QUERIDO_DIARIO_MONITOR_ENABLED: bool = False
+    # Códigos IBGE de 7 dígitos, separados por vírgula (ex.: Betim 3106705).
+    QUERIDO_DIARIO_MONITOR_MUNICIPIOS: str = ""
+    # Termos de busca, separados por vírgula. Sem termos o monitor não roda:
+    # varrer diário inteiro sem recorte gera ruído, não informação.
+    QUERIDO_DIARIO_MONITOR_TERMOS: str = ""
+    # Janela retroativa de cada varredura, em dias. 2 cobre feriado/fim de
+    # semana sem depender de o job da véspera ter rodado.
+    QUERIDO_DIARIO_MONITOR_JANELA_DIAS: int = 2
+    # Horário DIÁRIO da varredura em UTC ("HH:MM"). 11:00 UTC = 08:00 BRT,
+    # depois da publicação matinal dos diários municipais.
+    QUERIDO_DIARIO_MONITOR_HORA_UTC: str = "11:00"
+    # RADAR VINCULADO: além dos termos fixos, pesquisa o NOME DO PRÓPRIO
+    # cliente ativo no município dele (derivado de Client.cidade/estado pela
+    # API de localidades do IBGE — exige IBGE_LOCALIDADES_ENABLED).
+    QUERIDO_DIARIO_RADAR_CLIENTES_ENABLED: bool = False
+    # Estende o radar a clientes PESSOA FÍSICA. Interruptor SEPARADO porque
+    # pesquisar o nome de uma PF numa API pública revela a terceiro que ela se
+    # relaciona com o escritório — sigilo profissional (EOAB art. 34, VII).
+    # Razão social de PJ é registro público; nome de PF não é. CPF/CNPJ nunca
+    # são usados como termo de busca, em nenhum dos modos.
+    QUERIDO_DIARIO_RADAR_INCLUI_PF: bool = False
+    # Teto de clientes consultados por execução do radar. Sem teto, o escritório
+    # transfere a base inteira de razões sociais ao agregador todo dia — e o
+    # padrão de consultas reconstrói a carteira do lado de lá, que é, por
+    # acumulação, o mesmo risco que a flag de PF contém caso a caso.
+    QUERIDO_DIARIO_RADAR_MAX_CLIENTES: int = 50
     # Relatório semanal do dono (segunda-feira, e-mail aos sócios/admins) —
     # services/relatorio_dono_service.py.
     RELATORIO_DONO_ENABLED: bool = False
@@ -1056,6 +1128,18 @@ class Settings(BaseSettings):
     ESCRITORIO_OAB: str = "251174"   # só o número; o rótulo "OAB/MG " já é aposto pelos consumidores (timbre PDF/DOCX)
     ESCRITORIO_ENDERECO: str = "Av. Gov. Valadares nº 851, sala 405, Centro, Betim"
     ESCRITORIO_CEP: str = ""
+    # Sócio-titular: OUTORGADO fixo da procuração do escritório (documental.py).
+    # A OAB é a mesma ESCRITORIO_OAB; só o nome é dado próprio da pessoa.
+    ESCRITORIO_SOCIO_TITULAR: str = "JOÃO PEDRO RODRIGUES TEIXEIRA"
+    ESCRITORIO_SITE: str = "https://depaulateixeira.adv.br"
+
+    # Admissão do cliente: procuração + contrato de honorários nascem JUNTO com
+    # o cadastro (decisão do titular — é a base do sistema, não um extra sob
+    # demanda). São rascunhos determinísticos (sem LLM), idempotentes por
+    # cliente e sujeitos aos mesmos gates de revisão do kit manual. Ligado por
+    # padrão; ON/OFF por instalação via .env. Falha na geração NUNCA derruba o
+    # cadastro (degradação graciosa — o cliente é gravado de qualquer forma).
+    CLIENTE_KIT_ADMISSAO_AUTOMATICO: bool = True
 
     def escritorio_oab(self) -> str:
         return (self.ESCRITORIO_OAB or "").strip()

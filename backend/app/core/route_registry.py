@@ -58,7 +58,6 @@ _PARES_SEMANTICOS = (
     ("/teses", "/teses-v4", "Motor de teses com versão paralela."),
     ("/data-rooms", "/data-room-v4", "Data Room com versão paralela."),
     ("/intelligence", "/intelligence-v3", "Inteligência com versão paralela."),
-    ("/diplomacia", "/diplomacia-v3", "Diplomacia jurídica com versão paralela."),
     ("/conhecimento", "/rag", "Conhecimento e RAG historicamente comparados."),
 )
 
@@ -80,7 +79,6 @@ _PARES_DISTINTOS: set[tuple[str, str]] = {
 _PARES_RESOLVIDOS: set[tuple[str, str]] = {
     ("/teses", "/teses-v4"),
     ("/data-rooms", "/data-room-v4"),
-    ("/diplomacia", "/diplomacia-v3"),
     ("/intelligence", "/intelligence-v3"),
 }
 

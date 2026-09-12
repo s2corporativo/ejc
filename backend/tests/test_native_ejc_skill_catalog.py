@@ -32,6 +32,11 @@ EXPECTED_LEGAL_AREAS = {
     "transito",
 }
 
+# Só as áreas com agente dedicado sobrevivem à consolidação 38→8 de
+# 2026-09-06 (escopo definido pelo titular). As demais áreas canônicas
+# (ambiental, família, imobiliário, previdenciário, digital_lgpd, trânsito)
+# continuam com método de ramo/skill nativa em LEGAL_AREA_SPECS — só não têm
+# mais agente de IA dedicado no núcleo (caem no fallback determinístico).
 AREA_AGENTS = {
     "empresarial": "CorporateLawAgent",
     "civil": "CivilLawAgent",
@@ -40,13 +45,7 @@ AREA_AGENTS = {
     "administrativo": "AdministrativeLawAgent",
     "bancario": "BankForensicsAgent",
     "tributario": "TaxLawAgent",
-    "ambiental": "EnvironmentalLawAgent",
     "consumidor": "ConsumerLawAgent",
-    "familia": "FamilyLawAgent",
-    "imobiliario": "RealEstateLawAgent",
-    "previdenciario": "SocialSecurityAgent",
-    "digital_lgpd": "DigitalLGPDAgent",
-    "transito": "TrafficLawAgent",
 }
 
 
@@ -56,8 +55,9 @@ def test_catalogo_cobre_todos_os_ramos_e_modulos() -> None:
     assert set(LEGAL_AREA_SPECS) == EXPECTED_LEGAL_AREAS
     assert set(MODULE_SKILL_SPECS) == module_keys
     assert len(LEGAL_AREA_SPECS) == 14
-    # 34 módulos = 35 anteriores - biblioteca - whatsapp + sala-juridica
-    # (pente fino 2026-07, onda 2 — paridade com o moduleRegistry do frontend).
+    # 34 módulos = 34 (onda 2) - noticias (CORTE-4) - victory-vault (CORTE-3)
+    # + ajuizamento e ajuizamento-perfis (PR #1536) — paridade com o
+    # moduleRegistry do frontend.
     assert len(MODULE_SKILL_SPECS) == 34
     assert len(native_skill_specs()) == 48
 
@@ -187,19 +187,21 @@ def test_empate_de_keywords_nao_escolhe_ramo() -> None:
     assert _best_keyword_match("nada", {"a": ("x",)}) is None
 
 
-def test_roteamento_dedica_ambiental_digital_e_transito() -> None:
-    assert classify_intent("chat", "ambiental", "").agente == "EnvironmentalLawAgent"
-    assert classify_intent("chat", "digital_lgpd", "").agente == "DigitalLGPDAgent"
-    assert classify_intent("chat", "transito", "").agente == "TrafficLawAgent"
+def test_roteamento_de_areas_sem_agente_dedicado_cai_no_fallback() -> None:
+    # EnvironmentalLawAgent/DigitalLGPDAgent/TrafficLawAgent foram retirados na
+    # consolidação 38→8 (2026-09-06, escopo definido pelo titular) — sem
+    # keyword na mensagem, o domain sozinho cai no fallback determinístico.
+    assert classify_intent("chat", "ambiental", "").agente == "CaseAgent"
+    assert classify_intent("chat", "digital_lgpd", "").agente == "CaseAgent"
+    assert classify_intent("chat", "transito", "").agente == "CaseAgent"
     assert classify_intent("modulo", None, "Abrir o módulo").agente == "EJCCoordinatorAgent"
 
 
 def test_rota_compartilhada_resolve_para_modulo_canonico() -> None:
-    """Regressão da onda 2: conhecimento e victory-vault compartilham a rota
-    /inteligencia?tab=conhecimento — o alias de rota deve resolver para o
-    módulo CANÔNICO (primeiro no MODULE_REGISTRY), nunca para o carona."""
+    """Regressão da onda 2 (victory-vault removido em 2026-09-05, CORTE-3): a
+    rota /inteligencia?tab=conhecimento resolve para o módulo CANÔNICO."""
     from app.services.ai.core.ejc_skill_catalog import MODULE_ALIASES, _normalize
 
     assert MODULE_ALIASES[_normalize("/inteligencia?tab=conhecimento")] == "conhecimento"
     # Chaves e nomes continuam resolvendo para si mesmos.
-    assert MODULE_ALIASES["victory_vault"] == "victory-vault"
+    assert MODULE_ALIASES["conhecimento"] == "conhecimento"

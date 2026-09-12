@@ -11,7 +11,6 @@ import {
   FileText,
   Gavel,
   ListTodo,
-  Newspaper,
   Scale,
   Send,
   ShieldCheck,
@@ -67,14 +66,6 @@ interface ClientItem {
   email?: string;
   telefone?: string;
   whatsapp?: string;
-}
-
-interface NewsItem {
-  titulo?: string;
-  resumo?: string;
-  fonte?: string;
-  data?: string;
-  link?: string;
 }
 
 interface DefesasMeta {
@@ -170,16 +161,6 @@ function isFinalActivity(status?: string) {
   return FINAL_ACTIVITY_STATUSES.has((status || "").toLowerCase());
 }
 
-function formatNewsDate(value?: string) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    month: "short",
-  }).format(date);
-}
-
 function isTask(item: ActivityItem) {
   return item.tipo === "tarefa" || item.fonte === "tarefa";
 }
@@ -257,7 +238,6 @@ export default function DashboardUltra() {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [agendaEvents, setAgendaEvents] = useState<AgendaEvent[]>([]);
   const [clients, setClients] = useState<ClientItem[]>([]);
-  const [news, setNews] = useState<NewsItem[]>([]);
   const [defesasMeta, setDefesasMeta] = useState<DefesasMeta | null>(null);
   const [taskTab, setTaskTab] = useState<"tarefas" | "intimacoes">("tarefas");
   const [quickQuestion, setQuickQuestion] = useState("");
@@ -267,7 +247,6 @@ export default function DashboardUltra() {
     activities: false,
     agenda: false,
     clients: false,
-    news: false,
   });
 
   useEffect(() => {
@@ -279,7 +258,6 @@ export default function DashboardUltra() {
       api.get("/atividades", { params: { apenas_pendentes: false } }),
       api.get("/agenda-eventos/", { params: { page_size: 500 } }),
       api.get("/clients/?page_size=4&status=ativo"),
-      api.get("/noticias?limit=4"),
       api.get("/defesas-revisoes/meta"),
     ])
       .then(
@@ -288,7 +266,6 @@ export default function DashboardUltra() {
           activitiesResult,
           agendaResult,
           clientsResult,
-          newsResult,
           defesasResult,
         ]) => {
           if (!active) return;
@@ -298,7 +275,6 @@ export default function DashboardUltra() {
             activities: activitiesResult.status === "rejected",
             agenda: agendaResult.status === "rejected",
             clients: clientsResult.status === "rejected",
-            news: newsResult.status === "rejected",
           });
 
           if (dashboardResult.status === "fulfilled")
@@ -309,12 +285,6 @@ export default function DashboardUltra() {
             setAgendaEvents(asList(agendaResult.value.data));
           if (clientsResult.status === "fulfilled")
             setClients(asList<ClientItem>(clientsResult.value.data));
-          if (newsResult.status === "fulfilled")
-            setNews(
-              asList<NewsItem>(
-                newsResult.value.data?.itens ?? newsResult.value.data,
-              ),
-            );
           if (defesasResult.status === "fulfilled")
             setDefesasMeta(defesasResult.value.data);
         },
@@ -879,55 +849,6 @@ export default function DashboardUltra() {
           )}
         </Card>
 
-        <Card
-          title="Últimas Notícias Jurídicas"
-          icon={Newspaper}
-          action={<MoreLink to="/noticias">Ver todas</MoreLink>}
-        >
-          {loading ? (
-            <Empty>Carregando notícias…</Empty>
-          ) : failed.news ? (
-            <Empty>Notícias temporariamente indisponíveis.</Empty>
-          ) : news.length === 0 ? (
-            <Empty>Nenhuma notícia disponível no momento.</Empty>
-          ) : (
-            news.slice(0, 4).map((item, index) => {
-              const content = (
-                <>
-                  <span>
-                    <Newspaper aria-hidden="true" />
-                  </span>
-                  <span>
-                    <strong>{item.titulo || "Atualização jurídica"}</strong>
-                    <small>
-                      {item.resumo || "Abra para consultar a fonte de origem."}
-                    </small>
-                  </span>
-                  <em>{item.fonte || "Fonte"}</em>
-                  <time>{formatNewsDate(item.data)}</time>
-                </>
-              );
-              return item.link ? (
-                <a
-                  key={`${item.link}-${index}`}
-                  href={item.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="ejc-reference-news-row"
-                >
-                  {content}
-                </a>
-              ) : (
-                <div
-                  key={`${item.titulo}-${index}`}
-                  className="ejc-reference-news-row"
-                >
-                  {content}
-                </div>
-              );
-            })
-          )}
-        </Card>
       </div>
 
       <footer className="ejc-reference-footer">

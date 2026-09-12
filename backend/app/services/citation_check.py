@@ -28,6 +28,9 @@ async def _existe_sumula(db, num: str, orgao: str) -> str | None:
     )
     row = (
         await db.execute(
+            # SQL literal com bind params; a regra marca todo text(), sem olhar
+            # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             text(
                 "SELECT kd.titulo FROM knowledge_docs kd "
                 "WHERE kd.deleted_at IS NULL AND kd.vigente = TRUE "
@@ -48,6 +51,9 @@ async def _existe_sumula(db, num: str, orgao: str) -> str | None:
         params["org"] = orgao_norm.upper()
     row = (
         await db.execute(
+            # SQL literal com bind params; a regra marca todo text(), sem olhar
+            # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             text(
                 "SELECT kd.titulo FROM knowledge_docs kd "
                 "WHERE kd.deleted_at IS NULL AND kd.vigente = TRUE "
@@ -189,6 +195,9 @@ async def _fonte_artigo(
     vigencia_sql = "TRUE" if vigente else "FALSE"
     row = (
         await db.execute(
+            # SQL literal com bind params; a regra marca todo text(), sem olhar
+            # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             text(
                 "SELECT kd.id, kd.titulo, kd.chave_origem, kd.versao, "
                 "kd.vigente, kd.fonte FROM knowledge_chunks kc "
@@ -224,6 +233,9 @@ async def _sumula_superada(db, num: str, orgao: str) -> dict | None:
     )
     row = (
         await db.execute(
+            # SQL literal com bind params; a regra marca todo text(), sem olhar
+            # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             text(
                 "SELECT kd.titulo, kd.versao FROM knowledge_docs kd "
                 "WHERE kd.deleted_at IS NULL AND kd.vigente = FALSE "

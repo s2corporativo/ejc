@@ -203,7 +203,7 @@ def _montar_prompt(dados: dict, rag: list[dict]) -> str:
         "REGRAS: não invente fatos, julgados ou artigos; cite [Fonte N] para material da base; "
         "nunca prometa resultado ('vai ganhar'/'garantido').",
         "Formate em Markdown claro e profissional.",
-        "IMPORTANTE: Este é um RASCUNHO para revisão humana obrigatória antes de uso (Provimento OAB 205/2021).",
+        "IMPORTANTE: Este é um RASCUNHO para revisão humana obrigatória antes de uso.",
     ]
     return "\n".join(linhas)
 

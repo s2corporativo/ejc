@@ -40,6 +40,19 @@ _LOGO_CANDIDATOS = (
 
 
 @lru_cache(maxsize=1)
+def logo_path() -> Path | None:
+    """Caminho do arquivo da logo, ou ``None`` se nenhum candidato existir.
+
+    Existe para consumidores que precisam do ARQUIVO e não do data URI — o
+    DOCX (python-docx) insere imagem por caminho/stream, não por base64.
+    """
+    for caminho in _LOGO_CANDIDATOS:
+        if caminho.is_file():
+            return caminho
+    return None
+
+
+@lru_cache(maxsize=1)
 def logo_data_uri() -> str:
     """Logo De Paula Teixeira como data URI base64 (lazy, cache em memória)."""
     for caminho in _LOGO_CANDIDATOS:

@@ -249,7 +249,12 @@ async def pesquisar_por_questao(db, case_id: str, issue: LegalIssue) -> list[Aut
     NÃO commita (o orquestrador montar_matriz commita ao final).
     """
     query = f"{issue.area or ''} {issue.questao}".strip()
-    fontes = await buscar_contexto_rag(db, query, limite=RAG_LIMITE_POR_QUESTAO)
+    from app.services.ai_service import _escopo_cliente_do_caso
+    scope_client_id = await _escopo_cliente_do_caso(db, case_id)
+    fontes = await buscar_contexto_rag(
+        db, query, limite=RAG_LIMITE_POR_QUESTAO,
+        scope_client_id=scope_client_id, scope_case_id=case_id,
+    )
     records: list[AuthorityRecord] = []
     for f in fontes or []:
         trecho = (f.get("conteudo") or "").strip()
