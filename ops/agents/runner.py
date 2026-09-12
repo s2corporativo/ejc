@@ -121,6 +121,7 @@ def build_agent(snapshot_source: Path, model: str) -> SandboxAgent[None]:
             "creep, regression risk, missing tests, security/LGPD exposure, and violations of "
             "repository governance. Do not request deployment and do not invent test results."
         ),
+        output_guardrails=[maintenance_output_guardrail],
     )
 
     security_reviewer = Agent(
@@ -136,6 +137,7 @@ def build_agent(snapshot_source: Path, model: str) -> SandboxAgent[None]:
             "required validations, residual risks, and whether the change is safe to keep in PR. "
             "Never authorize production deployment yourself."
         ),
+        output_guardrails=[maintenance_output_guardrail],
     )
 
     security_handoff = handoff(
@@ -236,12 +238,14 @@ def main() -> int:
     if not args.model:
         parser.error("set --model or OPENAI_AGENTS_MODEL")
     if not os.getenv("OPENAI_API_KEY"):
-        parser.error("OPENAI_API_KEY is required by the host runner and is not passed to the sandbox")
+        parser.error(
+            "OPENAI_API_KEY is required by the host runner and is not passed to the sandbox"
+        )
 
     try:
         output = asyncio.run(run_task(args.task, Path(args.repo), args.model))
-    except InputGuardrailTripwireTriggered as exc:
-        print(f"BLOCKED_BY_INPUT_GUARDRAIL: {exc.guardrail_result.output.output_info}")
+    except InputGuardrailTripwireTriggered:
+        print("BLOCKED_BY_INPUT_GUARDRAIL: task requested a protected/destructive action")
         return 2
     except OutputGuardrailTripwireTriggered:
         print("BLOCKED_BY_OUTPUT_GUARDRAIL: candidate output matched a credential pattern")
