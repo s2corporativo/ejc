@@ -180,7 +180,9 @@ class VereditoIA:
             consulta = f"{area_juridica} {tese_limpa}"[:400]
             chunks = await buscar_contexto_rag(
                 db, consulta, limite=5, categorias=_CATS_JURISPRUDENCIA,
-                modo_or=True, scope_client_id=escopo_cli)
+                modo_or=True, scope_client_id=escopo_cli,
+                scope_case_id=case_id,
+            )
             jurisprudencia = [
                 JurisprudenciaSuporte(
                     id=str(c.get("chunk_id") or i),

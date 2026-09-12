@@ -148,7 +148,10 @@ async def executar_ia(
     if req.usar_rag:
         try:
             from app.services.ai_service import buscar_contexto_rag
-            ctx = await buscar_contexto_rag(db, mensagem_limpa, limite=5, scope_client_id=escopo_cli)
+            ctx = await buscar_contexto_rag(
+                db, mensagem_limpa, limite=5,
+                scope_client_id=escopo_cli, scope_case_id=req.case_id,
+            )
             contexto_rag = [str(c.get("conteudo") or "") for c in (ctx or []) if c.get("conteudo")]
         except Exception:
             contexto_rag = None

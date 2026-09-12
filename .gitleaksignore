@@ -1,22 +1,3 @@
-# Falsos positivos verificados do gitleaks (passo secret-scanning do CI).
-# Cada linha é o fingerprint de UM achado já conferido: comentário de
-# documentação, exemplo de `curl -u`, string de rota/seed ou a APIKey PÚBLICA
-# que o CNJ divulga na wiki oficial do DataJud (scripts/probe_apis.py). Nenhum
-# é credencial do escritório. Ignora só estes achados — qualquer segredo novo
-# continua reprovando a pipeline.
-b063ab2490f7deb4601ad447a3320aadace3f913:.claude/skills/arquiteto-automacao-n8n/SKILL.md:curl-auth-user:264
-b063ab2490f7deb4601ad447a3320aadace3f913:.claude/skills/arquiteto-automacao-n8n/SKILL.md:curl-auth-user:267
-b063ab2490f7deb4601ad447a3320aadace3f913:.claude/skills/arquiteto-automacao-n8n/SKILL.md:curl-auth-user:271
-b063ab2490f7deb4601ad447a3320aadace3f913:.claude/skills/integrador-apis-externas-ejc/SKILL.md:generic-api-key:35
-b063ab2490f7deb4601ad447a3320aadace3f913:.env.example:generic-api-key:600
-b063ab2490f7deb4601ad447a3320aadace3f913:backend/app/seeds/redesign_seed.py:generic-api-key:181
-b063ab2490f7deb4601ad447a3320aadace3f913:frontend/src/config/moduleRegistry.tsx:generic-api-key:187
-b063ab2490f7deb4601ad447a3320aadace3f913:scripts/probe_apis.py:generic-api-key:17
-ed6b4f21974f0bb8dde33690e3ab27199c773cba:.claude/skills/arquiteto-automacao-n8n/SKILL.md:curl-auth-user:264
-ed6b4f21974f0bb8dde33690e3ab27199c773cba:.claude/skills/arquiteto-automacao-n8n/SKILL.md:curl-auth-user:267
-ed6b4f21974f0bb8dde33690e3ab27199c773cba:.claude/skills/arquiteto-automacao-n8n/SKILL.md:curl-auth-user:271
-ed6b4f21974f0bb8dde33690e3ab27199c773cba:.claude/skills/integrador-apis-externas-ejc/SKILL.md:generic-api-key:35
-ed6b4f21974f0bb8dde33690e3ab27199c773cba:.env.example:generic-api-key:595
-ed6b4f21974f0bb8dde33690e3ab27199c773cba:backend/app/seeds/redesign_seed.py:generic-api-key:181
-ed6b4f21974f0bb8dde33690e3ab27199c773cba:frontend/src/config/moduleRegistry.tsx:generic-api-key:187
-ed6b4f21974f0bb8dde33690e3ab27199c773cba:scripts/probe_apis.py:generic-api-key:17
+# Fingerprints SHA-dependentes aposentados em 2026-09-07.
+# O CI usa gitleaks dir sobre o checkout atual; falsos positivos inevitáveis
+# devem usar gitleaks:allow somente na linha semântica verificada.

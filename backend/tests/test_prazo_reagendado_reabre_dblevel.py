@@ -28,12 +28,13 @@ Postgres obrigatório, como nos demais `*_dblevel.py`. Sem RUN_DB_TESTS=1, pula
 from __future__ import annotations
 
 import os
-from datetime import date, timedelta
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import select, text
 
+from app.core.clock import hoje_operacional
 from app.core.database import AsyncSessionLocal
 from app.models.deadline import Deadline
 from app.routers.deadlines import atualizar
@@ -44,9 +45,9 @@ pytestmark = pytest.mark.skipif(
     reason="requer Postgres com migrations (defina RUN_DB_TESTS=1)",
 )
 
-HOJE = date.today()
-FUTURO = HOJE + timedelta(days=10)
-PASSADO = HOJE - timedelta(days=10)
+def _datas_referencia():
+    hoje = hoje_operacional()
+    return hoje, hoje + timedelta(days=10), hoje - timedelta(days=10)
 
 
 async def _criar_user(db, role: str = "advogado") -> str:
@@ -111,12 +112,12 @@ async def test_reagendar_vencido_para_o_futuro_reabre_como_pendente():
     """O caso do achado: só `data_prazo` no corpo, como a tela manda."""
     async with AsyncSessionLocal() as db:
         adv = await _criar_user(db)
-        did = await _criar_deadline(db, resp_id=adv, data_prazo=PASSADO,
+        did = await _criar_deadline(db, resp_id=adv, data_prazo=_datas_referencia()[2],
                                     status="vencido")
         await db.commit()
         try:
             cu = await _carregar_user(db, adv)
-            out = await atualizar(did, DeadlineUpdate(data_prazo=FUTURO),
+            out = await atualizar(did, DeadlineUpdate(data_prazo=_datas_referencia()[1]),
                                   db=db, cu=cu)
 
             assert out.status == "pendente", (
@@ -136,11 +137,11 @@ async def test_reagendar_para_hoje_tambem_reabre():
     """Fronteira: o job usa `data_prazo < hoje`, então hoje não é vencido."""
     async with AsyncSessionLocal() as db:
         adv = await _criar_user(db)
-        did = await _criar_deadline(db, resp_id=adv, data_prazo=PASSADO,
+        did = await _criar_deadline(db, resp_id=adv, data_prazo=_datas_referencia()[2],
                                     status="vencido")
         await db.commit()
         try:
-            out = await atualizar(did, DeadlineUpdate(data_prazo=HOJE),
+            out = await atualizar(did, DeadlineUpdate(data_prazo=_datas_referencia()[0]),
                                   db=db, cu=await _carregar_user(db, adv))
             assert out.status == "pendente"
         finally:
@@ -151,12 +152,12 @@ async def test_reagendar_para_o_passado_nao_reabre():
     """Continua vencido — mudou a data, não deixou de ter vencido."""
     async with AsyncSessionLocal() as db:
         adv = await _criar_user(db)
-        did = await _criar_deadline(db, resp_id=adv, data_prazo=PASSADO,
+        did = await _criar_deadline(db, resp_id=adv, data_prazo=_datas_referencia()[2],
                                     status="vencido")
         await db.commit()
         try:
             out = await atualizar(
-                did, DeadlineUpdate(data_prazo=HOJE - timedelta(days=3)),
+                did, DeadlineUpdate(data_prazo=_datas_referencia()[0] - timedelta(days=3)),
                 db=db, cu=await _carregar_user(db, adv))
             assert out.status == "vencido"
             async with AsyncSessionLocal() as db2:
@@ -172,11 +173,11 @@ async def test_concluido_e_cancelado_nunca_sao_reabertos_por_troca_de_data(
     """Trocar a data de um prazo encerrado não pode ressuscitá-lo."""
     async with AsyncSessionLocal() as db:
         adv = await _criar_user(db)
-        did = await _criar_deadline(db, resp_id=adv, data_prazo=PASSADO,
+        did = await _criar_deadline(db, resp_id=adv, data_prazo=_datas_referencia()[2],
                                     status=status_final)
         await db.commit()
         try:
-            out = await atualizar(did, DeadlineUpdate(data_prazo=FUTURO),
+            out = await atualizar(did, DeadlineUpdate(data_prazo=_datas_referencia()[1]),
                                   db=db, cu=await _carregar_user(db, adv))
             assert out.status == status_final
         finally:
@@ -187,12 +188,12 @@ async def test_status_explicito_na_mesma_chamada_tem_precedencia():
     """Quem manda status junto com a data está dizendo o que quer."""
     async with AsyncSessionLocal() as db:
         adv = await _criar_user(db)
-        did = await _criar_deadline(db, resp_id=adv, data_prazo=PASSADO,
+        did = await _criar_deadline(db, resp_id=adv, data_prazo=_datas_referencia()[2],
                                     status="vencido")
         await db.commit()
         try:
             out = await atualizar(
-                did, DeadlineUpdate(data_prazo=FUTURO, status="vencido"),
+                did, DeadlineUpdate(data_prazo=_datas_referencia()[1], status="vencido"),
                 db=db, cu=await _carregar_user(db, adv))
             assert out.status == "vencido", (
                 "status explícito no payload foi sobrescrito pela reabertura"

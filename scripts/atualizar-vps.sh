@@ -16,6 +16,10 @@
 #      e espera o healthcheck de verdade
 #   8. smoke test final (migrations, /api/health, frontend HTTP 200)
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=legacy_script_guard.sh
+source "$SCRIPT_DIR/legacy_script_guard.sh"
+ejc_legacy_script_guard "scripts/atualizar-vps.sh" "/opt/s2-automation/host/ejc-deploy-approved.sh"
 cd /opt/ejc
 
 log() { printf '\n===== %s =====\n' "$*"; }
