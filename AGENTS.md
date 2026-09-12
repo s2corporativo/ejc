@@ -12,6 +12,21 @@ Para tarefas conduzidas por Antigravity, Codex ou Claude, consulte também
 `docs/ia/README.md`, `docs/ia/PROBLEMAS_CONHECIDOS.md`, `docs/ia/VALIDACOES_IDE.md` e o
 modelo aplicável em `docs/ia/tarefas/` antes da primeira escrita.
 
+## Contrato de execução permanente
+
+- Trate toda tarefa com rigor de produção: o sistema pode sustentar operação jurídica real, dados reais e rotinas críticas.
+- Preserve a arquitetura e o comportamento existente, salvo autorização explícita e documentada.
+- Não crie módulos, serviços, rotas, integrações ou fluxos paralelos quando já existir capacidade equivalente.
+- Antes de alterar, mapeie a implementação atual, dependências, rotas, banco, migrations, testes e regras de autorização.
+- Não faça refatorações fora do escopo da tarefa.
+- Não altere migrations já aplicadas; toda migration nova deve ser aditiva, salvo autorização expressa com rollback.
+- Não use dados pessoais reais, documentos reais, dados processuais reais ou dados de clientes em testes, logs, seeds ou documentação.
+- Não altere produção diretamente.
+- Não faça deploy enquanto todos os gates definidos não estiverem verdes.
+- Cada mudança de comportamento deve possuir teste de regressão quando tecnicamente possível.
+- Antes de concluir, execute typecheck, lint, testes unitários, integração quando aplicável, security scan e build, conforme o risco do diff.
+- Não declare tarefa concluída sem evidência objetiva.
+
 ## Modos de trabalho
 
 - **Somente leitura**: começa sem Issue e sem branch; pode ler tudo (inclusive arquivos de

@@ -6,6 +6,7 @@ Use esta regra em tarefas de codigo do EJC.
 
 - Responda em portugues do Brasil.
 - Trabalhe como engenheiro senior: leia antes, diagnostique, altere pouco, valide e revise o diff.
+- Siga o Contrato de Execucao Permanente em `AGENTS.md`.
 - Priorize causa raiz, seguranca, sigilo juridico, LGPD e continuidade operacional.
 - Nao invente dados juridicos, prazos, andamentos, documentos, valores, status ou resultados de teste.
 - Preserve autenticacao, autorizacao por perfil, documentos, dados processuais e logs sem dados sensiveis.
