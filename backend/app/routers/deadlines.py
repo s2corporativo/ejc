@@ -14,6 +14,7 @@ from fastapi.responses import Response
 from sqlalchemy import func as sqlfunc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clock import hoje_operacional
 from app.core.database import get_db
 from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.core.security import get_current_user, requer_advogado
@@ -247,12 +248,6 @@ async def calcular(req: CalcularPrazoRequest, cu: User = Depends(get_current_use
             req.data_inicio, req.dias, tribunal=req.tribunal
         )
         modo = "dias corridos c/ prorrogação do termo final (Lei 9.784 art. 66 §1º)"
-    # O prazo administrativo usa as MESMAS funções de dia útil e os MESMOS
-    # feriados do banco que o processual — então degrada pelos mesmos motivos.
-    # Antes estes três campos eram fixos (`False`/`False`/`None`): com a carga
-    # de feriados falha, o prazo saía carimbado como DEFINITIVO sem os feriados
-    # municipais, e ninguém era avisado. Mesma classe de defeito que este PR já
-    # corrigiu em calcular_prazo_processual; agora ambos leem a fonte única.
     degradado, aviso = estado_degradacao(req.tribunal)
     return {
         "data_vencimento": vencimento,
@@ -295,7 +290,7 @@ async def listar(
         q.offset((page - 1) * page_size).limit(page_size)
     )).scalars().all()
 
-    hoje = date.today()
+    hoje = hoje_operacional()
     data = []
     for d in rows:
         item = DeadlineResponse.model_validate(d).model_dump()
@@ -334,7 +329,7 @@ async def exportar_csv(
         logger.warning("[export.csv] resultado truncado em %d linhas", _MAX_EXPORT)
 
     return Response(
-        content=_prazos_para_csv(rows, date.today()),
+        content=_prazos_para_csv(rows, hoje_operacional()),
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="prazos.csv"'},
     )
@@ -512,24 +507,11 @@ async def atualizar(
     for k, v in mudancas.items():
         setattr(d, k, v)
 
-    # Reagendar para o futuro devolve o prazo a 'pendente' (achado 29, 22/08).
-    # `exclude_unset` faz o PATCH aplicar só o que veio: `CentralAtividades`
-    # reagenda mandando SÓ `data_prazo`, então o status 'vencido' escrito pelo
-    # job das 07:10 (`scheduler._marcar_prazos_vencidos`) sobrevivia à mudança e
-    # o prazo aparecia como vencido com data futura. É a regra inversa do job —
-    # ele faz pendente→vencido quando a data passa; aqui é vencido→pendente
-    # quando a data volta para frente. Sem isso, a aba "Vencidos" mostrava
-    # prazo que não venceu, e o painel (que conta por DATA) discordava da
-    # listagem (que filtra por STATUS) sobre o mesmo prazo.
-    #
-    # Só toca o par (vencido → data futura): status definido explicitamente
-    # nesta chamada manda, e 'concluido'/'cancelado' nunca são reabertos por
-    # uma troca de data.
     if (
         "data_prazo" in mudancas
         and "status" not in mudancas
         and getattr(d.status, "value", d.status) == "vencido"
-        and d.data_prazo >= date.today()
+        and d.data_prazo >= hoje_operacional()
     ):
         d.status = "pendente"
         await criar_audit_log(
