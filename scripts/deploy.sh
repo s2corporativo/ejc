@@ -2,6 +2,10 @@
 # ── EJC v3.0 — Deploy no Contabo VPS (Ubuntu 22/24) ──────────────────────────
 # Uso: bash scripts/deploy.sh
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=legacy_script_guard.sh
+source "$SCRIPT_DIR/legacy_script_guard.sh"
+ejc_legacy_script_guard "scripts/deploy.sh" "/opt/s2-automation/host/ejc-deploy-approved.sh"
 
 echo "═══ EJC v3.0 — Deploy ═══"
 

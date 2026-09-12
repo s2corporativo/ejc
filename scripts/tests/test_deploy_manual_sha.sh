@@ -19,4 +19,6 @@ ejc_sha_confere "$HEAD" "094E3D8A"   && ok "prefixo maiúsculo"    || fail "pref
 ! ejc_sha_confere "$HEAD" "${HEAD}00" && ok "mais de 40 reprova"  || fail "mais de 40 reprova"
 bash -n "$ROOT/scripts/deploy_manual.sh" && ok "deploy_manual.sh sintaxe" || fail "deploy_manual.sh sintaxe"
 grep -q 'ejc_sha_confere "$head_local" "$TARGET_SHA"' "$ROOT/scripts/deploy_manual.sh" && ok "pré-voo usa a função" || fail "pré-voo usa a função"
+grep -q 'origin_main_sha=' "$ROOT/scripts/deploy_manual.sh" && ok "manual exige origin/main" || fail "manual não exige origin/main"
+grep -q '"$WOODPECKER_GATE" "$REPO_FULL_NAME" "$TARGET_SHA"' "$ROOT/scripts/deploy_manual.sh" && ok "manual exige gate Woodpecker" || fail "manual não exige gate Woodpecker"
 exit $falhas

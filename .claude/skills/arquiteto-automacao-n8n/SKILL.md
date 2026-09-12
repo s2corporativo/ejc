@@ -261,15 +261,15 @@ N8N_ENCRYPTION_KEY=CHAVE_ALEATORIA_32_CHARS
 
 ```bash
 # Backup workflows
-curl -u admin:senha http://localhost:5678/api/v1/workflows > workflows_backup.json
+curl -u ${N8N_USER}:${N8N_PASSWORD} http://localhost:5678/api/v1/workflows > workflows_backup.json
 
 # Restaurar workflow
-curl -u admin:senha -X POST http://localhost:5678/api/v1/workflows \
+curl -u ${N8N_USER}:${N8N_PASSWORD} -X POST http://localhost:5678/api/v1/workflows \
   -H "Content-Type: application/json" -d @workflow.json
 
 # Health check
 curl http://localhost:5678/healthz
 
 # Ver execuções recentes
-curl -u admin:senha http://localhost:5678/api/v1/executions?limit=10
+curl -u ${N8N_USER}:${N8N_PASSWORD} http://localhost:5678/api/v1/executions?limit=10
 ```

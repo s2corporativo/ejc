@@ -724,7 +724,10 @@ async def assistente_estrategico(
     # (Bloco 5): caso já validado por ownership acima → conteúdo restrito do
     # próprio cliente é recuperável; de outros clientes, nunca.
     consulta_rag = f"{getattr(caso.area, 'value', '')} {caso.titulo or ''}"
-    fontes = await buscar_contexto_rag(db, consulta_rag[:300], limite=4, scope_client_id=caso.client_id)
+    fontes = await buscar_contexto_rag(
+        db, consulta_rag[:300], limite=4,
+        scope_client_id=caso.client_id, scope_case_id=case_id,
+    )
     rag_txt = ""
     if fontes:
         linhas = [f"[Fonte {i+1}] {f['titulo']} ({f['categoria']})\n{f['conteudo'][:500]}"
@@ -1048,7 +1051,10 @@ async def motor_estrategia(
     dossie = await montar_dossie(db, case_id, incluir_pecas=False, sanitizar=True)
     dossie_txt = dossie["texto"] if dossie else f"Caso {case_id}."
 
-    fontes = await buscar_contexto_rag(db, f"{getattr(caso.area, 'value', '')} estrategia litigiosa", limite=3, scope_client_id=caso.client_id)
+    fontes = await buscar_contexto_rag(
+        db, f"{getattr(caso.area, 'value', '')} estrategia litigiosa", limite=3,
+        scope_client_id=caso.client_id, scope_case_id=case_id,
+    )
     rag_txt = ""
     if fontes:
         rag_txt = "\n[JURISPRUDÊNCIA RELEVANTE]\n" + "\n".join(
