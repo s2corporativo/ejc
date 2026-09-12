@@ -153,3 +153,55 @@ async def test_listar_partes_caso_sem_responsavel_so_gestao():
             assert exc.value.status_code == 403
         finally:
             await _limpar(db, case_ids=[caso], user_ids=[adv, socio], client_ids=[cli])
+
+
+async def test_db03_criar_parte_cifra_em_repouso_e_busca_por_hmac():
+    """Fase A: nova gravação não deixa CPF/e-mail/telefone em plaintext."""
+    from starlette.requests import Request
+    from app.core.database import AsyncSessionLocal
+    from app.routers.case_partes import ParteCreate, criar_parte, listar_partes
+    from app.routers.search import busca_global
+
+    async with AsyncSessionLocal() as db:
+        uid = await _criar_user(db, "advogado")
+        cli = await _criar_cliente(db, "Cliente DB03 cifrado")
+        caso = await _criar_caso(db, cli, "Caso DB03 cifrado", resp_id=uid)
+        await db.commit()
+        cu = await _carregar_user(db, uid)
+        body = ParteCreate(
+            tipo="autor", nome="Pessoa Fictícia DB03",
+            cpf_cnpj="153.509.460-56",
+            email="pessoa@example.test", telefone="(31) 99999-9999",
+        )
+        try:
+            criado = await criar_parte(caso, body, db, cu)
+            row = (await db.execute(text(
+                "SELECT cpf_cnpj, cpf_cnpj_enc, cpf_cnpj_hash, email, email_enc, "
+                "telefone, telefone_enc FROM case_partes WHERE id = :id"
+            ), {"id": criado["id"]})).mappings().one()
+            assert row["cpf_cnpj"] is None and row["email"] is None and row["telefone"] is None
+            assert row["cpf_cnpj_enc"] and row["cpf_cnpj_hash"]
+            assert row["email_enc"] and row["telefone_enc"]
+
+            partes = await listar_partes(caso, db, cu)
+            assert partes[0]["cpf_cnpj"] == "153.509.460-56"
+            assert partes[0]["email"] == "pessoa@example.test"
+            assert partes[0]["telefone"] == "(31) 99999-9999"
+
+            req = Request({
+                "type": "http", "method": "GET", "path": "/search", "headers": [],
+                "query_string": b"", "client": ("127.0.0.1", 50158),
+                "server": ("testserver", 80), "scheme": "http",
+            })
+            busca = await busca_global(
+                request=req, q="15350946056", tipo="cpf", limit=6, db=db, cu=cu,
+            )
+            assert any(r.get("id") == caso for r in busca["resultados"])
+
+            with pytest.raises(HTTPException) as exc:
+                await criar_parte(caso, body, db, cu)
+            assert exc.value.status_code == 409
+        finally:
+            await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
+            await db.execute(text("DELETE FROM audit_logs WHERE user_id = :id"), {"id": uid})
+            await _limpar(db, case_ids=[caso], user_ids=[uid], client_ids=[cli])

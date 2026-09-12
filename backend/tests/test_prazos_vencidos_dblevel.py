@@ -17,12 +17,13 @@ de conclusão só passa com a migration aplicada.
 from __future__ import annotations
 
 import os
-from datetime import date, timedelta
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import select, text
 
+from app.core.clock import hoje_operacional
 from app.models.deadline import Deadline
 
 pytestmark = pytest.mark.skipif(
@@ -98,7 +99,7 @@ async def test_marcar_prazos_vencidos_transiciona_e_alerta_uma_vez():
     from app.core.database import AsyncSessionLocal
     from app.services.scheduler import _marcar_prazos_vencidos
 
-    ontem = date.today() - timedelta(days=1)
+    ontem = hoje_operacional() - timedelta(days=1)
     async with AsyncSessionLocal() as db:
         adv = await _criar_user(db, "advogado")
         venc_id = await _criar_deadline(db, resp_id=adv, data_prazo=ontem, status="pendente")
@@ -131,7 +132,7 @@ async def test_marcar_prazos_vencidos_ignora_prazo_do_dia():
 
     async with AsyncSessionLocal() as db:
         adv = await _criar_user(db, "advogado")
-        hoje_id = await _criar_deadline(db, resp_id=adv, data_prazo=date.today())
+        hoje_id = await _criar_deadline(db, resp_id=adv, data_prazo=hoje_operacional())
         await db.commit()
         try:
             await _marcar_prazos_vencidos()
@@ -151,7 +152,7 @@ async def test_atualizar_concluido_seta_autor_e_grava_audit():
 
     async with AsyncSessionLocal() as db:
         adv = await _criar_user(db, "advogado")
-        did = await _criar_deadline(db, resp_id=adv, data_prazo=date.today())
+        did = await _criar_deadline(db, resp_id=adv, data_prazo=hoje_operacional())
         await db.commit()
         try:
             cu = await _carregar_user(db, adv)

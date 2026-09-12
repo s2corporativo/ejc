@@ -8,13 +8,14 @@ Sempre sai com exit 0 — o resultado é o relatório, não um gate de CI.
 from __future__ import annotations
 
 import json
+import os
 import time
 import urllib.request
 import urllib.error
 
 UA = {"User-Agent": "EJC-Probe/1.0 (avaliacao de viabilidade; contato@depaulateixeira.adv.br)"}
-# Chave PÚBLICA divulgada pelo CNJ na wiki oficial do DataJud.
-DATAJUD_KEY = "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=="
+# Credencial da sonda é fornecida somente pelo ambiente; nunca fica versionada.
+DATAJUD_KEY = os.getenv("DATAJUD_API_KEY", "")
 
 def get(url: str, headers: dict | None = None, data: bytes | None = None,
         timeout: int = 25) -> tuple[int, float, str]:
@@ -149,12 +150,15 @@ def main() -> None:
           lambda b: (True, "página ok"))
 
     # ── Judiciário ───────────────────────────────────────────────────────────
-    check("DataJud TJMG (chave pública CNJ)",
-          "https://api-publica.datajud.cnj.jus.br/api_publica_tjmg/_search",
-          lambda b: (True, str(b)[:80]),
-          headers={"Authorization": f"APIKey {DATAJUD_KEY}",
-                   "Content-Type": "application/json"},
-          data=json.dumps({"size": 1, "query": {"match_all": {}}}).encode())
+    if DATAJUD_KEY:
+        check("DataJud TJMG (chave pública CNJ)",
+              "https://api-publica.datajud.cnj.jus.br/api_publica_tjmg/_search",
+              lambda b: (True, str(b)[:80]),
+              headers={"Authorization": f"APIKey {DATAJUD_KEY}",
+                       "Content-Type": "application/json"},
+              data=json.dumps({"size": 1, "query": {"match_all": {}}}).encode())
+    else:
+        print("| DataJud TJMG | SEM CHAVE | 0.0s | defina DATAJUD_API_KEY para testar autenticação |")
     check("CNJ TPU/SGT (página do webservice)",
           "https://www.cnj.jus.br/sgt/consulta_publica_classes.php",
           lambda b: (True, "página ok"))

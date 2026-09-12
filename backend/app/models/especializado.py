@@ -349,6 +349,9 @@ class TrabalhistaCase(Base):
       - Embargos declaração: 5 dias (CLT art. 897-A)
     """
     __tablename__ = "trabalhista_cases"
+    # Consumido por ramos_comum._serialize/_crud_atualizar: ciphertext nunca é
+    # exposto nem editável diretamente pela API.
+    __api_internal_columns__ = frozenset({"cid_enc"})
 
     id      = Column(String(36), primary_key=True)
     case_id = Column(String(36), ForeignKey("cases.id"), nullable=False, unique=True, index=True)
@@ -374,7 +377,11 @@ class TrabalhistaCase(Base):
     # Dados do acidente (se aplicável)
     data_acidente         = Column(Date, nullable=True)
     cat_emitida           = Column(Boolean, nullable=True)  # CAT — Lei 8.213/91 art. 22
-    cid                   = Column(String(10), nullable=True)
+    # DB-03 / Fase A: CID é dado relacionado à saúde. A coluna `cid` antiga
+    # permanece somente como fallback de leitura durante o rollout; novas
+    # escritas usam `cid_enc`. A Fase B remove o plaintext após prova de zero legado.
+    _cid_legacy           = Column("cid", String(10), nullable=True)
+    cid_enc               = Column(Text, nullable=True)
     afastamento_dias      = Column(Integer, nullable=True)
     sequela_permanente    = Column(Boolean, default=False)
 
@@ -399,6 +406,23 @@ class TrabalhistaCase(Base):
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     case = relationship("Case", back_populates="trabalhista_esp")
+
+    @property
+    def cid(self) -> str | None:
+        if not self.cid_enc:
+            return self._cid_legacy
+        from app.services.pii_crypto import decrypt
+        try:
+            return decrypt(self.cid_enc)
+        except (ValueError, RuntimeError):
+            return "[dado indisponível]"
+
+    @cid.setter
+    def cid(self, value: str | None) -> None:
+        from app.services.pii_crypto import encrypt
+        limpo = value.strip() if isinstance(value, str) else None
+        self.cid_enc = encrypt(limpo or None)
+        self._cid_legacy = None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
