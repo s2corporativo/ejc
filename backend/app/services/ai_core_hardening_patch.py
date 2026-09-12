@@ -83,6 +83,14 @@ def _instalar_resolucao_escopo_rag() -> None:
     identidade do caso é, portanto, verificável no servidor. Somente esse padrão
     canônico pode ser auto-resolvido. Qualquer outra categoria/chave sem client_id
     continua bloqueada pelo write gate de `ingestion_service`.
+
+    O precedente do encerramento é memória institucional ACESSÓRIA: uma falha de
+    embedding/RAG não pode transformar em HTTP 500 um encerramento juridicamente
+    válido. Depois que o caso canônico foi resolvido e escopado, o upsert roda em
+    SAVEPOINT (`begin_nested`). Se ele falhar, só o trabalho do RAG é revertido;
+    a transação externa do encerramento continua apta a registrar movimento,
+    auditoria e commit. Caso inexistente/deletado/sem cliente NÃO entra nesse
+    caminho tolerante: segue fail-closed no gate normal, sem fallback global.
     """
     from app.services import ingestion_service
 
@@ -99,6 +107,8 @@ def _instalar_resolucao_escopo_rag() -> None:
         categoria = kwargs.get("categoria")
         client_id = kwargs.get("client_id")
         chave = str(kwargs.get("chave_origem") or "")
+        escopo_canonico_resolvido = False
+
         if categoria == "precedente_interno" and not client_id and chave.startswith("caso:"):
             case_id = chave.removeprefix("caso:").strip()
             if case_id:
@@ -107,11 +117,33 @@ def _instalar_resolucao_escopo_rag() -> None:
                 if case is not None and case.deleted_at is None and case.client_id:
                     kwargs["client_id"] = str(case.client_id)
                     kwargs["case_id"] = str(case.id)
+                    escopo_canonico_resolvido = True
                     logger.info(
                         "Escopo RAG resolvido pelo caso canônico %s para precedente interno",
                         getattr(case, "numero_interno", None) or case.id,
                     )
-        return await original(db, **kwargs)
+
+        if not escopo_canonico_resolvido:
+            # Fail-closed: chave não canônica, caso inexistente/deletado ou sem
+            # cliente continua sujeito ao gate normal de categoria restrita.
+            return await original(db, **kwargs)
+
+        try:
+            # SAVEPOINT: erro de RAG não invalida a transação externa do
+            # encerramento. O SQLAlchemy reverte somente este bloco.
+            async with db.begin_nested():
+                return await original(db, **kwargs)
+        except Exception as exc:
+            # Não logar conteúdo, chave completa, cliente, caso, prompt ou
+            # mensagem bruta da exceção. A trilha técnica precisa apenas da
+            # classe do erro; o encerramento segue e a memória poderá ser
+            # reprocessada posteriormente.
+            logger.warning(
+                "Precedente interno não persistido no encerramento; "
+                "transação principal preservada (erro=%s)",
+                type(exc).__name__,
+            )
+            return "falha_acessoria"
 
     ingestion_service.upsert_documento = upsert_com_escopo_canonico
     ingestion_service._ejc_scope_resolver_installed = True
