@@ -36,6 +36,7 @@ from agents.sandbox.sandboxes.docker import DockerSandboxClient, DockerSandboxCl
 try:
     from .policy import (
         avaliar_tarefa,
+        caminho_checkout_producao,
         caminho_sensivel_repositorio,
         contem_segredo_provavel,
         requer_revisao_seguranca,
@@ -43,6 +44,7 @@ try:
 except ImportError:  # pragma: no cover - permite execução direta do arquivo
     from policy import (
         avaliar_tarefa,
+        caminho_checkout_producao,
         caminho_sensivel_repositorio,
         contem_segredo_provavel,
         requer_revisao_seguranca,
@@ -56,6 +58,7 @@ IMAGEM_SANDBOX_PADRAO = "ejc-agents-sandbox:0.22.2"
 
 
 def _entrada_para_texto(valor: str | list[TResponseInputItem]) -> str:
+    """Normaliza a entrada do SDK para avaliação pela política determinística."""
     if isinstance(valor, str):
         return valor
     return "\n".join(str(item) for item in valor)
@@ -67,6 +70,7 @@ async def guardrail_entrada_manutencao(
     agente: Agent[Any],
     entrada: str | list[TResponseInputItem],
 ) -> GuardrailFunctionOutput:
+    """Bloqueia a tarefa antes de qualquer turno ou ferramenta quando a política reprova."""
     del contexto, agente
     decisao = avaliar_tarefa(_entrada_para_texto(entrada))
     return GuardrailFunctionOutput(
@@ -81,6 +85,7 @@ async def guardrail_saida_manutencao(
     agente: Agent[Any],
     saida: str,
 ) -> GuardrailFunctionOutput:
+    """Rejeita resposta final que contenha formato de credencial de alta confiança."""
     del contexto, agente
     segredo_detectado = contem_segredo_provavel(saida)
     return GuardrailFunctionOutput(
@@ -153,6 +158,7 @@ def criar_opcoes_docker(imagem: str) -> DockerSandboxClientOptions:
 
 
 def construir_agente(origem_snapshot: Path, modelo: str) -> SandboxAgent[None]:
+    """Monta orquestrador, revisor como tool e handoff de segurança obrigatório."""
     revisor_independente = Agent(
         name="Revisor Independente EJC",
         model=modelo,
@@ -242,7 +248,12 @@ def criar_cliente_docker(imagem: str) -> DockerSandboxClient:
 
 
 async def executar_tarefa(tarefa: str, diretorio_repo: Path, modelo: str, imagem: str) -> str:
-    diretorio_repo = diretorio_repo.resolve()
+    """Executa uma tarefa somente em checkout não produtivo e sandbox Docker sem rede."""
+    diretorio_repo = diretorio_repo.expanduser().resolve()
+    if caminho_checkout_producao(diretorio_repo):
+        raise RuntimeError(
+            f"checkout de produção recusado para manutenção por agente: {diretorio_repo}"
+        )
     if not (diretorio_repo / ".git").exists():
         raise RuntimeError(f"checkout Git do EJC não encontrado: {diretorio_repo}")
 
@@ -284,6 +295,7 @@ async def executar_tarefa(tarefa: str, diretorio_repo: Path, modelo: str, imagem
 
 
 def main() -> int:
+    """Processa a CLI, executa o runner e traduz bloqueios em códigos de saída estáveis."""
     parser = argparse.ArgumentParser(
         description="Executa manutenção do EJC em snapshot isolado por Docker, sem rede."
     )
