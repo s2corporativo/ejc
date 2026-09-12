@@ -5,7 +5,7 @@ Este arquivo é o ledger canônico de **reservas futuras** e do trecho recente d
 **Head canônico atual da `main`:** `159_user_cpf_secure`
 **Próximo prefixo livre:** `160`
 
-> Estado desta branch após reconstrução sobre a `main` que já contém `158_case_partes_trabalhista_pii_expand`. A migration 159 parte diretamente desse head integrado.
+> Estado da `main` após integração de `158_case_partes_trabalhista_pii_expand` e `159_user_cpf_secure`. A migration 159 parte diretamente de 158 e integra a cadeia canônica.
 
 > Nunca reutilize um número menor ou igual ao head atual, mesmo quando houver lacuna histórica. A ordem numérica precisa crescer junto com `down_revision`.
 
@@ -50,14 +50,14 @@ gh pr list --state open
 | `154_saneamento_schema` | `153_legal_doc_client_id` | Mesclada | Módulo de saneamento de base processual (PROMPT 1). Encadeada sobre 153 porque era o head real no momento (`alembic heads`). 7 tabelas próprias, **prefixadas `saneamento_*` no schema `public`** — nenhuma alteração em tabela existente do EJC. Um schema Postgres dedicado (`CREATE SCHEMA`) foi cogitado e descartado porque os gates de compatibilidade/paridade existentes não suportavam qualificação de schema sem alteração mais ampla. |
 | `155_indices_listagem_espinha` | `154_saneamento_schema` | Mesclada | Índices parciais de listagem em `cases`/`clients`/`documents` (AUD27-P3-11). `deadlines` fora de propósito: já coberta por `ix_deadlines_data_prazo`, medido. |
 | `156_case_despesas_processuais` | `155_indices_listagem_espinha` | Mesclada | Issue #809: tabela `case_despesas` para custos processuais reembolsáveis do caso, distinta de `office_expenses`; faturamento explícito gera `FeeTipo.custas_despesas`. Migration aditiva e reversível. |
-| `157_ajuizamento_judicial` | `156_case_despesas_processuais` | **Mesclada** | Núcleo de ajuizamento: perfis de integração, ajuizamentos, transições, tentativas, protocolos, sync e TPU. A migration existe na `main` e é o head canônico atual. |
+| `157_ajuizamento_judicial` | `156_case_despesas_processuais` | **Mesclada** | Núcleo de ajuizamento: perfis de integração, ajuizamentos, transições, tentativas, protocolos, sync e TPU. |
 | `158_case_partes_trabalhista_pii_expand` | `157_ajuizamento_judicial` | **Mesclada** | DB-03 Fase A integrada na `main` pelo PR #1586; adiciona PII cifrada/HMAC em `case_partes` e CID cifrado em `trabalhista_cases`, preservando plaintext legado no expand. |
-| `159_user_cpf_secure` | `158_case_partes_trabalhista_pii_expand` | **Em PR — HEAD desta branch** | DB-03 perfis profissionais: CPF somente cifrado + HMAC, índice único parcial para ativos e resposta apenas mascarada. Reconstruída diretamente sobre a `main` pós-#1586. |
+| `159_user_cpf_secure` | `158_case_partes_trabalhista_pii_expand` | **Mesclada** | DB-03 perfis profissionais integrada na `main` pelo PR #1613; CPF somente cifrado + HMAC, índice único parcial para ativos e resposta apenas mascarada. |
 
-### Reserva atual a partir do head 158 integrado
+### Estado atual a partir do head 159 integrado
 
-- O PR **#1586** foi integrado; o prefixo `158` faz parte da cadeia canônica e nunca pode ser reutilizado.
-- Esta branch reconstrói o conteúdo funcional do antigo #1587 diretamente sobre a `main` pós-#1586 e reserva legitimamente `159_user_cpf_secure` como sucessor imediato de `158_case_partes_trabalhista_pii_expand`.
+- Os prefixos `158` e `159` fazem parte da cadeia canônica e nunca podem ser reutilizados.
+- `159_user_cpf_secure` é o head atual e `160` é o próximo prefixo livre, sujeito às regras de reserva acima.
 - Frentes de Documentos/Legal Hold/Outbox que ainda carreguem migrations históricas `156_*` são incompatíveis com a cadeia atual e devem ser reconstruídas somente depois do avanço efetivo do head, usando o próximo número então confirmado.
 
 ## Banco de Teses — decisão canônica
