@@ -10,6 +10,7 @@ Requer PostgreSQL com migrations, como os demais testes ``*_dblevel.py``.
 """
 from __future__ import annotations
 
+import logging
 import os
 from uuid import uuid4
 
