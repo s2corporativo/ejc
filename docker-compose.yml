@@ -1,3 +1,9 @@
+x-logging: &ejc-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
 services:
   db:
     # pgvector/pgvector:pg16 — Postgres 16 COM a extensão `vector` já instalada.
@@ -10,6 +16,7 @@ services:
     # "No such container".
     container_name: ejc_db
     restart: unless-stopped
+    logging: *ejc-logging
     # Teto de memória — ver a nota em `backend` abaixo. Folga generosa: um
     # Postgres morto por OOM é pior que um container lento.
     mem_limit: ${EJC_DB_MEM_LIMIT:-3g}
@@ -30,6 +37,7 @@ services:
     image: redis:7-alpine
     container_name: ejc_redis
     restart: unless-stopped
+    logging: *ejc-logging
     # Teto de memória — ver a nota em `backend` abaixo.
     mem_limit: ${EJC_REDIS_MEM_LIMIT:-512m}
     # AOF ligado: tasks enfileiradas sobrevivem a restart do container.
@@ -47,6 +55,7 @@ services:
       context: ./backend
     container_name: ejc_backend
     restart: unless-stopped
+    logging: *ejc-logging
     # Teto DURO de memória. Esta VPS não é dedicada ao EJC: hospeda também
     # Verde Limp, sistema-s2, Evolution API (WhatsApp) e o Woodpecker. Até
     # 2026-08-27 nenhum container do EJC declarava limite — só o `ollama` —
@@ -154,6 +163,7 @@ services:
       context: ./backend
     container_name: ejc_worker
     restart: unless-stopped
+    logging: *ejc-logging
     # Teto de memória — ver a nota em `backend`. O worker roda o MESMO código
     # (indexação incluída), então precisa do mesmo tipo de contenção.
     mem_limit: ${EJC_WORKER_MEM_LIMIT:-2g}
@@ -204,6 +214,7 @@ services:
       context: ./frontend
     container_name: ejc_frontend
     restart: unless-stopped
+    logging: *ejc-logging
     # Teto de memória — ver a nota em `backend`. Nginx servindo estáticos.
     mem_limit: ${EJC_FRONTEND_MEM_LIMIT:-256m}
     ports:
@@ -232,6 +243,7 @@ services:
     container_name: ejc_langfuse_db
     profiles: ["observability"]
     restart: unless-stopped
+    logging: *ejc-logging
     # Teto de memória — ver a nota em `backend`. Opt-in por profile, mas
     # nenhum container do EJC fica sem teto nesta VPS compartilhada.
     mem_limit: ${LANGFUSE_DB_MEM_LIMIT:-1g}
@@ -256,6 +268,7 @@ services:
     container_name: ejc_langfuse
     profiles: ["observability"]
     restart: unless-stopped
+    logging: *ejc-logging
     # Teto de memória — ver a nota em `backend`.
     mem_limit: ${LANGFUSE_MEM_LIMIT:-1g}
     depends_on:
@@ -296,6 +309,7 @@ services:
     container_name: ejc_ollama
     profiles: ["ia-local"]
     restart: unless-stopped
+    logging: *ejc-logging
     # Rede dedicada: só backend/worker alcançam a API sem auth do Ollama —
     # frontend/langfuse ficam fora (menor superfície em caso de comprometimento).
     networks: [ia]
@@ -333,6 +347,7 @@ services:
     container_name: ejc_ollama_init
     profiles: ["ia-local"]
     restart: "no"
+    logging: *ejc-logging
     networks: [ia]
     depends_on:
       ollama:
