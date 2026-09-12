@@ -1,0 +1,2 @@
+# Isolated operational dependency; not part of the EJC production backend runtime.
+openai-agents==0.22.2
