@@ -5,15 +5,14 @@ services/entrada_expurgo_service.py::expurgar_rascunhos_entrada_unica.
 NÃO edita tests/test_entrada_unica.py (tocado pelo PR #679 aberto) — arquivo
 NOVO, harness aiosqlite copiado por REFERÊNCIA do padrão dos vizinhos.
 
-Cobertura pedida pela issue:
-  - batch com case_id preenchido NUNCA é tocado, mesmo velho/erro/concluido;
-  - Document com client_id preenchido (mesmo sem case_id) não é removido —
-    dupla checagem no nível do Document;
-  - batch dentro da janela de retenção (recente) não é tocado;
-  - batch fora da janela, sem case_id, status erro/concluido → removido
-    (arquivo físico + registro), com dry_run=False;
-  - dry_run=True não apaga nada, só conta;
-  - dict de resultado com as chaves certas e contagens corretas.
+Cobertura atual:
+  - batch com case_id preenchido nunca é selecionado no dry-run;
+  - Document com client_id preenchido não é selecionado no dry-run;
+  - batch recente não é selecionado;
+  - batch expirado é contado no dry-run, sem apagar nada;
+  - hard delete (`dry_run=False`) fica bloqueado até retenção/legal hold serem
+    verificáveis no schema canônico (#1359);
+  - dict de resultado mantém contagens auditáveis sem tocar dados.
 """
 from __future__ import annotations
 
@@ -83,7 +82,7 @@ async def _semear(
         id=batch_id, case_id=batch_case_id, status=batch_status,
         created_by="u1", document_count=1,
         updated_at=batch_updated_at or _velho(),
-        resultado={"entrada_unica": {"fatos": "Relato do cliente com dado pessoal."}},
+        resultado={"entrada_unica": {"fatos": "Relato sintético de teste."}},
     )
     doc = Document(
         id=doc_id, titulo="Comprovante", filename=f"{doc_id}.pdf", filepath=filepath,
@@ -102,18 +101,18 @@ async def _semear(
     return batch, doc, item
 
 
-# ── regra inegociável: case_id no batch → nunca toca ──────────────────────────
+# ── regra inegociável: case_id no batch → nunca seleciona ─────────────────────
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("status", ["erro", "concluido"])
 async def test_batch_com_case_id_nunca_e_tocado(sessao_db, upload_dir, status):
     await _semear(
         sessao_db, upload_dir, batch_case_id="caso-1", batch_status=status,
-        batch_updated_at=_velho(90),  # bem além da janela — só o case_id protege
+        batch_updated_at=_velho(90),
     )
 
     resultado = await expurgar_rascunhos_entrada_unica(
-        sessao_db, dias=30, dry_run=False,
+        sessao_db, dias=30, dry_run=True,
     )
 
     assert resultado["batches_removidos"] == 0
@@ -124,17 +123,17 @@ async def test_batch_com_case_id_nunca_e_tocado(sessao_db, upload_dir, status):
     assert (upload_dir / "2026/08/d1.pdf").exists()
 
 
-# ── dupla checagem: client_id no Document → não remove ────────────────────────
+# ── dupla checagem: client_id no Document → não seleciona ─────────────────────
 
 @pytest.mark.anyio
 async def test_documento_com_client_id_nao_e_removido(sessao_db, upload_dir):
     await _semear(
-        sessao_db, upload_dir, doc_client_id="cliente-1",  # batch.case_id=None (órfão)
+        sessao_db, upload_dir, doc_client_id="cliente-1",
         batch_status="concluido", batch_updated_at=_velho(),
     )
 
     resultado = await expurgar_rascunhos_entrada_unica(
-        sessao_db, dias=30, dry_run=False,
+        sessao_db, dias=30, dry_run=True,
     )
 
     assert resultado["batches_removidos"] == 0
@@ -153,7 +152,7 @@ async def test_batch_recente_nao_e_tocado(sessao_db, upload_dir):
     )
 
     resultado = await expurgar_rascunhos_entrada_unica(
-        sessao_db, dias=30, dry_run=False,
+        sessao_db, dias=30, dry_run=True,
     )
 
     assert resultado["batches_removidos"] == 0
@@ -163,11 +162,11 @@ async def test_batch_recente_nao_e_tocado(sessao_db, upload_dir):
     assert (upload_dir / "2026/08/d1.pdf").exists()
 
 
-# ── caso positivo: fora da janela, sem case_id, status expurgável ─────────────
+# ── hard delete bloqueado até retenção/legal hold ──────────────────────────────
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("status", ["erro", "concluido"])
-async def test_batch_expirado_e_removido(sessao_db, upload_dir, status):
+async def test_batch_expirado_hard_delete_fica_bloqueado(sessao_db, upload_dir, status):
     await _semear(
         sessao_db, upload_dir, batch_status=status, batch_updated_at=_velho(45),
         size_bytes=250,
@@ -177,19 +176,20 @@ async def test_batch_expirado_e_removido(sessao_db, upload_dir, status):
         sessao_db, dias=30, dry_run=False,
     )
 
-    assert resultado["batches_removidos"] == 1
-    assert resultado["documentos_removidos"] == 1
-    assert resultado["bytes_liberados"] == 250
-    assert await sessao_db.get(DocumentIntakeBatch, "b1") is None
-    assert await sessao_db.get(Document, "d1") is None
-    assert await sessao_db.get(DocumentIntakeItem, "i1") is None
-    assert not (upload_dir / "2026/08/d1.pdf").exists()
+    assert resultado["bloqueado"] is True
+    assert resultado["motivo"] == "retencao_legal_hold_nao_codificados"
+    assert resultado["erro"] == "retencao_legal_hold_nao_codificados"
+    assert resultado["batches_removidos"] == 0
+    assert resultado["documentos_removidos"] == 0
+    assert resultado["bytes_liberados"] == 0
+    assert await sessao_db.get(DocumentIntakeBatch, "b1") is not None
+    assert await sessao_db.get(Document, "d1") is not None
+    assert await sessao_db.get(DocumentIntakeItem, "i1") is not None
+    assert (upload_dir / "2026/08/d1.pdf").exists()
 
 
 @pytest.mark.anyio
-async def test_arquivo_fisico_ja_ausente_nao_e_fatal(sessao_db, upload_dir):
-    """FileNotFoundError no os.remove é não-fatal — o registro é removido
-    mesmo assim (o arquivo pode já ter sumido antes desta execução)."""
+async def test_hard_delete_bloqueia_antes_de_tocar_arquivo(sessao_db, upload_dir):
     await _semear(
         sessao_db, upload_dir, batch_updated_at=_velho(45),
         criar_arquivo_fisico=False,
@@ -199,11 +199,10 @@ async def test_arquivo_fisico_ja_ausente_nao_e_fatal(sessao_db, upload_dir):
         sessao_db, dias=30, dry_run=False,
     )
 
-    assert "erro" not in resultado
-    assert resultado["batches_removidos"] == 1
-    assert resultado["documentos_removidos"] == 1
-    assert await sessao_db.get(DocumentIntakeBatch, "b1") is None
-    assert await sessao_db.get(Document, "d1") is None
+    assert resultado["bloqueado"] is True
+    assert resultado["erro"] == "retencao_legal_hold_nao_codificados"
+    assert await sessao_db.get(DocumentIntakeBatch, "b1") is not None
+    assert await sessao_db.get(Document, "d1") is not None
 
 
 # ── dry_run=True: só conta, nunca apaga ────────────────────────────────────────
@@ -222,7 +221,6 @@ async def test_dry_run_nao_apaga_nada(sessao_db, upload_dir):
     assert resultado["batches_removidos"] == 1
     assert resultado["documentos_removidos"] == 1
     assert resultado["bytes_liberados"] == 250
-    # nada foi tocado de verdade:
     assert await sessao_db.get(DocumentIntakeBatch, "b1") is not None
     assert await sessao_db.get(Document, "d1") is not None
     assert await sessao_db.get(DocumentIntakeItem, "i1") is not None
@@ -255,8 +253,7 @@ async def test_resultado_tem_chaves_e_contagens_certas(sessao_db, upload_dir):
     assert isinstance(resultado["documentos_removidos"], int)
     assert isinstance(resultado["bytes_liberados"], int)
     assert resultado["mais_antigo_dias"] is not None
-    assert resultado["mais_antigo_dias"] >= 44  # semeado com _velho(45)
-    # corte é ISO parseável e ~30 dias atrás:
+    assert resultado["mais_antigo_dias"] >= 44
     corte = datetime.fromisoformat(resultado["corte"])
     assert corte < datetime.now(timezone.utc) - timedelta(days=29)
 
@@ -278,39 +275,29 @@ async def test_resultado_sem_batches_qualificados_tem_mais_antigo_none(
 # ── modalidade filter (Issue #1082): excluir apenas dpt360_oportunidade ────────
 
 @pytest.mark.anyio
-async def test_batch_modalidade_null_e_expurgado(sessao_db, upload_dir):
-    """Batch com modalidade=NULL (de entrada_unica padrão) deve ser expurgado
-    quando fora da janela de retenção, pois não é uma oportunidade DPT360.
-    SQL semantics: NULL != 'dpt360_oportunidade' é UNKNOWN, mas usamos
-    (IS NULL OR !=) para incluir NULL no resultado."""
+async def test_batch_modalidade_null_e_contado_no_dry_run(sessao_db, upload_dir):
     batch, doc, item = await _semear(
         sessao_db, upload_dir,
         batch_status="concluido", batch_updated_at=_velho(45),
         size_bytes=150,
     )
-    # Verificar que modalidade é NULL
     assert batch.modalidade is None
 
     resultado = await expurgar_rascunhos_entrada_unica(
-        sessao_db, dias=30, dry_run=False,
+        sessao_db, dias=30, dry_run=True,
     )
 
     assert resultado["batches_removidos"] == 1
     assert resultado["documentos_removidos"] == 1
     assert resultado["bytes_liberados"] == 150
-    assert await sessao_db.get(DocumentIntakeBatch, "b1") is None
-    assert await sessao_db.get(Document, "d1") is None
-    assert await sessao_db.get(DocumentIntakeItem, "i1") is None
-    assert not (upload_dir / "2026/08/d1.pdf").exists()
+    assert await sessao_db.get(DocumentIntakeBatch, "b1") is not None
+    assert await sessao_db.get(Document, "d1") is not None
+    assert await sessao_db.get(DocumentIntakeItem, "i1") is not None
+    assert (upload_dir / "2026/08/d1.pdf").exists()
 
 
 @pytest.mark.anyio
 async def test_batch_modalidade_dpt360_oportunidade_nao_e_expurgado(sessao_db, upload_dir):
-    """Batch com modalidade='dpt360_oportunidade' (leads DPT360) não deve ser
-    expurgado mesmo fora da janela de retenção. O filtro preserva DPT360 leads
-    para análise posterior (Issue #1082)."""
-    engine = sessao_db.get_bind()
-    # Semear e depois atualizar modalidade (pois o modelo não oferece default)
     batch, doc, item = await _semear(
         sessao_db, upload_dir,
         batch_status="concluido", batch_updated_at=_velho(45),
@@ -321,10 +308,9 @@ async def test_batch_modalidade_dpt360_oportunidade_nao_e_expurgado(sessao_db, u
     await sessao_db.commit()
 
     resultado = await expurgar_rascunhos_entrada_unica(
-        sessao_db, dias=30, dry_run=False,
+        sessao_db, dias=30, dry_run=True,
     )
 
-    # DPT360 leads não devem ser tocadas
     assert resultado["batches_removidos"] == 0
     assert resultado["documentos_removidos"] == 0
     assert await sessao_db.get(DocumentIntakeBatch, "b1") is not None

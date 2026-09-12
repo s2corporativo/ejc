@@ -178,7 +178,7 @@ AREA_MODULOS = (
             _f("Depósito recursal", "/trabalhista-esp/ferramentas/deposito-recursal"),
         ]}])
     + _area("previdenciario", [{
-        "module_key": "ramos/previdenciario",
+        "module_key": "ramos/previdenciario",  # gitleaks:allow -- chave semântica de módulo, não credencial
         "ferramentas": [
             _f("Prazos previdenciários", "/previdenciario/ferramentas/prazos"),
             _f("Tempo de contribuição", "/previdenciario/ferramentas/tempo-contribuicao"),

@@ -23,18 +23,18 @@ ok "containers de staging ativos"
 
 # Health-check com espera de subida (até 2 min)
 for _ in $(seq 1 24); do
-  curl -fsS "$API/api/health" >/dev/null 2>&1 && break
+  curl -fsS --connect-timeout 5 --max-time 15 "$API/api/health" >/dev/null 2>&1 && break
   sleep 5
 done
-curl -fsS "$API/api/health" >/dev/null || fail "$API/api/health indisponível"
+curl -fsS --connect-timeout 5 --max-time 15 "$API/api/health" >/dev/null || fail "$API/api/health indisponível"
 ok "health-check da API"
 
-code="$(curl -sS -o /dev/null -w '%{http_code}' "$FRONT/")"
+code="$(curl -sS --connect-timeout 5 --max-time 15 -o /dev/null -w '%{http_code}' "$FRONT/")"
 [ "$code" = "200" ] || fail "frontend staging retornou HTTP $code"
 ok "frontend responde 200"
 
 # Autenticação: credencial inválida deve ser rejeitada, nunca 5xx
-login_code="$(curl -sS -o /dev/null -w '%{http_code}' \
+login_code="$(curl -sS --connect-timeout 5 --max-time 15 -o /dev/null -w '%{http_code}' \
   -H 'Content-Type: application/json' \
   -d '{"email":"smoke@invalid.local","password":"invalid"}' \
   "$API/api/auth/login" || true)"

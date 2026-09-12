@@ -30,12 +30,14 @@ class UserCreate(BaseModel):
     role: str = "advogado"
     phone: Optional[str] = None
     oab_number: Optional[str] = None
+    cpf: Optional[str] = None
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     role: Optional[str] = None
     phone: Optional[str] = None
     oab_number: Optional[str] = None
+    cpf: Optional[str] = None
     is_active: Optional[bool] = None
     djen_oab_numero: Optional[str] = None   # captura de intimações
     djen_oab_uf: Optional[str] = None
@@ -88,6 +90,7 @@ class UserResponse(BaseModel):
     role: str
     phone: Optional[str] = None
     oab_number: Optional[str] = None
+    cpf_mascarado: Optional[str] = None
     # Path da API que serve a foto de perfil (ex.: /users/{id}/avatar).
     # O frontend monta a URL final com o baseURL do axios (/api) + este path.
     avatar_url: Optional[str] = None
