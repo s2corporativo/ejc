@@ -38,8 +38,11 @@ LIMITACOES = [
     "O DataJud atualiza com defasagem e não traz o texto da decisão.",
     "Decisões/ementas normalizadas do RAG são uma camada documental separada: "
     "servem para pesquisa e fundamentação, não para inflar taxa de êxito.",
-    "A taxa de reforma é calculada dentro da amostra coletada, não sobre todos "
-    "os recursos do tribunal.",
+    "Quando o teto de coleta é atingido, as taxas são suprimidas: o primeiro "
+    "lote cronológico não é tratado como amostra representativa do tribunal.",
+    "No recorte TJMG por comarca, taxa de reforma em 2º grau fica indisponível "
+    "até que os recursos sejam vinculados aos números dos processos de origem; "
+    "câmaras recursais não carregam necessariamente o nome da comarca.",
     "Dados externos descrevem o histórico do tribunal e nunca são apresentados "
     "como desempenho do escritório ou garantia de resultado futuro.",
 ]
@@ -83,13 +86,66 @@ def status() -> dict[str, Any]:
     }
 
 
+def _suprimir_taxas_se_truncado(
+    agregado: dict[str, Any], meta: dict[str, Any]
+) -> dict[str, Any]:
+    """Não transforma lote cronológico capado em estatística representativa."""
+    if not meta.get("truncado"):
+        agregado["amostra_truncada"] = False
+        return agregado
+
+    for chave in ("total",):
+        grupo = agregado.get(chave)
+        if isinstance(grupo, dict):
+            grupo["taxa_procedencia"] = None
+            grupo["taxa_acordo"] = None
+            if isinstance(grupo.get("tempo_sentenca"), dict):
+                grupo["tempo_sentenca"]["mediana_dias"] = None
+                grupo["tempo_sentenca"]["media_dias"] = None
+    for chave in ("por_municipio", "por_assunto", "por_municipio_assunto"):
+        for grupo in agregado.get(chave) or []:
+            grupo["taxa_procedencia"] = None
+            grupo["taxa_acordo"] = None
+            if isinstance(grupo.get("tempo_sentenca"), dict):
+                grupo["tempo_sentenca"]["mediana_dias"] = None
+                grupo["tempo_sentenca"]["media_dias"] = None
+    if isinstance(agregado.get("reforma_2grau"), dict):
+        agregado["reforma_2grau"]["taxa_reforma"] = None
+
+    agregado["amostra_truncada"] = True
+    agregado["aviso_amostragem"] = (
+        "O limite máximo de registros foi atingido. Contagens são exibidas, "
+        "mas taxas e tempos foram suprimidos porque o lote não é uma amostra "
+        "estatisticamente representativa do universo consultado. Restrinja "
+        "período, classe ou assunto para obter um recorte não truncado."
+    )
+    return agregado
+
+
+def _desabilitar_reforma_geografica(agregado: dict[str, Any]) -> None:
+    reforma = agregado.get("reforma_2grau")
+    if not isinstance(reforma, dict):
+        return
+    reforma["taxa_reforma"] = None
+    reforma["disponivel"] = False
+    reforma["motivo"] = (
+        "O filtro por comarca seleciona o primeiro grau, mas o órgão de segundo "
+        "grau é uma Câmara/Turma e pode não carregar o nome da comarca. A taxa "
+        "só será publicada após vínculo explícito pelo número do processo de origem."
+    )
+
+
 def _recorte_jec(
     docs_tjmg: list[dict],
     chaves: list[str],
     meta_tjmg: dict[str, Any],
+    *,
+    assunto: int | None,
 ) -> dict[str, Any]:
     docs = filtrar_jec(docs_tjmg)
-    agregado = agregar(docs, chaves)
+    agregado = agregar(docs, chaves, assunto_filtro=assunto)
+    _desabilitar_reforma_geografica(agregado)
+    agregado = _suprimir_taxas_se_truncado(agregado, meta_tjmg)
     return {
         "disponivel": True,
         "fonte": FONTE_TJMG,
@@ -122,10 +178,10 @@ async def _recorte_trt3(
             desde=desde,
             ate=ate,
         )
-        agregado = agregar(docs, [])
-        # Sem município no índice regional: não exponha o bucket artificial
-        # "Outro" como se fosse um agrupamento geográfico útil.
+        agregado = agregar(docs, [], assunto_filtro=assunto)
         agregado["por_municipio"] = []
+        agregado["por_municipio_assunto"] = []
+        agregado = _suprimir_taxas_se_truncado(agregado, meta)
         return {
             "disponivel": True,
             "fonte": FONTE_TRT3,
@@ -148,7 +204,10 @@ async def _recorte_trt3(
         return {
             "disponivel": False,
             "fonte": FONTE_TRT3,
-            "escopo": {"tribunal": "TRT3", "regiao": "3ª Região — Minas Gerais"},
+            "escopo": {
+                "tribunal": "TRT3",
+                "regiao": "3ª Região — Minas Gerais",
+            },
             "erro": "Fonte TRT3 temporariamente indisponível.",
         }
 
@@ -169,8 +228,10 @@ async def desfechos(
         desde=desde,
         ate=ate,
     )
-    agregado = agregar(docs, chaves)
-    jec = _recorte_jec(docs, chaves, meta)
+    agregado = agregar(docs, chaves, assunto_filtro=assunto)
+    _desabilitar_reforma_geografica(agregado)
+    agregado = _suprimir_taxas_se_truncado(agregado, meta)
+    jec = _recorte_jec(docs, chaves, meta, assunto=assunto)
     trt3 = await _recorte_trt3(
         classe=classe,
         assunto=assunto,
