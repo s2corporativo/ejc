@@ -18,10 +18,12 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { Link, useNavigate } from "react-router";
+import { Link } from "react-router";
 import api from "../lib/api";
 import { asList } from "../lib/list";
 import { useAuth } from "../stores/auth";
+import DashboardAiChat from "../components/DashboardAiChat";
+import JurisprudentialAlertsStrip from "../components/JurisprudentialAlertsStrip";
 
 interface DashboardPayload {
   casos?: {
@@ -232,7 +234,6 @@ function Empty({ children }: { children: ReactNode }) {
 }
 
 export default function DashboardUltra() {
-  const navigate = useNavigate();
   const user = useAuth((state) => state.user);
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
@@ -240,7 +241,6 @@ export default function DashboardUltra() {
   const [clients, setClients] = useState<ClientItem[]>([]);
   const [defesasMeta, setDefesasMeta] = useState<DefesasMeta | null>(null);
   const [taskTab, setTaskTab] = useState<"tarefas" | "intimacoes">("tarefas");
-  const [quickQuestion, setQuickQuestion] = useState("");
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState({
     dashboard: false,
@@ -376,14 +376,6 @@ export default function DashboardUltra() {
   const trafficFeature = defesasMeta?.modalidades?.find(
     (item) => item.codigo === "multa_transito",
   );
-
-  const submitQuickQuestion = () => {
-    const q = quickQuestion.trim();
-    if (!q) return;
-    navigate("/inteligencia?tab=assistente&sub=rapido", {
-      state: { perguntaRapida: q },
-    });
-  };
 
   return (
     <div className="ejc-reference-dashboard">
@@ -543,69 +535,7 @@ export default function DashboardUltra() {
             ) : undefined
           }
         >
-          {canUseLegal ? (
-            <>
-              <p className="ejc-reference-ai-copy">
-                Pergunte algo rápido ou abra uma ferramenta jurídica
-                especializada.
-              </p>
-              <div className="ejc-reference-ai-box">
-                <textarea
-                  value={quickQuestion}
-                  onChange={(event) => setQuickQuestion(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (
-                      (event.ctrlKey || event.metaKey) &&
-                      event.key === "Enter"
-                    )
-                      submitQuickQuestion();
-                  }}
-                  placeholder="Digite sua pergunta ou descreva o que precisa (ex.: jurisprudência sobre dano moral em acidente de trânsito)…"
-                  aria-label="Pergunta rápida para a Inteligência Jurídica"
-                />
-                <button
-                  type="button"
-                  className="ejc-reference-ai-send"
-                  onClick={submitQuickQuestion}
-                  disabled={!quickQuestion.trim()}
-                  aria-label="Abrir pergunta na Inteligência Jurídica"
-                >
-                  <Send aria-hidden="true" />
-                </button>
-              </div>
-              <div className="ejc-reference-ai-shortcuts">
-                <Link
-                  to="/inteligencia?tab=conhecimento&sub=pesquisa"
-                  className="ejc-reference-ai-shortcut"
-                >
-                  <Scale aria-hidden="true" /> Jurisprudência e fontes
-                </Link>
-                <Link
-                  to="/inteligencia?tab=producao&sub=analise"
-                  className="ejc-reference-ai-shortcut"
-                >
-                  <FileText aria-hidden="true" /> Analisar / produzir peça
-                </Link>
-                <Link
-                  to="/inteligencia?tab=assistente&sub=rapido"
-                  className="ejc-reference-ai-shortcut"
-                >
-                  <ListTodo aria-hidden="true" /> Resumo rápido
-                </Link>
-                <Link
-                  to="/inteligencia?tab=assistente&sub=agente"
-                  className="ejc-reference-ai-shortcut"
-                >
-                  <ShieldCheck aria-hidden="true" /> Análise aprofundada
-                </Link>
-              </div>
-            </>
-          ) : (
-            <Empty>
-              Inteligência Jurídica disponível apenas aos perfis jurídicos
-              autorizados.
-            </Empty>
-          )}
+          <DashboardAiChat canUseLegal={canUseLegal} />
         </Card>
       </div>
 
@@ -848,8 +778,14 @@ export default function DashboardUltra() {
             <Empty>Ferramenta restrita à equipe jurídica autorizada.</Empty>
           )}
         </Card>
-
       </div>
+
+      <aside
+        className="ejc-reference-dashboard__rail"
+        aria-label="Radar jurídico"
+      >
+        <JurisprudentialAlertsStrip />
+      </aside>
 
       <footer className="ejc-reference-footer">
         © {new Date().getFullYear()} EJC — Ecossistema Jurídico Clóvis · De

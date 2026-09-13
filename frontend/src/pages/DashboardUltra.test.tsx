@@ -1,14 +1,22 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 
 const getMock = vi.fn();
+const postMock = vi.fn();
 let papelAtual = "advogado";
 
 vi.mock("../lib/api", () => ({
   default: {
     get: (...args: unknown[]) => getMock(...args),
+    post: (...args: unknown[]) => postMock(...args),
   },
 }));
 
@@ -16,6 +24,14 @@ vi.mock("../stores/auth", () => ({
   useAuth: (
     selector: (state: { user: { role: string; full_name: string } }) => unknown,
   ) => selector({ user: { role: papelAtual, full_name: "Clovis Teste" } }),
+}));
+
+vi.mock("../lib/iaStatus", () => ({
+  useIaStatus: () => ({ disponivel: true, mensagem: "" }),
+}));
+
+vi.mock("../lib/iaErro", () => ({
+  mensagemErroIA: () => "Falha controlada da IA",
 }));
 
 import DashboardUltra from "./DashboardUltra";
@@ -119,6 +135,14 @@ function renderizar() {
 beforeEach(() => {
   papelAtual = "advogado";
   getMock.mockReset();
+  postMock.mockReset();
+  postMock.mockResolvedValue({
+    data: {
+      conteudo: "Resposta jurídica de teste",
+      fontes_rag: ["Fonte oficial A"],
+      aviso_hitl: "Revisão humana obrigatória",
+    },
+  });
   mockSucesso();
 });
 
@@ -128,7 +152,7 @@ describe("DashboardUltra — referência 2026", () => {
   it("aplica RBAC às ferramentas jurídicas sem esconder o estado explicativo", async () => {
     papelAtual = "advogado";
     const primeira = renderizar();
-    expect(await screen.findByText("Jurisprudência e fontes")).toBeTruthy();
+    expect(await screen.findByText("Fontes e jurisprudência")).toBeTruthy();
     expect(screen.getByText("Recurso de Multa de Trânsito")).toBeTruthy();
     primeira.unmount();
 
@@ -139,11 +163,31 @@ describe("DashboardUltra — referência 2026", () => {
         "Inteligência Jurídica disponível apenas aos perfis jurídicos autorizados.",
       ),
     ).toBeTruthy();
-    expect(screen.queryByText("Jurisprudência e fontes")).toBeNull();
+    expect(screen.queryByText("Fontes e jurisprudência")).toBeNull();
     expect(
       screen.getAllByText("Ferramenta restrita à equipe jurídica autorizada.")
         .length,
     ).toBeGreaterThanOrEqual(1);
+  });
+
+  it("responde no próprio dashboard usando a porta canônica de IA", async () => {
+    renderizar();
+
+    const input = await screen.findByLabelText(
+      "Pergunta rápida para a Inteligência Jurídica",
+    );
+    fireEvent.change(input, { target: { value: "Qual é a tese aplicável?" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    await waitFor(() => {
+      expect(postMock).toHaveBeenCalledWith("/ia/conversar", {
+        texto: "Qual é a tese aplicável?",
+        area: "pesquisa_juridica",
+      });
+    });
+    expect(await screen.findByText("Resposta jurídica de teste")).toBeTruthy();
+    expect(screen.getByText("Fonte oficial A")).toBeTruthy();
+    expect(screen.getByText("Revisão humana obrigatória")).toBeTruthy();
   });
 
   it("exclui atividades finalizadas e usa dados reais dos novos cartões", async () => {
@@ -165,7 +209,7 @@ describe("DashboardUltra — referência 2026", () => {
       if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
       if (url === "/clients/?page_size=4&status=ativo")
         return Promise.resolve(clientesOk);
-        if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
+      if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
       return Promise.reject(new Error("inesperado"));
     });
 
@@ -184,7 +228,7 @@ describe("DashboardUltra — referência 2026", () => {
       if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
       if (url === "/clients/?page_size=4&status=ativo")
         return Promise.resolve(clientesOk);
-        if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
+      if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
       return Promise.reject(new Error("inesperado"));
     });
 
@@ -205,7 +249,7 @@ describe("DashboardUltra — referência 2026", () => {
         return Promise.reject(new Error("agenda off"));
       if (url === "/clients/?page_size=4&status=ativo")
         return Promise.resolve(clientesOk);
-        if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
+      if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
       return Promise.reject(new Error("inesperado"));
     });
 
