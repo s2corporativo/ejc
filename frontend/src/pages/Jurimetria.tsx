@@ -206,7 +206,7 @@ export default function Jurimetria() {
       <div>
         <PageHeader
           title="Jurimetria"
-          subtitle="Desempenho e histórico interno do escritório — sem benchmark externo ativo"
+          subtitle="Histórico interno do escritório e benchmarks externos dos tribunais — exibidos separadamente quando disponíveis"
         />
         <ErrorState
           title="Não foi possível carregar a jurimetria"
@@ -231,7 +231,7 @@ export default function Jurimetria() {
     <div>
       <PageHeader
         title="Jurimetria"
-        subtitle="Desempenho e histórico interno do escritório — sem benchmark externo ativo"
+        subtitle="Histórico interno do escritório e benchmarks externos dos tribunais — exibidos separadamente quando disponíveis"
       />
 
       {/* Cards resumo escritório */}
