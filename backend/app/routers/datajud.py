@@ -20,6 +20,21 @@ router = APIRouter(prefix="/datajud", tags=["datajud"])
 _ADVOGADO_MAIS = require_roles(["advogado"])
 
 
+def _prazos_datajud_bloqueados() -> dict[str, object]:
+    """Estado explícito enquanto prazo DataJud exigir motor canônico + HITL.
+
+    Mantém o campo ``prazos`` no contrato do sync para consumidores existentes,
+    mas impede que ausência de materialização seja interpretada como sucesso
+    silencioso de um cálculo processual.
+    """
+    return {
+        "criados": 0,
+        "ignorados": 0,
+        "bloqueado": True,
+        "motivo": "prazo_datajud_requer_motor_canonico_e_hitl",
+    }
+
+
 @router.get(
     "/process/{numero_cnj}",
     dependencies=[Depends(rate_limit("datajud_process", 20))],  # [B4] anti-abuso
@@ -70,7 +85,12 @@ async def sync_case(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """Sincroniza movimentações de um caso com o DataJud"""
+    """Sincroniza movimentações/contexto de um caso, nunca prazo processual.
+
+    O DataJud não fornece, por mera data genérica de movimento, prova suficiente
+    de publicação, termo inicial, regime e calendário para materializar prazo
+    fatal. O campo ``prazos`` permanece no response com bloqueio explícito.
+    """
     result = await db.execute(select(Case).where(Case.id == case_id, Case.deleted_at.is_(None)))
     case = result.scalar_one_or_none()
     if not case:
@@ -80,16 +100,11 @@ async def sync_case(
         raise HTTPException(400, "Case has no numero_processo")
     try:
         synced = await datajud_service.sincronizar_caso(db, case)
-        # Prazos são bloqueados: materialização automática de Deadline
-        # via DataJud exige motor canônico + revisão humana (#1336).
-        prazos = await datajud_service.sincronizar_prazos_datajud(
-            case.id, case.numero_processo, db
-        )
         await db.commit()
         return {
             "synced": synced,
             "numero_processo": case.numero_processo,
-            "prazos": prazos,
+            "prazos": _prazos_datajud_bloqueados(),
         }
     except datajud_service.DataJudDesabilitadoError as exc:
         await db.rollback()
@@ -128,8 +143,10 @@ async def sync_prazos(
     await verificar_acesso_caso(db, current_user, case_id)
     if not case.numero_processo:
         raise HTTPException(400, "Case has no numero_processo")
-    prazos = await datajud_service.sincronizar_prazos_datajud(
-        case.id, case.numero_processo, db
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            "Sincronização automática de prazos via DataJud suspensa: "
+            "o prazo precisa passar pelo motor canônico de cálculo e revisão humana."
+        ),
     )
-    await db.commit()
-    return {"numero_processo": case.numero_processo, "prazos": prazos}
