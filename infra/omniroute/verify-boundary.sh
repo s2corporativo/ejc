@@ -35,6 +35,12 @@ compose='infra/omniroute/docker-compose.yml'
 grep -Fq '${OMNIROUTE_BIND_HOST:-127.0.0.1}:${OMNIROUTE_PORT:-20128}:20128' "$compose" \
   || fail "bind loopback padrão do OmniRoute foi removido ou alterado"
 
+grep -Fq 'JWT_SECRET: "${OMNIROUTE_JWT_SECRET:?' "$compose" \
+  || fail "JWT_SECRET obrigatório não está protegido por variável local"
+
+grep -Fq 'REQUIRE_API_KEY: "${OMNIROUTE_REQUIRE_API_KEY:-true}"' "$compose" \
+  || fail "API de inferência não está com autenticação obrigatória por padrão"
+
 if grep -Ein '(/opt/ejc|/var/run/docker\.sock|\.codex|\.claude|\.ssh|/root/|backend/app|frontend/src)' "$compose"; then
   fail "compose do OmniRoute contém mount/referência sensível ou acoplamento ao checkout"
 fi
@@ -50,3 +56,4 @@ grep -Fq -- '- ALL' "$compose" \
 printf 'OK: fronteira IA jurídica x engenharia preservada.\n'
 printf 'OK: backend continua com ai_gateway.py próprio.\n'
 printf 'OK: OmniRoute permanece isolado, loopback-only e sem mounts sensíveis.\n'
+printf 'OK: dashboard exige JWT local e inferência exige API key por padrão.\n'
