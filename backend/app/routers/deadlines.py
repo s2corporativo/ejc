@@ -14,6 +14,7 @@ from fastapi.responses import Response
 from sqlalchemy import func as sqlfunc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clock import hoje_operacional
 from app.core.database import get_db
 from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.core.security import get_current_user, requer_advogado
@@ -85,7 +86,12 @@ def _ids_casos_do_usuario(user: User):
 
 
 def _filtro_escopo_prazos(q, cu: User):
-    """Escopo de leitura: prazo avulso é pessoal; prazo de caso herda o caso."""
+    """Aplica o mesmo princípio da Agenda: prazo avulso é pessoal.
+
+    Usuário não gestor enxerga prazo de caso da própria carteira OU prazo pelo
+    qual é responsável. Remover o antigo `case_id IS NULL` fecha o vazamento em
+    que todo prazo avulso ficava visível para qualquer usuário interno.
+    """
     if is_gestao(cu):
         return q
     return q.where(
@@ -97,11 +103,13 @@ def _filtro_escopo_prazos(q, cu: User):
 
 
 def _normalizar_status_filtro(status_f: str | None) -> str | None:
-    """`all`, vazio ou ausência significam sem filtro; desconhecido => 422."""
-    valor = (status_f or "").strip().lower()
+    """Normaliza `status=all` sem deixar valor fora do enum chegar ao Postgres."""
+    if status_f is None:
+        return None
+    valor = status_f.strip().lower()
     if not valor or valor == "all":
         return None
-    validos = {status.value for status in DeadlineStatus}
+    validos = {item.value for item in DeadlineStatus}
     if valor not in validos:
         raise HTTPException(
             status_code=422,
@@ -115,11 +123,13 @@ async def _verificar_acesso_prazo(
     cu: User,
     prazo: Deadline,
 ) -> None:
+    """Gate único para mutações/leitura dirigida de prazo existente."""
     if prazo.case_id:
         await verificar_acesso_caso(db, cu, prazo.case_id)
         return
     if is_gestao(cu) or prazo.responsavel_id == cu.id:
         return
+    # Anti-enumeração (README §Segurança): resposta genérica 404.
     raise HTTPException(status_code=404, detail="Prazo não encontrado")
 
 
@@ -128,61 +138,62 @@ async def _validar_responsavel_prazo(
     cu: User,
     responsavel_id: str,
     *,
-    case_id: str | None,
-) -> User:
-    if responsavel_id == cu.id:
-        if (
-            cu.role not in _ROLES_RESPONSAVEIS
-            or getattr(cu, "deleted_at", None) is not None
-            or getattr(cu, "is_active", True) is False
-        ):
-            raise HTTPException(
-                status_code=422,
-                detail="responsavel_id inválido: usuário atual não é elegível",
-            )
-        return cu
+    case_id: str | None = None,
+) -> None:
+    """Valida transferência sem transformar atribuição em concessão de acesso.
 
+    Transferir prazo para terceiro é ato de gestão. O alvo precisa existir,
+    estar ativo, ser usuário interno e, quando o prazo pertence a um caso,
+    possuir acesso real ao mesmo caso pelo gate canônico de ownership.
+    """
+    if responsavel_id == cu.id:
+        return
+    if not is_gestao(cu):
+        raise HTTPException(
+            status_code=403,
+            detail="Só a gestão pode atribuir prazo a outro responsável",
+        )
     alvo = (
         await db.execute(
             select(User).where(
                 User.id == responsavel_id,
-                User.deleted_at.is_(None),
                 User.is_active.is_(True),
+                User.deleted_at.is_(None),
             )
         )
     ).scalar_one_or_none()
-    if alvo is None or alvo.role not in _ROLES_RESPONSAVEIS:
+    if alvo is None:
         raise HTTPException(
             status_code=422,
-            detail="responsavel_id inválido: informe usuário interno ativo e elegível",
+            detail="responsavel_id inválido: usuário ativo não encontrado",
         )
-
-    if is_gestao(cu):
-        return alvo
-
-    if not case_id:
+    if getattr(alvo.role, "value", alvo.role) == "cliente_externo":
         raise HTTPException(
-            status_code=403,
-            detail="Sem permissão para atribuir prazo avulso a outro usuário",
+            status_code=422,
+            detail="responsavel_id inválido: prazo interno não pode ser atribuído a cliente externo",
         )
-
-    caso = await verificar_acesso_caso(db, cu, case_id)
-    if alvo.id not in (
-        caso.advogado_responsavel_id,
-        caso.advogado_auxiliar_id,
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail="Responsável informado não pertence à equipe jurídica do caso",
-        )
-    return alvo
+    if case_id:
+        try:
+            await verificar_acesso_caso(db, alvo, case_id)
+        except HTTPException as exc:
+            if exc.status_code not in (403, 404):
+                raise
+            raise HTTPException(
+                status_code=422,
+                detail="responsavel_id sem acesso ao caso informado",
+            ) from exc
 
 
 def _resolver_regime_processual(
     regime: str | None,
     dias_uteis: bool,
 ) -> tuple[str, bool]:
-    """Prazo processual exige regime explícito; nunca presume CPC."""
+    """Prazo processual exige regime explícito; nunca presume CPC.
+
+    Consolidação #1412: a presumção legada de cível (clientes antigos com
+    `dias_uteis=true` sem regime) sai do ar — a auditoria de prazos por regime
+    exige base explícita, e o frontend consolidado sempre envia o regime.
+    """
     del dias_uteis
     if regime:
         return regime, False
@@ -302,12 +313,6 @@ async def calcular(
             tribunal=req.tribunal,
         )
         modo = "dias corridos c/ prorrogação do termo final (Lei 9.784 art. 66 §1º)"
-    # O prazo administrativo usa as MESMAS funções de dia útil e os MESMOS
-    # feriados do banco que o processual — então degrada pelos mesmos motivos.
-    # Antes estes três campos eram fixos (`False`/`False`/`None`): com a carga
-    # de feriados falha, o prazo saía carimbado como DEFINITIVO sem os feriados
-    # municipais, e ninguém era avisado. Mesma classe de defeito que este PR já
-    # corrigiu em calcular_prazo_processual; agora ambos leem a fonte única.
     degradado, aviso = estado_degradacao(req.tribunal)
     return {
         "data_vencimento": vencimento,
@@ -351,7 +356,7 @@ async def listar(
         await db.execute(q.offset((page - 1) * page_size).limit(page_size))
     ).scalars().all()
 
-    hoje = date.today()
+    hoje = hoje_operacional()
     data = []
     for d in rows:
         item = DeadlineResponse.model_validate(d).model_dump()
@@ -399,7 +404,7 @@ async def exportar_csv(
         logger.warning("[export.csv] resultado truncado em %d linhas", _MAX_EXPORT)
 
     return Response(
-        content=_prazos_para_csv(rows, date.today()),
+        content=_prazos_para_csv(rows, hoje_operacional()),
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="prazos.csv"'},
     )
@@ -572,6 +577,15 @@ async def criar(
         modo_origem="motor_canonico" if calculo_audit else "vencimento_manual",
     )
 
+    responsavel_id = payload.responsavel_id or cu.id
+    if responsavel_id != cu.id:
+        await _validar_responsavel_prazo(
+            db,
+            cu,
+            responsavel_id,
+            case_id=payload.case_id,
+        )
+
     d = Deadline(
         id=str(uuid4()),
         titulo=payload.titulo,
@@ -636,6 +650,21 @@ async def atualizar(
     await _verificar_acesso_prazo(db, cu, d)
 
     mudancas = payload.model_dump(exclude_unset=True)
+    if "responsavel_id" in mudancas:
+        novo_responsavel = mudancas["responsavel_id"]
+        if not novo_responsavel:
+            raise HTTPException(
+                status_code=422,
+                detail="responsavel_id não pode ser vazio",
+            )
+        if novo_responsavel != d.responsavel_id:
+            await _validar_responsavel_prazo(
+                db,
+                cu,
+                novo_responsavel,
+                case_id=d.case_id,
+            )
+
     status_antes = getattr(d.status, "value", d.status)
     data_antes = d.data_prazo
     responsavel_antes = d.responsavel_id
@@ -764,7 +793,7 @@ async def atualizar(
         "data_prazo" in mudancas
         and "status" not in mudancas
         and getattr(d.status, "value", d.status) == "vencido"
-        and d.data_prazo >= date.today()
+        and d.data_prazo >= hoje_operacional()
     ):
         d.status = "pendente"
         await criar_audit_log(

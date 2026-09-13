@@ -101,6 +101,9 @@ def _chave(url: str) -> str:
     seg = re.sub(r"\.pdf$", "", seg, flags=re.I)
     slug = slugificar(seg)
     if not slug:   # URL atípica → hash estável (dedup preservado)
+        # SHA-1 usado como chave de deduplicacao/identidade, nunca como
+        # assinatura, token ou senha. Ver docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
         slug = hashlib.sha1(url.encode("utf-8")).hexdigest()[:16]
     return f"anpd:{slug}"
 

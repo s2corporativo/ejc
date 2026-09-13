@@ -13,8 +13,8 @@
 # ficha_confirmada() → helper do gate em peca_geracao.
 # resumo_para_prompt() → texto compacto dos campos p/ ancorar a peça na triagem.
 #
-# Todo o pré-preenchimento é ESTIMATIVA / RASCUNHO (HITL obrigatório — OAB
-# Prov. 205/2021). A peça só nasce de uma ficha CONFIRMADA pelo advogado.
+# Todo o pré-preenchimento é ESTIMATIVA / RASCUNHO (HITL obrigatório). A
+# peça só nasce de uma ficha CONFIRMADA pelo advogado.
 from __future__ import annotations
 
 import json
@@ -70,8 +70,7 @@ _RISCOS_VALIDOS = {"baixo", "medio", "alto"}
 
 _AVISO_ESTIMATIVA = (
     "Pré-preenchimento gerado por IA a partir dos dados do caso — RASCUNHO, "
-    "NÃO é parecer jurídico. Revisão e confirmação do advogado obrigatórias "
-    "(OAB Prov. 205/2021)."
+    "NÃO é parecer jurídico. Revisão e confirmação do advogado obrigatórias."
 )
 
 _SYSTEM_PROMPT = """Você é assistente interno de TRIAGEM de um escritório de advocacia brasileiro (uso exclusivo por advogados — nunca resposta a cliente).

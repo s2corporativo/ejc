@@ -15,7 +15,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
-MIGRATION = BACKEND_DIR / "alembic" / "versions" / "156_prazos_auditaveis_regime.py"
+MIGRATION = BACKEND_DIR / "alembic" / "versions" / "160_prazos_auditaveis_regime.py"
 
 DEADLINE_COLS = {
     "data_publicacao",
@@ -42,9 +42,11 @@ def _script() -> ScriptDirectory:
     return ScriptDirectory.from_config(cfg)
 
 
-def test_156_encadeia_no_head_155():
-    rev = _script().get_revision("156_prazos_auditaveis_regime")
-    assert rev.down_revision == "155_indices_listagem_espinha"
+def test_160_encadeia_no_head_159():
+    """#1412: migration renumerada de 156 para 160 (colisão na main) e
+    reencadeada sobre o head canônico 159_user_cpf_secure."""
+    rev = _script().get_revision("160_prazos_auditaveis_regime")
+    assert rev.down_revision == "159_user_cpf_secure"
 
 
 def test_upgrade_156_e_estritamente_aditivo_e_sem_backfill():
@@ -147,7 +149,7 @@ def test_upgrade_e_downgrade_156_em_postgres_real():
         finally:
             engine.dispose()
 
-        alembic("upgrade", "156_prazos_auditaveis_regime")
+        alembic("upgrade", "160_prazos_auditaveis_regime")
         engine = create_engine(sync_url)
         try:
             insp = inspect(engine)

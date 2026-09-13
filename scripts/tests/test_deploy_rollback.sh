@@ -300,18 +300,25 @@ grep -q '^compose up -d --no-deps --force-recreate backend worker frontend$' "$L
 grep -q '^post-check$' "$POST_LOG" || fail "post-check do rollback não executou"
 grep -q 'Rollback confirmado pelo post-deploy check' "$TMP/runtime-rollback.out" || fail "rollback de runtime não foi confirmado"
 
-# 9) Workflow usa transação única e marcador de fase explícito.
-WF="$ROOT/.github/workflows/deploy-vps.yml"
-grep -q 'run: bash scripts/deploy_workflow_transaction.sh' "$WF" || fail "workflow não usa wrapper transacional"
-grep -q 'sync_started' "$WF" || fail "resumo não reconhece rsync parcial"
-grep -q 'sync_completed' "$WF" || fail "resumo não reconhece sync concluído"
-grep -q 'deploy_completed' "$WF" || fail "resumo não reconhece deploy concluído"
-! grep -q 'SYNC_OUTCOME:' "$WF" || fail "workflow ainda depende de outcome ambíguo"
+# 9) A entrada de deploy usa transação única e marcador de fase explícito.
+# O gatilho deixou de ser o GitHub Actions (aposentado em #1533); o contrato
+# vale sobre o mecanismo, não sobre o gatilho: quem dispara chama o wrapper
+# transacional, e é o wrapper que marca cada fase.
+ENTRADA="$ROOT/scripts/deploy_manual.sh"
+TX="$ROOT/scripts/deploy_workflow_transaction.sh"
+HOST_ENTRADA="$ROOT/infra/host-automation/ejc-deploy-approved.sh"
+grep -q 'bash scripts/deploy_workflow_transaction.sh' "$ENTRADA" || fail "entrada de deploy não usa wrapper transacional"
+grep -q 'write_phase sync_started' "$TX" || fail "wrapper não marca rsync parcial"
+grep -q 'write_phase sync_completed' "$TX" || fail "wrapper não marca sync concluído"
+grep -q 'write_phase deploy_completed' "$TX" || fail "wrapper não marca deploy concluído"
+! grep -q 'SYNC_OUTCOME:' "$ENTRADA" "$TX" || fail "deploy ainda depende de outcome ambíguo"
 
 # 10) Contratos de sintaxe e política.
-grep -q 'REQUIRE_PREDEPLOY_BACKUP: "1"' "$WF" || fail "workflow não exige backup"
+grep -q 'REQUIRE_PREDEPLOY_BACKUP=1' "$ENTRADA" || fail "entrada de deploy não exige backup"
+grep -q 'REQUIRE_PREDEPLOY_BACKUP=1' "$HOST_ENTRADA" || fail "automação do host não exige backup"
 bash -n "$ROOT/scripts/deploy_lock.sh"
 bash -n "$ROOT/scripts/deploy_workflow_transaction.sh"
 bash -n "$ROOT/scripts/deploy_vps_safe.sh"
 bash -n "$ROOT/scripts/migrar_env_obsoletos.sh"
+bash "$ROOT/scripts/tests/test_operational_curl_timeouts.sh"
 echo "[rollback-test] OK — lock host-level/inode, backup fail-closed, env transacional, migration e rollback comprovados."

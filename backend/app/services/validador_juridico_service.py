@@ -529,6 +529,7 @@ async def validar_rascunho_juridico(
         limite=8,
         modo_or=True,
         scope_client_id=scope_client_id,
+        scope_case_id=payload.case_id,
     )
 
     user_prompt = USER_TEMPLATE.format(

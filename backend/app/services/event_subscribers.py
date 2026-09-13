@@ -75,11 +75,11 @@ def _install_datajud_cognitive_feed() -> None:
         instalar()
     except Exception as exc:
         logger.critical(
-            "Barreira crítica DataJud/Prazos não pôde ser instalada: %s",
+            "Barreira crítica DataJud para prazos não pôde ser instalada: %s",
             exc,
             exc_info=True,
         )
-        raise RuntimeError("Barreira crítica DataJud/Prazos indisponível") from exc
+        raise RuntimeError("Barreira crítica DataJud indisponível") from exc
 
 
 def _install_financial_scheduler_hardening() -> None:

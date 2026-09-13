@@ -109,6 +109,54 @@ def _candidato_legislacao() -> dict:
     }
 
 
+async def test_reranker_descarta_normativo_sem_registro_com_banco_disponivel(
+    monkeypatch,
+):
+    """Fail-closed também quando o banco RESPONDE e o documento não está lá.
+
+    O `except` já derrubava normativo com banco indisponível, mas o caminho de
+    "documento não encontrado" assumia `vigente=True` por padrão e mantinha o
+    candidato. Como a consulta de governança filtra `deleted_at IS NULL`, um
+    KnowledgeDoc apagado cujos chunks continuassem indexados caía exatamente
+    nesse padrão e voltava ao ranking como norma vigente — virando fundamentação
+    de peça. O recorte continua sendo só do normativo: doutrina passa.
+    """
+    monkeypatch.setattr(reranker, "disponivel", lambda: False)
+
+    class _ResultadoVazio:
+        def all(self):
+            return []
+
+    class _DBSemOsDocs:
+        async def execute(self, *a, **k):
+            return _ResultadoVazio()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(reranker, "AsyncSessionLocal", lambda: _DBSemOsDocs())
+
+    doutrina = dict(
+        _candidato_legislacao(),
+        doc_id="d2",
+        chunk_id="c2",
+        categoria="doutrina",
+        titulo="Comentário doutrinário",
+    )
+    result = await reranker.rerank(
+        "consulta", [_candidato_legislacao(), doutrina], 5
+    )
+    ids = [item["doc_id"] for item in result]
+    assert "d1" not in ids, (
+        "legislação sem registro de governança não pode ser recuperada nem "
+        "quando o banco responde"
+    )
+    assert "d2" in ids, "o recorte é do normativo — doutrina continua passando"
+
+
 async def test_reranker_enriquece_citacao_mesmo_desabilitado(monkeypatch):
     monkeypatch.setattr(reranker, "disponivel", lambda: False)
     # A hidratação de governança abre sessão própria (AsyncSessionLocal) e não

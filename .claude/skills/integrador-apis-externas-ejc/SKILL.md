@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 DATAJUD_BASE = "https://api-publica.datajud.cnj.jus.br"
 # Token: solicitar em https://datajud-wiki.cnj.jus.br/api-publica/acesso
-DATAJUD_TOKEN = os.getenv("DATAJUD_API_KEY", "cDZHYzlZa0JadVREZDJCendFbzVlQTU2S3NMWDBIQUs=")
+DATAJUD_TOKEN = os.getenv("DATAJUD_API_KEY")
 
 # Mapeamento tribunal → índice Elastic DataJud
 TRIBUNAL_INDEX = {

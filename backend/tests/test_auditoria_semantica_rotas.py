@@ -24,7 +24,10 @@ def test_semantica_sem_violacoes_ativas():
         "par(es) semântico(s) ativos sem decisão registrada: "
         f"{resultado['violacoes']}"
     )
-    assert resultado["pares_avaliados"] >= 6, (
+    # 5 desde 2026-09-05: o par /diplomacia × /diplomacia-v3 saiu da matriz
+    # junto com o último resquício do módulo (CORTE-2) — nenhum dos dois lados
+    # existe no app desde 12/08, o par só registrava história.
+    assert resultado["pares_avaliados"] >= 5, (
         "a matriz de pares semânticos encolheu — pares removidos precisam de "
         "decisão escrita no próprio route_registry.py"
     )

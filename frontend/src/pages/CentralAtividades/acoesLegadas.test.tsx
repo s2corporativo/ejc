@@ -27,7 +27,6 @@ vi.mock("../../components/Toast", () => ({
 
 import { PrazoSugeridoModal, SimularPrazoModal } from "./acoesLegadas";
 
-
 describe("SimularPrazoModal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -62,6 +61,7 @@ describe("SimularPrazoModal", () => {
       dias: 15,
       tipo: "processual",
       regime_calculo: "penal",
+      dias_uteis: false,
       tribunal: null,
       dobro: false,
       excecao_recesso_penal: false,
@@ -72,11 +72,22 @@ describe("SimularPrazoModal", () => {
     );
   });
 
-  it("mostra aviso de conferência quando tribunal não é informado", () => {
-    render(<SimularPrazoModal open={true} onClose={vi.fn()} />);
-    expect(
-      screen.getByText(/Tribunal não informado: feriados e suspensões locais/),
-    ).toBeTruthy();
+  it("exibe regra auditável e revisão humana obrigatória após simular", async () => {
+    const { container } = render(
+      <SimularPrazoModal open={true} onClose={vi.fn()} />,
+    );
+
+    const data = container.querySelector('input[type="date"]') as HTMLInputElement;
+    fireEvent.change(data, { target: { value: "2026-09-01" } });
+    fireEvent.click(screen.getByRole("button", { name: "Simular" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/Referência normativa: CPC, arts\. 219 e 220/),
+      ).toBeTruthy(),
+    );
+    expect(screen.getByText(/Abrir texto oficial no Planalto/)).toBeTruthy();
+    expect(screen.getByText(/Revisão humana obrigatória/)).toBeTruthy();
   });
 });
 
@@ -92,19 +103,18 @@ describe("PrazoSugeridoModal", () => {
     });
   });
 
-  it("só aceita DJEN após informar os quatro marcos e regime", async () => {
+  it("só cria prazo após o advogado informar o vencimento conferido", async () => {
     const onClose = vi.fn();
     const onResolvido = vi.fn();
-    render(
+    const { container } = render(
       <PrazoSugeridoModal
         sugestao={{
           id: "com-1",
           titulo: "Intimação de teste",
           dados: {
-            disponivel: false,
-            case_id: "case-1",
-            data_disponibilizacao: "2026-09-01",
-            aviso: "Revisão necessária",
+            disponivel: true,
+            data_sugerida: "2026-09-18",
+            dias: 15,
             prazo_sugerido_status: "nenhum",
           },
         }}
@@ -113,54 +123,39 @@ describe("PrazoSugeridoModal", () => {
       />,
     );
 
+    // A referência automática aparece, mas não materializa prazo.
+    expect(screen.getByText(/Referência automática/)).toBeTruthy();
+
     const aceitar = screen.getByRole("button", {
-      name: "Cadastrar prazo revisado",
+      name: "Aceitar e criar prazo",
     }) as HTMLButtonElement;
     expect(aceitar.disabled).toBe(true);
 
-    fireEvent.change(screen.getByLabelText("Data de publicação"), {
-      target: { value: "2026-09-02" },
-    });
-    fireEvent.change(screen.getByLabelText("Termo inicial"), {
-      target: { value: "2026-09-03" },
-    });
-    fireEvent.change(screen.getByLabelText("Regime processual"), {
-      target: { value: "civel" },
-    });
-    fireEvent.change(screen.getByLabelText("Vencimento final"), {
-      target: { value: "2026-09-22" },
-    });
-    expect(aceitar.disabled).toBe(true);
-
-    fireEvent.click(screen.getByLabelText("Confirmei a fonte oficial"));
+    const vencimento = container.querySelector(
+      'input[type="date"]',
+    ) as HTMLInputElement;
+    expect(vencimento).toBeTruthy();
+    fireEvent.change(vencimento, { target: { value: "2026-09-22" } });
     expect(aceitar.disabled).toBe(false);
-    fireEvent.click(aceitar);
 
+    fireEvent.click(aceitar);
     await waitFor(() =>
-      expect(post).toHaveBeenCalledWith(
-        "/intimacoes/com-1/aceitar-prazo",
-        {
-          data_publicacao: "2026-09-02",
-          termo_inicial: "2026-09-03",
-          regime_calculo: "civel",
-          data_prazo: "2026-09-22",
-          confirmacao_fonte_oficial: true,
-        },
-      ),
+      expect(post).toHaveBeenCalledWith("/intimacoes/com-1/aceitar-prazo", {
+        data_prazo: "2026-09-22",
+      }),
     );
     await waitFor(() => expect(onResolvido).toHaveBeenCalledTimes(1));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("mantém bloqueio quando intimação não está vinculada a caso", () => {
+  it("não envia nada enquanto o vencimento conferido não é informado", async () => {
     render(
       <PrazoSugeridoModal
         sugestao={{
-          id: "com-sem-caso",
-          titulo: "Intimação sem caso",
+          id: "com-sem-data",
+          titulo: "Intimação sem data",
           dados: {
             disponivel: false,
-            case_id: null,
             prazo_sugerido_status: "nenhum",
           },
         }}
@@ -168,23 +163,28 @@ describe("PrazoSugeridoModal", () => {
         onResolvido={vi.fn()}
       />,
     );
-    expect(screen.getByText(/ainda não está vinculada a um caso/i)).toBeTruthy();
+
+    // Sem base calculável, o motivo aparece — mas o caminho é HITL: nada é
+    // enviado automaticamente.
+    expect(
+      screen.getByText(/A captura não fornece base suficiente/i),
+    ).toBeTruthy();
     const aceitar = screen.getByRole("button", {
-      name: "Cadastrar prazo revisado",
+      name: "Aceitar e criar prazo",
     }) as HTMLButtonElement;
     expect(aceitar.disabled).toBe(true);
+    expect(post).not.toHaveBeenCalled();
   });
 
-  it("não envia quando a cronologia dos marcos é inválida", async () => {
+  it("recusar prazo não envia data e não cria Deadline", async () => {
     render(
       <PrazoSugeridoModal
         sugestao={{
-          id: "com-crono",
-          titulo: "Intimação cronologia",
+          id: "com-recusa",
+          titulo: "Intimação recusável",
           dados: {
-            disponivel: false,
-            case_id: "case-1",
-            data_disponibilizacao: "2026-09-05",
+            disponivel: true,
+            data_sugerida: "2026-09-18",
             prazo_sugerido_status: "nenhum",
           },
         }}
@@ -193,23 +193,14 @@ describe("PrazoSugeridoModal", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Data de publicação"), {
-      target: { value: "2026-09-04" },
-    });
-    fireEvent.change(screen.getByLabelText("Termo inicial"), {
-      target: { value: "2026-09-06" },
-    });
-    fireEvent.change(screen.getByLabelText("Regime processual"), {
-      target: { value: "civel" },
-    });
-    fireEvent.change(screen.getByLabelText("Vencimento final"), {
-      target: { value: "2026-09-20" },
-    });
-    fireEvent.click(screen.getByLabelText("Confirmei a fonte oficial"));
-    fireEvent.click(
-      screen.getByRole("button", { name: "Cadastrar prazo revisado" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Recusar prazo" }));
 
-    await waitFor(() => expect(post).not.toHaveBeenCalled());
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/intimacoes/com-recusa/recusar-prazo"),
+    );
+    expect(post).not.toHaveBeenCalledWith(
+      "/intimacoes/com-recusa/aceitar-prazo",
+      expect.anything(),
+    );
   });
 });

@@ -39,8 +39,8 @@ logger = logging.getLogger("ejc.intake")
 router = APIRouter(prefix="/intake", tags=["Intake — Orquestração"])
 
 AVISO_RASCUNHO = (
-    "Sugestões geradas por IA — sujeitas a revisão do advogado responsável "
-    "(OAB Prov. 205/2021)"
+    "Sugestões geradas por IA — sujeitas a revisão obrigatória do advogado "
+    "responsável"
 )
 RESSALVA_OAB = (
     "Valor de referência mínimo da tabela OAB/MG — não vinculante, "
@@ -203,7 +203,10 @@ async def _estrategia_recomendada(
 
     fontes = []
     try:
-        fontes = await buscar_contexto_rag(db, f"{area} {texto_limpo[:400]}", limite=5, modo_or=True)
+        fontes = await buscar_contexto_rag(
+            db, f"{area} {texto_limpo[:400]}", limite=5, modo_or=True,
+            scope_client_id=case.client_id, scope_case_id=case.id,
+        )
     except Exception as e:
         logger.warning(f"RAG indisponível na estratégia: {e}")
 

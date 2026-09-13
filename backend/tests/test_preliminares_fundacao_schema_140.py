@@ -66,7 +66,11 @@ def _script_directory() -> ScriptDirectory:
 
 def test_migration_139_encadeia_em_138_e_e_o_head():
     script = _script_directory()
-    assert script.get_heads() == ["156_prazos_auditaveis_regime"]
+    # Issue #1272 (24/08/2026): 148/149 do plano-mestre renumeradas para
+    # 151/152 ao mesclar a main (149/150 ocupadas pelo #1238). A migration
+    # 153 isola cliente-documento, 154 cria saneamento, 155 adiciona índices
+    # de listagem e 156 adiciona despesas processuais por caso.
+    assert script.get_heads() == ["160_prazos_auditaveis_regime"]
     revisao = script.get_revision("140_preliminares_fundacao_schema")
     assert revisao.down_revision == "139_dpt360_ciclo_vida_lgpd"
     assert (
@@ -102,8 +106,8 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
         == "138_consolida_fontes_ingestao"
     )
     assert (
-        script.get_revision("156_prazos_auditaveis_regime").down_revision
-        == "155_indices_listagem_espinha"
+        script.get_revision("160_prazos_auditaveis_regime").down_revision
+        == "159_user_cpf_secure"
     )
 
 

@@ -25,6 +25,9 @@ async def listar_tabela(
         params["complexity"] = complexity
 
     where = " AND ".join(filters)
+    # SQL literal com bind params; a regra marca todo text(), sem olhar
+    # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     r = await db.execute(text(f"""
         SELECT id, area, case_type, complexity, fee_type,
                base_amount, percentage_of_value, min_amount, max_amount,

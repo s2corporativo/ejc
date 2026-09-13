@@ -84,6 +84,31 @@ async def _validar_dependencias_restauração(
         await _exigir_pai_ativo(db, Client, client_id, "o cliente")
 
 
+def _validar_purga_irreversivel_disponivel(entidade: str) -> None:
+    """Bloqueia purga documental até existir política de retenção verificável.
+
+    `Document` ainda não possui no schema canônico campos que permitam ao
+    backend provar, no instante da purga, que o período de retenção terminou e
+    que não existe legal hold ativo. Autorizar hard delete somente com papel de
+    superadmin + motivo seria irreversível sem uma barreira jurídica objetiva.
+
+    O bloqueio é deliberadamente restrito a `documents`: as demais entidades
+    mantêm o fluxo existente. A futura implementação de #1359 deve substituir
+    esta contenção por validação server-side de retenção/legal hold, com trilha
+    de auditoria e migration própria após reconciliação do head Alembic.
+    """
+    if entidade == "documents":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Purga definitiva de documentos temporariamente bloqueada: "
+                "a política de retenção e legal hold ainda não está codificada "
+                "no schema canônico. Use a lixeira/soft delete até a validação "
+                "server-side de retenção estar disponível."
+            ),
+        )
+
+
 @router.get("/")
 async def listar(
     entidade: str = Query(...),
@@ -163,8 +188,12 @@ async def restaurar(
 
 
 class PurgarRequest(BaseModel):
-    motivo: str = Field(..., min_length=5, max_length=500,
-                        description="Motivo da purga (LGPD art. 18, VI) — obrigatório.")
+    motivo: str = Field(
+        ...,
+        min_length=5,
+        max_length=500,
+        description="Motivo da purga (LGPD art. 18, VI) — obrigatório.",
+    )
 
 
 @router.post("/{entidade}/{registro_id}/purgar")
@@ -177,37 +206,21 @@ async def purgar(
 ):
     """Exclusão DEFINITIVA (hard delete) — LGPD art. 16 e art. 18, VI.
 
-    Até esta rota, não havia caminho pela aplicação para atender um pedido de
-    eliminação: `DELETE /trash/{entidade}/{id}` e `POST .../purgar` respondiam
-    404 (auditoria V2-4.4). Salvaguardas deliberadas:
-
-    - só `superadmin` (mais restrito que `restaurar`, que aceita admin/socio —
-      irreversível, então o piso de permissão é mais alto);
-    - só purga o que JÁ está na lixeira (`deleted_at` preenchido) — o soft
-      delete continua sendo o único caminho de exclusão de um registro ativo;
-    - `motivo` obrigatório (mín. 5 caracteres), mesmo padrão de
-      `DELETE /cases/{id}` (R2);
-    - audit log ANTES do delete físico (a linha em si vai deixar de existir —
-      a trilha em audit_logs é o único registro que sobra depois da purga);
-    - NÃO tenta cascatear a exclusão para registros dependentes: um
-      IntegrityError vira 409 explícito, e o operador purga a dependência
-      primeiro. Cascatear automaticamente exclusão IRREVERSÍVEL é mais
-      perigoso do que pedir uma segunda chamada.
-
-    Política de retenção (prazo mínimo de guarda antes de permitir purga) NÃO
-    está codificada aqui de propósito — pauta D-pendente com o advogado
-    responsável (auditoria: "peça a política de retenção antes de codificar
-    prazos, não arbitre"). Até essa decisão, a salvaguarda é o julgamento
-    humano do superadmin, registrado no `motivo` obrigatório.
+    Salvaguardas:
+    - somente superadmin;
+    - somente registro previamente soft-deleted;
+    - motivo obrigatório;
+    - audit log antes do delete físico;
+    - sem cascade automático de exclusão irreversível;
+    - documentos permanecem bloqueados para hard purge até o backend conseguir
+      verificar retenção e legal hold de forma objetiva (issue #1359).
     """
     if entidade not in ENTIDADES:
         raise HTTPException(status_code=422, detail="Entidade inválida")
     modelo, rotulo = ENTIDADES[entidade]
     # `with_for_update()`: sem lock, um `restaurar` concorrente (admin/socio,
     # nível de permissão mais baixo) entre este SELECT e o commit abaixo podia
-    # apagar fisicamente um registro que acabara de ser restaurado (achado da
-    # revisão de segurança, TOCTOU) — o DELETE do ORM não reconfere
-    # `deleted_at` no momento do commit.
+    # apagar fisicamente um registro que acabara de ser restaurado.
     registro = (
         await db.execute(
             select(modelo).where(
@@ -218,8 +231,13 @@ async def purgar(
     if not registro:
         raise HTTPException(
             status_code=404,
-            detail="Registro não está na lixeira — purga exige exclusão (soft delete) prévia.",
+            detail=(
+                "Registro não está na lixeira — purga exige exclusão "
+                "(soft delete) prévia."
+            ),
         )
+
+    _validar_purga_irreversivel_disponivel(entidade)
 
     excluido_em = registro.deleted_at
     rotulo_registro = rotulo(registro)

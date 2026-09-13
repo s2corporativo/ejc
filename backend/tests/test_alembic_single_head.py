@@ -6,7 +6,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # Atualizar este identificador no mesmo PR que adicionar uma nova migration.
-HEAD_REVISION = "156_prazos_auditaveis_regime"
+HEAD_REVISION = "160_prazos_auditaveis_regime"
 MERGE_REVISION = "104_merge_entrada_orquestrador"
 EXPECTED_PARENTS = {
     "101_entrada_universal_documentos",
@@ -149,22 +149,19 @@ def test_preliminares_encadeiam_apos_consolidacao_fontes():
     assert script.get_revision("145_drop_orphan_db_only_columns").down_revision == (
         "144_alembic_version_varchar128"
     )
+    assert _script_directory().get_heads() == [HEAD_REVISION]
 
 
-def test_cadeia_recente_145_ate_156_e_linear_e_sem_reuso_148():
-    script = _script_directory()
-    pares = {
-        "146_case_sigilo_reforcado": "145_drop_orphan_db_only_columns",
-        "147_pendencia_impacto_providencia": "146_case_sigilo_reforcado",
-        "149_documents_sha256_integridade": "147_pendencia_impacto_providencia",
-        "150_indices_fk_espinha_dominio": "149_documents_sha256_integridade",
-        "151_case_status_anterior": "150_indices_fk_espinha_dominio",
-        "152_thesis_candidate_tese_banco": "151_case_status_anterior",
-        "153_legal_doc_client_id": "152_thesis_candidate_tese_banco",
-        "154_saneamento_schema": "153_legal_doc_client_id",
-        "155_indices_listagem_espinha": "154_saneamento_schema",
-        "156_prazos_auditaveis_regime": "155_indices_listagem_espinha",
-    }
-    for revision_id, parent in pares.items():
-        assert script.get_revision(revision_id).down_revision == parent
-    assert script.get_heads() == [HEAD_REVISION]
+def test_despesas_processuais_encadeiam_no_head_155():
+    revision = _script_directory().get_revision("156_case_despesas_processuais")
+    assert revision.down_revision == "155_indices_listagem_espinha"
+
+
+def test_ajuizamento_encadeia_no_head_156():
+    revision = _script_directory().get_revision("157_ajuizamento_judicial")
+    assert revision.down_revision == "156_case_despesas_processuais"
+
+def test_prazos_auditaveis_160_encadeia_no_head_159():
+    """#1412 renumerado: migration do PR encadeia sobre o head canônico 159."""
+    revisao = _script_directory().get_revision("160_prazos_auditaveis_regime")
+    assert revisao.down_revision == "159_user_cpf_secure"

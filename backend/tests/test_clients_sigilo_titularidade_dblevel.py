@@ -32,6 +32,8 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import select, text
 
+from _limpeza_cliente import limpar_dependencias_de_clientes
+
 pytestmark = pytest.mark.skipif(
     not os.getenv("RUN_DB_TESTS"),
     reason="requer Postgres com migrations (defina RUN_DB_TESTS=1)",
@@ -89,6 +91,7 @@ async def _limpar(db, *, case_ids=(), user_ids=(), client_ids=()):
     # checar_conflito/criar-acesso gravam auditoria; limpar ANTES dos users,
     # senão o DELETE viola a FK, aborta a transação e nada é limpo (órfãos que
     # contaminam outros testes, ex.: test_search_dblevel).
+    await limpar_dependencias_de_clientes(db, client_ids)
     for cid in case_ids:
         await db.execute(text("DELETE FROM cases WHERE id = :id"), {"id": cid})
     for cid in client_ids:

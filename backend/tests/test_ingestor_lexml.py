@@ -286,6 +286,36 @@ async def test_ingerir_tolerante_a_erro_de_upsert(monkeypatch):
 
 
 async def test_ingerir_tolerante_a_erro_de_busca(monkeypatch):
+    """Falha em PARTE das consultas não derruba a execução — a intenção
+    original deste teste, agora exercitada de fato.
+
+    A versão anterior simulava falha em 100% das consultas e ainda exigia
+    `(0, 0)`: com um único tema configurado, TODA busca estourava e o
+    resultado era declarado sucesso. Isso codificava como contrato exatamente
+    o defeito que esta branch corrige — "a fonte não respondeu" indistinguível
+    de "não havia nada". A tolerância que o comentário original descreve
+    ("num tipo/tema") é a parcial, e é ela que este teste passa a verificar.
+    """
+    s = get_settings()
+    monkeypatch.setattr(s, "LEXML_INGEST_TEMAS", "tema1,tema2", raising=False)
+
+    chamadas = {"n": 0}
+
+    async def fake_buscar(palavras, tipo="jurisprudencia", por_pagina=10, **kw):
+        chamadas["n"] += 1
+        if chamadas["n"] == 1:
+            raise RuntimeError("LexML fora do ar")
+        return []
+
+    monkeypatch.setattr(lexml, "buscar_lexml", fake_buscar)
+    assert await lexml.ingerir(_FakeDB()) == (0, 0)
+    assert chamadas["n"] > 1, "as consultas seguintes têm de ser tentadas"
+
+
+async def test_ingerir_falha_alto_quando_todas_as_consultas_estouram(monkeypatch):
+    """Plano inteiramente falho não pode ser reportado como execução sadia."""
+    import pytest as _pytest
+
     s = get_settings()
     monkeypatch.setattr(s, "LEXML_INGEST_TEMAS", "tema1", raising=False)
 
@@ -293,8 +323,8 @@ async def test_ingerir_tolerante_a_erro_de_busca(monkeypatch):
         raise RuntimeError("LexML fora do ar")
 
     monkeypatch.setattr(lexml, "buscar_lexml", fake_buscar)
-    # rede/fonte indisponível num tipo/tema NÃO derruba a execução
-    assert await lexml.ingerir(_FakeDB()) == (0, 0)
+    with _pytest.raises(RuntimeError, match="erro técnico"):
+        await lexml.ingerir(_FakeDB())
 
 
 # ── 4. Gate no scheduler ──────────────────────────────────────────────────────

@@ -1,7 +1,6 @@
 // ── Ações que só existiam nas telas legadas, trazidas para a Central ─────────
 // Fluxos de intimação (prazo assistido, captura manual) e de suspensão de
-// tribunal (criar, excluir). O simulador jurídico usa o motor canônico de
-// deadlines para não manter duas regras de cálculo processual.
+// tribunal (criar, excluir). O simulador usa o motor canônico de prazos.
 import { useEffect, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import api from "../../lib/api";
@@ -38,18 +37,10 @@ function fmtData(d?: string | null): string {
 
 // ── 1. Prazo assistido da intimação (aceitar / recusar) ──────────────────────
 
-type RegimeProcessual = "civel" | "trabalhista" | "penal";
-
 type PrazoSugerido = {
   disponivel?: boolean;
   dias?: number | null;
   data_sugerida?: string | null;
-  data_disponibilizacao?: string | null;
-  data_publicacao?: string | null;
-  termo_inicial?: string | null;
-  regime_calculo?: RegimeProcessual | null;
-  case_id?: string | null;
-  aviso?: string | null;
   base_legal?: string | null;
   base_calculo?: string | null;
   motivo?: string | null;
@@ -64,10 +55,10 @@ export type SugestaoAberta = {
 };
 
 /**
- * Prazo DJEN é HITL. Os quatro marcos ficam visíveis e distintos:
- * disponibilização (fato capturado), publicação, termo inicial e vencimento.
- * Nenhum deles é preenchido a partir de outro. O regime processual também é
- * informado explicitamente antes da materialização do Deadline.
+ * Modal do prazo assistido: a sugestão automática é somente referência.
+ * O backend só cria o Deadline quando o advogado informa manualmente o
+ * vencimento conferido após validar publicação, termo inicial, regime e
+ * calendário. A recusa não cria prazo.
  */
 export function PrazoSugeridoModal({
   sugestao,
@@ -79,68 +70,27 @@ export function PrazoSugeridoModal({
   onResolvido: () => void;
 }) {
   const [salvando, setSalvando] = useState<"aceitar" | "recusar" | null>(null);
-  const [dataPublicacao, setDataPublicacao] = useState("");
-  const [termoInicial, setTermoInicial] = useState("");
-  const [regimeCalculo, setRegimeCalculo] = useState<RegimeProcessual | "">("");
-  const [vencimentoConferido, setVencimentoConferido] = useState("");
-  const [fonteConferida, setFonteConferida] = useState(false);
+  const [dataPrazo, setDataPrazo] = useState("");
   const dados = sugestao?.dados;
   const status = dados?.prazo_sugerido_status ?? "nenhum";
   const jaResolvido = status === "aceito" || status === "recusado";
   const semBase = dados?.disponivel === false;
 
   useEffect(() => {
-    setDataPublicacao(dados?.data_publicacao?.slice(0, 10) ?? "");
-    setTermoInicial(dados?.termo_inicial?.slice(0, 10) ?? "");
-    setRegimeCalculo(dados?.regime_calculo ?? "");
-    setVencimentoConferido("");
-    setFonteConferida(false);
-  }, [sugestao?.id, dados?.data_publicacao, dados?.termo_inicial, dados?.regime_calculo]);
-
-  const revisaoCompleta =
-    !!dados?.case_id &&
-    !!dataPublicacao &&
-    !!termoInicial &&
-    !!regimeCalculo &&
-    !!vencimentoConferido &&
-    fonteConferida;
-
-  const cronologiaValida = (): boolean => {
-    const disponibilidade = dados?.data_disponibilizacao?.slice(0, 10) ?? "";
-    if (disponibilidade && dataPublicacao < disponibilidade) return false;
-    if (termoInicial < dataPublicacao) return false;
-    if (vencimentoConferido < termoInicial) return false;
-    return true;
-  };
+    setDataPrazo("");
+  }, [sugestao?.id]);
 
   const aceitar = async () => {
     if (!sugestao) return;
-    if (semBase && !revisaoCompleta) {
-      toast.error(
-        "Informe publicação, termo inicial, regime, vencimento final e confirme a conferência da fonte oficial.",
-      );
-      return;
-    }
-    if (semBase && !cronologiaValida()) {
-      toast.error(
-        "Revise a cronologia: disponibilização ≤ publicação ≤ termo inicial ≤ vencimento.",
-      );
+    if (!dataPrazo) {
+      toast.error("Informe o vencimento conferido antes de criar o prazo.");
       return;
     }
     setSalvando("aceitar");
     try {
-      const body = semBase
-        ? {
-            data_publicacao: dataPublicacao,
-            termo_inicial: termoInicial,
-            regime_calculo: regimeCalculo,
-            data_prazo: vencimentoConferido,
-            confirmacao_fonte_oficial: true,
-          }
-        : undefined;
       const { data } = await api.post(
         `/intimacoes/${sugestao.id}/aceitar-prazo`,
-        body,
+        { data_prazo: dataPrazo },
       );
       toast.success(
         data.criado === false
@@ -154,7 +104,7 @@ export function PrazoSugeridoModal({
         e?.response?.status === 422
           ? erroDetalhe(
               e,
-              "Revise o vínculo do caso e os marcos processuais antes de gerar o prazo.",
+              "Revise o vínculo do caso e informe um vencimento válido após conferência.",
             )
           : erroDetalhe(e, "Não foi possível cadastrar o prazo."),
       );
@@ -193,104 +143,23 @@ export function PrazoSugeridoModal({
           </p>
 
           {semBase ? (
-            <div className="space-y-3">
-              <div className="rounded-lg border border-warn-200 bg-warn-50 p-3 text-xs text-warn-800">
-                {dados?.aviso ||
-                  "Cálculo automático indisponível. Confira a comunicação oficial antes de informar os marcos processuais."}
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800">
-                <div className="flex justify-between gap-2">
-                  <span className="text-slate-500">Disponibilização capturada</span>
-                  <span className="font-medium text-slate-700 dark:text-slate-200">
-                    {fmtData(dados?.data_disponibilizacao)}
-                  </span>
-                </div>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  Disponibilização ≠ publicação ≠ termo inicial ≠ vencimento. O
-                  EJC não converte um marco no outro por inferência.
-                </p>
-              </div>
-              {!dados?.case_id && (
-                <div className="rounded-lg border border-danger-200 bg-danger-50 p-2 text-xs text-danger-700">
-                  A intimação ainda não está vinculada a um caso. Vincule o caso
-                  antes de aceitar o prazo.
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label text-xs">Data de publicação *</label>
-                  <input
-                    className="input"
-                    aria-label="Data de publicação"
-                    type="date"
-                    value={dataPublicacao}
-                    onChange={(e) => setDataPublicacao(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="label text-xs">Termo inicial *</label>
-                  <input
-                    className="input"
-                    aria-label="Termo inicial"
-                    type="date"
-                    value={termoInicial}
-                    onChange={(e) => setTermoInicial(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="label text-xs">Regime processual *</label>
-                  <select
-                    className="input"
-                    aria-label="Regime processual"
-                    value={regimeCalculo}
-                    onChange={(e) =>
-                      setRegimeCalculo(e.target.value as RegimeProcessual | "")
-                    }
-                  >
-                    <option value="">Selecione…</option>
-                    <option value="civel">Cível — CPC</option>
-                    <option value="trabalhista">Trabalhista — CLT</option>
-                    <option value="penal">Penal — CPP</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="label text-xs">Vencimento final *</label>
-                  <input
-                    className="input"
-                    aria-label="Vencimento final"
-                    type="date"
-                    value={vencimentoConferido}
-                    onChange={(e) => setVencimentoConferido(e.target.value)}
-                  />
-                </div>
-              </div>
-              <label className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300">
-                <input
-                  type="checkbox"
-                  aria-label="Confirmei a fonte oficial"
-                  checked={fonteConferida}
-                  onChange={(e) => setFonteConferida(e.target.checked)}
-                />
-                <span>
-                  Conferi na fonte oficial a publicação, o termo inicial, o regime
-                  processual e o calendário aplicável, e confirmo o vencimento
-                  final informado acima.
-                </span>
-              </label>
+            <div className="rounded-lg border border-warn-200 bg-warn-50 p-3 text-xs text-warn-800">
+              {dados?.motivo ||
+                "A captura não fornece base suficiente para calcular o vencimento automaticamente."}
             </div>
           ) : (
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800">
               <div className="flex justify-between gap-2">
-                <span className="text-slate-500">Data sugerida</span>
+                <span className="text-slate-500">Referência automática</span>
                 <span className="font-semibold text-slate-800 dark:text-slate-100">
                   {fmtData(dados?.data_sugerida)}
                 </span>
               </div>
               {dados?.dias != null && (
                 <div className="flex justify-between gap-2 mt-1">
-                  <span className="text-slate-500">Prazo</span>
+                  <span className="text-slate-500">Quantidade sugerida</span>
                   <span className="text-slate-700 dark:text-slate-200">
-                    {dados.dias} dias úteis forenses
+                    {dados.dias} dias
                   </span>
                 </div>
               )}
@@ -302,8 +171,24 @@ export function PrazoSugeridoModal({
             </div>
           )}
 
+          <div>
+            <label className="label text-xs">Vencimento conferido *</label>
+            <input
+              className="input"
+              type="date"
+              value={dataPrazo}
+              disabled={status === "aceito"}
+              onChange={(e) => setDataPrazo(e.target.value)}
+            />
+            <p className="mt-1 text-[11px] text-slate-500">
+              Informe a data somente depois de conferir a publicação oficial,
+              o termo inicial, o regime aplicável, feriados e suspensões.
+            </p>
+          </div>
+
           <p className="text-[11px] text-slate-500 italic">
-            O prazo só é criado após uma ação humana explícita.
+            A referência automática não confirma o prazo. O cadastro usa apenas
+            o vencimento informado acima após revisão humana.
           </p>
 
           {jaResolvido && (
@@ -326,18 +211,12 @@ export function PrazoSugeridoModal({
             </button>
             <button
               onClick={aceitar}
-              disabled={
-                salvando !== null ||
-                status === "aceito" ||
-                (semBase && !revisaoCompleta)
-              }
+              disabled={salvando !== null || !dataPrazo || status === "aceito"}
               className="px-4 py-2 bg-success-600 text-white text-sm rounded-lg hover:bg-success-700 disabled:opacity-60"
             >
               {salvando === "aceitar"
                 ? "Aceitando..."
-                : semBase
-                  ? "Cadastrar prazo revisado"
-                  : "Aceitar e criar prazo"}
+                : "Aceitar e criar prazo"}
             </button>
           </div>
         </div>
@@ -373,6 +252,7 @@ export function SuspensaoFormModal({
   useEffect(() => {
     if (!open) return;
     setErro("");
+    // Lista de tribunais é conveniência: se falhar, o campo vira texto livre.
     api
       .get("/suspensoes/tribunais")
       .then((r) =>
@@ -479,7 +359,40 @@ export function SuspensaoFormModal({
   );
 }
 
-// ── 3. Simulador processual canônico (leitura — não grava nada) ──────────────
+// ── 3. Simulador de prazo (motor canônico — leitura, não grava) ──────────────
+
+type RegimeProcessual = "civel" | "trabalhista" | "penal";
+
+type RegraProcessualAuditavel = {
+  rotulo: string;
+  fonteOficial: string;
+  fonteConsultadaEm: string;
+  versaoMotor: string;
+};
+
+const REGRAS_PROCESSUAIS: Record<RegimeProcessual, RegraProcessualAuditavel> = {
+  civel: {
+    rotulo: "CPC, arts. 219 e 220",
+    fonteOficial:
+      "https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2015/lei/l13105.htm",
+    fonteConsultadaEm: "10/09/2026",
+    versaoMotor: "prazos-2026-09-10",
+  },
+  trabalhista: {
+    rotulo: "CLT, arts. 775 e 775-A",
+    fonteOficial:
+      "https://www.planalto.gov.br/ccivil_03/decreto-lei/del5452.htm",
+    fonteConsultadaEm: "10/09/2026",
+    versaoMotor: "prazos-2026-09-10",
+  },
+  penal: {
+    rotulo: "CPP, arts. 798 e 798-A",
+    fonteOficial:
+      "https://www.planalto.gov.br/ccivil_03/decreto-lei/del3689compilado.htm",
+    fonteConsultadaEm: "10/09/2026",
+    versaoMotor: "prazos-2026-09-10",
+  },
+};
 
 export function SimularPrazoModal({
   open,
@@ -505,10 +418,6 @@ export function SimularPrazoModal({
       setErro("Informe a data inicial.");
       return;
     }
-    if (!Number.isFinite(Number(sim.dias)) || Number(sim.dias) < 1) {
-      setErro("Informe uma quantidade de dias maior que zero.");
-      return;
-    }
     setCarregando(true);
     setErro("");
     setRes(null);
@@ -518,12 +427,15 @@ export function SimularPrazoModal({
         dias: Number(sim.dias),
         tipo: "processual",
         regime_calculo: sim.regime_calculo,
-        tribunal: sim.tribunal.trim() || null,
-        dobro: sim.regime_calculo === "penal" ? false : sim.dobro,
-        excecao_recesso_penal:
-          sim.regime_calculo === "penal" && sim.excecao_recesso_penal,
+        dias_uteis: sim.regime_calculo !== "penal",
+        dobro: sim.dobro,
+        tribunal: sim.tribunal || null,
+        excecao_recesso_penal: sim.excecao_recesso_penal,
       });
-      setRes(data);
+      setRes({
+        ...data,
+        regra_auditavel: REGRAS_PROCESSUAIS[sim.regime_calculo],
+      });
     } catch (e) {
       setErro(erroDetalhe(e, "Não foi possível simular o prazo."));
     } finally {
@@ -532,12 +444,12 @@ export function SimularPrazoModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Simular vencimento processual">
+    <Modal open={open} onClose={onClose} title="Simular vencimento de prazo">
       <div className="space-y-3">
         <p className="text-xs text-slate-500">
-          Usa o motor processual canônico do EJC. Informe o regime jurídico e
-          confira tribunal, termo inicial, feriados e suspensões antes de usar o
-          resultado em um caso real. A simulação não grava prazo.
+          Usa o motor canônico CPC/CLT/CPP e o calendário disponível no EJC.
+          É uma simulação de apoio: o resultado não cria prazo e deve sempre ser
+          conferido por profissional antes de qualquer cadastro ou uso processual.
         </p>
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -550,7 +462,7 @@ export function SimularPrazoModal({
             />
           </div>
           <div>
-            <label className="label text-xs">Dias *</label>
+            <label className="label text-xs">Dias</label>
             <input
               className="input"
               type="number"
@@ -560,21 +472,23 @@ export function SimularPrazoModal({
             />
           </div>
           <div>
-            <label className="label text-xs">Regime processual *</label>
+            <label className="label text-xs">Regime *</label>
             <select
               className="input"
               value={sim.regime_calculo}
-              onChange={(e) =>
+              onChange={(e) => {
+                const regime_calculo = e.target.value as RegimeProcessual;
                 setSim({
                   ...sim,
-                  regime_calculo: e.target.value as RegimeProcessual,
-                  dobro: e.target.value === "penal" ? false : sim.dobro,
+                  regime_calculo,
+                  dobro: regime_calculo === "penal" ? false : sim.dobro,
                   excecao_recesso_penal:
-                    e.target.value === "penal"
+                    regime_calculo === "penal"
                       ? sim.excecao_recesso_penal
                       : false,
-                })
-              }
+                });
+                setRes(null);
+              }}
             >
               <option value="civel">Cível — CPC</option>
               <option value="trabalhista">Trabalhista — CLT</option>
@@ -586,46 +500,47 @@ export function SimularPrazoModal({
             <input
               className="input"
               value={sim.tribunal}
-              placeholder="TJMG, TRT3, STJ…"
+              placeholder="Opcional"
               onChange={(e) => setSim({ ...sim, tribunal: e.target.value })}
             />
           </div>
         </div>
 
         {sim.regime_calculo !== "penal" && (
-          <label className="flex items-start gap-2 text-xs text-slate-600">
+          <label className="flex items-start gap-2 rounded-lg border border-slate-200 p-2 text-xs text-slate-600">
             <input
               type="checkbox"
+              className="mt-0.5"
               checked={sim.dobro}
-              onChange={(e) => setSim({ ...sim, dobro: e.target.checked })}
+              onChange={(e) =>
+                setSim({ ...sim, dobro: e.target.checked })
+              }
             />
             <span>
-              Aplicar prazo em dobro. Marque somente depois de conferir a hipótese
-              legal aplicável ao caso.
+              <strong>Aplicar contagem em dobro.</strong> Marque somente depois
+              de confirmar a hipótese legal aplicável ao caso. O motor não infere
+              automaticamente a incidência do benefício.
             </span>
           </label>
         )}
 
         {sim.regime_calculo === "penal" && (
-          <label className="flex items-start gap-2 text-xs text-slate-600">
+          <label className="flex items-start gap-2 rounded-lg border border-slate-200 p-2 text-xs text-slate-600">
             <input
               type="checkbox"
+              className="mt-0.5"
               checked={sim.excecao_recesso_penal}
               onChange={(e) =>
                 setSim({ ...sim, excecao_recesso_penal: e.target.checked })
               }
             />
             <span>
-              Exceção legal ao recesso do CPP art. 798-A confirmada pelo operador.
+              <strong>Aplicar exceção ao recesso do CPP art. 798-A.</strong> Use
+              somente após conferir se o ato envolve réu preso, procedimento da
+              Lei Maria da Penha ou medida urgente reconhecida por despacho
+              fundamentado. O EJC não presume essa exceção.
             </span>
           </label>
-        )}
-
-        {!sim.tribunal.trim() && (
-          <div className="rounded-lg border border-warn-200 bg-warn-50 p-2 text-[11px] text-warn-800">
-            Tribunal não informado: feriados e suspensões locais podem alterar o
-            vencimento. Trate o resultado como preliminar até a conferência.
-          </div>
         )}
 
         {erro && <p className="text-xs text-danger-600">{erro}</p>}
@@ -637,27 +552,45 @@ export function SimularPrazoModal({
                 {fmtData(res.data_vencimento)}
               </span>
             </div>
-            {res.regime_calculo && (
-              <p className="text-[11px] text-slate-600 mt-1">
-                Regime: {res.regime_calculo}
-              </p>
-            )}
             {res.modo && (
-              <p className="text-[11px] text-slate-500 mt-1">{res.modo}</p>
-            )}
-            {res.calendario_status && (
-              <p className="text-[11px] text-slate-500 mt-1">
-                Calendário: {res.calendario_status}
+              <p className="text-[11px] text-slate-500 mt-2">
+                Regra aplicada pelo motor: {String(res.modo)}
               </p>
             )}
-            {(res.resultado_preliminar || res.revisao_obrigatoria) && (
-              <div className="mt-2 rounded border border-warn-200 bg-warn-50 p-2 text-[11px] text-warn-800">
-                Resultado preliminar — revisão humana obrigatória antes de
-                confirmar o prazo.
+            {res.regime_calculo && (
+              <p className="text-[11px] text-slate-500 mt-1">
+                Regime: {String(res.regime_calculo)} · calendário:{" "}
+                {String(res.calendario_status || "não informado")}
+              </p>
+            )}
+            {res.regra_auditavel && (
+              <div className="mt-2 border-t border-gold-200 pt-2 text-[11px] text-slate-500">
+                <p>
+                  Referência normativa: {String(res.regra_auditavel.rotulo)} ·
+                  snapshot do motor: {String(res.regra_auditavel.versaoMotor)} ·
+                  fonte oficial consultada em {String(res.regra_auditavel.fonteConsultadaEm)}.
+                </p>
+                <a
+                  href={String(res.regra_auditavel.fonteOficial)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-medium text-primary-700 hover:underline"
+                >
+                  Abrir texto oficial no Planalto
+                </a>
               </div>
             )}
-            {res.aviso && (
-              <p className="text-[11px] text-warn-800 mt-2">{res.aviso}</p>
+            <div className="mt-2 rounded border border-warn-200 bg-warn-50 p-2 text-[11px] text-warn-800">
+              Revisão humana obrigatória — confira publicação, termo inicial,
+              regime, tribunal, feriados, suspensões e exceções antes de usar o
+              vencimento ou criar um prazo no caso.
+            </div>
+            {res.revisao_obrigatoria && (
+              <div className="mt-2 rounded border border-danger-200 bg-danger-50 p-2 text-[11px] text-danger-800">
+                Resultado preliminar/degradado — há informação operacional
+                incompleta no cálculo.
+                {res.aviso ? ` ${String(res.aviso)}` : ""}
+              </div>
             )}
           </div>
         )}

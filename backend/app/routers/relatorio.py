@@ -41,6 +41,9 @@ async def relatorio_mensal(
     mes_ref = date.fromisoformat(f"{mes}-01")
 
     hon = await db.execute(
+        # SQL literal com bind params; a regra marca todo text(), sem olhar
+        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         text(
             f"""
             WITH {LEDGER_COMPAT_CTES},
@@ -118,6 +121,9 @@ async def relatorio_mensal(
     )
 
     casos = await db.execute(
+        # SQL literal com bind params; a regra marca todo text(), sem olhar
+        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         text(
             f"""
             SELECT
@@ -153,6 +159,9 @@ async def relatorio_mensal(
     prazos_data = dict(prazos.mappings().first() or {})
 
     por_tipo = await db.execute(
+        # SQL literal com bind params; a regra marca todo text(), sem olhar
+        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         text(
             f"""
             WITH {LEDGER_COMPAT_CTES}

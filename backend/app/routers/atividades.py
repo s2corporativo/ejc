@@ -33,6 +33,9 @@ async def listar_atividades(
         params["uid"] = cu.id
     # (v.data::date - CURRENT_DATE) força diferença em DIAS inteiros mesmo se a
     # coluna for TIMESTAMP (senão vem interval → int() estoura 500).
+    # SQL literal com bind params; a regra marca todo text(), sem olhar
+    # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     rows = (await db.execute(text(f"""
         SELECT v.id, v.tipo, v.titulo, v.descricao, v.data, v.status,
                v.case_id, v.responsavel_id, v.prioridade, v.subtipo,

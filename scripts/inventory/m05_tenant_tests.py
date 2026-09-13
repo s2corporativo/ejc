@@ -145,6 +145,10 @@ if __name__ == "__main__":
                             "pending_items", "contratos_societarios",
                             "knowledge_chunks"):
                     try:
+                        # Limpeza de QA rodada a mao: o nome de tabela interpolado vem das
+                        # tuplas literais logo acima, e `where` das duas strings fixas deste
+                        # bloco. Nada externo entra. Ver docs/seguranca/SAST_BASELINE.md
+                        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
                         await conn.execute(text(
                             f"DELETE FROM {tab} WHERE client_id IN "
                             f"(SELECT id FROM clients WHERE nome LIKE 'EJC_QA%')"))
@@ -152,6 +156,10 @@ if __name__ == "__main__":
                         pass
                 for tab in ("case_partes",):
                     try:
+                        # Limpeza de QA rodada a mao: o nome de tabela interpolado vem das
+                        # tuplas literais logo acima, e `where` das duas strings fixas deste
+                        # bloco. Nada externo entra. Ver docs/seguranca/SAST_BASELINE.md
+                        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
                         await conn.execute(text(
                             f"DELETE FROM {tab} WHERE caso_id IN "
                             f"(SELECT id FROM cases WHERE client_id IN "
@@ -162,6 +170,10 @@ if __name__ == "__main__":
                 where = "user_id IN (SELECT id FROM users WHERE email LIKE '%qa%')"
             try:
                 async with engine.begin() as conn:
+                    # Limpeza de QA rodada a mao: o nome de tabela interpolado vem das
+                    # tuplas literais logo acima, e `where` das duas strings fixas deste
+                    # bloco. Nada externo entra. Ver docs/seguranca/SAST_BASELINE.md
+                    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
                     r = await conn.execute(text(
                         f"DELETE FROM {t} WHERE {where}"))
                     print("del", t, r.rowcount)

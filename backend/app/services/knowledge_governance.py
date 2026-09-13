@@ -37,6 +37,9 @@ async def _ids_recuperaveis(db: AsyncSession) -> set[str]:
         "WHERE kd.deleted_at IS NULL AND kd.vigente = TRUE "
         f"{filtros_gate_rag()}"
     )
+    # SQL literal com bind params; a regra marca todo text(), sem olhar
+    # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     rows = (await db.execute(text(sql))).all()
     return {str(r[0]) for r in rows}
 

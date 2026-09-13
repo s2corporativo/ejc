@@ -288,7 +288,7 @@ def _acao(nome: str, endpoint: str, payload: dict | None = None,
 
 
 # Atos jurídicos: `avancar` NUNCA executa — devolve a instrução do endpoint
-# de aprovação humana próprio (HITL, OAB Prov. 205/2021).
+# de aprovação humana próprio (HITL obrigatório).
 ACOES_APROVACAO_HUMANA: dict[str, dict] = {
     "aprovar_snapshot": {
         "endpoint": "POST /cases/{case_id}/inteligencia/{snapshot_id}/aprovar",
