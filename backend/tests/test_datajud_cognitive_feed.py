@@ -170,4 +170,6 @@ async def test_startup_bloqueia_tambem_criador_e_sync_de_prazos():
     )
     assert resultado["criados"] == 0
     assert resultado["bloqueado"] is True
-    assert resultado["motivo"] == "revisao_humana_obrigatoria_ate_motor_auditavel"
+    # Motivo atual do motor canônico (#1599): HITL explícito na mensagem.
+    assert "cálculo canônico" in resultado["motivo"]
+    assert "confirmação humana" in resultado["motivo"]
