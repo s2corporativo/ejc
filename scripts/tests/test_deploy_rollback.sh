@@ -102,6 +102,18 @@ if [ "${1:-}" = "image" ] && [ "${2:-}" = "inspect" ] && \
    [ "${3:-}" = "sha256:frontend-old" ] && [ "${MISSING_FRONTEND_IMAGE:-0}" = "1" ]; then
   exit 1
 fi
+if [ "${1:-}" = "commit" ] && [ "${2:-}" = "ejc_frontend" ] && \
+   [ "${FAIL_FRONTEND_COMMIT:-0}" = "1" ]; then
+  exit 44
+fi
+if [ "${1:-}" = "export" ]; then
+  printf 'fake-export-stream'
+  exit 0
+fi
+if [ "${1:-}" = "import" ]; then
+  cat >/dev/null
+  exit 0
+fi
 if [ "${1:-}" = "compose" ] && [ "${2:-}" = "build" ] && \
    [ "${3:-}" = "frontend" ] && [ "${FAIL_FRONTEND_BUILD:-0}" = "1" ]; then
   exit 42
@@ -305,6 +317,20 @@ grep -Eq '^tag ejc-frontend:rollback-.* project-frontend:latest$' "$LOG" || fail
 grep -q 'image ID anterior de frontend não está mais no catálogo local' "$TMP/missing-image.out" || fail "fallback de image ID podado não foi registrado"
 [ "$(stat -c '%a' "$APP/.env")" = "600" ] || fail ".env idêntico não teve modo normalizado para 600"
 grep -q 'conteúdo não foi reescrito e permissões seguras foram preservadas' "$TMP/missing-image.out" || fail "caminho seguro de .env idêntico não foi registrado"
+
+# 7.2) Se docker commit também falhar por camada ausente, frontend usa export/import seguro.
+: > "$LOG"
+set +e
+env "${COMMON_ENV[@]}" MISSING_FRONTEND_IMAGE=1 FAIL_FRONTEND_COMMIT=1 FAIL_FRONTEND_BUILD=1 TARGET_SHA="$TEST_SHA" \
+  ENSURE_DAILY_BACKUP=0 REQUIRE_PREDEPLOY_BACKUP=0 \
+  bash "$APP/scripts/deploy_vps_safe.sh" >"$TMP/export-fallback.out" 2>"$TMP/export-fallback.err"
+export_fallback_rc=$?
+set -e
+[ "$export_fallback_rc" -eq 42 ] || fail "fallback export/import retornou rc=$export_fallback_rc, esperado 42"
+grep -q '^export ejc_frontend$' "$LOG" || fail "filesystem do frontend não foi exportado após falha do commit"
+grep -q '^import --change ' "$LOG" || fail "filesystem do frontend não foi reimportado como imagem de rollback"
+grep -Eq '^tag ejc-frontend:rollback-.* project-frontend:latest$' "$LOG" || fail "imagem importada não restaurou a referência anterior"
+grep -q 'docker commit do frontend falhou; usando export/import' "$TMP/export-fallback.out" || fail "fallback export/import não foi registrado"
 
 # 8) Falha pós-cutover restaura imagens + runtime.
 : > "$APP/.env"

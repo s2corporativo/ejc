@@ -234,7 +234,18 @@ snapshot_runtime_image() {
     return 0
   fi
   log "AVISO: image ID anterior de ${label} não está mais no catálogo local; preservando o container em execução como imagem de rollback."
-  docker commit "$container" "$rollback_tag" >/dev/null
+  if docker commit "$container" "$rollback_tag" >/dev/null; then
+    return 0
+  fi
+  if [ "$label" = "frontend" ]; then
+    log "AVISO: docker commit do frontend falhou; usando export/import do filesystem com entrypoint/CMD canônicos do nginx."
+    docker export "$container" | docker import \
+      --change 'ENTRYPOINT ["/docker-entrypoint.sh"]' \
+      --change 'CMD ["nginx","-g","daemon off;"]' \
+      - "$rollback_tag" >/dev/null
+    return 0
+  fi
+  return 1
 }
 
 if [ -n "$OLD_BACKEND_IMAGE" ]; then
