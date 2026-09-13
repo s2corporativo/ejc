@@ -1104,41 +1104,58 @@ async def encerrar_caso(
     # Agora inclui o DOSSIÊ COMPLETO (dados especializados do ramo, prazos que
     # foram cumpridos, peças produzidas) — não só a estratégia textual. Isso faz
     # o precedente interno ser pesquisável por características concretas do caso.
+    # #1466 (P0): este passo é ACESSÓRIO — falha de dossiê/embedding/RAG nunca
+    # pode transformar em HTTP 500 um encerramento juridicamente válido. O upsert
+    # roda em SAVEPOINT para não envenenar a transação principal, e qualquer
+    # exceção é contida com warning (sem PII/conteúdo no log).
     if payload.alimentar_rag:
         from app.services.case_context import montar_dossie
         from app.services.ingestion_service import upsert_documento
 
         area_str = case.area.value if hasattr(case.area, "value") else str(case.area)
 
-        # Dossiê consolidado e já sanitizado (cliente, ramo, prazos, peças)
-        dossie = await montar_dossie(db, case_id, incluir_pecas=True, sanitizar=True)
-        bloco_dossie = dossie["texto"] if dossie else ""
+        try:
+            # Dossiê consolidado e já sanitizado (cliente, ramo, prazos, peças)
+            dossie = await montar_dossie(db, case_id, incluir_pecas=True, sanitizar=True)
+            bloco_dossie = dossie["texto"] if dossie else ""
 
-        corpo = (
-            f"PRECEDENTE INTERNO — CASO {case.numero_interno}\n"
-            f"Área: {area_str} | Resultado: {payload.resultado}\n\n"
-            f"TESE PRINCIPAL: {case.tese_principal or '—'}\n\n"
-            f"MOTIVO DO RESULTADO: {payload.motivo_resultado}\n\n"
-            f"PROVAS DETERMINANTES: {payload.provas_determinantes}\n\n"
-            f"LIÇÕES APRENDIDAS: {payload.licoes_aprendidas}\n\n"
-            f"--- CONTEXTO DO CASO (dossiê) ---\n{bloco_dossie}"
-        )
-        # Idempotente: chave_origem = caso:{id} evita duplicar se reencerrado.
-        await upsert_documento(
-            db,
-            titulo=f"Precedente Interno — {case.numero_interno} ({payload.resultado})",
-            categoria="precedente_interno",
-            conteudo=corpo,
-            chave_origem=f"caso:{case.id}",
-            fonte=f"caso:{case.id}",
-            extra={
-                "area": area_str,
-                "resultado": payload.resultado,
-                "rag_status": "aprovado",
-                "human_reviewed": True,
-                "approved_by": str(cu.id),
-            },
-        )
+            corpo = (
+                f"PRECEDENTE INTERNO — CASO {case.numero_interno}\n"
+                f"Área: {area_str} | Resultado: {payload.resultado}\n\n"
+                f"TESE PRINCIPAL: {case.tese_principal or '—'}\n\n"
+                f"MOTIVO DO RESULTADO: {payload.motivo_resultado}\n\n"
+                f"PROVAS DETERMINANTES: {payload.provas_determinantes}\n\n"
+                f"LIÇÕES APRENDIDAS: {payload.licoes_aprendidas}\n\n"
+                f"--- CONTEXTO DO CASO (dossiê) ---\n{bloco_dossie}"
+            )
+            # Idempotente: chave_origem = caso:{id} evita duplicar se reencerrado.
+            # Escopo explícito do caso canônico (server-side): categoria restrita
+            # exige client_id; valores divergentes continuam recusados pelo gate
+            # de escrita do ingestion_service.
+            async with db.begin_nested():
+                await upsert_documento(
+                    db,
+                    titulo=f"Precedente Interno — {case.numero_interno} ({payload.resultado})",
+                    categoria="precedente_interno",
+                    conteudo=corpo,
+                    chave_origem=f"caso:{case.id}",
+                    fonte=f"caso:{case.id}",
+                    client_id=str(case.client_id) if case.client_id else None,
+                    case_id=str(case.id),
+                    extra={
+                        "area": area_str,
+                        "resultado": payload.resultado,
+                        "rag_status": "aprovado",
+                        "human_reviewed": True,
+                        "approved_by": str(cu.id),
+                    },
+                )
+        except Exception:
+            logger.warning(
+                "Memoria institucional acessoria nao persistida no encerramento; "
+                "transacao principal preservada (caso=%s)",
+                case_id,
+            )
 
     pendencias_txt = ""
     if diag["bloqueios"] or diag["alertas"]:
