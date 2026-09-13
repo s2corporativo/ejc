@@ -1,23 +1,15 @@
 """Coleta de processos públicos no DataJud para a jurimetria dos tribunais.
 
-Reusa ``datajud_service.buscar_lote_paginado`` (search_after sobre
-@timestamp, contrato já verificado pelo módulo de saneamento). Regras:
+Reusa ``datajud_service.buscar_lote_paginado``. Regras:
 
-  • opt-in duplo: ``JURIMETRIA_TRIBUNAIS_ENABLED`` (esta funcionalidade) E
-    ``DATAJUD_ENABLED``/``DATAJUD_API_KEY`` (a integração). Sem qualquer um,
-    resposta controlada — nunca 500, nunca I/O externo;
-  • limite de processos por consulta (``JURIMETRIA_TRIBUNAIS_MAX_PROCESSOS``)
-    — a API Pública é rate-limited e o ``n`` real vai na resposta;
-  • cache TTL em memória por consulta (premissa de worker único do EJC);
-    erro nunca entra no cache; kill-switch prevalece sobre cache;
-  • TJMG continua sendo o recorte principal (Betim, Contagem e BH). TRT3 é
-    coletado como benchmark trabalhista de MG e JEC/Turmas Recursais são
-    derivados do próprio lote TJMG, sem uma segunda chamada e sem duplicação.
-
-Campos do documento DataJud usados: ``numeroProcesso``, ``grau``, ``classe``,
-``assuntos``, ``orgaoJulgador{codigo,nome}``, ``dataAjuizamento``,
-``movimentos[]{codigo,nome,dataHora}`` — a mesma forma que as fixtures de
-``tests/test_saneamento_*`` e o contrato documentado em ``datajud_service``.
+  • opt-in duplo: ``JURIMETRIA_TRIBUNAIS_ENABLED`` E
+    ``DATAJUD_ENABLED``/``DATAJUD_API_KEY``;
+  • limite de processos por consulta e indicação explícita de truncamento;
+  • cache curto apenas para lotes pequenos, com teto de entradas/documentos;
+    o kill-switch/credencial é verificado ANTES de servir qualquer cache;
+  • TJMG é o recorte principal (Betim, Contagem e BH). TRT3 é benchmark
+    trabalhista de MG; JEC/Turmas Recursais são derivados do lote TJMG sem
+    segunda chamada nem duplicação de dados.
 """
 from __future__ import annotations
 
@@ -35,13 +27,6 @@ from app.services.datajud_service import (
 ALIAS_TJMG = "api_publica_tjmg"
 ALIAS_TRT3 = "api_publica_trt3"
 
-# Recorte inicial decidido pelo titular (Issue #1527): Betim, Contagem e Belo
-# Horizonte. Códigos IBGE verificados um a um na API de localidades do IBGE
-# (servicodados.ibge.gov.br/api/v1/localidades/municipios/{id}) em 05/09/2026:
-# Belo Horizonte 3106200, Contagem 3118601, Betim 3106705 — todos /MG.
-# O filtro principal é o NOME do órgão julgador (contrato confirmado do DataJud:
-# ``orgaoJulgador.nome``); o código IBGE é cláusula alternativa para índices
-# que o preencham.
 MUNICIPIOS: dict[str, dict[str, Any]] = {
     "belo_horizonte": {"nome": "Belo Horizonte", "ibge": 3106200},
     "contagem": {"nome": "Contagem", "ibge": 3118601},
@@ -49,8 +34,12 @@ MUNICIPIOS: dict[str, dict[str, Any]] = {
 }
 MUNICIPIOS_PADRAO = ("betim", "contagem", "belo_horizonte")
 
-_CACHE: dict[str, tuple[float, list[dict]]] = {}
-_CACHE_MAX = 64
+# Nunca retenha em memória os lotes grandes usados para estatística. O cache é
+# somente uma otimização para recortes já estreitos. Assim o teto absoluto é
+# 4 × 500 documentos, e não 64 × 2.000 históricos processuais completos.
+_CACHE: dict[str, tuple[float, list[dict], dict[str, Any]]] = {}
+_CACHE_MAX = 4
+_CACHE_DOCS_MAX = 500
 
 
 def municipios_validos(chaves: list[str] | None) -> list[str]:
@@ -98,11 +87,7 @@ def montar_query(
     desde: str | None = None,
     ate: str | None = None,
 ) -> dict:
-    """Query Elasticsearch DSL para o índice do TJMG.
-
-    ``grau`` None traz 1º e 2º grau juntos: a taxa de reforma precisa dos dois
-    registros do mesmo ``numeroProcesso``.
-    """
+    """Query Elasticsearch DSL para o índice do TJMG."""
     should: list[dict] = []
     for chave in municipios:
         m = MUNICIPIOS[chave]
@@ -132,12 +117,7 @@ def montar_query_trt3(
     desde: str | None = None,
     ate: str | None = None,
 ) -> dict:
-    """Query do TRT3/MG sem inventar filtro geográfico inexistente.
-
-    O próprio índice ``api_publica_trt3`` já delimita a 3ª Região. Aplicamos
-    somente filtros TPU/data informados pelo usuário. Sem filtro, ``match_all``
-    preserva a semântica de benchmark regional completo.
-    """
+    """Query do TRT3/MG; o próprio índice delimita a 3ª Região."""
     filtros = _filtros_comuns(
         classe=classe,
         assunto=assunto,
@@ -150,11 +130,7 @@ def montar_query_trt3(
 
 
 def eh_jec(doc: dict) -> bool:
-    """Classifica recorte JEC/Turma Recursal apenas por metadado público.
-
-    Não infere a partir do conteúdo da decisão. Usa ``grau`` quando a fonte o
-    identifica como JE/JEC e, como fallback, o nome do órgão julgador.
-    """
+    """Classifica JEC/Turma Recursal somente por metadado público."""
     grau = str(doc.get("grau") or "").strip().upper()
     if grau in {"JE", "JEC"}:
         return True
@@ -199,6 +175,8 @@ async def _coletar_alias(
     maximo: int,
     ttl: int,
 ) -> tuple[list[dict], dict[str, Any]]:
+    # Segurança: revogação/kill-switch prevalece até sobre resposta cacheada.
+    headers = _headers()
     chave = _chave_cache(query, maximo, alias)
     agora = time.time()
 
@@ -206,29 +184,19 @@ async def _coletar_alias(
         cacheado = _CACHE.get(chave)
         if cacheado and cacheado[0] > agora:
             docs = cacheado[1]
-            return docs, {
-                "cache": True,
-                "coletado_em": None,
-                "maximo": maximo,
-                "n_documentos": len(docs),
-                "alias": alias,
-            }
+            meta = dict(cacheado[2])
+            meta["cache"] = True
+            return docs, meta
 
     hits = await buscar_lote_paginado(
         alias,
         query,
-        _headers(),
+        headers,
         tamanho_pagina=min(500, maximo),
         maximo=maximo,
     )
     docs = [h.get("_source") or {} for h in hits if isinstance(h, dict)]
-
-    if ttl > 0:
-        if len(_CACHE) >= _CACHE_MAX:
-            _CACHE.pop(next(iter(_CACHE)))
-        _CACHE[chave] = (agora + ttl, docs)
-
-    return docs, {
+    meta = {
         "cache": False,
         "coletado_em": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(agora)),
         "maximo": maximo,
@@ -236,6 +204,15 @@ async def _coletar_alias(
         "truncado": len(docs) >= maximo,
         "alias": alias,
     }
+
+    # Lote grande nunca fica residente: acima de 500 docs, o custo de memória
+    # supera o ganho de evitar nova consulta. Recortes pequenos mantêm TTL.
+    if ttl > 0 and len(docs) <= _CACHE_DOCS_MAX:
+        if len(_CACHE) >= _CACHE_MAX:
+            _CACHE.pop(next(iter(_CACHE)))
+        _CACHE[chave] = (agora + ttl, docs, dict(meta))
+
+    return docs, meta
 
 
 async def coletar(
