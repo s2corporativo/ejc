@@ -7,6 +7,7 @@ Reusa ``datajud_service.buscar_lote_paginado``. Regras:
   • limite de processos por consulta e indicação explícita de truncamento;
   • cache curto apenas para lotes pequenos, com teto de entradas/documentos;
     o kill-switch/credencial é verificado ANTES de servir qualquer cache;
+  • datas são validadas como calendário ISO antes de qualquer chamada externa;
   • TJMG é o recorte principal (Betim, Contagem e BH). TRT3 é benchmark
     trabalhista de MG; JEC/Turmas Recursais são derivados do lote TJMG sem
     segunda chamada nem duplicação de dados.
@@ -15,7 +16,10 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import date
 from typing import Any
+
+from fastapi import HTTPException
 
 from app.core.config import get_settings
 from app.integrations.feature_flags import require_enabled
@@ -53,6 +57,18 @@ def municipios_validos(chaves: list[str] | None) -> list[str]:
     return validos or list(MUNICIPIOS_PADRAO)
 
 
+def _data_iso(valor: str | None, campo: str) -> date | None:
+    if not valor:
+        return None
+    try:
+        return date.fromisoformat(valor)
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{campo} deve ser uma data ISO válida (AAAA-MM-DD).",
+        ) from None
+
+
 def _filtros_comuns(
     *,
     grau: str | None = None,
@@ -61,6 +77,14 @@ def _filtros_comuns(
     desde: str | None = None,
     ate: str | None = None,
 ) -> list[dict]:
+    data_desde = _data_iso(desde, "desde")
+    data_ate = _data_iso(ate, "ate")
+    if data_desde and data_ate and data_desde > data_ate:
+        raise HTTPException(
+            status_code=422,
+            detail="desde não pode ser posterior a ate.",
+        )
+
     filtro: list[dict] = []
     if grau:
         filtro.append({"term": {"grau": grau}})
