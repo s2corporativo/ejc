@@ -1,6 +1,6 @@
 import { toast } from "../components/Toast";
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Plus, Search, ShieldAlert, KeyRound, FileSignature } from "lucide-react";
 import api from "../lib/api";
 import { soDigitos } from "../utils/phone";
@@ -40,6 +40,7 @@ interface ConflitoCheck {
   nivel: ConflitoNivel;
   matches: ConflitoMatch[];
 }
+type ResultadoConflito = ConflitoCheck | "indisponivel" | null;
 
 // Documentos de admissão (procuração + contrato de honorários) gerados
 // automaticamente no cadastro do cliente — GET /clients/{id}/pecas-geradas.
@@ -65,8 +66,9 @@ export default function Clientes() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [modal, setModal] = useState(false);
-  const [conflito, setConflito] = useState<ConflitoCheck | null>(null);
+  const [conflito, setConflito] = useState<ResultadoConflito>(null);
   const [conflitoLoading, setConflitoLoading] = useState(false);
+  const [conflitoIndisponivel, setConflitoIndisponivel] = useState(false);
   const [acessoModal, setAcessoModal] = useState<any>(null); // cliente alvo
   const [acessoForm, setAcessoForm] = useState({
     email: "",
@@ -138,7 +140,7 @@ export default function Clientes() {
 
   // Checagem de conflito de interesses em tempo real (EOAB arts. 34-35).
   // Fail-safe: qualquer erro é silencioso e NÃO impede o cadastro.
-  const checarConflito = async (): Promise<ConflitoCheck | null> => {
+  const checarConflito = async (): Promise<ResultadoConflito> => {
     const nome = (form.nome || form.razao_social || "").trim();
     const cpf = form.cpf;
     const cnpj = form.cnpj;
@@ -146,6 +148,7 @@ export default function Clientes() {
     // Nada relevante digitado ainda → limpa e não chama a API.
     if (!cpf && !cnpj && nome.length < 4 && !parte_contraria) {
       setConflito(null);
+      setConflitoIndisponivel(false);
       return null;
     }
     setConflitoLoading(true);
@@ -155,11 +158,14 @@ export default function Clientes() {
         { nome, cpf, cnpj, parte_contraria },
       );
       setConflito(data);
+      setConflitoIndisponivel(false);
       return data;
     } catch {
-      // Aviso ético é best-effort: falha na checagem não trava o formulário.
+      // Falha da checagem NÃO parece "nenhum conflito": fica explícita que a
+      // verificação não pôde ser feita (dever ético, EOAB arts. 34-35).
       setConflito(null);
-      return null;
+      setConflitoIndisponivel(true);
+      return "indisponivel";
     } finally {
       setConflitoLoading(false);
     }
@@ -232,6 +238,10 @@ export default function Clientes() {
     }
   };
 
+  // Intenção do PR #1449: a Ficha Mestra é o ponto canônico para
+  // continuar o relacionamento após o cadastro.
+  const navigate = useNavigate();
+
   const salvar = async () => {
     // O alerta de conflito é apenas um aviso ético — NÃO bloqueia o cadastro.
     setSalvando(true);
@@ -254,6 +264,7 @@ export default function Clientes() {
             toast.success(
               "Cliente cadastrado. Procuração e contrato de honorários gerados como rascunho.",
             );
+            navigate(`/clientes/${criado.id}`);
             return;
           }
         } catch {
@@ -261,6 +272,7 @@ export default function Clientes() {
         }
       }
       toast.success("Cliente cadastrado.");
+      if (criado?.id) navigate(`/clientes/${criado.id}`);
     } catch (e: any) {
       toast.error(e.response?.data?.detail || "Erro ao salvar");
     } finally {
@@ -677,7 +689,19 @@ export default function Clientes() {
           </div>
         </div>
 
-        {conflito && conflito.conflito && conflito.nivel !== "nenhum" && (
+        {conflitoIndisponivel && (
+          <Alert
+            className="mt-4"
+            variant="warning"
+            title="Conflito não pôde ser verificado"
+          >
+            A consulta de conflito está indisponível neste momento. O cadastro
+            continua permitido, mas a análise de conflito deve ser realizada
+            antes da atuação no caso.
+          </Alert>
+        )}
+
+        {conflito && conflito !== "indisponivel" && conflito.conflito && conflito.nivel !== "nenhum" && (
           <Alert
             className="mt-4"
             variant={conflito.nivel === "critico" ? "danger" : "warning"}
@@ -726,7 +750,7 @@ export default function Clientes() {
             disabled={conflitoLoading}
             onClick={async () => {
               const r = await checarConflito();
-              if (r && r.nivel === "nenhum")
+              if (r && r !== "indisponivel" && r.nivel === "nenhum")
                 toast.success("Nenhum conflito de interesses encontrado.");
               else if (!r)
                 toast.info(
@@ -738,7 +762,7 @@ export default function Clientes() {
             {conflitoLoading ? "Verificando..." : "Verificar conflito"}
           </Button>
           <Button variant="primary" disabled={salvando} onClick={salvar}>
-            {salvando ? "Salvando..." : "Salvar cliente"}
+            {salvando ? "Salvando..." : "Salvar e abrir ficha"}
           </Button>
         </div>
       </Modal>
