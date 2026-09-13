@@ -80,7 +80,14 @@ def test_proposicao_legislativa_nao_recebe_autoridade_normativa() -> None:
         "legislacao",
         "https://www.planalto.gov.br/ccivil_03/leis/l0000.htm",
     )
+    proposicao_nao_oficial = inferir_autoridade(
+        "proposicao_legislativa",
+        "https://example.org/projeto",
+    )
 
     assert proposicao["code"] == "proposicao_legislativa"
+    assert proposicao["official"] is True
     assert proposicao["weight"] < norma["weight"]
     assert norma["code"] == "oficial_normativa"
+    assert proposicao_nao_oficial["code"] == "referencial"
+    assert proposicao_nao_oficial["official"] is False
