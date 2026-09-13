@@ -139,7 +139,8 @@ beforeEach(() => {
   postMock.mockResolvedValue({
     data: {
       conteudo: "Resposta jurídica de teste",
-      fontes_rag: ["Fonte oficial A"],
+      fontes_rag: ["Fonte oficial A", "Fonte oficial B"],
+      alertas: ["Citação exige conferência específica"],
       aviso_hitl: "Revisão humana obrigatória",
     },
   });
@@ -187,7 +188,65 @@ describe("DashboardUltra — referência 2026", () => {
     });
     expect(await screen.findByText("Resposta jurídica de teste")).toBeTruthy();
     expect(screen.getByText("Fonte oficial A")).toBeTruthy();
+    expect(screen.getByText("Fonte oficial B")).toBeTruthy();
+    expect(
+      screen.getByText("Atenção: Citação exige conferência específica"),
+    ).toBeTruthy();
     expect(screen.getByText("Revisão humana obrigatória")).toBeTruthy();
+  });
+
+  it("bloqueia perguntas com menos de três caracteres", async () => {
+    renderizar();
+
+    const input = await screen.findByLabelText(
+      "Pergunta rápida para a Inteligência Jurídica",
+    );
+    fireEvent.change(input, { target: { value: "oi" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    expect(postMock).not.toHaveBeenCalled();
+    const sendButton = screen.getByRole("button", {
+      name: "Enviar pergunta para a Inteligência Jurídica",
+    }) as HTMLButtonElement;
+    expect(sendButton.disabled).toBe(true);
+  });
+
+  it("substitui o turno anterior quando uma nova pergunta rápida é enviada", async () => {
+    postMock
+      .mockResolvedValueOnce({
+        data: {
+          conteudo: "Primeira resposta independente",
+          fontes_rag: ["Fonte primeira"],
+          aviso_hitl: "Revisão humana obrigatória",
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          conteudo: "Segunda resposta independente",
+          fontes_rag: ["Fonte segunda"],
+          aviso_hitl: "Revisão humana obrigatória",
+        },
+      });
+
+    renderizar();
+    const input = await screen.findByLabelText(
+      "Pergunta rápida para a Inteligência Jurídica",
+    );
+
+    fireEvent.change(input, { target: { value: "Primeira pergunta válida" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+    expect(
+      await screen.findByText("Primeira resposta independente"),
+    ).toBeTruthy();
+
+    fireEvent.change(input, { target: { value: "Segunda pergunta válida" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    await waitFor(() => expect(postMock).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText("Primeira resposta independente")).toBeNull();
+    expect(
+      await screen.findByText("Segunda resposta independente"),
+    ).toBeTruthy();
   });
 
   it("exclui atividades finalizadas e usa dados reais dos novos cartões", async () => {

@@ -1450,13 +1450,12 @@ html:not(.dark) .ejc-reference-dashboard .ejc-reference-card__title svg {
 
 .ejc-reference-ai-sources span {
   max-width: 100%;
-  overflow: hidden;
   padding: 2px 5px;
   border-radius: 999px;
   background: #f7f1dc;
   color: #6f5711;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .ejc-reference-ai-notice,
@@ -1488,6 +1487,17 @@ html:not(.dark) .ejc-reference-dashboard .ejc-reference-card__title svg {
   border-color: rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.05);
   color: #e2e8f0;
+}
+
+.dark
+  .ejc-reference-ai-message.is-assistant
+  .markdown
+  :where(h1, h2, h3, h4, h5, h6, p, li, strong, em, span, blockquote) {
+  color: inherit !important;
+}
+
+.dark .ejc-reference-ai-message.is-assistant .markdown a {
+  color: #e5ce7f !important;
 }
 
 .dark .ejc-reference-ai-welcome strong {
@@ -1732,7 +1742,25 @@ html:not(.dark) .ejc-reference-dashboard .ejc-reference-card__title svg {
   color: #cbd5e1;
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 1600px) and (min-width: 1241px) {
+  .ejc-reference-dashboard__top {
+    grid-template-columns: 1fr 1.2fr;
+  }
+
+  .ejc-reference-dashboard__top > :last-child {
+    grid-column: 1 / -1;
+  }
+
+  .ejc-reference-dashboard__middle {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .ejc-reference-dashboard__bottom {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1240px) {
   .ejc-reference-dashboard {
     grid-template-columns: 1fr;
   }
@@ -1747,7 +1775,7 @@ html:not(.dark) .ejc-reference-dashboard .ejc-reference-card__title svg {
     grid-auto-flow: column;
     grid-auto-columns: minmax(270px, 1fr);
     overflow-x: auto;
-    overflow-y: hidden;
+    overflow-y: auto;
   }
   .ejc-legal-rail__item {
     border-right: 1px solid #f1eee8;

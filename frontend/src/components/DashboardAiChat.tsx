@@ -39,9 +39,7 @@ export default function DashboardAiChat({
     const text = question.trim();
     if (text.length < 3 || loading || !iaDisponivel) return;
 
-    setTurns([
-      { id: `${Date.now()}-user`, role: "user", content: text },
-    ]);
+    setTurns([{ id: `${Date.now()}-user`, role: "user", content: text }]);
     setQuestion("");
     setError("");
     setLoading(true);
@@ -90,8 +88,7 @@ export default function DashboardAiChat({
     }
   };
 
-  const canSubmit =
-    question.trim().length >= 3 && iaDisponivel && !loading;
+  const canSubmit = question.trim().length >= 3 && iaDisponivel && !loading;
 
   return (
     <>
@@ -110,9 +107,9 @@ export default function DashboardAiChat({
             <div>
               <strong>Pergunte diretamente à IA do EJC</strong>
               <span>
-                Use para pesquisa e orientação inicial. Fontes, alertas e revisão
-                humana continuam obrigatórios. Para conversa com contexto, use o
-                Assistente completo.
+                Use para pesquisa e orientação inicial. Fontes, alertas e
+                revisão humana continuam obrigatórios. Para conversa com
+                contexto, use o Assistente completo.
               </span>
             </div>
           </div>
