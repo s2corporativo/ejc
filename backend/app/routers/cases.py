@@ -1100,6 +1100,8 @@ async def encerrar_caso(
     case.provas_determinantes = payload.provas_determinantes
     case.licoes_aprendidas = payload.licoes_aprendidas
 
+    precedente_rag_status = "nao_solicitado"
+
     # Memória institucional: ingere o pós-mortem no RAG (sem dados pessoais).
     # Agora inclui o DOSSIÊ COMPLETO (dados especializados do ramo, prazos que
     # foram cumpridos, peças produzidas) — não só a estratégia textual. Isso faz
@@ -1115,24 +1117,30 @@ async def encerrar_caso(
         area_str = case.area.value if hasattr(case.area, "value") else str(case.area)
 
         try:
-            # Dossiê consolidado e já sanitizado (cliente, ramo, prazos, peças)
-            dossie = await montar_dossie(db, case_id, incluir_pecas=True, sanitizar=True)
-            bloco_dossie = dossie["texto"] if dossie else ""
-
-            corpo = (
-                f"PRECEDENTE INTERNO — CASO {case.numero_interno}\n"
-                f"Área: {area_str} | Resultado: {payload.resultado}\n\n"
-                f"TESE PRINCIPAL: {case.tese_principal or '—'}\n\n"
-                f"MOTIVO DO RESULTADO: {payload.motivo_resultado}\n\n"
-                f"PROVAS DETERMINANTES: {payload.provas_determinantes}\n\n"
-                f"LIÇÕES APRENDIDAS: {payload.licoes_aprendidas}\n\n"
-                f"--- CONTEXTO DO CASO (dossiê) ---\n{bloco_dossie}"
-            )
-            # Idempotente: chave_origem = caso:{id} evita duplicar se reencerrado.
-            # Escopo explícito do caso canônico (server-side): categoria restrita
-            # exige client_id; valores divergentes continuam recusados pelo gate
-            # de escrita do ingestion_service.
+            # Um único SAVEPOINT cobre TODO o passo acessório. Assim, falha de
+            # leitura do dossiê (inclusive erro SQL) ou de embedding/upsert não
+            # deixa a transação principal do encerramento em estado abortado.
             async with db.begin_nested():
+                # Dossiê consolidado e já sanitizado (cliente, ramo, prazos, peças).
+                # Peças de IA não revisadas entram apenas como metadado sinalizado
+                # por case_context; o conteúdo da minuta não é incorporado aqui.
+                dossie = await montar_dossie(
+                    db, case_id, incluir_pecas=True, sanitizar=True
+                )
+                bloco_dossie = dossie["texto"] if dossie else ""
+
+                corpo = (
+                    f"PRECEDENTE INTERNO — CASO {case.numero_interno}\n"
+                    f"Área: {area_str} | Resultado: {payload.resultado}\n\n"
+                    f"TESE PRINCIPAL: {case.tese_principal or '—'}\n\n"
+                    f"MOTIVO DO RESULTADO: {payload.motivo_resultado}\n\n"
+                    f"PROVAS DETERMINANTES: {payload.provas_determinantes}\n\n"
+                    f"LIÇÕES APRENDIDAS: {payload.licoes_aprendidas}\n\n"
+                    f"--- CONTEXTO DO CASO (dossiê) ---\n{bloco_dossie}"
+                )
+                # Idempotente: chave_origem = caso:{id} evita duplicar se reencerrado.
+                # O hardening valida estes IDs explícitos contra o Case canônico;
+                # qualquer divergência cross-client/cross-case falha antes da escrita.
                 await upsert_documento(
                     db,
                     titulo=f"Precedente Interno — {case.numero_interno} ({payload.resultado})",
@@ -1150,11 +1158,14 @@ async def encerrar_caso(
                         "approved_by": str(cu.id),
                     },
                 )
-        except Exception:
+            precedente_rag_status = "registrado"
+        except Exception as exc:
+            precedente_rag_status = "falha_acessoria"
+            # Sem conteúdo, chave, IDs de cliente/caso ou mensagem bruta da exceção.
             logger.warning(
                 "Memoria institucional acessoria nao persistida no encerramento; "
-                "transacao principal preservada (caso=%s)",
-                case_id,
+                "transacao principal preservada (erro=%s)",
+                type(exc).__name__,
             )
 
     pendencias_txt = ""
@@ -1191,7 +1202,13 @@ async def encerrar_caso(
     )
     sincronizacao = await _sincronizar_no_encerramento(db, case, cu, payload, request)
     return {
-        "detail": "Caso encerrado. Conhecimento registrado na base institucional.",
+        "detail": "Caso encerrado.",
+        "memoria_institucional": {
+            "precedente_rag": precedente_rag_status,
+            # A memória/tese roda em BackgroundTasks depois da resposta;
+            # não declarar sucesso antes de sua execução real.
+            "aprendizado_assincrono": "enfileirado",
+        },
         "sincronizacao_processo_eletronico": sincronizacao,
     }
 

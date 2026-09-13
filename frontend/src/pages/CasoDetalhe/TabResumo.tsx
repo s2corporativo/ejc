@@ -471,9 +471,13 @@ export default function TabResumo({
       };
       const { data } = await api.post(`/cases/${caso.id}/encerrar`, payload);
       setEncModal(false);
-      toast.success(
-        "Caso encerrado. Conhecimento registrado na base institucional (precedente + memória + tese).",
-      );
+      toast.success(data?.detail || "Caso encerrado.");
+      const memoria = data?.memoria_institucional;
+      if (memoria?.precedente_rag === "falha_acessoria") {
+        toast.error(
+          "Caso encerrado, mas o precedente não pôde ser registrado no RAG. O encerramento foi preservado.",
+        );
+      }
       // A sincronização é assíncrona e degrada graciosamente no backend: o
       // encerramento vale mesmo quando ela não sai. Reporta o que de fato
       // aconteceu, em vez de prometer o que foi apenas pedido.

@@ -52,8 +52,18 @@ def fakes(monkeypatch):
     async def _dossie_ok(db, case_id, incluir_pecas=True, sanitizar=True):
         return {"texto": "DOSSIÊ SANITIZADO DE TESTE"}
 
+    async def _diagnostico_limpo(db, case, somente_leitura=False):
+        del db, somente_leitura
+        return {
+            "bloqueios": [],
+            "alertas": [],
+            "processo": None,
+            "resumo": {"case_id": case.id, "apto": True},
+        }
+
     monkeypatch.setattr(cases_router, "criar_audit_log", _fake_audit)
     monkeypatch.setattr(case_closure_service, "serializar_mutacao_caso", _sem_lock)
+    monkeypatch.setattr(case_closure_service, "diagnosticar_fechamento", _diagnostico_limpo)
 
     from app.services import case_context
     monkeypatch.setattr(case_context, "montar_dossie", _dossie_ok)
@@ -111,6 +121,8 @@ async def test_encerramento_sobrevive_a_falha_do_rag(db, fakes, monkeypatch):
         caso.id, _payload(), BackgroundTasks(), None, db, socio,
     )
     assert "encerrado" in resp["detail"].lower()
+    assert resp["memoria_institucional"]["precedente_rag"] == "falha_acessoria"
+    assert resp["memoria_institucional"]["aprendizado_assincrono"] == "enfileirado"
     await db.refresh(caso)
     assert caso.status == CaseStatus.encerrado
 
@@ -138,9 +150,57 @@ async def test_encerramento_passa_escopo_explicito_ao_rag(db, fakes, monkeypatch
         caso.id, _payload(), BackgroundTasks(), None, db, socio,
     )
     assert "encerrado" in resp["detail"].lower()
+    assert resp["memoria_institucional"]["precedente_rag"] == "registrado"
+    assert resp["memoria_institucional"]["aprendizado_assincrono"] == "enfileirado"
     assert len(chamadas) == 1
     kwargs = chamadas[0]
     assert kwargs["categoria"] == "precedente_interno"
     assert kwargs["client_id"] == cli.id
     assert kwargs["case_id"] == caso.id
     assert kwargs["chave_origem"] == f"caso:{caso.id}"
+
+
+@pytest.mark.asyncio
+async def test_encerramento_sobrevive_a_falha_do_dossie(db, fakes, monkeypatch, caplog):
+    """Falha no dossiê também fica contida pelo SAVEPOINT acessório."""
+    from app.services import case_context
+
+    socio = _socio()
+    cli = _cliente(socio.id)
+    caso = _caso(cli.id, socio.id)
+    db.add_all([socio, cli, caso])
+    await db.commit()
+
+    marcador = "PII-SINTETICA-NAO-DEVE-IR-AO-LOG"
+
+    async def _dossie_quebrado(*args, **kwargs):
+        del args, kwargs
+        raise RuntimeError(marcador)
+
+    monkeypatch.setattr(case_context, "montar_dossie", _dossie_quebrado)
+
+    with caplog.at_level("WARNING"):
+        resp = await cases_router.encerrar_caso(
+            caso.id, _payload(), BackgroundTasks(), None, db, socio
+        )
+
+    assert "encerrado" in resp["detail"].lower()
+    assert resp["memoria_institucional"]["precedente_rag"] == "falha_acessoria"
+    await db.refresh(caso)
+    assert caso.status == CaseStatus.encerrado
+    assert "RuntimeError" in caplog.text
+    assert marcador not in caplog.text
+    assert caso.id not in caplog.text
+
+
+def test_dossie_e_upsert_compartilham_um_unico_savepoint():
+    """Evita dupla contenção e garante que leitura do dossiê também é isolada."""
+    import inspect
+
+    fonte = inspect.getsource(cases_router.encerrar_caso)
+    inicio = fonte.index("async with db.begin_nested():")
+    pos_dossie = fonte.index("dossie = await montar_dossie")
+    pos_upsert = fonte.index("await upsert_documento")
+
+    assert fonte.count("async with db.begin_nested():") == 1
+    assert inicio < pos_dossie < pos_upsert
