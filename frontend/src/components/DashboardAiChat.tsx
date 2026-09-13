@@ -123,7 +123,7 @@ export default function DashboardAiChat({
                 {turn.role === "user" ? "Você" : "EJC IA"}
               </span>
               {turn.role === "assistant" ? (
-                <Markdown source={turn.content} />
+                <Markdown source={turn.content} className="markdown" />
               ) : (
                 <p>{turn.content}</p>
               )}
