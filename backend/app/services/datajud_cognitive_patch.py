@@ -19,7 +19,12 @@ logger = logging.getLogger("ejc.datajud.cognitive_patch")
 _INSTALADO = False
 
 
-def _numero_limpo(valor: str | None) -> str:
+async def _nao_criar_deadline_datajud(*_args, **_kwargs) -> None:
+    """Defesa em profundidade: DataJud nunca persiste Deadline automaticamente."""
+    logger.warning(
+        "Criação automática de Deadline por DataJud bloqueada: "
+        "exige revisão humana de publicação, termo inicial, regime e calendário."
+    )
     return re.sub(r"\D", "", valor or "")
 
 
@@ -139,12 +144,14 @@ def _instalar_wrappers() -> None:
             "motivo": "Prazos DataJud exigem cálculo canônico e confirmação humana.",
         }
 
+    dj._criar_deadline_automatico = _nao_criar_deadline_datajud
+    dj._detectar_prazos_criticos = detectar_sem_criar_prazo
+    dj.sincronizar_prazos_datajud = sincronizar_prazos_bloqueado
+
     dj.consultar_movimentos = _consultar_movimentos_exatos
     dj.consultar_processo = _consultar_processo_exato
     dj.upsert_movimentos_no_caso = upsert_com_feed
     dj.sincronizar_caso = sync_com_feed
-    dj._detectar_prazos_criticos = detectar_sem_criar_prazo
-    dj.sincronizar_prazos_datajud = sincronizar_prazos_bloqueado
 
     try:
         from app.routers import cases as cases_router
