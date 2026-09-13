@@ -11,7 +11,10 @@
 # fazer). Corrigido trocando `:marca::jsonb` por `CAST(:marca AS jsonb)`.
 #
 # Postgres é OBRIGATÓRIO (mesmo padrão dos demais *_dblevel.py). Sem
-# RUN_DB_TESTS=1, pula.
+# RUN_DB_TESTS=1, pula. Os testes também isolam explicitamente o conjunto de
+# candidatos e a reversão aos IDs do fixture: mesmo se alguém apontar a suíte
+# por engano para um banco reutilizado, nenhuma linha preexistente entra no
+# plano de deduplicação nem na reversão.
 from __future__ import annotations
 
 import os
@@ -21,7 +24,7 @@ import pytest
 from sqlalchemy import text
 
 from scripts import deduplicar_base_conhecimento as dedup_mod
-from scripts.deduplicar_base_conhecimento import executar, reverter
+from scripts.deduplicar_base_conhecimento import DocCandidato, executar, reverter
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("RUN_DB_TESTS"),
@@ -59,6 +62,44 @@ async def _limpar(db, doc_ids: list[str]) -> None:
     await db.commit()
 
 
+def _isolar_candidatos(monkeypatch, candidatos: list[DocCandidato]) -> None:
+    """Impede que `executar()` forme plano com qualquer linha fora do fixture."""
+    async def _carregar_fixture(_db):
+        return candidatos
+
+    monkeypatch.setattr(dedup_mod, "carregar_candidatos", _carregar_fixture)
+
+
+def _candidato(doc_id: str, titulo: str, *, fonte=False, chave=False,
+               revisado=False) -> DocCandidato:
+    return DocCandidato(
+        id=doc_id,
+        titulo=titulo,
+        categoria="legislacao",
+        tem_fonte=fonte,
+        tem_chave_origem=chave,
+        revisado=revisado,
+        versao=1,
+        atualizado_em_ts=0.0,
+        n_chunks=0,
+    )
+
+
+def _isolar_reversao(monkeypatch, ids: list[str]) -> None:
+    """Mantém a semântica da reversão, mas restringe o UPDATE aos IDs do fixture."""
+    placeholders = ", ".join(f":id_{i}" for i in range(len(ids)))
+    sql = text(
+        "UPDATE knowledge_docs "
+        "SET vigente = true, extra = extra - :chave_dedup - :chave_vencedor "
+        "WHERE vigente = false AND extra ? :chave_dedup "
+        f"AND id IN ({placeholders})"
+    )
+    # `reverter()` fornece apenas as chaves; bindamos os IDs diretamente no
+    # statement para não ampliar a assinatura de produção só por causa do teste.
+    sql = sql.bindparams(**{f"id_{i}": value for i, value in enumerate(ids)})
+    monkeypatch.setattr(dedup_mod, "_SQL_REVERTER", sql)
+
+
 async def test_aplicar_rebaixa_perdedor_e_marca_extra_sem_apagar(monkeypatch):
     """Regressão do bug real: --aplicar tem de gravar vigente=false + extra."""
     from app.core.database import AsyncSessionLocal
@@ -67,13 +108,19 @@ async def test_aplicar_rebaixa_perdedor_e_marca_extra_sem_apagar(monkeypatch):
                         raising=False)
     tok = uuid4().hex[:8]
     async with AsyncSessionLocal() as db:
-        manual = await _inserir_doc(db, titulo=f"CPC upload manual {tok}")
+        titulo_manual = f"CPC upload manual {tok}"
+        titulo_oficial = f"Código de Processo Civil (Lei 13.105/2015) {tok}"
+        manual = await _inserir_doc(db, titulo=titulo_manual)
         oficial = await _inserir_doc(
-            db, titulo=f"Código de Processo Civil (Lei 13.105/2015) {tok}",
+            db, titulo=titulo_oficial,
             fonte="https://planalto.gov.br/l13105", chave_origem=f"planalto:l13105:{tok}",
             revisado=True,
         )
         await db.commit()
+        _isolar_candidatos(monkeypatch, [
+            _candidato(manual, titulo_manual),
+            _candidato(oficial, titulo_oficial, fonte=True, chave=True, revisado=True),
+        ])
         try:
             rc = await executar(aplicar=True)
             assert rc == 0
@@ -103,12 +150,19 @@ async def test_reverter_devolve_vigente_true_so_ao_que_este_script_marcou(monkey
                         raising=False)
     tok = uuid4().hex[:8]
     async with AsyncSessionLocal() as db:
-        manual = await _inserir_doc(db, titulo=f"CLT upload manual {tok}")
+        titulo_manual = f"CLT upload manual {tok}"
+        titulo_oficial = f"CLT (Decreto-Lei 5.452/1943) {tok}"
+        manual = await _inserir_doc(db, titulo=titulo_manual)
         oficial = await _inserir_doc(
-            db, titulo=f"CLT (Decreto-Lei 5.452/1943) {tok}",
+            db, titulo=titulo_oficial,
             fonte="https://planalto.gov.br/dl5452", chave_origem=f"planalto:dl5452:{tok}",
         )
         await db.commit()
+        _isolar_candidatos(monkeypatch, [
+            _candidato(manual, titulo_manual),
+            _candidato(oficial, titulo_oficial, fonte=True, chave=True),
+        ])
+        _isolar_reversao(monkeypatch, [manual])
         try:
             await executar(aplicar=True)
 
@@ -130,17 +184,23 @@ async def test_reverter_devolve_vigente_true_so_ao_que_este_script_marcou(monkey
             await _limpar(db, [manual, oficial])
 
 
-async def test_dry_run_nao_altera_nada():
+async def test_dry_run_nao_altera_nada(monkeypatch):
     from app.core.database import AsyncSessionLocal
 
     tok = uuid4().hex[:8]
     async with AsyncSessionLocal() as db:
-        manual = await _inserir_doc(db, titulo=f"Código Civil upload {tok}")
+        titulo_manual = f"Código Civil upload {tok}"
+        titulo_oficial = f"Código Civil (Lei 10.406/2002) {tok}"
+        manual = await _inserir_doc(db, titulo=titulo_manual)
         oficial = await _inserir_doc(
-            db, titulo=f"Código Civil (Lei 10.406/2002) {tok}",
+            db, titulo=titulo_oficial,
             fonte="https://planalto.gov.br/l10406",
         )
         await db.commit()
+        _isolar_candidatos(monkeypatch, [
+            _candidato(manual, titulo_manual),
+            _candidato(oficial, titulo_oficial, fonte=True),
+        ])
         try:
             rc = await executar(aplicar=False)
             assert rc == 0
