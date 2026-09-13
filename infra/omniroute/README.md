@@ -1,0 +1,101 @@
+# OmniRoute — gateway de manutenção do EJC
+
+Integração opcional para ferramentas de desenvolvimento e manutenção (Codex, Claude Code, Antigravity e clientes compatíveis). **Não substitui** `backend/app/services/ai_gateway.py` e não participa das chamadas de IA do runtime jurídico do EJC.
+
+## Limite arquitetural
+
+- serviço independente do `docker-compose.yml` principal;
+- bind padrão somente em `127.0.0.1:20128`;
+- sem Nginx, Cloudflare, túnel público ou porta aberta para a internet;
+- sem mount de `/opt/ejc`, checkout Git, `.env`, `~/.codex`, `~/.claude` ou diretórios de credenciais;
+- dados do OmniRoute persistem apenas no volume Docker `ejc-omniroute-data`;
+- endpoint keys, OAuth/refresh tokens e credenciais de providers são segredos e nunca devem ser versionados, copiados para Issue/PR ou registrados em logs de CI.
+
+## Subir a stack
+
+A partir de um workspace seguro, fora de `/opt/ejc`:
+
+```bash
+cp infra/omniroute/.env.example infra/omniroute/.env
+docker compose \
+  -p ejc-omniroute \
+  -f infra/omniroute/docker-compose.yml \
+  --env-file infra/omniroute/.env \
+  config
+docker compose \
+  -p ejc-omniroute \
+  -f infra/omniroute/docker-compose.yml \
+  --env-file infra/omniroute/.env \
+  up -d
+```
+
+O `.env` local desta pasta é ignorado pelo Git. O compose usa uma versão fixa da imagem para evitar atualização implícita.
+
+## Acesso remoto seguro
+
+Na VPS, a interface fica acessível apenas por loopback. Para abrir o dashboard de uma estação autorizada, prefira túnel SSH local:
+
+```bash
+ssh -L 20128:127.0.0.1:20128 USUARIO@VPS
+```
+
+Depois, abra `http://127.0.0.1:20128` no navegador local. Não altere `OMNIROUTE_BIND_HOST` para `0.0.0.0` em servidor exposto sem uma decisão específica de segurança.
+
+## Providers e custo
+
+Cadastre providers apenas pelo dashboard/local helper do OmniRoute. Priorize providers gratuitos ou planos já disponíveis e use o modelo lógico `auto` quando o fluxo exigir fallback. Provider pago deve ser habilitado deliberadamente; o OmniRoute não transforma uma API paga em gratuita.
+
+As credenciais e endpoint keys ficam fora do repositório. O volume `/app/data` deve ser tratado como sensível porque pode conter configuração de providers e autenticação.
+
+## Codex
+
+Depois de criar uma endpoint key no OmniRoute:
+
+```bash
+export OPENAI_BASE_URL="http://127.0.0.1:20128/v1"
+export OPENAI_API_KEY="<endpoint-key-do-omniroute>"
+```
+
+Use o modelo `auto` quando suportado pela integração. A chave acima é segredo operacional: não gravar em arquivos versionados.
+
+## Claude Code
+
+```bash
+export ANTHROPIC_BASE_URL="http://127.0.0.1:20128"
+export ANTHROPIC_AUTH_TOKEN="<endpoint-key-do-omniroute>"
+export ANTHROPIC_MODEL="auto"
+export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1
+```
+
+A base Anthropic usa a raiz do gateway, sem `/v1`.
+
+## Antigravity
+
+Quando o Antigravity estiver na máquina local, mantenha o OmniRoute alcançável pelo túnel SSH acima. Configuração/autenticação de provider deve permanecer no OmniRoute; não transportar refresh tokens para o repositório nem para prompts de agentes.
+
+## Verificação operacional
+
+```bash
+docker compose -p ejc-omniroute -f infra/omniroute/docker-compose.yml ps
+curl -fsS http://127.0.0.1:20128/ >/dev/null
+```
+
+Para diagnóstico, inspecione somente logs técnicos do container e evite colar logs que contenham headers ou credenciais em Issues/PRs.
+
+## Atualização
+
+A imagem está pinada em `diegosouzapw/omniroute:3.8.50`. Atualização de versão deve ocorrer em PR separado, após confirmar a tag, revisar release notes e repetir `docker compose config`, health-check e smoke local.
+
+## Rollback
+
+Pare a camada sem apagar os dados:
+
+```bash
+docker compose -p ejc-omniroute -f infra/omniroute/docker-compose.yml down
+```
+
+Não use `down -v` no ciclo normal. A remoção do volume é destrutiva e exige decisão explícita porque elimina configuração e credenciais persistidas do OmniRoute.
+
+## Relação com outras frentes
+
+Esta integração evita sobreposição com o PR #1616 (regras/workflows de Antigravity) e com o PR #1624 (`ops/agents/**` + OpenAI Agents SDK). Ela fornece somente o gateway externo de modelos; governança, sandbox, handoffs, guardrails, testes, PRs e deploy continuam sendo responsabilidade das camadas próprias do EJC.
