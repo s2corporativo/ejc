@@ -82,9 +82,11 @@ curl -fsS http://127.0.0.1:20128/ >/dev/null
 
 Para diagnóstico, inspecione somente logs técnicos do container e evite colar logs que contenham headers ou credenciais em Issues/PRs.
 
-## Atualização
+## Versão e atualização
 
-A imagem está pinada em `diegosouzapw/omniroute:3.8.50`. Atualização de versão deve ocorrer em PR separado, após confirmar a tag, revisar release notes e repetir `docker compose config`, health-check e smoke local.
+A imagem está pinada em `diegosouzapw/omniroute:3.8.49`, última imagem Docker estável confirmada no momento desta integração. A release 3.8.50 foi publicada no GitHub/npm, mas o publish Docker dessa versão apresentou falha; por isso uma tag Docker 3.8.50 não é aceita como prova de que o código 3.8.50 está sendo executado.
+
+Existe um problema conhecido no 3.8.49 relacionado ao custo do endpoint `/v1/models`; por isso health-check e automação desta integração **não fazem polling desse endpoint**. Atualização deve ocorrer em PR separado depois que uma imagem Docker posterior estiver realmente publicada, com digest/versão confirmados, release notes revisadas e novos smoke tests.
 
 ## Rollback
 
