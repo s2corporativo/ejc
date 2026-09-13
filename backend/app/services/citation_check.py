@@ -187,8 +187,8 @@ async def _fonte_artigo(
 ) -> dict | None:
     """Retorna evidência estrutural do artigo dentro do diploma exato.
 
-    Em consulta de direito atual, um registro marcado como revogado não pode
-    satisfazer a citação mesmo que o flag técnico `vigente` esteja incoerente.
+    Em consulta de direito atual, registros marcados como revogados ou suspensos
+    não podem satisfazer a citação mesmo que o flag técnico `vigente` esteja incoerente.
     """
     from app.services.ai_service import _filtros_gate_rag
 
@@ -198,7 +198,7 @@ async def _fonte_artigo(
         return None
     vigencia_sql = "TRUE" if vigente else "FALSE"
     status_clause = (
-        "AND COALESCE(kd.extra->>'legal_status', '') <> 'revogada' "
+        "AND COALESCE(kd.extra->>'legal_status', '') NOT IN ('revogada', 'suspensa') "
         if vigente
         else ""
     )
