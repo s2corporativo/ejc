@@ -983,7 +983,13 @@ async def atualizar_atendimento(
     if "advogado_responsavel_id" in data:
         await _validar_responsavel(db, data["advogado_responsavel_id"])
     if "solicitacao_responsavel_id" in data:
-        await _validar_responsavel(db, data["solicitacao_responsavel_id"])
+        responsavel_solicitacao = await _validar_responsavel(
+            db, data["solicitacao_responsavel_id"]
+        )
+        if atendimento.task_id:
+            await _validar_responsavel_tarefa_no_caso(
+                db, responsavel_solicitacao, atendimento.case_id
+            )
     if "solicitacao_prioridade" in data:
         if data["solicitacao_prioridade"] is None:
             raise HTTPException(status_code=422, detail="Prioridade não pode ser nula")
