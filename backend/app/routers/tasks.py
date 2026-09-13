@@ -150,7 +150,7 @@ async def criar(
         caso = await verificar_acesso_caso(db, cu, payload.case_id)
 
     alvo = None
-    if payload.responsavel_id:
+    if payload.responsavel_id is not None:
         alvo = await _carregar_responsavel_ativo(db, payload.responsavel_id)
         if caso is not None and not _responsavel_pode_acessar_caso(alvo, caso):
             raise HTTPException(
@@ -189,7 +189,7 @@ async def atualizar(
     caso = await _verificar_acesso_tarefa(db, cu, t)
 
     mud = payload.model_dump(exclude_unset=True)
-    if "responsavel_id" in mud and mud["responsavel_id"]:
+    if "responsavel_id" in mud and mud["responsavel_id"] is not None:
         alvo = await _carregar_responsavel_ativo(db, mud["responsavel_id"])
         if caso is not None and not _responsavel_pode_acessar_caso(alvo, caso):
             raise HTTPException(
