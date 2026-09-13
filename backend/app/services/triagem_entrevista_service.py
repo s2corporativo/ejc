@@ -6,8 +6,8 @@
 #   sanitizar_ou_abortar (LGPD) → ai_gateway.chat(task_type="triagem") →
 #   registrar_ai_log (AILog obrigatório / HITL).
 # Toda saída é ESTIMATIVA PRELIMINAR / RASCUNHO — nunca parecer definitivo
-# (OAB Prov. 205/2021). O router antigo continua com o MESMO comportamento:
-# ele apenas delega para cá.
+# O router antigo continua com o MESMO comportamento: ele apenas delega
+# para cá.
 from __future__ import annotations
 
 import json
@@ -24,8 +24,7 @@ logger = logging.getLogger("ejc.triagem.entrevista")
 
 AVISO_ESTIMATIVA = (
     "Estimativa preliminar gerada por IA a partir do relato — NÃO é parecer "
-    "jurídico. Sujeita a revisão obrigatória do advogado responsável "
-    "(OAB Prov. 205/2021)."
+    "jurídico. Sujeita a revisão obrigatória do advogado responsável."
 )
 
 # Campos do painel: cada um vira {"valor"/..., "confianca": 0-100} na resposta.

@@ -44,13 +44,28 @@ async def _enforce_client_legal_doc_scope(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ) -> None:
-    """Gate transversal de peça avulsa por client_id; usa 404 anti-enumeração."""
+    """Gate transversal de peça avulsa por client_id; usa 404 anti-enumeração.
+
+    Peça de admissão (`client_admission_kind` preenchido — procuração/contrato
+    com qualificação completa do cliente) exige advogado+ mesmo para papéis
+    com visão ampla de CRM (#1460): o mesmo LegalDoc não pode ser negado por
+    `/clients/{id}/pecas-geradas` e liberado aqui. Achado 2026-09-06: a
+    primeira tentativa (`services/legal_doc_access_hardening.py`, monkeypatch
+    do Dependant já compilado) quebrava em dois pontos — `fastapi.params.
+    Depends` é dataclass FROZEN (não dá para reatribuir `.dependency`) e a
+    troca do atributo do módulo invalidava silenciosamente qualquer
+    `app.dependency_overrides[_enforce_client_legal_doc_scope]` registrado por
+    testes que capturaram a referência ANTES do monkeypatch instalar (ordem de
+    import de pytest), fazendo o gate real rodar contra fakes de banco que não
+    o esperavam. Corrigido embutindo a regra aqui — sem swap de objeto, sem
+    esse risco.
+    """
     doc_id = request.path_params.get("doc_id")
     if not doc_id:
         return
     row = (
         await db.execute(
-            select(LegalDoc.client_id).where(
+            select(LegalDoc.client_id, LegalDoc.client_admission_kind).where(
                 LegalDoc.id == doc_id,
                 LegalDoc.deleted_at.is_(None),
             )
@@ -58,9 +73,14 @@ async def _enforce_client_legal_doc_scope(
     ).first()
     if row is None:
         return
-    client_id = row[0]
+    client_id, admission_kind = row
     if client_id and not await cliente_id_visivel(db, cu, client_id):
         raise HTTPException(status_code=404, detail="Peça não encontrada")
+    if admission_kind:
+        requer_advogado(
+            cu,
+            detail="Conteúdo de documento de admissão restrito à equipe jurídica",
+        )
 
 
 router = APIRouter(

@@ -1,10 +1,17 @@
 # Woodpecker CI — servidor + agente, self-hosted na VPS.
 # Substituto do GitHub Actions (conta sem alocação de runner desde ~22/08/2026).
 # Runbook completo: README.md ao lado. Variáveis: copie .env.example para .env.
+x-logging: &woodpecker-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
 services:
   woodpecker-server:
     image: woodpeckerci/woodpecker-server:v3.18.0
     restart: unless-stopped
+    logging: *woodpecker-logging
     ports:
       # Só loopback: o Nginx do host faz o TLS e o proxy público.
       - "127.0.0.1:8100:8000"
@@ -18,6 +25,12 @@ services:
       - WOODPECKER_GITHUB=true
       - WOODPECKER_GITHUB_CLIENT=${WOODPECKER_GITHUB_CLIENT:?defina WOODPECKER_GITHUB_CLIENT no .env}
       - WOODPECKER_GITHUB_SECRET=${WOODPECKER_GITHUB_SECRET:?defina WOODPECKER_GITHUB_SECRET no .env}
+      # SQLite é o datastore padrão desta instância. Como o servidor é único e
+      # o agente já executa 1 workflow por vez, serializamos o pool para evitar
+      # concorrência de escrita que pode resultar em "database is locked".
+      # Se o lock reaparecer, a próxima etapa é migração controlada para Postgres.
+      - WOODPECKER_DATABASE_MAX_CONNECTIONS=${WOODPECKER_DATABASE_MAX_CONNECTIONS:-1}
+      - WOODPECKER_DATABASE_IDLE_CONNECTIONS=${WOODPECKER_DATABASE_IDLE_CONNECTIONS:-1}
       # Funções distintas no v3: AGENT_SECRET autentica/registra agentes;
       # GRPC_SECRET assina JWTs das conexões gRPC. Use segredos independentes.
       - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET:?defina WOODPECKER_AGENT_SECRET no .env}
@@ -30,6 +43,7 @@ services:
   woodpecker-agent:
     image: woodpeckerci/woodpecker-agent:v3.18.0
     restart: unless-stopped
+    logging: *woodpecker-logging
     depends_on:
       - woodpecker-server
     volumes:

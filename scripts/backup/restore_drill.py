@@ -173,6 +173,9 @@ def main() -> int:
     try:
         with tempfile.TemporaryDirectory(prefix="ejc_restore_drill_") as tmp:
             tmp_path = Path(tmp)
+            # 0o700 e dono-apenas: MAIS restritivo que o 0o644 que a regra sugere.
+            # Seguir a regra afrouxaria o diretorio. Ver docs/seguranca/SAST_BASELINE.md
+            # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
             os.chmod(tmp_path, 0o700)
             clear_dump = tmp_path / "ejc.dump"
             encrypted_dump = tmp_path / "ejc.dump.enc"

@@ -299,8 +299,13 @@ async def _get_case(db: AsyncSession, case_id: str, user: User) -> Case:
 
 
 def _serialize(obj) -> dict:
-    """Serializa um modelo ORM em dict SEM vazar `_sa_instance_state`."""
-    return {c.key: getattr(obj, c.key) for c in obj.__table__.columns}
+    """Serializa modelo ORM sem estado SQLAlchemy nem colunas internas/sensíveis."""
+    internas = set(getattr(obj, "__api_internal_columns__", ()))
+    return {
+        c.key: getattr(obj, c.key)
+        for c in obj.__table__.columns
+        if c.key not in internas
+    }
 
 
 def _casos_visiveis_subq(cu: User):
@@ -353,7 +358,12 @@ async def _crud_atualizar(Model, table: str, item_id: str, body: dict,
     # colunas de CONTROLE (id/case_id/timestamps/soft-delete) são bloqueadas e
     # campo desconhecido/bloqueado responde 422 — nunca ignorado em silêncio
     # (um PATCH que "não pega" esconderia perda de dado de desfecho/prazo).
-    editaveis = {c.key for c in Model.__table__.columns} - _COLUNAS_CONTROLE
+    internas = set(getattr(Model, "__api_internal_columns__", ()))
+    editaveis = (
+        {c.key for c in Model.__table__.columns}
+        - _COLUNAS_CONTROLE
+        - internas
+    )
     rejeitados = sorted(k for k in body if k not in editaveis)
     if rejeitados:
         raise HTTPException(
@@ -365,6 +375,10 @@ async def _crud_atualizar(Model, table: str, item_id: str, body: dict,
         setattr(obj, k, v)
     await criar_audit_log(db, cu.id, cu.role.value, "UPDATE", table, item_id)
     await db.commit()
+    # Colunas com onupdate/server_default (ex.: updated_at) podem ficar
+    # expiradas após o flush mesmo com expire_on_commit=False. Recarregar de
+    # forma assíncrona evita lazy IO síncrono em _serialize (MissingGreenlet).
+    await db.refresh(obj)
     return _serialize(obj)
 
 

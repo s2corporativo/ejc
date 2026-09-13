@@ -26,7 +26,12 @@ def _autorizado(request: Request) -> bool:
         # Sem fallback por query string: segredo em URL vaza em log de acesso.
         or ""
     )
-    return bool(recebido) and hmac.compare_digest(recebido, WEBHOOK_SECRET)
+    # Sem typecast do valor externo: a comparação é feita direto sobre a
+    # string do header. O caso vazio sai antes, para não gastar compare_digest
+    # (e para não depender de `bool()` sobre entrada não confiável).
+    if not recebido:
+        return False
+    return hmac.compare_digest(recebido, WEBHOOK_SECRET)
 
 
 def _log_safe(valor) -> str:

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import {
+  Calculator,
   ChevronDown,
   ChevronUp,
   LayoutGrid,
@@ -11,6 +12,7 @@ import {
 import { Badge, Button, Card, PageHeader } from "../components/UI";
 import { EmptyState } from "../components/UI";
 import { cn } from "../lib/cn";
+import CalculadorasJuridicas from "../components/CalculadorasJuridicas";
 import { filterModulesByLifecycle } from "../lib/moduleLifecycle";
 import { useModuleLifecycleStore } from "../stores/moduleLifecycle";
 import DefesasRevisoesPanel from "../components/DefesasRevisoesPanel";
@@ -44,7 +46,7 @@ export const CATEGORIAS_FERRAMENTAS: {
   {
     title: "Monitoramento",
     description: "Dados públicos e publicações acompanhados pelo escritório.",
-    keys: ["datajud", "diario-oficial", "noticias"],
+    keys: ["datajud", "diario-oficial"],
   },
   {
     title: "Produtividade e operações",
@@ -86,6 +88,9 @@ export default function Ferramentas() {
   const [searchParams] = useSearchParams();
   const [defesasOpen, setDefesasOpen] = useState(
     searchParams.get("abrir") === "defesas",
+  );
+  const [calculadorasOpen, setCalculadorasOpen] = useState(
+    searchParams.get("abrir") === "calculadoras",
   );
   const [favoritos, setFavoritos] = useState<Set<string>>(carregarFavoritos);
 
@@ -208,6 +213,53 @@ export default function Ferramentas() {
                 <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.02]">
                   <DefesasRevisoesPanel />
                   <RevisaoBancariaDeterministica />
+                </div>
+              )}
+            </section>
+          )}
+
+        {podeUsarDefesas &&
+          (!termo ||
+            "calculadoras prazos alimentos usucapiao dano moral anpp contestacao".includes(
+              termo,
+            )) && (
+            <section className="space-y-4">
+              <button
+                type="button"
+                onClick={() => setCalculadorasOpen((aberto) => !aberto)}
+                className="group w-full text-left"
+                aria-expanded={calculadorasOpen}
+              >
+                <Card className="flex items-start gap-4 p-4">
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-primary-100 bg-primary-50 text-primary-700 dark:border-white/10 dark:bg-white/10 dark:text-primary-200">
+                    <Calculator className="h-6 w-6" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h2 className="font-semibold text-slate-950 dark:text-slate-50">
+                          Calculadoras Jurídicas
+                        </h2>
+                        <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-300">
+                          Prazos, alimentos, usucapião, dano moral, ANPP —
+                          cálculos determinísticos com fontes rastreáveis.
+                        </p>
+                      </div>
+                      <span className="rounded-lg p-2 text-slate-400">
+                        {calculadorasOpen ? (
+                          <ChevronUp className="h-5 w-5" />
+                        ) : (
+                          <ChevronDown className="h-5 w-5" />
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                </Card>
+              </button>
+
+              {calculadorasOpen && (
+                <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.02]">
+                  <CalculadorasJuridicas />
                 </div>
               )}
             </section>

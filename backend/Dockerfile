@@ -61,4 +61,19 @@ EXPOSE 8000
 
 # O entrypoint aplica migrations (alembic upgrade head) + seed idempotente do
 # admin e então sobe o uvicorn — o container antigo subia com o banco vazio.
+#
+# DÍVIDA DE SEGURANÇA ACEITA E RASTREADA (semgrep missing-user-entrypoint):
+# este container roda como root. Não é falso positivo — é endurecimento real
+# que falta. Não foi feito aqui porque `USER` sem mais nada QUEBRA produção:
+# /app/uploads e /app/backups são volumes NOMEADOS (uploads_data,
+# backups_data no docker-compose.yml) que já existem no VPS pertencendo ao
+# root. O Docker só copia dono/permissão da imagem quando o volume nasce
+# vazio — nos volumes já populados de produção ele não faz nada, e um usuário
+# não-root perderia a escrita: upload de documento e o backup agendado das
+# 02h00 (scheduler.py) parariam no primeiro deploy.
+# Fechar isso exige, num PR próprio e com build de container exercitado:
+#   1) `useradd` + `chown -R` de /app/uploads e /app/backups na imagem;
+#   2) `chown` único dos volumes existentes no VPS, no runbook de deploy;
+#   3) conferir que pg_dump/rclone do job de backup ainda escrevem.
+# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint
 ENTRYPOINT ["/app/entrypoint.sh"]

@@ -270,6 +270,9 @@ async def listar_templates(
         filters.append("LOWER(dd_type) = LOWER(:dd_type)")
         params["dd_type"] = dd_type
     where = " AND ".join(filters)
+    # SQL literal com bind params; a regra marca todo text(), sem olhar
+    # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     r = await db.execute(text(
         f"SELECT id, name, dd_type, items, created_at FROM due_diligence_templates "
         f"WHERE {where} ORDER BY name"

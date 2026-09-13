@@ -1,5 +1,10 @@
 # ── app/services/datajud_cognitive_patch.py ───────────────────────────────────
-"""Integra DataJud ao RAG nativo preservando os fluxos existentes."""
+"""Integra DataJud ao RAG nativo preservando os fluxos existentes.
+
+A neutralização de criação automática de prazos é barreira crítica de segurança.
+Feed cognitivo, categoria RAG e scheduler são complementares e podem degradar sem
+reativar o caminho legado de materialização automática de Deadline.
+"""
 from __future__ import annotations
 
 import logging
@@ -124,11 +129,22 @@ def _instalar_wrappers() -> None:
             )
         return []
 
+    async def sincronizar_prazos_bloqueado(*args, **kwargs):
+        del args, kwargs
+        return {
+            "criados": 0,
+            "ignorados": 0,
+            "erros": 0,
+            "bloqueado": True,
+            "motivo": "Prazos DataJud exigem cálculo canônico e confirmação humana.",
+        }
+
     dj.consultar_movimentos = _consultar_movimentos_exatos
     dj.consultar_processo = _consultar_processo_exato
     dj.upsert_movimentos_no_caso = upsert_com_feed
     dj.sincronizar_caso = sync_com_feed
     dj._detectar_prazos_criticos = detectar_sem_criar_prazo
+    dj.sincronizar_prazos_datajud = sincronizar_prazos_bloqueado
 
     try:
         from app.routers import cases as cases_router
@@ -149,8 +165,6 @@ def _registrar_categoria_restrita() -> None:
     from app.services import ai_service
     if "andamento_processual" not in ai_service._RESTRICTED_CATS:
         ai_service._RESTRICTED_CATS.append("andamento_processual")
-
-
 
 
 async def _job_feed_datajud() -> None:
@@ -181,10 +195,21 @@ def instalar() -> None:
     global _INSTALADO
     if _INSTALADO:
         return
+
+    # Segurança jurídica: se estes wrappers falharem, a instalação falha e o
+    # caller deve impedir boot. Não marcar _INSTALADO antes desta etapa.
     _instalar_wrappers()
-    _registrar_categoria_restrita()
-    # Onda 3 §4.1: o router datajud_intelligence é registrado explicitamente
-    # em app/main.py (antes era anexado a andamentos.router por patch daqui).
-    _registrar_job()
+
+    # Recursos cognitivos são complementares. Falhas aqui não podem remover a
+    # barreira de prazos nem transformar indisponibilidade externa em outage.
+    try:
+        _registrar_categoria_restrita()
+    except Exception as exc:
+        logger.error("Categoria RAG DataJud indisponível: %s", type(exc).__name__)
+    try:
+        _registrar_job()
+    except Exception as exc:
+        logger.error("Scheduler do feed DataJud indisponível: %s", type(exc).__name__)
+
     _INSTALADO = True
-    logger.info("Feed cognitivo DataJud instalado")
+    logger.info("Barreira crítica DataJud instalada; feed cognitivo ativado quando disponível")

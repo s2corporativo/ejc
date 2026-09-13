@@ -565,20 +565,6 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         ],
         perfil: "advogado",
       },
-      {
-        id: "noticias",
-        titulo: "Notícias Jurídicas",
-        rota: "/noticias",
-        oQueE: "As atualizações e o conteúdo jurídico externo agregados.",
-        paraQueServe:
-          "Reúne notícias e conteúdo jurídico relevante para a equipe se manter atualizada sem sair do sistema.",
-        comoUsar: [
-          "Veja o card de notícias no Dashboard para o uso diário.",
-          "Abra Notícias Jurídicas para a lista completa.",
-          "Leia e compartilhe o que for útil ao escritório.",
-        ],
-        perfil: "todos",
-      },
     ],
   },
   {

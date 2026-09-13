@@ -2,9 +2,9 @@
 
 C4 — isolamento por caso: `scope_case_id` é propagado onde o `case_id` já é
 conhecido (deep_research, dossiê, ai_service) e a consulta ao RAG carrega o
-filtro `_FILTRO_CASO_RAG` — comunicação processual de OUTRO caso do mesmo
-cliente não volta. Sem caso no escopo, `scope_client_id` sozinho gera
-`logger.debug`.
+contrato único `_FILTRO_ESCOPO_RAG` — ownership de OUTRO caso/cliente não
+volta. Sem caso no escopo, `scope_client_id` sozinho mantém documentos de caso
+fail-closed e gera `logger.debug`.
 
 B7 — deep_research grava tokens/custo somando as DUAS chamadas ao gateway e
 passa `entidades` do caso quando há `case_id`.
@@ -70,36 +70,40 @@ async def test_busca_com_scope_case_id_aplica_filtro_por_caso(_sem_embeddings):
     assert db.consultas, "a busca textual deve consultar o banco"
     sqls = [s for s, _ in db.consultas]
     params = [p for _, p in db.consultas]
-    assert any("kd.case_id = :scope_case" in s for s in sqls)
+    assert any("kd.client_id = NULLIF(:scope_cli, '')" in s for s in sqls)
+    assert any("kd.case_id IS NULL OR kd.case_id = NULLIF(:scope_case, '')" in s
+               for s in sqls)
+    assert any(p.get("scope_cli") == "cli-1" for p in params)
     assert any(p.get("scope_case") == "caso-A" for p in params)
-    assert any(p.get("case_cats") == ai_service._CASE_SCOPED_CATS for p in params)
+    assert any(p.get("restr_cats") == ai_service._RESTRICTED_CATS for p in params)
 
 
 async def test_busca_sem_scope_case_id_nao_filtra_por_caso(_sem_embeddings):
     db = _FakeDB()
     await ai_service.buscar_contexto_rag(db, "intimação", limite=5, scope_client_id="cli-1")
-    assert all("kd.case_id = :scope_case" not in s for s, _ in db.consultas)
+    assert any("kd.case_id IS NULL OR kd.case_id = NULLIF(:scope_case, '')" in s
+               for s, _ in db.consultas)
+    assert any(p.get("scope_case") == "" for _, p in db.consultas)
 
 
 async def test_scope_client_sem_scope_case_gera_debug(_sem_embeddings, caplog):
     db = _FakeDB()
     with caplog.at_level(logging.DEBUG, logger=ai_service.logger.name):
         await ai_service.buscar_contexto_rag(db, "x", limite=3, scope_client_id="cli-1")
-    assert any("scope_client_id sem scope_case_id" in r.getMessage() for r in caplog.records)
+    assert any("escopo de cliente sem caso" in r.getMessage() for r in caplog.records)
 
 
 def test_semantica_do_filtro_por_caso():
-    """Avaliação em Python do predicado `_FILTRO_CASO_RAG` (mesma lógica do SQL):
-    comunicação de OUTRO caso do mesmo cliente é excluída; doc sem case_id e
-    categorias públicas continuam visíveis."""
-    def passa(categoria, case_id, scope_case):
-        return (categoria not in ai_service._CASE_SCOPED_CATS
-                or case_id is None or case_id == scope_case)
-
-    assert passa("comunicacao_processual", "caso-A", "caso-A")
-    assert not passa("comunicacao_processual", "caso-B", "caso-A")   # outro caso
-    assert passa("comunicacao_processual", None, "caso-A")           # acervo antigo
-    assert passa("legislacao_geral", "caso-B", "caso-A")             # categoria pública
+    """O contrato novo é ownership/base, não lista de categorias por caso."""
+    assert not hasattr(ai_service, "_CASE_SCOPED_CATS")
+    filtro = ai_service._FILTRO_ESCOPO_RAG
+    assert "base_rag" in filtro
+    assert "kd.client_id = NULLIF(:scope_cli, '')" in filtro
+    assert "kd.case_id IS NULL OR kd.case_id = NULLIF(:scope_case, '')" in filtro
+    params = ai_service._params_escopo_rag("cli-1", "caso-A")
+    assert params["scope_cli"] == "cli-1"
+    assert params["scope_case"] == "caso-A"
+    assert params["restr_cats"] == ai_service._RESTRICTED_CATS
 
 
 # ── call sites propagam scope_case_id ────────────────────────────────────────

@@ -374,6 +374,7 @@ async def aplicar_acoes(
                 case_id=payload.case_id,
                 responsavel_id=responsavel_id,
                 observacoes="Criado automaticamente como rascunho. Ciência e revisão humana obrigatórias.",
+                confirmado=False,
                 origem="ia_documento",
             )
             db.add(d)

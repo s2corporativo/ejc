@@ -17,8 +17,10 @@ def _agente(mensagem: str) -> str:
     return classify_intent(task_type="", domain=None, mensagem=mensagem).agente
 
 
-def test_clausula_penal_vai_para_contratual_nao_criminal():
-    assert _agente("preciso revisar a cláusula penal do contrato") == "ContractLawAgent"
+def test_clausula_penal_nao_vai_para_criminal():
+    # ContractLawAgent foi retirado na consolidação 38→8 (2026-09-06); o
+    # desempate contra "penal" cru segue necessário e cai no CaseAgent.
+    assert _agente("preciso revisar a cláusula penal do contrato") == "CaseAgent"
 
 
 def test_disposicoes_transitorias_nao_caem_em_transito():
@@ -30,6 +32,8 @@ def test_mensagem_criminal_pura_continua_criminal():
     assert _agente("denúncia criminal, ação penal contra o réu") == "CriminalLawAgent"
 
 
-def test_erro_medico_com_dano_moral_continua_medico():
-    # Garante que a correção não regrediu o desempate médico × cível.
-    assert _agente("erro médico com dano moral") == "MedicalLawAgent"
+def test_erro_medico_com_dano_moral_vai_para_civil():
+    # MedicalLawAgent foi retirado na consolidação 38→8 (2026-09-06):
+    # responsabilidade médica é espécie de responsabilidade civil (art. 951
+    # CC) e as keywords foram dobradas sobre CivilLawAgent.
+    assert _agente("erro médico com dano moral") == "CivilLawAgent"

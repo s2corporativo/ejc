@@ -1,0 +1,11 @@
+[Unit]
+Description=Executa S2 Renovate em janela de baixa carga
+
+[Timer]
+OnCalendar=*-*-* 06:00:00 UTC
+RandomizedDelaySec=20m
+Persistent=true
+Unit=s2-renovate.service
+
+[Install]
+WantedBy=timers.target

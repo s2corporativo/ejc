@@ -71,6 +71,10 @@ TRAVAS = [
      "gate de vigência ambíguo não pode tocar produção"),
     ("/api/health",
      "sem verificação pós-deploy, rollback silencioso passa por sucesso"),
+    ("WOODPECKER_GATE",
+     "deploy manual não pode contornar a prova do pipeline push/main"),
+    ("origin/main",
+     "SHA manual precisa ser o commit integrado atual de main"),
 ]
 
 
