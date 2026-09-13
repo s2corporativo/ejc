@@ -29,7 +29,7 @@ docker compose \
   up -d
 ```
 
-O `.env` local desta pasta é ignorado pelo Git. O compose usa uma versão fixa da imagem para evitar atualização implícita.
+O `.env` local desta pasta é ignorado pelo Git. O compose usa versão + digest fixos para evitar atualização implícita.
 
 ## Acesso remoto seguro
 
@@ -84,9 +84,9 @@ Para diagnóstico, inspecione somente logs técnicos do container e evite colar 
 
 ## Versão e atualização
 
-A imagem está pinada em `diegosouzapw/omniroute:3.8.49`, última imagem Docker estável confirmada no momento desta integração. A release 3.8.50 foi publicada no GitHub/npm, mas o publish Docker dessa versão apresentou falha; por isso uma tag Docker 3.8.50 não é aceita como prova de que o código 3.8.50 está sendo executado.
+A implantação inicial foi validada em 13/09/2026 com `diegosouzapw/omniroute:3.8.50`, cujo `package.json` dentro da imagem retornou `3.8.50`. O compose também fixa o digest `sha256:085c57adf499a8aaa9f35ccde95c0df9c11bd9ecd18d6c9edbf3b68b8079ba9d`, evitando confiar apenas em uma tag mutável.
 
-Existe um problema conhecido no 3.8.49 relacionado ao custo do endpoint `/v1/models`; por isso health-check e automação desta integração **não fazem polling desse endpoint**. Atualização deve ocorrer em PR separado depois que uma imagem Docker posterior estiver realmente publicada, com digest/versão confirmados, release notes revisadas e novos smoke tests.
+Houve falhas no publish inicial do 3.8.50 em 26/08/2026; por isso a validação desta integração exige conferir o artefato real, não somente a existência da tag. Atualizações devem ocorrer em PR separado, com versão interna, digest, release notes, `docker compose config`, health-check e smoke local novamente verificados.
 
 ## Rollback
 
