@@ -67,12 +67,17 @@ cleanup_temp_files() {
   rm -f -- "$DEPLOYED_SHA_TMP" >/dev/null 2>&1 || true
 }
 
+# Restaura o snapshot transacional do .env somente quando o conteúdo mudou;
+# se estiver idêntico, limita-se a garantir modo 0600 sem reescrever o arquivo.
 restore_env() {
   [ "$ENV_MUTATED" = "1" ] || return 0
   [ -n "$ENV_ROLLBACK_FILE" ] && [ -s "$ENV_ROLLBACK_FILE" ] \
     || { log "ERRO CRÍTICO: snapshot transacional do .env ausente."; return 1; }
   if cmp -s -- "$ENV_ROLLBACK_FILE" .env; then
-    log ".env permaneceu idêntico ao snapshot; restauração física não é necessária."
+    if [ "$(stat -c '%a' .env 2>/dev/null || true)" != "600" ]; then
+      chmod 600 .env || return 1
+    fi
+    log ".env permaneceu idêntico ao snapshot; conteúdo não foi reescrito e permissões seguras foram preservadas."
     return 0
   fi
   cp -- "$ENV_ROLLBACK_FILE" .env || return 1
@@ -220,6 +225,8 @@ log "Imagem backend anterior: ${OLD_BACKEND_IMAGE:-indisponível} (${OLD_BACKEND
 log "Imagem worker anterior: ${OLD_WORKER_IMAGE:-indisponível} (${OLD_WORKER_REF:-sem-ref})"
 log "Imagem frontend anterior: ${OLD_FRONTEND_IMAGE:-indisponível} (${OLD_FRONTEND_REF:-sem-ref})"
 
+# Preserva a imagem do runtime atual para rollback: reutiliza o image ID quando
+# disponível e, se ele já tiver sido podado, materializa o container em execução.
 snapshot_runtime_image() {
   local container="$1" image_id="$2" rollback_tag="$3" label="$4"
   if [ -n "$image_id" ] && docker image inspect "$image_id" >/dev/null 2>&1; then

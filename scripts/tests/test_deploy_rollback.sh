@@ -289,8 +289,9 @@ grep -Eq '^tag ejc-frontend:rollback-.* project-frontend:latest$' "$LOG" || fail
 [ ! -s "$POST_LOG" ] || fail "post-check de rollback rodou sem cutover"
 
 # 7.1) Image ID do container pode ter sido podado; rollback preserva o runtime via docker commit.
-: > "$APP/.env"
-chmod 600 "$APP/.env"
+# Chave neutra não exige migração: rollback deve manter conteúdo e normalizar modo.
+printf '%s\n' 'UNCHANGED_TEST=1' > "$APP/.env"
+chmod 644 "$APP/.env"
 : > "$LOG"
 set +e
 env "${COMMON_ENV[@]}" MISSING_FRONTEND_IMAGE=1 FAIL_FRONTEND_BUILD=1 TARGET_SHA="$TEST_SHA" \
@@ -302,6 +303,8 @@ set -e
 grep -Eq '^commit ejc_frontend ejc-frontend:rollback-' "$LOG" || fail "container frontend não foi preservado via docker commit"
 grep -Eq '^tag ejc-frontend:rollback-.* project-frontend:latest$' "$LOG" || fail "rollback do frontend preservado não restaurou a referência"
 grep -q 'image ID anterior de frontend não está mais no catálogo local' "$TMP/missing-image.out" || fail "fallback de image ID podado não foi registrado"
+[ "$(stat -c '%a' "$APP/.env")" = "600" ] || fail ".env idêntico não teve modo normalizado para 600"
+grep -q 'conteúdo não foi reescrito e permissões seguras foram preservadas' "$TMP/missing-image.out" || fail "caminho seguro de .env idêntico não foi registrado"
 
 # 8) Falha pós-cutover restaura imagens + runtime.
 : > "$APP/.env"
