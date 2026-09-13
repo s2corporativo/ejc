@@ -3,15 +3,15 @@
 Definições (espelham a honestidade estatística de ``services/jurimetria.py``):
 
   • ``taxa_procedencia`` = (procedência + procedência parcial) ÷ decididos no
-    mérito (procedência + parcial + improcedência). Acordo e extinção sem
-    mérito NÃO entram no denominador: acordo não é vitória judicial e
-    extinção não é decisão de mérito. Ambos ficam visíveis nas contagens;
-  • ``taxa_acordo`` = acordos ÷ processos com desfecho (qualquer);
-  • ``tempo_sentenca`` = dias entre ``dataAjuizamento`` e a data do movimento
-    de desfecho de mérito; mediana e média, com o ``n`` que as sustenta;
-  • ``reforma_2grau`` = entre os processos com registro de 2º grau julgado,
-    quantos tiveram provimento (total ou parcial) — só faz sentido dentro da
-    amostra coletada, por isso ``n_com_recurso_julgado`` acompanha a taxa.
+    mérito. Acordo e extinção sem mérito NÃO entram no denominador;
+  • ``taxa_acordo`` = acordos ÷ processos com desfecho;
+  • ``tempo_sentenca`` = dias entre ajuizamento e movimento de mérito;
+  • assuntos múltiplos são preservados. Um processo contribui uma vez para
+    cada assunto realmente associado a ele, e o filtro por assunto (quando
+    informado) restringe a dimensão ao código solicitado;
+  • além das marginais por município e por assunto, a saída contém o cruzamento
+    município × assunto — necessário para responder como cada comarca decide
+    cada matéria sem inferir a partir de duas taxas independentes.
 """
 from __future__ import annotations
 
@@ -45,14 +45,34 @@ def _municipio_de(doc: dict, pedidos: list[str]) -> str:
     return "outro"
 
 
-def _assunto_de(doc: dict) -> tuple[str, str]:
+def _assuntos_de(
+    doc: dict,
+    assunto_filtro: int | None = None,
+) -> list[tuple[str, str]]:
     assuntos = doc.get("assuntos") or []
     if isinstance(assuntos, dict):
         assuntos = [assuntos]
+    saida: list[tuple[str, str]] = []
+    vistos: set[tuple[str, str]] = set()
     for a in assuntos:
-        if isinstance(a, dict) and (a.get("codigo") or a.get("nome")):
-            return str(a.get("codigo") or ""), str(a.get("nome") or "")
-    return "", "(sem assunto)"
+        if not isinstance(a, dict) or not (a.get("codigo") or a.get("nome")):
+            continue
+        codigo = str(a.get("codigo") or "")
+        nome = str(a.get("nome") or "")
+        if assunto_filtro is not None and codigo != str(assunto_filtro):
+            continue
+        par = (codigo, nome)
+        if par not in vistos:
+            vistos.add(par)
+            saida.append(par)
+    if saida:
+        return saida
+    # Se houve filtro e o documento não carrega o assunto solicitado, não o
+    # atribuímos artificialmente a "sem assunto". O DataJud deveria tê-lo
+    # selecionado server-side; metadado inconsistente fica fora da dimensão.
+    if assunto_filtro is not None:
+        return []
+    return [("", "(sem assunto)")]
 
 
 def _dias(inicio: datetime | None, fim: datetime | None) -> int | None:
@@ -77,9 +97,12 @@ def _fechar_grupo(g: dict[str, Any]) -> dict[str, Any]:
     saida["decididos_merito"] = decididos
     saida["taxa_procedencia"] = (
         round((g[tpu.PROCEDENCIA] + g[tpu.PROCEDENCIA_PARCIAL]) / decididos, 4)
-        if decididos else None
+        if decididos
+        else None
     )
-    saida["taxa_acordo"] = round(g[tpu.ACORDO] / com_desfecho, 4) if com_desfecho else None
+    saida["taxa_acordo"] = (
+        round(g[tpu.ACORDO] / com_desfecho, 4) if com_desfecho else None
+    )
     saida["amostra_pequena"] = decididos < MIN_AMOSTRA
     saida["tempo_sentenca"] = {
         "n": len(dias),
@@ -89,7 +112,12 @@ def _fechar_grupo(g: dict[str, Any]) -> dict[str, Any]:
     return saida
 
 
-def agregar(docs: list[dict], municipios: list[str]) -> dict[str, Any]:
+def agregar(
+    docs: list[dict],
+    municipios: list[str],
+    *,
+    assunto_filtro: int | None = None,
+) -> dict[str, Any]:
     por_processo: dict[str, dict[str, Any]] = {}
     recursal: dict[str, str] = {}
 
@@ -104,34 +132,67 @@ def agregar(docs: list[dict], municipios: list[str]) -> dict[str, Any]:
             if r:
                 recursal[numero] = r[0]
             continue
-        # 1º grau (ou grau ausente: tratado como originário)
-        entrada = por_processo.setdefault(numero, {
-            "municipio": _municipio_de(doc, municipios),
-            "assunto": _assunto_de(doc),
-            "ajuizamento": tpu._parse_data(doc.get("dataAjuizamento")),
-            "desfecho": None,
-            "data_desfecho": None,
-        })
+
+        assuntos_doc = _assuntos_de(doc, assunto_filtro)
+        entrada = por_processo.setdefault(
+            numero,
+            {
+                "municipio": _municipio_de(doc, municipios),
+                "assuntos": [],
+                "ajuizamento": tpu._parse_data(doc.get("dataAjuizamento")),
+                "desfecho": None,
+                "data_desfecho": None,
+            },
+        )
+        existentes = set(entrada["assuntos"])
+        for assunto in assuntos_doc:
+            if assunto not in existentes:
+                entrada["assuntos"].append(assunto)
+                existentes.add(assunto)
+
         d = tpu.desfecho_1grau(movs)
-        if d and (entrada["data_desfecho"] is None or (d[1] and d[1] > entrada["data_desfecho"])):
+        if d and (
+            entrada["data_desfecho"] is None
+            or (d[1] and d[1] > entrada["data_desfecho"])
+        ):
             entrada["desfecho"], entrada["data_desfecho"] = d
 
     por_municipio: dict[str, dict[str, Any]] = defaultdict(_grupo_vazio)
     por_assunto: dict[tuple[str, str], dict[str, Any]] = defaultdict(_grupo_vazio)
+    por_municipio_assunto: dict[
+        tuple[str, str, str], dict[str, Any]
+    ] = defaultdict(_grupo_vazio)
     total = _grupo_vazio()
 
-    for numero, p in por_processo.items():
-        grupos = (por_municipio[p["municipio"]], por_assunto[p["assunto"]], total)
-        for g in grupos:
+    for p in por_processo.values():
+        assuntos = p["assuntos"] or ([] if assunto_filtro is not None else [("", "(sem assunto)")])
+        grupos_unicos = (por_municipio[p["municipio"]], total)
+        for g in grupos_unicos:
             g["n"] += 1
+        for assunto in assuntos:
+            por_assunto[assunto]["n"] += 1
+            por_municipio_assunto[(p["municipio"], assunto[0], assunto[1])]["n"] += 1
+
         desfecho = p["desfecho"]
         if not desfecho:
             continue
-        for g in grupos:
+        dias = (
+            _dias(p["ajuizamento"], p["data_desfecho"])
+            if desfecho in _MERITO
+            else None
+        )
+        for g in grupos_unicos:
             g["n_com_desfecho"] += 1
             g[desfecho] += 1
-            if desfecho in _MERITO:
-                dias = _dias(p["ajuizamento"], p["data_desfecho"])
+            if dias is not None:
+                g["_dias"].append(dias)
+        for assunto in assuntos:
+            for g in (
+                por_assunto[assunto],
+                por_municipio_assunto[(p["municipio"], assunto[0], assunto[1])],
+            ):
+                g["n_com_desfecho"] += 1
+                g[desfecho] += 1
                 if dias is not None:
                     g["_dias"].append(dias)
 
@@ -140,8 +201,12 @@ def agregar(docs: list[dict], municipios: list[str]) -> dict[str, Any]:
     reforma = {
         "n_com_recurso_julgado": n_recurso,
         tpu.PROVIMENTO: sum(1 for r in recursal.values() if r == tpu.PROVIMENTO),
-        tpu.PROVIMENTO_PARCIAL: sum(1 for r in recursal.values() if r == tpu.PROVIMENTO_PARCIAL),
-        tpu.NAO_PROVIMENTO: sum(1 for r in recursal.values() if r == tpu.NAO_PROVIMENTO),
+        tpu.PROVIMENTO_PARCIAL: sum(
+            1 for r in recursal.values() if r == tpu.PROVIMENTO_PARCIAL
+        ),
+        tpu.NAO_PROVIMENTO: sum(
+            1 for r in recursal.values() if r == tpu.NAO_PROVIMENTO
+        ),
         "taxa_reforma": round(reformas / n_recurso, 4) if n_recurso else None,
         "amostra_pequena": n_recurso < MIN_AMOSTRA,
     }
@@ -149,12 +214,30 @@ def agregar(docs: list[dict], municipios: list[str]) -> dict[str, Any]:
     return {
         "total": _fechar_grupo(total),
         "por_municipio": [
-            {"municipio": k, "nome": MUNICIPIOS.get(k, {}).get("nome", "Outro"), **_fechar_grupo(v)}
-            for k, v in sorted(por_municipio.items(), key=lambda kv: -kv[1]["n"])
+            {
+                "municipio": k,
+                "nome": MUNICIPIOS.get(k, {}).get("nome", "Outro"),
+                **_fechar_grupo(v),
+            }
+            for k, v in sorted(
+                por_municipio.items(), key=lambda kv: -kv[1]["n"]
+            )
         ],
         "por_assunto": [
             {"assunto_codigo": k[0], "assunto": k[1], **_fechar_grupo(v)}
             for k, v in sorted(por_assunto.items(), key=lambda kv: -kv[1]["n"])
+        ],
+        "por_municipio_assunto": [
+            {
+                "municipio": k[0],
+                "municipio_nome": MUNICIPIOS.get(k[0], {}).get("nome", "Outro"),
+                "assunto_codigo": k[1],
+                "assunto": k[2],
+                **_fechar_grupo(v),
+            }
+            for k, v in sorted(
+                por_municipio_assunto.items(), key=lambda kv: -kv[1]["n"]
+            )
         ],
         "reforma_2grau": reforma,
         "n_processos_1grau": len(por_processo),
