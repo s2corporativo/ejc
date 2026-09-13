@@ -762,7 +762,7 @@ export default function Clientes() {
             {conflitoLoading ? "Verificando..." : "Verificar conflito"}
           </Button>
           <Button variant="primary" disabled={salvando} onClick={salvar}>
-            {salvando ? "Salvando..." : "Salvar e abrir ficha"}
+            {salvando ? "Salvando..." : "Salvar cliente"}
           </Button>
         </div>
       </Modal>
