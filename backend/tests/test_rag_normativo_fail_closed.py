@@ -59,7 +59,7 @@ async def test_governanca_indisponivel_remove_candidatos_normativos(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_citacao_de_direito_atual_exclui_legal_status_revogada() -> None:
+async def test_citacao_de_direito_atual_exclui_status_bloqueados() -> None:
     db = _DBCapturaSQL()
 
     await _fonte_artigo(db, "300", "cpc", vigente=True)
@@ -67,7 +67,8 @@ async def test_citacao_de_direito_atual_exclui_legal_status_revogada() -> None:
     sql = db.sql.lower()
     assert "legal_status" in sql
     assert "revogada" in sql
-    assert "<>" in sql
+    assert "suspensa" in sql
+    assert "not in" in sql
 
 
 def test_proposicao_legislativa_nao_recebe_autoridade_normativa() -> None:
