@@ -3,13 +3,6 @@ import { Scale } from "lucide-react";
 
 import api from "../lib/api";
 
-/**
- * Jurimetria dos TRIBUNAIS (Issue #1527): comportamento histórico externo via
- * DataJud/CNJ. TJMG (Betim, Contagem e Belo Horizonte) permanece como recorte
- * principal; TRT3 e JEC/Turmas Recursais aparecem como recortes complementares.
- * Nunca se misturam com a jurimetria interna do escritório.
- */
-
 type Grupo = {
   n: number;
   n_com_desfecho: number;
@@ -47,6 +40,8 @@ type RecorteComplementar = {
   };
   total?: Grupo;
   por_assunto?: Array<Grupo & { assunto_codigo: string; assunto: string }>;
+  amostra_truncada?: boolean;
+  aviso_amostragem?: string;
   erro?: string;
 };
 
@@ -65,6 +60,16 @@ type Desfechos = {
   total: Grupo;
   por_municipio: Array<Grupo & { municipio: string; nome: string }>;
   por_assunto: Array<Grupo & { assunto_codigo: string; assunto: string }>;
+  por_municipio_assunto?: Array<
+    Grupo & {
+      municipio: string;
+      municipio_nome: string;
+      assunto_codigo: string;
+      assunto: string;
+    }
+  >;
+  amostra_truncada?: boolean;
+  aviso_amostragem?: string;
   reforma_2grau: {
     n_com_recurso_julgado: number;
     provimento: number;
@@ -72,6 +77,8 @@ type Desfechos = {
     nao_provimento: number;
     taxa_reforma: number | null;
     amostra_pequena: boolean;
+    disponivel?: boolean;
+    motivo?: string;
   };
   fontes_complementares?: {
     jec_tjmg?: RecorteComplementar;
@@ -87,6 +94,10 @@ type Status = {
 
 function pct(v: number | null | undefined): string {
   return v == null ? "—" : `${(v * 100).toFixed(1)}%`;
+}
+
+function pctGrupo(g: Grupo): string {
+  return pct(g.amostra_pequena ? null : g.taxa_procedencia);
 }
 
 function Taxa({
@@ -107,7 +118,7 @@ function Taxa({
       <p className="text-[11px] text-gray-400">{sub}</p>
       {pequena && (
         <p className="text-[11px] text-amber-700 mt-1">
-          amostra pequena — leia com cautela
+          amostra pequena — taxa não publicada
         </p>
       )}
     </div>
@@ -135,6 +146,7 @@ function RecorteExterno({
     );
   }
 
+  const pequena = recorte.total.amostra_pequena;
   return (
     <div className="border border-black/[0.05] rounded-lg p-4">
       <div className="flex items-start justify-between gap-3 mb-3">
@@ -143,7 +155,9 @@ function RecorteExterno({
             {titulo}
           </h4>
           <p className="text-[11px] text-gray-400">
-            {recorte.escopo.segmento || recorte.escopo.regiao || recorte.escopo.tribunal}
+            {recorte.escopo.segmento ||
+              recorte.escopo.regiao ||
+              recorte.escopo.tribunal}
           </p>
         </div>
         <span className="text-[11px] text-gray-400">
@@ -153,16 +167,23 @@ function RecorteExterno({
       <div className="grid grid-cols-2 gap-2">
         <Taxa
           rotulo="Procedência"
-          valor={pct(recorte.total.taxa_procedencia)}
+          valor={pct(pequena ? null : recorte.total.taxa_procedencia)}
           sub={`${recorte.total.decididos_merito} decididos no mérito`}
-          pequena={recorte.total.amostra_pequena}
+          pequena={pequena}
         />
         <Taxa
           rotulo="Acordo"
-          valor={pct(recorte.total.taxa_acordo)}
+          valor={pct(pequena ? null : recorte.total.taxa_acordo)}
           sub={`${recorte.total.acordo} homologados`}
+          pequena={pequena}
         />
       </div>
+      {recorte.amostra_truncada && (
+        <p className="text-[11px] text-amber-700 mt-2">
+          Limite de coleta atingido: taxas suprimidas. Restrinja período,
+          classe ou assunto.
+        </p>
+      )}
       <p className="text-[11px] text-gray-400 mt-2">
         Fonte: {recorte.fonte}. Desfecho por movimento TPU; não é previsão de
         resultado futuro.
@@ -225,9 +246,14 @@ export default function JurimetriaTribunais() {
           Tribunais — TJMG, JEC/Turmas Recursais e TRT3
         </h3>
       </div>
-      <p className="text-xs text-gray-500 mb-4">
+      <p className="text-xs text-gray-500 mb-2">
         Histórico externo a partir do DataJud/CNJ. Não é o desempenho do
         escritório — esse permanece nos painéis de base interna.
+      </p>
+      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+        Revisão humana obrigatória: estes indicadores apoiam a estratégia do
+        advogado, mas não substituem leitura dos autos, pesquisa dos precedentes
+        aplicáveis nem avaliação profissional do caso concreto.
       </p>
 
       {carregando && (
@@ -245,6 +271,14 @@ export default function JurimetriaTribunais() {
 
       {!carregando && dados && (
         <>
+          {dados.amostra_truncada && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+              Limite máximo de registros atingido. As contagens permanecem
+              visíveis, mas taxas e tempos foram suprimidos. Restrinja período,
+              classe ou assunto para um recorte não truncado.
+            </p>
+          )}
+
           <div className="mb-3">
             <h4 className="text-xs font-semibold text-gray-600 uppercase mb-2">
               TJMG — Betim, Contagem e Belo Horizonte
@@ -252,14 +286,21 @@ export default function JurimetriaTribunais() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <Taxa
                 rotulo="Procedência (total + parcial)"
-                valor={pct(dados.total.taxa_procedencia)}
+                valor={pct(
+                  dados.total.amostra_pequena
+                    ? null
+                    : dados.total.taxa_procedencia,
+                )}
                 sub={`${dados.total.decididos_merito} decididos no mérito`}
                 pequena={dados.total.amostra_pequena}
               />
               <Taxa
                 rotulo="Acordo homologado"
-                valor={pct(dados.total.taxa_acordo)}
+                valor={pct(
+                  dados.total.amostra_pequena ? null : dados.total.taxa_acordo,
+                )}
                 sub={`${dados.total.acordo} de ${dados.total.n_com_desfecho} com desfecho`}
+                pequena={dados.total.amostra_pequena}
               />
               <Taxa
                 rotulo="Tempo até sentença (mediana)"
@@ -273,8 +314,15 @@ export default function JurimetriaTribunais() {
               <Taxa
                 rotulo="Reforma em 2º grau"
                 valor={pct(dados.reforma_2grau.taxa_reforma)}
-                sub={`${dados.reforma_2grau.n_com_recurso_julgado} recursos julgados na amostra`}
-                pequena={dados.reforma_2grau.amostra_pequena}
+                sub={
+                  dados.reforma_2grau.disponivel === false
+                    ? "não publicada neste recorte geográfico"
+                    : `${dados.reforma_2grau.n_com_recurso_julgado} recursos julgados na amostra`
+                }
+                pequena={
+                  dados.reforma_2grau.disponivel !== false &&
+                  dados.reforma_2grau.amostra_pequena
+                }
               />
             </div>
           </div>
@@ -312,10 +360,12 @@ export default function JurimetriaTribunais() {
                     >
                       <td className="py-1">{m.nome}</td>
                       <td className="py-1 text-right">{m.n}</td>
-                      <td className="py-1 text-right">
-                        {pct(m.taxa_procedencia)}
+                      <td className="py-1 text-right" title={m.amostra_pequena ? "amostra pequena" : undefined}>
+                        {pctGrupo(m)}
                       </td>
-                      <td className="py-1 text-right">{pct(m.taxa_acordo)}</td>
+                      <td className="py-1 text-right">
+                        {pct(m.amostra_pequena ? null : m.taxa_acordo)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -341,8 +391,8 @@ export default function JurimetriaTribunais() {
                     >
                       <td className="py-1">{a.assunto}</td>
                       <td className="py-1 text-right">{a.n}</td>
-                      <td className="py-1 text-right">
-                        {pct(a.taxa_procedencia)}
+                      <td className="py-1 text-right" title={a.amostra_pequena ? "amostra pequena" : undefined}>
+                        {pctGrupo(a)}
                       </td>
                     </tr>
                   ))}
@@ -351,12 +401,45 @@ export default function JurimetriaTribunais() {
             </div>
           </div>
 
+          {(dados.por_municipio_assunto?.length ?? 0) > 0 && (
+            <div className="mt-4">
+              <h4 className="text-xs font-semibold text-gray-600 uppercase mb-2">
+                Município × assunto — TJMG (top 10)
+              </h4>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-gray-500">
+                    <th className="py-1">Município</th>
+                    <th className="py-1">Assunto</th>
+                    <th className="py-1 text-right">n</th>
+                    <th className="py-1 text-right">Procedência</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dados.por_municipio_assunto?.slice(0, 10).map((r) => (
+                    <tr
+                      key={`${r.municipio}:${r.assunto_codigo}:${r.assunto}`}
+                      className="border-t border-black/[0.05]"
+                    >
+                      <td className="py-1">{r.municipio_nome}</td>
+                      <td className="py-1">{r.assunto}</td>
+                      <td className="py-1 text-right">{r.n}</td>
+                      <td className="py-1 text-right" title={r.amostra_pequena ? "amostra pequena" : undefined}>
+                        {pctGrupo(r)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           <p className="text-[11px] text-gray-400 mt-4">
             Fonte principal: {dados.fonte}. Amostra TJMG: {dados.coleta.n_documentos}{" "}
             registros{dados.coleta.truncado ? " (limite atingido)" : ""}
             {dados.coleta.coletado_em
               ? ` · coleta ${dados.coleta.coletado_em}`
-              : " · resultado em cache"}{" "}
+              : ""}{" "}
             · TPU {dados.tpu.versao}. Desfecho inferido por código de movimento
             — proxy, não leitura da sentença.
           </p>
