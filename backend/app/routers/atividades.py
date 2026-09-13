@@ -22,14 +22,18 @@ async def listar_atividades(
     params: dict = {}
     if apenas_pendentes:
         where += " AND COALESCE(v.status,'') NOT IN ('concluido','concluida','tratada','cancelado')"
-    # Visibilidade: gestão vê tudo; equipe só as atividades das quais é responsável
-    # OU vinculadas a casos em que atua (responsável/auxiliar). Evita vazar prazos/
-    # tarefas/intimações de casos alheios na central de atividades.
+    # Visibilidade: gestão vê tudo. Equipe vê atividade vinculada a caso apenas
+    # quando atua naquele caso; atividades avulsas seguem o responsável direto.
+    # Assim, responsavel_id nunca funciona como bypass da carteira de um caso.
     if not is_gestao(cu):
-        where += """ AND (v.responsavel_id = :uid OR EXISTS (
-            SELECT 1 FROM cases cc WHERE cc.id = v.case_id
-              AND (cc.advogado_responsavel_id = :uid OR cc.advogado_auxiliar_id = :uid)
-        ))"""
+        where += """ AND (
+            (v.case_id IS NULL AND v.responsavel_id = :uid)
+            OR EXISTS (
+                SELECT 1 FROM cases cc WHERE cc.id = v.case_id
+                  AND cc.deleted_at IS NULL
+                  AND (cc.advogado_responsavel_id = :uid OR cc.advogado_auxiliar_id = :uid)
+            )
+        )"""
         params["uid"] = cu.id
     # (v.data::date - CURRENT_DATE) força diferença em DIAS inteiros mesmo se a
     # coluna for TIMESTAMP (senão vem interval → int() estoura 500).
