@@ -153,12 +153,13 @@ async def _aguardar_rate_limit() -> None:
     intervalo = 1.0 / _rate_limit_rps() if _rate_limit_rps() else 0.0
     if intervalo <= 0:
         return
-    async with _RATE_LOCK:
-        agora = time.monotonic()
-        espera = (_ULTIMA_CONCESSAO + intervalo) - agora
-        if espera > 0:
-            await asyncio.sleep(espera)
-        _ULTIMA_CONCESSAO = time.monotonic()
+    async with asyncio.timeout(30):
+        async with _RATE_LOCK:
+            agora = time.monotonic()
+            espera = (_ULTIMA_CONCESSAO + intervalo) - agora
+            if espera > 0:
+                await asyncio.sleep(espera)
+            _ULTIMA_CONCESSAO = time.monotonic()
 
 
 @retry(

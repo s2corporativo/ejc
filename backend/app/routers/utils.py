@@ -37,4 +37,4 @@ async def cnpj(cnpj: str, cu: User = Depends(get_current_user)):
 
 @router.get("/validar-cpf/{cpf}")
 async def cpf_check(cpf: str, cu: User = Depends(get_current_user)):
-    return {"cpf": cpf, "valido": validar_cpf(cpf)}
+    return {"valido": validar_cpf(cpf)}
