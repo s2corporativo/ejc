@@ -56,6 +56,36 @@ class MemoriaUpdate(BaseModel):
     tags: Optional[List[str]] = None
 
 
+async def _obter_memoria_autorizada(
+    db: AsyncSession,
+    cu: User,
+    mem_id: str,
+) -> dict:
+    """Carrega um registro ativo e aplica o ownership do caso vinculado.
+
+    O router já restringe a equipe jurídica por papel. Esta segunda barreira
+    impede que um usuário obtenha/edite/remova uma memória de caso que não
+    poderia consultar diretamente. Registros institucionais sem ``case_id``
+    continuam disponíveis à equipe jurídica, preservando o uso transversal do
+    acervo do escritório.
+    """
+    result = await db.execute(
+        # SQL literal com bind params; a regra marca todo text(), sem olhar
+        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+        text(f"SELECT {_COLS} FROM memoria_institucional "
+             f"WHERE id = :id AND deleted_at IS NULL"),
+        {"id": mem_id},
+    )
+    row = result.mappings().first()
+    if not row:
+        raise HTTPException(404, "Registro não encontrado")
+    memoria = dict(row)
+    if memoria.get("case_id"):
+        await verificar_acesso_caso(db, cu, memoria["case_id"])
+    return memoria
+
+
 @router.get("")
 async def listar(
     case_id: Optional[str] = None,
@@ -130,18 +160,7 @@ async def obter(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        # SQL literal com bind params; a regra marca todo text(), sem olhar
-        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
-        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-        text(f"SELECT {_COLS} FROM memoria_institucional "
-             f"WHERE id = :id AND deleted_at IS NULL"),
-        {"id": mem_id},
-    )
-    row = result.mappings().first()
-    if not row:
-        raise HTTPException(404, "Registro não encontrado")
-    return dict(row)
+    return await _obter_memoria_autorizada(db, cu, mem_id)
 
 
 @router.patch("/{mem_id}")
@@ -151,6 +170,13 @@ async def atualizar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # A validação de ownership acontece ANTES de qualquer mutação.
+    await _obter_memoria_autorizada(db, cu, mem_id)
+    if body.tipo is not None and body.tipo not in TIPOS:
+        raise HTTPException(422, f"tipo inválido; use um de {sorted(TIPOS)}")
+    if body.resultado is not None and body.resultado not in RESULTADOS:
+        raise HTTPException(422, f"resultado inválido; use um de {sorted(RESULTADOS)}")
+
     sets: list[str] = []
     params: dict = {"id": mem_id}
     for field in ("tipo", "titulo", "conteudo", "resultado", "area_direito"):
@@ -183,6 +209,8 @@ async def remover(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # Mesmo ownership de GET/PATCH: memória vinculada acompanha o caso.
+    await _obter_memoria_autorizada(db, cu, mem_id)
     res = await db.execute(
         text("UPDATE memoria_institucional SET deleted_at = now() "
              "WHERE id = :id AND deleted_at IS NULL"),
