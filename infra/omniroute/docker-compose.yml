@@ -15,6 +15,8 @@ services:
       PORT: "20128"
       DASHBOARD_PORT: "20128"
       API_HOST: "0.0.0.0"
+      JWT_SECRET: "${OMNIROUTE_JWT_SECRET:?defina OMNIROUTE_JWT_SECRET no .env local}"
+      REQUIRE_API_KEY: "${OMNIROUTE_REQUIRE_API_KEY:-true}"
       DISABLE_SQLITE_AUTO_BACKUP: "${OMNIROUTE_DISABLE_SQLITE_AUTO_BACKUP:-false}"
     volumes:
       - omniroute-data:/app/data
