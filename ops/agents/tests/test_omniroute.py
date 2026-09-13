@@ -25,7 +25,7 @@ class TestesOmniRoute(unittest.TestCase):
 
     def test_rejeita_gateway_publico(self) -> None:
         """A camada de engenharia não pode enviar tráfego para OmniRoute publicado na internet."""
-        with self.assertRaisesRegex(ValueError, "127.0.0.1"):
+        with self.assertRaisesRegex(ValueError, "HTTP local|127.0.0.1"):
             omniroute.resolver_configuracao_omniroute(
                 {
                     "OPENAI_API_KEY": "teste-local",
