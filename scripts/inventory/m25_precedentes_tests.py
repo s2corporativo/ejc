@@ -437,6 +437,9 @@ def secao_correspondencia():
         # mesmo check com peça sintética contendo CNJ inventado → deve reportar problema
         async def _criar_peca():
             async with AsyncSessionLocal() as db:
+                # SQL literal com bind params; a regra marca todo text(), sem olhar
+                # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+                # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
                 await db.execute(text(
                     "INSERT INTO legal_docs (id, case_id, titulo, tipo_peca, status, conteudo, created_at, updated_at) "
                     "SELECT gen_random_uuid()::text, :cid, 'EJC_QA_M25 peça teste', "

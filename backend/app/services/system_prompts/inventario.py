@@ -21,6 +21,19 @@ import hashlib
 
 _TAM_IMPRESSAO = 12
 
+# Prompts de áreas SEM agente dedicado desde a consolidação 38→8 do núcleo de
+# IA (2026-09-06, escopo definido pelo titular: civil, consumidor, tributário,
+# penal, administrativo, trabalhista, empresarial, juizado especial). O
+# conteúdo jurídico foi preservado (não se deleta system_prompts/*.py) e a
+# especialização foi dobrada sobre um dos 8 agentes mantidos — ver as tabelas
+# de fallback em app/services/ai/core/intent_classifier.py. Órfão
+# INTENCIONAL: não conta como dívida silenciosa, mas fica rastreado aqui em
+# vez de silenciado sem registro.
+PROMPTS_APOSENTADOS: frozenset[str] = frozenset({
+    "agrario", "agronegocio", "contratual", "eleitoral", "internacional",
+    "medico", "previdenciario", "saude", "transito",
+})
+
 
 def impressao(conteudo: str) -> str:
     """Impressão digital estável do texto do prompt."""
@@ -61,8 +74,11 @@ def inventario() -> list[dict]:
             "tamanho": len(conteudo or ""),
             "consumidores": sorted(consumidores.get(chave, [])),
             # Prompt registrado que ninguém consome é dívida silenciosa: ou o
-            # consumidor sumiu, ou a chave nunca foi ligada.
-            "orfao": not consumidores.get(chave),
+            # consumidor sumiu, ou a chave nunca foi ligada. Exceto os
+            # aposentados de propósito (ver PROMPTS_APOSENTADOS) — esses são
+            # órfãos por decisão de arquitetura, não por esquecimento.
+            "orfao": not consumidores.get(chave) and chave not in PROMPTS_APOSENTADOS,
+            "aposentado": chave in PROMPTS_APOSENTADOS,
         }
         for chave, conteudo in SYSTEM_PROMPTS.items()
     ]
@@ -74,6 +90,7 @@ def inventario() -> list[dict]:
             "tamanho": len(conteudo or ""),
             "consumidores": ["params:prompt_extra"],
             "orfao": False,
+            "aposentado": False,
         }
         for chave, conteudo in PROMPT_EXTRAS.items()
     ]
@@ -97,6 +114,7 @@ def resumo() -> dict:
     return {
         "total": len(linhas),
         "orfaos": sorted(x["chave"] for x in linhas if x["orfao"]),
+        "aposentados": sorted(x["chave"] for x in linhas if x["aposentado"]),
         "fantasmas": chaves_fantasma(),
         "prompts": linhas,
     }

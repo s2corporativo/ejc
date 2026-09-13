@@ -39,6 +39,25 @@ bash scripts/deploy_manual.sh --sha <SHA> --dry-run   # confere, não muta
 bash scripts/deploy_manual.sh --sha <SHA>             # implanta
 ```
 
+`<SHA>` pode ser completo ou abreviado (≥ 7 hex, como o git) — o pré-voo
+confere prefixo contra o `HEAD` do checkout e passa o SHA completo adiante.
+
+**Checkout com alterações locais** (aprendido no 1º deploy real, 05/09/2026:
+`/opt/ejc` tinha ~100 arquivos alterados fora do git e o `checkout` recusava).
+Nunca `reset --hard`/`clean`; guarde reversivelmente e siga:
+
+```bash
+git stash push -u -m "pre-deploy-<SHA>-$(date +%F-%H%M)"
+git checkout <SHA>
+git status --short | wc -l   # esperado: 0
+```
+
+O stash fica recuperável (`git stash list` / `git stash show -p stash@{0}`);
+descarte só depois de uma semana sem regressão.
+
+```bash
+```
+
 **Rode sempre o `--dry-run` primeiro.** Ele executa o pré-voo e a classificação
 de migration e para antes de qualquer mutação — é assim que se descobre, sem
 risco, se a migration pendente é expand-only e se o runtime está sadio.

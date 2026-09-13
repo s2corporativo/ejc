@@ -19,6 +19,7 @@ from datetime import date, timedelta
 from functools import lru_cache
 from typing import Literal
 
+from app.core.clock import hoje_operacional
 from app.services import calendario_tribunal as _cal
 
 RegimeProcessual = Literal["civel", "trabalhista", "penal"]
@@ -406,7 +407,7 @@ def prazo_defesa_ambiental(data_ciencia: date) -> dict:
         interna -= timedelta(days=1)
         interna = dia_util_anterior(interna, forense=False)
 
-    hoje = date.today()
+    hoje = hoje_operacional()
     return {
         "data_legal": data_legal,
         "data_interna": interna,
@@ -417,7 +418,7 @@ def prazo_defesa_ambiental(data_ciencia: date) -> dict:
 
 def dias_uteis_restantes(vencimento: date) -> int:
     """Dias úteis entre hoje e o vencimento (indicador operacional do painel)."""
-    hoje = date.today()
+    hoje = hoje_operacional()
     if vencimento <= hoje:
         return 0
     atual, contados = hoje, 0
@@ -460,7 +461,7 @@ def calcular_prescricao(tipo_acao: str, data_fato: date) -> dict | None:
     return {
         "data_limite": limite,
         "base_legal": regra["base"],
-        "dias_restantes": max((limite - date.today()).days, 0),
+        "dias_restantes": max((limite - hoje_operacional()).days, 0),
         "aviso_causas": (
             "⚠️ Verifique causas suspensivas (CC arts. 197-201) e interruptivas "
             "(CC art. 202) — podem alterar esta data. Cálculo assume prazo contínuo."

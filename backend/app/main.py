@@ -68,6 +68,7 @@ from app.routers import data_room
 from app.routers import datajud
 from app.routers import deadlines
 from app.routers import despesas
+from app.routers import despesas_processuais
 from app.routers import diagnostico
 from app.routers import diario_oficial
 from app.routers import documento_ia
@@ -122,7 +123,6 @@ from app.routers import mensagens
 from app.routers import module_help
 from app.routers import motor_peca
 from app.routers import movimentos
-from app.routers import noticias
 from app.routers import saneamento
 from app.routers import notifications
 from app.routers import novos_modulos
@@ -163,6 +163,7 @@ from app.routers import signatures
 from app.routers import sociedades_cliente
 from app.routers import provas
 from app.routers import processo_eletronico
+from app.routers import ajuizamento
 from app.routers import sumulas
 from app.routers import suspensoes
 from app.routers import system_modules
@@ -444,6 +445,9 @@ app.include_router(data_room.router, prefix=API)
 app.include_router(datajud.router, prefix=API)
 app.include_router(deadlines.router, prefix=API)
 app.include_router(despesas.router, prefix=API)
+# Composição do #1492/#1493 (2026-09-05): o router existia sem registro —
+# a UI de TabTimeline chamava /despesas-processuais e recebia 404.
+app.include_router(despesas_processuais.router, prefix=API)
 app.include_router(diario_oficial.router, prefix=API)
 app.include_router(documento_ia.router, prefix=API)
 app.include_router(raio_x.router, prefix=API)
@@ -501,7 +505,6 @@ app.include_router(mensagens.router, prefix=API)
 app.include_router(module_help.router, prefix=API)  # frontend: /api/module-help/* (HelpButton)
 app.include_router(motor_peca.router, prefix=API)  # P1: Motor de Peça — /api/cases/{id}/motor-peca/*
 app.include_router(movimentos.router, prefix=API)
-app.include_router(noticias.router, prefix=API)
 app.include_router(saneamento.router, prefix=API)  # PROMPT 1: saneamento de base processual
 app.include_router(notifications.router, prefix=API)
 app.include_router(novos_modulos.router, prefix=API)  # P3: prefixo /modulos no router
@@ -559,6 +562,7 @@ app.include_router(signatures.router, prefix=API)
 app.include_router(sociedades_cliente.router, prefix=API)  # gestão societária de CLIENTES (vertical Empresarial)
 app.include_router(provas.router, prefix=API)  # Gestão de Provas por caso + Documento Único de Anexos (Visual Law)
 app.include_router(processo_eletronico.router, prefix=API)  # Processo Eletrônico MNI 2.2.2 (Issue #762, Fase A leitura)
+app.include_router(ajuizamento.router, prefix=API)  # Núcleo de ajuizamento e integração judicial (PDPJ/PJe-MNI/eproc/DataJud)
 app.include_router(lgpd_registros.router, prefix=API)  # vertical LGPD — ROPA (art. 37) por cliente + RIPD (art. 38)
 app.include_router(sumulas.router, prefix=API)  # P3: prefixo /sumulas no router
 app.include_router(sumulas.casos_router, prefix=API)

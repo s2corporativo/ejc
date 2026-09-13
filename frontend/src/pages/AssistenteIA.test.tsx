@@ -60,6 +60,9 @@ function montar() {
 }
 
 function trocarPara(rotulo: string) {
+  // Padrao vem do catalogo estatico de modulos e ja tem os metacaracteres
+  // escapados; nao ha entrada de usuario. Ver docs/seguranca/SAST_BASELINE.md
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
   fireEvent.click(screen.getByRole("button", { name: new RegExp(rotulo) }));
 }
 

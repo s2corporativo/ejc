@@ -70,6 +70,33 @@ LEXML_NS = {
 }
 
 
+class LexMLBloqueadoError(RuntimeError):
+    """O LexML devolveu desafio anti-bot em vez do XML da busca.
+
+    Erro PRÓPRIO, e não lista vazia, porque as duas situações são
+    operacionalmente opostas: "a busca rodou e não achou nada" pede outra
+    consulta; "a busca não rodou" pede intervenção. Confundir as duas foi o
+    que fez a ingestão LexML→RAG reportar sucesso entregando zero.
+    """
+
+
+def _e_intersticio_antibot(resposta) -> bool:
+    """Identifica o interstício por content-type + marcadores do corpo.
+
+    Só o content-type não basta (o gate pode mudar de cabeçalho) e só o corpo
+    também não (uma busca legítima pode citar a palavra "verificação"); exigir
+    HTML E marcador reduz o falso positivo, e o custo de errar aqui é uma
+    exceção onde antes havia silêncio — o lado seguro.
+    """
+    tipo = (resposta.headers.get("content-type") or "").lower()
+    if "xml" in tipo:
+        return False
+    corpo = (resposta.text or "")[:4000].lower()
+    marcadores = ("verificação de segurança", "proof-of-work", "challenge",
+                  "<html", "javascript")
+    return "html" in tipo and any(m in corpo for m in marcadores)
+
+
 async def buscar_lexml(
     palavras: str,
     tipo: str = "jurisprudencia",
@@ -93,6 +120,21 @@ async def buscar_lexml(
     except Exception as exc:
         logger.warning("LexML indisponível: %s", exc)
         return []
+
+    if _e_intersticio_antibot(r):
+        # HTTP 200 com HTML de desafio anti-bot (proof-of-work do Senado,
+        # exige JS/WebCrypto). Verificado ao vivo em 04/09/2026.
+        #
+        # Antes esta resposta caía no `ParseError` abaixo e virava `return []`
+        # com um warning: o ingestor percorria as ~53 consultas do plano,
+        # recebia vazio em todas e reportava (0, 0) como execução BEM-SUCEDIDA.
+        # Federação LexML→RAG entregando nada, sem ninguém reclamar — a mesma
+        # classe de defeito do achado V2-3.1 (monitorar resultado, não
+        # execução). Agora falha alto: quem chama decide, mas não é enganado.
+        raise LexMLBloqueadoError(
+            "LexML respondeu com desafio anti-bot (HTML), não com XML. "
+            "A busca não foi executada."
+        )
 
     try:
         root = ET.fromstring(r.text)
@@ -427,15 +469,37 @@ async def buscar_todas_fontes(
 
     resultados = await asyncio.gather(*tasks, return_exceptions=True)
 
-    lexml_res = resultados[0] if not isinstance(resultados[0], Exception) else []
-    tjmg_res  = resultados[1] if not isinstance(resultados[1], Exception) else []
+    # "Não achei nada" e "a fonte não respondeu" são fatos opostos para quem
+    # pesquisa: o primeiro encerra a linha de investigação, o segundo manda
+    # tentar de novo. Achatar os dois em `[]` fazia o advogado ler um LexML
+    # bloqueado como ausência de precedente — e o `LexMLBloqueadoError`, criado
+    # justamente para não falhar em silêncio, morria aqui. O padrão de fonte
+    # com status já existe no repo (`radar_legislativo.buscar_ao_vivo` e
+    # `crawler_precedentes.buscar_precedentes`).
+    def _separar(res) -> tuple[list, str | None]:
+        if isinstance(res, BaseException):
+            return [], type(res).__name__
+        return res, None
+
+    lexml_res, lexml_falha = _separar(resultados[0])
+    tjmg_res, tjmg_falha = _separar(resultados[1])
+
+    falhas = [f for f, erro in (("lexml", lexml_falha), ("tjmg", tjmg_falha)) if erro]
+    for fonte, erro in (("lexml", lexml_falha), ("tjmg", tjmg_falha)):
+        if erro:
+            logger.warning("[%s] busca não respondeu: %s", fonte, erro)
 
     return {
         "palavras": palavras,
         "total": len(lexml_res) + len(tjmg_res),
+        # Campos ADITIVOS: nenhum consumidor existente quebra, e quem exibe
+        # resultado passa a poder distinguir vazio de indisponível.
+        "fontes_com_falha": falhas,
         "fontes": {
-            "lexml": {"total": len(lexml_res), "itens": lexml_res},
-            "tjmg":  {"total": len(tjmg_res),  "itens": tjmg_res},
+            "lexml": {"total": len(lexml_res), "itens": lexml_res,
+                      "respondeu": lexml_falha is None, "erro": lexml_falha},
+            "tjmg":  {"total": len(tjmg_res),  "itens": tjmg_res,
+                      "respondeu": tjmg_falha is None, "erro": tjmg_falha},
         },
         "todos": lexml_res + tjmg_res,
     }

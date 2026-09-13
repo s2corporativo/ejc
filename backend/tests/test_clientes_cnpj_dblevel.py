@@ -33,6 +33,15 @@ pytestmark = pytest.mark.skipif(
 from app.routers import clients as clients_router  # noqa: E402
 from app.schemas.client import ClientResponse as _CR
 
+from _limpeza_cliente import (  # noqa: E402
+    limpar_dependencias_de_clientes_por_sql,
+)
+
+_CLIENTES_DO_TESTE = (
+    "SELECT id FROM clients WHERE nome LIKE 'Empresa Fictícia Teste%' "
+    "OR razao_social LIKE 'Empresa%'"
+)
+
 
 def _to_dict(obj):
     return _CR.model_validate(obj).model_dump()
@@ -76,15 +85,17 @@ async def _limpar_dados_de_teste():
 
     async with AsyncSessionLocal() as db:
         # Casos de teste criados pelo próprio teste ficam em clients, mas há
-        # cadeia de FK (deadlines → cases → clients): apagar clients ou cases
-        # primeiro viola as constraints. Usar DELETE encadeado por FK (sem
-        # CASCADE automático, para não tocar dados de outros testes).
+        # cadeia de FK (deadlines → cases → clients, e o kit de admissão em
+        # legal_docs/procuracoes): apagar clients ou cases primeiro viola as
+        # constraints. Usar DELETE encadeado por FK (sem CASCADE automático,
+        # para não tocar dados de outros testes).
         await db.execute(
             text("DELETE FROM deadlines WHERE case_id IN "
                  "(SELECT id FROM cases WHERE client_id IN "
                  "(SELECT id FROM clients WHERE nome LIKE 'Empresa Fictícia Teste%' "
                  "OR razao_social LIKE 'Empresa%'))")
         )
+        await limpar_dependencias_de_clientes_por_sql(db, _CLIENTES_DO_TESTE)
         await db.execute(
             text("DELETE FROM cases WHERE client_id IN "
                  "(SELECT id FROM clients WHERE nome LIKE 'Empresa Fictícia Teste%' "

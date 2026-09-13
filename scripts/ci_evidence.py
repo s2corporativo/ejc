@@ -91,6 +91,9 @@ def _fsync_directory(directory: pathlib.Path) -> None:
 
 def _atomic_json(path: pathlib.Path, value: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # 0o700 e dono-apenas: MAIS restritivo que o 0o644 que a regra sugere.
+    # Seguir a regra afrouxaria o diretorio. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
     os.chmod(path.parent, 0o700)
     fd, tmp_name = tempfile.mkstemp(
         prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
@@ -172,7 +175,13 @@ def start_attempt(root: pathlib.Path, sha: str, ref: str, pr: int | None) -> pat
     sha_root = root / sha
     attempts = sha_root / "attempts"
     attempts.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # 0o700 e dono-apenas: MAIS restritivo que o 0o644 que a regra sugere.
+    # Seguir a regra afrouxaria o diretorio. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
     os.chmod(sha_root, 0o700)
+    # 0o700 e dono-apenas: MAIS restritivo que o 0o644 que a regra sugere.
+    # Seguir a regra afrouxaria o diretorio. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
     os.chmod(attempts, 0o700)
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")

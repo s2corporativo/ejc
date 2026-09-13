@@ -160,9 +160,37 @@ ADICOES_INTENCIONAIS = {
     # Autenticada e atrás do gate de papel `_exigir_financeiro`; o resumo é
     # agregado — contagem e total — sem expor PII de cliente.
     ("/api/financeiro/atencao", "GET"),
+    # Núcleo de ajuizamento (PR #1536): fluxo CLIENTE → CASO → … → PROTOCOLO →
+    # SINCRONIZAÇÃO. Todas autenticadas; atos jurídicos (aprovar/assinar/
+    # protocolar/confirmar) exigem advogado+ dentro do handler; perfis de
+    # tribunal e carga TPU exigem admin. Nenhuma rota pública.
+    ("/api/ajuizamento/capacidades", "GET"),
+    ("/api/ajuizamento/perfis", "GET"),
+    ("/api/ajuizamento/perfis", "POST"),
+    ("/api/ajuizamento/perfis/{perfil_id}", "PATCH"),
+    ("/api/ajuizamento/tpu/{tipo}", "GET"),
+    ("/api/ajuizamento/tpu/sincronizar", "POST"),
+    ("/api/ajuizamento/tpu/importar", "POST"),
+    ("/api/ajuizamento/filings", "GET"),
+    ("/api/ajuizamento/filings", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}", "GET"),
+    ("/api/ajuizamento/filings/{filing_id}", "PATCH"),
+    ("/api/ajuizamento/filings/{filing_id}/validar", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}/aprovar", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}/assinar", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}/protocolar", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}/confirmar-manual", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}/sincronizar", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}/cancelar", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}/transicoes", "GET"),
+    ("/api/ajuizamento/protocolos", "GET"),
 }
 
 REMOCOES_INTENCIONAIS = {
+    # `routers/noticias.py` REMOVIDO (05/09/2026, CORTE-4 do plano-mestre,
+    # decisão D3 do titular): feed ConJur/JOTA não é gestão de casos; a tela
+    # já estava `hidden` e o card do Dashboard foi retirado junto.
+    ("/api/noticias", "GET"),
     # `routers/curadoria_renomada.py` REMOVIDO (04/09/2026). Os três endpoints
     # respondiam 503 INCONDICIONAL desde a auditoria de 19/07: a "base de teses
     # renomadas" curada nunca existiu, e o 503 substituiu handlers que fingiam
@@ -267,11 +295,24 @@ ADICOES_INTENCIONAIS |= {
 # portas antigas de /ai/* e /ia-especializada/* seguem registradas — nada foi
 # removido aqui, então não há entrada correspondente em REMOCOES_INTENCIONAIS.
 ADICOES_INTENCIONAIS |= {
+    # Composição de 2026-09-05 dos PRs empilhados promovidos à main:
+    # #1490 (Data Room público token-bound) e #1492/#1493 (despesas
+    # processuais — router registrado em main.py neste PR).
+    ("/api/data-rooms/acesso/{token}/arquivos/{arquivo_id}", "GET"),
+    ("/api/data-rooms/acesso/{token}/manifesto", "GET"),
+    ("/api/despesas-processuais/casos/{case_id}", "GET"),
+    ("/api/despesas-processuais/", "POST"),
+    ("/api/despesas-processuais/caso/{case_id}/faturar", "POST"),
+    ("/api/despesas-processuais/{entry_id}", "DELETE"),
     ("/api/ia/analisar", "POST"),
     ("/api/ia/conversar", "POST"),
     ("/api/ia/extrair", "POST"),
     ("/api/ia/redigir", "POST"),
     ("/api/ia/resumir", "POST"),
+    # Consolidação do fluxo principal (encerramento): diagnóstico determinístico
+    # de pendências ANTES do POST /encerrar. Autenticada, mesmo gate de papel e
+    # visibilidade do encerramento (advogado+ e carteira); só leitura.
+    ("/api/cases/{case_id}/encerrar/diagnostico", "GET"),
 }
 
 

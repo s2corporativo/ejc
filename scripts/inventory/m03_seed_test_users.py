@@ -84,6 +84,9 @@ async def main():
             params = {f"p_{k}": v for k, v in vals.items()}
             ins = f"INSERT INTO users ({cols_sql}) VALUES (" + \
                 ", ".join(f":p_{k}" for k in vals) + ")"
+            # SQL literal com bind params; a regra marca todo text(), sem olhar
+            # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             await conn.execute(t(ins), params)
             print(f"criado: {role} {email} -> {uid}")
     await engine.dispose()

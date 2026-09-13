@@ -20,7 +20,9 @@
 #     com o mesmo bloqueio quando a migration pendente não é expand-only;
 #   • mesma transação sob mutex host-level, com backup pré-deploy OBRIGATÓRIO,
 #     health-poll e rollback automático;
-#   • mesma idempotência por SHA (`/opt/ejc/.deployed_sha`).
+#   • mesma idempotência por SHA (`/opt/ejc/.deployed_sha`);
+#   • SHA precisa ser o `origin/main` atual E possuir pipeline Woodpecker
+#     `push/main` verde no gate host-level — manual não é bypass de CI.
 #
 # QUANDO USAR: cota do Actions esgotada, incidente na plataforma, ou qualquer
 # situação em que a esteira não aloca runner. NÃO é atalho para pular revisão:
@@ -29,14 +31,16 @@
 # ONDE RODAR: na própria VPS, a partir de um checkout do SHA aprovado, com um
 # usuário que tenha `sudo -n` e acesso ao socket do Docker.
 #
-#   git fetch origin main && git checkout <SHA>
-#   bash scripts/deploy_manual.sh --sha <SHA> --dry-run   # confere e não muta
+#   git fetch origin main && git checkout --detach <SHA>
+#   bash scripts/deploy_manual.sh --sha <SHA> --dry-run   # confere CI e não muta produção
 #   bash scripts/deploy_manual.sh --sha <SHA>             # implanta
 #
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/ejc}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+WOODPECKER_GATE="${WOODPECKER_GATE:-/opt/s2-automation/host/woodpecker-approved-sha.sh}"
+REPO_FULL_NAME="s2corporativo/ejc"
 TARGET_SHA=""
 DRY_RUN=0
 RUN_SEEDS="${RUN_SEEDS:-0}"
@@ -71,6 +75,8 @@ done
 [ -n "$TARGET_SHA" ] || usage
 
 cd "$ROOT"
+# shellcheck source=scripts/lib/sha_prefix.sh
+. "$ROOT/scripts/lib/sha_prefix.sh"
 
 # ── 1. Pré-voo — paridade com o passo homônimo do deploy-vps.yml ─────────────
 erros=0
@@ -79,8 +85,14 @@ reprovar() { printf '[deploy-manual] PRÉ-VOO: %s\n' "$1" >&2; erros=1; }
 dono="$(stat -c %u "$ROOT" 2>/dev/null || echo desconhecido)"
 if [ "$dono" = "$(id -u)" ] || [ "$dono" = "0" ]; then
   if head_local="$(git -c safe.directory="$ROOT" rev-parse HEAD 2>&1)"; then
-    [ "$head_local" = "$TARGET_SHA" ] ||
+    # Aceita SHA completo ou prefixo (>= 7 hex), como o git. Daqui em diante
+    # TARGET_SHA passa a ser o HEAD COMPLETO — é o que a transação registra em
+    # .deployed_sha e compara com o /api/health.
+    if ejc_sha_confere "$head_local" "$TARGET_SHA"; then
+      TARGET_SHA="$head_local"
+    else
       reprovar "checkout está em '$head_local', esperado '$TARGET_SHA'"
+    fi
   else
     reprovar "git rev-parse HEAD falhou — $head_local"
   fi
@@ -114,7 +126,16 @@ fi
 [ "$erros" -eq 0 ] || fail "pré-voo reprovado; nada foi tocado em produção"
 log "Pré-voo aprovado — HEAD $TARGET_SHA, $APP_DIR e runtime presentes."
 
-# ── 2. Idempotência por SHA ─────────────────────────────────────────────────
+# ── 2. Prova de origem + CI — manual NÃO é bypass de Woodpecker ────────────
+[ -x "$WOODPECKER_GATE" ] || fail "gate Woodpecker ausente: $WOODPECKER_GATE"
+git fetch --prune origin main >/dev/null 2>&1 || fail "não foi possível atualizar origin/main"
+origin_main_sha="$(git rev-parse origin/main 2>/dev/null || true)"
+[[ "$origin_main_sha" =~ ^[0-9a-f]{40}$ ]] || fail "origin/main não resolveu para SHA completo"
+[ "$origin_main_sha" = "$TARGET_SHA" ] ||   fail "SHA manual precisa ser o origin/main atual ($origin_main_sha), recebido $TARGET_SHA"
+"$WOODPECKER_GATE" "$REPO_FULL_NAME" "$TARGET_SHA" ||   fail "SHA $TARGET_SHA não possui aprovação Woodpecker push/main"
+log "Origem e CI aprovados — origin/main=$TARGET_SHA com prova Woodpecker."
+
+# ── 3. Idempotência por SHA ─────────────────────────────────────────────────
 ultimo=""
 sudo -n test -f "$APP_DIR/.deployed_sha" && ultimo="$(sudo -n cat "$APP_DIR/.deployed_sha")" || true
 if [ "$ultimo" = "$TARGET_SHA" ]; then
@@ -122,7 +143,7 @@ if [ "$ultimo" = "$TARGET_SHA" ]; then
   exit 0
 fi
 
-# ── 3. Classificação de migrations — o passo que só existia no YAML ─────────
+# ── 4. Classificação de migrations — o passo que só existia no YAML ─────────
 revisoes="$(docker exec ejc_db sh -lc \
   'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atq -c "SELECT version_num FROM alembic_version ORDER BY version_num"' \
   | tr -d '\r')"
@@ -157,7 +178,7 @@ if [ "$DRY_RUN" = "1" ]; then
   exit 0
 fi
 
-# ── 4. Transação mutável, idêntica à do workflow ────────────────────────────
+# ── 5. Transação mutável, idêntica à do workflow ────────────────────────────
 # RUNNER_TEMP é exigido por deploy_workflow_transaction.sh para guardar o
 # arquivo de fase; fora do Actions ele não existe, então criamos um.
 if [ -z "${RUNNER_TEMP:-}" ]; then

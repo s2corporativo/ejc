@@ -39,7 +39,7 @@ import {
  * Dispara POST /intake/casos/{case_id}/analise-completa e renderiza o RASCUNHO
  * retornado: área provável, teses do banco (nunca inventadas), estratégia
  * recomendada, honorários de referência OAB/MG e módulos sugeridos.
- * Tudo em superfície ai-* (rascunho sujeito a revisão humana — OAB 205/2021).
+ * Tudo em superfície ai-* (rascunho sujeito a revisão humana obrigatória).
  */
 
 interface TeseSugerida {
@@ -269,7 +269,7 @@ function IntakeAnaliseInner({ caseId }: { caseId: string }) {
 
       {dados && !loading && !iaIndisponivelNaResposta && (
         <div className="space-y-4">
-          {/* Banner: rascunho OAB 205/2021 */}
+          {/* Banner: rascunho sujeito a revisão humana */}
           <Alert
             variant="warning"
             title="Rascunho — revisão humana obrigatória"

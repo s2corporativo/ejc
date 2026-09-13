@@ -167,20 +167,33 @@ def _parse_senado(payload: Any) -> list[dict]:
     for m in materias:
         if not isinstance(m, dict):
             continue
+        # O shape REAL da API (verificado ao vivo em 04/09/2026) é PLANO:
+        # Codigo, Sigla, Numero, Ano, Ementa, Data, Autor, UrlDetalheMateria,
+        # DescricaoIdentificacao. Não existe `IdentificacaoMateria`.
+        #
+        # O parser anterior lia `IdentificacaoMateria.CodigoMateria` e caía para
+        # `codigo`/`id` em MINÚSCULO — nunca para `Codigo`. Sem código, o
+        # `continue` descartava tudo: medido, 85 matérias entravam e 0 saíam, e
+        # a perna Senado do radar reportava `senado: 0` como sucesso, todo dia.
+        # O formato plano já era lido corretamente pelo ingestor irmão
+        # (`ingestors/senado.py`), que serve de referência aqui.
         ident = m.get("IdentificacaoMateria") or m
-        codigo = ident.get("CodigoMateria") or ident.get("codigo") or ident.get("id")
+        basicos = m.get("DadosBasicosMateria") or {}
+        codigo = (m.get("Codigo") or ident.get("CodigoMateria")
+                  or ident.get("codigo") or ident.get("id"))
         if not codigo:
             continue
-        basicos = m.get("DadosBasicosMateria") or {}
         saida.append(_item(
             "senado", codigo,
-            ident.get("SiglaSubtipoMateria") or ident.get("SiglaTipoMateria")
-            or ident.get("sigla") or "MAT",
-            ident.get("NumeroMateria") or ident.get("numero"),
-            ident.get("AnoMateria") or ident.get("ano"),
-            m.get("EmentaMateria") or basicos.get("EmentaMateria") or m.get("ementa"),
-            f"https://www25.senado.leg.br/web/atividade/materias/-/materia/{codigo}",
-            data_apresentacao=(basicos.get("DataApresentacao")
+            (m.get("Sigla") or ident.get("SiglaSubtipoMateria")
+             or ident.get("SiglaTipoMateria") or ident.get("sigla") or "MAT"),
+            m.get("Numero") or ident.get("NumeroMateria") or ident.get("numero"),
+            m.get("Ano") or ident.get("AnoMateria") or ident.get("ano"),
+            (m.get("Ementa") or m.get("EmentaMateria")
+             or basicos.get("EmentaMateria") or m.get("ementa")),
+            (m.get("UrlDetalheMateria")
+             or f"https://www25.senado.leg.br/web/atividade/materias/-/materia/{codigo}"),
+            data_apresentacao=(m.get("Data") or basicos.get("DataApresentacao")
                                or m.get("DataApresentacao") or None),
         ))
     return saida
@@ -485,12 +498,29 @@ async def executar_radar(db, *, sleep_s: float = _SLEEP_ENTRE_TERMOS) -> dict:
     return resumo
 
 
+async def _bater_ponto_radar(status: str, detalhe: str | None = None) -> None:
+    """Registra o heartbeat do radar. Sessão PRÓPRIA e best-effort: a do job
+    pode ter sido envenenada por rollback, e falha de heartbeat nunca pode
+    derrubar o job (mesmo contrato de `scheduler._bater_ponto`)."""
+    try:
+        from app.core.database import AsyncSessionLocal
+        from app.services.heartbeat_service import (
+            JOB_RADAR_LEGISLATIVO,
+            registrar_heartbeat,
+        )
+        async with AsyncSessionLocal() as db:
+            await registrar_heartbeat(db, JOB_RADAR_LEGISLATIVO, status, detalhe)
+    except Exception as e:
+        logger.warning("[radar-legislativo] heartbeat falhou: %s", e)
+
+
 async def job_radar_legislativo() -> None:
     """07h00 UTC — gate RADAR_LEGISLATIVO_ENABLED (default True: APIs públicas
     gratuitas, autorizado pelo dono)."""
     if not get_settings().RADAR_LEGISLATIVO_ENABLED:
         logger.info("[radar-legislativo] desabilitado (RADAR_LEGISLATIVO_ENABLED=false)")
         return
+    resumo: dict[str, Any] = {}
     try:
         from app.core.database import AsyncSessionLocal
         async with AsyncSessionLocal() as db:
@@ -498,6 +528,15 @@ async def job_radar_legislativo() -> None:
             logger.info(f"[radar-legislativo] concluído — novos por fonte: {resumo}")
     except Exception as e:
         logger.error(f"[radar-legislativo] falha no job: {e}")
+        await _bater_ponto_radar("erro", str(e)[:200])
+        return
+
+    # Heartbeat por RESULTADO, não por execução. Sem isto, uma perna morta
+    # (foi o caso do Senado: 85 matérias entravam, 0 saíam) fica invisível —
+    # o job termina sem exceção, loga "concluído" e nenhum painel percebe.
+    # Fonte que devolveu "erro" torna a execução inteira `erro` no diagnóstico.
+    houve_erro = any(v == "erro" for v in resumo.values())
+    await _bater_ponto_radar("erro" if houve_erro else "ok", json.dumps(resumo)[:200])
 
 
 # ── Consulta (endpoint) ───────────────────────────────────────────────────────

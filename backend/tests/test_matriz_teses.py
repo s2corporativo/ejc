@@ -64,6 +64,14 @@ class _FakeDB:
         self.rollbacks += 1
 
 
+@pytest.fixture(autouse=True)
+def _escopo_cliente_do_caso_isolado(monkeypatch):
+    """Isola o lookup de ownership da fila fake usada para Tese/Prova."""
+    async def _fake_scope(db, case_id):
+        return "cli-test" if case_id else None
+    monkeypatch.setattr("app.services.ai_service._escopo_cliente_do_caso", _fake_scope)
+
+
 def _user(role: UserRole, uid: str = "u1") -> User:
     return User(id=uid, role=role)
 

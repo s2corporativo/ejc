@@ -19,7 +19,6 @@ import {
   LayoutDashboard,
   LayoutGrid,
   ListChecks,
-  Newspaper,
   Plus,
   Library,
   Scale,
@@ -93,6 +92,8 @@ const DossieCliente = lazy(() => import("../pages/DossieCliente"));
 const Casos = lazy(() => import("../pages/Casos"));
 const CasoDetalhe = lazy(() => import("../pages/CasoDetalhe"));
 const RaioXProcesso = lazy(() => import("../pages/RaioXProcesso"));
+const Ajuizamento = lazy(() => import("../pages/Ajuizamento"));
+const AjuizamentoPerfis = lazy(() => import("../pages/AjuizamentoPerfis"));
 const SalaJuridica = lazy(() => import("../pages/SalaJuridica"));
 const EntrevistaInteligente = lazy(
   () => import("../pages/EntrevistaInteligente"),
@@ -121,7 +122,6 @@ const DiarioOficial = lazy(() => import("../pages/DiarioOficial"));
 // Os componentes originais seguem no repositório — a casca os renderiza
 // embutidos, e as rotas antigas viram LEGACY_REDIRECTS.
 const Radar = lazy(() => import("../pages/Radar"));
-const Noticias = lazy(() => import("../pages/Noticias"));
 const Checklists = lazy(() => import("../pages/Checklists"));
 const Workflow = lazy(() => import("../pages/Workflow"));
 const Assinaturas = lazy(() => import("../pages/Assinaturas"));
@@ -185,7 +185,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     backendPrefixes: ["/api/clients", "/api/cases", "/api/deadlines"],
   },
   {
-    key: "dpt360-subroutes",
+    key: "dpt360-subroutes", // gitleaks:allow -- chave semântica do registry, não credencial
     path: "/dpt360/*",
     label: "DPT Empresarial 360",
     description: "Navegação interna do workspace empresarial.",
@@ -392,6 +392,38 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "casos",
     status: "hidden",
     sensitive: true,
+  },
+  {
+    key: "ajuizamento",
+    path: "/ajuizamento",
+    label: "Ajuizamento",
+    description:
+      "Do caso ao protocolo: validação, revisão humana, assinatura e registro do protocolo.",
+    group: "Trabalhar um caso",
+    icon: Gavel,
+    component: Ajuizamento,
+    roles: ROLES.juridico,
+    showInNav: true,
+    order: 25,
+    helpKey: "casos",
+    sensitive: true,
+    backendPrefixes: ["/api/ajuizamento"],
+  },
+  {
+    key: "ajuizamento-perfis",
+    path: "/ajuizamento/perfis",
+    label: "Perfis de tribunal",
+    description:
+      "Endpoint, versão, capacidades e homologação por tribunal (segredos só por referência).",
+    group: "Administrar",
+    icon: ShieldCheck,
+    component: AjuizamentoPerfis,
+    roles: ROLES.administradores,
+    showInNav: false,
+    status: "hidden",
+    helpKey: "casos",
+    sensitive: true,
+    backendPrefixes: ["/api/ajuizamento/perfis"],
   },
   {
     key: "caso-entrevista",
@@ -648,18 +680,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     backendPrefixes: ["/api/compliance/radar", "/api/regulatorio"],
   },
   {
-    key: "noticias",
-    path: "/noticias",
-    label: "Notícias Jurídicas",
-    description: "Atualizações e conteúdo jurídico externo.",
-    group: "Pesquisar & IA",
-    icon: Newspaper,
-    component: Noticias,
-    status: "hidden",
-    helpKey: "noticias",
-    sensitive: false,
-  },
-  {
     key: "financeiro",
     path: "/financeiro",
     label: "Financeiro",
@@ -689,7 +709,12 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: Users,
     component: SociedadeWorkspace,
     roles: ROLES.gestores,
-    showInNav: true,
+    // 2026-09-05 (CORTE-5 reenquadrado): o módulo NÃO foi removido porque a
+    // tabela partner_withdrawals é escrita por honorarios_oab.py e lida por
+    // extratos.py — cortar quebraria o fluxo de honorários. Sai só do menu;
+    // a rota segue viva (deep-link) até haver quadro societário cadastrado.
+    showInNav: false,
+    status: "hidden",
     essential: false,
     order: 20,
     helpKey: "financeiro",

@@ -16,15 +16,37 @@ from app.utils.format import formatar_brl
 _MARCA = aviso_minuta_automatica() + "\n\n"
 _settings = get_settings()
 
-# OUTORGADO FIXO da procuração — sócio-titular do escritório. O modelo oficial
-# da procuração é SEMPRE outorgado ao sócio-titular, INDEPENDENTEMENTE do
-# advogado responsável pelo caso (que, quando preciso, atua por
-# substabelecimento). Dado institucional fixo (não é PII de cliente).
-_OUTORGADO_SOCIO = (
-    "JOÃO PEDRO RODRIGUES TEIXEIRA, brasileiro, advogado, OAB/MG nº 251.174, "
-    "com endereço profissional na Av. Gov. Valadares nº 851, sala 405, Centro, "
-    "Betim/MG, e-mail contato@depaulateixeira.adv.br"
-)
+def formatar_oab(numero: str | None) -> str:
+    """'251174' → '251.174' (só formata quando é numérico; senão devolve como veio)."""
+    n = (numero or "").strip()
+    if n.isdigit() and len(n) > 3:
+        return f"{n[:-3]}.{n[-3:]}"
+    return n
+
+
+def _outorgado_socio() -> str:
+    """OUTORGADO FIXO da procuração — sócio-titular do escritório.
+
+    O modelo oficial da procuração é SEMPRE outorgado ao sócio-titular,
+    INDEPENDENTEMENTE do advogado responsável pelo caso (que, quando preciso,
+    atua por substabelecimento). Dado institucional (settings ESCRITORIO_*),
+    não PII de cliente — a configuração do escritório alimenta o documento.
+    """
+    oab = formatar_oab(_settings.escritorio_oab())
+    partes = [
+        f"{_settings.ESCRITORIO_SOCIO_TITULAR}, brasileiro, advogado",
+        f"OAB/{_settings.ESCRITORIO_ESTADO} nº {oab}" if oab else "",
+        (
+            f"com endereço profissional na {_settings.escritorio_endereco()}/"
+            f"{_settings.ESCRITORIO_ESTADO}"
+            if _settings.escritorio_endereco() else ""
+        ),
+        f"e-mail {_settings.ESCRITORIO_EMAIL}" if _settings.ESCRITORIO_EMAIL else "",
+    ]
+    return ", ".join(p for p in partes if p)
+
+
+_OUTORGADO_SOCIO = _outorgado_socio()
 
 # Cabeçalho oficial (timbre textual) da procuração do escritório.
 _CABECALHO_ESCRITORIO = "DE PAULA TEIXEIRA - SOCIEDADE DE ADVOGADOS"

@@ -196,3 +196,141 @@ async def test_nao_permite_anonimizar_duas_vezes():
         finally:
             await _limpar_executor(db, executor)
             await _limpar(db, client_id)
+
+
+async def test_db03_anonimizacao_limpa_parte_vinculada_e_cid_pf_reclamante():
+    """Fase A: anonimização alcança PII cifrada relacionada sem tocar terceiros."""
+    from app.core.database import AsyncSessionLocal
+    from app.models.case_parte import CaseParte
+    from app.models.especializado import TrabalhistaCase
+    from app.services.client_anonimizacao import anonimizar_cliente
+
+    client_id, case_id = str(uuid4()), str(uuid4())
+    async with AsyncSessionLocal() as db:
+        await _criar_cliente(db, client_id)
+        await _criar_caso(db, case_id, client_id, status="encerrado")
+        executor = await _criar_executor(db)
+        parte = CaseParte(
+            id=str(uuid4()), case_id=case_id, client_id=client_id,
+            tipo="autor", nome="Titular DB03",
+            cpf_cnpj="390.533.447-05",
+            email="titular@example.test", telefone="31988887777",
+        )
+        trab = TrabalhistaCase(
+            id=str(uuid4()), case_id=case_id, tipo="acidente_trabalho",
+            polo="reclamante", cid="S93.4",
+        )
+        db.add_all([parte, trab])
+        await db.commit()
+        try:
+            resultado = await anonimizar_cliente(
+                db, client_id, executor_id=executor, executor_role="socio",
+                motivo="teste automatizado DB03",
+            )
+            assert resultado["partes_cliente_anonimizadas"] == 1
+            assert resultado["cids_cliente_anonimizados"] == 1
+
+            p = (await db.execute(text(
+                "SELECT nome, cpf_cnpj, cpf_cnpj_enc, cpf_cnpj_hash, email, email_enc, "
+                "telefone, telefone_enc FROM case_partes WHERE id = :id"
+            ), {"id": parte.id})).mappings().one()
+            assert p["nome"] == "[ANONIMIZADO — LGPD ART. 17]"
+            assert all(p[k] is None for k in (
+                "cpf_cnpj", "cpf_cnpj_enc", "cpf_cnpj_hash",
+                "email", "email_enc", "telefone", "telefone_enc",
+            ))
+
+            c = (await db.execute(text(
+                "SELECT cid, cid_enc FROM trabalhista_cases WHERE id = :id"
+            ), {"id": trab.id})).mappings().one()
+            assert c["cid"] is None and c["cid_enc"] is None
+        finally:
+            await db.execute(text("DELETE FROM trabalhista_cases WHERE case_id = :id"), {"id": case_id})
+            await db.execute(text("DELETE FROM case_partes WHERE case_id = :id"), {"id": case_id})
+            await _limpar_executor(db, executor)
+            await _limpar(db, client_id, case_id)
+
+
+async def test_db03_crud_trabalhista_cid_cifrado_sem_vazar_ciphertext():
+    """CRUD do satélite mantém `cid` na API, mas só `cid_enc` no storage novo."""
+    from app.core.database import AsyncSessionLocal
+    from app.models.especializado import TrabalhistaTipo
+    from app.models.user import User
+    from app.routers.ramos_trabalhista_esp import TrabalhistaIn, trab_atualizar, trab_criar
+    from app.schemas.areas_atuacao import TrabalhistaUpdate
+
+    client_id, case_id = str(uuid4()), str(uuid4())
+    async with AsyncSessionLocal() as db:
+        await _criar_cliente(db, client_id)
+        await _criar_caso(db, case_id, client_id, status="encerrado")
+        executor = await _criar_executor(db)
+        await db.commit()
+        cu = await db.get(User, executor)
+        try:
+            criado = await trab_criar(
+                TrabalhistaIn(
+                    case_id=case_id,
+                    tipo=TrabalhistaTipo.acidente_trabalho,
+                    polo="reclamante",
+                    cid="S93.4",
+                ),
+                db,
+                cu,
+            )
+            assert criado["cid"] == "S93.4"
+            assert "cid_enc" not in criado
+
+            raw = (await db.execute(text(
+                "SELECT cid, cid_enc FROM trabalhista_cases WHERE id = :id"
+            ), {"id": criado["id"]})).mappings().one()
+            assert raw["cid"] is None and raw["cid_enc"]
+
+            atualizado = await trab_atualizar(
+                criado["id"], TrabalhistaUpdate(cid="M54.6"), db, cu,
+            )
+            assert atualizado["cid"] == "M54.6"
+            assert "cid_enc" not in atualizado
+            raw2 = (await db.execute(text(
+                "SELECT cid, cid_enc FROM trabalhista_cases WHERE id = :id"
+            ), {"id": criado["id"]})).mappings().one()
+            assert raw2["cid"] is None and raw2["cid_enc"]
+        finally:
+            await db.execute(text("DELETE FROM trabalhista_cases WHERE case_id = :id"), {"id": case_id})
+            await _limpar_executor(db, executor)
+            await _limpar(db, client_id, case_id)
+
+
+async def test_db03_anonimizacao_limpa_cid_de_caso_soft_deleted():
+    """Lixeira não pode fazer CID do titular reaparecer após anonimização."""
+    from app.core.database import AsyncSessionLocal
+    from app.models.especializado import TrabalhistaCase
+    from app.services.client_anonimizacao import anonimizar_cliente
+
+    client_id, case_id = str(uuid4()), str(uuid4())
+    async with AsyncSessionLocal() as db:
+        await _criar_cliente(db, client_id)
+        await _criar_caso(db, case_id, client_id, status="encerrado")
+        executor = await _criar_executor(db)
+        trab = TrabalhistaCase(
+            id=str(uuid4()), case_id=case_id, tipo="acidente_trabalho",
+            polo="reclamante", cid="S93.4",
+        )
+        db.add(trab)
+        await db.flush()
+        await db.execute(text("UPDATE cases SET deleted_at = now() WHERE id = :id"), {"id": case_id})
+        await db.commit()
+        try:
+            resultado = await anonimizar_cliente(
+                db, client_id, executor_id=executor, executor_role="socio",
+                motivo="teste DB03 caso em lixeira",
+            )
+            assert resultado["cids_cliente_anonimizados"] == 1
+            row = (await db.execute(
+                text("SELECT cid, cid_enc FROM trabalhista_cases WHERE id = :id"),
+                {"id": trab.id},
+            )).mappings().one()
+            assert row["cid"] is None and row["cid_enc"] is None
+        finally:
+            await db.execute(text("DELETE FROM trabalhista_cases WHERE case_id = :id"), {"id": case_id})
+            await _limpar_executor(db, executor)
+            await _limpar(db, client_id, case_id)

@@ -74,7 +74,9 @@ async function abrirDialogDeAprovacao() {
   );
   // A lista renderiza em cartão (mobile) e em tabela (desktop) — em jsdom os
   // dois estão no DOM; qualquer um abre o mesmo dialog.
-  const [botao] = await screen.findAllByText(/Revisar e Aprovar/i);
+  // PR #1425 renomeou a ação da fila de "Revisar e Aprovar" para "Revisar peça".
+  // O gate de citações que este arquivo cobre não mudou — só o rótulo do botão.
+  const [botao] = await screen.findAllByText(/Revisar peça/i);
   fireEvent.click(botao);
   const observacoes = await screen.findByPlaceholderText(
     /Observações da revisão/i,
@@ -82,7 +84,9 @@ async function abrirDialogDeAprovacao() {
   fireEvent.change(observacoes, {
     target: { value: "Conferi os fatos e a fundamentação." },
   });
-  return screen.getByRole("button", { name: /Aprovar peça/i });
+  // Idem: "Aprovar peça" virou "Aprovar e assinar" (conferência e assinatura
+  // num ato só, PR #622/#1425). O comportamento aferido aqui é o mesmo.
+  return screen.getByRole("button", { name: /Aprovar e assinar/i });
 }
 
 describe("Peças — gate de citações na aprovação", () => {
@@ -93,13 +97,13 @@ describe("Peças — gate de citações na aprovação", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText(/Citações não confirmadas na base oficial/i),
+        screen.getByText(/Citações não confirmadas/i),
       ).toBeTruthy(),
     );
     expect(screen.getByText(/Súmula 999 STJ/)).toBeTruthy();
     // O caminho de saída aparece: justificar e assumir.
     expect(
-      screen.getByPlaceholderText(/Justificativa para aprovar apesar/i),
+      screen.getByPlaceholderText(/Justificativa para eventual override/i),
     ).toBeTruthy();
   });
 
@@ -107,14 +111,18 @@ describe("Peças — gate de citações na aprovação", () => {
     vi.mocked(api.post).mockRejectedValueOnce(BLOQUEIO_409);
     const aprovar = await abrirDialogDeAprovacao();
     fireEvent.click(aprovar);
-    await screen.findByPlaceholderText(/Justificativa para aprovar apesar/i);
+    await screen.findByPlaceholderText(/Justificativa para eventual override/i);
 
+    // O fluxo não tem mais um botão separado de override: o MESMO "Aprovar e
+    // assinar" é reusado, e só manda o override quando há justificativa.
     const chamadasAntes = vi.mocked(api.post).mock.calls.length;
     fireEvent.click(
-      screen.getByRole("button", { name: /Aprovar assumindo as citações/i }),
+      screen.getByRole("button", { name: /Aprovar e assinar/i }),
     );
     await waitFor(() =>
-      expect(screen.getByText(/justifique por escrito/i)).toBeTruthy(),
+      expect(
+        screen.getByText(/registre uma justificativa por escrito/i),
+      ).toBeTruthy(),
     );
     expect(vi.mocked(api.post).mock.calls.length).toBe(chamadasAntes);
   });
@@ -126,13 +134,15 @@ describe("Peças — gate de citações na aprovação", () => {
     const aprovar = await abrirDialogDeAprovacao();
     fireEvent.click(aprovar);
     const justificativa = await screen.findByPlaceholderText(
-      /Justificativa para aprovar apesar/i,
+      /Justificativa para eventual override/i,
     );
     fireEvent.change(justificativa, {
       target: { value: "Conferi a súmula no site do STJ; está correta." },
     });
+    // Mesmo botão do fluxo normal: com justificativa preenchida, ele reenvia
+    // a aprovação já com o override.
     fireEvent.click(
-      screen.getByRole("button", { name: /Aprovar assumindo as citações/i }),
+      screen.getByRole("button", { name: /Aprovar e assinar/i }),
     );
 
     await waitFor(() => expect(vi.mocked(api.post).mock.calls.length).toBe(2));

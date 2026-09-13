@@ -219,23 +219,15 @@ async def test_caso_com_responsavel_barra_advogado_sem_vinculo():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Item 5 — REQUIRE_2FA_ROLES default inclui advogado + advogado_auxiliar
+# Item 5 — 2FA não obrigatório por default (#1580)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def test_require_2fa_roles_default_inclui_advogados():
+def test_require_2fa_roles_default_vazio():
     from app.core.config import Settings
-    default = Settings.model_fields["REQUIRE_2FA_ROLES"].default
-    papeis = {p.strip().lower() for p in default.split(",") if p.strip()}
-    assert {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar"} <= papeis, (
-        f"default de REQUIRE_2FA_ROLES não obriga os advogados: {default}"
-    )
+    assert Settings.model_fields["REQUIRE_2FA_ROLES"].default == ""
 
 
-def test_require_2fa_roles_list_parseia_advogados():
-    from app.core.config import get_settings
-    lista = get_settings().require_2fa_roles_list
-    # get_settings pode ler .env do ambiente; o teste garante que, com o default
-    # de código, os advogados entram na lista normalizada.
-    if "advogado" not in lista:
-        pytest.skip("REQUIRE_2FA_ROLES sobrescrito por ambiente/.env — default não avaliado")
-    assert "advogado_auxiliar" in lista
+def test_require_2fa_roles_list_parseia_allowlist_explicita():
+    from app.core.config import Settings
+    cfg = Settings(REQUIRE_2FA_ROLES="superadmin, socio, ADVOGADO")
+    assert cfg.require_2fa_roles_list == ["superadmin", "socio", "advogado"]

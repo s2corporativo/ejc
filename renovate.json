@@ -1,0 +1,18 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "timezone": "America/Sao_Paulo",
+  "schedule": ["after 02:00 on saturday", "before 07:00 on saturday"],
+  "dependencyDashboard": true,
+  "automerge": false,
+  "prConcurrentLimit": 4,
+  "prHourlyLimit": 2,
+  "labels": ["dependencies"],
+  "rangeStrategy": "auto",
+  "lockFileMaintenance": {"enabled": true, "schedule": ["before 05:00 on the first day of the month"]},
+  "packageRules": [
+    {"description": "GitHub Actions esta sendo aposentado; nao atualizar workflows legados", "matchManagers": ["github-actions"], "enabled": false},
+    {"description": "Agrupar atualizacoes nao majoritarias", "matchUpdateTypes": ["minor", "patch"], "groupName": "non-major dependencies"},
+    {"description": "Major exige aprovacao explicita no Dependency Dashboard", "matchUpdateTypes": ["major"], "dependencyDashboardApproval": true}
+  ]
+}
