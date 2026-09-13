@@ -80,7 +80,8 @@ async def sync_case(
         raise HTTPException(400, "Case has no numero_processo")
     try:
         synced = await datajud_service.sincronizar_caso(db, case)
-        # BUG-16: ao sincronizar o caso, também sincroniza os PRAZOS (rascunho/HITL).
+        # Prazos são bloqueados: materialização automática de Deadline
+        # via DataJud exige motor canônico + revisão humana (#1336).
         prazos = await datajud_service.sincronizar_prazos_datajud(
             case.id, case.numero_processo, db
         )
@@ -112,10 +113,11 @@ async def sync_prazos(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """BUG-16: sincronização MANUAL de prazos do caso a partir do DataJud.
+    """Compatibilidade de rota: valida ownership e bloqueia materialização de prazos.
 
-    Cria prazos (deadlines) preliminares — rascunho, exigem revisão do advogado
-    (HITL/OAB). Dedup por referencia_datajud: reexecutar não duplica.
+    O 409 é deliberado para que clientes não interpretem uma lista vazia como
+    cálculo processual bem-sucedido. O prazo deve passar pelo motor canônico e
+    revisão humana antes de existir como Deadline operacional (#1336).
     """
     result = await db.execute(
         select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))

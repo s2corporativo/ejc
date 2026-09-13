@@ -25,6 +25,9 @@ async def _nao_criar_deadline_datajud(*_args, **_kwargs) -> None:
         "Criação automática de Deadline por DataJud bloqueada: "
         "exige revisão humana de publicação, termo inicial, regime e calendário."
     )
+
+
+def _numero_limpo(valor: str | None) -> str:
     return re.sub(r"\D", "", valor or "")
 
 
