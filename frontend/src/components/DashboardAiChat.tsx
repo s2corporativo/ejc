@@ -12,6 +12,7 @@ type AiTurn = {
   content: string;
   sources?: string[];
   notice?: string;
+  alerts?: string[];
 };
 
 export default function DashboardAiChat({
@@ -36,10 +37,9 @@ export default function DashboardAiChat({
 
   const submit = async () => {
     const text = question.trim();
-    if (!text || loading || !iaDisponivel) return;
+    if (text.length < 3 || loading || !iaDisponivel) return;
 
-    setTurns((current) => [
-      ...current,
+    setTurns([
       { id: `${Date.now()}-user`, role: "user", content: text },
     ]);
     setQuestion("");
@@ -54,19 +54,22 @@ export default function DashboardAiChat({
       const content = String(data?.conteudo ?? data?.resposta ?? "").trim();
       const rawSources = data?.fontes_rag ?? data?.fontes ?? [];
       const sources = Array.isArray(rawSources)
-        ? rawSources
-            .slice(0, 4)
-            .map((source: any) =>
-              typeof source === "string"
-                ? source
-                : String(
-                    source?.titulo ??
-                      source?.referencia ??
-                      source?.fonte ??
-                      source?.url ??
-                      "Fonte consultada",
-                  ),
-            )
+        ? rawSources.map((source: any) =>
+            typeof source === "string"
+              ? source
+              : String(
+                  source?.titulo ??
+                    source?.referencia ??
+                    source?.fonte ??
+                    source?.url ??
+                    "Fonte consultada",
+                ),
+          )
+        : [];
+      const alerts = Array.isArray(data?.alertas)
+        ? data.alertas
+            .map((alert: unknown) => String(alert ?? "").trim())
+            .filter(Boolean)
         : [];
 
       setTurns((current) => [
@@ -77,6 +80,7 @@ export default function DashboardAiChat({
           content: content || "A IA não retornou conteúdo para esta pergunta.",
           sources,
           notice: String(data?.aviso_hitl ?? data?.aviso ?? "").trim(),
+          alerts,
         },
       ]);
     } catch (err: any) {
@@ -86,6 +90,9 @@ export default function DashboardAiChat({
     }
   };
 
+  const canSubmit =
+    question.trim().length >= 3 && iaDisponivel && !loading;
+
   return (
     <>
       <div className="ejc-reference-ai-status">
@@ -93,7 +100,7 @@ export default function DashboardAiChat({
           <i aria-hidden="true" />
           {iaDisponivel ? "IA disponível" : "IA indisponível"}
         </span>
-        <small>Mesmo núcleo jurídico do Assistente IA</small>
+        <small>Cada pergunta é independente neste painel rápido</small>
       </div>
 
       <div className="ejc-reference-ai-chat" aria-live="polite">
@@ -103,8 +110,9 @@ export default function DashboardAiChat({
             <div>
               <strong>Pergunte diretamente à IA do EJC</strong>
               <span>
-                Use para pesquisa e orientação inicial. Fontes e revisão humana
-                continuam obrigatórias.
+                Use para pesquisa e orientação inicial. Fontes, alertas e revisão
+                humana continuam obrigatórios. Para conversa com contexto, use o
+                Assistente completo.
               </span>
             </div>
           </div>
@@ -130,6 +138,14 @@ export default function DashboardAiChat({
                   ))}
                 </div>
               )}
+              {turn.alerts?.map((alert, index) => (
+                <small
+                  key={`${turn.id}-alert-${index}`}
+                  className="ejc-reference-ai-notice"
+                >
+                  Atenção: {alert}
+                </small>
+              ))}
               {turn.notice && (
                 <small className="ejc-reference-ai-notice">{turn.notice}</small>
               )}
@@ -169,15 +185,16 @@ export default function DashboardAiChat({
           type="button"
           className="ejc-reference-ai-send"
           onClick={() => void submit()}
-          disabled={!question.trim() || !iaDisponivel || loading}
+          disabled={!canSubmit}
           aria-label="Enviar pergunta para a Inteligência Jurídica"
         >
           <Send aria-hidden="true" />
         </button>
       </div>
       <p className="ejc-reference-ai-hint">
-        Enter envia · Shift+Enter quebra a linha · respostas são rascunhos
-        sujeitos a conferência.
+        Mínimo de 3 caracteres · Enter envia · Shift+Enter quebra a linha · cada
+        pergunta é independente e as respostas são rascunhos sujeitos a
+        conferência.
       </p>
       <div className="ejc-reference-ai-shortcuts">
         <Link
