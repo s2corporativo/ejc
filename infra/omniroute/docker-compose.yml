@@ -1,0 +1,30 @@
+name: ejc-omniroute
+
+services:
+  omniroute:
+    image: diegosouzapw/omniroute:3.8.50
+    container_name: ejc_omniroute
+    restart: unless-stopped
+    stop_grace_period: 40s
+    ports:
+      - "${OMNIROUTE_BIND_HOST:-127.0.0.1}:${OMNIROUTE_PORT:-20128}:20128"
+    environment:
+      DATA_DIR: /app/data
+      PORT: "20128"
+      DASHBOARD_PORT: "20128"
+      API_HOST: "0.0.0.0"
+      DISABLE_SQLITE_AUTO_BACKUP: "${OMNIROUTE_DISABLE_SQLITE_AUTO_BACKUP:-false}"
+    volumes:
+      - omniroute-data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.mjs"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  omniroute-data:
+    name: ejc-omniroute-data
