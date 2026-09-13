@@ -882,8 +882,11 @@ export default function Documentos() {
                       aria-label={`Selecionar ${d.titulo}`}
                     />
                   </td>
-                  <td className="px-4 py-3 font-medium text-navy flex items-center gap-1.5">
-                    {confIcon(d.confidencialidade)} {d.titulo}
+                  <td className="px-4 py-3 font-medium text-navy">
+                    <div className="flex min-w-[220px] items-center gap-1.5">
+                      {confIcon(d.confidencialidade)}
+                      <span className="min-w-0 break-words">{d.titulo}</span>
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-slate-500 text-xs">
                     {d.filename}

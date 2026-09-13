@@ -303,7 +303,7 @@ export default function Honorarios() {
       </div>
 
       {resumo && (
-        <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4 mb-6">
           <div className="card p-4">
             <div className="text-xs text-slate-400 uppercase font-semibold">Pendente</div>
             <div className="text-xl font-bold text-navy">{fmtMoney(resumo.pendente)}</div>
@@ -537,13 +537,13 @@ export default function Honorarios() {
         {pixModal && (
           <div className="space-y-3">
             <p className="text-sm text-slate-600">{pixModal.descricao} · saldo a cobrar: <b>{fmtMoney(pixModal.saldo)}</b></p>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="col-span-3">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className="sm:col-span-3">
                 <label className="label">Chave PIX do escritório *</label>
                 <input className="input" value={pixCfg.chave || ""} onChange={(e) => setPixCfg({ ...pixCfg, chave: e.target.value })} placeholder="CPF/CNPJ, e-mail, telefone ou aleatória" />
                 <p className="text-[11px] text-slate-400 mt-1">A configuração fica somente nesta sessão do navegador.</p>
               </div>
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <label className="label">Recebedor</label>
                 <input className="input" value={pixCfg.nome || ""} onChange={(e) => setPixCfg({ ...pixCfg, nome: e.target.value })} placeholder="Nome do escritório" />
               </div>
