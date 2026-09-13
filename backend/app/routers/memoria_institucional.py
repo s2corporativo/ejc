@@ -100,13 +100,17 @@ async def listar(
     params: dict = {"limit": limit}
     if case_id:
         await verificar_acesso_caso(db, cu, case_id)  # ownership do caso filtrado
-        cond.append("case_id = :case_id"); params["case_id"] = case_id
+        cond.append("case_id = :case_id")
+        params["case_id"] = case_id
     if tipo:
-        cond.append("tipo = :tipo"); params["tipo"] = tipo
+        cond.append("tipo = :tipo")
+        params["tipo"] = tipo
     if area:
-        cond.append("area_direito ILIKE :area"); params["area"] = f"%{area}%"
+        cond.append("area_direito ILIKE :area")
+        params["area"] = f"%{area}%"
     if q:
-        cond.append("(titulo ILIKE :q OR conteudo ILIKE :q)"); params["q"] = f"%{q}%"
+        cond.append("(titulo ILIKE :q OR conteudo ILIKE :q)")
+        params["q"] = f"%{q}%"
     result = await db.execute(
         # SQL literal com bind params; a regra marca todo text(), sem olhar
         # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
@@ -182,9 +186,11 @@ async def atualizar(
     for field in ("tipo", "titulo", "conteudo", "resultado", "area_direito"):
         val = getattr(body, field)
         if val is not None:
-            sets.append(f"{field} = :{field}"); params[field] = val
+            sets.append(f"{field} = :{field}")
+            params[field] = val
     if body.tags is not None:
-        sets.append("tags = CAST(:tags AS jsonb)"); params["tags"] = json.dumps(body.tags)
+        sets.append("tags = CAST(:tags AS jsonb)")
+        params["tags"] = json.dumps(body.tags)
     if not sets:
         raise HTTPException(422, "Nada para atualizar")
     sets.append("updated_at = now()")
