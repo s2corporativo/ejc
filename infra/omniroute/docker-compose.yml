@@ -2,7 +2,10 @@ name: ejc-omniroute
 
 services:
   omniroute:
-    image: diegosouzapw/omniroute:3.8.50
+    # 3.8.49 é a última imagem Docker estável confirmada. A release 3.8.50
+    # existe no GitHub/npm, mas o publish Docker correspondente falhou; não usar
+    # uma tag enganosa até que o artefato Docker seja publicado e verificado.
+    image: diegosouzapw/omniroute:3.8.49
     container_name: ejc_omniroute
     restart: unless-stopped
     stop_grace_period: 40s
