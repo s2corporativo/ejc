@@ -1,4 +1,4 @@
-"""Regressão da desativação temporária e reversível do 2FA."""
+"""Regressão da política de 2FA não obrigatório e reversível (#1580)."""
 from __future__ import annotations
 
 from app.core.auth_middleware import _totp_management_temporarily_disabled
@@ -20,7 +20,7 @@ def _user_with_totp() -> User:
     )
 
 
-def test_2fa_nasce_temporariamente_desativado(monkeypatch):
+def test_2fa_nasce_desativado_por_default(monkeypatch):
     monkeypatch.delenv("TWO_FACTOR_AUTH_ENABLED", raising=False)
     assert two_factor_enabled() is False
 
@@ -43,7 +43,7 @@ def test_reativacao_respeita_valor_persistido(monkeypatch):
     assert user.totp_secret == "SEGREDO_PRESERVADO"
 
 
-def test_papeis_obrigatorios_ficam_vazios_no_modo_temporario():
+def test_papeis_obrigatorios_ficam_vazios_com_gate_desligado():
     # O módulo de política ajusta o mesmo Settings cacheado usado por login e
     # refresh, impedindo emissão de token limitado ao setup obrigatório.
     assert get_settings().require_2fa_roles_list == []
