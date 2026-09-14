@@ -21,6 +21,7 @@ from sqlalchemy import (
     table,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.core.ownership import is_gestao
 from app.models.activity_alert import ActivityAlertState
@@ -96,15 +97,16 @@ def _activity_scope_clause(user: User):
     if is_gestao(user):
         return None
     v = VW_ATIVIDADES.c
+    cc = aliased(Case)
     return or_(
         and_(v.case_id.is_(None), v.responsavel_id == user.id),
         exists(
-            select(1).select_from(Case).where(
-                Case.id == v.case_id,
-                Case.deleted_at.is_(None),
+            select(1).select_from(cc).where(
+                cc.id == v.case_id,
+                cc.deleted_at.is_(None),
                 or_(
-                    Case.advogado_responsavel_id == user.id,
-                    Case.advogado_auxiliar_id == user.id,
+                    cc.advogado_responsavel_id == user.id,
+                    cc.advogado_auxiliar_id == user.id,
                 ),
             )
         ),
@@ -123,15 +125,16 @@ def _case_scope_clause(user: User):
 def _document_scope_clause(user: User):
     if is_gestao(user):
         return None
+    cc = aliased(Case)
     return or_(
         and_(Document.case_id.is_(None), Document.uploaded_by == user.id),
         exists(
-            select(1).select_from(Case).where(
-                Case.id == Document.case_id,
-                Case.deleted_at.is_(None),
+            select(1).select_from(cc).where(
+                cc.id == Document.case_id,
+                cc.deleted_at.is_(None),
                 or_(
-                    Case.advogado_responsavel_id == user.id,
-                    Case.advogado_auxiliar_id == user.id,
+                    cc.advogado_responsavel_id == user.id,
+                    cc.advogado_auxiliar_id == user.id,
                 ),
             )
         ),
