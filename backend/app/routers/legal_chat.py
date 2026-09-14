@@ -366,6 +366,11 @@ async def converter(
         acao="sala_juridica_converter", entidade="legal_chat_sessions",
         registro_id=sessao.id,
         detalhes=f"case_id={resultado.get('case_id')}",
+        dados_depois={
+            "case_id": resultado.get("case_id"),
+            "aplicar_dossie_estruturado": payload.aplicar_dossie_estruturado,
+            "dossie_materializado": resultado.get("dossie_materializado"),
+        },
     )
     await db.commit()
     return resultado
@@ -394,6 +399,11 @@ async def vincular_caso(
         acao="sala_juridica_vincular_caso", entidade="legal_chat_sessions",
         registro_id=sessao.id,
         detalhes=f"case_id={resultado.get('case_id')}",
+        dados_depois={
+            "case_id": resultado.get("case_id"),
+            "aplicar_dossie_estruturado": payload.aplicar_dossie_estruturado,
+            "dossie_materializado": resultado.get("dossie_materializado"),
+        },
     )
     await db.commit()
     return resultado

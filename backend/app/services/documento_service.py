@@ -558,8 +558,8 @@ async def extrair_e_analisar(
             "caracteres_lidos": len(texto_extraido_completo),
             "pii_removida": houve_pii,
             "_aviso": _AVISO,
-            "_texto_sanitizado": texto_contexto_sanitizado,
-            "_texto_sanitizado_truncado": contexto_truncado,
+            "_texto_sanitizado": texto_para_ia,
+            "_texto_sanitizado_truncado": len(texto_extraido_completo) > len(texto),
         }
 
     # 2.b) Trilha de auditoria (art. 37 LGPD): AILog da chamada PRINCIPAL do
@@ -600,8 +600,8 @@ async def extrair_e_analisar(
             "pii_removida": houve_pii,
             # Chave interna (consumida e removida pelo router documento_ia):
             # texto JÁ SANITIZADO para o diagnóstico via núcleo único de IA.
-            "_texto_sanitizado": texto_contexto_sanitizado,
-            "_texto_sanitizado_truncado": contexto_truncado,
+            "_texto_sanitizado": texto_para_ia,
+            "_texto_sanitizado_truncado": len(texto_extraido_completo) > len(texto),
         }
 
     # 2.b) R4 — verificação de origem dos campos v2 (anti-alucinação).
@@ -631,6 +631,28 @@ async def extrair_e_analisar(
     # para DocumentoIntakeResult, ADITIVO ao dict legado (não o substitui).
     dados["intake_result"] = _montar_intake_result(
         dados, dados_estruturados).model_dump(mode="json")
+
+    # O contexto ampliado (até 120k) só fica elegível para conversas posteriores
+    # após uma segunda sanitização com os nomes que o intake acabou de extrair.
+    # Se nenhum nome foi reconhecido, a barreira estrutural segue válida; o
+    # legal_chat_service reaplica a mesma proteção antes de cada provider.
+    nomes_documento: list[str] = []
+    cliente_intake = dados["intake_result"].get("cliente")
+    if isinstance(cliente_intake, dict):
+        nome = str(cliente_intake.get("nome") or "").strip()
+        if len(nome) >= 4:
+            nomes_documento.append(nome)
+    for parte in dados["intake_result"].get("partes") or []:
+        if not isinstance(parte, dict):
+            continue
+        nome = str(parte.get("nome") or "").strip()
+        if len(nome) >= 4 and nome.casefold() not in {n.casefold() for n in nomes_documento}:
+            nomes_documento.append(nome)
+    texto_contexto_sanitizado, houve_pii_contexto = sanitizar_pii(
+        texto_contexto, nomes_proteger=nomes_documento or None
+    )
+    houve_pii = bool(houve_pii or houve_pii_contexto)
+
     dados["_aviso"] = _AVISO
     dados["_modelo"] = f"{resp.provedor}/{resp.modelo}"
     dados["intake_log_id"] = intake_log_id

@@ -268,6 +268,48 @@ const CLASSIFICACAO_COR: Record<string, string> = {
   superado: "bg-gray-200 text-gray-500 line-through",
 };
 
+function formatarItemEstado(item: Record<string, unknown>): string {
+  const preferidos = [
+    "numero_processo",
+    "tribunal",
+    "comarca",
+    "vara",
+    "texto",
+    "descricao",
+    "nome",
+    "titulo",
+    "evento",
+    "acao",
+    "valor",
+    "data",
+    "fundamento",
+    "justificativa",
+  ];
+  const vistos = new Set<string>();
+  const partes: string[] = [];
+  for (const chave of preferidos) {
+    const valor = item[chave];
+    if (valor == null || typeof valor === "object") continue;
+    const texto = String(valor).trim();
+    if (!texto || vistos.has(texto)) continue;
+    vistos.add(texto);
+    partes.push(`${chave.split("_").join(" ")}: ${texto}`);
+  }
+  if (partes.length > 0) return partes.join(" · ");
+
+  return Object.entries(item)
+    .filter(
+      ([chave, valor]) =>
+        !["classificacao", "nivel", "tipo"].includes(chave) &&
+        valor != null &&
+        typeof valor !== "object" &&
+        String(valor).trim(),
+    )
+    .slice(0, 8)
+    .map(([chave, valor]) => `${chave.split("_").join(" ")}: ${String(valor)}`)
+    .join(" · ") || "Item estruturado sem valor textual; revise o dossiê antes de aplicar.";
+}
+
 // E7: converter/vincular sessão a caso é ato privativo de advogado ou sócio
 // (mesmo critério do backend); estagiário/auxiliar/secretaria continuam
 // analisando na sala, mas não criam nem vinculam caso a partir dela.
@@ -1414,14 +1456,7 @@ export default function SalaJuridica() {
                           abaEstado,
                       )}
                     </span>
-                    {String(
-                      item.texto ??
-                        item.descricao ??
-                        item.nome ??
-                        item.titulo ??
-                        item.evento ??
-                        "",
-                    )}
+                    {formatarItemEstado(item)}
                   </div>
                 ))
               )}

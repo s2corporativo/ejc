@@ -47,6 +47,7 @@ from app.services.conflito_service import (
     _casos_por_parte_contraria,
     _clientes_por_nome,
 )
+from app.services.sanitizer import sanitizar_pii
 
 # Modo do seletor → task_type do gateway. "chat_rapido" NÃO consta no mapa do
 # intent_classifier de propósito: a conversa livre cai no fallback por
@@ -315,6 +316,7 @@ def _montar_mensagem_ia(
     blocos_anexos: list[str] = []
     blocos_texto: list[str] = []
     total = 0
+    nomes_proteger = _nomes_partes_anexos(anexos or [])
     for a in anexos or []:
         analise = a.resultado_analise if isinstance(a.resultado_analise, dict) else {}
         # O texto integral sanitizado é injetado em bloco próprio; removê-lo da
@@ -325,6 +327,9 @@ def _montar_mensagem_ia(
         sintese = json.dumps(
             analise_sintese, ensure_ascii=False, separators=(",", ":")
         )[:20_000]
+        sintese, _ = sanitizar_pii(
+            sintese, nomes_proteger=nomes_proteger or None
+        )
         truncado = bool(analise.get("_texto_sanitizado_truncado"))
         sufixo = " [CONTEXTO TEXTUAL TRUNCADO — confira o arquivo original]" if truncado else ""
         bloco = f"- {a.nome_original}{sufixo}: {sintese}"
@@ -334,7 +339,13 @@ def _montar_mensagem_ia(
         total += len(bloco)
         texto = analise.get("_texto_sanitizado")
         if isinstance(texto, str) and texto.strip():
-            bloco_t = f"### {a.nome_original}\n{(texto.strip())[:_ANEXO_MAX_CHARS]}"
+            # Defesa em profundidade: anexos sem case_id não possuem entidades
+            # canônicas do caso. Reaplicamos a sanitização com os nomes que o
+            # intake local/persistido já identificou antes de qualquer provider.
+            texto_sem_nomes, _ = sanitizar_pii(
+                texto.strip(), nomes_proteger=nomes_proteger or None
+            )
+            bloco_t = f"### {a.nome_original}\n{texto_sem_nomes[:_ANEXO_MAX_CHARS]}"
             if total + len(bloco_t) > _ANEXOS_MAX_CHARS_TOTAL:
                 break
             blocos_texto.append(bloco_t)
@@ -658,6 +669,13 @@ def _nomes_partes_anexos(anexos: list[LegalChatAttachment]) -> list[str]:
     for a in anexos:
         ra = a.resultado_analise if isinstance(a.resultado_analise, dict) else {}
         intake = ra.get("intake_result") if isinstance(ra.get("intake_result"), dict) else ra
+        cliente = intake.get("cliente") if isinstance(intake, dict) else None
+        if isinstance(cliente, dict):
+            nome_cliente = str(cliente.get("nome") or "").strip()
+            chave_cliente = nome_cliente.casefold()
+            if len(nome_cliente) >= 4 and chave_cliente not in vistos:
+                vistos.add(chave_cliente)
+                nomes.append(nome_cliente)
         for item in intake.get("partes") or []:
             if isinstance(item, str):
                 nome = item.strip()
@@ -984,6 +1002,10 @@ async def _materializar_dossie_confirmado(
     testemunha, pedido, valor ou tese em tabelas definitivas; esses itens ficam
     no snapshot até existir fluxo canônico próprio.
     """
+    # A sessão tem lock próprio, mas sessões diferentes podem materializar no
+    # mesmo caso. Serializar pelo case_id mantém deduplicação e auditoria estáveis.
+    await db.execute(select(Case.id).where(Case.id == case.id).with_for_update())
+
     estado_v = await ultima_versao_estado(db, sessao.id)
     estado = dict((estado_v.estado if estado_v else {}) or {})
 
@@ -992,7 +1014,9 @@ async def _materializar_dossie_confirmado(
     ident = ident_items[0] if ident_items and isinstance(ident_items[0], dict) else {}
     comp_items = estado.get("competencia") or []
     comp = comp_items[0] if comp_items and isinstance(comp_items[0], dict) else {}
-    for campo, limite in (("numero_processo", 30), ("tribunal", 20), ("comarca", 100), ("vara", 100)):
+    # Número CNJ não é promovido por este atalho: sua validação e sincronização
+    # com a entidade processual pertencem ao fluxo canônico de Caso/Processo.
+    for campo, limite in (("tribunal", 20), ("comarca", 100), ("vara", 100)):
         bruto = ident.get(campo) or comp.get(campo)
         valor = bruto.strip() if isinstance(bruto, str) else None
         if valor and not getattr(case, campo, None):
@@ -1365,6 +1389,11 @@ def serializar_anexo(a: LegalChatAttachment) -> dict[str, Any]:
         "sha256": a.sha256,
         "tipo_documento": a.tipo_documento,
         "ocr_utilizado": a.ocr_utilizado,
+        # Derivado seguro para a UI: não expõe texto interno nem outro dado do
+        # documento, apenas informa que o contexto entregue à IA foi limitado.
+        "contexto_truncado": bool(
+            (a.resultado_analise or {}).get("_texto_sanitizado_truncado")
+        ),
         # Chaves `_`-prefixadas são internas por convenção do repo (o texto
         # sanitizado é retido só para virar Document.ocr_text na conversão) —
         # nunca saem na API, aqui como no caminho gêmeo de documentos.

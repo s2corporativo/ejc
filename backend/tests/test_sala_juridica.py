@@ -290,6 +290,7 @@ class _FakeDB:
         self.anexos = list(anexos)
         self.estado_atual = estado_atual
         self.added = []
+        self.executed = []
 
     def add(self, obj):
         self.added.append(obj)
@@ -309,6 +310,7 @@ class _FakeDB:
         return SimpleNamespace(id=pk, role="advogado", is_active=True)
 
     async def execute(self, stmt, params=None):
+        self.executed.append(stmt)
         from app.models.legal_chat import (
             LegalChatAttachment,
             LegalChatMessage,
@@ -382,7 +384,9 @@ async def test_enviar_mensagem_inclui_historico_e_anexos(monkeypatch):
     assert "IA: resposta anterior" in prompt
     assert "[DOCUMENTOS ANEXADOS]" in prompt
     assert "contrato.pdf" in prompt
-    assert "Banco X" in prompt
+    assert "Banco X" not in prompt
+    assert "Fulano" not in prompt
+    assert "[PARTE_" in prompt
     # A própria pergunta nova não entra duplicada no histórico.
     assert prompt.count("qual o próximo passo?") == 1
 
@@ -567,7 +571,9 @@ def test_nomes_partes_anexos_extrai_dedup_e_piso():
     from app.services.legal_chat_service import _nomes_partes_anexos
 
     anexos = [
-        SimpleNamespace(resultado_analise={"intake_result": {"partes": [
+        SimpleNamespace(resultado_analise={"intake_result": {
+            "cliente": {"nome": "Maria Cliente"},
+            "partes": [
             "Banco Alfa S/A",
             {"nome": "João da Silva"},
             {"valor": "Banco Alfa S/A"},   # duplicado (case-insensitive)
@@ -578,8 +584,34 @@ def test_nomes_partes_anexos_extrai_dedup_e_piso():
         SimpleNamespace(resultado_analise=None),
     ]
     assert _nomes_partes_anexos(anexos) == [
-        "Banco Alfa S/A", "João da Silva", "Construtora Beta",
+        "Maria Cliente", "Banco Alfa S/A", "João da Silva", "Construtora Beta",
     ]
+
+
+def test_prompt_de_anexo_mascara_nomes_em_sintese_e_texto():
+    from types import SimpleNamespace
+
+    from app.models.legal_chat import LegalChatSession
+    from app.schemas.legal_chat import MensagemCreate
+    from app.services.legal_chat_service import _montar_mensagem_ia
+
+    sessao = LegalChatSession(id="s-nomes", titulo="t", created_by="u1")
+    anexo = SimpleNamespace(
+        nome_original="peticao.pdf",
+        resultado_analise={
+            "intake_result": {
+                "cliente": {"nome": "Maria Cliente"},
+                "partes": [{"nome": "Banco Alfa S/A", "papel": "reu"}],
+            },
+            "_texto_sanitizado": "Maria Cliente ajuizou ação contra Banco Alfa S/A.",
+        },
+    )
+    prompt = _montar_mensagem_ia(
+        MensagemCreate(conteudo="Analise"), sessao, anexos=[anexo]
+    )
+    assert "Maria Cliente" not in prompt
+    assert "Banco Alfa S/A" not in prompt
+    assert "[PARTE_" in prompt
 
 
 @pytest.mark.anyio
@@ -784,11 +816,15 @@ def test_serializar_anexo_nao_ecoa_chaves_internas():
     anexo = LegalChatAttachment(
         id="a1", session_id="s1", nome_original="x.pdf", filepath="p",
         size_bytes=1, sha256="0" * 64, uploaded_by="u1",
-        resultado_analise={"tipo_documento": "contrato",
-                           "_texto_sanitizado": "conteúdo integral do documento"},
+        resultado_analise={
+            "tipo_documento": "contrato",
+            "_texto_sanitizado": "conteúdo integral do documento",
+            "_texto_sanitizado_truncado": True,
+        },
     )
     out = serializar_anexo(anexo)
     assert out["resultado_analise"] == {"tipo_documento": "contrato"}
+    assert out["contexto_truncado"] is True
     assert "_texto_sanitizado" not in str(out)
 
 
@@ -904,9 +940,11 @@ async def test_materializar_dossie_confirmado_aplica_somente_destinos_canonicos_
 
     out = await svc._materializar_dossie_confirmado(db, sessao, caso, _user())
 
-    assert out["campos_preenchidos"] == ["numero_processo", "tribunal", "comarca", "vara"]
+    assert out["campos_preenchidos"] == ["tribunal", "comarca", "vara"]
     assert out["partes_criadas"] == 1
-    assert caso.numero_processo == "0000000-00.0000.0.00.0000"
+    # O número CNJ fica no dossiê até passar pelo fluxo canônico de Caso/Processo.
+    assert caso.numero_processo is None
+    assert any("FOR UPDATE" in str(stmt).upper() for stmt in db.executed)
     partes = [obj for obj in db.added if isinstance(obj, CaseParte)]
     assert [(p.tipo, p.nome) for p in partes] == [("autor", "Autora Fictícia")]
     assert not any(isinstance(obj, Deadline) for obj in db.added)
