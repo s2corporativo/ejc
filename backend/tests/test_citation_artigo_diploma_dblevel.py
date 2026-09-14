@@ -289,7 +289,12 @@ async def test_legislacao_sem_vigencia_declarada_nao_confirma_a_citacao(monkeypa
                 "legislação com vigência não conferida NÃO pode receber selo "
                 "de citação verificada")
             assert estrita["encontrada"] is False
-            assert estrita["fonte_chave_origem"] is None
+            # O texto atual pode ser identificado sem receber selo verde: a
+            # fonte fica rastreável, mas o gate jurídico continua fail-closed.
+            assert estrita["vigencia_pendente"] is True
+            assert estrita["fonte_chave_origem"] == "planalto:cpc"
+            assert estrita["fonte_doc_id"] == id_cpc
+            assert estrita["fonte_vigente"] is True
 
             monkeypatch.setattr(
                 ai_service.settings, "RAG_EXIGIR_VIGENCIA_VERIFICADA", False)
@@ -420,5 +425,70 @@ async def test_diploma_vigente_sem_data_verificacao_nao_e_recuperado_pelo_gate_e
             assert citacao["status"] != "verificada", (
                 "diploma sem data de verificação passou pelo gate estrito")
             assert citacao["encontrada"] is False
+        finally:
+            await _limpar(db, ids)
+
+
+async def test_texto_atual_com_vigencia_pendente_nao_e_rotulado_como_superado():
+    """A versão atual pode estar presente e aprovada, mas ainda sem curadoria de
+    vigência. O gate continua negando selo ``verificada``; o diagnóstico, porém,
+    não pode mentir dizendo que o artigo existe APENAS em versão histórica.
+    """
+    from app.core.database import AsyncSessionLocal
+
+    ids: list[str] = []
+    async with AsyncSessionLocal() as db:
+        try:
+            atual = await _inserir_diploma(
+                db,
+                chave="planalto:cdc",
+                titulo="Código de Defesa do Consumidor (Lei 8.078/1990)",
+                conteudo="Art. 26. Texto atual ingerido, vigência ainda pendente.",
+                vigente=True,
+                versao=3,
+                legal_status="vigencia_nao_verificada",
+                legal_status_verificado_em=None,
+            )
+            ids.append(atual)
+            # Reproduz o carimbo fail-closed do ingestor Planalto.
+            await db.execute(
+                text(
+                    "UPDATE knowledge_docs SET extra = extra || "
+                    "CAST(:extra AS jsonb) WHERE id = :id"
+                ),
+                {
+                    "id": atual,
+                    "extra": json.dumps({
+                        "legal_status_origem": "planalto:texto_compilado",
+                        "legal_status_inferido_em": "2026-09-13T03:00:00Z",
+                    }),
+                },
+            )
+            ids.append(
+                await _inserir_diploma(
+                    db,
+                    chave="planalto:cdc",
+                    titulo="Código de Defesa do Consumidor (Lei 8.078/1990)",
+                    conteudo="Art. 26. Redação histórica do dispositivo.",
+                    vigente=False,
+                    versao=2,
+                    legal_status=None,
+                )
+            )
+            await db.commit()
+
+            citacao = await _verificar(
+                db,
+                "Prazo previsto no art. 26 do CDC.",
+            )
+
+            assert citacao["status"] == "identificada"
+            assert citacao["encontrada"] is False
+            assert citacao["vigencia_pendente"] is True
+            assert citacao["fonte_doc_id"] == atual
+            assert citacao["fonte_vigente"] is True
+            assert citacao["fonte_chave_origem"] == "planalto:cdc"
+            assert "versão atual" in citacao["aviso"]
+            assert "SUPERADA" not in citacao["aviso"]
         finally:
             await _limpar(db, ids)
