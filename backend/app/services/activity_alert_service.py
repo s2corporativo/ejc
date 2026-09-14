@@ -2,24 +2,53 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import select, text
+from sqlalchemy import (
+    Date,
+    DateTime,
+    String,
+    and_,
+    cast,
+    column,
+    exists,
+    func,
+    or_,
+    select,
+    table,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ownership import is_gestao
 from app.models.activity_alert import ActivityAlertState
 from app.models.audit_log import criar_audit_log
-from app.models.case import Case
+from app.models.case import Case, CaseMovimento
+from app.models.document import Document
 from app.models.user import User
 
 SOURCE_TYPES = {"prazo", "tarefa", "intimacao", "movimentacao"}
 ACK_STATES = {"visualizado", "tratado"}
 _FINAL_STATUSES = {"concluido", "concluida", "tratada", "cancelado", "cancelada"}
 _LEVEL_RANK = {"critico": 0, "alto": 1, "atencao": 2, "info": 3, "normal": 4}
+
+# VIEW sem model ORM próprio. ``table()/column()`` permite consultar a view com
+# SQLAlchemy Core parametrizado, sem SQL textual/f-string.
+VW_ATIVIDADES = table(
+    "vw_atividades",
+    column("id", String),
+    column("tipo", String),
+    column("titulo", String),
+    column("descricao", String),
+    column("data", DateTime(timezone=True)),
+    column("status", String),
+    column("case_id", String),
+    column("responsavel_id", String),
+    column("prioridade", String),
+    column("subtipo", String),
+)
 
 
 def _role_value(user: User) -> str:
@@ -50,7 +79,7 @@ def _case_scope_sql(user: User) -> str:
 
 
 def _document_scope_sql(user: User) -> str:
-    """Documento de caso segue ownership; documento avulso segue o uploader."""
+    """Representação legada do escopo, mantida apenas para testes de contrato."""
     if is_gestao(user):
         return ""
     return """ AND (
@@ -61,6 +90,52 @@ def _document_scope_sql(user: User) -> str:
             AND (cc.advogado_responsavel_id = :uid OR cc.advogado_auxiliar_id = :uid)
         )
     )"""
+
+
+def _activity_scope_clause(user: User):
+    if is_gestao(user):
+        return None
+    v = VW_ATIVIDADES.c
+    return or_(
+        and_(v.case_id.is_(None), v.responsavel_id == user.id),
+        exists(
+            select(1).select_from(Case).where(
+                Case.id == v.case_id,
+                Case.deleted_at.is_(None),
+                or_(
+                    Case.advogado_responsavel_id == user.id,
+                    Case.advogado_auxiliar_id == user.id,
+                ),
+            )
+        ),
+    )
+
+
+def _case_scope_clause(user: User):
+    if is_gestao(user):
+        return None
+    return or_(
+        Case.advogado_responsavel_id == user.id,
+        Case.advogado_auxiliar_id == user.id,
+    )
+
+
+def _document_scope_clause(user: User):
+    if is_gestao(user):
+        return None
+    return or_(
+        and_(Document.case_id.is_(None), Document.uploaded_by == user.id),
+        exists(
+            select(1).select_from(Case).where(
+                Case.id == Document.case_id,
+                Case.deleted_at.is_(None),
+                or_(
+                    Case.advogado_responsavel_id == user.id,
+                    Case.advogado_auxiliar_id == user.id,
+                ),
+            )
+        ),
+    )
 
 
 def nivel_alerta(
@@ -164,74 +239,99 @@ async def listar_alertas_inteligentes(
     limit_per_type: int = 5,
 ) -> dict[str, Any]:
     """Retorna apenas alertas acionáveis da carteira permitida ao usuário."""
-    params: dict[str, Any] = {"uid": user.id}
-    scope = _activity_scope_sql(user)
-
-    # Somente itens que podem demandar atenção imediata entram neste cockpit.
-    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-    atividades = (
-        await db.execute(
-            text(
-                f"""
-                SELECT v.id, v.tipo, v.titulo, v.descricao, v.data, v.status,
-                       v.case_id, v.responsavel_id, v.prioridade, v.subtipo,
-                       c.titulo AS caso_titulo, u.full_name AS responsavel_nome,
-                       (v.data::date - CURRENT_DATE) AS dias_restantes,
-                       s.estado AS estado_alerta, s.source_fingerprint
-                FROM vw_atividades v
-                LEFT JOIN cases c ON c.id = v.case_id
-                LEFT JOIN users u ON u.id = v.responsavel_id
-                LEFT JOIN activity_alert_states s
-                  ON s.user_id = :uid AND s.source_type = v.tipo AND s.source_id = v.id
-                WHERE v.tipo IN ('prazo','tarefa','intimacao')
-                  AND COALESCE(v.status,'') NOT IN ('concluido','concluida','tratada','cancelado','cancelada')
-                  AND (
-                    (v.tipo = 'prazo' AND v.data::date <= CURRENT_DATE + 3)
-                    OR (v.tipo = 'tarefa' AND (
-                        v.data::date <= CURRENT_DATE
-                        OR COALESCE(v.prioridade,'') IN ('alta','critica')
-                    ))
-                    OR v.tipo = 'intimacao'
-                  )
-                  {scope}
-                ORDER BY v.data ASC NULLS LAST
-                """
-            ),
-            params,
+    v = VW_ATIVIDADES.c
+    stmt_atividades = (
+        select(
+            v.id,
+            v.tipo,
+            v.titulo,
+            v.descricao,
+            v.data,
+            v.status,
+            v.case_id,
+            v.responsavel_id,
+            v.prioridade,
+            v.subtipo,
+            Case.titulo.label("caso_titulo"),
+            User.full_name.label("responsavel_nome"),
+            (cast(v.data, Date) - func.current_date()).label("dias_restantes"),
+            ActivityAlertState.estado.label("estado_alerta"),
+            ActivityAlertState.source_fingerprint,
         )
-    ).mappings().all()
-
-    mov_scope = _case_scope_sql(user)
-    # Movimentações antigas não podem nascer como alerta retroativo infinito.
-    # O cockpit considera a janela recente de sete dias; o histórico completo
-    # continua disponível na timeline do caso.
-    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-    movimentos = (
-        await db.execute(
-            text(
-                f"""
-                SELECT m.id, m.case_id, m.tipo AS tipo_movimento,
-                       COALESCE(NULLIF(m.resumo_ia,''), m.descricao) AS descricao,
-                       COALESCE(m.data_evento, m.created_at) AS data,
-                       c.titulo AS caso_titulo,
-                       c.advogado_responsavel_id AS responsavel_id,
-                       u.full_name AS responsavel_nome,
-                       s.estado AS estado_alerta, s.source_fingerprint
-                FROM case_movimentos m
-                JOIN cases c ON c.id = m.case_id
-                LEFT JOIN users u ON u.id = c.advogado_responsavel_id
-                LEFT JOIN activity_alert_states s
-                  ON s.user_id = :uid AND s.source_type = 'movimentacao' AND s.source_id = m.id
-                WHERE c.deleted_at IS NULL
-                  AND COALESCE(m.created_at, m.data_evento) >= NOW() - INTERVAL '7 days'
-                  {mov_scope}
-                ORDER BY COALESCE(m.data_evento, m.created_at) DESC
-                LIMIT 100
-                """
+        .select_from(VW_ATIVIDADES)
+        .outerjoin(Case, Case.id == v.case_id)
+        .outerjoin(User, User.id == v.responsavel_id)
+        .outerjoin(
+            ActivityAlertState,
+            and_(
+                ActivityAlertState.user_id == user.id,
+                ActivityAlertState.source_type == v.tipo,
+                ActivityAlertState.source_id == v.id,
             ),
-            params,
         )
-    ).mappings().all()
+        .where(
+            v.tipo.in_(("prazo", "tarefa", "intimacao")),
+            func.coalesce(v.status, "").notin_(_FINAL_STATUSES),
+            or_(
+                and_(v.tipo == "prazo", cast(v.data, Date) <= func.current_date() + 3),
+                and_(
+                    v.tipo == "tarefa",
+                    or_(
+                        cast(v.data, Date) <= func.current_date(),
+                        func.coalesce(v.prioridade, "").in_(("alta", "critica")),
+                    ),
+                ),
+                v.tipo == "intimacao",
+            ),
+        )
+        .order_by(v.data.asc().nullslast())
+    )
+    activity_scope = _activity_scope_clause(user)
+    if activity_scope is not None:
+        stmt_atividades = stmt_atividades.where(activity_scope)
+    atividades = (await db.execute(stmt_atividades)).mappings().all()
+
+    stmt_movimentos = (
+        select(
+            CaseMovimento.id,
+            CaseMovimento.case_id,
+            CaseMovimento.tipo.label("tipo_movimento"),
+            func.coalesce(
+                func.nullif(CaseMovimento.resumo_ia, ""),
+                CaseMovimento.descricao,
+            ).label("descricao"),
+            func.coalesce(CaseMovimento.data_evento, CaseMovimento.created_at).label("data"),
+            Case.titulo.label("caso_titulo"),
+            Case.advogado_responsavel_id.label("responsavel_id"),
+            User.full_name.label("responsavel_nome"),
+            ActivityAlertState.estado.label("estado_alerta"),
+            ActivityAlertState.source_fingerprint,
+        )
+        .select_from(CaseMovimento)
+        .join(Case, Case.id == CaseMovimento.case_id)
+        .outerjoin(User, User.id == Case.advogado_responsavel_id)
+        .outerjoin(
+            ActivityAlertState,
+            and_(
+                ActivityAlertState.user_id == user.id,
+                ActivityAlertState.source_type == "movimentacao",
+                ActivityAlertState.source_id == CaseMovimento.id,
+            ),
+        )
+        .where(
+            Case.deleted_at.is_(None),
+            func.coalesce(CaseMovimento.created_at, CaseMovimento.data_evento)
+            >= func.now() - timedelta(days=7),
+        )
+        .order_by(
+            func.coalesce(CaseMovimento.data_evento, CaseMovimento.created_at).desc()
+        )
+        .limit(100)
+    )
+    case_scope = _case_scope_clause(user)
+    if case_scope is not None:
+        stmt_movimentos = stmt_movimentos.where(case_scope)
+    movimentos = (await db.execute(stmt_movimentos)).mappings().all()
 
     por_tipo: dict[str, list[dict[str, Any]]] = {tipo: [] for tipo in SOURCE_TYPES}
     for row in atividades:
@@ -271,25 +371,31 @@ async def listar_alertas_inteligentes(
 async def _validar_fonte_acessivel(
     db: AsyncSession, user: User, source_type: str, source_id: str
 ) -> tuple[dict[str, Any], str]:
-    params = {"uid": user.id, "sid": source_id, "tipo": source_type}
     if source_type == "movimentacao":
-        scope = _case_scope_sql(user)
-        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-        row = (
-            await db.execute(
-                text(
-                    f"""SELECT m.id, m.case_id, m.tipo AS tipo_movimento,
-                               COALESCE(NULLIF(m.resumo_ia,''), m.descricao) AS descricao,
-                               COALESCE(m.data_evento, m.created_at) AS data,
-                               c.titulo AS caso_titulo
-                        FROM case_movimentos m
-                        JOIN cases c ON c.id = m.case_id
-                        WHERE m.id = :sid AND c.deleted_at IS NULL {scope}
-                        LIMIT 1"""
-                ),
-                params,
+        stmt = (
+            select(
+                CaseMovimento.id,
+                CaseMovimento.case_id,
+                CaseMovimento.tipo.label("tipo_movimento"),
+                func.coalesce(
+                    func.nullif(CaseMovimento.resumo_ia, ""),
+                    CaseMovimento.descricao,
+                ).label("descricao"),
+                func.coalesce(CaseMovimento.data_evento, CaseMovimento.created_at).label("data"),
+                Case.titulo.label("caso_titulo"),
             )
-        ).mappings().first()
+            .select_from(CaseMovimento)
+            .join(Case, Case.id == CaseMovimento.case_id)
+            .where(
+                CaseMovimento.id == source_id,
+                Case.deleted_at.is_(None),
+            )
+            .limit(1)
+        )
+        scope = _case_scope_clause(user)
+        if scope is not None:
+            stmt = stmt.where(scope)
+        row = (await db.execute(stmt)).mappings().first()
         if row:
             data = dict(row)
             data["titulo"] = f"Movimentação: {data.get('caso_titulo') or 'caso'}"
@@ -297,20 +403,27 @@ async def _validar_fonte_acessivel(
         else:
             data = {}
     else:
-        scope = _activity_scope_sql(user)
-        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-        row = (
-            await db.execute(
-                text(
-                    f"""SELECT v.id, v.tipo, v.titulo, v.descricao, v.data, v.status,
-                               v.case_id, v.prioridade, v.subtipo
-                        FROM vw_atividades v
-                        WHERE v.id = :sid AND v.tipo = :tipo {scope}
-                        LIMIT 1"""
-                ),
-                params,
+        v = VW_ATIVIDADES.c
+        stmt = (
+            select(
+                v.id,
+                v.tipo,
+                v.titulo,
+                v.descricao,
+                v.data,
+                v.status,
+                v.case_id,
+                v.prioridade,
+                v.subtipo,
             )
-        ).mappings().first()
+            .select_from(VW_ATIVIDADES)
+            .where(v.id == source_id, v.tipo == source_type)
+            .limit(1)
+        )
+        scope = _activity_scope_clause(user)
+        if scope is not None:
+            stmt = stmt.where(scope)
+        row = (await db.execute(stmt)).mappings().first()
         data = dict(row) if row else {}
     if not data:
         raise HTTPException(status_code=404, detail="Alerta não encontrado")
@@ -396,48 +509,54 @@ async def marcar_estado_alerta(
 async def montar_contexto_operacional_ejc(db: AsyncSession, user: User) -> str:
     """Contexto mínimo, autorizado e bounded para o modo Contexto EJC."""
     alertas = await listar_alertas_inteligentes(db, user, limit_per_type=5)
-    params: dict[str, Any] = {"uid": user.id}
-    case_scope = _case_scope_sql(user)
-    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-    casos = (
-        await db.execute(
-            text(
-                f"""
-                SELECT c.id, c.titulo, c.status::text AS status, c.prioridade::text AS prioridade,
-                       c.proxima_acao, c.proxima_acao_prazo
-                FROM cases c
-                WHERE c.deleted_at IS NULL
-                  AND c.status::text NOT IN ('encerrado','arquivado')
-                  AND (c.proxima_acao IS NULL OR BTRIM(c.proxima_acao) = ''
-                       OR c.proxima_acao_prazo::date <= CURRENT_DATE + 3)
-                  {case_scope}
-                ORDER BY c.proxima_acao_prazo ASC NULLS FIRST, c.created_at DESC
-                LIMIT 15
-                """
-            ),
-            params,
+    stmt_casos = (
+        select(
+            Case.id,
+            Case.titulo,
+            cast(Case.status, String).label("status"),
+            cast(Case.prioridade, String).label("prioridade"),
+            Case.proxima_acao,
+            Case.proxima_acao_prazo,
         )
-    ).mappings().all()
+        .where(
+            Case.deleted_at.is_(None),
+            cast(Case.status, String).notin_(("encerrado", "arquivado")),
+            or_(
+                Case.proxima_acao.is_(None),
+                func.btrim(Case.proxima_acao) == "",
+                cast(Case.proxima_acao_prazo, Date) <= func.current_date() + 3,
+            ),
+        )
+        .order_by(Case.proxima_acao_prazo.asc().nullsfirst(), Case.created_at.desc())
+        .limit(15)
+    )
+    case_scope = _case_scope_clause(user)
+    if case_scope is not None:
+        stmt_casos = stmt_casos.where(case_scope)
+    casos = (await db.execute(stmt_casos)).mappings().all()
 
-    doc_scope = _document_scope_sql(user)
-    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-    docs = (
-        await db.execute(
-            text(
-                f"""
-                SELECT d.id, d.titulo, d.tipo, d.case_id, d.created_at, c.titulo AS caso_titulo
-                FROM documents d
-                LEFT JOIN cases c ON c.id = d.case_id
-                WHERE d.deleted_at IS NULL
-                  AND d.created_at >= NOW() - INTERVAL '7 days'
-                  {doc_scope}
-                ORDER BY d.created_at DESC
-                LIMIT 10
-                """
-            ),
-            params,
+    stmt_docs = (
+        select(
+            Document.id,
+            Document.titulo,
+            Document.tipo,
+            Document.case_id,
+            Document.created_at,
+            Case.titulo.label("caso_titulo"),
         )
-    ).mappings().all()
+        .select_from(Document)
+        .outerjoin(Case, Case.id == Document.case_id)
+        .where(
+            Document.deleted_at.is_(None),
+            Document.created_at >= func.now() - timedelta(days=7),
+        )
+        .order_by(Document.created_at.desc())
+        .limit(10)
+    )
+    doc_scope = _document_scope_clause(user)
+    if doc_scope is not None:
+        stmt_docs = stmt_docs.where(doc_scope)
+    docs = (await db.execute(stmt_docs)).mappings().all()
 
     casos_lista = [dict(r) for r in casos]
     docs_lista = [dict(r) for r in docs]
