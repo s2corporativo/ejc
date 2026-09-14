@@ -42,6 +42,20 @@ steps:
       # Gate completo obrigatório, agora com DB-level habilitado.
       - pytest tests -q
 
+  # O SDK de agentes é ferramenta operacional isolada e tem dependências próprias.
+  # Este gate só consome recursos quando a própria camada (ou este workflow) muda.
+  agents-contracts:
+    image: python:3.11-bookworm
+    commands:
+      - pip install --quiet -r ops/agents/requirements.txt
+      - python -m compileall ops/agents -q
+      - python -m unittest discover -s ops/agents/tests -v
+    when:
+      - event: manual
+      - path:
+          include: ['ops/agents/**', '.woodpecker.yml']
+          on_empty: false
+
   frontend:
     image: node:22
     commands:
