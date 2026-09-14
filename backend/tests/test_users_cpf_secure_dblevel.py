@@ -145,7 +145,7 @@ async def test_downgrade_159_falha_fechado_e_preserva_revision_schema_e_dado():
     async with AsyncSessionLocal() as db:
         try:
             revision = (await db.execute(text("SELECT version_num FROM alembic_version"))).scalar_one()
-            assert revision == "159_user_cpf_secure"
+            assert revision == "160_activity_alert_states"
             cols = set((await db.execute(text(
                 "SELECT column_name FROM information_schema.columns "
                 "WHERE table_name='users' AND column_name IN ('cpf_enc','cpf_hash')"

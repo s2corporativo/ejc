@@ -1,7 +1,7 @@
 """Executa o Legal Bench determinístico sobre respostas estruturadas.
 
 Exemplo:
-    python -m scripts.legal_bench --cases app/eval/legal_bench.synthetic.jsonl \
+    python -m scripts.legal_bench --cases app/eval/benchmarks/legal_bench.synthetic.jsonl \
         --answers /tmp/respostas.jsonl
 
 O comando não chama LLM. Ele pontua artefatos já produzidos e pode ser usado para

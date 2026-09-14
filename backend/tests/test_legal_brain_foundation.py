@@ -47,7 +47,7 @@ def test_saneamento_inicial_nao_dispara_pesquisa_de_precedentes():
 
 def test_issue_engine_usa_fronteira_de_palavra_e_nao_substring():
     issues = identify_legal_issues(
-        "O escritório recebeu aprovação interna do documento.",
+        "O escritório recebeu aprovação interna do texto.",
         area="civil",
     )
     keys = {issue.key for issue in issues}
