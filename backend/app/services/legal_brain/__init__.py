@@ -7,12 +7,13 @@ pelo ``SingleAICoreOrchestrator`` e pelos módulos canônicos já existentes.
 Princípios:
 - fato, alegação, inferência e validação humana são estados distintos;
 - referência jurídica é por ID/proveniência, nunca por cópia silenciosa;
-- ausência de evidência gera lacuna, não conclusão;
+- ausência de evidência gera lacuna, nunca conclusão;
 - pesquisa tem critérios objetivos de parada;
 - validade de precedente é proposicional e baseada em relações explícitas.
 """
 
 from .brain import build_legal_brain_plan
+from .case_state_bridge import CaseStateBridgeResult, bridge_legal_chat_state
 from .contracts import (
     EvidenceState,
     LegalBrainPlan,
@@ -34,6 +35,7 @@ from .skill_contracts import (
 
 __all__ = [
     "CaseAssertion",
+    "CaseStateBridgeResult",
     "EvidenceState",
     "LegalBrainPlan",
     "LegalIssue",
@@ -42,6 +44,7 @@ __all__ = [
     "PrecedentPropositionStatus",
     "ResearchPlan",
     "SkillStatus",
+    "bridge_legal_chat_state",
     "build_legal_brain_plan",
     "build_research_plan",
     "evaluate_proposition_validity",
