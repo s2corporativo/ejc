@@ -42,24 +42,22 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_HOURS: int = 2
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    # ── 2FA (TOTP) — enforcement organizacional por papel ─────────────────
-    # CSV de papéis (UserRole: superadmin, admin, socio, advogado,
-    # advogado_auxiliar, financeiro, estagiario, secretaria, cliente_externo)
-    # que DEVEM usar 2FA (TOTP). Default inclui a GESTÃO e os ADVOGADOS
-    # (superadmin,admin,socio,advogado,advogado_auxiliar): quem pratica atos
-    # jurídicos e acessa dados sensíveis de casos/clientes é obrigado a 2FA.
-    # Enforcement SEM lockout (ver abaixo) — endurecer o default não tranca
-    # ninguém; só passa a orientar a configuração e a impedir a auto-desproteção.
-    # Quando um papel está listado (comparação case-insensitive):
+    # ── 2FA (TOTP) — recurso opcional; enforcement por papel é opt-in ─────
+    # Decisão do titular consolidada em 05/08/2026 e revalidada na #1580:
+    # 2FA NÃO é obrigatório por papel. O feature gate global nasce desligado
+    # (TWO_FACTOR_AUTH_ENABLED=false, lido por two_factor_policy.py) e esta
+    # allowlist nasce vazia. Se, no futuro, o titular decidir impor 2FA a algum
+    # papel, a ativação deve ser explícita no ambiente e homologada por H01.
+    # Quando um papel é explicitamente listado (comparação case-insensitive):
     #   (a) /auth/login sinaliza `precisa_configurar_2fa=true` no payload
     #       enquanto o usuário desse papel ainda não tiver TOTP ativo — para o
     #       frontend orientar a configuração. NÃO bloqueia o login (enforcement
     #       SEM lockout: não há coluna/migration nova e não se tranca ninguém);
     #   (b) POST /auth/totp/desativar RECUSA (403) desativar o 2FA de um usuário
     #       cujo papel é obrigado — ele não pode se auto-desproteger.
-    # Override por ambiente (definir no .env, NÃO versionado), ex. só gestão:
+    # Override por ambiente (definir no .env), somente após decisão explícita:
     #   REQUIRE_2FA_ROLES=superadmin,admin,socio
-    REQUIRE_2FA_ROLES: str = "superadmin,admin,socio,advogado,advogado_auxiliar"
+    REQUIRE_2FA_ROLES: str = ""
     TWO_FACTOR_SETUP_TOKEN_EXPIRE_MINUTES: int = 15
 
     @property
