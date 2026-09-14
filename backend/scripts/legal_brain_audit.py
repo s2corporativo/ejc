@@ -21,6 +21,8 @@ from app.services.legal_brain.skill_contracts import native_legal_skill_contract
 
 
 async def collect() -> dict[str, Any]:
+    """Coleta health canônico e cobertura de skills sem alterar estado."""
+
     async with AsyncSessionLocal() as db:
         health = await health_snapshot(db)
     coverage = native_skill_coverage()
@@ -38,6 +40,8 @@ async def collect() -> dict[str, Any]:
 
 
 def _print_human(report: dict[str, Any]) -> None:
+    """Imprime apenas indicadores agregados, sem conteúdo jurídico ou PII."""
+
     skill = report["native_skill_coverage"]
     contracts = report["legal_skill_contracts"]
     print("EJC LEGAL BRAIN — AUDITORIA SOMENTE LEITURA")
@@ -50,6 +54,8 @@ def _print_human(report: dict[str, Any]) -> None:
 
 
 async def _main() -> None:
+    """Resolve argumentos e entrega relatório humano ou JSON."""
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--json", action="store_true", help="imprime JSON completo")
     args = parser.parse_args()
