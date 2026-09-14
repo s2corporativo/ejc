@@ -16,6 +16,7 @@ class LegalBenchCase:
     allowed_fact_ids: tuple[str, ...] = ()
     requires_adverse_research: bool = True
     has_missing_evidence: bool = False
+    source_scoring_enabled: bool = True
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "LegalBenchCase":
@@ -28,6 +29,7 @@ class LegalBenchCase:
             allowed_fact_ids=tuple(str(v) for v in raw.get("allowed_fact_ids", [])),
             requires_adverse_research=bool(raw.get("requires_adverse_research", True)),
             has_missing_evidence=bool(raw.get("has_missing_evidence", False)),
+            source_scoring_enabled=bool(raw.get("source_scoring_enabled", True)),
         )
 
 
@@ -86,9 +88,9 @@ def score_structured_answer(
 
     Contrato esperado da resposta avaliada:
     ``issue_keys``, ``source_ids``, ``fact_ids``, ``adverse_research_done`` e
-    ``conclusion_status``. Métricas semânticas/qualitativas podem ser adicionadas
-    por uma camada humana ou juiz separado, mas este baseline permanece
-    reproduzível e barato.
+    ``conclusion_status``. Casos puramente estruturais podem desabilitar o score
+    de fontes; gabarito jurídico só deve ser habilitado depois de curadoria de
+    fontes oficiais.
     """
 
     issue_keys = {str(v) for v in answer.get("issue_keys", [])}
@@ -99,7 +101,11 @@ def score_structured_answer(
     allowed_facts = set(case.allowed_fact_ids)
 
     issue_recall = _ratio(expected_issues, issue_keys)
-    source_precision = _precision(expected_sources, source_ids)
+    source_precision = (
+        _precision(expected_sources, source_ids)
+        if case.source_scoring_enabled
+        else 1.0
+    )
 
     if not fact_ids:
         fact_grounding = 1.0
