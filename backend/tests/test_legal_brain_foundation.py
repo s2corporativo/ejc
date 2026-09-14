@@ -1,11 +1,16 @@
+import pytest
+
 from app.eval.legal_bench import LegalBenchCase, score_structured_answer, summarize
 from app.services.legal_brain import (
+    CaseAssertion,
+    EvidenceState,
     PrecedentPropositionStatus,
     build_legal_brain_plan,
     build_research_plan,
     evaluate_proposition_validity,
     evaluate_research_coverage,
     identify_legal_issues,
+    transition_assertion,
 )
 
 
@@ -78,6 +83,40 @@ def test_precedent_validity_prioriza_superacao_explicita():
     assert result.status == PrecedentPropositionStatus.SUPERADA
     assert result.decisive_relation == "overruled_by"
     assert "src-superacao" in result.related_source_ids
+
+
+def test_inferencia_ia_nao_vira_fato_confirmado_diretamente():
+    assertion = CaseAssertion(
+        id="fato-1",
+        text="Hipótese produzida pela IA",
+        state=EvidenceState.INFERENCIA_IA,
+    )
+    with pytest.raises(ValueError, match="transição probatória inválida"):
+        transition_assertion(
+            assertion,
+            EvidenceState.CONFIRMADO,
+            reviewer_user_id="adv-1",
+            reviewed_at="2026-09-13T20:00:00-03:00",
+        )
+
+
+def test_validacao_humana_exige_identidade_e_data():
+    assertion = CaseAssertion(
+        id="fato-1",
+        text="Hipótese produzida pela IA",
+        state=EvidenceState.INFERENCIA_IA,
+    )
+    with pytest.raises(ValueError, match="revisor autenticado"):
+        transition_assertion(assertion, EvidenceState.VALIDADO_ADVOGADO)
+
+    reviewed = transition_assertion(
+        assertion,
+        EvidenceState.VALIDADO_ADVOGADO,
+        reviewer_user_id="adv-1",
+        reviewed_at="2026-09-13T20:00:00-03:00",
+    )
+    assert reviewed.state == EvidenceState.VALIDADO_ADVOGADO
+    assert reviewed.validated_by_user_id == "adv-1"
 
 
 def test_legal_brain_reutiliza_catalogo_nativo_sem_segundo_gateway():
