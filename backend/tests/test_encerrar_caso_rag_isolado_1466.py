@@ -137,12 +137,15 @@ async def test_encerramento_sobrevive_a_falha_do_rag(db, fakes, monkeypatch):
     assert resp["memoria_institucional"]["aprendizado_assincrono"] == "enfileirado"
     await db.refresh(caso)
     assert caso.status == CaseStatus.encerrado
-    assert any(
-        call["acao"] == "UPDATE"
+    auditoria = next(
+        call
+        for call in fakes
+        if call["acao"] == "UPDATE"
         and call["entidade"] == "cases"
         and call["registro_id"] == caso.id
-        for call in fakes
     )
+    assert auditoria["dados_depois"]["rag_solicitado"] is True
+    assert auditoria["dados_depois"]["precedente_rag"] == "falha_acessoria"
 
 
 @pytest.mark.asyncio

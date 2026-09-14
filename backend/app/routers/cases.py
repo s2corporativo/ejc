@@ -1197,6 +1197,10 @@ async def encerrar_caso(
             "bloqueios_justificados": [b["codigo"] for b in diag["bloqueios"]],
             "alertas_confirmados": [a["codigo"] for a in diag["alertas"]],
             "justificativa_bloqueio": justificativa if justificativa_valida else None,
+            # Resultado operacional, sem conteúdo jurídico/PII: permite
+            # reconciliar fechamentos cujo precedente acessório falhou.
+            "rag_solicitado": bool(payload.alimentar_rag),
+            "precedente_rag": precedente_rag_status,
         },
     )
     await db.commit()
