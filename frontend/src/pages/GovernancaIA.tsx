@@ -95,7 +95,7 @@ export default function GovernancaIA() {
   const [revisao, setRevisao] = useState<{
     docId: string;
     decisao: DecisaoRevisao;
-    confidence: "alta" | "media";
+    confidence?: "alta" | "media" | "baixa";
   } | null>(null);
 
   const load = async () => {
@@ -137,28 +137,6 @@ export default function GovernancaIA() {
   useEffect(() => {
     load();
   }, []);
-
-  // PATCH legado: só ajusta confiança/status de "baixa"/"bloqueado" — aprovar
-  // para o RAG passa pelo diálogo de revisão (C9).
-  const atualizarCuradoria = async (
-    doc: any,
-    confidence_level: string,
-    rag_status = "aprovado",
-  ) => {
-    setSalvando(doc.id);
-    try {
-      await api.patch(`/ia-governanca/rag-curadoria/${doc.id}`, {
-        confidence_level,
-        rag_status,
-      });
-      toast.success("Curadoria atualizada");
-      await load();
-    } catch (e) {
-      toast.error(mensagemErroHttp(e, "Falha ao atualizar a curadoria"));
-    } finally {
-      setSalvando(null);
-    }
-  };
 
   const extrairUrlJurisprudencia = async () => {
     if (!urlImportacao) return;
@@ -456,7 +434,11 @@ export default function GovernancaIA() {
                         className="btn-ghost px-2 py-1 text-xs text-warn-700"
                         disabled={salvando === d.id}
                         onClick={() =>
-                          atualizarCuradoria(d, "baixa", "pendente")
+                          setRevisao({
+                            docId: d.id,
+                            decisao: "rejeitar",
+                            confidence: "baixa",
+                          })
                         }
                       >
                         Baixa
@@ -465,7 +447,10 @@ export default function GovernancaIA() {
                         className="btn-ghost px-2 py-1 text-xs text-danger-700"
                         disabled={salvando === d.id}
                         onClick={() =>
-                          atualizarCuradoria(d, "bloqueado", "recusado")
+                          setRevisao({
+                            docId: d.id,
+                            decisao: "rejeitar",
+                          })
                         }
                       >
                         Bloquear
