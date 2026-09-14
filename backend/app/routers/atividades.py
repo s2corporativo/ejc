@@ -8,6 +8,8 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.ownership import is_gestao
 from app.models.user import User
+from app.schemas.activity_alert import ActivityAlertStateUpdate
+from app.services.activity_alert_service import listar_alertas_inteligentes, marcar_estado_alerta
 
 router = APIRouter(prefix="/atividades", tags=["Central de Atividades"])
 
@@ -82,3 +84,27 @@ async def listar_atividades(
             "dias_restantes": di, "urgencia": urg(di),
         })
     return {"data": data}
+
+
+@router.get("/alertas-inteligentes")
+async def alertas_inteligentes(
+    limit_per_type: int = Query(5, ge=1, le=10),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    return await listar_alertas_inteligentes(
+        db, cu, limit_per_type=limit_per_type
+    )
+
+
+@router.patch("/alertas/{source_type}/{source_id}")
+async def atualizar_estado_alerta(
+    source_type: str,
+    source_id: str,
+    payload: ActivityAlertStateUpdate,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    return await marcar_estado_alerta(
+        db, cu, source_type, source_id, payload.estado
+    )
