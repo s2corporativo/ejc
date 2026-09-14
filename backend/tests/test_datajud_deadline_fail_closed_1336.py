@@ -14,7 +14,7 @@ from fastapi import HTTPException
 
 from app.models.case import Case
 from app.routers import datajud as router_datajud
-from app.services import datajud_cognitive_patch
+from app.services import datajud_cognitive_patch, datajud_service
 
 
 class _Resultado:
@@ -105,6 +105,31 @@ async def test_sync_prazos_preserva_ownership_e_falha_com_409(monkeypatch):
     acesso.assert_awaited_once_with(db, ANY, "case-1")
     sync_prazos.assert_not_awaited()
     db.commit.assert_not_awaited()
+
+
+def test_detector_na_fonte_e_fail_closed_sem_startup():
+    """Import isolado do serviço não calcula prazos a partir do movimento."""
+    assert datajud_service._detectar_prazos_criticos(
+        "Sentença publicada", object()
+    ) == []
+
+
+@pytest.mark.asyncio
+async def test_writer_na_fonte_e_noop_sem_startup_ou_db(caplog):
+    """Writer original permanece inerte mesmo sem instalar o patch cognitivo."""
+    marcador = "NUMERO-PROCESSO-NAO-DEVE-APARECER"
+
+    with caplog.at_level("WARNING", logger="ejc.datajud"):
+        resultado = await datajud_service._criar_deadline_automatico(
+            object(),
+            object(),
+            {"titulo": "prazo sintético"},
+            marcador,
+        )
+
+    assert resultado is None
+    assert marcador not in caplog.text
+    assert "revisão humana" in caplog.text
 
 
 @pytest.mark.asyncio
