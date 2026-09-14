@@ -209,6 +209,45 @@ async def gravar_versao_estado(
     return nova
 
 
+async def confirmar_proxima_acao(
+    db: AsyncSession,
+    sessao: LegalChatSession,
+    *,
+    acao: str,
+    user: User,
+) -> dict[str, Any]:
+    """Confirma uma sugestão sem criar tarefa/prazo nem mutar caso automaticamente."""
+    exigir_nao_congelada(sessao)
+    atual = await ultima_versao_estado(db, sessao.id)
+    if atual is None:
+        raise HTTPException(status_code=409, detail="A sessão ainda não possui dossiê estruturado")
+    alvo = acao.strip()
+    chave = alvo.casefold()
+    estado = dict(atual.estado or {})
+    proximas = [dict(a) for a in (estado.get("proximas_acoes") or []) if isinstance(a, dict)]
+    encontrado = False
+    agora = datetime.now(timezone.utc).isoformat()
+    for item in proximas:
+        texto_acao = str(item.get("acao") or "").strip()
+        if texto_acao.casefold() == chave:
+            item["confirmada"] = True
+            item["confirmada_por"] = user.id
+            item["confirmada_em"] = agora
+            encontrado = True
+        else:
+            item.pop("confirmada", None)
+            item.pop("confirmada_por", None)
+            item.pop("confirmada_em", None)
+    if not encontrado:
+        raise HTTPException(status_code=409, detail="Próxima ação não corresponde ao estado atual da sessão")
+    estado["proximas_acoes"] = proximas
+    nova = await gravar_versao_estado(
+        db, sessao, estado=estado, resumo=atual.resumo, origem="manual", created_by=user.id
+    )
+    await db.flush()
+    return {"versao": nova.versao, "acao": alvo, "confirmada": True}
+
+
 # Tetos dos blocos de contexto conversacional — protegem a janela de tokens
 # do provider em sessões longas/com muitos anexos. Ampliados (2026-07): a Sala
 # roteia para modelos de janela grande (200k tokens) e a memória curta era o
@@ -226,6 +265,7 @@ def _montar_mensagem_ia(
     sessao: LegalChatSession,
     historico: list[LegalChatMessage] | None = None,
     anexos: list[LegalChatAttachment] | None = None,
+    contexto_ejc: str | None = None,
 ) -> str:
     """Mensagem efetiva enviada ao núcleo: instrução do modo + workspace +
     histórico recente + síntese dos anexos + texto do advogado.
@@ -243,6 +283,12 @@ def _montar_mensagem_ia(
         partes.append(
             "[ÁREA DE TRABALHO DO ADVOGADO — fatos, anotações e rascunhos]\n"
             + sessao.workspace_texto.strip()
+        )
+    if contexto_ejc:
+        partes.append(
+            "[CONTEXTO OPERACIONAL EJC — DADOS AUTORIZADOS DA CARTEIRA]\n"
+            "Use somente para responder à pergunta operacional. Não extrapole "
+            "acesso nem trate ausência como inexistência.\n" + contexto_ejc
         )
 
     # Histórico (cronológico): truncagem por mensagem + teto total, cortando
@@ -341,6 +387,12 @@ async def enviar_mensagem(
     db.add(msg_user)
     await db.flush()
 
+    contexto_ejc: str | None = None
+    if payload.incluir_contexto_ejc:
+        from app.services.activity_alert_service import montar_contexto_operacional_ejc
+
+        contexto_ejc = await montar_contexto_operacional_ejc(db, user)
+
     # Import tardio: mantém o service importável em testes sem stack de IA.
     from app.services.ai.core.orchestrator import run_ai_task
 
@@ -349,7 +401,9 @@ async def enviar_mensagem(
             db=db,
             user=user,
             task_type=MODO_TASK_TYPE[payload.modo],
-            mensagem=_montar_mensagem_ia(payload, sessao, historico, anexos),
+            mensagem=_montar_mensagem_ia(
+                payload, sessao, historico, anexos, contexto_ejc=contexto_ejc
+            ),
             case_id=sessao.convertido_case_id,
             params={
                 "module_key": "sala-juridica",
@@ -418,6 +472,17 @@ async def enviar_mensagem(
         if extraido is not None:
             resumo_estado = extraido.pop("_resumo", None)
             extraido["fontes"] = estado["fontes"]  # fontes vêm do RAG, não do LLM
+            confirmadas = [
+                a for a in (estado.get("proximas_acoes") or [])
+                if isinstance(a, dict) and a.get("confirmada") is True
+            ]
+            if confirmadas and "proximas_acoes" in extraido:
+                novas = [a for a in (extraido.get("proximas_acoes") or []) if isinstance(a, dict)]
+                textos = {str(a.get("acao") or "").strip().casefold() for a in confirmadas}
+                extraido["proximas_acoes"] = confirmadas + [
+                    a for a in novas
+                    if str(a.get("acao") or "").strip().casefold() not in textos
+                ]
             # Merge PARCIAL: o extrator pode devolver só algumas chaves (ex.:
             # apenas "fatos"). As omitidas herdam do estado atual — substituir
             # o dicionário inteiro apagaria provas/riscos/cronologia já
@@ -440,6 +505,22 @@ async def enviar_mensagem(
     )
     await db.flush()
 
+    fatos_nao_confirmados = sum(
+        1 for fato in (estado.get("fatos") or [])
+        if isinstance(fato, dict)
+        and str(fato.get("classificacao") or "").lower()
+        in {"alegado", "inferido", "controvertido", "ausente"}
+    )
+    nao_encontradas = 0
+    if isinstance(_relatorio_citacoes, dict):
+        bruto = _relatorio_citacoes.get("nao_encontradas")
+        if isinstance(bruto, int):
+            nao_encontradas = bruto
+        elif isinstance(bruto, list):
+            nao_encontradas = len(bruto)
+    proximas = [a for a in (estado.get("proximas_acoes") or []) if isinstance(a, dict)]
+    proxima_acao = proximas[0] if proximas else None
+
     return {
         "mensagem_user": serializar_mensagem(msg_user),
         "mensagem_ia": serializar_mensagem(msg_ia),
@@ -447,6 +528,14 @@ async def enviar_mensagem(
         "is_rascunho": resultado.get("is_rascunho", True),
         "aviso_hitl": resultado.get("aviso_hitl"),
         "critica_adversarial": resultado.get("critica_adversarial"),
+        "indicadores_confianca": {
+            "fontes_rastreaveis": len(estado.get("fontes") or []),
+            "documentos_utilizados": len(anexos),
+            "fatos_nao_confirmados": fatos_nao_confirmados,
+            "citacoes_a_conferir": nao_encontradas,
+            "revisao_humana_necessaria": True,
+        },
+        "proxima_acao_sugerida": proxima_acao,
     }
 
 
@@ -455,7 +544,7 @@ _CHAVES_ESTADO = {
     "contradicoes", "questoes", "teses", "pedidos", "riscos", "pendencias",
     "cronologia", "datas_relevantes", "valores", "competencia", "ramo_direito",
     "natureza_acao", "procedimento_rito", "prescricao_decadencia", "urgencia",
-    "fontes",
+    "proximas_acoes", "fontes",
 }
 
 _PROMPT_EXTRACAO = """Você é o extrator de estado jurídico da Sala Jurídica.
@@ -464,7 +553,7 @@ que sustentaram a resposta. Responda SOMENTE com objeto JSON válido (sem markdo
 com chaves conhecidas e listas de objetos: fatos, partes, testemunhas, enderecos, identificacao_processual,
 provas, documentos, contradicoes, questoes, teses, pedidos, riscos, pendencias,
 cronologia, datas_relevantes, valores, competencia, ramo_direito, natureza_acao,
-procedimento_rito, prescricao_decadencia, urgencia e _resumo (string de até 3 frases).
+procedimento_rito, prescricao_decadencia, urgencia, proximas_acoes e _resumo (string de até 3 frases).
 
 Regras invioláveis:
 - cada fato tem {{"texto": ..., "classificacao": "comprovado"|"alegado"|"inferido"|"controvertido"|"ausente"|"superado", "fonte": ...}};
@@ -919,6 +1008,18 @@ async def _materializar_dossie_confirmado(
         "reu": "reu", "réu": "reu", "requerido": "reu", "demandado": "reu",
         "terceiro": "terceiro", "advogado": "advogado", "procurador": "procurador",
     }
+    proxima_confirmada = next(
+        (
+            item for item in (estado.get("proximas_acoes") or [])
+            if isinstance(item, dict) and item.get("confirmada") is True
+            and str(item.get("acao") or "").strip()
+        ),
+        None,
+    )
+    if proxima_confirmada and not (case.proxima_acao or "").strip():
+        case.proxima_acao = str(proxima_confirmada["acao"]).strip()[:500]
+        preenchidos.append("proxima_acao")
+
     partes_criadas = 0
     for item in estado.get("partes") or []:
         if not isinstance(item, dict):

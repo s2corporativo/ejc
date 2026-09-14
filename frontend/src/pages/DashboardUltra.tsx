@@ -1,17 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Bell,
+  CheckCircle2,
   Clock3,
+  Eye,
   Mail,
   MessageCircle,
   Radio,
   Scale,
   Sparkles,
 } from "lucide-react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import api from "../lib/api";
-import { asList } from "../lib/list";
 import { useAuth } from "../stores/auth";
 import DashboardAiChat from "../components/DashboardAiChat";
 import JurisprudentialAlertsStrip from "../components/JurisprudentialAlertsStrip";
@@ -21,34 +22,44 @@ import {
   officeBranding,
 } from "../config/officeBranding";
 
-interface DashboardPayload {
-  prazos?: {
-    vencidos?: number;
-    criticos_3d?: number;
-    proximos_7d?: number;
-  };
-  degradado?: string[];
-}
+type AlertType = "prazo" | "tarefa" | "intimacao" | "movimentacao";
+type AlertState = "novo" | "visualizado" | "tratado";
+type AlertLevel = "critico" | "alto" | "atencao" | "info" | "normal";
 
-interface ActivityItem {
-  id?: string;
-  tipo?: string;
-  subtipo?: string;
-  fonte?: string;
-  status?: string;
-}
+type AlertSummary = {
+  ativos: number;
+  novos: number;
+  criticos: number;
+  altos: number;
+};
 
-const FINAL_ACTIVITY_STATUSES = new Set([
-  "concluido",
-  "concluida",
-  "tratada",
-  "cancelado",
-  "cancelada",
-  "arquivado",
-  "arquivada",
-  "encerrado",
-  "encerrada",
-]);
+type SmartAlert = {
+  source_type: AlertType;
+  source_id: string;
+  titulo: string;
+  descricao?: string | null;
+  data?: string | null;
+  case_id?: string | null;
+  caso_titulo?: string | null;
+  responsavel_nome?: string | null;
+  prioridade?: string | null;
+  dias_restantes?: number | null;
+  nivel_alerta: AlertLevel;
+  estado_alerta: AlertState;
+  link: string;
+};
+
+type SmartAlertPayload = {
+  resumo: Record<AlertType, AlertSummary>;
+  itens: Record<AlertType, SmartAlert[]>;
+};
+
+const EMPTY_SUMMARY: AlertSummary = {
+  ativos: 0,
+  novos: 0,
+  criticos: 0,
+  altos: 0,
+};
 
 const LEGAL_ROLES = new Set([
   "superadmin",
@@ -59,96 +70,121 @@ const LEGAL_ROLES = new Set([
   "estagiario",
 ]);
 
-function isFinalActivity(status?: string) {
-  return FINAL_ACTIVITY_STATUSES.has((status || "").toLowerCase());
+const ALERT_CONFIG: Array<{
+  type: AlertType;
+  label: string;
+  hint: string;
+  className: string;
+  icon: typeof Scale;
+}> = [
+  {
+    type: "prazo",
+    label: "Prazos",
+    hint: "vencidos ou em até 3 dias",
+    className: "is-deadline",
+    icon: Scale,
+  },
+  {
+    type: "tarefa",
+    label: "Tarefas",
+    hint: "vencidas, hoje ou alta prioridade",
+    className: "is-task",
+    icon: Clock3,
+  },
+  {
+    type: "intimacao",
+    label: "Intimações",
+    hint: "pendentes de tratamento",
+    className: "is-intimation",
+    icon: Bell,
+  },
+  {
+    type: "movimentacao",
+    label: "Movimentações",
+    hint: "novidades dos últimos 7 dias",
+    className: "is-movement",
+    icon: Radio,
+  },
+];
+
+function formatAlertDate(value?: string | null) {
+  if (!value) return "Sem data";
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) return `${match[3]}/${match[2]}/${match[1]}`;
+  return value;
 }
 
-function isTask(item: ActivityItem) {
-  return item.tipo === "tarefa" || item.fonte === "tarefa";
+function stateLabel(state: AlertState) {
+  if (state === "visualizado") return "Visualizado";
+  if (state === "tratado") return "Tratado";
+  return "Novo";
 }
 
-function isIntimation(item: ActivityItem) {
-  const kind =
-    `${item.tipo || ""} ${item.subtipo || ""} ${item.fonte || ""}`.toLowerCase();
-  return kind.includes("intimacao") || kind.includes("intimação");
-}
-
-function isMovement(item: ActivityItem) {
-  const kind = `${item.tipo || ""} ${item.subtipo || ""} ${item.fonte || ""}`
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-  return (
-    kind.includes("moviment") ||
-    kind.includes("andamento") ||
-    kind.includes("datajud")
-  );
+function levelLabel(level: AlertLevel) {
+  if (level === "critico") return "Crítico";
+  if (level === "alto") return "Alto";
+  if (level === "atencao") return "Atenção";
+  if (level === "info") return "Novo andamento";
+  return "Normal";
 }
 
 export default function DashboardUltra() {
   const user = useAuth((state) => state.user);
-  const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
-  const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const navigate = useNavigate();
+  const [alerts, setAlerts] = useState<SmartAlertPayload | null>(null);
+  const [activeType, setActiveType] = useState<AlertType | null>(null);
   const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState({ dashboard: false, activities: false });
+  const [failed, setFailed] = useState(false);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
+  const loadAlerts = useCallback(async () => {
     setLoading(true);
-    Promise.allSettled([
-      api.get("/dashboard/"),
-      api.get("/atividades", { params: { apenas_pendentes: false } }),
-    ])
-      .then(([dashboardResult, activitiesResult]) => {
-        if (!active) return;
-        setFailed({
-          dashboard: dashboardResult.status === "rejected",
-          activities: activitiesResult.status === "rejected",
-        });
-        if (dashboardResult.status === "fulfilled")
-          setDashboard(dashboardResult.value.data);
-        if (activitiesResult.status === "fulfilled")
-          setActivities(asList(activitiesResult.value.data));
-      })
-      .finally(() => {
-        if (active) setLoading(false);
+    setFailed(false);
+    try {
+      const { data } = await api.get("/atividades/alertas-inteligentes", {
+        params: { limit_per_type: 5 },
       });
-    return () => {
-      active = false;
-    };
+      setAlerts(data as SmartAlertPayload);
+    } catch {
+      setFailed(true);
+      setAlerts(null);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const pendingTasks = useMemo(
-    () =>
-      activities.filter(
-        (item) => isTask(item) && !isFinalActivity(item.status),
-      ),
-    [activities],
-  );
-  const pendingIntimations = useMemo(
-    () =>
-      activities.filter(
-        (item) => isIntimation(item) && !isFinalActivity(item.status),
-      ),
-    [activities],
-  );
-  const pendingMovements = useMemo(
-    () =>
-      activities.filter(
-        (item) => isMovement(item) && !isFinalActivity(item.status),
-      ),
-    [activities],
-  );
+  useEffect(() => {
+    void loadAlerts();
+  }, [loadAlerts]);
 
-  const deadlinesUnavailable =
-    failed.dashboard || new Set(dashboard?.degradado || []).has("prazos");
-  const deadlineCount = deadlinesUnavailable
-    ? 0
-    : (dashboard?.prazos?.vencidos ?? 0) +
-      (dashboard?.prazos?.criticos_3d ?? 0);
   const canUseLegal = LEGAL_ROLES.has(user?.role || "");
   const whatsappUrl = getWhatsAppUrl();
   const mailtoUrl = getMailtoUrl();
+  const activeItems = useMemo(
+    () => (activeType ? alerts?.itens?.[activeType] || [] : []),
+    [activeType, alerts],
+  );
+
+  const markState = async (
+    item: SmartAlert,
+    estado: "visualizado" | "tratado",
+    openAfter = false,
+  ) => {
+    setUpdatingId(item.source_id);
+    try {
+      await api.patch(
+        `/atividades/alertas/${item.source_type}/${item.source_id}`,
+        { estado },
+      );
+      if (openAfter) {
+        navigate(item.link);
+        return;
+      }
+      await loadAlerts();
+    } finally {
+      setUpdatingId(null);
+    }
+  };
 
   return (
     <div className="ejc-ai-dashboard">
@@ -198,74 +234,133 @@ export default function DashboardUltra() {
 
       <section
         className="ejc-ai-dashboard__signals"
-        aria-label="Radar operacional de prazos e atividades"
+        aria-label="Alertas inteligentes do escritório"
       >
-        <Link
-          to="/atividades?tipo=prazo"
-          aria-label={`Prazos: ${deadlinesUnavailable || loading ? "—" : deadlineCount}. ${dashboard?.prazos?.vencidos ?? 0} vencidos · ${dashboard?.prazos?.criticos_3d ?? 0} críticos`}
-          className={`ejc-ai-signal is-deadline ${deadlineCount > 0 ? "is-alerting" : ""}`}
-        >
-          <span className="ejc-ai-signal__beacon" aria-hidden="true" />
-          <Scale aria-hidden="true" />
-          <span>
-            <strong>
-              {deadlinesUnavailable || loading ? "—" : deadlineCount}
-            </strong>
-            <small>Prazos em atenção</small>
-          </span>
-          {!deadlinesUnavailable && (
-            <em>
-              {dashboard?.prazos?.vencidos ?? 0} vencidos ·{" "}
-              {dashboard?.prazos?.criticos_3d ?? 0} em até 3 dias
-            </em>
-          )}
-        </Link>
-
-        <Link
-          to="/atividades?tipo=tarefa"
-          aria-label={`Tarefas: ${failed.activities || loading ? "—" : pendingTasks.length}. pendentes`}
-          className={`ejc-ai-signal is-task ${pendingTasks.length > 0 ? "is-alerting" : ""}`}
-        >
-          <span className="ejc-ai-signal__beacon" aria-hidden="true" />
-          <Clock3 aria-hidden="true" />
-          <span>
-            <strong>
-              {failed.activities || loading ? "—" : pendingTasks.length}
-            </strong>
-            <small>Tarefas pendentes</small>
-          </span>
-        </Link>
-
-        <Link
-          to="/atividades?tipo=intimacao"
-          aria-label={`Intimações: ${failed.activities || loading ? "—" : pendingIntimations.length}. a tratar`}
-          className={`ejc-ai-signal is-intimation ${pendingIntimations.length > 0 ? "is-alerting" : ""}`}
-        >
-          <span className="ejc-ai-signal__beacon" aria-hidden="true" />
-          <Bell aria-hidden="true" />
-          <span>
-            <strong>
-              {failed.activities || loading ? "—" : pendingIntimations.length}
-            </strong>
-            <small>Intimações pendentes</small>
-          </span>
-        </Link>
-
-        <Link
-          to="/atividades"
-          aria-label={`Movimentações: ${failed.activities || loading ? "—" : pendingMovements.length}. recentes / pendentes`}
-          className={`ejc-ai-signal is-movement ${pendingMovements.length > 0 ? "is-alerting" : ""}`}
-        >
-          <span className="ejc-ai-signal__beacon" aria-hidden="true" />
-          <Radio aria-hidden="true" />
-          <span>
-            <strong>
-              {failed.activities || loading ? "—" : pendingMovements.length}
-            </strong>
-            <small>Movimentações</small>
-          </span>
-        </Link>
+        {ALERT_CONFIG.map((config) => {
+          const summary = alerts?.resumo?.[config.type] || EMPTY_SUMMARY;
+          const Icon = config.icon;
+          const isActive = activeType === config.type;
+          return (
+            <button
+              type="button"
+              key={config.type}
+              aria-pressed={isActive}
+              aria-label={`${config.label}: ${failed || loading ? "—" : summary.ativos}. ${summary.novos} novos`}
+              className={`ejc-ai-signal ${config.className} ${summary.novos > 0 ? "is-alerting" : ""} ${isActive ? "is-selected" : ""}`}
+              onClick={() =>
+                setActiveType((current) =>
+                  current === config.type ? null : config.type,
+                )
+              }
+            >
+              <span className="ejc-ai-signal__beacon" aria-hidden="true" />
+              <Icon aria-hidden="true" />
+              <span>
+                <strong>{failed || loading ? "—" : summary.ativos}</strong>
+                <small>{config.label}</small>
+              </span>
+              <em>
+                {summary.novos > 0 ? `${summary.novos} novos · ` : ""}
+                {config.hint}
+              </em>
+            </button>
+          );
+        })}
       </section>
+
+      {activeType && (
+        <section
+          className="ejc-smart-alert-panel"
+          aria-label={`Detalhes dos alertas de ${activeType}`}
+        >
+          <header>
+            <div>
+              <strong>
+                {ALERT_CONFIG.find((item) => item.type === activeType)?.label}
+              </strong>
+              <span>
+                O estado do alerta é pessoal e não altera o status jurídico da
+                atividade de origem.
+              </span>
+            </div>
+            <Link
+              to={
+                activeType === "movimentacao"
+                  ? "/casos"
+                  : `/atividades?tipo=${activeType}`
+              }
+            >
+              Ver todos
+            </Link>
+          </header>
+
+          {failed ? (
+            <div className="ejc-smart-alert-panel__empty">
+              Alertas temporariamente indisponíveis.
+            </div>
+          ) : activeItems.length === 0 ? (
+            <div className="ejc-smart-alert-panel__empty">
+              Nenhum alerta acionável nesta categoria.
+            </div>
+          ) : (
+            <div className="ejc-smart-alert-list">
+              {activeItems.map((item) => (
+                <article
+                  key={`${item.source_type}-${item.source_id}`}
+                  className={`ejc-smart-alert-item is-${item.nivel_alerta}`}
+                >
+                  <div className="ejc-smart-alert-item__meta">
+                    <span className={`is-state-${item.estado_alerta}`}>
+                      {stateLabel(item.estado_alerta)}
+                    </span>
+                    <span>{levelLabel(item.nivel_alerta)}</span>
+                  </div>
+                  <div className="ejc-smart-alert-item__body">
+                    <strong>{item.titulo}</strong>
+                    <p>
+                      {item.caso_titulo ||
+                        item.descricao ||
+                        "Sem detalhe adicional."}
+                    </p>
+                    <small>
+                      {formatAlertDate(item.data)}
+                      {item.responsavel_nome
+                        ? ` · Responsável: ${item.responsavel_nome}`
+                        : ""}
+                    </small>
+                  </div>
+                  <div className="ejc-smart-alert-item__actions">
+                    {item.estado_alerta === "novo" && (
+                      <button
+                        type="button"
+                        disabled={updatingId === item.source_id}
+                        onClick={() => void markState(item, "visualizado")}
+                      >
+                        <Eye aria-hidden="true" /> Visto
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={updatingId === item.source_id}
+                      onClick={() => void markState(item, "visualizado", true)}
+                    >
+                      Abrir
+                    </button>
+                    <button
+                      type="button"
+                      className="is-treat"
+                      disabled={updatingId === item.source_id}
+                      onClick={() => void markState(item, "tratado")}
+                    >
+                      <CheckCircle2 aria-hidden="true" /> Tratar alerta
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       <main className="ejc-ai-dashboard__workspace">
         <div className="ejc-ai-dashboard__workspace-header">

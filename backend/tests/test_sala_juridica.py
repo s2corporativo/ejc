@@ -910,3 +910,87 @@ async def test_materializar_dossie_confirmado_aplica_somente_destinos_canonicos_
     partes = [obj for obj in db.added if isinstance(obj, CaseParte)]
     assert [(p.tipo, p.nome) for p in partes] == [("autor", "Autora Fictícia")]
     assert not any(isinstance(obj, Deadline) for obj in db.added)
+
+
+def test_contexto_ejc_e_opt_in_no_schema():
+    assert MensagemCreate(conteudo="analise").incluir_contexto_ejc is False
+    assert MensagemCreate(conteudo="analise", incluir_contexto_ejc=True).incluir_contexto_ejc is True
+
+
+def test_prompt_contexto_ejc_so_aparece_quando_fornecido():
+    from app.models.legal_chat import LegalChatSession
+    from app.services.legal_chat_service import _montar_mensagem_ia
+
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    payload = MensagemCreate(conteudo="O que merece atenção?", incluir_contexto_ejc=True)
+    texto = _montar_mensagem_ia(payload, sessao, contexto_ejc='{"prazos":2}')
+    assert "CONTEXTO OPERACIONAL EJC" in texto
+    assert '"prazos":2' in texto
+    sem = _montar_mensagem_ia(MensagemCreate(conteudo="Pergunta geral"), sessao)
+    assert "CONTEXTO OPERACIONAL EJC" not in sem
+
+
+@pytest.mark.anyio
+async def test_confirmar_proxima_acao_so_confirma_item_do_estado(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.models.legal_chat import LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    atual = SimpleNamespace(
+        estado={
+            "proximas_acoes": [
+                {"acao": "Obter contrato", "prioridade": "alta"},
+                {"acao": "Ouvir testemunha", "prioridade": "media"},
+            ]
+        },
+        resumo="resumo",
+    )
+    capturado = {}
+
+    async def fake_ultima(db, session_id):
+        return atual
+
+    async def fake_gravar(db, sessao, **kwargs):
+        capturado.update(kwargs)
+        return SimpleNamespace(versao=7)
+
+    class DB:
+        async def flush(self):
+            return None
+
+    monkeypatch.setattr(svc, "ultima_versao_estado", fake_ultima)
+    monkeypatch.setattr(svc, "gravar_versao_estado", fake_gravar)
+    user = SimpleNamespace(id="u1")
+    out = await svc.confirmar_proxima_acao(
+        DB(), sessao, acao="Obter contrato", user=user
+    )
+    assert out == {"versao": 7, "acao": "Obter contrato", "confirmada": True}
+    primeira = capturado["estado"]["proximas_acoes"][0]
+    segunda = capturado["estado"]["proximas_acoes"][1]
+    assert primeira["confirmada"] is True
+    assert primeira["confirmada_por"] == "u1"
+    assert "confirmada" not in segunda
+
+
+@pytest.mark.anyio
+async def test_confirmar_proxima_acao_rejeita_texto_fora_do_estado(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.models.legal_chat import LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+
+    async def fake_ultima(db, session_id):
+        return SimpleNamespace(
+            estado={"proximas_acoes": [{"acao": "Obter contrato"}]}, resumo=None
+        )
+
+    monkeypatch.setattr(svc, "ultima_versao_estado", fake_ultima)
+    with pytest.raises(HTTPException) as exc:
+        await svc.confirmar_proxima_acao(
+            object(), sessao, acao="Criar prazo fatal", user=SimpleNamespace(id="u1")
+        )
+    assert exc.value.status_code == 409

@@ -27,6 +27,7 @@ from app.models.user import User
 from app.schemas.legal_chat import (
     ConverterRequest,
     EstadoUpdate,
+    ProximaAcaoConfirmarRequest,
     MensagemCreate,
     SaidaAlternativaRequest,
     SessaoCreate,
@@ -204,6 +205,26 @@ async def obter_estado(
         "origem": estado.origem,
         "created_at": estado.created_at.isoformat() if estado.created_at else None,
     }
+
+
+@router.post("/{session_id}/proxima-acao/confirmar")
+async def confirmar_proxima_acao(
+    session_id: str,
+    payload: ProximaAcaoConfirmarRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(exigir_equipe_juridica),
+):
+    sessao = await svc.obter_sessao(db, session_id, user)
+    resultado = await svc.confirmar_proxima_acao(
+        db, sessao, acao=payload.acao, user=user
+    )
+    await criar_audit_log(
+        db, user_id=user.id, user_role=svc._role(user),
+        acao="UPDATE", entidade="legal_chat_next_action", registro_id=sessao.id,
+        dados_depois={"estado": "confirmada", "versao": resultado["versao"]},
+    )
+    await db.commit()
+    return resultado
 
 
 @router.post(

@@ -65,6 +65,8 @@ class MensagemCreate(BaseModel):
     modo: str = Field(default="conversa_livre")
     # Quando True, o texto da área de trabalho entra como contexto da IA.
     incluir_workspace: bool = True
+    # Opt-in LGPD: injeta somente o contexto operacional autorizado da carteira.
+    incluir_contexto_ejc: bool = False
     usar_rag: bool = True
 
     @field_validator("modo")
@@ -89,7 +91,7 @@ class EstadoUpdate(BaseModel):
             "contradicoes", "questoes", "teses", "pedidos", "riscos",
             "pendencias", "cronologia", "datas_relevantes", "valores",
             "competencia", "ramo_direito", "natureza_acao", "procedimento_rito",
-            "prescricao_decadencia", "urgencia", "fontes",
+            "prescricao_decadencia", "urgencia", "proximas_acoes", "fontes",
         }
         desconhecidas = set(v) - permitidas
         if desconhecidas:
@@ -98,6 +100,10 @@ class EstadoUpdate(BaseModel):
             if not isinstance(valor, list):
                 raise ValueError(f"'{chave}' deve ser uma lista")
         return v
+
+
+class ProximaAcaoConfirmarRequest(BaseModel):
+    acao: str = Field(min_length=3, max_length=500)
 
 
 class ConverterRequest(BaseModel):
