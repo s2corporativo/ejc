@@ -2,9 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.ai_service import buscar_contexto_rag
-from app.services.knowledge_governance import inferir_autoridade
-
 from .contracts import ResearchPlan
 from .research_loop import evaluate_research_coverage, next_research_gap
 
@@ -22,6 +19,9 @@ def _record_from_rag(item: dict[str, Any], *, purpose: str) -> dict[str, Any] | 
     fonte = str(item.get("fonte") or "").strip()
     if not doc_id and not chunk_id and not fonte:
         return None
+
+    # Import tardio: importar legal_brain não deve inicializar ai_service/RAG.
+    from app.services.knowledge_governance import inferir_autoridade
 
     extra = item.get("extra") if isinstance(item.get("extra"), dict) else {}
     authority = inferir_autoridade(
@@ -83,6 +83,9 @@ async def execute_research_plan_with_rag(
     validade pode consultar versões históricas, mas isso nunca as promove a
     autoridade atual. ``saneamento_inicial`` não consulta RAG.
     """
+    # Import tardio: mantém o pacote Legal Brain leve e evita ciclos de startup.
+    from app.services.ai_service import buscar_contexto_rag
+
     records: list[dict[str, Any]] = []
     executed_steps: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
