@@ -7,12 +7,25 @@ from .contracts import EvidenceState
 
 @dataclass(frozen=True)
 class CaseAssertion:
+    """Afirmação do caso com estado epistemológico e trilha de validação."""
+
     id: str
     text: str
     state: EvidenceState
     source_ids: tuple[str, ...] = ()
     validated_by_user_id: str | None = None
     validated_at: str | None = None
+
+    def __post_init__(self) -> None:
+        """Impede construir estado validado sem identidade e data do revisor."""
+
+        if self.state in {
+            EvidenceState.VALIDADO_ADVOGADO,
+            EvidenceState.CONFIRMADO,
+        } and (not self.validated_by_user_id or not self.validated_at):
+            raise ValueError(
+                "estado probatório validado exige revisor autenticado e data"
+            )
 
 
 # Transições explícitas. Inferência nunca vira CONFIRMADO diretamente; para
