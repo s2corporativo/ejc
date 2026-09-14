@@ -494,6 +494,7 @@ async def verificar_jurisprudencia(
         _artigo_superado,
         _existe_artigo,
         _existe_sumula,
+        _fonte_artigo_vigencia_pendente,
         _sumula_superada,
     )
 
@@ -514,6 +515,7 @@ async def verificar_jurisprudencia(
         status = STATUS_IDENTIFICADA
         fonte: str | None = None
         aviso: str | None = None
+        vigencia_pendente = False
         rotulo = c["trecho"]
 
         if c["tipo"] == "processo_cnj":
@@ -619,17 +621,33 @@ async def verificar_jurisprudencia(
                 status = STATUS_VERIFICADA
                 aviso = _AVISO_VERIFICADA.format(fonte="base oficial interna/RAG")
             else:
-                # Mesmo recorte por diploma do lookup vigente (AI-056): avisar
-                # "superado" com base numa lei diferente da citada seria uma
-                # informação errada entregue com ar de certeza.
-                superado = await _artigo_superado(db, c["numero"], c.get("diploma"))
-                if superado:
-                    status = STATUS_DESATUALIZADA
-                    fonte = superado.get("titulo")
-                    aviso = _aviso_superada(superado, "o dispositivo")
+                # O texto pode existir na versão ATUAL ingerida e estar fora do
+                # RAG apenas porque a vigência jurídica ainda não recebeu
+                # proveniência positiva/curadoria. Isso NÃO é versão superada.
+                pendente = await _fonte_artigo_vigencia_pendente(
+                    db, c["numero"], c.get("diploma")
+                )
+                if pendente:
+                    status = STATUS_IDENTIFICADA
+                    fonte = pendente.get("titulo")
+                    vigencia_pendente = True
+                    aviso = (
+                        "Texto do dispositivo localizado na versão atual ingerida, "
+                        "mas a vigência jurídica do diploma ainda não está verificada "
+                        "pelo gate de governança. Não trate como autoridade atual "
+                        "antes da conferência/curadoria da fonte oficial."
+                    )
                 else:
-                    aviso = ("Artigo não localizado na legislação ingerida na base interna — "
-                             "confira o texto legal vigente antes de citar.")
+                    # Só agora uma versão histórica pode justificar o rótulo
+                    # "possivelmente_desatualizada".
+                    superado = await _artigo_superado(db, c["numero"], c.get("diploma"))
+                    if superado:
+                        status = STATUS_DESATUALIZADA
+                        fonte = superado.get("titulo")
+                        aviso = _aviso_superada(superado, "o dispositivo")
+                    else:
+                        aviso = ("Artigo não localizado na legislação ingerida na base interna — "
+                                 "confira o texto legal vigente antes de citar.")
 
         else:  # generica
             status = STATUS_GENERICA
@@ -659,6 +677,9 @@ async def verificar_jurisprudencia(
             # Diploma citado (artigos): a leitura do texto da autoridade é
             # RESTRITA ao diploma referido, mesmo recorte do AI-056.
             "diploma": c.get("diploma"),
+            # True apenas quando o texto está na versão atual ingerida, porém
+            # sem proveniência positiva de vigência suficiente para selo verde.
+            "vigencia_pendente": vigencia_pendente,
         })
 
     return _montar_relatorio(resultados, datajud_saturado)
