@@ -2,6 +2,7 @@
 # GED: upload/download com controle de confidencialidade (cofre).
 # Acesso a docs restritos: audit log obrigatório (LGPD art. 37).
 import asyncio
+import hashlib
 import logging
 import os
 from datetime import date, datetime, time as dtime, timedelta, timezone
@@ -387,6 +388,13 @@ async def upload(
                 status_code=422,
                 detail=f"Tipo de documento inválido: {tipo}. Use GET /documents/tipos.",
             )
+
+    # O service de persistência também normaliza o título. Fazer a mesma
+    # normalização antes do advisory lock e da consulta do predecessor evita
+    # que " Contrato " e "Contrato" criem duas raízes de versão distintas.
+    titulo = titulo.strip()
+    if not titulo or len(titulo) > 255:
+        raise HTTPException(status_code=422, detail="Título do documento inválido")
 
     # Compatibilidade do contrato legado de versionamento por título: enquanto
     # a UI não envia predecessor explícito, o último documento ativo de mesmo
@@ -1114,6 +1122,7 @@ async def upload_para_drive(
         filepath=f"drive://{remote_path}",
         mimetype=mime,
         size_bytes=len(content),
+        sha256=hashlib.sha256(content).hexdigest(),
         drive_file_id=file_id,
         drive_link=result.get("webViewLink"),
         uploaded_by=current_user.id,

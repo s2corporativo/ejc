@@ -130,7 +130,7 @@ async def test_mesmo_titulo_no_caso_vira_predecessor_explicitamente(
     await documents.upload(
         background_tasks=BackgroundTasks(),
         file=_upload(),
-        titulo="Contrato social",
+        titulo="  Contrato social  ",
         tipo=None,
         confidencialidade="normal",
         case_id="case-1",
@@ -143,6 +143,7 @@ async def test_mesmo_titulo_no_caso_vira_predecessor_explicitamente(
     assert dados.case_id == "case-1"
     assert dados.client_id == "client-1"
     assert dados.documento_anterior_id == "doc-anterior"
+    assert dados.titulo == "Contrato social"
     assert capturado["lock"] == ("case-1", "Contrato social")
     assert db.executed == 1
     assert "status" in capturado

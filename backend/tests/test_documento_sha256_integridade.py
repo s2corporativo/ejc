@@ -107,9 +107,9 @@ def test_migration_149_e_aditiva_e_reversivel():
 # Só o mapper do MNI precisava calcular de fato.
 
 CAMINHOS_QUE_CRIAM_DOCUMENT = (
-    # `routers/documents.py` deixou de construir Document diretamente: delega
-    # ao `document_persistence_service`, já listado abaixo e coberto pelo teste
-    # específico do pipeline streaming acima.
+    # O upload local delega ao persistence service, mas /drive/upload ainda
+    # constrói Document diretamente e também precisa persistir o digest.
+    ("app/routers/documents.py", "upload remoto pelo Google Drive"),
     ("app/routers/portal_documentos.py", "upload do cliente pelo Portal"),
     ("app/routers/entrada_universal.py", "Entrada Universal (lote e cópia isolada)"),
     ("app/services/document_persistence_service.py", "persistência local/Drive"),
@@ -139,6 +139,15 @@ def test_todo_caminho_que_cria_documento_grava_o_hash():
         "caminho cria Document sem prova de integridade:\n  "
         + "\n  ".join(faltando)
     )
+
+
+def test_upload_drive_deriva_hash_dos_bytes_enviados():
+    import inspect
+
+    from app.routers import documents
+
+    fonte = inspect.getsource(documents.upload_para_drive)
+    assert "sha256=hashlib.sha256(content).hexdigest()" in fonte
 
 
 def test_upload_do_portal_deriva_o_hash_do_conteudo_recebido():
