@@ -26,6 +26,43 @@ def _role_value(user: User) -> str:
     return getattr(user.role, "value", str(user.role))
 
 
+def _activity_scope_sql(user: User) -> str:
+    """Escopo fail-closed: atividade de caso segue ownership; avulsa segue responsável."""
+    if is_gestao(user):
+        return ""
+    return """ AND (
+        (v.case_id IS NULL AND v.responsavel_id = :uid)
+        OR EXISTS (
+            SELECT 1 FROM cases cc WHERE cc.id = v.case_id
+            AND cc.deleted_at IS NULL
+            AND (cc.advogado_responsavel_id = :uid OR cc.advogado_auxiliar_id = :uid)
+        )
+    )"""
+
+
+def _case_scope_sql(user: User) -> str:
+    """Casos sem ownership explícito não são visíveis a usuário não gestor."""
+    if is_gestao(user):
+        return ""
+    return """ AND (
+        c.advogado_responsavel_id = :uid OR c.advogado_auxiliar_id = :uid
+    )"""
+
+
+def _document_scope_sql(user: User) -> str:
+    """Documento de caso segue ownership; documento avulso segue o uploader."""
+    if is_gestao(user):
+        return ""
+    return """ AND (
+        (d.case_id IS NULL AND d.uploaded_by = :uid)
+        OR EXISTS (
+            SELECT 1 FROM cases cc WHERE cc.id = d.case_id
+            AND cc.deleted_at IS NULL
+            AND (cc.advogado_responsavel_id = :uid OR cc.advogado_auxiliar_id = :uid)
+        )
+    )"""
+
+
 def nivel_alerta(
     source_type: str,
     dias_restantes: int | None,
@@ -128,14 +165,7 @@ async def listar_alertas_inteligentes(
 ) -> dict[str, Any]:
     """Retorna apenas alertas acionáveis da carteira permitida ao usuário."""
     params: dict[str, Any] = {"uid": user.id}
-    scope = ""
-    if not is_gestao(user):
-        scope = """ AND (
-            v.responsavel_id = :uid OR EXISTS (
-                SELECT 1 FROM cases cc WHERE cc.id = v.case_id
-                AND (cc.advogado_responsavel_id = :uid OR cc.advogado_auxiliar_id = :uid)
-            )
-        )"""
+    scope = _activity_scope_sql(user)
 
     # Somente itens que podem demandar atenção imediata entram neste cockpit.
     # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
@@ -171,12 +201,7 @@ async def listar_alertas_inteligentes(
         )
     ).mappings().all()
 
-    mov_scope = ""
-    if not is_gestao(user):
-        mov_scope = """ AND (
-            c.advogado_responsavel_id = :uid OR c.advogado_auxiliar_id = :uid
-            OR (c.advogado_responsavel_id IS NULL AND c.advogado_auxiliar_id IS NULL)
-        )"""
+    mov_scope = _case_scope_sql(user)
     # Movimentações antigas não podem nascer como alerta retroativo infinito.
     # O cockpit considera a janela recente de sete dias; o histórico completo
     # continua disponível na timeline do caso.
@@ -248,12 +273,7 @@ async def _validar_fonte_acessivel(
 ) -> tuple[dict[str, Any], str]:
     params = {"uid": user.id, "sid": source_id, "tipo": source_type}
     if source_type == "movimentacao":
-        scope = ""
-        if not is_gestao(user):
-            scope = """ AND (
-                c.advogado_responsavel_id = :uid OR c.advogado_auxiliar_id = :uid
-                OR (c.advogado_responsavel_id IS NULL AND c.advogado_auxiliar_id IS NULL)
-            )"""
+        scope = _case_scope_sql(user)
         # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         row = (
             await db.execute(
@@ -277,14 +297,7 @@ async def _validar_fonte_acessivel(
         else:
             data = {}
     else:
-        scope = ""
-        if not is_gestao(user):
-            scope = """ AND (
-                v.responsavel_id = :uid OR EXISTS (
-                    SELECT 1 FROM cases cc WHERE cc.id = v.case_id
-                    AND (cc.advogado_responsavel_id = :uid OR cc.advogado_auxiliar_id = :uid)
-                )
-            )"""
+        scope = _activity_scope_sql(user)
         # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         row = (
             await db.execute(
@@ -384,12 +397,7 @@ async def montar_contexto_operacional_ejc(db: AsyncSession, user: User) -> str:
     """Contexto mínimo, autorizado e bounded para o modo Contexto EJC."""
     alertas = await listar_alertas_inteligentes(db, user, limit_per_type=5)
     params: dict[str, Any] = {"uid": user.id}
-    case_scope = ""
-    if not is_gestao(user):
-        case_scope = """ AND (
-            c.advogado_responsavel_id = :uid OR c.advogado_auxiliar_id = :uid
-            OR (c.advogado_responsavel_id IS NULL AND c.advogado_auxiliar_id IS NULL)
-        )"""
+    case_scope = _case_scope_sql(user)
     # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     casos = (
         await db.execute(
@@ -411,15 +419,7 @@ async def montar_contexto_operacional_ejc(db: AsyncSession, user: User) -> str:
         )
     ).mappings().all()
 
-    doc_scope = ""
-    if not is_gestao(user):
-        doc_scope = """ AND (
-            d.uploaded_by = :uid OR EXISTS (
-                SELECT 1 FROM cases cc WHERE cc.id = d.case_id
-                AND (cc.advogado_responsavel_id = :uid OR cc.advogado_auxiliar_id = :uid
-                     OR (cc.advogado_responsavel_id IS NULL AND cc.advogado_auxiliar_id IS NULL))
-            )
-        )"""
+    doc_scope = _document_scope_sql(user)
     # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     docs = (
         await db.execute(
