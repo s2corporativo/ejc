@@ -94,8 +94,25 @@ async def test_get_patch_delete_bloqueiam_antes_de_operar_sem_ownership(monkeypa
     assert exc.value.status_code == 403
 
 
-def test_update_rejeita_tipo_e_resultado_invalidos():
-    # O contrato Pydantic aceita string para manter compatibilidade de payload;
-    # a rota aplica a taxonomia canônica antes de persistir.
-    assert "invalido" not in memoria.TIPOS
-    assert "invalido" not in memoria.RESULTADOS
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "body",
+    [
+        memoria.MemoriaUpdate(tipo="invalido"),
+        memoria.MemoriaUpdate(resultado="invalido"),
+    ],
+)
+async def test_update_rejeita_taxonomia_invalida_antes_de_persistir(monkeypatch, body):
+    autorizacao = AsyncMock(return_value={"id": "mem-1", "case_id": None})
+    monkeypatch.setattr(memoria, "_obter_memoria_autorizada", autorizacao)
+
+    with pytest.raises(HTTPException) as exc:
+        await memoria.atualizar(
+            "mem-1",
+            body,
+            db=object(),
+            cu=SimpleNamespace(id="user-1"),
+        )
+
+    assert exc.value.status_code == 422
+    autorizacao.assert_awaited_once()
