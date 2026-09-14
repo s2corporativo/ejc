@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BriefcaseBusiness,
   CheckCircle2,
@@ -39,11 +39,16 @@ type AiTurn = {
   sources?: string[];
   notice?: string;
   alerts?: string[];
+  critique?: string;
   trust?: TrustIndicators;
   nextAction?: NextAction | null;
 };
 
-type Attachment = { id: string; nome_original: string };
+type Attachment = {
+  id: string;
+  nome_original: string;
+  contexto_truncado?: boolean;
+};
 
 const MODE_OPTIONS: Array<{ key: ModeKey; label: string }> = [
   { key: "livre", label: "Livre" },
@@ -62,6 +67,19 @@ function apiMode(mode: ModeKey, hasAttachments: boolean) {
   return hasAttachments ? "organizar_fatos" : "conversa_livre";
 }
 
+function normalizarCritica(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (!value || typeof value !== "object") return "";
+  const raw = value as Record<string, unknown>;
+  for (const key of ["conteudo", "texto", "critica", "aviso", "mensagem"]) {
+    const candidate = raw[key];
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return "";
+}
+
 export default function DashboardAiChat({
   canUseLegal,
 }: {
@@ -70,6 +88,7 @@ export default function DashboardAiChat({
   const { disponivel: iaDisponivel, mensagem: iaMensagem } = useIaStatus();
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
+  const chatBottomRef = useRef<HTMLDivElement>(null);
   const sessionPromiseRef = useRef<Promise<string> | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [question, setQuestion] = useState("");
@@ -81,6 +100,10 @@ export default function DashboardAiChat({
   const [uploading, setUploading] = useState(false);
   const [confirmingAction, setConfirmingAction] = useState<string | null>(null);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ block: "nearest" });
+  }, [turns, loading]);
 
   if (!canUseLegal) {
     return (
@@ -124,19 +147,23 @@ export default function DashboardAiChat({
         headers: { "Content-Type": "multipart/form-data" },
       });
       const novos = Array.isArray(data?.anexados) ? data.anexados : [];
-      setAttachments((current) => [
-        ...current,
-        ...novos.map((item: any) => ({
-          id: String(item.id),
-          nome_original: String(item.nome_original || "Anexo"),
-        })),
-      ]);
+      const anexosNormalizados = novos.map((item: any) => ({
+        id: String(item.id),
+        nome_original: String(item.nome_original || "Anexo"),
+        contexto_truncado: item.contexto_truncado === true,
+      }));
+      setAttachments((current) => [...current, ...anexosNormalizados]);
       if (novos.length) {
+        const haTruncamento = anexosNormalizados.some(
+          (item: Attachment) => item.contexto_truncado,
+        );
         setMode("documentos");
         setQuestion(
           (current) =>
             current ||
-            "Leia integralmente os anexos disponíveis, organize o dossiê jurídico e diga o que ainda precisa ser confirmado.",
+            (haTruncamento
+              ? "Analise os anexos disponíveis, organize o dossiê jurídico e sinalize expressamente os pontos que exigem conferência no arquivo original, pois ao menos um contexto textual foi truncado."
+              : "Analise os anexos disponíveis, organize o dossiê jurídico e diga o que ainda precisa ser confirmado."),
         );
       }
       const erros = Array.isArray(data?.erros) ? data.erros : [];
@@ -196,9 +223,10 @@ export default function DashboardAiChat({
               justificativa: nextActionRaw.justificativa
                 ? String(nextActionRaw.justificativa)
                 : undefined,
-              confirmada: Boolean(nextActionRaw.confirmada),
+              confirmada: Boolean(nextActionRaw.confirmimada),
             }
           : null;
+      const critique = normalizarCritica(data?.critica_adversarial);
       setTurns((current) => [
         ...current,
         {
@@ -210,11 +238,16 @@ export default function DashboardAiChat({
           sources,
           notice: String(data?.aviso_hitl || "").trim(),
           alerts: Array.isArray(msg?.alertas) ? msg.alertas.map(String) : [],
+          critique: critique || undefined,
           trust: data?.indicadores_confianca || undefined,
           nextAction: nextAction?.acao ? nextAction : null,
         },
       ]);
     } catch (err: any) {
+      // A UI não pode afirmar que o servidor persistiu uma pergunta cujo envio
+      // falhou. Remove apenas o turno otimista desta tentativa e restaura o texto.
+      setTurns((current) => current.filter((turn) => turn.id !== userTurn.id));
+      setQuestion(text);
       setError(mensagemErroIA(err));
     } finally {
       setLoading(false);
@@ -327,6 +360,13 @@ export default function DashboardAiChat({
                 <p>{turn.content}</p>
               )}
 
+              {turn.role === "assistant" && turn.critique && (
+                <div className="ejc-reference-ai-notice">
+                  <strong>Contraponto adversarial</strong>
+                  <Markdown source={turn.critique} className="markdown" />
+                </div>
+              )}
+
               {turn.role === "assistant" && turn.trust && (
                 <div
                   className="ejc-ai-trustbar"
@@ -409,6 +449,7 @@ export default function DashboardAiChat({
             <p>Analisando fatos, documentos, fontes e riscos…</p>
           </div>
         )}
+        <div ref={chatBottomRef} aria-hidden="true" />
       </div>
 
       {attachments.length > 0 && (
@@ -418,6 +459,9 @@ export default function DashboardAiChat({
             <span key={a.id}>
               <FileText aria-hidden="true" style={{ width: 12, height: 12 }} />{" "}
               {a.nome_original}
+              {a.contexto_truncado
+                ? " — contexto parcial; confira o arquivo original"
+                : ""}
             </span>
           ))}
         </div>
