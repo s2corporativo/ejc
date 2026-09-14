@@ -4,7 +4,7 @@ from app.services.ai.core.ejc_skill_catalog import resolve_native_skill_plan
 
 from .contracts import LegalBrainPlan
 from .issue_engine import identify_legal_issues
-from .research_loop import build_research_plan
+from .research_loop import build_clarification_plan, build_research_plan
 
 
 def build_legal_brain_plan(
@@ -16,11 +16,11 @@ def build_legal_brain_plan(
     surface: str | None = None,
     max_research_cycles: int = 3,
 ) -> LegalBrainPlan:
-    """Compõe um plano determinístico sem duplicar o núcleo de IA.
+    """Compõe plano determinístico usando apenas o núcleo e catálogo canônicos.
 
-    O catálogo nativo continua sendo a fonte canônica de skills. Esta função
-    apenas acrescenta questões e plano de pesquisa estruturado para o mesmo
-    ``SingleAICoreOrchestrator`` consumir em shadow/active mode.
+    ``saneamento_inicial`` é tratado como etapa de clarificação: enquanto fatos,
+    partes, documentos e marcos não estiverem suficientemente delimitados, o
+    plano não sugere pesquisa de precedente favorável/adverso.
     """
 
     native_plan = resolve_native_skill_plan(
@@ -33,7 +33,9 @@ def build_legal_brain_plan(
     area = native_plan.legal_area or domain
     issues = identify_legal_issues(message, area=area)
     plans = tuple(
-        build_research_plan(issue, max_cycles=max_research_cycles)
+        build_clarification_plan(issue)
+        if issue.key == "saneamento_inicial"
+        else build_research_plan(issue, max_cycles=max_research_cycles)
         for issue in issues
     )
 

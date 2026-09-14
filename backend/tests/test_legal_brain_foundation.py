@@ -34,6 +34,37 @@ def test_issue_engine_sem_match_retorna_saneamento_em_vez_de_inventar():
     assert issues[0].area == "nao_definida"
 
 
+def test_saneamento_inicial_nao_dispara_pesquisa_de_precedentes():
+    plan = build_legal_brain_plan(
+        task_type="analise_juridica",
+        message="Relato ainda incompleto",
+    )
+    purposes = {step.purpose for research in plan.research_plans for step in research.steps}
+    assert purposes == {"saneamento_fatico"}
+    assert "precedente_favoravel" not in purposes
+    assert "precedente_adverso" not in purposes
+
+
+def test_issue_engine_usa_fronteira_de_palavra_e_nao_substring():
+    issues = identify_legal_issues(
+        "O escritório recebeu aprovação interna do documento.",
+        area="civil",
+    )
+    keys = {issue.key for issue in issues}
+    assert "competencia_rito" not in keys
+    assert "prova_onus_lacunas" not in keys
+
+
+def test_questoes_transversais_nao_somem_quando_area_e_informada():
+    issues = identify_legal_issues(
+        "Pedido de liminar com prova documental.",
+        area="familia",
+    )
+    keys = {issue.key for issue in issues}
+    assert "tutela_urgencia" in keys
+    assert "prova_onus_lacunas" in keys
+
+
 def test_research_plan_exige_fonte_validade_e_contraditorio():
     issue = identify_legal_issues(
         "Há discussão de prescrição e prova documental.", area="civil"
@@ -48,8 +79,8 @@ def test_research_plan_exige_fonte_validade_e_contraditorio():
     assert "INSUFICIENTE" in plan.insufficient_evidence_message
 
 
-def test_research_coverage_so_fecha_com_flags_explicitas():
-    coverage = evaluate_research_coverage(
+def test_research_coverage_exige_proveniencia_e_booleanos_nativos():
+    sem_proveniencia = evaluate_research_coverage(
         [
             {
                 "source_class": "legislacao_oficial",
@@ -60,12 +91,47 @@ def test_research_coverage_so_fecha_com_flags_explicitas():
             {"source_class": "jurisprudencia_oficial", "stance": "adverso"},
         ]
     )
-    assert coverage.complete is True
+    assert sem_proveniencia.complete is False
+
+    cobertura = evaluate_research_coverage(
+        [
+            {
+                "source_id": "norma-1",
+                "source_class": "legislacao_oficial",
+                "validity_verified": True,
+                "factual_fit_reviewed": True,
+            },
+            {
+                "source_id": "precedente-1",
+                "source_class": "jurisprudencia_oficial",
+                "stance": "favoravel",
+            },
+            {
+                "source_id": "precedente-2",
+                "source_class": "jurisprudencia_oficial",
+                "stance": "adverso",
+            },
+        ]
+    )
+    assert cobertura.complete is True
+
+    strings_nao_sao_true = evaluate_research_coverage(
+        [
+            {
+                "source_id": "norma-2",
+                "source_class": "legislacao_oficial",
+                "validity_verified": "false",
+                "factual_fit_reviewed": "false",
+            }
+        ]
+    )
+    assert strings_nao_sao_true.current_validity is False
+    assert strings_nao_sao_true.factual_fit is False
 
 
 def test_precedent_validity_sem_proveniencia_falha_fechado():
     result = evaluate_proposition_validity(
-        "prop-1", [{"relation": "overruled_by", "source_id": ""}]
+        "prop-1", [{"tipo": "supera", "outro": ""}]
     )
     assert result.status == PrecedentPropositionStatus.NAO_VERIFICADA
     assert result.related_source_ids == ()
@@ -75,13 +141,13 @@ def test_precedent_validity_prioriza_superacao_explicita():
     result = evaluate_proposition_validity(
         "prop-1",
         [
-            {"relation": "confirmed_by", "source_id": "src-confirmacao"},
-            {"relation": "limited_by", "source_id": "src-limitacao"},
-            {"relation": "overruled_by", "source_id": "src-superacao"},
+            {"tipo": "confirma", "outro": "src-confirmacao"},
+            {"tipo": "limita", "outro": "src-limitacao"},
+            {"tipo": "supera", "outro": "src-superacao"},
         ],
     )
     assert result.status == PrecedentPropositionStatus.SUPERADA
-    assert result.decisive_relation == "overruled_by"
+    assert result.decisive_relation == "supera"
     assert "src-superacao" in result.related_source_ids
 
 
@@ -97,6 +163,15 @@ def test_inferencia_ia_nao_vira_fato_confirmado_diretamente():
             EvidenceState.CONFIRMADO,
             reviewer_user_id="adv-1",
             reviewed_at="2026-09-13T20:00:00-03:00",
+        )
+
+
+def test_construtor_nao_aceita_estado_validado_sem_trilha_humana():
+    with pytest.raises(ValueError, match="revisor autenticado"):
+        CaseAssertion(
+            id="fato-1",
+            text="Fato",
+            state=EvidenceState.CONFIRMADO,
         )
 
 
@@ -119,7 +194,7 @@ def test_validacao_humana_exige_identidade_e_data():
     assert reviewed.validated_by_user_id == "adv-1"
 
 
-def test_legal_brain_reutiliza_catalogo_nativo_sem_segundo_gateway():
+def test_legal_brain_reutiliza_catalogo_nativo_e_metadata_e_imutavel():
     plan = build_legal_brain_plan(
         task_type="analise_juridica",
         domain="bancario",
@@ -130,9 +205,11 @@ def test_legal_brain_reutiliza_catalogo_nativo_sem_segundo_gateway():
     assert plan.metadata["deterministic"] is True
     assert plan.issues
     assert plan.research_plans
+    with pytest.raises(TypeError):
+        plan.metadata["requires_human_review"] = False
 
 
-def test_legal_bench_pune_fato_inventado_e_ausencia_de_adversarial():
+def test_legal_bench_pune_fato_inventado_e_adversarial_sem_fonte():
     case = LegalBenchCase(
         id="bench-1",
         area="consumidor",
@@ -149,7 +226,10 @@ def test_legal_bench_pune_fato_inventado_e_ausencia_de_adversarial():
             "issue_keys": ["tutela_urgencia"],
             "source_ids": ["fonte-1"],
             "fact_ids": ["fato-1", "fato-inventado"],
-            "adverse_research_done": False,
+            "adverse_research_done": True,
+            "research_records": [
+                {"source_class": "jurisprudencia_oficial", "stance": "adverso"}
+            ],
             "conclusion_status": "conclusivo",
         },
     )
@@ -159,3 +239,27 @@ def test_legal_bench_pune_fato_inventado_e_ausencia_de_adversarial():
     assert score.adverse_coverage == 0.0
     assert score.uncertainty_compliance == 0.0
     assert summarize([score])["n"] == 1
+
+
+def test_legal_bench_reconhece_adversarial_com_proveniencia():
+    case = LegalBenchCase(
+        id="bench-2",
+        area="civil",
+        prompt="Caso sintético",
+        requires_adverse_research=True,
+        source_scoring_enabled=False,
+    )
+    score = score_structured_answer(
+        case,
+        {
+            "research_records": [
+                {
+                    "source_id": "precedente-adverso-1",
+                    "source_class": "jurisprudencia_oficial",
+                    "stance": "adverso",
+                }
+            ],
+            "conclusion_status": "sem_conclusao_segura",
+        },
+    )
+    assert score.adverse_coverage == 1.0

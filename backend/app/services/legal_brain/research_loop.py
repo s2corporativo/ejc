@@ -71,11 +71,47 @@ def build_research_plan(issue: LegalIssue, *, max_cycles: int = 3) -> ResearchPl
     )
 
 
-def evaluate_research_coverage(records: Iterable[dict]) -> ResearchCoverage:
-    """Mede cobertura a partir de metadados explícitos.
+def build_clarification_plan(issue: LegalIssue) -> ResearchPlan:
+    """Cria plano de saneamento sem disparar pesquisa jurídica prematura.
 
-    Campos desconhecidos não são inferidos. O chamador deve registrar as classes
-    de fonte e flags de verificação no resultado da busca/curadoria.
+    ``saneamento_inicial`` existe justamente quando ainda não há questão jurídica
+    suficientemente delimitada. Nesse estado, pesquisar precedentes favoráveis ou
+    adversos criaria ruído e falsa aparência de enquadramento.
+    """
+
+    return ResearchPlan(
+        issue_key=issue.key,
+        area=issue.area or "nao_definida",
+        max_cycles=1,
+        steps=(
+            ResearchStep(
+                order=1,
+                purpose="saneamento_fatico",
+                query=issue.question,
+                source_classes=(),
+                mandatory=True,
+            ),
+        ),
+        stop_when=("partes, fatos, documentos, datas, valores, objetivo e fase confirmados",),
+    )
+
+
+def _provenance_id(raw: dict) -> str:
+    """Retorna uma âncora rastreável sem inferir proveniência ausente."""
+
+    for key in ("source_id", "canonical_id", "doc_id", "url", "citation"):
+        value = str(raw.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def evaluate_research_coverage(records: Iterable[dict]) -> ResearchCoverage:
+    """Mede cobertura somente a partir de evidência explícita e rastreável.
+
+    Uma classe declarada sem ``source_id``/``canonical_id``/``doc_id``/URL/citação
+    não satisfaz nenhum requisito. Flags de validação precisam ser booleanos
+    nativos ``True``; strings como ``"false"`` nunca contam como verificação.
     """
 
     primary_source = False
@@ -87,18 +123,21 @@ def evaluate_research_coverage(records: Iterable[dict]) -> ResearchCoverage:
     for raw in records:
         if not isinstance(raw, dict):
             continue
+        provenance = _provenance_id(raw)
+        if not provenance:
+            continue
         source_class = str(raw.get("source_class") or "").strip().lower()
         stance = str(raw.get("stance") or "").strip().lower()
         if source_class in {"legislacao_oficial", "ato_administrativo_oficial"}:
             primary_source = True
-        if bool(raw.get("validity_verified")):
+        if raw.get("validity_verified") is True:
             current_validity = True
         if source_class in {"precedente_vinculante", "jurisprudencia_oficial"}:
             if stance in {"favoravel", "supporting", "apoio"}:
                 supporting_precedent = True
             if stance in {"contrario", "adverso", "adverse"}:
                 adverse_precedent = True
-        if bool(raw.get("factual_fit_reviewed")):
+        if raw.get("factual_fit_reviewed") is True:
             factual_fit = True
 
     return ResearchCoverage(

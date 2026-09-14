@@ -17,6 +17,8 @@ from app.eval.legal_bench import load_cases, score_structured_answer, summarize
 
 
 def _load_answers(path: str | Path) -> dict[str, dict]:
+    """Carrega respostas JSONL e rejeita IDs ausentes ou duplicados."""
+
     answers: dict[str, dict] = {}
     with Path(path).open("r", encoding="utf-8") as handle:
         for lineno, line in enumerate(handle, start=1):
@@ -27,13 +29,20 @@ def _load_answers(path: str | Path) -> dict[str, dict]:
                 raw = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise ValueError(f"resposta JSONL inválida na linha {lineno}: {exc}") from exc
-            if not isinstance(raw, dict) or not raw.get("id"):
+            if not isinstance(raw, dict):
+                raise ValueError(f"resposta da linha {lineno} precisa ser objeto JSON")
+            answer_id = str(raw.get("id") or "").strip()
+            if not answer_id:
                 raise ValueError(f"resposta da linha {lineno} precisa de campo id")
-            answers[str(raw["id"])] = raw
+            if answer_id in answers:
+                raise ValueError(f"id de resposta duplicado: {answer_id}")
+            answers[answer_id] = raw
     return answers
 
 
 def main() -> None:
+    """Valida entradas, calcula scores e imprime ou grava o relatório JSON."""
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--cases", required=True)
     parser.add_argument("--answers", required=True)
@@ -55,7 +64,11 @@ def main() -> None:
     }
     text = json.dumps(payload, ensure_ascii=False, indent=2)
     if args.out:
-        Path(args.out).write_text(text + "\n", encoding="utf-8")
+        out_path = Path(args.out).resolve()
+        input_paths = {Path(args.cases).resolve(), Path(args.answers).resolve()}
+        if out_path in input_paths:
+            raise SystemExit("--out não pode sobrescrever --cases ou --answers")
+        out_path.write_text(text + "\n", encoding="utf-8")
     else:
         print(text)
 
