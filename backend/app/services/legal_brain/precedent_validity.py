@@ -5,7 +5,18 @@ from collections.abc import Iterable
 from .contracts import PrecedentPropositionStatus, PrecedentValidityResult
 
 
+# Vocabulário primário = legal_graph.RELACOES_VALIDAS. Os aliases em inglês
+# permanecem somente para importar artefatos externos/legados sem quebrar a
+# semântica canônica do EJC.
 _RELATION_STATUS: dict[str, PrecedentPropositionStatus] = {
+    "confirma": PrecedentPropositionStatus.CONFIRMADA,
+    "distingue": PrecedentPropositionStatus.DISTINGUIDA,
+    "limita": PrecedentPropositionStatus.LIMITADA,
+    "supera": PrecedentPropositionStatus.SUPERADA,
+    "afetado_por_tema": PrecedentPropositionStatus.AFETADA_POR_TEMA,
+    "afetado_por_sumula": PrecedentPropositionStatus.AFETADA_POR_SUMULA,
+    "afetado_por_alteracao_legislativa": PrecedentPropositionStatus.AFETADA_POR_ALTERACAO_LEGISLATIVA,
+    # aliases de interoperabilidade; não são o vocabulário de persistência
     "confirmed_by": PrecedentPropositionStatus.CONFIRMADA,
     "distinguished_by": PrecedentPropositionStatus.DISTINGUIDA,
     "limited_by": PrecedentPropositionStatus.LIMITADA,
@@ -37,8 +48,9 @@ def evaluate_proposition_validity(
     """Avalia status usando somente relações explicitamente registradas.
 
     A ausência de relações não significa validade: retorna ``nao_verificada``.
-    Relações sem ``source_id`` podem sinalizar hipótese interna, mas não promovem
-    estado jurídico porque não possuem proveniência rastreável.
+    O formato preferencial é o índice do grafo canônico: ``tipo`` + ``outro``.
+    Também aceitamos ``source_id`` para interoperabilidade. Relações sem nó/fonte
+    rastreável não promovem estado jurídico.
     """
 
     candidates: list[tuple[int, PrecedentPropositionStatus, str, str]] = []
@@ -47,8 +59,10 @@ def evaluate_proposition_validity(
     for raw in relations:
         if not isinstance(raw, dict):
             continue
-        relation = str(raw.get("relation") or raw.get("type") or "").strip().lower()
-        source_id = str(raw.get("source_id") or "").strip()
+        relation = str(
+            raw.get("tipo") or raw.get("relation") or raw.get("type") or ""
+        ).strip().lower()
+        source_id = str(raw.get("outro") or raw.get("source_id") or "").strip()
         status = _RELATION_STATUS.get(relation)
         if status is None:
             continue
