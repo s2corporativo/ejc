@@ -1100,45 +1100,81 @@ async def encerrar_caso(
     case.provas_determinantes = payload.provas_determinantes
     case.licoes_aprendidas = payload.licoes_aprendidas
 
+    precedente_rag_status = "nao_solicitado"
+
     # Memória institucional: ingere o pós-mortem no RAG (sem dados pessoais).
     # Agora inclui o DOSSIÊ COMPLETO (dados especializados do ramo, prazos que
     # foram cumpridos, peças produzidas) — não só a estratégia textual. Isso faz
     # o precedente interno ser pesquisável por características concretas do caso.
+    # #1466 (P0): este passo é ACESSÓRIO — falha de dossiê/embedding/RAG nunca
+    # pode transformar em HTTP 500 um encerramento juridicamente válido. O upsert
+    # roda em SAVEPOINT para não envenenar a transação principal, e qualquer
+    # exceção é contida com warning (sem PII/conteúdo no log).
     if payload.alimentar_rag:
         from app.services.case_context import montar_dossie
         from app.services.ingestion_service import upsert_documento
 
         area_str = case.area.value if hasattr(case.area, "value") else str(case.area)
 
-        # Dossiê consolidado e já sanitizado (cliente, ramo, prazos, peças)
-        dossie = await montar_dossie(db, case_id, incluir_pecas=True, sanitizar=True)
-        bloco_dossie = dossie["texto"] if dossie else ""
+        try:
+            # Um único SAVEPOINT cobre TODO o passo acessório. Assim, falha de
+            # leitura do dossiê (inclusive erro SQL) ou de embedding/upsert não
+            # deixa a transação principal do encerramento em estado abortado.
+            async with db.begin_nested():
+                # Dossiê consolidado e já sanitizado (cliente, ramo, prazos, peças).
+                # Peças de IA não revisadas entram apenas como metadado sinalizado
+                # por case_context; o conteúdo da minuta não é incorporado aqui.
+                dossie = await montar_dossie(
+                    db, case_id, incluir_pecas=True, sanitizar=True
+                )
+                bloco_dossie = dossie["texto"] if dossie else ""
 
-        corpo = (
-            f"PRECEDENTE INTERNO — CASO {case.numero_interno}\n"
-            f"Área: {area_str} | Resultado: {payload.resultado}\n\n"
-            f"TESE PRINCIPAL: {case.tese_principal or '—'}\n\n"
-            f"MOTIVO DO RESULTADO: {payload.motivo_resultado}\n\n"
-            f"PROVAS DETERMINANTES: {payload.provas_determinantes}\n\n"
-            f"LIÇÕES APRENDIDAS: {payload.licoes_aprendidas}\n\n"
-            f"--- CONTEXTO DO CASO (dossiê) ---\n{bloco_dossie}"
-        )
-        # Idempotente: chave_origem = caso:{id} evita duplicar se reencerrado.
-        await upsert_documento(
-            db,
-            titulo=f"Precedente Interno — {case.numero_interno} ({payload.resultado})",
-            categoria="precedente_interno",
-            conteudo=corpo,
-            chave_origem=f"caso:{case.id}",
-            fonte=f"caso:{case.id}",
-            extra={
-                "area": area_str,
-                "resultado": payload.resultado,
-                "rag_status": "aprovado",
-                "human_reviewed": True,
-                "approved_by": str(cu.id),
-            },
-        )
+                corpo = (
+                    f"PRECEDENTE INTERNO — CASO {case.numero_interno}\n"
+                    f"Área: {area_str} | Resultado: {payload.resultado}\n\n"
+                    f"TESE PRINCIPAL: {case.tese_principal or '—'}\n\n"
+                    f"MOTIVO DO RESULTADO: {payload.motivo_resultado}\n\n"
+                    f"PROVAS DETERMINANTES: {payload.provas_determinantes}\n\n"
+                    f"LIÇÕES APRENDIDAS: {payload.licoes_aprendidas}\n\n"
+                    f"--- CONTEXTO DO CASO (dossiê) ---\n{bloco_dossie}"
+                )
+                # Idempotente: chave_origem = caso:{id} evita duplicar se reencerrado.
+                # O hardening valida estes IDs explícitos contra o Case canônico;
+                # qualquer divergência cross-client/cross-case falha antes da escrita.
+                await upsert_documento(
+                    db,
+                    titulo=f"Precedente Interno — {case.numero_interno} ({payload.resultado})",
+                    categoria="precedente_interno",
+                    conteudo=corpo,
+                    chave_origem=f"caso:{case.id}",
+                    fonte=f"caso:{case.id}",
+                    client_id=str(case.client_id) if case.client_id else None,
+                    case_id=str(case.id),
+                    # Reencerramento é um novo ato de aprendizagem. Mesmo com
+                    # conteúdo idêntico, cria nova versão vigente pendente de
+                    # HITL em vez de herdar metadados de aprovação da versão
+                    # anterior (inclusive autoaprovações legadas).
+                    forcar_nova_versao=True,
+                    extra={
+                        "area": area_str,
+                        "resultado": payload.resultado,
+                        # Encerrar o caso não equivale a revisar este novo
+                        # artefato cognitivo. O precedente nasce pendente e só
+                        # avança pelo fluxo canônico de curadoria/HITL.
+                        "requires_human_review": True,
+                        "rag_status": "pendente",
+                        "human_reviewed": False,
+                    },
+                )
+            precedente_rag_status = "registrado"
+        except Exception as exc:
+            precedente_rag_status = "falha_acessoria"
+            # Sem conteúdo, chave, IDs de cliente/caso ou mensagem bruta da exceção.
+            logger.warning(
+                "Memoria institucional acessoria nao persistida no encerramento; "
+                "transacao principal preservada (erro=%s)",
+                type(exc).__name__,
+            )
 
     pendencias_txt = ""
     if diag["bloqueios"] or diag["alertas"]:
@@ -1161,6 +1197,10 @@ async def encerrar_caso(
             "bloqueios_justificados": [b["codigo"] for b in diag["bloqueios"]],
             "alertas_confirmados": [a["codigo"] for a in diag["alertas"]],
             "justificativa_bloqueio": justificativa if justificativa_valida else None,
+            # Resultado operacional, sem conteúdo jurídico/PII: permite
+            # reconciliar fechamentos cujo precedente acessório falhou.
+            "rag_solicitado": bool(payload.alimentar_rag),
+            "precedente_rag": precedente_rag_status,
         },
     )
     await db.commit()
@@ -1174,7 +1214,13 @@ async def encerrar_caso(
     )
     sincronizacao = await _sincronizar_no_encerramento(db, case, cu, payload, request)
     return {
-        "detail": "Caso encerrado. Conhecimento registrado na base institucional.",
+        "detail": "Caso encerrado.",
+        "memoria_institucional": {
+            "precedente_rag": precedente_rag_status,
+            # A memória/tese roda em BackgroundTasks depois da resposta;
+            # não declarar sucesso antes de sua execução real.
+            "aprendizado_assincrono": "enfileirado",
+        },
         "sincronizacao_processo_eletronico": sincronizacao,
     }
 
