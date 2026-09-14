@@ -972,6 +972,21 @@ async def atualizar_atendimento(
     if not _pode_editar_atendimento(atendimento, cu):
         raise HTTPException(status_code=403, detail="Sem permissão para editar este atendimento")
 
+    # PATCH de atendimento com Task vinculada também sincroniza a Task. Portanto,
+    # o editor precisa manter acesso atual ao caso antes de qualquer mutação,
+    # inclusive ao remover o responsável da solicitação. Isso evita que criador
+    # ou antigo responsável do atendimento contorne o ownership case-scoped.
+    if atendimento.task_id and atendimento.case_id:
+        try:
+            await verificar_acesso_caso(db, cu, atendimento.case_id)
+        except HTTPException as exc:
+            if exc.status_code in (403, 404):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Sem acesso ao caso vinculado à tarefa",
+                ) from None
+            raise
+
     data = req.model_dump(exclude_unset=True)
     for obrigatorio in ("tipo", "data_atendimento", "resumo"):
         if obrigatorio in data and data[obrigatorio] is None:
