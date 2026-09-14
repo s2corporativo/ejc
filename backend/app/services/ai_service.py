@@ -203,12 +203,22 @@ _FILTRO_VIGENCIA_VERIFICADA_RAG = (
 )
 
 
-def filtros_gate_rag(incluir_ficticio: bool = False) -> str:
+def filtros_gate_rag(
+    incluir_ficticio: bool = False,
+    *,
+    ignorar_gate_vigencia: bool = False,
+) -> str:
     """Fragmento SQL (sem bind params; alias obrigatório `kd` para
     knowledge_docs) com o gate de governança/quarentena aplicado a TODAS as
     consultas de recuperação RAG. A decisão é feita em Python a partir das
     flags de config, então não há parâmetros novos para propagar aos
     dicionários de params das queries. Fail-closed.
+
+    ``ignorar_gate_vigencia`` existe SOMENTE para diagnósticos controlados que
+    precisam distinguir "texto atual presente, vigência ainda não curada" de
+    "texto existente apenas em versão histórica". Ele NÃO desliga aprovação,
+    revogação, quarentena de súmulas nem o filtro de corpus fictício e não deve
+    ser usado para montar contexto de IA.
 
     FONTE ÚNICA (C3 da análise E2E de IA 2026-09-03): as métricas de cobertura
     (`rag_coverage`) e de saúde da base (`knowledge_governance.usable_docs`)
@@ -219,7 +229,7 @@ def filtros_gate_rag(incluir_ficticio: bool = False) -> str:
     partes = [_FILTRO_GATE_RAG, _FILTRO_REVOGADA_RAG]
     if settings.RAG_EXIGIR_APROVADO:
         partes.append(_FILTRO_APROVADO_RAG)
-    if settings.RAG_EXIGIR_VIGENCIA_VERIFICADA:
+    if settings.RAG_EXIGIR_VIGENCIA_VERIFICADA and not ignorar_gate_vigencia:
         partes.append(_FILTRO_VIGENCIA_VERIFICADA_RAG)
     if settings.RAG_SUMULAS_QUARENTENA:
         partes.append(_FILTRO_SUMULAS_QUARENTENA)
