@@ -1,9 +1,9 @@
 """Métricas agregadas de cobertura do RAG.
 
 Não lê conteúdo nem dados de cliente: só agrega metadados e contagens. O mapa
-MG/JEC inclui os documentos dedicados e também a jurisprudência genérica do
-crawler TJMG (`categoria=jurisprudencia`, `tribunal=TJMG`) por mapeamento lógico,
-sem duplicar `knowledge_docs`.
+MG/JEC/TRT3 inclui documentos dedicados e também jurisprudência genérica
+normalizada dos importadores oficiais, por mapeamento lógico, sem duplicar
+``knowledge_docs``.
 """
 from __future__ import annotations
 
@@ -31,9 +31,17 @@ _SQL_LEGAL_STATUS = (
 _SQL_FONTE_VALIDADA = "lower(COALESCE(kd.extra->>'fonte_validada','')) = 'true'"
 _SQL_COLECAO = (
     "COALESCE(NULLIF(kd.extra->>'collection',''), "
-    "CASE WHEN lower(kd.categoria) = 'jurisprudencia' "
+    "CASE "
+    "WHEN lower(kd.categoria) = 'jurisprudencia' "
     f"AND {_SQL_TRIBUNAL} = 'TJMG' "
-    "THEN 'jurisprudencia_tjmg_acordaos_auto' ELSE kd.categoria END)"
+    "THEN 'jurisprudencia_tjmg_acordaos_auto' "
+    "WHEN lower(kd.categoria) = 'jurisprudencia' "
+    f"AND {_SQL_TRIBUNAL} IN ('TRT3','TRT-3') "
+    "THEN 'jurisprudencia_trt3_auto' "
+    "WHEN lower(kd.categoria) = 'jurisprudencia' "
+    f"AND {_SQL_TRIBUNAL} IN ('JEC','JEF') "
+    "THEN 'jurisprudencia_juizados_auto' "
+    "ELSE kd.categoria END)"
 )
 _SQL_ANO = (
     "CASE "
@@ -50,15 +58,13 @@ def _filtro_mg_jec() -> str:
     return (
         "(kd.categoria IN (" + cats + ") "
         "OR COALESCE(kd.extra->>'source_family','') = 'mg_jec' "
-        f"OR (lower(kd.categoria) = 'jurisprudencia' AND {_SQL_TRIBUNAL} = 'TJMG'))"
+        "OR (lower(kd.categoria) = 'jurisprudencia' "
+        f"AND {_SQL_TRIBUNAL} IN ('TJMG','TRT3','TRT-3','JEC','JEF')))"
     )
 
 
 def _where(mg_jec_only: bool) -> str:
-    """WHERE das métricas = vigente/não excluído + o MESMO gate de governança
-    da recuperação (C3): cobertura nunca conta documento que a busca exclui
-    (sem rag_status aprovado, vigência não verificada, súmula em quarentena,
-    corpus fictício, revogado). Import tardio: ai_service é módulo pesado."""
+    """WHERE das métricas = vigente/não excluído + o mesmo gate do retrieval."""
     from app.services.ai_service import filtros_gate_rag
 
     base = (
@@ -150,7 +156,8 @@ async def medir_cobertura_rag(db: AsyncSession, *, mg_jec_only: bool = False) ->
             )
         ).mappings().all()
         return [
-            {nome: r["valor"], "documentos": int(r["documentos"] or 0)} for r in rows
+            {nome: r["valor"], "documentos": int(r["documentos"] or 0)}
+            for r in rows
         ]
 
     por_tribunal = await _dim(_SQL_TRIBUNAL, "tribunal")
@@ -162,7 +169,7 @@ async def medir_cobertura_rag(db: AsyncSession, *, mg_jec_only: bool = False) ->
     documentos = int((resumo or {}).get("documentos") or 0)
     validadas = int((resumo or {}).get("fonte_validada_explicita") or 0)
     return {
-        "escopo": "mg_jec" if mg_jec_only else "rag_atual",
+        "escopo": "mg_jec_trt3" if mg_jec_only else "rag_atual",
         "documentos": documentos,
         "chunks": int((resumo or {}).get("chunks") or 0),
         "documentos_indexados": int((resumo or {}).get("documentos_indexados") or 0),
@@ -179,7 +186,9 @@ async def medir_cobertura_rag(db: AsyncSession, *, mg_jec_only: bool = False) ->
                 "chunks": int(r["chunks"] or 0),
                 "indexados": int(r["indexados"] or 0),
                 "aprovados": int(r["aprovados"] or 0),
-                "fonte_validada_explicita": int(r["fonte_validada_explicita"] or 0),
+                "fonte_validada_explicita": int(
+                    r["fonte_validada_explicita"] or 0
+                ),
                 "ultima_atualizacao": r["ultima_atualizacao"],
             }
             for r in colecoes
@@ -193,7 +202,13 @@ async def medir_cobertura_rag(db: AsyncSession, *, mg_jec_only: bool = False) ->
             "conta_apenas_versao_tecnica_vigente": True,
             "conteudo_exposto": False,
             "tjmg_generico_mapeado_sem_duplicacao": True,
-            "tjmg_generico_colecao_logica": "jurisprudencia_tjmg_acordaos_auto",
+            "trt3_generico_mapeado_sem_duplicacao": True,
+            "juizados_genericos_mapeados_sem_duplicacao": True,
+            "colecoes_logicas": {
+                "tjmg": "jurisprudencia_tjmg_acordaos_auto",
+                "trt3": "jurisprudencia_trt3_auto",
+                "juizados": "jurisprudencia_juizados_auto",
+            },
             "fonte_validada_explicita": (
                 "Conta somente extra.fonte_validada=true; ausência do metadado "
                 "não é inferida como validação."
