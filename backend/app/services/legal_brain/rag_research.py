@@ -81,7 +81,8 @@ async def execute_research_plan_with_rag(
 
     Ownership e governança permanecem em ``buscar_contexto_rag``. O passo de
     validade pode consultar versões históricas, mas isso nunca as promove a
-    autoridade atual. ``saneamento_inicial`` não consulta RAG.
+    autoridade atual. Planos apenas de saneamento não consultam RAG nem abrem
+    automaticamente uma lacuna de pesquisa jurídica.
     """
     # Import tardio: mantém o pacote Legal Brain leve e evita ciclos de startup.
     from app.services.ai_service import buscar_contexto_rag
@@ -89,6 +90,9 @@ async def execute_research_plan_with_rag(
     records: list[dict[str, Any]] = []
     executed_steps: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
+    clarification_only = bool(plan.steps) and all(
+        step.purpose == "clarificar_fatos" for step in plan.steps
+    )
 
     for step in plan.steps:
         if step.purpose == "clarificar_fatos":
@@ -138,7 +142,7 @@ async def execute_research_plan_with_rag(
             "factual_fit": coverage.factual_fit,
             "complete": coverage.complete,
         },
-        "next_gap": next_research_gap(coverage),
+        "next_gap": "clarificar_fatos" if clarification_only else next_research_gap(coverage),
         "executed_steps": executed_steps,
         "requires_human_review": True,
     }
