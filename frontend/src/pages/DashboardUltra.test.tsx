@@ -38,12 +38,7 @@ import DashboardUltra from "./DashboardUltra";
 
 const dashboardOk = {
   data: {
-    casos: {
-      total: 3,
-      ativos: 2,
-      por_status: { ativo: 2, encerrado: 1 },
-    },
-    prazos: { vencidos: 1, criticos_3d: 1, proximos_7d: 2 },
+    prazos: { vencidos: 1, criticos_3d: 2, proximos_7d: 4 },
     degradado: [],
   },
 };
@@ -53,18 +48,13 @@ const atividadesOk = {
     {
       id: "t1",
       tipo: "tarefa",
-      fonte: "tarefa",
       titulo: "Tarefa pendente",
-      descricao: "Caso Alfa",
-      date: "2099-01-02",
       status: "pendente",
     },
     {
       id: "t2",
       tipo: "tarefa",
-      fonte: "tarefa",
       titulo: "Tarefa concluída",
-      date: "2099-01-03",
       status: "concluida",
     },
     {
@@ -72,54 +62,22 @@ const atividadesOk = {
       tipo: "intimacao",
       fonte: "djen",
       titulo: "Intimação pendente",
-      date: "2099-01-04",
+      status: "pendente",
+    },
+    {
+      id: "m1",
+      tipo: "movimentacao",
+      fonte: "datajud",
+      titulo: "Movimentação nova",
       status: "pendente",
     },
   ],
-};
-
-const agendaOk = {
-  data: [{ id: "t1", tipo: "audiencia", hora: "09:30", local: "Fórum" }],
-};
-
-const clientesOk = {
-  data: {
-    data: [
-      {
-        id: "c1",
-        nome: "Cliente Alfa",
-        status: "ativo",
-        email: "cliente@example.com",
-      },
-    ],
-  },
-};
-
-const defesasOk = {
-  data: {
-    modalidades: [
-      {
-        codigo: "multa_transito",
-        titulo: "Recurso de multa de trânsito",
-        descricao: "Defesa prévia e recursos administrativos.",
-      },
-      {
-        codigo: "revisao_contratual",
-        titulo: "Revisão de contrato",
-        descricao: "Leitura estruturada do contrato.",
-      },
-    ],
-  },
 };
 
 function mockSucesso() {
   getMock.mockImplementation((url: string) => {
     if (url === "/dashboard/") return Promise.resolve(dashboardOk);
     if (url === "/atividades") return Promise.resolve(atividadesOk);
-    if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
-    if (url === "/clients/?page_size=4&status=ativo")
-      return Promise.resolve(clientesOk);
-    if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
     return Promise.reject(new Error(`URL inesperada: ${url}`));
   });
 }
@@ -136,27 +94,84 @@ beforeEach(() => {
   papelAtual = "advogado";
   getMock.mockReset();
   postMock.mockReset();
-  postMock.mockResolvedValue({
-    data: {
-      conteudo: "Resposta jurídica de teste",
-      fontes_rag: ["Fonte oficial A", "Fonte oficial B"],
-      alertas: ["Citação exige conferência específica"],
-      aviso_hitl: "Revisão humana obrigatória",
-    },
+  postMock.mockImplementation((url: string) => {
+    if (url === "/sala-juridica") {
+      return Promise.resolve({ data: { id: "sess-dashboard-1" } });
+    }
+    if (url === "/sala-juridica/sess-dashboard-1/mensagens") {
+      return Promise.resolve({
+        data: {
+          mensagem_ia: {
+            id: "msg-ia-1",
+            conteudo: "Resposta jurídica de teste",
+            fontes: [{ titulo: "Fonte oficial A" }],
+            alertas: ["Citação exige conferência específica"],
+          },
+          aviso_hitl: "Revisão humana obrigatória",
+        },
+      });
+    }
+    if (url === "/sala-juridica/sess-dashboard-1/anexos") {
+      return Promise.resolve({
+        data: {
+          anexados: [{ id: "anexo-1", nome_original: "processo.pdf" }],
+          erros: [],
+        },
+      });
+    }
+    return Promise.reject(new Error(`POST inesperado: ${url}`));
   });
   mockSucesso();
 });
 
 afterEach(() => cleanup());
 
-describe("DashboardUltra — referência 2026", () => {
-  it("aplica RBAC às ferramentas jurídicas sem esconder o estado explicativo", async () => {
-    papelAtual = "advogado";
-    const primeira = renderizar();
-    expect(await screen.findByText("Fontes e jurisprudência")).toBeTruthy();
-    expect(screen.getByText("Recurso de Multa de Trânsito")).toBeTruthy();
-    primeira.unmount();
+describe("DashboardUltra — cockpit IA-first", () => {
+  it("mantém a marca evidente, IA como área principal e radar jurídico horizontal", async () => {
+    renderizar();
+    expect(
+      await screen.findByAltText("De Paula Teixeira Advogados"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/Converse, anexe, analise e transforme informação/i),
+    ).toBeTruthy();
+    expect(
+      screen.getByLabelText("Pergunta rápida para a Inteligência Jurídica"),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Abrir WhatsApp do escritório" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Enviar e-mail ao escritório" }),
+    ).toBeTruthy();
+    expect(screen.getByText("Radar Jurídico")).toBeTruthy();
+    expect(
+      screen.getByRole("link", {
+        name: /ACP sindical: honorários sucumbenciais contra a União/i,
+      }),
+    ).toBeTruthy();
+  });
 
+  it("carrega somente os dados necessários para IA e radar operacional", async () => {
+    renderizar();
+    await screen.findByLabelText(/Prazos: 3\. 1 vencidos · 2 críticos/i);
+    expect(getMock).toHaveBeenCalledWith("/dashboard/");
+    expect(getMock).toHaveBeenCalledWith("/atividades", {
+      params: { apenas_pendentes: false },
+    });
+    expect(getMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("mostra sinais distintos para prazo, tarefa e intimação", async () => {
+    renderizar();
+    expect(
+      await screen.findByLabelText(/Prazos: 3\. 1 vencidos · 2 críticos/i),
+    ).toBeTruthy();
+    expect(screen.getByLabelText(/Tarefas: 1\. pendentes/i)).toBeTruthy();
+    expect(screen.getByLabelText(/Intimações: 1\. a tratar/i)).toBeTruthy();
+  });
+
+  it("aplica RBAC à IA sem esconder o radar operacional", async () => {
     papelAtual = "cliente_externo";
     renderizar();
     expect(
@@ -164,16 +179,13 @@ describe("DashboardUltra — referência 2026", () => {
         "Inteligência Jurídica disponível apenas aos perfis jurídicos autorizados.",
       ),
     ).toBeTruthy();
-    expect(screen.queryByText("Fontes e jurisprudência")).toBeNull();
     expect(
-      screen.getAllByText("Ferramenta restrita à equipe jurídica autorizada.")
-        .length,
-    ).toBeGreaterThanOrEqual(1);
+      screen.getByLabelText(/Prazos: 3\. 1 vencidos · 2 críticos/i),
+    ).toBeTruthy();
   });
 
-  it("responde no próprio dashboard usando a porta canônica de IA", async () => {
+  it("responde no próprio dashboard usando a sessão canônica da Sala Jurídica", async () => {
     renderizar();
-
     const input = await screen.findByLabelText(
       "Pergunta rápida para a Inteligência Jurídica",
     );
@@ -181,160 +193,89 @@ describe("DashboardUltra — referência 2026", () => {
     fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
 
     await waitFor(() => {
-      expect(postMock).toHaveBeenCalledWith("/ia/conversar", {
-        texto: "Qual é a tese aplicável?",
-        area: "pesquisa_juridica",
+      expect(postMock).toHaveBeenCalledWith("/sala-juridica", {
+        titulo: "Qual é a tese aplicável?",
       });
+      expect(postMock).toHaveBeenCalledWith(
+        "/sala-juridica/sess-dashboard-1/mensagens",
+        {
+          conteudo: "Qual é a tese aplicável?",
+          modo: "conversa_livre",
+          incluir_workspace: true,
+          usar_rag: true,
+        },
+      );
     });
     expect(await screen.findByText("Resposta jurídica de teste")).toBeTruthy();
     expect(screen.getByText("Fonte oficial A")).toBeTruthy();
-    expect(screen.getByText("Fonte oficial B")).toBeTruthy();
-    expect(
-      screen.getByText("Atenção: Citação exige conferência específica"),
-    ).toBeTruthy();
     expect(screen.getByText("Revisão humana obrigatória")).toBeTruthy();
   });
 
-  it("bloqueia perguntas com menos de três caracteres", async () => {
-    renderizar();
-
-    const input = await screen.findByLabelText(
-      "Pergunta rápida para a Inteligência Jurídica",
-    );
-    fireEvent.change(input, { target: { value: "oi" } });
-    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
-
-    expect(postMock).not.toHaveBeenCalled();
-    const sendButton = screen.getByRole("button", {
-      name: "Enviar pergunta para a Inteligência Jurídica",
-    }) as HTMLButtonElement;
-    expect(sendButton.disabled).toBe(true);
-  });
-
-  it("substitui o turno anterior quando uma nova pergunta rápida é enviada", async () => {
-    postMock
-      .mockResolvedValueOnce({
-        data: {
-          conteudo: "Primeira resposta independente",
-          fontes_rag: ["Fonte primeira"],
-          aviso_hitl: "Revisão humana obrigatória",
-        },
-      })
-      .mockResolvedValueOnce({
-        data: {
-          conteudo: "Segunda resposta independente",
-          fontes_rag: ["Fonte segunda"],
-          aviso_hitl: "Revisão humana obrigatória",
-        },
-      });
+  it("mantém histórico e usa a mesma sessão conversacional", async () => {
+    let mensagens = 0;
+    postMock.mockImplementation((url: string) => {
+      if (url === "/sala-juridica")
+        return Promise.resolve({ data: { id: "sess-dashboard-1" } });
+      if (url === "/sala-juridica/sess-dashboard-1/mensagens") {
+        mensagens += 1;
+        return Promise.resolve({
+          data: {
+            mensagem_ia: {
+              id: `ia-${mensagens}`,
+              conteudo:
+                mensagens === 1 ? "Primeira resposta" : "Segunda resposta",
+              fontes: [],
+              alertas: [],
+            },
+            aviso_hitl: "Revisão humana obrigatória",
+          },
+        });
+      }
+      return Promise.reject(new Error(`POST inesperado: ${url}`));
+    });
 
     renderizar();
     const input = await screen.findByLabelText(
       "Pergunta rápida para a Inteligência Jurídica",
     );
-
     fireEvent.change(input, { target: { value: "Primeira pergunta válida" } });
-    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
-    expect(
-      await screen.findByText("Primeira resposta independente"),
-    ).toBeTruthy();
-
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(await screen.findByText("Primeira resposta")).toBeTruthy();
     fireEvent.change(input, { target: { value: "Segunda pergunta válida" } });
-    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
-
-    await waitFor(() => expect(postMock).toHaveBeenCalledTimes(2));
-    expect(screen.queryByText("Primeira resposta independente")).toBeNull();
-    expect(
-      await screen.findByText("Segunda resposta independente"),
-    ).toBeTruthy();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(await screen.findByText("Segunda resposta")).toBeTruthy();
+    expect(screen.getByText("Primeira resposta")).toBeTruthy();
+    expect(postMock).toHaveBeenCalledTimes(3);
   });
 
-  it("exclui atividades finalizadas e usa dados reais dos novos cartões", async () => {
-    renderizar();
-
-    expect(
-      (await screen.findAllByText("Tarefa pendente")).length,
-    ).toBeGreaterThanOrEqual(1);
-    expect(screen.queryByText("Tarefa concluída")).toBeNull();
-    expect(screen.getByText("Cliente Alfa")).toBeTruthy();
-    expect(screen.getByText("Ativo")).toBeTruthy();
-  });
-
-  it("expõe falha do dashboard em vez de inventar prazos ou carteira", async () => {
-    getMock.mockImplementation((url: string) => {
-      if (url === "/dashboard/")
-        return Promise.reject(new Error("dashboard off"));
-      if (url === "/atividades") return Promise.resolve(atividadesOk);
-      if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
-      if (url === "/clients/?page_size=4&status=ativo")
-        return Promise.resolve(clientesOk);
-      if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
-      return Promise.reject(new Error("inesperado"));
+  it("anexa documento à mesma sessão antes da análise", async () => {
+    const { container } = renderizar();
+    await screen.findByLabelText(
+      "Pergunta rápida para a Inteligência Jurídica",
+    );
+    const inputFile = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    const file = new File(["conteúdo jurídico sintético"], "processo.pdf", {
+      type: "application/pdf",
     });
+    fireEvent.change(inputFile, { target: { files: [file] } });
 
-    renderizar();
+    expect(await screen.findByText(/processo\.pdf/)).toBeTruthy();
     await waitFor(() => {
-      expect(screen.getByText("— prazos vencidos")).toBeTruthy();
+      expect(postMock).toHaveBeenCalledWith(
+        "/sala-juridica/sess-dashboard-1/anexos",
+        expect.any(FormData),
+        { headers: { "Content-Type": "multipart/form-data" } },
+      );
     });
-    expect(screen.getByText("Dados da carteira indisponíveis.")).toBeTruthy();
   });
 
-  it("expõe falha de atividades e não mascara a agenda como vazia", async () => {
-    getMock.mockImplementation((url: string) => {
-      if (url === "/dashboard/") return Promise.resolve(dashboardOk);
-      if (url === "/atividades")
-        return Promise.reject(new Error("atividades off"));
-      if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
-      if (url === "/clients/?page_size=4&status=ativo")
-        return Promise.resolve(clientesOk);
-      if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
-      return Promise.reject(new Error("inesperado"));
-    });
-
+  it("degrada prazos e atividades sem inventar contagens", async () => {
+    getMock.mockRejectedValue(new Error("offline"));
     renderizar();
-    expect(
-      await screen.findByText("Atividades temporariamente indisponíveis."),
-    ).toBeTruthy();
-    expect(
-      screen.getByText("Agenda temporariamente indisponível."),
-    ).toBeTruthy();
-  });
-
-  it("sinaliza degradação parcial quando somente o enriquecimento da agenda falha", async () => {
-    getMock.mockImplementation((url: string) => {
-      if (url === "/dashboard/") return Promise.resolve(dashboardOk);
-      if (url === "/atividades") return Promise.resolve(atividadesOk);
-      if (url === "/agenda-eventos/")
-        return Promise.reject(new Error("agenda off"));
-      if (url === "/clients/?page_size=4&status=ativo")
-        return Promise.resolve(clientesOk);
-      if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
-      return Promise.reject(new Error("inesperado"));
-    });
-
-    renderizar();
-    expect(
-      await screen.findByText(/Horário\/local podem estar incompletos/i),
-    ).toBeTruthy();
-    expect(
-      screen.getAllByText("Tarefa pendente").length,
-    ).toBeGreaterThanOrEqual(1);
-  });
-
-  it("mantém estado de erro de clientes isolado dos demais blocos", async () => {
-    getMock.mockImplementation((url: string) => {
-      if (url === "/dashboard/") return Promise.resolve(dashboardOk);
-      if (url === "/atividades") return Promise.resolve(atividadesOk);
-      if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
-      if (url === "/clients/?page_size=4&status=ativo")
-        return Promise.reject(new Error("clients off"));
-      if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
-      return Promise.reject(new Error("inesperado"));
-    });
-
-    renderizar();
-    expect(
-      await screen.findByText("Clientes temporariamente indisponíveis."),
-    ).toBeTruthy();
+    expect(await screen.findByLabelText(/Prazos: —/i)).toBeTruthy();
+    expect(screen.getByLabelText(/Tarefas: —/i)).toBeTruthy();
+    expect(screen.getByLabelText(/Intimações: —/i)).toBeTruthy();
   });
 });

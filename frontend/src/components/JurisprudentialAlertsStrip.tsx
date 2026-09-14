@@ -133,7 +133,43 @@ function prioridadeClasses(prioridade: LegalAlert["prioridade"]) {
   return "bg-amber-50 text-amber-800 dark:bg-amber-400/10 dark:text-amber-200";
 }
 
-export default function JurisprudentialAlertsStrip() {
+export default function JurisprudentialAlertsStrip({
+  compact = false,
+}: {
+  compact?: boolean;
+}) {
+  if (compact) {
+    return (
+      <div
+        className="ejc-legal-ticker"
+        role="feed"
+        aria-label="Atualizações jurídicas"
+      >
+        {ALERTAS.map((alerta) => (
+          <a
+            key={alerta.id}
+            href={alerta.fonte}
+            target="_blank"
+            rel="noreferrer"
+            className="ejc-legal-ticker__item"
+            title={`${alerta.tribunal} · ${alerta.referencia} · ${alerta.area}`}
+          >
+            <span
+              className={`ejc-legal-ticker__priority is-${alerta.prioridade.toLowerCase()}`}
+            >
+              {alerta.prioridade}
+            </span>
+            <span className="ejc-legal-ticker__title">{alerta.titulo}</span>
+            <span className="ejc-legal-ticker__source">
+              {alerta.tribunal} · {alerta.referencia}
+            </span>
+            <ExternalLink aria-hidden="true" />
+          </a>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <section
       aria-labelledby="alertas-juridicos-title"

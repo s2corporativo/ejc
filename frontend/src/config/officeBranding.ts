@@ -3,6 +3,9 @@ const DEFAULT_OFFICE_NAME = "EJC — Ecossistema Jurídico Clóvis";
 const DEFAULT_DAILY_MESSAGE =
   "Organização, clareza e responsabilidade em cada decisão.";
 const DEFAULT_DAILY_SOURCE = "Mensagem institucional";
+const DEFAULT_CONTACT_EMAIL = "contato@depaulateixeira.adv.br";
+// Canal público divulgado no site institucional do escritório.
+const DEFAULT_WHATSAPP_NUMBER = "5531999776855";
 const DEFAULT_LOGO_PATH = "/brand/de-paula-teixeira-dt.png";
 const LEGACY_DEFAULT_LOGO_PATH = "/brand/logo-hd.png";
 
@@ -23,10 +26,12 @@ function resolveLogoPath(value: string): string {
   return value;
 }
 
-const whatsappNumber = normalizePhone(
-  readPublicEnv(import.meta.env.VITE_EJC_WHATSAPP_NUMBER),
-);
-const contactEmail = readPublicEnv(import.meta.env.VITE_EJC_CONTACT_EMAIL);
+const whatsappNumber =
+  normalizePhone(readPublicEnv(import.meta.env.VITE_EJC_WHATSAPP_NUMBER)) ||
+  DEFAULT_WHATSAPP_NUMBER;
+const contactEmail =
+  readPublicEnv(import.meta.env.VITE_EJC_CONTACT_EMAIL) ||
+  DEFAULT_CONTACT_EMAIL;
 const configuredLogoPath = readPublicEnv(import.meta.env.VITE_EJC_LOGO_PATH);
 
 export const officeBranding = Object.freeze({

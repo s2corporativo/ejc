@@ -456,22 +456,34 @@ async def extrair_e_analisar(
     # thread para não congelar o event loop do worker único (pente fino E2E
     # 30/08 §5.4: GET /documents/ de 17ms estourava 30s durante uma análise).
     # Mesmo padrão do upload em routers/documents.py.
-    texto = await asyncio.to_thread(ocr_service.extrair_texto, filepath, mimetype)
-    if not texto or len(texto.strip()) < 40:
+    texto_extraido_completo = await asyncio.to_thread(
+        ocr_service.extrair_texto, filepath, mimetype
+    )
+    if not texto_extraido_completo or len(texto_extraido_completo.strip()) < 40:
         return {
             "ok": False,
             "erro": "Não foi possível extrair texto legível do documento (OCR vazio). "
                     "Verifique a qualidade do arquivo.",
         }
-    texto = texto[:18000]  # teto de contexto
 
-    # 1.b) Extração DETERMINÍSTICA local (regex, sem IA) sobre o texto BRUTO.
+    # A interpretação inicial continua com teto conservador para custo/latência,
+    # mas a Sala Jurídica recebe um contexto sanitizado muito maior para poder
+    # conversar sobre o documento sem fingir que leu apenas as primeiras páginas.
+    # Acima de 120k caracteres a limitação é explicitamente registrada no anexo.
+    _CONTEXTO_DOCUMENTAL_MAX = 120_000
+    texto_contexto = texto_extraido_completo[:_CONTEXTO_DOCUMENTAL_MAX]
+    texto = texto_contexto[:18_000]
+
+    # 1.b) Extração DETERMINÍSTICA local (regex, sem IA) sobre o texto amplo.
     # LGPD: o dado pessoal EXATO (CPF/CNPJ/nº CNJ/e-mail/telefone) é extraído
     # aqui, localmente, sem passar por nenhum LLM — e devolvido apenas ao
     # frontend autenticado. Nunca alimenta prompt de IA.
-    dados_estruturados = extrair_estruturas(texto)
+    dados_estruturados = extrair_estruturas(texto_contexto)
 
     texto_para_ia, houve_pii = sanitizar_pii(texto)
+    texto_contexto_sanitizado, houve_pii_contexto = sanitizar_pii(texto_contexto)
+    houve_pii = bool(houve_pii or houve_pii_contexto)
+    contexto_truncado = len(texto_extraido_completo) > len(texto_contexto)
 
     # 2) Interpretação LLM (1 chamada de IA) — cadeia com fallback.
     # Decisão LGPD (híbrido determinístico + LLM):
@@ -543,10 +555,11 @@ async def extrair_e_analisar(
             "intake_result": _montar_intake_result(
                 None, dados_estruturados).model_dump(mode="json"),
             "texto_extraido": texto_para_ia[:2000],
-            "caracteres_lidos": len(texto),
+            "caracteres_lidos": len(texto_extraido_completo),
             "pii_removida": houve_pii,
             "_aviso": _AVISO,
-            "_texto_sanitizado": texto_para_ia[:6000],
+            "_texto_sanitizado": texto_contexto_sanitizado,
+            "_texto_sanitizado_truncado": contexto_truncado,
         }
 
     # 2.b) Trilha de auditoria (art. 37 LGPD): AILog da chamada PRINCIPAL do
@@ -587,7 +600,8 @@ async def extrair_e_analisar(
             "pii_removida": houve_pii,
             # Chave interna (consumida e removida pelo router documento_ia):
             # texto JÁ SANITIZADO para o diagnóstico via núcleo único de IA.
-            "_texto_sanitizado": texto_para_ia[:6000],
+            "_texto_sanitizado": texto_contexto_sanitizado,
+            "_texto_sanitizado_truncado": contexto_truncado,
         }
 
     # 2.b) R4 — verificação de origem dos campos v2 (anti-alucinação).
@@ -620,11 +634,12 @@ async def extrair_e_analisar(
     dados["_aviso"] = _AVISO
     dados["_modelo"] = f"{resp.provedor}/{resp.modelo}"
     dados["intake_log_id"] = intake_log_id
-    dados["caracteres_lidos"] = len(texto)
+    dados["caracteres_lidos"] = len(texto_extraido_completo)
     dados["pii_removida"] = houve_pii
     # Chave interna (consumida e removida pelo router documento_ia): texto JÁ
     # SANITIZADO para o diagnóstico jurídico via núcleo único de IA.
-    dados["_texto_sanitizado"] = texto_para_ia[:6000]
+    dados["_texto_sanitizado"] = texto_contexto_sanitizado
+    dados["_texto_sanitizado_truncado"] = contexto_truncado
     return dados
 
 

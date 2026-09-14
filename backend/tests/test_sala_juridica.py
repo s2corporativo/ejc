@@ -847,3 +847,66 @@ def test_ficha_confirmada_nao_e_rebaixada_por_escrita_automatica():
     assert 'ficha.status == "confirmada"' in fonte
     # A ponte Entrevista→Ficha precisa realmente pedir a preservação.
     assert "preservar_confirmada=True" in inspect.getsource(te._alimentar_ficha)
+
+
+def test_estado_ampliado_aceita_dossie_juridico_estruturado():
+    estado = EstadoUpdate(
+        estado={
+            "partes": [{"nome": "Parte Fictícia", "tipo": "autor", "classificacao": "alegado"}],
+            "testemunhas": [{"nome": "Testemunha Fictícia", "fonte": "depoimento"}],
+            "enderecos": [{"texto": "Rua Fictícia, 1", "fonte": "contrato"}],
+            "identificacao_processual": [{"numero_processo": "0000000-00.0000.0.00.0000"}],
+            "competencia": [{"comarca": "Betim", "fundamento": "a confirmar"}],
+            "ramo_direito": [{"area": "civil", "classificacao": "inferido"}],
+            "natureza_acao": [{"tipo": "obrigacao_de_fazer", "classificacao": "inferido"}],
+            "procedimento_rito": [{"rito": "comum", "classificacao": "inferido"}],
+            "prescricao_decadencia": [{"analise": "depende de termo inicial"}],
+            "urgencia": [{"nivel": "medio", "motivo": "a confirmar"}],
+        }
+    )
+    assert estado.estado["partes"][0]["nome"] == "Parte Fictícia"
+    assert estado.estado["testemunhas"][0]["nome"] == "Testemunha Fictícia"
+
+
+@pytest.mark.anyio
+async def test_materializar_dossie_confirmado_aplica_somente_destinos_canonicos_seguros():
+    from app.models.case import Case
+    from app.models.case_parte import CaseParte
+    from app.models.deadline import Deadline
+    from app.models.legal_chat import LegalChatSession, LegalChatStateVersion
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(id="s-dossie", titulo="Análise", created_by="u1")
+    estado = LegalChatStateVersion(
+        id="ev-1",
+        session_id="s-dossie",
+        versao=1,
+        estado={
+            "partes": [
+                {"nome": "Autora Fictícia", "tipo": "autor", "classificacao": "alegado"},
+                {"nome": "Pessoa Inferida", "tipo": "reu", "classificacao": "inferido"},
+            ],
+            "testemunhas": [{"nome": "Testemunha Fictícia"}],
+            "identificacao_processual": [
+                {
+                    "numero_processo": "0000000-00.0000.0.00.0000",
+                    "tribunal": "TJMG",
+                    "comarca": "Betim",
+                    "vara": "Vara Fictícia",
+                }
+            ],
+            "prescricao_decadencia": [{"data_sugerida": "2099-01-01"}],
+        },
+        origem="ia_extracao",
+    )
+    db = _FakeDB(sessao=sessao, estado_atual=estado)
+    caso = Case(id="case-1", titulo="Caso", client_id="client-1")
+
+    out = await svc._materializar_dossie_confirmado(db, sessao, caso, _user())
+
+    assert out["campos_preenchidos"] == ["numero_processo", "tribunal", "comarca", "vara"]
+    assert out["partes_criadas"] == 1
+    assert caso.numero_processo == "0000000-00.0000.0.00.0000"
+    partes = [obj for obj in db.added if isinstance(obj, CaseParte)]
+    assert [(p.tipo, p.nome) for p in partes] == [("autor", "Autora Fictícia")]
+    assert not any(isinstance(obj, Deadline) for obj in db.added)

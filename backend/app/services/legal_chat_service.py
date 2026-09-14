@@ -26,6 +26,7 @@ from app.core.client_ownership import (
 from app.core.config import get_settings
 from app.core.security import ROLE_LEVEL
 from app.models.case import Case, CaseArea, CaseStatus
+from app.models.case_parte import CaseParte
 from app.models.case_intelligence import CaseIntelligenceSnapshot
 from app.models.client import Client
 from app.models.document import DocConfidencialidade, Document
@@ -78,11 +79,20 @@ MODO_INSTRUCAO: dict[str, str] = {
         "invente); distinga expressamente o que é certo, o que é provável e o "
         "que depende de fato/documento ausente; aponte riscos e caminhos "
         "alternativos; termine com os próximos passos práticos quando fizer "
-        "sentido. Se a pergunta for simples, seja direto — sem encher."
+        "sentido. Se a pergunta for simples, seja direto — sem encher. "
+        "Quando houver documentos anexados, faça leitura jurídico-probatória: "
+        "identifique partes, testemunhas, endereços, datas, valores, pedidos, "
+        "provas, lacunas, competência, ramo do Direito, natureza da ação, rito, "
+        "prescrição/decadência e urgência; diferencie extração documental de "
+        "inferência jurídica. Antes da conclusão, teste a tese como advogado da "
+        "parte, como contraparte e como julgador exigente."
     ),
     "organizar_fatos": (
-        "Organize os fatos em cronologia, distinguindo expressamente: "
-        "comprovado, alegado, inferido, controvertido, ausente e superado."
+        "Organize o dossiê integral em cronologia, distinguindo expressamente: "
+        "comprovado, alegado, inferido, controvertido, ausente e superado. "
+        "Extraia também partes, testemunhas, endereços, datas, valores, pedidos, "
+        "documentos/provas, competência, ramo do Direito, natureza da ação, rito, "
+        "prescrição/decadência e urgência. Não invente campos ausentes."
     ),
     "analisar_provas": (
         "Relacione cada fato às provas existentes (documento, trecho, origem) "
@@ -207,8 +217,8 @@ async def gravar_versao_estado(
 _HISTORICO_MAX_MENSAGENS = 20
 _HISTORICO_MAX_CHARS_MSG = 3_000
 _HISTORICO_MAX_CHARS_TOTAL = 24_000
-_ANEXO_MAX_CHARS = 6_000
-_ANEXOS_MAX_CHARS_TOTAL = 24_000
+_ANEXO_MAX_CHARS = 120_000
+_ANEXOS_MAX_CHARS_TOTAL = 300_000
 
 
 def _montar_mensagem_ia(
@@ -261,8 +271,17 @@ def _montar_mensagem_ia(
     total = 0
     for a in anexos or []:
         analise = a.resultado_analise if isinstance(a.resultado_analise, dict) else {}
-        sintese = json.dumps(analise, ensure_ascii=False, separators=(",", ":"))[:_ANEXO_MAX_CHARS]
-        bloco = f"- {a.nome_original}: {sintese}"
+        # O texto integral sanitizado é injetado em bloco próprio; removê-lo da
+        # síntese evita duplicar dezenas de milhares de caracteres no prompt.
+        analise_sintese = {
+            k: v for k, v in analise.items() if not str(k).startswith("_texto_sanitizado")
+        }
+        sintese = json.dumps(
+            analise_sintese, ensure_ascii=False, separators=(",", ":")
+        )[:20_000]
+        truncado = bool(analise.get("_texto_sanitizado_truncado"))
+        sufixo = " [CONTEXTO TEXTUAL TRUNCADO — confira o arquivo original]" if truncado else ""
+        bloco = f"- {a.nome_original}{sufixo}: {sintese}"
         if total + len(bloco) > _ANEXOS_MAX_CHARS_TOTAL:
             break
         blocos_anexos.append(bloco)
@@ -432,22 +451,30 @@ async def enviar_mensagem(
 
 
 _CHAVES_ESTADO = {
-    "fatos", "provas", "contradicoes", "questoes", "teses",
-    "riscos", "pendencias", "cronologia", "fontes",
+    "fatos", "partes", "testemunhas", "enderecos", "identificacao_processual", "provas", "documentos",
+    "contradicoes", "questoes", "teses", "pedidos", "riscos", "pendencias",
+    "cronologia", "datas_relevantes", "valores", "competencia", "ramo_direito",
+    "natureza_acao", "procedimento_rito", "prescricao_decadencia", "urgencia",
+    "fontes",
 }
 
 _PROMPT_EXTRACAO = """Você é o extrator de estado jurídico da Sala Jurídica.
-Atualize o ESTADO CONSOLIDADO abaixo com base na última interação, e responda
-SOMENTE com um objeto JSON válido (sem markdown, sem comentários) com as chaves:
-fatos, provas, contradicoes, questoes, teses, riscos, pendencias, cronologia,
-_resumo (string de até 3 frases com a síntese atual).
+Atualize o ESTADO CONSOLIDADO abaixo com base na última interação e nos documentos
+que sustentaram a resposta. Responda SOMENTE com objeto JSON válido (sem markdown)
+com chaves conhecidas e listas de objetos: fatos, partes, testemunhas, enderecos, identificacao_processual,
+provas, documentos, contradicoes, questoes, teses, pedidos, riscos, pendencias,
+cronologia, datas_relevantes, valores, competencia, ramo_direito, natureza_acao,
+procedimento_rito, prescricao_decadencia, urgencia e _resumo (string de até 3 frases).
 
 Regras invioláveis:
-- cada fato tem {{"texto": ..., "classificacao": "comprovado"|"alegado"|"inferido"|"controvertido"|"ausente"|"superado"}};
-- NUNCA promova um fato a "comprovado" sem prova documental mencionada;
-- fato substituído por informação posterior vira "superado" (não é apagado);
+- cada fato tem {{"texto": ..., "classificacao": "comprovado"|"alegado"|"inferido"|"controvertido"|"ausente"|"superado", "fonte": ...}};
+- NUNCA promova fato a "comprovado" sem prova documental identificável;
+- partes/testemunhas/endereco/data/valor devem indicar fonte e não podem ser inventados;
+- competencia/natureza/rito/ramo são hipóteses jurídicas até confirmação humana e devem trazer fundamento/justificativa;
+- prescrição/decadência e prazo ficam apenas como análise/sugestão: NUNCA materialize deadline;
 - riscos têm {{"descricao": ..., "nivel": "baixo"|"medio"|"alto"}};
-- não invente fatos, provas nem fontes que não constem da interação/estado.
+- fato substituído por informação posterior vira "superado" (não é apagado);
+- não invente fatos, provas, partes, fontes, artigos ou precedentes.
 
 ESTADO CONSOLIDADO ATUAL:
 {estado}
@@ -823,13 +850,27 @@ async def _criar_snapshot_sala(
         payload={
             "area": area,
             "fatos": estado.get("fatos") or [],
+            "partes": estado.get("partes") or [],
+            "testemunhas": estado.get("testemunhas") or [],
+            "enderecos": estado.get("enderecos") or [],
+            "identificacao_processual": estado.get("identificacao_processual") or [],
             "provas": estado.get("provas") or [],
+            "documentos": estado.get("documentos") or [],
             "contradicoes": estado.get("contradicoes") or [],
             "questoes": estado.get("questoes") or [],
             "teses": {"principal": None, "secundarias": estado.get("teses") or []},
+            "pedidos": estado.get("pedidos") or [],
             "riscos": estado.get("riscos") or [],
             "pendencias": estado.get("pendencias") or [],
             "cronologia": estado.get("cronologia") or [],
+            "datas_relevantes": estado.get("datas_relevantes") or [],
+            "valores": estado.get("valores") or [],
+            "competencia": estado.get("competencia") or [],
+            "ramo_direito": estado.get("ramo_direito") or [],
+            "natureza_acao": estado.get("natureza_acao") or [],
+            "procedimento_rito": estado.get("procedimento_rito") or [],
+            "prescricao_decadencia": estado.get("prescricao_decadencia") or [],
+            "urgencia": estado.get("urgencia") or [],
             "fontes": estado.get("fontes") or [],
             "sala_juridica_session_id": sessao.id,
             "revisao_humana_obrigatoria": True,
@@ -843,6 +884,65 @@ async def _criar_snapshot_sala(
     )
     db.add(snap)
     return snap.versao
+
+
+async def _materializar_dossie_confirmado(
+    db: AsyncSession, sessao: LegalChatSession, case: Case, user: User,
+) -> dict[str, Any]:
+    """Aplica somente dados estruturados que têm destino canônico seguro.
+
+    Chamado APENAS após confirmação explícita do advogado. Não cria prazo,
+    testemunha, pedido, valor ou tese em tabelas definitivas; esses itens ficam
+    no snapshot até existir fluxo canônico próprio.
+    """
+    estado_v = await ultima_versao_estado(db, sessao.id)
+    estado = dict((estado_v.estado if estado_v else {}) or {})
+
+    preenchidos: list[str] = []
+    ident_items = estado.get("identificacao_processual") or []
+    ident = ident_items[0] if ident_items and isinstance(ident_items[0], dict) else {}
+    comp_items = estado.get("competencia") or []
+    comp = comp_items[0] if comp_items and isinstance(comp_items[0], dict) else {}
+    for campo, limite in (("numero_processo", 30), ("tribunal", 20), ("comarca", 100), ("vara", 100)):
+        bruto = ident.get(campo) or comp.get(campo)
+        valor = bruto.strip() if isinstance(bruto, str) else None
+        if valor and not getattr(case, campo, None):
+            setattr(case, campo, valor[:limite])
+            preenchidos.append(campo)
+
+    existentes = {
+        (p.tipo, (p.nome or "").strip().casefold())
+        for p in (await db.execute(select(CaseParte).where(CaseParte.case_id == case.id))).scalars().all()
+    }
+    aliases = {
+        "autor": "autor", "requerente": "autor", "demandante": "autor",
+        "reu": "reu", "réu": "reu", "requerido": "reu", "demandado": "reu",
+        "terceiro": "terceiro", "advogado": "advogado", "procurador": "procurador",
+    }
+    partes_criadas = 0
+    for item in estado.get("partes") or []:
+        if not isinstance(item, dict):
+            continue
+        nome = str(item.get("nome") or "").strip()
+        tipo_raw = str(item.get("tipo") or item.get("papel") or "").strip().casefold()
+        tipo = aliases.get(tipo_raw)
+        # Itens inferidos permanecem no snapshot; não viram cadastro definitivo.
+        classificacao = str(item.get("classificacao") or "alegado").strip().casefold()
+        if not nome or not tipo or classificacao == "inferido":
+            continue
+        chave = (tipo, nome.casefold())
+        if chave in existentes:
+            continue
+        db.add(CaseParte(
+            id=str(uuid4()), case_id=case.id, tipo=tipo, nome=nome[:255],
+            papel_processual=(str(item.get("papel_processual") or "")[:100] or None),
+            observacoes="Origem: dossiê estruturado da Sala Jurídica; confirmação humana na integração.",
+            created_by=user.id,
+        ))
+        existentes.add(chave)
+        partes_criadas += 1
+
+    return {"campos_preenchidos": preenchidos, "partes_criadas": partes_criadas}
 
 
 async def converter_em_caso(
@@ -960,6 +1060,11 @@ async def converter_em_caso(
             transferidos, copiados = await _transferir_anexos(
                 db, sessao, case.id, client.id, user
             )
+        materializado = (
+            await _materializar_dossie_confirmado(db, sessao, case, user)
+            if payload.aplicar_dossie_estruturado
+            else {"campos_preenchidos": [], "partes_criadas": 0}
+        )
         snapshot_versao = await _criar_snapshot_sala(
             db, sessao, case.id, payload.area, user
         )
@@ -980,6 +1085,7 @@ async def converter_em_caso(
         "ja_convertido": False,
         "documentos_transferidos": transferidos,
         "snapshot_versao": snapshot_versao,
+        "dossie_materializado": materializado,
     }
 
 
@@ -990,6 +1096,7 @@ async def vincular_caso_existente(
     user: User,
     *,
     transferir_anexos: bool = True,
+    aplicar_dossie_estruturado: bool = False,
 ) -> dict[str, Any]:
     """Vincula a análise a um caso JÁ EXISTENTE (sem criar caso novo).
 
@@ -1031,6 +1138,11 @@ async def vincular_caso_existente(
             transferidos, copiados = await _transferir_anexos(
                 db, sessao, case.id, case.client_id, user
             )
+        materializado = (
+            await _materializar_dossie_confirmado(db, sessao, case, user)
+            if aplicar_dossie_estruturado
+            else {"campos_preenchidos": [], "partes_criadas": 0}
+        )
         snapshot_versao = await _criar_snapshot_sala(
             db, sessao, case.id, getattr(case.area, "value", str(case.area)), user
         )
@@ -1051,6 +1163,7 @@ async def vincular_caso_existente(
         "ja_convertido": False,
         "documentos_transferidos": transferidos,
         "snapshot_versao": snapshot_versao,
+        "dossie_materializado": materializado,
     }
 
 

@@ -321,7 +321,7 @@ class Settings(BaseSettings):
     # CSV de task_types do ai_gateway que disparam a crítica automática
     # (vocabulário de TASK_ROUTING; aliases como "redacao_peca" são
     # normalizados antes da comparação).
-    DUAS_IAS_TASK_TYPES: str = "elaboracao_peca,auditoria_peca"
+    DUAS_IAS_TASK_TYPES: str = "elaboracao_peca,auditoria_peca,analise_juridica,estrategia"
     # Ordem de preferência entre provedores ELEGÍVEIS (csv). A policy ainda
     # filtra por habilitação/chave e prioriza Anthropic em tarefas complexas.
     # Maritaca antes do groq: para tarefa jurídica PT-BR o Sabiá rankeia acima

@@ -85,8 +85,11 @@ class EstadoUpdate(BaseModel):
     @classmethod
     def _chaves_conhecidas(cls, v: dict) -> dict:
         permitidas = {
-            "fatos", "provas", "contradicoes", "questoes", "teses",
-            "riscos", "pendencias", "cronologia", "fontes",
+            "fatos", "partes", "testemunhas", "enderecos", "identificacao_processual", "provas", "documentos",
+            "contradicoes", "questoes", "teses", "pedidos", "riscos",
+            "pendencias", "cronologia", "datas_relevantes", "valores",
+            "competencia", "ramo_direito", "natureza_acao", "procedimento_rito",
+            "prescricao_decadencia", "urgencia", "fontes",
         }
         desconhecidas = set(v) - permitidas
         if desconhecidas:
@@ -118,6 +121,9 @@ class ConverterRequest(BaseModel):
     duplicate_confirmed: bool = False
     # Anexos da sessão viram Document oficiais do caso (padrão Raio-X).
     transferir_anexos: bool = True
+    # Materialização opcional do dossiê estruturado confirmado. Nunca cria
+    # prazo automaticamente; somente campos processuais seguros + partes.
+    aplicar_dossie_estruturado: bool = False
 
     @field_validator("confirmo_conflito_verificado", "confirmo_dados_revisados")
     @classmethod
@@ -134,6 +140,8 @@ class VincularCasoRequest(BaseModel):
     confirmo_dados_revisados: bool
     # Anexos da sessão viram Document oficiais do caso vinculado.
     transferir_anexos: bool = True
+    # Aplicação explícita e auditável do dossiê estruturado no caso existente.
+    aplicar_dossie_estruturado: bool = False
 
     @field_validator("confirmo_dados_revisados")
     @classmethod

@@ -366,6 +366,7 @@ async def vincular_caso(
     resultado = await svc.vincular_caso_existente(
         db, sessao, payload.case_id, user,
         transferir_anexos=payload.transferir_anexos,
+        aplicar_dossie_estruturado=payload.aplicar_dossie_estruturado,
     )
     await criar_audit_log(
         db, user_id=user.id, user_role=svc._role(user),
