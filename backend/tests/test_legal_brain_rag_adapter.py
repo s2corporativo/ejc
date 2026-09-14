@@ -125,4 +125,4 @@ async def test_saneamento_inicial_nao_consulta_rag(monkeypatch):
     retrieve.assert_not_awaited()
     assert result["records"] == []
     assert result["executed_steps"][0]["skipped"] is True
-    assert result["next_gap"] == "fonte_primaria"
+    assert result["next_gap"] == "clarificar_fatos"
