@@ -473,7 +473,9 @@ export default function TabResumo({
       setEncModal(false);
       toast.success(data?.detail || "Caso encerrado.");
       const memoria = data?.memoria_institucional;
-      if (memoria?.precedente_rag === "falha_acessoria") {
+      const falhaPrecedenteRag =
+        memoria?.precedente_rag === "falha_acessoria";
+      if (falhaPrecedenteRag) {
         toast.error(
           "Caso encerrado, mas o precedente não pôde ser registrado no RAG. O encerramento foi preservado.",
         );
@@ -497,6 +499,11 @@ export default function TabResumo({
           "Sincronização com o tribunal enfileirada — acompanhe em Processo Eletrônico.",
         );
       }
+      // Em falha acessória do RAG, não recarrega imediatamente: o toast é
+      // estado React e seria descartado antes de o operador conseguir lê-lo.
+      // O caso já está encerrado no backend; manter a página é fail-safe e
+      // preserva a informação operacional sem alterar o resultado jurídico.
+      if (falhaPrecedenteRag) return;
       window.location.reload();
     } catch (e: any) {
       // 422 do fechamento inteligente traz a lista atualizada de pendências.
