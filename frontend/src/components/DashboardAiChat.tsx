@@ -223,7 +223,7 @@ export default function DashboardAiChat({
               justificativa: nextActionRaw.justificativa
                 ? String(nextActionRaw.justificativa)
                 : undefined,
-              confirmada: Boolean(nextActionRaw.confirmimada),
+              confirmada: Boolean(nextActionRaw.confirmada),
             }
           : null;
       const critique = normalizarCritica(data?.critica_adversarial);
