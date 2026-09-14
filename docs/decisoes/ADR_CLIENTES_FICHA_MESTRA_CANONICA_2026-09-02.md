@@ -55,13 +55,17 @@ Indicadores de qualidade/onboarding devem ser fatos objetivos, por exemplo: docu
 
 ### 5. Conflito de interesses
 
-A checagem de conflito é assistiva e não substitui análise profissional. O sistema deve distinguir explicitamente:
+A checagem de conflito é assistiva e não substitui análise profissional. Sua base ética foi revalidada em 13/09/2026 no texto oficial do Conselho Federal da OAB: **Código de Ética e Disciplina da OAB, aprovado pela Resolução CFOAB nº 02/2015**, especialmente os arts. **19 a 22**. Esses dispositivos tratam de representação de interesses opostos na mesma sociedade, conflito superveniente entre constituintes, dever de sigilo perante ex-cliente/ex-empregador e impedimento decorrente de intervenção anterior. A Resolução CFOAB nº 05/2024 alterou outros dispositivos do Código, sem modificar os arts. 19 a 22.
+
+Fonte oficial de validação: `https://www.oab.org.br/leisnormas/legislacao/resolucoes/02-2015`.
+
+O sistema deve distinguir explicitamente:
 
 - nenhum conflito identificado;
 - possível conflito;
 - consulta indisponível/não concluída.
 
-Falha técnica nunca pode ser apresentada como ausência de conflito.
+Falha técnica nunca pode ser apresentada como ausência de conflito. A resposta automatizada é apenas sinalização de apoio; a decisão sobre aceitação, manutenção ou renúncia de mandato exige análise profissional humana conforme o caso concreto.
 
 ### 6. LGPD e segurança
 
