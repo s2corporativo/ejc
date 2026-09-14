@@ -98,6 +98,22 @@ if [ "${1:-}" = "inspect" ]; then
   exit 0
 fi
 
+if [ "${1:-}" = "image" ] && [ "${2:-}" = "inspect" ] && \
+   [ "${3:-}" = "sha256:frontend-old" ] && [ "${MISSING_FRONTEND_IMAGE:-0}" = "1" ]; then
+  exit 1
+fi
+if [ "${1:-}" = "commit" ] && [ "${2:-}" = "ejc_frontend" ] && \
+   [ "${FAIL_FRONTEND_COMMIT:-0}" = "1" ]; then
+  exit 44
+fi
+if [ "${1:-}" = "export" ]; then
+  printf 'fake-export-stream'
+  exit 0
+fi
+if [ "${1:-}" = "import" ]; then
+  cat >/dev/null
+  exit 0
+fi
 if [ "${1:-}" = "compose" ] && [ "${2:-}" = "build" ] && \
    [ "${3:-}" = "frontend" ] && [ "${FAIL_FRONTEND_BUILD:-0}" = "1" ]; then
   exit 42
@@ -283,6 +299,38 @@ grep -Eq '^tag ejc-worker:rollback-.* project-worker:latest$' "$LOG" || fail "re
 grep -Eq '^tag ejc-frontend:rollback-.* project-frontend:latest$' "$LOG" || fail "ref frontend anterior não foi restaurada"
 ! grep -q '^compose up -d --no-deps --force-recreate backend worker frontend$' "$LOG" || fail "runtime reiniciou apesar de falha pré-cutover"
 [ ! -s "$POST_LOG" ] || fail "post-check de rollback rodou sem cutover"
+
+# 7.1) Image ID do container pode ter sido podado; rollback preserva o runtime via docker commit.
+# Chave neutra não exige migração: rollback deve manter conteúdo e normalizar modo.
+printf '%s\n' 'UNCHANGED_TEST=1' > "$APP/.env"
+chmod 644 "$APP/.env"
+: > "$LOG"
+set +e
+env "${COMMON_ENV[@]}" MISSING_FRONTEND_IMAGE=1 FAIL_FRONTEND_BUILD=1 TARGET_SHA="$TEST_SHA" \
+  ENSURE_DAILY_BACKUP=0 REQUIRE_PREDEPLOY_BACKUP=0 \
+  bash "$APP/scripts/deploy_vps_safe.sh" >"$TMP/missing-image.out" 2>"$TMP/missing-image.err"
+missing_image_rc=$?
+set -e
+[ "$missing_image_rc" -eq 42 ] || fail "falha com image ID podado retornou rc=$missing_image_rc, esperado 42"
+grep -Eq '^commit ejc_frontend ejc-frontend:rollback-' "$LOG" || fail "container frontend não foi preservado via docker commit"
+grep -Eq '^tag ejc-frontend:rollback-.* project-frontend:latest$' "$LOG" || fail "rollback do frontend preservado não restaurou a referência"
+grep -q 'image ID anterior de frontend não está mais no catálogo local' "$TMP/missing-image.out" || fail "fallback de image ID podado não foi registrado"
+[ "$(stat -c '%a' "$APP/.env")" = "600" ] || fail ".env idêntico não teve modo normalizado para 600"
+grep -q 'conteúdo não foi reescrito e permissões seguras foram preservadas' "$TMP/missing-image.out" || fail "caminho seguro de .env idêntico não foi registrado"
+
+# 7.2) Se docker commit também falhar por camada ausente, frontend usa export/import seguro.
+: > "$LOG"
+set +e
+env "${COMMON_ENV[@]}" MISSING_FRONTEND_IMAGE=1 FAIL_FRONTEND_COMMIT=1 FAIL_FRONTEND_BUILD=1 TARGET_SHA="$TEST_SHA" \
+  ENSURE_DAILY_BACKUP=0 REQUIRE_PREDEPLOY_BACKUP=0 \
+  bash "$APP/scripts/deploy_vps_safe.sh" >"$TMP/export-fallback.out" 2>"$TMP/export-fallback.err"
+export_fallback_rc=$?
+set -e
+[ "$export_fallback_rc" -eq 42 ] || fail "fallback export/import retornou rc=$export_fallback_rc, esperado 42"
+grep -q '^export ejc_frontend$' "$LOG" || fail "filesystem do frontend não foi exportado após falha do commit"
+grep -q '^import --change ' "$LOG" || fail "filesystem do frontend não foi reimportado como imagem de rollback"
+grep -Eq '^tag ejc-frontend:rollback-.* project-frontend:latest$' "$LOG" || fail "imagem importada não restaurou a referência anterior"
+grep -q 'docker commit do frontend falhou; usando export/import' "$TMP/export-fallback.out" || fail "fallback export/import não foi registrado"
 
 # 8) Falha pós-cutover restaura imagens + runtime.
 : > "$APP/.env"
