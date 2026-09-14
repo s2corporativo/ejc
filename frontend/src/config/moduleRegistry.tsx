@@ -21,6 +21,7 @@ import {
   ListChecks,
   Plus,
   Library,
+  Receipt,
   Scale,
   ScanSearch,
   ScrollText,
@@ -104,6 +105,7 @@ const GestaoDocumental = lazy(() => import("../pages/GestaoDocumental"));
 const Pecas = lazy(() => import("../pages/Pecas"));
 const RamosHub = lazy(() => import("../pages/RamosHub"));
 const RamoBase = lazy(() => import("../pages/ramos/RamoBase"));
+const TributarioWorkspace = lazy(() => import("../pages/TributarioWorkspace"));
 const CRMLeads = lazy(() => import("../pages/CRMLeads"));
 const FinanceiroWorkspace = lazy(() => import("../pages/FinanceiroWorkspace"));
 const SociedadeWorkspace = lazy(() => import("../pages/SociedadeWorkspace"));
@@ -455,6 +457,28 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "ramos",
     usesAI: true,
     sensitive: true,
+  },
+  {
+    key: "tributario",
+    path: "/tributario",
+    label: "Tributário",
+    description:
+      "Acesso direto ao núcleo tributário canônico: casos, análise, créditos fiscais e referências.",
+    group: "Pesquisar & IA",
+    icon: Receipt,
+    component: TributarioWorkspace,
+    roles: ROLES.juridico,
+    showInNav: true,
+    essential: false,
+    order: 35,
+    helpKey: "ramos",
+    usesAI: true,
+    sensitive: true,
+    backendPrefixes: [
+      "/api/cases",
+      "/api/admin-esp",
+      "/api/tributario/fiscal",
+    ],
   },
   {
     key: "ramo-detalhe",
