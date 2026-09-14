@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, Mapping
 
-from .contracts import LegalSkillContract, SkillStatus
+from .contracts import LegalReference, LegalSkillContract, SkillStatus
 
 _SEMVER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+_NORMATIVE_KINDS = {"legislacao", "norma", "regulamento"}
 
 
 class SkillFactoryError(ValueError):
@@ -61,15 +62,52 @@ def _require_items(values: Iterable[str], field: str) -> tuple[str, ...]:
     return cleaned
 
 
-def build_skill_for_homologation(candidate: SkillCandidate) -> LegalSkillContract:
+def _validate_source_catalog(
+    source_refs: tuple[str, ...],
+    references: Mapping[str, LegalReference],
+) -> None:
+    for source_id in source_refs:
+        reference = references.get(source_id)
+        if reference is None:
+            raise SkillFactoryError(
+                f"source_ref sem referência resolvida: {source_id}"
+            )
+        if reference.source_id != source_id:
+            raise SkillFactoryError(
+                f"source_ref divergente da referência: {source_id}"
+            )
+        if not reference.official:
+            raise SkillFactoryError(
+                f"source_ref principal não é oficial: {source_id}"
+            )
+        if not reference.verified_at:
+            raise SkillFactoryError(
+                f"source_ref principal sem data de verificação: {source_id}"
+            )
+
+        kind = str(reference.kind or "").strip().lower()
+        if kind in _NORMATIVE_KINDS and reference.legal_status != "vigente":
+            raise SkillFactoryError(
+                f"fonte normativa não confirmada como vigente: {source_id}"
+            )
+
+
+def build_skill_for_homologation(
+    candidate: SkillCandidate,
+    references: Mapping[str, LegalReference],
+) -> LegalSkillContract:
     """Valida candidata e produz contrato fail-closed para homologação.
 
     Regras deliberadas:
     - nenhuma skill nasce ``ATIVA`` por esta factory;
-    - fonte rastreável é obrigatória;
+    - fonte rastreável, oficial e verificada é obrigatória;
+    - norma usada como fonte principal precisa estar marcada como vigente;
     - questões e evidências são obrigatórias;
     - precedente e tese são opcionais, mas, quando informados, precisam ter ID;
     - nenhum texto jurídico, precedente ou fonte é inferido pela factory.
+
+    ``references`` é um catálogo previamente resolvido pela camada canônica de
+    conhecimento. A factory não consulta banco nem duplica o gate do RAG.
     """
 
     key = _clean_text(candidate.key, "key")
@@ -97,6 +135,8 @@ def build_skill_for_homologation(candidate: SkillCandidate) -> LegalSkillContrac
         candidate.contraindications,
         "contraindications",
     )
+
+    _validate_source_catalog(source_refs, references)
 
     return LegalSkillContract(
         key=key,
