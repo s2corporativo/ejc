@@ -1,11 +1,17 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
 
 from app.models.activity_alert import ActivityAlertState
 from app.schemas.activity_alert import ActivityAlertStateUpdate
-from app.services.activity_alert_service import nivel_alerta
+from app.services.activity_alert_service import (
+    _activity_scope_sql,
+    _case_scope_sql,
+    _document_scope_sql,
+    nivel_alerta,
+)
 
 
 def test_nivel_prazo_vencido_e_janela_urgente():
@@ -70,3 +76,42 @@ def test_fingerprint_reabre_alerta_quando_origem_muda():
     novo_fp = _fingerprint("prazo", alterado)
     assert novo_fp != fp
     assert _estado(reconhecido, novo_fp) == "novo"
+
+
+def test_atividade_de_caso_nao_usa_responsavel_como_bypass_de_ownership():
+    advogado = SimpleNamespace(id="u1", role="advogado")
+    scope = _activity_scope_sql(advogado)
+
+    assert "v.case_id IS NULL AND v.responsavel_id = :uid" in scope
+    assert "cc.advogado_responsavel_id = :uid" in scope
+    assert "cc.advogado_auxiliar_id = :uid" in scope
+    assert "cc.deleted_at IS NULL" in scope
+    assert "v.responsavel_id = :uid OR EXISTS" not in scope
+
+
+def test_caso_orfao_nao_e_escape_de_rbac_para_usuario_nao_gestor():
+    advogado = SimpleNamespace(id="u1", role="advogado")
+    scope = _case_scope_sql(advogado)
+
+    assert "c.advogado_responsavel_id = :uid" in scope
+    assert "c.advogado_auxiliar_id = :uid" in scope
+    assert "IS NULL" not in scope
+
+
+def test_documento_de_caso_segue_ownership_e_avulso_segue_uploader():
+    advogado = SimpleNamespace(id="u1", role="advogado")
+    scope = _document_scope_sql(advogado)
+
+    assert "d.case_id IS NULL AND d.uploaded_by = :uid" in scope
+    assert "cc.advogado_responsavel_id = :uid" in scope
+    assert "cc.advogado_auxiliar_id = :uid" in scope
+    assert "cc.deleted_at IS NULL" in scope
+    assert "d.uploaded_by = :uid OR EXISTS" not in scope
+
+
+def test_gestao_nao_recebe_filtro_de_ownership_nos_alertas():
+    socio = SimpleNamespace(id="u1", role="socio")
+
+    assert _activity_scope_sql(socio) == ""
+    assert _case_scope_sql(socio) == ""
+    assert _document_scope_sql(socio) == ""
