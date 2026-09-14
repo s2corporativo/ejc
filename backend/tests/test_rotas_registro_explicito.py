@@ -51,6 +51,11 @@ def _extrair_rotas(app) -> list[dict]:
 # Adições INTENCIONAIS posteriores ao snapshot. O registro explícito (§4.1) não
 # pode criar nem remover rota; qualquer outra novidade falha o teste.
 ADICOES_INTENCIONAIS = {
+    # Dashboard/Sala Jurídica — release #1657. Novas superfícies autenticadas;
+    # não removem nem afrouxam rotas existentes.
+    ("/api/atividades/alertas-inteligentes", "GET"),
+    ("/api/atividades/alertas/{source_type}/{source_id}", "PATCH"),
+    ("/api/sala-juridica/{session_id}/proxima-acao/confirmar", "POST"),
     # Jurimetria dos TRIBUNAIS (Issue #1527): desfechos do TJMG a partir do
     # DataJud, no slot do "benchmark externo" que /interno/* declarava como
     # `externo_habilitado: False`. Mesmo gate de papel do módulo (_req_staff,
