@@ -42,8 +42,19 @@ async def db():
 
 @pytest.fixture
 def fakes(monkeypatch):
+    audit_calls: list[dict] = []
+
     async def _fake_audit(db, user_id, user_role, acao, entidade, registro_id=None,
                           detalhes=None, **kw):
+        audit_calls.append({
+            "user_id": user_id,
+            "user_role": user_role,
+            "acao": acao,
+            "entidade": entidade,
+            "registro_id": registro_id,
+            "detalhes": detalhes,
+            **kw,
+        })
         return None
 
     async def _sem_lock(db, case_id):
@@ -67,6 +78,7 @@ def fakes(monkeypatch):
 
     from app.services import case_context
     monkeypatch.setattr(case_context, "montar_dossie", _dossie_ok)
+    return audit_calls
 
 
 def _socio() -> User:
@@ -125,6 +137,12 @@ async def test_encerramento_sobrevive_a_falha_do_rag(db, fakes, monkeypatch):
     assert resp["memoria_institucional"]["aprendizado_assincrono"] == "enfileirado"
     await db.refresh(caso)
     assert caso.status == CaseStatus.encerrado
+    assert any(
+        call["acao"] == "UPDATE"
+        and call["entidade"] == "cases"
+        and call["registro_id"] == caso.id
+        for call in fakes
+    )
 
 
 @pytest.mark.asyncio
@@ -158,6 +176,10 @@ async def test_encerramento_passa_escopo_explicito_ao_rag(db, fakes, monkeypatch
     assert kwargs["client_id"] == cli.id
     assert kwargs["case_id"] == caso.id
     assert kwargs["chave_origem"] == f"caso:{caso.id}"
+    assert kwargs["extra"]["requires_human_review"] is True
+    assert kwargs["extra"]["rag_status"] == "pendente"
+    assert kwargs["extra"]["human_reviewed"] is False
+    assert "approved_by" not in kwargs["extra"]
 
 
 @pytest.mark.asyncio

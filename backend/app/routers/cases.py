@@ -1153,9 +1153,12 @@ async def encerrar_caso(
                     extra={
                         "area": area_str,
                         "resultado": payload.resultado,
-                        "rag_status": "aprovado",
-                        "human_reviewed": True,
-                        "approved_by": str(cu.id),
+                        # Encerrar o caso não equivale a revisar este novo
+                        # artefato cognitivo. O precedente nasce pendente e só
+                        # avança pelo fluxo canônico de curadoria/HITL.
+                        "requires_human_review": True,
+                        "rag_status": "pendente",
+                        "human_reviewed": False,
                     },
                 )
             precedente_rag_status = "registrado"
