@@ -74,18 +74,31 @@ export default function Clientes() {
   const [conflitoLoading, setConflitoLoading] = useState(false);
   const [conflitoIndisponivel, setConflitoIndisponivel] = useState(false);
   const [acessoModal, setAcessoModal] = useState<any>(null);
-  const [acessoForm, setAcessoForm] = useState({ email: "", senha_inicial: "" });
-  const [form, setForm] = useState<any>({ tipo: "PF", cidade: "Betim", estado: "MG" });
+  const [acessoForm, setAcessoForm] = useState({
+    email: "",
+    senha_inicial: "",
+  });
+  const [form, setForm] = useState<any>({
+    tipo: "PF",
+    cidade: "Betim",
+    estado: "MG",
+  });
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(false);
   const seq = useRef(0);
 
   const role = user?.role || "";
-  const podeCriarAcesso = ["superadmin", "admin", "socio", "advogado"].includes(role);
+  const podeCriarAcesso = ["superadmin", "admin", "socio", "advogado"].includes(
+    role,
+  );
   const podeRelatorioLgpd = ["superadmin", "admin", "socio"].includes(role);
-  const podeVerAdmissao = ["superadmin", "admin", "socio", "advogado"].includes(role);
+  const podeVerAdmissao = ["superadmin", "admin", "socio", "advogado"].includes(
+    role,
+  );
   const [admissaoModal, setAdmissaoModal] = useState<Client | null>(null);
-  const [admissaoPecas, setAdmissaoPecas] = useState<PecaAdmissao[] | null>(null);
+  const [admissaoPecas, setAdmissaoPecas] = useState<PecaAdmissao[] | null>(
+    null,
+  );
   const [admissaoLoading, setAdmissaoLoading] = useState(false);
   const admissaoReq = useRef(0);
   const [admissaoPoderes, setAdmissaoPoderes] = useState({
@@ -98,7 +111,9 @@ export default function Clientes() {
     const my = ++seq.current;
     setErro(false);
     return api
-      .get("/clients/", { params: { search: search || undefined, page, page_size: 50 } })
+      .get("/clients/", {
+        params: { search: search || undefined, page, page_size: 50 },
+      })
       .then((r) => {
         if (my === seq.current) setData(r.data);
       })
@@ -129,12 +144,15 @@ export default function Clientes() {
     }
     setConflitoLoading(true);
     try {
-      const { data } = await api.post<ConflitoCheck>("/clients/checar-conflito", {
-        nome,
-        cpf,
-        cnpj,
-        parte_contraria,
-      });
+      const { data } = await api.post<ConflitoCheck>(
+        "/clients/checar-conflito",
+        {
+          nome,
+          cpf,
+          cnpj,
+          parte_contraria,
+        },
+      );
       setConflito(data);
       setConflitoIndisponivel(false);
       return data;
@@ -155,13 +173,18 @@ export default function Clientes() {
     setAdmissaoPecas(null);
     setAdmissaoLoading(true);
     try {
-      const { data } = await api.get<PecaAdmissao[]>(`/clients/${c.id}/pecas-geradas`);
+      const { data } = await api.get<PecaAdmissao[]>(
+        `/clients/${c.id}/pecas-geradas`,
+      );
       if (req !== admissaoReq.current) return;
       setAdmissaoPecas(Array.isArray(data) ? data : []);
     } catch (e: any) {
       if (req !== admissaoReq.current) return;
       setAdmissaoPecas([]);
-      toast.error(e.response?.data?.detail || "Falha ao carregar os documentos de admissão");
+      toast.error(
+        e.response?.data?.detail ||
+          "Falha ao carregar os documentos de admissão",
+      );
     } finally {
       if (req === admissaoReq.current) setAdmissaoLoading(false);
     }
@@ -188,7 +211,9 @@ export default function Clientes() {
 
   const baixarPecaPdf = async (peca: PecaAdmissao) => {
     try {
-      const r = await api.get(`/legal-docs/${peca.id}/pdf-minuta`, { responseType: "blob" });
+      const r = await api.get(`/legal-docs/${peca.id}/pdf-minuta`, {
+        responseType: "blob",
+      });
       const url = URL.createObjectURL(r.data);
       const a = document.createElement("a");
       a.href = url;
@@ -220,7 +245,9 @@ export default function Clientes() {
           .get<PecaAdmissao[]>(`/clients/${criado.id}/pecas-geradas`)
           .then(({ data: pecas }) => {
             if (Array.isArray(pecas) && pecas.length) {
-              toast.success("Procuração e contrato de honorários gerados como rascunho.");
+              toast.success(
+                "Procuração e contrato de honorários gerados como rascunho.",
+              );
             }
           })
           .catch(() => {
@@ -282,7 +309,11 @@ export default function Clientes() {
           titulo="Nenhum cliente cadastrado"
           descricao="O cadastro de clientes centraliza contatos, documentos e casos de cada pessoa ou empresa. Cadastre o primeiro para vinculá-lo aos casos."
           acao={
-            <Button variant="primary" icon={<Plus size={16} />} onClick={() => setModal(true)}>
+            <Button
+              variant="primary"
+              icon={<Plus size={16} />}
+              onClick={() => setModal(true)}
+            >
               Cadastrar um cliente
             </Button>
           }
@@ -305,12 +336,17 @@ export default function Clientes() {
               {(Array.isArray(data.data) ? data.data : []).map((c) => (
                 <tr key={c.id} className="hover:bg-slate-50">
                   <td className="px-4 py-3 font-medium text-navy">
-                    <Link to={`/clientes/${c.id}`} className="hover:text-bronze hover:underline">
+                    <Link
+                      to={`/clientes/${c.id}`}
+                      className="hover:text-bronze hover:underline"
+                    >
                       {c.nome || c.razao_social}
                     </Link>
                   </td>
                   <td className="px-4 py-3">{c.tipo}</td>
-                  <td className="px-4 py-3 text-slate-500">{c.documento_exibicao || "—"}</td>
+                  <td className="px-4 py-3 text-slate-500">
+                    {c.documento_exibicao || "—"}
+                  </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     <button
                       title="Dossiê Digital"
@@ -329,7 +365,10 @@ export default function Clientes() {
                         onClick={(e) => {
                           e.stopPropagation();
                           setAcessoModal(c);
-                          setAcessoForm({ email: c.email || "", senha_inicial: "" });
+                          setAcessoForm({
+                            email: c.email || "",
+                            senha_inicial: "",
+                          });
                         }}
                       >
                         <KeyRound size={14} />
@@ -354,9 +393,12 @@ export default function Clientes() {
                         onClick={async (e) => {
                           e.stopPropagation();
                           try {
-                            const r = await api.get(`/clients/${c.id}/relatorio-lgpd`, {
-                              responseType: "blob",
-                            });
+                            const r = await api.get(
+                              `/clients/${c.id}/relatorio-lgpd`,
+                              {
+                                responseType: "blob",
+                              },
+                            );
                             const url = URL.createObjectURL(r.data);
                             const a = document.createElement("a");
                             a.href = url;
@@ -364,7 +406,10 @@ export default function Clientes() {
                             a.click();
                             URL.revokeObjectURL(url);
                           } catch (e: any) {
-                            toast.error(e.response?.data?.detail || "Não foi possível gerar o relatório LGPD");
+                            toast.error(
+                              e.response?.data?.detail ||
+                                "Não foi possível gerar o relatório LGPD",
+                            );
                           }
                         }}
                       >
@@ -376,31 +421,54 @@ export default function Clientes() {
                     <span>{c.whatsapp || c.telefone || c.email || "—"}</span>
                     {(c.whatsapp || c.telefone) && (
                       <button
-                        onClick={() => openWhatsApp(c.whatsapp || c.telefone || "", c.nome || "")}
+                        onClick={() =>
+                          openWhatsApp(
+                            c.whatsapp || c.telefone || "",
+                            c.nome || "",
+                          )
+                        }
                         className="inline-flex min-h-[24px] min-w-[24px] items-center justify-center rounded-full bg-green-100 p-1 text-green-600 transition-colors hover:bg-green-200"
                         title="Abrir WhatsApp"
                       >
-                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                        <svg
+                          className="w-3.5 h-3.5"
+                          viewBox="0 0 24 24"
+                          fill="currentColor"
+                        >
                           <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
                           <path d="M12 0C5.373 0 0 5.373 0 12c0 2.125.557 4.126 1.535 5.858L.057 23.486a.5.5 0 0 0 .612.612l5.63-1.477A11.95 11.95 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.886 0-3.655-.497-5.191-1.367l-.372-.217-3.858 1.012 1.013-3.842-.228-.384A9.96 9.96 0 0 1 2 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z" />
                         </svg>
                       </button>
                     )}
                   </td>
-                  <td className="px-4 py-3"><StatusBadge value={c.status} /></td>
-                  <td className="px-4 py-3 text-slate-400">{fmtDate(c.created_at)}</td>
+                  <td className="px-4 py-3">
+                    <StatusBadge value={c.status} />
+                  </td>
+                  <td className="px-4 py-3 text-slate-400">
+                    {fmtDate(c.created_at)}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
           {totalPages > 1 && (
             <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-sm">
-              <span className="text-slate-500">Página {data.page} de {totalPages}</span>
+              <span className="text-slate-500">
+                Página {data.page} de {totalPages}
+              </span>
               <div className="flex gap-2">
-                <Button variant="ghost" disabled={data.page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                <Button
+                  variant="ghost"
+                  disabled={data.page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
                   Anterior
                 </Button>
-                <Button variant="ghost" disabled={data.page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
+                <Button
+                  variant="ghost"
+                  disabled={data.page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
                   Próxima
                 </Button>
               </div>
@@ -422,7 +490,11 @@ export default function Clientes() {
         <div className="grid sm:grid-cols-2 gap-4">
           <div>
             <label className="label">Tipo</label>
-            <select className="input" value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
+            <select
+              className="input"
+              value={form.tipo}
+              onChange={(e) => setForm({ ...form, tipo: e.target.value })}
+            >
               <option value="PF">Pessoa Física</option>
               <option value="PJ">Pessoa Jurídica</option>
             </select>
@@ -431,13 +503,26 @@ export default function Clientes() {
             <>
               <div>
                 <label className="label">Nome completo *</label>
-                <input className="input" value={form.nome || ""} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
+                <input
+                  className="input"
+                  value={form.nome || ""}
+                  onChange={(e) => setForm({ ...form, nome: e.target.value })}
+                />
               </div>
               <div>
                 <label className="label">CPF</label>
                 <div className="flex gap-2">
-                  <input className="input flex-1" value={form.cpf || ""} onChange={(e) => setForm({ ...form, cpf: e.target.value })} onBlur={checarConflito} />
-                  <VerificarReceita tipo="cpf" documento={form.cpf || ""} onUsarNome={(nome) => setForm((f: any) => ({ ...f, nome }))} />
+                  <input
+                    className="input flex-1"
+                    value={form.cpf || ""}
+                    onChange={(e) => setForm({ ...form, cpf: e.target.value })}
+                    onBlur={checarConflito}
+                  />
+                  <VerificarReceita
+                    tipo="cpf"
+                    documento={form.cpf || ""}
+                    onUsarNome={(nome) => setForm((f: any) => ({ ...f, nome }))}
+                  />
                 </div>
               </div>
             </>
@@ -445,38 +530,77 @@ export default function Clientes() {
             <>
               <div>
                 <label className="label">Razão social *</label>
-                <input className="input" value={form.razao_social || ""} onChange={(e) => setForm({ ...form, razao_social: e.target.value })} />
+                <input
+                  className="input"
+                  value={form.razao_social || ""}
+                  onChange={(e) =>
+                    setForm({ ...form, razao_social: e.target.value })
+                  }
+                />
               </div>
               <div>
                 <label className="label">CNPJ</label>
                 <div className="flex gap-2">
-                  <input className="input flex-1" value={form.cnpj || ""} onChange={(e) => setForm({ ...form, cnpj: e.target.value })} onBlur={checarConflito} />
+                  <input
+                    className="input flex-1"
+                    value={form.cnpj || ""}
+                    onChange={(e) => setForm({ ...form, cnpj: e.target.value })}
+                    onBlur={checarConflito}
+                  />
                   <button
                     type="button"
                     className="btn-ghost text-xs whitespace-nowrap"
                     onClick={async () => {
                       try {
-                        const { data } = await api.get(`/utils/cnpj/${(form.cnpj || "").replace(/\D/g, "")}`);
-                        setForm({ ...form, razao_social: data.razao_social, cep: data.cep, logradouro: data.logradouro, numero: data.numero, bairro: data.bairro, cidade: data.cidade, estado: data.estado, telefone: data.telefone });
+                        const { data } = await api.get(
+                          `/utils/cnpj/${(form.cnpj || "").replace(/\D/g, "")}`,
+                        );
+                        setForm({
+                          ...form,
+                          razao_social: data.razao_social,
+                          cep: data.cep,
+                          logradouro: data.logradouro,
+                          numero: data.numero,
+                          bairro: data.bairro,
+                          cidade: data.cidade,
+                          estado: data.estado,
+                          telefone: data.telefone,
+                        });
                       } catch (e: any) {
-                        toast.error(e.response?.data?.detail || "CNPJ não encontrado");
+                        toast.error(
+                          e.response?.data?.detail || "CNPJ não encontrado",
+                        );
                       }
                     }}
                   >
                     🔍 Receita
                   </button>
-                  <VerificarReceita tipo="cnpj" documento={form.cnpj || ""} onUsarNome={(razao_social) => setForm((f: any) => ({ ...f, razao_social }))} />
+                  <VerificarReceita
+                    tipo="cnpj"
+                    documento={form.cnpj || ""}
+                    onUsarNome={(razao_social) =>
+                      setForm((f: any) => ({ ...f, razao_social }))
+                    }
+                  />
                 </div>
               </div>
             </>
           )}
           <div>
             <label className="label">WhatsApp</label>
-            <input className="input" value={form.whatsapp || ""} onChange={(e) => setForm({ ...form, whatsapp: e.target.value })} />
+            <input
+              className="input"
+              value={form.whatsapp || ""}
+              onChange={(e) => setForm({ ...form, whatsapp: e.target.value })}
+            />
           </div>
           <div>
             <label className="label">E-mail</label>
-            <input className="input" value={form.email || ""} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            <input
+              className="input"
+              value={form.email || ""}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+            />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
@@ -491,7 +615,13 @@ export default function Clientes() {
                     if (cep.length !== 8) return;
                     try {
                       const { data } = await api.get(`/utils/cep/${cep}`);
-                      setForm((f: any) => ({ ...f, logradouro: data.logradouro, bairro: data.bairro, cidade: data.cidade, estado: data.estado }));
+                      setForm((f: any) => ({
+                        ...f,
+                        logradouro: data.logradouro,
+                        bairro: data.bairro,
+                        cidade: data.cidade,
+                        estado: data.estado,
+                      }));
                     } catch {}
                   }}
                 />
@@ -499,50 +629,104 @@ export default function Clientes() {
             </div>
             <div className="col-span-2">
               <label className="label">Logradouro</label>
-              <input className="input" value={form.logradouro || ""} onChange={(e) => setForm({ ...form, logradouro: e.target.value })} />
+              <input
+                className="input"
+                value={form.logradouro || ""}
+                onChange={(e) =>
+                  setForm({ ...form, logradouro: e.target.value })
+                }
+              />
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="label">Número</label>
-              <input className="input" value={form.numero || ""} onChange={(e) => setForm({ ...form, numero: e.target.value })} />
+              <input
+                className="input"
+                value={form.numero || ""}
+                onChange={(e) => setForm({ ...form, numero: e.target.value })}
+              />
             </div>
             <div className="col-span-2">
               <label className="label">Bairro</label>
-              <input className="input" value={form.bairro || ""} onChange={(e) => setForm({ ...form, bairro: e.target.value })} />
+              <input
+                className="input"
+                value={form.bairro || ""}
+                onChange={(e) => setForm({ ...form, bairro: e.target.value })}
+              />
             </div>
           </div>
           <div className="sm:col-span-2">
-            <label className="label">Parte contrária (se já conhecida — p/ verificação de conflito)</label>
-            <input className="input" value={form.parte_contraria || ""} onChange={(e) => setForm({ ...form, parte_contraria: e.target.value })} onBlur={checarConflito} />
+            <label className="label">
+              Parte contrária (se já conhecida — p/ verificação de conflito)
+            </label>
+            <input
+              className="input"
+              value={form.parte_contraria || ""}
+              onChange={(e) =>
+                setForm({ ...form, parte_contraria: e.target.value })
+              }
+              onBlur={checarConflito}
+            />
           </div>
         </div>
 
         {conflitoIndisponivel && (
-          <Alert className="mt-4" variant="warning" title="Conflito não pôde ser verificado">
-            A consulta de conflito está indisponível neste momento. O cadastro continua permitido, mas a análise de conflito deve ser realizada antes da atuação no caso.
+          <Alert
+            className="mt-4"
+            variant="warning"
+            title="Conflito não pôde ser verificado"
+          >
+            A consulta de conflito está indisponível neste momento. O cadastro
+            continua permitido, mas a análise de conflito deve ser realizada
+            antes da atuação no caso.
           </Alert>
         )}
 
-        {conflito && conflito !== "indisponivel" && conflito.conflito && conflito.nivel !== "nenhum" && (
-          <Alert
-            className="mt-4"
-            variant={conflito.nivel === "critico" ? "danger" : "warning"}
-            title={conflito.nivel === "critico" ? "Conflito de interesses crítico" : "Atenção: possível conflito de interesses"}
-          >
-            <ul className="space-y-1.5">
-              {conflito.matches.map((m, i) => (
-                <li key={i} className="flex flex-wrap items-center gap-1.5">
-                  <Badge tone={conflito.nivel === "critico" ? "red" : "amber"}>{m.papel.replace(/_/g, " ")}</Badge>
-                  <span>{m.descricao}</span>
-                  {m.documento_mascarado && <span className="font-mono text-xs opacity-70">{m.documento_mascarado}</span>}
-                  {m.case_id && <Link to={`/casos/${m.case_id}`} className="font-medium underline hover:no-underline">ver caso</Link>}
-                </li>
-              ))}
-            </ul>
-            <p className="mt-2 text-xs opacity-80">Aviso ético — o cadastro não é bloqueado, mas registre a análise de conflito antes de prosseguir.</p>
-          </Alert>
-        )}
+        {conflito &&
+          conflito !== "indisponivel" &&
+          conflito.conflito &&
+          conflito.nivel !== "nenhum" && (
+            <Alert
+              className="mt-4"
+              variant={conflito.nivel === "critico" ? "danger" : "warning"}
+              title={
+                conflito.nivel === "critico"
+                  ? "Conflito de interesses crítico"
+                  : "Atenção: possível conflito de interesses"
+              }
+            >
+              <ul className="space-y-1.5">
+                {conflito.matches.map((m, i) => (
+                  <li key={i} className="flex flex-wrap items-center gap-1.5">
+                    <Badge
+                      tone={conflito.nivel === "critico" ? "red" : "amber"}
+                    >
+                      {m.papel.replace(/_/g, " ")}
+                    </Badge>
+                    <span>{m.descricao}</span>
+                    {m.documento_mascarado && (
+                      <span className="font-mono text-xs opacity-70">
+                        {m.documento_mascarado}
+                      </span>
+                    )}
+                    {m.case_id && (
+                      <Link
+                        to={`/casos/${m.case_id}`}
+                        className="font-medium underline hover:no-underline"
+                      >
+                        ver caso
+                      </Link>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs opacity-80">
+                Aviso ético — o cadastro não é bloqueado, mas registre a análise
+                de conflito antes de prosseguir.
+              </p>
+            </Alert>
+          )}
 
         <div className="flex justify-between mt-5">
           <Button
@@ -551,8 +735,12 @@ export default function Clientes() {
             disabled={conflitoLoading}
             onClick={async () => {
               const r = await checarConflito();
-              if (r && r !== "indisponivel" && r.nivel === "nenhum") toast.success("Nenhum conflito de interesses encontrado.");
-              else if (!r) toast.info("Informe nome/documento ou parte contrária para verificar.");
+              if (r && r !== "indisponivel" && r.nivel === "nenhum")
+                toast.success("Nenhum conflito de interesses encontrado.");
+              else if (!r)
+                toast.info(
+                  "Informe nome/documento ou parte contrária para verificar.",
+                );
             }}
           >
             {conflitoLoading ? "Verificando..." : "Verificar conflito"}
@@ -564,64 +752,166 @@ export default function Clientes() {
       </Modal>
 
       {admissaoModal && podeVerAdmissao && (
-        <Modal open onClose={() => setAdmissaoModal(null)} title="Documentos de admissão">
+        <Modal
+          open
+          onClose={() => setAdmissaoModal(null)}
+          title="Documentos de admissão"
+        >
           <p className="text-xs text-slate-500 mb-3">
-            {admissaoModal.nome || admissaoModal.razao_social} — procuração e contrato de honorários emitidos no cadastro. Saem em papel timbrado do escritório e permanecem <strong>rascunho</strong> até a revisão e a assinatura do advogado.
+            {admissaoModal.nome || admissaoModal.razao_social} — procuração e
+            contrato de honorários emitidos no cadastro. Saem em papel timbrado
+            do escritório e permanecem <strong>rascunho</strong> até a revisão e
+            a assinatura do advogado.
           </p>
-          {admissaoLoading && <p className="text-sm text-slate-500">Carregando…</p>}
+          {admissaoLoading && (
+            <p className="text-sm text-slate-500">Carregando…</p>
+          )}
           {!admissaoLoading && admissaoPecas?.length === 0 && (
-            <Alert variant="warning">Nenhum documento de admissão para este cliente. Use "Gerar novamente" para emitir a procuração e o contrato.</Alert>
+            <Alert variant="warning">
+              Nenhum documento de admissão para este cliente. Use "Gerar
+              novamente" para emitir a procuração e o contrato.
+            </Alert>
           )}
           {!admissaoLoading && !!admissaoPecas?.length && (
             <ul className="divide-y divide-slate-100 text-sm">
               {admissaoPecas.map((peca) => (
-                <li key={peca.id} className="flex items-center justify-between gap-3 py-2">
+                <li
+                  key={peca.id}
+                  className="flex items-center justify-between gap-3 py-2"
+                >
                   <div className="min-w-0">
-                    <p className="truncate font-medium text-navy">{peca.titulo}</p>
-                    <p className="text-xs text-slate-500">{peca.tipo} · {peca.status}{peca.created_at ? ` · ${fmtDate(peca.created_at)}` : ""}</p>
+                    <p className="truncate font-medium text-navy">
+                      {peca.titulo}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {peca.tipo} · {peca.status}
+                      {peca.created_at ? ` · ${fmtDate(peca.created_at)}` : ""}
+                    </p>
                   </div>
-                  <Button variant="secondary" onClick={() => baixarPecaPdf(peca)}>PDF</Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => baixarPecaPdf(peca)}
+                  >
+                    PDF
+                  </Button>
                 </li>
               ))}
             </ul>
           )}
           <div className="mt-5 rounded-lg border border-slate-200 p-3">
-            <p className="mb-2 text-xs font-semibold text-navy">Poderes da nova procuração</p>
-            <p className="mb-3 text-xs text-slate-500">Gerar novamente cria uma versão nova <strong>com estes poderes</strong> — confira antes, porque é o que o cliente assinará. A versão anterior continua no histórico.</p>
+            <p className="mb-2 text-xs font-semibold text-navy">
+              Poderes da nova procuração
+            </p>
+            <p className="mb-3 text-xs text-slate-500">
+              Gerar novamente cria uma versão nova{" "}
+              <strong>com estes poderes</strong> — confira antes, porque é o que
+              o cliente assinará. A versão anterior continua no histórico.
+            </p>
             <div className="space-y-2">
-              <select className="input w-full" value={admissaoPoderes.tipo_poderes} onChange={(e) => setAdmissaoPoderes({ ...admissaoPoderes, tipo_poderes: e.target.value })}>
+              <select
+                className="input w-full"
+                value={admissaoPoderes.tipo_poderes}
+                onChange={(e) =>
+                  setAdmissaoPoderes({
+                    ...admissaoPoderes,
+                    tipo_poderes: e.target.value,
+                  })
+                }
+              >
                 <option value="ad_judicia">Ad judicia (foro em geral)</option>
-                <option value="ad_judicia_et_extra">Ad judicia et extra (judicial e extrajudicial)</option>
+                <option value="ad_judicia_et_extra">
+                  Ad judicia et extra (judicial e extrajudicial)
+                </option>
                 <option value="especiais">Poderes especiais</option>
               </select>
               <label className="flex items-center gap-2 text-sm text-slate-600">
-                <input type="checkbox" checked={admissaoPoderes.permite_substabelecimento} onChange={(e) => setAdmissaoPoderes({ ...admissaoPoderes, permite_substabelecimento: e.target.checked })} />
+                <input
+                  type="checkbox"
+                  checked={admissaoPoderes.permite_substabelecimento}
+                  onChange={(e) =>
+                    setAdmissaoPoderes({
+                      ...admissaoPoderes,
+                      permite_substabelecimento: e.target.checked,
+                    })
+                  }
+                />
                 Permite substabelecimento
               </label>
-              <input className="input w-full" placeholder="Poderes especiais (art. 105 do CPC) — opcional" value={admissaoPoderes.poderes_especiais} onChange={(e) => setAdmissaoPoderes({ ...admissaoPoderes, poderes_especiais: e.target.value })} />
+              <input
+                className="input w-full"
+                placeholder="Poderes especiais (art. 105 do CPC) — opcional"
+                value={admissaoPoderes.poderes_especiais}
+                onChange={(e) =>
+                  setAdmissaoPoderes({
+                    ...admissaoPoderes,
+                    poderes_especiais: e.target.value,
+                  })
+                }
+              />
             </div>
           </div>
           <div className="mt-4 flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setAdmissaoModal(null)}>Fechar</Button>
-            <Button variant="primary" disabled={admissaoLoading} onClick={regerarAdmissao}>Gerar novamente</Button>
+            <Button variant="ghost" onClick={() => setAdmissaoModal(null)}>
+              Fechar
+            </Button>
+            <Button
+              variant="primary"
+              disabled={admissaoLoading}
+              onClick={regerarAdmissao}
+            >
+              Gerar novamente
+            </Button>
           </div>
         </Modal>
       )}
 
       {acessoModal && podeCriarAcesso && (
         <div className="modal-backdrop" onClick={() => setAcessoModal(null)}>
-          <div className="card p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-semibold text-navy mb-1 flex items-center gap-1.5"><KeyRound size={16} /> Acesso ao Portal</h3>
-            <p className="text-xs text-slate-500 mb-4">{acessoModal.nome || acessoModal.razao_social} — o cliente trocará a senha no 1º login.</p>
+          <div
+            className="card p-6 w-full max-w-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-semibold text-navy mb-1 flex items-center gap-1.5">
+              <KeyRound size={16} /> Acesso ao Portal
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              {acessoModal.nome || acessoModal.razao_social} — o cliente trocará
+              a senha no 1º login.
+            </p>
             <div className="space-y-3">
-              <input className="input" type="email" placeholder="E-mail de login" value={acessoForm.email} onChange={(e) => setAcessoForm({ ...acessoForm, email: e.target.value })} />
-              <input className="input" type="password" autoComplete="new-password" placeholder="Senha inicial (mín. 10, com letra, número e símbolo)" value={acessoForm.senha_inicial} onChange={(e) => setAcessoForm({ ...acessoForm, senha_inicial: e.target.value })} />
+              <input
+                className="input"
+                type="email"
+                placeholder="E-mail de login"
+                value={acessoForm.email}
+                onChange={(e) =>
+                  setAcessoForm({ ...acessoForm, email: e.target.value })
+                }
+              />
+              <input
+                className="input"
+                type="password"
+                autoComplete="new-password"
+                placeholder="Senha inicial (mín. 10, com letra, número e símbolo)"
+                value={acessoForm.senha_inicial}
+                onChange={(e) =>
+                  setAcessoForm({
+                    ...acessoForm,
+                    senha_inicial: e.target.value,
+                  })
+                }
+              />
               <button
                 className="btn-primary w-full justify-center"
                 onClick={async () => {
                   try {
-                    await api.post(`/clients/${acessoModal.id}/criar-acesso`, acessoForm);
-                    toast.success("Acesso criado! Informe o e-mail e a senha inicial ao cliente.");
+                    await api.post(
+                      `/clients/${acessoModal.id}/criar-acesso`,
+                      acessoForm,
+                    );
+                    toast.success(
+                      "Acesso criado! Informe o e-mail e a senha inicial ao cliente.",
+                    );
                     setAcessoModal(null);
                   } catch (e: any) {
                     toast.error(e.response?.data?.detail || "Erro");
