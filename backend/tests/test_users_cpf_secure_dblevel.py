@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+import subprocess
+import sys
 from uuid import uuid4
 
 import pytest
@@ -98,4 +101,61 @@ async def test_cpf_duplicado_entre_usuarios_ativos_e_bloqueado_no_banco():
         finally:
             for uid in ids:
                 await db.execute(text("DELETE FROM users WHERE id=:id"), {"id": uid})
+            await db.commit()
+
+
+async def test_downgrade_159_falha_fechado_e_preserva_revision_schema_e_dado():
+    from app.core.database import AsyncSessionLocal, engine
+    from app.models.user import User, UserRole
+    from app.services.pii_crypto import encrypt, hash_documento
+
+    uid = str(uuid4())
+    cpf = _cpf_teste_valido()
+    cpf_enc = encrypt(cpf)
+    cpf_hash = hash_documento(cpf)
+
+    async with AsyncSessionLocal() as db:
+        db.add(User(
+            id=uid,
+            email=f"{uid[:8]}@teste.local",
+            hashed_password="x",
+            full_name="Rollback Seguro",
+            role=UserRole.socio,
+            cpf_enc=cpf_enc,
+            cpf_hash=cpf_hash,
+            is_active=True,
+        ))
+        await db.commit()
+
+    # Libera conexões antes de o subprocesso Alembic tentar adquirir o lock da migration.
+    await engine.dispose()
+    backend_dir = Path(__file__).resolve().parents[1]
+    proc = subprocess.run(
+        [sys.executable, "-m", "alembic", "downgrade", "158_case_partes_trabalhista_pii_expand"],
+        cwd=backend_dir,
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert proc.returncode != 0
+    assert "downgrade 159 bloqueado" in (proc.stdout + proc.stderr)
+
+    async with AsyncSessionLocal() as db:
+        try:
+            revision = (await db.execute(text("SELECT version_num FROM alembic_version"))).scalar_one()
+            assert revision == "159_user_cpf_secure"
+            cols = set((await db.execute(text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name='users' AND column_name IN ('cpf_enc','cpf_hash')"
+            ))).scalars().all())
+            assert cols == {"cpf_enc", "cpf_hash"}
+            row = (await db.execute(
+                text("SELECT cpf_enc, cpf_hash FROM users WHERE id=:id"), {"id": uid}
+            )).mappings().one()
+            assert row["cpf_enc"] == cpf_enc
+            assert row["cpf_hash"] == cpf_hash
+        finally:
+            await db.execute(text("DELETE FROM users WHERE id=:id"), {"id": uid})
             await db.commit()
