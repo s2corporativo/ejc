@@ -272,6 +272,12 @@ ADICOES_INTENCIONAIS |= {
     ("/api" + path[len("/api/v1"):], metodo) for path, metodo in _MOVIDAS_ONDA2
 }
 ADICOES_INTENCIONAIS |= {
+    # PR #1645 — cockpit IA-first. São rotas autenticadas e internas: o estado
+    # de alerta é pessoal ao usuário e não altera a entidade jurídica de origem;
+    # a confirmação de próxima ação versiona apenas o dossiê da Sala Jurídica.
+    ("/api/atividades/alertas-inteligentes", "GET"),
+    ("/api/atividades/alertas/{source_type}/{source_id}", "PATCH"),
+    ("/api/sala-juridica/{session_id}/proxima-acao/confirmar", "POST"),
     ("/api/datajud/intelligence/reconstruir-lote", "POST"),
     ("/api/datajud/intelligence/{case_id}/andamentos/alimentar-ia", "POST"),
     ("/api/kanban/columns", "GET"),
