@@ -26,6 +26,7 @@ from .contracts import (
 from .evidence import CaseAssertion, transition_assertion
 from .issue_engine import identify_legal_issues
 from .precedent_validity import evaluate_proposition_validity
+from .rag_research import execute_research_plan_with_rag
 from .research_loop import build_research_plan, evaluate_research_coverage
 from .skill_contracts import (
     get_native_legal_skill_contract,
@@ -46,6 +47,7 @@ __all__ = [
     "build_research_plan",
     "evaluate_proposition_validity",
     "evaluate_research_coverage",
+    "execute_research_plan_with_rag",
     "get_native_legal_skill_contract",
     "identify_legal_issues",
     "native_legal_skill_contracts",
