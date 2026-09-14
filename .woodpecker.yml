@@ -6,7 +6,9 @@
 # - push na main e execução manual: suíte completa;
 # - pull request: executa apenas os gates materialmente afetados pelo diff;
 # - security-secrets: sempre executa, inclusive em docs-only;
-# - alterar este próprio workflow força todos os gates relevantes.
+# - runtime, segurança, migrations e deploy: suíte completa por caminhos críticos;
+# - diff vazio/desconhecido: suíte completa (fail-closed);
+# - ops-contracts: sempre executa os contratos leves de segurança/operação.
 when:
   - event: push
     branch: main
@@ -45,6 +47,7 @@ steps:
       - python -m alembic heads
       - until pg_isready -h db -U ejc_user -q; do sleep 1; done
       - python -m alembic upgrade head
+      - python -m unittest discover -s ../scripts/tests -p test_woodpecker_scopes.py -v
       - pytest tests/test_alembic_single_head.py tests/test_rotas_registro_explicito.py -q
       # Gate completo obrigatório quando backend/configuração compartilhada muda.
       - pytest tests -q
@@ -52,6 +55,45 @@ steps:
       - event: push
         branch: main
       - event: manual
+      - &critical_change
+        path:
+          include:
+            - 'backend/app/**'
+            - 'backend/alembic/**'
+            - 'backend/scripts/**'
+            - 'frontend/src/lib/**'
+            - 'frontend/src/services/**'
+            - 'frontend/src/stores/**'
+            - 'frontend/src/config/**'
+            - 'frontend/src/App.tsx'
+            - 'frontend/src/components/*Protected*'
+            - 'frontend/src/components/*Role*'
+            - 'frontend/src/components/*Staff*'
+            - 'frontend/src/components/RouteGuards.tsx'
+            - 'scripts/**'
+            - 'infra/**'
+            - 'ops/**'
+            - 'config/**'
+            - 'nginx/**'
+            - 'vps-tools/**'
+            - '.github/**'
+            - '.githooks/**'
+            - '.claude/**'
+            - '.env.example'
+            - '.woodpecker.yml'
+            - '.gitleaks*'
+            - '.semgrep*'
+            - '.trivy*'
+            - 'AGENTS.md'
+            - 'CLAUDE.md'
+            - 'docs/GOVERNANCA*'
+            - 'docker-compose*.yml'
+            - '**/Dockerfile*'
+            - '**/requirements*.txt'
+            - '**/package*.json'
+            - '**/*lock*'
+            - '**/pyproject.toml'
+          on_empty: true
       - path:
           include:
             - 'backend/**'
@@ -74,6 +116,7 @@ steps:
       - event: push
         branch: main
       - event: manual
+      - *critical_change
       - path:
           include: ['ops/agents/**', '.woodpecker.yml']
           on_empty: false
@@ -91,6 +134,7 @@ steps:
       - event: push
         branch: main
       - event: manual
+      - *critical_change
       - path:
           include:
             - 'frontend/**'
@@ -111,23 +155,7 @@ steps:
       - bash -n scripts/legacy_script_guard.sh scripts/deploy.sh scripts/deploy-vps.sh scripts/atualizar-vps.sh scripts/vps_setup.sh scripts/tests/test_legacy_script_guards.sh
       - bash scripts/tests/test_legacy_script_guards.sh
       - bash scripts/tests/test_rag_activation.sh
-    when:
-      - event: push
-        branch: main
-      - event: manual
-      - path:
-          include:
-            - 'scripts/**'
-            - 'infra/**'
-            - 'vps-tools/**'
-            - 'nginx/**'
-            - 'config/**'
-            - '.github/**'
-            - '.githooks/**'
-            - '.woodpecker.yml'
-            - 'docker-compose.yml'
-            - 'docker-compose.*.yml'
-          on_empty: false
+    # Contratos leves rodam sempre: seus insumos cruzam código, exemplos e scanners.
 
   security-sast:
     image: semgrep/semgrep:1.172.0
@@ -137,6 +165,7 @@ steps:
       - event: push
         branch: main
       - event: manual
+      - *critical_change
       - path:
           include:
             - 'backend/**'
@@ -156,6 +185,7 @@ steps:
       - event: push
         branch: main
       - event: manual
+      - *critical_change
       - path:
           include:
             - 'backend/requirements*.txt'
@@ -177,6 +207,7 @@ steps:
       - event: push
         branch: main
       - event: manual
+      - *critical_change
       - path:
           include:
             - 'infra/**'
