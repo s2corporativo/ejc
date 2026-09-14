@@ -1,6 +1,12 @@
 # CI oficial fora do GitHub Actions: self-hosted (Woodpecker — infra/woodpecker/).
 # Replica os portões locais e adiciona SAST, vulnerabilidades, secret scanning
 # e validação determinística dos contratos operacionais de backup/deploy.
+#
+# Política de escopo:
+# - push na main e execução manual: suíte completa;
+# - pull request: executa apenas os gates materialmente afetados pelo diff;
+# - security-secrets: sempre executa, inclusive em docs-only;
+# - alterar este próprio workflow força todos os gates relevantes.
 when:
   - event: push
     branch: main
@@ -12,16 +18,17 @@ services:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: ejc_user
-      POSTGRES_PASSWORD: ejc_pass
       POSTGRES_DB: ejc_db
+      # Banco efêmero e isolado por pipeline: evita pseudo-senha hardcoded no repo.
+      POSTGRES_HOST_AUTH_METHOD: trust
 
 steps:
   backend:
     image: python:3.11-bookworm
     environment:
-      DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@db:5432/ejc_db
-      DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@db:5432/ejc_db
-      SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user:ejc_pass@db:5432/ejc_db
+      DATABASE_URL: postgresql+asyncpg://ejc_user@db:5432/ejc_db
+      DATABASE_URL_SYNC: postgresql://ejc_user@db:5432/ejc_db
+      SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user@db:5432/ejc_db
       # O CI já sobe PostgreSQL+pgvector e aplica `alembic upgrade head`.
       # Sem esta flag, os testes DB-level se auto-pulam e o gate fica mais
       # fraco que o portão local obrigatório do repositório.
@@ -39,11 +46,24 @@ steps:
       - until pg_isready -h db -U ejc_user -q; do sleep 1; done
       - python -m alembic upgrade head
       - pytest tests/test_alembic_single_head.py tests/test_rotas_registro_explicito.py -q
-      # Gate completo obrigatório, agora com DB-level habilitado.
+      # Gate completo obrigatório quando backend/configuração compartilhada muda.
       - pytest tests -q
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - path:
+          include:
+            - 'backend/**'
+            - 'qa/**'
+            - 'config/**'
+            - '.env.example'
+            - '.woodpecker.yml'
+            - 'docker-compose.yml'
+            - 'docker-compose.*.yml'
+          on_empty: false
 
   # O SDK de agentes é ferramenta operacional isolada e tem dependências próprias.
-  # Este gate só consome recursos quando a própria camada (ou este workflow) muda.
   agents-contracts:
     image: python:3.11-bookworm
     commands:
@@ -51,6 +71,8 @@ steps:
       - python -m compileall ops/agents -q
       - python -m unittest discover -s ops/agents/tests -v
     when:
+      - event: push
+        branch: main
       - event: manual
       - path:
           include: ['ops/agents/**', '.woodpecker.yml']
@@ -65,6 +87,16 @@ steps:
       - npm run lint
       - npm test
       - npm run build
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - path:
+          include:
+            - 'frontend/**'
+            - 'qa/**'
+            - '.woodpecker.yml'
+          on_empty: false
 
   ops-contracts:
     image: python:3.11-bookworm
@@ -79,16 +111,61 @@ steps:
       - bash -n scripts/legacy_script_guard.sh scripts/deploy.sh scripts/deploy-vps.sh scripts/atualizar-vps.sh scripts/vps_setup.sh scripts/tests/test_legacy_script_guards.sh
       - bash scripts/tests/test_legacy_script_guards.sh
       - bash scripts/tests/test_rag_activation.sh
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - path:
+          include:
+            - 'scripts/**'
+            - 'infra/**'
+            - 'vps-tools/**'
+            - 'nginx/**'
+            - 'config/**'
+            - '.github/**'
+            - '.githooks/**'
+            - '.woodpecker.yml'
+            - 'docker-compose.yml'
+            - 'docker-compose.*.yml'
+          on_empty: false
 
   security-sast:
     image: semgrep/semgrep:1.172.0
     commands:
       - semgrep scan --config=auto --error .
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - path:
+          include:
+            - 'backend/**'
+            - 'frontend/**'
+            - 'scripts/**'
+            - 'infra/**'
+            - 'ops/**'
+            - 'config/**'
+            - '.woodpecker.yml'
+          on_empty: false
 
   security-vulnerabilities:
     image: aquasec/trivy:0.74.0
     commands:
       - trivy fs --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 .
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - path:
+          include:
+            - 'backend/requirements*.txt'
+            - 'frontend/package*.json'
+            - 'ops/**/requirements*.txt'
+            - '**/Dockerfile*'
+            - 'docker-compose.yml'
+            - 'docker-compose.*.yml'
+            - '.woodpecker.yml'
+          on_empty: false
 
   security-misconfig-audit:
     image: aquasec/trivy:0.74.0
@@ -96,7 +173,25 @@ steps:
       # Auditoria inicialmente não bloqueante: há findings legados conhecidos.
       # Promover para exit-code 1 somente após saneamento/baseline explícito.
       - trivy fs --scanners misconfig --severity HIGH,CRITICAL --exit-code 0 .
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - path:
+          include:
+            - 'infra/**'
+            - 'nginx/**'
+            - 'config/**'
+            - 'vps-tools/**'
+            - '.github/**'
+            - '.woodpecker.yml'
+            - 'docker-compose.yml'
+            - 'docker-compose.*.yml'
+            - '**/Dockerfile*'
+          on_empty: false
 
+  # Secret scanning é barato comparado às suítes e deve cobrir qualquer diff,
+  # inclusive documentação, exemplos e arquivos de configuração.
   security-secrets:
     image: ghcr.io/gitleaks/gitleaks:v8.30.1
     commands:
