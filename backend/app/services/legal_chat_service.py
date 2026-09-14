@@ -26,6 +26,7 @@ from app.core.client_ownership import (
 from app.core.config import get_settings
 from app.core.security import ROLE_LEVEL
 from app.models.case import Case, CaseArea, CaseStatus
+from app.models.case_parte import CaseParte
 from app.models.case_intelligence import CaseIntelligenceSnapshot
 from app.models.client import Client
 from app.models.document import DocConfidencialidade, Document
@@ -46,6 +47,7 @@ from app.services.conflito_service import (
     _casos_por_parte_contraria,
     _clientes_por_nome,
 )
+from app.services.sanitizer import sanitizar_pii
 
 # Modo do seletor → task_type do gateway. "chat_rapido" NÃO consta no mapa do
 # intent_classifier de propósito: a conversa livre cai no fallback por
@@ -78,11 +80,20 @@ MODO_INSTRUCAO: dict[str, str] = {
         "invente); distinga expressamente o que é certo, o que é provável e o "
         "que depende de fato/documento ausente; aponte riscos e caminhos "
         "alternativos; termine com os próximos passos práticos quando fizer "
-        "sentido. Se a pergunta for simples, seja direto — sem encher."
+        "sentido. Se a pergunta for simples, seja direto — sem encher. "
+        "Quando houver documentos anexados, faça leitura jurídico-probatória: "
+        "identifique partes, testemunhas, endereços, datas, valores, pedidos, "
+        "provas, lacunas, competência, ramo do Direito, natureza da ação, rito, "
+        "prescrição/decadência e urgência; diferencie extração documental de "
+        "inferência jurídica. Antes da conclusão, teste a tese como advogado da "
+        "parte, como contraparte e como julgador exigente."
     ),
     "organizar_fatos": (
-        "Organize os fatos em cronologia, distinguindo expressamente: "
-        "comprovado, alegado, inferido, controvertido, ausente e superado."
+        "Organize o dossiê integral em cronologia, distinguindo expressamente: "
+        "comprovado, alegado, inferido, controvertido, ausente e superado. "
+        "Extraia também partes, testemunhas, endereços, datas, valores, pedidos, "
+        "documentos/provas, competência, ramo do Direito, natureza da ação, rito, "
+        "prescrição/decadência e urgência. Não invente campos ausentes."
     ),
     "analisar_provas": (
         "Relacione cada fato às provas existentes (documento, trecho, origem) "
@@ -199,6 +210,45 @@ async def gravar_versao_estado(
     return nova
 
 
+async def confirmar_proxima_acao(
+    db: AsyncSession,
+    sessao: LegalChatSession,
+    *,
+    acao: str,
+    user: User,
+) -> dict[str, Any]:
+    """Confirma uma sugestão sem criar tarefa/prazo nem mutar caso automaticamente."""
+    exigir_nao_congelada(sessao)
+    atual = await ultima_versao_estado(db, sessao.id)
+    if atual is None:
+        raise HTTPException(status_code=409, detail="A sessão ainda não possui dossiê estruturado")
+    alvo = acao.strip()
+    chave = alvo.casefold()
+    estado = dict(atual.estado or {})
+    proximas = [dict(a) for a in (estado.get("proximas_acoes") or []) if isinstance(a, dict)]
+    encontrado = False
+    agora = datetime.now(timezone.utc).isoformat()
+    for item in proximas:
+        texto_acao = str(item.get("acao") or "").strip()
+        if texto_acao.casefold() == chave:
+            item["confirmada"] = True
+            item["confirmada_por"] = user.id
+            item["confirmada_em"] = agora
+            encontrado = True
+        else:
+            item.pop("confirmada", None)
+            item.pop("confirmada_por", None)
+            item.pop("confirmada_em", None)
+    if not encontrado:
+        raise HTTPException(status_code=409, detail="Próxima ação não corresponde ao estado atual da sessão")
+    estado["proximas_acoes"] = proximas
+    nova = await gravar_versao_estado(
+        db, sessao, estado=estado, resumo=atual.resumo, origem="manual", created_by=user.id
+    )
+    await db.flush()
+    return {"versao": nova.versao, "acao": alvo, "confirmada": True}
+
+
 # Tetos dos blocos de contexto conversacional — protegem a janela de tokens
 # do provider em sessões longas/com muitos anexos. Ampliados (2026-07): a Sala
 # roteia para modelos de janela grande (200k tokens) e a memória curta era o
@@ -207,8 +257,8 @@ async def gravar_versao_estado(
 _HISTORICO_MAX_MENSAGENS = 20
 _HISTORICO_MAX_CHARS_MSG = 3_000
 _HISTORICO_MAX_CHARS_TOTAL = 24_000
-_ANEXO_MAX_CHARS = 6_000
-_ANEXOS_MAX_CHARS_TOTAL = 24_000
+_ANEXO_MAX_CHARS = 120_000
+_ANEXOS_MAX_CHARS_TOTAL = 300_000
 
 
 def _montar_mensagem_ia(
@@ -216,6 +266,7 @@ def _montar_mensagem_ia(
     sessao: LegalChatSession,
     historico: list[LegalChatMessage] | None = None,
     anexos: list[LegalChatAttachment] | None = None,
+    contexto_ejc: str | None = None,
 ) -> str:
     """Mensagem efetiva enviada ao núcleo: instrução do modo + workspace +
     histórico recente + síntese dos anexos + texto do advogado.
@@ -233,6 +284,12 @@ def _montar_mensagem_ia(
         partes.append(
             "[ÁREA DE TRABALHO DO ADVOGADO — fatos, anotações e rascunhos]\n"
             + sessao.workspace_texto.strip()
+        )
+    if contexto_ejc:
+        partes.append(
+            "[CONTEXTO OPERACIONAL EJC — DADOS AUTORIZADOS DA CARTEIRA]\n"
+            "Use somente para responder à pergunta operacional. Não extrapole "
+            "acesso nem trate ausência como inexistência.\n" + contexto_ejc
         )
 
     # Histórico (cronológico): truncagem por mensagem + teto total, cortando
@@ -259,17 +316,36 @@ def _montar_mensagem_ia(
     blocos_anexos: list[str] = []
     blocos_texto: list[str] = []
     total = 0
+    nomes_proteger = _nomes_partes_anexos(anexos or [])
     for a in anexos or []:
         analise = a.resultado_analise if isinstance(a.resultado_analise, dict) else {}
-        sintese = json.dumps(analise, ensure_ascii=False, separators=(",", ":"))[:_ANEXO_MAX_CHARS]
-        bloco = f"- {a.nome_original}: {sintese}"
+        # O texto integral sanitizado é injetado em bloco próprio; removê-lo da
+        # síntese evita duplicar dezenas de milhares de caracteres no prompt.
+        analise_sintese = {
+            k: v for k, v in analise.items() if not str(k).startswith("_texto_sanitizado")
+        }
+        sintese = json.dumps(
+            analise_sintese, ensure_ascii=False, separators=(",", ":")
+        )[:20_000]
+        sintese, _ = sanitizar_pii(
+            sintese, nomes_proteger=nomes_proteger or None
+        )
+        truncado = bool(analise.get("_texto_sanitizado_truncado"))
+        sufixo = " [CONTEXTO TEXTUAL TRUNCADO — confira o arquivo original]" if truncado else ""
+        bloco = f"- {a.nome_original}{sufixo}: {sintese}"
         if total + len(bloco) > _ANEXOS_MAX_CHARS_TOTAL:
             break
         blocos_anexos.append(bloco)
         total += len(bloco)
         texto = analise.get("_texto_sanitizado")
         if isinstance(texto, str) and texto.strip():
-            bloco_t = f"### {a.nome_original}\n{(texto.strip())[:_ANEXO_MAX_CHARS]}"
+            # Defesa em profundidade: anexos sem case_id não possuem entidades
+            # canônicas do caso. Reaplicamos a sanitização com os nomes que o
+            # intake local/persistido já identificou antes de qualquer provider.
+            texto_sem_nomes, _ = sanitizar_pii(
+                texto.strip(), nomes_proteger=nomes_proteger or None
+            )
+            bloco_t = f"### {a.nome_original}\n{texto_sem_nomes[:_ANEXO_MAX_CHARS]}"
             if total + len(bloco_t) > _ANEXOS_MAX_CHARS_TOTAL:
                 break
             blocos_texto.append(bloco_t)
@@ -322,6 +398,12 @@ async def enviar_mensagem(
     db.add(msg_user)
     await db.flush()
 
+    contexto_ejc: str | None = None
+    if payload.incluir_contexto_ejc:
+        from app.services.activity_alert_service import montar_contexto_operacional_ejc
+
+        contexto_ejc = await montar_contexto_operacional_ejc(db, user)
+
     # Import tardio: mantém o service importável em testes sem stack de IA.
     from app.services.ai.core.orchestrator import run_ai_task
 
@@ -330,7 +412,9 @@ async def enviar_mensagem(
             db=db,
             user=user,
             task_type=MODO_TASK_TYPE[payload.modo],
-            mensagem=_montar_mensagem_ia(payload, sessao, historico, anexos),
+            mensagem=_montar_mensagem_ia(
+                payload, sessao, historico, anexos, contexto_ejc=contexto_ejc
+            ),
             case_id=sessao.convertido_case_id,
             params={
                 "module_key": "sala-juridica",
@@ -399,6 +483,17 @@ async def enviar_mensagem(
         if extraido is not None:
             resumo_estado = extraido.pop("_resumo", None)
             extraido["fontes"] = estado["fontes"]  # fontes vêm do RAG, não do LLM
+            confirmadas = [
+                a for a in (estado.get("proximas_acoes") or [])
+                if isinstance(a, dict) and a.get("confirmada") is True
+            ]
+            if confirmadas and "proximas_acoes" in extraido:
+                novas = [a for a in (extraido.get("proximas_acoes") or []) if isinstance(a, dict)]
+                textos = {str(a.get("acao") or "").strip().casefold() for a in confirmadas}
+                extraido["proximas_acoes"] = confirmadas + [
+                    a for a in novas
+                    if str(a.get("acao") or "").strip().casefold() not in textos
+                ]
             # Merge PARCIAL: o extrator pode devolver só algumas chaves (ex.:
             # apenas "fatos"). As omitidas herdam do estado atual — substituir
             # o dicionário inteiro apagaria provas/riscos/cronologia já
@@ -421,6 +516,22 @@ async def enviar_mensagem(
     )
     await db.flush()
 
+    fatos_nao_confirmados = sum(
+        1 for fato in (estado.get("fatos") or [])
+        if isinstance(fato, dict)
+        and str(fato.get("classificacao") or "").lower()
+        in {"alegado", "inferido", "controvertido", "ausente"}
+    )
+    nao_encontradas = 0
+    if isinstance(_relatorio_citacoes, dict):
+        bruto = _relatorio_citacoes.get("nao_encontradas")
+        if isinstance(bruto, int):
+            nao_encontradas = bruto
+        elif isinstance(bruto, list):
+            nao_encontradas = len(bruto)
+    proximas = [a for a in (estado.get("proximas_acoes") or []) if isinstance(a, dict)]
+    proxima_acao = proximas[0] if proximas else None
+
     return {
         "mensagem_user": serializar_mensagem(msg_user),
         "mensagem_ia": serializar_mensagem(msg_ia),
@@ -428,26 +539,42 @@ async def enviar_mensagem(
         "is_rascunho": resultado.get("is_rascunho", True),
         "aviso_hitl": resultado.get("aviso_hitl"),
         "critica_adversarial": resultado.get("critica_adversarial"),
+        "indicadores_confianca": {
+            "fontes_rastreaveis": len(estado.get("fontes") or []),
+            "documentos_utilizados": len(anexos),
+            "fatos_nao_confirmados": fatos_nao_confirmados,
+            "citacoes_a_conferir": nao_encontradas,
+            "revisao_humana_necessaria": True,
+        },
+        "proxima_acao_sugerida": proxima_acao,
     }
 
 
 _CHAVES_ESTADO = {
-    "fatos", "provas", "contradicoes", "questoes", "teses",
-    "riscos", "pendencias", "cronologia", "fontes",
+    "fatos", "partes", "testemunhas", "enderecos", "identificacao_processual", "provas", "documentos",
+    "contradicoes", "questoes", "teses", "pedidos", "riscos", "pendencias",
+    "cronologia", "datas_relevantes", "valores", "competencia", "ramo_direito",
+    "natureza_acao", "procedimento_rito", "prescricao_decadencia", "urgencia",
+    "proximas_acoes", "fontes",
 }
 
 _PROMPT_EXTRACAO = """Você é o extrator de estado jurídico da Sala Jurídica.
-Atualize o ESTADO CONSOLIDADO abaixo com base na última interação, e responda
-SOMENTE com um objeto JSON válido (sem markdown, sem comentários) com as chaves:
-fatos, provas, contradicoes, questoes, teses, riscos, pendencias, cronologia,
-_resumo (string de até 3 frases com a síntese atual).
+Atualize o ESTADO CONSOLIDADO abaixo com base na última interação e nos documentos
+que sustentaram a resposta. Responda SOMENTE com objeto JSON válido (sem markdown)
+com chaves conhecidas e listas de objetos: fatos, partes, testemunhas, enderecos, identificacao_processual,
+provas, documentos, contradicoes, questoes, teses, pedidos, riscos, pendencias,
+cronologia, datas_relevantes, valores, competencia, ramo_direito, natureza_acao,
+procedimento_rito, prescricao_decadencia, urgencia, proximas_acoes e _resumo (string de até 3 frases).
 
 Regras invioláveis:
-- cada fato tem {{"texto": ..., "classificacao": "comprovado"|"alegado"|"inferido"|"controvertido"|"ausente"|"superado"}};
-- NUNCA promova um fato a "comprovado" sem prova documental mencionada;
-- fato substituído por informação posterior vira "superado" (não é apagado);
+- cada fato tem {{"texto": ..., "classificacao": "comprovado"|"alegado"|"inferido"|"controvertido"|"ausente"|"superado", "fonte": ...}};
+- NUNCA promova fato a "comprovado" sem prova documental identificável;
+- partes/testemunhas/endereco/data/valor devem indicar fonte e não podem ser inventados;
+- competencia/natureza/rito/ramo são hipóteses jurídicas até confirmação humana e devem trazer fundamento/justificativa;
+- prescrição/decadência e prazo ficam apenas como análise/sugestão: NUNCA materialize deadline;
 - riscos têm {{"descricao": ..., "nivel": "baixo"|"medio"|"alto"}};
-- não invente fatos, provas nem fontes que não constem da interação/estado.
+- fato substituído por informação posterior vira "superado" (não é apagado);
+- não invente fatos, provas, partes, fontes, artigos ou precedentes.
 
 ESTADO CONSOLIDADO ATUAL:
 {estado}
@@ -542,6 +669,13 @@ def _nomes_partes_anexos(anexos: list[LegalChatAttachment]) -> list[str]:
     for a in anexos:
         ra = a.resultado_analise if isinstance(a.resultado_analise, dict) else {}
         intake = ra.get("intake_result") if isinstance(ra.get("intake_result"), dict) else ra
+        cliente = intake.get("cliente") if isinstance(intake, dict) else None
+        if isinstance(cliente, dict):
+            nome_cliente = str(cliente.get("nome") or "").strip()
+            chave_cliente = nome_cliente.casefold()
+            if len(nome_cliente) >= 4 and chave_cliente not in vistos:
+                vistos.add(chave_cliente)
+                nomes.append(nome_cliente)
         for item in intake.get("partes") or []:
             if isinstance(item, str):
                 nome = item.strip()
@@ -823,13 +957,27 @@ async def _criar_snapshot_sala(
         payload={
             "area": area,
             "fatos": estado.get("fatos") or [],
+            "partes": estado.get("partes") or [],
+            "testemunhas": estado.get("testemunhas") or [],
+            "enderecos": estado.get("enderecos") or [],
+            "identificacao_processual": estado.get("identificacao_processual") or [],
             "provas": estado.get("provas") or [],
+            "documentos": estado.get("documentos") or [],
             "contradicoes": estado.get("contradicoes") or [],
             "questoes": estado.get("questoes") or [],
             "teses": {"principal": None, "secundarias": estado.get("teses") or []},
+            "pedidos": estado.get("pedidos") or [],
             "riscos": estado.get("riscos") or [],
             "pendencias": estado.get("pendencias") or [],
             "cronologia": estado.get("cronologia") or [],
+            "datas_relevantes": estado.get("datas_relevantes") or [],
+            "valores": estado.get("valores") or [],
+            "competencia": estado.get("competencia") or [],
+            "ramo_direito": estado.get("ramo_direito") or [],
+            "natureza_acao": estado.get("natureza_acao") or [],
+            "procedimento_rito": estado.get("procedimento_rito") or [],
+            "prescricao_decadencia": estado.get("prescricao_decadencia") or [],
+            "urgencia": estado.get("urgencia") or [],
             "fontes": estado.get("fontes") or [],
             "sala_juridica_session_id": sessao.id,
             "revisao_humana_obrigatoria": True,
@@ -843,6 +991,83 @@ async def _criar_snapshot_sala(
     )
     db.add(snap)
     return snap.versao
+
+
+async def _materializar_dossie_confirmado(
+    db: AsyncSession, sessao: LegalChatSession, case: Case, user: User,
+) -> dict[str, Any]:
+    """Aplica somente dados estruturados que têm destino canônico seguro.
+
+    Chamado APENAS após confirmação explícita do advogado. Não cria prazo,
+    testemunha, pedido, valor ou tese em tabelas definitivas; esses itens ficam
+    no snapshot até existir fluxo canônico próprio.
+    """
+    # A sessão tem lock próprio, mas sessões diferentes podem materializar no
+    # mesmo caso. Serializar pelo case_id mantém deduplicação e auditoria estáveis.
+    await db.execute(select(Case.id).where(Case.id == case.id).with_for_update())
+
+    estado_v = await ultima_versao_estado(db, sessao.id)
+    estado = dict((estado_v.estado if estado_v else {}) or {})
+
+    preenchidos: list[str] = []
+    ident_items = estado.get("identificacao_processual") or []
+    ident = ident_items[0] if ident_items and isinstance(ident_items[0], dict) else {}
+    comp_items = estado.get("competencia") or []
+    comp = comp_items[0] if comp_items and isinstance(comp_items[0], dict) else {}
+    # Número CNJ não é promovido por este atalho: sua validação e sincronização
+    # com a entidade processual pertencem ao fluxo canônico de Caso/Processo.
+    for campo, limite in (("tribunal", 20), ("comarca", 100), ("vara", 100)):
+        bruto = ident.get(campo) or comp.get(campo)
+        valor = bruto.strip() if isinstance(bruto, str) else None
+        if valor and not getattr(case, campo, None):
+            setattr(case, campo, valor[:limite])
+            preenchidos.append(campo)
+
+    existentes = {
+        (p.tipo, (p.nome or "").strip().casefold())
+        for p in (await db.execute(select(CaseParte).where(CaseParte.case_id == case.id))).scalars().all()
+    }
+    aliases = {
+        "autor": "autor", "requerente": "autor", "demandante": "autor",
+        "reu": "reu", "réu": "reu", "requerido": "reu", "demandado": "reu",
+        "terceiro": "terceiro", "advogado": "advogado", "procurador": "procurador",
+    }
+    proxima_confirmada = next(
+        (
+            item for item in (estado.get("proximas_acoes") or [])
+            if isinstance(item, dict) and item.get("confirmada") is True
+            and str(item.get("acao") or "").strip()
+        ),
+        None,
+    )
+    if proxima_confirmada and not (case.proxima_acao or "").strip():
+        case.proxima_acao = str(proxima_confirmada["acao"]).strip()[:500]
+        preenchidos.append("proxima_acao")
+
+    partes_criadas = 0
+    for item in estado.get("partes") or []:
+        if not isinstance(item, dict):
+            continue
+        nome = str(item.get("nome") or "").strip()
+        tipo_raw = str(item.get("tipo") or item.get("papel") or "").strip().casefold()
+        tipo = aliases.get(tipo_raw)
+        # Itens inferidos permanecem no snapshot; não viram cadastro definitivo.
+        classificacao = str(item.get("classificacao") or "alegado").strip().casefold()
+        if not nome or not tipo or classificacao == "inferido":
+            continue
+        chave = (tipo, nome.casefold())
+        if chave in existentes:
+            continue
+        db.add(CaseParte(
+            id=str(uuid4()), case_id=case.id, tipo=tipo, nome=nome[:255],
+            papel_processual=(str(item.get("papel_processual") or "")[:100] or None),
+            observacoes="Origem: dossiê estruturado da Sala Jurídica; confirmação humana na integração.",
+            created_by=user.id,
+        ))
+        existentes.add(chave)
+        partes_criadas += 1
+
+    return {"campos_preenchidos": preenchidos, "partes_criadas": partes_criadas}
 
 
 async def converter_em_caso(
@@ -960,6 +1185,11 @@ async def converter_em_caso(
             transferidos, copiados = await _transferir_anexos(
                 db, sessao, case.id, client.id, user
             )
+        materializado = (
+            await _materializar_dossie_confirmado(db, sessao, case, user)
+            if payload.aplicar_dossie_estruturado
+            else {"campos_preenchidos": [], "partes_criadas": 0}
+        )
         snapshot_versao = await _criar_snapshot_sala(
             db, sessao, case.id, payload.area, user
         )
@@ -980,6 +1210,7 @@ async def converter_em_caso(
         "ja_convertido": False,
         "documentos_transferidos": transferidos,
         "snapshot_versao": snapshot_versao,
+        "dossie_materializado": materializado,
     }
 
 
@@ -990,6 +1221,7 @@ async def vincular_caso_existente(
     user: User,
     *,
     transferir_anexos: bool = True,
+    aplicar_dossie_estruturado: bool = False,
 ) -> dict[str, Any]:
     """Vincula a análise a um caso JÁ EXISTENTE (sem criar caso novo).
 
@@ -1031,6 +1263,11 @@ async def vincular_caso_existente(
             transferidos, copiados = await _transferir_anexos(
                 db, sessao, case.id, case.client_id, user
             )
+        materializado = (
+            await _materializar_dossie_confirmado(db, sessao, case, user)
+            if aplicar_dossie_estruturado
+            else {"campos_preenchidos": [], "partes_criadas": 0}
+        )
         snapshot_versao = await _criar_snapshot_sala(
             db, sessao, case.id, getattr(case.area, "value", str(case.area)), user
         )
@@ -1051,6 +1288,7 @@ async def vincular_caso_existente(
         "ja_convertido": False,
         "documentos_transferidos": transferidos,
         "snapshot_versao": snapshot_versao,
+        "dossie_materializado": materializado,
     }
 
 
@@ -1151,6 +1389,11 @@ def serializar_anexo(a: LegalChatAttachment) -> dict[str, Any]:
         "sha256": a.sha256,
         "tipo_documento": a.tipo_documento,
         "ocr_utilizado": a.ocr_utilizado,
+        # Derivado seguro para a UI: não expõe texto interno nem outro dado do
+        # documento, apenas informa que o contexto entregue à IA foi limitado.
+        "contexto_truncado": bool(
+            (a.resultado_analise or {}).get("_texto_sanitizado_truncado")
+        ),
         # Chaves `_`-prefixadas são internas por convenção do repo (o texto
         # sanitizado é retido só para virar Document.ocr_text na conversão) —
         # nunca saem na API, aqui como no caminho gêmeo de documentos.

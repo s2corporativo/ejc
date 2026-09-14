@@ -304,3 +304,27 @@ async def test_ocr_roda_fora_da_thread_do_event_loop(monkeypatch):
         "extração de texto executou na thread do event loop — deve ir para "
         "thread worker (asyncio.to_thread)"
     )
+
+
+async def test_contexto_documental_amplo_e_truncamento_transparente(monkeypatch):
+    """A Sala recebe muito mais que os antigos 6k, mas nunca finge leitura
+    integral acima do teto documental: o resultado sinaliza truncamento."""
+    texto_longo = "Inicio juridico. " + ("conteudo sem PII " * 9000)
+    monkeypatch.setattr(
+        "app.services.ocr_service.extrair_texto", lambda *a, **k: texto_longo
+    )
+
+    async def fake_chat(**kw):
+        return _R('{"classificacao": {"area": "civil"}}')
+
+    monkeypatch.setattr("app.services.ai_gateway.chat", fake_chat)
+    from app.services.documento_service import extrair_e_analisar
+
+    r = await extrair_e_analisar(
+        "/fake.pdf", "application/pdf", db=None, enriquecer_rag=False
+    )
+
+    assert r["ok"] is True
+    assert len(r["_texto_sanitizado"]) == 120_000
+    assert r["_texto_sanitizado_truncado"] is True
+    assert r["caracteres_lidos"] == len(texto_longo)

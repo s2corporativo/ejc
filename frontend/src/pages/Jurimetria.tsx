@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Database } from "lucide-react";
+import JurimetriaTribunais from "../components/JurimetriaTribunais";
 import api from "../lib/api";
 import { ErrorState, PageHeader, Spinner } from "../components/UI";
 import { toast } from "../components/Toast";
@@ -205,7 +206,7 @@ export default function Jurimetria() {
       <div>
         <PageHeader
           title="Jurimetria"
-          subtitle="Desempenho e histórico interno do escritório — sem benchmark externo ativo"
+          subtitle="Histórico interno do escritório e benchmarks externos dos tribunais — exibidos separadamente quando disponíveis"
         />
         <ErrorState
           title="Não foi possível carregar a jurimetria"
@@ -230,7 +231,7 @@ export default function Jurimetria() {
     <div>
       <PageHeader
         title="Jurimetria"
-        subtitle="Desempenho e histórico interno do escritório — sem benchmark externo ativo"
+        subtitle="Histórico interno do escritório e benchmarks externos dos tribunais — exibidos separadamente quando disponíveis"
       />
 
       {/* Cards resumo escritório */}
@@ -252,6 +253,10 @@ export default function Jurimetria() {
           sub="casos com tribunal informado"
         />
       </div>
+
+      {/* Jurimetria dos TRIBUNAIS (Issue #1527) — DataJud/TJMG. Coexiste com os
+          painéis do escritório acima; o componente rotula a diferença. */}
+      <JurimetriaTribunais />
 
       {/* Cobertura real do conhecimento */}
       {(ragCoverage || mgCoverage) && (
