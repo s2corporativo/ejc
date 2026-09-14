@@ -1150,6 +1150,11 @@ async def encerrar_caso(
                     fonte=f"caso:{case.id}",
                     client_id=str(case.client_id) if case.client_id else None,
                     case_id=str(case.id),
+                    # Reencerramento é um novo ato de aprendizagem. Mesmo com
+                    # conteúdo idêntico, cria nova versão vigente pendente de
+                    # HITL em vez de herdar metadados de aprovação da versão
+                    # anterior (inclusive autoaprovações legadas).
+                    forcar_nova_versao=True,
                     extra={
                         "area": area_str,
                         "resultado": payload.resultado,

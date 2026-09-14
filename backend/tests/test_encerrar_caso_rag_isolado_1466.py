@@ -176,6 +176,7 @@ async def test_encerramento_passa_escopo_explicito_ao_rag(db, fakes, monkeypatch
     assert kwargs["client_id"] == cli.id
     assert kwargs["case_id"] == caso.id
     assert kwargs["chave_origem"] == f"caso:{caso.id}"
+    assert kwargs["forcar_nova_versao"] is True
     assert kwargs["extra"]["requires_human_review"] is True
     assert kwargs["extra"]["rag_status"] == "pendente"
     assert kwargs["extra"]["human_reviewed"] is False
