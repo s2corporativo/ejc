@@ -2,15 +2,12 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
-from typing import Any
+from types import MappingProxyType
+from typing import Any, Mapping
 
 
 class EvidenceState(StrEnum):
-    """Estado epistemológico de uma afirmação no caso.
-
-    A enumeração é deliberadamente estrita para impedir que inferência de IA
-    seja promovida implicitamente a fato confirmado.
-    """
+    """Estado epistemológico de uma afirmação no caso."""
 
     CONFIRMADO = "confirmado"
     ALEGADO_CLIENTE = "alegado_cliente"
@@ -22,6 +19,8 @@ class EvidenceState(StrEnum):
 
 
 class SkillStatus(StrEnum):
+    """Ciclo de vida de uma skill jurídica versionada."""
+
     RASCUNHO = "rascunho"
     HOMOLOGACAO = "homologacao"
     ATIVA = "ativa"
@@ -30,6 +29,8 @@ class SkillStatus(StrEnum):
 
 
 class PrecedentPropositionStatus(StrEnum):
+    """Situação de uma proposição extraída de precedente."""
+
     CONFIRMADA = "confirmada"
     DISTINGUIDA = "distinguida"
     LIMITADA = "limitada"
@@ -69,11 +70,7 @@ class LegalIssue:
 
 @dataclass(frozen=True)
 class LegalSkillContract:
-    """Contrato versionado de skill jurídica.
-
-    A skill descreve método e referências. Ela não incorpora texto normativo ou
-    jurisprudencial como verdade autônoma.
-    """
+    """Contrato versionado de skill que referencia, mas não copia, o Direito."""
 
     key: str
     version: str
@@ -94,6 +91,8 @@ class LegalSkillContract:
 
 @dataclass(frozen=True)
 class ResearchStep:
+    """Uma etapa ordenada de saneamento ou pesquisa jurídica."""
+
     order: int
     purpose: str
     query: str
@@ -103,6 +102,8 @@ class ResearchStep:
 
 @dataclass(frozen=True)
 class ResearchCoverage:
+    """Cobertura mínima auditável de uma pesquisa jurídica."""
+
     primary_source: bool = False
     current_validity: bool = False
     supporting_precedent: bool = False
@@ -111,6 +112,8 @@ class ResearchCoverage:
 
     @property
     def complete(self) -> bool:
+        """Indica se todas as dimensões mínimas foram comprovadas."""
+
         return all(
             (
                 self.primary_source,
@@ -124,6 +127,8 @@ class ResearchCoverage:
 
 @dataclass(frozen=True)
 class ResearchPlan:
+    """Plano limitado de pesquisa ou saneamento para uma questão jurídica."""
+
     issue_key: str
     area: str
     max_cycles: int
@@ -136,6 +141,8 @@ class ResearchPlan:
 
 @dataclass(frozen=True)
 class PrecedentValidityResult:
+    """Resultado rastreável da avaliação de validade de uma proposição."""
+
     proposition_id: str
     status: PrecedentPropositionStatus
     decisive_relation: str | None = None
@@ -152,7 +159,21 @@ class LegalBrainPlan:
     native_skill_names: tuple[str, ...]
     research_plans: tuple[ResearchPlan, ...]
     warnings: tuple[str, ...] = ()
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Congela metadados aninhados para impedir mutação pós-construção."""
+
+        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        """Serializa para estruturas mutáveis sem expor o mapping interno."""
+
+        return {
+            "area": self.area,
+            "issues": [asdict(issue) for issue in self.issues],
+            "native_skill_names": list(self.native_skill_names),
+            "research_plans": [asdict(plan) for plan in self.research_plans],
+            "warnings": list(self.warnings),
+            "metadata": dict(self.metadata),
+        }
