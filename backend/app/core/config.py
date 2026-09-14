@@ -321,7 +321,7 @@ class Settings(BaseSettings):
     # CSV de task_types do ai_gateway que disparam a crítica automática
     # (vocabulário de TASK_ROUTING; aliases como "redacao_peca" são
     # normalizados antes da comparação).
-    DUAS_IAS_TASK_TYPES: str = "elaboracao_peca,auditoria_peca"
+    DUAS_IAS_TASK_TYPES: str = "elaboracao_peca,auditoria_peca,analise_juridica,estrategia"
     # Ordem de preferência entre provedores ELEGÍVEIS (csv). A policy ainda
     # filtra por habilitação/chave e prioriza Anthropic em tarefas complexas.
     # Maritaca antes do groq: para tarefa jurídica PT-BR o Sabiá rankeia acima
@@ -517,6 +517,15 @@ class Settings(BaseSettings):
     PJE_MNI_TIMEOUT_SECONDS: float = 60.0
     # eproc — sem API pública documentada; CONDITIONAL por tribunal/perfil.
     EPROC_INTEGRATION_ENABLED: bool = False
+    # ── Jurimetria dos tribunais (Issue #1527) — agregados do DataJud ──────
+    # Interruptor próprio em app/integrations/feature_flags.py
+    # (JURIMETRIA_TRIBUNAIS_ENABLED, default OFF); exige DATAJUD_* acima.
+    # Teto de processos por consulta: a API Pública é rate-limited e o
+    # agregado estabiliza com amostra grande; o `n` real vai na resposta.
+    JURIMETRIA_TRIBUNAIS_MAX_PROCESSOS: int = 2000
+    # Cache TTL (segundos) do agregado por consulta — em memória (worker
+    # único). 0 desliga. Erro do CNJ nunca entra no cache.
+    JURIMETRIA_TRIBUNAIS_CACHE_TTL_SEGUNDOS: int = 3600
 
     # ── Infosimples — consultas PAGAS a sites públicos (TJMG, Receita…) ──
     # Agregador comercial (https://infosimples.com/consultas/): cada consulta

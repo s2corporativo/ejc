@@ -797,3 +797,12 @@ class TestEndpointCriticaAdversarial:
         )
         assert c.disponivel is False
         assert db.added == [] and db.commits == 0  # nada de log sem chamada de IA
+
+
+def test_config_padrao_critica_analise_e_estrategia(monkeypatch):
+    """Qualidade jurídica: análise e estratégia entram no segundo olhar
+    adversarial por padrão, além de elaboração/auditoria de peça."""
+    from app.core.config import Settings
+    s = Settings(_env_file=None)
+    tipos = {x.strip() for x in s.DUAS_IAS_TASK_TYPES.split(",") if x.strip()}
+    assert {"elaboracao_peca", "auditoria_peca", "analise_juridica", "estrategia"} <= tipos

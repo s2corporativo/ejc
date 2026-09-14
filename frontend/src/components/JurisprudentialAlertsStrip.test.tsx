@@ -17,7 +17,10 @@ describe("JurisprudentialAlertsStrip", () => {
     expect(screen.getByText(/Acórdão 2321\/2026-Plenário/i)).toBeTruthy();
     expect(screen.getByText(/Decreto 13\.108\/2026/i)).toBeTruthy();
     expect(screen.getByText(/Decreto 13\.109\/2026/i)).toBeTruthy();
-    expect(screen.getByText(/5 relevantes/i)).toBeTruthy();
+    expect(screen.getByText("5")).toBeTruthy();
+    expect(
+      screen.getByRole("feed", { name: /Atualizações jurídicas/i }),
+    ).toBeTruthy();
   });
 
   it("preserva o gate de revisão humana", () => {
@@ -27,10 +30,12 @@ describe("JurisprudentialAlertsStrip", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText(/revisão humana obrigatória/i)).toBeTruthy();
     expect(
-      screen.getByText(/Nenhum aviso altera automaticamente tese/i),
+      screen.getByText(
+        /Nenhum item altera tese, caso ou peça sem validação humana/i,
+      ),
     ).toBeTruthy();
+    expect(screen.getAllByText(/Impacto e ação recomendada/i)).toHaveLength(5);
   });
 
   it("leva ao Radar Jurídico canônico", () => {
@@ -40,7 +45,7 @@ describe("JurisprudentialAlertsStrip", () => {
       </MemoryRouter>,
     );
 
-    const link = screen.getByRole("link", { name: /Abrir Radar Jurídico/i });
+    const link = screen.getByRole("link", { name: /Abrir radar/i });
     expect(link.getAttribute("href")).toBe("/dpt360/radar");
   });
 

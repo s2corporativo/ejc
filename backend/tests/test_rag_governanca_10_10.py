@@ -95,7 +95,9 @@ def test_fluxos_internos_e_externos_declaram_estado_de_curadoria():
     encerramento = (app / "routers/cases.py").read_text(encoding="utf-8")
     drive = (app / "services/google_drive_service.py").read_text(encoding="utf-8")
     peca = (app / "services/case_intel.py").read_text(encoding="utf-8")
-    assert '"rag_status": "aprovado"' in encerramento
+    assert '"requires_human_review": True' in encerramento
+    assert '"rag_status": "pendente"' in encerramento
+    assert '"human_reviewed": False' in encerramento
     assert 'extra["rag_status"] = "pendente"' in drive
     # O critério ficou MAIS estrito: além da revisão humana, a peça precisa
     # estar em status apto ao RAG — rascunho apenas revisado não vira
