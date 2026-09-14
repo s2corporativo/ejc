@@ -12,6 +12,11 @@ Princípios:
 - validade de precedente é proposicional e baseada em relações explícitas.
 """
 
+from .area_specializations import (
+    AreaSpecializationRef,
+    resolve_area_specialization,
+    supplemental_area_coverage,
+)
 from .brain import build_legal_brain_plan
 from .case_state_bridge import CaseStateBridgeResult, bridge_legal_chat_state
 from .contracts import (
@@ -35,6 +40,7 @@ from .skill_contracts import (
 )
 
 __all__ = [
+    "AreaSpecializationRef",
     "CaseAssertion",
     "CaseStateBridgeResult",
     "EvidenceState",
@@ -54,5 +60,7 @@ __all__ = [
     "get_native_legal_skill_contract",
     "identify_legal_issues",
     "native_legal_skill_contracts",
+    "resolve_area_specialization",
+    "supplemental_area_coverage",
     "transition_assertion",
 ]
