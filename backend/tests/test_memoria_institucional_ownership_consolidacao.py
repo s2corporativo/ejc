@@ -116,3 +116,65 @@ async def test_update_rejeita_taxonomia_invalida_antes_de_persistir(monkeypatch,
 
     assert exc.value.status_code == 422
     autorizacao.assert_awaited_once()
+
+
+class _MappingsMany:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def all(self):
+        return self._rows
+
+
+class _ResultMany:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def mappings(self):
+        return _MappingsMany(self._rows)
+
+
+class _DbLista:
+    def __init__(self, rows):
+        self.rows = rows
+        self.statement = None
+        self.params = None
+
+    async def execute(self, statement, params):
+        self.statement = str(statement)
+        self.params = params
+        return _ResultMany(self.rows)
+
+
+@pytest.mark.asyncio
+async def test_listagem_global_filtra_case_scoped_antes_do_limit(monkeypatch):
+    db = _DbLista([
+        {"id": "mem-global", "case_id": None},
+        {"id": "mem-permitida", "case_id": "case-ok"},
+    ])
+    cu = SimpleNamespace(id="user-1")
+    monkeypatch.setattr(memoria, "is_gestao", lambda _cu: False)
+
+    rows = await memoria.listar(limit=2, db=db, cu=cu)
+
+    assert [r["id"] for r in rows] == ["mem-global", "mem-permitida"]
+    assert "case_id IS NULL OR case_id IN" in db.statement
+    assert "advogado_responsavel_id = :cu_id" in db.statement
+    assert "advogado_auxiliar_id = :cu_id" in db.statement
+    assert "LIMIT :limit" in db.statement
+    assert db.statement.index("case_id IS NULL OR case_id IN") < db.statement.index("LIMIT :limit")
+    assert db.params["cu_id"] == "user-1"
+    assert db.params["limit"] == 2
+
+
+@pytest.mark.asyncio
+async def test_listagem_global_gestao_preserva_acervo_completo(monkeypatch):
+    db = _DbLista([{"id": "mem-qualquer", "case_id": "case-x"}])
+    cu = SimpleNamespace(id="socio-1")
+    monkeypatch.setattr(memoria, "is_gestao", lambda _cu: True)
+
+    rows = await memoria.listar(limit=10, db=db, cu=cu)
+
+    assert rows == [{"id": "mem-qualquer", "case_id": "case-x"}]
+    assert "case_id IS NULL OR case_id IN" not in db.statement
+    assert "cu_id" not in db.params
