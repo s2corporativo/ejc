@@ -38,6 +38,11 @@ from .skill_contracts import (
     get_native_legal_skill_contract,
     native_legal_skill_contracts,
 )
+from .skill_factory import (
+    SkillCandidate,
+    SkillFactoryError,
+    build_skill_for_homologation,
+)
 
 __all__ = [
     "AreaSpecializationRef",
@@ -50,10 +55,13 @@ __all__ = [
     "LegalSkillContract",
     "PrecedentPropositionStatus",
     "ResearchPlan",
+    "SkillCandidate",
+    "SkillFactoryError",
     "SkillStatus",
     "bridge_legal_chat_state",
     "build_legal_brain_plan",
     "build_research_plan",
+    "build_skill_for_homologation",
     "evaluate_proposition_validity",
     "evaluate_research_coverage",
     "execute_research_plan_with_rag",
