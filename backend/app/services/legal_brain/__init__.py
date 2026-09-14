@@ -23,6 +23,7 @@ from .contracts import (
     ResearchPlan,
     SkillStatus,
 )
+from .evidence import CaseAssertion, transition_assertion
 from .issue_engine import identify_legal_issues
 from .precedent_validity import evaluate_proposition_validity
 from .research_loop import build_research_plan, evaluate_research_coverage
@@ -32,6 +33,7 @@ from .skill_contracts import (
 )
 
 __all__ = [
+    "CaseAssertion",
     "EvidenceState",
     "LegalBrainPlan",
     "LegalIssue",
@@ -47,4 +49,5 @@ __all__ = [
     "get_native_legal_skill_contract",
     "identify_legal_issues",
     "native_legal_skill_contracts",
+    "transition_assertion",
 ]
