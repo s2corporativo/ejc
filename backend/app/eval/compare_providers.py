@@ -24,6 +24,11 @@ class ResultadoProvider:
     fallback: bool = False
     citacoes_total: int = 0
     citacoes_nao_confirmadas: int = 0
+    citacoes_verificadas: int = 0
+    citacoes_identificadas: int = 0
+    citacoes_suspeitas: int = 0
+    citacoes_genericas: int = 0
+    citacoes_desatualizadas: int = 0
     groundedness: float | None = None
     custo_brl: float = 0.0
     duracao_ms: int = 0
@@ -120,6 +125,14 @@ async def avaliar_provider(db, caso, chunks, provider: str, usar_judge: bool) ->
             if isinstance(citacoes, dict):
                 resultado.citacoes_total = int(citacoes.get("total") or 0)
                 resultado.citacoes_nao_confirmadas = int(citacoes.get("nao_encontradas") or 0)
+                status = citacoes.get("contagem_status") or {}
+                resultado.citacoes_verificadas = int(status.get("verificada") or 0)
+                resultado.citacoes_identificadas = int(status.get("identificada") or 0)
+                resultado.citacoes_suspeitas = int(status.get("suspeita") or 0)
+                resultado.citacoes_genericas = int(status.get("generica") or 0)
+                resultado.citacoes_desatualizadas = int(
+                    status.get("possivelmente_desatualizada") or 0
+                )
         except Exception:
             pass
 
@@ -149,7 +162,16 @@ def agregar(resultados: list[ResultadoProvider]) -> dict[str, dict[str, Any]]:
             "n_validos": len(validos),
             "fallbacks_excluidos": len(fallbacks),
             "erros": len(erros),
+            # Métrica legada mantida, mas não confunde mais todos os estados:
+            # o bloco abaixo mostra por que uma citação não recebeu selo verde.
             "taxa_citacoes_nao_confirmadas": round(cit_ruins / cit_total, 4) if cit_total else None,
+            "citacoes_status": {
+                "verificadas": sum(i.citacoes_verificadas for i in validos),
+                "identificadas": sum(i.citacoes_identificadas for i in validos),
+                "suspeitas": sum(i.citacoes_suspeitas for i in validos),
+                "genericas": sum(i.citacoes_genericas for i in validos),
+                "desatualizadas": sum(i.citacoes_desatualizadas for i in validos),
+            },
             "groundedness_media": round(sum(grounded) / len(grounded), 4) if grounded else None,
             "custo_total_brl": round(sum(item.custo_brl for item in validos), 6),
             "duracao_media_ms": (
