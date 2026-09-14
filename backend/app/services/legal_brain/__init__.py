@@ -24,8 +24,13 @@ from .contracts import (
     SkillStatus,
 )
 from .issue_engine import identify_legal_issues
+from .knowledge_health import knowledge_health_snapshot
 from .precedent_validity import evaluate_proposition_validity
 from .research_loop import build_research_plan, evaluate_research_coverage
+from .skill_contracts import (
+    get_native_legal_skill_contract,
+    native_legal_skill_contracts,
+)
 
 __all__ = [
     "EvidenceState",
@@ -40,5 +45,8 @@ __all__ = [
     "build_research_plan",
     "evaluate_proposition_validity",
     "evaluate_research_coverage",
+    "get_native_legal_skill_contract",
     "identify_legal_issues",
+    "knowledge_health_snapshot",
+    "native_legal_skill_contracts",
 ]
