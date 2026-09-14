@@ -185,11 +185,14 @@ describe("DashboardUltra — cockpit IA + alertas inteligentes", () => {
       await screen.findByAltText("De Paula Teixeira Advogados"),
     ).toBeTruthy();
     expect(
-      screen.getByRole("link", { name: "Abrir WhatsApp do escritório" }),
+      screen.getByTitle("WhatsApp institucional não configurado"),
     ).toBeTruthy();
     expect(
-      screen.getByRole("link", { name: "Enviar e-mail ao escritório" }),
-    ).toBeTruthy();
+      screen.queryByRole("link", { name: "Abrir WhatsApp do escritório" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("link", { name: "Enviar e-mail ao escritório" }),
+    ).toBeNull();
     expect(
       screen.getByLabelText("Pergunta rápida para a Inteligência Jurídica"),
     ).toBeTruthy();

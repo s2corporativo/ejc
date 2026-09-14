@@ -102,7 +102,10 @@ export default function DashboardAiChat({
   const [error, setError] = useState("");
 
   useEffect(() => {
-    chatBottomRef.current?.scrollIntoView({ block: "nearest" });
+    const bottom = chatBottomRef.current;
+    if (bottom && typeof bottom.scrollIntoView === "function") {
+      bottom.scrollIntoView({ block: "nearest" });
+    }
   }, [turns, loading]);
 
   if (!canUseLegal) {
