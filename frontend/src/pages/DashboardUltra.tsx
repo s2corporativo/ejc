@@ -61,13 +61,14 @@ const EMPTY_SUMMARY: AlertSummary = {
   altos: 0,
 };
 
-const LEGAL_ROLES = new Set([
+// Paridade deliberada com `requer_advogado` do endpoint de mensagens da Sala.
+// Perfis auxiliares continuam vendo o Dashboard, mas não recebem um composer que
+// o backend invariavelmente recusaria com 403.
+const AI_MESSAGE_ROLES = new Set([
   "superadmin",
   "admin",
   "socio",
   "advogado",
-  "advogado_auxiliar",
-  "estagiario",
 ]);
 
 const ALERT_CONFIG: Array<{
@@ -157,7 +158,7 @@ export default function DashboardUltra() {
     void loadAlerts();
   }, [loadAlerts]);
 
-  const canUseLegal = LEGAL_ROLES.has(user?.role || "");
+  const canUseLegal = AI_MESSAGE_ROLES.has(user?.role || "");
   const whatsappUrl = getWhatsAppUrl();
   const mailtoUrl = getMailtoUrl();
   const activeItems = useMemo(
