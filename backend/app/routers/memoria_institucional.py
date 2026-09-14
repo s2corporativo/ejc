@@ -11,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_current_user, requer_equipe_juridica
-from app.core.ownership import verificar_acesso_caso
+from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.models.user import User
 from app.models.audit_log import criar_audit_log
 
@@ -102,6 +102,18 @@ async def listar(
         await verificar_acesso_caso(db, cu, case_id)  # ownership do caso filtrado
         cond.append("case_id = :case_id")
         params["case_id"] = case_id
+    elif not is_gestao(cu):
+        # A listagem global também respeita o ownership antes da paginação:
+        # memórias sem caso permanecem transversais; registros case-scoped só
+        # aparecem para responsável/auxiliar do próprio caso.
+        cond.append(
+            "(case_id IS NULL OR case_id IN ("
+            "SELECT id FROM cases "
+            "WHERE deleted_at IS NULL "
+            "AND (advogado_responsavel_id = :cu_id "
+            "OR advogado_auxiliar_id = :cu_id)))"
+        )
+        params["cu_id"] = cu.id
     if tipo:
         cond.append("tipo = :tipo")
         params["tipo"] = tipo
