@@ -53,7 +53,7 @@ export default function Central() {
           <div
             role="tablist"
             aria-label="Seções da central"
-            className="inline-flex gap-1 rounded-xl bg-slate-900/[0.05] p-1 dark:bg-white/[0.07]"
+            className="grid w-full grid-cols-1 gap-1 rounded-xl bg-slate-900/[0.05] p-1 sm:inline-flex sm:w-auto dark:bg-white/[0.07]"
           >
             {TABS.map(({ key, label, icon: Icon }) => (
               <button
@@ -61,7 +61,7 @@ export default function Central() {
                 role="tab"
                 aria-selected={tab === key}
                 onClick={() => setTab(key)}
-                className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                className={`flex min-w-0 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors sm:justify-start sm:py-1.5 ${
                   tab === key
                     ? "bg-navy text-white"
                     : "text-slate-600 hover:bg-slate-900/[0.09] dark:text-slate-300 dark:hover:bg-white/[0.12]"
