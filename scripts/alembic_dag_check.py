@@ -69,7 +69,7 @@ def mapear(versions_dir: Path) -> tuple[dict[str, Path], dict[str, list[str]]]:
     return revisions, downs
 
 
-def validar(versions_dir: Path) -> str:
+def validar(versions_dir: Path, quiet: bool = False) -> str:
     revisions, downs = mapear(versions_dir)
     if not revisions:
         raise SystemExit("ERRO: nenhuma migration encontrada")
@@ -99,6 +99,8 @@ def validar(versions_dir: Path) -> str:
     if vistos != len(revisions):
         raise SystemExit("ERRO: ciclo no grafo de migrations")
 
+    if quiet:
+        return heads[0]
     print(f"OK: {len(revisions)} migrations, head único {heads[0]!r}")
     return heads[0]
 
@@ -107,9 +109,10 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--versions-dir", default="backend/alembic/versions")
     ap.add_argument("--print-head", action="store_true",
-                    help="imprime apenas o head (após validar)")
+                    help="imprime APENAS o head revision id, sem resumo (modo máquina; "
+                         "erros de validação continuam saindo em stderr com exit != 0)")
     args = ap.parse_args()
-    head = validar(Path(args.versions_dir))
+    head = validar(Path(args.versions_dir), quiet=args.print_head)
     if args.print_head:
         print(head)
     return 0
