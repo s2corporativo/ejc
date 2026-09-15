@@ -1,7 +1,13 @@
 import { toast } from "../components/Toast";
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router";
-import { Plus, Search, ShieldAlert, KeyRound, FileSignature } from "lucide-react";
+import { Link, useNavigate } from "react-router";
+import {
+  Plus,
+  Search,
+  ShieldAlert,
+  KeyRound,
+  FileSignature,
+} from "lucide-react";
 import api from "../lib/api";
 import { soDigitos } from "../utils/phone";
 import type { Client, Paged } from "../types";
@@ -40,9 +46,8 @@ interface ConflitoCheck {
   nivel: ConflitoNivel;
   matches: ConflitoMatch[];
 }
+type ResultadoConflito = ConflitoCheck | "indisponivel" | null;
 
-// Documentos de admissão (procuração + contrato de honorários) gerados
-// automaticamente no cadastro do cliente — GET /clients/{id}/pecas-geradas.
 interface PecaAdmissao {
   id: string;
   titulo: string;
@@ -65,9 +70,10 @@ export default function Clientes() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [modal, setModal] = useState(false);
-  const [conflito, setConflito] = useState<ConflitoCheck | null>(null);
+  const [conflito, setConflito] = useState<ResultadoConflito>(null);
   const [conflitoLoading, setConflitoLoading] = useState(false);
-  const [acessoModal, setAcessoModal] = useState<any>(null); // cliente alvo
+  const [conflitoIndisponivel, setConflitoIndisponivel] = useState(false);
+  const [acessoModal, setAcessoModal] = useState<any>(null);
   const [acessoForm, setAcessoForm] = useState({
     email: "",
     senha_inicial: "",
@@ -79,35 +85,22 @@ export default function Clientes() {
   });
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(false);
-  // Guarda de sequência: só a resposta do load mais recente aplica setData,
-  // evitando que uma resposta antiga (busca com debounce) sobrescreva a nova.
   const seq = useRef(0);
 
   const role = user?.role || "";
-  const podeCriarAcesso = ["superadmin", "admin", "socio", "advogado"].includes(role);
+  const podeCriarAcesso = ["superadmin", "admin", "socio", "advogado"].includes(
+    role,
+  );
   const podeRelatorioLgpd = ["superadmin", "admin", "socio"].includes(role);
-  // Emissão/consulta de procuração e contrato é ato jurídico: o backend exige
-  // advogado+ (requer_advogado). O botão espelha esse gate — não o substitui.
-  const podeVerAdmissao = [
-    "superadmin",
-    "admin",
-    "socio",
-    "advogado",
-  ].includes(role);
+  const podeVerAdmissao = ["superadmin", "admin", "socio", "advogado"].includes(
+    role,
+  );
   const [admissaoModal, setAdmissaoModal] = useState<Client | null>(null);
   const [admissaoPecas, setAdmissaoPecas] = useState<PecaAdmissao[] | null>(
     null,
   );
   const [admissaoLoading, setAdmissaoLoading] = useState(false);
-  // Sequência da requisição em voo: a resposta de um cliente lento pode chegar
-  // depois de o usuário já ter aberto OUTRO cliente, e sobrescreveria a lista
-  // — o modal mostraria o nome de B com as peças (e os downloads) de A, ou
-  // seja, PII e documentos de cliente alheio. Só a última requisição aplica.
   const admissaoReq = useRef(0);
-  // Poderes da NOVA versão. A procuração emitida não guarda os poderes que a
-  // originaram, então regenerar sem escolher aplicaria os defaults do backend
-  // e trocaria em silêncio o que o cliente assina (art. 105 do CPC,
-  // substabelecimento). A escolha passa a ser explícita, aqui.
   const [admissaoPoderes, setAdmissaoPoderes] = useState({
     tipo_poderes: "ad_judicia",
     permite_substabelecimento: true,
@@ -136,30 +129,39 @@ export default function Clientes() {
     return () => clearTimeout(t);
   }, [search, page]);
 
-  // Checagem de conflito de interesses em tempo real (EOAB arts. 34-35).
-  // Fail-safe: qualquer erro é silencioso e NÃO impede o cadastro.
-  const checarConflito = async (): Promise<ConflitoCheck | null> => {
+  // Checagem assistiva de conflito de interesses. Base ética: Código de Ética
+  // e Disciplina da OAB (Res. CFOAB 02/2015), especialmente arts. 19 a 22.
+  // Falha técnica nunca equivale a ausência de conflito e não decide a admissão.
+  const checarConflito = async (): Promise<ResultadoConflito> => {
     const nome = (form.nome || form.razao_social || "").trim();
     const cpf = form.cpf;
     const cnpj = form.cnpj;
     const parte_contraria = form.parte_contraria;
-    // Nada relevante digitado ainda → limpa e não chama a API.
     if (!cpf && !cnpj && nome.length < 4 && !parte_contraria) {
       setConflito(null);
+      setConflitoIndisponivel(false);
       return null;
     }
     setConflitoLoading(true);
     try {
       const { data } = await api.post<ConflitoCheck>(
         "/clients/checar-conflito",
-        { nome, cpf, cnpj, parte_contraria },
+        {
+          nome,
+          cpf,
+          cnpj,
+          parte_contraria,
+        },
       );
       setConflito(data);
+      setConflitoIndisponivel(false);
       return data;
     } catch {
-      // Aviso ético é best-effort: falha na checagem não trava o formulário.
+      // Falha da checagem NÃO parece "nenhum conflito": fica explícita que a
+      // verificação não pôde ser feita (CED/OAB, arts. 19 a 22).
       setConflito(null);
-      return null;
+      setConflitoIndisponivel(true);
+      return "indisponivel";
     } finally {
       setConflitoLoading(false);
     }
@@ -174,27 +176,20 @@ export default function Clientes() {
       const { data } = await api.get<PecaAdmissao[]>(
         `/clients/${c.id}/pecas-geradas`,
       );
-      // Resposta obsoleta (outro cliente foi aberto no meio) é descartada.
       if (req !== admissaoReq.current) return;
       setAdmissaoPecas(Array.isArray(data) ? data : []);
     } catch (e: any) {
       if (req !== admissaoReq.current) return;
       setAdmissaoPecas([]);
       toast.error(
-        e.response?.data?.detail || "Falha ao carregar os documentos de admissão",
+        e.response?.data?.detail ||
+          "Falha ao carregar os documentos de admissão",
       );
     } finally {
       if (req === admissaoReq.current) setAdmissaoLoading(false);
     }
   };
 
-  // Regeneração explícita: o backend é idempotente por cliente, então só cria
-  // versão nova com forcar_novo. Serve para o caso em que o cadastro mudou
-  // (endereço, área) depois de os rascunhos terem sido emitidos.
-  //
-  // Os poderes vão SEMPRE explícitos: a nova procuração substitui a anterior, e
-  // deixar o backend aplicar os defaults trocaria o mandato sem que o advogado
-  // decidisse. O formulário abaixo é o ponto onde ele confirma o que outorga.
   const regerarAdmissao = async () => {
     if (!admissaoModal) return;
     const alvo = admissaoModal;
@@ -214,8 +209,6 @@ export default function Clientes() {
     }
   };
 
-  // PDF timbrado (logomarca + dados institucionais do escritório) da minuta —
-  // é leitura/conferência, não peça de protocolo.
   const baixarPecaPdf = async (peca: PecaAdmissao) => {
     try {
       const r = await api.get(`/legal-docs/${peca.id}/pdf-minuta`, {
@@ -232,35 +225,35 @@ export default function Clientes() {
     }
   };
 
+  const navigate = useNavigate();
+
   const salvar = async () => {
-    // O alerta de conflito é apenas um aviso ético — NÃO bloqueia o cadastro.
     setSalvando(true);
     try {
       const { data: criado } = await api.post<Client>("/clients/", form);
       setModal(false);
       setForm({ tipo: "PF", cidade: "Betim", estado: "MG" });
       setConflito(null);
+      setConflitoIndisponivel(false);
       if (page !== 1) setPage(1);
       else load();
-      // Admissão automática: o backend já emitiu procuração + contrato junto
-      // com o cadastro. Confirma pela listagem real (não pelo pressuposto) e
-      // degrada em silêncio quando o papel não tem acesso à consulta.
-      if (criado?.id && podeVerAdmissao) {
-        try {
-          const { data: pecas } = await api.get<PecaAdmissao[]>(
-            `/clients/${criado.id}/pecas-geradas`,
-          );
-          if (Array.isArray(pecas) && pecas.length) {
-            toast.success(
-              "Cliente cadastrado. Procuração e contrato de honorários gerados como rascunho.",
-            );
-            return;
-          }
-        } catch {
-          /* consulta é confirmação, não parte do cadastro */
-        }
-      }
       toast.success("Cliente cadastrado.");
+      if (criado?.id) navigate(`/clientes/${criado.id}`);
+
+      if (criado?.id && podeVerAdmissao) {
+        void api
+          .get<PecaAdmissao[]>(`/clients/${criado.id}/pecas-geradas`)
+          .then(({ data: pecas }) => {
+            if (Array.isArray(pecas) && pecas.length) {
+              toast.success(
+                "Procuração e contrato de honorários gerados como rascunho.",
+              );
+            }
+          })
+          .catch(() => {
+            /* confirmação acessória: cadastro já concluído */
+          });
+      }
     } catch (e: any) {
       toast.error(e.response?.data?.detail || "Erro ao salvar");
     } finally {
@@ -402,7 +395,9 @@ export default function Clientes() {
                           try {
                             const r = await api.get(
                               `/clients/${c.id}/relatorio-lgpd`,
-                              { responseType: "blob" },
+                              {
+                                responseType: "blob",
+                              },
                             );
                             const url = URL.createObjectURL(r.data);
                             const a = document.createElement("a");
@@ -487,6 +482,7 @@ export default function Clientes() {
         onClose={() => {
           setModal(false);
           setConflito(null);
+          setConflitoIndisponivel(false);
         }}
         title="Novo cliente"
         wide
@@ -606,8 +602,6 @@ export default function Clientes() {
               onChange={(e) => setForm({ ...form, email: e.target.value })}
             />
           </div>
-
-          {/* Endereço com busca CEP (ViaCEP) */}
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="label">CEP</label>
@@ -677,47 +671,62 @@ export default function Clientes() {
           </div>
         </div>
 
-        {conflito && conflito.conflito && conflito.nivel !== "nenhum" && (
+        {conflitoIndisponivel && (
           <Alert
             className="mt-4"
-            variant={conflito.nivel === "critico" ? "danger" : "warning"}
-            title={
-              conflito.nivel === "critico"
-                ? "Conflito de interesses crítico (EOAB arts. 34-35)"
-                : "Atenção: possível conflito de interesses"
-            }
+            variant="warning"
+            title="Conflito não pôde ser verificado"
           >
-            <ul className="space-y-1.5">
-              {conflito.matches.map((m, i) => (
-                <li key={i} className="flex flex-wrap items-center gap-1.5">
-                  <Badge tone={conflito.nivel === "critico" ? "red" : "amber"}>
-                    {m.papel.replace(/_/g, " ")}
-                  </Badge>
-                  <span>{m.descricao}</span>
-                  {/* Mascarado: só serve para desempatar homônimo quando o
-                      operador já tem o documento em mãos. */}
-                  {m.documento_mascarado && (
-                    <span className="font-mono text-xs opacity-70">
-                      {m.documento_mascarado}
-                    </span>
-                  )}
-                  {m.case_id && (
-                    <Link
-                      to={`/casos/${m.case_id}`}
-                      className="font-medium underline hover:no-underline"
-                    >
-                      ver caso
-                    </Link>
-                  )}
-                </li>
-              ))}
-            </ul>
-            <p className="mt-2 text-xs opacity-80">
-              Aviso ético — o cadastro não é bloqueado, mas registre a análise
-              de conflito antes de prosseguir.
-            </p>
+            A consulta de conflito está indisponível neste momento. O cadastro
+            continua permitido, mas a análise de conflito deve ser realizada
+            antes da atuação no caso.
           </Alert>
         )}
+
+        {conflito &&
+          conflito !== "indisponivel" &&
+          conflito.conflito &&
+          conflito.nivel !== "nenhum" && (
+            <Alert
+              className="mt-4"
+              variant={conflito.nivel === "critico" ? "danger" : "warning"}
+              title={
+                conflito.nivel === "critico"
+                  ? "Conflito de interesses crítico"
+                  : "Atenção: possível conflito de interesses"
+              }
+            >
+              <ul className="space-y-1.5">
+                {conflito.matches.map((m, i) => (
+                  <li key={i} className="flex flex-wrap items-center gap-1.5">
+                    <Badge
+                      tone={conflito.nivel === "critico" ? "red" : "amber"}
+                    >
+                      {m.papel.replace(/_/g, " ")}
+                    </Badge>
+                    <span>{m.descricao}</span>
+                    {m.documento_mascarado && (
+                      <span className="font-mono text-xs opacity-70">
+                        {m.documento_mascarado}
+                      </span>
+                    )}
+                    {m.case_id && (
+                      <Link
+                        to={`/casos/${m.case_id}`}
+                        className="font-medium underline hover:no-underline"
+                      >
+                        ver caso
+                      </Link>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs opacity-80">
+                Aviso ético — o cadastro não é bloqueado, mas registre a análise
+                de conflito antes de prosseguir.
+              </p>
+            </Alert>
+          )}
 
         <div className="flex justify-between mt-5">
           <Button
@@ -726,13 +735,12 @@ export default function Clientes() {
             disabled={conflitoLoading}
             onClick={async () => {
               const r = await checarConflito();
-              if (r && r.nivel === "nenhum")
+              if (r && r !== "indisponivel" && r.nivel === "nenhum")
                 toast.success("Nenhum conflito de interesses encontrado.");
               else if (!r)
                 toast.info(
                   "Informe nome/documento ou parte contrária para verificar.",
                 );
-              // r.nivel !== "nenhum" → o Alert inline já exibe o conflito
             }}
           >
             {conflitoLoading ? "Verificando..." : "Verificar conflito"}
@@ -742,7 +750,7 @@ export default function Clientes() {
           </Button>
         </div>
       </Modal>
-      {/* Modal: documentos de admissão (procuração + contrato) */}
+
       {admissaoModal && podeVerAdmissao && (
         <Modal
           open
@@ -755,18 +763,15 @@ export default function Clientes() {
             do escritório e permanecem <strong>rascunho</strong> até a revisão e
             a assinatura do advogado.
           </p>
-
           {admissaoLoading && (
             <p className="text-sm text-slate-500">Carregando…</p>
           )}
-
           {!admissaoLoading && admissaoPecas?.length === 0 && (
             <Alert variant="warning">
               Nenhum documento de admissão para este cliente. Use "Gerar
               novamente" para emitir a procuração e o contrato.
             </Alert>
           )}
-
           {!admissaoLoading && !!admissaoPecas?.length && (
             <ul className="divide-y divide-slate-100 text-sm">
               {admissaoPecas.map((peca) => (
@@ -793,15 +798,14 @@ export default function Clientes() {
               ))}
             </ul>
           )}
-
           <div className="mt-5 rounded-lg border border-slate-200 p-3">
             <p className="mb-2 text-xs font-semibold text-navy">
               Poderes da nova procuração
             </p>
             <p className="mb-3 text-xs text-slate-500">
-              Gerar novamente cria uma versão nova <strong>com estes
-              poderes</strong> — confira antes, porque é o que o cliente
-              assinará. A versão anterior continua no histórico.
+              Gerar novamente cria uma versão nova{" "}
+              <strong>com estes poderes</strong> — confira antes, porque é o que
+              o cliente assinará. A versão anterior continua no histórico.
             </p>
             <div className="space-y-2">
               <select
@@ -846,7 +850,6 @@ export default function Clientes() {
               />
             </div>
           </div>
-
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setAdmissaoModal(null)}>
               Fechar
@@ -861,7 +864,7 @@ export default function Clientes() {
           </div>
         </Modal>
       )}
-      {/* Modal: criar acesso ao Portal do Cliente */}
+
       {acessoModal && podeCriarAcesso && (
         <div className="modal-backdrop" onClick={() => setAcessoModal(null)}>
           <div
