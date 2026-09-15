@@ -219,7 +219,7 @@ async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
                 # Mesmo recorte do `except` abaixo, pelo mesmo motivo: doutrina e
                 # jurisprudência não correm esse risco e continuam passando — o
                 # gate é recortado, não um apagão.
-                if _candidato_normativo(item):
+                if _categoria_normativa(item):
                     logger.info(
                         "RAG excluiu normativo sem registro de governança: doc_id=%s",
                         item.get("doc_id"),
