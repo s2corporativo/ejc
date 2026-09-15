@@ -60,15 +60,17 @@ class ScopeContract(unittest.TestCase):
 
     def test_docs_only_keeps_light_contracts_and_secret_scan(self):
         self.assertEqual(selected(self.workflow, "pull_request", "main", ["docs/example.md"]),
-                         {"ops-contracts", "security-secrets"})
+                         {"ops-contracts", "deploy-validation", "security-secrets"})
 
     def test_frontend_only_does_not_start_backend_tests(self):
         gates = selected(self.workflow, "pull_request", "main", ["frontend/src/pages/Page.tsx"])
-        self.assertEqual(gates, {"frontend", "ops-contracts", "security-sast", "security-secrets"})
+        self.assertEqual(gates, {"frontend", "ops-contracts", "deploy-validation",
+                                 "security-sast", "security-secrets"})
 
     def test_backend_test_only_does_not_start_frontend_tests(self):
         gates = selected(self.workflow, "pull_request", "main", ["backend/tests/test_example.py"])
-        self.assertEqual(gates, {"backend", "ops-contracts", "security-sast", "security-secrets"})
+        self.assertEqual(gates, {"backend-tests", "ops-contracts", "deploy-validation",
+                                 "security-sast", "security-secrets"})
 
     def test_sensitive_changes_require_full_suite(self):
         paths = [".gitleaks.toml", ".semgrepignore", ".env.example", ".woodpecker.yml",
@@ -96,6 +98,13 @@ class ScopeContract(unittest.TestCase):
     def test_light_contracts_have_no_filter(self):
         self.assertNotIn("when", self.workflow["steps"]["ops-contracts"])
         self.assertNotIn("when", self.workflow["steps"]["security-secrets"])
+        self.assertNotIn("when", self.workflow["steps"]["deploy-validation"])
+
+    def test_migration_check_nao_roda_para_testes_documentais(self):
+        gates = selected(self.workflow, "pull_request", "main",
+                         ["backend/tests/test_outro.py"])
+        self.assertNotIn("migration-check", gates)
+        self.assertNotIn("lint", gates)
 
     def test_glob_star_does_not_cross_directories(self):
         self.assertFalse(matches("frontend/*.json", "frontend/nested/package.json"))
