@@ -843,7 +843,8 @@ class TestOrchestrator:
 # 2026-09-06: civil, consumidor, tributário, penal, administrativo,
 # trabalhista, empresarial, juizado especial) + agentes funcionais/técnicos.
 AGENTES_CANONICOS = {
-    "EJCCoordinatorAgent", "CaseAgent", "ProcessAgent", "DocumentAgent",
+    "EJCCoordinatorAgent", "CaseAgent", "EvidenceAgent", "JudicialReviewAgent",
+    "ProcessAgent", "DocumentAgent",
     "DocumentExtractionAgent", "LegalWritingAgent",
     "RAGResearchAgent", "JurimetryAgent", "FinanceAgent", "BankForensicsAgent",
     "ConsumerLawAgent", "TaxLawAgent", "CorporateLawAgent",

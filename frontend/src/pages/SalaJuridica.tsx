@@ -6,7 +6,7 @@
  * Toda IA passa pelo backend (/api/sala-juridica/*), que roda o núcleo único.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   AlertTriangle,
   Archive,
@@ -236,12 +236,26 @@ const ACOES_RAPIDAS: Array<{ rotulo: string; modo: string; comando: string }> =
 
 const ABAS_ESTADO = [
   "fatos",
+  "partes",
+  "testemunhas",
+  "enderecos",
+  "identificacao_processual",
   "provas",
+  "documentos",
   "contradicoes",
   "teses",
+  "pedidos",
   "riscos",
   "pendencias",
   "cronologia",
+  "datas_relevantes",
+  "valores",
+  "competencia",
+  "ramo_direito",
+  "natureza_acao",
+  "procedimento_rito",
+  "prescricao_decadencia",
+  "urgencia",
   "fontes",
 ] as const;
 
@@ -253,6 +267,48 @@ const CLASSIFICACAO_COR: Record<string, string> = {
   ausente: "bg-red-100 text-red-800",
   superado: "bg-gray-200 text-gray-500 line-through",
 };
+
+function formatarItemEstado(item: Record<string, unknown>): string {
+  const preferidos = [
+    "numero_processo",
+    "tribunal",
+    "comarca",
+    "vara",
+    "texto",
+    "descricao",
+    "nome",
+    "titulo",
+    "evento",
+    "acao",
+    "valor",
+    "data",
+    "fundamento",
+    "justificativa",
+  ];
+  const vistos = new Set<string>();
+  const partes: string[] = [];
+  for (const chave of preferidos) {
+    const valor = item[chave];
+    if (valor == null || typeof valor === "object") continue;
+    const texto = String(valor).trim();
+    if (!texto || vistos.has(texto)) continue;
+    vistos.add(texto);
+    partes.push(`${chave.split("_").join(" ")}: ${texto}`);
+  }
+  if (partes.length > 0) return partes.join(" · ");
+
+  return Object.entries(item)
+    .filter(
+      ([chave, valor]) =>
+        !["classificacao", "nivel", "tipo"].includes(chave) &&
+        valor != null &&
+        typeof valor !== "object" &&
+        String(valor).trim(),
+    )
+    .slice(0, 8)
+    .map(([chave, valor]) => `${chave.split("_").join(" ")}: ${String(valor)}`)
+    .join(" · ") || "Item estruturado sem valor textual; revise o dossiê antes de aplicar.";
+}
 
 // E7: converter/vincular sessão a caso é ato privativo de advogado ou sócio
 // (mesmo critério do backend); estagiário/auxiliar/secretaria continuam
@@ -270,6 +326,8 @@ export default function SalaJuridica() {
     user?.role && PAPEIS_CONVERTER_SESSAO.includes(user.role),
   );
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const sessaoInicial = searchParams.get("session");
   const [sessoes, setSessoes] = useState<Sessao[]>([]);
   const [ativa, setAtiva] = useState<Sessao | null>(null);
   const [criticas, setCriticas] = useState<Record<string, CriticaAdversarial>>(
@@ -296,6 +354,7 @@ export default function SalaJuridica() {
   const [convFatos, setConvFatos] = useState("");
   const [convConflito, setConvConflito] = useState(false);
   const [convRevisado, setConvRevisado] = useState(false);
+  const [convAplicarDossie, setConvAplicarDossie] = useState(false);
   const [convertendo, setConvertendo] = useState(false);
   const [vincAberto, setVincAberto] = useState(false);
   const [vincBusca, setVincBusca] = useState("");
@@ -304,6 +363,7 @@ export default function SalaJuridica() {
   >([]);
   const [vincCaseId, setVincCaseId] = useState<string | null>(null);
   const [vincRevisado, setVincRevisado] = useState(false);
+  const [vincAplicarDossie, setVincAplicarDossie] = useState(false);
   const [vinculando, setVinculando] = useState(false);
   const [exportando, setExportando] = useState(false);
   const [painelSessoes, setPainelSessoes] = useState(true);
@@ -373,7 +433,16 @@ export default function SalaJuridica() {
     void (async () => {
       try {
         const lista = await carregarLista();
-        if (mounted && lista?.length) await abrirSessao(lista[0].id);
+        if (!mounted) return;
+        if (sessaoInicial) {
+          try {
+            await abrirSessao(sessaoInicial);
+          } catch {
+            if (lista?.length) await abrirSessao(lista[0].id);
+          }
+        } else if (lista?.length) {
+          await abrirSessao(lista[0].id);
+        }
       } catch {
         if (mounted) toast.error("Falha ao carregar a Sala Jurídica");
       } finally {
@@ -383,7 +452,7 @@ export default function SalaJuridica() {
     return () => {
       mounted = false;
     };
-  }, [carregarLista, abrirSessao, toast]);
+  }, [carregarLista, abrirSessao, sessaoInicial, toast]);
 
   useEffect(() => {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight });
@@ -591,6 +660,7 @@ export default function SalaJuridica() {
     setConvClienteId(null);
     setConvConflito(false);
     setConvRevisado(false);
+    setConvAplicarDossie(false);
     setConvDuplicado(false);
     convBloqueioServidorRef.current = false;
     previewGateRef.current.invalidate();
@@ -683,6 +753,7 @@ export default function SalaJuridica() {
         confirmo_dados_revisados: convRevisado,
         conflict_confirmed: convConflito,
         duplicate_confirmed: convDuplicado,
+        aplicar_dossie_estruturado: convAplicarDossie,
       });
       const docs = (data?.documentos_transferidos ?? []).length;
       toast.success(
@@ -803,6 +874,7 @@ export default function SalaJuridica() {
         {
           case_id: vincCaseId,
           confirmo_dados_revisados: vincRevisado,
+          aplicar_dossie_estruturado: vincAplicarDossie,
         },
       );
       toast.success(
@@ -885,30 +957,6 @@ export default function SalaJuridica() {
             >
               <Archive className="h-4 w-4" /> Arquivar
             </Button>
-            {podeConverter && (
-              <Button
-                variant="secondary"
-                disabled={!ativa || ativa.frozen}
-                onClick={() => {
-                  setVincCaseId(null);
-                  setVincRevisado(false);
-                  setVincBusca("");
-                  setVincCasos([]);
-                  setVincAberto(true);
-                }}
-              >
-                <Link2 className="h-4 w-4" /> Vincular a caso
-              </Button>
-            )}
-            {podeConverter && (
-              <Button
-                variant="secondary"
-                disabled={!ativa || ativa.frozen}
-                onClick={abrirWizard}
-              >
-                <FolderInput className="h-4 w-4" /> Transformar em caso
-              </Button>
-            )}
             <Button onClick={novaSessao}>
               <Plus className="h-4 w-4" /> Nova análise
             </Button>
@@ -1280,6 +1328,38 @@ export default function SalaJuridica() {
                 </div>
               </div>
               <AIFactualityLegend />
+              {podeConverter && !ativa.frozen && (
+                <div className="mx-auto mt-2 flex w-full max-w-3xl flex-col gap-2 rounded-xl border border-primary-100 bg-primary-50/40 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-primary-900">
+                      Finalizar análise — opcional
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      Nenhum caso é obrigatório. Continue conversando livremente
+                      ou, somente ao final, escolha criar ou vincular.
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setVincCaseId(null);
+                        setVincRevisado(false);
+                        setVincAplicarDossie(false);
+                        setVincBusca("");
+                        setVincCasos([]);
+                        setVincAberto(true);
+                      }}
+                    >
+                      <Link2 className="h-4 w-4" /> Vincular a caso (opcional)
+                    </Button>
+                    <Button variant="secondary" onClick={abrirWizard}>
+                      <FolderInput className="h-4 w-4" /> Transformar em caso
+                      (opcional)
+                    </Button>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <EmptyState
@@ -1376,14 +1456,7 @@ export default function SalaJuridica() {
                           abaEstado,
                       )}
                     </span>
-                    {String(
-                      item.texto ??
-                        item.descricao ??
-                        item.nome ??
-                        item.titulo ??
-                        item.evento ??
-                        "",
-                    )}
+                    {formatarItemEstado(item)}
                   </div>
                 ))
               )}
@@ -1432,6 +1505,18 @@ export default function SalaJuridica() {
                 onChange={(e) => setVincRevisado(e.target.checked)}
               />
               Revisei fatos, provas e documentos desta análise antes do vínculo.
+            </label>
+            <label className="mt-2 flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={vincAplicarDossie}
+                onChange={(e) => setVincAplicarDossie(e.target.checked)}
+              />
+              Aplicar ao cadastro do caso os dados estruturados que revisei
+              (partes e identificação processual). Prazos, testemunhas, teses e
+              pedidos permanecem somente no dossiê até confirmação em fluxo
+              próprio.
             </label>
             <div className="mt-5 flex justify-end gap-2">
               <Button variant="secondary" onClick={() => setVincAberto(false)}>
@@ -1631,6 +1716,17 @@ export default function SalaJuridica() {
                 onChange={(e) => setConvRevisado(e.target.checked)}
               />
               Revisei fatos, provas, pendências e documentos desta análise.
+            </label>
+            <label className="mt-1 flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={convAplicarDossie}
+                onChange={(e) => setConvAplicarDossie(e.target.checked)}
+              />
+              Aplicar ao novo caso os dados estruturados que revisei (partes e
+              identificação processual). Nenhum prazo será criado
+              automaticamente.
             </label>
             {temDuplicidade && (
               <label className="mt-1 flex items-start gap-2 text-sm">

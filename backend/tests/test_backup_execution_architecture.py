@@ -74,3 +74,11 @@ def test_predeploy_deve_migrar_para_fachada_exclusiva_quando_pr_1017_for_integra
     assert "backup_execution_service.executar_backup_exclusivo" in backup_script, (
         "P0: scripts/backup.sh ainda chama backup_service.executar_backup diretamente"
     )
+
+
+def test_ativador_backup_usa_fachada_com_mutex():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    src = (root / "scripts" / "backup" / "ativar_backup.sh").read_text(encoding="utf-8")
+    assert "backup_execution_service.executar_backup_exclusivo" in src
+    assert "backup_service.executar_backup(db" not in src

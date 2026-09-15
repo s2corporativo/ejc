@@ -80,20 +80,16 @@ run_case() {
   [ "$config_line" -lt "$execute_line" ] || \
     fail "backup é iniciado antes do gate de configuração"
 
-  # P0 Staff: os `.enc` atuais nascem em TemporaryDirectory; portanto
-  # `local_ok`/artefatos gerados NÃO provam persistência local após retorno.
-  # O pré-deploy só fica verde com transferência offsite confirmada pelo motor.
-  # Política de retenção do remote e teste de restauração são controles separados.
-  grep -q 'encrypted_generated' "$TMP/stdin.py" || fail "produção dos artefatos cifrados não é conferida"
-  grep -q 'offsite_ok = bool(result.get("offsite_ok"))' "$TMP/stdin.py" || \
-    fail "confirmação de transferência offsite não é lida do resultado"
-  grep -q 'and offsite_ok' "$TMP/stdin.py" || \
-    fail "gate pré-deploy ainda pode aprovar sem transferência offsite confirmada"
-  grep -q 'artefatos_cifrados_gerados' "$TMP/stdin.py" || \
-    fail "saída não diferencia geração temporária de envio offsite"
-  if grep -q 'deploy prossegue com prova local\|BACKUP_OFFSITE_OBRIGATORIO' "$TMP/stdin.py"; then
-    fail "wrapper ainda admite falso verde baseado em prova local temporária"
-  fi
+  # INF-04: `local_ok` agora significa persistência cifrada em BACKUP_DIR.
+  # Offsite só é bloqueante quando a política o exige explicitamente.
+  grep -q 'local_persisted' "$TMP/stdin.py" || fail "persistência local cifrada não é conferida"
+  grep -q 'local_persistido' "$TMP/stdin.py" || fail "artefatos não comprovam persistência local"
+  grep -q 'offsite_required = bool(config.get("offsite_obrigatorio"))' "$TMP/stdin.py" || \
+    fail "política offsite não é lida"
+  grep -q 'offsite_ok or not offsite_required' "$TMP/stdin.py" || \
+    fail "gate não respeita política offsite após prova local persistente"
+  grep -q 'artefatos_cifrados_persistidos' "$TMP/stdin.py" || \
+    fail "saída não distingue persistência local"
   grep -q '_db.dump.enc' "$TMP/stdin.py" || fail "artefato do banco não é exigido"
   grep -q '_uploads.tar.gz.enc' "$TMP/stdin.py" || fail "artefato de uploads não é exigido"
   if grep -q 'drive_file_id\|result.get("erro")' "$TMP/stdin.py"; then
@@ -107,10 +103,8 @@ run_case 0 0 restarting '^compose run --rm --no-deps -T backend python -$'
 grep -q '^compose config$' "$LOG" || fail "compose não foi validado no fallback"
 grep -q 'Backend indisponível para exec (estado: restarting)' "$TMP/err" || fail "fallback de restart loop não foi registrado"
 
-# Integração do caller: mesmo que um wrapper defeituoso retorne exit 0 com
-# offsite_ok=false, o deploy precisa falhar ANTES de build/up/tag ou qualquer
-# mutação de runtime. A fixture é deliberadamente compacta para cobrir JSON sem
-# espaços após os dois-pontos.
+# Integração do caller: local_ok=false sempre bloqueia. Quando a política
+# declara offsite obrigatório, offsite_ok=false também bloqueia antes de mutar.
 DEPLOY_CASE="$TMP/deploy-case"
 DEPLOY_APP="$TMP/deploy-app"
 mkdir -p "$DEPLOY_CASE" "$DEPLOY_APP/scripts"
@@ -120,7 +114,7 @@ ejc_deploy_lock_acquire() { return 0; }
 EOF
 cat > "$DEPLOY_APP/scripts/backup.sh" <<'EOF'
 #!/usr/bin/env bash
-printf '%s\n' '{"ok":true,"offsite_ok":false,"destino":"rclone"}'
+printf '%s\n' '{"ok":true,"local_ok":false,"offsite_required":false,"offsite_ok":false,"destino":"rclone"}'
 exit 0
 EOF
 chmod +x "$DEPLOY_APP/scripts/backup.sh"
@@ -138,11 +132,11 @@ ENSURE_DAILY_BACKUP=1 \
 bash "$DEPLOY_CASE/deploy.sh" >"$TMP/deploy-out" 2>"$TMP/deploy-err"
 deploy_rc=$?
 set -e
-[ "$deploy_rc" -ne 0 ] || fail "deploy aceitou offsite_ok=false"
-grep -q 'offsite_ok=false' "$TMP/deploy-out" || \
-  fail "deploy não registrou bloqueio por ausência de transferência offsite confirmada"
+[ "$deploy_rc" -ne 0 ] || fail "deploy aceitou local_ok=false"
+grep -q 'persistência local cifrada' "$TMP/deploy-out" || \
+  fail "deploy não registrou bloqueio por local_ok ausente"
 if grep -Eq '^compose build|^compose up|^tag ' "$TMP/deploy-docker.log"; then
-  fail "deploy iniciou mutação de imagem/runtime após offsite_ok=false"
+  fail "deploy iniciou mutação de imagem/runtime após local_ok=false"
 fi
 
 if grep -Eq \
@@ -193,4 +187,4 @@ if expected not in text:
 PY_DOCKERFILE
 
 bash -n "$ROOT/scripts/backup.sh" "$DEPLOY" "$ACTIVATOR"
-echo "[backup-wrapper-test] OK — pré-deploy exige cifragem + transferência offsite confirmada, sem falso local_ok."
+echo "[backup-wrapper-test] OK — pré-deploy exige persistência local cifrada e respeita política offsite."
