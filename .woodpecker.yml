@@ -1,6 +1,14 @@
 # CI oficial fora do GitHub Actions: self-hosted (Woodpecker — infra/woodpecker/).
 # Replica os portões locais e adiciona SAST, vulnerabilidades, secret scanning
 # e validação determinística dos contratos operacionais de backup/deploy.
+#
+# Política de escopo:
+# - push na main e execução manual: suíte completa;
+# - pull request: executa apenas os gates materialmente afetados pelo diff;
+# - security-secrets: sempre executa, inclusive em docs-only;
+# - runtime, segurança, migrations e deploy: suíte completa por caminhos críticos;
+# - diff vazio/desconhecido: suíte completa (fail-closed);
+# - ops-contracts: sempre executa os contratos leves de segurança/operação.
 when:
   - event: push
     branch: main
@@ -12,16 +20,17 @@ services:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: ejc_user
-      POSTGRES_PASSWORD: ejc_pass
       POSTGRES_DB: ejc_db
+      # Banco efêmero e isolado por pipeline: evita pseudo-senha hardcoded no repo.
+      POSTGRES_HOST_AUTH_METHOD: trust
 
 steps:
   backend:
     image: python:3.11-bookworm
     environment:
-      DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@db:5432/ejc_db
-      DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@db:5432/ejc_db
-      SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user:ejc_pass@db:5432/ejc_db
+      DATABASE_URL: postgresql+asyncpg://ejc_user@db:5432/ejc_db
+      DATABASE_URL_SYNC: postgresql://ejc_user@db:5432/ejc_db
+      SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user@db:5432/ejc_db
       # O CI já sobe PostgreSQL+pgvector e aplica `alembic upgrade head`.
       # Sem esta flag, os testes DB-level se auto-pulam e o gate fica mais
       # fraco que o portão local obrigatório do repositório.
@@ -38,9 +47,79 @@ steps:
       - python -m alembic heads
       - until pg_isready -h db -U ejc_user -q; do sleep 1; done
       - python -m alembic upgrade head
+      - python -m unittest discover -s ../scripts/tests -p test_woodpecker_scopes.py -v
       - pytest tests/test_alembic_single_head.py tests/test_rotas_registro_explicito.py -q
-      # Gate completo obrigatório, agora com DB-level habilitado.
+      # Gate completo obrigatório quando backend/configuração compartilhada muda.
       - pytest tests -q
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - &critical_change
+        path:
+          include:
+            - 'backend/app/**'
+            - 'backend/alembic/**'
+            - 'backend/scripts/**'
+            - 'frontend/src/lib/**'
+            - 'frontend/src/services/**'
+            - 'frontend/src/stores/**'
+            - 'frontend/src/config/**'
+            - 'frontend/src/App.tsx'
+            - 'frontend/src/components/*Protected*'
+            - 'frontend/src/components/*Role*'
+            - 'frontend/src/components/*Staff*'
+            - 'frontend/src/components/RouteGuards.tsx'
+            - 'scripts/**'
+            - 'infra/**'
+            - 'ops/**'
+            - 'config/**'
+            - 'nginx/**'
+            - 'vps-tools/**'
+            - '.github/**'
+            - '.githooks/**'
+            - '.claude/**'
+            - '.env.example'
+            - '.woodpecker.yml'
+            - '.gitleaks*'
+            - '.semgrep*'
+            - '.trivy*'
+            - 'AGENTS.md'
+            - 'CLAUDE.md'
+            - 'docs/GOVERNANCA*'
+            - 'docker-compose*.yml'
+            - '**/Dockerfile*'
+            - '**/requirements*.txt'
+            - '**/package*.json'
+            - '**/*lock*'
+            - '**/pyproject.toml'
+          on_empty: true
+      - path:
+          include:
+            - 'backend/**'
+            - 'qa/**'
+            - 'config/**'
+            - '.env.example'
+            - '.woodpecker.yml'
+            - 'docker-compose.yml'
+            - 'docker-compose.*.yml'
+          on_empty: false
+
+  # O SDK de agentes é ferramenta operacional isolada e tem dependências próprias.
+  agents-contracts:
+    image: python:3.11-bookworm
+    commands:
+      - pip install --quiet -r ops/agents/requirements.txt
+      - python -m compileall ops/agents -q
+      - python -m unittest discover -s ops/agents/tests -v
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - *critical_change
+      - path:
+          include: ['ops/agents/**', '.woodpecker.yml']
+          on_empty: false
 
   frontend:
     image: node:22
@@ -51,6 +130,17 @@ steps:
       - npm run lint
       - npm test
       - npm run build
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - *critical_change
+      - path:
+          include:
+            - 'frontend/**'
+            - 'qa/**'
+            - '.woodpecker.yml'
+          on_empty: false
 
   ops-contracts:
     image: python:3.11-bookworm
@@ -65,16 +155,47 @@ steps:
       - bash -n scripts/legacy_script_guard.sh scripts/deploy.sh scripts/deploy-vps.sh scripts/atualizar-vps.sh scripts/vps_setup.sh scripts/tests/test_legacy_script_guards.sh
       - bash scripts/tests/test_legacy_script_guards.sh
       - bash scripts/tests/test_rag_activation.sh
+    # Contratos leves rodam sempre: seus insumos cruzam código, exemplos e scanners.
 
   security-sast:
     image: semgrep/semgrep:1.172.0
     commands:
       - semgrep scan --config=auto --error .
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - *critical_change
+      - path:
+          include:
+            - 'backend/**'
+            - 'frontend/**'
+            - 'scripts/**'
+            - 'infra/**'
+            - 'ops/**'
+            - 'config/**'
+            - '.woodpecker.yml'
+          on_empty: false
 
   security-vulnerabilities:
     image: aquasec/trivy:0.74.0
     commands:
       - trivy fs --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 .
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - *critical_change
+      - path:
+          include:
+            - 'backend/requirements*.txt'
+            - 'frontend/package*.json'
+            - 'ops/**/requirements*.txt'
+            - '**/Dockerfile*'
+            - 'docker-compose.yml'
+            - 'docker-compose.*.yml'
+            - '.woodpecker.yml'
+          on_empty: false
 
   security-misconfig-audit:
     image: aquasec/trivy:0.74.0
@@ -82,7 +203,26 @@ steps:
       # Auditoria inicialmente não bloqueante: há findings legados conhecidos.
       # Promover para exit-code 1 somente após saneamento/baseline explícito.
       - trivy fs --scanners misconfig --severity HIGH,CRITICAL --exit-code 0 .
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - *critical_change
+      - path:
+          include:
+            - 'infra/**'
+            - 'nginx/**'
+            - 'config/**'
+            - 'vps-tools/**'
+            - '.github/**'
+            - '.woodpecker.yml'
+            - 'docker-compose.yml'
+            - 'docker-compose.*.yml'
+            - '**/Dockerfile*'
+          on_empty: false
 
+  # Secret scanning é barato comparado às suítes e deve cobrir qualquer diff,
+  # inclusive documentação, exemplos e arquivos de configuração.
   security-secrets:
     image: ghcr.io/gitleaks/gitleaks:v8.30.1
     commands:

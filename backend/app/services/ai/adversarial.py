@@ -1,10 +1,10 @@
 # ── app/services/ai/adversarial.py ──────────────────────────────────────────
 # MODO DUAS IAS (Fase 5) — IA Crítica/Adversarial.
 #
-# Peças de alta complexidade geradas pela IA Proponente (fluxo normal do
-# Núcleo Único) passam por uma SEGUNDA IA que atua como advogado da parte
-# contrária + magistrado: caça contradições, lacunas fáticas, fragilidades
-# probatórias, teses defensivas prováveis e jurisprudência contrária.
+# Conteúdo jurídico de alta complexidade gerado pela IA Proponente (peças,
+# análises e estratégia) pode passar por uma SEGUNDA IA que atua como advogado
+# da parte contrária + magistrado: caça contradições, lacunas fáticas,
+# fragilidades probatórias, teses defensivas prováveis e jurisprudência contrária.
 #
 # Princípios (imutáveis):
 #   • DIVERSIDADE DE PROVIDER: a crítica prefere provider DIFERENTE do que
@@ -34,7 +34,7 @@ TASK_TYPE_CRITICA = "critica_adversarial"
 
 AVISO_INDISPONIVEL = (
     "CRÍTICA ADVERSARIAL INDISPONÍVEL: a segunda IA não pôde ser executada. "
-    "A peça segue normalmente para revisão humana — redobre a atenção na "
+    "O conteúdo segue normalmente para revisão humana — redobre a atenção na "
     "revisão (contradições, lacunas fáticas e jurisprudência citada)."
 )
 AVISO_RASCUNHO = (
@@ -81,14 +81,14 @@ _PROVIDERS_CONHECIDOS = ("ollama", "anthropic", "groq", "maritaca")
 
 SYSTEM_CRITICA = """
 Você é a IA CRÍTICA/ADVERSARIAL do escritório De Paula Teixeira Advogados.
-Assuma DOIS papéis simultâneos sobre a peça jurídica recebida:
-1. ADVOGADO DA PARTE CONTRÁRIA: como você atacaria esta peça? Onde ela é vulnerável?
-2. MAGISTRADO EXIGENTE: o que faltou provar? O que está contraditório ou mal fundamentado?
+Assuma DOIS papéis simultâneos sobre o conteúdo jurídico recebido:
+1. ADVOGADO DA PARTE CONTRÁRIA: como você atacaria a tese, análise ou peça? Onde ela é vulnerável?
+2. MAGISTRADO EXIGENTE: o que faltou provar? O que está contraditório, prematuro ou mal fundamentado?
 
-Sua missão é BLINDAR a argumentação encontrando os defeitos ANTES do adversário.
+Sua missão é BLINDAR o raciocínio encontrando defeitos ANTES do adversário e ANTES da decisão judicial.
 
 Regras absolutas:
-- NÃO reescreva a peça; produza apenas o relatório de crítica.
+- NÃO reescreva o conteúdo; produza apenas o relatório de crítica.
 - NÃO invente leis, súmulas, julgados, número de acórdão, relator ou data.
   Jurisprudência contrária deve ser listada como HIPÓTESE A VERIFICAR, nunca
   como certeza; sem fonte certa, escreva exatamente: verificar fonte.
@@ -98,7 +98,7 @@ Regras absolutas:
 Responda EXATAMENTE nesta estrutura de seções:
 
 ## 1. CONTRADIÇÕES
-(internas à peça e entre peça e fatos/documentos do contexto; se nenhuma, escreva "Nenhuma identificada.")
+(internas ao conteúdo e entre a análise/peça e os fatos/documentos do contexto; se nenhuma, escreva "Nenhuma identificada.")
 
 ## 2. LACUNAS FÁTICAS
 (fatos essenciais não narrados/não provados; datas, valores e nexos ausentes)
@@ -114,7 +114,7 @@ Responda EXATAMENTE nesta estrutura de seções:
 
 ## 6. NOTA DE ROBUSTEZ
 NOTA DE ROBUSTEZ: <inteiro 0-100>
-(0 = peça indefensável; 100 = blindada. Justifique em 2-3 linhas.)
+(0 = raciocínio indefensável; 100 = análise/peça robusta. Justifique em 2-3 linhas.)
 """.strip()
 
 _RE_NOTA = re.compile(r"NOTA\s+DE\s+ROBUSTEZ\s*[:\-]?\s*(\d{1,3})", re.IGNORECASE)

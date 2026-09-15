@@ -26,6 +26,17 @@ Closes #
 - Risco jurídico/LGPD:
 - Risco operacional:
 
+## Agente de IA e instruções locais
+
+- [ ] `docs/GOVERNANCA_IA.md`, `CLAUDE.md`, `AGENTS.md` e `.agent/rules/*.md` foram lidos
+- [ ] `docs/ia/README.md` foi consultado quando o PR foi produzido ou revisado por agente
+- [ ] `docs/ia/tarefas/README.md` foi consultado e o modelo usado foi informado:
+- [ ] `docs/ia/PROBLEMAS_CONHECIDOS.md` foi consultado/atualizado quando aplicável
+- [ ] `docs/ia/VALIDACOES_IDE.md` ou `.vscode/tasks.json` orientou as validações locais
+- [ ] O agente confirmou branch, remoto, estado do Git e PRs concorrentes antes de escrever
+- [ ] O agente revisou `git diff` antes de concluir
+- [ ] Nenhuma afirmação jurídica, técnica ou de teste foi feita sem evidência
+
 ## Escopo e coesão
 
 - Decisão técnica única deste PR:
