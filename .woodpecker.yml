@@ -8,7 +8,22 @@
 # - security-secrets: sempre executa, inclusive em docs-only;
 # - runtime, segurança, migrations e deploy: suíte completa por caminhos críticos;
 # - diff vazio/desconhecido: suíte completa (fail-closed);
-# - ops-contracts: sempre executa os contratos leves de segurança/operação.
+# - ops-contracts e deploy-validation: sempre executam os contratos leves de
+#   segurança/operação, inclusive em docs-only.
+#
+# Ordem dos steps (execução sequencial, fail-fast): os contratos leves e
+# sempre-on (segundos) rodam ANTES das suítes pesadas, para que uma falha
+# barata interrompa a esteira antes de gastar 30-40min de testes. A cadeia
+# obrigatória de gates permanece: lint → backend-tests → frontend →
+# migration-check → security-(sast/vuln/secrets) → deploy-validation.
+#
+# Classificação dos testes (ver RUNBOOK_CI_CD_WOODPECKER.md):
+# - OBRIGATÓRIOS (bloqueiam): security-secrets, ops-contracts, deploy-validation,
+#   lint, backend-tests, frontend, migration-check, agents-contracts,
+#   security-sast, security-vulnerabilities;
+# - NÃO BLOQUEANTES (baseline pendente de saneamento): security-misconfig-audit;
+# - PESADOS (escopados por diff, sempre na main/manual): backend-tests (pytest
+#   completo), frontend (vitest+build), security-sast, security-vulnerabilities.
 when:
   - event: push
     branch: main
@@ -25,32 +40,43 @@ services:
       POSTGRES_HOST_AUTH_METHOD: trust
 
 steps:
-  backend:
-    image: python:3.11-bookworm
-    environment:
-      DATABASE_URL: postgresql+asyncpg://ejc_user@db:5432/ejc_db
-      DATABASE_URL_SYNC: postgresql://ejc_user@db:5432/ejc_db
-      SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user@db:5432/ejc_db
-      # O CI já sobe PostgreSQL+pgvector e aplica `alembic upgrade head`.
-      # Sem esta flag, os testes DB-level se auto-pulam e o gate fica mais
-      # fraco que o portão local obrigatório do repositório.
-      RUN_DB_TESTS: "1"
+  # ── Contratos leves sempre-on (falham em segundos, inclusive docs-only) ──
+  security-secrets:
+    image: ghcr.io/gitleaks/gitleaks:v8.30.1
     commands:
-      - apt-get update -qq
-      - apt-get install -y -qq --no-install-recommends jq libmagic1 poppler-utils tesseract-ocr libpango-1.0-0 libpangocairo-1.0-0 libcairo2 postgresql-client
-      - cd backend
-      - pip install --quiet -r requirements.txt
-      # Fast gate: falhas estruturais baratas interrompem antes da suíte total.
-      # Não substitui testes de módulo nem o pytest completo.
-      - ruff check app
-      - python -m compileall app -q
-      - python -m alembic heads
-      - until pg_isready -h db -U ejc_user -q; do sleep 1; done
-      - python -m alembic upgrade head
-      - python -m unittest discover -s ../scripts/tests -p test_woodpecker_scopes.py -v
-      - pytest tests/test_alembic_single_head.py tests/test_rotas_registro_explicito.py -q
-      # Gate completo obrigatório quando backend/configuração compartilhada muda.
-      - pytest tests -q
+      # O clone Woodpecker é parcial (um commit grafted); git-mode reinterpreta a árvore inteira e torna fingerprints dependentes do SHA.
+      # dir-mode preserva a cobertura efetiva do checkout atual sem baseline por commit.
+      - gitleaks dir . --redact --verbose --exit-code 1
+
+  ops-contracts:
+    image: python:3.11-bookworm
+    commands:
+      - bash -n scripts/backup.sh scripts/backup/ativar_backup.sh infra/selfhosted/bootstrap.sh scripts/tests/test_backup_wrapper.sh scripts/tests/test_ci_secret_gate.sh scripts/tests/test_rag_activation.sh scripts/legacy_script_guard.sh scripts/tests/test_legacy_script_guards.sh
+      - bash scripts/tests/test_backup_wrapper.sh
+      - bash scripts/tests/test_ci_secret_gate.sh
+      - bash scripts/tests/test_rag_activation.sh
+      - bash -n scripts/legacy_script_guard.sh
+      - bash scripts/tests/test_legacy_script_guards.sh
+    # Contratos leves rodam sempre: seus insumos cruzam código, exemplos e scanners.
+
+  deploy-validation:
+    image: python:3.11-bookworm
+    commands:
+      # Sintaxe dos scripts de deploy/host-automation (gates de deploy aprovado).
+      - bash -n scripts/deploy_vps_safe.sh scripts/deploy_workflow_transaction.sh infra/host-automation/woodpecker-approved-sha.sh infra/host-automation/ejc-deploy-approved.sh infra/host-automation/install.sh infra/host-automation/install-ejc-deploy.sh scripts/deploy.sh scripts/deploy-vps.sh scripts/atualizar-vps.sh scripts/vps_setup.sh
+      # Contratos executáveis de deploy e rollback.
+      - bash scripts/tests/test_deploy_rollback.sh
+      - bash infra/host-automation/tests/test_gate.sh
+      - python scripts/tests/test_docker_log_rotation.py
+    # Deploy validation roda sempre: os scripts de deploy cruzam código, imagens e infra.
+
+  # ── Cadeia obrigatória de gates ──
+  lint:
+    image: python:3.11-bookworm
+    commands:
+      # Mesmo pin de ruff do requirements.txt — regras idênticas ao portão local.
+      - pip install --quiet ruff==0.6.9
+      - cd backend && ruff check app
     when:
       - event: push
         branch: main
@@ -94,6 +120,44 @@ steps:
             - '**/*lock*'
             - '**/pyproject.toml'
           on_empty: true
+      - path:
+          include:
+            - 'backend/app/**'
+            - 'backend/scripts/**'
+            - 'backend/alembic/**'
+            - 'backend/alembic.ini'
+          on_empty: false
+
+  backend-tests:
+    image: python:3.11-bookworm
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ejc_user@db:5432/ejc_db
+      DATABASE_URL_SYNC: postgresql://ejc_user@db:5432/ejc_db
+      SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user@db:5432/ejc_db
+      # O CI já sobe PostgreSQL+pgvector e aplica `alembic upgrade head`.
+      # Sem esta flag, os testes DB-level se auto-pulam e o gate fica mais
+      # fraco que o portão local obrigatório do repositório.
+      RUN_DB_TESTS: "1"
+    commands:
+      - apt-get update -qq
+      - apt-get install -y -qq --no-install-recommends jq libmagic1 poppler-utils tesseract-ocr libpango-1.0-0 libpangocairo-1.0-0 libcairo2 postgresql-client
+      - cd backend
+      - pip install --quiet -r requirements.txt
+      # Fast gate: falhas estruturais baratas interrompem antes da suíte total.
+      # Não substitui testes de módulo nem o pytest completo.
+      - python -m compileall app -q
+      - python -m alembic heads
+      - until pg_isready -h db -U ejc_user -q; do sleep 1; done
+      - python -m alembic upgrade head
+      - python -m unittest discover -s ../scripts/tests -p test_woodpecker_scopes.py -v
+      - pytest tests/test_alembic_single_head.py tests/test_rotas_registro_explicito.py -q
+      # Gate completo obrigatório quando backend/configuração compartilhada muda.
+      - pytest tests -q
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - *critical_change
       - path:
           include:
             - 'backend/**'
@@ -142,21 +206,31 @@ steps:
             - '.woodpecker.yml'
           on_empty: false
 
-  ops-contracts:
+  # Gate estrutural de migrations SEM banco: head único, sem órfãos, sem
+  # duplicatas, sem ciclos + classificador expand-only executado de verdade
+  # (antes era apenas py_compile). O upgrade real contra PostgreSQL permanece
+  # no backend-tests, contra o serviço efêmero de banco.
+  migration-check:
     image: python:3.11-bookworm
     commands:
-      - bash -n scripts/backup.sh scripts/backup/ativar_backup.sh scripts/deploy_vps_safe.sh scripts/deploy_workflow_transaction.sh scripts/tests/test_backup_wrapper.sh scripts/tests/test_deploy_rollback.sh infra/host-automation/woodpecker-approved-sha.sh infra/host-automation/ejc-deploy-approved.sh infra/host-automation/install.sh infra/host-automation/install-ejc-deploy.sh infra/host-automation/tests/test_gate.sh infra/selfhosted/bootstrap.sh scripts/tests/test_ci_secret_gate.sh scripts/tests/test_rag_activation.sh
-      - python -m py_compile scripts/check_migration_compatibility.py
-      - bash scripts/tests/test_backup_wrapper.sh
-      - bash scripts/tests/test_deploy_rollback.sh
-      - bash infra/host-automation/tests/test_gate.sh
-      - bash scripts/tests/test_ci_secret_gate.sh
-      - python scripts/tests/test_docker_log_rotation.py
-      - bash -n scripts/legacy_script_guard.sh scripts/deploy.sh scripts/deploy-vps.sh scripts/atualizar-vps.sh scripts/vps_setup.sh scripts/tests/test_legacy_script_guards.sh
-      - bash scripts/tests/test_legacy_script_guards.sh
-      - bash scripts/tests/test_rag_activation.sh
-    # Contratos leves rodam sempre: seus insumos cruzam código, exemplos e scanners.
+      - HEAD_REV=$(python scripts/alembic_dag_check.py --versions-dir backend/alembic/versions --print-head)
+      - python scripts/check_migration_compatibility.py --versions-dir backend/alembic/versions --current-revision "$HEAD_REV"
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - *critical_change
+      - path:
+          include:
+            - 'backend/alembic/**'
+            - 'backend/alembic.ini'
+            - 'backend/app/**'
+            - 'backend/requirements*.txt'
+            - 'scripts/alembic_dag_check.py'
+            - 'scripts/check_migration_compatibility.py'
+          on_empty: false
 
+  # ── Segurança profunda (escopada por diff; completa na main/manual) ──
   security-sast:
     image: semgrep/semgrep:1.172.0
     commands:
@@ -220,12 +294,3 @@ steps:
             - 'docker-compose.*.yml'
             - '**/Dockerfile*'
           on_empty: false
-
-  # Secret scanning é barato comparado às suítes e deve cobrir qualquer diff,
-  # inclusive documentação, exemplos e arquivos de configuração.
-  security-secrets:
-    image: ghcr.io/gitleaks/gitleaks:v8.30.1
-    commands:
-      # O clone Woodpecker é parcial (um commit grafted); git-mode reinterpreta a árvore inteira e torna fingerprints dependentes do SHA.
-      # dir-mode preserva a cobertura efetiva do checkout atual sem baseline por commit.
-      - gitleaks dir . --redact --verbose --exit-code 1
