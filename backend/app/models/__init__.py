@@ -25,6 +25,7 @@ from app.models.audit_log import AuditLog, criar_audit_log
 from app.models.ai_log import AILog, AIStatusHITL, AITipoUso
 from app.models.ai_provider_metric import AIProviderMetric
 from app.models.notification import Notification
+from app.models.activity_alert import ActivityAlertState
 from app.models.feriado import Feriado
 from app.models.procuracao import Procuracao
 from app.models.rag import KnowledgeDoc, KnowledgeChunk
@@ -43,7 +44,7 @@ __all__ = [
     "EnvironmentalCase", "OrgaoAutuador", "StatusDefesa",
     "AuditLog", "criar_audit_log",
     "AILog", "AIStatusHITL", "AITipoUso", "AIProviderMetric",
-    "Notification", "Feriado", "Procuracao",
+    "Notification", "ActivityAlertState", "Feriado", "Procuracao",
     "KnowledgeDoc", "KnowledgeChunk",
     "ApiKey",
 ]

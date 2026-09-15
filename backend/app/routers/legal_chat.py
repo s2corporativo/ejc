@@ -27,6 +27,7 @@ from app.models.user import User
 from app.schemas.legal_chat import (
     ConverterRequest,
     EstadoUpdate,
+    ProximaAcaoConfirmarRequest,
     MensagemCreate,
     SaidaAlternativaRequest,
     SessaoCreate,
@@ -206,6 +207,26 @@ async def obter_estado(
     }
 
 
+@router.post("/{session_id}/proxima-acao/confirmar")
+async def confirmar_proxima_acao(
+    session_id: str,
+    payload: ProximaAcaoConfirmarRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(exigir_equipe_juridica),
+):
+    sessao = await svc.obter_sessao(db, session_id, user)
+    resultado = await svc.confirmar_proxima_acao(
+        db, sessao, acao=payload.acao, user=user
+    )
+    await criar_audit_log(
+        db, user_id=user.id, user_role=svc._role(user),
+        acao="UPDATE", entidade="legal_chat_next_action", registro_id=sessao.id,
+        dados_depois={"estado": "confirmada", "versao": resultado["versao"]},
+    )
+    await db.commit()
+    return resultado
+
+
 @router.post(
     "/{session_id}/anexos",
     dependencies=[Depends(rate_limit("sala-juridica-upload", 10))],
@@ -345,6 +366,11 @@ async def converter(
         acao="sala_juridica_converter", entidade="legal_chat_sessions",
         registro_id=sessao.id,
         detalhes=f"case_id={resultado.get('case_id')}",
+        dados_depois={
+            "case_id": resultado.get("case_id"),
+            "aplicar_dossie_estruturado": payload.aplicar_dossie_estruturado,
+            "dossie_materializado": resultado.get("dossie_materializado"),
+        },
     )
     await db.commit()
     return resultado
@@ -366,12 +392,18 @@ async def vincular_caso(
     resultado = await svc.vincular_caso_existente(
         db, sessao, payload.case_id, user,
         transferir_anexos=payload.transferir_anexos,
+        aplicar_dossie_estruturado=payload.aplicar_dossie_estruturado,
     )
     await criar_audit_log(
         db, user_id=user.id, user_role=svc._role(user),
         acao="sala_juridica_vincular_caso", entidade="legal_chat_sessions",
         registro_id=sessao.id,
         detalhes=f"case_id={resultado.get('case_id')}",
+        dados_depois={
+            "case_id": resultado.get("case_id"),
+            "aplicar_dossie_estruturado": payload.aplicar_dossie_estruturado,
+            "dossie_materializado": resultado.get("dossie_materializado"),
+        },
     )
     await db.commit()
     return resultado

@@ -45,6 +45,8 @@ def _prepara(monkeypatch, tmp_path, **overrides):
     artefatos cifrados (db.dump.enc + uploads.tar.gz.enc)."""
     uploads = tmp_path / "uploads"
     uploads.mkdir()
+    backup_dir = tmp_path / "backups"
+    backup_dir.mkdir(mode=0o700)
     (uploads / "doc.pdf").write_bytes(b"%PDF fake" * 20)
     valores = {
         "BACKUP_ENCRYPTION_KEY": CHAVE,
@@ -53,6 +55,8 @@ def _prepara(monkeypatch, tmp_path, **overrides):
         "BACKUP_RCLONE_TIMEOUT": 123,
         "BACKUP_OFFSITE_OBRIGATORIO": False,
         "BACKUP_DRIVE_FOLDER_ID": "",
+        "BACKUP_DIR": str(backup_dir),
+        "BACKUP_RETENTION_DAYS": 7,
         "UPLOAD_DIR": str(uploads),
         **overrides,
     }
@@ -104,6 +108,13 @@ async def test_destino_rclone_chama_subprocess_com_args_corretos(monkeypatch, tm
     assert any(d.endswith("_uploads.tar.gz.enc") for d in destinos)
     # Segredo nunca vaza no payload (vai para log/estado/status).
     assert CHAVE not in str(resultado)
+    backup_dir = tmp_path / "backups"
+    for art in resultado["artefatos"]:
+        assert art["local_persistido"] is True
+        local = backup_dir / art["nome"]
+        assert local.is_file()
+        assert (local.stat().st_mode & 0o777) == 0o600
+        Fernet(CHAVE.encode()).decrypt(local.read_bytes())
 
 
 async def test_rclone_falha_com_local_ok_gera_parcial(monkeypatch, tmp_path):

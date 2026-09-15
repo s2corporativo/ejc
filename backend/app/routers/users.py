@@ -76,6 +76,38 @@ async def _validar_cpf_usuario_exclusivo(
         raise HTTPException(status_code=409, detail="CPF já vinculado a outro usuário ativo")
 
 
+_CPF_HASH_UNIQUE_CONSTRAINT = "ux_users_cpf_hash_active"
+
+
+def _integrity_e_duplicidade_cpf_usuario(exc: IntegrityError) -> bool:
+    """Reconhece somente a constraint do CPF protegido; demais erros propagam."""
+    orig = getattr(exc, "orig", None)
+    candidatos = (orig, getattr(orig, "__cause__", None))
+    for candidato in candidatos:
+        if candidato is None:
+            continue
+        nome = getattr(candidato, "constraint_name", None)
+        if not nome:
+            nome = getattr(getattr(candidato, "diag", None), "constraint_name", None)
+        if nome == _CPF_HASH_UNIQUE_CONSTRAINT:
+            return True
+    return False
+
+
+async def _commit_usuario_com_cpf_guard(db: AsyncSession) -> None:
+    """Fecha corrida após o precheck sem mascarar integridades não relacionadas."""
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        if _integrity_e_duplicidade_cpf_usuario(exc):
+            raise HTTPException(
+                status_code=409,
+                detail="CPF já vinculado a outro usuário ativo",
+            ) from exc
+        raise
+
+
 def _refresh_jti_atual(request: Request) -> str | None:
     token = request.cookies.get(REFRESH_COOKIE)
     payload = decode_token(token) if token else None
@@ -346,16 +378,7 @@ async def criar(
     )
     db.add(user)
     await criar_audit_log(db, cu.id, _role_value(cu.role), "CREATE", "users", user.id)
-    try:
-        await db.commit()
-    except IntegrityError as exc:
-        await db.rollback()
-        if cpf_hash and "ux_users_cpf_hash_active" in str(exc.orig):
-            raise HTTPException(
-                status_code=409,
-                detail="CPF já vinculado a outro usuário ativo",
-            ) from exc
-        raise
+    await _commit_usuario_com_cpf_guard(db)
     await db.refresh(user)
     return user
 
@@ -496,7 +519,6 @@ async def atualizar(
     _validar_par_oab_djen(user, mudancas)
     await _validar_oab_djen_exclusiva(db, user, mudancas)
 
-    cpf_hash_tentado: str | None = None
     if "cpf" in mudancas:
         if not eh_admin:
             raise HTTPException(status_code=403, detail="CPF é restrito à gestão de usuários")
@@ -508,7 +530,6 @@ async def atualizar(
         await _validar_cpf_usuario_exclusivo(db, user.id, cpf_hash)
         user.cpf_enc = cpf_enc
         user.cpf_hash = cpf_hash
-        cpf_hash_tentado = cpf_hash
 
     for key, value in mudancas.items():
         setattr(user, key, value)
@@ -520,16 +541,7 @@ async def atualizar(
         "users",
         user_id,
     )
-    try:
-        await db.commit()
-    except IntegrityError as exc:
-        await db.rollback()
-        if cpf_hash_tentado and "ux_users_cpf_hash_active" in str(exc.orig):
-            raise HTTPException(
-                status_code=409,
-                detail="CPF já vinculado a outro usuário ativo",
-            ) from exc
-        raise
+    await _commit_usuario_com_cpf_guard(db)
     await db.refresh(user)
     return user
 
