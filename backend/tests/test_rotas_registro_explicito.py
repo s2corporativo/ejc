@@ -51,6 +51,18 @@ def _extrair_rotas(app) -> list[dict]:
 # Adições INTENCIONAIS posteriores ao snapshot. O registro explícito (§4.1) não
 # pode criar nem remover rota; qualquer outra novidade falha o teste.
 ADICOES_INTENCIONAIS = {
+    # Dashboard/Sala Jurídica — release #1657. Novas superfícies autenticadas;
+    # não removem nem afrouxam rotas existentes.
+    ("/api/atividades/alertas-inteligentes", "GET"),
+    ("/api/atividades/alertas/{source_type}/{source_id}", "PATCH"),
+    ("/api/sala-juridica/{session_id}/proxima-acao/confirmar", "POST"),
+    # Jurimetria dos TRIBUNAIS (Issue #1527): desfechos do TJMG a partir do
+    # DataJud, no slot do "benchmark externo" que /interno/* declarava como
+    # `externo_habilitado: False`. Mesmo gate de papel do módulo (_req_staff,
+    # equipe jurídica). Opt-in: sem JURIMETRIA_TRIBUNAIS_ENABLED e
+    # DATAJUD_ENABLED/DATAJUD_API_KEY, responde 503 controlado.
+    ("/api/jurimetria/tribunais/status", "GET"),
+    ("/api/jurimetria/tribunais/desfechos", "GET"),
     ("/api/architecture/uso-rotas", "GET"),
     # PR #1378 — consolidação do Financeiro/Fiscal. Rotas novas deliberadas,
     # autenticadas e de leitura. O subledger respeita escopo/ownership do fee;
