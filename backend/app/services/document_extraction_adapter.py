@@ -73,6 +73,7 @@ async def extrair_texto_compatibilidade(
             extrair_texto,
             str(caminho),
             ingestao.mimetype,
+            ingestao.ext,
         )
         return _normalizar_texto(texto)
     except Exception as exc:
