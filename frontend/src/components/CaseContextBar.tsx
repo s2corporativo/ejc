@@ -1,19 +1,30 @@
 import { useEffect } from "react";
 import { Link, useLocation } from "react-router";
-import { FolderOpen, X } from "lucide-react";
+import { ArrowRight, CalendarClock, FolderOpen, X } from "lucide-react";
 import { CASE_NAV_SECTIONS } from "../config/caseNav";
 import { useCaseContext } from "../stores/caseContext";
 
 // Rotas /casos/:id/* ativam o modo caso; /casos/novo é o wizard (não é caso).
 const CASE_ROUTE = /^\/casos\/([^/]+)/;
 
+function prazoCurto(valor?: string): string | null {
+  if (!valor) return null;
+  const data = new Date(valor);
+  if (Number.isNaN(data.getTime())) return null;
+  return data.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
 /**
  * Faixa persistente do "Modo Caso".
  *
  * Além de identificar o caso ativo, oferece cinco destinos canônicos para que o
- * usuário não precise conhecer as dezenas de subabas do workspace. As telas
- * avançadas continuam acessíveis nas subabas internas; esta barra apenas reduz
- * o custo cognitivo da navegação principal.
+ * usuário não precise conhecer as dezenas de subabas do workspace. A próxima
+ * ação permanece visível em qualquer superfície do caso, reforçando a pergunta
+ * operacional central: "o que precisa ser feito agora?".
  */
 export default function CaseContextBar() {
   const { pathname, search } = useLocation();
@@ -33,32 +44,52 @@ export default function CaseContextBar() {
   const rotaRaizDoCaso = pathname === baseCaso || pathname === `${baseCaso}/`;
   const tabAtiva =
     new URLSearchParams(search).get("tab") || (rotaRaizDoCaso ? "resumo" : "");
+  const prazo = prazoCurto(caso.proxima_acao_prazo);
 
   return (
     <div className="border-b border-primary-200/60 bg-primary-50/95">
       <div className="px-4 md:px-7">
-        <div className="flex h-9 items-center gap-2 text-xs">
+        <div className="flex min-h-10 items-center gap-2 py-1.5 text-xs">
           <FolderOpen
             className="h-3.5 w-3.5 shrink-0 text-primary-700"
             aria-hidden="true"
           />
-          <Link
-            to={baseCaso}
-            className="min-w-0 truncate font-medium text-primary-900 hover:underline"
-            title={
-              caso.numero_processo
-                ? `${caso.titulo} · Processo ${caso.numero_processo}`
-                : caso.titulo
-            }
-          >
-            {caso.titulo}
-            {caso.cliente && (
-              <span className="font-normal text-primary-700/80">
-                {" — "}
-                {caso.cliente}
-              </span>
+          <div className="min-w-0 flex-1">
+            <Link
+              to={baseCaso}
+              className="block min-w-0 truncate font-medium text-primary-900 hover:underline"
+              title={
+                caso.numero_processo
+                  ? `${caso.titulo} · Processo ${caso.numero_processo}`
+                  : caso.titulo
+              }
+            >
+              {caso.titulo}
+              {caso.cliente && (
+                <span className="font-normal text-primary-700/80">
+                  {" — "}
+                  {caso.cliente}
+                </span>
+              )}
+            </Link>
+            {caso.proxima_acao && (
+              <Link
+                to={`${baseCaso}?tab=resumo`}
+                className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] text-primary-700 hover:text-primary-950"
+                title={`Próxima ação: ${caso.proxima_acao}${prazo ? ` · ${prazo}` : ""}`}
+              >
+                <ArrowRight className="h-3 w-3 shrink-0" aria-hidden="true" />
+                <span className="shrink-0 font-semibold">Próxima:</span>
+                <span className="truncate">{caso.proxima_acao}</span>
+                {prazo && (
+                  <span className="ml-1 inline-flex shrink-0 items-center gap-1 text-primary-600">
+                    <CalendarClock className="h-3 w-3" aria-hidden="true" />
+                    {prazo}
+                  </span>
+                )}
+              </Link>
             )}
-          </Link>
+          </div>
           <button
             type="button"
             onClick={sair}

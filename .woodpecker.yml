@@ -1,43 +1,352 @@
-# CI oficial fora do GitHub Actions (Woodpecker self-hosted — infra/woodpecker/).
-# Replica o portão local obrigatório do CLAUDE.md; divergência entre os dois é
-# bug deste arquivo.
+# CI oficial fora do GitHub Actions: self-hosted (Woodpecker — infra/woodpecker/).
+# Replica os portões locais e adiciona SAST, vulnerabilidades, secret scanning
+# e validação determinística dos contratos operacionais de backup/deploy.
+#
+# Política de escopo:
+# - push na main e execução manual: suíte completa;
+# - pull request: executa apenas os gates materialmente afetados pelo diff;
+# - security-secrets: sempre executa, inclusive em docs-only;
+# - runtime, segurança, migrations e deploy: suíte completa por caminhos críticos;
+# - diff vazio/desconhecido: suíte completa (fail-closed);
+# - ops-contracts e deploy-validation: sempre executam os contratos leves de
+#   segurança/operação, inclusive em docs-only.
+#
+# Ordem dos steps (DAG com depends_on — o Woodpecker executa em ONDAS de
+# nível: uma onda só inicia quando a anterior INTEIRA termina):
+#   Onda 1: security-secrets (falha barata, ~1min);
+#   Onda 2: ops-contracts + deploy-validation + lint + backend-tests ∥
+#           frontend ∥ security-sast ∥ security-vulnerabilities + migration-.
+#           check (as suítes pesadas independentes em PARALELO, ~14min);
+#   Onda 3: agents-contracts (serializa writer do cache pip com backend) e
+#           security-misconfig-audit (serializa writer do cache trivy).
+# Critical path ≈ 52s + max(backend 14m, frontend 14m) + 33s ≈ 15-16min
+# (vs ~37min sequenciais). A cadeia obrigatória de gates mantém os MESMOS
+# membros — todos obrigatórios para o merge; apenas a topologia mudou.
+#
+# Classificação dos testes (ver RUNBOOK_CI_CD_WOODPECKER.md):
+# - OBRIGATÓRIOS (bloqueiam): security-secrets, ops-contracts, deploy-validation,
+#   lint, backend-tests, frontend, migration-check, agents-contracts,
+#   security-sast, security-vulnerabilities;
+# - NÃO BLOQUEANTES (baseline pendente de saneamento): security-misconfig-audit;
+# - PESADOS (escopados por diff, sempre na main/manual): backend-tests (pytest
+#   completo), frontend (vitest+build), security-sast, security-vulnerabilities.
+#
+# Cache de dependências (corte estimado: 10-20min/esteira em agente de 1 CPU):
+# - Volumes nomeados Docker (persistem no host do agente entre pipelines):
+#   pip (~/.cache/pip), apt (archives+lists), npm (~/.npm), trivy (DB de
+#   vulnerabilidades) e semgrep (regras baixadas). É fail-open: cache vazio ou
+#   corrompido apenas re-baixa do registry, nunca mascara falha real.
+# - PRÉ-REQUISITO: repo marcado como `trusted` no Woodpecker (server admin, via
+#   UI ou API). Sem trusted, a criação de pipelines com volumes é REJEITADA.
+#   Portanto: habilitar trusted ANTES de este arquivo chegar à branch avaliada.
+# - Concorrência segura aqui: volumes distintos por ecossistema (pip/npm/apt/
+#   semgrep/trivy) NUNCA são escritos por dois steps da MESMA onda — writers
+#   de pip ficam em ondas distintas (backend onda 2, agents onda 3) e writers
+#   de trivy também (vulnerabilities onda 2, misconfig onda 3).
+# - Manutenção: `docker volume ls | grep ejc-ci-` e, se disco apertar,
+#   `docker volume rm ejc-ci-<nome>` (recriado no próximo pipeline).
+#
 when:
   - event: push
     branch: main
   - event: pull_request
+  - event: manual
 
 services:
   db:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: ejc_user
-      POSTGRES_PASSWORD: ejc_pass
       POSTGRES_DB: ejc_db
+      # Banco efêmero e isolado por pipeline: evita pseudo-senha hardcoded no repo.
+      POSTGRES_HOST_AUTH_METHOD: trust
 
 steps:
-  backend:
-    image: python:3.11-bookworm
-    environment:
-      DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@db:5432/ejc_db
-      DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@db:5432/ejc_db
-      SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user:ejc_pass@db:5432/ejc_db
+  # ── Contratos leves sempre-on (falham em segundos, inclusive docs-only) ──
+  security-secrets:
+    image: ghcr.io/gitleaks/gitleaks:v8.30.1
     commands:
-      # Deps nativas de OCR/PDF exigidas pela suíte (mesma lista do ci.yml).
+      # O clone Woodpecker é parcial (um commit grafted); git-mode reinterpreta a árvore inteira e torna fingerprints dependentes do SHA.
+      # dir-mode preserva a cobertura efetiva do checkout atual sem baseline por commit.
+      - gitleaks dir . --redact --verbose --exit-code 1
+
+  ops-contracts:
+    image: python:3.11-bookworm
+    depends_on: [security-secrets]
+    commands:
+      - bash -n scripts/backup.sh scripts/backup/ativar_backup.sh infra/selfhosted/bootstrap.sh scripts/tests/test_backup_wrapper.sh scripts/tests/test_ci_secret_gate.sh scripts/tests/test_rag_activation.sh scripts/legacy_script_guard.sh scripts/tests/test_legacy_script_guards.sh
+      - bash scripts/tests/test_backup_wrapper.sh
+      - bash scripts/tests/test_ci_secret_gate.sh
+      - bash scripts/tests/test_rag_activation.sh
+      - bash -n scripts/legacy_script_guard.sh
+      - bash scripts/tests/test_legacy_script_guards.sh
+    # Contratos leves rodam sempre: seus insumos cruzam código, exemplos e scanners.
+
+  deploy-validation:
+    image: python:3.11-bookworm
+    depends_on: [security-secrets]
+    commands:
+      # Sintaxe dos scripts de deploy/host-automation (gates de deploy aprovado).
+      - bash -n scripts/deploy_vps_safe.sh scripts/deploy_workflow_transaction.sh infra/host-automation/woodpecker-approved-sha.sh infra/host-automation/ejc-deploy-approved.sh infra/host-automation/install.sh infra/host-automation/install-ejc-deploy.sh scripts/deploy.sh scripts/deploy-vps.sh scripts/atualizar-vps.sh scripts/vps_setup.sh
+      # Contratos executáveis de deploy e rollback.
+      - bash scripts/tests/test_deploy_rollback.sh
+      - bash infra/host-automation/tests/test_gate.sh
+      - python scripts/tests/test_docker_log_rotation.py
+    # Deploy validation roda sempre: os scripts de deploy cruzam código, imagens e infra.
+
+  # ── Cadeia obrigatória de gates ──
+  lint:
+    image: python:3.11-bookworm
+    depends_on: [security-secrets]
+    commands:
+      # Sem volume de cache pip de propósito: lint e backend-tests estão na
+      # MESMA onda e o cache pip não pode ter dois writers (o wheel do ruff
+      # re-baixa ~15s por run — custo aceitável para eliminar a disputa).
+      # Mesmo pin de ruff do requirements.txt — regras idênticas ao portão local.
+      - pip install --quiet ruff==0.6.9
+      - cd backend && ruff check app
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - &critical_change
+        path:
+          include:
+            - 'backend/app/**'
+            - 'backend/alembic/**'
+            - 'backend/scripts/**'
+            - 'frontend/src/lib/**'
+            - 'frontend/src/services/**'
+            - 'frontend/src/stores/**'
+            - 'frontend/src/config/**'
+            - 'frontend/src/App.tsx'
+            - 'frontend/src/components/*Protected*'
+            - 'frontend/src/components/*Role*'
+            - 'frontend/src/components/*Staff*'
+            - 'frontend/src/components/RouteGuards.tsx'
+            - 'scripts/**'
+            - 'infra/**'
+            - 'ops/**'
+            - 'config/**'
+            - 'nginx/**'
+            - 'vps-tools/**'
+            - '.github/**'
+            - '.githooks/**'
+            - '.claude/**'
+            - '.env.example'
+            - '.woodpecker.yml'
+            - '.gitleaks*'
+            - '.semgrep*'
+            - '.trivy*'
+            - 'AGENTS.md'
+            - 'CLAUDE.md'
+            - 'docs/GOVERNANCA*'
+            - 'docker-compose*.yml'
+            - '**/Dockerfile*'
+            - '**/requirements*.txt'
+            - '**/package*.json'
+            - '**/*lock*'
+            - '**/pyproject.toml'
+          on_empty: true
+      - path:
+          include:
+            - 'backend/app/**'
+            - 'backend/scripts/**'
+            - 'backend/alembic/**'
+            - 'backend/alembic.ini'
+          on_empty: false
+
+  backend-tests:
+    image: python:3.11-bookworm
+    depends_on: [security-secrets]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ejc_user@db:5432/ejc_db
+      DATABASE_URL_SYNC: postgresql://ejc_user@db:5432/ejc_db
+      SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user@db:5432/ejc_db
+      # O CI já sobe PostgreSQL+pgvector e aplica `alembic upgrade head`.
+      # Sem esta flag, os testes DB-level se auto-pulam e o gate fica mais
+      # fraco que o portão local obrigatório do repositório.
+      RUN_DB_TESTS: "1"
+    volumes:
+      # pip: 163 dependências — maior ganho da esteira (baixa só o que mudou).
+      - ejc-ci-pip-cache:/root/.cache/pip
+      # apt: .debs e listas persistidos evita re-baixar jq/magic/poppler/tesseract
+      # e pango/cairo/pgclient a cada run (update passa a buscar só deltas).
+      - ejc-ci-apt-archives:/var/cache/apt/archives
+      - ejc-ci-apt-lists:/var/lib/apt/lists
+    commands:
       - apt-get update -qq
       - apt-get install -y -qq --no-install-recommends jq libmagic1 poppler-utils tesseract-ocr libpango-1.0-0 libpangocairo-1.0-0 libcairo2 postgresql-client
       - cd backend
       - pip install --quiet -r requirements.txt
-      - ruff check app
+      # Fast gate: falhas estruturais baratas interrompem antes da suíte total.
+      # Não substitui testes de módulo nem o pytest completo.
+      - python -m compileall app -q
       - python -m alembic heads
       - until pg_isready -h db -U ejc_user -q; do sleep 1; done
       - python -m alembic upgrade head
+      - python -m unittest discover -s ../scripts/tests -p test_woodpecker_scopes.py -v
+      - pytest tests/test_alembic_single_head.py tests/test_rotas_registro_explicito.py -q
+      # Gate completo obrigatório quando backend/configuração compartilhada muda.
       - pytest tests -q
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - *critical_change
+      - path:
+          include:
+            - 'backend/**'
+            - 'qa/**'
+            - 'config/**'
+            - '.env.example'
+            - '.woodpecker.yml'
+            - 'docker-compose.yml'
+            - 'docker-compose.*.yml'
+          on_empty: false
+
+  # O SDK de agentes é ferramenta operacional isolada e tem dependências próprias.
+  agents-contracts:
+    image: python:3.11-bookworm
+    depends_on: [backend-tests]
+    volumes:
+      - ejc-ci-pip-cache:/root/.cache/pip
+    commands:
+      - pip install --quiet -r ops/agents/requirements.txt
+      - python -m compileall ops/agents -q
+      - python -m unittest discover -s ops/agents/tests -v
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - *critical_change
+      - path:
+          include: ['ops/agents/**', '.woodpecker.yml']
+          on_empty: false
 
   frontend:
     image: node:22
+    depends_on: [security-secrets]
+    volumes:
+      # Tarballs e metadados npm em cache; `npm ci --prefer-offline` consome o
+      # cache local e só vai à rede no que faltar (sem mascarar lockfile novo).
+      - ejc-ci-npm-cache:/root/.npm
     commands:
       - cd frontend
-      - npm ci
+      - npm ci --prefer-offline
+      # Ordenado do mais barato para o mais caro; qualquer falha interrompe.
       - npm run lint
       - npm test
       - npm run build
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - *critical_change
+      - path:
+          include:
+            - 'frontend/**'
+            - 'qa/**'
+            - '.woodpecker.yml'
+          on_empty: false
+
+  # Gate estrutural de migrations SEM banco: head único, sem órfãos, sem
+  # duplicatas, sem ciclos + classificador expand-only executado de verdade
+  # (antes era apenas py_compile). O upgrade real contra PostgreSQL permanece
+  # no backend-tests, contra o serviço efêmero de banco.
+  migration-check:
+    image: python:3.11-bookworm
+    depends_on: [security-secrets]
+    commands:
+      - HEAD_REV=$(python scripts/alembic_dag_check.py --versions-dir backend/alembic/versions --print-head)
+      - python scripts/check_migration_compatibility.py --versions-dir backend/alembic/versions --current-revision "$HEAD_REV"
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - *critical_change
+      - path:
+          include:
+            - 'backend/alembic/**'
+            - 'backend/alembic.ini'
+            - 'backend/app/**'
+            - 'backend/requirements*.txt'
+            - 'scripts/alembic_dag_check.py'
+            - 'scripts/check_migration_compatibility.py'
+          on_empty: false
+
+  # ── Segurança profunda (escopada por diff; completa na main/manual) ──
+  security-sast:
+    image: semgrep/semgrep:1.172.0
+    depends_on: [security-secrets]
+    volumes:
+      # Regras do registry semgrep.dev persistidas entre runs.
+      - ejc-ci-semgrep-cache:/root/.semgrep
+    commands:
+      - semgrep scan --config=auto --error .
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - *critical_change
+      - path:
+          include:
+            - 'backend/**'
+            - 'frontend/**'
+            - 'scripts/**'
+            - 'infra/**'
+            - 'ops/**'
+            - 'config/**'
+            - '.woodpecker.yml'
+          on_empty: false
+
+  security-vulnerabilities:
+    image: aquasec/trivy:0.74.0
+    depends_on: [security-secrets]
+    volumes:
+      # DB de vulnerabilidades (~50-80MB comprimido) baixado só quando expira.
+      - ejc-ci-trivy-cache:/root/.cache/trivy
+    commands:
+      - trivy fs --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 .
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - *critical_change
+      - path:
+          include:
+            - 'backend/requirements*.txt'
+            - 'frontend/package*.json'
+            - 'ops/**/requirements*.txt'
+            - '**/Dockerfile*'
+            - 'docker-compose.yml'
+            - 'docker-compose.*.yml'
+            - '.woodpecker.yml'
+          on_empty: false
+
+  security-misconfig-audit:
+    image: aquasec/trivy:0.74.0
+    depends_on: [security-vulnerabilities]
+    volumes:
+      - ejc-ci-trivy-cache:/root/.cache/trivy
+    commands:
+      # Auditoria inicialmente não bloqueante: há findings legados conhecidos.
+      # Promover para exit-code 1 somente após saneamento/baseline explícito.
+      - trivy fs --scanners misconfig --severity HIGH,CRITICAL --exit-code 0 .
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - *critical_change
+      - path:
+          include:
+            - 'infra/**'
+            - 'nginx/**'
+            - 'config/**'
+            - 'vps-tools/**'
+            - '.github/**'
+            - '.woodpecker.yml'
+            - 'docker-compose.yml'
+            - 'docker-compose.*.yml'
+            - '**/Dockerfile*'
+          on_empty: false

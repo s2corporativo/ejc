@@ -16,9 +16,12 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.client import Client
+from app.models.client import Client, ClientTipo
 from app.models.case import Case, CaseStatus
+from app.models.case_parte import CaseParte
+from app.models.especializado import TrabalhistaCase
 from app.models.user import User
+from app.models.legal_doc import LegalDoc, PecaStatus
 from app.models.audit_log import criar_audit_log
 
 _MARCADOR = "[ANONIMIZADO — LGPD ART. 17]"
@@ -29,6 +32,32 @@ _MARCADOR = "[ANONIMIZADO — LGPD ART. 17]"
 _STATUS_BLOQUEIA_ANONIMIZACAO = {
     CaseStatus.aberto, CaseStatus.em_instrucao, CaseStatus.em_producao, CaseStatus.protocolado,
 }
+
+# Documentos de admissão ainda editáveis podem ser efetivamente redigidos e
+# soft-deleted na mesma transação da anonimização. Já um documento aprovado,
+# final ou protocolado pode representar instrumento jurídico cuja retenção
+# precisa de decisão própria. O serviço NÃO presume prazo/base de guarda e não
+# deixa `forcar=true` apagar esse conteúdo silenciosamente.
+_STATUS_ADMISSAO_REDIGIVEL = {
+    PecaStatus.rascunho,
+    PecaStatus.em_revisao,
+    PecaStatus.corrigida,
+}
+_STATUS_ADMISSAO_RETENCAO = {
+    PecaStatus.aprovada,
+    PecaStatus.final,
+    PecaStatus.protocolada,
+}
+
+
+async def _docs_admissao_ativos(db: AsyncSession, client_id: str) -> list[LegalDoc]:
+    return (await db.execute(
+        select(LegalDoc).where(
+            LegalDoc.client_id == client_id,
+            LegalDoc.client_admission_kind.is_not(None),
+            LegalDoc.deleted_at.is_(None),
+        )
+    )).scalars().all()
 
 
 async def verificar_bloqueios(db: AsyncSession, client_id: str) -> list[str]:
@@ -48,6 +77,16 @@ async def verificar_bloqueios(db: AsyncSession, client_id: str) -> list[str]:
             "Encerre ou arquive antes de anonimizar — o escritório precisa "
             "identificar o cliente enquanto atua por ele (dever profissional OAB)."
         )
+
+    docs = await _docs_admissao_ativos(db, client_id)
+    retidos = [d for d in docs if d.status in _STATUS_ADMISSAO_RETENCAO]
+    if retidos:
+        motivos.append(
+            f"{len(retidos)} documento(s) de admissão aprovado/final/protocolado "
+            "exigem decisão explícita de retenção antes da anonimização. "
+            "O sistema não presume base ou prazo de guarda e não elimina "
+            "instrumento jurídico consolidado automaticamente."
+        )
     return motivos
 
 
@@ -57,8 +96,11 @@ async def anonimizar_cliente(
 ) -> dict:
     """
     Executa a anonimização. Levanta HTTPException se bloqueado (a menos que
-    forcar=True — reservado para gestão, com o bloqueio registrado no log
-    mesmo assim, para rastreabilidade da decisão de forçar).
+    forcar=True para bloqueios operacionais de representação ativa).
+
+    Documentos de admissão aprovados/finais/protocolados são um bloqueio não
+    sobreponível por `forcar`: a decisão sobre retenção precisa ser tratada no
+    lifecycle documental, sem o serviço inventar fundamento ou prazo de guarda.
     """
     cliente = (await db.execute(
         select(Client).where(Client.id == client_id, Client.deleted_at.is_(None))
@@ -67,6 +109,20 @@ async def anonimizar_cliente(
         raise HTTPException(404, "Cliente não encontrado")
     if cliente.anonimizado_em:
         raise HTTPException(409, "Cliente já foi anonimizado anteriormente")
+
+    docs_admissao = await _docs_admissao_ativos(db, client_id)
+    docs_retencao = [d for d in docs_admissao if d.status in _STATUS_ADMISSAO_RETENCAO]
+    if docs_retencao:
+        raise HTTPException(409, {
+            "mensagem": (
+                "Anonimização bloqueada por documento de admissão consolidado. "
+                "Defina primeiro a retenção ou o descarte governado do documento; "
+                "forcar=true não ignora este bloqueio."
+            ),
+            "bloqueios": [
+                f"{len(docs_retencao)} documento(s) de admissão exigem decisão de retenção"
+            ],
+        })
 
     bloqueios = await verificar_bloqueios(db, client_id)
     if bloqueios and not forcar:
@@ -122,6 +178,64 @@ async def anonimizar_cliente(
     cliente.observacoes = None
     cliente.anonimizado_em = agora
 
+    # Rascunhos/documentos de admissão ainda não consolidados podem conter a
+    # qualificação completa em texto puro. Soft-delete sozinho não bastaria:
+    # preservaria a PII no banco/lixeira. Por isso o conteúdo é sobrescrito e a
+    # peça sai do acervo ativo na mesma transação.
+    docs_redigidos = 0
+    for doc in docs_admissao:
+        if doc.status not in _STATUS_ADMISSAO_REDIGIVEL:
+            continue
+        kind = (doc.client_admission_kind or "documento")[:40]
+        doc.titulo = f"Documento de admissão anonimizado ({kind})"
+        doc.conteudo = _MARCADOR
+        doc.notas_revisao = None
+        doc.deleted_at = agora
+        docs_redigidos += 1
+
+    # DB-03 / Fase A: partes estruturadas vinculadas DIRETAMENTE ao cliente
+    # também podem conter nome, documento, contato e qualificação. Não tocar em
+    # partes contrárias/terceiros apenas por pertencerem ao mesmo caso: isso
+    # apagaria dados de outra pessoa sem base neste pedido de anonimização.
+    partes_cliente = (
+        await db.execute(select(CaseParte).where(CaseParte.client_id == client_id))
+    ).scalars().all()
+    partes_anonimizadas = 0
+    for parte in partes_cliente:
+        parte.nome = _MARCADOR
+        parte.cpf_cnpj = None
+        parte.email = None
+        parte.telefone = None
+        parte.qualificacao = None
+        parte.representante_legal = None
+        parte.observacoes = None
+        partes_anonimizadas += 1
+
+    # CID é dado relacionado à saúde. No satélite trabalhista, só o removemos
+    # automaticamente quando o cliente é PF e figura como reclamante — cenário
+    # em que o dado de saúde pertence, em regra, ao próprio cliente. Para cliente
+    # reclamado/empresa, o CID pode ser de terceiro (empregado/adversário) e não
+    # deve ser apagado por este pedido; permanece cifrado em repouso.
+    cids_anonimizados = 0
+    if cliente.tipo == ClientTipo.PF:
+        # Inclui casos soft-deleted: a lixeira permite restauração e o satélite
+        # trabalhista permanece no banco. Excluir esses casos deixaria CID
+        # decryptável reaparecer após uma anonimização já declarada concluída.
+        case_ids = select(Case.id).where(Case.client_id == client_id)
+        trab_rows = (
+            await db.execute(
+                select(TrabalhistaCase).where(
+                    TrabalhistaCase.case_id.in_(case_ids),
+                    TrabalhistaCase.deleted_at.is_(None),
+                    TrabalhistaCase.polo == "reclamante",
+                )
+            )
+        ).scalars().all()
+        for trab in trab_rows:
+            if trab.cid is not None:
+                trab.cid = None
+                cids_anonimizados += 1
+
     # Portal do cliente: desativa qualquer login vinculado — a identidade que
     # existia (nome/e-mail) não corresponde mais aos dados reais.
     usuarios_portal = (await db.execute(
@@ -135,10 +249,13 @@ async def anonimizar_cliente(
     detalhes = (
         "Anonimização LGPD art.17; "
         f"justificativa_informada={'sim' if bool(motivo_limpo) else 'nao'}; "
-        f"codigo={codigo_justificativa}"
+        f"codigo={codigo_justificativa}; "
+        f"docs_admissao_redigidos={docs_redigidos}; "
+        f"partes_cliente_anonimizadas={partes_anonimizadas}; "
+        f"cids_cliente_anonimizados={cids_anonimizados}"
     )
     if bloqueios:
-        detalhes += f"; FORÇADO apesar de {len(bloqueios)} bloqueio(s) ativo(s)"
+        detalhes += f"; FORÇADO apesar de {len(bloqueios)} bloqueio(s) operacional(is)"
     await criar_audit_log(
         db,
         executor_id,
@@ -152,6 +269,9 @@ async def anonimizar_cliente(
             "bloqueios_ignorados": len(bloqueios),
             "justificativa_informada": bool(motivo_limpo),
             "codigo_justificativa": codigo_justificativa,
+            "docs_admissao_redigidos": docs_redigidos,
+            "partes_cliente_anonimizadas": partes_anonimizadas,
+            "cids_cliente_anonimizados": cids_anonimizados,
         },
     )
     await db.commit()
@@ -161,4 +281,7 @@ async def anonimizar_cliente(
         "anonimizado_em": agora.isoformat(),
         "portal_desativado_para": [u.id for u in usuarios_portal],
         "bloqueios_ignorados": bloqueios if bloqueios else None,
+        "documentos_admissao_anonimizados": docs_redigidos,
+        "partes_cliente_anonimizadas": partes_anonimizadas,
+        "cids_cliente_anonimizados": cids_anonimizados,
     }

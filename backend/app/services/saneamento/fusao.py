@@ -114,11 +114,19 @@ async def _reatribuir_tabela(
     chave = f"{tabela}.{coluna}"
     if unica_sozinha or tabela in _TABELAS_AREA_UM_POR_CASO:
         existe_no_principal = (await db.execute(
+            # Identificador vem do catalogo (information_schema) ou da whitelist
+            # _TABELAS_AREA_UM_POR_CASO e passa por _ident(); os VALORES sao bind
+            # params. Ver docs/seguranca/SAST_BASELINE.md
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             text(f"SELECT 1 FROM {_ident(tabela)} WHERE {_ident(coluna)} = :p LIMIT 1"),
             {"p": principal_id},
         )).first() is not None
         if existe_no_principal:
             resultado = await db.execute(
+                # Identificador vem do catalogo (information_schema) ou da whitelist
+                # _TABELAS_AREA_UM_POR_CASO e passa por _ident(); os VALORES sao bind
+                # params. Ver docs/seguranca/SAST_BASELINE.md
+                # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
                 text(f"DELETE FROM {_ident(tabela)} WHERE {_ident(coluna)} = :a"),
                 {"a": absorvido_id},
             )
@@ -126,6 +134,10 @@ async def _reatribuir_tabela(
                 relatorio.descartadas[chave] = resultado.rowcount
             return
         resultado = await db.execute(
+            # Identificador vem do catalogo (information_schema) ou da whitelist
+            # _TABELAS_AREA_UM_POR_CASO e passa por _ident(); os VALORES sao bind
+            # params. Ver docs/seguranca/SAST_BASELINE.md
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             text(f"UPDATE {_ident(tabela)} SET {_ident(coluna)} = :p WHERE {_ident(coluna)} = :a"),
             {"p": principal_id, "a": absorvido_id},
         )
@@ -141,6 +153,10 @@ async def _reatribuir_tabela(
         condicao = " AND ".join(
             f"ppl.{_ident(c)} IS NOT DISTINCT FROM abs.{_ident(c)}" for c in outras
         )
+        # Identificador vem do catalogo (information_schema) ou da whitelist
+        # _TABELAS_AREA_UM_POR_CASO e passa por _ident(); os VALORES sao bind
+        # params. Ver docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         resultado = await db.execute(text(f"""
             UPDATE {_ident(tabela)} AS abs
             SET {_ident(coluna)} = :p
@@ -155,6 +171,10 @@ async def _reatribuir_tabela(
         # Sobrou linha do absorvido que colidiu (não pôde ser reatribuída
         # sem violar a constraint) — descarta, mesma regra "principal vence".
         descarte = await db.execute(
+            # Identificador vem do catalogo (information_schema) ou da whitelist
+            # _TABELAS_AREA_UM_POR_CASO e passa por _ident(); os VALORES sao bind
+            # params. Ver docs/seguranca/SAST_BASELINE.md
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             text(f"DELETE FROM {_ident(tabela)} WHERE {_ident(coluna)} = :a"),
             {"a": absorvido_id},
         )
@@ -165,6 +185,10 @@ async def _reatribuir_tabela(
     # 1:N normal (documents, tasks, deadlines, fees, time_entries,
     # processes, ...) — toda linha do absorvido passa a apontar pro principal.
     resultado = await db.execute(
+        # Identificador vem do catalogo (information_schema) ou da whitelist
+        # _TABELAS_AREA_UM_POR_CASO e passa por _ident(); os VALORES sao bind
+        # params. Ver docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         text(f"UPDATE {_ident(tabela)} SET {_ident(coluna)} = :p WHERE {_ident(coluna)} = :a"),
         {"p": principal_id, "a": absorvido_id},
     )

@@ -278,8 +278,7 @@ export default function EntrevistaInteligente() {
           <div className="mt-4">
             <IANotice>
               Estimativa preliminar gerada por IA — não é parecer jurídico.
-              Revisão do advogado responsável é obrigatória (OAB Prov.
-              205/2021).
+              Revisão do advogado responsável é obrigatória.
             </IANotice>
           </div>
         </Card>

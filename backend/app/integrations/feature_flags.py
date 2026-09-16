@@ -23,6 +23,10 @@ FLAGS: dict[str, str] = {
     "pgfn": "PGFN_OPEN_DATA_ENABLED",
     "querido_diario": "QUERIDO_DIARIO_ENABLED",
     "ide_sisema": "IDE_SISEMA_ENABLED",
+    # Jurimetria dos tribunais (Issue #1527): consulta agregada ao DataJud.
+    # Exige também DATAJUD_ENABLED/DATAJUD_API_KEY — é uma leitura a mais da
+    # mesma integração, com o próprio interruptor.
+    "jurimetria_tribunais": "JURIMETRIA_TRIBUNAIS_ENABLED",
 }
 
 

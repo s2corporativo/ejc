@@ -1,0 +1,66 @@
+# .semgrepignore — caminhos fora do alcance do gate `security-sast`
+# (.woodpecker.yml: `semgrep scan --config=auto --error .`).
+#
+# ATENÇÃO: um `.semgrepignore` no raiz SUBSTITUI a lista embutida do semgrep.
+# Por isso o bloco 1 reproduz os padrões padrão (dependências, artefatos de
+# build, minificados). Remover uma linha do bloco 1 faz o scan varrer
+# `node_modules/` inteiro e o gate passa a reprovar por código de terceiros.
+#
+# Regra de uso: este arquivo exclui CAMINHO, ou seja, TODAS as regras naquele
+# caminho. Ele só recebe diretório que não é código de produção. Falso positivo
+# de UMA regra em código de produção se resolve com `# nosemgrep: <regra>` na
+# linha, com o motivo escrito ao lado — nunca aqui.
+# Racional completo e critério de reavaliação: docs/seguranca/SAST_BASELINE.md
+
+# ── 1. Padrões embutidos do semgrep (reproduzidos porque este arquivo os
+#       substitui). Não é decisão do EJC; é o default da ferramenta. Foi
+#       medido: sem o bloco `test/`+`tests/`, `backend/tests/` entra no scan e
+#       aparecem 24 achados que o gate NUNCA reprovou (fixture com senha de
+#       teste, chmod 0700 em tmpdir, SQL montado para checar schema). ────────
+.git/
+node_modules/
+vendor/
+.venv/
+venv/
+.env/
+.tox/
+.npm/
+.yarn/
+.mypy_cache/
+.pytest_cache/
+__pycache__/
+dist/
+build/
+.semgrep
+.semgrep_logs/
+test/
+tests/
+*_test.go
+*.min.js
+*.min.css
+*.map
+
+# ── 2. Exclusões do EJC ──────────────────────────────────────────────────────
+
+# Documentação histórica de workflows do GitHub Actions APOSENTADOS em #1533
+# (a esteira migrou para Woodpecker self-hosted). Os arquivos foram movidos
+# para cá justamente por não serem mais executáveis: não existe nenhum
+# `.github/workflows/` no repositório — `.github/` tem só CODEOWNERS e o
+# template de PR. São 57 achados (55 `github-actions-mutable-action-tag` +
+# 2 `run-shell-injection`) sobre YAML que nenhum runner lê.
+# REAVALIAR SE: voltar a existir `.github/workflows/`. Nesse caso a exclusão
+# não pode ser ampliada para lá — o workflow vivo tem de passar no gate.
+docs/arquivo/
+
+# Migrations Alembic: DDL/DML literal, executado offline pelo operador ou pelo
+# deploy (`alembic upgrade head`), nunca no caminho de uma request. Não existe
+# valor de usuário para interpolar — a "entrada" de uma migration é o schema
+# anterior. O repositório declara em CLAUDE.md que ~30 tabelas são raw-SQL sem
+# model, então SQL literal aqui é a arquitetura, não um desvio. São 66 achados
+# (33 `formatted-sql-query` + 33 `sqlalchemy-execute-raw-query`).
+# Por que caminho e não `# nosemgrep` linha a linha: CLAUDE.md §5 proíbe editar
+# migration já aplicada em produção, e as 14 atingidas já rodaram lá.
+# REAVALIAR SE: uma migration passar a ler entrada externa (env var, arquivo,
+# argumento de linha de comando) e interpolá-la em SQL. Aí não é mais DDL
+# literal e o achado é verdadeiro.
+backend/alembic/versions/

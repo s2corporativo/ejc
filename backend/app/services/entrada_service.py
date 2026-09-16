@@ -60,7 +60,7 @@ PROXIMA_ACAO_DEFAULT = (
 
 AVISO_HITL = (
     "Proposta gerada por análise automática — RASCUNHO. Área, prazo e fatos "
-    "sugeridos por IA exigem confirmação humana (OAB Prov. 205/2021)."
+    "sugeridos por IA exigem confirmação humana do advogado responsável."
 )
 
 

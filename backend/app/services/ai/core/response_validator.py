@@ -29,7 +29,7 @@ _RE_PROMESSAS = [
     # Promessa NUMÉRICA de resultado (auditoria IA 2026-07-18): um percentual de
     # êxito/ganho/vitória/procedência prometido ao cliente ("90% de êxito",
     # "chance de 95% de ganhar") escapava dos padrões puramente textuais. A
-    # vedação OAB (art. 34; Prov. 205/2021) alcança a promessa de resultado,
+    # vedação OAB (art. 34) alcança a promessa de resultado,
     # inclusive quantificada. Continua sendo ALERTA advisory ao revisor (HITL),
     # nunca reescrita/bloqueio; os padrões exigem um número (\d%), então NÃO
     # disparam em análise prudente sem percentual — falso-positivo em relato

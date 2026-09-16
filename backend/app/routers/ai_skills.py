@@ -30,6 +30,7 @@ from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user
 from app.models.user import User
 from app.schemas.ai_skill import (
@@ -113,6 +114,7 @@ async def _buscar_contexto(
     *,
     usar_rag: bool,
     escopo_cliente: str | None,
+    escopo_caso: str | None,
 ) -> list[str] | None:
     if not usar_rag:
         return None
@@ -124,6 +126,7 @@ async def _buscar_contexto(
             consulta[:4_000],
             limite=5,
             scope_client_id=escopo_cliente,
+            scope_case_id=escopo_caso,
         )
         return [
             str(item.get("conteudo") or "")
@@ -266,7 +269,7 @@ async def listar_skills(
     return await ai_skill_service.listar_skills(db, area=area)
 
 
-@router.post("/execute", response_model=SkillExecuteResponse)
+@router.post("/execute", response_model=SkillExecuteResponse, dependencies=[Depends(rate_limit("ai-skills-execute", 15))])
 async def executar_skill(
     req: SkillExecuteRequest,
     db: AsyncSession = Depends(get_db),
@@ -279,6 +282,7 @@ async def executar_skill(
         req.query,
         usar_rag=req.usar_rag,
         escopo_cliente=escopo,
+        escopo_caso=req.case_id,
     )
     try:
         resultado = await ai_skill_service.executar_skill(
@@ -306,7 +310,7 @@ async def executar_skill(
     return SkillExecuteResponse(**resultado)
 
 
-@router.post("/execute-doc", response_model=SkillExecuteResponse)
+@router.post("/execute-doc", response_model=SkillExecuteResponse, dependencies=[Depends(rate_limit("ai-skills-execute-doc", 10))])
 async def executar_skill_documento(
     skill_name: Optional[str] = Form(None),
     file: UploadFile = File(...),
@@ -405,6 +409,7 @@ async def executar_skill_documento(
         consulta_rag,
         usar_rag=usar_rag,
         escopo_cliente=escopo,
+        escopo_caso=case_id,
     )
 
     try:
@@ -457,7 +462,7 @@ async def executar_skill_documento(
     return SkillExecuteResponse(**resultado)
 
 
-@router.post("/transcribe-media", response_model=SkillExecuteResponse)
+@router.post("/transcribe-media", response_model=SkillExecuteResponse, dependencies=[Depends(rate_limit("ai-skills-transcribe", 10))])
 async def transcrever_midia(
     file: UploadFile = File(...),
     skill_name: str = Form("transcritor-midias-audiencia"),

@@ -54,7 +54,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.services.ingestion_service import upsert_documento
-from app.services.jurisprudencia_externa import buscar_lexml
+from app.services.jurisprudencia_externa import LexMLBloqueadoError, buscar_lexml
 
 logger = logging.getLogger("ejc.ingestao.lexml")
 
@@ -239,6 +239,9 @@ def _chave(item: dict, tipo: str) -> str:
     if ident:
         return f"lexml:{ns}:{ident}"[:120]
     base = ((item.get("titulo") or "") + "|" + (item.get("ementa") or ""))[:500]
+    # SHA-1 usado como chave de deduplicacao/identidade, nunca como
+    # assinatura, token ou senha. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
     h = hashlib.sha1(base.encode("utf-8")).hexdigest()[:16]
     return f"lexml:{ns}:{h}"
 
@@ -282,10 +285,32 @@ def situacao_juridica(item: dict, tipo: str) -> str | None:
     return "revogada" if _RE_ATO_REVOGADO.search(titulo) else None
 
 
+# Aviso de proveniência gravado NO CONTEÚDO, não só no `extra`.
+#
+# O LexML devolve ementa/resumo e metadados — NUNCA o inteiro teor. Sem este
+# aviso, o trecho recuperado pelo RAG chega ao modelo indistinguível de um
+# documento lido por inteiro, e a IA pode afirmar o que a decisão "decidiu" ou
+# o que a norma "dispõe" tendo visto apenas a ementa. Ementa é resumo redigido
+# pelo tribunal: ela indica o julgado, não o substitui.
+#
+# O aviso vai no conteúdo (e não apenas em metadado) porque é o conteúdo que
+# entra no contexto do modelo; metadado em `extra` não é lido por ele.
+_AVISO_PROVENIENCIA = (
+    "[PROVENIÊNCIA — LEXML: EMENTA E METADADOS, NÃO É O INTEIRO TEOR. "
+    "Este registro traz o resumo oficial e os dados de identificação do "
+    "documento. Não afirme o conteúdo integral da decisão ou da norma a partir "
+    "daqui: consulte o inteiro teor na fonte oficial indicada em 'fonte' antes "
+    "de fundamentar.]"
+)
+
+
 def _monta_conteudo(item: dict, tipo: str) -> str:
     """Concatena as partes citáveis do registro LexML (título + metadados +
-    ementa/resumo). Não inventa texto: usa só o que o federador retornou."""
-    partes: list[str] = []
+    ementa/resumo), com o aviso de proveniência à frente.
+
+    Não inventa texto: usa só o que o federador retornou.
+    """
+    partes: list[str] = [_AVISO_PROVENIENCIA]
     if item.get("titulo"):
         partes.append(item["titulo"])
     if tipo == "jurisprudencia" and item.get("tribunal"):
@@ -319,10 +344,28 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
     novos = total = 0
     vistas: set[str] = set()   # dedup intra-execução (mesmo registro em 2 consultas)
 
+    consultas = 0
+    bloqueadas = 0
+    falhas_tecnicas = 0
+
     for consulta, tipo, jur in _plano_federacao(cfg):
+        consultas += 1
         try:
             itens = await buscar_lexml(consulta, tipo=tipo, por_pagina=max_item)
+        except LexMLBloqueadoError as e:
+            # Contado à parte: bloqueio anti-bot não é "não achei nada", é "não
+            # perguntei". Se TODAS as consultas forem bloqueadas, a execução
+            # inteira falha ao final em vez de reportar (0, 0) como sucesso.
+            bloqueadas += 1
+            logger.warning("LexML %s %r bloqueado: %s", tipo, consulta, e)
+            continue
         except Exception as e:   # rede/XML — nunca derruba a execução inteira
+            # Contado junto com os bloqueios: consulta que ESTOUROU também não
+            # é "não achei nada". Sem este contador, uma queda de rede em 100%
+            # do plano ainda devolveria (0, 0) como execução bem-sucedida — o
+            # mesmo silêncio que a correção do anti-bot fechou por um lado e
+            # deixou aberto pelo outro.
+            falhas_tecnicas += 1
             logger.warning("LexML %s %r: %s: %s", tipo, consulta, type(e).__name__, e)
             continue
 
@@ -388,6 +431,14 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                         "origem": "lexml",
                         "rag_status": "aprovado",
                         "tipo_fonte": _TIPO_FONTE[tipo],
+                        # Proveniência explícita: o LexML federa ementa e
+                        # metadados, nunca o inteiro teor. Marcado também aqui
+                        # (além do aviso no conteúdo) para que painéis, gate de
+                        # citações e curadoria possam filtrar por isso sem
+                        # precisar reprocessar texto.
+                        "inteiro_teor": False,
+                        "natureza_conteudo": "ementa_e_metadados",
+                        "consultar_inteiro_teor_em": it.get("link_original") or fonte,
                         **extra_vigencia,
                     },
                     confianca="alta",   # federador oficial (Senado/LexML)
@@ -408,5 +459,21 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
         alvo = jur.slug if jur else "tema"
         logger.info("LexML %s %r [%s]: %d novos / %d itens",
                     tipo, consulta, alvo, n_consulta, len(itens))
+
+    # Toda consulta bloqueada = a federação não rodou. Devolver (0, 0) aqui
+    # marcaria a execução como bem-sucedida no registro de fontes, escondendo
+    # que o LexML deixou de responder — foi assim que a ingestão passou a
+    # entregar zero sem ninguém perceber.
+    if consultas and bloqueadas == consultas:
+        raise LexMLBloqueadoError(
+            f"LexML bloqueou as {consultas} consultas do plano (desafio "
+            "anti-bot). Nenhuma ingestão foi executada."
+        )
+    if consultas and (bloqueadas + falhas_tecnicas) == consultas:
+        raise RuntimeError(
+            f"LexML: as {consultas} consultas do plano falharam "
+            f"({bloqueadas} bloqueadas, {falhas_tecnicas} por erro técnico). "
+            "Nenhuma ingestão foi executada."
+        )
 
     return novos, total

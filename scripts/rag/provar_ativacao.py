@@ -66,18 +66,27 @@ def _config_metrics() -> tuple[dict[str, Any], list[str]]:
     return data, problems
 
 
-def _governance_contract() -> tuple[str, list[str]]:
-    """Retorna o mesmo gate SQL usado pela recuperação real do EJC."""
+def _governance_contract(
+    scope_client_id: str | None = None,
+    scope_case_id: str | None = None,
+) -> tuple[str, str, dict[str, object]]:
+    """Retorna os mesmos gates e binds usados pela recuperação real do EJC."""
     from app.services import ai_service as ai
 
-    return ai._filtros_gate_rag(False), list(ai._RESTRICTED_CATS)
+    return (
+        ai._filtros_gate_rag(False),
+        ai._FILTRO_ESCOPO_RAG,
+        ai._params_escopo_rag(scope_client_id, scope_case_id),
+    )
 
 
 async def _db_metrics() -> dict[str, Any]:
     from app.core.database import AsyncSessionLocal
     from app.services import ai_service as ai
 
-    gate_sql, restricted = _governance_contract()
+    gate_sql = ai._filtros_gate_rag(False)
+    eligibility_sql = ai._FILTRO_ELIGIBILIDADE_RAG
+    eligibility_params = {"incl_hist": False, "restr_cats": ai._RESTRICTED_CATS}
     async with AsyncSessionLocal() as db:
         column_type = (
             await db.execute(
@@ -108,6 +117,9 @@ async def _db_metrics() -> dict[str, Any]:
         ).one()
         governed = (
             await db.execute(
+                # Métrica neutra: conta todo documento que seria recuperável sob
+                # ALGUM escopo legítimo. Não simula usuário/autoriza acesso.
+                # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
                 text(
                     "SELECT "
                     "COUNT(*) AS total, "
@@ -117,10 +129,10 @@ async def _db_metrics() -> dict[str, Any]:
                     "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
                     "WHERE kd.deleted_at IS NULL "
                     "AND (kd.vigente = TRUE OR :incl_hist) "
-                    "AND (kd.categoria <> ALL(:restr_cats) OR kd.client_id IS NOT NULL) "
+                    f"{eligibility_sql} "
                     f"{gate_sql}"
                 ),
-                {"incl_hist": False, "restr_cats": restricted},
+                eligibility_params,
             )
         ).one()
 
@@ -136,6 +148,7 @@ async def _db_metrics() -> dict[str, Any]:
         "knowledge_chunks_governados_com_embedding": int(governed.embedded or 0),
         "knowledge_chunks_governados_pendentes": int(governed.pending or 0),
         "governanca_recuperacao_espelhada": True,
+        "governanca_metrica_neutra_por_elegibilidade": True,
         "rag_max_dist": float(ai._rag_max_dist()),
     }
 
@@ -176,65 +189,87 @@ async def _probe_pgvector(vector: list[float]) -> bool:
 
 
 async def _probe_semantic_search() -> bool:
-    """Exercita os mesmos gates da recuperação real, sem emitir conteúdo/IDs.
+    """Prova retrieval em cada classe de ownership sem expor conteúdo/IDs.
 
-    Primeiro escolhe internamente um chunk já elegível e usa o próprio vetor
-    como consulta controlada. Em seguida repete escopo, vigência, aprovação,
-    quarentena, exclusão de fictícios e limiar máximo de distância usados por
-    ``buscar_contexto_rag``. A distância do próprio vetor é zero, portanto uma
-    falha significa que o caminho governado não está recuperando o corpus.
+    A seleção usa apenas elegibilidade neutra ("existe algum escopo legítimo")
+    e escolhe, quando existirem, um chunk público, um de cliente e um de caso.
+    Cada seed é então consultado novamente pelo PRÓPRIO vetor usando exatamente
+    os `client_id/case_id` persistidos daquele documento. Escopo privado nunca é
+    convertido em escopo vazio e nenhum identificador é emitido no relatório.
     """
     from app.core.database import AsyncSessionLocal
     from app.services import ai_service as ai
 
-    gate_sql, restricted = _governance_contract()
+    gate_sql = ai._filtros_gate_rag(False)
+    eligibility_sql = ai._FILTRO_ELIGIBILIDADE_RAG
     async with AsyncSessionLocal() as db:
-        seed = (
+        seeds = (
             await db.execute(
+                # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
                 text(
-                    "SELECT kc.embedding::text AS vector_text, "
-                    "CASE WHEN kd.categoria = ANY(:restr_cats) "
-                    "THEN kd.client_id::text ELSE '' END AS scope_cli "
-                    "FROM knowledge_chunks kc "
-                    "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
-                    "WHERE kd.deleted_at IS NULL "
-                    "AND kc.embedding IS NOT NULL "
-                    "AND (kd.vigente = TRUE OR :incl_hist) "
-                    "AND (kd.categoria <> ALL(:restr_cats) OR kd.client_id IS NOT NULL) "
-                    f"{gate_sql} "
-                    "ORDER BY kc.id LIMIT 1"
-                ),
-                {"incl_hist": False, "restr_cats": restricted},
-            )
-        ).first()
-        if seed is None:
-            return False
-
-        row = (
-            await db.execute(
-                text(
-                    "SELECT 1 "
-                    "FROM knowledge_chunks kc "
-                    "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
-                    "WHERE kd.deleted_at IS NULL "
-                    "AND kc.embedding IS NOT NULL "
-                    "AND (kc.embedding <=> CAST(:vec AS vector(1024))) <= :max_dist "
-                    f"{ai._FILTRO_ESCOPO_RAG} "
-                    f"{ai._FILTRO_VIGENTE_RAG} "
-                    f"{gate_sql} "
-                    "ORDER BY kc.embedding <=> CAST(:vec AS vector(1024)) "
-                    "LIMIT 1"
+                    "WITH candidatos AS ("
+                    " SELECT kc.id AS chunk_id, kc.embedding::text AS vector_text, "
+                    "        kd.client_id, kd.case_id, "
+                    "        CASE WHEN kd.case_id IS NOT NULL THEN 'caso' "
+                    "             WHEN kd.client_id IS NOT NULL THEN 'cliente' "
+                    "             ELSE 'publico' END AS scope_kind, "
+                    "        ROW_NUMBER() OVER (PARTITION BY "
+                    "          CASE WHEN kd.case_id IS NOT NULL THEN 'caso' "
+                    "               WHEN kd.client_id IS NOT NULL THEN 'cliente' "
+                    "               ELSE 'publico' END ORDER BY kc.id) AS rn "
+                    " FROM knowledge_chunks kc "
+                    " JOIN knowledge_docs kd ON kd.id = kc.doc_id "
+                    " WHERE kd.deleted_at IS NULL "
+                    " AND kc.embedding IS NOT NULL "
+                    " AND (kd.vigente = TRUE OR :incl_hist) "
+                    f" {eligibility_sql} "
+                    f" {gate_sql}"
+                    ") SELECT chunk_id, vector_text, client_id, case_id, scope_kind "
+                    "FROM candidatos WHERE rn = 1 ORDER BY scope_kind"
                 ),
                 {
-                    "vec": seed.vector_text,
-                    "max_dist": ai._rag_max_dist(),
-                    "restr_cats": restricted,
-                    "scope_cli": seed.scope_cli or "",
                     "incl_hist": False,
+                    "restr_cats": ai._RESTRICTED_CATS,
                 },
             )
-        ).first()
-    return row is not None
+        ).all()
+        if not seeds:
+            return False
+
+        for seed in seeds:
+            gate_one, scope_sql, scope_params = _governance_contract(
+                seed.client_id, seed.case_id
+            )
+            row = (
+                await db.execute(
+                    # Verifica o MESMO chunk sob seu ownership; evita que um
+                    # documento público mas similar masque falha de escopo privado.
+                    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+                    text(
+                        "SELECT 1 "
+                        "FROM knowledge_chunks kc "
+                        "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
+                        "WHERE kc.id = :chunk_id "
+                        "AND kd.deleted_at IS NULL "
+                        "AND kc.embedding IS NOT NULL "
+                        "AND (kc.embedding <=> CAST(:vec AS vector(1024))) <= :max_dist "
+                        f"{scope_sql} "
+                        f"{ai._FILTRO_VIGENTE_RAG} "
+                        f"{gate_one} "
+                        "LIMIT 1"
+                    ),
+                    {
+                        "chunk_id": seed.chunk_id,
+                        "vec": seed.vector_text,
+                        "max_dist": ai._rag_max_dist(),
+                        "incl_hist": False,
+                        **scope_params,
+                    },
+                )
+            ).first()
+            if row is None:
+                return False
+    return True
 
 
 async def runtime() -> int:
@@ -271,6 +306,45 @@ async def preflight() -> int:
     return _emit("preflight", data, problems)
 
 
+async def _select_canary_docs(db, max_docs: int):
+    """Seleciona docs governados pendentes, priorizando ownership mais estrito.
+
+    Deve ser chamado dentro da transação do canário para que `FOR UPDATE ...
+    SKIP LOCKED` serialize concorrência. Retorna apenas IDs e ownership; nenhum
+    conteúdo jurídico é carregado ou emitido.
+    """
+    from app.services import ai_service as ai
+
+    gate_sql = ai._filtros_gate_rag(False)
+    eligibility_sql = ai._FILTRO_ELIGIBILIDADE_RAG
+    return (
+        await db.execute(
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+            text(
+                "SELECT kd.id, kd.client_id, kd.case_id "
+                "FROM knowledge_docs kd "
+                "WHERE kd.deleted_at IS NULL "
+                "AND (kd.vigente = TRUE OR :incl_hist) "
+                f"{eligibility_sql} "
+                f"{gate_sql} "
+                "AND EXISTS ("
+                "  SELECT 1 FROM knowledge_chunks kc "
+                "  WHERE kc.doc_id = kd.id AND kc.embedding IS NULL"
+                ") "
+                "ORDER BY (kd.case_id IS NOT NULL) DESC, "
+                "         (kd.client_id IS NOT NULL) DESC, kd.id "
+                "LIMIT :limit "
+                "FOR UPDATE OF kd SKIP LOCKED"
+            ),
+            {
+                "limit": max_docs,
+                "incl_hist": False,
+                "restr_cats": ai._RESTRICTED_CATS,
+            },
+        )
+    ).all()
+
+
 async def canary(max_docs: int) -> int:
     from app.core.database import AsyncSessionLocal
     from app.services import ai_service as ai
@@ -279,6 +353,7 @@ async def canary(max_docs: int) -> int:
     data, problems = _config_metrics()
     data["max_docs"] = max_docs
     data["canario_governado"] = True
+    data["canario_selecao_por_elegibilidade"] = True
     if not data["EMBEDDINGS_ENABLED"]:
         problems.append("EMBEDDINGS_ENABLED não está efetivamente ligado")
         return _emit("canary", data, problems)
@@ -295,41 +370,24 @@ async def canary(max_docs: int) -> int:
         problems.append(f"sonda pré-canário falhou:{_exception_code(exc)}")
         return _emit("canary", data, problems)
 
-    gate_sql, restricted = _governance_contract()
     processed = succeeded = failed = 0
+    scope_counts = {"publico": 0, "cliente": 0, "caso": 0}
     try:
         async with AsyncSessionLocal() as db:
             async with db.begin():
-                docs = (
-                    await db.execute(
-                        text(
-                            "SELECT kd.id "
-                            "FROM knowledge_docs kd "
-                            "WHERE kd.deleted_at IS NULL "
-                            "AND (kd.vigente = TRUE OR :incl_hist) "
-                            "AND (kd.categoria <> ALL(:restr_cats) OR kd.client_id IS NOT NULL) "
-                            f"{gate_sql} "
-                            "AND EXISTS ("
-                            "  SELECT 1 FROM knowledge_chunks kc "
-                            "  WHERE kc.doc_id = kd.id AND kc.embedding IS NULL"
-                            ") "
-                            "ORDER BY kd.id "
-                            "LIMIT :limit "
-                            "FOR UPDATE OF kd SKIP LOCKED"
-                        ),
-                        {
-                            "limit": max_docs,
-                            "incl_hist": False,
-                            "restr_cats": restricted,
-                        },
-                    )
-                ).scalars().all()
+                docs = await _select_canary_docs(db, max_docs)
 
-                for doc_id in docs:
+                for doc in docs:
                     processed += 1
+                    scope_kind = (
+                        "caso" if doc.case_id is not None
+                        else "cliente" if doc.client_id is not None
+                        else "publico"
+                    )
+                    scope_counts[scope_kind] += 1
                     try:
                         async with db.begin_nested():
-                            result = await _reembedar_doc(db, doc_id, False)
+                            result = await _reembedar_doc(db, doc.id, False)
                         if result == "ok":
                             succeeded += 1
                         else:
@@ -344,6 +402,9 @@ async def canary(max_docs: int) -> int:
             "documentos_processados": processed,
             "documentos_ok": succeeded,
             "documentos_com_erro": failed,
+            "documentos_publicos_processados": scope_counts["publico"],
+            "documentos_cliente_processados": scope_counts["cliente"],
+            "documentos_caso_processados": scope_counts["caso"],
         }
     )
     try:
@@ -354,6 +415,10 @@ async def canary(max_docs: int) -> int:
             int(after["knowledge_chunks_governados_com_embedding"])
             - int(before["knowledge_chunks_governados_com_embedding"]),
         )
+        if processed:
+            data["probe_semantico_pos_canario_ok"] = await _probe_semantic_search()
+            if not data["probe_semantico_pos_canario_ok"]:
+                problems.append("probe semântico por ownership falhou após canário")
     except Exception as exc:
         problems.append(f"sonda pós-canário falhou:{_exception_code(exc)}")
 

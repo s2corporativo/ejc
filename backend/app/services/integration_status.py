@@ -24,6 +24,57 @@ class IntegrationStatus:
     # sem_permissao|indisponivel). None = sem teste registrado (default → o
     # contrato histórico status ∈ disabled|attention|ready não muda).
     credential_state: str | None = None
+    # Conectores judiciais: o que cada integração REALMENTE oferece ao fluxo
+    # do caso (consultar, sincronizar movimentações, partes, audiências,
+    # baixar documentos, intimações, protocolar). None = não é conector
+    # judicial. Nenhum conector protocola: peticionamento é manual e
+    # registrado por PATCH /legal-docs/{id}/protocolo.
+    capacidades: dict[str, bool] | None = None
+
+
+# ── Capacidades declaradas dos conectores judiciais ───────────────────────────
+_CAPS_CHAVES = (
+    "consultar_processo", "sincronizar_movimentacoes", "partes", "audiencias",
+    "baixar_documentos", "intimacoes", "protocolar",
+)
+
+
+def _caps(**ativas: bool) -> dict[str, bool]:
+    desconhecidas = set(ativas) - set(_CAPS_CHAVES)
+    if desconhecidas:
+        raise ValueError(f"capacidade desconhecida: {sorted(desconhecidas)}")
+    # `protocolar` nunca é declarado True por conector algum (sem API oficial
+    # de peticionamento habilitada — MNI Fase A é somente leitura).
+    return {chave: bool(ativas.get(chave, False)) for chave in _CAPS_CHAVES}
+
+
+CAPACIDADES_CONECTORES: dict[str, dict[str, bool]] = {
+    # DataJud/CNJ: API pública de metadados + movimentações (sem peças).
+    "datajud": _caps(consultar_processo=True, sincronizar_movimentacoes=True,
+                     partes=True),
+    # MNI 2.2.2 (PJe e tribunais cadastrados) — Fase A somente leitura:
+    # consultarProcesso (cabeçalho, movimentos, documentos) + avisos pendentes.
+    "processo_eletronico": _caps(consultar_processo=True,
+                                 sincronizar_movimentacoes=True, partes=True,
+                                 baixar_documentos=True, intimacoes=True),
+    # DJEN/Comunica CNJ: intimações publicadas por OAB monitorada.
+    "djen": _caps(intimacoes=True),
+    # Infosimples (agregador pago): consulta processual TJMG por número/parte.
+    "infosimples": _caps(consultar_processo=True, partes=True),
+    # Núcleo de ajuizamento: prepara/valida/revisa/assina e REGISTRA o
+    # protocolo; `protocolar` eletrônico segue False até perfil de tribunal
+    # homologado (matriz fina em GET /ajuizamento/capacidades).
+    "ajuizamento": _caps(consultar_processo=True, sincronizar_movimentacoes=True,
+                         partes=True),
+}
+
+
+def _aplicar_capacidades(items: list[IntegrationStatus]) -> list[IntegrationStatus]:
+    return [
+        replace(it, capacidades=CAPACIDADES_CONECTORES[it.key])
+        if it.key in CAPACIDADES_CONECTORES else it
+        for it in items
+    ]
 
 
 # ── Refinamento pelo teste do Cofre (PR-4) ────────────────────────────────────
@@ -226,6 +277,37 @@ def build_integration_status(
             mode="APIKey pública rotativa (CNJ)",
         ),
         _status(
+            key="processo_eletronico",
+            label="Processo Eletrônico (MNI 2.2.2 / PJe)",
+            group="Jurídico",
+            # A sincronização roda em task Celery; sem fila não há conector.
+            enabled=settings.CELERY_ENABLED,
+            configured=bool(settings.REDIS_URL),
+            ready_detail=(
+                "Sincronização MNI habilitada via fila; tribunais e credenciais "
+                "são cadastrados em /processo-eletronico."
+            ),
+            missing_detail="CELERY habilitado sem REDIS_URL — a fila MNI não sobe.",
+            mode="somente leitura (sem peticionamento)",
+        ),
+        _status(
+            key="ajuizamento",
+            label="Ajuizamento (PDPJ / PJe-MNI / eproc)",
+            group="Jurídico",
+            enabled=settings.JUDICIAL_FILING_ENABLED,
+            # Sem credencial PDPJ o fluxo funciona até o registro manual do
+            # protocolo; o painel fino por tribunal é /ajuizamento/capacidades.
+            configured=True,
+            ready_detail=(
+                "Wizard de ajuizamento com validação, revisão humana e registro de "
+                "protocolo; protocolo eletrônico exige perfil de tribunal homologado."
+            ),
+            mode=(
+                "PDPJ " + ("credencial presente" if settings.PDPJ_CLIENT_ID and settings.PDPJ_CLIENT_SECRET
+                           else "REQUIRES_AUTHORIZATION")
+            ),
+        ),
+        _status(
             key="djen",
             label="DJEN / Comunica CNJ",
             group="Jurídico",
@@ -380,6 +462,7 @@ def build_integration_status(
     ]
     if credential_states:
         items = _aplicar_estados_credencial(items, credential_states)
+    items = _aplicar_capacidades(items)
     counts = {
         "total": len(items),
         "ready": sum(item.status == "ready" for item in items),

@@ -1,0 +1,15 @@
+[Unit]
+Description=S2 Renovate self-hosted dependency updates
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/opt/s2-automation/renovate/run.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=90min

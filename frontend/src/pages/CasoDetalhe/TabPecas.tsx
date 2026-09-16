@@ -5,6 +5,7 @@ import { FileText, ShieldCheck, Sparkles } from "lucide-react";
 import Pecas from "../Pecas";
 import PecaGeneratorModal from "../../components/PecaGeneratorModal";
 import { toast } from "../../components/Toast";
+import TesesVinculadasPanel from "./TesesVinculadasPanel";
 
 /**
  * Produção Jurídica contextual ao caso.
@@ -57,6 +58,8 @@ export default function TabPecas({ caseId }: { caseId: string }) {
           <Etapa icon={<ShieldCheck className="h-4 w-4" />} titulo="3. Revisar" texto="HITL, aprovação e protocolo" />
         </div>
       </section>
+
+      <TesesVinculadasPanel caseId={caseId} />
 
       <div>
         <div className="mb-3">
