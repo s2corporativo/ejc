@@ -14,6 +14,7 @@ CONFIGS = {
     "docker-compose.yml": ("ejc-logging", set()),
     "infra/woodpecker/docker-compose.yml": ("woodpecker-logging", set()),
     "infra/monitoring/uptime-kuma/docker-compose.yml": ("kuma-logging", set()),
+    "infra/omniroute/docker-compose.yml": ("omniroute-logging", set()),
 }
 
 

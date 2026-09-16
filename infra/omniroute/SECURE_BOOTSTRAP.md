@@ -4,25 +4,34 @@ O OmniRoute de manutenção fica isolado do runtime jurídico e exige autentica�
 
 ## 1. Preparar o `.env` local
 
-Na VPS, dentro de `/srv/ejc-omniroute`, copie o modelo e gere um `JWT_SECRET` aleatório sem imprimi-lo no terminal:
+Todos os comandos deste runbook partem da **raiz do checkout** do OmniRoute
+(ex.: `/srv/ejc-omniroute`), que contém a pasta `infra/omniroute/`. Copie o
+modelo e gere um `JWT_SECRET` aleatório sem imprimi-lo no terminal:
 
 ```bash
-cp .env.example .env
+cp infra/omniroute/.env.example infra/omniroute/.env
 python3 - <<'PY'
 from pathlib import Path
+import re
 import secrets
 
-path = Path('.env')
+path = Path('infra/omniroute/.env')
 text = path.read_text()
-placeholder = 'CHANGE_ME_WITH_A_RANDOM_SECRET'
-if placeholder not in text:
-    raise SystemExit('placeholder do JWT_SECRET não encontrado')
-path.write_text(text.replace(placeholder, secrets.token_urlsafe(64)))
+gerado, n = re.subn(
+    r'(?m)^OMNIROUTE_JWT_SECRET=.*$',
+    'OMNIROUTE_JWT_SECRET=' + secrets.token_urlsafe(64),
+    text,
+)
+if n != 1:
+    raise SystemExit('OMNIROUTE_JWT_SECRET não encontrado no modelo')
+path.write_text(gerado)
 PY
-chmod 600 .env
+chmod 600 infra/omniroute/.env
 ```
 
-O `JWT_SECRET` protege a assinatura da sessão administrativa do dashboard. O compose falha de forma segura se a variável estiver ausente.
+O `JWT_SECRET` protege a assinatura da sessão administrativa do dashboard. O
+compose falha de forma segura se a variável estiver ausente, vazia ou com o
+valor placeholder — e `verify-boundary.sh` (seção 2) recusa subir nesse estado.
 
 ## 2. Validar antes de subir
 

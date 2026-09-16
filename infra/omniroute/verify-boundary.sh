@@ -10,7 +10,16 @@ fail() {
 }
 
 runtime_targets=()
-for path in backend/app frontend/src docker-compose.yml docker-compose.prod.yml docker-compose.production.yml; do
+for path in backend/app frontend/src; do
+  if [[ -e "$path" ]]; then
+    runtime_targets+=("$path")
+  fi
+done
+
+# Todas as variantes de compose da raiz (principal, staging, override...),
+# descobertas dinamicamente — uma referência ao OmniRoute em qualquer uma
+# delas acopla uma stack de runtime ao gateway de engenharia.
+for path in docker-compose*.yml; do
   if [[ -e "$path" ]]; then
     runtime_targets+=("$path")
   fi
@@ -52,6 +61,26 @@ grep -Fq 'cap_drop:' "$compose" \
   || fail "cap_drop não está configurado"
 grep -Fq -- '- ALL' "$compose" \
   || fail "cap_drop ALL não está configurado"
+
+# Contrato INF-02: serviço persistentemente reiniciado não pode encher o
+# disco do host — rotação json-file 50m × 5 obrigatória.
+grep -Fq 'x-logging: &omniroute-logging' "$compose" \
+  || fail "política de rotação de logs ausente (INF-02: json-file 50m × 5)"
+grep -Fq 'logging: *omniroute-logging' "$compose" \
+  || fail "serviço omniroute sem logging: *omniroute-logging (INF-02)"
+
+# Preflight de segredo: o dashboard jamais pode subir com o segredo público
+# do modelo ou vazio (compose aceitaria e forjaria sessões admin conhecidas).
+env_file='infra/omniroute/.env'
+if [[ -f "$env_file" ]]; then
+  jwt_valor="$(grep -E '^OMNIROUTE_JWT_SECRET=' "$env_file" | tail -1 | cut -d= -f2-)"
+  jwt_valor="${jwt_valor//\"/}"
+  jwt_valor="${jwt_valor//\'}"
+  jwt_valor="${jwt_valor// /}"
+  if [[ -z "$jwt_valor" || "$jwt_valor" == "CHANGE_ME_WITH_A_RANDOM_SECRET" ]]; then
+    fail "OMNIROUTE_JWT_SECRET vazio ou placeholder; gere um segredo forte (SECURE_BOOTSTRAP.md §1)"
+  fi
+fi
 
 printf 'OK: fronteira IA jurídica x engenharia preservada.\n'
 printf 'OK: backend continua com ai_gateway.py próprio.\n'

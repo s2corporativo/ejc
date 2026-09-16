@@ -35,6 +35,27 @@ Usos permitidos:
 - revisão de PR;
 - tarefas de manutenção executadas em sandbox.
 
+## Exceção de governança (escopo exclusivo de engenharia)
+
+`CLAUDE.md` §3 exige que toda chamada de IA do produto passe pelo gateway
+institucional (`backend/app/services/ai_gateway.py`). Esta seção registra a
+**exceção explícita** concedida para a camada OmniRoute e o seu limite exato:
+
+- **quem usa**: apenas ferramentas de engenharia/manutenção (Codex, Claude
+  Code, Antigravity e clientes compatíveis do mantenedor);
+- **o que usa**: diagnóstico, análise de código/logs técnicos, correção de
+  bugs, testes, lint/typecheck, geração/revisão de patches, documentação
+  técnica — o rol do §"Domínio B";
+- **o que NÃO usa**: nenhum router, service, job ou fluxo do runtime jurídico
+  do produto (frontend e backend do EJC não referenciam o OmniRoute — o
+  `verify-boundary.sh` falha se encontrar acoplamento);
+- **vigência**: enquanto esta camada existir de forma isolada; qualquer uso
+  pelo produto exige mudança arquitetural separada (§"Mudanças futuras").
+
+Com isso, a regra inegociável permanece intacta para o produto, e o uso
+externo de engenharia passa a ter amparo documentado em vez de operar como
+contorno informal.
+
 ## Dados proibidos no OmniRoute de engenharia
 
 Não enviar a providers externos por esta camada:

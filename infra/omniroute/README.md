@@ -2,6 +2,18 @@
 
 Integração opcional para ferramentas de desenvolvimento e manutenção (Codex, Claude Code, Antigravity e clientes compatíveis). **Não substitui** `backend/app/services/ai_gateway.py` e não participa das chamadas de IA do runtime jurídico do EJC.
 
+## Exceção de governança registrada (escopo: engenharia)
+
+`CLAUDE.md` §3 (regra inegociável) exige que **toda chamada de IA do produto**
+passe por `backend/app/services/ai_gateway.py` — nada aqui altera isso. Esta
+integração é a **exceção explícita, registrada e delimitada** para as
+ferramentas de engenharia/mantenedores (Codex, Claude Code, Antigravity)
+operarem fora do produto, conforme formalizado em `ENGINEERING_BOUNDARY.md`
+(§"Exceção de governança"): escopo exclusivo de manutenção, sem tráfego de
+funcionalidades jurídicas, sem sobreposição ao gateway institucional. Qualquer
+uso do OmniRoute pelo runtime do produto segue sendo mudança arquitetural
+separada.
+
 ## Limite arquitetural
 
 - serviço independente do `docker-compose.yml` principal;
@@ -21,7 +33,7 @@ docker compose \
   -p ejc-omniroute \
   -f infra/omniroute/docker-compose.yml \
   --env-file infra/omniroute/.env \
-  config
+  config >/dev/null
 docker compose \
   -p ejc-omniroute \
   -f infra/omniroute/docker-compose.yml \
@@ -29,7 +41,14 @@ docker compose \
   up -d
 ```
 
-O `.env` local desta pasta é ignorado pelo Git. O compose usa versão + digest fixos para evitar atualização implícita.
+O `config >/dev/null` valida o compose **sem imprimir** a configuração
+interpolada — a saída expandida contém o `JWT_SECRET` resolvido e não deve
+ever ser exibida em terminal capturado ou log de CI.
+
+O `.env` local desta pasta é ignorado pelo Git. O compose usa versão + digest
+fixos para evitar atualização implícita. Antes do `up`, gere um `JWT_SECRET`
+forte conforme `SECURE_BOOTSTRAP.md` — o compose falha de forma segura com
+valor vazio ou placeholder, e `verify-boundary.sh` recusa subir nesse estado.
 
 ## Acesso remoto seguro
 

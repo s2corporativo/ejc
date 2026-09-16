@@ -1,5 +1,11 @@
 name: ejc-omniroute
 
+x-logging: &omniroute-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
 services:
   omniroute:
     # Artefato verificado em 13/09/2026: package.json=3.8.50 e digest abaixo.
@@ -8,6 +14,7 @@ services:
     container_name: ejc_omniroute
     restart: unless-stopped
     stop_grace_period: 40s
+    logging: *omniroute-logging
     ports:
       - "${OMNIROUTE_BIND_HOST:-127.0.0.1}:${OMNIROUTE_PORT:-20128}:20128"
     environment:
