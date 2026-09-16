@@ -20,6 +20,13 @@ describe("moduleRegistry", () => {
     const paths = STAFF_ROUTES.map((route) => route.path);
     expect(new Set(keys).size).toBe(keys.length);
     expect(new Set(paths).size).toBe(paths.length);
+    // subPaths (auditoria §2.6 #7) também não podem colidir entre si nem com
+    // paths principais — padrões sobrepostos tornariam o matching ambíguo.
+    const patterns = STAFF_ROUTES.flatMap((route) => [
+      route.path,
+      ...(route.subPaths ?? []),
+    ]);
+    expect(new Set(patterns).size).toBe(patterns.length);
   });
 
   it("declara backendPrefixes só com o prefixo canônico /api (nunca /api/v1)", () => {
@@ -40,14 +47,21 @@ describe("moduleRegistry", () => {
   });
 
   it("registra o DPT Empresarial 360 como workspace essencial sem alargar RBAC", () => {
+    // Consolidação do "DPT360 triplo" (auditoria §2.6 #7): um módulo só,
+    // com as sub-rotas internas declaradas em subPaths (o splat cobre tanto
+    // a navegação interna quanto o detalhe /dpt360/empresas/:clientId).
     const dpt = STAFF_ROUTES.find((route) => route.key === "dpt360");
     expect(dpt?.path).toBe("/dpt360");
     expect(dpt?.showInNav).toBe(true);
     expect(dpt?.essential).toBe(true);
-    expect(STAFF_ROUTES.some((route) => route.path === "/dpt360/*")).toBe(true);
+    expect(dpt?.subPaths).toEqual(["/dpt360/*"]);
+    expect(
+      STAFF_ROUTES.filter((route) => route.path.startsWith("/dpt360")),
+    ).toHaveLength(1);
 
     for (const role of ["superadmin", "admin", "socio", "advogado"]) {
       expect(canRoleAccessPath(role, "/dpt360"), role).toBe(true);
+      expect(canRoleAccessPath(role, "/dpt360/radar"), role).toBe(true);
       expect(canRoleAccessPath(role, "/dpt360/empresas"), role).toBe(true);
       expect(
         canRoleAccessPath(role, "/dpt360/empresas/cliente-123"),
@@ -62,6 +76,7 @@ describe("moduleRegistry", () => {
       "cliente_externo",
     ]) {
       expect(canRoleAccessPath(role, "/dpt360"), role).toBe(false);
+      expect(canRoleAccessPath(role, "/dpt360/radar"), role).toBe(false);
       expect(canRoleAccessPath(role, "/dpt360/empresas"), role).toBe(false);
       expect(
         canRoleAccessPath(role, "/dpt360/empresas/cliente-123"),
@@ -335,10 +350,11 @@ describe("navegação canônica do shell (Fase 4)", () => {
         ],
       ],
     ] as const) {
-      const primaria = getProductionNavigation(role).filter(
-        (m) => m.essential,
-      );
-      expect(primaria.map((m) => m.path), role).toEqual(esperado);
+      const primaria = getProductionNavigation(role).filter((m) => m.essential);
+      expect(
+        primaria.map((m) => m.path),
+        role,
+      ).toEqual(esperado);
     }
   });
 
