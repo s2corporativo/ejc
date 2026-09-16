@@ -473,7 +473,9 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   {
     key: "atividades",
     path: "/atividades",
-    label: "Agenda e Prazos",
+    // Rótulo canônico da navegação (LayoutReference e CommandPalette consomem
+    // este campo — não existe mais override de rótulo no shell).
+    label: "Prazos e Agenda",
     description:
       "Agenda, prazos, tarefas e intimações + relacionamento com clientes em abas.",
     group: "Trabalhar um caso",
@@ -586,7 +588,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   {
     key: "inteligencia",
     path: "/inteligencia",
-    label: "Pesquisa e IA",
+    // Rótulo canônico da navegação (fonte única — antes havia override no shell).
+    label: "IA Jurídica",
     description:
       "Pesquisa jurídica, análise, jurimetria, conhecimento e precificação de honorários.",
     group: "Pesquisar & IA",
@@ -736,7 +739,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   {
     key: "configuracoes",
     path: "/configuracoes",
-    label: "Preferências",
+    // Rótulo canônico da navegação (fonte única — antes havia override no shell).
+    label: "Configurações",
     description: "Aparência, navegação, segurança e preferências pessoais.",
     group: "Administrar",
     icon: Settings,
@@ -1134,6 +1138,32 @@ export function getNavigationModules(role?: string | null): ModuleRoute[] {
     if (groupDiff !== 0) return groupDiff;
     return (a.order ?? 999) - (b.order ?? 999);
   });
+}
+
+export type NavigationGroup = {
+  name: string;
+  items: ModuleRoute[];
+};
+
+/**
+ * Agrupa módulos JÁ ORDENADOS (getNavigationModules ordena por
+ * MODULE_GROUP_ORDER + order) em blocos consecutivos para a sidebar renderizar
+ * os cabeçalhos de grupo. Antes os grupos eram computados e nunca exibidos —
+ * terceira fonte de verdade da navegação aposentada (auditoria Fase 4).
+ */
+export function groupNavigationModules(
+  items: ModuleRoute[],
+): NavigationGroup[] {
+  const groups: NavigationGroup[] = [];
+  for (const item of items) {
+    const last = groups[groups.length - 1];
+    if (last && last.name === item.group) {
+      last.items.push(item);
+    } else {
+      groups.push({ name: item.group, items: [item] });
+    }
+  }
+  return groups;
 }
 
 export function getHelpModuleKey(pathname: string): string | null {

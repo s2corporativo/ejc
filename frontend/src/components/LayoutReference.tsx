@@ -32,6 +32,7 @@ import {
 import {
   getHelpModuleKey,
   getNavigationModules,
+  groupNavigationModules,
   type ModuleRoute,
 } from "../config/moduleRegistry";
 import { ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
@@ -43,25 +44,9 @@ import { useAuth } from "../stores/auth";
 import { useModuleLifecycleStore } from "../stores/moduleLifecycle";
 import { usePreferencesStore } from "../stores/preferences";
 
-const PRIMARY_NAV_KEYS = [
-  "dashboard",
-  "casos",
-  "atividades",
-  "clientes",
-  "documentos",
-  "pecas",
-  "financeiro",
-  "inteligencia",
-  "configuracoes",
-] as const;
-
-const NAV_LABELS: Record<string, string> = {
-  atividades: "Prazos e Agenda",
-  financeiro: "Financeiro",
-  inteligencia: "IA Jurídica",
-  configuracoes: "Configurações",
-};
-
+// Fonte única de navegação: o moduleRegistry (auditoria Fase 4). A lista
+// primária deriva da flag `essential` do registry, os rótulos vêm do próprio
+// módulo e os grupos de MODULE_GROUP_ORDER — nada é hardcoded aqui.
 function formatClock(date: Date) {
   const dateText = new Intl.DateTimeFormat("pt-BR", {
     timeZone: officeBranding.timezone,
@@ -150,20 +135,19 @@ export default function LayoutReference() {
     [user?.role, lifecycleSettings],
   );
 
-  const primary = useMemo(() => {
-    const map = new Map(visible.map((item) => [item.key, item]));
-    return PRIMARY_NAV_KEYS.map((key) => map.get(key)).filter(
-      (item): item is ModuleRoute => Boolean(item),
-    );
-  }, [visible]);
+  const primary = useMemo(
+    () => visible.filter((item) => item.essential),
+    [visible],
+  );
 
-  const primaryKeys = useMemo(
-    () => new Set(primary.map((item) => item.key)),
+  const primaryGroups = useMemo(
+    () => groupNavigationModules(primary),
     [primary],
   );
+
   const secondary = useMemo(
-    () => visible.filter((item) => !primaryKeys.has(item.key)),
-    [primaryKeys, visible],
+    () => visible.filter((item) => !item.essential),
+    [visible],
   );
 
   const sidebarWidth = collapsed ? "md:w-[4.75rem]" : "md:w-[15.5rem]";
@@ -175,7 +159,7 @@ export default function LayoutReference() {
 
   const renderNavItem = (item: ModuleRoute) => {
     const Icon = item.icon;
-    const label = NAV_LABELS[item.key] || item.label;
+    const label = item.label;
     const content = (
       <NavLink
         key={item.path}
@@ -406,7 +390,21 @@ export default function LayoutReference() {
         </div>
 
         <nav className="flex-1 overflow-y-auto px-3 py-3 scrollbar-thin">
-          <div className="space-y-1">{primary.map(renderNavItem)}</div>
+          {primaryGroups.map((group, index) => (
+            <div key={group.name} className={index > 0 ? "mt-4" : undefined}>
+              {!navCollapsed && (
+                <div
+                  className="sidebar-group-label px-3 pb-1 text-[9px] font-semibold uppercase tracking-[0.16em]"
+                  aria-hidden="true"
+                >
+                  {group.name}
+                </div>
+              )}
+              <div className="space-y-1">
+                {group.items.map(renderNavItem)}
+              </div>
+            </div>
+          ))}
 
           {secondary.length > 0 && (
             <div className="mt-3 border-t border-slate-100 pt-2">
