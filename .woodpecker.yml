@@ -11,11 +11,17 @@
 # - ops-contracts e deploy-validation: sempre executam os contratos leves de
 #   segurança/operação, inclusive em docs-only.
 #
-# Ordem dos steps (execução sequencial, fail-fast): os contratos leves e
-# sempre-on (segundos) rodam ANTES das suítes pesadas, para que uma falha
-# barata interrompa a esteira antes de gastar 30-40min de testes. A cadeia
-# obrigatória de gates permanece: lint → backend-tests → frontend →
-# migration-check → security-(sast/vuln/secrets) → deploy-validation.
+# Ordem dos steps (DAG com depends_on — o Woodpecker executa em ONDAS de
+# nível: uma onda só inicia quando a anterior INTEIRA termina):
+#   Onda 1: security-secrets (falha barata, ~1min);
+#   Onda 2: ops-contracts + deploy-validation + lint + backend-tests ∥
+#           frontend ∥ security-sast ∥ security-vulnerabilities + migration-.
+#           check (as suítes pesadas independentes em PARALELO, ~14min);
+#   Onda 3: agents-contracts (serializa writer do cache pip com backend) e
+#           security-misconfig-audit (serializa writer do cache trivy).
+# Critical path ≈ 52s + max(backend 14m, frontend 14m) + 33s ≈ 15-16min
+# (vs ~37min sequenciais). A cadeia obrigatória de gates mantém os MESMOS
+# membros — todos obrigatórios para o merge; apenas a topologia mudou.
 #
 # Classificação dos testes (ver RUNBOOK_CI_CD_WOODPECKER.md):
 # - OBRIGATÓRIOS (bloqueiam): security-secrets, ops-contracts, deploy-validation,
@@ -33,10 +39,13 @@
 # - PRÉ-REQUISITO: repo marcado como `trusted` no Woodpecker (server admin, via
 #   UI ou API). Sem trusted, a criação de pipelines com volumes é REJEITADA.
 #   Portanto: habilitar trusted ANTES de este arquivo chegar à branch avaliada.
-# - Concorrência segura aqui: o agente roda 1 workflow por vez
-#   (WOODPECKER_MAX_WORKFLOWS=1), não há escrita simultânea nos caches.
+# - Concorrência segura aqui: volumes distintos por ecossistema (pip/npm/apt/
+#   semgrep/trivy) NUNCA são escritos por dois steps da MESMA onda — writers
+#   de pip ficam em ondas distintas (backend onda 2, agents onda 3) e writers
+#   de trivy também (vulnerabilities onda 2, misconfig onda 3).
 # - Manutenção: `docker volume ls | grep ejc-ci-` e, se disco apertar,
 #   `docker volume rm ejc-ci-<nome>` (recriado no próximo pipeline).
+#
 when:
   - event: push
     branch: main
@@ -63,6 +72,7 @@ steps:
 
   ops-contracts:
     image: python:3.11-bookworm
+    depends_on: [security-secrets]
     commands:
       - bash -n scripts/backup.sh scripts/backup/ativar_backup.sh infra/selfhosted/bootstrap.sh scripts/tests/test_backup_wrapper.sh scripts/tests/test_ci_secret_gate.sh scripts/tests/test_rag_activation.sh scripts/legacy_script_guard.sh scripts/tests/test_legacy_script_guards.sh
       - bash scripts/tests/test_backup_wrapper.sh
@@ -74,6 +84,7 @@ steps:
 
   deploy-validation:
     image: python:3.11-bookworm
+    depends_on: [security-secrets]
     commands:
       # Sintaxe dos scripts de deploy/host-automation (gates de deploy aprovado).
       - bash -n scripts/deploy_vps_safe.sh scripts/deploy_workflow_transaction.sh infra/host-automation/woodpecker-approved-sha.sh infra/host-automation/ejc-deploy-approved.sh infra/host-automation/install.sh infra/host-automation/install-ejc-deploy.sh scripts/deploy.sh scripts/deploy-vps.sh scripts/atualizar-vps.sh scripts/vps_setup.sh
@@ -86,10 +97,11 @@ steps:
   # ── Cadeia obrigatória de gates ──
   lint:
     image: python:3.11-bookworm
-    volumes:
-      # Wheel do ruff fica em cache após o primeiro run (~10-20s economizados).
-      - ejc-ci-pip-cache:/root/.cache/pip
+    depends_on: [security-secrets]
     commands:
+      # Sem volume de cache pip de propósito: lint e backend-tests estão na
+      # MESMA onda e o cache pip não pode ter dois writers (o wheel do ruff
+      # re-baixa ~15s por run — custo aceitável para eliminar a disputa).
       # Mesmo pin de ruff do requirements.txt — regras idênticas ao portão local.
       - pip install --quiet ruff==0.6.9
       - cd backend && ruff check app
@@ -146,6 +158,7 @@ steps:
 
   backend-tests:
     image: python:3.11-bookworm
+    depends_on: [security-secrets]
     environment:
       DATABASE_URL: postgresql+asyncpg://ejc_user@db:5432/ejc_db
       DATABASE_URL_SYNC: postgresql://ejc_user@db:5432/ejc_db
@@ -195,6 +208,7 @@ steps:
   # O SDK de agentes é ferramenta operacional isolada e tem dependências próprias.
   agents-contracts:
     image: python:3.11-bookworm
+    depends_on: [backend-tests]
     volumes:
       - ejc-ci-pip-cache:/root/.cache/pip
     commands:
@@ -212,6 +226,7 @@ steps:
 
   frontend:
     image: node:22
+    depends_on: [security-secrets]
     volumes:
       # Tarballs e metadados npm em cache; `npm ci --prefer-offline` consome o
       # cache local e só vai à rede no que faltar (sem mascarar lockfile novo).
@@ -241,6 +256,7 @@ steps:
   # no backend-tests, contra o serviço efêmero de banco.
   migration-check:
     image: python:3.11-bookworm
+    depends_on: [security-secrets]
     commands:
       - HEAD_REV=$(python scripts/alembic_dag_check.py --versions-dir backend/alembic/versions --print-head)
       - python scripts/check_migration_compatibility.py --versions-dir backend/alembic/versions --current-revision "$HEAD_REV"
@@ -262,6 +278,7 @@ steps:
   # ── Segurança profunda (escopada por diff; completa na main/manual) ──
   security-sast:
     image: semgrep/semgrep:1.172.0
+    depends_on: [security-secrets]
     volumes:
       # Regras do registry semgrep.dev persistidas entre runs.
       - ejc-ci-semgrep-cache:/root/.semgrep
@@ -285,6 +302,7 @@ steps:
 
   security-vulnerabilities:
     image: aquasec/trivy:0.74.0
+    depends_on: [security-secrets]
     volumes:
       # DB de vulnerabilidades (~50-80MB comprimido) baixado só quando expira.
       - ejc-ci-trivy-cache:/root/.cache/trivy
@@ -308,6 +326,7 @@ steps:
 
   security-misconfig-audit:
     image: aquasec/trivy:0.74.0
+    depends_on: [security-vulnerabilities]
     volumes:
       - ejc-ci-trivy-cache:/root/.cache/trivy
     commands:
