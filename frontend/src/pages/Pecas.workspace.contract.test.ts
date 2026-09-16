@@ -1,10 +1,20 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const DIR = dirname(fileURLToPath(import.meta.url));
-const fonte = readFileSync(join(DIR, "Pecas.tsx"), "utf-8");
+
+// A decomposição do monólito (auditoria §2.6 #10) moveu blocos da página para
+// pecas/ — o contrato da feature continua único: ler a página + o módulo.
+const fonte = [
+  join(DIR, "Pecas.tsx"),
+  ...readdirSync(join(DIR, "pecas"))
+    .filter((f) => /\.(ts|tsx)$/.test(f))
+    .map((f) => join(DIR, "pecas", f)),
+]
+  .map((p) => readFileSync(p, "utf-8"))
+  .join("\n");
 
 describe("Peças — Workspace Jurídico", () => {
   it("permite editar pelo PATCH canônico e não cria endpoint paralelo", () => {
