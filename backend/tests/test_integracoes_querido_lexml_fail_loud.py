@@ -4,12 +4,9 @@ Sem rede externa: fixa contratos de reação a indisponibilidade e proveniência
 """
 from __future__ import annotations
 
-from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
 
-from app.models.user import UserRole
 from app.services.jurisprudencia_externa import (
     LexMLBloqueadoError,
     _e_intersticio_antibot,
@@ -84,25 +81,8 @@ async def test_busca_agregada_distingue_vazio_de_fonte_indisponivel(monkeypatch)
     assert resultado["fontes"]["tjmg"]["respondeu"] is True
     assert resultado["fontes_com_falha"] == ["lexml"]
 
-
-@pytest.mark.asyncio
-async def test_endpoint_lexml_converte_bloqueio_em_503_controlado(monkeypatch):
-    from app.routers import jurisprudencia_externa as router_mod
-
-    async def _bloqueado(*_args, **_kwargs):
-        raise LexMLBloqueadoError("desafio anti-bot")
-
-    monkeypatch.setattr(router_mod, "buscar_lexml", _bloqueado)
-    user = SimpleNamespace(role=UserRole.advogado)
-
-    with pytest.raises(HTTPException) as exc:
-        await router_mod.buscar_lexml_endpoint(
-            q="teste juridico",
-            tipo="jurisprudencia",
-            pagina=1,
-            por_pagina=10,
-            cu=user,
-        )
-
-    assert exc.value.status_code == 503
-    assert "anti-bot" in str(exc.value.detail).lower()
+# (Fase 7 §3.6): o teste de conversão 503 no ROUTER /jurisprudencia-externa
+# foi aposentado junto com o router — a garantia "LexML bloqueado falha ALTO"
+# segue travada na camada de serviço (LexMLBloqueadoError acima, consumido
+# pelos ingestores e pelo juris_import) e na fachada canônica de busca
+# (precedentes_jurisprudencia: status honesto por fonte).

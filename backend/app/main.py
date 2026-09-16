@@ -106,7 +106,6 @@ from app.routers import intimacoes
 from app.routers import jurimetria
 from app.routers import juris_import
 from app.routers import datajud_intelligence
-from app.routers import jurisprudencia_externa
 from app.routers import honorarios_oab
 from app.routers import intake
 from app.routers import entrada
@@ -485,7 +484,6 @@ app.include_router(nfse.router, prefix=API)  # NFS-e (emissão fiscal GATED, hom
 app.include_router(intimacoes.router, prefix=API)
 app.include_router(jurimetria.router, prefix=API)
 app.include_router(juris_import.router, prefix=API)
-app.include_router(jurisprudencia_externa.router, prefix=API)
 app.include_router(jurisprudencia_interna.router, prefix=API)
 app.include_router(kanban.router, prefix=API)  # P3: prefixo /kanban no router
 app.include_router(kanban.casos_router, prefix=API)
