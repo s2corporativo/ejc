@@ -199,6 +199,27 @@ ADICOES_INTENCIONAIS = {
 }
 
 REMOCOES_INTENCIONAIS = {
+    # `routers/jurisprudencia_externa.py` REMOVIDO (17/09/2026, Fase 7 —
+    # auditoria §3.6 "Jurisprudência: 4 superfícies"). O router duplicava, em
+    # REST, operações que já têm trilha canônica testada: BUSCA EXTERNA →
+    # POST /api/jurisprudencia-externa/precedentes/buscar (router
+    # precedentes_jurisprudencia, montado no MESMO prefixo /jurisprudencia-
+    # externa, sobre o MESMO service services/jurisprudencia_externa.py —
+    # conectores LexML/TJMG seguem vivos e compartilhados com ingestores e
+    # juris_import); IMPORTAÇÃO → POST /api/conhecimento/importar-jurisprudencia
+    # (juris_import: assíncrona, dedup compartilhado com o scheduler, trilha
+    # fontes_ingestao + audit, alimenta o RAG citável e o gate de citações —
+    # o /importar daqui gravava num silo que NENHUM consumidor de IA lê).
+    # /fontes aqui era lista estática divergente da verdade; a real é
+    # GET /api/conhecimento/importar-jurisprudencia/fontes. Zero chamadas no
+    # frontend/src e zero chamadores backend via HTTP. A biblioteca interna
+    # (routers/jurisprudencia_interna.py, /api/jurisprudencias) segue canônica.
+    ("/api/jurisprudencia-externa/buscar", "GET"),
+    ("/api/jurisprudencia-externa/buscar/lexml", "GET"),
+    ("/api/jurisprudencia-externa/buscar/tjmg", "GET"),
+    ("/api/jurisprudencia-externa/fontes", "GET"),
+    ("/api/jurisprudencia-externa/importar", "POST"),
+    ("/api/jurisprudencia-externa/importar-lote", "POST"),
     # `routers/documento_ia.py` REMOVIDO (17/09/2026, Fase 7 — auditoria
     # §3.6 "Entrada/intake: 6 portas"). A porta legada /documentos-ia
     # ("Importação Inteligente" de 1 arquivo, temp-file, sem persistir no

@@ -197,7 +197,7 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
     _mod(
         "conhecimento", "Base de Conhecimento e RAG", "Inteligência",
         "/inteligencia?tab=conhecimento",
-        ["/api/rag", "/api/rag/knowledge-base", "/api/teses", "/api/teses-v4", "/api/sumulas", "/api/jurisprudencias", "/api/jurisprudencia-externa"],
+        ["/api/rag", "/api/rag/knowledge-base", "/api/teses", "/api/teses-v4", "/api/sumulas", "/api/jurisprudencias"],
         perfis=PERFIS_GESTAO + ["advogado"], dependencias=["database", "pgvector", "embedding_service", "storage"],
         usa_ia=True, responsavel_operacional="juridico",
     ),
