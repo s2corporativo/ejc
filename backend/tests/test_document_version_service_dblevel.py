@@ -21,6 +21,7 @@ from app.services.document_version_service import (
     DocumentoAnteriorObsoletoError,
     DocumentoContextoDivergenteError,
     DocumentoGrupoInconsistenteError,
+    bloquear_versionamento_por_titulo,
     preparar_nova_versao,
 )
 
@@ -236,5 +237,38 @@ async def test_contexto_do_novo_documento_deve_ser_igual_ao_predecessor():
                 )
             await db.rollback()
             await _limpar_grupo(db, raiz_id)
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_lock_por_titulo_serializa_primeira_versao():
+    engine = create_async_engine(get_settings().DATABASE_URL, poolclass=NullPool)
+    Session = async_sessionmaker(engine, expire_on_commit=False)
+    case_id = str(uuid4())
+    titulo = f"Contrato concorrente {uuid4()}"
+    liberado = asyncio.Event()
+    try:
+        async with Session() as db1:
+            await bloquear_versionamento_por_titulo(
+                db1, case_id=case_id, titulo=titulo
+            )
+
+            async def segundo_escritor():
+                async with Session() as db2:
+                    await bloquear_versionamento_por_titulo(
+                        db2, case_id=case_id, titulo=titulo
+                    )
+                    liberado.set()
+                    await db2.rollback()
+
+            tarefa = asyncio.create_task(segundo_escritor())
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(asyncio.shield(tarefa), timeout=0.15)
+            assert not liberado.is_set()
+
+            await db1.rollback()
+            await asyncio.wait_for(tarefa, timeout=2)
+            assert liberado.is_set()
     finally:
         await engine.dispose()

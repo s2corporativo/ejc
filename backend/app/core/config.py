@@ -321,7 +321,7 @@ class Settings(BaseSettings):
     # CSV de task_types do ai_gateway que disparam a crítica automática
     # (vocabulário de TASK_ROUTING; aliases como "redacao_peca" são
     # normalizados antes da comparação).
-    DUAS_IAS_TASK_TYPES: str = "elaboracao_peca,auditoria_peca"
+    DUAS_IAS_TASK_TYPES: str = "elaboracao_peca,auditoria_peca,analise_juridica,estrategia"
     # Ordem de preferência entre provedores ELEGÍVEIS (csv). A policy ainda
     # filtra por habilitação/chave e prioriza Anthropic em tarefas complexas.
     # Maritaca antes do groq: para tarefa jurídica PT-BR o Sabiá rankeia acima
@@ -517,6 +517,15 @@ class Settings(BaseSettings):
     PJE_MNI_TIMEOUT_SECONDS: float = 60.0
     # eproc — sem API pública documentada; CONDITIONAL por tribunal/perfil.
     EPROC_INTEGRATION_ENABLED: bool = False
+    # ── Jurimetria dos tribunais (Issue #1527) — agregados do DataJud ──────
+    # Interruptor próprio em app/integrations/feature_flags.py
+    # (JURIMETRIA_TRIBUNAIS_ENABLED, default OFF); exige DATAJUD_* acima.
+    # Teto de processos por consulta: a API Pública é rate-limited e o
+    # agregado estabiliza com amostra grande; o `n` real vai na resposta.
+    JURIMETRIA_TRIBUNAIS_MAX_PROCESSOS: int = 2000
+    # Cache TTL (segundos) do agregado por consulta — em memória (worker
+    # único). 0 desliga. Erro do CNJ nunca entra no cache.
+    JURIMETRIA_TRIBUNAIS_CACHE_TTL_SEGUNDOS: int = 3600
 
     # ── Infosimples — consultas PAGAS a sites públicos (TJMG, Receita…) ──
     # Agregador comercial (https://infosimples.com/consultas/): cada consulta
@@ -911,11 +920,13 @@ class Settings(BaseSettings):
     AI_BUDGET_ALERTA_BRL: float = 0.0
 
     # ── Backup ────────────────────────────────────────────────────────────
-    # (a) Legado: pg_dump local + rclone (scheduler._backup_banco, 02h00).
-    BACKUP_REMOTE: str = ""         # ex: "b2:ejc-backups" (rclone remote)
-    BACKUP_DIR: str = "/app/backups"  # diretório local de dumps dentro do container postgres
-    BACKUP_RETENTION_DAYS: int = 7  # dumps locais mais antigos que isto são apagados na rotação
-    # (b) Backup diário cifrado → Google Drive (services/backup_service.py).
+    # Continuidade local canônica: o motor persiste SOMENTE artefatos `.enc`
+    # neste volume. BACKUP_REMOTE permanece legado/telemetria e não é caminho
+    # autoritativo de backup.
+    BACKUP_REMOTE: str = ""
+    BACKUP_DIR: str = "/app/backups"
+    BACKUP_RETENTION_DAYS: int = 7  # retenção da cópia cifrada local "quente"
+    # Backup diário cifrado → local + Google Drive/rclone (backup_service.py).
     # Prefere identidade exclusiva BACKUP_GOOGLE_DRIVE_* com escrita. O modo
     # herdado GOOGLE_DRIVE_* existe apenas para compatibilidade explícita.
     # Opt-in: default False mantém tudo desligado.

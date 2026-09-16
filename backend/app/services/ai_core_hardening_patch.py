@@ -77,12 +77,13 @@ def _instalar_resolver_provedores() -> None:
 
 
 def _instalar_resolucao_escopo_rag() -> None:
-    """Compatibiliza o encerramento legado sem aceitar escopo do cliente.
+    """Valida o escopo canônico de precedentes ``caso:<id>`` fail-closed.
 
-    `cases.encerrar_caso` usa chave `caso:<uuid>` e import local da função; a
-    identidade do caso é, portanto, verificável no servidor. Somente esse padrão
-    canônico pode ser auto-resolvido. Qualquer outra categoria/chave sem client_id
-    continua bloqueada pelo write gate de `ingestion_service`.
+    O ``Case`` carregado server-side é a fonte única de verdade. IDs ausentes são
+    preenchidos; IDs explícitos só passam quando coincidem exatamente com o caso.
+    Caso inexistente, deletado, sem cliente ou chave vazia é recusado antes do
+    upsert, sem fallback global. A contenção transacional do encerramento fica no
+    caller, evitando SAVEPOINT e captura de exceção duplicados nesta camada.
     """
     from app.services import ingestion_service
 
@@ -91,26 +92,42 @@ def _instalar_resolucao_escopo_rag() -> None:
 
     original = ingestion_service.upsert_documento
 
-    # functools.wraps preserva a assinatura ORIGINAL para inspect.signature
-    # (via __wrapped__) — o wrapper usa **kwargs mas repassa tudo (inclusive
-    # `confianca`) ao original; sem isso a introspecção da assinatura some.
     @functools.wraps(original)
     async def upsert_com_escopo_canonico(db, **kwargs):
         categoria = kwargs.get("categoria")
-        client_id = kwargs.get("client_id")
         chave = str(kwargs.get("chave_origem") or "")
-        if categoria == "precedente_interno" and not client_id and chave.startswith("caso:"):
-            case_id = chave.removeprefix("caso:").strip()
-            if case_id:
-                from app.models.case import Case
-                case = await db.get(Case, case_id)
-                if case is not None and case.deleted_at is None and case.client_id:
-                    kwargs["client_id"] = str(case.client_id)
-                    kwargs["case_id"] = str(case.id)
-                    logger.info(
-                        "Escopo RAG resolvido pelo caso canônico %s para precedente interno",
-                        getattr(case, "numero_interno", None) or case.id,
-                    )
+
+        if categoria != "precedente_interno" or not chave.startswith("caso:"):
+            return await original(db, **kwargs)
+
+        case_id_chave = chave.removeprefix("caso:").strip()
+        if not case_id_chave:
+            raise ValueError("chave canônica de precedente sem identificador de caso")
+
+        from app.models.case import Case
+
+        case = await db.get(Case, case_id_chave)
+        if case is None or case.deleted_at is not None or not case.client_id:
+            raise ValueError("caso canônico inválido para precedente interno")
+
+        client_id_canonico = str(case.client_id)
+        case_id_canonico = str(case.id)
+        client_id_informado = kwargs.get("client_id")
+        case_id_informado = kwargs.get("case_id")
+
+        if (
+            client_id_informado is not None
+            and str(client_id_informado) != client_id_canonico
+        ):
+            raise ValueError("client_id divergente do caso canônico")
+        if (
+            case_id_informado is not None
+            and str(case_id_informado) != case_id_canonico
+        ):
+            raise ValueError("case_id divergente da chave canônica")
+
+        kwargs["client_id"] = client_id_canonico
+        kwargs["case_id"] = case_id_canonico
         return await original(db, **kwargs)
 
     ingestion_service.upsert_documento = upsert_com_escopo_canonico

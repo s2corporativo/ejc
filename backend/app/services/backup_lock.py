@@ -175,6 +175,11 @@ class BackupProcessLock:
         self.release()
 
 
+def open_backup_dir_fd(backup_dir: str | os.PathLike[str]) -> int:
+    """Abre BACKUP_DIR com as mesmas invariantes do mutex; caller fecha o fd."""
+    return BackupProcessLock.from_path(backup_dir)._open_directory()
+
+
 def backup_process_lock(backup_dir: str | os.PathLike[str]) -> BackupProcessLock:
     """Retorna context manager ainda não adquirido para uso com ``with``."""
     return BackupProcessLock.from_path(backup_dir)

@@ -68,6 +68,32 @@ def _escopo_grupo(grupo_id: str):
     )
 
 
+async def bloquear_versionamento_por_titulo(
+    db: AsyncSession,
+    *,
+    case_id: str,
+    titulo: str,
+) -> None:
+    """Serializa a escolha do predecessor legado por ``caso + título``.
+
+    Enquanto a UI ainda não envia predecessor explícito, dois primeiros uploads
+    simultâneos do mesmo título poderiam ambos observar ausência de predecessor e
+    criar raízes independentes versão 1. O advisory lock transacional fecha essa
+    janela sem introduzir índice/tabela nova; ele permanece até o commit/rollback
+    da mesma sessão que persistirá o documento.
+    """
+    if not case_id or not titulo:
+        raise DocumentoVersaoError("contexto de versionamento por título ausente")
+    chave = f"document-title:{case_id}:{titulo}"
+    await db.execute(
+        select(
+            func.pg_advisory_xact_lock(
+                func.hashtextextended(chave, 0)
+            )
+        )
+    )
+
+
 async def preparar_nova_versao(
     db: AsyncSession,
     documento: Document,

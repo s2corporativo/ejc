@@ -42,22 +42,39 @@ except ImportError:
 MAX_OCR_CHARS = 200_000  # limite de armazenamento por documento
 
 
-def extrair_texto(filepath: str, mimetype: str | None) -> str | None:
+def extrair_texto(
+    filepath: str,
+    mimetype: str | None,
+    suffix_hint: str | None = None,
+) -> str | None:
     """
     Retorna texto extraído (truncado) ou None se tipo não suportado/falha.
     Síncrono — chamado via asyncio.to_thread no router.
+
+    ``suffix_hint`` preserva a extensão já validada quando o arquivo físico
+    ainda está em staging (ex.: ``.docx.uploading``). O hint só decide qual
+    extrator local usar; nunca altera o path aberto.
     """
     mt = (mimetype or "").lower()
+    hint = (suffix_hint or "").lower()
     try:
         if "pdf" in mt and _PDF_OK:
             return _pdf(filepath)
         if mt.startswith("image/") and _TESS_OK:
             return _imagem(filepath)
-        if ("wordprocessingml" in mt or filepath.endswith(".docx")) and _DOCX_OK:
+        if (
+            "wordprocessingml" in mt
+            or hint == ".docx"
+            or filepath.lower().endswith(".docx")
+        ) and _DOCX_OK:
             return _docx_texto(filepath)
         # Planilhas .xlsx via openpyxl (P1 2026-07-05: antes ocr_text ficava
         # NULL silencioso).
-        if "spreadsheetml" in mt or filepath.lower().endswith(".xlsx"):
+        if (
+            "spreadsheetml" in mt
+            or hint == ".xlsx"
+            or filepath.lower().endswith(".xlsx")
+        ):
             return _xlsx(filepath)
         if "ms-excel" in mt or filepath.lower().endswith(".xls"):
             return _xls_legado(filepath)
@@ -99,8 +116,10 @@ def _imagem(path: str) -> str:
 
 
 def _docx_texto(path: str) -> str:
-    d = _docx.Document(path)
-    return "\n".join(p.text for p in d.paragraphs)[:MAX_OCR_CHARS]
+    # File-like evita qualquer dependência da extensão do path de staging.
+    with open(path, "rb") as handle:
+        d = _docx.Document(handle)
+        return "\n".join(p.text for p in d.paragraphs)[:MAX_OCR_CHARS]
 
 
 def _xlsx(path: str) -> str:
@@ -111,7 +130,10 @@ def _xlsx(path: str) -> str:
     (log + None, padrão do arquivo — falha de extração nunca quebra upload)."""
     import openpyxl  # lazy, como os demais extratores
 
-    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    # File-like evita a validação de extensão do openpyxl; o staging mantém
+    # deliberadamente o sufixo ``.uploading`` até a promoção transacional.
+    handle = open(path, "rb")
+    wb = openpyxl.load_workbook(handle, read_only=True, data_only=True)
     partes: list[str] = []
     total = 0
     try:
@@ -131,6 +153,7 @@ def _xlsx(path: str) -> str:
                 break
     finally:
         wb.close()
+        handle.close()
     return "\n".join(partes)[:MAX_OCR_CHARS]
 
 def _xls_legado(path: str) -> str | None:

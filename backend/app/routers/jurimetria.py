@@ -732,6 +732,59 @@ async def ingerir_datajud(
     }
 
 
+# ── Jurimetria dos TRIBUNAIS (Issue #1527) — DataJud/TJMG ───────────────────
+# Preenche o slot do "benchmark externo" que os endpoints /interno/* declaram
+# como `externo_habilitado: False`. Mede o comportamento do tribunal (Betim,
+# Contagem, BH), não os casos do escritório; as duas jurimetrias coexistem.
+# Mesmo gate de papel do resto do módulo (equipe jurídica, allowlist exata).
+@router.get("/tribunais/status")
+async def tribunais_status(cu: User = Depends(_req_staff)):
+    """Configuração e limites da jurimetria dos tribunais — sem I/O externo."""
+    from app.services.jurimetria_tribunais.servico import status as _status
+
+    return _status()
+
+
+@router.get("/tribunais/desfechos")
+async def tribunais_desfechos(
+    municipios: str = Query(
+        "betim,contagem,belo_horizonte",
+        description="Chaves separadas por vírgula: betim, contagem, belo_horizonte",
+    ),
+    classe: Optional[int] = Query(None, ge=1, description="Código TPU da classe"),
+    assunto: Optional[int] = Query(None, ge=1, description="Código TPU do assunto"),
+    desde: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    ate: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    cu: User = Depends(_req_staff),
+):
+    """Desfechos agregados do TJMG por município e assunto (só contagens/taxas).
+
+    Falhas viram resposta controlada: funcionalidade desligada → 503 (via
+    `require_enabled`); integração DataJud desligada → 503; CNJ fora do ar →
+    502 sem stack trace. Nunca 500.
+    """
+    import logging
+
+    import httpx
+
+    from app.services import datajud_service as _djs
+    from app.services.jurimetria_tribunais.servico import desfechos as _desfechos
+
+    chaves = [m for m in (municipios or "").split(",") if m.strip()]
+    try:
+        return await _desfechos(chaves, classe=classe, assunto=assunto, desde=desde, ate=ate)
+    except _djs.DataJudDesabilitadoError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    except httpx.HTTPError as exc:
+        logging.getLogger("ejc.jurimetria").warning(
+            "jurimetria dos tribunais: DataJud indisponível (%s)", type(exc).__name__
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="Falha ao consultar o DataJud. Tente novamente mais tarde.",
+        ) from None
+
+
 @router.get("/cobertura-rag")
 async def cobertura_rag(
     db: AsyncSession = Depends(get_db),
