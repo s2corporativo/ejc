@@ -187,21 +187,25 @@ a hipótese por consulta normalizada.
 
 ---
 
-### C‑3. Encerrar caso com `alimentar_rag=True` (default) retorna 500
+### C‑3. ~~Encerrar caso com `alimentar_rag=True` (default) retorna 500~~ — ACHADO RETIRADO na revisão
 
-**Evidência.** `routers/cases.py:1039-1053` chama `upsert_documento` com
-`categoria="precedente_interno"` e **sem `client_id`**;
-`ingestion_service.py:315-319` levanta `ValueError` para categoria em
-`_CATEGORIAS_RESTRITAS` (que inclui `precedente_interno`,
-`ingestion_service.py:38-44`) sem `client_id`. Não há `try/except` no caminho, e
-`payload.alimentar_rag` tem default `True` (`cases.py:982`).
+**Evidência original (incorreta).** `routers/cases.py:1039-1053` chama
+`upsert_documento` com `categoria="precedente_interno"` e **sem `client_id`**;
+`ingestion_service.py:315-319` levantaria `ValueError` para categoria em
+`_CATEGORIAS_RESTRITAS` sem `client_id`.
 
-**Consequência.** O encerramento de caso falha com HTTP 500 sempre que o
-advogado não desmarca a opção. A "memória institucional" — o pós‑mortem que
-alimentaria os precedentes internos do escritório — nunca foi gravada.
+**Por que foi retirado.** No startup normal, `event_subscribers._install_ai_core_hardening()`
+instala obrigatoriamente `_instalar_resolucao_escopo_rag()`, cujo wrapper reconhece
+`precedente_interno` com chave `caso:<id>`, consulta o caso e injeta `client_id` e
+`case_id` **antes** de chamar o `upsert_documento` original
+(`backend/app/services/ai_core_hardening_patch.py:77-115`). Como `encerrar_caso` faz o
+import local após esse patch, `alimentar_rag=True` não retorna 500 pelo motivo descrito —
+o achado classificava como crítica uma regressão inexistente.
 
-**Cobertura de teste**: nenhuma. O único teste do fluxo passa
+**Resta de valor.** Cobertura de teste: o único teste do fluxo passa
 `alimentar_rag=False` (`tests/test_case_patch_arquivar_encerrar_gate_dblevel.py:345`).
+Um teste de regressão com `alimentar_rag=True` (protegido pelo patch de hardening)
+continua desejável como rede de proteção, mas não é correção de bug.
 
 ---
 
@@ -758,7 +762,7 @@ que A‑21 passou despercebido.
 | M‑22 | Ingestão manual gera duplicata por mudança de título ou de autor | `routers/rag.py:97-104` |
 | M‑23 | Grounding ao vivo falha **aberta**: alerta sem setar `revisao_obrigatoria`, ao contrário da falha do `citation_check`, que fecha | `ai/core/response_validator.py:151-155` × `:86-93` |
 | M‑24 | `_hidratar_governanca` abre `AsyncSessionLocal()` própria em **toda** busca RAG, mesmo com reranker OFF (`rerank()` é chamado incondicionalmente) | `reranker.py:164`; `ai_service.py:541,596` |
-| M‑25 | Gate de governança do reranker falha **aberta** (`except` devolve candidatos originais; default assume `vigente=True`) — atenuado pelo gate SQL primário | `reranker.py:186-189,222-227` |
+| M‑25 | ~~Gate de governança do reranker falha **aberta**~~ **RESOLVIDO** (`a9451cb`): o `except` de `_hidratar_governanca` não devolve mais os candidatos originais — `reranker.py:237-243` filtra com `_candidato_normativo` e mantém somente candidatos não normativos, fechando o fail‑open para legislação, normas, regulamentos e autoridades `oficial_normativa` | `reranker.py:237-243` |
 | M‑26 | `confianca="bloqueado"` no reranker apenas rebaixa (−0,10), não exclui | `reranker.py:236` |
 | M‑27 | `--smoke` do `run_eval` valida **formato**, não recuperação; `run_legal_smoke_tests` (5 perguntas) checa presença de termo em qualquer posição do top‑5, ignorando rank | `run_eval.py:393-433`; `knowledge_governance.py:802-827` |
 
@@ -825,17 +829,26 @@ O relatório de 03/09 (§5.3) fica assim atualizado:
 
 **Onda 1 — desbloquear o RAG (sem isso, o resto é otimização de algo que não roda):**
 
-1. **C‑1**: produtor automático de vigência. Duas opções não excludentes: (a) o
-   Planalto passa a gravar `legal_status='vigente'` + `legal_status_verificado_em`
-   quando o cabeçalho do texto compilado **não** indica revogação (hoje esse
-   desfecho é tratado como "não sei", quando na fonte oficial ele é evidência
-   positiva); (b) script de backfill em lote com trilha, substituindo o clique a
-   clique. Excluir `proposicao_legislativa` do recorte `%legisl%` — proposição não
-   é norma vigente e o gate não deveria alcançá‑la por acidente de substring.
+1. **C‑1**: produtor automático de vigência. Duas opções não excludentes:
+   (a) o Planalto passa a gravar `legal_status='vigente'` +
+   `legal_status_verificado_em` **somente com verificação positiva rastreável** —
+   declaração explícita de vigência no texto compilado na fonte oficial ou
+   conferência curada e registrada; a ausência de marcador de revogação **não**
+   constitui prova positiva (o contrato fail‑closed de `ingestors/planalto.py:315-355`,
+   testado em `tests/test_planalto_vigencia_segura_p01.py:38-46`, trata silêncio
+   como `vigencia_nao_verificada` porque o texto pode não declarar o estado
+   jurídico do diploma — norma pode estar suspensa, parcialmente revogada ou
+   desatualizada sem que o cabeçalho o indique); (b) script de backfill em lote
+   com trilha de curadoria identificada, fonte oficial HTTPS e conferência de
+   vigência, substituindo o clique a clique. Excluir `proposicao_legislativa` do
+   recorte `%legisl%` — proposição não é norma vigente e o gate não deveria
+   alcançá‑la por acidente de substring.
 2. **C‑2**: `RAG_HYDE_ENABLED` e `RAG_FTS_ENABLED` alinhados ao que o código
    documenta, ou propagação de `modo_sanitizacao` até `_hyde_expandir`.
-3. **C‑3**: `client_id` no `upsert_documento` de `cases.py:1039`, com teste de
-   regressão em `alimentar_rag=True`.
+3. ~~**C‑3**~~: achado retirado na revisão — o hardening de
+   `ai_core_hardening_patch.py` já resolve o escopo do `precedente_interno`;
+   resta apenas o teste de regressão com `alimentar_rag=True` (baixa prioridade,
+   rede de proteção — ver seção C‑3).
 
 **Onda 2 — fechar o que é segurança:**
 
@@ -877,7 +890,7 @@ depende de nenhuma das outras.
 
 ## 8. Achados que viram Issue própria (fora do escopo desta auditoria)
 
-- `cases.py:1039` (C‑3) é bug funcional de encerramento de caso, não de RAG.
+- `cases.py:1039` (C‑3) — achado retirado na revisão (ver seção C‑3); sem issue própria.
 - `camara.py`/`senado.py` (M‑9) é telemetria de ingestão.
 - `ocr_service.py` (A‑16) afeta todo upload de documento, não só RAG.
 - `RUNBOOK_MIGRACAO_EMBEDDING_1024.md` (A‑17) é correção de runbook.
