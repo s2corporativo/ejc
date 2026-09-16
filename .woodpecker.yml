@@ -175,8 +175,12 @@ steps:
       - ejc-ci-apt-archives:/var/cache/apt/archives
       - ejc-ci-apt-lists:/var/lib/apt/lists
     commands:
-      - apt-get update -qq
-      - apt-get install -y -qq --no-install-recommends jq libmagic1 poppler-utils tesseract-ocr libpango-1.0-0 libpangocairo-1.0-0 libcairo2 postgresql-client
+      # DPkg::Lock::Timeout: com o cache apt em volumes compartilhados
+      # (#1661), dois pipelines simultâneos disputam /var/cache/apt/archives;
+      # sem timeout, o segundo falha o step inteiro ("Could not get lock",
+      # flakes nos PRs #1632 e #1641). 300s cobre a janela do apt vizinho.
+      - apt-get -o DPkg::Lock::Timeout=300 update -qq
+      - apt-get -o DPkg::Lock::Timeout=300 install -y -qq --no-install-recommends jq libmagic1 poppler-utils tesseract-ocr libpango-1.0-0 libpangocairo-1.0-0 libcairo2 postgresql-client
       - cd backend
       - pip install --quiet -r requirements.txt
       # Fast gate: falhas estruturais baratas interrompem antes da suíte total.
