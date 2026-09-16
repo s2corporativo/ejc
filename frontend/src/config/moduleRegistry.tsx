@@ -408,7 +408,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "inteligencia",
     usesAI: true,
     sensitive: true,
-    backendPrefixes: ["/api/raio-x", "/api/documentos-ia", "/api/ai/skills"],
+    backendPrefixes: ["/api/raio-x", "/api/ai/skills"],
   },
   {
     key: "casos",
@@ -579,11 +579,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "documentos",
     sensitive: true,
     usesAI: true,
-    backendPrefixes: [
-      "/api/documents",
-      "/api/data-rooms",
-      "/api/documentos-ia",
-    ],
+    backendPrefixes: ["/api/documents", "/api/data-rooms"],
   },
   {
     key: "pecas",

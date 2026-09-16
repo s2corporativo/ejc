@@ -199,6 +199,20 @@ ADICOES_INTENCIONAIS = {
 }
 
 REMOCOES_INTENCIONAIS = {
+    # `routers/documento_ia.py` REMOVIDO (17/09/2026, Fase 7 — auditoria
+    # §3.6 "Entrada/intake: 6 portas"). A porta legada /documentos-ia
+    # ("Importação Inteligente" de 1 arquivo, temp-file, sem persistir no
+    # GED) ficou sem NENHUM consumidor: zero chamadas no frontend/src, zero
+    # chamadores backend (services usam documento_service.extrair_e_analisar
+    # diretamente — legal_chat, raio_x_tasks), contrato órfão
+    # `aplicarAcoesDocumento` aposentado junto. A trilha canônica de análise
+    # documental é a Entrada Universal (/api/entrada-universal/*, persiste
+    # lote no GED com rastreabilidade IA) e as capacidades canônicas de IA
+    # (/api/ia/extrair etc.). O service e o schema document_intake seguem
+    # vivos (não são porta).
+    ("/api/documentos-ia/analisar", "POST"),
+    ("/api/documentos-ia/analisar-url", "POST"),
+    ("/api/documentos-ia/aplicar-acoes", "POST"),
     # `routers/noticias.py` REMOVIDO (05/09/2026, CORTE-4 do plano-mestre,
     # decisão D3 do titular): feed ConJur/JOTA não é gestão de casos; a tela
     # já estava `hidden` e o card do Dashboard foi retirado junto.
