@@ -928,104 +928,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   },
 ];
 
-/**
- * Subárvore do Portal do Cliente (papel `cliente_externo`), movida para o
- * registry na auditoria §2.6 #7 — antes as rotas eram literais no App.tsx e
- * a navegação (NAV) um array paralelo dentro do PortalLayout.
- *
- * Convenção: `path` é RELATIVO a /portal (o App aninha sob
- * `<Route path="/portal">`); a rota índice usa `index: true`. O href
- * absoluto para links é produzido por `portalNavHref`, fonte única do
- * prefixo.
- */
-export const PORTAL_ROOT = "/portal";
-
-export const PORTAL_ROUTES: PortalModuleRoute[] = [
-  {
-    key: "portal-inicio",
-    index: true,
-    label: "Início",
-    description: "Painel do cliente com casos, prazos e movimentações.",
-    icon: Home,
-    component: PortalDashboard,
-    showInNav: true,
-    order: 10,
-  },
-  {
-    key: "portal-casos",
-    path: "casos",
-    label: "Casos",
-    description: "Lista de casos do cliente no portal.",
-    icon: Briefcase,
-    component: PortalCasos,
-    showInNav: true,
-    order: 20,
-  },
-  {
-    key: "portal-caso-detalhe",
-    path: "casos/:id",
-    label: "Detalhe do caso",
-    description: "Detalhe de um caso específico no portal.",
-    icon: Briefcase,
-    component: PortalCasoDetalhe,
-    showInNav: false,
-  },
-  {
-    key: "portal-financeiro",
-    path: "financeiro",
-    label: "Financeiro",
-    description: "Honorários, faturas e pagamentos do cliente.",
-    icon: Wallet,
-    component: PortalFinanceiro,
-    showInNav: true,
-    order: 30,
-  },
-  {
-    key: "portal-assinaturas",
-    path: "assinaturas",
-    label: "Assinaturas",
-    description: "Documentos pendentes e histórico de assinaturas.",
-    icon: PenLine,
-    component: PortalAssinaturas,
-    showInNav: true,
-    order: 40,
-  },
-  {
-    key: "portal-mensagens",
-    path: "mensagens",
-    label: "Mensagens",
-    description: "Conversa com a equipe jurídica responsável.",
-    icon: MessageCircle,
-    component: PortalMensagens,
-    showInNav: true,
-    order: 50,
-  },
-  {
-    key: "portal-documentos",
-    path: "documentos",
-    label: "Documentos",
-    description: "Documentos compartilhados com o cliente.",
-    icon: FileText,
-    component: PortalDocumentos,
-    showInNav: true,
-    order: 60,
-  },
-];
-
-/** Nav do portal: só itens visíveis, em ordem determinística. */
-export function getPortalNavModules(): PortalModuleRoute[] {
-  return PORTAL_ROUTES.filter((module) => module.showInNav).sort(
-    (a, b) => (a.order ?? 999) - (b.order ?? 999),
-  );
-}
-
-/** Href absoluto de um módulo do portal (fonte única do prefixo /portal). */
-export function portalNavHref(module: PortalModuleRoute): string {
-  return module.index || !module.path
-    ? PORTAL_ROOT
-    : `${PORTAL_ROOT}/${module.path}`;
-}
-
 export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   ...LEGACY_CANONICAL_REDIRECTS,
   {
@@ -1388,4 +1290,102 @@ export function getModuleCatalog() {
   return STAFF_ROUTES.map(
     ({ component: _component, icon: _icon, ...module }) => module,
   );
+}
+
+/**
+ * Subárvore do Portal do Cliente (papel `cliente_externo`), movida para o
+ * registry na auditoria §2.6 #7 — antes as rotas eram literais no App.tsx e
+ * a navegação (NAV) um array paralelo dentro do PortalLayout.
+ *
+ * Convenção: `path` é RELATIVO a /portal (o App aninha sob
+ * `<Route path="/portal">`); a rota índice usa `index: true`. O href
+ * absoluto para links é produzido por `portalNavHref`, fonte única do
+ * prefixo.
+ */
+export const PORTAL_ROOT = "/portal";
+
+export const PORTAL_ROUTES: PortalModuleRoute[] = [
+  {
+    key: "portal-inicio",
+    index: true,
+    label: "Início",
+    description: "Painel do cliente com casos, prazos e movimentações.",
+    icon: Home,
+    component: PortalDashboard,
+    showInNav: true,
+    order: 10,
+  },
+  {
+    key: "portal-casos",
+    path: "casos",
+    label: "Casos",
+    description: "Lista de casos do cliente no portal.",
+    icon: Briefcase,
+    component: PortalCasos,
+    showInNav: true,
+    order: 20,
+  },
+  {
+    key: "portal-caso-detalhe",
+    path: "casos/:id",
+    label: "Detalhe do caso",
+    description: "Detalhe de um caso específico no portal.",
+    icon: Briefcase,
+    component: PortalCasoDetalhe,
+    showInNav: false,
+  },
+  {
+    key: "portal-financeiro",
+    path: "financeiro",
+    label: "Financeiro",
+    description: "Honorários, faturas e pagamentos do cliente.",
+    icon: Wallet,
+    component: PortalFinanceiro,
+    showInNav: true,
+    order: 30,
+  },
+  {
+    key: "portal-assinaturas",
+    path: "assinaturas",
+    label: "Assinaturas",
+    description: "Documentos pendentes e histórico de assinaturas.",
+    icon: PenLine,
+    component: PortalAssinaturas,
+    showInNav: true,
+    order: 40,
+  },
+  {
+    key: "portal-mensagens",
+    path: "mensagens",
+    label: "Mensagens",
+    description: "Conversa com a equipe jurídica responsável.",
+    icon: MessageCircle,
+    component: PortalMensagens,
+    showInNav: true,
+    order: 50,
+  },
+  {
+    key: "portal-documentos",
+    path: "documentos",
+    label: "Documentos",
+    description: "Documentos compartilhados com o cliente.",
+    icon: FileText,
+    component: PortalDocumentos,
+    showInNav: true,
+    order: 60,
+  },
+];
+
+/** Nav do portal: só itens visíveis, em ordem determinística. */
+export function getPortalNavModules(): PortalModuleRoute[] {
+  return PORTAL_ROUTES.filter((module) => module.showInNav).sort(
+    (a, b) => (a.order ?? 999) - (b.order ?? 999),
+  );
+}
+
+/** Href absoluto de um módulo do portal (fonte única do prefixo /portal). */
+export function portalNavHref(module: PortalModuleRoute): string {
+  return module.index || !module.path
+    ? PORTAL_ROOT
+    : `${PORTAL_ROOT}/${module.path}`;
 }
