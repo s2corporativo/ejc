@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.ai_log import AILog
@@ -43,6 +44,18 @@ def _role(user: User) -> str:
 def _require_admin_socio(user: User):
     if _role(user) not in ("superadmin", "admin", "socio"):
         raise HTTPException(403, "Acesso restrito a governanca da IA")
+
+
+def _req_admin_socio(cu: User = Depends(get_current_user)) -> User:
+    """Gate estrutural dos painéis de governança da IA (Fase 8, onda 1).
+
+    Promove a checagem ``_require_admin_socio`` — que cada handler fazia no
+    próprio corpo — para dependency FastAPI: o 403 dispara ANTES de qualquer
+    trabalho do endpoint, fica visível para o inventário RBAC (ROLE_GATE em
+    vez de ONLY_AUTH) e não pode ser esquecido num handler novo.
+    """
+    _require_admin_socio(cu)
+    return cu
 
 
 def _v(x):
@@ -236,9 +249,8 @@ def _texto_jurisprudencia_mg(req: JurisprudenciaMGIn) -> str:
 async def dashboard_governanca(
     dias: int = Query(30, ge=1, le=365),
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(_req_admin_socio),
 ):
-    _require_admin_socio(cu)
     desde = datetime.now(timezone.utc) - timedelta(days=dias)
 
     total_logs = (await db.execute(select(sqlfunc.count()).select_from(AILog).where(AILog.created_at >= desde))).scalar() or 0
@@ -386,9 +398,8 @@ async def listar_curadoria(
     confianca: str | None = None,
     busca: str | None = None,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(_req_admin_socio),
 ):
-    _require_admin_socio(cu)
     q = select(KnowledgeDoc).where(KnowledgeDoc.deleted_at.is_(None))
     if categoria:
         q = q.where(KnowledgeDoc.categoria == categoria)
@@ -437,14 +448,16 @@ async def listar_curadoria(
     return {"data": data, "total": total, "page": page, "page_size": page_size}
 
 
-@router.patch("/rag-curadoria/{doc_id}")
+@router.patch(
+    "/rag-curadoria/{doc_id}",
+    dependencies=[Depends(rate_limit("ia-gov-curadoria", 30))],
+)
 async def atualizar_curadoria(
     doc_id: str,
     req: CuradoriaPatch,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(_req_admin_socio),
 ):
-    _require_admin_socio(cu)
     d = (await db.execute(select(KnowledgeDoc).where(KnowledgeDoc.id == doc_id, KnowledgeDoc.deleted_at.is_(None)))).scalar_one_or_none()
     if not d:
         raise HTTPException(404, "Documento RAG nao encontrado")
@@ -466,8 +479,7 @@ async def atualizar_curadoria(
 
 
 @router.get("/prompts")
-async def governanca_prompts(db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
-    _require_admin_socio(cu)
+async def governanca_prompts(db: AsyncSession = Depends(get_db), cu: User = Depends(_req_admin_socio)):
     rows = (await db.execute(select(PromptJuridico).where(PromptJuridico.deleted_at.is_(None)).order_by(PromptJuridico.vezes_executado.desc(), PromptJuridico.updated_at.desc()).limit(50))).scalars().all()
     return {"data": [{
         "id": p.id,
@@ -483,7 +495,7 @@ async def governanca_prompts(db: AsyncSession = Depends(get_db), cu: User = Depe
 
 
 @router.get("/prompts-sistema")
-async def governanca_prompts_sistema(cu: User = Depends(get_current_user)):
+async def governanca_prompts_sistema(cu: User = Depends(_req_admin_socio)):
     """Inventário canônico dos prompts do NÚCLEO (código), com versão por conteúdo.
 
     Distinto de `/prompts`, que lista os prompts jurídicos criados pelo usuário
@@ -493,15 +505,13 @@ async def governanca_prompts_sistema(cu: User = Depends(get_current_user)):
     `orfaos` = registrados e não consumidos; `fantasmas` = consumidos por
     agente/tarefa e ausentes do registro (caem no prompt `default` em silêncio).
     """
-    _require_admin_socio(cu)
     from app.services.system_prompts.inventario import resumo
 
     return resumo()
 
 
 @router.get("/fontes")
-async def fontes_ingestao(db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
-    _require_admin_socio(cu)
+async def fontes_ingestao(db: AsyncSession = Depends(get_db), cu: User = Depends(_req_admin_socio)):
     from app.services.ingestao_saude import avaliar_fontes, resumir
 
     rows = (await db.execute(select(FonteIngestao).order_by(FonteIngestao.slug))).scalars().all()
@@ -528,10 +538,14 @@ async def fontes_ingestao(db: AsyncSession = Depends(get_db), cu: User = Depends
     }
 
 
-@router.post("/fontes/tjmg/coletar", status_code=202)
+@router.post(
+    "/fontes/tjmg/coletar",
+    status_code=202,
+    dependencies=[Depends(rate_limit("ia-gov-coleta-tjmg", 5))],
+)
 async def coletar_tjmg_agora(
     bg: BackgroundTasks,
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(_req_admin_socio),
 ):
     """Dispara uma coleta do TJMG SOB DEMANDA (fora do cron semanal).
 
@@ -541,7 +555,6 @@ async def coletar_tjmg_agora(
     faz requisições de rede) e o resultado (novos/total/erro) aparece na fonte
     'tjmg' em GET /ia-governanca/fontes.
     """
-    _require_admin_socio(cu)
     from app.services.ingestion_service import executar_ingestao
     from app.services.ingestors import tjmg
     bg.add_task(
@@ -578,8 +591,7 @@ def _peca_de_caso_vivo():
 
 
 @router.get("/guardrails")
-async def guardrails(db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
-    _require_admin_socio(cu)
+async def guardrails(db: AsyncSession = Depends(get_db), cu: User = Depends(_req_admin_socio)):
     _viva = _peca_de_caso_vivo()
     total_pecas = (await db.execute(select(sqlfunc.count()).select_from(LegalDoc).where(*_viva))).scalar() or 0
     ia_sem_revisao = (await db.execute(select(sqlfunc.count()).select_from(LegalDoc).where(*_viva, LegalDoc.ai_generated.is_(True), LegalDoc.human_reviewed.is_(False)))).scalar() or 0
@@ -597,8 +609,7 @@ async def guardrails(db: AsyncSession = Depends(get_db), cu: User = Depends(get_
 
 
 @router.get("/jurisprudencia-mg/geometria")
-async def geometria_jurisprudencia_mg(cu: User = Depends(get_current_user)):
-    _require_admin_socio(cu)
+async def geometria_jurisprudencia_mg(cu: User = Depends(_req_admin_socio)):
     return {
         "colecoes": [
             "jurisprudencia_tjmg_acordaos",
@@ -620,13 +631,16 @@ async def geometria_jurisprudencia_mg(cu: User = Depends(get_current_user)):
     }
 
 
-@router.post("/jurisprudencia-mg", status_code=201)
+@router.post(
+    "/jurisprudencia-mg",
+    status_code=201,
+    dependencies=[Depends(rate_limit("ia-gov-import-juris-mg", 10))],
+)
 async def importar_jurisprudencia_mg(
     req: JurisprudenciaMGIn,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(_req_admin_socio),
 ):
-    _require_admin_socio(cu)
     fonte_validada = _fonte_oficial(req.fonte_url)
     colecao = _colecao_mg(req.tipo_fonte, req.rito)
     confidence = "alta" if fonte_validada and req.numero_processo else "media" if fonte_validada else "baixa"
@@ -683,12 +697,14 @@ async def importar_jurisprudencia_mg(
     }
 
 
-@router.post("/jurisprudencia-mg/extrair-url")
+@router.post(
+    "/jurisprudencia-mg/extrair-url",
+    dependencies=[Depends(rate_limit("ia-gov-extrai-juris-mg", 5))],
+)
 async def extrair_jurisprudencia_url(
     req: ExtrairJurisprudenciaURLIn,
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(_req_admin_socio),
 ):
-    _require_admin_socio(cu)
     if not req.url.startswith(("http://", "https://")):
         raise HTTPException(422, "URL invalida")
     if not _fonte_oficial(req.url):
@@ -730,9 +746,8 @@ async def listar_jurisprudencia_mg(
     fonte_validada: bool | None = None,
     limite: int = Query(30, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(_req_admin_socio),
 ):
-    _require_admin_socio(cu)
     colecoes = [
         "jurisprudencia_tjmg_acordaos", "jurisprudencia_tjmg_juizados",
         "sentencas_jec_tjmg", "fonaje_enunciados", "stj_juizados", "datajud_metadados",
@@ -776,8 +791,9 @@ def _require_gestao(user: User) -> None:
     # superadmin está ACIMA de admin (ROLE_LEVEL) e é o mesmo conjunto do
     # _require_admin_socio deste arquivo — a omissão barrava o superadmin da
     # fonte canônica de provedores (403 no pente fino de 29/08/2026).
-    if _role(user) not in ("superadmin", "admin", "socio"):
-        raise HTTPException(status_code=403, detail="Somente admin/sócio")
+    # Delega ao gate canônico do arquivo para que os dois nomes não voltem a
+    # divergir (o teste de gates trava os dois lados).
+    _require_admin_socio(user)
 
 def _modelo_configurado(provider: str) -> str | None:
     settings = get_settings()
@@ -804,10 +820,9 @@ async def painel_provedores(
     dias: int = Query(30, ge=1, le=365),
     limite: int = Query(40, ge=5, le=200),
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(_req_admin_socio),
 ):
     """Métricas técnicas agregadas, sem prompts, respostas ou dados pessoais."""
-    _require_gestao(cu)
     desde = datetime.now(timezone.utc) - timedelta(days=dias)
     settings = get_settings()
     prioridade = [

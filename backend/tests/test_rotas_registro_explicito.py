@@ -404,6 +404,25 @@ def test_paridade_openapi_com_snapshot_anterior():
         (("/api/users/me/avatar", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
         (("/api/users/me/avatar", "DELETE"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
         (("/api/users/{user_id}/avatar", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        # Fase 8, onda 1-B: gate admin/sócio dos painéis de governança da IA
+        # promovido do CORPO do handler para a dependency `_req_admin_socio`
+        # (403 antes de qualquer trabalho; ROLE_GATE no inventário RBAC) e
+        # rate limit ('_dep') nos 4 mutantes da P1. Alteração RESTRITIVA: as
+        # rotas continuam exigindo o mesmo papel; ver
+        # test_ia_governanca_gates_estrutural.py.
+        (("/api/ia-governanca/dashboard", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/fontes", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/fontes/tjmg/coletar", "POST"), ["HTTPBearer", "_dep", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/guardrails", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/jurisprudencia-mg", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/jurisprudencia-mg", "POST"), ["HTTPBearer", "_dep", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/jurisprudencia-mg/extrair-url", "POST"), ["HTTPBearer", "_dep", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/jurisprudencia-mg/geometria", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/prompts", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/prompts-sistema", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/provedores", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/rag-curadoria", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/rag-curadoria/{doc_id}", "PATCH"), ["HTTPBearer", "_dep", "_req_admin_socio", "get_current_user", "get_db"]),
         # Estabilização do Financeiro (este PR): precificação e proposta de
         # honorários passam a exigir `_req_advogado` (advogado+), não apenas
         # autenticação. É ato jurídico privativo — estagiário e secretaria
