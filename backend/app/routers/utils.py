@@ -37,4 +37,6 @@ async def cnpj(cnpj: str, cu: User = Depends(get_current_user)):
 
 @router.get("/validar-cpf/{cpf}")
 async def cpf_check(cpf: str, cu: User = Depends(get_current_user)):
+    # Minimização LGPD: a resposta informa apenas o resultado da validação.
+    # O CPF já veio na URL da requisição e não deve ser repetido no payload.
     return {"valido": validar_cpf(cpf)}

@@ -47,12 +47,27 @@ async def test_upload_com_case_id_vincula_documento_ao_caso(monkeypatch, tmp_pat
     from app.models.document import Document
     import app.routers.documents as documents
 
-    # Determinismo: sem libmagic (valida como PDF), sem OCR do PDF falso, e
+    # Determinismo: o upload direto agora delega ao pipeline canônico. Patchamos
+    # MIME e extração nas camadas proprietárias, não no router, e mantemos o
     # UPLOAD_DIR gravável (o default /app/uploads não é gravável no CI runner).
+    from app.services import document_ingestion_orchestrator as orchestrator
+    from app.services import document_ingestion_service as ingestion_svc
+    from app.services.document_extraction_adapter import (
+        ResultadoExtracaoTexto,
+        StatusExtracaoTexto,
+    )
+
     monkeypatch.setattr(documents.settings, "UPLOAD_DIR", str(tmp_path))
-    monkeypatch.setattr(documents, "_validar_conteudo",
-                        lambda ext, conteudo: "application/pdf")
-    monkeypatch.setattr(documents, "extrair_texto", lambda *a, **k: None)
+    monkeypatch.setattr(
+        ingestion_svc,
+        "validar_conteudo",
+        lambda ext, amostra: "application/pdf",
+    )
+
+    async def _sem_ocr(*args, **kwargs):
+        return ResultadoExtracaoTexto(StatusExtracaoTexto.SEM_TEXTO)
+
+    monkeypatch.setattr(orchestrator, "extrair_texto_compatibilidade", _sem_ocr)
 
     uid = str(uuid4())
     client_id = str(uuid4())

@@ -9,8 +9,9 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, Route, Routes } from "react-router";
 
 const getMock = vi.fn();
 const postMock = vi.fn();
@@ -75,8 +76,11 @@ const PECAS = [
 
 function montar() {
   return render(
-    <MemoryRouter>
-      <Clientes />
+    <MemoryRouter initialEntries={["/clientes"]}>
+      <Routes>
+        <Route path="/clientes" element={<Clientes />} />
+        <Route path="/clientes/:id" element={<div>FICHA DESTINO</div>} />
+      </Routes>
     </MemoryRouter>,
   );
 }
@@ -120,16 +124,65 @@ describe("Clientes — documentos de admissão", () => {
     );
   });
 
+  it("navega para a Ficha Mestra sem esperar a confirmação acessória", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url === "/clients/cli-1/pecas-geradas") {
+        return new Promise(() => {});
+      }
+      return Promise.resolve({
+        data: { data: [CLIENTE], total: 1, page: 1, page_size: 20 },
+      });
+    });
+
+    montar();
+    await screen.findByText("Maria Souza");
+    fireEvent.click(screen.getByText(/Novo cliente/i));
+    fireEvent.click(await screen.findByText(/Salvar cliente/i));
+
+    expect(await screen.findByText("FICHA DESTINO")).toBeTruthy();
+    expect(getMock).toHaveBeenCalledWith("/clients/cli-1/pecas-geradas");
+  });
+
+  it("falha da checagem de conflito é explícita e resetada ao reabrir", async () => {
+    postMock.mockImplementation((url: string) => {
+      if (url === "/clients/checar-conflito") {
+        return Promise.reject(new Error("serviço indisponível"));
+      }
+      return Promise.resolve({ data: CLIENTE });
+    });
+
+    montar();
+    await screen.findByText("Maria Souza");
+    fireEvent.click(screen.getByText(/Novo cliente/i));
+
+    const dialog = await screen.findByRole("dialog");
+    const parteContraria = within(dialog)
+      .getByText(/Parte contrária/i)
+      .parentElement?.querySelector("input");
+    expect(parteContraria).toBeTruthy();
+    fireEvent.change(parteContraria!, { target: { value: "Empresa Adversa" } });
+    fireEvent.blur(parteContraria!);
+
+    expect(
+      await screen.findByText("Conflito não pôde ser verificado"),
+    ).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Fechar" }));
+    fireEvent.click(screen.getByText(/Novo cliente/i));
+
+    expect(screen.queryByText("Conflito não pôde ser verificado")).toBeNull();
+  });
+
   it("lista os rascunhos de admissão do cliente", async () => {
     montar();
     await screen.findByText("Maria Souza");
 
-    fireEvent.click(
-      screen.getByTitle("Procuração e contrato de honorários"),
-    );
+    fireEvent.click(screen.getByTitle("Procuração e contrato de honorários"));
 
     expect(await screen.findByText("Procuracao - Maria Souza")).toBeTruthy();
-    expect(screen.getByText("Contrato de Honorarios - Maria Souza")).toBeTruthy();
+    expect(
+      screen.getByText("Contrato de Honorarios - Maria Souza"),
+    ).toBeTruthy();
   });
 
   it("regeneração é explícita (forcar_novo) e carrega os poderes escolhidos", async () => {
@@ -141,22 +194,18 @@ describe("Clientes — documentos de admissão", () => {
     fireEvent.click(screen.getByTitle("Procuração e contrato de honorários"));
     await screen.findByText("Procuracao - Maria Souza");
 
-    fireEvent.change(
-      screen.getByDisplayValue("Ad judicia (foro em geral)"),
-      { target: { value: "ad_judicia_et_extra" } },
-    );
+    fireEvent.change(screen.getByDisplayValue("Ad judicia (foro em geral)"), {
+      target: { value: "ad_judicia_et_extra" },
+    });
     fireEvent.click(screen.getByText("Gerar novamente"));
 
     await waitFor(() =>
-      expect(postMock).toHaveBeenCalledWith(
-        "/clients/cli-1/gerar-documentos",
-        {
-          forcar_novo: true,
-          tipo_poderes: "ad_judicia_et_extra",
-          permite_substabelecimento: true,
-          poderes_especiais: null,
-        },
-      ),
+      expect(postMock).toHaveBeenCalledWith("/clients/cli-1/gerar-documentos", {
+        forcar_novo: true,
+        tipo_poderes: "ad_judicia_et_extra",
+        permite_substabelecimento: true,
+        poderes_especiais: null,
+      }),
     );
   });
 

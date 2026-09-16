@@ -179,15 +179,17 @@ BACKUP_SAIDA=""
 if BACKUP_SAIDA="$(bash scripts/backup.sh)"; then
   [ -n "$BACKUP_SAIDA" ] && printf '%s\n' "$BACKUP_SAIDA"
   log "Backup pré-deploy concluído."
-if printf '%s' "$BACKUP_SAIDA" | grep -Eq '"offsite_ok"[[:space:]]*:[[:space:]]*false'; then
-  log "ERRO CRÍTICO: backup retornou offsite_ok=false; retenção recuperável fora da VPS não foi comprovada."
+if ! printf '%s' "$BACKUP_SAIDA" | grep -Eq '"local_ok"[[:space:]]*:[[:space:]]*true'; then
+  log "ERRO CRÍTICO: backup não comprovou persistência local cifrada (local_ok=true)."
   log "Deploy bloqueado antes de qualquer mutação de .env/imagens/runtime."
   exit 1
 fi
-if ! printf '%s' "$BACKUP_SAIDA" | grep -Eq '"offsite_ok"[[:space:]]*:[[:space:]]*true'; then
-  log "ERRO CRÍTICO: saída do backup não contém confirmação explícita offsite_ok=true."
-  log "Deploy bloqueado antes de qualquer mutação de .env/imagens/runtime."
-  exit 1
+if printf '%s' "$BACKUP_SAIDA" | grep -Eq '"offsite_required"[[:space:]]*:[[:space:]]*true'; then
+  if ! printf '%s' "$BACKUP_SAIDA" | grep -Eq '"offsite_ok"[[:space:]]*:[[:space:]]*true'; then
+    log "ERRO CRÍTICO: política exige offsite e offsite_ok=true não foi comprovado."
+    log "Deploy bloqueado antes de qualquer mutação de .env/imagens/runtime."
+    exit 1
+  fi
 fi
 else
   [ -n "$BACKUP_SAIDA" ] && printf '%s\n' "$BACKUP_SAIDA"

@@ -41,21 +41,29 @@ def test_modelo_documento_tem_coluna_sha256():
     assert coluna.type.length == 64, "SHA-256 em hex tem 64 caracteres"
 
 
-def test_upload_calcula_o_hash_dos_bytes_recebidos():
-    """O valor gravado tem de ser o SHA-256 do conteúdo, não um placeholder.
+def test_upload_calcula_hash_no_pipeline_streaming_canonico():
+    """O router não materializa bytes; o digest nasce no stream e é persistido.
 
-    O upload já tem os bytes em memória (`conteudo = await file.read()`), então
-    o cálculo não custa I/O nem releitura do disco.
+    A prova de integridade continua derivada exatamente dos bytes recebidos, mas
+    agora em SHA-256 incremental no pipeline canônico, com memória limitada por
+    chunk. O router só delega a ingestão autorizada.
     """
     import inspect
 
     from app.routers import documents as router_documents
+    from app.services import document_persistence_service, document_upload_stream
 
-    fonte = inspect.getsource(router_documents.upload)
-    assert "hashlib.sha256(conteudo).hexdigest()" in fonte, (
-        "o upload precisa derivar o hash do conteúdo lido, não de outra fonte"
+    fonte_router = inspect.getsource(router_documents.upload)
+    fonte_stream = inspect.getsource(document_upload_stream.receber_em_staging)
+    fonte_persistencia = inspect.getsource(
+        document_persistence_service.persistir_documento_local
     )
-    assert "sha256=" in fonte, "o hash calculado precisa chegar ao Document"
+
+    assert "ingerir_documento_local(" in fonte_router
+    assert "await file.read()" not in fonte_router
+    assert "hashlib.sha256()" in fonte_stream
+    assert "digest.update(chunk)" in fonte_stream
+    assert "sha256=ingestao.sha256" in fonte_persistencia
 
 
 def test_hash_muda_quando_o_conteudo_muda():
@@ -99,7 +107,9 @@ def test_migration_149_e_aditiva_e_reversivel():
 # Só o mapper do MNI precisava calcular de fato.
 
 CAMINHOS_QUE_CRIAM_DOCUMENT = (
-    ("app/routers/documents.py", "upload direto pela tela"),
+    # O upload local delega ao persistence service, mas /drive/upload ainda
+    # constrói Document diretamente e também precisa persistir o digest.
+    ("app/routers/documents.py", "upload remoto pelo Google Drive"),
     ("app/routers/portal_documentos.py", "upload do cliente pelo Portal"),
     ("app/routers/entrada_universal.py", "Entrada Universal (lote e cópia isolada)"),
     ("app/services/document_persistence_service.py", "persistência local/Drive"),
@@ -129,6 +139,15 @@ def test_todo_caminho_que_cria_documento_grava_o_hash():
         "caminho cria Document sem prova de integridade:\n  "
         + "\n  ".join(faltando)
     )
+
+
+def test_upload_drive_deriva_hash_dos_bytes_enviados():
+    import inspect
+
+    from app.routers import documents
+
+    fonte = inspect.getsource(documents.upload_para_drive)
+    assert "sha256=hashlib.sha256(content).hexdigest()" in fonte
 
 
 def test_upload_do_portal_deriva_o_hash_do_conteudo_recebido():
