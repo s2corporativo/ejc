@@ -11,16 +11,17 @@
 # - ops-contracts e deploy-validation: sempre executam os contratos leves de
 #   segurança/operação, inclusive em docs-only.
 #
-# Ordem dos steps (DAG com depends_on — paralelo onde os caches permitem):
-# os contratos leves e sempre-on (segundos) rodam ANTES das suítes pesadas
-# (fail-fast barato), e as suítes pesadas INDEPENDENTES entre si rodam em
-# PARALELO: backend-tests ∥ frontend ∥ security-sast ∥ security-trivy.
-# Critical path ≈ lint → backend-tests (~14min), com frontend (~13min) e
-# sast (~6min) absorvidos em paralelo → esteira cai de ~37min para ~16-17min.
-# A cadeia obrigatória de gates permanece com os MESMOS membros:
-# security-secrets → ops-contracts → deploy-validation → lint →
-# backend-tests → agents-contracts, com frontend/migration-check/sast/trivy
-# ingressando em paralelo (todos obrigatórios para o merge).
+# Ordem dos steps (DAG com depends_on — o Woodpecker executa em ONDAS de
+# nível: uma onda só inicia quando a anterior INTEIRA termina):
+#   Onda 1: security-secrets (falha barata, ~1min);
+#   Onda 2: ops-contracts + deploy-validation + lint + backend-tests ∥
+#           frontend ∥ security-sast ∥ security-vulnerabilities + migration-.
+#           check (as suítes pesadas independentes em PARALELO, ~14min);
+#   Onda 3: agents-contracts (serializa writer do cache pip com backend) e
+#           security-misconfig-audit (serializa writer do cache trivy).
+# Critical path ≈ 52s + max(backend 14m, frontend 14m) + 33s ≈ 15-16min
+# (vs ~37min sequenciais). A cadeia obrigatória de gates mantém os MESMOS
+# membros — todos obrigatórios para o merge; apenas a topologia mudou.
 #
 # Classificação dos testes (ver RUNBOOK_CI_CD_WOODPECKER.md):
 # - OBRIGATÓRIOS (bloqueiam): security-secrets, ops-contracts, deploy-validation,
@@ -39,18 +40,12 @@
 #   UI ou API). Sem trusted, a criação de pipelines com volumes é REJEITADA.
 #   Portanto: habilitar trusted ANTES de este arquivo chegar à branch avaliada.
 # - Concorrência segura aqui: volumes distintos por ecossistema (pip/npm/apt/
-#   semgrep/trivy) NUNCA são escritos por dois steps simultâneos — writers de
-#   pip são serializados via depends_on (lint → backend-tests → agents-
-#   contracts) e writers de trivy via (security-vulnerabilities → misconfig-).
+#   semgrep/trivy) NUNCA são escritos por dois steps da MESMA onda — writers
+#   de pip ficam em ondas distintas (backend onda 2, agents onda 3) e writers
+#   de trivy também (vulnerabilities onda 2, misconfig onda 3).
 # - Manutenção: `docker volume ls | grep ejc-ci-` e, se disco apertar,
 #   `docker volume rm ejc-ci-<nome>` (recriado no próximo pipeline).
 #
-# Ordem dos steps (DAG com depends_on — paralelo onde os caches permitem):
-# os contratos leves e sempre-on (segundos) rodam ANTES das suítes pesadas
-# (fail-fast barato), e as suítes pesadas INDEPENDENTES entre si rodam em
-# PARALELO: backend-tests ∥ frontend ∥ security-sast ∥ security-trivy.
-# Critical path ≈ lint → backend-tests (14min) com frontend (13min) e sast
-# (6min) absorvidos em paralelo → esteira cai de ~37min para ~16-17min.
 when:
   - event: push
     branch: main
@@ -89,7 +84,7 @@ steps:
 
   deploy-validation:
     image: python:3.11-bookworm
-    depends_on: [ops-contracts]
+    depends_on: [security-secrets]
     commands:
       # Sintaxe dos scripts de deploy/host-automation (gates de deploy aprovado).
       - bash -n scripts/deploy_vps_safe.sh scripts/deploy_workflow_transaction.sh infra/host-automation/woodpecker-approved-sha.sh infra/host-automation/ejc-deploy-approved.sh infra/host-automation/install.sh infra/host-automation/install-ejc-deploy.sh scripts/deploy.sh scripts/deploy-vps.sh scripts/atualizar-vps.sh scripts/vps_setup.sh
@@ -102,11 +97,11 @@ steps:
   # ── Cadeia obrigatória de gates ──
   lint:
     image: python:3.11-bookworm
-    depends_on: [deploy-validation]
-    volumes:
-      # Wheel do ruff fica em cache após o primeiro run (~10-20s economizados).
-      - ejc-ci-pip-cache:/root/.cache/pip
+    depends_on: [security-secrets]
     commands:
+      # Sem volume de cache pip de propósito: lint e backend-tests estão na
+      # MESMA onda e o cache pip não pode ter dois writers (o wheel do ruff
+      # re-baixa ~15s por run — custo aceitável para eliminar a disputa).
       # Mesmo pin de ruff do requirements.txt — regras idênticas ao portão local.
       - pip install --quiet ruff==0.6.9
       - cd backend && ruff check app
@@ -163,7 +158,7 @@ steps:
 
   backend-tests:
     image: python:3.11-bookworm
-    depends_on: [lint]
+    depends_on: [security-secrets]
     environment:
       DATABASE_URL: postgresql+asyncpg://ejc_user@db:5432/ejc_db
       DATABASE_URL_SYNC: postgresql://ejc_user@db:5432/ejc_db
