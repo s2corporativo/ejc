@@ -110,9 +110,17 @@ function routePatternToRegex(path: string): RegExp {
 // O catálogo é estático durante a vida da SPA. Compilar e ordenar os padrões a
 // cada mudança de rota custava O(n log n) e criava n RegExp temporárias. Com a
 // pré-compilação abaixo, o lookup passa a O(n), sem alocação por navegação.
+// subPaths (auditoria §2.6 #7): sub-rotas internas do mesmo módulo — ex.
+// /dpt360/* — casam com o módulo pai; padrões mais longos testam primeiro.
 const MODULE_PATH_MATCHERS = getModuleCatalog()
-  .map((module) => ({ module, regex: routePatternToRegex(module.path) }))
-  .sort((a, b) => b.module.path.length - a.module.path.length);
+  .flatMap((module) =>
+    [module.path, ...(module.subPaths ?? [])].map((pattern) => ({
+      module,
+      pattern,
+      regex: routePatternToRegex(pattern),
+    })),
+  )
+  .sort((a, b) => b.pattern.length - a.pattern.length);
 
 export function matchModuleByPath(pathname: string) {
   return (
