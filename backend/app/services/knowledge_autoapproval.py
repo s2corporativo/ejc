@@ -25,7 +25,7 @@ from typing import Any
 from sqlalchemy import event
 
 from app.models.rag import KnowledgeDoc
-from app.services.knowledge_governance import inferir_autoridade
+from app.services.knowledge_governance import fonte_oficial, inferir_autoridade
 
 POLITICA = "knowledge_module_default_approved_when_unspecified"
 POLITICA_STATUS_EXPLICITO = "explicit_rag_status_respected"
@@ -97,7 +97,13 @@ def aplicar_aprovacao_automatica(documento: KnowledgeDoc) -> dict:
 
     authority = inferir_autoridade(documento.categoria, documento.fonte, extra)
     extra.setdefault("authority_level", authority["code"])
-    extra.setdefault("source_official", authority["official"])
+    if "source_official" not in extra:
+        # A força jurídica e a proveniência são dimensões independentes: uma
+        # proposição da Câmara/Senado não é norma vigente, mas sua fonte segue
+        # sendo oficial e precisa permanecer rastreável como tal.
+        extra["source_official"] = bool(authority["official"]) or fonte_oficial(
+            documento.fonte
+        )
     if "legisl" in _texto(documento.categoria):
         extra.setdefault("legal_status", "vigencia_nao_verificada")
 

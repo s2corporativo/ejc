@@ -22,7 +22,7 @@ _AGENTES_NORMATIVOS = {
     "RAGResearchAgent", "LegalWritingAgent", "JurimetryAgent",
     # I5/B5 (análise E2E 03/09): prazo (CPC/CLT/regimento) e base legal
     # LGPD/OAB são afirmação normativa — exigem fonte e gate de citações.
-    "ProcessAgent", "SecurityLGPDOABAgent",
+    "ProcessAgent", "EvidenceAgent", "JudicialReviewAgent", "SecurityLGPDOABAgent",
 }
 
 # TarefaIA que correspondem a uma ÁREA jurídica com prompt DEDICADO. Cada uma
