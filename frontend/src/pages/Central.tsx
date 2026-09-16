@@ -3,12 +3,17 @@
 // única tela com abas. A aba é controlada por ?tab= para deep links; o
 // parâmetro ?view= continua sendo lido pela aba de atividades (compatível
 // com os redirects /agenda e /kanban).
+import { lazy, Suspense } from "react";
 import { useSearchParams } from "react-router";
 import { CalendarClock, Users } from "lucide-react";
 import { useAuth } from "../stores/auth";
 import { ROLES } from "../config/moduleRegistry";
-import CentralAtividades from "./CentralAtividades";
-import CentralRelacionamento from "./CentralRelacionamento";
+import { Spinner } from "../components/UI";
+
+// Code-splitting por aba (auditoria §2.6 #4): as duas centrais são grandes —
+// carregadas sob demanda conforme a aba ativa.
+const CentralAtividades = lazy(() => import("./CentralAtividades"));
+const CentralRelacionamento = lazy(() => import("./CentralRelacionamento"));
 
 export type CentralTab = "atividades" | "relacionamento";
 
@@ -75,9 +80,25 @@ export default function Central() {
         </div>
       )}
       {tab === "relacionamento" ? (
-        <CentralRelacionamento />
+        <Suspense
+          fallback={
+            <div className="flex justify-center py-16">
+              <Spinner />
+            </div>
+          }
+        >
+          <CentralRelacionamento />
+        </Suspense>
       ) : (
-        <CentralAtividades />
+        <Suspense
+          fallback={
+            <div className="flex justify-center py-16">
+              <Spinner />
+            </div>
+          }
+        >
+          <CentralAtividades />
+        </Suspense>
       )}
     </div>
   );
