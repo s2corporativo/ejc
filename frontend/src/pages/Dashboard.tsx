@@ -20,8 +20,10 @@ const PAPEIS_PJE = new Set([
  * - sincronização MNI é contextual ao caso e protegida por ownership;
  * - peticionamento eletrônico NÃO está implementado nesta fase do backend.
  *
- * As implementações anteriores do dashboard permanecem preservadas para
- * rollback sem alteração de rotas ou contratos de API.
+ * Consolidação da pilha de dashboards (auditoria Fase 4): as gerações
+ * anteriores foram aposentadas — as rotas legadas (/dashboard,
+ * /dashboard-executivo, /financeiro-dashboard) viram redirects e a única
+ * implementação viva é DashboardUltra, embutida aqui sem rollback paralelo.
  */
 export default function Dashboard() {
   const user = useAuth((state) => state.user);
