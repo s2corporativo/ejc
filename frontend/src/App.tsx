@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -23,8 +23,10 @@ import {
 } from "./components/RouteGuards";
 import {
   LEGACY_REDIRECTS,
+  PORTAL_ROUTES,
   ROLES,
   STAFF_ROUTES,
+  type ModuleRoute,
 } from "./config/moduleRegistry";
 import { useAuth } from "./stores/auth";
 import Login from "./pages/LoginModern";
@@ -33,17 +35,6 @@ const RecuperarSenha = lazy(() => import("./pages/RecuperarSenha"));
 const RedefinirSenha = lazy(() => import("./pages/RedefinirSenha"));
 const TrocarSenha = lazy(() => import("./pages/TrocarSenha"));
 const Configurar2FA = lazy(() => import("./pages/Configurar2FA"));
-const PortalDashboard = lazy(() => import("./pages/portal/PortalDashboard"));
-const PortalCasos = lazy(() => import("./pages/portal/PortalCasos"));
-const PortalCasoDetalhe = lazy(
-  () => import("./pages/portal/PortalCasoDetalhe"),
-);
-const PortalFinanceiro = lazy(() => import("./pages/portal/PortalFinanceiro"));
-const PortalAssinaturas = lazy(
-  () => import("./pages/portal/PortalAssinaturas"),
-);
-const PortalMensagens = lazy(() => import("./pages/portal/PortalMensagens"));
-const PortalDocumentos = lazy(() => import("./pages/portal/PortalDocumentos"));
 const PainelProvedoresIA = lazy(() => import("./pages/PainelProvedoresIA"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
@@ -72,6 +63,14 @@ function RouteFallback() {
       <Spinner />
     </div>
   );
+}
+
+function renderModuleRoute(module: ModuleRoute, element: ReactNode) {
+  // subPaths (auditoria §2.6 #7): sub-rotas internas do MESMO módulo
+  // compartilham o elemento — ex. /dpt360/* monta o mesmo workspace de /dpt360.
+  return [module.path, ...(module.subPaths ?? [])].map((path) => (
+    <Route key={`${module.key}:${path}`} path={path} element={element} />
+  ));
 }
 
 export default function App() {
@@ -117,13 +116,20 @@ export default function App() {
                 </Protected>
               }
             >
-              <Route index element={<PortalDashboard />} />
-              <Route path="casos" element={<PortalCasos />} />
-              <Route path="casos/:id" element={<PortalCasoDetalhe />} />
-              <Route path="financeiro" element={<PortalFinanceiro />} />
-              <Route path="assinaturas" element={<PortalAssinaturas />} />
-              <Route path="mensagens" element={<PortalMensagens />} />
-              <Route path="documentos" element={<PortalDocumentos />} />
+              {/* Rotas do portal definidas no moduleRegistry (PORTAL_ROUTES) —
+                  a navegação do PortalLayout deriva da MESMA lista. */}
+              {PORTAL_ROUTES.map((module) => {
+                const Component = module.component;
+                return module.index ? (
+                  <Route key={module.key} index element={<Component />} />
+                ) : (
+                  <Route
+                    key={module.key}
+                    path={module.path}
+                    element={<Component />}
+                  />
+                );
+              })}
             </Route>
 
             <Route
@@ -147,37 +153,27 @@ export default function App() {
                 // LegacyRedirect preserva modo, client_id, query e hash.
                 if (module.key === "caso-novo") {
                   const redirecionamento = <LegacyRedirect to="/entrada" />;
-                  return (
-                    <Route
-                      key={module.key}
-                      path={module.path}
-                      element={
-                        module.roles ? (
-                          <RoleOnly roles={module.roles}>
-                            {redirecionamento}
-                          </RoleOnly>
-                        ) : (
-                          redirecionamento
-                        )
-                      }
-                    />
+                  return renderModuleRoute(
+                    module,
+                    module.roles ? (
+                      <RoleOnly roles={module.roles}>
+                        {redirecionamento}
+                      </RoleOnly>
+                    ) : (
+                      redirecionamento
+                    ),
                   );
                 }
 
                 const Component = module.component;
                 const content = <Component />;
-                return (
-                  <Route
-                    key={module.key}
-                    path={module.path}
-                    element={
-                      module.roles ? (
-                        <RoleOnly roles={module.roles}>{content}</RoleOnly>
-                      ) : (
-                        content
-                      )
-                    }
-                  />
+                return renderModuleRoute(
+                  module,
+                  module.roles ? (
+                    <RoleOnly roles={module.roles}>{content}</RoleOnly>
+                  ) : (
+                    content
+                  ),
                 );
               })}
 
