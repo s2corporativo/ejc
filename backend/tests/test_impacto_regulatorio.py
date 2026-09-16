@@ -238,6 +238,15 @@ async def test_publicacao_fora_da_janela_nao_entra():
     from app.routers.teses import impacto_regulatorio
 
     async with AsyncSessionLocal() as db:
+        # Isolamento do playground: o varredor limita a 300 publicações por
+        # created_at DESC — resíduos de testes anteriores (DJEN/radar, volume
+        # variável por run) mais recentes que o alerta-alvo de 40 dias podem
+        # estourar o teto e recortá-lo, derrubando a asserção da janela larga
+        # de forma intermitente (pipelines #1547/#1550). DB efêmero de CI:
+        # remover as publicações mais novas que o alvo é seguro e proporcional.
+        await db.execute(text(
+            "DELETE FROM diario_oficial_alertas WHERE created_at > NOW() - INTERVAL '39 days'"
+        ))
         uid = await _user(db)
         marca = uuid4().hex[:8]
         tese = await _tese_db(db, f"Tese sobre {marca} e consolidação")

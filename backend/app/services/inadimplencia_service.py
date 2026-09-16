@@ -77,71 +77,81 @@ async def varrer_inadimplencia(db: AsyncSession) -> dict:
     """))
     fees = r.fetchall()
 
+    # Prévia única de alerts pendentes por fee_id — elimina SELECT por fee
+    # (N+1) e permite decidir UPDATE vs INSERT sem round-trip por linha.
+    if fees:
+        ids = [fee.fee_id for fee in fees]
+        r2 = await db.execute(text("""
+            SELECT fee_id, id, alert_level
+            FROM inadimplencia_alerts
+            WHERE fee_id = ANY(:fee_ids) AND resolved = FALSE
+        """), {"fee_ids": ids})
+        existentes = {row.fee_id: row for row in r2.fetchall()}
+    else:
+        existentes = {}
+
     inserted = 0
     updated = 0
     falhas = 0
 
     for fee in fees:
         try:
-            days = (now.date() - fee.due_date).days if fee.due_date else 0
-            nivel = _nivel(days)
+            async with db.begin_nested():
+                days = (now.date() - fee.due_date).days if fee.due_date else 0
+                nivel = _nivel(days)
 
-            existing = await db.execute(text("""
-                SELECT id, alert_level FROM inadimplencia_alerts
-                WHERE fee_id = :fee_id AND resolved = FALSE
-                LIMIT 1
-            """), {"fee_id": fee.fee_id})
-            row = existing.fetchone()
+                row = existentes.get(fee.fee_id)
 
-            amount_due = float(fee.amount_due or 0)
-            if row:
-                await db.execute(text("""
-                    UPDATE inadimplencia_alerts
-                    SET alert_level = :nivel, days_overdue = :days,
-                        amount_due = :amount, updated_at = NOW()
-                    WHERE id = :id
-                """), {
-                    "nivel": nivel,
-                    "days": days,
-                    "amount": amount_due,
-                    "id": row.id,
-                })
-                acao = "updated"
-            else:
-                await db.execute(text("""
-                    INSERT INTO inadimplencia_alerts
-                        (id, fee_id, case_id, client_id, days_overdue, amount_due, alert_level)
-                    VALUES
-                        (gen_random_uuid()::text, :fee_id, :case_id, :client_id,
-                         :days, :amount, :nivel)
-                """), {
-                    "fee_id": fee.fee_id,
-                    "case_id": fee.case_id,
-                    "client_id": fee.client_id,
-                    "days": days,
-                    "amount": amount_due,
-                    "nivel": nivel,
-                })
-                acao = "inserted"
+                amount_due = float(fee.amount_due or 0)
+                if row:
+                    await db.execute(text("""
+                        UPDATE inadimplencia_alerts
+                        SET alert_level = :nivel, days_overdue = :days,
+                            amount_due = :amount, updated_at = NOW()
+                        WHERE id = :id
+                    """), {
+                        "nivel": nivel,
+                        "days": days,
+                        "amount": amount_due,
+                        "id": row.id,
+                    })
+                    acao = "updated"
+                else:
+                    await db.execute(text("""
+                        INSERT INTO inadimplencia_alerts
+                            (id, fee_id, case_id, client_id, days_overdue, amount_due, alert_level)
+                        VALUES
+                            (gen_random_uuid()::text, :fee_id, :case_id, :client_id,
+                             :days, :amount, :nivel)
+                    """), {
+                        "fee_id": fee.fee_id,
+                        "case_id": fee.case_id,
+                        "client_id": fee.client_id,
+                        "days": days,
+                        "amount": amount_due,
+                        "nivel": nivel,
+                    })
+                    acao = "inserted"
 
-            if days >= 15:
-                await db.execute(text("""
-                    UPDATE fees SET status='atrasado', updated_at=NOW()
-                    WHERE id = :id AND status='pendente'
-                """), {"id": fee.fee_id})
+                if days >= 15:
+                    await db.execute(text("""
+                        UPDATE fees SET status='atrasado', updated_at=NOW()
+                        WHERE id = :id AND status='pendente'
+                    """), {"id": fee.fee_id})
 
-            await db.commit()
-            if acao == "inserted":
-                inserted += 1
-            else:
-                updated += 1
+                if acao == "inserted":
+                    inserted += 1
+                else:
+                    updated += 1
         except Exception as e:
-            await db.rollback()
             falhas += 1
             logger.error(
                 f"[Inadimplencia] varrer falhou p/ fee {fee.fee_id}: {e}"
             )
             continue
+
+    if fees:
+        await db.commit()
 
     return {
         "varridas": len(fees),
