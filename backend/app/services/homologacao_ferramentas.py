@@ -13,6 +13,26 @@ from urllib.parse import unquote
 from fastapi import HTTPException
 
 FERRAMENTAS_NAO_HOMOLOGADAS: dict[str, str] = {
+    "/tributario/ferramentas/auto-infracao-prazos": (
+        "regra do PAF federal reconstruída para LC 227/2026, porém ainda em "
+        "revisão jurídica integral; não promover resultado a documento profissional"
+    ),
+    "/tributario/ferramentas/prescricao-decadencia": (
+        "calculadora tributária ainda exige validação dos marcos jurídicos concretos "
+        "antes de qualquer conclusão profissional sobre decadência ou prescrição"
+    ),
+    "/tributario/ferramentas/parcelamento": (
+        "simulador tributário depende da modalidade oficial vigente, órgão, edital, "
+        "perfil, natureza do débito e capacidade de pagamento"
+    ),
+    "/tributario/ferramentas/regime-tributario": (
+        "comparativo tributário ainda requer homologação jurídica das premissas, período "
+        "de apuração e transição IBS/CBS antes de uso profissional"
+    ),
+    "/tributario/ferramentas/reforma-tributaria": (
+        "simulação geral da reforma permanece indicativa; créditos, redutores, regime "
+        "específico e cadeia precisam ser validados no caso concreto"
+    ),
     # Onda 2 — Fase A (2026-07): corrigidas e REMOVIDAS da matriz:
     #   /empresarial/ferramentas/prazos-rj · /empresarial/ferramentas/juros-mora
     #   /penal/ferramentas/prazos-processuais · /penal/ferramentas/verificar-anpp
