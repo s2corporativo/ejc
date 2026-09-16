@@ -149,8 +149,9 @@ def test_categoria_ailog_cliente_nao_contamina_resumo_documental():
 
 
 # ── intelligence.py (legado vivo) :: analise_impacto ──────────────────────────
-# Único endpoint deste arquivo que permanece em processar_demanda e grava
-# tipo_uso=outro sanitizando o prompt no próprio endpoint.
+# Endpoint que chama o gateway canônico diretamente (shim core.ai_brain
+# aposentado — auditoria Fase 7) e grava tipo_uso=outro sanitizando o prompt
+# no próprio endpoint.
 
 async def test_analise_impacto_grava_ailog(monkeypatch):
     from app.services import ai_gateway
@@ -174,7 +175,7 @@ async def test_analise_impacto_grava_ailog(monkeypatch):
     assert log.case_id is None
     assert log.tipo_uso == AITipoUso.outro
     assert log.resposta == "Impacto: alta relevância tributária."
-    assert log.modelo == "ollama/modelo-x"  # modelo REAL exposto por processar_demanda
+    assert log.modelo == "ollama/modelo-x"  # modelo REAL do GatewayResponse
     assert db.commits >= 1
 
 
@@ -183,7 +184,7 @@ async def test_analise_impacto_falha_nao_grava_ailog(monkeypatch):
     e SEM gravar AILog (semântica de erro preservada)."""
     from app.services import ai_gateway
     from app.routers import intelligence as intel_router
-    from app.core.ai_brain import _ERRO_SEGURO
+    from app.routers.intelligence import _ERRO_SEGURO_IA
 
     async def chat_falha(messages, task_type="", **kw):
         raise RuntimeError("provider indisponível")
@@ -195,5 +196,5 @@ async def test_analise_impacto_falha_nao_grava_ailog(monkeypatch):
 
     r = await intel_router.analise_impacto({"texto": "qualquer fato"}, db=db, cu=cu)
 
-    assert r == {"resumo_executivo": _ERRO_SEGURO}  # shim converte exceção
+    assert r == {"resumo_executivo": _ERRO_SEGURO_IA}  # erro seguro, não propaga
     assert [o for o in db.added if isinstance(o, AILog)] == []
