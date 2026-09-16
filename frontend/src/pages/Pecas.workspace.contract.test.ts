@@ -14,7 +14,10 @@ const fonte = [
     .map((f) => join(DIR, "pecas", f)),
 ]
   .map((p) => readFileSync(p, "utf-8"))
-  .join("\n");
+  .join("\n")
+  // Prettier quebra textos JSX longos em várias linhas — o contrato
+  // é sobre a frase existir no módulo, não sobre o layout do fonte.
+  .replace(/\s+/g, " ");
 
 describe("Peças — Workspace Jurídico", () => {
   it("permite editar pelo PATCH canônico e não cria endpoint paralelo", () => {

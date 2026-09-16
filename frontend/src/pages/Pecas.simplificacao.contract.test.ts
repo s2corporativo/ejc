@@ -14,7 +14,10 @@ const fonte = [
     .map((f) => join(DIR, "pecas", f)),
 ]
   .map((p) => readFileSync(p, "utf-8"))
-  .join("\n");
+  .join("\n")
+  // Prettier quebra textos JSX longos em várias linhas — o contrato
+  // é sobre a frase existir no módulo, não sobre o layout do fonte.
+  .replace(/\s+/g, " ");
 
 describe("Peças — contrato da interface operacional simplificada", () => {
   it("mantém os seis estados internos agrupados em quatro fases visuais", () => {
