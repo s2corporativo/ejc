@@ -12,42 +12,16 @@ import Markdown from "../components/Markdown";
 import CaseFilterChip from "../components/CaseFilterChip";
 import { PageHeader, Spinner } from "../components/UI";
 import { useCasoFiltro } from "../contexts/useCasoFiltro";
-import api from "../lib/api";
+import {
+  executarSkill,
+  executarSkillDocumento,
+  listarSkills,
+  transcreverMidia,
+  type Skill,
+  type SkillExecuteResponse,
+} from "../services/ai";
 import { mensagemErroIA } from "../lib/iaErro";
 import { ROTULO_AREA } from "../lib/taxonomia";
-
-// Espelha GET /ai/skills/list (routers/ai_skills.py).
-export type Skill = {
-  id: string;
-  name: string;
-  display_name: string;
-  description?: string | null;
-  area: string;
-  oab_restricted: boolean;
-  /** Skill só faz sentido dentro de um caso (usa documentos/prazos dele). */
-  requires_case?: boolean;
-  /** Output nasce rascunho: revisão humana obrigatória antes de qualquer uso. */
-  requires_human_review?: boolean;
-  /** Motor que executa (ex.: "orquestrador", "skill_nativa"). */
-  engine?: string | null;
-};
-
-/** Resposta de POST /ai/skills/execute(-doc|transcribe-media). */
-type ResultadoSkill = {
-  skill?: string;
-  engine?: string | null;
-  tokens_usados?: number;
-  resposta?: string;
-  resultado?: string;
-  transcricao?: string;
-  conteudo?: string;
-  aviso?: string;
-  aviso_hitl?: string;
-  aviso_privacidade?: string;
-  is_rascunho?: boolean;
-  requires_human_review?: boolean;
-  processamento?: { modo?: string; blocos?: number } | null;
-};
 
 /** Skill exige caso e não há caso selecionado → bloqueia a execução. */
 export function bloqueadaSemCaso(
@@ -212,14 +186,12 @@ export default function FerramentasIA() {
   const [baseLegalMidia, setBaseLegalMidia] = useState("");
   const [loading, setLoading] = useState(false);
   const [carregando, setCarregando] = useState(true);
-  const [res, setRes] = useState<ResultadoSkill | null>(null);
+  const [res, setRes] = useState<SkillExecuteResponse | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
-    api
-      .get("/ai/skills/list")
-      .then((r) => {
-        const arr: Skill[] = r.data ?? [];
+    listarSkills()
+      .then((arr) => {
         setSkills(arr);
         if (arr.length) setSel(arr[0].name);
       })
@@ -279,7 +251,7 @@ export default function FerramentasIA() {
     setErro(null);
     setRes(null);
     try {
-      let data;
+      let data: SkillExecuteResponse;
       if (file) {
         const fd = new FormData();
         fd.append("skill_name", sel);
@@ -292,17 +264,17 @@ export default function FerramentasIA() {
           fd.append("confirmar_envio_externo", String(confirmacaoMidia));
           fd.append("base_legal_registrada", baseLegalMidia);
           fd.append("idioma", "pt");
-          ({ data } = await api.post("/ai/skills/transcribe-media", fd));
+          data = await transcreverMidia(fd);
         } else {
-          ({ data } = await api.post("/ai/skills/execute-doc", fd));
+          data = await executarSkillDocumento(fd);
         }
       } else {
-        ({ data } = await api.post("/ai/skills/execute", {
+        data = await executarSkill({
           skill_name: sel,
           query: texto.trim(),
           case_id: casoFiltro,
           usar_rag: usarRag,
-        }));
+        });
       }
       setRes(data);
     } catch (error: any) {
