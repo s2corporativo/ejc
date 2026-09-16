@@ -1,6 +1,7 @@
 import { useState } from "react";
 import api from "../lib/api";
 import { ErrorState, PageHeader, Spinner, fmtMoney } from "../components/UI";
+import { Kpi, KpiGrid } from "../components/Dashboards";
 import { mensagemDaFalha, useCarregar } from "../lib/useCarregar";
 
 export default function DashboardIA() {
@@ -21,13 +22,8 @@ export default function DashboardIA() {
       </div>
     );
 
-  const Kpi = ({ label, val }: { label: string; val: any }) => (
-    <div className="card p-4">
-      <div className="text-xs text-slate-400">{label}</div>
-      <div className="text-2xl font-serif text-navy mt-1">{val}</div>
-    </div>
-  );
-
+  // KPIs usam o componente canônico do design system (auditoria §2.6 #3:
+  // havia um `Kpi` local duplicando components/Dashboards.tsx).
   const blocos: [string, any][] = [
     ["Por modelo", d?.por_modelo],
     ["Por tipo de uso", d?.por_tipo_uso],
@@ -61,19 +57,19 @@ export default function DashboardIA() {
         />
       ) : (
         <>
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
-        <Kpi label="Chamadas" val={d?.total_chamadas ?? 0} />
-        <Kpi label="Custo (R$)" val={fmtMoney(d?.custo_total_brl)} />
+      <KpiGrid cols={4} className="mb-5">
+        <Kpi label="Chamadas" value={d?.total_chamadas ?? 0} />
+        <Kpi label="Custo (R$)" value={fmtMoney(d?.custo_total_brl)} />
         <Kpi
           label="Aproveitamento"
-          val={
+          value={
             d?.taxa_aproveitamento_pct != null
               ? `${d.taxa_aproveitamento_pct}%`
               : "—"
           }
         />
-        <Kpi label="PII removida" val={d?.chamadas_com_pii_removida ?? 0} />
-      </div>
+        <Kpi label="PII removida" value={d?.chamadas_com_pii_removida ?? 0} />
+      </KpiGrid>
 
       <div className="grid md:grid-cols-3 gap-4">
         {blocos.map(([titulo, obj], i) => (
