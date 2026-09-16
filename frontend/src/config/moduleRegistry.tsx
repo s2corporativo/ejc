@@ -33,7 +33,51 @@ import {
   Wallet,
   type LucideIcon,
 } from "lucide-react";
-import { LEGACY_CANONICAL_REDIRECTS } from "./canonicalRoutes";
+
+/**
+ * Redirects legados canônicos (auditoria §2.6 #6): a definição vive AQUI no
+ * registry — fonte única — e `canonicalRoutes.ts` re-exporta por
+ * compatibilidade. O fluxo de import é unidirecional
+ * (canonicalRoutes → moduleRegistry), sem ciclos.
+ */
+export type LegacyCanonicalRedirect = {
+  from: string;
+  to: string;
+  reason: string;
+};
+
+export const LEGACY_CANONICAL_REDIRECTS: LegacyCanonicalRedirect[] = [
+  {
+    from: "/prazos",
+    to: "/atividades?tipo=prazo",
+    reason: "Prazos foram consolidados na Central de Agenda e Prazos.",
+  },
+  {
+    from: "/tarefas",
+    to: "/atividades?tipo=tarefa",
+    reason: "Tarefas foram consolidadas na Central de Agenda e Prazos.",
+  },
+  {
+    from: "/intimacoes",
+    to: "/atividades?tipo=intimacao",
+    reason: "Intimações foram consolidadas na Central de Agenda e Prazos.",
+  },
+  {
+    from: "/suspensoes",
+    to: "/atividades?tipo=suspensao",
+    reason: "Suspensões foram consolidadas na Central de Agenda e Prazos.",
+  },
+  {
+    from: "/knowledge-hub",
+    to: "/inteligencia?tab=conhecimento",
+    reason: "Conhecimento Jurídico foi consolidado em Pesquisa e IA.",
+  },
+  {
+    from: "/ramos",
+    to: "/areas-de-atuacao",
+    reason: "Área de Atuação usa nomenclatura semântica.",
+  },
+];
 
 export const ROLES = {
   gestores: ["superadmin", "admin", "socio"],
