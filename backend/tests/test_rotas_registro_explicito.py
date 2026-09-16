@@ -388,6 +388,22 @@ def test_paridade_openapi_com_snapshot_anterior():
         # a suíte vermelha — regularizado na análise ponta a ponta de 03/09.
         (("/api/clients/{client_id}/ia-analise", "POST"), ["HTTPBearer", "_dep", "_req_clientes", "get_current_user", "get_db"]),
         (("/api/export/clientes.csv", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        # Fase 8, onda 1-A (inventário RBAC, P1): rate limit (`_dep`) nos 11
+        # endpoints de /users classificados ONLY_AUTH + sensíveis sem cota.
+        # Só ACRESCENTA throttling; os gates de identidade/escopo existentes
+        # (self-service /me, RBAC inline do PATCH, staff gate do avatar de
+        # terceiros) permanecem — ver test_users_rate_limit_gates.py.
+        (("/api/users/me", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/users/me/security", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/users/me/sessions", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/users/me/sessions/revoke-others", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/users/me/sessions/{session_id}/revoke", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/users/me/totp-qr", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/users/{user_id}", "PATCH"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/users/me/calendar-url", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/users/me/avatar", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/users/me/avatar", "DELETE"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/users/{user_id}/avatar", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
         # Fase 8, onda 1-B: gate admin/sócio dos painéis de governança da IA
         # promovido do CORPO do handler para a dependency `_req_admin_socio`
         # (403 antes de qualquer trabalho; ROLE_GATE no inventário RBAC) e
