@@ -13,6 +13,7 @@
 #  • nenhuma comunicação cria prazo automaticamente.
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -36,7 +37,11 @@ from tenacity import (
 from app.models.case import Case, CaseMovimento, CaseStatus
 from app.models.djen import DjenComunicacao
 from app.models.user import User
-from app.services.djen_http import DJEN_COMUNICACAO_URL, criar_cliente_djen
+from app.services.djen_http import (
+    DJEN_COMUNICACAO_URL,
+    DJEN_ITENS_POR_PAGINA,
+    criar_cliente_djen,
+)
 
 # Siglas de duas letras que aparecem em rótulos de OAB e NÃO são unidade
 # federativa — sem isto, "OAB 252599" viria com uf="OA".
@@ -44,8 +49,10 @@ _NAO_UF = frozenset({"OA", "NO", "DE", "DA", "DO", "Nº", "N"})
 
 logger = logging.getLogger("ejc.djen")
 BASE = DJEN_COMUNICACAO_URL
-ITENS_POR_PAGINA = 100
-MAX_PAGINAS = 100
+ITENS_POR_PAGINA = DJEN_ITENS_POR_PAGINA
+MAX_PAGINAS = 200
+MAX_RETRIES_PAGINA_VAZIA = 2
+PAUSA_ENTRE_PAGINAS = 0.25
 JANELA_RECONCILIACAO_DIAS = 7
 
 
@@ -454,12 +461,29 @@ def _extrair_items(payload: dict | list) -> list[dict]:
     return items
 
 
+def extrair_total_djen(payload: dict | list) -> int | None:
+    """Total reportado pela API, quando presente e válido."""
+    if not isinstance(payload, dict):
+        return None
+    for chave in ("count", "total", "totalElements"):
+        valor = payload.get(chave)
+        if valor is None:
+            continue
+        try:
+            total = int(valor)
+        except (TypeError, ValueError):
+            continue
+        if total >= 0:
+            return total
+    return None
+
+
 async def consultar_oab(
     numero: str,
     uf: str,
     dias: int = JANELA_RECONCILIACAO_DIAS,
 ) -> DjenConsultaResultado:
-    """Consulta paginada com janela sobreposta e sem sucesso truncado."""
+    """Consulta paginada, count-aware e fail-closed para páginas incompletas."""
     dias = max(1, min(int(dias), 90))
     fim = date.today()
     inicio = fim - timedelta(days=dias)
@@ -474,29 +498,62 @@ async def consultar_oab(
     todos: list[dict] = []
     vistos: set[str] = set()
     paginas = 0
+    total_fonte: int | None = None
+    pagina = 1
+    retries_vazia = 0
     try:
-        for pagina in range(1, MAX_PAGINAS + 1):
+        while pagina <= MAX_PAGINAS:
             payload = await _djen_get({**base_params, "pagina": pagina})
             lote = _extrair_items(payload)
             paginas = pagina
+            reportado = extrair_total_djen(payload)
+            if reportado is not None:
+                total_fonte = reportado
 
+            if not lote:
+                # Sem itens só prova exaustão quando a própria fonte não afirma
+                # que ainda existem resultados. Caso contrário, retenta a MESMA
+                # página: o Comunica pode devolver vazio transitório com HTTP 200.
+                if total_fonte is not None and len(todos) < total_fonte:
+                    if retries_vazia < MAX_RETRIES_PAGINA_VAZIA:
+                        retries_vazia += 1
+                        await asyncio.sleep(PAUSA_ENTRE_PAGINAS * retries_vazia)
+                        continue
+                    logger.error(
+                        "DJEN: página %s vazia com %s/%s itens; janela incompleta",
+                        pagina, len(todos), total_fonte,
+                    )
+                    return DjenConsultaResultado(
+                        fonte_ok=False,
+                        items=[],
+                        erro="pagina_vazia_incompleta",
+                        paginas=paginas,
+                        janela_dias=dias,
+                    )
+                return DjenConsultaResultado(
+                    fonte_ok=True, items=todos, paginas=paginas, janela_dias=dias
+                )
+
+            retries_vazia = 0
             for item in lote:
                 chave = str(item.get("id") or item.get("hash") or "")
-                # Sem id/hash, a captura contabiliza como ignorada. Não usamos
-                # conteúdo como chave para não fundir duas comunicações reais.
                 if chave and chave in vistos:
                     continue
                 if chave:
                     vistos.add(chave)
                 todos.append(item)
 
-            if len(lote) < ITENS_POR_PAGINA:
+            if total_fonte is not None and len(todos) >= total_fonte:
                 return DjenConsultaResultado(
-                    fonte_ok=True,
-                    items=todos,
-                    paginas=paginas,
-                    janela_dias=dias,
+                    fonte_ok=True, items=todos, paginas=paginas, janela_dias=dias
                 )
+            if len(lote) < ITENS_POR_PAGINA and total_fonte is None:
+                return DjenConsultaResultado(
+                    fonte_ok=True, items=todos, paginas=paginas, janela_dias=dias
+                )
+
+            pagina += 1
+            await asyncio.sleep(PAUSA_ENTRE_PAGINAS)
 
         logger.error(
             "DJEN: paginação atingiu teto de %s páginas; janela incompleta",
