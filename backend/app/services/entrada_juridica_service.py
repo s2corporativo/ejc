@@ -317,6 +317,7 @@ async def gerar_dossie_juridico(db, user, case_id: str) -> dict[str, Any]:
         nomes_proteger=[x for x in [nome_cliente, case.parte_contraria, *[p["nome"] for p in partes]] if x],
         scope_client_id=case.client_id,
         case_id=case.id,
+        recuperar_ocr_completo=False,
         db=db,
         user_id=user.id,
     )
