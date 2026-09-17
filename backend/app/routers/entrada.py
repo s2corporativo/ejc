@@ -6,12 +6,12 @@
 #                               inclusive no caminho só-texto, document_count=0).
 # POST /entrada/{id}/criar-caso: cria Cliente→Caso→vínculos em UMA transação,
 #                               com gates de servidor e idempotência.
+# POST /entrada/casos/{id}/dossie-juridico: análise profunda do caso já criado,
+#                               plano jurídico versionado + HITL.
 #
-# Router fino: toda a orquestração vive em services/entrada_service.py, que
-# REUTILIZA os pipelines existentes (Entrada Universal, Entrevista Inteligente,
-# índice cego de CPF/CNPJ, conflito de interesses). Nenhuma chamada de IA nova.
-# RBAC: piso advogado (mesmo de triagem/entrevista — criar caso é ato
-# privativo de advogado no resto do sistema).
+# Router fino: toda a orquestração vive em services/entrada_service.py e
+# services/entrada_juridica_service.py, que REUTILIZAM os pipelines existentes.
+# RBAC: piso advogado (mesmo de triagem/entrevista e motor de peça).
 from __future__ import annotations
 
 import logging
@@ -27,7 +27,7 @@ from app.core.security import ROLE_LEVEL, get_current_user
 from app.models.document_intake import DocumentIntakeBatch
 from app.models.user import User
 from app.schemas.entrada import CriarCasoEntradaRequest
-from app.services import entrada_service
+from app.services import entrada_juridica_service, entrada_service
 
 logger = logging.getLogger("ejc.entrada_unica.router")
 router = APIRouter(prefix="/entrada", tags=["Entrada Única"])
@@ -77,6 +77,14 @@ async def analisar(
         proposta = await entrada_service.analisar_entrada(
             db, cu, batch=batch, files=files, texto=texto_limpo,
         )
+        proposta["conteudo_identificado"] = entrada_juridica_service.identificar_conteudo(
+            texto_limpo,
+            [
+                {"titulo": d.get("nome"), "tipo": d.get("classificacao")}
+                for d in (proposta.get("documentos") or [])
+                if isinstance(d, dict)
+            ],
+        )
         batch.status = "concluido"
         batch.document_count = len(proposta.get("documentos") or [])
         batch.total_bytes = int(proposta.pop("total_bytes", 0) or 0)
@@ -85,10 +93,13 @@ async def analisar(
         return proposta
     except HTTPException:
         await db.rollback()  # limpa transação pendente antes de reusar a sessão
-        batch.status = "erro"; await db.commit(); raise
+        batch.status = "erro"
+        await db.commit()
+        raise
     except Exception as exc:
         await db.rollback()  # limpa transação pendente antes de reusar a sessão
-        batch.status = "erro"; await db.commit()
+        batch.status = "erro"
+        await db.commit()
         logger.exception("Falha na análise da Entrada Única (lote %s)", batch.id)
         # Mensagem genérica: detalhe de exceção interna só no log (achado B4
         # da auditoria — não expor internals ao cliente).
@@ -96,6 +107,24 @@ async def analisar(
             500, "Falha ao analisar a entrada. Os originais enviados foram "
                  "preservados; tente novamente ou contate a gestão.",
         ) from exc
+
+
+@router.post(
+    "/casos/{case_id}/dossie-juridico",
+    dependencies=[Depends(rate_limit("entrada-dossie-juridico", 4))],
+)
+async def dossie_juridico(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(exigir_advogado),
+):
+    """Caso oficial → leitura jurídica profunda → plano versionado em RASCUNHO.
+
+    O endpoint não gera peça nem cria prazo. A aprovação do plano usa o HITL
+    canônico de CaseIntelligenceSnapshot; depois, a redação segue pelo Motor de
+    Peça e seus gates próprios.
+    """
+    return await entrada_juridica_service.gerar_dossie_juridico(db, cu, case_id)
 
 
 @router.post("/{rascunho_id}/criar-caso",

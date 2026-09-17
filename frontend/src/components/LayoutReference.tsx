@@ -4,7 +4,6 @@ import {
   Bell,
   Bot,
   CalendarDays,
-  ChevronDown,
   Eye,
   EyeOff,
   Mail,
@@ -21,32 +20,46 @@ import IaStatusBanner from "./IaStatusBanner";
 import ModuleLifecycleGate from "./ModuleLifecycleGate";
 import OnboardingTour from "./OnboardingTour";
 import SecurityMenu from "./SecurityMenu";
-import { toast } from "./Toast";
 import SidebarWeekCalendar from "./SidebarWeekCalendar";
+import { toast } from "./Toast";
 import { Tooltip, cn } from "./UI";
 import {
-  officeBranding,
   getMailtoUrl,
   getWhatsAppUrl,
+  officeBranding,
 } from "../config/officeBranding";
 import {
   getHelpModuleKey,
   getNavigationModules,
-  groupNavigationModules,
   type ModuleRoute,
 } from "../config/moduleRegistry";
+import api from "../lib/api";
 import { ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
 import { useIaStatus } from "../lib/iaStatus";
 import { filterModulesByLifecycle } from "../lib/moduleLifecycle";
 import { isSidebarNavigationCollapsed } from "../lib/sidebarNavigation";
-import api from "../lib/api";
 import { useAuth } from "../stores/auth";
 import { useModuleLifecycleStore } from "../stores/moduleLifecycle";
 import { usePreferencesStore } from "../stores/preferences";
 
-// Fonte única de navegação: o moduleRegistry (auditoria Fase 4). A lista
-// primária deriva da flag `essential` do registry, os rótulos vêm do próprio
-// módulo e os grupos de MODULE_GROUP_ORDER — nada é hardcoded aqui.
+const CANONICAL_MAIN_NAV_KEYS = [
+  "dashboard",
+  "casos",
+  "clientes",
+  "atividades",
+  "documentos",
+  "ramos",
+  "financeiro",
+  "configuracoes",
+] as const;
+
+const CANONICAL_MAIN_NAV_LABELS: Partial<
+  Record<(typeof CANONICAL_MAIN_NAV_KEYS)[number], string>
+> = {
+  atividades: "Agenda",
+  configuracoes: "Administrativo",
+};
+
 function formatClock(date: Date) {
   const dateText = new Intl.DateTimeFormat("pt-BR", {
     timeZone: officeBranding.timezone,
@@ -70,11 +83,13 @@ function formatClock(date: Date) {
 }
 
 /**
- * AppShell de referência 2026.
+ * AppShell canônico do EJC.
  *
- * A implementação altera exclusivamente navegação/apresentação do shell:
- * RBAC, lifecycle, busca global, notificações, contexto do caso, IA, segurança
- * e o Outlet continuam usando os mesmos serviços e componentes do EJC.
+ * A barra lateral expõe somente os oito domínios principais. Capacidades
+ * especializadas permanecem registradas e protegidas pelas mesmas rotas/RBAC,
+ * sendo alcançadas dentro do domínio correspondente, por deep-link, busca ou
+ * ações contextuais. A simplificação é de arquitetura de informação, não de
+ * autorização nem de remoção funcional.
  */
 export default function LayoutReference() {
   const user = useAuth((state) => state.user);
@@ -90,7 +105,6 @@ export default function LayoutReference() {
   );
 
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifCount, setNotifCount] = useState(0);
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -126,29 +140,16 @@ export default function LayoutReference() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const visible = useMemo(
-    () =>
-      filterModulesByLifecycle(
-        getNavigationModules(user?.role),
-        lifecycleSettings,
-      ),
-    [user?.role, lifecycleSettings],
-  );
-
-  const primary = useMemo(
-    () => visible.filter((item) => item.essential),
-    [visible],
-  );
-
-  const primaryGroups = useMemo(
-    () => groupNavigationModules(primary),
-    [primary],
-  );
-
-  const secondary = useMemo(
-    () => visible.filter((item) => !item.essential),
-    [visible],
-  );
+  const visible = useMemo(() => {
+    const allowed = filterModulesByLifecycle(
+      getNavigationModules(user?.role),
+      lifecycleSettings,
+    );
+    const byKey = new Map(allowed.map((item) => [item.key, item]));
+    return CANONICAL_MAIN_NAV_KEYS.map((key) => byKey.get(key)).filter(
+      (item): item is ModuleRoute => Boolean(item),
+    );
+  }, [user?.role, lifecycleSettings]);
 
   const sidebarWidth = collapsed ? "md:w-[4.75rem]" : "md:w-[15.5rem]";
   const contentMargin = collapsed ? "md:ml-[4.75rem]" : "md:ml-[15.5rem]";
@@ -159,7 +160,10 @@ export default function LayoutReference() {
 
   const renderNavItem = (item: ModuleRoute) => {
     const Icon = item.icon;
-    const label = item.label;
+    const label =
+      CANONICAL_MAIN_NAV_LABELS[
+        item.key as (typeof CANONICAL_MAIN_NAV_KEYS)[number]
+      ] ?? item.label;
     const content = (
       <NavLink
         key={item.path}
@@ -217,7 +221,7 @@ export default function LayoutReference() {
             <img
               src={officeBranding.logoPath}
               alt={officeBranding.officeName}
-              className="brand-logo-img h-10 w-auto max-w-[190px] object-contain"
+              className="brand-logo-img h-12 w-auto max-w-[230px] object-contain"
             />
           </Link>
 
@@ -377,7 +381,7 @@ export default function LayoutReference() {
           <img
             src={officeBranding.logoPath}
             alt={officeBranding.officeName}
-            className="h-9 w-auto max-w-[170px] object-contain"
+            className="h-11 w-auto max-w-[200px] object-contain"
           />
           <button
             type="button"
@@ -389,52 +393,11 @@ export default function LayoutReference() {
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-3 py-3 scrollbar-thin">
-          {primaryGroups.map((group, index) => (
-            <div key={group.name} className={index > 0 ? "mt-4" : undefined}>
-              {!navCollapsed && (
-                <div
-                  className="sidebar-group-label px-3 pb-1 text-[9px] font-semibold uppercase tracking-[0.16em]"
-                  aria-hidden="true"
-                >
-                  {group.name}
-                </div>
-              )}
-              <div className="space-y-1">
-                {group.items.map(renderNavItem)}
-              </div>
-            </div>
-          ))}
-
-          {secondary.length > 0 && (
-            <div className="mt-3 border-t border-slate-100 pt-2">
-              {navCollapsed ? (
-                <div className="space-y-1">{secondary.map(renderNavItem)}</div>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setMoreOpen((value) => !value)}
-                    className="sidebar-group-label flex w-full items-center justify-between rounded-lg px-3 py-2 text-[9px] font-semibold uppercase tracking-[0.16em]"
-                    aria-expanded={moreOpen}
-                  >
-                    <span>Mais</span>
-                    <ChevronDown
-                      className={cn(
-                        "h-3 w-3 transition-transform",
-                        !moreOpen && "-rotate-90",
-                      )}
-                    />
-                  </button>
-                  {moreOpen && (
-                    <div className="mt-1 space-y-1">
-                      {secondary.map(renderNavItem)}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
+        <nav
+          className="flex-1 overflow-y-auto px-3 py-3 scrollbar-thin"
+          aria-label="Navegação principal"
+        >
+          <div className="space-y-1">{visible.map(renderNavItem)}</div>
         </nav>
 
         {!navCollapsed && <SidebarWeekCalendar />}

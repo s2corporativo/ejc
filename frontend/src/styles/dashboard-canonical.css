@@ -1,0 +1,17 @@
+.ejc-ai-dashboard__signals.ejc-ai-dashboard__signals--canonical {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ejc-ai-dashboard__workspace.ejc-ai-dashboard__workspace--entry {
+  min-height: 58vh;
+}
+
+@media (max-width: 900px) {
+  .ejc-ai-dashboard__signals.ejc-ai-dashboard__signals--canonical {
+    grid-template-columns: 1fr;
+  }
+
+  .ejc-ai-dashboard__workspace.ejc-ai-dashboard__workspace--entry {
+    min-height: auto;
+  }
+}
