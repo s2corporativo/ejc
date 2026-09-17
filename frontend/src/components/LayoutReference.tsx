@@ -23,6 +23,7 @@ import SecurityMenu from "./SecurityMenu";
 import SidebarWeekCalendar from "./SidebarWeekCalendar";
 import { toast } from "./Toast";
 import { Tooltip, cn } from "./UI";
+import { selectCanonicalMainNavigation } from "../config/canonicalNavigation";
 import {
   getMailtoUrl,
   getWhatsAppUrl,
@@ -41,24 +42,6 @@ import { isSidebarNavigationCollapsed } from "../lib/sidebarNavigation";
 import { useAuth } from "../stores/auth";
 import { useModuleLifecycleStore } from "../stores/moduleLifecycle";
 import { usePreferencesStore } from "../stores/preferences";
-
-const CANONICAL_MAIN_NAV_KEYS = [
-  "dashboard",
-  "casos",
-  "clientes",
-  "atividades",
-  "documentos",
-  "ramos",
-  "financeiro",
-  "configuracoes",
-] as const;
-
-const CANONICAL_MAIN_NAV_LABELS: Partial<
-  Record<(typeof CANONICAL_MAIN_NAV_KEYS)[number], string>
-> = {
-  atividades: "Agenda",
-  configuracoes: "Administrativo",
-};
 
 function formatClock(date: Date) {
   const dateText = new Intl.DateTimeFormat("pt-BR", {
@@ -85,11 +68,10 @@ function formatClock(date: Date) {
 /**
  * AppShell canônico do EJC.
  *
- * A barra lateral expõe somente os oito domínios principais. Capacidades
- * especializadas permanecem registradas e protegidas pelas mesmas rotas/RBAC,
- * sendo alcançadas dentro do domínio correspondente, por deep-link, busca ou
- * ações contextuais. A simplificação é de arquitetura de informação, não de
- * autorização nem de remoção funcional.
+ * A barra lateral expõe somente os oito domínios definidos em
+ * canonicalNavigation. Rotas, componentes, RBAC e lifecycle continuam vindo
+ * do moduleRegistry e dos gates existentes; a simplificação é apenas de
+ * arquitetura de informação, sem remoção funcional.
  */
 export default function LayoutReference() {
   const user = useAuth((state) => state.user);
@@ -140,16 +122,16 @@ export default function LayoutReference() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const visible = useMemo(() => {
-    const allowed = filterModulesByLifecycle(
-      getNavigationModules(user?.role),
-      lifecycleSettings,
-    );
-    const byKey = new Map(allowed.map((item) => [item.key, item]));
-    return CANONICAL_MAIN_NAV_KEYS.map((key) => byKey.get(key)).filter(
-      (item): item is ModuleRoute => Boolean(item),
-    );
-  }, [user?.role, lifecycleSettings]);
+  const visible = useMemo(
+    () =>
+      selectCanonicalMainNavigation(
+        filterModulesByLifecycle(
+          getNavigationModules(user?.role),
+          lifecycleSettings,
+        ),
+      ),
+    [user?.role, lifecycleSettings],
+  );
 
   const sidebarWidth = collapsed ? "md:w-[4.75rem]" : "md:w-[15.5rem]";
   const contentMargin = collapsed ? "md:ml-[4.75rem]" : "md:ml-[15.5rem]";
@@ -160,10 +142,7 @@ export default function LayoutReference() {
 
   const renderNavItem = (item: ModuleRoute) => {
     const Icon = item.icon;
-    const label =
-      CANONICAL_MAIN_NAV_LABELS[
-        item.key as (typeof CANONICAL_MAIN_NAV_KEYS)[number]
-      ] ?? item.label;
+    const label = item.label;
     const content = (
       <NavLink
         key={item.path}
