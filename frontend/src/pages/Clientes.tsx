@@ -7,6 +7,7 @@ import {
   ShieldAlert,
   KeyRound,
   FileSignature,
+  Trash2,
 } from "lucide-react";
 import api from "../lib/api";
 import { soDigitos } from "../utils/phone";
@@ -74,6 +75,13 @@ export default function Clientes() {
   const [conflitoLoading, setConflitoLoading] = useState(false);
   const [conflitoIndisponivel, setConflitoIndisponivel] = useState(false);
   const [acessoModal, setAcessoModal] = useState<any>(null);
+  // Exclusão de cliente: modal de confirmação + dependências bloqueantes.
+  // O backend responde 409 com { mensagem, bloqueios } quando há caso em
+  // representação ativa; ?forcar=true prossegue com decisão registrada.
+  const [excluirAlvo, setExcluirAlvo] = useState<Client | null>(null);
+  const [excluirBloqueios, setExcluirBloqueios] = useState<string[]>([]);
+  const [excluirForcar, setExcluirForcar] = useState(false);
+  const [excluindo, setExcluindo] = useState(false);
   const [acessoForm, setAcessoForm] = useState({
     email: "",
     senha_inicial: "",
@@ -92,6 +100,10 @@ export default function Clientes() {
     role,
   );
   const podeRelatorioLgpd = ["superadmin", "admin", "socio"].includes(role);
+  // Exclusão de cliente (soft delete com trilha de auditoria): o backend
+  // exige admin/sócio via require_roles — superadmin passa pela hierarquia
+  // de níveis. O botão espelha o gate; quem não pode, não vê a ação.
+  const podeExcluir = ["superadmin", "admin", "socio"].includes(role);
   // Emissão/consulta de procuração e contrato é ato jurídico: o backend exige
   // advogado+ (requer_advogado). O botão espelha esse gate — não o substitui.
   const podeVerAdmissao = ["superadmin", "admin", "socio", "advogado"].includes(
@@ -130,6 +142,41 @@ export default function Clientes() {
     const t = setTimeout(load, search ? 350 : 0);
     return () => clearTimeout(t);
   }, [search, page]);
+
+  // Exclusão: 1ª tentativa sem forcar; 409 devolve bloqueios e o modal
+  // passa a oferecer a confirmação forçada (decisão explícita, auditable).
+  const confirmarExclusao = async () => {
+    if (!excluirAlvo) return;
+    setExcluindo(true);
+    try {
+      await api.delete(
+        `/clients/${excluirAlvo.id}${excluirForcar ? "?forcar=true" : ""}`,
+      );
+      toast.success(
+        "Cliente excluído. A decisão ficou registrada na trilha de auditoria.",
+      );
+      setExcluirAlvo(null);
+      load();
+    } catch (e: any) {
+      const det = e.response?.data?.detail;
+      if (e.response?.status === 409 && det?.bloqueios) {
+        setExcluirBloqueios(
+          Array.isArray(det.bloqueios)
+            ? det.bloqueios.map(String)
+            : [String(det.bloqueios)],
+        );
+        toast.error(det.mensagem || "Exclusão bloqueada pelas dependências.");
+      } else {
+        toast.error(
+          typeof det === "string"
+            ? det
+            : "Não foi possível excluir o cliente",
+        );
+      }
+    } finally {
+      setExcluindo(false);
+    }
+  };
 
   // Checagem assistiva de conflito de interesses. Base ética: Código de Ética
   // e Disciplina da OAB (Res. CFOAB 02/2015), especialmente arts. 19 a 22.
@@ -416,6 +463,20 @@ export default function Clientes() {
                         }}
                       >
                         📄
+                      </button>
+                    )}
+                    {podeExcluir && (
+                      <button
+                        title="Excluir cliente"
+                        className="inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5 text-red-500/70 hover:text-red-600"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExcluirBloqueios([]);
+                          setExcluirForcar(false);
+                          setExcluirAlvo(c);
+                        }}
+                      >
+                        <Trash2 size={14} />
                       </button>
                     )}
                   </td>
@@ -926,6 +987,65 @@ export default function Clientes() {
               >
                 Criar acesso
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {excluirAlvo && podeExcluir && (
+        <div className="modal-backdrop" onClick={() => setExcluirAlvo(null)}>
+          <div
+            className="card p-6 w-full max-w-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-semibold text-navy mb-1 flex items-center gap-1.5">
+              <Trash2 size={16} /> Excluir cliente
+            </h3>
+            <p className="text-xs text-slate-500 mb-3">
+              {excluirAlvo.nome || excluirAlvo.razao_social} — o cliente sai da
+              listagem (exclusão lógica). Documentos, casos e a trilha de
+              auditoria permanecem preservados, conforme a LGPD.
+            </p>
+            {excluirBloqueios.length > 0 && (
+              <Alert
+                variant="warning"
+                title="Exclusão bloqueada pelas dependências"
+                className="mb-3"
+              >
+                <ul className="list-disc pl-4 text-xs">
+                  {excluirBloqueios.map((b, i) => (
+                    <li key={i}>{b}</li>
+                  ))}
+                </ul>
+              </Alert>
+            )}
+            {excluirBloqueios.length > 0 && (
+              <label className="mb-3 flex items-start gap-2 text-xs text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={excluirForcar}
+                  onChange={(e) => setExcluirForcar(e.target.checked)}
+                  className="mt-0.5"
+                />
+                Confirmar mesmo assim (forçar) — a decisão é registrada na
+                auditoria e fica associada ao seu usuário.
+              </label>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <Button
+                variant="ghost"
+                disabled={excluindo}
+                onClick={() => setExcluirAlvo(null)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="danger"
+                disabled={excluindo || (excluirBloqueios.length > 0 && !excluirForcar)}
+                onClick={confirmarExclusao}
+              >
+                {excluindo ? "Excluindo..." : "Excluir"}
+              </Button>
             </div>
           </div>
         </div>
