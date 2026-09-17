@@ -4,7 +4,6 @@ import pytest
 
 from app.services.datajud_service import DataJudDesabilitadoError
 from app.services.jurimetria_tribunais import agregacao, coleta, servico
-from app.services.jurimetria_tribunais import tpu_desfechos as tpu
 
 
 def _mov(codigo: int) -> dict:
