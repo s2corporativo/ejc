@@ -15,6 +15,7 @@ from sqlalchemy import func as sqlfunc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import hoje_operacional
+from app.core.csv_safe import sanitize_csv_row
 from app.core.database import get_db
 from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.core.security import get_current_user, requer_advogado
@@ -338,16 +339,16 @@ async def exportar_csv(
 def _prazos_para_csv(rows, hoje: date) -> str:
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";")
-    w.writerow(["Titulo", "Tipo", "Prioridade", "Status", "Data do prazo",
-                "Data da intimacao", "Dias restantes", "Base legal"])
+    w.writerow(sanitize_csv_row(["Titulo", "Tipo", "Prioridade", "Status", "Data do prazo",
+                "Data da intimacao", "Dias restantes", "Base legal"]))
     for d in rows:
         dias = (d.data_prazo - hoje).days if d.data_prazo else ""
-        w.writerow([
+        w.writerow(sanitize_csv_row([
             d.titulo or "", d.tipo or "", d.prioridade or "", d.status or "",
             d.data_prazo.isoformat() if d.data_prazo else "",
             d.data_intimacao.isoformat() if getattr(d, "data_intimacao", None) else "",
             dias, getattr(d, "base_legal", "") or "",
-        ])
+        ]))
     return "﻿" + buf.getvalue()
 
 

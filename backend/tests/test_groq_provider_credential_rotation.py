@@ -12,9 +12,7 @@ existe.
 from __future__ import annotations
 
 import pytest
-from groq import AsyncGroq
 
-from app.core.config import get_settings
 from app.services.providers import groq_provider as gp
 
 

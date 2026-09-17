@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.database import Base
@@ -15,14 +14,10 @@ from app.modules.dpt360.lifecycle_service import (
     ESTADO_TRIAGEM_PENDENTE,
     ESTADO_TRIAGEM_CONCLUIDA,
     ESTADO_DESCARTADA,
-    ESTADO_EXPIRADA,
     ESTADO_ANONIMIZADA,
-    ESTADO_CONVERTIDA,
     mudar_estado,
     anonimizar_oportunidade,
-    expurgar_oportunidade,
     job_anonimizar_oportunidades,
-    job_expurgar_oportunidades,
 )
 
 # AuditLog fica de fora: usa JSONB (Postgres-only) e não compila no SQLite —

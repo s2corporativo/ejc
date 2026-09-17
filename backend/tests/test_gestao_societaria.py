@@ -24,7 +24,7 @@ from app.models.socio import RegimeSocio, Socio
 from app.models.user import User, UserRole
 from app.routers.gestao_societaria import (
     SocioIn, SocioPatch,
-    atualizar_socio, cadastrar_socio, aprovar_distribuicao, calcular_distribuicao,
+    atualizar_socio, cadastrar_socio, aprovar_distribuicao,
 )
 from app.models.socio import DistribuicaoLucro
 
