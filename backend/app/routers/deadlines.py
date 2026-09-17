@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.clock import hoje_operacional
 from app.core.database import get_db
 from app.core.ownership import is_gestao, verificar_acesso_caso
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, requer_advogado
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case
@@ -196,7 +197,8 @@ def _base_processual(regime: str, dias: int, dobro: bool, *, legado: bool,
     return base
 
 
-@router.post("/calcular")
+@router.post("/calcular",
+             dependencies=[Depends(rate_limit("deadlines-calcular", 60))])
 async def calcular(req: CalcularPrazoRequest, cu: User = Depends(get_current_user)):
     """Calculadora rápida, sem persistir, com regime processual explícito."""
     del cu
@@ -260,7 +262,7 @@ async def calcular(req: CalcularPrazoRequest, cu: User = Depends(get_current_use
     }
 
 
-@router.get("/")
+@router.get("/", dependencies=[Depends(rate_limit("deadlines-listar", 120))])
 async def listar(
     page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
     status_f: Optional[str] = Query("pendente", alias="status"),
@@ -305,7 +307,8 @@ async def listar(
     return {"data": data, "total": total, "page": page, "page_size": page_size}
 
 
-@router.get("/export.csv")
+@router.get("/export.csv",
+            dependencies=[Depends(rate_limit("deadlines-exporta-csv", 10))])
 async def exportar_csv(
     status_f: Optional[str] = Query("pendente", alias="status"),
     case_id: Optional[str] = None,
@@ -351,7 +354,8 @@ def _prazos_para_csv(rows, hoje: date) -> str:
     return "﻿" + buf.getvalue()
 
 
-@router.post("/", status_code=201)
+@router.post("/", status_code=201,
+             dependencies=[Depends(rate_limit("deadlines-criar", 30))])
 async def criar(
     payload: DeadlineCreate,
     db: AsyncSession = Depends(get_db),
@@ -466,7 +470,8 @@ async def criar(
     return DeadlineResponse.model_validate(d)
 
 
-@router.patch("/{deadline_id}")
+@router.patch("/{deadline_id}",
+              dependencies=[Depends(rate_limit("deadlines-atualizar", 30))])
 async def atualizar(
     deadline_id: str, payload: DeadlineUpdate,
     db: AsyncSession = Depends(get_db),
@@ -538,7 +543,8 @@ async def atualizar(
     return DeadlineResponse.model_validate(d)
 
 
-@router.patch("/{deadline_id}/confirmar", response_model=DeadlineResponse)
+@router.patch("/{deadline_id}/confirmar", response_model=DeadlineResponse,
+              dependencies=[Depends(rate_limit("deadlines-confirmar", 30))])
 async def confirmar(
     deadline_id: str,
     db: AsyncSession = Depends(get_db),
@@ -563,7 +569,8 @@ async def confirmar(
     return DeadlineResponse.model_validate(d)
 
 
-@router.post("/{deadline_id}/ciencia", response_model=MsgResponse)
+@router.post("/{deadline_id}/ciencia", response_model=MsgResponse,
+             dependencies=[Depends(rate_limit("deadlines-ciencia", 30))])
 async def confirmar_ciencia(
     deadline_id: str,
     db: AsyncSession = Depends(get_db),
@@ -588,7 +595,8 @@ async def confirmar_ciencia(
     return MsgResponse(detail="Ciência confirmada")
 
 
-@router.delete("/{deadline_id}", response_model=MsgResponse)
+@router.delete("/{deadline_id}", response_model=MsgResponse,
+               dependencies=[Depends(rate_limit("deadlines-excluir", 5))])
 async def cancelar(
     deadline_id: str,
     db: AsyncSession = Depends(get_db),
