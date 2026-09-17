@@ -1,24 +1,22 @@
 # ── app/routers/entrada.py ───────────────────────────────────────────────────
 # Entrada Única (Bloco 3 — docs/DESENHO_BLOCO3_TELAS.md, seção 4).
 #
-# POST /entrada/analisar      : multipart (texto e/ou arquivos) → proposta de
-#                               caso (RASCUNHO persistido no DocumentIntakeBatch,
-#                               inclusive no caminho só-texto, document_count=0).
+# POST /entrada/analisar:
+#   - multipart texto/arquivos → proposta de caso (rascunho persistido);
+#   - com ?case_id=<id> → dossiê jurídico profundo do caso já criado.
 # POST /entrada/{id}/criar-caso: cria Cliente→Caso→vínculos em UMA transação,
 #                               com gates de servidor e idempotência.
 #
-# Router fino: toda a orquestração vive em services/entrada_service.py, que
-# REUTILIZA os pipelines existentes (Entrada Universal, Entrevista Inteligente,
-# índice cego de CPF/CNPJ, conflito de interesses). Nenhuma chamada de IA nova.
-# RBAC: piso advogado (mesmo de triagem/entrevista — criar caso é ato
-# privativo de advogado no resto do sistema).
+# Router fino: toda a orquestração vive em services/entrada_service.py e
+# services/entrada_juridica_service.py, que REUTILIZAM os pipelines existentes.
+# RBAC: piso advogado (mesmo de triagem/entrevista e motor de peça).
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Annotated, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -27,7 +25,7 @@ from app.core.security import ROLE_LEVEL, get_current_user
 from app.models.document_intake import DocumentIntakeBatch
 from app.models.user import User
 from app.schemas.entrada import CriarCasoEntradaRequest
-from app.services import entrada_service
+from app.services import entrada_juridica_service, entrada_service
 
 logger = logging.getLogger("ejc.entrada_unica.router")
 router = APIRouter(prefix="/entrada", tags=["Entrada Única"])
@@ -49,24 +47,27 @@ async def exigir_advogado(cu: User = Depends(get_current_user)) -> User:
 async def analisar(
     files: list[UploadFile] = File(default=[]),
     texto: Optional[str] = Form(None),
+    case_id: Annotated[Optional[str], Query(max_length=36)] = None,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(exigir_advogado),
 ):
-    """Cole o relato, arraste os documentos, ou os dois — exige relato com 40+
-    caracteres OU ao menos 1 arquivo. IA indisponível NUNCA derruba a análise
-    (degradado=true + avisos). Toda saída de IA é rascunho HITL com AILog."""
+    """Porta única de análise jurídica.
+
+    Sem `case_id`: relato/documentos → proposta preliminar de novo caso.
+    Com `case_id`: caso oficial existente → dossiê jurídico profundo versionado
+    em RASCUNHO. Em ambos os modos, RBAC/HITL/auditoria continuam obrigatórios.
+    """
+    if case_id:
+        return await entrada_juridica_service.gerar_dossie_juridico(db, cu, case_id)
+
     texto_limpo = (texto or "").strip() or None
     if not files and len(texto_limpo or "") < 40:
         raise HTTPException(
             422, "Envie ao menos um arquivo ou um relato com 40+ caracteres"
         )
-    # Teto do relato (paridade com a Entrevista Inteligente, que limita o
-    # payload a 15.000) — sem ele o texto integral iria a batch.resultado.
     if texto_limpo and len(texto_limpo) > 15_000:
         raise HTTPException(422, "Relato excede 15.000 caracteres")
 
-    # O rascunho persiste também no caminho só-texto (document_count=0):
-    # a proposta editável sobrevive ao F5 dentro de batch.resultado.
     batch = DocumentIntakeBatch(
         id=str(uuid4()), status="processando", created_by=cu.id,
     )
@@ -77,6 +78,14 @@ async def analisar(
         proposta = await entrada_service.analisar_entrada(
             db, cu, batch=batch, files=files, texto=texto_limpo,
         )
+        proposta["conteudo_identificado"] = entrada_juridica_service.identificar_conteudo(
+            texto_limpo,
+            [
+                {"titulo": d.get("nome"), "tipo": d.get("classificacao")}
+                for d in (proposta.get("documentos") or [])
+                if isinstance(d, dict)
+            ],
+        )
         batch.status = "concluido"
         batch.document_count = len(proposta.get("documentos") or [])
         batch.total_bytes = int(proposta.pop("total_bytes", 0) or 0)
@@ -84,14 +93,15 @@ async def analisar(
         await db.commit()
         return proposta
     except HTTPException:
-        await db.rollback()  # limpa transação pendente antes de reusar a sessão
-        batch.status = "erro"; await db.commit(); raise
+        await db.rollback()
+        batch.status = "erro"
+        await db.commit()
+        raise
     except Exception as exc:
-        await db.rollback()  # limpa transação pendente antes de reusar a sessão
-        batch.status = "erro"; await db.commit()
+        await db.rollback()
+        batch.status = "erro"
+        await db.commit()
         logger.exception("Falha na análise da Entrada Única (lote %s)", batch.id)
-        # Mensagem genérica: detalhe de exceção interna só no log (achado B4
-        # da auditoria — não expor internals ao cliente).
         raise HTTPException(
             500, "Falha ao analisar a entrada. Os originais enviados foram "
                  "preservados; tente novamente ou contate a gestão.",

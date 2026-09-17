@@ -1,12 +1,11 @@
 // Entrada Única (/entrada) — porta de entrada principal de casos.
-// Duas telas na mesma rota (docs/DESENHO_BLOCO3_TELAS.md, seções 2-4):
-//   A) relato + documentos → POST /entrada/analisar (multipart);
-//   B) confirmação editável → POST /entrada/{rascunho_id}/criar-caso.
-// Regras: nada que o sistema possa inferir é perguntado antes de inferir;
-// resposta que CHEGOU nunca vira tela de erro (degradado = confirmação com
-// campos vazios); rascunho sobrevive ao F5 via sessionStorage.
+// Fluxo canônico:
+//   A) relato + documentos → análise preliminar;
+//   B) confirmação editável → criação do caso;
+//   C) dossiê jurídico profundo → aprovação HITL → Motor de Peça.
+// A complexidade fica no EJC; a superfície inicial continua simples.
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import api from "../lib/api";
 import { toast } from "../components/Toast";
 import { PageHeader } from "../components/UI";
@@ -14,6 +13,7 @@ import { useAuth } from "../stores/auth";
 import type { User } from "../types";
 import CadastroManual from "./CadastroManual";
 import { Confirmacao } from "./EntradaUnica/Confirmacao";
+import DossieJuridico from "./EntradaUnica/DossieJuridico";
 import { TelaAnalisando, TelaInicial } from "./EntradaUnica/TelaEnvio";
 import {
   carregarRascunho,
@@ -30,7 +30,7 @@ import {
   type Proposta,
 } from "./EntradaUnica/types";
 
-type Fase = "inicial" | "analisando" | "confirmar";
+type Fase = "inicial" | "analisando" | "confirmar" | "dossie";
 
 type ClienteContexto = {
   id: string;
@@ -71,9 +71,8 @@ function nomeClienteContexto(raw: unknown): string {
 
 /**
  * Entrada Jurídica é a única porta visível. O modo manual reutiliza a tela
- * canônica sem IA, mantendo /cadastro-manual como rota histórica/atalho.
- * Perfis autorizados a cadastrar cliente/caso, mas não a usar /entrada/analisar
- * (ex.: secretaria), permanecem na mesma porta e recebem o modo manual.
+ * canônica sem IA. Perfis sem acesso à IA permanecem na mesma porta e recebem
+ * o cadastro manual; backend continua autoritativo para cada operação.
  */
 export default function EntradaUnica() {
   const [searchParams] = useSearchParams();
@@ -84,8 +83,8 @@ export default function EntradaUnica() {
   return <EntradaInteligente />;
 }
 
-function EntradaInteligente() {
-  const navigate = useNavigate();
+/** Reutilizada no Dashboard para que / e /entrada usem a MESMA Entrada Única. */
+export function EntradaInteligente({ embedded = false }: { embedded?: boolean }) {
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const meuId = user?.id ?? "";
@@ -100,12 +99,11 @@ function EntradaInteligente() {
   const [usuarios, setUsuarios] = useState<User[]>([]);
   const [criando, setCriando] = useState(false);
   const [erro409, setErro409] = useState<string | null>(null);
+  const [caseCriadoId, setCaseCriadoId] = useState<string | null>(null);
   const [clienteContexto, setClienteContexto] =
     useState<ClienteContexto | null>(null);
   const [clienteContextoInvalido, setClienteContextoInvalido] = useState(false);
 
-  // Cliente vindo da Ficha Mestra: o GET canônico aplica RBAC/ownership. O ID
-  // nunca é aceito como autorização apenas porque apareceu na URL.
   useEffect(() => {
     if (!clientIdContexto) {
       setClienteContexto(null);
@@ -133,7 +131,6 @@ function EntradaInteligente() {
     };
   }, [clientIdContexto]);
 
-  // Rascunho sobrevive ao F5: reidrata a proposta editada da sessão.
   useEffect(() => {
     const salvo = carregarRascunho();
     if (salvo) {
@@ -142,7 +139,6 @@ function EntradaInteligente() {
     }
   }, []);
 
-  // Limites/formatos reais do backend, com fallback estático.
   useEffect(() => {
     api
       .get("/entrada-universal/meta")
@@ -152,8 +148,6 @@ function EntradaInteligente() {
       });
   }, []);
 
-  // Advogados para os seletores de responsável — falha silenciosa (o
-  // default "eu" continua válido mesmo sem a lista).
   useEffect(() => {
     if (fase !== "confirmar") return;
     api
@@ -162,13 +156,10 @@ function EntradaInteligente() {
       .catch(() => setUsuarios([]));
   }, [fase]);
 
-  // Toda edição da confirmação é persistida (chave por rascunho).
   useEffect(() => {
     if (proposta) salvarRascunho(proposta);
   }, [proposta]);
 
-  // Se o rascunho foi reidratado e a entrada veio de uma Ficha de Cliente,
-  // reaplica o contexto somente depois que o cliente foi autorizado/carregado.
   useEffect(() => {
     if (!proposta || !clienteContexto) return;
     if (proposta.clienteId === clienteContexto.id) return;
@@ -192,9 +183,6 @@ function EntradaInteligente() {
   }, [clienteContexto, proposta]);
 
   const analisar = useCallback(async () => {
-    // Quando a URL veio da Ficha Mestra, a análise só pode começar DEPOIS que
-    // o backend confirmou o cliente. Assim um id em query nunca é promovido a
-    // cliente do caso por simples presença no navegador.
     if (clientIdContexto && !clienteContexto) {
       if (clienteContextoInvalido) {
         toast.error(
@@ -286,12 +274,14 @@ function EntradaInteligente() {
         return;
       }
       limparRascunho();
+      setCaseCriadoId(caseId);
+      setProposta(null);
       toast.success(
         data?.numero_interno
-          ? `Caso ${data.numero_interno} criado`
-          : "Caso criado",
+          ? `Caso ${data.numero_interno} criado. Iniciando leitura jurídica completa.`
+          : "Caso criado. Iniciando leitura jurídica completa.",
       );
-      navigate(`/casos/${caseId}`);
+      setFase("dossie");
     } catch (err) {
       const status = (err as { response?: { status?: number } } | undefined)
         ?.response?.status;
@@ -370,7 +360,7 @@ function EntradaInteligente() {
     } finally {
       setCriando(false);
     }
-  }, [proposta, navigate]);
+  }, [proposta]);
 
   const descartar = useCallback(() => {
     limparRascunho();
@@ -379,16 +369,28 @@ function EntradaInteligente() {
     setFase("inicial");
   }, []);
 
+  const novaEntrada = useCallback(() => {
+    limparRascunho();
+    setCaseCriadoId(null);
+    setProposta(null);
+    setTexto("");
+    setArquivos([]);
+    setErro409(null);
+    setFase("inicial");
+  }, []);
+
   return (
     <div>
-      <PageHeader
-        title="Entrada Jurídica"
-        subtitle={
-          clienteContexto
-            ? `Novo caso para ${clienteContexto.nome}: cole o relato, arraste os documentos, ou os dois.`
-            : "Cole o relato, arraste os documentos, ou os dois."
-        }
-      />
+      {!embedded && fase !== "dossie" && (
+        <PageHeader
+          title="Entrada Jurídica"
+          subtitle={
+            clienteContexto
+              ? `Novo caso para ${clienteContexto.nome}: cole o relato, arraste os documentos, ou os dois.`
+              : "Conte o caso, cole o conteúdo ou envie os documentos. O EJC organiza o restante."
+          }
+        />
+      )}
       {fase === "inicial" && (
         <TelaInicial
           texto={texto}
@@ -412,6 +414,9 @@ function EntradaInteligente() {
           onCriar={criarCaso}
           onDescartar={descartar}
         />
+      )}
+      {fase === "dossie" && caseCriadoId && (
+        <DossieJuridico caseId={caseCriadoId} onNovo={novaEntrada} />
       )}
     </div>
   );

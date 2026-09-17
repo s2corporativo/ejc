@@ -4,7 +4,6 @@ import {
   Bell,
   Bot,
   CalendarDays,
-  ChevronDown,
   Eye,
   EyeOff,
   Mail,
@@ -21,32 +20,29 @@ import IaStatusBanner from "./IaStatusBanner";
 import ModuleLifecycleGate from "./ModuleLifecycleGate";
 import OnboardingTour from "./OnboardingTour";
 import SecurityMenu from "./SecurityMenu";
-import { toast } from "./Toast";
 import SidebarWeekCalendar from "./SidebarWeekCalendar";
+import { toast } from "./Toast";
 import { Tooltip, cn } from "./UI";
+import { selectCanonicalMainNavigation } from "../config/canonicalNavigation";
 import {
-  officeBranding,
   getMailtoUrl,
   getWhatsAppUrl,
+  officeBranding,
 } from "../config/officeBranding";
 import {
   getHelpModuleKey,
   getNavigationModules,
-  groupNavigationModules,
   type ModuleRoute,
 } from "../config/moduleRegistry";
+import api from "../lib/api";
 import { ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
 import { useIaStatus } from "../lib/iaStatus";
 import { filterModulesByLifecycle } from "../lib/moduleLifecycle";
 import { isSidebarNavigationCollapsed } from "../lib/sidebarNavigation";
-import api from "../lib/api";
 import { useAuth } from "../stores/auth";
 import { useModuleLifecycleStore } from "../stores/moduleLifecycle";
 import { usePreferencesStore } from "../stores/preferences";
 
-// Fonte única de navegação: o moduleRegistry (auditoria Fase 4). A lista
-// primária deriva da flag `essential` do registry, os rótulos vêm do próprio
-// módulo e os grupos de MODULE_GROUP_ORDER — nada é hardcoded aqui.
 function formatClock(date: Date) {
   const dateText = new Intl.DateTimeFormat("pt-BR", {
     timeZone: officeBranding.timezone,
@@ -70,11 +66,12 @@ function formatClock(date: Date) {
 }
 
 /**
- * AppShell de referência 2026.
+ * AppShell canônico do EJC.
  *
- * A implementação altera exclusivamente navegação/apresentação do shell:
- * RBAC, lifecycle, busca global, notificações, contexto do caso, IA, segurança
- * e o Outlet continuam usando os mesmos serviços e componentes do EJC.
+ * A barra lateral expõe somente os oito domínios definidos em
+ * canonicalNavigation. Rotas, componentes, RBAC e lifecycle continuam vindo
+ * do moduleRegistry e dos gates existentes; a simplificação é apenas de
+ * arquitetura de informação, sem remoção funcional.
  */
 export default function LayoutReference() {
   const user = useAuth((state) => state.user);
@@ -90,7 +87,6 @@ export default function LayoutReference() {
   );
 
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifCount, setNotifCount] = useState(0);
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -128,26 +124,13 @@ export default function LayoutReference() {
 
   const visible = useMemo(
     () =>
-      filterModulesByLifecycle(
-        getNavigationModules(user?.role),
-        lifecycleSettings,
+      selectCanonicalMainNavigation(
+        filterModulesByLifecycle(
+          getNavigationModules(user?.role),
+          lifecycleSettings,
+        ),
       ),
     [user?.role, lifecycleSettings],
-  );
-
-  const primary = useMemo(
-    () => visible.filter((item) => item.essential),
-    [visible],
-  );
-
-  const primaryGroups = useMemo(
-    () => groupNavigationModules(primary),
-    [primary],
-  );
-
-  const secondary = useMemo(
-    () => visible.filter((item) => !item.essential),
-    [visible],
   );
 
   const sidebarWidth = collapsed ? "md:w-[4.75rem]" : "md:w-[15.5rem]";
@@ -217,7 +200,7 @@ export default function LayoutReference() {
             <img
               src={officeBranding.logoPath}
               alt={officeBranding.officeName}
-              className="brand-logo-img h-10 w-auto max-w-[190px] object-contain"
+              className="brand-logo-img h-12 w-auto max-w-[230px] object-contain"
             />
           </Link>
 
@@ -377,7 +360,7 @@ export default function LayoutReference() {
           <img
             src={officeBranding.logoPath}
             alt={officeBranding.officeName}
-            className="h-9 w-auto max-w-[170px] object-contain"
+            className="h-11 w-auto max-w-[200px] object-contain"
           />
           <button
             type="button"
@@ -389,52 +372,11 @@ export default function LayoutReference() {
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-3 py-3 scrollbar-thin">
-          {primaryGroups.map((group, index) => (
-            <div key={group.name} className={index > 0 ? "mt-4" : undefined}>
-              {!navCollapsed && (
-                <div
-                  className="sidebar-group-label px-3 pb-1 text-[9px] font-semibold uppercase tracking-[0.16em]"
-                  aria-hidden="true"
-                >
-                  {group.name}
-                </div>
-              )}
-              <div className="space-y-1">
-                {group.items.map(renderNavItem)}
-              </div>
-            </div>
-          ))}
-
-          {secondary.length > 0 && (
-            <div className="mt-3 border-t border-slate-100 pt-2">
-              {navCollapsed ? (
-                <div className="space-y-1">{secondary.map(renderNavItem)}</div>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setMoreOpen((value) => !value)}
-                    className="sidebar-group-label flex w-full items-center justify-between rounded-lg px-3 py-2 text-[9px] font-semibold uppercase tracking-[0.16em]"
-                    aria-expanded={moreOpen}
-                  >
-                    <span>Mais</span>
-                    <ChevronDown
-                      className={cn(
-                        "h-3 w-3 transition-transform",
-                        !moreOpen && "-rotate-90",
-                      )}
-                    />
-                  </button>
-                  {moreOpen && (
-                    <div className="mt-1 space-y-1">
-                      {secondary.map(renderNavItem)}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
+        <nav
+          className="flex-1 overflow-y-auto px-3 py-3 scrollbar-thin"
+          aria-label="Navegação principal"
+        >
+          <div className="space-y-1">{visible.map(renderNavItem)}</div>
         </nav>
 
         {!navCollapsed && <SidebarWeekCalendar />}
