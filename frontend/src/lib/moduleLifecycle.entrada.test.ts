@@ -87,24 +87,19 @@ describe("Entrada Única — consolidação segura de navegação", () => {
   });
 
   it("aplica lifecycle a subrotas wildcard do DPT360", () => {
-    const dptSubroutes = override("dpt360-subroutes", false);
+    // O antigo "DPT360 triplo" (dpt360 / dpt360-subroutes /
+    // dpt360-company-detail) virou um módulo único com subPaths —
+    // auditoria §2.6 #7. O lifecycle do módulo cobre as sub-rotas.
+    const dpt = override("dpt360", false);
 
-    expect(
-      lifecycleForPath("/dpt360/radar", {
-        "dpt360-subroutes": dptSubroutes,
-      }),
-    ).toBe(dptSubroutes);
+    expect(lifecycleForPath("/dpt360/radar", { dpt360: dpt })).toBe(dpt);
   });
 
-  it("prefere a rota dinâmica mais específica ao wildcard", () => {
-    const companyDetail = override("dpt360-company-detail", false);
-    const dptSubroutes = override("dpt360-subroutes", true);
+  it("resolve detalhe dinâmico de empresa ao módulo único do DPT360", () => {
+    const dpt = override("dpt360", true);
 
     expect(
-      lifecycleForPath("/dpt360/empresas/cliente-123", {
-        "dpt360-company-detail": companyDetail,
-        "dpt360-subroutes": dptSubroutes,
-      }),
-    ).toBe(companyDetail);
+      lifecycleForPath("/dpt360/empresas/cliente-123", { dpt360: dpt }),
+    ).toBe(dpt);
   });
 });

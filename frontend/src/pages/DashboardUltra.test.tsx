@@ -18,93 +18,35 @@ vi.mock("../stores/auth", () => ({
   ) => selector({ user: { role: papelAtual, full_name: "Clovis Teste" } }),
 }));
 
+vi.mock("./EntradaUnica", () => ({
+  EntradaInteligente: ({ embedded }: { embedded?: boolean }) => (
+    <div data-testid="entrada-unica" data-embedded={String(Boolean(embedded))}>
+      Entrada Única embutida
+    </div>
+  ),
+}));
+
+vi.mock("../components/JurisprudentialAlertsStrip", () => ({
+  default: () => <div aria-label="Radar Jurídico">Radar Jurídico</div>,
+}));
+
 import DashboardUltra from "./DashboardUltra";
 
-const dashboardOk = {
-  data: {
-    casos: {
-      total: 3,
-      ativos: 2,
-      por_status: { ativo: 2, encerrado: 1 },
-    },
-    prazos: { vencidos: 1, criticos_3d: 1, proximos_7d: 2 },
-    degradado: [],
+const alertasOk = {
+  resumo: {
+    prazo: { ativos: 2, novos: 1, criticos: 1, altos: 1 },
+    tarefa: { ativos: 1, novos: 1, criticos: 0, altos: 1 },
+    intimacao: { ativos: 1, novos: 1, criticos: 0, altos: 1 },
+    movimentacao: { ativos: 1, novos: 1, criticos: 0, altos: 1 },
   },
 };
 
-const atividadesOk = {
-  data: [
-    {
-      id: "t1",
-      tipo: "tarefa",
-      fonte: "tarefa",
-      titulo: "Tarefa pendente",
-      descricao: "Caso Alfa",
-      date: "2099-01-02",
-      status: "pendente",
-    },
-    {
-      id: "t2",
-      tipo: "tarefa",
-      fonte: "tarefa",
-      titulo: "Tarefa concluída",
-      date: "2099-01-03",
-      status: "concluida",
-    },
-    {
-      id: "i1",
-      tipo: "intimacao",
-      fonte: "djen",
-      titulo: "Intimação pendente",
-      date: "2099-01-04",
-      status: "pendente",
-    },
-  ],
-};
-
-const agendaOk = {
-  data: [{ id: "t1", tipo: "audiencia", hora: "09:30", local: "Fórum" }],
-};
-
-const clientesOk = {
-  data: {
-    data: [
-      {
-        id: "c1",
-        nome: "Cliente Alfa",
-        status: "ativo",
-        email: "cliente@example.com",
-      },
-    ],
-  },
-};
-
-const defesasOk = {
-  data: {
-    modalidades: [
-      {
-        codigo: "multa_transito",
-        titulo: "Recurso de multa de trânsito",
-        descricao: "Defesa prévia e recursos administrativos.",
-      },
-      {
-        codigo: "revisao_contratual",
-        titulo: "Revisão de contrato",
-        descricao: "Leitura estruturada do contrato.",
-      },
-    ],
-  },
-};
-
-function mockSucesso() {
+function mockGetOk() {
   getMock.mockImplementation((url: string) => {
-    if (url === "/dashboard/") return Promise.resolve(dashboardOk);
-    if (url === "/atividades") return Promise.resolve(atividadesOk);
-    if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
-    if (url === "/clients/?page_size=4&status=ativo")
-      return Promise.resolve(clientesOk);
-    if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
-    return Promise.reject(new Error(`URL inesperada: ${url}`));
+    if (url === "/atividades/alertas-inteligentes") {
+      return Promise.resolve({ data: alertasOk });
+    }
+    return Promise.reject(new Error(`GET inesperado: ${url}`));
   });
 }
 
@@ -119,119 +61,100 @@ function renderizar() {
 beforeEach(() => {
   papelAtual = "advogado";
   getMock.mockReset();
-  mockSucesso();
+  mockGetOk();
 });
 
 afterEach(() => cleanup());
 
-describe("DashboardUltra — referência 2026", () => {
-  it("aplica RBAC às ferramentas jurídicas sem esconder o estado explicativo", async () => {
-    papelAtual = "advogado";
-    const primeira = renderizar();
-    expect(await screen.findByText("Jurisprudência e fontes")).toBeTruthy();
-    expect(screen.getByText("Recurso de Multa de Trânsito")).toBeTruthy();
-    primeira.unmount();
+describe("DashboardUltra — Início canônico", () => {
+  it("mantém marca, três sinais operacionais, Entrada Única e Radar Jurídico", async () => {
+    renderizar();
 
+    expect(
+      await screen.findByRole("link", { name: "Abrir Ajuizamento" }),
+    ).toBeTruthy();
+    expect(
+      await screen.findByRole("link", { name: "Riscos de prazos: 2" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Comunicações processuais: 2" }),
+    ).toBeTruthy();
+    expect(screen.getByTestId("entrada-unica").dataset.embedded).toBe("true");
+    expect(
+      screen.getByRole("region", { name: "Radar Jurídico" }),
+    ).toBeTruthy();
+
+    expect(screen.queryByText("Tarefas")).toBeNull();
+    expect(screen.queryByText("Movimentações")).toBeNull();
+  });
+
+  it("consulta somente o endpoint canônico de alertas com payload mínimo", async () => {
+    renderizar();
+
+    await screen.findByRole("link", { name: "Riscos de prazos: 2" });
+    expect(getMock).toHaveBeenCalledWith("/atividades/alertas-inteligentes", {
+      params: { limit_per_type: 1 },
+    });
+    expect(getMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("combina intimações e movimentações na métrica de comunicações", async () => {
+    renderizar();
+
+    const comunicacoes = await screen.findByRole("link", {
+      name: "Comunicações processuais: 2",
+    });
+    expect(comunicacoes.className).toContain("is-alerting");
+    expect(screen.getByText(/2 novas · intimações e movimentações/i)).toBeTruthy();
+  });
+
+  it("destaca risco de prazo crítico e aponta para a agenda filtrada", async () => {
+    renderizar();
+
+    const prazo = await screen.findByRole("link", { name: "Riscos de prazos: 2" });
+    expect(prazo.className).toContain("is-deadline");
+    expect(prazo.className).toContain("is-alerting");
+    expect(prazo.getAttribute("href")).toBe("/atividades?tipo=prazo");
+  });
+
+  it("mantém a Entrada Única assistida apenas para advogado+", async () => {
+    papelAtual = "secretaria";
+    renderizar();
+
+    await screen.findByRole("link", { name: "Riscos de prazos: 2" });
+    expect(screen.queryByTestId("entrada-unica")).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "Abrir Entrada Única" }).getAttribute("href"),
+    ).toBe("/entrada");
+  });
+
+  it("preserva sinais operacionais e bloqueia a entrada para perfil sem acesso", async () => {
     papelAtual = "cliente_externo";
     renderizar();
+
     expect(
-      await screen.findByText(
-        "Inteligência Jurídica disponível apenas aos perfis jurídicos autorizados.",
+      await screen.findByRole("link", { name: "Riscos de prazos: 2" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "A Entrada Única está disponível apenas aos perfis autorizados.",
       ),
     ).toBeTruthy();
-    expect(screen.queryByText("Jurisprudência e fontes")).toBeNull();
-    expect(
-      screen.getAllByText("Ferramenta restrita à equipe jurídica autorizada.")
-        .length,
-    ).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByTestId("entrada-unica")).toBeNull();
   });
 
-  it("exclui atividades finalizadas e usa dados reais dos novos cartões", async () => {
+  it("degrada métricas sem inventar contagens quando alertas estão indisponíveis", async () => {
+    getMock.mockRejectedValue(new Error("offline"));
     renderizar();
 
-    expect(
-      (await screen.findAllByText("Tarefa pendente")).length,
-    ).toBeGreaterThanOrEqual(1);
-    expect(screen.queryByText("Tarefa concluída")).toBeNull();
-    expect(screen.getByText("Cliente Alfa")).toBeTruthy();
-    expect(screen.getByText("Ativo")).toBeTruthy();
-  });
-
-  it("expõe falha do dashboard em vez de inventar prazos ou carteira", async () => {
-    getMock.mockImplementation((url: string) => {
-      if (url === "/dashboard/")
-        return Promise.reject(new Error("dashboard off"));
-      if (url === "/atividades") return Promise.resolve(atividadesOk);
-      if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
-      if (url === "/clients/?page_size=4&status=ativo")
-        return Promise.resolve(clientesOk);
-        if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
-      return Promise.reject(new Error("inesperado"));
-    });
-
-    renderizar();
     await waitFor(() => {
-      expect(screen.getByText("— prazos vencidos")).toBeTruthy();
+      expect(
+        screen.getByRole("link", { name: "Riscos de prazos: indisponível" }),
+      ).toBeTruthy();
     });
-    expect(screen.getByText("Dados da carteira indisponíveis.")).toBeTruthy();
-  });
-
-  it("expõe falha de atividades e não mascara a agenda como vazia", async () => {
-    getMock.mockImplementation((url: string) => {
-      if (url === "/dashboard/") return Promise.resolve(dashboardOk);
-      if (url === "/atividades")
-        return Promise.reject(new Error("atividades off"));
-      if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
-      if (url === "/clients/?page_size=4&status=ativo")
-        return Promise.resolve(clientesOk);
-        if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
-      return Promise.reject(new Error("inesperado"));
-    });
-
-    renderizar();
+    expect(screen.getByText("consultar agenda")).toBeTruthy();
     expect(
-      await screen.findByText("Atividades temporariamente indisponíveis."),
-    ).toBeTruthy();
-    expect(
-      screen.getByText("Agenda temporariamente indisponível."),
-    ).toBeTruthy();
-  });
-
-  it("sinaliza degradação parcial quando somente o enriquecimento da agenda falha", async () => {
-    getMock.mockImplementation((url: string) => {
-      if (url === "/dashboard/") return Promise.resolve(dashboardOk);
-      if (url === "/atividades") return Promise.resolve(atividadesOk);
-      if (url === "/agenda-eventos/")
-        return Promise.reject(new Error("agenda off"));
-      if (url === "/clients/?page_size=4&status=ativo")
-        return Promise.resolve(clientesOk);
-        if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
-      return Promise.reject(new Error("inesperado"));
-    });
-
-    renderizar();
-    expect(
-      await screen.findByText(/Horário\/local podem estar incompletos/i),
-    ).toBeTruthy();
-    expect(
-      screen.getAllByText("Tarefa pendente").length,
-    ).toBeGreaterThanOrEqual(1);
-  });
-
-  it("mantém estado de erro de clientes isolado dos demais blocos", async () => {
-    getMock.mockImplementation((url: string) => {
-      if (url === "/dashboard/") return Promise.resolve(dashboardOk);
-      if (url === "/atividades") return Promise.resolve(atividadesOk);
-      if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
-      if (url === "/clients/?page_size=4&status=ativo")
-        return Promise.reject(new Error("clients off"));
-      if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
-      return Promise.reject(new Error("inesperado"));
-    });
-
-    renderizar();
-    expect(
-      await screen.findByText("Clientes temporariamente indisponíveis."),
+      screen.getByRole("link", { name: "Comunicações processuais: indisponível" }),
     ).toBeTruthy();
   });
 });

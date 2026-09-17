@@ -1,0 +1,43 @@
+name: ejc-omniroute
+
+x-logging: &omniroute-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
+services:
+  omniroute:
+    # Artefato verificado em 13/09/2026: package.json=3.8.50 e digest abaixo.
+    # O digest torna a implantação imutável mesmo se a tag for republicada.
+    image: diegosouzapw/omniroute:3.8.50@sha256:085c57adf499a8aaa9f35ccde95c0df9c11bd9ecd18d6c9edbf3b68b8079ba9d
+    container_name: ejc_omniroute
+    restart: unless-stopped
+    stop_grace_period: 40s
+    logging: *omniroute-logging
+    ports:
+      - "${OMNIROUTE_BIND_HOST:-127.0.0.1}:${OMNIROUTE_PORT:-20128}:20128"
+    environment:
+      DATA_DIR: /app/data
+      PORT: "20128"
+      DASHBOARD_PORT: "20128"
+      API_HOST: "0.0.0.0"
+      JWT_SECRET: "${OMNIROUTE_JWT_SECRET:?defina OMNIROUTE_JWT_SECRET no .env local}"
+      REQUIRE_API_KEY: "${OMNIROUTE_REQUIRE_API_KEY:-true}"
+      DISABLE_SQLITE_AUTO_BACKUP: "${OMNIROUTE_DISABLE_SQLITE_AUTO_BACKUP:-false}"
+    volumes:
+      - omniroute-data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.mjs"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  omniroute-data:
+    name: ejc-omniroute-data

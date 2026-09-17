@@ -31,6 +31,14 @@ TASK_TYPE_PARA_AGENTE: dict[str, str] = {
     "analise_caso": "CaseAgent",
     "case": "CaseAgent",
     "estrategia": "CaseAgent",
+    # Funções jurídicas transversais
+    "provas": "EvidenceAgent",
+    "evidencias": "EvidenceAgent",
+    "lacunas_probatorias": "EvidenceAgent",
+    "onus_prova": "EvidenceAgent",
+    "revisao_judicial": "JudicialReviewAgent",
+    "perspectiva_magistrado": "JudicialReviewAgent",
+    "analise_judicial": "JudicialReviewAgent",
     # Processo / prazos
     "process_analysis": "ProcessAgent",
     "prazos": "ProcessAgent",
@@ -145,6 +153,8 @@ def _msg_tem_termo(msg: str, termo: str) -> bool:
 
 # Fallback por keywords na MENSAGEM (ordem importa: mais específico primeiro).
 _KEYWORDS_PARA_AGENTE: list[tuple[tuple[str, ...], str]] = [
+    (("auditar provas", "auditoria probatória", "auditoria probatoria", "lacunas probatórias", "lacunas probatorias", "ônus da prova", "onus da prova", "quais provas faltam"), "EvidenceAgent"),
+    (("revisão judicial", "revisao judicial", "perspectiva do magistrado", "perspectiva do juiz", "como um magistrado", "como um juiz avaliaria"), "JudicialReviewAgent"),
     (("extrato", "tarifa bancária", "busca e apreensão", "revisional"), "BankForensicsAgent"),
     (("cdc", "código de defesa do consumidor", "codigo de defesa do consumidor", "relação de consumo", "vício do produto", "vicio do produto", "propaganda enganosa"), "ConsumerLawAgent"),
     (("execução fiscal", "execucao fiscal", "certidão de dívida ativa", "certidao de divida ativa", "icms", "decadência tributária", "decadencia tributaria", "tributár", "reforma tributária", "reforma tributaria", "ibs", "cbs", "imposto seletivo", "split payment", "lc 214", "lei complementar 214"), "TaxLawAgent"),
@@ -183,7 +193,8 @@ _KEYWORDS_PARA_AGENTE: list[tuple[tuple[str, ...], str]] = [
 
 # Agentes cujo trabalho normalmente depende de um caso concreto.
 _AGENTES_COM_CASO = {
-    "CaseAgent", "ProcessAgent", "FinanceAgent", "BankForensicsAgent",
+    "CaseAgent", "EvidenceAgent", "JudicialReviewAgent", "ProcessAgent",
+    "FinanceAgent", "BankForensicsAgent",
     "ConsumerLawAgent", "TaxLawAgent", "CorporateLawAgent",
     "LaborLawAgent", "CriminalLawAgent",
     "AdministrativeLawAgent", "SpecialCourtsAgent", "CivilLawAgent",

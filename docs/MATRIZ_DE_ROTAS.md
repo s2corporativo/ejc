@@ -1128,8 +1128,6 @@
 | `/api/diario-oficial/keywords` | `frontend/src/pages/DiarioOficial.tsx:127` |
 | `/api/diario-oficial/keywords` | `frontend/src/pages/DiarioOficial.tsx:86` |
 | `/api/diario-oficial` | `frontend/src/config/moduleRegistry.tsx:631` |
-| `/api/documentos-ia` | `frontend/src/config/moduleRegistry.tsx:353` |
-| `/api/documentos-ia` | `frontend/src/config/moduleRegistry.tsx:493` |
 | `/api/documents/${d.id}/download` | `frontend/src/pages/Documentos.tsx:360` |
 | `/api/documents/${d.id}/download` | `frontend/src/pages/Documentos.tsx:388` |
 | `/api/documents/${d.id}` | `frontend/src/pages/Documentos.tsx:458` |

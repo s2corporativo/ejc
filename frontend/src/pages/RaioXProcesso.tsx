@@ -26,6 +26,11 @@ import api, {
   analiseAdvogadoPorAnalise,
   type AnaliseAdvogadoResult,
 } from "../lib/api";
+import {
+  acoesContextuais,
+  executarSkill,
+  type ContextualAction,
+} from "../services/ai";
 import Markdown from "../components/Markdown";
 import { useAuth } from "../stores/auth";
 import {
@@ -124,15 +129,6 @@ type ConversionPreview = {
 };
 
 type Area = { slug: string; nome: string; ativo?: boolean };
-type ContextualAction = {
-  id: string;
-  name: string;
-  display_name: string;
-  description?: string;
-  reason: string;
-  requires_case: boolean;
-};
-
 type ReviewFields = {
   numero_processo: string;
   area: string;
@@ -527,21 +523,18 @@ export default function RaioXProcesso() {
       return;
     }
     const documentType = selected?.documentos?.[0]?.tipo_documento || undefined;
-    api
-      .get("/ai/skills/contextual", {
-        params: {
-          surface: "processos",
-          case_id: contextualCaseId || undefined,
-          area:
-            String(identification.area || selected?.area || "") || undefined,
-          phase:
-            String(identification.etapa_atual || selected?.fase || "") ||
-            undefined,
-          document_type: documentType,
-          limit: 6,
-        },
-      })
-      .then(({ data }) => setActions(data.actions || []))
+    acoesContextuais({
+      surface: "processos",
+      case_id: contextualCaseId || undefined,
+      area:
+        String(identification.area || selected?.area || "") || undefined,
+      phase:
+        String(identification.etapa_atual || selected?.fase || "") ||
+        undefined,
+      document_type: documentType,
+      limit: 6,
+    })
+      .then((resposta) => setActions(resposta.actions || []))
       .catch(() => setActions([]));
   }, [
     report,
@@ -768,7 +761,7 @@ export default function RaioXProcesso() {
         "Execute a ação sobre o relatório preliminar abaixo. Separe fatos, inferências, ausências, riscos, fontes e recomendação. Não invente dados.",
         JSON.stringify(report).slice(0, 10500),
       ].join("\n\n");
-      const { data } = await api.post("/ai/skills/execute", {
+      const data = await executarSkill({
         skill_name: action.name,
         query,
         case_id: contextualCaseId || null,

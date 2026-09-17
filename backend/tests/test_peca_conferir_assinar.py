@@ -176,9 +176,14 @@ def test_frontend_mantem_a_chave_do_enum_no_filtro_da_fila():
     A fila deixou de ser um cartão por status e passou a agrupar status
     correlatos (`statuses: [...]`), mas os valores continuam sendo os do enum
     do backend — é isso que não pode derivar, sob pena de o filtro devolver
-    vazio silenciosamente."""
+    vazio silenciosamente.
+
+    Com a decomposição do monólito (#1674, Fase 4), o catálogo de grupos da
+    fila migrou de `pages/Pecas.tsx` para `pages/pecas/pecasCatalogo.ts` —
+    este contrato acompanha a localização canônica atual."""
     fonte = (
-        Path(__file__).parents[2] / "frontend" / "src" / "pages" / "Pecas.tsx"
+        Path(__file__).parents[2]
+        / "frontend" / "src" / "pages" / "pecas" / "pecasCatalogo.ts"
     ).read_text(encoding="utf-8")
     assert 'statuses: ["rascunho", "em_revisao"]' in fonte
     assert 'statuses: ["corrigida"]' in fonte

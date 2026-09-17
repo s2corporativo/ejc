@@ -31,7 +31,9 @@ const APP_LITERAL_ROUTES = [
 ];
 
 const KNOWN_ROUTES: string[] = [
-  ...STAFF_ROUTES.map((m) => m.path),
+  // subPaths (auditoria §2.6 #7): sub-rotas internas do mesmo módulo — ex.
+  // /dpt360/* — são destinos válidos tanto quanto o path principal.
+  ...STAFF_ROUTES.flatMap((m) => [m.path, ...(m.subPaths ?? [])]),
   ...LEGACY_REDIRECTS.map((r) => r.from),
   ...APP_LITERAL_ROUTES,
 ];
