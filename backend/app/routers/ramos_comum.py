@@ -114,7 +114,6 @@ def _teto_deposito_para(referencia: date) -> dict:
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["Áreas de Atuação"])
 
 # SELO DE HOMOLOGAÇÃO — Onda 1: matriz e helpers vivem em módulo neutro
 # (app/services/homologacao_ferramentas.py), compartilhado com o gate de
