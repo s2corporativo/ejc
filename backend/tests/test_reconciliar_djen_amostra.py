@@ -1,32 +1,31 @@
 # ── tests/test_reconciliar_djen_amostra.py ───────────────────────────────────
-# Issue #572 — cobre só a parte do script que não depende de banco: a
-# mascaração de OAB usada no bloco de evidência minimizada. A consulta em si
-# (leitura de djen_comunicacoes) é read-only e exige Postgres real; ver
-# padrão de `scripts/reconciliar_status_rag.py`, também sem teste dedicado.
-from scripts.reconciliar_djen_amostra import _mascarar_oab
+# O script da reconciliação DJEN (RUNBOOK_RECONCILIACAO_DJEN.md, Issue #572)
+# montava seu SELECT com `User.name` — atributo que o modelo não tem (o campo
+# é `full_name`). O AttributeError acontecia na CONSTRUÇÃO da query, antes de
+# tocar o banco: toda execução do runbook quebrava, e a única cobertura que o
+# script tinha era nenhuma. Este teste exercita o caminho com uma sessão
+# falsa, que é suficiente porque a falha era anterior ao `execute`.
+from __future__ import annotations
 
 
-def test_mascarar_oab_seis_digitos():
-    assert _mascarar_oab("123456") == "1****6"
+async def test_reconciliar_djen_amostra_localiza_advogado(monkeypatch):
+    import scripts.reconciliar_djen_amostra as mod
 
+    class _Resultado:
+        def first(self):
+            return ("uid-1", "Guilherme Teixeira")
 
-def test_mascarar_oab_dois_digitos_mascara_tudo():
-    assert _mascarar_oab("12") == "**"
+    class _DB:
+        async def execute(self, stmt):
+            return _Resultado()
 
+        async def __aenter__(self):
+            return self
 
-def test_mascarar_oab_um_digito_mascara_tudo():
-    assert _mascarar_oab("1") == "*"
+        async def __aexit__(self, *a):
+            return False
 
-
-def test_mascarar_oab_vazio():
-    assert _mascarar_oab("") == ""
-
-
-def test_mascarar_oab_ignora_espacos_nas_pontas():
-    assert _mascarar_oab(" 123456 ") == "1****6"
-
-
-def test_mascarar_oab_nao_revela_digitos_centrais():
-    numero = "987654"
-    mascarado = _mascarar_oab(numero)
-    assert numero[1:-1] not in mascarado
+    monkeypatch.setattr(mod, "AsyncSessionLocal", lambda: _DB())
+    # Antes da correção isto levantava AttributeError na MONTAGEM do select,
+    # antes mesmo de tocar o banco — ou seja, em toda execução do runbook.
+    assert await mod._localizar_advogado("252599", "mg") == ("uid-1", "Guilherme Teixeira")

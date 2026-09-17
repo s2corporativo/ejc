@@ -70,9 +70,14 @@ def test_titularidade_da_sucumbencia_cita_o_artigo_23_do_estatuto():
 
 
 def test_vedacao_de_garantia_de_resultado_nao_se_funda_no_artigo_34_xx():
-    """Art. 34, XX do EOAB é locupletamento; a vedação vem do CED e do Prov. 205/2021."""
+    """Art. 34, XX do EOAB é locupletamento; a vedação vem do CED. D5
+    (2026-09-05): "Provimento CFOAB 205/2021" removido da citação — o
+    Provimento 205/2021 trata de publicidade da advocacia, não de vedação
+    de garantia de resultado; citação incorreta confirmada por pesquisa
+    independente na auditoria de 2026-08-24."""
     assert "art. 34, XX EOAB" not in PROMPT_HONORARIOS
-    assert "Provimento CFOAB 205/2021" in PROMPT_HONORARIOS
+    assert "205/2021" not in PROMPT_HONORARIOS
+    assert "(CED — Res. CFOAB 02/2015)" in PROMPT_HONORARIOS
 
 
 def test_foro_de_eleicao_exige_pertinencia():

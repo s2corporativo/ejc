@@ -153,12 +153,13 @@ async def _aguardar_rate_limit() -> None:
     intervalo = 1.0 / _rate_limit_rps() if _rate_limit_rps() else 0.0
     if intervalo <= 0:
         return
-    async with _RATE_LOCK:
-        agora = time.monotonic()
-        espera = (_ULTIMA_CONCESSAO + intervalo) - agora
-        if espera > 0:
-            await asyncio.sleep(espera)
-        _ULTIMA_CONCESSAO = time.monotonic()
+    async with asyncio.timeout(30):
+        async with _RATE_LOCK:
+            agora = time.monotonic()
+            espera = (_ULTIMA_CONCESSAO + intervalo) - agora
+            if espera > 0:
+                await asyncio.sleep(espera)
+            _ULTIMA_CONCESSAO = time.monotonic()
 
 
 @retry(
@@ -361,6 +362,9 @@ _alias_do_numero = alias_do_numero
 
 
 def _hash_mov(data: str, descricao: str) -> str:
+    # SHA-1 usado como chave de deduplicacao/identidade, nunca como
+    # assinatura, token ou senha. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
     return hashlib.sha1(f"{data}|{descricao}".encode()).hexdigest()[:16]
 
 
@@ -619,25 +623,13 @@ _MOVIMENTOS_CRITICOS: list[dict] = [
 def _detectar_prazos_criticos(
     descricao: str, data_evento: datetime | None
 ) -> list[dict]:
+    """Barreira jurídica: DataJud não materializa nem calcula prazo operacional.
+
+    Movimento DataJud, isoladamente, não comprova publicação, termo inicial,
+    regime ou calendário aplicável. O cálculo deve ocorrer somente no motor
+    canônico com revisão humana (HITL).
     """
-    Compara a descrição do movimento com os padrões críticos.
-    Retorna lista de dicts {titulo, data_prazo, tipo, aviso} para cada match.
-    """
-    if not data_evento:
-        return []
-    matches = []
-    base = data_evento.date() if hasattr(data_evento, "date") else data_evento
-    from app.services.deadline_calculator import prazo_dias_uteis
-    for regra in _MOVIMENTOS_CRITICOS:
-        if regra["padrao"].search(descricao):
-            venc = prazo_dias_uteis(base, regra["dias_uteis"])
-            matches.append({
-                "titulo": regra["titulo"],
-                "data_prazo": venc,
-                "tipo": regra["tipo"],
-                "aviso": regra["aviso"],
-            })
-    return matches
+    return []
 
 
 async def sincronizar_caso(db: AsyncSession, case: Case) -> int:
@@ -711,51 +703,26 @@ async def sincronizar_caso(db: AsyncSession, case: Case) -> int:
 async def _criar_deadline_automatico(
     db: AsyncSession, case: Case, prazo: dict, origem_mov: str
 ) -> None:
-    """
-    Insere deadline gerado automaticamente por movimento DataJud.
-    Marcado como alerta_datajud para distinguir dos prazos manuais.
-    Requer revisão humana (HITL). Não duplica se já existe prazo igual no caso.
-    """
-    try:
-        from sqlalchemy import text as _text
-        # Evitar duplicata: mesma combinação case_id + titulo + data_prazo
-        existe = (await db.execute(_text("""
-            SELECT 1 FROM deadlines
-            WHERE case_id = :cid AND titulo = :tit
-              AND data_prazo = :dp AND deleted_at IS NULL
-            LIMIT 1
-        """), {"cid": case.id, "tit": prazo["titulo"], "dp": prazo["data_prazo"]})).scalar()
-        if existe:
-            return
+    """Barreira jurídica fail-closed: DataJud nunca persiste Deadline.
 
-        from app.models.deadline import Deadline
-        db.add(Deadline(
-            id=str(uuid4()),
-            case_id=case.id,
-            titulo=prazo["titulo"],
-            descricao=(
-                f"[ALERTA AUTOMÁTICO — DataJud]\n"
-                f"Movimento: {origem_mov[:200]}\n"
-                f"{prazo['aviso']}\n"
-                f"⚠️ Revisar e confirmar prazo antes de qualquer uso."
-            ),
-            data_prazo=prazo["data_prazo"],
-            tipo=prazo["tipo"],
-            status="pendente",
-            responsavel_id=getattr(case, "advogado_responsavel_id", None),
-        ))
-        logger.info(
-            f"[DataJud] Deadline automático criado: '{prazo['titulo']}' "
-            f"vence {prazo['data_prazo']} (caso {getattr(case, 'numero_interno', case.id)})"
-        )
-    except Exception as e:
-        logger.warning(f"[DataJud] Falha ao criar deadline automático: {e}")
+    Mantida por compatibilidade interna com callers legados, sem tocar banco,
+    calcular vencimento ou registrar conteúdo processual em log. Prazo
+    operacional exige motor canônico e revisão humana (HITL).
+    """
+    logger.warning(
+        "[DataJud] criação automática de prazo bloqueada; "
+        "exige motor canônico e revisão humana"
+    )
+    return None
 
 
 # ── BUG-16: sincronização de PRAZOS a partir do DataJud ──────────────────────
 def _ref_datajud(numero_cnj: str, data: str, titulo: str) -> str:
     """Chave estável de dedup de prazo: hash(CNJ|data|titulo)."""
     n = re.sub(r"\D", "", numero_cnj or "")
+    # SHA-1 usado como chave de deduplicacao/identidade, nunca como
+    # assinatura, token ou senha. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
     return hashlib.sha1(f"{n}|{data}|{titulo}".encode()).hexdigest()[:32]
 
 

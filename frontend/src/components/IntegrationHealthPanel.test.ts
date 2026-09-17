@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   avisoOverlayCofre,
+  capacidadesDoItem,
   groupIntegrationItems,
   type IntegrationItem,
 } from "./IntegrationHealthPanel";
@@ -83,5 +84,43 @@ describe("avisoOverlayCofre", () => {
 
     expect(aviso).toBeTruthy();
     expect(aviso).toContain("Cofre de Credenciais");
+  });
+});
+
+describe("capacidadesDoItem", () => {
+  it("lista as sete capacidades na ordem canônica, marcando as ativas", () => {
+    const datajud: IntegrationItem = {
+      ...items[0],
+      key: "datajud",
+      capacidades: {
+        consultar_processo: true,
+        sincronizar_movimentacoes: true,
+        partes: true,
+        audiencias: false,
+        baixar_documentos: false,
+        intimacoes: false,
+        protocolar: false,
+      },
+    };
+    const caps = capacidadesDoItem(datajud);
+    expect(caps.map((c) => c.chave)).toEqual([
+      "consultar_processo",
+      "sincronizar_movimentacoes",
+      "partes",
+      "audiencias",
+      "baixar_documentos",
+      "intimacoes",
+      "protocolar",
+    ]);
+    expect(caps.filter((c) => c.ativa).map((c) => c.chave)).toEqual([
+      "consultar_processo",
+      "sincronizar_movimentacoes",
+      "partes",
+    ]);
+    expect(caps.find((c) => c.chave === "protocolar")?.ativa).toBe(false);
+  });
+
+  it("item sem capacidades (não é conector judicial) não gera chips", () => {
+    expect(capacidadesDoItem(items[1])).toEqual([]);
   });
 });

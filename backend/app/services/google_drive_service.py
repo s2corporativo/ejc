@@ -6,6 +6,13 @@
 # - Autenticação aceita OAuth do usuário ou Service Account, sempre fora do Git.
 # - Deduplicação/versionamento usa upsert_documento(chave_origem='gdrive:<file_id>').
 # - Metadados do Drive ficam em knowledge_docs.extra para rastreabilidade.
+#
+# FRONTEIRA (decisão Fase 7, 2026-09-17): este módulo é a INGESTÃO DE
+# CONHECIMENTO (googleapiclient: OAuth/service account, listing, download e
+# upsert no RAG). NÃO confundir com ``google_drive.py``, que é o adapter de
+# ARMAZENAGEM do GED (rclone: copia/move/remove blobs). Protocolos e planos de
+# dados distintos — a família "Drive" da auditoria não é duplicação lógica;
+# não consolidar (ver docs/auditoria/2026-09-17-fase7-pendencias-menores.md).
 from __future__ import annotations
 
 import asyncio

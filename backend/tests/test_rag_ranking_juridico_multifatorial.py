@@ -100,15 +100,25 @@ def test_quarentena_e_gate_duro_antes_do_ranking():
 
 
 def test_hidratacao_de_governanca_falha_fechado_para_material_normativo():
+    # O mecanismo, não a prosa do log: em falha de governança a função recorta
+    # os candidatos pelo predicado normativo e devolve só os que sobram. A
+    # mensagem exata muda; o fail-closed não pode mudar.
     fonte = inspect.getsource(reranker._hidratar_governanca)
-    assert "mantendo apenas candidatos não normativos" in fonte
-    assert "seguros = [item for item in candidatos if not _candidato_normativo(item)]" in fonte
+    assert "_categoria_normativa" in fonte
     assert "return seguros" in fonte
+    assert "return candidatos" not in fonte, (
+        "devolver os candidatos originais é o fail-OPEN que este gate fecha"
+    )
 
-    assert reranker._candidato_normativo({"categoria": "legislacao_federal"}) is True
-    assert reranker._candidato_normativo({"categoria": "proposicao_legislativa"}) is True
-    assert reranker._candidato_normativo({"categoria": "jurisprudencia_stj"}) is False
-    assert reranker._candidato_normativo({
+    assert reranker._categoria_normativa({"categoria": "legislacao_federal"}) is True
+    assert reranker._categoria_normativa({"categoria": "proposicao_legislativa"}) is True
+    assert reranker._categoria_normativa({"categoria": "jurisprudencia_stj"}) is False
+    assert reranker._categoria_normativa({
         "categoria": "referencia",
         "extra": {"authority_level": "oficial_normativa"},
+    }) is True
+    # Alias legado do metadado de autoridade também precisa ser reconhecido.
+    assert reranker._categoria_normativa({
+        "categoria": "referencia",
+        "extra": {"nivel_autoridade": "oficial_normativa"},
     }) is True

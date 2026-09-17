@@ -23,6 +23,9 @@ function resolveLogoPath(value: string): string {
   return value;
 }
 
+// Contatos externos são fail-closed: ausência/configuração vazia mantém os
+// controles desabilitados. O endereço/número do escritório pertence ao ambiente
+// de deploy, não ao bundle versionado.
 const whatsappNumber = normalizePhone(
   readPublicEnv(import.meta.env.VITE_EJC_WHATSAPP_NUMBER),
 );

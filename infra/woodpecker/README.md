@@ -128,6 +128,53 @@ O mesmo ajuste pode ser feito pelo Swagger autenticado com
   aprovação obrigatória para PRs vindos de forks. A execução automática fica
   restrita aos PRs internos do próprio repositório.
 
+## Diagnóstico administrativo pela API
+
+O Woodpecker expõe no Swagger os endpoints administrativos de agentes e filas.
+Para diagnóstico do P0 de alocação, use `diagnose-api.sh`; ele nunca cria agente,
+não repara webhook e não imprime PAT ou token do agente.
+
+O PAT deve existir apenas no ambiente local autorizado. Não coloque PAT em
+Issue, PR, chat, histórico de shell, `.env` versionado ou argumento de linha de
+comando. Prefira carregar o PAT a partir do gerenciador/cofre local da VPS sem
+digitá-lo diretamente após `export`. A ferramenta transfere o Bearer para
+arquivo temporário `0600`, remove a variável antes de chamar `curl` e apaga o
+arquivo ao sair.
+
+```bash
+cd /opt/woodpecker-ci/infra/woodpecker
+
+# WOODPECKER_API_TOKEN deve já existir na sessão por mecanismo seguro local.
+
+# Somente leitura: agentes, fila, repo EJC (id 2) e pipeline 447.
+bash diagnose-api.sh check 2 447
+```
+
+Interpretação:
+
+- lista de agentes vazia ou `last_contact` antigo: a API não consegue consertar
+  o processo ausente; execute a recuperação controlada de server/agent abaixo;
+- agente presente, recente e `no_schedule=true`: pode ser liberado sem trocar
+  token, preservando o nome atual:
+
+  ```bash
+  bash diagnose-api.sh fix-schedule <agent_id>
+  ```
+
+- agente presente, recente, `no_schedule=false` e capacidade positiva, mas a fila
+  continua pendente: conferir `backend`, `platform`, labels e logs locais antes
+  de qualquer mutação adicional;
+- depois de o agente ficar realmente apto, um pipeline existente pode ser
+  reexecutado preservando o evento original:
+
+  ```bash
+  bash diagnose-api.sh restart-pipeline 2 447
+  ```
+
+Não use `POST /agents` como tentativa de recuperação: ele gera novo token e cria
+outra identidade. O agente existente deve preservar sua identidade e
+`WOODPECKER_AGENT_SECRET`; se ele não conecta, a correção é operacional no host.
+
 ## Backup antes de atualizar ou recriar
 
 O banco do Woodpecker fica no volume `woodpecker-server-data`; copiar arquivos

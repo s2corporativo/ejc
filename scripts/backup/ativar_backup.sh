@@ -164,8 +164,8 @@ fi
 log "aguardando health-check do backend..."
 BACKEND_OK=0
 for _ in $(seq 1 30); do
-  if curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1 || \
-     docker exec "$APP_CONTAINER" curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+  if curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health >/dev/null 2>&1 || \
+     docker exec "$APP_CONTAINER" curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
     BACKEND_OK=1
     break
   fi
@@ -257,6 +257,7 @@ import asyncio
 import json
 
 from app.core.database import AsyncSessionLocal
+from app.services import backup_execution_service
 from app.services import backup_service
 
 async def main() -> int:
@@ -265,7 +266,9 @@ async def main() -> int:
         print(json.dumps({"ok": False, "status": "credencial_nao_dedicada"}))
         return 2
     async with AsyncSessionLocal() as db:
-        result = await backup_service.executar_backup(db, origem="ativacao_deploy")
+        result = await backup_execution_service.executar_backup_exclusivo(
+            db, origem="ativacao_deploy", usuario_id=None, usuario_role="sistema"
+        )
     artifacts = result.get("artefatos") or []
     names = [str(item.get("nome") or "") for item in artifacts]
     has_db = any(name.endswith("_db.dump.enc") for name in names)

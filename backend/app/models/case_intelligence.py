@@ -9,7 +9,7 @@
 # Regras de domínio:
 #   • APPEND-ONLY: snapshot nunca é editado nem sobrescrito — novo resultado
 #     gera nova versão (padrão audit_log: sem soft delete, histórico íntegro).
-#   • HITL (OAB Prov. 205/2021): snapshot automático NUNCA nasce aprovado;
+#   • HITL: snapshot automático NUNCA nasce aprovado;
 #     `congelado=True` só por ato humano (aprovar_snapshot), que o torna
 #     imutável e registra aprovado_por/aprovado_em + AuditLog.
 #   • payload é JSONB de estrutura livre mas DOCUMENTADA — chaves esperadas:
@@ -41,6 +41,7 @@ ORIGENS_SNAPSHOT: tuple[str, ...] = (
     "orquestrador",  # FASE 5 — LegalCaseOrchestrator (linha do tempo de estados)
     "sala_juridica",  # conversão/vínculo da Sala Jurídica → caso oficial
     "documento",  # leitura estratégica automática de documento vinculado
+    "entrada_unica",  # dossiê jurídico canônico produzido pela Entrada Única
 )
 
 

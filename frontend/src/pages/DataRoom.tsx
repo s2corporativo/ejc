@@ -26,12 +26,15 @@ interface Arquivo {
 }
 interface Link {
   id: string;
-  token: string;
   descricao?: string;
   expira_em?: string;
   max_acessos?: number;
   acessos_realizados: number;
   ativo: boolean;
+}
+interface LinkRecemGerado {
+  url: string;
+  expira_em?: string;
 }
 
 export default function DataRoom() {
@@ -43,6 +46,8 @@ export default function DataRoom() {
   const [aberta, setAberta] = useState<any>(null); // detalhe da sala
   const [docs, setDocs] = useState<any[]>([]);
   const [docSel, setDocSel] = useState("");
+  const [linkRecemGerado, setLinkRecemGerado] =
+    useState<LinkRecemGerado | null>(null);
 
   const carregar = () => {
     setLoading(true);
@@ -65,13 +70,19 @@ export default function DataRoom() {
     carregar();
   };
 
-  const abrir = async (id: string) => {
+  const abrir = async (id: string, preservarLinkRecemGerado = false) => {
+    if (!preservarLinkRecemGerado) setLinkRecemGerado(null);
     const { data } = await api.get(`/data-rooms/${id}`);
     setAberta(data);
     api
       .get("/documents/?per_page=100")
       .then((r) => setDocs(asList(r.data)))
       .catch(() => {});
+  };
+
+  const fecharSala = () => {
+    setAberta(null);
+    setLinkRecemGerado(null);
   };
 
   const addArquivo = async () => {
@@ -85,24 +96,34 @@ export default function DataRoom() {
     abrir(aberta.id);
   };
 
+  const copiarUrl = (url: string) => {
+    navigator.clipboard?.writeText(url);
+    toast.info("Link copiado:\n" + url);
+  };
+
   const gerarLink = async () => {
-    // FIX-001 — erro tratado com mensagem legível; a aba nunca quebra.
+    // O backend persiste somente o hash do token e devolve o segredo uma única
+    // vez. A UI deve capturar essa resposta — a listagem posterior não contém
+    // (nem deve conter) o token em claro.
     try {
-      await api.post(`/data-rooms/${aberta.id}/links`, { expira_horas: 72 });
-      abrir(aberta.id);
+      const { data } = await api.post(`/data-rooms/${aberta.id}/links`, {
+        expira_horas: 72,
+      });
+      const caminho = String(data?.url_acesso || "");
+      if (!caminho.startsWith("/api/data-rooms/acesso/")) {
+        throw new Error("Resposta de criação de link sem URL de acesso válida");
+      }
+      const url = new URL(caminho, location.origin).toString();
+      await abrir(aberta.id, true);
+      setLinkRecemGerado({ url, expira_em: data?.expira_em });
     } catch (err: any) {
       const msg =
         err?.response?.data?.detail ||
         err?.response?.data?.message ||
+        err?.message ||
         "Não foi possível gerar o link de acesso.";
       toast.error(String(msg));
     }
-  };
-
-  const copiar = (token: string) => {
-    const url = `${location.origin}/api/data-rooms/acesso/${token}`;
-    navigator.clipboard?.writeText(url);
-    toast.info("Link copiado:\n" + url);
   };
 
   return (
@@ -202,7 +223,7 @@ export default function DataRoom() {
       {aberta && (
         <Modal
           open={!!aberta}
-          onClose={() => setAberta(null)}
+          onClose={fecharSala}
           title={`🔒 ${aberta.nome}`}
           wide
         >
@@ -270,6 +291,40 @@ export default function DataRoom() {
                   + Gerar link (72h)
                 </button>
               </div>
+
+              {linkRecemGerado && (
+                <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
+                  <div className="font-medium text-amber-900">
+                    Link recém-gerado — copie agora
+                  </div>
+                  <p className="mt-1 text-xs text-amber-800">
+                    Por segurança, o token não fica armazenado em claro e este
+                    URL não poderá ser recuperado depois que você fechar a sala.
+                    Se perdê-lo, gere um novo link.
+                  </p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      readOnly
+                      value={linkRecemGerado.url}
+                      className="input min-w-0 flex-1 text-xs font-mono"
+                      aria-label="URL recém-gerado do Data Room"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => copiarUrl(linkRecemGerado.url)}
+                      className="btn-primary text-xs"
+                    >
+                      Copiar URL
+                    </button>
+                  </div>
+                  {linkRecemGerado.expira_em && (
+                    <p className="mt-1 text-xs text-amber-700">
+                      Expira {fmtDate(linkRecemGerado.expira_em)}
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-1">
                 {(aberta.links ?? []).map((lk: Link) => (
                   <div
@@ -278,19 +333,16 @@ export default function DataRoom() {
                   >
                     <div>
                       <span className="font-mono text-xs">
-                        …{lk.token.slice(-8)}
+                        Link …{lk.id.slice(-8)}
                       </span>
                       <span className="text-gray-400 text-xs ml-2">
                         {lk.acessos_realizados} acessos · expira{" "}
                         {fmtDate(lk.expira_em)}
                       </span>
                     </div>
-                    <button
-                      onClick={() => copiar(lk.token)}
-                      className="text-primary-600 hover:underline text-xs"
-                    >
-                      Copiar URL
-                    </button>
+                    <span className="text-gray-400 text-xs">
+                      URL não recuperável
+                    </span>
                   </div>
                 ))}
                 {(aberta.links?.length ?? 0) === 0 && (

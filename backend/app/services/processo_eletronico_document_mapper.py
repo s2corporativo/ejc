@@ -196,39 +196,40 @@ async def _gravar_documentos_novos(
             continue
 
         try:
-            nivel_sigilo = _get(doc, "nivelSigilo", "nivelDeSigilo", default=0)
-            confidencialidade = mapear_confidencialidade(nivel_sigilo)
-            tipo_documento = _get(doc, "tipoDocumento", "descricao", default="processo_eletronico")
-            mimetype = _get(doc, "mimetype", default="application/octet-stream")
-            titulo = _get(doc, "descricao", default=f"Documento MNI {id_doc}")
+            async with db.begin_nested():
+                nivel_sigilo = _get(doc, "nivelSigilo", "nivelDeSigilo", default=0)
+                confidencialidade = mapear_confidencialidade(nivel_sigilo)
+                tipo_documento = _get(doc, "tipoDocumento", "descricao", default="processo_eletronico")
+                mimetype = _get(doc, "mimetype", default="application/octet-stream")
+                titulo = _get(doc, "descricao", default=f"Documento MNI {id_doc}")
 
-            agora = datetime.now(timezone.utc)
-            subdir = f"{agora.year}/{agora.month:02d}"
-            os.makedirs(f"{settings.UPLOAD_DIR}/{subdir}", exist_ok=True)
-            doc_id = str(uuid4())
-            ext = _extensao_por_mimetype(mimetype)
-            filepath_rel = f"{subdir}/{doc_id}{ext}"
-            with open(f"{settings.UPLOAD_DIR}/{filepath_rel}", "wb") as f:
-                f.write(binario)
+                agora = datetime.now(timezone.utc)
+                subdir = f"{agora.year}/{agora.month:02d}"
+                os.makedirs(f"{settings.UPLOAD_DIR}/{subdir}", exist_ok=True)
+                doc_id = str(uuid4())
+                ext = _extensao_por_mimetype(mimetype)
+                filepath_rel = f"{subdir}/{doc_id}{ext}"
+                with open(f"{settings.UPLOAD_DIR}/{filepath_rel}", "wb") as f:
+                    f.write(binario)
 
-            documento_ged = Document(
-                id=doc_id, titulo=str(titulo)[:255], tipo=str(tipo_documento)[:50],
-                filename=f"{id_doc}{ext}", filepath=filepath_rel,
-                mimetype=str(mimetype), size_bytes=len(binario),
-                confidencialidade=confidencialidade,
-                case_id=case.id, uploaded_by=uploaded_by,
-                # Achado 30: documento baixado do tribunal (MNI) e prova
-                # documental — o digest e o que sustenta que o arquivo juntado
-                # e o que veio de la.
-                sha256=hashlib.sha256(binario).hexdigest(),
-            )
-            db.add(documento_ged)
-            await db.flush()
+                documento_ged = Document(
+                    id=doc_id, titulo=str(titulo)[:255], tipo=str(tipo_documento)[:50],
+                    filename=f"{id_doc}{ext}", filepath=filepath_rel,
+                    mimetype=str(mimetype), size_bytes=len(binario),
+                    confidencialidade=confidencialidade,
+                    case_id=case.id, uploaded_by=uploaded_by,
+                    # Achado 30: documento baixado do tribunal (MNI) e prova
+                    # documental — o digest e o que sustenta que o arquivo juntado
+                    # e o que veio de la.
+                    sha256=hashlib.sha256(binario).hexdigest(),
+                )
+                db.add(documento_ged)
+                await db.flush()
 
-            db.add(DocumentoProcessoEletronicoDedup(
-                id=str(uuid4()), tribunal_id=tribunal_id,
-                id_documento_tribunal=id_doc, document_id=doc_id, case_id=case.id,
-            ))
+                db.add(DocumentoProcessoEletronicoDedup(
+                    id=str(uuid4()), tribunal_id=tribunal_id,
+                    id_documento_tribunal=id_doc, document_id=doc_id, case_id=case.id,
+                ))
             novos += 1
         except Exception as e:  # noqa: BLE001 — erro em UM documento não aborta os demais
             logger.error(

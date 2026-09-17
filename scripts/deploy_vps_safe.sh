@@ -67,10 +67,19 @@ cleanup_temp_files() {
   rm -f -- "$DEPLOYED_SHA_TMP" >/dev/null 2>&1 || true
 }
 
+# Restaura o snapshot transacional do .env somente quando o conteúdo mudou;
+# se estiver idêntico, limita-se a garantir modo 0600 sem reescrever o arquivo.
 restore_env() {
   [ "$ENV_MUTATED" = "1" ] || return 0
   [ -n "$ENV_ROLLBACK_FILE" ] && [ -s "$ENV_ROLLBACK_FILE" ] \
     || { log "ERRO CRÍTICO: snapshot transacional do .env ausente."; return 1; }
+  if cmp -s -- "$ENV_ROLLBACK_FILE" .env; then
+    if [ "$(stat -c '%a' .env 2>/dev/null || true)" != "600" ]; then
+      chmod 600 .env || return 1
+    fi
+    log ".env permaneceu idêntico ao snapshot; conteúdo não foi reescrito e permissões seguras foram preservadas."
+    return 0
+  fi
   cp -- "$ENV_ROLLBACK_FILE" .env || return 1
   chmod 600 .env || return 1
   log ".env anterior restaurado a partir do snapshot transacional protegido."
@@ -170,15 +179,17 @@ BACKUP_SAIDA=""
 if BACKUP_SAIDA="$(bash scripts/backup.sh)"; then
   [ -n "$BACKUP_SAIDA" ] && printf '%s\n' "$BACKUP_SAIDA"
   log "Backup pré-deploy concluído."
-if printf '%s' "$BACKUP_SAIDA" | grep -Eq '"offsite_ok"[[:space:]]*:[[:space:]]*false'; then
-  log "ERRO CRÍTICO: backup retornou offsite_ok=false; retenção recuperável fora da VPS não foi comprovada."
+if ! printf '%s' "$BACKUP_SAIDA" | grep -Eq '"local_ok"[[:space:]]*:[[:space:]]*true'; then
+  log "ERRO CRÍTICO: backup não comprovou persistência local cifrada (local_ok=true)."
   log "Deploy bloqueado antes de qualquer mutação de .env/imagens/runtime."
   exit 1
 fi
-if ! printf '%s' "$BACKUP_SAIDA" | grep -Eq '"offsite_ok"[[:space:]]*:[[:space:]]*true'; then
-  log "ERRO CRÍTICO: saída do backup não contém confirmação explícita offsite_ok=true."
-  log "Deploy bloqueado antes de qualquer mutação de .env/imagens/runtime."
-  exit 1
+if printf '%s' "$BACKUP_SAIDA" | grep -Eq '"offsite_required"[[:space:]]*:[[:space:]]*true'; then
+  if ! printf '%s' "$BACKUP_SAIDA" | grep -Eq '"offsite_ok"[[:space:]]*:[[:space:]]*true'; then
+    log "ERRO CRÍTICO: política exige offsite e offsite_ok=true não foi comprovado."
+    log "Deploy bloqueado antes de qualquer mutação de .env/imagens/runtime."
+    exit 1
+  fi
 fi
 else
   [ -n "$BACKUP_SAIDA" ] && printf '%s\n' "$BACKUP_SAIDA"
@@ -216,17 +227,40 @@ log "Imagem backend anterior: ${OLD_BACKEND_IMAGE:-indisponível} (${OLD_BACKEND
 log "Imagem worker anterior: ${OLD_WORKER_IMAGE:-indisponível} (${OLD_WORKER_REF:-sem-ref})"
 log "Imagem frontend anterior: ${OLD_FRONTEND_IMAGE:-indisponível} (${OLD_FRONTEND_REF:-sem-ref})"
 
+# Preserva a imagem do runtime atual para rollback: reutiliza o image ID quando
+# disponível e, se ele já tiver sido podado, materializa o container em execução.
+snapshot_runtime_image() {
+  local container="$1" image_id="$2" rollback_tag="$3" label="$4"
+  if [ -n "$image_id" ] && docker image inspect "$image_id" >/dev/null 2>&1; then
+    docker tag "$image_id" "$rollback_tag"
+    return 0
+  fi
+  log "AVISO: image ID anterior de ${label} não está mais no catálogo local; preservando o container em execução como imagem de rollback."
+  if docker commit "$container" "$rollback_tag" >/dev/null; then
+    return 0
+  fi
+  if [ "$label" = "frontend" ]; then
+    log "AVISO: docker commit do frontend falhou; usando export/import do filesystem com entrypoint/CMD canônicos do nginx."
+    docker export "$container" | docker import \
+      --change 'ENTRYPOINT ["/docker-entrypoint.sh"]' \
+      --change 'CMD ["nginx","-g","daemon off;"]' \
+      - "$rollback_tag" >/dev/null
+    return 0
+  fi
+  return 1
+}
+
 if [ -n "$OLD_BACKEND_IMAGE" ]; then
   OLD_BACKEND_TAG="ejc-backend:rollback-${ROLLBACK_SUFFIX}"
-  docker tag "$OLD_BACKEND_IMAGE" "$OLD_BACKEND_TAG"
+  snapshot_runtime_image ejc_backend "$OLD_BACKEND_IMAGE" "$OLD_BACKEND_TAG" backend
 fi
 if [ -n "$OLD_WORKER_IMAGE" ]; then
   OLD_WORKER_TAG="ejc-worker:rollback-${ROLLBACK_SUFFIX}"
-  docker tag "$OLD_WORKER_IMAGE" "$OLD_WORKER_TAG"
+  snapshot_runtime_image ejc_worker "$OLD_WORKER_IMAGE" "$OLD_WORKER_TAG" worker
 fi
 if [ -n "$OLD_FRONTEND_IMAGE" ]; then
   OLD_FRONTEND_TAG="ejc-frontend:rollback-${ROLLBACK_SUFFIX}"
-  docker tag "$OLD_FRONTEND_IMAGE" "$OLD_FRONTEND_TAG"
+  snapshot_runtime_image ejc_frontend "$OLD_FRONTEND_IMAGE" "$OLD_FRONTEND_TAG" frontend
 fi
 
 OLD_GIT_SHA="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \
@@ -252,14 +286,14 @@ RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate backend
 backend_ok=0
 for _ in $(seq 1 12); do
   sleep 5
-  if curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+  if curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
     backend_ok=1
     break
   fi
 done
 [ "$backend_ok" = "1" ] || { log "Backend não respondeu em 60s"; exit 1; }
 
-COMMIT_NO_AR="$(curl -fsS http://127.0.0.1:8000/api/health 2>/dev/null \
+COMMIT_NO_AR="$(curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health 2>/dev/null \
   | sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
 if [ "$COMMIT_NO_AR" = "$GIT_SHA" ]; then
   log "Versão publicada confirmada pelo /api/health: ${COMMIT_NO_AR}"

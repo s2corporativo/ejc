@@ -15,7 +15,7 @@ from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.security import EQUIPE_JURIDICA, get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.models.prompt_juridico import PromptJuridico, PromptCategoria
 from app.core.rate_limit import rate_limit
@@ -72,26 +72,24 @@ def _pode_editar(user: User) -> bool:
     return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["advogado"]
 
 def _visivel_para(cu: User):
-    """Cláusula de visibilidade: público OU do próprio autor.
+    """Cláusula única de visibilidade, sem promoção hierárquica indevida.
 
-    `publico=False` é opt-OUT explícito do compartilhamento com o escritório
-    (a tela cria prompt privado por padrão). Antes, o filtro só existia para
-    quem estava ABAIXO de estagiário: qualquer membro da equipe lia — e
-    executava — o prompt privado de qualquer colega, esvaziando a promessa de
-    privacidade da própria tela (achado da revisão automatizada do PR,
-    03/09/2026).
+    Papel fora de ``EQUIPE_JURIDICA`` vê somente conteúdo público. Para a equipe
+    jurídica, ``publico=False`` é opt-OUT explícito do compartilhamento com o
+    escritório: o autor continua vendo o próprio prompt privado, mas os demais
+    colegas não. Prompt órfão (``created_by IS NULL`` por ON DELETE SET NULL)
+    fica recuperável somente pela gestão jurídica (sócio+).
 
-    Órfão (`created_by IS NULL`, efeito do ON DELETE SET NULL quando o autor é
-    removido) fica visível apenas de sócio para cima: tratá-lo como público
-    entregaria a todos o prompt privado de quem saiu do escritório, e escondê-lo
-    de todos o tornaria irrecuperável sem acesso direto ao banco.
+    A allowlist é necessária porque ``financeiro`` fica numericamente acima de
+    ``estagiario`` em ROLE_LEVEL e, portanto, um piso hierárquico vazaria prompts
+    privados para um papel que não integra a equipe jurídica.
     """
-    clausulas = [
-        PromptJuridico.publico.is_(True),
-        PromptJuridico.created_by == cu.id,
-    ]
-    if ROLE_LEVEL.get(cu.role.value, 0) >= ROLE_LEVEL["socio"]:
-        clausulas.append(PromptJuridico.created_by.is_(None))
+    role_value = cu.role.value
+    clausulas = [PromptJuridico.publico.is_(True)]
+    if role_value in EQUIPE_JURIDICA:
+        clausulas.append(PromptJuridico.created_by == cu.id)
+        if ROLE_LEVEL.get(role_value, 0) >= ROLE_LEVEL["socio"]:
+            clausulas.append(PromptJuridico.created_by.is_(None))
     return or_(*clausulas)
 
 # ── Clamp de task_type (P0.1) ─────────────────────────────────────────────────
@@ -136,13 +134,10 @@ async def listar_prompts(
     db:        AsyncSession = Depends(get_db),
     cu:        User = Depends(get_current_user),
 ):
-    q = select(PromptJuridico).where(PromptJuridico.deleted_at.is_(None))
-
-    # Usuários não-staff só veem prompts públicos — nem os próprios.
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
-        q = q.where(PromptJuridico.publico.is_(True))
-    else:
-        q = q.where(_visivel_para(cu))
+    q = select(PromptJuridico).where(
+        PromptJuridico.deleted_at.is_(None),
+        _visivel_para(cu),
+    )
 
     if categoria:
         q = q.where(PromptJuridico.categoria == categoria)
@@ -361,4 +356,3 @@ class PromptResponse(PromptCreate):
 
 # ── (incorporado de prompts.py — D4; handlers colidentes com o
 #    canônico removidos — compatibilidade preservada via redirect 308) ──
-

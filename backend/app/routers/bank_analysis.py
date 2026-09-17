@@ -16,7 +16,7 @@ import json
 
 from app.core.database import get_db
 from app.core.config import get_settings
-from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.security import get_current_user, requer_equipe_juridica
 from app.models.user import User
 from app.models.bank_analysis import BankAnalysis, BankTransaction, BankAbusiveCharge
 from app.services.bank_statement import parse_extrato, detectar_abusivas
@@ -45,12 +45,11 @@ async def upload(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    # IDOR: análise vinculada a caso exige acesso ao caso ANTES de persistir.
+    # O upload/análise determinística permanece disponível conforme ownership.
+    # Ato jurídico (documento/petição) é protegido separadamente por allowlist
+    # exata, para não confundir tratamento financeiro com produção jurídica.
     if case_id:
         await verificar_acesso_caso(db, cu, case_id)
-    # IDOR (pente fino 2026-07-25): client_id do form também exige visibilidade
-    # de carteira — antes era persistido sem checagem, permitindo vincular dado
-    # financeiro sensível a cliente alheio. 404 uniforme (não confirma existência).
     if client_id:
         from app.core.client_ownership import obter_cliente_autorizado
         await obter_cliente_autorizado(db, cu, client_id)
@@ -82,7 +81,6 @@ async def upload(
         raise HTTPException(422, "Nenhuma transação reconhecida no arquivo. "
                                  "Para PDF, tente exportar em OFX/CSV do app do banco.")
 
-    # ids p/ ligar cobranças às transações
     for t in transacoes:
         t["_id"] = str(uuid4())
     cobrancas = detectar_abusivas(transacoes)
@@ -125,16 +123,20 @@ async def listar(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user),
 ):
-    # IDOR (auditoria 2026-06-30): não-gestão só vê as próprias análises
-    # (extrato bancário = dado sensível do cliente).
     escopo = "" if is_gestao(cu) else " AND created_by = :uid"
     params = {"l": page_size, "o": (page - 1) * page_size}
     if not is_gestao(cu):
         params["uid"] = cu.id
     total = (await db.execute(
+        # SQL literal com bind params; a regra marca todo text(), sem olhar
+        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         text(f"SELECT count(*) FROM bank_analyses WHERE deleted_at IS NULL{escopo}"),
         ({"uid": cu.id} if not is_gestao(cu) else {}),
     )).scalar()
+    # SQL literal com bind params; a regra marca todo text(), sem olhar
+    # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     rows = (await db.execute(text(f"""
         SELECT id, banco, formato, arquivo_nome, periodo_inicio, periodo_fim,
                total_transacoes, total_abusivo, qtd_abusivas, status, created_at
@@ -151,7 +153,6 @@ async def detalhe(analysis_id: str, db: AsyncSession = Depends(get_db),
         BankAnalysis.id == analysis_id, BankAnalysis.deleted_at.is_(None)))).scalar_one_or_none()
     if not a:
         raise HTTPException(404, "Análise não encontrada")
-    # IDOR: análise vinculada a caso exige acesso ao caso; órfã → gestão/criador.
     if a.case_id:
         await verificar_acesso_caso(db, cu, a.case_id)
     elif not (is_gestao(cu) or a.created_by == cu.id):
@@ -187,6 +188,10 @@ async def excel(analysis_id: str, db: AsyncSession = Depends(get_db),
 @router.post("/{analysis_id}/documento")
 async def documento(analysis_id: str, payload: dict = Body(default={}),
                     db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
+    # Notificação/petição/BACEN são saídas jurídicas; ownership sozinho não é
+    # autorização profissional. Allowlist exata impede `financeiro` de praticar
+    # o ato apenas por ocupar nível numérico superior a `estagiario`.
+    requer_equipe_juridica(cu, "Geração de documento jurídico restrita à equipe jurídica")
     tipo = (payload.get("tipo") or "notificacao").lower()
     if tipo not in ("notificacao", "peticao", "bacen"):
         raise HTTPException(422, "tipo deve ser notificacao|peticao|bacen")
@@ -198,7 +203,7 @@ async def documento(analysis_id: str, payload: dict = Body(default={}),
 
 
 def _fmt_brl(valor) -> str:
-    from app.utils.format import formatar_brl  # #41: formatador BRL único
+    from app.utils.format import formatar_brl
     return formatar_brl(valor)
 
 
@@ -272,26 +277,19 @@ async def gerar_peca(analysis_id: str, payload: dict | None = Body(default=None)
     cobranças abusivas já detectadas na análise bancária.
 
     Reutiliza a esteira de peças (gerar_peca_pipeline, 7 etapas + SSE). A saída é
-    RASCUNHO (HITL): revisão humana obrigatória (OAB). A sanitização LGPD ocorre
-    dentro do pipeline. Retorna Server-Sent Events: step(1-7) → concluido com o
-    documento e o legal_doc_id, no mesmo formato do gerador de peças.
+    RASCUNHO: revisão humana obrigatória antes de qualquer uso jurídico final.
+    A sanitização LGPD ocorre dentro do pipeline.
 
     Body opcional: {"abusividade": <resposta de POST /analise-bancaria/abusividade>}
     — quando presente e com expurgo calculado, os números DETERMINÍSTICOS do
-    recálculo pela taxa média BACEN entram nos fatos/pedidos da minuta (apenas
-    valores numéricos validados são formatados; texto livre é descartado)."""
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
-        raise HTTPException(403, "Acesso negado")
+    recálculo pela taxa média BACEN entram nos fatos/pedidos da minuta."""
+    requer_equipe_juridica(cu, "Geração de peça jurídica restrita à equipe jurídica")
 
-    # Reutiliza detalhe(): já aplica ownership (verificar_acesso_caso se houver
-    # case_id; senão gestão/criador) e carrega análise + cobranças.
     d = await detalhe(analysis_id, db, cu)
     cobrancas = d["cobrancas"]
     if not cobrancas:
         raise HTTPException(422, "Sem cobranças abusivas para peticionar nesta análise.")
 
-    # Fail-safe: a esteira de peças depende de IA. Se nenhum provedor estiver
-    # configurado, retorna erro limpo antes de abrir o stream.
     if not settings.GROQ_API_KEY and not settings.OLLAMA_ENABLED:
         raise HTTPException(503, "Serviço de IA indisponível para geração de peças no momento.")
 
@@ -305,7 +303,6 @@ async def gerar_peca(analysis_id: str, payload: dict | None = Body(default=None)
 
     escopo_cli = None
     if case_id:
-        # ownership do caso já checado em detalhe(); aqui deriva o escopo do RAG.
         from app.services.ai_service import _escopo_cliente_do_caso
         escopo_cli = await _escopo_cliente_do_caso(db, case_id)
 
@@ -355,7 +352,6 @@ async def remover(analysis_id: str, db: AsyncSession = Depends(get_db),
         BankAnalysis.id == analysis_id, BankAnalysis.deleted_at.is_(None)))).scalar_one_or_none()
     if not a:
         raise HTTPException(404, "Análise não encontrada")
-    # IDOR: só gestão, dono do caso ou criador pode apagar.
     if a.case_id:
         await verificar_acesso_caso(db, cu, a.case_id)
     elif not (is_gestao(cu) or a.created_by == cu.id):

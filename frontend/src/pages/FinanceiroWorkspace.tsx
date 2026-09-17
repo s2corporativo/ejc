@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Navigate, useSearchParams } from "react-router";
 import {
   BarChart3,
@@ -12,15 +12,18 @@ import {
   MoreHorizontal,
   ChevronDown,
 } from "lucide-react";
-import FinanceiroDashboard from "./FinanceiroDashboard";
-import Honorarios from "./Honorarios";
-import NotasFiscais from "./NotasFiscais";
-import Despesas from "./Despesas";
-import DespesasRecorrentes from "./DespesasRecorrentes";
-import OfficeContracts from "./OfficeContracts";
 import ErrorBoundary from "../components/ErrorBoundary";
-import { PageHeader } from "../components/UI";
+import { PageHeader, Spinner } from "../components/UI";
 import { useAuth } from "../stores/auth";
+
+// Code-splitting por aba (auditoria §2.6 #4): as páginas do workspace são
+// carregadas sob demanda — uma aba renderiza por vez.
+const FinanceiroDashboard = lazy(() => import("./FinanceiroDashboard"));
+const Honorarios = lazy(() => import("./Honorarios"));
+const NotasFiscais = lazy(() => import("./NotasFiscais"));
+const Despesas = lazy(() => import("./Despesas"));
+const DespesasRecorrentes = lazy(() => import("./DespesasRecorrentes"));
+const OfficeContracts = lazy(() => import("./OfficeContracts"));
 
 const TABS = [
   { k: "visao", label: "Visão geral", icon: BarChart3 },
@@ -193,20 +196,28 @@ export default function FinanceiroWorkspace() {
 
       <div className="min-w-0">
         <ErrorBoundary key={tab}>
-          {tab === "visao" && (
-            <FinanceiroDashboard
-              competencia={competencia}
-              onDrillDown={(destino, status) =>
-                setTab(destino, status ? { status } : undefined)
-              }
-              onNavigate={(destino) => setTab(destino)}
-            />
-          )}
-          {tab === "honorarios" && <Honorarios />}
-          {tab === "despesas" && <Despesas competencia={competencia} />}
-          {tab === "nfse" && <NotasFiscais />}
-          {tab === "contratos" && <OfficeContracts />}
-          {tab === "recorrentes" && <DespesasRecorrentes />}
+          <Suspense
+            fallback={
+              <div className="flex justify-center py-16">
+                <Spinner />
+              </div>
+            }
+          >
+            {tab === "visao" && (
+              <FinanceiroDashboard
+                competencia={competencia}
+                onDrillDown={(destino, status) =>
+                  setTab(destino, status ? { status } : undefined)
+                }
+                onNavigate={(destino) => setTab(destino)}
+              />
+            )}
+            {tab === "honorarios" && <Honorarios />}
+            {tab === "despesas" && <Despesas competencia={competencia} />}
+            {tab === "nfse" && <NotasFiscais />}
+            {tab === "contratos" && <OfficeContracts />}
+            {tab === "recorrentes" && <DespesasRecorrentes />}
+          </Suspense>
         </ErrorBoundary>
       </div>
     </div>

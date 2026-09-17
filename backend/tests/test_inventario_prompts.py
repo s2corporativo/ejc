@@ -34,6 +34,18 @@ def test_nenhum_prompt_orfao():
     assert resumo()["orfaos"] == []
 
 
+def test_aposentados_sao_exatamente_os_da_consolidacao_38_para_8():
+    """Trava o conjunto: um órfão NOVO deve cair em 'orfaos' (falhar o teste
+    acima), não ser silenciosamente absorvido aqui."""
+    from app.services.system_prompts.inventario import PROMPTS_APOSENTADOS
+
+    assert resumo()["aposentados"] == sorted(PROMPTS_APOSENTADOS)
+    assert PROMPTS_APOSENTADOS == {
+        "agrario", "agronegocio", "contratual", "eleitoral", "internacional",
+        "medico", "previdenciario", "saude", "transito",
+    }
+
+
 def test_versao_muda_com_o_conteudo_e_e_estavel():
     assert impressao("texto A") == impressao("texto A")
     assert impressao("texto A") != impressao("texto A ")

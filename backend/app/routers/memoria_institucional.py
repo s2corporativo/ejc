@@ -11,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_current_user, requer_equipe_juridica
-from app.core.ownership import verificar_acesso_caso
+from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.models.user import User
 from app.models.audit_log import criar_audit_log
 
@@ -56,6 +56,36 @@ class MemoriaUpdate(BaseModel):
     tags: Optional[List[str]] = None
 
 
+async def _obter_memoria_autorizada(
+    db: AsyncSession,
+    cu: User,
+    mem_id: str,
+) -> dict:
+    """Carrega um registro ativo e aplica o ownership do caso vinculado.
+
+    O router já restringe a equipe jurídica por papel. Esta segunda barreira
+    impede que um usuário obtenha/edite/remova uma memória de caso que não
+    poderia consultar diretamente. Registros institucionais sem ``case_id``
+    continuam disponíveis à equipe jurídica, preservando o uso transversal do
+    acervo do escritório.
+    """
+    result = await db.execute(
+        # SQL literal com bind params; a regra marca todo text(), sem olhar
+        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+        text(f"SELECT {_COLS} FROM memoria_institucional "
+             f"WHERE id = :id AND deleted_at IS NULL"),
+        {"id": mem_id},
+    )
+    row = result.mappings().first()
+    if not row:
+        raise HTTPException(404, "Registro não encontrado")
+    memoria = dict(row)
+    if memoria.get("case_id"):
+        await verificar_acesso_caso(db, cu, memoria["case_id"])
+    return memoria
+
+
 @router.get("")
 async def listar(
     case_id: Optional[str] = None,
@@ -70,14 +100,33 @@ async def listar(
     params: dict = {"limit": limit}
     if case_id:
         await verificar_acesso_caso(db, cu, case_id)  # ownership do caso filtrado
-        cond.append("case_id = :case_id"); params["case_id"] = case_id
+        cond.append("case_id = :case_id")
+        params["case_id"] = case_id
+    elif not is_gestao(cu):
+        # A listagem global também respeita o ownership antes da paginação:
+        # memórias sem caso permanecem transversais; registros case-scoped só
+        # aparecem para responsável/auxiliar do próprio caso.
+        cond.append(
+            "(case_id IS NULL OR case_id IN ("
+            "SELECT id FROM cases "
+            "WHERE deleted_at IS NULL "
+            "AND (advogado_responsavel_id = :cu_id "
+            "OR advogado_auxiliar_id = :cu_id)))"
+        )
+        params["cu_id"] = cu.id
     if tipo:
-        cond.append("tipo = :tipo"); params["tipo"] = tipo
+        cond.append("tipo = :tipo")
+        params["tipo"] = tipo
     if area:
-        cond.append("area_direito ILIKE :area"); params["area"] = f"%{area}%"
+        cond.append("area_direito ILIKE :area")
+        params["area"] = f"%{area}%"
     if q:
-        cond.append("(titulo ILIKE :q OR conteudo ILIKE :q)"); params["q"] = f"%{q}%"
+        cond.append("(titulo ILIKE :q OR conteudo ILIKE :q)")
+        params["q"] = f"%{q}%"
     result = await db.execute(
+        # SQL literal com bind params; a regra marca todo text(), sem olhar
+        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         text(f"SELECT {_COLS} FROM memoria_institucional "
              f"WHERE {' AND '.join(cond)} ORDER BY created_at DESC LIMIT :limit"),
         params,
@@ -127,15 +176,7 @@ async def obter(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        text(f"SELECT {_COLS} FROM memoria_institucional "
-             f"WHERE id = :id AND deleted_at IS NULL"),
-        {"id": mem_id},
-    )
-    row = result.mappings().first()
-    if not row:
-        raise HTTPException(404, "Registro não encontrado")
-    return dict(row)
+    return await _obter_memoria_autorizada(db, cu, mem_id)
 
 
 @router.patch("/{mem_id}")
@@ -145,18 +186,30 @@ async def atualizar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # A validação de ownership acontece ANTES de qualquer mutação.
+    await _obter_memoria_autorizada(db, cu, mem_id)
+    if body.tipo is not None and body.tipo not in TIPOS:
+        raise HTTPException(422, f"tipo inválido; use um de {sorted(TIPOS)}")
+    if body.resultado is not None and body.resultado not in RESULTADOS:
+        raise HTTPException(422, f"resultado inválido; use um de {sorted(RESULTADOS)}")
+
     sets: list[str] = []
     params: dict = {"id": mem_id}
     for field in ("tipo", "titulo", "conteudo", "resultado", "area_direito"):
         val = getattr(body, field)
         if val is not None:
-            sets.append(f"{field} = :{field}"); params[field] = val
+            sets.append(f"{field} = :{field}")
+            params[field] = val
     if body.tags is not None:
-        sets.append("tags = CAST(:tags AS jsonb)"); params["tags"] = json.dumps(body.tags)
+        sets.append("tags = CAST(:tags AS jsonb)")
+        params["tags"] = json.dumps(body.tags)
     if not sets:
         raise HTTPException(422, "Nada para atualizar")
     sets.append("updated_at = now()")
     result = await db.execute(
+        # SQL literal com bind params; a regra marca todo text(), sem olhar
+        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         text(f"UPDATE memoria_institucional SET {', '.join(sets)} "
              f"WHERE id = :id AND deleted_at IS NULL RETURNING id"),
         params,
@@ -174,6 +227,8 @@ async def remover(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # Mesmo ownership de GET/PATCH: memória vinculada acompanha o caso.
+    await _obter_memoria_autorizada(db, cu, mem_id)
     res = await db.execute(
         text("UPDATE memoria_institucional SET deleted_at = now() "
              "WHERE id = :id AND deleted_at IS NULL"),

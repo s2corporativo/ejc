@@ -178,9 +178,11 @@ export function Kpi({
 export function KpiGrid({
   children,
   cols = 4,
+  className,
 }: {
   children: any;
   cols?: 2 | 3 | 4;
+  className?: string;
 }) {
   const g =
     cols === 2
@@ -188,7 +190,11 @@ export function KpiGrid({
       : cols === 3
         ? "lg:grid-cols-3"
         : "lg:grid-cols-4";
-  return <div className={`grid grid-cols-2 ${g} gap-4`}>{children}</div>;
+  return (
+    <div className={`grid grid-cols-2 ${g} gap-4${className ? ` ${className}` : ""}`}>
+      {children}
+    </div>
+  );
 }
 
 // ── Barras horizontais ───────────────────────────────────────────────────────

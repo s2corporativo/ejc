@@ -15,10 +15,12 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import func as sqlfunc, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.rate_limit import rate_limit
 from app.core.security import (
     ROLE_LEVEL,
     ROLES_PERMISSOES,
@@ -31,6 +33,8 @@ from app.models.audit_log import criar_audit_log
 from app.models.user import RefreshToken, User
 from app.schemas.auth import UserCreate, UserResponse, UserUpdate
 from app.services.security_service import obter_ip_real, validar_forca_senha
+from app.services.pii_crypto import encrypt as pii_encrypt, hash_documento, normalizar_documento
+from app.services.validators_service import validar_cpf
 from app.schemas.common import MsgResponse
 
 settings = get_settings()
@@ -48,6 +52,61 @@ def _nivel(role) -> int:
 
 def _permissoes(role) -> list[str]:
     return list(ROLES_PERMISSOES.get(_role_value(role), []))
+
+
+def _preparar_cpf_usuario(cpf: str | None) -> tuple[str | None, str | None]:
+    """Normaliza, valida e protege CPF de profissional."""
+    doc = normalizar_documento(cpf)
+    if doc is None:
+        return None, None
+    if len(doc) != 11 or not validar_cpf(doc):
+        raise HTTPException(status_code=422, detail="CPF inválido")
+    return pii_encrypt(doc), hash_documento(doc)
+
+
+async def _validar_cpf_usuario_exclusivo(
+    db: AsyncSession, user_id: str | None, cpf_hash: str | None
+) -> None:
+    if not cpf_hash:
+        return
+    filtros = [User.cpf_hash == cpf_hash, User.deleted_at.is_(None)]
+    if user_id:
+        filtros.append(User.id != user_id)
+    conflito = (await db.execute(select(User.id).where(*filtros))).first()
+    if conflito:
+        raise HTTPException(status_code=409, detail="CPF já vinculado a outro usuário ativo")
+
+
+_CPF_HASH_UNIQUE_CONSTRAINT = "ux_users_cpf_hash_active"
+
+
+def _integrity_e_duplicidade_cpf_usuario(exc: IntegrityError) -> bool:
+    """Reconhece somente a constraint do CPF protegido; demais erros propagam."""
+    orig = getattr(exc, "orig", None)
+    candidatos = (orig, getattr(orig, "__cause__", None))
+    for candidato in candidatos:
+        if candidato is None:
+            continue
+        nome = getattr(candidato, "constraint_name", None)
+        if not nome:
+            nome = getattr(getattr(candidato, "diag", None), "constraint_name", None)
+        if nome == _CPF_HASH_UNIQUE_CONSTRAINT:
+            return True
+    return False
+
+
+async def _commit_usuario_com_cpf_guard(db: AsyncSession) -> None:
+    """Fecha corrida após o precheck sem mascarar integridades não relacionadas."""
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        if _integrity_e_duplicidade_cpf_usuario(exc):
+            raise HTTPException(
+                status_code=409,
+                detail="CPF já vinculado a outro usuário ativo",
+            ) from exc
+        raise
 
 
 def _refresh_jti_atual(request: Request) -> str | None:
@@ -86,13 +145,17 @@ def _validar_alvo(cu: User, alvo: User) -> None:
         )
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get(
+    "/me",
+    response_model=UserResponse,
+    dependencies=[Depends(rate_limit("users-me", 120))],
+)
 async def meu_perfil(cu: User = Depends(get_current_user)):
     """Dados do usuário autenticado."""
     return cu
 
 
-@router.get("/me/security")
+@router.get("/me/security", dependencies=[Depends(rate_limit("users-me-seguranca", 60))])
 async def minha_seguranca(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
@@ -116,7 +179,7 @@ async def minha_seguranca(
     }
 
 
-@router.get("/me/sessions")
+@router.get("/me/sessions", dependencies=[Depends(rate_limit("users-me-sessoes", 60))])
 async def minhas_sessoes(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -151,7 +214,10 @@ async def minhas_sessoes(
     }
 
 
-@router.post("/me/sessions/revoke-others")
+@router.post(
+    "/me/sessions/revoke-others",
+    dependencies=[Depends(rate_limit("users-sessoes-revoga-outras", 10))],
+)
 async def revogar_outras_sessoes(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -188,7 +254,10 @@ async def revogar_outras_sessoes(
     return {"detail": "Outras sessões revogadas.", "revoked": quantidade}
 
 
-@router.post("/me/sessions/{session_id}/revoke")
+@router.post(
+    "/me/sessions/{session_id}/revoke",
+    dependencies=[Depends(rate_limit("users-sessoes-revoga", 10))],
+)
 async def revogar_sessao(
     session_id: str,
     request: Request,
@@ -228,9 +297,18 @@ async def revogar_sessao(
     return {"detail": "Sessão revogada."}
 
 
-@router.get("/me/totp-qr")
+@router.get(
+    "/me/totp-qr",
+    dependencies=[Depends(rate_limit("users-totp-qr", 5))],
+)
 async def meu_qr_totp(cu: User = Depends(get_current_user)):
-    """Retorna QR PNG apenas durante a configuração, nunca após a ativação."""
+    """Retorna QR PNG apenas durante a configuração, nunca após a ativação.
+
+    Rate limit estrito (Fase 8): o QR embute o segredo TOTP enquanto a
+    verificação em dois fatores não está ativa — cota de 5/min por usuário
+    limita o dano de uma sessão comprometida enumerando ou reaproveitando a
+    imagem.
+    """
     if cu.totp_enabled:
         raise HTTPException(
             status_code=400,
@@ -301,6 +379,11 @@ async def criar(
         validar_forca_senha(payload.password, payload.email)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    try:
+        cpf_enc, cpf_hash = _preparar_cpf_usuario(payload.cpf)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail="Proteção de CPF indisponível") from e
+    await _validar_cpf_usuario_exclusivo(db, None, cpf_hash)
     user = User(
         id=str(uuid4()),
         email=payload.email.lower(),
@@ -309,16 +392,99 @@ async def criar(
         role=payload.role,
         phone=payload.phone,
         oab_number=payload.oab_number,
+        cpf_enc=cpf_enc,
+        cpf_hash=cpf_hash,
         must_change_password=True,
     )
     db.add(user)
     await criar_audit_log(db, cu.id, _role_value(cu.role), "CREATE", "users", user.id)
-    await db.commit()
+    await _commit_usuario_com_cpf_guard(db)
     await db.refresh(user)
     return user
 
 
-@router.patch("/{user_id}", response_model=UserResponse)
+_CAMPOS_OAB_DJEN = frozenset({"djen_oab_numero", "djen_oab_uf"})
+
+
+def _validar_par_oab_djen(user: User, mudancas: dict) -> None:
+    """Recusa gravar metade do par número↔UF da OAB monitorada.
+
+    A captura DJEN lê os DOIS campos, mas o job seleciona o advogado pelo
+    número. Com metade do par gravada, o advogado entra na lista, é descartado
+    por falta de UF e o sistema segue "verde" capturando zero — a falha mais
+    cara possível num sistema de prazos. A checagem é sobre o valor RESULTANTE
+    (o já gravado somado ao que veio num PATCH parcial), nunca sobre o payload
+    isolado.
+
+    Um PATCH que não toca a OAB passa direto: a coluna não tem constraint e
+    linhas legadas podem carregar meio par, e travar `{"is_active": false}`
+    numa dessas contas atrasaria contenção de incidente por um defeito de
+    dado em campo alheio.
+    """
+    if not _CAMPOS_OAB_DJEN & mudancas.keys():
+        return
+    numero = (mudancas.get("djen_oab_numero", user.djen_oab_numero) or "").strip()
+    uf = (mudancas.get("djen_oab_uf", user.djen_oab_uf) or "").strip()
+    if bool(numero) != bool(uf):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Número e UF da OAB formam um par indivisível para a captura "
+                "de intimações: informe os dois, ou limpe os dois para "
+                "desligar o monitoramento."
+            ),
+        )
+
+
+async def _validar_oab_djen_exclusiva(
+    db: AsyncSession, user: User, mudancas: dict
+) -> None:
+    """Uma inscrição da OAB monitora um usuário só.
+
+    `djen_oab_numero`/`djen_oab_uf` estão em `campos_self`: qualquer usuário
+    interno podia gravar em SI MESMO a inscrição de outro advogado. O job
+    diário grava `DjenComunicacao.advogado_id` com o id de quem tem a OAB, e a
+    listagem de intimações é escopada por esse campo — então isso entregava a
+    carteira de publicações do titular da inscrição a quem a copiou, contornando
+    a checagem de acesso por caso. Duas pessoas com a mesma inscrição também
+    dividiriam a captura de forma imprevisível.
+
+    Reatribuição legítima (advogado que sai do escritório) continua possível:
+    limpe a OAB do usuário antigo antes.
+    """
+    if not _CAMPOS_OAB_DJEN & mudancas.keys():
+        return
+    numero = (mudancas.get("djen_oab_numero", user.djen_oab_numero) or "").strip()
+    uf = (mudancas.get("djen_oab_uf", user.djen_oab_uf) or "").strip().upper()
+    if not numero or not uf:
+        return
+    conflito = (
+        await db.execute(
+            select(User.id).where(
+                User.id != user.id,
+                User.deleted_at.is_(None),
+                User.djen_oab_numero == numero,
+                sqlfunc.upper(User.djen_oab_uf) == uf,
+            )
+        )
+    ).first()
+    if conflito:
+        # Sem nome/e-mail do outro usuário: a mensagem não pode virar oráculo
+        # de "quem é o dono desta inscrição" para quem tentou copiá-la.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"A OAB {numero}/{uf} já está vinculada a outro usuário. "
+                "Remova o vínculo anterior antes de reatribuí-la."
+            ),
+        )
+
+
+@router.patch(
+    "/{user_id}",
+    response_model=UserResponse,
+    dependencies=[Depends(rate_limit("users-atualiza", 30))],
+)
 async def atualizar(
     user_id: str,
     payload: UserUpdate,
@@ -374,6 +540,21 @@ async def atualizar(
             raise HTTPException(status_code=400,
                                 detail="Não é permitido ativar o próprio perfil")
 
+    _validar_par_oab_djen(user, mudancas)
+    await _validar_oab_djen_exclusiva(db, user, mudancas)
+
+    if "cpf" in mudancas:
+        if not eh_admin:
+            raise HTTPException(status_code=403, detail="CPF é restrito à gestão de usuários")
+        cpf = mudancas.pop("cpf")
+        try:
+            cpf_enc, cpf_hash = _preparar_cpf_usuario(cpf)
+        except RuntimeError as e:
+            raise HTTPException(status_code=503, detail="Proteção de CPF indisponível") from e
+        await _validar_cpf_usuario_exclusivo(db, user.id, cpf_hash)
+        user.cpf_enc = cpf_enc
+        user.cpf_hash = cpf_hash
+
     for key, value in mudancas.items():
         setattr(user, key, value)
     await criar_audit_log(
@@ -384,7 +565,7 @@ async def atualizar(
         "users",
         user_id,
     )
-    await db.commit()
+    await _commit_usuario_com_cpf_guard(db)
     await db.refresh(user)
     return user
 
@@ -425,7 +606,10 @@ async def desativar(
 from app.routers.calendar_feed import _headers_credencial, obter_url_calendario
 
 
-@router.get("/me/calendar-url")
+@router.get(
+    "/me/calendar-url",
+    dependencies=[Depends(rate_limit("users-calendario-url", 10))],
+)
 async def minha_url_calendario(
     response: Response,
     db: AsyncSession = Depends(get_db),
@@ -495,7 +679,11 @@ def _apagar_avatares(user_id: str, exceto_ext: str | None = None) -> None:
             pass
 
 
-@router.post("/me/avatar", response_model=UserResponse)
+@router.post(
+    "/me/avatar",
+    response_model=UserResponse,
+    dependencies=[Depends(rate_limit("users-avatar-envia", 10))],
+)
 async def enviar_avatar(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -524,7 +712,11 @@ async def enviar_avatar(
     return cu
 
 
-@router.delete("/me/avatar", response_model=MsgResponse)
+@router.delete(
+    "/me/avatar",
+    response_model=MsgResponse,
+    dependencies=[Depends(rate_limit("users-avatar-remove", 10))],
+)
 async def remover_avatar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
@@ -544,7 +736,10 @@ async def remover_avatar(
     return MsgResponse(detail="Avatar removido")
 
 
-@router.get("/{user_id}/avatar")
+@router.get(
+    "/{user_id}/avatar",
+    dependencies=[Depends(rate_limit("users-avatar-ve", 120))],
+)
 async def obter_avatar(
     user_id: str,
     db: AsyncSession = Depends(get_db),

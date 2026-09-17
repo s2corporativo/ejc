@@ -15,11 +15,12 @@ from app.services.knowledge_autoapproval import (
 )
 
 
-def _doc(extra=None, categoria="legislacao") -> KnowledgeDoc:
+def _doc(extra=None, categoria="legislacao", fonte=None) -> KnowledgeDoc:
     return KnowledgeDoc(
         id="doc-teste",
         titulo="Documento excepcional",
         categoria=categoria,
+        fonte=fonte,
         extra=extra,
     )
 
@@ -43,6 +44,20 @@ def test_doutrina_sem_status_explicito_nasce_pendente():
     assert extra["rag_status"] == "pendente"
     assert extra["auto_approval"]["policy"] == POLITICA_JURIDICO_PENDENTE
     assert "approved_at" not in extra["auto_approval"]
+
+
+def test_proposicao_de_fonte_oficial_preserva_proveniencia_sem_forca_normativa():
+    doc = _doc(
+        {"confidence_level": "media"},
+        categoria="proposicao_legislativa",
+        fonte="https://www.senado.leg.br/atividade/materia",
+    )
+    extra = aplicar_aprovacao_automatica(doc)
+
+    assert extra["authority_level"] == "proposicao_legislativa"
+    assert extra["source_official"] is True
+    assert extra["rag_status"] == "pendente"
+    assert extra["auto_approval"]["policy"] == POLITICA_JURIDICO_PENDENTE
 
 
 def test_conteudo_nao_juridico_sem_status_mantem_compatibilidade_autoaprovada():
