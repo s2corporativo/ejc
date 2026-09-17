@@ -151,3 +151,106 @@ def test_exemplos_nao_entram_no_digest_real(tmp_path):
 
     assert digest_depois == digest_antes
     assert arquivos_antes == arquivos_depois == ("gold_set_real.jsonl",)
+
+
+def test_arquivo_somente_candidato_nao_entra_no_corpus_atestado(tmp_path):
+    """Corpus com apenas gabaritos de IA (status=candidato/ficticio) não é
+    atestável — atestaria um gabarito que ninguém revisou."""
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    candidatos = corpus / "gold_set_ia_candidatos.jsonl"
+    candidatos.write_text(
+        '{"id":"c1","status":"candidato","ficticio":true}\n'
+        '{"id":"c2","status":"candidato","ficticio":true}\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(GoldAttestationError, match="nenhum arquivo gold real"):
+        digest_corpus(corpus)
+
+    # Com um arquivo revisado no mesmo diretório, só o revisado entra.
+    real = corpus / "gold_set_real.jsonl"
+    real.write_text('{"id":"real-1","ficticio":false}\n', encoding="utf-8")
+    digest, arquivos = digest_corpus(corpus)
+    assert arquivos == ("gold_set_real.jsonl",)
+
+    # E alterar o arquivo candidato não muda o digest.
+    candidatos.write_text(
+        '{"id":"c1-alterado","status":"candidato","ficticio":true}\n',
+        encoding="utf-8",
+    )
+    digest_depois, arquivos_depois = digest_corpus(corpus)
+    assert digest_depois == digest
+    assert arquivos_depois == arquivos
+
+
+def test_head_git_aceita_apenas_sha1_ou_sha256_completos():
+    from app.eval.gold_attestation import validar_atestacao as _v
+
+    for tam in (41, 45, 63):
+        with pytest.raises(GoldAttestationError, match="HEAD Git"):
+            _v(
+                corpus_dir=".",
+                attestation_file="x",
+                public_key_file="y",
+                head_sha="a" * tam,
+                repo_root=".",
+            )
+    # 40 e 64 passam da validação de formato (falham depois por arquivo ausente,
+    # o que prova que o formato foi aceito).
+    for tam in (40, 64):
+        with pytest.raises(GoldAttestationError, match="não encontrado"):
+            _v(
+                corpus_dir=".",
+                attestation_file="x",
+                public_key_file="y",
+                head_sha="a" * tam,
+                repo_root=".",
+            )
+
+
+def test_manifesto_e_chave_nao_podem_vir_do_checkout_do_corpus(tmp_path):
+    """Executando a partir de um checkout confiável com --corpus-dir apontando
+    para um PR checkout separado, manifesto/chave dentro do PR são rejeitados."""
+    repo_confiavel = tmp_path / "confiavel"
+    repo_confiavel.mkdir()
+
+    pr_checkout = tmp_path / "pr"
+    corpus = pr_checkout / "backend" / "app" / "eval"
+    corpus.mkdir(parents=True)
+    (pr_checkout / ".git").mkdir()  # raiz Git do checkout do PR
+    (corpus / "gold_set_real.jsonl").write_text(
+        '{"id":"real-1","ficticio":false}\n', encoding="utf-8"
+    )
+
+    private = Ed25519PrivateKey.generate()
+    public = private.public_key()
+    chave_no_pr = pr_checkout / "gold-public.pem"
+    chave_no_pr.write_bytes(
+        public.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+    )
+    digest, _ = digest_corpus(corpus)
+    manifesto = {
+        "schema_version": SCHEMA_VERSION,
+        "scope": SCOPE,
+        "head_sha": HEAD,
+        "corpus_sha256": digest,
+        "attested_by": "advogado-revisor",
+        "attested_at": (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat(),
+    }
+    manifesto["signature_ed25519_base64"] = base64.b64encode(
+        private.sign(canonical_payload(manifesto))
+    ).decode("ascii")
+    atestacao_no_pr = pr_checkout / "gold-attestation.json"
+    atestacao_no_pr.write_text(json.dumps(manifesto), encoding="utf-8")
+
+    with pytest.raises(GoldAttestationError, match="externo ao repositório"):
+        validar_atestacao(
+            corpus_dir=corpus,
+            attestation_file=atestacao_no_pr,
+            public_key_file=chave_no_pr,
+            head_sha=HEAD,
+            repo_root=repo_confiavel,
+        )

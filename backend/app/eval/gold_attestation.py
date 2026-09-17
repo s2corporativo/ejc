@@ -42,7 +42,7 @@ SCOPE = "ejc-legal-gold"
 ENV_HEAD = "EJC_GOLD_HEAD_SHA"
 ENV_ATTESTATION_FILE = "EJC_GOLD_ATTESTATION_FILE"
 ENV_PUBLIC_KEY_FILE = "EJC_GOLD_ATTESTATION_PUBLIC_KEY_FILE"
-_SHA_GIT = re.compile(r"^[0-9a-fA-F]{40,64}$")
+_SHA_GIT = re.compile(r"^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$")
 _SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
@@ -59,6 +59,19 @@ class AttestationResult:
     files: tuple[str, ...]
 
 
+def _linha_eh_candidato(linha: str) -> bool:
+    """Linha de gold set ainda não revisada por pessoa (gabarito de treino/IA)."""
+    try:
+        obj = json.loads(linha)
+    except (json.JSONDecodeError, ValueError):
+        return False  # linha não-JSON não pode ser descartada por heurística
+    if not isinstance(obj, dict):
+        return False
+    if obj.get("ficticio") is True:
+        return True
+    return str(obj.get("status") or "").strip().lower() == "candidato"
+
+
 def _arquivos_gold_reais(base: Path) -> list[Path]:
     arquivos: list[Path] = []
     for path in sorted(base.glob("gold_set*.jsonl")):
@@ -66,6 +79,13 @@ def _arquivos_gold_reais(base: Path) -> list[Path]:
         if any(tag in nome for tag in (".example.", ".synthetic.", ".sintetico.")):
             continue
         if not path.is_file() or not path.read_bytes().strip():
+            continue
+        # Arquivo 100% candidato (nenhuma linha revisada por pessoa) não entra
+        # no corpus atestado — atestar gabarito fictício seria falso atestado.
+        linhas = [
+            ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()
+        ]
+        if linhas and all(_linha_eh_candidato(ln) for ln in linhas):
             continue
         arquivos.append(path)
     return arquivos
@@ -129,6 +149,19 @@ def _data_atestacao(valor: Any) -> str:
     return raw
 
 
+def _raiz_git_do_corpus(corpus_dir: Path) -> Path | None:
+    """Localiza a raiz Git do checkout que contém o corpus (se houver).
+
+    Manifesto e chave NUNCA podem vir desse checkout — quem controla a branch
+    do corpus controla os arquivos dele; a atestação tem que ser externa.
+    """
+    atual = corpus_dir.resolve()
+    for candidato in [atual, *atual.parents]:
+        if (candidato / ".git").exists():
+            return candidato
+    return None
+
+
 def _fora_do_repositorio(path: Path, repo_root: Path, rotulo: str) -> None:
     try:
         path.resolve().relative_to(repo_root.resolve())
@@ -183,6 +216,13 @@ def validar_atestacao(
         raise GoldAttestationError("arquivo externo de chave pública não encontrado")
     _fora_do_repositorio(att_path, repo, "arquivo de atestação")
     _fora_do_repositorio(key_path, repo, "chave pública de atestação")
+    # Mesmo executando a partir de um checkout confiável (main/imagem pinada),
+    # os arquivos precisam ser externos ao checkout que contém o corpus —
+    # senão um PR consegue apresentar manifesto/chave dentro da própria branch.
+    checkout_corpus = _raiz_git_do_corpus(Path(corpus_dir))
+    if checkout_corpus is not None and checkout_corpus != repo:
+        _fora_do_repositorio(att_path, checkout_corpus, "arquivo de atestação")
+        _fora_do_repositorio(key_path, checkout_corpus, "chave pública de atestação")
 
     try:
         manifesto = json.loads(att_path.read_text(encoding="utf-8"))
