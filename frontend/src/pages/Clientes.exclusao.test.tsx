@@ -86,11 +86,13 @@ describe("Clientes — exclusão de cliente", () => {
     fireEvent.click(within(modal).getByText("Excluir"));
 
     await waitFor(() =>
-      expect(deleteMock).toHaveBeenCalledWith("/clients/cli-1"),
+      expect(deleteMock).toHaveBeenCalledWith("/clients/cli-1", undefined),
     );
     expect(deleteMock).not.toHaveBeenCalledWith(
-      "/clients/cli-1?forcar=true",
+      "/clients/cli-1",
+      { params: { forcar: true } },
     );
+    expect(deleteMock.mock.calls[0][1]).toBeUndefined();
     await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
     // load() reexecutado após a exclusão
     await waitFor(() => expect(getMock).toHaveBeenCalledTimes(2));
@@ -133,7 +135,9 @@ describe("Clientes — exclusão de cliente", () => {
     fireEvent.click(within(modal).getByText("Excluir"));
 
     await waitFor(() =>
-      expect(deleteMock).toHaveBeenCalledWith("/clients/cli-1?forcar=true"),
+      expect(deleteMock).toHaveBeenCalledWith("/clients/cli-1", {
+        params: { forcar: true },
+      }),
     );
     await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
   });
