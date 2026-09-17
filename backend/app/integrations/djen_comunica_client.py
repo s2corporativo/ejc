@@ -34,7 +34,11 @@ from typing import Any, Optional
 
 import httpx
 
-from app.services.djen_http import DJEN_COMUNICA_BASE_URL, criar_cliente_djen
+from app.services.djen_http import (
+    DJEN_COMUNICA_BASE_URL,
+    DJEN_ITENS_POR_PAGINA,
+    criar_cliente_djen,
+)
 
 COMUNICA_BASE_URL = DJEN_COMUNICA_BASE_URL
 
@@ -67,6 +71,7 @@ class DjenComunicaClient:
             "numeroOab": numero_oab,
             "ufOab": uf_oab,
             "pagina": pagina,
+            "itensPorPagina": DJEN_ITENS_POR_PAGINA,
         }
         if data_inicio:
             params["dataDisponibilizacaoInicio"] = data_inicio.isoformat()
