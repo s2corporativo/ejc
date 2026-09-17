@@ -13,26 +13,35 @@ from urllib.parse import unquote
 from fastapi import HTTPException
 
 FERRAMENTAS_NAO_HOMOLOGADAS: dict[str, str] = {
-    "/tributario/ferramentas/auto-infracao-prazos": (
-        "regra do PAF federal reconstruída para LC 227/2026, porém ainda em "
-        "revisão jurídica integral; não promover resultado a documento profissional"
-    ),
-    "/tributario/ferramentas/prescricao-decadencia": (
-        "calculadora tributária ainda exige validação dos marcos jurídicos concretos "
-        "antes de qualquer conclusão profissional sobre decadência ou prescrição"
-    ),
-    "/tributario/ferramentas/parcelamento": (
-        "simulador tributário depende da modalidade oficial vigente, órgão, edital, "
-        "perfil, natureza do débito e capacidade de pagamento"
-    ),
-    "/tributario/ferramentas/regime-tributario": (
-        "comparativo tributário ainda requer homologação jurídica das premissas, período "
-        "de apuração e transição IBS/CBS antes de uso profissional"
-    ),
-    "/tributario/ferramentas/reforma-tributaria": (
-        "simulação geral da reforma permanece indicativa; créditos, redutores, regime "
-        "específico e cadeia precisam ser validados no caso concreto"
-    ),
+    "/tributario/ferramentas/auto-infracao-prazos":
+        "regra do PAF federal corrigida para LC 227/2026, porém ainda em revisão "
+        "jurídica integral #1553; não promover resultado a documento profissional",
+
+    "/tributario/ferramentas/prescricao-decadencia":
+        "calculadora não modela marcos suficientes e ainda não incorpora integralmente "
+        "a LC 236/2026, vigente desde 04/09/2026, inclusive alterações dos arts. "
+        "150/151/168/174 do CTN; revisão jurídica P0 #1553 obrigatória",
+
+    "/tributario/ferramentas/parcelamento":
+        "simulador mistura PERT/REFIS históricos e parâmetros fixos com transações "
+        "tributárias de 2026 que variam por edital, órgão, perfil, natureza do débito "
+        "e capacidade de pagamento; confirmar modalidade oficial vigente antes de uso profissional",
+
+    # P0/P1 tributário #1553: o comparativo usa coeficientes históricos fixos do
+    # Lucro Presumido e não recebe período de apuração. A LC 224/2025 determinou
+    # acréscimo de 10% nos percentuais de presunção sobre a parcela da receita que
+    # excede R$ 5 milhões/ano (limite proporcional por período/atividade). Em 2026,
+    # a RFB orienta aplicação ao IRPJ desde o 1º trimestre e à CSLL desde o 2º.
+    # Além disso, o cenário de consumo deve identificar a transição IBS/CBS de 2026.
+    "/tributario/ferramentas/regime-tributario":
+        "comparativo usa percentuais fixos de Lucro Presumido e não modela período, "
+        "limite ou acréscimo da LC 224/2025 aplicável em 2026 ao IRPJ/CSLL; também "
+        "precisa contextualizar a transição IBS/CBS antes de uso profissional",
+
+    "/tributario/ferramentas/reforma-tributaria":
+        "simulação geral da reforma ainda usa alíquota indicativa sobre receita bruta "
+        "e premissas setoriais sem créditos/redutores/regime específico; atualizar "
+        "proveniência para LC 227/2026, atos de 2026 e impactos transversais da LC 236/2026",
     # Onda 2 — Fase A (2026-07): corrigidas e REMOVIDAS da matriz:
     #   /empresarial/ferramentas/prazos-rj · /empresarial/ferramentas/juros-mora
     #   /penal/ferramentas/prazos-processuais · /penal/ferramentas/verificar-anpp

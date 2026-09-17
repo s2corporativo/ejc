@@ -76,6 +76,11 @@ async def trib_auto_infracao_prazos(
                 "reducao_pct": 20,
                 "multa_reduzida": round(valor_multa * 0.80, 2),
             },
+            "regra_contagem": (
+                "30 dias corridos; a suspensão processual do art. 5º-A do "
+                "Decreto 70.235/72 não se aplica a esses prazos do art. 6º "
+                "da Lei 8.218/91"
+            ),
             "base": "Lei 8.218/1991 art. 6º",
         },
         "fluxo_recursal": [

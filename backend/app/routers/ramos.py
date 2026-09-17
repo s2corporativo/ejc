@@ -6,6 +6,9 @@
 
 from fastapi import APIRouter
 import logging
+from functools import wraps
+
+from app.services.homologacao_ferramentas import motivo_nao_homologada, selo_homologacao
 
 logger = logging.getLogger(__name__)
 
@@ -94,13 +97,34 @@ for _r in _ramos_tributario_paf.router.routes:
                              tags=_r.tags, summary=_r.summary,
                              deprecated=getattr(_r, "deprecated", False))
 
+def _selar_endpoint_nao_homologado(endpoint, caminho: str):
+    """Aplica o selo da matriz à resposta real da API sem alterar a assinatura.
+
+    O gate de `/pecas/demonstrativo` já impede promoção profissional usando a
+    mesma matriz. Este wrapper fecha a outra metade do contrato: a própria rota
+    consultada passa a devolver `homologada=false`, permitindo que a UI avise o
+    usuário e desabilite o demonstrativo antes de qualquer tentativa de exportar.
+    """
+    @wraps(endpoint)
+    async def endpoint_selado(*args, **kwargs):
+        out = await endpoint(*args, **kwargs)
+        if isinstance(out, dict):
+            return selo_homologacao(caminho, out)
+        return out
+
+    return endpoint_selado
+
+
 from app.routers import ramos_ferramentas_complementares as _ramos_ferramentas_complementares
 for _r in _ramos_ferramentas_complementares.router.routes:
     if (
         getattr(_r, "path", None)
         and _r.path != _ramos_tributario_paf.ROTA_AUTO_INFRACAO
     ):
-        router.add_api_route(_r.path, _r.endpoint, methods=_r.methods,
+        _endpoint = _r.endpoint
+        if motivo_nao_homologada(_r.path):
+            _endpoint = _selar_endpoint_nao_homologado(_endpoint, _r.path)
+        router.add_api_route(_r.path, _endpoint, methods=_r.methods,
                              dependencies=_r.dependencies,
                              response_model=_r.response_model,
                              status_code=_r.status_code,
@@ -128,7 +152,7 @@ from app.routers.ramos_tributario_paf import trib_auto_infracao_prazos  # noqa: 
 from app.routers.ramos_ferramentas_complementares import civ_prescricao_consumidor, civ_dano_moral, civ_partilha_divorcio, civ_rescisao_locacao, trab_verbas_rescisorias, adm_reajuste_contrato, bancario_taxas_bacen, trib_prescricao_decadencia, trib_parcelamento, trib_simples_nacional, trib_regime_tributario, trib_reforma_tributaria, amb_auto_infracao, amb_crimes_ambientais, amb_tac, amb_licenciamento, amb_reserva_legal, _MODALIDADES_PARCELAMENTO, _REFORMA_CRONOGRAMA  # noqa: F401 (reexport p/ compat)
 from app.routers.ramos_comum import TETOS_DEPOSITO_RECURSAL, _teto_deposito_para, _add_meses_data, _ultimo_dia_do_mes, _SUNSET_DUPLICATAS, _sm_vigente  # noqa: F401 (reexport p/ compat)
 from app.routers.ramos_comum import VERSAO_REGRA_ATUAL, _serialize  # noqa: F401 (reexport p/ compat)
-from app.services.homologacao_ferramentas import (  # noqa: F401 (reexport p/ compat)
+from app.services.homologacao_ferramentas import (  # noqa: F401 (reexport p/ compat; motivo/selo já importados acima)
     FERRAMENTAS_BLOQUEADAS, FERRAMENTAS_NAO_HOMOLOGADAS,
     normalizar_caminho_ferramenta,
 )

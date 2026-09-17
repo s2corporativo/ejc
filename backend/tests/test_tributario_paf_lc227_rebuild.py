@@ -21,6 +21,19 @@ def test_suspensao_2026_nao_retroage_antes_da_vigencia() -> None:
     assert suspenso_paf_federal(date(2026, 1, 21)) is False
 
 
+def test_suspensao_integral_a_partir_do_fim_de_2026() -> None:
+    assert suspenso_paf_federal(date(2026, 12, 20)) is True
+    assert suspenso_paf_federal(date(2027, 1, 20)) is True
+    assert suspenso_paf_federal(date(2027, 1, 21)) is False
+
+
+def test_ciencia_anterior_lc227_preserva_regime_anterior_com_suspensao_incidente() -> None:
+    out = calcular_prazo_impugnacao_paf(date(2026, 1, 10))
+    assert out["criterio"] == "regime_anterior_30_corridos"
+    assert set(out["componentes"]) == {"30_dias_corridos"}
+    assert out["vencimento"] > date(2026, 2, 9)  # 30 corridos simples, sem a suspensão
+
+
 def test_transicao_ate_31_marco_escolhe_vencimento_posterior() -> None:
     out = calcular_prazo_impugnacao_paf(date(2026, 3, 31))
     assert out["criterio"] == "transicao_adi_rfb_2_2026_maior_vencimento"

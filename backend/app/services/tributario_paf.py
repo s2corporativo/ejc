@@ -27,7 +27,11 @@ FONTES_PAF = [
 
 
 def suspenso_paf_federal(dia: date) -> bool:
-    """Suspensão do art. 5º-A com regra especial de entrada em vigor em 2026."""
+    """Suspensão do art. 5º-A com regra especial de entrada em vigor em 2026.
+
+    Em 2026 a LC 227 entrou em vigor em 14/01: não há retroatividade para
+    01-13/01/2026. A partir do fim de 2026 aplica-se integralmente 20/12-20/01.
+    """
     if dia.year == 2026 and dia.month == 1:
         return 14 <= dia.day <= 20
     if dia.year >= 2026 and dia.month == 12:
@@ -38,6 +42,7 @@ def suspenso_paf_federal(dia: date) -> bool:
 
 
 def _prazo_corridos_processual(data_ciencia: date, dias: int) -> date:
+    """Conta dias corridos excluindo a ciência, congelando suspensão do PAF."""
     atual = data_ciencia
     contados = 0
     while contados < dias:
@@ -49,6 +54,7 @@ def _prazo_corridos_processual(data_ciencia: date, dias: int) -> date:
 
 
 def _prazo_uteis_processual(data_ciencia: date, dias: int) -> date:
+    """Conta dias úteis excluindo a ciência e respeitando a suspensão do PAF."""
     atual = data_ciencia
     contados = 0
     while contados < dias:
@@ -61,7 +67,14 @@ def _prazo_uteis_processual(data_ciencia: date, dias: int) -> date:
 
 
 def calcular_prazo_impugnacao_paf(data_ciencia: date) -> dict:
-    """Calcula a regra federal aplicável pela data de ciência."""
+    """Calcula a regra federal aplicável pela data de ciência.
+
+    - ciência anterior a 14/01/2026: regime anterior de 30 dias corridos; se o
+      prazo ainda estava em curso, suspende 14-20/01/2026;
+    - ciência de 14/01 a 31/03/2026: por segurança jurídica, considera o prazo
+      que vencer por último entre 20 dias úteis e 30 dias corridos (ADI RFB 2);
+    - ciência após 31/03/2026: 20 dias úteis.
+    """
     if data_ciencia < LC227_VIGENCIA:
         vencimento = _prazo_corridos_processual(data_ciencia, 30)
         return {
