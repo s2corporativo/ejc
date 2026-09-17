@@ -25,7 +25,7 @@ import pytest
 from app.models.ajuizamento import EstadoAjuizamento as E
 from app.services.ajuizamento import estados
 from app.services.ajuizamento.canonico import (
-    CanonicalJudicialCase, DocumentoCanonico, Endereco, construir_canonico,
+    CanonicalJudicialCase, DocumentoCanonico, construir_canonico,
     documento_de_document, parte_de_case_parte, representacao_de_usuario, _split_oab,
 )
 from app.services.ajuizamento.capacidades import (

@@ -199,6 +199,15 @@ ADICOES_INTENCIONAIS = {
 }
 
 REMOCOES_INTENCIONAIS = {
+    # Saneamento 18/09/2026 (pós-auditoria de rotas): POST
+    # /cerebro/jurisprudencia/pesquisa respondia 503 INCONDICIONAL desde a
+    # auditoria de 2026-07-19 e não tinha NENHUM chamador (zero no frontend,
+    # zero no backend — verificado por varredura de api.* e rg). A trilha
+    # canônica de busca segue /api/search e /api/rag (RAG híbrido). Um router
+    # que só sabe recusar é superfície de API que promete o que ninguém
+    # constrói — e aparece no OpenAPI como promessa falsa.
+    ("/api/cerebro/jurisprudencia/pesquisa", "POST"),
+
     # `routers/jurisprudencia_externa.py` REMOVIDO (17/09/2026, Fase 7 —
     # auditoria §3.6 "Jurisprudência: 4 superfícies"). O router duplicava, em
     # REST, operações que já têm trilha canônica testada: BUSCA EXTERNA →

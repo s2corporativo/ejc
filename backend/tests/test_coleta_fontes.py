@@ -9,6 +9,7 @@ import app.eval.coleta_fontes as coleta_fontes
 from app.eval.coleta_fontes import (
     ErroDeColeta,
     Fonte,
+    _host_oficial,
     baixar,
     carregar_registro,
     coletar_fonte,
@@ -41,9 +42,11 @@ def test_natureza_ignora_o_menu_do_portal_e_falha_fechada():
 
 
 def test_extrai_artigo_pedido_sem_confundir_com_numero_maior():
+    # Cada "Art. N" começa uma linha, como html_para_texto produz de verdade
+    # (cada <p>/<br> vira \n) — não um bloco corrido artificial.
     texto = (
-        "Art. 14. Dispositivo procurado, com corpo suficiente para ser reconhecido. "
-        "Art. 140. Outro dispositivo, que não pode ser devolvido no lugar do 14. "
+        "Art. 14. Dispositivo procurado, com corpo suficiente para ser reconhecido.\n"
+        "Art. 140. Outro dispositivo, que não pode ser devolvido no lugar do 14.\n"
         "Art. 27. Terceiro dispositivo com texto bastante para o corte."
     )
     achados = extrair_artigos(texto, ["14", "27"])
@@ -117,7 +120,7 @@ def test_recusa_documento_que_nao_e_a_norma_declarada():
     )
     corpo = b"<p>LEI N 10.406, DE 10 DE JANEIRO DE 2002. Art. 173. Outro texto qualquer.</p>"
 
-    with pytest.raises(ErroDeColeta, match="não é a norma que o registro declara"):
+    with pytest.raises(ErroDeColeta, match="não contém uma linha-título compatível"):
         coletar_fonte(fonte, baixador=lambda _: corpo)
 
 
@@ -129,7 +132,7 @@ def test_registra_o_que_foi_verificado_quando_o_documento_confere():
         artigos=["186"],
         verificar_texto=["LEI N", "10.406"],
     )
-    corpo = b"<p>LEI N 10.406, DE 10 DE JANEIRO DE 2002. Art. 186. Aquele que violar direito.</p>"
+    corpo = b"<p>LEI N 10.406, DE 10 DE JANEIRO DE 2002.</p><p>Art. 186. Aquele que violar direito.</p>"
 
     registro = coletar_fonte(fonte, baixador=lambda _: corpo)
 
@@ -170,8 +173,8 @@ def test_recusa_redirecionamento_para_fora_de_dominio_oficial(monkeypatch):
 def test_artigo_com_sufixo_e_com_milhar_pontuado():
     """`170-A` e `1.022` são corriqueiros; capturar só os dígitos iniciais errava nos dois sentidos."""
     texto = (
-        "Art. 170. Dispositivo base, com corpo suficiente para não ser descartado. "
-        "Art. 170-A. Dispositivo sufixado, também com corpo suficiente. "
+        "Art. 170. Dispositivo base, com corpo suficiente para não ser descartado.\n"
+        "Art. 170-A. Dispositivo sufixado, também com corpo suficiente.\n"
         "Art. 1.022. Milhar pontuado, com corpo suficiente para o corte."
     )
 
@@ -269,3 +272,144 @@ def test_falha_parcial_nao_publica_registro_truncado(tmp_path, monkeypatch, caps
 
     assert codigo == 1
     assert saida.read_text(encoding="utf-8") == '{"fontes": ["COMPLETO"]}'
+
+
+# ── Achados do review do Codex sobre o commit já mesclado (cd9f0596) ───────
+
+
+def test_host_oab_aceito_como_excecao_de_host_exato():
+    """`oab.org.br` não termina em `.gov.br` etc — é exceção de host exato,
+    igual ao que `gold_governance._host_oficial` já aceita. A lista anterior
+    só olhava sufixo e recusaria a mesma fonte que o validador aceita."""
+    assert _host_oficial("https://oab.org.br/resolucao")
+    assert _host_oficial("https://www.oab.org.br/resolucao")
+    assert not _host_oficial("https://oab.com.br/resolucao")
+
+
+def test_artigo_com_ordinal_e_sufixo():
+    """`Art. 6º-A`: o ordinal fica ENTRE o número e o sufixo. Capturar só até
+    o número perdia o sufixo nos dois sentidos — "6-A" nunca era encontrado, e
+    "6" podia devolver o corpo do "6º-A"."""
+    texto = (
+        "Art. 6º-A. Dispositivo sufixado com ordinal, corpo bastante para o corte. "
+        "Art. 7. Outro dispositivo qualquer, também com corpo suficiente."
+    )
+    achado_6a = extrair_artigos(texto, ["6-A"])
+    assert "Dispositivo sufixado" in achado_6a["6-A"]
+    assert "6" not in extrair_artigos(texto, ["6"])
+
+
+def test_citacao_cruzada_no_corpo_nao_corta_o_artigo():
+    """Uma referência cruzada dentro da frase ("nos termos do Art. 20 desta
+    lei") não é um novo cabeçalho de artigo — só marcador no início de linha
+    conta, porque cada artigo é seu próprio parágrafo no legin."""
+    texto = (
+        "Art. 18. Corpo do artigo dezoito, com referência cruzada nos termos "
+        "do Art. 20 desta lei, que não deveria cortar o texto aqui.\n"
+        "Art. 20. Corpo real do artigo vinte, começando em nova linha."
+    )
+    achados = extrair_artigos(texto, ["18", "20"])
+    assert "não deveria cortar" in achados["18"]
+    assert "Corpo real do artigo vinte" in achados["20"]
+
+
+def test_apelido_preserva_fontes_ja_coletadas_no_arquivo(tmp_path, monkeypatch):
+    """`--apelido cdc` coleta só o CDC; o próprio aviso de falha parcial
+    recomenda `--apelido` para "coletar só o que falta" — rodá-lo não pode
+    apagar em silêncio toda fonte já coletada e ausente deste run."""
+    saida = tmp_path / "fontes.json"
+    saida.write_text(
+        json.dumps(
+            {
+                "fontes": [
+                    {"apelido": "cc", "titulo": "Código Civil", "hash_sha256": "a" * 64},
+                    {"apelido": "cp", "titulo": "Código Penal", "hash_sha256": "b" * 64},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    registro = tmp_path / "registro.json"
+    registro.write_text(
+        json.dumps(
+            {
+                "fontes": [
+                    {
+                        "apelido": "cdc",
+                        "titulo": "CDC",
+                        "url": "https://www2.camara.leg.br/a",
+                        "verificar_texto": ["LEI"],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def coleta_falsa(fonte, **_):
+        return {"apelido": fonte.apelido, "titulo": fonte.titulo, "prova_vigencia": False,
+                "artigos": {}, "artigos_nao_encontrados": [], "hash_sha256": "c" * 64}
+
+    monkeypatch.setattr(coleta_fontes, "coletar_fonte", coleta_falsa)
+
+    codigo = coleta_fontes.main(
+        ["--registro", str(registro), "--saida", str(saida), "--apelido", "cdc"]
+    )
+
+    assert codigo == 0
+    apelidos = {f["apelido"] for f in json.loads(saida.read_text(encoding="utf-8"))["fontes"]}
+    assert apelidos == {"cc", "cp", "cdc"}, "cc e cp não podem sumir por causa do --apelido"
+
+
+def test_recoleta_do_mesmo_apelido_substitui_a_entrada_antiga(tmp_path, monkeypatch):
+    """Recoletar `cdc` deve trocar a entrada antiga dele, não duplicar."""
+    saida = tmp_path / "fontes.json"
+    saida.write_text(
+        json.dumps({"fontes": [{"apelido": "cdc", "hash_sha256": "velho" + "0" * 59}]}),
+        encoding="utf-8",
+    )
+    registro = tmp_path / "registro.json"
+    registro.write_text(
+        json.dumps(
+            {"fontes": [{"apelido": "cdc", "titulo": "CDC",
+                         "url": "https://www2.camara.leg.br/a", "verificar_texto": ["LEI"]}]}
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        coleta_fontes, "coletar_fonte",
+        lambda fonte, **_: {"apelido": "cdc", "titulo": "CDC", "prova_vigencia": False,
+                             "artigos": {}, "artigos_nao_encontrados": [], "hash_sha256": "novo" + "1" * 60},
+    )
+
+    coleta_fontes.main(["--registro", str(registro), "--saida", str(saida), "--apelido", "cdc"])
+
+    fontes = json.loads(saida.read_text(encoding="utf-8"))["fontes"]
+    assert len(fontes) == 1
+    assert fontes[0]["hash_sha256"].startswith("novo")
+
+
+def test_marcador_de_identidade_so_no_cabecalho_recusa_ato_que_so_cita_a_norma():
+    """Uma emenda que cita número e data da norma-alvo no meio do corpo não
+    pode ser confundida com a norma em si. Só o cabeçalho conta."""
+    corpo = (
+        b"<p>LEI N 99.999, DE 1 DE JANEIRO DE 2020. Altera dispositivos.</p>"
+        + b"<p>enchimento </p>" * 500
+        + b"<p>Art. 1. Esta lei altera a LEI N 5.172, DE 25 DE OUTUBRO DE 1966 (CTN).</p>"
+    )
+    fonte = Fonte(
+        apelido="ctn-emenda", titulo="CTN", url="https://www2.camara.leg.br/x",
+        artigos=["173"], verificar_texto=["LEI N", "5.172", "25 DE OUTUBRO DE 1966"],
+    )
+    with pytest.raises(ErroDeColeta, match="linha-título"):
+        coletar_fonte(fonte, baixador=lambda _: corpo)
+
+
+def test_marcador_no_cabecalho_de_verdade_ainda_passa():
+    corpo = b"<p>LEI N 10.406, DE 10 DE JANEIRO DE 2002.</p><p>Art. 186. Texto do dispositivo.</p>"
+    fonte = Fonte(
+        apelido="cc", titulo="Código Civil", url="https://www2.camara.leg.br/x",
+        artigos=["186"], verificar_texto=["LEI N", "10.406"],
+    )
+    registro = coletar_fonte(fonte, baixador=lambda _: corpo)
+    assert "Art. 186" in registro["artigos"]["186"]
