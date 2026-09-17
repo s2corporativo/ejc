@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import { filterModulesByLifecycle } from "../lib/moduleLifecycle";
 import {
   LEGACY_REDIRECTS,
+  MODULE_GROUP_ORDER,
   STAFF_ROUTES,
   canRoleAccessPath,
   getNavigationModules,
+  groupNavigationModules,
   routePatternMatches,
 } from "./moduleRegistry";
 
@@ -18,6 +20,13 @@ describe("moduleRegistry", () => {
     const paths = STAFF_ROUTES.map((route) => route.path);
     expect(new Set(keys).size).toBe(keys.length);
     expect(new Set(paths).size).toBe(paths.length);
+    // subPaths (auditoria §2.6 #7) também não podem colidir entre si nem com
+    // paths principais — padrões sobrepostos tornariam o matching ambíguo.
+    const patterns = STAFF_ROUTES.flatMap((route) => [
+      route.path,
+      ...(route.subPaths ?? []),
+    ]);
+    expect(new Set(patterns).size).toBe(patterns.length);
   });
 
   it("declara backendPrefixes só com o prefixo canônico /api (nunca /api/v1)", () => {
@@ -38,14 +47,21 @@ describe("moduleRegistry", () => {
   });
 
   it("registra o DPT Empresarial 360 como workspace essencial sem alargar RBAC", () => {
+    // Consolidação do "DPT360 triplo" (auditoria §2.6 #7): um módulo só,
+    // com as sub-rotas internas declaradas em subPaths (o splat cobre tanto
+    // a navegação interna quanto o detalhe /dpt360/empresas/:clientId).
     const dpt = STAFF_ROUTES.find((route) => route.key === "dpt360");
     expect(dpt?.path).toBe("/dpt360");
     expect(dpt?.showInNav).toBe(true);
     expect(dpt?.essential).toBe(true);
-    expect(STAFF_ROUTES.some((route) => route.path === "/dpt360/*")).toBe(true);
+    expect(dpt?.subPaths).toEqual(["/dpt360/*"]);
+    expect(
+      STAFF_ROUTES.filter((route) => route.path.startsWith("/dpt360")),
+    ).toHaveLength(1);
 
     for (const role of ["superadmin", "admin", "socio", "advogado"]) {
       expect(canRoleAccessPath(role, "/dpt360"), role).toBe(true);
+      expect(canRoleAccessPath(role, "/dpt360/radar"), role).toBe(true);
       expect(canRoleAccessPath(role, "/dpt360/empresas"), role).toBe(true);
       expect(
         canRoleAccessPath(role, "/dpt360/empresas/cliente-123"),
@@ -60,6 +76,7 @@ describe("moduleRegistry", () => {
       "cliente_externo",
     ]) {
       expect(canRoleAccessPath(role, "/dpt360"), role).toBe(false);
+      expect(canRoleAccessPath(role, "/dpt360/radar"), role).toBe(false);
       expect(canRoleAccessPath(role, "/dpt360/empresas"), role).toBe(false);
       expect(
         canRoleAccessPath(role, "/dpt360/empresas/cliente-123"),
@@ -283,5 +300,101 @@ describe("radar consolidado", () => {
       expect(canRoleAccessPath(papel, "/radar"), papel).toBe(false);
     }
     expect(canRoleAccessPath("cliente_externo", "/radar")).toBe(false);
+  });
+});
+
+describe("navegação canônica do shell (Fase 4)", () => {
+  it("não tem rótulo de módulo sobrescrito fora do registry — fonte única", () => {
+    // O shell (LayoutReference) passou a consumir item.label direto do
+    // registry. Se um rótulo canônico regredir aqui, sidebar e CommandPalette
+    // divergem de novo (auditoria §2.6 #2).
+    const labels = new Map(
+      STAFF_ROUTES.map((route) => [route.key, route.label]),
+    );
+    expect(labels.get("atividades")).toBe("Prazos e Agenda");
+    expect(labels.get("inteligencia")).toBe("IA Jurídica");
+    expect(labels.get("configuracoes")).toBe("Configurações");
+    expect(labels.get("financeiro")).toBe("Financeiro");
+  });
+
+  it("deriva a lista primária exatamente da flag essential por papel", () => {
+    // Espelha a regra do LayoutReference: primary = visible.filter(essential).
+    for (const [role, esperado] of [
+      [
+        "advogado",
+        [
+          "/",
+          "/entrada",
+          "/casos",
+          "/atividades",
+          "/clientes",
+          "/documentos",
+          "/pecas",
+          "/dpt360",
+          "/inteligencia",
+        ],
+      ],
+      [
+        "socio",
+        [
+          "/",
+          "/entrada",
+          "/casos",
+          "/atividades",
+          "/clientes",
+          "/documentos",
+          "/pecas",
+          "/dpt360",
+          "/inteligencia",
+          "/financeiro",
+        ],
+      ],
+    ] as const) {
+      const primaria = getProductionNavigation(role).filter((m) => m.essential);
+      expect(
+        primaria.map((m) => m.path),
+        role,
+      ).toEqual(esperado);
+    }
+  });
+
+  it("groupNavigationModules produz blocos consecutivos na ordem dos grupos", () => {
+    const navegacao = getProductionNavigation("socio");
+    const grupos = groupNavigationModules(navegacao);
+
+    // sem perda nem duplicação
+    expect(grupos.flatMap((g) => g.items)).toEqual(navegacao);
+
+    // blocos consecutivos: nenhum grupo reaparece depois de encerrado
+    const nomes = grupos.map((g) => g.name);
+    expect(new Set(nomes).size).toBe(nomes.length);
+
+    // a ordem dos blocos respeita MODULE_GROUP_ORDER
+    const posicao = new Map(MODULE_GROUP_ORDER.map((g, i) => [g, i]));
+    const indices = nomes.map((n) => posicao.get(n) ?? Number.MAX_SAFE_INTEGER);
+    expect(indices).toEqual([...indices].sort((a, b) => a - b));
+
+    // caso determinístico com módulos reais do registry
+    const pega = (key: string) => {
+      const found = STAFF_ROUTES.find((route) => route.key === key);
+      expect(found, key).toBeTruthy();
+      return found!;
+    };
+    const mistura = [
+      pega("dashboard"),
+      pega("casos"),
+      pega("dpt360"),
+      pega("inteligencia"),
+    ];
+    const blocos = groupNavigationModules(mistura);
+    expect(blocos.map((g) => g.name)).toEqual([
+      "Trabalhar um caso",
+      "Pesquisar & IA",
+    ]);
+    expect(blocos[0].items.map((i) => i.key)).toEqual(["dashboard", "casos"]);
+    expect(blocos[1].items.map((i) => i.key)).toEqual([
+      "dpt360",
+      "inteligencia",
+    ]);
   });
 });

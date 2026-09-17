@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.rate_limit import rate_limit
 from app.core.security import (
     ROLE_LEVEL,
     ROLES_PERMISSOES,
@@ -144,13 +145,17 @@ def _validar_alvo(cu: User, alvo: User) -> None:
         )
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get(
+    "/me",
+    response_model=UserResponse,
+    dependencies=[Depends(rate_limit("users-me", 120))],
+)
 async def meu_perfil(cu: User = Depends(get_current_user)):
     """Dados do usuário autenticado."""
     return cu
 
 
-@router.get("/me/security")
+@router.get("/me/security", dependencies=[Depends(rate_limit("users-me-seguranca", 60))])
 async def minha_seguranca(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
@@ -174,7 +179,7 @@ async def minha_seguranca(
     }
 
 
-@router.get("/me/sessions")
+@router.get("/me/sessions", dependencies=[Depends(rate_limit("users-me-sessoes", 60))])
 async def minhas_sessoes(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -209,7 +214,10 @@ async def minhas_sessoes(
     }
 
 
-@router.post("/me/sessions/revoke-others")
+@router.post(
+    "/me/sessions/revoke-others",
+    dependencies=[Depends(rate_limit("users-sessoes-revoga-outras", 10))],
+)
 async def revogar_outras_sessoes(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -246,7 +254,10 @@ async def revogar_outras_sessoes(
     return {"detail": "Outras sessões revogadas.", "revoked": quantidade}
 
 
-@router.post("/me/sessions/{session_id}/revoke")
+@router.post(
+    "/me/sessions/{session_id}/revoke",
+    dependencies=[Depends(rate_limit("users-sessoes-revoga", 10))],
+)
 async def revogar_sessao(
     session_id: str,
     request: Request,
@@ -286,9 +297,18 @@ async def revogar_sessao(
     return {"detail": "Sessão revogada."}
 
 
-@router.get("/me/totp-qr")
+@router.get(
+    "/me/totp-qr",
+    dependencies=[Depends(rate_limit("users-totp-qr", 5))],
+)
 async def meu_qr_totp(cu: User = Depends(get_current_user)):
-    """Retorna QR PNG apenas durante a configuração, nunca após a ativação."""
+    """Retorna QR PNG apenas durante a configuração, nunca após a ativação.
+
+    Rate limit estrito (Fase 8): o QR embute o segredo TOTP enquanto a
+    verificação em dois fatores não está ativa — cota de 5/min por usuário
+    limita o dano de uma sessão comprometida enumerando ou reaproveitando a
+    imagem.
+    """
     if cu.totp_enabled:
         raise HTTPException(
             status_code=400,
@@ -460,7 +480,11 @@ async def _validar_oab_djen_exclusiva(
         )
 
 
-@router.patch("/{user_id}", response_model=UserResponse)
+@router.patch(
+    "/{user_id}",
+    response_model=UserResponse,
+    dependencies=[Depends(rate_limit("users-atualiza", 30))],
+)
 async def atualizar(
     user_id: str,
     payload: UserUpdate,
@@ -582,7 +606,10 @@ async def desativar(
 from app.routers.calendar_feed import _headers_credencial, obter_url_calendario
 
 
-@router.get("/me/calendar-url")
+@router.get(
+    "/me/calendar-url",
+    dependencies=[Depends(rate_limit("users-calendario-url", 10))],
+)
 async def minha_url_calendario(
     response: Response,
     db: AsyncSession = Depends(get_db),
@@ -652,7 +679,11 @@ def _apagar_avatares(user_id: str, exceto_ext: str | None = None) -> None:
             pass
 
 
-@router.post("/me/avatar", response_model=UserResponse)
+@router.post(
+    "/me/avatar",
+    response_model=UserResponse,
+    dependencies=[Depends(rate_limit("users-avatar-envia", 10))],
+)
 async def enviar_avatar(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -681,7 +712,11 @@ async def enviar_avatar(
     return cu
 
 
-@router.delete("/me/avatar", response_model=MsgResponse)
+@router.delete(
+    "/me/avatar",
+    response_model=MsgResponse,
+    dependencies=[Depends(rate_limit("users-avatar-remove", 10))],
+)
 async def remover_avatar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
@@ -701,7 +736,10 @@ async def remover_avatar(
     return MsgResponse(detail="Avatar removido")
 
 
-@router.get("/{user_id}/avatar")
+@router.get(
+    "/{user_id}/avatar",
+    dependencies=[Depends(rate_limit("users-avatar-ve", 120))],
+)
 async def obter_avatar(
     user_id: str,
     db: AsyncSession = Depends(get_db),

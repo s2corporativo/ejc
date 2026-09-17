@@ -1342,9 +1342,10 @@ def _map_deadline_tipo(tipo_txt: Optional[str]) -> DeadlineTipo:
 
 
 class AplicarExtracaoReq(_BM2):
-    """JSON de /documentos-ia/analisar materializado no caso: partes
-    (case_partes), área (caso_areas), campos processuais vazios e prazos
-    (deadlines rascunho, #83 Gap C)."""
+    """Extração de IA materializada no caso (trilha canônica: lote da
+    Entrada Universal + aplicar-extracao): partes (case_partes), área
+    (caso_areas), campos processuais vazios e prazos (deadlines rascunho,
+    #83 Gap C)."""
     identificacao_processual: Optional[dict] = None
     partes: Optional[dict] = None
     classificacao: Optional[dict] = None

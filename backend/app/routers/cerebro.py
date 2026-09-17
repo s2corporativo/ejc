@@ -10,7 +10,7 @@ from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user
 from app.models.user import User
-from app.core.skill_router import skill_router
+from app.services.ai.skill_router import skill_router
 
 router = APIRouter(prefix="/cerebro", tags=["Cérebro"])
 

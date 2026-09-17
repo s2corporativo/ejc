@@ -334,34 +334,23 @@ r = S.post(f"{BASE}/api/cerebro/jurisprudencia/pesquisa", headers=H(E_ADV),
 chk("cerebro/jurisprudencia/pesquisa: payload vazio rejeitado (422), não 500",
     r.status_code == 422, f"{r.status_code} {r.text[:120]}")
 
-# ══════════════════ 6. IMPORTAÇÃO INTELIGENTE DE DOCUMENTOS ═══════════════
-db("6. documentos-ia (intake) — análise sem stacktrace")
+# ══════════════════ 6. CAPACIDADES CANÔNICAS DE IA (/ia/*) ═══════════════
+db("6. ia/extrair — análise sem stacktrace (porta canônica; /documentos-ia "
+   "aposentada na Fase 7, auditoria §3.6)")
 
-r = S.post(f"{BASE}/api/documentos-ia/analisar", headers=H(E_ADV), json={
-    "conteudo": "EJC_QA M23: contrato de locação comercial firmado em 2026, "
-                "com prazo de 5 anos, reajuste anual pelo IGP-M, "
-                "cláusula resolutiva por atraso superior a 30 dias e foro de "
-                "eleição na comarca do imóvel."}, timeout=90)
-chk("documentos-ia/analisar: resposta ou degradação graciosa (não 500 cego)",
+r = S.post(f"{BASE}/api/ia/extrair", headers=H(E_ADV), json={
+    "texto": "EJC_QA M23: contrato de locação comercial firmado em 2026, "
+             "com prazo de 5 anos, reajuste anual pelo IGP-M, "
+             "cláusula resolutiva por atraso superior a 30 dias e foro de "
+             "eleição na comarca do imóvel."}, timeout=90)
+chk("ia/extrair: resposta ou degradação graciosa (não 500 cego)",
     r.status_code in (200, 422, 502, 503) and not (
         r.status_code == 500 and "Traceback" in r.text),
     f"{r.status_code} {r.text[:180]}")
 
-r = S.post(f"{BASE}/api/documentos-ia/analisar-url", headers=H(E_ADV), json={
-    "url": "http://169.254.169.254/latest/meta-data/", "titulo": "EJC_QA M23 "
-    "intake url sensível"}, timeout=60)
-j2 = r.json() if r.status_code in (200, 201) else {}
-# SSRF: endereço de metadata de nuvem NÃO deve ser tratado como fonte válida
-if r.status_code in (200, 201):
-    chk("documentos-ia/analisar-url: metadata sensível é bloqueada "
-        "(bloqueado=true e não importada)",
-        j2.get("bloqueado") is True or not j2.get("ok") or
-        ("erro" in r.text.lower() or "bloque" in r.text.lower()),
-        f"{r.status_code} {r.text[:220]}")
-else:
-    chk("documentos-ia/analisar-url: URL sensível rejeitada (não 500 cego)",
-        r.status_code in (400, 422, 502, 503),
-        f"{r.status_code} {r.text[:120]}")
+r = S.post(f"{BASE}/api/ia/extrair", headers=H(E_ADV), json={}, timeout=30)
+chk("ia/extrair: payload vazio rejeitado (422), não 500",
+    r.status_code == 422, f"{r.status_code} {r.text[:120]}")
 
 # ══════════════════ 7. AUDITORIA LGPD — HITL e rastreabilidade ═════════════
 db("7. auditoria, HITL e sanitização")

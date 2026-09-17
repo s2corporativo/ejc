@@ -223,6 +223,7 @@ async def analisar_caso(
     nomes_proteger: list[str] | None = None,
     scope_client_id: str | None = None,
     case_id: str | None = None,
+    recuperar_ocr_completo: bool = True,
     db=None,
     user_id: str | None = None,
 ) -> dict:
@@ -231,18 +232,21 @@ async def analisar_caso(
     Combina dados do caso + texto extraído de documento (opcional).
     Usa ai_gateway.chat com task_type='estrategia'.
     Se `db` for fornecido, ancora a análise na base RAG (anti-alucinação).
+    `recuperar_ocr_completo=False` preserva um contexto documental já filtrado
+    por uma política de acesso upstream, sem reconsultar documentos do caso.
     """
     from app.services.ai_gateway import chat
     from app.services.document_intake_service import montar_dossie_documental
     from app.services.sanitizer import sanitizar_pii, validar_sem_pii
 
-    texto_documento = await _recuperar_ocr_completo_se_truncado(
-        db=db,
-        texto_documento=texto_documento,
-        titulo=titulo,
-        numero_processo=numero_processo,
-        scope_client_id=scope_client_id,
-    )
+    if recuperar_ocr_completo:
+        texto_documento = await _recuperar_ocr_completo_se_truncado(
+            db=db,
+            texto_documento=texto_documento,
+            titulo=titulo,
+            numero_processo=numero_processo,
+            scope_client_id=scope_client_id,
+        )
 
     # Montar contexto
     partes_ctx = []
