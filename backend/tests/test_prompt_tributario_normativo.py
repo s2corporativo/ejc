@@ -5,7 +5,7 @@ def test_prompt_exige_marcos_antes_de_calcular_prazo() -> None:
     texto = PROMPT_TRIBUTARIO.casefold()
     assert "sem os marcos necessários, não dê data final" in texto
     assert "sempre calcular" not in texto
-    assert "não invente prazo" in texto
+    assert "nunca invente prazo" in texto
 
 
 def test_prompt_lef_preserva_tres_termos_iniciais_dos_embargos() -> None:
