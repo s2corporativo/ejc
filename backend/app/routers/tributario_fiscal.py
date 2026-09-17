@@ -1,14 +1,6 @@
 # ── app/routers/tributario_fiscal.py ─────────────────────────────────────────
-# Vertical Tributário — leitor de XML fiscal (NF-e) + motor determinístico de
-# recuperação de créditos. v1 STATELESS: sem persistência e sem IA.
-#
-#   POST /tributario/fiscal/analisar-xml      → consolidação das teses
-#   POST /tributario/fiscal/relatorio-pdf     → {"download_url": ...}
-#   GET  /tributario/fiscal/relatorio/{id}/download → FileResponse (PDF)
-#
-# Padrões seguidos: upload (MAX_UPLOAD_MB + magic bytes) de routers/documents.py;
-# download_url (POST → download_url → blob); Visual Law central
-# (services/visual_law_theme.py) como dossie_estrategico.py.
+# Vertical Tributário — leitor de XML fiscal (NF-e) + pré-auditoria determinística.
+# Stateless, sem IA e sem persistência do XML.
 from __future__ import annotations
 
 import os
@@ -16,7 +8,7 @@ from datetime import date, datetime, timezone
 from typing import Literal, Optional
 from uuid import uuid4
 
-import magic  # python-magic — validação por magic bytes (server-side)
+import magic
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -31,32 +23,24 @@ from app.services.fiscal.recuperacao_creditos import analisar_recuperacao
 settings = get_settings()
 router = APIRouter(prefix="/tributario/fiscal", tags=["Tributário / Fiscal"])
 
-# Ferramenta de ramo tributário: restrita à equipe jurídica (estagiário+),
-# mesmo padrão de previdenciario_beneficio._EQUIPE. cliente_externo já é
-# barrado pelo AuthMiddleware — este gate é defesa em profundidade staff-vs-staff.
-_EQUIPE = ["superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario"]
+_EQUIPE = [
+    "superadmin",
+    "admin",
+    "socio",
+    "advogado",
+    "advogado_auxiliar",
+    "estagiario",
+]
 
 MAX_ARQUIVOS = 50
-# Mesmo conjunto aceito para .xml em routers/documents.py (libmagic varia).
 MIMES_XML = {"application/xml", "text/xml", "text/plain"}
-# Teto agregado do lote (soma de todos os XMLs válidos mantidos em memória):
-# além do teto por arquivo (MAX_UPLOAD_MB), limita o total simultâneo para
-# não esgotar a RAM do worker com 50 arquivos grandes (hardening DoS).
 MAX_LOTE_MB = 120
-_CHUNK = 256 * 1024  # 256 KiB — leitura em blocos, sem materializar tudo
-# Retenção dos PDFs de diagnóstico (contêm dados fiscais de terceiros — LGPD):
-# varredura best-effort remove os mais antigos que este TTL a cada geração.
-PDF_TTL_SEGUNDOS = 3600  # 1h
+_CHUNK = 256 * 1024
+PDF_TTL_SEGUNDOS = 3600
 
 Regime = Literal["simples", "lucro_presumido", "lucro_real"]
-
-
-# ── Schemas de resposta (Decimal só interno; JSON sai float) ─────────────────
-
-# Limites de tamanho no payload de /relatorio-pdf (entrada do usuário renderizada
-# pelo WeasyPrint — caro/síncrono): evitam DoS por strings/listas gigantes.
-_TXT = 2000       # texto curto (títulos, fundamentos, alertas)
-_TXT_LONGO = 6000  # aviso_hitl
+_TXT = 2000
+_TXT_LONGO = 6000
 
 
 class TeseOut(BaseModel):
@@ -64,6 +48,8 @@ class TeseOut(BaseModel):
     titulo: str = Field(max_length=_TXT)
     base_legal: str = Field(max_length=_TXT)
     fundamento: str = Field(max_length=_TXT)
+    # Contrato legado: representa compatibilidade técnica do radar, não
+    # elegibilidade jurídica definitiva.
     aplicavel: bool
     motivo_inaplicavel: Optional[str] = Field(default=None, max_length=_TXT)
     valor_estimado: float
@@ -92,36 +78,38 @@ class ConsolidacaoOut(BaseModel):
     total_estimado: float
     notas_analisadas: int
     notas_com_erro: int
+    # Campo legado mantido temporariamente para compatibilidade. O motor P0
+    # #1553 não conclui prescrição pela emissão da NF-e e retorna sempre zero.
     notas_prescritas: int
     periodo: PeriodoOut
     teses: list[TeseOut] = Field(max_length=20)
     alertas_globais: list[str] = Field(max_length=50)
     aviso_hitl: str = Field(max_length=_TXT_LONGO)
-    # teto coerente com MAX_ARQUIVOS (uma nota-resumo por arquivo enviado)
     notas: list[NotaOut] = Field(max_length=MAX_ARQUIVOS)
 
 
-# ── Análise ───────────────────────────────────────────────────────────────────
-
-@router.post("/analisar-xml", response_model=ConsolidacaoOut,
-             dependencies=[Depends(rate_limit("tributario-fiscal-analise", 10))])
+@router.post(
+    "/analisar-xml",
+    response_model=ConsolidacaoOut,
+    dependencies=[Depends(rate_limit("tributario-fiscal-analise", 10))],
+)
 async def analisar_xml(
     arquivos: list[UploadFile] = File(..., description="XMLs de NF-e de saída"),
     regime: Regime = Form(...),
     cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
-    """
-    Diagnóstico de recuperação de créditos a partir dos XMLs de SAÍDA do
-    cliente. Determinístico, sem IA e sem persistência — a resposta é uma
-    ESTIMATIVA PRELIMINAR para triagem (HITL obrigatório).
-    Fail-soft por arquivo: XML inválido/duplicado vira entrada em
-    `notas_com_erro` sem derrubar o lote.
+    """Executa pré-auditoria documental por XML.
+
+    O resultado é triagem matemática/técnica, não parecer, crédito reconhecido,
+    conclusão de elegibilidade ou cálculo jurídico de prescrição.
     """
     if len(arquivos) > MAX_ARQUIVOS:
         raise HTTPException(
             status_code=422,
-            detail=f"Máximo de {MAX_ARQUIVOS} arquivos por análise "
-                   f"(recebidos {len(arquivos)}). Divida o lote e envie em partes.",
+            detail=(
+                f"Máximo de {MAX_ARQUIVOS} arquivos por análise "
+                f"(recebidos {len(arquivos)}). Divida o lote e envie em partes."
+            ),
         )
     if not arquivos:
         raise HTTPException(status_code=422, detail="Envie ao menos 1 arquivo XML.")
@@ -131,15 +119,21 @@ async def analisar_xml(
     limite_bytes = settings.MAX_UPLOAD_MB * 1024 * 1024
     limite_lote = MAX_LOTE_MB * 1024 * 1024
     total_bytes = 0
+
     for f in arquivos:
         nome = f.filename or "sem_nome.xml"
         ext = os.path.splitext(nome)[1].lower()
         if ext != ".xml":
-            erros_previos.append({"arquivo": nome,
-                                  "erro": f"Extensão não permitida: {ext or '(sem extensão)'} — apenas .xml."})
+            erros_previos.append(
+                {
+                    "arquivo": nome,
+                    "erro": (
+                        f"Extensão não permitida: {ext or '(sem extensão)'} — apenas .xml."
+                    ),
+                }
+            )
             continue
-        # Leitura em blocos com corte no teto: aborta o arquivo ao ultrapassar
-        # o limite SEM materializar 800 MB na RAM para só então rejeitar.
+
         partes: list[bytes] = []
         tamanho = 0
         estourou = False
@@ -152,40 +146,48 @@ async def analisar_xml(
                 estourou = True
                 break
             partes.append(bloco)
+
         if estourou:
-            erros_previos.append({"arquivo": nome,
-                                  "erro": f"Arquivo excede {settings.MAX_UPLOAD_MB}MB."})
+            erros_previos.append(
+                {
+                    "arquivo": nome,
+                    "erro": f"Arquivo excede {settings.MAX_UPLOAD_MB}MB.",
+                }
+            )
             continue
+
         conteudo = b"".join(partes)
-        # Teto agregado do lote: barra o esgotamento de RAM por muitos arquivos
-        # grandes somados (o restante do lote vira erro, não derruba o app).
         if total_bytes + len(conteudo) > limite_lote:
-            erros_previos.append({"arquivo": nome,
-                                  "erro": f"Lote excede o total de {MAX_LOTE_MB}MB — "
-                                          "envie menos arquivos por vez."})
+            erros_previos.append(
+                {
+                    "arquivo": nome,
+                    "erro": (
+                        f"Lote excede o total de {MAX_LOTE_MB}MB — "
+                        "envie menos arquivos por vez."
+                    ),
+                }
+            )
             continue
-        # Magic bytes (server-side), nunca o content_type do cliente —
-        # mesmo padrão de routers/documents.py.
+
         mime_real = magic.from_buffer(conteudo[:2048], mime=True)
         if mime_real not in MIMES_XML:
-            erros_previos.append({"arquivo": nome,
-                                  "erro": f"Conteúdo do arquivo ({mime_real}) não é XML."})
+            erros_previos.append(
+                {
+                    "arquivo": nome,
+                    "erro": f"Conteúdo do arquivo ({mime_real}) não é XML.",
+                }
+            )
             continue
+
         total_bytes += len(conteudo)
         lote.append((nome, conteudo))
 
-    # Rejeições de nível de router (extensão/mime/tamanho) entram no lote como
-    # notas com erro — mesmo shape das falhas do parser —, contadas e listadas
-    # junto das demais.
     notas = erros_previos + parse_lote(lote)
     resultado = analisar_recuperacao(notas, regime)
     return ConsolidacaoOut.model_validate(resultado)
 
 
-# ── Relatório PDF (Visual Law) ────────────────────────────────────────────────
-
-# #27: arnês de arquivo (dir + purga TTL + validação UUID) centralizado em
-# services/visual_law_files — antes copiado verbatim em cada vertical.
+# ── PDF Visual Law ────────────────────────────────────────────────────────────
 from app.services import visual_law_files as _vlf
 
 
@@ -198,21 +200,21 @@ def _limpar_pdfs_antigos(out_dir: str) -> None:
 
 
 def _html_relatorio(c: ConsolidacaoOut) -> str:
-    """Monta o corpo HTML do diagnóstico. TODO string do payload passa por
-    vlt.esc() — o JSON é devolvido pelo frontend (entrada do usuário)."""
+    """Monta a pré-auditoria em HTML, escapando todo conteúdo do payload."""
     from app.services import visual_law_theme as vlt
 
     esc = vlt.esc
-    regimes_rotulo = {"simples": "Simples Nacional",
-                      "lucro_presumido": "Lucro Presumido",
-                      "lucro_real": "Lucro Real"}
+    regimes_rotulo = {
+        "simples": "Simples Nacional",
+        "lucro_presumido": "Lucro Presumido",
+        "lucro_real": "Lucro Real",
+    }
 
     def moeda(v: float) -> str:
         inteiro, _, dec = f"{v:,.2f}".partition(".")
         return "R$ " + inteiro.replace(",", ".") + "," + dec
 
     def data_br(d: Optional[str]) -> str:
-        # periodo.inicio/fim chegam como ISO 'YYYY-MM-DD' (ou None).
         if not d:
             return "—"
         try:
@@ -220,123 +222,163 @@ def _html_relatorio(c: ConsolidacaoOut) -> str:
         except ValueError:
             return esc(d)
 
-    partes: list[str] = [vlt.render_banner(
-        "DIAGNÓSTICO DE RECUPERAÇÃO DE CRÉDITOS",
-        f"Regime: {esc(regimes_rotulo.get(c.regime, c.regime))} · "
-        f"{c.notas_analisadas} nota(s) analisada(s)",
-    )]
+    partes: list[str] = [
+        vlt.render_banner(
+            "PRÉ-AUDITORIA TRIBUTÁRIA POR XML",
+            f"Regime informado: {esc(regimes_rotulo.get(c.regime, c.regime))} · "
+            f"{c.notas_analisadas} nota(s) analisada(s)",
+        )
+    ]
 
     partes.append(
-        "<div style='background:" + vlt.OURO_PALHA + ";border-left:4px solid "
-        + vlt.OURO + ";padding:14px 16px;margin:16px 0;'>"
-        f"<div style='font-size:10pt;color:{vlt.TEXTO_SUAVE};'>Total estimado "
-        "(soma das teses)</div>"
+        "<div style='background:"
+        + vlt.OURO_PALHA
+        + ";border-left:4px solid "
+        + vlt.OURO
+        + ";padding:14px 16px;margin:16px 0;'>"
+        f"<div style='font-size:10pt;color:{vlt.TEXTO_SUAVE};'>"
+        "Estimativa matemática preliminar (soma dos radares compatíveis)"
+        "</div>"
         f"<div style='font-size:20pt;font-weight:bold;color:{vlt.OURO_PROFUNDO};'>"
         f"{moeda(c.total_estimado)}</div>"
-        f"<div style='font-size:9pt;color:{vlt.TEXTO_SUAVE};'>Período analisado: "
+        f"<div style='font-size:9pt;color:{vlt.TEXTO_SUAVE};'>Período documental: "
         f"{data_br(c.periodo.inicio)} a {data_br(c.periodo.fim)} · "
-        f"{c.notas_prescritas} nota(s) prescrita(s) · "
+        "Prescrição: não avaliada · "
         f"{c.notas_com_erro} arquivo(s) com erro</div></div>"
     )
 
     partes.append(
         "<div style='background:#fffbe6;border:1px solid #f0ad4e;border-left:"
         f"4px solid {vlt.OURO_CLARO};padding:12px;margin:12px 0;font-size:9.5pt;'>"
-        "<strong>ESTIMATIVA PRELIMINAR — REVISÃO HUMANA OBRIGATÓRIA</strong><br>"
+        "<strong>PRÉ-AUDITORIA — REVISÃO HUMANA OBRIGATÓRIA</strong><br>"
+        "Este documento não reconhece crédito, elegibilidade ou prescrição.<br>"
         f"{esc(c.aviso_hitl)}</div>"
     )
 
     for alerta in c.alertas_globais:
-        partes.append(f"<p style='font-size:9.5pt;color:{vlt.TEXTO_SUAVE};'>"
-                      f"⚠ {esc(alerta)}</p>")
+        partes.append(
+            f"<p style='font-size:9.5pt;color:{vlt.TEXTO_SUAVE};'>⚠ {esc(alerta)}</p>"
+        )
 
     for t in c.teses:
-        status = ("APLICÁVEL" if t.aplicavel else "INAPLICÁVEL")
+        status = (
+            "SINAL TÉCNICO COMPATÍVEL COM O RADAR"
+            if t.aplicavel
+            else "RADAR SEM COMPATIBILIDADE TÉCNICA"
+        )
         cor = vlt.OURO_PROFUNDO if t.aplicavel else vlt.RODAPE_COR
+        estimativa = (
+            f" · Estimativa matemática: <strong>{moeda(t.valor_estimado)}</strong>"
+            if t.aplicavel
+            else ""
+        )
         partes.append(
             f"<h2 style='color:{vlt.OURO};border-bottom:2px solid "
             f"{vlt.OURO_CLARO};padding-bottom:4px;margin-top:22px;'>"
             f"{esc(t.titulo)}</h2>"
-            f"<p><strong style='color:{cor};'>{status}</strong>"
-            + (f" · Valor estimado: <strong>{moeda(t.valor_estimado)}</strong>"
-               if t.aplicavel else "") + "</p>"
+            f"<p><strong style='color:{cor};'>{status}</strong>{estimativa}</p>"
             f"<p style='font-size:10pt;'>{esc(t.fundamento)}</p>"
         )
         if t.motivo_inaplicavel:
-            partes.append(f"<p style='font-size:9.5pt;color:{vlt.TEXTO_SUAVE};'>"
-                          f"Motivo: {esc(t.motivo_inaplicavel)}</p>")
+            partes.append(
+                f"<p style='font-size:9.5pt;color:{vlt.TEXTO_SUAVE};'>"
+                f"Motivo técnico: {esc(t.motivo_inaplicavel)}</p>"
+            )
         if t.base_legal:
-            partes.append("<p style='font-size:9pt;'><strong>Base legal:</strong> "
-                          + esc(t.base_legal) + "</p>")
+            partes.append(
+                "<p style='font-size:9pt;'><strong>Referências jurídicas para revisão:</strong> "
+                + esc(t.base_legal)
+                + "</p>"
+            )
         if t.memoria_calculo:
-            partes.append("<p style='font-size:9.5pt;margin-bottom:2px;'>"
-                          "<strong>Memória de cálculo</strong></p><ul>"
-                          + "".join(f"<li style='font-size:9.5pt;'>{esc(p)}</li>"
-                                    for p in t.memoria_calculo) + "</ul>")
+            partes.append(
+                "<p style='font-size:9.5pt;margin-bottom:2px;'>"
+                "<strong>Memória da estimativa</strong></p><ul>"
+                + "".join(
+                    f"<li style='font-size:9.5pt;'>{esc(p)}</li>"
+                    for p in t.memoria_calculo
+                )
+                + "</ul>"
+            )
         for alerta in t.alertas:
-            partes.append(f"<p style='font-size:9pt;color:{vlt.TEXTO_SUAVE};'>"
-                          f"⚠ {esc(alerta)}</p>")
+            partes.append(
+                f"<p style='font-size:9pt;color:{vlt.TEXTO_SUAVE};'>⚠ {esc(alerta)}</p>"
+            )
 
     notas_erro = [n for n in c.notas if n.erro]
     if notas_erro:
-        partes.append(f"<h2 style='color:{vlt.OURO};margin-top:22px;'>"
-                      "Arquivos não processados</h2><ul>"
-                      + "".join(
-                          f"<li style='font-size:9pt;'>{esc(n.chave or '(sem chave)')}: "
-                          f"{esc(n.erro or '')}</li>" for n in notas_erro)
-                      + "</ul>")
+        partes.append(
+            f"<h2 style='color:{vlt.OURO};margin-top:22px;'>Arquivos não processados</h2><ul>"
+            + "".join(
+                f"<li style='font-size:9pt;'>{esc(n.chave or '(sem chave)')}: "
+                f"{esc(n.erro or '')}</li>"
+                for n in notas_erro
+            )
+            + "</ul>"
+        )
 
     partes.append(
         f"<div style='margin-top:24px;font-size:8.5pt;color:{vlt.RODAPE_COR};"
         "border-top:1px solid #e5e7eb;padding-top:8px;'>Gerado em: "
         f"{datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC · "
-        "Análise determinística (sem IA) · Nível de confiança: estimativa "
-        "preliminar</div>"
+        "Análise determinística (sem IA) · elegibilidade/prescrição não avaliadas"
+        "</div>"
     )
 
-    rodape = ("De Paula Teixeira Advogados · Diagnóstico de Recuperação de "
-              "Créditos Tributários — estimativa preliminar (HITL)")
+    rodape = (
+        "De Paula Teixeira Advogados · Pré-auditoria tributária por XML — "
+        "estimativa preliminar, revisão humana obrigatória"
+    )
     return vlt.html_doc("".join(partes), css=vlt.css_fluxo(rodape))
 
 
-@router.post("/relatorio-pdf",
-             dependencies=[Depends(rate_limit("tributario-fiscal-pdf", 10))])
+@router.post(
+    "/relatorio-pdf",
+    dependencies=[Depends(rate_limit("tributario-fiscal-pdf", 10))],
+)
 async def relatorio_pdf(
     consolidacao: ConsolidacaoOut,
     cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
-    """Gera o PDF Visual Law do diagnóstico a partir da consolidação devolvida
-    pelo frontend e retorna a URL de download (padrão POST → download_url → blob)."""
+    """Gera PDF da pré-auditoria a partir da consolidação validada."""
     try:
         from weasyprint import HTML as WP_HTML
     except ImportError as exc:
-        raise HTTPException(503, f"Dependência de PDF não disponível: {exc}. "
-                                 "Instale weasyprint.")
+        raise HTTPException(
+            503,
+            f"Dependência de PDF não disponível: {exc}. Instale weasyprint.",
+        )
 
     html_full = _html_relatorio(consolidacao)
     pdf_bytes = WP_HTML(string=html_full).write_pdf()
 
     out_dir = _relatorio_dir()
-    _limpar_pdfs_antigos(out_dir)  # retenção LGPD (TTL) a cada geração
+    _limpar_pdfs_antigos(out_dir)
     arquivo_id = str(uuid4())
-    path = os.path.join(out_dir, f"diagnostico_{arquivo_id}.pdf")
+    path = os.path.join(out_dir, f"pre_auditoria_{arquivo_id}.pdf")
     with open(path, "wb") as fh:
         fh.write(pdf_bytes)
     return {"download_url": f"/tributario/fiscal/relatorio/{arquivo_id}/download"}
 
 
-@router.get("/relatorio/{arquivo_id}/download",
-            dependencies=[Depends(rate_limit("tributario-fiscal-download", 30))])
+@router.get(
+    "/relatorio/{arquivo_id}/download",
+    dependencies=[Depends(rate_limit("tributario-fiscal-download", 30))],
+)
 async def download_relatorio(
     arquivo_id: str,
     cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
-    """Download do PDF gerado pelo POST acima. `arquivo_id` é validado como
-    UUID (nunca interpolado livre no path — sem traversal)."""
+    """Baixa PDF gerado; `arquivo_id` é validado como UUID."""
     _vlf.validar_uuid(arquivo_id)
-    path = os.path.join(_relatorio_dir(), f"diagnostico_{arquivo_id}.pdf")
+    path = os.path.join(_relatorio_dir(), f"pre_auditoria_{arquivo_id}.pdf")
     if not os.path.isfile(path):
-        raise HTTPException(404, "Relatório não encontrado — gere via POST "
-                                 "/tributario/fiscal/relatorio-pdf.")
-    return FileResponse(path, media_type="application/pdf",
-                        filename="diagnostico_recuperacao_creditos.pdf")
+        raise HTTPException(
+            404,
+            "Relatório não encontrado — gere via POST /tributario/fiscal/relatorio-pdf.",
+        )
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename="pre_auditoria_tributaria.pdf",
+    )

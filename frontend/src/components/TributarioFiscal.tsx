@@ -1,9 +1,7 @@
 // ── src/components/TributarioFiscal.tsx ──────────────────────────────────────
-// Vertical tributário — Recuperação de Créditos Fiscais:
-//   upload de XMLs de NF-e + diagnóstico determinístico por tese (ex.: Tema 69
-//   STF — exclusão do ICMS da base de PIS/COFINS), com estimativa de valores,
-//   memória de cálculo e relatório PDF Visual Law.
-// Tudo é estimativa preliminar — HITL obrigatório (OAB).
+// Vertical tributário — pré-auditoria documental por XML de NF-e.
+// O componente apresenta sinais técnicos e estimativas matemáticas para triagem;
+// elegibilidade, prescrição e valor de crédito exigem validação profissional.
 import { useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -19,33 +17,32 @@ import {
 import api from "../lib/api";
 import { toast } from "./Toast";
 
-// ── helpers ──────────────────────────────────────────────────────────────────
 function fmtBRL(v: number | null | undefined) {
   return Number(v ?? 0).toLocaleString("pt-BR", {
     style: "currency",
     currency: "BRL",
   });
 }
-// "2024-03-01" → "01/03/2024" (sem Date para evitar drift de fuso)
+
 function fmtDataISO(iso: string | null | undefined) {
   if (!iso) return "—";
   const [a, m, d] = String(iso).slice(0, 10).split("-");
   return d && m && a ? `${d}/${m}/${a}` : String(iso);
 }
+
 function apiDetail(e: any, fallback: string): string {
   const d = e?.response?.data?.detail;
   if (typeof d === "string") return d;
-  if (Array.isArray(d))
+  if (Array.isArray(d)) {
     return d
       .map((x: any) => (typeof x === "string" ? x : x?.msg || ""))
       .filter(Boolean)
       .join("; ");
+  }
   return fallback;
 }
 
 const MAX_ARQUIVOS = 50;
-
-// ── Tipos (contrato de POST /tributario/fiscal/analisar-xml) ────────────────
 type Regime = "simples" | "lucro_presumido" | "lucro_real";
 
 const REGIME_LABELS: Record<Regime, string> = {
@@ -59,6 +56,8 @@ interface TeseFiscal {
   titulo: string;
   base_legal: string;
   fundamento: string;
+  // Contrato legado: true significa compatibilidade técnica preliminar do radar,
+  // nunca reconhecimento jurídico de elegibilidade.
   aplicavel: boolean;
   motivo_inaplicavel: string | null;
   valor_estimado: number;
@@ -66,6 +65,7 @@ interface TeseFiscal {
   alertas: string[];
   nivel_confianca: string;
 }
+
 interface NotaAnalisada {
   chave: string;
   numero: string;
@@ -75,6 +75,7 @@ interface NotaAnalisada {
   icms_destacado: number;
   erro: string | null;
 }
+
 interface AnaliseFiscalRes {
   total_estimado: number;
   notas_analisadas: number;
@@ -85,7 +86,6 @@ interface AnaliseFiscalRes {
   notas: NotaAnalisada[];
 }
 
-// ── Card de tese ─────────────────────────────────────────────────────────────
 function TeseCard({ tese }: { tese: TeseFiscal }) {
   return (
     <div
@@ -103,30 +103,40 @@ function TeseCard({ tese }: { tese: TeseFiscal }) {
           {tese.base_legal}
         </span>
       </div>
+
       <p className="text-xs text-slate-600 leading-relaxed mt-1.5">
         {tese.fundamento}
       </p>
 
       {tese.aplicavel ? (
-        <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span className="text-xl font-bold text-gold-700">
-            {fmtBRL(tese.valor_estimado)}
-          </span>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-900/[0.05] text-slate-500 dark:bg-white/[0.07] dark:text-slate-400 uppercase tracking-wide">
-            {tese.nivel_confianca.replace(/_/g, " ")}
-          </span>
+        <div className="mt-3 space-y-1">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-gold-700">
+            Sinal técnico compatível com o radar
+          </p>
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span className="text-xl font-bold text-gold-700">
+              {fmtBRL(tese.valor_estimado)}
+            </span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-900/[0.05] text-slate-500 dark:bg-white/[0.07] dark:text-slate-400 uppercase tracking-wide">
+              {tese.nivel_confianca.replace(/_/g, " ")}
+            </span>
+          </div>
+          <p className="text-[10px] text-slate-500">
+            Estimativa matemática preliminar; não equivale a crédito reconhecido,
+            elegível ou recuperável.
+          </p>
         </div>
       ) : (
         <p className="mt-3 text-xs text-slate-500">
-          <b>Não aplicável:</b>{" "}
-          {tese.motivo_inaplicavel || "sem elementos nas notas enviadas."}
+          <b>Radar sem compatibilidade técnica:</b>{" "}
+          {tese.motivo_inaplicavel || "sem elementos suficientes nas notas enviadas."}
         </p>
       )}
 
       {tese.memoria_calculo?.length > 0 && (
         <details className="card mt-2 bg-slate-50/60 px-3 py-2">
           <summary className="text-xs font-medium text-slate-600 cursor-pointer select-none">
-            Como chegamos neste número
+            Memória da estimativa
           </summary>
           <ol className="mt-2 space-y-1">
             {tese.memoria_calculo.map((m, i) => (
@@ -151,7 +161,6 @@ function TeseCard({ tese }: { tese: TeseFiscal }) {
   );
 }
 
-// ── Componente principal ─────────────────────────────────────────────────────
 export default function TributarioFiscal() {
   const [arquivos, setArquivos] = useState<File[]>([]);
   const [regime, setRegime] = useState<Regime | "">("");
@@ -170,9 +179,9 @@ export default function TributarioFiscal() {
       );
       return [...prev, ...novos];
     });
-    // permite re-selecionar o mesmo arquivo depois de removê-lo
     if (inputRef.current) inputRef.current.value = "";
   };
+
   const removerArquivo = (i: number) =>
     setArquivos((prev) => prev.filter((_, j) => j !== i));
 
@@ -193,6 +202,7 @@ export default function TributarioFiscal() {
       setErro("Informe o regime tributário do cliente no período das notas.");
       return;
     }
+
     setAnalisando(true);
     setErro("");
     setRes(null);
@@ -213,7 +223,6 @@ export default function TributarioFiscal() {
     }
   };
 
-  // Mesmo padrão dos demais PDFs Visual Law: POST → download_url → blob
   const gerarPdf = async () => {
     if (!res) return;
     setGerandoPdf(true);
@@ -221,19 +230,18 @@ export default function TributarioFiscal() {
       const r = await api.post("/tributario/fiscal/relatorio-pdf", res);
       const downloadUrl: string | undefined = r.data?.download_url;
       if (!downloadUrl) throw new Error("download_url ausente na resposta");
-      // baseURL do client é /api — remove o prefixo se o backend devolver a URL completa
       const blob = await api.get(downloadUrl.replace(/^\/api/, ""), {
         responseType: "blob",
       });
       const url = URL.createObjectURL(blob.data as Blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "diagnostico-creditos-fiscais.pdf";
+      a.download = "pre-auditoria-tributaria.pdf";
       a.click();
       URL.revokeObjectURL(url);
-      toast.success("Diagnóstico em PDF (Visual Law) gerado.");
+      toast.success("Pré-auditoria tributária em PDF gerada.");
     } catch (e: any) {
-      toast.error(apiDetail(e, "Falha ao gerar o PDF do diagnóstico."));
+      toast.error(apiDetail(e, "Falha ao gerar o PDF da pré-auditoria."));
     } finally {
       setGerandoPdf(false);
     }
@@ -249,17 +257,16 @@ export default function TributarioFiscal() {
       <div className="flex items-center gap-2 mb-1">
         <Coins size={16} className="text-gold-600" />
         <h2 className="font-serif font-semibold text-navy">
-          Recuperação de Créditos Fiscais — diagnóstico por XML de NF-e
+          Pré-auditoria Tributária — análise documental por XML de NF-e
         </h2>
       </div>
       <p className="text-xs text-slate-500 mb-3">
-        Envie os XMLs de NF-e do cliente e o sistema estima créditos
-        recuperáveis por tese consolidada (ex.: Tema 69 STF — exclusão do ICMS
-        da base de PIS/COFINS). Estimativa preliminar — revisão do advogado
-        obrigatória.
+        Envie os XMLs de NF-e para identificar sinais técnicos e estimar grandezas
+        matemáticas associadas a hipóteses tributárias. O resultado não reconhece
+        crédito, elegibilidade ou prescrição e exige validação jurídica, fiscal e
+        contábil antes de qualquer medida.
       </p>
 
-      {/* ── Passo 1 — Upload ─────────────────────────────────────────────── */}
       <div className="space-y-3">
         <button
           type="button"
@@ -345,8 +352,8 @@ export default function TributarioFiscal() {
               ))}
             </select>
             <p className="text-[10px] text-slate-400 mt-1">
-              Regime do <b>cliente</b> no período das notas — as teses variam
-              por regime.
+              Regime informado para o período; a conclusão depende da documentação
+              fiscal/contábil efetivamente validada.
             </p>
           </div>
           <button
@@ -360,7 +367,7 @@ export default function TributarioFiscal() {
               </>
             ) : (
               <>
-                <Receipt size={14} /> Analisar créditos
+                <Receipt size={14} /> Analisar oportunidades
               </>
             )}
           </button>
@@ -368,20 +375,18 @@ export default function TributarioFiscal() {
         {erro && <p className="text-xs text-danger-600">{erro}</p>}
       </div>
 
-      {/* ── Passo 2 — Resultado ──────────────────────────────────────────── */}
       {res && (
         <div className="mt-5 space-y-3">
-          {/* Hero — total estimado */}
           <div className="rounded-xl border border-gold bg-gold-50 p-4">
             <div className="text-xs font-bold text-gold-700 uppercase tracking-wide">
-              Total estimado de créditos recuperáveis
+              Estimativa matemática preliminar — não equivale a crédito reconhecido
             </div>
             <div className="text-xl font-bold text-navy mt-1">
               {fmtBRL(res.total_estimado)}
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
               <span>
-                Período: <b>{fmtDataISO(res.periodo.inicio)}</b> a{" "}
+                Período documental: <b>{fmtDataISO(res.periodo.inicio)}</b> a{" "}
                 <b>{fmtDataISO(res.periodo.fim)}</b>
               </span>
               <span>
@@ -413,7 +418,6 @@ export default function TributarioFiscal() {
             )}
           </div>
 
-          {/* Aviso HITL — sempre visível */}
           <div className="rounded-xl border-2 border-warn-200 bg-warn-50 p-3 flex items-start gap-2">
             <AlertTriangle
               size={15}
@@ -424,14 +428,12 @@ export default function TributarioFiscal() {
             </p>
           </div>
 
-          {/* Teses */}
           <div className="space-y-2">
             {res.teses.map((t) => (
               <TeseCard key={t.tese_id} tese={t} />
             ))}
           </div>
 
-          {/* PDF Visual Law */}
           <button
             className="btn-gold text-sm"
             disabled={gerandoPdf}
@@ -443,12 +445,11 @@ export default function TributarioFiscal() {
               </>
             ) : (
               <>
-                <FileDown size={14} /> Gerar diagnóstico em PDF (Visual Law)
+                <FileDown size={14} /> Gerar pré-auditoria em PDF (Visual Law)
               </>
             )}
           </button>
 
-          {/* Notas analisadas */}
           <details className="card bg-slate-50/60 px-3 py-2">
             <summary className="text-xs font-medium text-slate-600 cursor-pointer select-none">
               Notas analisadas ({res.notas.length})
@@ -461,9 +462,7 @@ export default function TributarioFiscal() {
                     <th className="py-1 pr-3 font-semibold">Nº</th>
                     <th className="py-1 pr-3 font-semibold">Emissão</th>
                     <th className="py-1 pr-3 font-semibold">Emitente</th>
-                    <th className="py-1 pr-3 font-semibold text-right">
-                      Total
-                    </th>
+                    <th className="py-1 pr-3 font-semibold text-right">Total</th>
                     <th className="py-1 pr-3 font-semibold text-right">
                       ICMS destacado
                     </th>
