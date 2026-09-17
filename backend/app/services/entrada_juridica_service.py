@@ -27,7 +27,6 @@ from app.services import case_intelligence_service as cis
 from app.services import fee_proposal_service
 from app.services.analise_estrategica import analisar_caso
 from app.services.document_access_policy import confidencialidades_visiveis
-from app.services.motor_peca_service import texto_base_do_caso
 
 AVISO_DOSSIE = (
     "Dossiê jurídico gerado para apoio interno. É RASCUNHO e exige revisão e "
@@ -233,6 +232,26 @@ def _sanitizar_arvore(value: Any, nomes: list[str]) -> Any:
     return value
 
 
+def _texto_base_visivel(documentos: list[Document], case) -> str:
+    """Monta contexto de IA apenas com OCR já autorizado pela política do GED.
+
+    ``documentos`` deve ser a lista previamente filtrada por
+    ``confidencialidades_visiveis(user)``. O helper é puro e não reconsulta o
+    banco, evitando que uma leitura derivada contorne o cofre documental.
+    """
+    partes: list[str] = []
+    for doc in reversed(documentos):
+        ocr = (getattr(doc, "ocr_text", None) or "").strip()
+        if not ocr:
+            continue
+        partes.append(ocr)
+        if len(partes) >= 5:
+            break
+    if partes:
+        return "\n\n---\n\n".join(partes)[:18_000]
+    return (getattr(case, "descricao_fatos", None) or "").strip()
+
+
 async def gerar_dossie_juridico(db, user, case_id: str) -> dict[str, Any]:
     """Gera o dossiê completo, versiona o plano e devolve ações seguras."""
     case = await verificar_acesso_caso(db, user, case_id)
@@ -283,7 +302,7 @@ async def gerar_dossie_juridico(db, user, case_id: str) -> dict[str, Any]:
         for m in movimentos
     ]
 
-    texto_base = await texto_base_do_caso(db, case, None)
+    texto_base = _texto_base_visivel(docs_rows, case)
     partes_ctx = "; ".join(
         f"{p['tipo']}: {p['nome']}" for p in partes if p.get("nome")
     )
