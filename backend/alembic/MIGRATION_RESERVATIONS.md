@@ -2,7 +2,7 @@
 
 Este arquivo é o ledger canônico de **reservas futuras** e do trecho recente da cadeia Alembic. O histórico detalhado de reservas antigas permanece preservado no Git.
 
-**Head canônico atual da `main`:** `159_user_cpf_secure`
+**Head canônico atual da `main`:** `160_activity_alert_states`
 **Head esperado nesta árvore após as migrations do branch:** `160_activity_alert_states`
 **Próximo prefixo livre nesta árvore:** `161`
 
@@ -54,12 +54,12 @@ gh pr list --state open
 | `157_ajuizamento_judicial` | `156_case_despesas_processuais` | **Mesclada** | Núcleo de ajuizamento: perfis de integração, ajuizamentos, transições, tentativas, protocolos, sync e TPU. |
 | `158_case_partes_trabalhista_pii_expand` | `157_ajuizamento_judicial` | **Mesclada** | DB-03 Fase A integrada na `main` pelo PR #1586; adiciona PII cifrada/HMAC em `case_partes` e CID cifrado em `trabalhista_cases`, preservando plaintext legado no expand. |
 | `159_user_cpf_secure` | `158_case_partes_trabalhista_pii_expand` | **Mesclada** | DB-03 perfis profissionais integrada na `main` pelo PR #1613; CPF somente cifrado + HMAC, índice único parcial para ativos e resposta apenas mascarada. |
-| `160_activity_alert_states` | `159_user_cpf_secure` | **Em PR** | Estado pessoal dos alertas inteligentes do Dashboard; migration aditiva da release #1657, ainda fora da `main`. |
+| `160_activity_alert_states` | `159_user_cpf_secure` | **Mesclada** | Estado pessoal dos alertas inteligentes do Dashboard; release #1657 integrada à `main` (verificado em 18/09/2026 — saneamento pós-auditoria). |
 
 ### Estado atual a partir do head 159 integrado
 
 - Os prefixos `158` e `159` fazem parte da cadeia canônica da `main` e nunca podem ser reutilizados.
-- `160_activity_alert_states` está reservada e presente nesta release candidata, encadeada em `159_user_cpf_secure`; enquanto o PR não for mesclado, o head da `main` continua 159.
+- `160_activity_alert_states` foi integrada à `main` (head canônico atual). Nenhuma reservation pendente abaixo dela.
 - Nesta árvore da release, o head efetivo é `160_activity_alert_states` e o próximo prefixo livre é `161`.
 - Frentes de Documentos/Legal Hold/Outbox que ainda carreguem migrations históricas `156_*` são incompatíveis com a cadeia atual e devem ser reconstruídas somente depois do avanço efetivo do head, usando o próximo número então confirmado.
 
