@@ -24,6 +24,7 @@ import {
   PenLine,
   Plus,
   Library,
+  Receipt,
   Scale,
   ScanSearch,
   ScrollText,
@@ -174,6 +175,7 @@ const GestaoDocumental = lazy(() => import("../pages/GestaoDocumental"));
 const Pecas = lazy(() => import("../pages/Pecas"));
 const RamosHub = lazy(() => import("../pages/RamosHub"));
 const RamoBase = lazy(() => import("../pages/ramos/RamoBase"));
+const TributarioWorkspace = lazy(() => import("../pages/TributarioWorkspace"));
 const CRMLeads = lazy(() => import("../pages/CRMLeads"));
 const FinanceiroWorkspace = lazy(() => import("../pages/FinanceiroWorkspace"));
 const SociedadeWorkspace = lazy(() => import("../pages/SociedadeWorkspace"));
@@ -526,6 +528,30 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     status: "hidden",
     usesAI: true,
     sensitive: true,
+  },
+  {
+    // Workspace tributário (reconstrução do #1550 como SATÉLITE): o menu
+    // principal é o enxuto de 8 domínios (canonicalNavigation); a porta fica
+    // no hub /ferramentas e por deep link — sem segundo módulo essencial.
+    key: "tributario",
+    path: "/tributario",
+    label: "Tributário",
+    description:
+      "Workspace da carteira tributária: casos canônicos, resumo e fontes oficiais.",
+    group: "Pesquisar & IA",
+    icon: Receipt,
+    component: TributarioWorkspace,
+    roles: ROLES.juridico,
+    status: "hidden",
+    essential: false,
+    helpKey: "ramos",
+    usesAI: true,
+    sensitive: true,
+    backendPrefixes: [
+      "/api/cases",
+      "/api/admin-esp",
+      "/api/tributario/fiscal",
+    ],
   },
   {
     key: "atividades",
