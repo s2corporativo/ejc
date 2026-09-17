@@ -37,11 +37,12 @@ from app.services.djen_service import (
     extrair_numero_cnj,
     normalizar_processo,
 )
+from app.services.djen_http import DJEN_COMUNICACAO_URL, obter_proxy_djen
 from app.services.ingestion_service import fetch, upsert_documento
 
 logger = logging.getLogger("ejc.ingestao.djen")
 
-BASE = "https://comunicaapi.pje.jus.br/api/v1/comunicacao"
+BASE = DJEN_COMUNICACAO_URL
 ITENS_POR_PAGINA = 100
 MAX_PAGINAS = 30          # teto de segurança por OAB/execução (30×100 itens)
 PAUSA_ENTRE_PAGINAS = 0.5  # segundos — conservador (API sem rate limit documentado)
@@ -191,7 +192,7 @@ async def _coletar_oab(numero: str, uf: str, ini: str, fim: str) -> list[dict]:
             "dataDisponibilizacaoFim": fim,
             "itensPorPagina": ITENS_POR_PAGINA,
             "pagina": pagina,
-        }, timeout=30)
+        }, timeout=30, proxy=obter_proxy_djen(), trust_env=False)
         try:
             lote = _extrair_itens(r.json())
         except ValueError:
