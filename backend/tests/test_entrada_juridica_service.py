@@ -11,6 +11,11 @@ from app.services.entrada_juridica_service import (
 )
 
 
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
 def test_origem_entrada_unica_snapshot_e_aditiva_sem_migration():
     assert "entrada_unica" in ORIGENS_SNAPSHOT
 
@@ -102,10 +107,18 @@ async def test_analisar_com_case_id_reusa_rota_canonica_para_dossie(monkeypatch)
         chamado.update(db=db, cu=cu, case_id=case_id)
         return {"status": "rascunho", "case_id": case_id}
 
-    monkeypatch.setattr(router.entrada_juridica_service, "gerar_dossie_juridico", _dossie)
+    monkeypatch.setattr(
+        router.entrada_juridica_service,
+        "gerar_dossie_juridico",
+        _dossie,
+    )
     user = SimpleNamespace(id="u1", role="advogado")
     out = await router.analisar(
-        files=[], texto=None, case_id="case-1", db="db", cu=user,
+        files=[],
+        texto=None,
+        case_id="case-1",
+        db="db",
+        cu=user,
     )
 
     assert out == {"status": "rascunho", "case_id": "case-1"}
