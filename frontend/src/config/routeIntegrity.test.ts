@@ -1,16 +1,22 @@
 // Integridade de navegação: moduleRegistry ↔ App.tsx.
 //
-// O App monta as rotas de staff DINAMICAMENTE via STAFF_ROUTES.map e os
-// aliases via LEGACY_REDIRECTS.map — logo, "toda rota do registry está no
-// App" é garantido POR CONSTRUÇÃO desde que esses dois maps existam e usem
-// module.path / redirect.from. Este teste trava exatamente isso e, no sentido
-// inverso, garante que NENHUMA rota literal órfã seja adicionada ao App fora
-// das exceções explícitas (públicas de autenticação + subárvore do portal).
+// O App monta as rotas de staff DINAMICAMENTE via STAFF_ROUTES.map (com
+// subPaths do mesmo módulo), o portal via PORTAL_ROUTES.map e os aliases via
+// LEGACY_REDIRECTS.map — logo, "toda rota do registry está no App" é garantido
+// POR CONSTRUÇÃO desde que esses três maps existam e usem module.path /
+// redirect.from. Este teste trava exatamente isso e, no sentido inverso,
+// garante que NENHUMA rota literal órfã seja adicionada ao App fora das
+// exceções explícitas (públicas de autenticação + casco /portal).
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { LEGACY_REDIRECTS, STAFF_ROUTES } from "./moduleRegistry";
+import {
+  LEGACY_REDIRECTS,
+  PORTAL_ROUTES,
+  STAFF_ROUTES,
+  portalNavHref,
+} from "./moduleRegistry";
 import { isFinanceTab } from "../pages/FinanceiroWorkspace";
 import { isInteligenciaTab } from "../pages/InteligenciaWorkspace";
 import { isCentralTab } from "../pages/Central";
@@ -45,6 +51,8 @@ export const PUBLIC_APP_ROUTES = [
   "/configurar-2fa",
 ] as const;
 // Subárvore do Portal do Cliente (PortalLayout, papel cliente_externo):
+// rotas vivem em PORTAL_ROUTES (moduleRegistry) e o App só monta o casco
+// /portal literal. Este espelho trava os hrefs absolutos esperados.
 export const PORTAL_APP_ROUTES = [
   "/portal",
   "/portal/casos",
@@ -68,10 +76,8 @@ export const DYNAMIC_LEGACY_APP_ROUTES = [
   "/casos/:caseId/sala-de-guerra", // módulo removido; SalaDeGuerraLegacyRedirect → /casos/:caseId?tab=teses
 ] as const;
 
-// Literais relativos esperados DENTRO do bloco /portal do App.tsx.
-const PORTAL_CHILD_LITERALS = PORTAL_APP_ROUTES.filter(
-  (p) => p !== "/portal",
-).map((p) => p.replace("/portal/", ""));
+// Hrefs absolutos esperados da subárvore do portal (sem o casco).
+const PORTAL_CHILD_HREFS = PORTAL_APP_ROUTES.filter((p) => p !== "/portal");
 
 function extractLiteralPaths(source: string): string[] {
   // Captura apenas path="..." literal — path={module.path} e path={redirect.from}
@@ -99,12 +105,22 @@ describe("integridade App.tsx ↔ moduleRegistry", () => {
     expect(appSrc).toMatch(/path=\{redirect\.from\}/);
   });
 
+  it("monta o portal via PORTAL_ROUTES.map com o casco /portal literal", () => {
+    expect(appSrc).toMatch(/PORTAL_ROUTES\.map\(/);
+    const literals = new Set(extractLiteralPaths(appSrc));
+    expect(literals.has("/portal")).toBe(true);
+  });
+
+  it("PORTAL_ROUTES produz exatamente os hrefs absolutos esperados do portal", () => {
+    const hrefs = PORTAL_ROUTES.map((module) => portalNavHref(module));
+    expect(hrefs).toEqual([...PORTAL_APP_ROUTES]);
+  });
+
   it("não possui rota literal órfã no App fora das exceções documentadas", () => {
     const literals = extractLiteralPaths(appSrc);
     const permitidos = new Set<string>([
       ...PUBLIC_APP_ROUTES,
-      "/portal",
-      ...PORTAL_CHILD_LITERALS,
+      "/portal", // casco do portal; filhos vêm de PORTAL_ROUTES.map
       ...CONTEXTUAL_STAFF_APP_ROUTES,
       ...DYNAMIC_LEGACY_APP_ROUTES,
       "*", // catch-all → NotFound
@@ -117,14 +133,17 @@ describe("integridade App.tsx ↔ moduleRegistry", () => {
     ).toEqual([]);
   });
 
-  it("mantém a subárvore do portal montada exatamente como o esperado", () => {
-    const literals = new Set(extractLiteralPaths(appSrc));
-    expect(literals.has("/portal")).toBe(true);
-    for (const child of PORTAL_CHILD_LITERALS) {
-      expect(
-        literals.has(child),
-        `rota do portal ausente no App: ${child}`,
-      ).toBe(true);
+  it("PORTAL_ROUTES cobre exatamente a subárvore esperada (sem rota órfã no portal)", () => {
+    // O casco /portal (rota índice) é montado literalmente no App; o que
+    // precisa bater com o espelho PORTAL_APP_ROUTES são os FILHOS.
+    const hrefsFilhos = PORTAL_ROUTES.map((m) => portalNavHref(m)).filter(
+      (href) => href !== "/portal",
+    );
+    expect(hrefsFilhos.sort()).toEqual([...PORTAL_CHILD_HREFS].sort());
+    // Índice e paths relativos coerentes com a montagem aninhada no App.
+    for (const module of PORTAL_ROUTES) {
+      if (module.index) expect(module.path).toBeUndefined();
+      else expect(module.path).toMatch(/^[a-z][\w-]*(\/:\w+)?$/);
     }
   });
 

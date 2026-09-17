@@ -1,0 +1,2 @@
+# Dependência operacional isolada; não integra o runtime FastAPI de produção do EJC.
+openai-agents[docker]==0.22.2

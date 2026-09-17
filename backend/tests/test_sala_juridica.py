@@ -290,6 +290,7 @@ class _FakeDB:
         self.anexos = list(anexos)
         self.estado_atual = estado_atual
         self.added = []
+        self.executed = []
 
     def add(self, obj):
         self.added.append(obj)
@@ -309,6 +310,7 @@ class _FakeDB:
         return SimpleNamespace(id=pk, role="advogado", is_active=True)
 
     async def execute(self, stmt, params=None):
+        self.executed.append(stmt)
         from app.models.legal_chat import (
             LegalChatAttachment,
             LegalChatMessage,
@@ -382,7 +384,9 @@ async def test_enviar_mensagem_inclui_historico_e_anexos(monkeypatch):
     assert "IA: resposta anterior" in prompt
     assert "[DOCUMENTOS ANEXADOS]" in prompt
     assert "contrato.pdf" in prompt
-    assert "Banco X" in prompt
+    assert "Banco X" not in prompt
+    assert "Fulano" not in prompt
+    assert "[PARTE_" in prompt
     # A própria pergunta nova não entra duplicada no histórico.
     assert prompt.count("qual o próximo passo?") == 1
 
@@ -567,7 +571,9 @@ def test_nomes_partes_anexos_extrai_dedup_e_piso():
     from app.services.legal_chat_service import _nomes_partes_anexos
 
     anexos = [
-        SimpleNamespace(resultado_analise={"intake_result": {"partes": [
+        SimpleNamespace(resultado_analise={"intake_result": {
+            "cliente": {"nome": "Maria Cliente"},
+            "partes": [
             "Banco Alfa S/A",
             {"nome": "João da Silva"},
             {"valor": "Banco Alfa S/A"},   # duplicado (case-insensitive)
@@ -578,8 +584,34 @@ def test_nomes_partes_anexos_extrai_dedup_e_piso():
         SimpleNamespace(resultado_analise=None),
     ]
     assert _nomes_partes_anexos(anexos) == [
-        "Banco Alfa S/A", "João da Silva", "Construtora Beta",
+        "Maria Cliente", "Banco Alfa S/A", "João da Silva", "Construtora Beta",
     ]
+
+
+def test_prompt_de_anexo_mascara_nomes_em_sintese_e_texto():
+    from types import SimpleNamespace
+
+    from app.models.legal_chat import LegalChatSession
+    from app.schemas.legal_chat import MensagemCreate
+    from app.services.legal_chat_service import _montar_mensagem_ia
+
+    sessao = LegalChatSession(id="s-nomes", titulo="t", created_by="u1")
+    anexo = SimpleNamespace(
+        nome_original="peticao.pdf",
+        resultado_analise={
+            "intake_result": {
+                "cliente": {"nome": "Maria Cliente"},
+                "partes": [{"nome": "Banco Alfa S/A", "papel": "reu"}],
+            },
+            "_texto_sanitizado": "Maria Cliente ajuizou ação contra Banco Alfa S/A.",
+        },
+    )
+    prompt = _montar_mensagem_ia(
+        MensagemCreate(conteudo="Analise"), sessao, anexos=[anexo]
+    )
+    assert "Maria Cliente" not in prompt
+    assert "Banco Alfa S/A" not in prompt
+    assert "[PARTE_" in prompt
 
 
 @pytest.mark.anyio
@@ -784,11 +816,15 @@ def test_serializar_anexo_nao_ecoa_chaves_internas():
     anexo = LegalChatAttachment(
         id="a1", session_id="s1", nome_original="x.pdf", filepath="p",
         size_bytes=1, sha256="0" * 64, uploaded_by="u1",
-        resultado_analise={"tipo_documento": "contrato",
-                           "_texto_sanitizado": "conteúdo integral do documento"},
+        resultado_analise={
+            "tipo_documento": "contrato",
+            "_texto_sanitizado": "conteúdo integral do documento",
+            "_texto_sanitizado_truncado": True,
+        },
     )
     out = serializar_anexo(anexo)
     assert out["resultado_analise"] == {"tipo_documento": "contrato"}
+    assert out["contexto_truncado"] is True
     assert "_texto_sanitizado" not in str(out)
 
 
@@ -847,3 +883,152 @@ def test_ficha_confirmada_nao_e_rebaixada_por_escrita_automatica():
     assert 'ficha.status == "confirmada"' in fonte
     # A ponte Entrevista→Ficha precisa realmente pedir a preservação.
     assert "preservar_confirmada=True" in inspect.getsource(te._alimentar_ficha)
+
+
+def test_estado_ampliado_aceita_dossie_juridico_estruturado():
+    estado = EstadoUpdate(
+        estado={
+            "partes": [{"nome": "Parte Fictícia", "tipo": "autor", "classificacao": "alegado"}],
+            "testemunhas": [{"nome": "Testemunha Fictícia", "fonte": "depoimento"}],
+            "enderecos": [{"texto": "Rua Fictícia, 1", "fonte": "contrato"}],
+            "identificacao_processual": [{"numero_processo": "0000000-00.0000.0.00.0000"}],
+            "competencia": [{"comarca": "Betim", "fundamento": "a confirmar"}],
+            "ramo_direito": [{"area": "civil", "classificacao": "inferido"}],
+            "natureza_acao": [{"tipo": "obrigacao_de_fazer", "classificacao": "inferido"}],
+            "procedimento_rito": [{"rito": "comum", "classificacao": "inferido"}],
+            "prescricao_decadencia": [{"analise": "depende de termo inicial"}],
+            "urgencia": [{"nivel": "medio", "motivo": "a confirmar"}],
+        }
+    )
+    assert estado.estado["partes"][0]["nome"] == "Parte Fictícia"
+    assert estado.estado["testemunhas"][0]["nome"] == "Testemunha Fictícia"
+
+
+@pytest.mark.anyio
+async def test_materializar_dossie_confirmado_aplica_somente_destinos_canonicos_seguros():
+    from app.models.case import Case
+    from app.models.case_parte import CaseParte
+    from app.models.deadline import Deadline
+    from app.models.legal_chat import LegalChatSession, LegalChatStateVersion
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(id="s-dossie", titulo="Análise", created_by="u1")
+    estado = LegalChatStateVersion(
+        id="ev-1",
+        session_id="s-dossie",
+        versao=1,
+        estado={
+            "partes": [
+                {"nome": "Autora Fictícia", "tipo": "autor", "classificacao": "alegado"},
+                {"nome": "Pessoa Inferida", "tipo": "reu", "classificacao": "inferido"},
+            ],
+            "testemunhas": [{"nome": "Testemunha Fictícia"}],
+            "identificacao_processual": [
+                {
+                    "numero_processo": "0000000-00.0000.0.00.0000",
+                    "tribunal": "TJMG",
+                    "comarca": "Betim",
+                    "vara": "Vara Fictícia",
+                }
+            ],
+            "prescricao_decadencia": [{"data_sugerida": "2099-01-01"}],
+        },
+        origem="ia_extracao",
+    )
+    db = _FakeDB(sessao=sessao, estado_atual=estado)
+    caso = Case(id="case-1", titulo="Caso", client_id="client-1")
+
+    out = await svc._materializar_dossie_confirmado(db, sessao, caso, _user())
+
+    assert out["campos_preenchidos"] == ["tribunal", "comarca", "vara"]
+    assert out["partes_criadas"] == 1
+    # O número CNJ fica no dossiê até passar pelo fluxo canônico de Caso/Processo.
+    assert caso.numero_processo is None
+    assert any("FOR UPDATE" in str(stmt).upper() for stmt in db.executed)
+    partes = [obj for obj in db.added if isinstance(obj, CaseParte)]
+    assert [(p.tipo, p.nome) for p in partes] == [("autor", "Autora Fictícia")]
+    assert not any(isinstance(obj, Deadline) for obj in db.added)
+
+
+def test_contexto_ejc_e_opt_in_no_schema():
+    assert MensagemCreate(conteudo="analise").incluir_contexto_ejc is False
+    assert MensagemCreate(conteudo="analise", incluir_contexto_ejc=True).incluir_contexto_ejc is True
+
+
+def test_prompt_contexto_ejc_so_aparece_quando_fornecido():
+    from app.models.legal_chat import LegalChatSession
+    from app.services.legal_chat_service import _montar_mensagem_ia
+
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    payload = MensagemCreate(conteudo="O que merece atenção?", incluir_contexto_ejc=True)
+    texto = _montar_mensagem_ia(payload, sessao, contexto_ejc='{"prazos":2}')
+    assert "CONTEXTO OPERACIONAL EJC" in texto
+    assert '"prazos":2' in texto
+    sem = _montar_mensagem_ia(MensagemCreate(conteudo="Pergunta geral"), sessao)
+    assert "CONTEXTO OPERACIONAL EJC" not in sem
+
+
+@pytest.mark.anyio
+async def test_confirmar_proxima_acao_so_confirma_item_do_estado(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.models.legal_chat import LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    atual = SimpleNamespace(
+        estado={
+            "proximas_acoes": [
+                {"acao": "Obter contrato", "prioridade": "alta"},
+                {"acao": "Ouvir testemunha", "prioridade": "media"},
+            ]
+        },
+        resumo="resumo",
+    )
+    capturado = {}
+
+    async def fake_ultima(db, session_id):
+        return atual
+
+    async def fake_gravar(db, sessao, **kwargs):
+        capturado.update(kwargs)
+        return SimpleNamespace(versao=7)
+
+    class DB:
+        async def flush(self):
+            return None
+
+    monkeypatch.setattr(svc, "ultima_versao_estado", fake_ultima)
+    monkeypatch.setattr(svc, "gravar_versao_estado", fake_gravar)
+    user = SimpleNamespace(id="u1")
+    out = await svc.confirmar_proxima_acao(
+        DB(), sessao, acao="Obter contrato", user=user
+    )
+    assert out == {"versao": 7, "acao": "Obter contrato", "confirmada": True}
+    primeira = capturado["estado"]["proximas_acoes"][0]
+    segunda = capturado["estado"]["proximas_acoes"][1]
+    assert primeira["confirmada"] is True
+    assert primeira["confirmada_por"] == "u1"
+    assert "confirmada" not in segunda
+
+
+@pytest.mark.anyio
+async def test_confirmar_proxima_acao_rejeita_texto_fora_do_estado(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.models.legal_chat import LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+
+    async def fake_ultima(db, session_id):
+        return SimpleNamespace(
+            estado={"proximas_acoes": [{"acao": "Obter contrato"}]}, resumo=None
+        )
+
+    monkeypatch.setattr(svc, "ultima_versao_estado", fake_ultima)
+    with pytest.raises(HTTPException) as exc:
+        await svc.confirmar_proxima_acao(
+            object(), sessao, acao="Criar prazo fatal", user=SimpleNamespace(id="u1")
+        )
+    assert exc.value.status_code == 409

@@ -10,9 +10,10 @@
 #   O modo legado herdado permanece explícito para compatibilidade.
 # - Rotação apaga SÓ arquivos com o prefixo do EJC (ejc_backup_) na pasta.
 # - Segredos (chave, senha do banco) nunca vão para log/erro/estado.
-# - Destino offsite flexível (BACKUP_DESTINO=gdrive|rclone): a fase LOCAL
-#   (pg_dump + tar + Fernet) é a prova mínima; falha do envio offsite vira
-#   status "parcial" (ok=True) quando BACKUP_OFFSITE_OBRIGATORIO=false.
+# - A fase LOCAL persiste os artefatos já cifrados em BACKUP_DIR com modo 0600
+#   antes do envio offsite; `local_ok` só fica true após essa persistência.
+# - Destino offsite flexível (BACKUP_DESTINO=gdrive|rclone): falha do envio
+#   vira status "parcial" (ok=True) quando BACKUP_OFFSITE_OBRIGATORIO=false.
 from __future__ import annotations
 
 import asyncio
@@ -20,6 +21,7 @@ import json
 import logging
 import os
 import shutil
+import stat
 import subprocess
 import tarfile
 import tempfile
@@ -33,6 +35,7 @@ from sqlalchemy import text as sqltext
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.services.backup_lock import open_backup_dir_fd
 
 logger = logging.getLogger("ejc.backup")
 settings = get_settings()
@@ -152,6 +155,122 @@ def decifrar_arquivo(origem: str, destino: str, chave: str | None = None) -> int
 def _nome_artefato(sufixo: str, ts: datetime) -> str:
     """ejc_backup_<UTC compacto>_<sufixo>.enc — prefixo fixo para a rotação."""
     return f"{PREFIXO_BACKUP}{ts.strftime('%Y%m%dT%H%M%SZ')}_{sufixo}.enc"
+
+
+def _validar_nome_local(nome: str) -> None:
+    if (
+        not nome.startswith(PREFIXO_BACKUP)
+        or not nome.endswith(".enc")
+        or os.path.basename(nome) != nome
+        or "\x00" in nome
+    ):
+        raise RuntimeError("nome de artefato local inválido")
+
+
+def _persistir_artefatos_locais_sync(
+    artefatos: list[dict[str, Any]], backup_dir: str
+) -> int:
+    """Persiste o conjunto cifrado em BACKUP_DIR com commit atômico por arquivo.
+
+    Todos os temporários são fsyncados antes de qualquer rename. Se o commit do
+    conjunto falhar, remove os nomes finais criados nesta execução. O mutex
+    cross-process do backup é a autoridade contra concorrência entre ciclos.
+    """
+    if not artefatos:
+        raise RuntimeError("backup não gerou artefato cifrado local")
+
+    dir_fd = open_backup_dir_fd(backup_dir)
+    temporarios: list[tuple[str, str]] = []
+    publicados: list[str] = []
+    try:
+        # Primeiro prepara TODOS os arquivos, sem publicar nenhum nome final.
+        for art in artefatos:
+            nome = str(art.get("nome") or "")
+            origem = str(art.get("caminho") or "")
+            _validar_nome_local(nome)
+            if not origem or not os.path.isfile(origem):
+                raise RuntimeError("artefato cifrado temporário ausente")
+            try:
+                os.stat(nome, dir_fd=dir_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                raise RuntimeError("artefato local com mesmo nome já existe")
+
+            tmp_nome = f".{nome}.{os.getpid()}.{time.time_ns()}.tmp"
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
+            flags |= getattr(os, "O_NOFOLLOW", 0)
+            fd = os.open(tmp_nome, flags, 0o600, dir_fd=dir_fd)
+            try:
+                os.fchmod(fd, 0o600)
+                with open(origem, "rb") as src, os.fdopen(fd, "wb", closefd=False) as dst:
+                    shutil.copyfileobj(src, dst, length=1024 * 1024)
+                    dst.flush()
+                    os.fsync(dst.fileno())
+                st = os.fstat(fd)
+                esperado = int(art.get("bytes_cifrado") or 0)
+                if st.st_size <= 0 or (esperado and st.st_size != esperado):
+                    raise RuntimeError("tamanho do artefato local persistido divergiu")
+            finally:
+                os.close(fd)
+            temporarios.append((tmp_nome, nome))
+
+        # Publica somente depois que todo o conjunto foi escrito e fsyncado.
+        for tmp_nome, nome in temporarios:
+            os.rename(tmp_nome, nome, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+            publicados.append(nome)
+        os.fsync(dir_fd)
+
+        for art in artefatos:
+            art["local_persistido"] = True
+        return len(publicados)
+    except Exception:
+        for tmp_nome, _ in temporarios:
+            try:
+                os.unlink(tmp_nome, dir_fd=dir_fd)
+            except FileNotFoundError:
+                pass
+        for nome in publicados:
+            try:
+                os.unlink(nome, dir_fd=dir_fd)
+            except FileNotFoundError:
+                pass
+        try:
+            os.fsync(dir_fd)
+        except OSError:
+            pass
+        raise
+    finally:
+        os.close(dir_fd)
+
+
+def _rotacionar_local_sync(
+    backup_dir: str, retencao_dias: int, *, agora: datetime | None = None
+) -> int:
+    """Remove somente backups canônicos `.enc` expirados no storage local."""
+    if retencao_dias < 1:
+        raise RuntimeError("BACKUP_RETENTION_DAYS deve ser >= 1")
+    corte = (agora or datetime.now(timezone.utc)).timestamp() - retencao_dias * 86400
+    dir_fd = open_backup_dir_fd(backup_dir)
+    removidos = 0
+    try:
+        for nome in os.listdir(dir_fd):
+            if not (nome.startswith(PREFIXO_BACKUP) and nome.endswith(".enc")):
+                continue
+            try:
+                st = os.stat(nome, dir_fd=dir_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                continue
+            if os.path.basename(nome) != nome or not stat.S_ISREG(st.st_mode):
+                continue
+            if st.st_mtime < corte:
+                os.unlink(nome, dir_fd=dir_fd)
+                removidos += 1
+        if removidos:
+            os.fsync(dir_fd)
+        return removidos
+    finally:
+        os.close(dir_fd)
 
 
 def _pg_dump_para(destino: str) -> int:
@@ -466,8 +585,8 @@ async def executar_backup(
         artefatos: list[dict[str, Any]] = []
         avisos: list[str] = []
         status, erro = "sucesso", None
-        # Semântica separada: local_ok = artefatos cifrados gerados (prova
-        # mínima); offsite_ok = envio ao destino externo concluído.
+        # Semântica separada: local_ok = artefatos cifrados persistidos em
+        # BACKUP_DIR após fsync; offsite_ok = envio externo concluído.
         local_ok = False
         offsite_ok = False
         offsite_erro: str | None = None
@@ -541,10 +660,32 @@ async def executar_backup(
                 else:
                     avisos.append(f"UPLOAD_DIR inexistente: {settings.UPLOAD_DIR}")
 
-                # Artefatos cifrados prontos no disco = prova LOCAL do backup.
-                local_ok = True
+                # 4) Persiste o conjunto CIFRADO no volume de continuidade.
+                # `local_ok` só muda depois de todos os artefatos estarem publicados
+                # e fsyncados em BACKUP_DIR. O dump/tar em claro já foi removido.
+                persistidos = await asyncio.to_thread(
+                    _persistir_artefatos_locais_sync, artefatos, settings.BACKUP_DIR
+                )
+                local_ok = persistidos == len(artefatos) and persistidos > 0
+                if not local_ok:
+                    raise RuntimeError("persistência local cifrada incompleta")
 
-                # 4) Envio OFFSITE — Google Drive (fluxo original) ou rclone
+                local_rotacao_removidos = 0
+                try:
+                    local_rotacao_removidos = await asyncio.to_thread(
+                        _rotacionar_local_sync,
+                        settings.BACKUP_DIR,
+                        settings.BACKUP_RETENTION_DAYS,
+                    )
+                except Exception as exc:
+                    avisos.append(
+                        "rotação local cifrada falhou; backup novo foi preservado"
+                    )
+                    logger.warning(
+                        "[Backup] rotação local falhou (tipo=%s)", type(exc).__name__
+                    )
+
+                # 5) Envio OFFSITE — Google Drive (fluxo original) ou rclone
                 #    (ex.: OneDrive). Falha aqui NÃO invalida a prova local:
                 #    com BACKUP_OFFSITE_OBRIGATORIO=false vira status
                 #    "parcial" com aviso grave (deploy segue com a prova
@@ -582,7 +723,7 @@ async def executar_backup(
                             art["drive_file_id"] = enviado.get("id")
                             art.pop("caminho", None)
 
-                        # 5) Rotação: mantém BACKUP_RETENCAO_DIAS dias (só prefixo EJC).
+                        # 6) Rotação offsite: mantém BACKUP_RETENCAO_DIAS dias (só prefixo EJC).
                         removidos = await asyncio.to_thread(
                             _rotacionar_sync, service, folder_id, settings.BACKUP_RETENCAO_DIAS
                         )
@@ -604,7 +745,10 @@ async def executar_backup(
 
             if avisos:
                 status = "parcial"
-            resultado_extra: dict[str, Any] = {"rotacao_removidos": removidos}
+            resultado_extra: dict[str, Any] = {
+                "rotacao_removidos": removidos,
+                "rotacao_local_removidos": local_rotacao_removidos,
+            }
         except Exception as exc:
             status = "erro"
             # str(exc) de subprocess/googleapiclient não carrega segredos
