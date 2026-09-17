@@ -35,16 +35,22 @@ from app.core.config import get_settings
 from app.services.djen_service import (
     buscar_caso_ativo_por_processo,
     extrair_numero_cnj,
+    extrair_total_djen,
     normalizar_processo,
 )
-from app.services.djen_http import DJEN_COMUNICACAO_URL, obter_proxy_djen
+from app.services.djen_http import (
+    DJEN_COMUNICACAO_URL,
+    DJEN_ITENS_POR_PAGINA,
+    obter_proxy_djen,
+)
 from app.services.ingestion_service import fetch, upsert_documento
 
 logger = logging.getLogger("ejc.ingestao.djen")
 
 BASE = DJEN_COMUNICACAO_URL
-ITENS_POR_PAGINA = 100
-MAX_PAGINAS = 30          # teto de segurança por OAB/execução (30×100 itens)
+ITENS_POR_PAGINA = DJEN_ITENS_POR_PAGINA
+MAX_PAGINAS = 200         # 200×50 = teto conservador de 10.000 itens
+MAX_RETRIES_PAGINA_VAZIA = 2
 PAUSA_ENTRE_PAGINAS = 0.5  # segundos — conservador (API sem rate limit documentado)
 
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -182,9 +188,12 @@ class DjenContratoError(RuntimeError):
 
 
 async def _coletar_oab(numero: str, uf: str, ini: str, fim: str) -> list[dict]:
-    """Coleta paginada (sequencial + pausa) de uma OAB na janela [ini, fim]."""
+    """Coleta paginada e não confunde página vazia transitória com fim."""
     itens: list[dict] = []
-    for pagina in range(1, MAX_PAGINAS + 1):
+    total_fonte: int | None = None
+    pagina = 1
+    retries_vazia = 0
+    while pagina <= MAX_PAGINAS:
         r = await fetch(BASE, params={
             "numeroOab": numero,
             "ufOab": uf,
@@ -194,25 +203,46 @@ async def _coletar_oab(numero: str, uf: str, ini: str, fim: str) -> list[dict]:
             "pagina": pagina,
         }, timeout=30, proxy=obter_proxy_djen(), trust_env=False)
         try:
-            lote = _extrair_itens(r.json())
+            payload = r.json()
+            lote = _extrair_itens(payload)
         except ValueError:
             logger.warning(f"DJEN OAB {numero}/{uf} p.{pagina}: JSON inválido")
             if pagina == 1:
-                # Na PRIMEIRA página, JSON inválido significa que a consulta
-                # não foi respondida (mudança de contrato, HTML de bloqueio) —
-                # devolver lista vazia aqui faz "a fonte não respondeu" virar
-                # "este advogado não tem intimação", que num sistema de prazos
-                # é o erro mais caro possível. Nas páginas seguintes já há
-                # itens colhidos, então parar e aproveitá-los é o correto.
                 raise DjenContratoError(
                     f"DJEN OAB {numero}/{uf}: resposta sem JSON válido na "
                     "primeira página — consulta não foi respondida."
                 )
             break
+
+        reportado = extrair_total_djen(payload)
+        if reportado is not None:
+            total_fonte = reportado
+
+        if not lote:
+            if total_fonte is not None and len(itens) < total_fonte:
+                if retries_vazia < MAX_RETRIES_PAGINA_VAZIA:
+                    retries_vazia += 1
+                    await asyncio.sleep(PAUSA_ENTRE_PAGINAS * retries_vazia)
+                    continue
+                raise DjenContratoError(
+                    f"DJEN OAB {numero}/{uf}: página {pagina} vazia antes de "
+                    "completar o total reportado"
+                )
+            return itens
+
+        retries_vazia = 0
         itens.extend(x for x in lote if isinstance(x, dict))
-        if len(lote) < ITENS_POR_PAGINA:
-            break   # última página
+        if total_fonte is not None and len(itens) >= total_fonte:
+            return itens
+        if len(lote) < ITENS_POR_PAGINA and total_fonte is None:
+            return itens
+        pagina += 1
         await asyncio.sleep(PAUSA_ENTRE_PAGINAS)
+
+    if pagina > MAX_PAGINAS:
+        raise DjenContratoError(
+            f"DJEN OAB {numero}/{uf}: paginação atingiu teto sem provar exaustão"
+        )
     return itens
 
 
