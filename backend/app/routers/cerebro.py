@@ -74,17 +74,7 @@ async def listar_teses(db: AsyncSession = Depends(get_db), cu: User = Depends(ge
     result = await db.execute(text("SELECT * FROM teses WHERE deleted_at IS NULL ORDER BY taxa_sucesso DESC"))
     return result.mappings().all()
 
-@router.post("/jurisprudencia/pesquisa", dependencies=[Depends(rate_limit("cerebro-juris-pesquisa", 15))])
-async def pesquisar_jurisprudencia(query: str, db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
-    # INDISPONIBILIDADE EXPLÍCITA (auditoria 2026-07-19): este endpoint ANTES
-    # devolvia sempre `resultados: []` com o comentário "Simulação de busca
-    # semântica integrada" — mock enganoso que fingia base sem resultados. A
-    # busca semântica real vive no RAG híbrido; enquanto este atalho não é ligado
-    # ao núcleo, responde 503 honesto em vez de simular vazio.
-    raise HTTPException(
-        status_code=503,
-        detail=(
-            "Busca de jurisprudência do Cérebro não está ligada ao núcleo de busca. "
-            "Use /api/search ou /api/rag (Conhecimento Jurídico) para busca semântica real."
-        ),
-    )
+# A rota POST /jurisprudencia/pesquisa foi REMOVIDA (saneamento 18/09/2026):
+# respondia 503 incondicional desde a auditoria de 2026-07-19, sem chamadores
+# no frontend nem no backend. A trilha canônica de busca é /api/search e
+# /api/rag (RAG híbrido com gate de citações).
