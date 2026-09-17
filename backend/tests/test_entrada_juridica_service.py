@@ -7,6 +7,7 @@ from app.services.entrada_juridica_service import (
     _correlacionar_fato_prova_tese,
     _estimativa_sucesso,
     _perguntas_lacunas,
+    _texto_base_visivel,
     identificar_conteudo,
 )
 
@@ -95,6 +96,27 @@ def test_lacunas_perguntam_so_o_necessario():
     perguntas = _perguntas_lacunas(analise, case, provas)
     tipos = {item["tipo"] for item in perguntas}
     assert {"prova_faltante", "identificacao_processual", "parte", "prescricao"} <= tipos
+
+
+def test_texto_base_usa_apenas_lista_pre_filtrada_e_os_cinco_ocr_mais_recentes():
+    documentos_visiveis = [
+        SimpleNamespace(ocr_text=f"OCR visível {indice}") for indice in range(1, 7)
+    ]
+    case = SimpleNamespace(descricao_fatos="fallback do caso")
+
+    texto = _texto_base_visivel(documentos_visiveis, case)
+
+    assert texto.startswith("OCR visível 6")
+    assert "OCR visível 2" in texto
+    assert "OCR visível 1" not in texto
+    assert "fallback do caso" not in texto
+
+
+def test_texto_base_sem_ocr_visivel_faz_fallback_nos_fatos_do_caso():
+    documentos_visiveis = [SimpleNamespace(ocr_text=None), SimpleNamespace(ocr_text="  ")]
+    case = SimpleNamespace(descricao_fatos="Fatos autorizados do caso")
+
+    assert _texto_base_visivel(documentos_visiveis, case) == "Fatos autorizados do caso"
 
 
 @pytest.mark.anyio
