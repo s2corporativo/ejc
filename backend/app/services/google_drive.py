@@ -7,6 +7,14 @@ impede que um ``subprocess.run`` bloqueie o event loop do FastAPI.
 Documentos novos persistem ``remote_path`` no GED e, por isso, download/delete
 são endereçados diretamente. A resolução recursiva por ID existe somente como
 fallback de compatibilidade para registros legados que não guardavam o path.
+
+FRONTEIRA (decisão Fase 7, 2026-09-17): este módulo é o PLANO DE ARMAZENAGEM
+do GED (rclone: copia/move/remove blobs). NÃO confundir com
+``google_drive_service.py``, que é a SINCRONIZAÇÃO Drive → base de
+conhecimento RAG (googleapiclient: OAuth/service account, listing e ingestão
+via upsert_documento). Protocolos e planos de dados distintos — a família
+"Drive" da auditoria não é duplicação lógica; não consolidar (ver
+docs/auditoria/2026-09-17-fase7-pendencias-menores.md).
 """
 from __future__ import annotations
 

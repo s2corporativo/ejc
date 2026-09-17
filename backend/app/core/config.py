@@ -42,24 +42,22 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_HOURS: int = 2
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    # ── 2FA (TOTP) — enforcement organizacional por papel ─────────────────
-    # CSV de papéis (UserRole: superadmin, admin, socio, advogado,
-    # advogado_auxiliar, financeiro, estagiario, secretaria, cliente_externo)
-    # que DEVEM usar 2FA (TOTP). Default inclui a GESTÃO e os ADVOGADOS
-    # (superadmin,admin,socio,advogado,advogado_auxiliar): quem pratica atos
-    # jurídicos e acessa dados sensíveis de casos/clientes é obrigado a 2FA.
-    # Enforcement SEM lockout (ver abaixo) — endurecer o default não tranca
-    # ninguém; só passa a orientar a configuração e a impedir a auto-desproteção.
-    # Quando um papel está listado (comparação case-insensitive):
+    # ── 2FA (TOTP) — recurso opcional; enforcement por papel é opt-in ─────
+    # Decisão do titular consolidada em 05/08/2026 e revalidada na #1580:
+    # 2FA NÃO é obrigatório por papel. O feature gate global nasce desligado
+    # (TWO_FACTOR_AUTH_ENABLED=false, lido por two_factor_policy.py) e esta
+    # allowlist nasce vazia. Se, no futuro, o titular decidir impor 2FA a algum
+    # papel, a ativação deve ser explícita no ambiente e homologada por H01.
+    # Quando um papel é explicitamente listado (comparação case-insensitive):
     #   (a) /auth/login sinaliza `precisa_configurar_2fa=true` no payload
     #       enquanto o usuário desse papel ainda não tiver TOTP ativo — para o
     #       frontend orientar a configuração. NÃO bloqueia o login (enforcement
     #       SEM lockout: não há coluna/migration nova e não se tranca ninguém);
     #   (b) POST /auth/totp/desativar RECUSA (403) desativar o 2FA de um usuário
     #       cujo papel é obrigado — ele não pode se auto-desproteger.
-    # Override por ambiente (definir no .env, NÃO versionado), ex. só gestão:
+    # Override por ambiente (definir no .env), somente após decisão explícita:
     #   REQUIRE_2FA_ROLES=superadmin,admin,socio
-    REQUIRE_2FA_ROLES: str = "superadmin,admin,socio,advogado,advogado_auxiliar"
+    REQUIRE_2FA_ROLES: str = ""
     TWO_FACTOR_SETUP_TOKEN_EXPIRE_MINUTES: int = 15
 
     @property
@@ -323,7 +321,7 @@ class Settings(BaseSettings):
     # CSV de task_types do ai_gateway que disparam a crítica automática
     # (vocabulário de TASK_ROUTING; aliases como "redacao_peca" são
     # normalizados antes da comparação).
-    DUAS_IAS_TASK_TYPES: str = "elaboracao_peca,auditoria_peca"
+    DUAS_IAS_TASK_TYPES: str = "elaboracao_peca,auditoria_peca,analise_juridica,estrategia"
     # Ordem de preferência entre provedores ELEGÍVEIS (csv). A policy ainda
     # filtra por habilitação/chave e prioriza Anthropic em tarefas complexas.
     # Maritaca antes do groq: para tarefa jurídica PT-BR o Sabiá rankeia acima
@@ -519,6 +517,15 @@ class Settings(BaseSettings):
     PJE_MNI_TIMEOUT_SECONDS: float = 60.0
     # eproc — sem API pública documentada; CONDITIONAL por tribunal/perfil.
     EPROC_INTEGRATION_ENABLED: bool = False
+    # ── Jurimetria dos tribunais (Issue #1527) — agregados do DataJud ──────
+    # Interruptor próprio em app/integrations/feature_flags.py
+    # (JURIMETRIA_TRIBUNAIS_ENABLED, default OFF); exige DATAJUD_* acima.
+    # Teto de processos por consulta: a API Pública é rate-limited e o
+    # agregado estabiliza com amostra grande; o `n` real vai na resposta.
+    JURIMETRIA_TRIBUNAIS_MAX_PROCESSOS: int = 2000
+    # Cache TTL (segundos) do agregado por consulta — em memória (worker
+    # único). 0 desliga. Erro do CNJ nunca entra no cache.
+    JURIMETRIA_TRIBUNAIS_CACHE_TTL_SEGUNDOS: int = 3600
 
     # ── Infosimples — consultas PAGAS a sites públicos (TJMG, Receita…) ──
     # Agregador comercial (https://infosimples.com/consultas/): cada consulta
@@ -913,11 +920,13 @@ class Settings(BaseSettings):
     AI_BUDGET_ALERTA_BRL: float = 0.0
 
     # ── Backup ────────────────────────────────────────────────────────────
-    # (a) Legado: pg_dump local + rclone (scheduler._backup_banco, 02h00).
-    BACKUP_REMOTE: str = ""         # ex: "b2:ejc-backups" (rclone remote)
-    BACKUP_DIR: str = "/app/backups"  # diretório local de dumps dentro do container postgres
-    BACKUP_RETENTION_DAYS: int = 7  # dumps locais mais antigos que isto são apagados na rotação
-    # (b) Backup diário cifrado → Google Drive (services/backup_service.py).
+    # Continuidade local canônica: o motor persiste SOMENTE artefatos `.enc`
+    # neste volume. BACKUP_REMOTE permanece legado/telemetria e não é caminho
+    # autoritativo de backup.
+    BACKUP_REMOTE: str = ""
+    BACKUP_DIR: str = "/app/backups"
+    BACKUP_RETENTION_DAYS: int = 7  # retenção da cópia cifrada local "quente"
+    # Backup diário cifrado → local + Google Drive/rclone (backup_service.py).
     # Prefere identidade exclusiva BACKUP_GOOGLE_DRIVE_* com escrita. O modo
     # herdado GOOGLE_DRIVE_* existe apenas para compatibilidade explícita.
     # Opt-in: default False mantém tudo desligado.

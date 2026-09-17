@@ -272,8 +272,8 @@ def rodar_endpoints():
         chk("login socio para cenários de endpoint IA", False, r.text[:120])
         return
     for nome, texto in CENARIOS.items():
-        r = sess.post(f"{BASE}/api/documentos-ia/analisar",
-                      json={"conteudo": texto}, timeout=90)
+        r = sess.post(f"{BASE}/api/ia/extrair",
+                      json={"texto": texto}, timeout=90)
         ok = r.status_code in (200, 422, 502, 503) and \
             not (r.status_code == 500 and "Traceback" in r.text)
         chk(f"endpoint IA cenário '{nome}': {r.status_code}",

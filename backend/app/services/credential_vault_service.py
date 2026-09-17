@@ -460,37 +460,38 @@ async def aplicar_overlay(db) -> list[str]:
     sobrescrever a de uma revogação já commitada — ver o comentário do lock.
 
     Retorna a lista de field_keys efetivamente escritos (para log — sem valores)."""
-    async with _OVERLAY_LOCK:
-        settings = get_settings()
-        # A primeira consulta desta sessão acontece DENTRO do lock — é o que
-        # garante que o snapshot lido seja posterior ao commit de quem aplicou
-        # o overlay antes (revogação/rotação).
-        ativos = await resolver_overlay(db)
+    async with asyncio.timeout(30):
+        async with _OVERLAY_LOCK:
+            settings = get_settings()
+            # A primeira consulta desta sessão acontece DENTRO do lock — é o que
+            # garante que o snapshot lido seja posterior ao commit de quem aplicou
+            # o overlay antes (revogação/rotação).
+            ativos = await resolver_overlay(db)
 
-        # Campos do catálogo que já tiveram QUALQUER linha (histórico) — os que
-        # estão sem ativa entre eles foram revogados/zerados → "" explícito.
-        res = await db.execute(
-            select(IntegrationCredential.field_key).distinct()
-        )
-        com_historico = {row[0] for row in res.all()}
+            # Campos do catálogo que já tiveram QUALQUER linha (histórico) — os que
+            # estão sem ativa entre eles foram revogados/zerados → "" explícito.
+            res = await db.execute(
+                select(IntegrationCredential.field_key).distinct()
+            )
+            com_historico = {row[0] for row in res.all()}
 
-        aplicados: list[str] = []
-        for field_key in credential_registry.todos_field_keys():
-            if field_key in ativos:
-                setattr(settings, field_key, ativos[field_key])
-                aplicados.append(field_key)
-            elif field_key in com_historico:
-                setattr(settings, field_key, "")  # revogada — sem fallback ao .env
-                aplicados.append(field_key)
-            # else: nunca cadastrado — vale o .env, não toca.
+            aplicados: list[str] = []
+            for field_key in credential_registry.todos_field_keys():
+                if field_key in ativos:
+                    setattr(settings, field_key, ativos[field_key])
+                    aplicados.append(field_key)
+                elif field_key in com_historico:
+                    setattr(settings, field_key, "")  # revogada — sem fallback ao .env
+                    aplicados.append(field_key)
+                # else: nunca cadastrado — vale o .env, não toca.
 
-        _OVERLAY_RUNTIME.update({
-            "aplicado": True,
-            "aplicado_em": _agora(),
-            "campos": len(aplicados),
-            "erro_tipo": None,
-        })
-        return aplicados
+            _OVERLAY_RUNTIME.update({
+                "aplicado": True,
+                "aplicado_em": _agora(),
+                "campos": len(aplicados),
+                "erro_tipo": None,
+            })
+            return aplicados
 
 
 # ── Rotação da chave-mestra (PR-6) ───────────────────────────────────────────

@@ -11,7 +11,10 @@ from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user
 from app.models.user import User
 from app.services.radar_poder import radar_poder
-from app.core.ai_brain import ai_brain
+
+# Mensagem de erro seguro do caminho de IA (antes em core.ai_brain — aposentado;
+# auditoria Fase 7: último consumidor migrou ao gateway canônico).
+_ERRO_SEGURO_IA = "Erro na comunicação com a IA. Tente novamente em instantes."
 
 router = APIRouter(prefix="/intelligence", tags=["Intelligence"])
 
@@ -49,26 +52,41 @@ async def analise_impacto(
     2. Qual o impacto imediato para empresas e advogados?
     3. Qual a ação recomendada para o Dr. Clovis?
     """
-    # Auditoria obrigatória (LGPD/OAB): este endpoint passava pelo shim legado
-    # (ai_brain.generate) sem gravar AILog (furo #4a). Trocamos por
-    # processar_demanda, que percorre o MESMO caminho de modelo que
-    # generate("principal") — tipo "juridico_profundo" → task "analise_juridica"
-    # via core.ai_brain._chamar_central — e apenas EXPÕE o modelo real usado,
-    # permitindo o rastro obrigatório. A resposta ao cliente é idêntica
-    # ({"resumo_executivo": <mesmo texto>}), inclusive no caminho de erro.
-    res = await ai_brain.processar_demanda(prompt, tipo="juridico_profundo")
-    analise = res["resposta"]
+    # Auditoria obrigatória (LGPD/OAB): AILog com prompt SANITIZADO. O caminho
+    # canônico é o gateway central (app.services.ai_gateway.chat) — mesmo caminho
+    # de modelo do antigo shim core.ai_brain (aposentado): task_type
+    # "analise_juridica" pela cadeia de providers, com barreira final de PII.
+    # Em falha: mensagem segura, sem AILog, sem propagar exceção.
+    from app.services import ai_gateway as gateway_central
+    from app.services.sanitizer import sanitizar_pii
 
-    if res.get("status") == "sucesso":
-        from app.services.ai_guard import registrar_ai_log
-        from app.models.ai_log import AITipoUso
-        from app.services.sanitizer import sanitizar_pii
-        # LGPD: só o prompt SANITIZADO entra no AILog (o próprio shim já sanitiza
-        # antes de enviar ao provider; aqui sanitizamos o que registramos).
-        prompt_log, pii = sanitizar_pii(prompt)
-        await registrar_ai_log(
-            db, user_id=cu.id, tipo_uso=AITipoUso.outro, case_id=None,
-            prompt_sanitizado=prompt_log, pii_removida=pii,
-            resposta=analise, modelo=res.get("modelo_utilizado"),
+    prompt_limpo, _ = sanitizar_pii(prompt)
+    modelo_utilizado: str | None = None
+    try:
+        resp = await gateway_central.chat(
+            [{"role": "user", "content": prompt_limpo}],
+            task_type="analise_juridica",
         )
+        analise = resp.texto
+        modelo_utilizado = f"{resp.provedor}/{resp.modelo}"
+    except Exception as exc:  # noqa: BLE001 — erro seguro, nunca propaga
+        import logging
+
+        logging.getLogger("ejc.ai_gateway").error(
+            "AI Gateway central (analise-impacto): %s: %.200s",
+            type(exc).__name__,
+            str(exc),
+        )
+        return {"resumo_executivo": _ERRO_SEGURO_IA}
+
+    from app.services.ai_guard import registrar_ai_log
+    from app.models.ai_log import AITipoUso
+
+    # LGPD: só o prompt SANITIZADO entra no AILog.
+    prompt_log, pii = sanitizar_pii(prompt)
+    await registrar_ai_log(
+        db, user_id=cu.id, tipo_uso=AITipoUso.outro, case_id=None,
+        prompt_sanitizado=prompt_log, pii_removida=pii,
+        resposta=analise, modelo=modelo_utilizado,
+    )
     return {"resumo_executivo": analise}

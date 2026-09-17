@@ -702,66 +702,12 @@ class TestS8HITL:
         assert out["data"] == [] and "aviso" in out
         _hitl_ok(out)
 
-    async def test_documento_ia_analisar_url_ramos(self, monkeypatch):
-        from app.routers import documento_ia as mod
-
-        class _Imp:
-            def __init__(self, bloqueado, dossie):
-                self.bloqueado, self.dossie, self.titulo = bloqueado, dossie, "t"
-
-            def model_dump(self):
-                return {"bloqueado": self.bloqueado, "dossie": self.dossie, "titulo": self.titulo}
-
-        async def importar(url, titulo=None):
-            return _Imp(False, "Dossiê fictício importado.")
-
-        async def acesso(db, cu, case_id):
-            return None
-
-        async def analisar_boom(**kw):
-            raise RuntimeError("provider down")
-
-        monkeypatch.setattr(mod, "importar_url_juridica", importar)
-        monkeypatch.setattr(mod, "verificar_acesso_caso", acesso)
-        monkeypatch.setattr("app.services.analise_estrategica.analisar_caso", analisar_boom)
-        # (1) sem análise → carimbo HITL mesmo assim (chave legada mantida).
-        req = mod.AnalisarUrlRequest(url="https://exemplo.invalido/doc")
-        out = await mod.analisar_url(req, db=_FakeDB(), current_user=_user())
-        assert out["requer_revisao_humana"] is True
-        _hitl_ok(out)
-        # (2) análise falha → ramo except carimbado, sem stack trace ao usuário.
-        caso = SimpleNamespace(titulo="Caso", area="civil", numero_processo="", client_id="cl1")
-        req2 = mod.AnalisarUrlRequest(url="https://exemplo.invalido/doc", case_id="c1",
-                                      executar_analise=True)
-        out2 = await mod.analisar_url(req2, db=_FakeDB([_Res(scalar=caso)]), current_user=_user())
-        assert out2["analise"] is None and out2["analise_aviso"]
-        assert "provider down" not in out2["analise_aviso"]
-        _hitl_ok(out2)
-
-    async def test_documento_ia_analisar_ramo_except_do_nucleo(self, monkeypatch):
-        import io
-        from starlette.datastructures import Headers, UploadFile
-        from app.routers import documento_ia as mod
-        from app.services.ai.core import orchestrator as orch_mod
-
-        async def extrair(*a, **k):
-            return {"ok": True, "_texto_sanitizado": "texto fictício sanitizado", "classificacao": {}}
-
-        async def run_boom(**kw):
-            raise RuntimeError("núcleo indisponível")
-
-        monkeypatch.setattr(mod.documento_service, "extrair_e_analisar", extrair)
-        monkeypatch.setattr("app.routers.documents._validar_conteudo", lambda suf, c: "application/pdf")
-        monkeypatch.setattr(mod, "_aplicar_classificacao_contextual",
-                            lambda resultado, **kw: resultado)
-        monkeypatch.setattr(orch_mod.orchestrator, "run", run_boom)
-        arquivo = UploadFile(file=io.BytesIO(b"%PDF-1.4 fake"), filename="doc.pdf",
-                             headers=Headers({"content-type": "application/pdf"}))
-        out = await mod.analisar(file=arquivo, db=_FakeDB(), current_user=_user())
-        assert out["diagnostico_nucleo"] is None and out["nucleo_aviso"]
-        _hitl_ok(out)
-
-
+    # (Fase 7 — auditoria §3.6): os dois testes de HITL da porta legada
+    # /documentos-ia (analisar_url_ramos e analisar_ramo_except_do_nucleo)
+    # foram aposentados JUNTO com o router documento_ia.py — zero consumidores.
+    # A garantia de carimbo HITL em superfícies de análise documental segue
+    # travada na trilha canônica (test_entrada_universal_analise_ia.py e
+    # test_entrada_unica.py).
 # ══════════════════════════════════════════════════════════════════════════════
 # I5 — agentes com fonte
 # ══════════════════════════════════════════════════════════════════════════════

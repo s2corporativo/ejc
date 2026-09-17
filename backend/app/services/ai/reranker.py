@@ -23,6 +23,27 @@ from app.services.knowledge_governance import inferir_autoridade
 logger = logging.getLogger("ejc.ai.reranker")
 settings = get_settings()
 
+
+def _categoria_normativa(candidate: dict[str, Any]) -> bool:
+    """Indica se o candidato pode representar norma/regulamento vigente.
+
+    Quando a governança documental está indisponível, candidatos normativos não
+    podem permanecer na fundamentação atual: sem o metadado governado não há
+    como provar vigência, suspensão ou revogação. Jurisprudência, doutrina e
+    peças continuam disponíveis para não zerar o ranking por completo.
+    """
+    categoria = str(candidate.get("categoria") or "").strip().lower().replace("_", " ")
+    extra_raw = candidate.get("extra")
+    extra = extra_raw if isinstance(extra_raw, dict) else {}
+    autoridade = str(
+        extra.get("authority_level") or extra.get("nivel_autoridade") or ""
+    ).strip().lower()
+    return (
+        any(token in categoria for token in ("legisl", "norma", "regulamento"))
+        or autoridade == "oficial_normativa"
+    )
+
+
 _MAX_CHARS = 2000
 _model = None
 _model_lock = threading.Lock()
@@ -155,26 +176,11 @@ def _normalizar_status_legal(extra: dict[str, Any], vigente_no_ejc: bool) -> str
     )
 
 
-def _candidato_normativo(candidate: dict) -> bool:
-    """Identifica material que não pode seguir sem governança canônica."""
-    categoria = str(candidate.get("categoria") or "").strip().lower()
-    extra = candidate.get("extra") if isinstance(candidate.get("extra"), dict) else {}
-    autoridade = str(
-        extra.get("authority_level") or extra.get("nivel_autoridade") or ""
-    ).strip().lower()
-    return (
-        "legisl" in categoria
-        or "norma" in categoria
-        or "regulamento" in categoria
-        or autoridade == "oficial_normativa"
-    )
-
-
 async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
-    """Carrega metadados jurídicos e elimina quarentena/revogação do ranking."""
+    """Carrega governança e falha fechado para material normativo atual."""
     ids = {str(item.get("doc_id")) for item in candidatos if item.get("doc_id")}
     if not ids:
-        return [item for item in candidatos if not _candidato_normativo(item)]
+        return [item for item in candidatos if not _categoria_normativa(item)]
     try:
         async with AsyncSessionLocal() as db:
             rows = (
@@ -196,6 +202,9 @@ async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
             for doc_id, extra, vigente, tribunal, atualizado_em in rows
         }
         hydrated: list[dict] = []
+        exigir_vigencia = bool(
+            getattr(settings, "RAG_EXIGIR_VIGENCIA_VERIFICADA", True)
+        )
         for candidate in candidatos:
             item = dict(candidate)
             registro = metadata.get(str(item.get("doc_id")))
@@ -210,7 +219,7 @@ async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
                 # Mesmo recorte do `except` abaixo, pelo mesmo motivo: doutrina e
                 # jurisprudência não correm esse risco e continuam passando — o
                 # gate é recortado, não um apagão.
-                if _candidato_normativo(item):
+                if _categoria_normativa(item):
                     logger.info(
                         "RAG excluiu normativo sem registro de governança: doc_id=%s",
                         item.get("doc_id"),
@@ -247,19 +256,26 @@ async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
                     "revogada",
                 },
             }
-            if status == "revogada" and vigente:
+            bloqueados = {"revogada", "suspensa"}
+            if exigir_vigencia:
+                bloqueados.add("vigencia_nao_verificada")
+            if status in bloqueados and vigente:
                 logger.info(
-                    "RAG excluiu norma revogada da fundamentação atual: doc_id=%s",
+                    "RAG excluiu norma não apta à fundamentação atual: doc_id=%s status=%s",
                     item.get("doc_id"),
+                    status,
                 )
                 continue
             hydrated.append(item)
         return hydrated
     except Exception as exc:
-        seguros = [item for item in candidatos if not _candidato_normativo(item)]
+        seguros = [c for c in candidatos if not _categoria_normativa(c)]
         logger.warning(
-            "Governança documental indisponível no reranking (%s) — mantendo apenas candidatos não normativos",
+            "Governança documental indisponível no reranking (%s) — "
+            "fail-closed: removidos candidatos normativos; total=%s mantidos=%s",
             str(exc)[:180],
+            len(candidatos),
+            len(seguros),
         )
         return seguros
 

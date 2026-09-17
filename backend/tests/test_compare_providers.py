@@ -15,12 +15,20 @@ def test_fallback_nao_conta_como_execucao_valida():
         ResultadoProvider(
             caso_id="b", provider_pedido="maritaca", provider_real="maritaca",
             citacoes_total=4, citacoes_nao_confirmadas=1,
+            citacoes_verificadas=3, citacoes_identificadas=1,
             groundedness=0.8, custo_brl=0.2, duracao_ms=100,
         ),
     ])["maritaca"]
     assert resumo["n_validos"] == 1
     assert resumo["fallbacks_excluidos"] == 1
     assert resumo["taxa_citacoes_nao_confirmadas"] == 0.25
+    assert resumo["citacoes_status"] == {
+        "verificadas": 3,
+        "identificadas": 1,
+        "suspeitas": 0,
+        "genericas": 0,
+        "desatualizadas": 0,
+    }
     assert resumo["groundedness_media"] == 0.8
     assert resumo["custo_total_brl"] == 0.2
     assert resumo["duracao_media_ms"] == 100

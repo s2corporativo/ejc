@@ -79,8 +79,11 @@ FRONTEND_SEM_MODULO_NO_BACKEND: set[str] = {
     # continua pertencendo a `ramos`; não nasce um segundo módulo/API paralela.
     "tributario",
     # Workspaces/casca cujo conteúdo já está catalogado por módulo
+    # (a consolidação do "DPT360 triplo" aposentou dpt360-subroutes/
+    #  dpt360-company-detail: as sub-rotas ficaram em ModuleRoute.subPaths
+    #  do próprio módulo dpt360 — auditoria §2.6 #7)
     "atividades", "atividades-dia", "radar", "entrada",
-    "dpt360", "dpt360-subroutes", "dpt360-company-detail",
+    "dpt360",
     # Telas utilitárias/administrativas sem módulo de negócio próprio
     "configuracoes", "ajuda", "lixeira", "ferramentas", "prompts",
     "governanca-ia", "banco-teses", "raio-x-processo",

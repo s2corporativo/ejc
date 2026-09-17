@@ -15,10 +15,13 @@ import {
   Gavel,
   GitBranch,
   HeartPulse,
+  Home,
   Inbox,
   LayoutDashboard,
   LayoutGrid,
   ListChecks,
+  MessageCircle,
+  PenLine,
   Plus,
   Library,
   Receipt,
@@ -34,7 +37,51 @@ import {
   Wallet,
   type LucideIcon,
 } from "lucide-react";
-import { LEGACY_CANONICAL_REDIRECTS } from "./canonicalRoutes";
+
+/**
+ * Redirects legados canônicos (auditoria §2.6 #6): a definição vive AQUI no
+ * registry — fonte única — e `canonicalRoutes.ts` re-exporta por
+ * compatibilidade. O fluxo de import é unidirecional
+ * (canonicalRoutes → moduleRegistry), sem ciclos.
+ */
+export type LegacyCanonicalRedirect = {
+  from: string;
+  to: string;
+  reason: string;
+};
+
+export const LEGACY_CANONICAL_REDIRECTS: LegacyCanonicalRedirect[] = [
+  {
+    from: "/prazos",
+    to: "/atividades?tipo=prazo",
+    reason: "Prazos foram consolidados na Central de Agenda e Prazos.",
+  },
+  {
+    from: "/tarefas",
+    to: "/atividades?tipo=tarefa",
+    reason: "Tarefas foram consolidadas na Central de Agenda e Prazos.",
+  },
+  {
+    from: "/intimacoes",
+    to: "/atividades?tipo=intimacao",
+    reason: "Intimações foram consolidadas na Central de Agenda e Prazos.",
+  },
+  {
+    from: "/suspensoes",
+    to: "/atividades?tipo=suspensao",
+    reason: "Suspensões foram consolidadas na Central de Agenda e Prazos.",
+  },
+  {
+    from: "/knowledge-hub",
+    to: "/inteligencia?tab=conhecimento",
+    reason: "Conhecimento Jurídico foi consolidado em Pesquisa e IA.",
+  },
+  {
+    from: "/ramos",
+    to: "/areas-de-atuacao",
+    reason: "Área de Atuação usa nomenclatura semântica.",
+  },
+];
 
 export const ROLES = {
   gestores: ["superadmin", "admin", "socio"],
@@ -77,6 +124,29 @@ export type ModuleRoute = {
   sensitive?: boolean;
   backendPrefixes?: string[];
   dependencies?: string[];
+  /**
+   * Sub-rotas internas cobertas pelo MESMO módulo (mesmo componente, mesmo
+   * RBAC, mesma entrada de ajuda/lifecycle). O App registra uma <Route> para
+   * cada padrão; navegação e governança continuam enxergando um módulo só.
+   * Criada ao consolidar o "DPT360 triplo" no registry (auditoria §2.6 #7):
+   * `/dpt360`, `/dpt360/*` e `/dpt360/empresas/:clientId` eram três entradas
+   * paralelas apontando para o mesmo workspace.
+   */
+  subPaths?: string[];
+};
+
+export type PortalModuleRoute = {
+  key: string;
+  /** Segmento relativo a /portal (ex.: "casos", "casos/:id"). Índice omite. */
+  path?: string;
+  /** Rota índice (renderiza exatamente em /portal). */
+  index?: boolean;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+  component: LazyExoticComponent<ComponentType>;
+  showInNav?: boolean;
+  order?: number;
 };
 
 export type LegacyRedirect = {
@@ -141,6 +211,20 @@ const JornadaCaso = lazy(() => import("../pages/JornadaCaso"));
 const Ferramentas = lazy(() => import("../pages/Ferramentas"));
 const EntradaUnica = lazy(() => import("../pages/EntradaUnica"));
 
+// Portal do Cliente (auditoria §2.6 #7): rotas e navegação definidas AQUI —
+// fonte única — e consumidas por App.tsx (montagem) e PortalLayout (abas).
+const PortalDashboard = lazy(() => import("../pages/portal/PortalDashboard"));
+const PortalCasos = lazy(() => import("../pages/portal/PortalCasos"));
+const PortalCasoDetalhe = lazy(
+  () => import("../pages/portal/PortalCasoDetalhe"),
+);
+const PortalFinanceiro = lazy(() => import("../pages/portal/PortalFinanceiro"));
+const PortalAssinaturas = lazy(
+  () => import("../pages/portal/PortalAssinaturas"),
+);
+const PortalMensagens = lazy(() => import("../pages/portal/PortalMensagens"));
+const PortalDocumentos = lazy(() => import("../pages/portal/PortalDocumentos"));
+
 // EJC Command Center: navegação agrupada por intenção. "Mais" é catálogo de
 // capacidades avançadas e deixa de ser semanticamente uma tela administrativa.
 export const MODULE_GROUP_ORDER = [
@@ -171,6 +255,11 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   {
     key: "dpt360",
     path: "/dpt360",
+    // O splat cobre a navegação interna do workspace (radar, ferramentas,
+    // relatórios...) e o detalhe /dpt360/empresas/:clientId. Antes isso eram
+    // DUAS entradas extras no registry apontando para o mesmo componente —
+    // o "DPT360 triplo" da auditoria §2.6 #7.
+    subPaths: ["/dpt360/*"],
     label: "DPT Empresarial 360",
     description:
       "Cockpit de inteligência, prevenção e gestão jurídica empresarial.",
@@ -181,38 +270,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     showInNav: true,
     essential: true,
     order: 1,
-    helpKey: "dpt360",
-    sensitive: true,
-    usesAI: true,
-    backendPrefixes: ["/api/clients", "/api/cases", "/api/deadlines"],
-  },
-  {
-    key: "dpt360-subroutes", // gitleaks:allow -- chave semântica do registry, não credencial
-    path: "/dpt360/*",
-    label: "DPT Empresarial 360",
-    description: "Navegação interna do workspace empresarial.",
-    group: "Pesquisar & IA",
-    icon: BriefcaseBusiness,
-    component: Dpt360Workspace,
-    roles: ROLES.compliance,
-    showInNav: false,
-    status: "hidden",
-    helpKey: "dpt360",
-    sensitive: true,
-    usesAI: true,
-    backendPrefixes: ["/api/clients", "/api/cases", "/api/deadlines"],
-  },
-  {
-    key: "dpt360-company-detail",
-    path: "/dpt360/empresas/:clientId",
-    label: "Empresa 360",
-    description: "Visão jurídica empresarial do cliente pessoa jurídica.",
-    group: "Pesquisar & IA",
-    icon: BriefcaseBusiness,
-    component: Dpt360Workspace,
-    roles: ROLES.compliance,
-    showInNav: false,
-    status: "hidden",
     helpKey: "dpt360",
     sensitive: true,
     usesAI: true,
@@ -353,7 +410,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "inteligencia",
     usesAI: true,
     sensitive: true,
-    backendPrefixes: ["/api/raio-x", "/api/documentos-ia", "/api/ai/skills"],
+    backendPrefixes: ["/api/raio-x", "/api/ai/skills"],
   },
   {
     key: "casos",
@@ -497,7 +554,9 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   {
     key: "atividades",
     path: "/atividades",
-    label: "Agenda e Prazos",
+    // Rótulo canônico da navegação (LayoutReference e CommandPalette consomem
+    // este campo — não existe mais override de rótulo no shell).
+    label: "Prazos e Agenda",
     description:
       "Agenda, prazos, tarefas e intimações + relacionamento com clientes em abas.",
     group: "Trabalhar um caso",
@@ -544,11 +603,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "documentos",
     sensitive: true,
     usesAI: true,
-    backendPrefixes: [
-      "/api/documents",
-      "/api/data-rooms",
-      "/api/documentos-ia",
-    ],
+    backendPrefixes: ["/api/documents", "/api/data-rooms"],
   },
   {
     key: "pecas",
@@ -610,7 +665,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   {
     key: "inteligencia",
     path: "/inteligencia",
-    label: "Pesquisa e IA",
+    // Rótulo canônico da navegação (fonte única — antes havia override no shell).
+    label: "IA Jurídica",
     description:
       "Pesquisa jurídica, análise, jurimetria, conhecimento e precificação de honorários.",
     group: "Pesquisar & IA",
@@ -707,7 +763,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     key: "financeiro",
     path: "/financeiro",
     label: "Financeiro",
-    description: "Recebimentos, despesas, NFS-e, contratos e caixa do escritório.",
+    description:
+      "Recebimentos, despesas, NFS-e, contratos e caixa do escritório.",
     group: "Gerir o escritório",
     icon: Wallet,
     component: FinanceiroWorkspace,
@@ -760,7 +817,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   {
     key: "configuracoes",
     path: "/configuracoes",
-    label: "Preferências",
+    // Rótulo canônico da navegação (fonte única — antes havia override no shell).
+    label: "Configurações",
     description: "Aparência, navegação, segurança e preferências pessoais.",
     group: "Administrar",
     icon: Settings,
@@ -923,7 +981,8 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   {
     from: "/honorarios",
     to: "/financeiro?tab=honorarios",
-    reason: "Honorários contratados e recebimentos vivem no workspace financeiro.",
+    reason:
+      "Honorários contratados e recebimentos vivem no workspace financeiro.",
   },
   {
     from: "/nfse",
@@ -933,17 +992,20 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   {
     from: "/sociedade",
     to: "/gestao-escritorio/sociedade",
-    reason: "Gestão societária foi separada do caixa operacional do escritório.",
+    reason:
+      "Gestão societária foi separada do caixa operacional do escritório.",
   },
   {
     from: "/office-contracts",
     to: "/financeiro?tab=contratos",
-    reason: "Contratos do escritório ficam disponíveis no menu Mais do Financeiro.",
+    reason:
+      "Contratos do escritório ficam disponíveis no menu Mais do Financeiro.",
   },
   {
     from: "/partner-withdrawals",
     to: "/gestao-escritorio/sociedade?sub=saques",
-    reason: "Retiradas pertencem à gestão societária, separada do caixa operacional.",
+    reason:
+      "Retiradas pertencem à gestão societária, separada do caixa operacional.",
   },
   {
     from: "/financeiro-dashboard",
@@ -958,7 +1020,8 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   {
     from: "/despesas-recorrentes",
     to: "/financeiro?tab=recorrentes",
-    reason: "O deep-link histórico é preservado enquanto a recorrência migra para o formulário único de despesas.",
+    reason:
+      "O deep-link histórico é preservado enquanto a recorrência migra para o formulário único de despesas.",
   },
   {
     from: "/agenda",
@@ -1123,6 +1186,34 @@ function routeBase(path: string): string {
   return dynamicIndex >= 0 ? path.slice(0, dynamicIndex) : path;
 }
 
+/** Todos os padrões de URL que um módulo atende (path + subPaths). */
+function modulePathPatterns(module: ModuleRoute): string[] {
+  return [module.path, ...(module.subPaths ?? [])];
+}
+
+/** O pathname cai em algum padrão do módulo (path próprio ou sub-rotas)? */
+function matchesModulePath(module: ModuleRoute, pathname: string): boolean {
+  return modulePathPatterns(module).some((pattern) => {
+    const base = routeBase(pattern);
+    if (base === "/") return pathname === "/";
+    if (pattern.includes(":")) return routePatternMatches(pattern, pathname);
+    if (base.endsWith("/*")) {
+      const wildcardBase = base.slice(0, -2);
+      return (
+        pathname === wildcardBase || pathname.startsWith(`${wildcardBase}/`)
+      );
+    }
+    return pathname === base || pathname.startsWith(`${base}/`);
+  });
+}
+
+/** Maior base declarada do módulo — usada para priorizar matches específicos. */
+function longestPatternBase(module: ModuleRoute): number {
+  return Math.max(
+    ...modulePathPatterns(module).map((p) => routeBase(p).length),
+  );
+}
+
 /** Matcher mínimo compatível com os padrões registrados no EJC (:param e /*). */
 export function routePatternMatches(
   pattern: string,
@@ -1160,23 +1251,39 @@ export function getNavigationModules(role?: string | null): ModuleRoute[] {
   });
 }
 
+export type NavigationGroup = {
+  name: string;
+  items: ModuleRoute[];
+};
+
+/**
+ * Agrupa módulos JÁ ORDENADOS (getNavigationModules ordena por
+ * MODULE_GROUP_ORDER + order) em blocos consecutivos para a sidebar renderizar
+ * os cabeçalhos de grupo. Antes os grupos eram computados e nunca exibidos —
+ * terceira fonte de verdade da navegação aposentada (auditoria Fase 4).
+ */
+export function groupNavigationModules(
+  items: ModuleRoute[],
+): NavigationGroup[] {
+  const groups: NavigationGroup[] = [];
+  for (const item of items) {
+    const last = groups[groups.length - 1];
+    if (last && last.name === item.group) {
+      last.items.push(item);
+    } else {
+      groups.push({ name: item.group, items: [item] });
+    }
+  }
+  return groups;
+}
+
 export function getHelpModuleKey(pathname: string): string | null {
   const candidates = STAFF_ROUTES.filter((module) => module.helpKey).sort(
-    (a, b) => routeBase(b.path).length - routeBase(a.path).length,
+    (a, b) => longestPatternBase(b) - longestPatternBase(a),
   );
-  const match = candidates.find((module) => {
-    const base = routeBase(module.path);
-    if (base === "/") return pathname === "/";
-    if (module.path.includes(":"))
-      return routePatternMatches(module.path, pathname);
-    if (base.endsWith("/*")) {
-      const wildcardBase = base.slice(0, -2);
-      return (
-        pathname === wildcardBase || pathname.startsWith(`${wildcardBase}/`)
-      );
-    }
-    return pathname === base || pathname.startsWith(`${base}/`);
-  });
+  const match = candidates.find((module) =>
+    matchesModulePath(module, pathname),
+  );
   return match?.helpKey ?? null;
 }
 
@@ -1191,7 +1298,9 @@ export function canRoleAccessPath(
 ): boolean {
   const pathname = route.split("?")[0] || "/";
   const module = STAFF_ROUTES.find((item) =>
-    routePatternMatches(item.path, pathname),
+    modulePathPatterns(item).some((pattern) =>
+      routePatternMatches(pattern, pathname),
+    ),
   );
   if (!module?.roles) return Boolean(module);
   return Boolean(role && module.roles.includes(role));
@@ -1201,4 +1310,102 @@ export function getModuleCatalog() {
   return STAFF_ROUTES.map(
     ({ component: _component, icon: _icon, ...module }) => module,
   );
+}
+
+/**
+ * Subárvore do Portal do Cliente (papel `cliente_externo`), movida para o
+ * registry na auditoria §2.6 #7 — antes as rotas eram literais no App.tsx e
+ * a navegação (NAV) um array paralelo dentro do PortalLayout.
+ *
+ * Convenção: `path` é RELATIVO a /portal (o App aninha sob
+ * `<Route path="/portal">`); a rota índice usa `index: true`. O href
+ * absoluto para links é produzido por `portalNavHref`, fonte única do
+ * prefixo.
+ */
+export const PORTAL_ROOT = "/portal";
+
+export const PORTAL_ROUTES: PortalModuleRoute[] = [
+  {
+    key: "portal-inicio",
+    index: true,
+    label: "Início",
+    description: "Painel do cliente com casos, prazos e movimentações.",
+    icon: Home,
+    component: PortalDashboard,
+    showInNav: true,
+    order: 10,
+  },
+  {
+    key: "portal-casos",
+    path: "casos",
+    label: "Casos",
+    description: "Lista de casos do cliente no portal.",
+    icon: Briefcase,
+    component: PortalCasos,
+    showInNav: true,
+    order: 20,
+  },
+  {
+    key: "portal-caso-detalhe",
+    path: "casos/:id",
+    label: "Detalhe do caso",
+    description: "Detalhe de um caso específico no portal.",
+    icon: Briefcase,
+    component: PortalCasoDetalhe,
+    showInNav: false,
+  },
+  {
+    key: "portal-financeiro",
+    path: "financeiro",
+    label: "Financeiro",
+    description: "Honorários, faturas e pagamentos do cliente.",
+    icon: Wallet,
+    component: PortalFinanceiro,
+    showInNav: true,
+    order: 30,
+  },
+  {
+    key: "portal-assinaturas",
+    path: "assinaturas",
+    label: "Assinaturas",
+    description: "Documentos pendentes e histórico de assinaturas.",
+    icon: PenLine,
+    component: PortalAssinaturas,
+    showInNav: true,
+    order: 40,
+  },
+  {
+    key: "portal-mensagens",
+    path: "mensagens",
+    label: "Mensagens",
+    description: "Conversa com a equipe jurídica responsável.",
+    icon: MessageCircle,
+    component: PortalMensagens,
+    showInNav: true,
+    order: 50,
+  },
+  {
+    key: "portal-documentos",
+    path: "documentos",
+    label: "Documentos",
+    description: "Documentos compartilhados com o cliente.",
+    icon: FileText,
+    component: PortalDocumentos,
+    showInNav: true,
+    order: 60,
+  },
+];
+
+/** Nav do portal: só itens visíveis, em ordem determinística. */
+export function getPortalNavModules(): PortalModuleRoute[] {
+  return PORTAL_ROUTES.filter((module) => module.showInNav).sort(
+    (a, b) => (a.order ?? 999) - (b.order ?? 999),
+  );
+}
+
+/** Href absoluto de um módulo do portal (fonte única do prefixo /portal). */
+export function portalNavHref(module: PortalModuleRoute): string {
+  return module.index || !module.path
+    ? PORTAL_ROOT
+    : `${PORTAL_ROOT}/${module.path}`;
 }

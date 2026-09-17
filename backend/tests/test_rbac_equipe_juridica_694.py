@@ -284,7 +284,6 @@ _HELPERS_BOOL = [
     ("app.routers.advogado_estilo", "_pode_usar_estilo"),
     ("app.routers.teses", "_is_staff"),
     ("app.routers.jurisprudencia_interna", "_is_staff"),
-    ("app.routers.jurisprudencia_externa", "_is_staff"),
     ("app.routers.precedentes_jurisprudencia", "_is_staff"),
     ("app.routers.jurimetria", "_is_staff"),
     ("app.routers.consumidor_monitor", "_is_staff"),
@@ -443,13 +442,13 @@ def test_grandfather_nao_cobre_os_15_arquivos_corrigidos():
     arquivos_corrigidos = {
         "peca_geracao.py", "dossie_estrategico.py", "provas.py",
         "advogado_estilo.py", "teses.py",
-        "jurisprudencia_interna.py", "jurisprudencia_externa.py",
+        "jurisprudencia_interna.py",  # jurisprudencia_externa.py aposentada (Fase 7 §3.6)
         "precedentes_jurisprudencia.py", "jurimetria.py",
         "memoria_institucional.py", "consumidor_monitor.py", "ficha_triagem.py",
         "novos_modulos.py",
     }
     assert arquivos_corrigidos.isdisjoint(_GRANDFATHER_ISSUE_694)
-    assert len(arquivos_corrigidos) == 13  # 15 − 2 (teses_v4.py e jurimetria_extra.py arquivados em _dead_code)
+    assert len(arquivos_corrigidos) == 12  # 15 − 2 (teses_v4.py e jurimetria_extra.py arquivados) − 1 (jurisprudencia_externa.py aposentada na Fase 7)
 
 
 # ── Os gates compartilhados só valem chamados no CORPO ────────────────────────

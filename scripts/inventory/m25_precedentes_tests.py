@@ -11,7 +11,9 @@ Mede:
 
 Rotas corretas (confirmdas no app):
   /api/jurisprudencias            (interno)
-  /api/jurisprudencia-externa/*   (buscar, fontes, importar, precedentes/buscar)
+  /api/jurisprudencia-externa/precedentes/buscar (fachada multifonte;
+     rotas buscar/fontes/importar do router legado aposentadas — Fase 7 §3.6)
+  /api/conhecimento/importar-jurisprudencia/fontes (estado real das fontes)
   /api/ai/citacoes/verificar      (verificador rigoroso)
   /api/qualidade/verificar-citacoes (citation_check legado)
   /api/legal-docs/{doc}/jurisprudencia-check (correspondência conteúdo×citação)
@@ -308,27 +310,10 @@ def secao_externa():
     print("[M25] 3. Busca externa e precedentes multi-fonte")
     authed("advogado")
 
-    # LexML: fonte externa real — pode estar fora do ar (não-bloqueante)
-    r = S.get(f"{API}/api/jurisprudencia-externa/buscar", params={
-        "q": "honorários advocatícios", "fontes": "lexml", "pagina": 1})
-    if r.status_code == 200:
-        data = r.json()
-        _pass("busca externa responde 200 com total e fontes por origem") if (
-            isinstance(data, dict) and "fontes" in data
-        ) else _fail(f"shape inesperado: {type(data)}")
-        itens = data.get("todos", []) or []
-        if itens:
-            i0 = itens[0]
-            _pass("item traz chave 'fonte' declarando proveniência") if (
-                "fonte" in i0
-            ) else _fail(f"item sem 'fonte': {list(i0.keys())}")
-    else:
-        _pass(f"LexML indisponível → resposta honesta {r.status_code} (não-bloqueante; fonte externa, sem stack trace)")
-
-    r = S.get(f"{API}/api/jurisprudencia-externa/fontes")
+    r = S.get(f"{API}/api/conhecimento/importar-jurisprudencia/fontes")
     assert r.status_code == 200
-    nomes = [f["id"] for f in r.json()["fontes"]]
-    _pass("/fontes lista lexml/tjmg/datajud com tipo e cobertura declarados") if (
+    nomes = [f.get("id") or f.get("slug") for f in r.json().get("fontes", [])]
+    _pass("fontes reais (conhecimento) incluem lexml/tjmg") if (
         "lexml" in nomes and "tjmg" in nomes
     ) else _fail(f"fontes: {nomes}")
 

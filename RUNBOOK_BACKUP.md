@@ -4,14 +4,16 @@
 
 O EJC possui um **único fluxo operacional permitido** para novos backups:
 
-`caller → backup_execution_service → backup_lock → backup_service → destino cifrado`
+`caller → backup_execution_service → backup_lock → backup_service → retenção local cifrada → destino offsite`
 
-Banco, uploads e GED contêm dados jurídicos e pessoais. Artefato de backup em
-claro **não é permitido** em retenção local, cron, diretório persistente ou
-destino offsite.
+Banco, uploads e GED contêm dados jurídicos e pessoais. Todo **backup cifrado**
+persistente deve seguir o fluxo canônico abaixo; artefato de backup em claro
+**não é permitido** em retenção local, cron, diretório persistente ou destino
+offsite.
 
-A Issue #1030 consolida essa arquitetura e elimina as rotas históricas
-concorrentes.
+A Issue #1030 consolidou a exclusão mútua dessa arquitetura. A remediação
+INF-04/#1572 acrescenta a cópia local cifrada recuperável; ela não autoriza
+ressuscitar os scripts históricos de dump em claro.
 
 ## Componentes
 
@@ -22,8 +24,8 @@ concorrentes.
   execução administrativa, agendada e operacional.
 - `backend/app/services/backup_lock.py` — `fcntl.flock` cross-process sobre o
   volume `BACKUP_DIR`/`backups_data`.
-- `backend/app/services/backup_service.py` — motor de dump, cifragem, envio,
-  estado e auditoria.
+- `backend/app/services/backup_service.py` — motor de dump, cifragem, retenção
+  local, envio, estado e auditoria.
 - `scripts/backup/backup_diario.sh` — **shim de compatibilidade**. Não grava
   dump/tar em claro; apenas delega a `scripts/backup.sh`. Remova crons antigos
   após confirmar o scheduler canônico.
@@ -53,30 +55,69 @@ novo dump, tar, cifragem ou upload.
 Falha ao abrir/validar o mutex é fail-closed (`erro_lock`). Redis e conexão longa
 de banco não são dependências da trava de continuidade.
 
-## Criptografia e destino
+## Criptografia e retenção local
 
 `BACKUP_ENCRYPTION_KEY` deve existir fora do código e do repositório. Nunca
 publique, copie para documentação ou registre a chave em logs.
 
+O dump e o tar são criados em área temporária apenas pelo tempo necessário para
+cifragem. Eles são removidos em claro antes da publicação da cópia persistente.
+Somente arquivos canônicos `ejc_backup_*.enc` podem permanecer em `BACKUP_DIR`.
+
+No contrato INF-04:
+
+- `local_ok=true` significa que o conjunto cifrado foi efetivamente publicado
+  no `BACKUP_DIR` e fsyncado;
+- cada artefato promovível contém `local_persistido=true`;
+- arquivos finais devem permanecer `0600` e o diretório de continuidade não
+  pode ser gravável por grupo/outros nem ser symlink inseguro;
+- `BACKUP_RETENTION_DAYS` precisa ser inteiro positivo; configuração inválida
+  torna o ciclo de backup inválido, em vez de desativar silenciosamente a
+  rotação;
+- antes de escrever um novo conjunto, a rotação pode remover conjuntos
+  expirados, mas preserva o conjunto canônico mais recente conhecido; depois
+  da publicação do novo conjunto, uma segunda rotação pode remover o conjunto
+  antigo se já estiver expirado. Isso evita o deadlock de disco cheio sem
+  destruir a última cópia conhecida antes de a nova existir.
+
+Dumps históricos em claro encontrados em storages legados **não** fazem parte
+da rotação automática. Devem permanecer contidos por permissão e só podem ser
+saneados depois de uma cópia cifrada nova + restore drill comprovado.
+
+## Destino offsite
+
 O motor suporta destino externo configurado pelo EJC. A credencial de backup
 deve ser segregada da credencial de leitura do RAG.
 
-### Estado transitório importante
+A política normal do gate de pré-deploy é:
 
-No motor atual, `local_ok` significa que os artefatos cifrados foram gerados
-durante o ciclo. Enquanto os `.enc` ainda forem criados dentro de
-`TemporaryDirectory`, isso **não prova retenção local recuperável após o
-retorno**.
+- ciclo do motor aprovado;
+- artefato cifrado do banco persistido localmente;
+- artefato cifrado de uploads persistido localmente;
+- `local_ok=true` e `local_persistido=true` para o conjunto;
+- `offsite_ok=true` **quando** `BACKUP_OFFSITE_OBRIGATORIO=true`.
 
-Consequentemente, o gate de pré-deploy exige:
+Com `BACKUP_OFFSITE_OBRIGATORIO=false`, falha do destino externo gera estado
+parcial/alerta, mas a cópia local cifrada persistente pode satisfazer o gate.
+Isso não transforma offsite em dispensável: continuidade adequada exige que a
+falha seja corrigida e monitorada.
 
-- artefato cifrado do banco gerado;
-- artefato cifrado de uploads gerado;
-- `offsite_ok=true`.
+### Compatibilidade do primeiro deploy da INF-04
 
-Essa exigência pode ser relaxada somente quando a Issue #1030 persistir e
-validar uma cópia cifrada real em `BACKUP_DIR`, com retenção e restore
-homologados.
+Há um único caso de transição: o wrapper novo é sincronizado para o host antes
+de o backend novo ser recriado. Nesse instante ele pode executar contra a
+imagem anterior, na qual `local_ok` ainda significava apenas geração temporária
+e os artefatos não possuíam `local_persistido`.
+
+Para não criar um deploy impossível, o wrapper detecta a **ausência** desse
+marcador e usa exclusivamente o contrato legado mais estrito:
+
+- par cifrado banco + uploads gerado;
+- ciclo `ok=true`;
+- `offsite_ok=true`, independentemente de `BACKUP_OFFSITE_OBRIGATORIO`.
+
+Essa compatibilidade não relaxa segurança e deixa de ser usada automaticamente
+assim que o backend novo passa a emitir `local_persistido`.
 
 ## Validação de restore sem tocar produção
 
@@ -92,6 +133,18 @@ e restauração e produzir relatório sem substituir o banco produtivo.
 
 Nunca interprete `backup concluído` como prova suficiente: a continuidade só é
 válida quando um restore drill recente também passa.
+
+Após promover a INF-04, o primeiro fechamento operacional exige confirmar no
+host pelo menos:
+
+1. novo conjunto `ejc_backup_<timestamp>_*.enc` em `BACKUP_DIR`;
+2. arquivos `0600` e diretório com permissões seguras;
+3. `local_ok=true` e marcadores `local_persistido=true`;
+4. offsite conforme a política vigente;
+5. restore drill aprovado em banco descartável.
+
+Somente depois disso pode ser aberto saneamento destrutivo separado para dumps
+históricos em claro.
 
 ## Restore produtivo
 
@@ -121,6 +174,7 @@ Verifique pelo módulo administrativo/telemetria:
 - último status;
 - origem da execução;
 - `mutex_status`;
+- `local_ok`;
 - `offsite_ok`;
 - duração;
 - próximo agendamento;
@@ -133,13 +187,17 @@ segredo, conteúdo de documentos, CPF/CNPJ ou dados de cliente.
 
 - [ ] `BACKUP_DIR` está montado no volume esperado e não é group/world-writable.
 - [ ] `BACKUP_ENCRYPTION_KEY` configurada fora do repositório.
-- [ ] Credencial offsite dedicada configurada.
+- [ ] `BACKUP_RETENTION_DAYS >= 1`.
+- [ ] Credencial offsite dedicada configurada quando o destino a exigir.
 - [ ] Apenas um job canônico de backup está agendado.
 - [ ] Nenhum cron executa `pg_dump`/`tar` em claro.
 - [ ] Endpoint administrativo usa `backup_execution_service`.
 - [ ] Pré-deploy usa `backup_execution_service`.
 - [ ] Segundo processo é recusado pelo mesmo `flock`.
 - [ ] Falha/crash libera o lock pelo kernel.
-- [ ] Backup cifrado e destino offsite confirmados.
+- [ ] Par cifrado novo persiste localmente em `0600`.
+- [ ] `local_ok=true` e `local_persistido=true` foram comprovados no runtime novo.
+- [ ] Destino offsite confirmado conforme a política vigente.
 - [ ] Restore drill recente aprovado.
+- [ ] Dumps históricos em claro não foram removidos antes do restore drill.
 - [ ] Restore produtivo cifrado permanece bloqueado até homologação específica.
