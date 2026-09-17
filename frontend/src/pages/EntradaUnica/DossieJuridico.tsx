@@ -260,7 +260,7 @@ export default function DossieJuridico({ caseId, onNovo }: Props) {
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Conteúdo</p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {tipos.map((tipo) => (
-              <Badge key={tipo} tone="slate">{tipo.replaceAll("_", " ")}</Badge>
+              <Badge key={tipo} tone="slate">{tipo.replace(/_/g, " ")}</Badge>
             ))}
           </div>
         </Card>
@@ -388,7 +388,7 @@ export default function DossieJuridico({ caseId, onNovo }: Props) {
             const item = dossie.honorarios_sugeridos?.faixas?.[faixa];
             return (
               <Card key={faixa} className="p-3">
-                <p className="text-xs font-semibold uppercase text-slate-400">{faixa.replaceAll("_", " ")}</p>
+                <p className="text-xs font-semibold uppercase text-slate-400">{faixa.replace(/_/g, " ")}</p>
                 <p className="mt-1 font-semibold">
                   {typeof item?.valor === "number"
                     ? item.valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
