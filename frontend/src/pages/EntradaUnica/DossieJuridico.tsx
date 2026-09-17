@@ -10,6 +10,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import api from "../../lib/api";
+import OrquestradorPanel from "../../components/OrquestradorPanel";
 import { toast } from "../../components/Toast";
 import { Alert, Badge, Button, Card, Skeleton } from "../../components/UI";
 
@@ -243,7 +244,14 @@ export default function DossieJuridico({ caseId, onNovo }: Props) {
           </div>
           <p className="mt-1 max-w-3xl text-sm text-slate-500">{dossie.aviso}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="ghost"
+            onClick={() => void carregar()}
+            icon={<RefreshCw className="h-4 w-4" />}
+          >
+            Nova análise
+          </Button>
           {onNovo && (
             <Button variant="ghost" onClick={onNovo}>
               Nova entrada
@@ -372,6 +380,9 @@ export default function DossieJuridico({ caseId, onNovo }: Props) {
           {dossie.contradicoes_e_adversarial?.observacao}
         </Alert>
         <div className="mt-3">
+          <Lista itens={dossie.contradicoes_e_adversarial?.contradicoes_documentais} />
+        </div>
+        <div className="mt-3">
           <Lista itens={dossie.contradicoes_e_adversarial?.falhas_da_parte_contraria} />
         </div>
         {dossie.contradicoes_e_adversarial?.critica_adversarial?.relatorio && (
@@ -432,6 +443,10 @@ export default function DossieJuridico({ caseId, onNovo }: Props) {
             </Button>
           )}
         </div>
+      </Secao>
+
+      <Secao titulo="Plano de ação executável">
+        <OrquestradorPanel caseId={caseId} />
       </Secao>
 
       {aprovado && planoPeca && (
