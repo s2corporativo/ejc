@@ -34,7 +34,9 @@ from typing import Any, Optional
 
 import httpx
 
-COMUNICA_BASE_URL = "https://comunicaapi.pje.jus.br/api/v1"
+from app.services.djen_http import DJEN_COMUNICA_BASE_URL, criar_cliente_djen
+
+COMUNICA_BASE_URL = DJEN_COMUNICA_BASE_URL
 
 
 class DjenComunicaError(RuntimeError):
@@ -71,11 +73,11 @@ class DjenComunicaClient:
         if data_fim:
             params["dataDisponibilizacaoFim"] = data_fim.isoformat()
 
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with criar_cliente_djen(timeout=self._timeout) as client:
             resp = await client.get(f"{COMUNICA_BASE_URL}/comunicacao", params=params)
         if resp.status_code != 200:
             raise DjenComunicaError(
-                f"DJEN/Comunica retornou HTTP {resp.status_code}: {resp.text[:500]}"
+                f"DJEN/Comunica retornou HTTP {resp.status_code}"
             )
         return resp.json()
 
@@ -83,10 +85,10 @@ class DjenComunicaClient:
         """Consulta comunicações vinculadas a um número de processo específico."""
         numero_limpo = "".join(ch for ch in numero_processo if ch.isdigit())
         params = {"numeroProcesso": numero_limpo}
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with criar_cliente_djen(timeout=self._timeout) as client:
             resp = await client.get(f"{COMUNICA_BASE_URL}/comunicacao", params=params)
         if resp.status_code != 200:
             raise DjenComunicaError(
-                f"DJEN/Comunica retornou HTTP {resp.status_code}: {resp.text[:500]}"
+                f"DJEN/Comunica retornou HTTP {resp.status_code}"
             )
         return resp.json()
