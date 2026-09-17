@@ -149,8 +149,12 @@ export default function Clientes() {
     if (!excluirAlvo) return;
     setExcluindo(true);
     try {
+      // forcar via params do axios: o extrator de contrato FE↔BE
+      // (app/utils/api_contract.py) lê o path literal — query condicional
+      // no template quebraria o match com DELETE /clients/{client_id}.
       await api.delete(
-        `/clients/${excluirAlvo.id}${excluirForcar ? "?forcar=true" : ""}`,
+        `/clients/${excluirAlvo.id}`,
+        excluirForcar ? { params: { forcar: true } } : undefined,
       );
       toast.success(
         "Cliente excluído. A decisão ficou registrada na trilha de auditoria.",
