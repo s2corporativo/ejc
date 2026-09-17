@@ -254,10 +254,15 @@ async def test_publicacao_fora_da_janela_nao_entra():
         await db.commit()
         try:
             user = await db.get(User, uid)
-            curta = await impacto_regulatorio(7, 20, 25, db, user)
+            # limite=100 (teto) + piso=0, mesma razão do gate de visibilidade
+            # (#1695): este teste trava a JANELA (7 vs 90 dias), não a
+            # paginação nem o piso de relevância. Mesmo com o DELETE de
+            # resíduos acima, variância de volume da suíte já derrubou este
+            # teste via recorte de janela/teto (pipelines #1547, #1550, #1751).
+            curta = await impacto_regulatorio(7, 100, 0, db, user)
             assert tese not in {t["tese_id"] for t in curta["teses_afetadas"]}
 
-            larga = await impacto_regulatorio(90, 20, 25, db, user)
+            larga = await impacto_regulatorio(90, 100, 0, db, user)
             assert tese in {t["tese_id"] for t in larga["teses_afetadas"]}
         finally:
             await _limpar(db, tese_ids=[tese], alerta_ids=[antiga], user_ids=[uid])
