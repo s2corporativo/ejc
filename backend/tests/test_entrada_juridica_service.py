@@ -120,6 +120,45 @@ def test_texto_base_sem_ocr_visivel_faz_fallback_nos_fatos_do_caso():
 
 
 @pytest.mark.anyio
+async def test_analise_estrategica_pode_bloquear_recuperacao_legada_de_ocr(monkeypatch):
+    from app.services import ai_gateway
+    from app.services import analise_estrategica as ae
+    from app.services import document_intake_service
+    from app.services import sanitizer
+
+    async def _recuperacao_proibida(**_kwargs):
+        raise AssertionError("não deve reconsultar OCR")
+
+    async def _chat(**_kwargs):
+        return SimpleNamespace(
+            texto=(
+                '{"alertas": [], "provas_necessarias": [], "teses_campeas": [], '
+                '"riscos": [], "brechas_preliminares": {}, "estrategia": {}, '
+                '"proximos_passos": []}'
+            )
+        )
+
+    monkeypatch.setattr(ae, "_recuperar_ocr_completo_se_truncado", _recuperacao_proibida)
+    monkeypatch.setattr(ai_gateway, "chat", _chat)
+    monkeypatch.setattr(
+        document_intake_service,
+        "montar_dossie_documental",
+        lambda texto, titulo="": texto,
+    )
+    monkeypatch.setattr(sanitizer, "sanitizar_pii", lambda texto, nomes=None: (texto, False))
+    monkeypatch.setattr(sanitizer, "validar_sem_pii", lambda _texto: [])
+
+    out = await ae.analisar_caso(
+        titulo="Caso sintético",
+        texto_documento="Contexto documental já filtrado pelo GED.",
+        recuperar_ocr_completo=False,
+        db=None,
+    )
+
+    assert "erro" not in out
+
+
+@pytest.mark.anyio
 async def test_analisar_com_case_id_reusa_rota_canonica_para_dossie(monkeypatch):
     from app.routers import entrada as router
 
