@@ -423,6 +423,22 @@ def test_paridade_openapi_com_snapshot_anterior():
         (("/api/ia-governanca/provedores", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
         (("/api/ia-governanca/rag-curadoria", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
         (("/api/ia-governanca/rag-curadoria/{doc_id}", "PATCH"), ["HTTPBearer", "_dep", "_req_admin_socio", "get_current_user", "get_db"]),
+        # Fase 8, onda 2-D (PR #1685): rate limit (`_dep`) nos endpoints de
+        # /api/documents classificados ONLY_AUTH + sensíveis no inventário P1
+        # (listagem, upload do Drive e download/link/exclusão de arquivo).
+        # Só ACRESCENTA throttling fixed-window de 60s; autenticação e escopo
+        # existentes permanecem intatos — ver test_documents_rate_limit_gates.py.
+        (("/api/documents/", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/documents/drive/upload", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/documents/drive/{file_id}", "DELETE"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/documents/drive/{file_id}/download", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/documents/drive/{file_id}/link", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/documents/sugerir-tipo", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/documents/tipos", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/documents/upload", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/documents/{doc_id}", "DELETE"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/documents/{doc_id}", "PATCH"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/documents/{doc_id}/download", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
         # Estabilização do Financeiro (este PR): precificação e proposta de
         # honorários passam a exigir `_req_advogado` (advogado+), não apenas
         # autenticação. É ato jurídico privativo — estagiário e secretaria
