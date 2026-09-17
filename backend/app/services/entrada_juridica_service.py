@@ -14,16 +14,15 @@ import json
 import re
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 
 from app.core.config import get_settings
-from app.core.ownership import is_gestao, verificar_acesso_caso
+from app.core.ownership import verificar_acesso_caso
 from app.models.audit_log import criar_audit_log
 from app.models.case import CaseMovimento
 from app.models.case_parte import CaseParte
 from app.models.client import Client
 from app.models.document import Document
-from app.models.raio_x import RaioXAnalise
 from app.services import case_intelligence_service as cis
 from app.services import fee_proposal_service
 from app.services.analise_estrategica import analisar_caso
@@ -234,45 +233,6 @@ def _sanitizar_arvore(value: Any, nomes: list[str]) -> Any:
     return value
 
 
-def _contradicoes_do_relatorio(relatorio: Any) -> list[dict[str, Any]]:
-    """Extrai apenas contradições já estruturadas pelo Raio-X.
-
-    Não tenta inferir contradições de texto livre aqui. O Raio-X usa o detector
-    determinístico `detectar_contradicoes_documentais`, que preserva origem e
-    marca todo achado como não confirmado.
-    """
-    if not isinstance(relatorio, dict):
-        return []
-    itens = relatorio.get("contradicoes")
-    if not isinstance(itens, list):
-        return []
-    return [item for item in itens if isinstance(item, dict)][:30]
-
-
-async def _contradicoes_raio_x(db, user, case_id: str) -> list[dict[str, Any]]:
-    """Reusa o último Raio-X visível ligado ao caso, sem ampliar o escopo RBAC."""
-    stmt = (
-        select(RaioXAnalise)
-        .where(
-            RaioXAnalise.deleted_at.is_(None),
-            or_(
-                RaioXAnalise.convertido_case_id == case_id,
-                RaioXAnalise.origem_contextual_case_id == case_id,
-            ),
-        )
-        .order_by(RaioXAnalise.created_at.desc())
-        .limit(10)
-    )
-    if not is_gestao(user):
-        stmt = stmt.where(RaioXAnalise.created_by == user.id)
-    rows = list((await db.execute(stmt)).scalars().all())
-    for analise in rows:
-        contradicoes = _contradicoes_do_relatorio(analise.relatorio)
-        if contradicoes:
-            return contradicoes
-    return []
-
-
 async def gerar_dossie_juridico(db, user, case_id: str) -> dict[str, Any]:
     """Gera o dossiê completo, versiona o plano e devolve ações seguras."""
     case = await verificar_acesso_caso(db, user, case_id)
@@ -371,7 +331,6 @@ async def gerar_dossie_juridico(db, user, case_id: str) -> dict[str, Any]:
     matriz = _correlacionar_fato_prova_tese(provas, teses_ia)
     estimativa = _estimativa_sucesso(analise)
     perguntas = _perguntas_lacunas(analise, case, provas)
-    contradicoes_documentais = await _contradicoes_raio_x(db, user, case.id)
 
     brechas = analise.get("brechas_preliminares")
     brechas = brechas if isinstance(brechas, dict) else {}
@@ -452,17 +411,12 @@ async def gerar_dossie_juridico(db, user, case_id: str) -> dict[str, Any]:
         },
         "lacunas": {"perguntas": perguntas},
         "contradicoes_e_adversarial": {
-            "contradicoes_documentais": contradicoes_documentais,
-            "fonte_contradicoes": (
-                "raio_x_estruturado" if contradicoes_documentais else None
-            ),
             "falhas_da_parte_contraria": _lista(brechas.get("falhas_da_parte_contraria")),
             "pontos_fracos": _lista(analise.get("pontos_fracos")),
             "critica_adversarial": adversarial,
             "observacao": (
-                "Contradições documentais vêm apenas do detector estruturado do Raio-X "
-                "visível ao usuário e permanecem não confirmadas; a crítica adversarial "
-                "é hipótese para revisão, não fato."
+                "Contradições documentais só são afirmadas quando houver fonte estruturada; "
+                "a crítica adversarial é hipótese para revisão, não fato."
             ),
         },
         "analise_juridica": {
@@ -482,14 +436,6 @@ async def gerar_dossie_juridico(db, user, case_id: str) -> dict[str, Any]:
     }
 
     nomes = [x for x in [nome_cliente, case.parte_contraria, *[p["nome"] for p in partes]] if x]
-    fontes_snapshot = [
-        "entrada_unica",
-        "analise_estrategica",
-        "banco_teses",
-        "tabela_oab",
-    ]
-    if contradicoes_documentais:
-        fontes_snapshot.append("raio_x_estruturado")
     snapshot_payload = _sanitizar_arvore(
         {
             "area": area,
@@ -500,11 +446,10 @@ async def gerar_dossie_juridico(db, user, case_id: str) -> dict[str, Any]:
             },
             "riscos": plano["riscos"],
             "provas": resposta["provas"],
-            "contradicoes": contradicoes_documentais,
             "honorarios": honorarios,
             "estimativa_sucesso": estimativa,
             "plano_juridico": plano,
-            "fontes": fontes_snapshot,
+            "fontes": ["entrada_unica", "analise_estrategica", "banco_teses", "tabela_oab"],
         },
         nomes,
     )
@@ -541,7 +486,6 @@ async def gerar_dossie_juridico(db, user, case_id: str) -> dict[str, Any]:
     }
     resposta["acoes"] = {
         "aprovar_plano": f"/cases/{case.id}/inteligencia/{snap.id}/aprovar",
-        "orquestrador": f"/cases/{case.id}/orquestrador",
         "preparar_peca": f"/cases/{case.id}/motor-peca/analisar",
         "gerar_peca": f"/cases/{case.id}/motor-peca/gerar",
         "gerar_peca_disponivel": False,
