@@ -56,16 +56,8 @@ PAUSA_ENTRE_PAGINAS = 0.5  # segundos — conservador (API sem rate limit docume
 _TAG_RE = re.compile(r"<[^>]+>")
 
 
-# ══════════════════════════════════════════════════════════════════════════
-# Parsing / normalização (puros — testáveis sem rede)
-# ══════════════════════════════════════════════════════════════════════════
-
 def parse_oabs(csv: str) -> list[tuple[str, str]]:
-    """Converte o CSV de settings ("12345/MG,67890/MG") em [(numero, UF)].
-
-    Tolerante a espaços, entradas vazias e máscara no número (só dígitos são
-    mantidos). Entradas sem "/UF" válida são ignoradas com aviso.
-    """
+    """Converte o CSV de settings ("12345/MG,67890/MG") em [(numero, UF)]."""
     oabs: list[tuple[str, str]] = []
     for parte in (csv or "").split(","):
         parte = parte.strip()
@@ -82,8 +74,6 @@ def parse_oabs(csv: str) -> list[tuple[str, str]]:
 
 
 def _campo(it: dict, *nomes: str) -> str:
-    """Primeiro valor não-vazio entre aliases (a API mistura camelCase e
-    snake_case conforme o endpoint/versão)."""
     for n in nomes:
         v = it.get(n)
         if v:
@@ -92,13 +82,10 @@ def _campo(it: dict, *nomes: str) -> str:
 
 
 def _limpar_html(texto: str) -> str:
-    """Remove tags HTML do texto da comunicação (a API devolve HTML)."""
     return _TAG_RE.sub(" ", texto or "").strip()
 
 
 def chave_origem(it: dict) -> str:
-    """Chave determinística de dedup no RAG: "djen:{id}" quando a API traz
-    id/hash; senão hash SHA-1 estável dos campos identificadores do item."""
     ext = it.get("id") or it.get("hash")
     if ext:
         return f"djen:{ext}"
@@ -115,10 +102,6 @@ def chave_origem(it: dict) -> str:
 
 
 def montar_documento(it: dict) -> dict | None:
-    """Normaliza um item da API em kwargs para upsert_documento.
-
-    Retorna None para itens sem conteúdo aproveitável (sem texto).
-    """
     if not isinstance(it, dict):
         return None
     texto = _limpar_html(_campo(it, "texto"))
@@ -132,7 +115,7 @@ def montar_documento(it: dict) -> dict | None:
     link = _campo(it, "link")
     num_proc = _campo(it, "numeroProcesso", "numero_processo",
                       "numeroprocessocommascara")
-    if not num_proc:  # fallback: extrai o nº CNJ do próprio texto
+    if not num_proc:
         num_proc = extrair_numero_cnj(texto) or ""
 
     cab = [f"Comunicação processual (DJEN){' — ' + tribunal if tribunal else ''}"]
@@ -155,7 +138,7 @@ def montar_documento(it: dict) -> dict | None:
         "chave_origem": chave_origem(it),
         "fonte": "djen",
         "tribunal": tribunal or None,
-        "confianca": "alta",   # fonte oficial (DJEN/CNJ)
+        "confianca": "alta",
         "extra": {
             "numero_processo": normalizar_processo(num_proc) or None,
             "tipo_comunicacao": tipo or None,
@@ -166,12 +149,7 @@ def montar_documento(it: dict) -> dict | None:
     }
 
 
-# ══════════════════════════════════════════════════════════════════════════
-# Coleta (rede — mockada nos testes)
-# ══════════════════════════════════════════════════════════════════════════
-
 def _extrair_itens(payload) -> list[dict]:
-    """Tolerante ao envelope: {"items": [...]} ou lista crua; senão []."""
     if isinstance(payload, dict):
         items = payload.get("items")
         return items if isinstance(items, list) else []
@@ -179,12 +157,7 @@ def _extrair_itens(payload) -> list[dict]:
 
 
 class DjenContratoError(RuntimeError):
-    """A consulta ao DJEN não foi respondida no contrato esperado.
-
-    Erro PRÓPRIO porque, num sistema de prazos, "a fonte não respondeu" e
-    "não há intimação para esta OAB" levam a condutas opostas — e confundir os
-    dois é a origem documentada da armadilha do JOB_DJEN.
-    """
+    """A consulta ao DJEN não foi respondida no contrato esperado."""
 
 
 async def _coletar_oab(numero: str, uf: str, ini: str, fim: str) -> list[dict]:
@@ -247,12 +220,7 @@ async def _coletar_oab(numero: str, uf: str, ini: str, fim: str) -> list[dict]:
 
 
 async def ingerir(db: AsyncSession) -> tuple[int, int]:
-    """Ingere no RAG as comunicações da janela incremental de cada OAB
-    monitorada (DJEN_OABS_MONITORADAS). Retorna (novos, total_processados).
-
-    Tolerante a falha por OAB (uma OAB com erro não derruba as demais) e a
-    itens malformados (ignorados). Idempotente via chave_origem.
-    """
+    """Ingere comunicações no RAG e falha alto quando nenhuma OAB foi coletada."""
     from datetime import date, timedelta
     s = get_settings()
     oabs = parse_oabs(s.DJEN_OABS_MONITORADAS)
@@ -264,36 +232,25 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
     ini = fim - timedelta(days=max(1, s.DJEN_INGEST_JANELA_DIAS))
 
     novos = total = 0
-    for numero, uf in oabs:   # SEQUENCIAL de propósito (rate limit desconhecido)
+    oabs_ok = oabs_erro = 0
+    for numero, uf in oabs:
         try:
             itens = await _coletar_oab(numero, uf, ini.isoformat(), fim.isoformat())
+            oabs_ok += 1
             n_oab = 0
             for it in itens:
                 doc = montar_documento(it)
                 if not doc:
                     continue
-                # LGPD / isolamento cross-tenant: a comunicação processual
-                # contém PII de terceiros (nomes das partes, nº e teor da
-                # intimação). Ela SÓ pode entrar no RAG vinculada ao escopo do
-                # caso/cliente correto — nunca como conhecimento global
-                # recuperável por qualquer cliente. Resolve o caso ATIVO pelo
-                # nº do processo (normalizado no extra por montar_documento).
                 num_proc = (doc.get("extra") or {}).get("numero_processo")
                 case = await buscar_caso_ativo_por_processo(db, num_proc)
                 if case is None:
-                    # Processo não cadastrado (ou caso encerrado/arquivado):
-                    # NÃO poluir o RAG global com PII de terceiros. Pula a
-                    # ingestão desta comunicação (o fluxo de intimações em
-                    # djen_service segue independente deste ingestor RAG).
                     logger.info(
                         "DJEN OAB %s/%s: comunicação do processo %s sem caso "
-                        "ativo cadastrado — ingestão RAG pulada (evita PII de "
-                        "terceiros no conhecimento global)",
+                        "ativo cadastrado — ingestão RAG pulada (evita PII de terceiros)",
                         numero, uf, num_proc or "?",
                     )
                     continue
-                # Vincula ao escopo correto: recuperável apenas dentro do caso
-                # e do cliente donos do processo.
                 doc["case_id"] = case.id
                 doc["client_id"] = case.client_id
                 doc["extra"]["oab_monitorada"] = f"{numero}/{uf}"
@@ -304,11 +261,22 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                 if res in ("novo", "atualizado"):
                     novos += 1
                     n_oab += 1
-                if total % 50 == 0:   # commit em lotes (não segura em memória)
+                if total % 50 == 0:
                     await db.commit()
             await db.commit()
             logger.info(f"DJEN OAB {numero}/{uf}: {n_oab} novos / {len(itens)} itens")
         except Exception as e:
+            oabs_erro += 1
             await db.rollback()
-            logger.warning(f"DJEN OAB {numero}/{uf}: {type(e).__name__}: {e}")
+            logger.warning(
+                "DJEN OAB %s/%s: falha de coleta (%s)",
+                numero, uf, type(e).__name__,
+            )
+
+    if oabs_erro and not oabs_ok:
+        raise DjenContratoError("DJEN: todas as OABs configuradas falharam na coleta")
+    if oabs_erro:
+        logger.warning(
+            "DJEN: coleta parcial — oabs_ok=%s oabs_erro=%s", oabs_ok, oabs_erro
+        )
     return novos, total
