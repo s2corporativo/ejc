@@ -50,8 +50,15 @@ def test_woodpecker_declara_gatilhos_e_gates_essenciais():
         "event: push",
         "branch: main",
         "event: pull_request",
-        "backend:",
+        # Steps da cadeia fail-fast (backend foi renomeado para backend-tests
+        # na reestruturação do pipeline; lint/migration-check/deploy-validation
+        # são gates próprios desde então).
+        "backend-tests:",
         "frontend:",
+        "lint:",
+        "migration-check:",
+        "deploy-validation:",
+        "security-secrets:",
         "ruff check app",
         "python -m alembic upgrade head",
         "pytest tests -q",
@@ -68,5 +75,14 @@ def test_woodpecker_yaml_carrega():
     dados = yaml.safe_load(WOODPECKER_PATH.read_text(encoding="utf-8"))
     assert isinstance(dados, dict), ".woodpecker.yml não carregou como mapa YAML"
     assert "steps" in dados and isinstance(dados["steps"], dict)
-    assert {"backend", "frontend"}.issubset(dados["steps"])
+    # Cadeia obrigatória fail-fast: contratos leves sempre-on + gates por diff.
+    assert {
+        "security-secrets",
+        "ops-contracts",
+        "deploy-validation",
+        "lint",
+        "backend-tests",
+        "frontend",
+        "migration-check",
+    }.issubset(dados["steps"])
     assert "services" in dados and "db" in dados["services"]

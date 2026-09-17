@@ -7,9 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.core.ai_errors import http_erro_ia
 from app.core.database import get_db
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user
 from app.models.user import User
-from app.core.skill_router import skill_router
+from app.services.ai.skill_router import skill_router
 
 router = APIRouter(prefix="/cerebro", tags=["Cérebro"])
 
@@ -17,7 +18,7 @@ router = APIRouter(prefix="/cerebro", tags=["Cérebro"])
 async def status_cerebro(cu: User = Depends(get_current_user)):
     return {"status": "online", "version": "3.0", "mode": "soberania_tecnologica"}
 
-@router.post("/analise-estrategica")
+@router.post("/analise-estrategica", dependencies=[Depends(rate_limit("cerebro-analise-estrategica", 10))])
 async def analise_estrategica(payload: dict, db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     """
     Executa análise estratégica unificada com roteamento automático de Skills.
@@ -73,7 +74,7 @@ async def listar_teses(db: AsyncSession = Depends(get_db), cu: User = Depends(ge
     result = await db.execute(text("SELECT * FROM teses WHERE deleted_at IS NULL ORDER BY taxa_sucesso DESC"))
     return result.mappings().all()
 
-@router.post("/jurisprudencia/pesquisa")
+@router.post("/jurisprudencia/pesquisa", dependencies=[Depends(rate_limit("cerebro-juris-pesquisa", 15))])
 async def pesquisar_jurisprudencia(query: str, db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     # INDISPONIBILIDADE EXPLÍCITA (auditoria 2026-07-19): este endpoint ANTES
     # devolvia sempre `resultados: []` com o comentário "Simulação de busca

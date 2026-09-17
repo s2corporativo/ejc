@@ -972,12 +972,10 @@ QUERY_MINIMA_POR_ROTA: dict[str, QueryMinima] = {
     # calculadoras.py — Query(..., gt=0); qualquer valor positivo executa.
     "/api/calculadoras/inss": QueryMinima((("salario", "3000"),)),
     "/api/calculadoras/irrf": QueryMinima((("rendimento", "5000"),)),
-    # jurisprudencia_externa.py — q: min_length=3. As buscas externas degradam
-    # graciosamente DENTRO do serviço (exceções viram lista vazia → 200),
-    # então 200 é o único código de sucesso mesmo sem rede.
-    "/api/jurisprudencia-externa/buscar": QueryMinima((("q", "dano moral"),)),
-    "/api/jurisprudencia-externa/buscar/lexml": QueryMinima((("q", "dano moral"),)),
-    "/api/jurisprudencia-externa/buscar/tjmg": QueryMinima((("q", "dano moral"),)),
+    # (Fase 7 §3.6): entradas de /api/jurisprudencia-externa/buscar* removidas
+    # junto com o router aposentado; a busca externa canônica é a fachada
+    # multifonte POST /api/jurisprudencia-externa/precedentes/buscar (POST não
+    # entra no mapa de query mínima, que cobre apenas rotas GET).
     # ficha_triagem.py — o handler exige caso EXISTENTE (verificar_acesso_caso
     # roda DEPOIS do gate `_exigir_piso`): com um case_id fictício o papel
     # permitido chega ao handler e recebe 404 "caso não encontrado" — isso JÁ

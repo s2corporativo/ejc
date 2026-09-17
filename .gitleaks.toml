@@ -13,15 +13,7 @@ useDefault = true
 description = "pytest cache gerado no CI — não é fonte versionável"
 paths = ['''^backend/\.pytest_cache/''']
 
-# O build do frontend minifica `moduleRegistry.tsx` em um bundle de nome hash.
-# A chave semântica `dpt360-subroutes` é classificada pelo rule genérico como API key.
-# A exceção exige simultaneamente a regra, o caminho gerado e o valor semântico;
-# qualquer outro finding nesse bundle continua bloqueante.
-[[rules]]
-id = "generic-api-key"
-
-  [[rules.allowlists]]
-  description = "moduleRegistry: chave semântica dpt360-subroutes no bundle gerado"
-  condition = "AND"
-  paths = ['^frontend/dist/assets/moduleRegistry-[^/]+\.js$']
-  stopwords = ["dpt360-subroutes"]
+# A exceção para o bundle `moduleRegistry-*.js` (chave semântica
+# `dpt360-subroutes` classificada como API key) foi aposentada pela
+# consolidação do DPT360 triplo em um módulo único com subPaths
+# (auditoria §2.6 #7) — a string desapareceu do código e dos builds.

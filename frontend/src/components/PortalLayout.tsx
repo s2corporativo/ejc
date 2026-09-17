@@ -1,26 +1,16 @@
 // ── Portal do Cliente: layout simplificado e acolhedor ──
+//
+// As abas NÃO são mais um array local: derivam de PORTAL_ROUTES no
+// moduleRegistry — fonte única compartilhada com a montagem de rotas no
+// App.tsx (auditoria §2.6 #7: navegação fora do registry).
 import { NavLink, Outlet } from "react-router";
-import {
-  Home,
-  Briefcase,
-  Wallet,
-  PenLine,
-  MessageCircle,
-  FileText,
-  LogOut,
-} from "lucide-react";
+import { LogOut } from "lucide-react";
 import { logout } from "../lib/api";
 import { useAuth } from "../stores/auth";
 import { officeBranding } from "../config/officeBranding";
+import { getPortalNavModules, portalNavHref } from "../config/moduleRegistry";
 
-const NAV = [
-  { to: "/portal", label: "Início", icon: Home, end: true },
-  { to: "/portal/casos", label: "Casos", icon: Briefcase },
-  { to: "/portal/financeiro", label: "Financeiro", icon: Wallet },
-  { to: "/portal/assinaturas", label: "Assinaturas", icon: PenLine },
-  { to: "/portal/mensagens", label: "Mensagens", icon: MessageCircle },
-  { to: "/portal/documentos", label: "Documentos", icon: FileText },
-];
+const NAV = getPortalNavModules();
 
 export default function PortalLayout() {
   const { user } = useAuth();
@@ -54,22 +44,25 @@ export default function PortalLayout() {
           </div>
         </div>
         <nav className="max-w-4xl mx-auto px-4 flex gap-1 overflow-x-auto">
-          {NAV.map(({ to, label, icon: Icon, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                `relative flex shrink-0 items-center gap-2 px-4 py-2.5 text-sm transition-colors ${
-                  isActive
-                    ? "font-semibold text-ouro-profundo after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:bg-ouro-claro"
-                    : "text-slate-500 hover:text-slate-900"
-                }`
-              }
-            >
-              <Icon size={15} /> {label}
-            </NavLink>
-          ))}
+          {NAV.map((module) => {
+            const Icon = module.icon;
+            return (
+              <NavLink
+                key={module.key}
+                to={portalNavHref(module)}
+                end={module.index}
+                className={({ isActive }) =>
+                  `relative flex shrink-0 items-center gap-2 px-4 py-2.5 text-sm transition-colors ${
+                    isActive
+                      ? "font-semibold text-ouro-profundo after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:bg-ouro-claro"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`
+                }
+              >
+                <Icon size={15} /> {module.label}
+              </NavLink>
+            );
+          })}
         </nav>
       </header>
       <main className="max-w-4xl mx-auto px-4 py-6">

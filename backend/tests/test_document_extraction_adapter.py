@@ -46,9 +46,9 @@ async def test_adapter_usa_staging_e_ocr_local_sem_llm(tmp_path: Path, monkeypat
     ingestao = await _ingestao(tmp_path, monkeypatch)
     observado = {}
 
-    def fake_extrair(path, mimetype):
+    def fake_extrair(path, mimetype, suffix_hint=None):
         caminho = Path(path)
-        observado.update(path=caminho, mimetype=mimetype)
+        observado.update(path=caminho, mimetype=mimetype, suffix_hint=suffix_hint)
         assert caminho.exists()
         assert caminho.name.startswith(".")
         assert caminho.name.endswith(".uploading")
@@ -66,6 +66,7 @@ async def test_adapter_usa_staging_e_ocr_local_sem_llm(tmp_path: Path, monkeypat
     assert resultado.ocr_text == "texto extraído localmente"
     assert resultado.nfe is None
     assert observado["mimetype"] == "application/pdf"
+    assert observado["suffix_hint"] == ".pdf"
     ingestao.storage.compensar()
 
 
@@ -188,3 +189,39 @@ async def test_adapter_nao_pode_rodar_depois_da_promocao(tmp_path: Path, monkeyp
         )
 
     ingestao.storage.compensar()
+
+
+@pytest.mark.parametrize("ext", [".docx", ".xlsx"])
+def test_ooxml_extrai_de_path_staging_com_suffix_uploading(tmp_path: Path, ext: str):
+    """Regressão: libmagic pode reportar OOXML como application/zip."""
+    from app.services import ocr_service
+
+    if ext == ".docx":
+        import docx
+
+        origem = tmp_path / "origem.docx"
+        documento = docx.Document()
+        documento.add_paragraph("texto sentinela docx")
+        documento.save(origem)
+        esperado = "texto sentinela docx"
+    else:
+        import openpyxl
+
+        origem = tmp_path / "origem.xlsx"
+        workbook = openpyxl.Workbook()
+        workbook.active["A1"] = "texto sentinela xlsx"
+        workbook.save(origem)
+        workbook.close()
+        esperado = "texto sentinela xlsx"
+
+    staging = tmp_path / f".arquivo{ext}.uploading"
+    origem.replace(staging)
+
+    texto = ocr_service.extrair_texto(
+        str(staging),
+        "application/zip",
+        ext,
+    )
+
+    assert texto is not None
+    assert esperado in texto

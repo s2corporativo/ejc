@@ -174,6 +174,19 @@ class _FakeDBDedup:
     async def flush(self):
         pass
 
+    def begin_nested(self):
+        """Savepoint nulo — o mapper agora grava cada documento dentro de
+        db.begin_nested() (reconstrução #1641); a fake não precisa de
+        transação real, só do protocolo de context manager."""
+        return _NullSavepoint()
+
+class _NullSavepoint:
+    async def __aenter__(self):
+        return None
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False  # não suprime exceções — semântica de savepoint real
+
 
 def test_dedup_documento_nao_recria_na_segunda_sincronizacao(tmp_path, monkeypatch):
     from app.core.config import get_settings
