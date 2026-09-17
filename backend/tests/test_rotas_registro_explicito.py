@@ -423,6 +423,22 @@ def test_paridade_openapi_com_snapshot_anterior():
         (("/api/ia-governanca/provedores", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
         (("/api/ia-governanca/rag-curadoria", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
         (("/api/ia-governanca/rag-curadoria/{doc_id}", "PATCH"), ["HTTPBearer", "_dep", "_req_admin_socio", "get_current_user", "get_db"]),
+        # Fase 8, onda final (PR #1687): rate limit (`_dep`) nos routers
+        # entrada-universal, portal e financeiro consolidado (inventário P1).
+        # Só ACRESCENTA throttling fixed-window de 60s; autenticação e escopo
+        # existentes permanecem intatos — ver test_p1_ondafinal_rate_limit_gates.py.
+        (("/api/entrada-universal/meta", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/entrada-universal/{batch_id}", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/entrada-universal/{batch_id}/preparar-pacote", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/entrada-universal/{batch_id}/vincular-caso", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/financeiro/consolidado", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/portal/casos/{case_id}", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/portal/casos/{case_id}/mensagens", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/portal/casos/{case_id}/mensagens", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/portal/documentos", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/portal/financeiro", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/portal/mensagens/nao-lidas", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/portal/meus-casos", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
         # Estabilização do Financeiro (este PR): precificação e proposta de
         # honorários passam a exigir `_req_advogado` (advogado+), não apenas
         # autenticação. É ato jurídico privativo — estagiário e secretaria
