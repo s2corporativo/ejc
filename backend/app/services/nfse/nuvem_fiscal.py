@@ -170,6 +170,9 @@ class NuvemFiscalProvider(NFSeProvider):
             async with _novo_client(self._timeout) as c:
                 r = await c.post(f"{self._auth}/oauth/token", data=dados)
         except httpx.HTTPError as e:
+            # A regra casou a palavra 'token' na string LITERAL do log. O unico valor
+            # interpolado e type(e).__name__. Ver docs/seguranca/SAST_BASELINE.md
+            # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
             logger.warning("[nfse] falha HTTP no /oauth/token: %s", type(e).__name__)
             raise NFSeProviderError(
                 502, f"Falha de rede ao autenticar no provedor de NFS-e ({type(e).__name__})."

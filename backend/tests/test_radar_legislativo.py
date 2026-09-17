@@ -85,24 +85,61 @@ def test_parse_camara_detalhe():
 
 
 # ── Normalização: Senado ─────────────────────────────────────────────────────
-_SENADO_PAYLOAD = {"PesquisaBasicaMateria": {"Materias": {"Materia": [{
-    "IdentificacaoMateria": {"CodigoMateria": "555", "SiglaSubtipoMateria": "PLS",
-                             "NumeroMateria": "42", "AnoMateria": "2026"},
-    "DadosBasicosMateria": {"EmentaMateria": "Reforma tributária",
-                            "DataApresentacao": "2026-03-10"},
-}]}}}
+#
+# FIXTURE REAL, recortada da resposta ao vivo de
+# `legis.senado.leg.br/dadosabertos/materia/pesquisa/lista.json?ano=2026&
+# palavraChave=consumidor` em 04/09/2026 (85 matérias devolvidas).
+#
+# A fixture anterior era INVENTADA: usava `IdentificacaoMateria.CodigoMateria`,
+# `DadosBasicosMateria.EmentaMateria` — um envelope que a API não devolve. Com
+# ela, a suíte ficava verde enquanto o parser descartava 100% das matérias
+# reais (85 entravam, 0 saíam) e o radar reportava `senado: 0` como sucesso,
+# diariamente. Teste que fabrica contrato não protege nada: ele esconde.
+#
+# Se a API mudar de shape, ESTE teste tem de quebrar — é essa a função dele.
+_SENADO_PAYLOAD = {"PesquisaBasicaMateria": {"Materias": {"Materia": [
+    {
+        "Codigo": "172373",
+        "Sigla": "MPV",
+        "Numero": "01334",
+        "Ano": "2026",
+        "Ementa": (
+            "Altera a Lei nº 11.738, de 16 de julho de 2008, para dispor sobre "
+            "o piso salarial profissional nacional para os profissionais do "
+            "magistério público da educação básica."
+        ),
+        "Data": "2026-01-22",
+        "DescricaoIdentificacao": "MPV 1334/2026",
+        "UrlDetalheMateria": "http://legis.senado.leg.br/dadosabertos/materia/172373",
+    },
+]}}}
 
 
-def test_parse_senado_normaliza_shape_unico():
+def test_parse_senado_le_o_shape_real_da_api():
+    """Regressão do defeito medido: o shape real é PLANO, sem envelope."""
     itens = svc._parse_senado(_SENADO_PAYLOAD)
-    assert len(itens) == 1
+    assert len(itens) == 1, "o shape real da API não pode ser descartado"
     item = itens[0]
     assert item["fonte"] == "senado"
-    assert item["id_externo"] == "555"
-    assert (item["tipo"], item["numero"], item["ano"]) == ("PLS", 42, 2026)
-    assert item["ementa"] == "Reforma tributária"
-    assert item["data_apresentacao"] == "2026-03-10"
-    assert item["url"].endswith("/materia/555")
+    assert item["id_externo"] == "172373"
+    assert (item["tipo"], item["numero"], item["ano"]) == ("MPV", 1334, 2026)
+    assert "piso salarial" in item["ementa"]
+    assert item["data_apresentacao"] == "2026-01-22"
+
+
+def test_parse_senado_ainda_aceita_o_shape_antigo_com_envelope():
+    """Tolerância preservada: se a API voltar ao envelope, não quebra."""
+    payload = {"PesquisaBasicaMateria": {"Materias": {"Materia": [{
+        "IdentificacaoMateria": {"CodigoMateria": "555",
+                                 "SiglaSubtipoMateria": "PLS",
+                                 "NumeroMateria": "42", "AnoMateria": "2026"},
+        "DadosBasicosMateria": {"EmentaMateria": "Reforma tributária",
+                                "DataApresentacao": "2026-03-10"},
+    }]}}}
+    itens = svc._parse_senado(payload)
+    assert len(itens) == 1
+    assert itens[0]["id_externo"] == "555"
+    assert itens[0]["ementa"] == "Reforma tributária"
 
 
 def test_parse_senado_um_resultado_vira_dict():
@@ -317,3 +354,49 @@ async def test_termos_customizados_json_invalido_ignorado(monkeypatch):
     monkeypatch.setattr(get_settings(), "RADAR_LEGISLATIVO_TERMOS", "{{{lixo")
     termos = await svc.termos_monitorados(_FakeDB(["civil"]))
     assert termos == {"civil": ["código civil"]}          # nunca derruba o job
+
+
+# ── heartbeat por resultado ──────────────────────────────────────────────────
+
+async def test_fonte_com_erro_marca_a_execucao_como_erro(monkeypatch):
+    """Sem isto, uma perna morta fica invisível: o job termina sem exceção,
+    loga 'concluído' e nenhum painel percebe. Foi o que manteve o Senado
+    entregando zero por tempo indeterminado."""
+    pontos: list[tuple] = []
+
+    async def _espiao(status, detalhe=None):
+        pontos.append((status, detalhe))
+
+    async def _resumo_com_erro(db, **kwargs):
+        return {"camara": 3, "senado": "erro", "almg": 0}
+
+    monkeypatch.setattr(svc, "_bater_ponto_radar", _espiao)
+    monkeypatch.setattr(svc, "executar_radar", _resumo_com_erro)
+    monkeypatch.setattr(svc.get_settings(), "RADAR_LEGISLATIVO_ENABLED", True,
+                        raising=False)
+
+    await svc.job_radar_legislativo()
+
+    assert pontos and pontos[0][0] == "erro"
+    assert "senado" in pontos[0][1]
+
+
+async def test_execucao_sadia_bate_ponto_ok_com_as_contagens(monkeypatch):
+    pontos: list[tuple] = []
+
+    async def _espiao(status, detalhe=None):
+        pontos.append((status, detalhe))
+
+    async def _resumo_ok(db, **kwargs):
+        return {"camara": 3, "senado": 5, "almg": 0}
+
+    monkeypatch.setattr(svc, "_bater_ponto_radar", _espiao)
+    monkeypatch.setattr(svc, "executar_radar", _resumo_ok)
+    monkeypatch.setattr(svc.get_settings(), "RADAR_LEGISLATIVO_ENABLED", True,
+                        raising=False)
+
+    await svc.job_radar_legislativo()
+
+    assert pontos and pontos[0][0] == "ok"
+    # O detalhe carrega as contagens: "0 em todas" fica legível no diagnóstico.
+    assert '"senado": 5' in pontos[0][1]

@@ -382,20 +382,26 @@ if not _SKIP_SECTIONS:
             f"ids_sem={len(ids_sem)} d3_visivel_sem={_d3_id in ids_sem}")
         # Permissão no predicado de escopo (o mesmo SQL usado pelo service):
         # doc de categoria restrita é liberado SOMENTE com client_id próprio.
-        SQL_PERM = f"""
+        # `_d3_id` entra por parâmetro, não interpolado: a bateria já roda
+        # contra o banco de desenvolvimento com credenciais de escrita, e um id
+        # vindo da API não deve poder virar SQL nem por acidente.
+        SQL_PERM = """
             SELECT COUNT(*) FROM knowledge_docs kd
-            WHERE kd.id = '{_d3_id}' AND kd.deleted_at IS NULL AND kd.vigente = TRUE
+            WHERE kd.id = %s AND kd.deleted_at IS NULL AND kd.vigente = TRUE
               AND (kd.categoria <> ALL(%s) OR kd.client_id = %s)
         """
         import psycopg2
         conn = psycopg2.connect(host="localhost", user="ejc", password="ejc",
                                 dbname="ejc")
         with conn.cursor() as cu:
-            cu.execute(SQL_PERM, (_res_cats, ""))
+            cu.execute(SQL_PERM, (_d3_id, _res_cats, ""))
             n_sem = cu.fetchone()[0]
-            cu.execute(SQL_PERM, (_res_cats, cliente_escopo2["id"]))
+            cu.execute(SQL_PERM, (_d3_id, _res_cats, cliente_escopo2["id"]))
             n_com = cu.fetchone()[0]
-            cu.execute(SQL_PERM, (_res_cats, "00000000-0000-0000-0000-000000000000"))
+            cu.execute(
+                SQL_PERM,
+                (_d3_id, _res_cats, "00000000-0000-0000-0000-000000000000"),
+            )
             n_est = cu.fetchone()[0]
         conn.close()
         chk("tenant/cliente: predicado de escopo LIBERA o doc restrito com o "

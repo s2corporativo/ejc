@@ -51,6 +51,18 @@ def _extrair_rotas(app) -> list[dict]:
 # Adições INTENCIONAIS posteriores ao snapshot. O registro explícito (§4.1) não
 # pode criar nem remover rota; qualquer outra novidade falha o teste.
 ADICOES_INTENCIONAIS = {
+    # Dashboard/Sala Jurídica — release #1657. Novas superfícies autenticadas;
+    # não removem nem afrouxam rotas existentes.
+    ("/api/atividades/alertas-inteligentes", "GET"),
+    ("/api/atividades/alertas/{source_type}/{source_id}", "PATCH"),
+    ("/api/sala-juridica/{session_id}/proxima-acao/confirmar", "POST"),
+    # Jurimetria dos TRIBUNAIS (Issue #1527): desfechos do TJMG a partir do
+    # DataJud, no slot do "benchmark externo" que /interno/* declarava como
+    # `externo_habilitado: False`. Mesmo gate de papel do módulo (_req_staff,
+    # equipe jurídica). Opt-in: sem JURIMETRIA_TRIBUNAIS_ENABLED e
+    # DATAJUD_ENABLED/DATAJUD_API_KEY, responde 503 controlado.
+    ("/api/jurimetria/tribunais/status", "GET"),
+    ("/api/jurimetria/tribunais/desfechos", "GET"),
     ("/api/architecture/uso-rotas", "GET"),
     # PR #1378 — consolidação do Financeiro/Fiscal. Rotas novas deliberadas,
     # autenticadas e de leitura. O subledger respeita escopo/ownership do fee;
@@ -160,9 +172,72 @@ ADICOES_INTENCIONAIS = {
     # Autenticada e atrás do gate de papel `_exigir_financeiro`; o resumo é
     # agregado — contagem e total — sem expor PII de cliente.
     ("/api/financeiro/atencao", "GET"),
+    # Núcleo de ajuizamento (PR #1536): fluxo CLIENTE → CASO → … → PROTOCOLO →
+    # SINCRONIZAÇÃO. Todas autenticadas; atos jurídicos (aprovar/assinar/
+    # protocolar/confirmar) exigem advogado+ dentro do handler; perfis de
+    # tribunal e carga TPU exigem admin. Nenhuma rota pública.
+    ("/api/ajuizamento/capacidades", "GET"),
+    ("/api/ajuizamento/perfis", "GET"),
+    ("/api/ajuizamento/perfis", "POST"),
+    ("/api/ajuizamento/perfis/{perfil_id}", "PATCH"),
+    ("/api/ajuizamento/tpu/{tipo}", "GET"),
+    ("/api/ajuizamento/tpu/sincronizar", "POST"),
+    ("/api/ajuizamento/tpu/importar", "POST"),
+    ("/api/ajuizamento/filings", "GET"),
+    ("/api/ajuizamento/filings", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}", "GET"),
+    ("/api/ajuizamento/filings/{filing_id}", "PATCH"),
+    ("/api/ajuizamento/filings/{filing_id}/validar", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}/aprovar", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}/assinar", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}/protocolar", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}/confirmar-manual", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}/sincronizar", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}/cancelar", "POST"),
+    ("/api/ajuizamento/filings/{filing_id}/transicoes", "GET"),
+    ("/api/ajuizamento/protocolos", "GET"),
 }
 
 REMOCOES_INTENCIONAIS = {
+    # `routers/jurisprudencia_externa.py` REMOVIDO (17/09/2026, Fase 7 —
+    # auditoria §3.6 "Jurisprudência: 4 superfícies"). O router duplicava, em
+    # REST, operações que já têm trilha canônica testada: BUSCA EXTERNA →
+    # POST /api/jurisprudencia-externa/precedentes/buscar (router
+    # precedentes_jurisprudencia, montado no MESMO prefixo /jurisprudencia-
+    # externa, sobre o MESMO service services/jurisprudencia_externa.py —
+    # conectores LexML/TJMG seguem vivos e compartilhados com ingestores e
+    # juris_import); IMPORTAÇÃO → POST /api/conhecimento/importar-jurisprudencia
+    # (juris_import: assíncrona, dedup compartilhado com o scheduler, trilha
+    # fontes_ingestao + audit, alimenta o RAG citável e o gate de citações —
+    # o /importar daqui gravava num silo que NENHUM consumidor de IA lê).
+    # /fontes aqui era lista estática divergente da verdade; a real é
+    # GET /api/conhecimento/importar-jurisprudencia/fontes. Zero chamadas no
+    # frontend/src e zero chamadores backend via HTTP. A biblioteca interna
+    # (routers/jurisprudencia_interna.py, /api/jurisprudencias) segue canônica.
+    ("/api/jurisprudencia-externa/buscar", "GET"),
+    ("/api/jurisprudencia-externa/buscar/lexml", "GET"),
+    ("/api/jurisprudencia-externa/buscar/tjmg", "GET"),
+    ("/api/jurisprudencia-externa/fontes", "GET"),
+    ("/api/jurisprudencia-externa/importar", "POST"),
+    ("/api/jurisprudencia-externa/importar-lote", "POST"),
+    # `routers/documento_ia.py` REMOVIDO (17/09/2026, Fase 7 — auditoria
+    # §3.6 "Entrada/intake: 6 portas"). A porta legada /documentos-ia
+    # ("Importação Inteligente" de 1 arquivo, temp-file, sem persistir no
+    # GED) ficou sem NENHUM consumidor: zero chamadas no frontend/src, zero
+    # chamadores backend (services usam documento_service.extrair_e_analisar
+    # diretamente — legal_chat, raio_x_tasks), contrato órfão
+    # `aplicarAcoesDocumento` aposentado junto. A trilha canônica de análise
+    # documental é a Entrada Universal (/api/entrada-universal/*, persiste
+    # lote no GED com rastreabilidade IA) e as capacidades canônicas de IA
+    # (/api/ia/extrair etc.). O service e o schema document_intake seguem
+    # vivos (não são porta).
+    ("/api/documentos-ia/analisar", "POST"),
+    ("/api/documentos-ia/analisar-url", "POST"),
+    ("/api/documentos-ia/aplicar-acoes", "POST"),
+    # `routers/noticias.py` REMOVIDO (05/09/2026, CORTE-4 do plano-mestre,
+    # decisão D3 do titular): feed ConJur/JOTA não é gestão de casos; a tela
+    # já estava `hidden` e o card do Dashboard foi retirado junto.
+    ("/api/noticias", "GET"),
     # `routers/curadoria_renomada.py` REMOVIDO (04/09/2026). Os três endpoints
     # respondiam 503 INCONDICIONAL desde a auditoria de 19/07: a "base de teses
     # renomadas" curada nunca existiu, e o 503 substituiu handlers que fingiam
@@ -267,11 +342,24 @@ ADICOES_INTENCIONAIS |= {
 # portas antigas de /ai/* e /ia-especializada/* seguem registradas — nada foi
 # removido aqui, então não há entrada correspondente em REMOCOES_INTENCIONAIS.
 ADICOES_INTENCIONAIS |= {
+    # Composição de 2026-09-05 dos PRs empilhados promovidos à main:
+    # #1490 (Data Room público token-bound) e #1492/#1493 (despesas
+    # processuais — router registrado em main.py neste PR).
+    ("/api/data-rooms/acesso/{token}/arquivos/{arquivo_id}", "GET"),
+    ("/api/data-rooms/acesso/{token}/manifesto", "GET"),
+    ("/api/despesas-processuais/casos/{case_id}", "GET"),
+    ("/api/despesas-processuais/", "POST"),
+    ("/api/despesas-processuais/caso/{case_id}/faturar", "POST"),
+    ("/api/despesas-processuais/{entry_id}", "DELETE"),
     ("/api/ia/analisar", "POST"),
     ("/api/ia/conversar", "POST"),
     ("/api/ia/extrair", "POST"),
     ("/api/ia/redigir", "POST"),
     ("/api/ia/resumir", "POST"),
+    # Consolidação do fluxo principal (encerramento): diagnóstico determinístico
+    # de pendências ANTES do POST /encerrar. Autenticada, mesmo gate de papel e
+    # visibilidade do encerramento (advogado+ e carteira); só leitura.
+    ("/api/cases/{case_id}/encerrar/diagnostico", "GET"),
 }
 
 
@@ -300,6 +388,41 @@ def test_paridade_openapi_com_snapshot_anterior():
         # a suíte vermelha — regularizado na análise ponta a ponta de 03/09.
         (("/api/clients/{client_id}/ia-analise", "POST"), ["HTTPBearer", "_dep", "_req_clientes", "get_current_user", "get_db"]),
         (("/api/export/clientes.csv", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        # Fase 8, onda 1-A (inventário RBAC, P1): rate limit (`_dep`) nos 11
+        # endpoints de /users classificados ONLY_AUTH + sensíveis sem cota.
+        # Só ACRESCENTA throttling; os gates de identidade/escopo existentes
+        # (self-service /me, RBAC inline do PATCH, staff gate do avatar de
+        # terceiros) permanecem — ver test_users_rate_limit_gates.py.
+        (("/api/users/me", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/users/me/security", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/users/me/sessions", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/users/me/sessions/revoke-others", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/users/me/sessions/{session_id}/revoke", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/users/me/totp-qr", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/users/{user_id}", "PATCH"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/users/me/calendar-url", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/users/me/avatar", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/users/me/avatar", "DELETE"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/users/{user_id}/avatar", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        # Fase 8, onda 1-B: gate admin/sócio dos painéis de governança da IA
+        # promovido do CORPO do handler para a dependency `_req_admin_socio`
+        # (403 antes de qualquer trabalho; ROLE_GATE no inventário RBAC) e
+        # rate limit ('_dep') nos 4 mutantes da P1. Alteração RESTRITIVA: as
+        # rotas continuam exigindo o mesmo papel; ver
+        # test_ia_governanca_gates_estrutural.py.
+        (("/api/ia-governanca/dashboard", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/fontes", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/fontes/tjmg/coletar", "POST"), ["HTTPBearer", "_dep", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/guardrails", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/jurisprudencia-mg", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/jurisprudencia-mg", "POST"), ["HTTPBearer", "_dep", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/jurisprudencia-mg/extrair-url", "POST"), ["HTTPBearer", "_dep", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/jurisprudencia-mg/geometria", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/prompts", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/prompts-sistema", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/provedores", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/rag-curadoria", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
+        (("/api/ia-governanca/rag-curadoria/{doc_id}", "PATCH"), ["HTTPBearer", "_dep", "_req_admin_socio", "get_current_user", "get_db"]),
         # Estabilização do Financeiro (este PR): precificação e proposta de
         # honorários passam a exigir `_req_advogado` (advogado+), não apenas
         # autenticação. É ato jurídico privativo — estagiário e secretaria

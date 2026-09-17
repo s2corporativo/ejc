@@ -284,7 +284,6 @@ _HELPERS_BOOL = [
     ("app.routers.advogado_estilo", "_pode_usar_estilo"),
     ("app.routers.teses", "_is_staff"),
     ("app.routers.jurisprudencia_interna", "_is_staff"),
-    ("app.routers.jurisprudencia_externa", "_is_staff"),
     ("app.routers.precedentes_jurisprudencia", "_is_staff"),
     ("app.routers.jurimetria", "_is_staff"),
     ("app.routers.consumidor_monitor", "_is_staff"),
@@ -374,13 +373,17 @@ _PADRAO_PISO_ESTAGIARIO = re.compile(
 # estável sob deslocamento e continua específico o bastante para que uma
 # ocorrência NOVA numa função diferente do mesmo arquivo seja pega.
 _GRANDFATHER_ISSUE_694: dict[str, frozenset[str]] = {
-    "bank_analysis.py": frozenset({"gerar_peca"}),
-    "entrada_universal.py": frozenset({"meta", "processar"}),
-    "checklists.py": frozenset({"_pode_editar"}),
-    "prompts_juridicos.py": frozenset({"listar_prompts"}),
     # ai.py::assistente_estrategico e ai.py::visual_law corrigidos na
     # auditoria de segurança das APIs de IA (18/08) — migrados para
     # requer_equipe_juridica (allowlist exata).
+    #
+    # bank_analysis.py::gerar_peca, entrada_universal.py::meta e ::processar,
+    # checklists.py::_pode_editar e prompts_juridicos.py::listar_prompts
+    # corrigidos NESTE PR: o piso hierárquico `>= ROLE_LEVEL["estagiario"]`
+    # deu lugar à allowlist exata EQUIPE_JURIDICA, fechando a promoção de
+    # `financeiro` (nível 4) à superfície jurídica. Removidos daqui porque o
+    # baseline só admite ocorrência que ainda exista — é o que o assert
+    # `baseline_desatualizado` cobra de quem corrige.
     "users.py": frozenset({"obter_avatar"}),
 }
 
@@ -439,13 +442,13 @@ def test_grandfather_nao_cobre_os_15_arquivos_corrigidos():
     arquivos_corrigidos = {
         "peca_geracao.py", "dossie_estrategico.py", "provas.py",
         "advogado_estilo.py", "teses.py",
-        "jurisprudencia_interna.py", "jurisprudencia_externa.py",
+        "jurisprudencia_interna.py",  # jurisprudencia_externa.py aposentada (Fase 7 §3.6)
         "precedentes_jurisprudencia.py", "jurimetria.py",
         "memoria_institucional.py", "consumidor_monitor.py", "ficha_triagem.py",
         "novos_modulos.py",
     }
     assert arquivos_corrigidos.isdisjoint(_GRANDFATHER_ISSUE_694)
-    assert len(arquivos_corrigidos) == 13  # 15 − 2 (teses_v4.py e jurimetria_extra.py arquivados em _dead_code)
+    assert len(arquivos_corrigidos) == 12  # 15 − 2 (teses_v4.py e jurimetria_extra.py arquivados) − 1 (jurisprudencia_externa.py aposentada na Fase 7)
 
 
 # ── Os gates compartilhados só valem chamados no CORPO ────────────────────────

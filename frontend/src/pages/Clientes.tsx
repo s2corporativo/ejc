@@ -1,7 +1,13 @@
 import { toast } from "../components/Toast";
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router";
-import { Plus, Search, ShieldAlert, KeyRound } from "lucide-react";
+import { Link, useNavigate } from "react-router";
+import {
+  Plus,
+  Search,
+  ShieldAlert,
+  KeyRound,
+  FileSignature,
+} from "lucide-react";
 import api from "../lib/api";
 import { soDigitos } from "../utils/phone";
 import type { Client, Paged } from "../types";
@@ -40,6 +46,16 @@ interface ConflitoCheck {
   nivel: ConflitoNivel;
   matches: ConflitoMatch[];
 }
+type ResultadoConflito = ConflitoCheck | "indisponivel" | null;
+
+interface PecaAdmissao {
+  id: string;
+  titulo: string;
+  tipo: string;
+  status: string;
+  admission_kind: string | null;
+  created_at: string | null;
+}
 
 function openWhatsApp(phone: string, name: string) {
   const digits = soDigitos(phone);
@@ -54,9 +70,10 @@ export default function Clientes() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [modal, setModal] = useState(false);
-  const [conflito, setConflito] = useState<ConflitoCheck | null>(null);
+  const [conflito, setConflito] = useState<ResultadoConflito>(null);
   const [conflitoLoading, setConflitoLoading] = useState(false);
-  const [acessoModal, setAcessoModal] = useState<any>(null); // cliente alvo
+  const [conflitoIndisponivel, setConflitoIndisponivel] = useState(false);
+  const [acessoModal, setAcessoModal] = useState<any>(null);
   const [acessoForm, setAcessoForm] = useState({
     email: "",
     senha_inicial: "",
@@ -68,13 +85,29 @@ export default function Clientes() {
   });
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(false);
-  // Guarda de sequência: só a resposta do load mais recente aplica setData,
-  // evitando que uma resposta antiga (busca com debounce) sobrescreva a nova.
   const seq = useRef(0);
 
   const role = user?.role || "";
-  const podeCriarAcesso = ["superadmin", "admin", "socio", "advogado"].includes(role);
+  const podeCriarAcesso = ["superadmin", "admin", "socio", "advogado"].includes(
+    role,
+  );
   const podeRelatorioLgpd = ["superadmin", "admin", "socio"].includes(role);
+  // Emissão/consulta de procuração e contrato é ato jurídico: o backend exige
+  // advogado+ (requer_advogado). O botão espelha esse gate — não o substitui.
+  const podeVerAdmissao = ["superadmin", "admin", "socio", "advogado"].includes(
+    role,
+  );
+  const [admissaoModal, setAdmissaoModal] = useState<Client | null>(null);
+  const [admissaoPecas, setAdmissaoPecas] = useState<PecaAdmissao[] | null>(
+    null,
+  );
+  const [admissaoLoading, setAdmissaoLoading] = useState(false);
+  const admissaoReq = useRef(0);
+  const [admissaoPoderes, setAdmissaoPoderes] = useState({
+    tipo_poderes: "ad_judicia",
+    permite_substabelecimento: true,
+    poderes_especiais: "",
+  });
 
   const load = () => {
     const my = ++seq.current;
@@ -98,45 +131,131 @@ export default function Clientes() {
     return () => clearTimeout(t);
   }, [search, page]);
 
-  // Checagem de conflito de interesses em tempo real (EOAB arts. 34-35).
-  // Fail-safe: qualquer erro é silencioso e NÃO impede o cadastro.
-  const checarConflito = async (): Promise<ConflitoCheck | null> => {
+  // Checagem assistiva de conflito de interesses. Base ética: Código de Ética
+  // e Disciplina da OAB (Res. CFOAB 02/2015), especialmente arts. 19 a 22.
+  // Falha técnica nunca equivale a ausência de conflito e não decide a admissão.
+  const checarConflito = async (): Promise<ResultadoConflito> => {
     const nome = (form.nome || form.razao_social || "").trim();
     const cpf = form.cpf;
     const cnpj = form.cnpj;
     const parte_contraria = form.parte_contraria;
-    // Nada relevante digitado ainda → limpa e não chama a API.
     if (!cpf && !cnpj && nome.length < 4 && !parte_contraria) {
       setConflito(null);
+      setConflitoIndisponivel(false);
       return null;
     }
     setConflitoLoading(true);
     try {
       const { data } = await api.post<ConflitoCheck>(
         "/clients/checar-conflito",
-        { nome, cpf, cnpj, parte_contraria },
+        {
+          nome,
+          cpf,
+          cnpj,
+          parte_contraria,
+        },
       );
       setConflito(data);
+      setConflitoIndisponivel(false);
       return data;
     } catch {
-      // Aviso ético é best-effort: falha na checagem não trava o formulário.
+      // Falha da checagem NÃO parece "nenhum conflito": fica explícita que a
+      // verificação não pôde ser feita (CED/OAB, arts. 19 a 22).
       setConflito(null);
-      return null;
+      setConflitoIndisponivel(true);
+      return "indisponivel";
     } finally {
       setConflitoLoading(false);
     }
   };
 
+  const carregarAdmissao = async (c: Client) => {
+    const req = ++admissaoReq.current;
+    setAdmissaoModal(c);
+    setAdmissaoPecas(null);
+    setAdmissaoLoading(true);
+    try {
+      const { data } = await api.get<PecaAdmissao[]>(
+        `/clients/${c.id}/pecas-geradas`,
+      );
+      if (req !== admissaoReq.current) return;
+      setAdmissaoPecas(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      if (req !== admissaoReq.current) return;
+      setAdmissaoPecas([]);
+      toast.error(
+        e.response?.data?.detail ||
+          "Falha ao carregar os documentos de admissão",
+      );
+    } finally {
+      if (req === admissaoReq.current) setAdmissaoLoading(false);
+    }
+  };
+
+  const regerarAdmissao = async () => {
+    if (!admissaoModal) return;
+    const alvo = admissaoModal;
+    setAdmissaoLoading(true);
+    try {
+      await api.post(`/clients/${alvo.id}/gerar-documentos`, {
+        forcar_novo: true,
+        tipo_poderes: admissaoPoderes.tipo_poderes,
+        permite_substabelecimento: admissaoPoderes.permite_substabelecimento,
+        poderes_especiais: admissaoPoderes.poderes_especiais.trim() || null,
+      });
+      toast.success("Procuração e contrato regerados como novos rascunhos.");
+      await carregarAdmissao(alvo);
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Falha ao regerar os documentos");
+      setAdmissaoLoading(false);
+    }
+  };
+
+  const baixarPecaPdf = async (peca: PecaAdmissao) => {
+    try {
+      const r = await api.get(`/legal-docs/${peca.id}/pdf-minuta`, {
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${peca.admission_kind || "documento"}-${peca.id.slice(0, 8)}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Falha ao baixar o PDF");
+    }
+  };
+
+  const navigate = useNavigate();
+
   const salvar = async () => {
-    // O alerta de conflito é apenas um aviso ético — NÃO bloqueia o cadastro.
     setSalvando(true);
     try {
-      await api.post("/clients/", form);
+      const { data: criado } = await api.post<Client>("/clients/", form);
       setModal(false);
       setForm({ tipo: "PF", cidade: "Betim", estado: "MG" });
       setConflito(null);
+      setConflitoIndisponivel(false);
       if (page !== 1) setPage(1);
       else load();
+      toast.success("Cliente cadastrado.");
+      if (criado?.id) navigate(`/clientes/${criado.id}`);
+
+      if (criado?.id && podeVerAdmissao) {
+        void api
+          .get<PecaAdmissao[]>(`/clients/${criado.id}/pecas-geradas`)
+          .then(({ data: pecas }) => {
+            if (Array.isArray(pecas) && pecas.length) {
+              toast.success(
+                "Procuração e contrato de honorários gerados como rascunho.",
+              );
+            }
+          })
+          .catch(() => {
+            /* confirmação acessória: cadastro já concluído */
+          });
+      }
     } catch (e: any) {
       toast.error(e.response?.data?.detail || "Erro ao salvar");
     } finally {
@@ -257,6 +376,18 @@ export default function Clientes() {
                         <KeyRound size={14} />
                       </button>
                     )}
+                    {podeVerAdmissao && (
+                      <button
+                        title="Procuração e contrato de honorários"
+                        className="text-navy hover:text-gold inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          carregarAdmissao(c);
+                        }}
+                      >
+                        <FileSignature size={14} />
+                      </button>
+                    )}
                     {podeRelatorioLgpd && (
                       <button
                         title="Relatório LGPD"
@@ -266,7 +397,9 @@ export default function Clientes() {
                           try {
                             const r = await api.get(
                               `/clients/${c.id}/relatorio-lgpd`,
-                              { responseType: "blob" },
+                              {
+                                responseType: "blob",
+                              },
                             );
                             const url = URL.createObjectURL(r.data);
                             const a = document.createElement("a");
@@ -286,29 +419,33 @@ export default function Clientes() {
                       </button>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-slate-500 flex items-center gap-2">
-                    <span>{c.whatsapp || c.telefone || c.email || "—"}</span>
-                    {(c.whatsapp || c.telefone) && (
-                      <button
-                        onClick={() =>
-                          openWhatsApp(
-                            c.whatsapp || c.telefone || "",
-                            c.nome || "",
-                          )
-                        }
-                        className="inline-flex min-h-[24px] min-w-[24px] items-center justify-center rounded-full bg-green-100 p-1 text-green-600 transition-colors hover:bg-green-200"
-                        title="Abrir WhatsApp"
-                      >
-                        <svg
-                          className="w-3.5 h-3.5"
-                          viewBox="0 0 24 24"
-                          fill="currentColor"
+                  <td className="px-4 py-3 text-slate-500">
+                    <div className="flex min-w-[180px] items-center gap-2">
+                      <span className="min-w-0 truncate">
+                        {c.whatsapp || c.telefone || c.email || "—"}
+                      </span>
+                      {(c.whatsapp || c.telefone) && (
+                        <button
+                          onClick={() =>
+                            openWhatsApp(
+                              c.whatsapp || c.telefone || "",
+                              c.nome || "",
+                            )
+                          }
+                          className="inline-flex min-h-[24px] min-w-[24px] items-center justify-center rounded-full bg-green-100 p-1 text-green-600 transition-colors hover:bg-green-200"
+                          title="Abrir WhatsApp"
                         >
-                          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
-                          <path d="M12 0C5.373 0 0 5.373 0 12c0 2.125.557 4.126 1.535 5.858L.057 23.486a.5.5 0 0 0 .612.612l5.63-1.477A11.95 11.95 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.886 0-3.655-.497-5.191-1.367l-.372-.217-3.858 1.012 1.013-3.842-.228-.384A9.96 9.96 0 0 1 2 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z" />
-                        </svg>
-                      </button>
-                    )}
+                          <svg
+                            className="w-3.5 h-3.5"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                          >
+                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
+                            <path d="M12 0C5.373 0 0 5.373 0 12c0 2.125.557 4.126 1.535 5.858L.057 23.486a.5.5 0 0 0 .612.612l5.63-1.477A11.95 11.95 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.886 0-3.655-.497-5.191-1.367l-.372-.217-3.858 1.012 1.013-3.842-.228-.384A9.96 9.96 0 0 1 2 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge value={c.status} />
@@ -351,6 +488,7 @@ export default function Clientes() {
         onClose={() => {
           setModal(false);
           setConflito(null);
+          setConflitoIndisponivel(false);
         }}
         title="Novo cliente"
         wide
@@ -470,8 +608,6 @@ export default function Clientes() {
               onChange={(e) => setForm({ ...form, email: e.target.value })}
             />
           </div>
-
-          {/* Endereço com busca CEP (ViaCEP) */}
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="label">CEP</label>
@@ -541,47 +677,62 @@ export default function Clientes() {
           </div>
         </div>
 
-        {conflito && conflito.conflito && conflito.nivel !== "nenhum" && (
+        {conflitoIndisponivel && (
           <Alert
             className="mt-4"
-            variant={conflito.nivel === "critico" ? "danger" : "warning"}
-            title={
-              conflito.nivel === "critico"
-                ? "Conflito de interesses crítico (EOAB arts. 34-35)"
-                : "Atenção: possível conflito de interesses"
-            }
+            variant="warning"
+            title="Conflito não pôde ser verificado"
           >
-            <ul className="space-y-1.5">
-              {conflito.matches.map((m, i) => (
-                <li key={i} className="flex flex-wrap items-center gap-1.5">
-                  <Badge tone={conflito.nivel === "critico" ? "red" : "amber"}>
-                    {m.papel.replace(/_/g, " ")}
-                  </Badge>
-                  <span>{m.descricao}</span>
-                  {/* Mascarado: só serve para desempatar homônimo quando o
-                      operador já tem o documento em mãos. */}
-                  {m.documento_mascarado && (
-                    <span className="font-mono text-xs opacity-70">
-                      {m.documento_mascarado}
-                    </span>
-                  )}
-                  {m.case_id && (
-                    <Link
-                      to={`/casos/${m.case_id}`}
-                      className="font-medium underline hover:no-underline"
-                    >
-                      ver caso
-                    </Link>
-                  )}
-                </li>
-              ))}
-            </ul>
-            <p className="mt-2 text-xs opacity-80">
-              Aviso ético — o cadastro não é bloqueado, mas registre a análise
-              de conflito antes de prosseguir.
-            </p>
+            A consulta de conflito está indisponível neste momento. O cadastro
+            continua permitido, mas a análise de conflito deve ser realizada
+            antes da atuação no caso.
           </Alert>
         )}
+
+        {conflito &&
+          conflito !== "indisponivel" &&
+          conflito.conflito &&
+          conflito.nivel !== "nenhum" && (
+            <Alert
+              className="mt-4"
+              variant={conflito.nivel === "critico" ? "danger" : "warning"}
+              title={
+                conflito.nivel === "critico"
+                  ? "Conflito de interesses crítico"
+                  : "Atenção: possível conflito de interesses"
+              }
+            >
+              <ul className="space-y-1.5">
+                {conflito.matches.map((m, i) => (
+                  <li key={i} className="flex flex-wrap items-center gap-1.5">
+                    <Badge
+                      tone={conflito.nivel === "critico" ? "red" : "amber"}
+                    >
+                      {m.papel.replace(/_/g, " ")}
+                    </Badge>
+                    <span>{m.descricao}</span>
+                    {m.documento_mascarado && (
+                      <span className="font-mono text-xs opacity-70">
+                        {m.documento_mascarado}
+                      </span>
+                    )}
+                    {m.case_id && (
+                      <Link
+                        to={`/casos/${m.case_id}`}
+                        className="font-medium underline hover:no-underline"
+                      >
+                        ver caso
+                      </Link>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs opacity-80">
+                Aviso ético — o cadastro não é bloqueado, mas registre a análise
+                de conflito antes de prosseguir.
+              </p>
+            </Alert>
+          )}
 
         <div className="flex justify-between mt-5">
           <Button
@@ -590,13 +741,12 @@ export default function Clientes() {
             disabled={conflitoLoading}
             onClick={async () => {
               const r = await checarConflito();
-              if (r && r.nivel === "nenhum")
+              if (r && r !== "indisponivel" && r.nivel === "nenhum")
                 toast.success("Nenhum conflito de interesses encontrado.");
               else if (!r)
                 toast.info(
                   "Informe nome/documento ou parte contrária para verificar.",
                 );
-              // r.nivel !== "nenhum" → o Alert inline já exibe o conflito
             }}
           >
             {conflitoLoading ? "Verificando..." : "Verificar conflito"}
@@ -606,7 +756,121 @@ export default function Clientes() {
           </Button>
         </div>
       </Modal>
-      {/* Modal: criar acesso ao Portal do Cliente */}
+
+      {admissaoModal && podeVerAdmissao && (
+        <Modal
+          open
+          onClose={() => setAdmissaoModal(null)}
+          title="Documentos de admissão"
+        >
+          <p className="text-xs text-slate-500 mb-3">
+            {admissaoModal.nome || admissaoModal.razao_social} — procuração e
+            contrato de honorários emitidos no cadastro. Saem em papel timbrado
+            do escritório e permanecem <strong>rascunho</strong> até a revisão e
+            a assinatura do advogado.
+          </p>
+          {admissaoLoading && (
+            <p className="text-sm text-slate-500">Carregando…</p>
+          )}
+          {!admissaoLoading && admissaoPecas?.length === 0 && (
+            <Alert variant="warning">
+              Nenhum documento de admissão para este cliente. Use "Gerar
+              novamente" para emitir a procuração e o contrato.
+            </Alert>
+          )}
+          {!admissaoLoading && !!admissaoPecas?.length && (
+            <ul className="divide-y divide-slate-100 text-sm">
+              {admissaoPecas.map((peca) => (
+                <li
+                  key={peca.id}
+                  className="flex items-center justify-between gap-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-navy">
+                      {peca.titulo}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {peca.tipo} · {peca.status}
+                      {peca.created_at ? ` · ${fmtDate(peca.created_at)}` : ""}
+                    </p>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    onClick={() => baixarPecaPdf(peca)}
+                  >
+                    PDF
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="mt-5 rounded-lg border border-slate-200 p-3">
+            <p className="mb-2 text-xs font-semibold text-navy">
+              Poderes da nova procuração
+            </p>
+            <p className="mb-3 text-xs text-slate-500">
+              Gerar novamente cria uma versão nova{" "}
+              <strong>com estes poderes</strong> — confira antes, porque é o que
+              o cliente assinará. A versão anterior continua no histórico.
+            </p>
+            <div className="space-y-2">
+              <select
+                className="input w-full"
+                value={admissaoPoderes.tipo_poderes}
+                onChange={(e) =>
+                  setAdmissaoPoderes({
+                    ...admissaoPoderes,
+                    tipo_poderes: e.target.value,
+                  })
+                }
+              >
+                <option value="ad_judicia">Ad judicia (foro em geral)</option>
+                <option value="ad_judicia_et_extra">
+                  Ad judicia et extra (judicial e extrajudicial)
+                </option>
+                <option value="especiais">Poderes especiais</option>
+              </select>
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={admissaoPoderes.permite_substabelecimento}
+                  onChange={(e) =>
+                    setAdmissaoPoderes({
+                      ...admissaoPoderes,
+                      permite_substabelecimento: e.target.checked,
+                    })
+                  }
+                />
+                Permite substabelecimento
+              </label>
+              <input
+                className="input w-full"
+                placeholder="Poderes especiais (art. 105 do CPC) — opcional"
+                value={admissaoPoderes.poderes_especiais}
+                onChange={(e) =>
+                  setAdmissaoPoderes({
+                    ...admissaoPoderes,
+                    poderes_especiais: e.target.value,
+                  })
+                }
+              />
+            </div>
+          </div>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setAdmissaoModal(null)}>
+              Fechar
+            </Button>
+            <Button
+              variant="primary"
+              disabled={admissaoLoading}
+              onClick={regerarAdmissao}
+            >
+              Gerar novamente
+            </Button>
+          </div>
+        </Modal>
+      )}
+
       {acessoModal && podeCriarAcesso && (
         <div className="modal-backdrop" onClick={() => setAcessoModal(null)}>
           <div

@@ -1,0 +1,126 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Verificar: Completo",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Verificar: Frontend",
+        "Verificar: Backend",
+        "Verificar: Banco e Migrations"
+      ],
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Verificar: Frontend",
+      "type": "shell",
+      "command": "npm run lint && npm test && npm run build",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Testar: Frontend",
+      "type": "shell",
+      "command": "npm test",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Build: Producao Frontend",
+      "type": "shell",
+      "command": "npm run build",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Verificar: Backend",
+      "type": "shell",
+      "command": "ruff check app && pytest",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Testar: Backend",
+      "type": "shell",
+      "command": "pytest",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Verificar: Banco e Migrations",
+      "type": "shell",
+      "command": "python -m alembic heads && python -m alembic current",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Banco: Verificar Migrations Pendentes",
+      "type": "shell",
+      "command": "python -m alembic heads",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Banco: Verificar Estado",
+      "type": "shell",
+      "command": "python -m alembic current",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Verificar: Seguranca",
+      "type": "shell",
+      "command": "gitleaks detect --no-git --redact && pip-audit -r requirements.txt",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "CI: Simular Localmente",
+      "type": "shell",
+      "command": "bash scripts/ci-local.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Rotas: Verificar Ledger",
+      "type": "shell",
+      "command": "python backend/scripts/ledger_rotas.py --verificar",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "test",
+      "problemMatcher": []
+    }
+  ]
+}

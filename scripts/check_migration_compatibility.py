@@ -19,6 +19,7 @@ from typing import Iterable
 
 ADDITIVE_DATA_BACKFILL = "additive_data_backfill"
 HUMAN_REVIEWED_DROP = "human_reviewed_drop"
+HUMAN_REVIEWED_UNIQUE_INDEX = "human_reviewed_unique_index"
 _FORBIDDEN_SQL = {
     "ALTER",
     "CALL",
@@ -444,7 +445,10 @@ def _classify(revision: Revision) -> tuple[list[str], str]:
             if not ok:
                 findings.append(f"linha {line}: {reason}")
         elif op_name == "create_index":
-            if _keyword_literal(node, "unique") is True:
+            if (
+                _keyword_literal(node, "unique") is True
+                and policy != HUMAN_REVIEWED_UNIQUE_INDEX
+            ):
                 findings.append(
                     f"linha {line}: índice UNIQUE exige revisão de dados/lock"
                 )
@@ -470,6 +474,7 @@ def _classify(revision: Revision) -> tuple[list[str], str]:
     if policy is not None and policy not in {
         ADDITIVE_DATA_BACKFILL,
         HUMAN_REVIEWED_DROP,
+        HUMAN_REVIEWED_UNIQUE_INDEX,
     }:
         findings.append(f"deployment_policy desconhecida: {policy!r}")
     if policy == ADDITIVE_DATA_BACKFILL:

@@ -6,7 +6,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # Atualizar este identificador no mesmo PR que adicionar uma nova migration.
-HEAD_REVISION = "155_indices_listagem_espinha"
+HEAD_REVISION = "160_activity_alert_states"
 MERGE_REVISION = "104_merge_entrada_orquestrador"
 EXPECTED_PARENTS = {
     "101_entrada_universal_documentos",
@@ -159,3 +159,13 @@ def test_preliminares_encadeiam_apos_consolidacao_fontes():
     )
     assert revisao_145.down_revision == "144_alembic_version_varchar128"
     assert _script_directory().get_heads() == [HEAD_REVISION]
+
+
+def test_despesas_processuais_encadeiam_no_head_155():
+    revision = _script_directory().get_revision("156_case_despesas_processuais")
+    assert revision.down_revision == "155_indices_listagem_espinha"
+
+
+def test_ajuizamento_encadeia_no_head_156():
+    revision = _script_directory().get_revision("157_ajuizamento_judicial")
+    assert revision.down_revision == "156_case_despesas_processuais"

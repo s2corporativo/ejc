@@ -2,15 +2,15 @@
 # GED: upload/download com controle de confidencialidade (cofre).
 # Acesso a docs restritos: audit log obrigatório (LGPD art. 37).
 import asyncio
-import logging
 import hashlib
+import logging
 import os
 from datetime import date, datetime, time as dtime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 from uuid import uuid4
 
-import aiofiles
 import magic  # python-magic — validação por magic bytes (server-side)
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
@@ -33,9 +33,20 @@ from app.models.user import User
 from app.schemas.common import MsgResponse
 from app.services import google_drive as gd
 from app.services.document_analysis_hook import analisar_documento_bg
+from app.services.document_ingestion_orchestrator import ingerir_documento_local
+from app.services.document_ingestion_service import MalwareDetectadoError
+from app.services.document_persistence_service import (
+    DadosPersistenciaDocumento,
+    PersistenciaDocumentoInvalidaError,
+)
+from app.services.document_upload_stream import UploadExcedeLimiteError, UploadVazioError
+from app.services.document_version_service import (
+    DocumentoVersaoError,
+    bloquear_versionamento_por_titulo,
+)
+from app.services.malware_scan_service import MalwareScanIndisponivelError
 from app.services.document_format import ascii_seguro
 from app.services.document_reference_guard import exigir_documento_sem_referencias_bloqueantes
-from app.services.ocr_service import extrair_texto, extrair_xml
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -324,6 +335,8 @@ async def upload(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # Autorização permanece no router: o orquestrador documental recebe apenas
+    # contexto previamente autorizado e não funciona como atalho de RBAC.
     if case_id:
         caso = await verificar_acesso_caso(db, cu, case_id)
         if client_id and client_id != caso.client_id:
@@ -354,6 +367,9 @@ async def upload(
             detail=f"Confidencialidade inválida: {confidencialidade}. Use: {validos}",
         ) from exc
 
+    # Mantém a validação antecipada de extensão do contrato HTTP atual. A
+    # política de conteúdo/MIME será reaplicada pelo serviço canônico sobre a
+    # amostra streaming antes de qualquer promoção do staging.
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in EXTENSOES_PERMITIDAS:
         raise HTTPException(status_code=422, detail=f"Extensão não permitida: {ext}")
@@ -363,74 +379,36 @@ async def upload(
         try:
             tipos_validos |= {t.tipo_key for t in await _tipos_master_ativos(db)}
         except Exception as exc:
-            logger.warning("document_types_master indisponível na validação de tipo: %s", exc)
+            logger.warning(
+                "document_types_master indisponível na validação de tipo: %s",
+                type(exc).__name__,
+            )
         if tipo not in tipos_validos:
             raise HTTPException(
                 status_code=422,
                 detail=f"Tipo de documento inválido: {tipo}. Use GET /documents/tipos.",
             )
 
-    conteudo = await file.read()
-    if len(conteudo) > settings.MAX_UPLOAD_MB * 1024 * 1024:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Arquivo excede {settings.MAX_UPLOAD_MB}MB",
-        )
-    mime_real = _validar_conteudo(ext, conteudo)
+    # O service de persistência também normaliza o título. Fazer a mesma
+    # normalização antes do advisory lock e da consulta do predecessor evita
+    # que " Contrato " e "Contrato" criem duas raízes de versão distintas.
+    titulo = titulo.strip()
+    if not titulo or len(titulo) > 255:
+        raise HTTPException(status_code=422, detail="Título do documento inválido")
 
-    agora = datetime.now(timezone.utc)
-    subdir = f"{agora.year}/{agora.month:02d}"
-    os.makedirs(f"{settings.UPLOAD_DIR}/{subdir}", exist_ok=True)
-    doc_id = str(uuid4())
-    filepath = f"{subdir}/{doc_id}{ext}"
-    full_path = f"{settings.UPLOAD_DIR}/{filepath}"
-
-    async with aiofiles.open(full_path, "wb") as handle:
-        await handle.write(conteudo)
-
-    ocr_text = None
-    nfe_info = None
-    try:
-        if ext == ".xml":
-            res_xml = await asyncio.to_thread(extrair_xml, full_path)
-            if res_xml:
-                ocr_text = res_xml.get("texto")
-                nfe_info = res_xml.get("nfe")
-        else:
-            ocr_text = await asyncio.to_thread(extrair_texto, full_path, mime_real)
-    except Exception as exc:
-        logger.warning("OCR falhou no upload doc %s: %s", doc_id, exc)
-
-    document = Document(
-        id=doc_id,
-        titulo=titulo,
-        tipo=tipo,
-        filename=_nome_original_seguro(file.filename, f"documento{ext}"),
-        filepath=filepath,
-        mimetype=mime_real,
-        size_bytes=len(conteudo),
-        # Integridade (migration 147). O EJC é sistema de PROVA DOCUMENTAL: o
-        # hash é o que sustenta que o arquivo juntado hoje é o mesmo de amanhã.
-        # A maquinaria de SHA-256 existia inteira desde a 142 (serviço local,
-        # remoto via rclone, rescan, task de backfill) e o upload direto não
-        # chamava nada — o hash só existia em `document_intake_items`, que este
-        # caminho não alimenta. Calculado dos bytes que já estão em memória:
-        # sem I/O extra, sem reler o arquivo do disco.
-        sha256=hashlib.sha256(conteudo).hexdigest(),
-        confidencialidade=conf_enum,
-        ocr_text=ocr_text,
-        case_id=case_id,
-        client_id=client_id,
-        uploaded_by=cu.id,
-    )
-
-    # Compatibilidade G3 mantida nesta onda. A identidade por título será
-    # substituída por versionamento explícito em PR próprio, com testes de
-    # concorrência e constraint após auditoria dos grupos existentes.
+    # Compatibilidade do contrato legado de versionamento por título: enquanto
+    # a UI não envia predecessor explícito, o último documento ativo de mesmo
+    # título/caso é escolhido como predecessor. A numeração/lock passa a ser do
+    # document_version_service; concorrência deixa de gerar duas versões iguais
+    # e falha fechada com 409. Documentos avulsos preservam versão raiz.
+    documento_anterior_id: str | None = None
     if case_id:
-        existente = (
+        await bloquear_versionamento_por_titulo(
+            db, case_id=case_id, titulo=titulo
+        )
+        documento_anterior_id = (
             await db.execute(
-                select(Document)
+                select(Document.id)
                 .where(
                     Document.titulo == titulo,
                     Document.case_id == case_id,
@@ -440,53 +418,76 @@ async def upload(
                 .limit(1)
             )
         ).scalar_one_or_none()
-        if existente:
-            grupo = existente.versao_grupo_id or existente.id
-            document.versao = (existente.versao or 1) + 1
-            document.versao_grupo_id = grupo
-            document.versao_anterior_id = existente.id
-        else:
-            document.versao_grupo_id = doc_id
 
-    db.add(document)
-    await criar_audit_log(
-        db,
-        cu.id,
-        cu.role.value,
-        "UPLOAD",
-        "documents",
-        doc_id,
-        dados_depois={
-            "case_id": case_id,
-            "client_id": client_id,
-            "tipo": tipo,
-            "confidencialidade": conf_enum.value,
-            "size_bytes": len(conteudo),
-            "storage": "local",
-        },
+    dados = DadosPersistenciaDocumento(
+        titulo=titulo,
+        tipo=tipo,
+        confidencialidade=conf_enum,
+        case_id=case_id,
+        client_id=client_id,
+        uploaded_by=cu.id,
+        user_role=cu.role.value,
+        documento_anterior_id=documento_anterior_id,
     )
+
     try:
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        try:
-            os.unlink(full_path)
-        except FileNotFoundError:
-            pass
-        except OSError:
-            logger.error("Falha ao compensar arquivo órfão %s", filepath, exc_info=True)
-        raise
+        resultado = await ingerir_documento_local(
+            db,
+            file,
+            filename=file.filename,
+            upload_root=Path(settings.UPLOAD_DIR),
+            max_bytes=int(settings.MAX_UPLOAD_MB * 1024 * 1024),
+            dados=dados,
+        )
+    except UploadExcedeLimiteError as exc:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Arquivo excede {settings.MAX_UPLOAD_MB}MB",
+        ) from exc
+    except UploadVazioError as exc:
+        raise HTTPException(status_code=422, detail="Arquivo vazio") from exc
+    except MalwareDetectadoError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Arquivo bloqueado pela política de segurança",
+        ) from exc
+    except MalwareScanIndisponivelError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Validação de segurança do arquivo indisponível",
+        ) from exc
+    except PersistenciaDocumentoInvalidaError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Metadados do documento inválidos",
+        ) from exc
+    except DocumentoVersaoError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Conflito de versionamento documental. "
+                "Recarregue os documentos do caso e tente novamente."
+            ),
+        ) from exc
+
+    document = resultado.documento
+    doc_id = document.id
+    ocr_text = document.ocr_text
 
     if case_id:
         from app.services.status_transicao import avancar_status_pos_commit
 
-        await avancar_status_pos_commit(db, case_id, "documento_vinculado", user_id=cu.id)
+        await avancar_status_pos_commit(
+            db, case_id, "documento_vinculado", user_id=cu.id
+        )
     if case_id and ocr_text:
-        background_tasks.add_task(analisar_documento_bg, case_id, ocr_text, doc_id, cu.id)
+        background_tasks.add_task(
+            analisar_documento_bg, case_id, ocr_text, doc_id, cu.id
+        )
 
     resposta: dict = {"id": doc_id, "detail": "Documento enviado"}
-    if nfe_info:
-        resposta["nfe"] = nfe_info
+    if resultado.extracao.nfe:
+        resposta["nfe"] = resultado.extracao.nfe
     if ext in FORMATOS_SEM_INDEXACAO and not ocr_text:
         resposta["aviso"] = (
             "Conteúdo não indexável: formato legado sem extração de texto "
@@ -1121,6 +1122,7 @@ async def upload_para_drive(
         filepath=f"drive://{remote_path}",
         mimetype=mime,
         size_bytes=len(content),
+        sha256=hashlib.sha256(content).hexdigest(),
         drive_file_id=file_id,
         drive_link=result.get("webViewLink"),
         uploaded_by=current_user.id,

@@ -41,9 +41,11 @@ describe("Central — RBAC de atendimentos alinhado ao backend", () => {
 
   it.each(["superadmin", "admin", "socio", "advogado", "secretaria"])(
     "%s acessa a aba Atendimentos de Clientes",
-    (role) => {
+    async (role) => {
       renderCentral(role);
-      expect(screen.getByText("PAINEL_ATENDIMENTOS")).toBeTruthy();
+      // Com code-splitting por aba (lazy), o painel chega após o primeiro
+      // render — findByText aguarda a resolução do chunk mockado.
+      expect(await screen.findByText("PAINEL_ATENDIMENTOS")).toBeTruthy();
       expect(
         screen.getByRole("tab", { name: /Atendimentos de Clientes/ }),
       ).toBeTruthy();
@@ -52,9 +54,9 @@ describe("Central — RBAC de atendimentos alinhado ao backend", () => {
 
   it.each(["advogado_auxiliar", "estagiario", "financeiro"])(
     "%s não recebe acesso indevido e volta para Atividades",
-    (role) => {
+    async (role) => {
       renderCentral(role);
-      expect(screen.getByText("PAINEL_ATIVIDADES")).toBeTruthy();
+      expect(await screen.findByText("PAINEL_ATIVIDADES")).toBeTruthy();
       expect(
         screen.queryByRole("tab", { name: /Atendimentos de Clientes/ }),
       ).toBeNull();

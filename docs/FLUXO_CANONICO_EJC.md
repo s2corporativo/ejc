@@ -87,6 +87,15 @@ Nenhum perfil enxerga dados de outro escritório. Exceção exigiria alteração
 documento e revisão de segurança.
 
 Ato jurídico exige `advogado` ou superior — gate único em `requer_advogado()`.
+
+**Peças de admissão do cliente** — procuração e contrato identificados por
+`LegalDoc.client_admission_kind` — contêm a qualificação documental completa e são
+tratadas como conteúdo jurídico restrito. Emitir, ler, visualizar, baixar, revisar ou
+alterar esse `LegalDoc` exige `advogado` ou superior no backend, mesmo quando o usuário
+possui visão ampla do cadastro CRM. A permissão da `secretaria` para consultar dados
+cadastrais do cliente não autoriza acesso ao conteúdo integral dessas peças. As rotas
+`/clients/{id}/pecas-geradas` e `/legal-docs/*` devem aplicar o mesmo piso.
+
 `cliente_externo` acessa apenas o portal (`/portal`), nunca a área staff.
 
 ---

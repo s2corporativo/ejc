@@ -297,6 +297,31 @@ async def _validar_responsavel(
     return responsavel
 
 
+async def _validar_responsavel_tarefa_no_caso(
+    db: AsyncSession,
+    responsavel: Optional[User],
+    case_id: Optional[str],
+) -> None:
+    """Impede atribuir Task de atendimento a usuário fora da carteira do caso.
+
+    Reusa o gate canônico de ownership do próprio caso. A resposta ao caller é
+    422 genérica para não expor detalhes do caso ao usuário-alvo inválido.
+    Atendimento sem caso, sem responsável ou sem Task mantém o comportamento
+    existente.
+    """
+    if responsavel is None or not case_id:
+        return
+    try:
+        await verificar_acesso_caso(db, responsavel, case_id)
+    except HTTPException as exc:
+        if exc.status_code in (403, 404):
+            raise HTTPException(
+                status_code=422,
+                detail="Responsável da solicitação sem acesso ao caso",
+            ) from None
+        raise
+
+
 def _aplicar_status_solicitacao(
     atendimento: Atendimento,
     atendida: bool,
@@ -342,6 +367,12 @@ async def _sincronizar_tarefa(
     tarefa = await _obter_tarefa_vinculada(atendimento, db)
     if tarefa is None:
         return
+    responsavel = await _validar_responsavel(
+        db, atendimento.solicitacao_responsavel_id
+    )
+    await _validar_responsavel_tarefa_no_caso(
+        db, responsavel, atendimento.case_id
+    )
     tarefa.titulo = _titulo_tarefa(atendimento.solicitacao or "Solicitação")
     tarefa.descricao = (
         "Tarefa originada na linha do tempo de atendimento. "
@@ -540,6 +571,9 @@ async def criar_atendimento(
     _aplicar_status_solicitacao(atendimento, req.solicitacao_atendida, cu.id)
 
     if req.criar_tarefa:
+        await _validar_responsavel_tarefa_no_caso(
+            db, responsavel_solicitacao, req.case_id
+        )
         tarefa = Task(
             id=str(uuid4()),
             titulo=_titulo_tarefa(data["solicitacao"]),
@@ -938,6 +972,21 @@ async def atualizar_atendimento(
     if not _pode_editar_atendimento(atendimento, cu):
         raise HTTPException(status_code=403, detail="Sem permissão para editar este atendimento")
 
+    # PATCH de atendimento com Task vinculada também sincroniza a Task. Portanto,
+    # o editor precisa manter acesso atual ao caso antes de qualquer mutação,
+    # inclusive ao remover o responsável da solicitação. Isso evita que criador
+    # ou antigo responsável do atendimento contorne o ownership case-scoped.
+    if atendimento.task_id and atendimento.case_id:
+        try:
+            await verificar_acesso_caso(db, cu, atendimento.case_id)
+        except HTTPException as exc:
+            if exc.status_code in (403, 404):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Sem acesso ao caso vinculado à tarefa",
+                ) from None
+            raise
+
     data = req.model_dump(exclude_unset=True)
     for obrigatorio in ("tipo", "data_atendimento", "resumo"):
         if obrigatorio in data and data[obrigatorio] is None:
@@ -949,7 +998,13 @@ async def atualizar_atendimento(
     if "advogado_responsavel_id" in data:
         await _validar_responsavel(db, data["advogado_responsavel_id"])
     if "solicitacao_responsavel_id" in data:
-        await _validar_responsavel(db, data["solicitacao_responsavel_id"])
+        responsavel_solicitacao = await _validar_responsavel(
+            db, data["solicitacao_responsavel_id"]
+        )
+        if atendimento.task_id:
+            await _validar_responsavel_tarefa_no_caso(
+                db, responsavel_solicitacao, atendimento.case_id
+            )
     if "solicitacao_prioridade" in data:
         if data["solicitacao_prioridade"] is None:
             raise HTTPException(status_code=422, detail="Prioridade não pode ser nula")

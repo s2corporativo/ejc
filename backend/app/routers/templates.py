@@ -26,10 +26,15 @@ router = APIRouter(prefix="/templates", tags=["Templates de Peças"])
 
 # Variáveis suportadas (documentadas para o usuário)
 VARIAVEIS = [
-    "cliente_nome", "cliente_cpf_cnpj", "cliente_endereco",
+    "cliente_nome", "cliente_cpf_cnpj", "cliente_endereco", "cliente_qualificacao",
     "numero_processo", "parte_contraria", "comarca", "vara",
     "valor_causa", "area", "data_hoje",
     "advogado_nome", "advogado_oab",
+    # Dados institucionais (settings ESCRITORIO_*): mesma fonte do timbre
+    # PDF/DOCX — o modelo nunca precisa repetir CNPJ/OAB/endereço à mão.
+    "escritorio_nome", "escritorio_cnpj", "escritorio_oab", "escritorio_endereco",
+    "escritorio_cidade", "escritorio_estado", "escritorio_email", "escritorio_site",
+    "escritorio_socio_titular",
 ]
 
 
@@ -53,6 +58,9 @@ def _render(conteudo: str, ctx: dict) -> str:
     return re.sub(r"\{\{\s*([a-z_]+)\s*\}\}", repl, conteudo)
 
 
+_TIPOS_ADMISSAO = (PecaTipo.contrato.value, PecaTipo.procuracao.value)
+_ROLES_GESTAO = ("superadmin", "admin", "socio")
+
 _MESES_PT = [
     "janeiro", "fevereiro", "março", "abril", "maio", "junho",
     "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
@@ -62,6 +70,43 @@ _MESES_PT = [
 def _data_extenso(d: date) -> str:
     """Data por extenso em pt-BR, independente do locale do container."""
     return f"{d.day:02d} de {_MESES_PT[d.month - 1]} de {d.year}"
+
+
+def contexto_escritorio() -> dict:
+    """Variáveis institucionais do modelo — lidas das settings ESCRITORIO_*."""
+    from app.core.config import get_settings
+    from app.services.documental import formatar_oab
+
+    s = get_settings()
+    return {
+        "escritorio_nome": s.ESCRITORIO_NOME,
+        "escritorio_cnpj": s.escritorio_cnpj() or "—",
+        "escritorio_oab": formatar_oab(s.escritorio_oab()) or "—",
+        "escritorio_endereco": s.escritorio_endereco() or "—",
+        "escritorio_cidade": s.ESCRITORIO_CIDADE,
+        "escritorio_estado": s.ESCRITORIO_ESTADO,
+        "escritorio_email": s.ESCRITORIO_EMAIL,
+        "escritorio_site": s.ESCRITORIO_SITE,
+        "escritorio_socio_titular": s.ESCRITORIO_SOCIO_TITULAR,
+    }
+
+
+def contexto_cliente(client: Client) -> dict:
+    """Variáveis do cliente (cadastro único — nunca recadastro no modelo)."""
+    from app.services.documental import _qualificacao
+
+    endereco = ", ".join(filter(None, [
+        client.logradouro, client.numero, client.bairro,
+        f"{client.cidade}/{client.estado}" if client.cidade else None,
+    ])) or "—"
+    return {
+        "cliente_nome": client.razao_social or client.nome or "—",
+        "cliente_cpf_cnpj": client.documento_plain or "—",
+        "cliente_endereco": endereco,
+        "cliente_qualificacao": _qualificacao(client),
+        "data_hoje": _data_extenso(date.today()),
+        **contexto_escritorio(),
+    }
 
 
 @router.get("/")
@@ -120,6 +165,13 @@ async def criar(
     tipos_validos = [t.value for t in PecaTipo]
     if payload.tipo_peca not in tipos_validos:
         raise HTTPException(status_code=422, detail=f"tipo_peca inválido. Use: {tipos_validos}")
+    # Modelos de contrato/procuração substituem o texto institucional da
+    # admissão de TODOS os clientes — só gestão pode cadastrá-los.
+    if payload.tipo_peca in _TIPOS_ADMISSAO and cu.role.value not in _ROLES_GESTAO:
+        raise HTTPException(
+            status_code=403,
+            detail="Modelos de contrato e procuração são restritos a sócios/gestão",
+        )
     t = DocTemplate(id=str(uuid4()), created_by=cu.id, **payload.model_dump())
     db.add(t)
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "doc_templates", t.id)
@@ -149,22 +201,14 @@ async def gerar_peca(
     if not client:
         raise HTTPException(status_code=404, detail="Caso sem cliente vinculado")
 
-    endereco = ", ".join(filter(None, [
-        client.logradouro, client.numero, client.bairro,
-        f"{client.cidade}/{client.estado}" if client.cidade else None,
-    ])) or "—"
-
     ctx = {
-        "cliente_nome": client.nome or client.razao_social or "—",
-        "cliente_cpf_cnpj": client.documento_plain or "—",
-        "cliente_endereco": endereco,
+        **contexto_cliente(client),
         "numero_processo": case.numero_processo or "—",
         "parte_contraria": case.parte_contraria or "—",
         "comarca": case.comarca or "—",
         "vara": case.vara or "—",
         "valor_causa": formatar_brl(case.valor_causa) if case.valor_causa else "—",
         "area": case.area.value if hasattr(case.area, "value") else str(case.area),
-        "data_hoje": _data_extenso(date.today()),
         "advogado_nome": cu.full_name,
         "advogado_oab": cu.oab_number or "—",
     }

@@ -16,18 +16,14 @@ import Markdown from "./Markdown";
 import { AIFactualityLegend, HumanValidationStatus } from "./UI";
 import { toast } from "./Toast";
 import api from "../lib/api";
+import {
+  acoesContextuais as buscarAcoesContextuais,
+  executarSkill,
+  executarSkillDocumento,
+  type ContextualAction,
+  type SkillExecuteResponse,
+} from "../services/ai";
 import type { Case } from "../types";
-
-type ContextualAction = {
-  id: string;
-  name: string;
-  display_name: string;
-  description?: string | null;
-  area: string;
-  reason: string;
-  score: number;
-  oab_restricted: boolean;
-};
 
 type NextAction = {
   name: string;
@@ -35,23 +31,9 @@ type NextAction = {
   description?: string | null;
 };
 
-type SkillResult = {
-  conteudo: string;
-  skill: string;
-  skill_name?: string;
-  ai_log_id?: string;
-  requer_revisao: boolean;
-  tokens_usados?: number;
-  custo_estimado_brl?: number;
-  classificacao?: {
-    tipo: string;
-    confianca: number;
-    sinais: string[];
-    metodo: string;
-  };
-  proximas_acoes?: NextAction[];
-  auditoria?: Record<string, unknown>;
-};
+// SkillResult substituído pelo contrato canônico SkillExecuteResponse
+// (services/ai.ts — espelha SkillExecuteResponse do backend).
+type SkillResult = SkillExecuteResponse;
 
 type AgendaDraft = {
   open: boolean;
@@ -132,19 +114,15 @@ export default function ContextualAIAssistant({
   useEffect(() => {
     let ativo = true;
     setLoadingActions(true);
-    api
-      .get("/ai/skills/contextual", {
-        params: {
-          case_id: caso.id,
-          surface,
-          area: caso.area,
-          phase: caso.fase,
-          limit: 5,
-        },
-      })
-      .then(({ data }) => {
+    buscarAcoesContextuais({
+      case_id: caso.id,
+      surface,
+      area: caso.area,
+      phase: caso.fase,
+    })
+      .then((resposta) => {
         if (!ativo) return;
-        const itens: ContextualAction[] = data.actions || [];
+        const itens: ContextualAction[] = resposta.actions || [];
         setActions(itens);
         setSelected((atual) =>
           itens.some((item) => item.name === atual)
@@ -194,9 +172,9 @@ export default function ContextualAIAssistant({
         fd.append("phase", caso.fase || "");
         fd.append("usar_rag", "true");
         if (query.trim()) fd.append("instrucoes", query.trim());
-        ({ data } = await api.post("/ai/skills/execute-doc", fd));
+        data = await executarSkillDocumento(fd);
       } else {
-        ({ data } = await api.post("/ai/skills/execute", {
+        data = await executarSkill({
           skill_name: selected,
           query: query.trim(),
           case_id: caso.id,
@@ -204,7 +182,7 @@ export default function ContextualAIAssistant({
           surface,
           area: caso.area,
           phase: caso.fase,
-        }));
+        });
       }
       setResult(data);
     } catch (error: any) {

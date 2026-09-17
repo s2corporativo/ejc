@@ -90,6 +90,9 @@ def _host_oficial(url: str) -> bool:
 def baixar(url: str, *, timeout: int = TIMEOUT_PADRAO) -> bytes:
     """Baixa e exige que o host FINAL, após redirecionamentos, siga oficial."""
     req = urllib.request.Request(url, headers={"User-Agent": UA})
+    # URL restrita a allowlist de dominio oficial antes da chamada, e o host
+    # final pos-redirect e reconferido. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
     with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - URL validada acima
         final = resp.geturl()
         if final != url and not _host_oficial(final):

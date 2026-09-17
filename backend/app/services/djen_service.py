@@ -37,6 +37,10 @@ from app.models.case import Case, CaseMovimento, CaseStatus
 from app.models.djen import DjenComunicacao
 from app.models.user import User
 
+# Siglas de duas letras que aparecem em rótulos de OAB e NÃO são unidade
+# federativa — sem isto, "OAB 252599" viria com uf="OA".
+_NAO_UF = frozenset({"OA", "NO", "DE", "DA", "DO", "Nº", "N"})
+
 logger = logging.getLogger("ejc.djen")
 BASE = "https://comunicaapi.pje.jus.br/api/v1/comunicacao"
 ITENS_POR_PAGINA = 100
@@ -160,11 +164,32 @@ def limpar_resultados_execucao() -> None:
     _RESULTADOS_EXECUCAO.set(())
 
 
+# A API do Comunica/CNJ fica atrás de uma distribuição CloudFront com
+# restrição por país: de fora do Brasil ela devolve 403 em QUALQUER rota,
+# inclusive /swagger, com este texto no corpo. Sem distinguir esse caso, o
+# diagnóstico mostra `http_4xx` e o operador procura o defeito no cadastro de
+# OAB — quando a causa é a localização do servidor, que nenhum ajuste de
+# cadastro corrige. Verificado em 04/09/2026 (x-amz-cf-pop IAD55).
+_MARCA_BLOQUEIO_GEOGRAFICO = "block access from your country"
+
+
+def _e_bloqueio_geografico(resposta: httpx.Response | None) -> bool:
+    if resposta is None or resposta.status_code != 403:
+        return False
+    try:
+        corpo = resposta.text or ""
+    except Exception:  # resposta em streaming/consumida — não dá para afirmar
+        return False
+    return _MARCA_BLOQUEIO_GEOGRAFICO in corpo.lower()
+
+
 def _classificar_erro_fonte(exc: Exception) -> str:
     if isinstance(exc, httpx.TimeoutException):
         return "timeout"
     if isinstance(exc, httpx.HTTPStatusError):
         status = exc.response.status_code if exc.response is not None else 0
+        if _e_bloqueio_geografico(exc.response):
+            return "geo_bloqueado"
         if status >= 500:
             return "http_5xx"
         if status >= 400:
@@ -717,6 +742,46 @@ async def _capturar_configurado(
     )
 
 
+def oab_para_captura(adv) -> tuple[str, str]:
+    """Resolve a OAB usada na captura de intimações, com fallback do perfil.
+
+    AUD27-P3-9: o `User` tem DOIS campos para o mesmo fato — `oab_number`
+    (preenchido no perfil) e `djen_oab_numero`/`djen_oab_uf` (lidos pela
+    captura) — sem nenhuma reconciliação. Um advogado que preencheu só o do
+    perfil era pulado em silêncio pelo job das 06h30: o sistema tinha o dado e
+    não capturava nada. Num sistema de prazos, isso é risco de perda.
+
+    Ordem de resolução:
+      1. `djen_oab_numero` + `djen_oab_uf` — explícito, sempre vence;
+      2. `oab_number`, QUANDO carrega a UF ("252599/MG", "OAB/MG 252599",
+         "252599 MG").
+
+    A UF NUNCA é adivinhada. Número de OAB sem UF é ambíguo no país inteiro, e
+    supor o estado do escritório monitoraria a inscrição de outro advogado —
+    pior que não monitorar, porque pareceria estar funcionando. Sem UF
+    determinável, devolve vazio e o chamador registra `oab_nao_configurada`,
+    que aparece no diagnóstico.
+    """
+    numero = re.sub(r"\D", "", (getattr(adv, "djen_oab_numero", "") or ""))
+    uf = ((getattr(adv, "djen_oab_uf", "") or "").strip().upper())[:2]
+    if numero and len(uf) == 2 and uf.isalpha():
+        return numero, uf
+
+    perfil = (getattr(adv, "oab_number", "") or "").strip()
+    if not perfil:
+        return "", ""
+
+    # UF em qualquer posição: "252599/MG", "OAB/MG 252599", "252599 MG".
+    m_uf = re.search(r"\b([A-Za-z]{2})\b", perfil)
+    m_num = re.search(r"\d{3,}", perfil)
+    if not m_uf or not m_num:
+        return "", ""
+    uf_perfil = m_uf.group(1).upper()
+    if uf_perfil in _NAO_UF:
+        return "", ""
+    return m_num.group(0), uf_perfil
+
+
 async def capturar_para_advogado(
     db: AsyncSession,
     adv: User,
@@ -746,18 +811,13 @@ async def capturar_para_advogado(
             paginas=0,
             janela_dias=0,
         )
-    if not (adv.djen_oab_numero or "").strip() or not (
-        adv.djen_oab_uf or ""
-    ).strip():
+    numero, uf = oab_para_captura(adv)
+    if not numero or not uf:
         return registrar_resultado_execucao(
             DjenCapturaResultado.sem_configuracao()
         )
 
-    consulta = await consultar_oab(
-        adv.djen_oab_numero,
-        adv.djen_oab_uf,
-        dias=dias,
-    )
+    consulta = await consultar_oab(numero, uf, dias=dias)
     if not consulta.fonte_ok:
         return registrar_resultado_execucao(
             DjenCapturaResultado(

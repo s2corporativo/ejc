@@ -10,7 +10,8 @@
 # COMPARTILHADO com a Entrada Única (routers/entrada.py). Este router mantém
 # os gates (RBAC, AI_ENABLED, ownership) e a ponte Entrevista → Ficha.
 # Tudo é ESTIMATIVA PRELIMINAR / RASCUNHO (HITL) — nunca parecer definitivo,
-# nunca promessa de resultado (OAB Prov. 205/2021).
+# nunca promessa de resultado — revisão humana do advogado responsável é
+# obrigatória.
 from __future__ import annotations
 
 import logging

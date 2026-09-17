@@ -397,6 +397,9 @@ def gravar_rollback(caminho: Path, payload: dict[str, Any]) -> None:
     """
     assinar_payload(payload)
     caminho.parent.mkdir(parents=True, exist_ok=True)
+    # 0o700 e dono-apenas: MAIS restritivo que o 0o644 que a regra sugere.
+    # Seguir a regra afrouxaria o diretorio. Ver docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
     os.chmod(caminho.parent, 0o700)
     tmp = caminho.with_suffix(caminho.suffix + ".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)

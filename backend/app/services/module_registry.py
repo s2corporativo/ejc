@@ -77,6 +77,20 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         usa_ia=True, responsavel_operacional="juridico",
     ),
     _mod(
+        "ajuizamento", "Ajuizamento", "Jurídico", "/ajuizamento",
+        ["/api/ajuizamento"],
+        perfis=PERFIS_JURIDICO,
+        dependencias=["cases", "clients", "documents", "pecas", "audit", "external_api"],
+        responsavel_operacional="juridico",
+    ),
+    _mod(
+        "ajuizamento-perfis", "Perfis de tribunal", "Administração", "/ajuizamento/perfis",
+        ["/api/ajuizamento/perfis"],
+        perfis=["superadmin", "admin"],
+        dependencias=["ajuizamento", "vault", "audit"],
+        responsavel_operacional="gestao",
+    ),
+    _mod(
         "datajud", "Processos / DataJud", "Jurídico", "/datajud",
         ["/api/datajud", "/api/processes", "/api/movimentos"],
         perfis=PERFIS_JURIDICO, dependencias=["cases", "external_api"],
@@ -106,7 +120,7 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
     ),
     _mod(
         "documentos", "Documentos e GED", "Produção", "/documentos",
-        ["/api/documents", "/api/documentos-ia", "/api/anexos", "/api/data-room"],
+        ["/api/documents", "/api/anexos", "/api/data-room"],
         perfis=PERFIS_JURIDICO + ["secretaria"],
         dependencias=["storage", "ocr", "cases", "ai_gateway"], usa_ia=True,
         responsavel_operacional="juridico",
@@ -183,7 +197,7 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
     _mod(
         "conhecimento", "Base de Conhecimento e RAG", "Inteligência",
         "/inteligencia?tab=conhecimento",
-        ["/api/rag", "/api/rag/knowledge-base", "/api/teses", "/api/teses-v4", "/api/sumulas", "/api/jurisprudencias", "/api/jurisprudencia-externa"],
+        ["/api/rag", "/api/rag/knowledge-base", "/api/teses", "/api/teses-v4", "/api/sumulas", "/api/jurisprudencias"],
         perfis=PERFIS_GESTAO + ["advogado"], dependencias=["database", "pgvector", "embedding_service", "storage"],
         usa_ia=True, responsavel_operacional="juridico",
     ),
@@ -194,14 +208,8 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         responsavel_operacional="juridico",
     ),
     _mod(
-        "victory-vault", "Victory Vault", "Inteligência", "/inteligencia?tab=conhecimento",
-        ["/api/teses", "/api/casos/{case_id}/provas"], perfis=PERFIS_JURIDICO,
-        dependencias=["cases", "documents", "teses"], usa_ia=True,
-        responsavel_operacional="juridico",
-    ),
-    _mod(
         "radar-regulatorio", "Radar Regulatório", "Inteligência", "/radar?modo=digest",
-        ["/api/regulatorio", "/api/noticias"], perfis=PERFIS_JURIDICO,
+        ["/api/regulatorio"], perfis=PERFIS_JURIDICO,
         dependencias=["external_sources", "notifications"], usa_ia=True,
         responsavel_operacional="juridico",
     ),
@@ -210,11 +218,6 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         ["/api/diario-oficial", "/api/intimacoes"], perfis=PERFIS_JURIDICO,
         dependencias=["external_sources", "deadlines"], usa_ia=True,
         responsavel_operacional="juridico",
-    ),
-    _mod(
-        "noticias", "Notícias", "Inteligência", "/noticias", ["/api/noticias"],
-        perfis=PERFIS_JURIDICO + ["secretaria"], dependencias=["external_sources"],
-        dados_sensiveis=False, responsavel_operacional="juridico",
     ),
     _mod(
         "portal", "Portal do Cliente", "Portal", "/portal", ["/api/portal"],

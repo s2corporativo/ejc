@@ -58,7 +58,6 @@ BACKEND_SEM_KEY_NO_FRONTEND: set[str] = {
     "ferramentas-ia",    # aba de /inteligencia (?tab=ferramentas)
     "conhecimento",      # aba de /inteligencia (?tab=conhecimento)
     "jurimetria",        # aba de /inteligencia (?tab=jurimetria)
-    "victory-vault",     # consolidado na aba Conhecimento de /inteligencia
     "radar-regulatorio", # modo de /radar (?modo=digest)
     "portal",            # superfície do cliente externo (ver exceção acima)
     # Consolidação 30/08/2026: as páginas /legado/* viraram LEGACY_REDIRECTS
@@ -77,8 +76,11 @@ FRONTEND_SEM_MODULO_NO_BACKEND: set[str] = {
     "caso-novo", "caso-detalhe", "caso-jornada", "caso-entrevista",
     "cliente-detalhe", "cadastro-manual", "ramo-detalhe",
     # Workspaces/casca cujo conteúdo já está catalogado por módulo
+    # (a consolidação do "DPT360 triplo" aposentou dpt360-subroutes/
+    #  dpt360-company-detail: as sub-rotas ficaram em ModuleRoute.subPaths
+    #  do próprio módulo dpt360 — auditoria §2.6 #7)
     "atividades", "atividades-dia", "radar", "entrada",
-    "dpt360", "dpt360-subroutes", "dpt360-company-detail",
+    "dpt360",
     # Telas utilitárias/administrativas sem módulo de negócio próprio
     "configuracoes", "ajuda", "lixeira", "ferramentas", "prompts",
     "governanca-ia", "banco-teses", "raio-x-processo",

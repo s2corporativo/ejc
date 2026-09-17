@@ -171,12 +171,7 @@ class TestVeredictoWiring:
         monkeypatch.setattr(mod, "registrar_ai_log", _noop_log)
         monkeypatch.setattr(mod, "_escopo_cliente_do_caso", _noop_escopo)
 
-        class _VV:
-            async def get_teses_vitoriosas(self, area_juridica):
-                return []
-
         v = mod.VereditoIA()
-        v.victory_vault = _VV()
         user = User(id="u1", role=UserRole.advogado, full_name="Adv")
 
         await v.predict_success(
