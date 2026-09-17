@@ -120,7 +120,7 @@ def test_recusa_documento_que_nao_e_a_norma_declarada():
     )
     corpo = b"<p>LEI N 10.406, DE 10 DE JANEIRO DE 2002. Art. 173. Outro texto qualquer.</p>"
 
-    with pytest.raises(ErroDeColeta, match="não é a norma que o registro declara"):
+    with pytest.raises(ErroDeColeta, match="não contém uma linha-título compatível"):
         coletar_fonte(fonte, baixador=lambda _: corpo)
 
 
@@ -401,7 +401,7 @@ def test_marcador_de_identidade_so_no_cabecalho_recusa_ato_que_so_cita_a_norma()
         apelido="ctn-emenda", titulo="CTN", url="https://www2.camara.leg.br/x",
         artigos=["173"], verificar_texto=["LEI N", "5.172", "25 DE OUTUBRO DE 1966"],
     )
-    with pytest.raises(ErroDeColeta, match="cabeçalho"):
+    with pytest.raises(ErroDeColeta, match="linha-título"):
         coletar_fonte(fonte, baixador=lambda _: corpo)
 
 
