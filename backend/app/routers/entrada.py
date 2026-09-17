@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Annotated, Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -47,7 +47,7 @@ async def exigir_advogado(cu: User = Depends(get_current_user)) -> User:
 async def analisar(
     files: list[UploadFile] = File(default=[]),
     texto: Optional[str] = Form(None),
-    case_id: Optional[str] = Query(None, max_length=36),
+    case_id: Annotated[Optional[str], Query(max_length=36)] = None,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(exigir_advogado),
 ):
