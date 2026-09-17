@@ -36,13 +36,14 @@ from tenacity import (
 from app.models.case import Case, CaseMovimento, CaseStatus
 from app.models.djen import DjenComunicacao
 from app.models.user import User
+from app.services.djen_http import DJEN_COMUNICACAO_URL, criar_cliente_djen
 
 # Siglas de duas letras que aparecem em rótulos de OAB e NÃO são unidade
 # federativa — sem isto, "OAB 252599" viria com uf="OA".
 _NAO_UF = frozenset({"OA", "NO", "DE", "DA", "DO", "Nº", "N"})
 
 logger = logging.getLogger("ejc.djen")
-BASE = "https://comunicaapi.pje.jus.br/api/v1/comunicacao"
+BASE = DJEN_COMUNICACAO_URL
 ITENS_POR_PAGINA = 100
 MAX_PAGINAS = 100
 JANELA_RECONCILIACAO_DIAS = 7
@@ -305,7 +306,7 @@ async def enviar_emails_pendentes(resultado: DjenCapturaResultado) -> None:
     reraise=True,
 )
 async def _djen_get(params: dict) -> dict | list:
-    async with httpx.AsyncClient(timeout=25) as client:
+    async with criar_cliente_djen(timeout=25) as client:
         response = await client.get(BASE, params=params)
         response.raise_for_status()
         return response.json()
