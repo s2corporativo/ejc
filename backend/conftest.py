@@ -42,6 +42,25 @@ async def _engine_pool_limpo_por_teste():
     yield
 
 
+# ── Isolamento das cotas de rate limit entre testes ──────────────────────────
+# A suíte roda em segundos com o MESMO IP/usuário sintético: sem este reset,
+# as janelas de 60s acumulam ENTRE testes (o teste que roda depois herda a
+# cota já consumida pelo anterior) e loops legítimos de TestClient batem 429
+# nos endpoints agora protegidos pela Fase 8. Isolamento de teste — o
+# comportamento de produção (contador por rota/usuário-IP) permanece intacto.
+# O slowapi (@limiter.limit em auth) usa storage próprio e também é zerado.
+@pytest.fixture(autouse=True)
+def _rate_limit_zerado_por_teste():
+    from app.core import rate_limit as _rl
+
+    _rl._janelas.clear()
+    storage = getattr(_rl.limiter, "_storage", None)
+    if storage is not None and hasattr(storage, "reset"):
+        storage.reset()
+    yield
+    _rl._janelas.clear()
+
+
 # ── Guarda: ninguém recria o singleton de Settings entre testes (Issue #620) ─
 # `Settings` é cacheada via `lru_cache` em app.core.config.get_settings(), e
 # vários módulos capturam a referência da instância NO IMPORT (ex.:
