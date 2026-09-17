@@ -15,6 +15,8 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+
+from app.core.rate_limit import rate_limit
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -63,7 +65,7 @@ def _classificar_fechamento(itens: list[dict]) -> tuple[str, int]:
     return "pronto", score
 
 
-@router.get("/consolidado")
+@router.get("/consolidado", dependencies=[Depends(rate_limit("fin-consolidado", 60))])
 async def consolidado(
     competencia: Optional[str] = Query(None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
     db: AsyncSession = Depends(get_db),
@@ -276,7 +278,7 @@ async def consolidado(
     }
 
 
-@router.get("/atencao")
+@router.get("/atencao", dependencies=[Depends(rate_limit("fin-atencao", 60))])
 async def pendencias_operacionais(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
@@ -443,7 +445,7 @@ async def pendencias_operacionais(
     return {"gerado_em": hoje.isoformat(), "total": len(itens), "itens": itens}
 
 
-@router.get("/demonstrativo")
+@router.get("/demonstrativo", dependencies=[Depends(rate_limit("fin-demonstrativo", 30))])
 async def demonstrativo_gerencial(
     competencia: Optional[str] = Query(None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
     db: AsyncSession = Depends(get_db),
@@ -560,7 +562,7 @@ async def demonstrativo_gerencial(
     }
 
 
-@router.get("/fechamento-inteligente")
+@router.get("/fechamento-inteligente", dependencies=[Depends(rate_limit("fin-fechamento-inteligente", 10))])
 async def fechamento_inteligente(
     competencia: Optional[str] = Query(None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
     db: AsyncSession = Depends(get_db),
