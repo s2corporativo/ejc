@@ -10,6 +10,7 @@ import {
   Headset,
   PenLine,
   ScanSearch,
+  Wrench,
 } from "lucide-react";
 import api from "../lib/api";
 import { useAuth } from "../stores/auth";
@@ -118,6 +119,16 @@ export default function CommandPalette() {
             },
           ]
         : []),
+      {
+        // Hub "Mais Ferramentas": sem esta entrada, o catálogo de módulos
+        // avançados só era alcançável por URL direta (auditoria de
+        // alcançabilidade 18/09/2026 — o hub não tinha NENHUM link de
+        // entrada no app). Disponível a todos os perfis autenticados.
+        path: "/ferramentas",
+        label: "Mais ferramentas",
+        description: "Abrir o catálogo de módulos avançados do escritório",
+        icon: Wrench,
+      },
       {
         path: "/atividades",
         label: "Abrir Agenda e Prazos",
