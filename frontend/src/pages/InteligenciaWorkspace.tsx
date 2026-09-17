@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { lazy, Suspense, useMemo } from "react";
 import { useSearchParams } from "react-router";
 import {
   Sparkles,
@@ -12,19 +12,30 @@ import {
   AlertTriangle,
   Calculator,
 } from "lucide-react";
-import AgenteIA from "./AgenteIA";
-import IA from "./IA";
-import AssistenteIA from "./AssistenteIA";
-import FerramentasIA from "./FerramentasIA";
-import ConteudoJuridico from "./ConteudoJuridico";
-import Jurimetria from "./Jurimetria";
-import ConhecimentoGovernado from "./ConhecimentoGovernado";
-import DashboardIA from "./DashboardIA";
-import EstimadorHonorarios from "../components/EstimadorHonorarios";
 import ErrorBoundary from "../components/ErrorBoundary";
-import { AIFactualityLegend, IANotice, PageHeader } from "../components/UI";
+import {
+  AIFactualityLegend,
+  IANotice,
+  PageHeader,
+  Spinner,
+} from "../components/UI";
 import { useAuth } from "../stores/auth";
 import { MENSAGEM_IA_NAO_ATIVADA, useIaStatus } from "../lib/iaStatus";
+
+// Code-splitting por aba (auditoria §2.6 #4): importar as páginas inteiras
+// estaticamente anulava o lazy() do registry — tudo caía num chunk só.
+// Uma aba renderiza por vez; cada página vira um chunk carregado sob demanda.
+const AgenteIA = lazy(() => import("./AgenteIA"));
+const IA = lazy(() => import("./IA"));
+const AssistenteIA = lazy(() => import("./AssistenteIA"));
+const FerramentasIA = lazy(() => import("./FerramentasIA"));
+const ConteudoJuridico = lazy(() => import("./ConteudoJuridico"));
+const Jurimetria = lazy(() => import("./Jurimetria"));
+const ConhecimentoGovernado = lazy(() => import("./ConhecimentoGovernado"));
+const DashboardIA = lazy(() => import("./DashboardIA"));
+const EstimadorHonorarios = lazy(
+  () => import("../components/EstimadorHonorarios"),
+);
 
 const GESTORES: readonly string[] = ["superadmin", "admin", "socio"];
 const ADVOGADOS: readonly string[] = ["superadmin", "admin", "socio", "advogado"];
@@ -215,17 +226,27 @@ export default function InteligenciaWorkspace() {
 
       <div className="min-w-0">
         <ErrorBoundary key={`${tab}-${sub ?? ""}`}>
-          {tab === "assistente" && sub === "agente" && <AgenteIA />}
-          {tab === "assistente" && sub === "rapido" && <AssistenteIA />}
-          {tab === "producao" && sub === "analise" && <IA />}
-          {tab === "producao" && sub === "ferramentas" && <FerramentasIA />}
-          {tab === "honorarios" && <EstimadorHonorarios />}
-          {tab === "jurimetria" && <Jurimetria />}
-          {tab === "conhecimento" && sub === "pesquisa" && <ConteudoJuridico />}
-          {tab === "conhecimento" && sub === "curadoria" && (
-            <ConhecimentoGovernado />
-          )}
-          {tab === "saude" && <DashboardIA />}
+          <Suspense
+            fallback={
+              <div className="flex justify-center py-16">
+                <Spinner />
+              </div>
+            }
+          >
+            {tab === "assistente" && sub === "agente" && <AgenteIA />}
+            {tab === "assistente" && sub === "rapido" && <AssistenteIA />}
+            {tab === "producao" && sub === "analise" && <IA />}
+            {tab === "producao" && sub === "ferramentas" && <FerramentasIA />}
+            {tab === "honorarios" && <EstimadorHonorarios />}
+            {tab === "jurimetria" && <Jurimetria />}
+            {tab === "conhecimento" && sub === "pesquisa" && (
+              <ConteudoJuridico />
+            )}
+            {tab === "conhecimento" && sub === "curadoria" && (
+              <ConhecimentoGovernado />
+            )}
+            {tab === "saude" && <DashboardIA />}
+          </Suspense>
         </ErrorBoundary>
       </div>
     </div>

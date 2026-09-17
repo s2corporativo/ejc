@@ -41,6 +41,7 @@ ORIGENS_SNAPSHOT: tuple[str, ...] = (
     "orquestrador",  # FASE 5 — LegalCaseOrchestrator (linha do tempo de estados)
     "sala_juridica",  # conversão/vínculo da Sala Jurídica → caso oficial
     "documento",  # leitura estratégica automática de documento vinculado
+    "entrada_unica",  # dossiê jurídico canônico produzido pela Entrada Única
 )
 
 

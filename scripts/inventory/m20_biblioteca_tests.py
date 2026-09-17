@@ -151,38 +151,12 @@ chk("jurisprudência: secretaria bloqueada na edição (403)",
     r.status_code == 403, f"{r.status_code}")
 
 # ═══════════════════ 2. JURISPRUDÊNCIA EXTERNA ══════════════════════════════
-r = get("advogado", "/api/jurisprudencia-externa/buscar",
-        params={"q": "dano moral", "fonte": "stj"})
-chk("externa: busca 200 (query + fonte)", r.status_code == 200,
-    f"{r.status_code} {r.text[:80]}")
-
-r = get("advogado", "/api/jurisprudencia-externa/buscar/lexml",
-        params={"q": "recurso especial", "quantidade": 3})
-chk("externa: busca LexML 200", r.status_code == 200,
-    f"{r.status_code} {r.text[:80]}")
-
-r = get("advogado", "/api/jurisprudencia-externa/buscar/tjmg",
-        params={"q": "embargos de declaração"})
-chk("externa: busca TJMG 200", r.status_code == 200,
-    f"{r.status_code} {r.text[:80]}")
-
-r = get("advogado", "/api/jurisprudencia-externa/fontes")
-chk("externa: fontes 200 com status das integrações",
-    r.status_code == 200 and "fontes" in r.json(), str(r.json())[:120])
-
-# importar decisão externa (payload mínimo)
-r = requests.post(f"{BASE}/api/jurisprudencia-externa/importar",
-                  json={"titulo": "EJC_QA decisão importada",
-                        "ementa": "Ementa sintética EJC_QA para homologação do "
-                                  "módulo de biblioteca jurídica, com conteúdo "
-                                  "mínimo válido para ingestão na base interna.",
-                        "tribunal": "STJ", "fonte": "stj"},
-                  headers=H("advogado"), timeout=30)
-jimp = r.json() if r.status_code == 201 else {}
-chk("externa: importar decisão 201 cria registro interno",
-    r.status_code == 201 and jimp.get("titulo"),
-    f"{r.status_code} {r.text[:80]}")
-id_jimp = jimp.get("id")
+# (Fase 7 §3.6): as rotas /api/jurisprudencia-externa/{buscar,fontes,importar}
+# foram aposentadas — busca externa canônica = POST
+# /api/jurisprudencia-externa/precedentes/buscar (M25); importação canônica
+# = POST /api/conhecimento/importar-jurisprudencia (RAG citável). A biblioteca
+# interna (/api/jurisprudencias) segue testada na seção 1.
+id_jimp = None
 
 # ═══════════════════ 3. TESES ════════════════════════════════════════════════
 tese_body = {
