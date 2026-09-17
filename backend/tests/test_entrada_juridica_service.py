@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from app.models.case_intelligence import ORIGENS_SNAPSHOT
 from app.services.entrada_juridica_service import (
     _correlacionar_fato_prova_tese,
@@ -88,3 +90,23 @@ def test_lacunas_perguntam_so_o_necessario():
     perguntas = _perguntas_lacunas(analise, case, provas)
     tipos = {item["tipo"] for item in perguntas}
     assert {"prova_faltante", "identificacao_processual", "parte", "prescricao"} <= tipos
+
+
+@pytest.mark.anyio
+async def test_analisar_com_case_id_reusa_rota_canonica_para_dossie(monkeypatch):
+    from app.routers import entrada as router
+
+    chamado = {}
+
+    async def _dossie(db, cu, case_id):
+        chamado.update(db=db, cu=cu, case_id=case_id)
+        return {"status": "rascunho", "case_id": case_id}
+
+    monkeypatch.setattr(router.entrada_juridica_service, "gerar_dossie_juridico", _dossie)
+    user = SimpleNamespace(id="u1", role="advogado")
+    out = await router.analisar(
+        files=[], texto=None, case_id="case-1", db="db", cu=user,
+    )
+
+    assert out == {"status": "rascunho", "case_id": "case-1"}
+    assert chamado == {"db": "db", "cu": user, "case_id": "case-1"}
