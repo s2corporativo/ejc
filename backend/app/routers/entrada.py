@@ -1,13 +1,11 @@
 # ── app/routers/entrada.py ───────────────────────────────────────────────────
 # Entrada Única (Bloco 3 — docs/DESENHO_BLOCO3_TELAS.md, seção 4).
 #
-# POST /entrada/analisar      : multipart (texto e/ou arquivos) → proposta de
-#                               caso (RASCUNHO persistido no DocumentIntakeBatch,
-#                               inclusive no caminho só-texto, document_count=0).
+# POST /entrada/analisar:
+#   - multipart texto/arquivos → proposta de caso (rascunho persistido);
+#   - com ?case_id=<id> → dossiê jurídico profundo do caso já criado.
 # POST /entrada/{id}/criar-caso: cria Cliente→Caso→vínculos em UMA transação,
 #                               com gates de servidor e idempotência.
-# POST /entrada/casos/{id}/dossie-juridico: análise profunda do caso já criado,
-#                               plano jurídico versionado + HITL.
 #
 # Router fino: toda a orquestração vive em services/entrada_service.py e
 # services/entrada_juridica_service.py, que REUTILIZAM os pipelines existentes.
@@ -18,7 +16,7 @@ import logging
 from typing import Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -49,24 +47,27 @@ async def exigir_advogado(cu: User = Depends(get_current_user)) -> User:
 async def analisar(
     files: list[UploadFile] = File(default=[]),
     texto: Optional[str] = Form(None),
+    case_id: Optional[str] = Query(None, max_length=36),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(exigir_advogado),
 ):
-    """Cole o relato, arraste os documentos, ou os dois — exige relato com 40+
-    caracteres OU ao menos 1 arquivo. IA indisponível NUNCA derruba a análise
-    (degradado=true + avisos). Toda saída de IA é rascunho HITL com AILog."""
+    """Porta única de análise jurídica.
+
+    Sem `case_id`: relato/documentos → proposta preliminar de novo caso.
+    Com `case_id`: caso oficial existente → dossiê jurídico profundo versionado
+    em RASCUNHO. Em ambos os modos, RBAC/HITL/auditoria continuam obrigatórios.
+    """
+    if case_id:
+        return await entrada_juridica_service.gerar_dossie_juridico(db, cu, case_id)
+
     texto_limpo = (texto or "").strip() or None
     if not files and len(texto_limpo or "") < 40:
         raise HTTPException(
             422, "Envie ao menos um arquivo ou um relato com 40+ caracteres"
         )
-    # Teto do relato (paridade com a Entrevista Inteligente, que limita o
-    # payload a 15.000) — sem ele o texto integral iria a batch.resultado.
     if texto_limpo and len(texto_limpo) > 15_000:
         raise HTTPException(422, "Relato excede 15.000 caracteres")
 
-    # O rascunho persiste também no caminho só-texto (document_count=0):
-    # a proposta editável sobrevive ao F5 dentro de batch.resultado.
     batch = DocumentIntakeBatch(
         id=str(uuid4()), status="processando", created_by=cu.id,
     )
@@ -92,39 +93,19 @@ async def analisar(
         await db.commit()
         return proposta
     except HTTPException:
-        await db.rollback()  # limpa transação pendente antes de reusar a sessão
+        await db.rollback()
         batch.status = "erro"
         await db.commit()
         raise
     except Exception as exc:
-        await db.rollback()  # limpa transação pendente antes de reusar a sessão
+        await db.rollback()
         batch.status = "erro"
         await db.commit()
         logger.exception("Falha na análise da Entrada Única (lote %s)", batch.id)
-        # Mensagem genérica: detalhe de exceção interna só no log (achado B4
-        # da auditoria — não expor internals ao cliente).
         raise HTTPException(
             500, "Falha ao analisar a entrada. Os originais enviados foram "
                  "preservados; tente novamente ou contate a gestão.",
         ) from exc
-
-
-@router.post(
-    "/casos/{case_id}/dossie-juridico",
-    dependencies=[Depends(rate_limit("entrada-dossie-juridico", 4))],
-)
-async def dossie_juridico(
-    case_id: str,
-    db: AsyncSession = Depends(get_db),
-    cu: User = Depends(exigir_advogado),
-):
-    """Caso oficial → leitura jurídica profunda → plano versionado em RASCUNHO.
-
-    O endpoint não gera peça nem cria prazo. A aprovação do plano usa o HITL
-    canônico de CaseIntelligenceSnapshot; depois, a redação segue pelo Motor de
-    Peça e seus gates próprios.
-    """
-    return await entrada_juridica_service.gerar_dossie_juridico(db, cu, case_id)
 
 
 @router.post("/{rascunho_id}/criar-caso",
