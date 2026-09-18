@@ -28,12 +28,14 @@ import asyncio
 import hashlib
 import logging
 import re
+from collections import Counter
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.services.djen_service import (
     buscar_caso_ativo_por_processo,
+    classificar_erro_fonte,
     extrair_numero_cnj,
     extrair_total_djen,
     normalizar_processo,
@@ -160,6 +162,20 @@ class DjenContratoError(RuntimeError):
     """A consulta ao DJEN não foi respondida no contrato esperado."""
 
 
+def _classificar_falha_coleta(exc: Exception) -> str:
+    """Resume a causa sem carregar OAB, PII ou segredo para logs/Sentry."""
+    if isinstance(exc, DjenContratoError):
+        msg = str(exc).lower()
+        if "json válido" in msg:
+            return "payload_invalido"
+        if "página" in msg or "paginação" in msg:
+            return "paginacao_incompleta"
+        return "contrato_invalido"
+    if isinstance(exc, RuntimeError) and "DJEN_HTTP_PROXY_URL" in str(exc):
+        return "configuracao_proxy"
+    return classificar_erro_fonte(exc)
+
+
 async def _coletar_oab(numero: str, uf: str, ini: str, fim: str) -> list[dict]:
     """Coleta paginada e não confunde página vazia transitória com fim."""
     itens: list[dict] = []
@@ -233,6 +249,7 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
 
     novos = total = 0
     oabs_ok = oabs_erro = 0
+    causas_falha: Counter[str] = Counter()
     for numero, uf in oabs:
         try:
             itens = await _coletar_oab(numero, uf, ini.isoformat(), fim.isoformat())
@@ -267,14 +284,23 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
             logger.info(f"DJEN OAB {numero}/{uf}: {n_oab} novos / {len(itens)} itens")
         except Exception as e:
             oabs_erro += 1
+            causa = _classificar_falha_coleta(e)
+            causas_falha[causa] += 1
             await db.rollback()
             logger.warning(
-                "DJEN OAB %s/%s: falha de coleta (%s)",
-                numero, uf, type(e).__name__,
+                "DJEN: falha de coleta; causa=%s tipo=%s",
+                causa, type(e).__name__,
             )
 
     if oabs_erro and not oabs_ok:
-        raise DjenContratoError("DJEN: todas as OABs configuradas falharam na coleta")
+        resumo = ",".join(
+            f"{causa}:{quantidade}"
+            for causa, quantidade in sorted(causas_falha.items())
+        ) or "indeterminada"
+        raise DjenContratoError(
+            "DJEN: todas as OABs configuradas falharam na coleta "
+            f"(oabs_total={len(oabs)}; causas={resumo})"
+        )
     if oabs_erro:
         logger.warning(
             "DJEN: coleta parcial — oabs_ok=%s oabs_erro=%s", oabs_ok, oabs_erro
