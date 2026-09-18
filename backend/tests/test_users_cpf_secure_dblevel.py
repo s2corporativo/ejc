@@ -145,7 +145,18 @@ async def test_downgrade_159_falha_fechado_e_preserva_revision_schema_e_dado():
     async with AsyncSessionLocal() as db:
         try:
             revision = (await db.execute(text("SELECT version_num FROM alembic_version"))).scalar_one()
-            assert revision == "160_activity_alert_states"
+            # Head dinâmico: o gate protege o CONTRATO (downgrade bloqueado
+            # preserva a revision e os dados), não um número específico —
+            # assim novos heads legítimos (ex.: 161_fee_estornos) não quebram
+            # este teste de integridade.
+            from alembic.config import Config as _AlembicConfig
+            from alembic.script import ScriptDirectory as _ScriptDirectory
+            _cfg = _AlembicConfig(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+            _cfg.set_main_option(
+                "script_location",
+                str(Path(__file__).resolve().parents[1] / "alembic"),
+            )
+            assert revision == _ScriptDirectory.from_config(_cfg).get_heads()[0]
             cols = set((await db.execute(text(
                 "SELECT column_name FROM information_schema.columns "
                 "WHERE table_name='users' AND column_name IN ('cpf_enc','cpf_hash')"
