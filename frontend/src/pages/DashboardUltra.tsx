@@ -122,12 +122,11 @@ export default function DashboardUltra() {
             src={officeBranding.logoPath}
             alt={officeBranding.officeName}
             className="ejc-ai-dashboard__logo"
-            style={{ width: "clamp(156px, 16vw, 220px)" }}
           />
           <div>
-            <span>Ecossistema Jurídico</span>
-            <h1>EJC</h1>
-            <p>Operação jurídica centralizada, simples e rastreável.</p>
+            <span>Ecossistema Jurídico Clóvis</span>
+            <h2>Centro de comando jurídico</h2>
+            <p>Operação centralizada, simples, rastreável e orientada à decisão.</p>
           </div>
         </div>
       </header>
@@ -187,7 +186,8 @@ export default function DashboardUltra() {
         </Link>
       </section>
 
-      <main className="ejc-ai-dashboard__workspace ejc-ai-dashboard__workspace--entry">
+      <div className="ejc-ai-dashboard__main-grid">
+        <main className="ejc-ai-dashboard__workspace ejc-ai-dashboard__workspace--entry">
         <div className="ejc-ai-dashboard__workspace-header">
           <div>
             <span>
@@ -224,16 +224,17 @@ export default function DashboardUltra() {
         )}
       </main>
 
-      <section
-        className="ejc-ai-dashboard__legal-radar"
-        aria-label="Radar Jurídico"
-      >
+        <section
+          className="ejc-ai-dashboard__legal-radar"
+          aria-label="Radar Jurídico"
+        >
         <div className="ejc-ai-dashboard__legal-radar-head">
           <strong>Radar Jurídico</strong>
           <Link to="/dpt360/radar">Abrir radar</Link>
         </div>
-        <JurisprudentialAlertsStrip compact />
-      </section>
+          <JurisprudentialAlertsStrip compact />
+        </section>
+      </div>
 
       <footer className="ejc-ai-dashboard__footer">
         <span>
