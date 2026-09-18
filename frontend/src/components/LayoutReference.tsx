@@ -376,8 +376,7 @@ export default function LayoutReference() {
             />
             {!navCollapsed && (
               <span className="ejc-sidebar-brand__copy">
-                <strong>EJC</strong>
-                <small>Ecossistema Jurídico Clóvis</small>
+                <strong>EJC DePaula Teixeira Adv</strong>
               </span>
             )}
           </Link>
