@@ -225,7 +225,7 @@ def _content_disposition(filename: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 # TIPOS DE DOCUMENTO (master) — R3
 # ─────────────────────────────────────────────────────────────────────────────
-@router.get("/tipos")
+@router.get("/tipos", dependencies=[Depends(rate_limit("doc-tipos", 120))])
 async def listar_tipos(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
@@ -256,7 +256,8 @@ class SugerirTipoRequest(BaseModel):
     analise: Optional[dict] = None
 
 
-@router.post("/sugerir-tipo")
+@router.post("/sugerir-tipo",
+             dependencies=[Depends(rate_limit("doc-sugere-tipo", 10))])
 async def sugerir_tipo_documento(
     req: SugerirTipoRequest,
     db: AsyncSession = Depends(get_db),
@@ -323,7 +324,8 @@ async def sugerir_tipo_documento(
         raise HTTPException(status_code=503, detail="Serviço de IA indisponível no momento") from exc
 
 
-@router.post("/upload", status_code=201)
+@router.post("/upload", status_code=201,
+             dependencies=[Depends(rate_limit("doc-upload", 30))])
 async def upload(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
@@ -497,7 +499,7 @@ async def upload(
     return resposta
 
 
-@router.get("/")
+@router.get("/", dependencies=[Depends(rate_limit("doc-listar", 120))])
 async def listar(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -628,7 +630,7 @@ async def listar(
 # respondia 405 — só existiam list/download/PATCH/DELETE. Declarada DEPOIS das
 # rotas estáticas de 1 segmento (/tipos, GET /) para não capturá-las; /drive/*
 # tem mais segmentos e não conflita.
-@router.get("/{doc_id}")
+@router.get("/{doc_id}", dependencies=[Depends(rate_limit("doc-detalhe", 120))])
 async def detalhar(
     doc_id: str,
     db: AsyncSession = Depends(get_db),
@@ -655,7 +657,8 @@ async def detalhar(
     return _serializar_documento(document)
 
 
-@router.get("/{doc_id}/download")
+@router.get("/{doc_id}/download",
+            dependencies=[Depends(rate_limit("doc-download", 60))])
 async def download(
     doc_id: str,
     db: AsyncSession = Depends(get_db),
@@ -751,7 +754,8 @@ async def _soft_delete_documento(
     await db.commit()
 
 
-@router.delete("/{doc_id}", response_model=MsgResponse)
+@router.delete("/{doc_id}", response_model=MsgResponse,
+               dependencies=[Depends(rate_limit("doc-excluir", 5))])
 async def remover(
     doc_id: str,
     db: AsyncSession = Depends(get_db),
@@ -797,7 +801,7 @@ class DocumentPatchRequest(BaseModel):
     confidencialidade: Optional[str] = None
 
 
-@router.patch("/{doc_id}")
+@router.patch("/{doc_id}", dependencies=[Depends(rate_limit("doc-atualizar", 30))])
 async def atualizar_metadados(
     doc_id: str,
     req: DocumentPatchRequest,
@@ -902,7 +906,8 @@ class DocumentPublicacaoPortalRequest(BaseModel):
     publicado: bool
 
 
-@router.patch("/{doc_id}/publicacao-portal")
+@router.patch("/{doc_id}/publicacao-portal",
+              dependencies=[Depends(rate_limit("doc-publica-portal", 10))])
 async def publicar_no_portal(
     doc_id: str,
     req: DocumentPublicacaoPortalRequest,
@@ -1054,7 +1059,8 @@ async def classificar_tipo_documento(
 # ─────────────────────────────────────────────────────────────────────────────
 # GOOGLE DRIVE — compatibilidade de endpoints; lifecycle usa o mesmo Document.
 # ─────────────────────────────────────────────────────────────────────────────
-@router.post("/drive/upload")
+@router.post("/drive/upload",
+             dependencies=[Depends(rate_limit("doc-drive-upload", 10))])
 async def upload_para_drive(
     file: UploadFile = File(...),
     case_id: Optional[str] = Form(None),
@@ -1206,7 +1212,8 @@ async def _gate_drive_doc(db: AsyncSession, cu: User, file_id: str) -> Document:
     return document
 
 
-@router.get("/drive/{file_id}/link")
+@router.get("/drive/{file_id}/link",
+            dependencies=[Depends(rate_limit("doc-drive-link", 10))])
 async def link_documento(
     file_id: str,
     db: AsyncSession = Depends(get_db),
@@ -1231,7 +1238,8 @@ async def link_documento(
     }
 
 
-@router.get("/drive/{file_id}/download")
+@router.get("/drive/{file_id}/download",
+            dependencies=[Depends(rate_limit("doc-drive-download", 60))])
 async def download_documento(
     file_id: str,
     db: AsyncSession = Depends(get_db),
@@ -1272,7 +1280,8 @@ async def download_documento(
     )
 
 
-@router.delete("/drive/{file_id}")
+@router.delete("/drive/{file_id}",
+               dependencies=[Depends(rate_limit("doc-drive-excluir", 10))])
 async def deletar_documento_drive(
     file_id: str,
     db: AsyncSession = Depends(get_db),
