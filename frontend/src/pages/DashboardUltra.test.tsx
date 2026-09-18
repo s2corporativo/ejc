@@ -79,6 +79,8 @@ describe("DashboardUltra — Início canônico", () => {
     expect(
       screen.getByRole("link", { name: "Comunicações processuais: 2" }),
     ).toBeTruthy();
+    expect(screen.getByText("Olá, Clovis.")).toBeTruthy();
+    expect(screen.getByText("EJC DePaula Teixeira Adv")).toBeTruthy();
     expect(screen.getByTestId("entrada-unica").dataset.embedded).toBe("true");
     expect(
       screen.getByRole("region", { name: "Radar Jurídico" }),
