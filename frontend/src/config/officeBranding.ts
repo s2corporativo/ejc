@@ -16,12 +16,12 @@ function normalizePhone(value: string): string {
   return value.replace(/\D/g, "");
 }
 
-function resolveOfficeName(value: string): string {
+export function resolveOfficeName(value: string): string {
   if (!value || value === LEGACY_DEFAULT_OFFICE_NAME) return DEFAULT_OFFICE_NAME;
   return value;
 }
 
-function resolveLogoPath(value: string): string {
+export function resolveLogoPath(value: string): string {
   // Defaults legados podem permanecer em ambientes instalados. Normalizá-los
   // aqui troca a marca visual sem exigir edição manual do .env e preserva
   // qualquer caminho realmente customizado informado pelo operador.
