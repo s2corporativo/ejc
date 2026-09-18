@@ -15,6 +15,7 @@ from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.csv_safe import sanitize_csv_row
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.audit_log import criar_audit_log
@@ -31,8 +32,8 @@ router = APIRouter(prefix="/export", tags=["Exportação"])
 def _csv(filename: str, header: list[str], linhas: list[list]) -> StreamingResponse:
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";")
-    w.writerow(header)
-    w.writerows(linhas)
+    w.writerow(sanitize_csv_row(header))
+    w.writerows(sanitize_csv_row(linha) for linha in linhas)
     data = "\ufeff" + buf.getvalue()    # BOM → acentos corretos no Excel
     return StreamingResponse(
         iter([data]), media_type="text/csv; charset=utf-8",

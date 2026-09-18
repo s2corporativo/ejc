@@ -22,9 +22,9 @@ def test_cerebro_endpoints_caros_tem_rate_limit():
     assert 'rate_limit("cerebro-analise-estrategica", 10)' in src, (
         "POST /cerebro/analise-estrategica é caminho de IA caro e precisa de rate limit"
     )
-    assert 'rate_limit("cerebro-juris-pesquisa", 15)' in src, (
-        "POST /cerebro/jurisprudencia/pesquisa precisa de rate limit"
-    )
+    # 'cerebro-juris-pesquisa' saiu do ar: a rota POST
+    # /cerebro/jurisprudencia/pesquisa foi REMOVIDA no saneamento 18/09/2026
+    # (503 incondicional, sem chamadores; busca canônica é /api/search e /api/rag).
 
 
 def test_ai_skills_endpoints_caros_tem_rate_limit():
