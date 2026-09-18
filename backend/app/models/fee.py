@@ -87,9 +87,14 @@ class FeeEstorno(Base):
     __tablename__ = "fee_estornos"
 
     id             = Column(String(36), primary_key=True)
-    fee_id         = Column(String(36), ForeignKey("fees.id"), nullable=False, index=True)
+    fee_id         = Column(
+        String(36), ForeignKey("fees.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     fee_payment_id = Column(
-        String(36), ForeignKey("fee_payments.id"), nullable=False, index=True
+        String(36),
+        ForeignKey("fee_payments.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
     )
     valor        = Column(Numeric(14, 2), nullable=False)
     motivo       = Column(Text, nullable=False)
