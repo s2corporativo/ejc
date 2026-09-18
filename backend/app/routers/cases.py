@@ -108,7 +108,7 @@ def _filtro_visibilidade(q, user: User):
     ))
 
 
-@router.get("/")
+@router.get("/", dependencies=[Depends(rate_limit("cases-listar", 120))])
 async def listar(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=500),
     search: Optional[str] = None,
@@ -173,7 +173,7 @@ async def listar(
     }
 
 
-@router.get("/stats")
+@router.get("/stats", dependencies=[Depends(rate_limit("cases-stats", 60))])
 async def stats_casos(
     advogado_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
@@ -238,7 +238,8 @@ async def stats_casos(
     }
 
 
-@router.post("/", response_model=CaseDetail, status_code=201)
+@router.post("/", response_model=CaseDetail, status_code=201,
+             dependencies=[Depends(rate_limit("cases-criar", 30))])
 async def criar(
     payload: CaseCreate,
     background: BackgroundTasks,
@@ -352,7 +353,8 @@ async def criar(
     return c
 
 
-@router.get("/{case_id}", response_model=CaseDetail)
+@router.get("/{case_id}", response_model=CaseDetail,
+            dependencies=[Depends(rate_limit("cases-detalhe", 120))])
 async def detalhe(
     case_id: str,
     db: AsyncSession = Depends(get_db),
@@ -373,7 +375,8 @@ async def detalhe(
     return result
 
 
-@router.patch("/{case_id}", response_model=CaseDetail)
+@router.patch("/{case_id}", response_model=CaseDetail,
+              dependencies=[Depends(rate_limit("cases-atualizar", 30))])
 async def atualizar(
     case_id: str, payload: CaseUpdate,
     background: BackgroundTasks,
@@ -515,7 +518,8 @@ class ArchiveCaseRequest(BaseModel):
     motivo: Optional[str] = Field(default=None, max_length=1000)
 
 
-@router.post("/{case_id}/arquivar", response_model=CaseDetail)
+@router.post("/{case_id}/arquivar", response_model=CaseDetail,
+             dependencies=[Depends(rate_limit("cases-arquivar", 10))])
 async def arquivar_caso(
     case_id: str,
     background: BackgroundTasks,
@@ -554,7 +558,8 @@ async def arquivar_caso(
     return c
 
 
-@router.post("/{case_id}/desarquivar", response_model=CaseDetail)
+@router.post("/{case_id}/desarquivar", response_model=CaseDetail,
+             dependencies=[Depends(rate_limit("cases-desarquivar", 10))])
 async def desarquivar_caso(
     case_id: str,
     background: BackgroundTasks,
@@ -596,7 +601,8 @@ async def desarquivar_caso(
     return c
 
 
-@router.post("/{case_id}/reabrir", response_model=CaseDetail)
+@router.post("/{case_id}/reabrir", response_model=CaseDetail,
+             dependencies=[Depends(rate_limit("cases-reabrir", 10))])
 async def reabrir_caso(
     case_id: str,
     background: BackgroundTasks,
@@ -650,7 +656,8 @@ async def _bg_sync_prazos_datajud(case_id: str, numero_cnj: str) -> None:
         )
 
 
-@router.delete("/{case_id}", response_model=MsgResponse)
+@router.delete("/{case_id}", response_model=MsgResponse,
+               dependencies=[Depends(rate_limit("cases-excluir", 5))])
 async def excluir(
     case_id: str,
     motivo: Optional[str] = Query(None, min_length=5, max_length=500,
@@ -795,7 +802,8 @@ async def gerar_documentos(
 
 # ── Movimentos (timeline) ─────────────────────────────────────────────────────
 
-@router.get("/{case_id}/movimentos")
+@router.get("/{case_id}/movimentos",
+            dependencies=[Depends(rate_limit("cases-movimentos-lista", 120))])
 async def listar_movimentos(
     case_id: str,
     db: AsyncSession = Depends(get_db),
@@ -820,7 +828,8 @@ async def listar_movimentos(
     ]
 
 
-@router.post("/{case_id}/movimentos", status_code=201)
+@router.post("/{case_id}/movimentos", status_code=201,
+             dependencies=[Depends(rate_limit("cases-movimentos-cria", 30))])
 async def criar_movimento(
     case_id: str, payload: MovimentoCreate,
     background: BackgroundTasks,
@@ -855,7 +864,8 @@ async def criar_movimento(
     return {"id": m.id, "detail": "Movimento registrado"}
 
 
-@router.patch("/{case_id}/movimentos/{movimento_id}")
+@router.patch("/{case_id}/movimentos/{movimento_id}",
+              dependencies=[Depends(rate_limit("cases-movimentos-edita", 30))])
 async def editar_movimento(
     case_id: str,
     movimento_id: str,
@@ -894,7 +904,8 @@ async def editar_movimento(
     return {"id": m.id, "detail": "Movimento atualizado"}
 
 
-@router.delete("/{case_id}/movimentos/{movimento_id}")
+@router.delete("/{case_id}/movimentos/{movimento_id}",
+               dependencies=[Depends(rate_limit("cases-movimentos-exclui", 10))])
 async def excluir_movimento(
     case_id: str,
     movimento_id: str,
@@ -928,7 +939,8 @@ async def excluir_movimento(
 from app.services.datajud_service import sincronizar_caso as _dj_sync
 
 
-@router.post("/{case_id}/sincronizar-processo")
+@router.post("/{case_id}/sincronizar-processo",
+             dependencies=[Depends(rate_limit("cases-sincroniza-processo", 5))])
 async def sincronizar_processo(
     case_id: str,
     db: AsyncSession = Depends(get_db),
@@ -1020,7 +1032,8 @@ async def _caso_para_encerrar(db: AsyncSession, cu: User, case_id: str) -> Case:
     return case
 
 
-@router.get("/{case_id}/encerrar/diagnostico")
+@router.get("/{case_id}/encerrar/diagnostico",
+            dependencies=[Depends(rate_limit("cases-diagnostico-encerrar", 60))])
 async def diagnostico_encerramento(
     case_id: str,
     db: AsyncSession = Depends(get_db),
@@ -1043,7 +1056,8 @@ async def diagnostico_encerramento(
 # ainda esgotariam a cota do endpoint dedicado. O limite é consumido dentro de
 # `_sincronizar_no_encerramento`, no caminho opt-in, onde de fato há chamada ao
 # tribunal.
-@router.post("/{case_id}/encerrar")
+@router.post("/{case_id}/encerrar",
+             dependencies=[Depends(rate_limit("cases-encerrar", 10))])
 async def encerrar_caso(
     case_id: str, payload: EncerrarCasoReq,
     background: BackgroundTasks,
@@ -1360,7 +1374,8 @@ class AplicarExtracaoReq(_BM2):
     dry_run: bool = False
 
 
-@router.post("/{case_id}/aplicar-extracao")
+@router.post("/{case_id}/aplicar-extracao",
+             dependencies=[Depends(rate_limit("cases-aplica-extracao", 10))])
 async def aplicar_extracao(
     case_id: str, payload: AplicarExtracaoReq,
     background: BackgroundTasks,
@@ -1669,7 +1684,8 @@ async def teses_sugeridas(
     }
 
 
-@router.post('/{case_id}/analisar', summary='Analise estrategica com IA')
+@router.post('/{case_id}/analisar', summary='Analise estrategica com IA',
+             dependencies=[Depends(rate_limit("cases-analisar-ia", 6))])
 async def analisar_caso_ia(
     case_id: str,
     payload: dict = Body(default={}),

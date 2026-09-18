@@ -62,6 +62,7 @@ export const CATEGORIAS_FERRAMENTAS: {
       "assinaturas",
       "crm",
       "cadastro-manual",
+      "tributario",
     ],
   },
 ];

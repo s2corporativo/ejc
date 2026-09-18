@@ -3,11 +3,7 @@ from types import SimpleNamespace
 
 from app.modules.dpt360 import report_service
 from app.modules.dpt360.schemas import (
-    DptCaseSummary,
     DptCompanyProfile,
-    DptDashboardMetrics,
-    DptDashboardResponse,
-    DptDeadlineSummary,
 )
 
 _USER = SimpleNamespace(id="00000000-0000-0000-0000-000000000001", role="socio")
