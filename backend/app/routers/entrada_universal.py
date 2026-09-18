@@ -279,7 +279,7 @@ async def _analisar_ia(db: AsyncSession, cu: User, *, modalidade: str | None,
     return parsed
 
 
-@router.get("/meta")
+@router.get("/meta", dependencies=[Depends(rate_limit("entrada-universal-meta", 60))])
 async def meta(cu: User = Depends(get_current_user)):
     requer_equipe_juridica(cu, "Acesso restrito à equipe jurídica")
     return {"formatos": sorted(EXTENSOES_SUPORTADAS), "multiplos_arquivos": True, "zip": True,
@@ -482,7 +482,7 @@ def _lote_contem_pii(resultado: dict) -> bool:
     return False
 
 
-@router.get("/{batch_id}")
+@router.get("/{batch_id}", dependencies=[Depends(rate_limit("entrada-universal-batch", 120))])
 async def obter_lote(batch_id: str, db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     batch = await _acesso_batch(db, cu, batch_id)
     resultado = batch.resultado or {
@@ -513,7 +513,8 @@ async def obter_lote(batch_id: str, db: AsyncSession = Depends(get_db), cu: User
     return resultado
 
 
-@router.post("/{batch_id}/preparar-pacote")
+@router.post("/{batch_id}/preparar-pacote",
+             dependencies=[Depends(rate_limit("entrada-universal-pacote", 10))])
 async def preparar_pacote(batch_id: str, req: PrepararPacoteRequest,
                           db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     batch = await _acesso_batch(db, cu, batch_id)
@@ -605,7 +606,8 @@ def _clonar_documento_local(documento: Document, caso_id: str, client_id: str | 
     )
 
 
-@router.post("/{batch_id}/vincular-caso")
+@router.post("/{batch_id}/vincular-caso",
+             dependencies=[Depends(rate_limit("entrada-universal-vincular", 30))])
 async def vincular_lote_ao_caso(
     batch_id: str,
     req: VincularCasoRequest,
