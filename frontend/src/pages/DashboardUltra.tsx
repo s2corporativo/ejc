@@ -97,6 +97,7 @@ export default function DashboardUltra() {
 
   const canUseLegal = AI_MESSAGE_ROLES.has(user?.role || "");
   const canUseEntry = ENTRY_ROLES.has(user?.role || "");
+  const firstName = user?.full_name?.trim().split(/\s+/)[0] || "equipe";
   const whatsappUrl = getWhatsAppUrl();
   const mailtoUrl = getMailtoUrl();
   const metricUnavailable = failed || loading;
@@ -117,20 +118,18 @@ export default function DashboardUltra() {
 
   return (
     <div className="ejc-ai-dashboard">
-      <header className="ejc-ai-dashboard__brandbar">
-        <div className="ejc-ai-dashboard__brand">
-          <img
-            src={officeBranding.logoPath}
-            alt={officeBranding.officeName}
-            className="ejc-ai-dashboard__logo"
-          />
-          <div>
-            <span>Ecossistema Jurídico Clóvis</span>
-            <h2>Centro de comando jurídico</h2>
-            <p>
-              Operação centralizada, simples, rastreável e orientada à decisão.
-            </p>
-          </div>
+      <header className="ejc-ai-dashboard__brandbar ejc-ai-dashboard__welcome">
+        <div className="ejc-ai-dashboard__welcome-copy">
+          <span>EJC DePaula Teixeira Adv</span>
+          <h2>Olá, {firstName}.</h2>
+          <p>
+            Decisões jurídicas com organização, clareza e rastreabilidade.
+          </p>
+        </div>
+        <div className="ejc-ai-dashboard__motto" aria-hidden="true">
+          <span>Conhecimento</span>
+          <span>Estratégia</span>
+          <span>Resultados reais</span>
         </div>
       </header>
 
