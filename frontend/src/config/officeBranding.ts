@@ -1,5 +1,5 @@
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
-const DEFAULT_OFFICE_NAME = "EJC — Ecossistema Jurídico Clóvis";
+const DEFAULT_OFFICE_NAME = "EJC DePaula Teixeira Adv";
 const DEFAULT_DAILY_MESSAGE =
   "Organização, clareza e responsabilidade em cada decisão.";
 const DEFAULT_DAILY_SOURCE = "Mensagem institucional";
