@@ -7,6 +7,8 @@
 #   4. Estratégia do caso (tese, pontos fortes/fracos) NUNCA é exposta
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
+
+from app.core.rate_limit import rate_limit
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,7 +36,7 @@ def _exigir_cliente(cu: User) -> str:
     return cu.client_id
 
 
-@router.get("/meus-casos")
+@router.get("/meus-casos", dependencies=[Depends(rate_limit("portal-meus-casos", 60))])
 async def meus_casos(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
@@ -80,7 +82,7 @@ async def meus_casos(
     ]}
 
 
-@router.get("/casos/{case_id}")
+@router.get("/casos/{case_id}", dependencies=[Depends(rate_limit("portal-caso-detalhe", 60))])
 async def caso_detalhe(
     case_id: str,
     db: AsyncSession = Depends(get_db),
@@ -125,7 +127,7 @@ async def caso_detalhe(
     }
 
 
-@router.get("/documentos")
+@router.get("/documentos", dependencies=[Depends(rate_limit("portal-documentos", 60))])
 async def documentos(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
@@ -149,7 +151,7 @@ async def documentos(
     ]}
 
 
-@router.get("/financeiro")
+@router.get("/financeiro", dependencies=[Depends(rate_limit("portal-financeiro", 60))])
 async def financeiro(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
@@ -236,7 +238,7 @@ async def _caso_do_cliente(case_id: str, client_id: str, db: AsyncSession) -> No
         raise HTTPException(status_code=404, detail="Caso não encontrado")
 
 
-@router.get("/mensagens/nao-lidas")
+@router.get("/mensagens/nao-lidas", dependencies=[Depends(rate_limit("portal-mensagens-nao-lidas", 120))])
 async def mensagens_nao_lidas(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
@@ -254,7 +256,7 @@ async def mensagens_nao_lidas(
     return {"nao_lidas": int(res.scalar() or 0)}
 
 
-@router.get("/casos/{case_id}/mensagens")
+@router.get("/casos/{case_id}/mensagens", dependencies=[Depends(rate_limit("portal-mensagens-lista", 60))])
 async def listar_mensagens_portal(
     case_id: str,
     db: AsyncSession = Depends(get_db),
@@ -279,7 +281,8 @@ async def listar_mensagens_portal(
     return msgs
 
 
-@router.post("/casos/{case_id}/mensagens", status_code=201)
+@router.post("/casos/{case_id}/mensagens", status_code=201,
+             dependencies=[Depends(rate_limit("portal-mensagens-envia", 10))])
 async def enviar_mensagem_portal(
     case_id: str,
     body: MsgIn,
