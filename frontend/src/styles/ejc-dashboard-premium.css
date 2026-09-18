@@ -1122,6 +1122,26 @@ html:not(.dark) .sidebar-bronze .ejc-sidebar-brand {
   border-bottom-color: rgba(255, 255, 255, 0.08) !important;
 }
 
+/* A geração ejc-reference-2026 (sidebar branca, morta) pinta o primeiro
+   bloco da sidebar (`> div:first-child`) de branco com especificidade
+   (0,3,2) — acima do `transparent` do seletor por classe. Igualamos a
+   especificidade para vencer por ordem de camada: a marca deve ficar
+   DIRETO sobre o esmeralda, como na referência DPT (monograma dourado
+   sem cartão branco; subtítulo "Ecossistema Jurídico Clóvis" legível). */
+html:not(.dark) .sidebar-bronze > div:first-child {
+  background: transparent !important;
+  border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+html:not(.dark) .sidebar-bronze > div:first-child button {
+  color: rgba(228, 196, 110, 0.88) !important;
+}
+
+html:not(.dark) .sidebar-bronze > div:first-child button:hover {
+  color: #eaca7f !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
 html:not(.dark) .sidebar-bronze .ejc-sidebar-brand__logo {
   width: min(216px, 92%) !important;
   max-height: 108px !important;

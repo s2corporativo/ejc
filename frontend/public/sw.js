@@ -1,6 +1,6 @@
 // Service worker mínimo — cache de shell para PWA instalável.
 // API nunca é cacheada (dados jurídicos sempre frescos).
-const CACHE = "ejc-v3";
+const CACHE = "ejc-v4";
 self.addEventListener("install", (e) => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(
   caches.keys()

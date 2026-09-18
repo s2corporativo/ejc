@@ -443,16 +443,16 @@ function TabEtiquetas({ caseId }: { caseId: string }) {
   const [todas, setTodas] = useState<any[]>([]);
   const [doCaso, setDoCaso] = useState<any[]>([]);
   const [nome, setNome] = useState("");
-  const [cor, setCor] = useState("#AA8660");
+  const [cor, setCor] = useState("#CFA961");
   const CORES = [
-    "#AA8660",
-    "#0f1f3d",
-    "#1D9E75",
-    "#D85A30",
-    "#E24B4A",
-    "#26417a",
-    "#EF9F27",
-    "#7C5E40",
+    "#CFA961",
+    "#0A4132",
+    "#17985A",
+    "#E89A1B",
+    "#DF3F49",
+    "#14503F",
+    "#EACA7F",
+    "#8F7117",
   ];
 
   const carregar = () => {
@@ -502,7 +502,7 @@ function TabEtiquetas({ caseId }: { caseId: string }) {
   const Chip = ({ e, onX }: { e: any; onX?: () => void }) => (
     <span
       className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full text-white"
-      style={{ background: e.cor || "#AA8660" }}
+      style={{ background: e.cor || "#CFA961" }}
     >
       {e.nome}
       {onX && (
