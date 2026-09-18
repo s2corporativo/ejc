@@ -25,6 +25,9 @@ import "./styles/ejc-reference-systemwide.css";
 // Identidade premium DPT (referência do Titular 18/09/2026): composição do
 // Início e acabamentos do shell sobre a paleta esmeralda + ouro.
 import "./styles/ejc-dashboard-premium.css";
+// FONTE ÚNICA do design system canônico: tokens semânticos --ejc-* + aliases
+// de todas as gerações legadas. Importada por último — vence o cascade.
+import "./styles/ejc-tokens.css";
 
 initTheme();
 

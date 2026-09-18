@@ -1,0 +1,253 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   EJC — TOKENS CANÔNICOS DO DESIGN SYSTEM "DE PAULA TEIXEIRA"
+   Fonte ÚNICA de identidade visual (PROMPT MESTRE — Reconstrução Visual
+   Canônica, seções 5 e 6). Importado por último em src/main.tsx: toda
+   definição aqui vence as gerações anteriores (index.css, ejc-reference-2026,
+   ejc-reference-systemwide, saas-ultra-v2, premium-shell) por cascade, e as
+   variáveis legadas passam a APONTAR para os tokens canônicos — nenhuma
+   geração antiga define mais cor própria.
+
+   Paleta extraída da referência visual aprovada pelo Titular (mockup
+   "EJC DePaula Teixeira Adv" 18/09/2026) e homologada em produção (#1708):
+   • VERDE PRINCIPAL  esmeralda profundo  #0a4132 (superfície institucional)
+   • VERDE PROFUNDO                       #04291f (fim de gradiente/hover down)
+   • VERDE DE SUPERFÍCIO                  #14503f (realce translúcido)
+   • OURO             #cfa961 · brilhante #eaca7f · profundo #a8873c
+   • OURO-TINTA       #8f7117 (única forma de ouro usável como TEXTO sobre
+                      branco — 4,6:1 AA; a8873c/cfa961 são só gráficos)
+   • FUNDO            ivory quente #f5f4ef · superfícies #ffffff/#faf9f5
+   • TEXTO            #1d2b26 (principal) · #66766f (secundário) · #93a29b
+   • BORDAS           #e2ded2 (quente) · forte #cfc9ba · hairline esmeralda
+
+   Exceções funcionais documentadas (não decorativas):
+   • --ejc-ai / violeta: reservado a superfícies de Inteligência Artificial.
+   • Cores de status (success/warning/danger/info): semântica operacional.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── 1. Tokens canônicos semânticos ──────────────────────────────────── */
+  --ejc-primary: #0a4132;
+  --ejc-primary-dark: #04291f;
+  --ejc-primary-hover: #0d4f3d;
+  --ejc-primary-soft: #14503f;
+
+  --ejc-gold: #cfa961;
+  --ejc-gold-bright: #eaca7f;
+  --ejc-gold-deep: #a8873c;
+  --ejc-gold-soft: #f6eed9;
+  --ejc-gold-ink: #8f7117; /* ouro com contraste AA para texto/ação */
+
+  --ejc-background: #f5f4ef;
+  --ejc-surface: #ffffff;
+  --ejc-surface-muted: #faf9f5;
+  --ejc-surface-raised: #ffffff;
+
+  --ejc-border: #e2ded2;
+  --ejc-border-strong: #cfc9ba;
+  --ejc-hairline: rgba(12, 58, 45, 0.13);
+
+  --ejc-text: #1d2b26;
+  --ejc-text-secondary: #66766f;
+  --ejc-text-subtle: #93a29b;
+  --ejc-text-display: #10382c; /* tinta esmeralda dos títulos serifados */
+
+  --ejc-success: #17985a;
+  --ejc-success-soft: #eaf8f0;
+  --ejc-warning: #e89a1b;
+  --ejc-warning-soft: #fff7e8;
+  --ejc-danger: #df3f49;
+  --ejc-danger-soft: #fff0f1;
+  --ejc-info: #2f7dd1;
+  --ejc-info-soft: #edf5ff;
+
+  --ejc-focus-ring: rgba(143, 113, 23, 0.65);
+
+  --ejc-shadow-sm: 0 1px 2px rgba(15, 35, 60, 0.025),
+    0 8px 24px -22px rgba(15, 35, 60, 0.32);
+  --ejc-shadow-md: 0 14px 36px rgba(23, 48, 39, 0.075);
+  --ejc-shadow-lg: 0 24px 58px rgba(18, 42, 34, 0.12);
+
+  --ejc-radius-sm: 10px;
+  --ejc-radius-md: 14px;
+  --ejc-radius-lg: 18px;
+  --ejc-radius-xl: 22px;
+
+  /* Paleta de gráficos — família esmeralda + ouro */
+  --ejc-chart-1: #0a4132;
+  --ejc-chart-2: #cfa961;
+  --ejc-chart-3: #eaca7f;
+  --ejc-chart-4: #a8873c;
+  --ejc-chart-5: #14503f;
+  --ejc-chart-6: #f6eed9;
+
+  /* ── 2. Tokens tipográficos (seção 6 do PROMPT MESTRE) ───────────────── */
+  --ejc-font-serif:
+    "Playfair Display", Georgia, Cambria, "Times New Roman", serif;
+  --ejc-font-sans:
+    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    sans-serif;
+  --ejc-font-mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas,
+    monospace;
+
+  /* Shorthands compostos: uso `font: var(--ejc-text-h1)` etc.
+     (o shorthand `font` normaliza style/variant; itálico é aplicado à parte) */
+  --ejc-text-display: 700 clamp(28px, 3vw, 40px) / 1.1 var(--ejc-font-serif);
+  --ejc-text-h1: 700 clamp(22px, 2.2vw, 30px) / 1.2 var(--ejc-font-serif);
+  --ejc-text-h2: 650 1.375rem / 1.35 var(--ejc-font-serif);
+  --ejc-text-h3: 650 1.125rem / 1.4 var(--ejc-font-sans);
+  --ejc-text-title: 600 1rem / 1.45 var(--ejc-font-sans);
+  --ejc-text-subtitle: 400 0.9375rem / 1.6 var(--ejc-font-sans);
+  --ejc-text-body: 400 0.9375rem / 1.6 var(--ejc-font-sans);
+  --ejc-text-body-small: 400 0.8125rem / 1.45 var(--ejc-font-sans);
+  --ejc-text-caption: 400 0.75rem / 1.2 var(--ejc-font-sans);
+  --ejc-text-label: 600 0.75rem / 1.2 var(--ejc-font-sans);
+  --ejc-text-button: 600 0.875rem / 1.2 var(--ejc-font-sans);
+  --ejc-text-metadata: 400 0.7rem / 1.1 var(--ejc-font-sans);
+
+  /* ── 3. Aliases das gerações legadas → tokens canônicos ─────────────────
+     Cada nome antigo continua existindo (nenhum CSS quebra), mas resolve
+     dinamicamente para o valor canônico. Por serem apontadores var(), os
+     aliases herdam automaticamente os overrides do tema escuro. */
+
+  /* Geração index.css ("SaaS branco+ouro") */
+  --ejc-bg: var(--ejc-background);
+  --ejc-card: var(--ejc-surface);
+  --ejc-elev: var(--ejc-surface-raised);
+  --ejc-ink: var(--ejc-text);
+  --ejc-muted: var(--ejc-text-secondary);
+  --ejc-legal: var(--ejc-primary);
+  --ejc-action: var(--ejc-gold-ink);
+  --ejc-bronze: var(--ejc-gold-ink);
+  --ejc-sidebar-top: #052b22;
+  --ejc-sidebar-bottom: #0a4132;
+  --ejc-shadow-soft: var(--ejc-shadow-sm);
+
+  /* Geração ejc-reference-2026 (navy azul — geração morta, repintada) */
+  --ejc-ref-navy-950: var(--ejc-primary-dark);
+  --ejc-ref-navy-900: #062e24;
+  --ejc-ref-navy-800: var(--ejc-primary);
+  --ejc-ref-navy-700: var(--ejc-primary-soft);
+  --ejc-ref-blue-600: var(--ejc-primary);
+  --ejc-ref-blue-100: #dfeae5;
+  --ejc-ref-blue-50: #eef4f1;
+  --ejc-ref-canvas: var(--ejc-background);
+  --ejc-ref-card: var(--ejc-surface);
+  --ejc-ref-line: var(--ejc-border);
+  --ejc-ref-line-strong: var(--ejc-border-strong);
+  --ejc-ref-ink: var(--ejc-text);
+  --ejc-ref-muted: var(--ejc-text-secondary);
+  --ejc-ref-subtle: var(--ejc-text-subtle);
+  --ejc-ref-danger: var(--ejc-danger);
+  --ejc-ref-danger-soft: var(--ejc-danger-soft);
+  --ejc-ref-warning: var(--ejc-warning);
+  --ejc-ref-warning-soft: var(--ejc-warning-soft);
+  --ejc-ref-success: var(--ejc-success);
+  --ejc-ref-success-soft: var(--ejc-success-soft);
+  --ejc-ref-info: var(--ejc-info);
+  --ejc-ref-info-soft: var(--ejc-info-soft);
+  --ejc-ref-shadow: var(--ejc-shadow-sm);
+  --ejc-ref-shadow-float: var(--ejc-shadow-lg);
+
+  /* Geração ejc-reference-systemwide ("Petroleum & Gold") */
+  --ejc-system-canvas: var(--ejc-background);
+  --ejc-system-surface: var(--ejc-surface);
+  --ejc-system-surface-soft: var(--ejc-surface-muted);
+  --ejc-system-border: var(--ejc-border);
+  --ejc-system-border-strong: var(--ejc-border-strong);
+  --ejc-system-navy: var(--ejc-primary); /* nome histórico: é VERDE */
+  --ejc-system-navy-hover: var(--ejc-primary-dark);
+  --ejc-system-blue: var(--ejc-gold); /* nome histórico: é OURO */
+  --ejc-system-blue-soft: var(--ejc-gold-soft);
+  --ejc-system-ink: var(--ejc-text);
+  --ejc-system-muted: var(--ejc-text-secondary);
+  --ejc-system-subtle: var(--ejc-text-subtle);
+  --ejc-system-success: var(--ejc-success);
+  --ejc-system-warning: var(--ejc-warning);
+  --ejc-system-danger: var(--ejc-danger);
+  --ejc-system-radius-xs: 10px;
+  --ejc-system-radius-sm: 14px;
+  --ejc-system-radius-md: 18px;
+  --ejc-system-radius-lg: 22px;
+  --ejc-system-shadow: var(--ejc-shadow-sm);
+  --ejc-system-shadow-float: var(--ejc-shadow-lg);
+  --ejc-petroleum: var(--ejc-primary);
+  --ejc-petroleum-deep: var(--ejc-primary-dark);
+  --ejc-petroleum-soft: var(--ejc-primary-soft);
+  --ejc-ice: var(--ejc-background);
+  --ejc-ice-soft: var(--ejc-surface-muted);
+  --ejc-paper: var(--ejc-surface);
+  --ejc-soft-shadow: var(--ejc-shadow-md);
+  --ejc-float-shadow: var(--ejc-shadow-lg);
+
+  /* Geração ejc-dashboard-premium (escopo .ejc-dash) */
+  --ejc-dash-green: var(--ejc-primary);
+  --ejc-dash-green-deep: var(--ejc-primary-dark);
+  --ejc-dash-gold: var(--ejc-gold);
+  --ejc-dash-gold-bright: var(--ejc-gold-bright);
+  --ejc-dash-gold-deep: var(--ejc-gold-deep);
+  --ejc-dash-ink: var(--ejc-text-display);
+  --ejc-dash-muted: var(--ejc-text-secondary);
+  --ejc-dash-serif: var(--ejc-font-serif);
+
+  /* Geração saas-ultra-v2 */
+  --ejc-v2-ink: var(--ejc-text);
+  --ejc-v2-ink-soft: var(--ejc-text);
+  --ejc-v2-muted: var(--ejc-text-secondary);
+  --ejc-v2-line: var(--ejc-border);
+  --ejc-v2-line-strong: var(--ejc-border-strong);
+  --ejc-v2-canvas: var(--ejc-background);
+  --ejc-v2-card: var(--ejc-surface);
+  --ejc-v2-night: var(--ejc-primary-dark);
+  --ejc-v2-night-soft: var(--ejc-primary);
+  --ejc-v2-gold: var(--ejc-gold);
+  --ejc-v2-gold-deep: var(--ejc-gold-ink);
+  --ejc-v2-gold-pale: var(--ejc-gold-soft);
+  --ejc-v2-tech: var(--ejc-info);
+  --ejc-v2-danger: var(--ejc-danger);
+  --ejc-v2-warn: var(--ejc-warning);
+  --ejc-v2-success: var(--ejc-success);
+  --ejc-v2-shadow: var(--ejc-shadow-md);
+  --ejc-v2-shadow-hover: var(--ejc-shadow-lg);
+
+  /* Geração premium-shell */
+  --ejc-shell-black: var(--ejc-primary-dark);
+  --ejc-shell-black-soft: var(--ejc-primary);
+  --ejc-shell-gold: var(--ejc-gold);
+  --ejc-shell-gold-deep: var(--ejc-gold-ink);
+  --ejc-shell-cream: var(--ejc-gold-soft);
+}
+
+/* ── 4. Tema escuro — apenas os literais canônicos mudam; os aliases
+      var() das gerações legadas resolvem sozinhos para estes valores. ── */
+.dark {
+  --ejc-background: #14110a;
+  --ejc-surface: #1c180e;
+  --ejc-surface-muted: #1f1a10;
+  --ejc-surface-raised: #241e10;
+
+  --ejc-border: rgba(255, 245, 230, 0.08);
+  --ejc-border-strong: rgba(255, 245, 230, 0.16);
+  --ejc-hairline: rgba(234, 202, 127, 0.16);
+
+  --ejc-text: #ede6da;
+  --ejc-text-secondary: #a89e8f;
+  --ejc-text-subtle: #7d7466;
+  --ejc-text-display: #eaca7f;
+
+  --ejc-gold-soft: rgba(212, 175, 55, 0.12);
+  --ejc-gold-bright: #e5ce7f;
+
+  --ejc-focus-ring: rgba(229, 206, 127, 0.6);
+
+  --ejc-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3),
+    0 8px 22px -6px rgba(0, 0, 0, 0.42);
+  --ejc-shadow-md: 0 14px 36px rgba(0, 0, 0, 0.35);
+  --ejc-shadow-lg: 0 24px 58px rgba(0, 0, 0, 0.45);
+
+  --ejc-sidebar-top: #042319;
+  --ejc-sidebar-bottom: #0a4132;
+
+  /* No escuro o verde profundo some sobre o card — troca com o ouro claro */
+  --ejc-chart-1: #eaca7f;
+  --ejc-chart-4: #14503f;
+}

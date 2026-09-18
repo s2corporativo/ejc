@@ -6,6 +6,39 @@ export default {
     extend: {
       colors: {
         /*
+         * DESIGN SYSTEM CANÔNICO EJC — valores em src/styles/ejc-tokens.css
+         * (fonte única da identidade esmeralda + ouro DPT). Uso preferencial:
+         * bg-ejc-primary, text-ejc-gold-ink, bg-ejc-surface, border-ejc-border,
+         * text-ejc-text-secondary etc. Nota: cores var() não suportam o
+         * modificador /opacidade do Tailwind — para tintas use os tokens
+         * *-soft/-50 legados até migração completa.
+         */
+        ejc: {
+          primary: "var(--ejc-primary)",
+          "primary-dark": "var(--ejc-primary-dark)",
+          "primary-hover": "var(--ejc-primary-hover)",
+          "primary-soft": "var(--ejc-primary-soft)",
+          gold: "var(--ejc-gold)",
+          "gold-bright": "var(--ejc-gold-bright)",
+          "gold-deep": "var(--ejc-gold-deep)",
+          "gold-soft": "var(--ejc-gold-soft)",
+          "gold-ink": "var(--ejc-gold-ink)",
+          background: "var(--ejc-background)",
+          surface: "var(--ejc-surface)",
+          "surface-muted": "var(--ejc-surface-muted)",
+          "surface-raised": "var(--ejc-surface-raised)",
+          border: "var(--ejc-border)",
+          "border-strong": "var(--ejc-border-strong)",
+          text: "var(--ejc-text)",
+          "text-secondary": "var(--ejc-text-secondary)",
+          "text-subtle": "var(--ejc-text-subtle)",
+          "text-display": "var(--ejc-text-display)",
+          success: "var(--ejc-success)",
+          warning: "var(--ejc-warning)",
+          danger: "var(--ejc-danger)",
+          info: "var(--ejc-info)",
+        },
+        /*
          * Design System "De Paula Teixeira" — luxo jurídico DOURADO.
          * O papel do marrom/bronze foi transferido para a família OURO
          * (mesma família dos PDFs Visual Law — token `ouro` abaixo).
@@ -232,7 +265,13 @@ export default {
           "Roboto",
           "sans-serif",
         ],
-        serif: ["Georgia", "Cambria", '"Times New Roman"', "serif"],
+        serif: [
+          '"Playfair Display"',
+          "Georgia",
+          "Cambria",
+          '"Times New Roman"',
+          "serif",
+        ],
         // Mono de sistema — dados processuais (nº CNJ, CPF/CNPJ, valores).
         // Sem fonte externa: usa o que já existe no SO.
         mono: [
