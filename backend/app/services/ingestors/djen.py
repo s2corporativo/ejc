@@ -41,7 +41,7 @@ from app.services.djen_service import (
 from app.services.djen_http import (
     DJEN_COMUNICACAO_URL,
     DJEN_ITENS_POR_PAGINA,
-    preparar_requisicao_djen,
+    obter_proxy_djen,
 )
 from app.services.ingestion_service import fetch, upsert_documento
 
@@ -167,23 +167,14 @@ async def _coletar_oab(numero: str, uf: str, ini: str, fim: str) -> list[dict]:
     pagina = 1
     retries_vazia = 0
     while pagina <= MAX_PAGINAS:
-        params = {
+        r = await fetch(BASE, params={
             "numeroOab": numero,
             "ufOab": uf,
             "dataDisponibilizacaoInicio": ini,
             "dataDisponibilizacaoFim": fim,
             "itensPorPagina": ITENS_POR_PAGINA,
             "pagina": pagina,
-        }
-        alvo, headers, proxy = preparar_requisicao_djen(params)
-        r = await fetch(
-            alvo,
-            params=params,
-            headers=headers,
-            timeout=30,
-            proxy=proxy,
-            trust_env=False,
-        )
+        }, timeout=30, proxy=obter_proxy_djen(), trust_env=False)
         try:
             payload = r.json()
             lote = _extrair_itens(payload)
