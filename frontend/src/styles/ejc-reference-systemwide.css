@@ -996,6 +996,63 @@ html:not(.dark) .ejc-modern-scope :where(.kanban-card, .timeline-card) {
   box-shadow: 0 8px 22px rgba(27,45,40,.05) !important;
 }
 
+
+/* Login e Portal do Cliente — mesma identidade, sem alterar autenticação. */
+html:not(.dark) .min-h-screen.bg-canvas > .brand-watermark + div {
+  background:
+    linear-gradient(
+      90deg,
+      var(--ejc-petroleum-deep) 0%,
+      #073c35 57%,
+      var(--ejc-ice) 57%,
+      #faf8f2 100%
+    ) !important;
+}
+
+html:not(.dark) .min-h-screen.bg-canvas > .brand-watermark + div > section:first-of-type {
+  color: #f8f5ed !important;
+}
+
+html:not(.dark) .min-h-screen.bg-canvas > .brand-watermark + div > section:first-of-type h1,
+html:not(.dark) .min-h-screen.bg-canvas > .brand-watermark + div > section:first-of-type .text-slate-950,
+html:not(.dark) .min-h-screen.bg-canvas > .brand-watermark + div > section:first-of-type .text-slate-900 {
+  color: #fffdf8 !important;
+}
+
+html:not(.dark) .min-h-screen.bg-canvas > .brand-watermark + div > section:first-of-type .text-slate-500,
+html:not(.dark) .min-h-screen.bg-canvas > .brand-watermark + div > section:first-of-type .text-slate-400 {
+  color: rgba(248,245,237,.72) !important;
+}
+
+html:not(.dark) .min-h-screen.bg-canvas > .brand-watermark + div > section:first-of-type [class*="border-border"][class*="bg-white"] {
+  border-color: rgba(228,201,120,.20) !important;
+  background: rgba(255,255,255,.075) !important;
+  color: #fffdf8 !important;
+  box-shadow: none !important;
+}
+
+html:not(.dark) .min-h-screen.bg-canvas > .brand-watermark + div > section:last-of-type [class*="rounded-xl"][class*="bg-white"] {
+  border-color: rgba(7,60,53,.09) !important;
+  border-radius: 20px !important;
+  background: #fffdf8 !important;
+  box-shadow: var(--ejc-float-shadow) !important;
+}
+
+html:not(.dark) .ejc-modern-scope > header:not(.fixed) {
+  border-color: rgba(201,162,74,.20) !important;
+  background: rgba(255,253,248,.96) !important;
+  box-shadow: 0 8px 30px rgba(25,45,39,.07) !important;
+  backdrop-filter: blur(16px);
+}
+
+html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a {
+  color: #64716c !important;
+}
+
+html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a:hover {
+  color: var(--ejc-petroleum-deep) !important;
+}
+
 /* Dashboard premium */
 .ejc-ai-dashboard {
   gap: 14px;
