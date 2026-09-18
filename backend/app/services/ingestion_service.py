@@ -105,6 +105,8 @@ async def fetch(
     tentativas: int = 3,
     espera_base: float = 1.5,
     validar_ssrf: bool = False,
+    proxy: str | None = None,
+    trust_env: bool = True,
 ) -> httpx.Response:
     """GET/POST com retry e backoff exponencial. Levanta na última falha.
 
@@ -121,9 +123,15 @@ async def fetch(
     hdrs = {**_HEADERS_PADRAO, **(headers or {})}
     ultimo_erro: Exception | None = None
 
-    async with httpx.AsyncClient(
-        timeout=timeout, follow_redirects=not validar_ssrf
-    ) as c:
+    client_kwargs: dict[str, object] = {
+        "timeout": timeout,
+        "follow_redirects": not validar_ssrf,
+        "trust_env": trust_env,
+    }
+    if proxy:
+        client_kwargs["proxy"] = proxy
+
+    async with httpx.AsyncClient(**client_kwargs) as c:
         for n in range(tentativas):
             try:
                 if validar_ssrf:
