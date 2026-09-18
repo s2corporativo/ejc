@@ -85,7 +85,7 @@ const ICONS = {
 // Superfície elevada (branca no claro, grafite quente no escuro) com filete
 // de acento à esquerda na cor semântica — mesmo vocabulário dos cards/modais.
 const SURFACE =
-  "bg-white border-slate-200 dark:bg-[#241E10] dark:border-white/10";
+  "bg-white border-slate-200 dark:bg-[var(--ejc-surface-raised)] dark:border-white/10";
 
 const ACCENT = {
   success: "border-l-success-500",

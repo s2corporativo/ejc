@@ -202,9 +202,9 @@ export default function OnboardingTour() {
         aria-label={`Primeiros passos: ${concluidas} de ${total} concluídos. Reabrir.`}
         className="fixed bottom-5 right-20 z-40 flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 shadow-md"
       >
-        <Sparkles className="h-4 w-4 text-[#B08A50]" />
+        <Sparkles className="h-4 w-4 text-ejc-gold" />
         Primeiros passos
-        <span className="rounded-full bg-[#B08A50]/10 px-1.5 py-0.5 text-xs font-semibold text-[#8F7117]">
+        <span className="rounded-full bg-ejc-gold-soft px-1.5 py-0.5 text-xs font-semibold text-ejc-gold-ink">
           {concluidas}/{total}
         </span>
       </button>
@@ -226,7 +226,7 @@ export default function OnboardingTour() {
       >
         <div className="h-1 bg-zinc-100">
           <div
-            className="h-full bg-[#B08A50] transition-all duration-300"
+            className="h-full bg-ejc-gold transition-all duration-300"
             style={{ width: `${(concluidas / total) * 100}%` }}
           />
         </div>
@@ -277,8 +277,8 @@ export default function OnboardingTour() {
                     className={cn(
                       "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors",
                       done
-                        ? "border-[#B08A50] bg-[#B08A50] text-white"
-                        : "border-zinc-300 text-transparent hover:border-[#B08A50]",
+                        ? "border-ejc-gold bg-ejc-gold text-white"
+                        : "border-zinc-300 text-transparent hover:border-ejc-gold",
                     )}
                   >
                     <Check className="h-3.5 w-3.5" />
