@@ -53,12 +53,18 @@ async def _engine_pool_limpo_por_teste():
 def _rate_limit_zerado_por_teste():
     from app.core import rate_limit as _rl
 
-    _rl._janelas.clear()
-    storage = getattr(_rl.limiter, "_storage", None)
-    if storage is not None and hasattr(storage, "reset"):
-        storage.reset()
+    def _resetar_estado():
+        # Usa a API interna canônica para respeitar o lock que protege _janelas.
+        _rl._limpar_janelas()
+        storage = getattr(_rl.limiter, "_storage", None)
+        if storage is not None and hasattr(storage, "reset"):
+            storage.reset()
+
+    _resetar_estado()
     yield
-    _rl._janelas.clear()
+    # Teardown simétrico: nenhum estado do contador próprio ou do slowapi
+    # deve vazar para o teste seguinte, mesmo se o teste atual falhar.
+    _resetar_estado()
 
 
 # ── Guarda: ninguém recria o singleton de Settings entre testes (Issue #620) ─
