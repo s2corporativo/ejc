@@ -18,8 +18,6 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from decimal import Decimal
-from types import SimpleNamespace
-from uuid import uuid4
 
 import pytest
 import pytest_asyncio
@@ -29,7 +27,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.core.config import Settings
 from app.core.database import Base
 from app.models.ajuizamento import (
-    EstadoAjuizamento as E, JudicialFiling, JudicialFilingAttempt, JudicialFilingTransicao,
+    EstadoAjuizamento as E, JudicialFilingAttempt, JudicialFilingTransicao,
     JudicialIntegrationProfile, JudicialProtocol, JudicialSyncEvent,
 )
 from app.models.case import Case, CaseArea, CaseMovimento, CaseStatus

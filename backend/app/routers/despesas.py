@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.csv_safe import sanitize_csv_row
 from app.core.security import get_current_user
 from app.models.audit_log import criar_audit_log
 from app.models.user import User
@@ -270,20 +271,20 @@ async def export_despesas_csv(
 
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";")
-    w.writerow([
+    w.writerow(sanitize_csv_row([
         "Competência", "Categoria", "Subcategoria", "Tipo", "Descrição",
         "Valor", "Vencimento", "Pago em", "Recorrente", "Recorrência", "Status",
-    ])
+    ]))
     for r in rows:
         valor = Decimal(str(r["valor"] or 0)).quantize(Decimal("0.01"))
-        w.writerow([
+        w.writerow(sanitize_csv_row([
             r["competencia"] or "", r["categoria"] or "", r["subcategoria"] or "",
             r["tipo"] or "", r["descricao"] or "",
             format(valor, ".2f").replace(".", ","),
             r["vencimento"] or "", r["pago_em"] or "",
             "Sim" if r["recorrente"] else "Não", r["recorrencia"] or "",
             r["status"] or "",
-        ])
+        ]))
     nome = f"despesas_{competencia or 'todas'}.csv"
     return Response(
         content="﻿" + buf.getvalue(),

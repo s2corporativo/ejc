@@ -3,7 +3,7 @@
   "_regras_de_curadoria": [
     "NUNCA inclua PII real: pseudonimize nomes, CPFs, endereços e valores identificáveis ANTES de gravar (LGPD).",
     "NUNCA invente jurisprudência: em jurisprudencia_esperada liste apenas referências REAIS conferidas na fonte oficial; placeholders só pertencem aos arquivos .example.",
-    "Todo caso real exige curador, revisor independente, vigência conferida e fonte oficial com referência da versão revisada.",
+    "Todo caso real exige curador identificado, vigência conferida e fonte oficial com referência da versão revisada; revisor é opcional e pode ser o próprio curador (gold_governance.py, decisão do titular em 23/08/2026).",
     "Classifique o cenário como normal, fronteira ou excecao para impedir um corpus formado apenas por happy paths.",
     "Meta: 50-150 casos reais pseudonimizados cobrindo as áreas de atuação do escritório."
   ],
