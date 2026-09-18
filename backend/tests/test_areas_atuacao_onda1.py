@@ -123,8 +123,18 @@ def test_ferramentas_corrigidas_na_onda2_sairam_da_matriz():
         "/empresarial/ferramentas/verificar-cade",
     }
     assert corrigidas.isdisjoint(FERRAMENTAS_NAO_HOMOLOGADAS)
-    # Estado final pós-Fase C: APENAS a dosimetria segue selada.
-    assert set(FERRAMENTAS_NAO_HOMOLOGADAS) == {"/penal/ferramentas/dosimetria"}
+    # Estado final pós-Fase C seria apenas a dosimetria, MAS o P0 jurídico
+    # #1553 (LC 236/2026, vigente 04/09/2026, alterou arts. 150/151/168/174 do
+    # CTN) re-desomologou os cálculos tributários não consolidados até revisão
+    # jurídica completa — ver tributario_paf.py e test_tributario_lc227_guard.
+    assert set(FERRAMENTAS_NAO_HOMOLOGADAS) == {
+        "/penal/ferramentas/dosimetria",
+        "/tributario/ferramentas/auto-infracao-prazos",
+        "/tributario/ferramentas/prescricao-decadencia",
+        "/tributario/ferramentas/parcelamento",
+        "/tributario/ferramentas/regime-tributario",
+        "/tributario/ferramentas/reforma-tributaria",
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════

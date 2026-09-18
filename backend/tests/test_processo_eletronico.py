@@ -10,16 +10,12 @@ from __future__ import annotations
 
 import asyncio
 import os
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from uuid import uuid4
 
-import pytest
 
 from app.services import tribunal_registry
 from app.services import processo_eletronico_credential_service as cred_service
 from app.services import processo_eletronico_document_mapper as mapper
-from app.services.mni_connector import ConsultaProcessoResultado
 from app.models.processo_eletronico import (
     DocumentoProcessoEletronicoDedup, Tribunal,
 )
