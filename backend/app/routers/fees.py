@@ -18,10 +18,16 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case
-from app.models.fee import Fee, FeePayment, FeeStatus
+from app.models.fee import Fee, FeeEstorno, FeePayment, FeeStatus
 from app.models.user import User
 from app.schemas.common import MsgResponse
-from app.schemas.fee import FeeCreate, FeePaymentCreate, FeeResponse, FeeUpdate
+from app.schemas.fee import (
+    FeeCreate,
+    FeeEstornoCreate,
+    FeePaymentCreate,
+    FeeResponse,
+    FeeUpdate,
+)
 from app.services.document_access_policy import exigir_documento_compativel_com_caso
 from app.services.fee_ledger_compat import total_pago_efetivo
 
@@ -155,7 +161,19 @@ async def resumo(
         .group_by(FeePayment.fee_id)
         .subquery()
     )
-    total_pago = sqlfunc.coalesce(pagamentos_por_fee.c.total_pago, 0)
+    estornos_por_fee = (
+        select(
+            FeeEstorno.fee_id.label("fee_id"),
+            sqlfunc.coalesce(sqlfunc.sum(FeeEstorno.valor), 0).label("total_estornado"),
+        )
+        .group_by(FeeEstorno.fee_id)
+        .subquery()
+    )
+    total_pago = sqlfunc.greatest(
+        sqlfunc.coalesce(pagamentos_por_fee.c.total_pago, 0)
+        - sqlfunc.coalesce(estornos_por_fee.c.total_estornado, 0),
+        0,
+    )
     saldo = sqlfunc.greatest(sqlfunc.coalesce(Fee.valor, 0) - total_pago, 0)
 
     base_saldos = (
@@ -164,6 +182,7 @@ async def resumo(
             sqlfunc.coalesce(sqlfunc.sum(saldo).filter(Fee.status == FeeStatus.atrasado), 0),
         )
         .outerjoin(pagamentos_por_fee, pagamentos_por_fee.c.fee_id == Fee.id)
+        .outerjoin(estornos_por_fee, estornos_por_fee.c.fee_id == Fee.id)
         .where(Fee.deleted_at.is_(None))
     )
     base_caixa = (
@@ -339,11 +358,19 @@ async def listar_pagamentos(
             .order_by(FeePayment.data_pagamento.desc(), FeePayment.created_at.desc())
         )
     ).scalars().all()
+    estornos = (
+        await db.execute(
+            select(FeeEstorno)
+            .where(FeeEstorno.fee_id == fee_id)
+            .order_by(FeeEstorno.data_estorno.desc(), FeeEstorno.created_at.desc())
+        )
+    ).scalars().all()
     total_pago, legado = await total_pago_efetivo(db, fee)
     saldo = None
     if fee.valor is not None:
         saldo = max(Decimal(str(fee.valor)) - total_pago, Decimal("0"))
 
+    total_estornado = sum((Decimal(str(e.valor)) for e in estornos), Decimal("0"))
     return {
         "fee_id": fee_id,
         "valor_contratado": float(fee.valor) if fee.valor is not None else None,
@@ -351,6 +378,7 @@ async def listar_pagamentos(
             float(fee.percentual_exito) if fee.percentual_exito is not None else None
         ),
         "total_pago": float(total_pago),
+        "total_estornado": float(total_estornado),
         "saldo": float(saldo) if saldo is not None else None,
         "legacy_pago_sem_subledger": legado,
         "data_pagamento_legacy": (
@@ -364,8 +392,29 @@ async def listar_pagamentos(
                 "forma": p.forma,
                 "comprovante_doc_id": p.comprovante_doc_id,
                 "created_at": p.created_at.isoformat() if p.created_at else None,
+                "estornado": float(
+                    sum(
+                        (
+                            Decimal(str(e.valor))
+                            for e in estornos
+                            if e.fee_payment_id == p.id
+                        ),
+                        Decimal("0"),
+                    )
+                ),
             }
             for p in pagamentos
+        ],
+        "estornos": [
+            {
+                "id": e.id,
+                "fee_payment_id": e.fee_payment_id,
+                "valor": float(e.valor),
+                "motivo": e.motivo,
+                "data_estorno": e.data_estorno.isoformat(),
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            }
+            for e in estornos
         ],
     }
 
@@ -485,6 +534,173 @@ async def registrar_pagamento(
             if quitacao_indeterminada
             else "Pagamento registrado"
         ),
+    }
+
+
+@router.post("/{fee_id}/pagamentos/{payment_id}/estorno", status_code=201)
+async def estornar_pagamento(
+    fee_id: str,
+    payment_id: str,
+    payload: FeeEstornoCreate,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_req_financeiro_mutacao),
+):
+    """Estorna (total ou parcialmente) um pagamento do subledger.
+
+    Fecha o guard "registre eventual estorno em fluxo próprio": o lançamento
+    é novo, auditável, com motivo obrigatório e limitado ao valor do
+    pagamento de origem. Honorário ``pago`` é reaberto quando o total
+    efetivo fica abaixo do valor contratado — decisão explícita do endpoint,
+    registrada no audit log, nunca edição silenciosa de status.
+    """
+    fee = (
+        await db.execute(
+            select(Fee).where(Fee.id == fee_id, Fee.deleted_at.is_(None))
+        )
+    ).scalar_one_or_none()
+    if not fee:
+        raise HTTPException(status_code=404, detail="Honorário não encontrado")
+    if fee.status == FeeStatus.cancelado:
+        raise HTTPException(
+            status_code=409, detail="Honorário cancelado não aceita estorno"
+        )
+
+    pagamento = (
+        await db.execute(
+            select(FeePayment).where(
+                FeePayment.id == payment_id,
+                FeePayment.fee_id == fee_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not pagamento:
+        raise HTTPException(
+            status_code=404,
+            detail="Pagamento não encontrado para este honorário",
+        )
+
+    total_pago, legado = await total_pago_efetivo(db, fee)
+    if legado:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Honorário quitado em registro legado sem subledger; normalize o "
+                "histórico em fluxo controlado antes de lançar estorno"
+            ),
+        )
+
+    estornado_anterior = (
+        await db.execute(
+            select(sqlfunc.coalesce(sqlfunc.sum(FeeEstorno.valor), 0)).where(
+                FeeEstorno.fee_payment_id == payment_id
+            )
+        )
+    ).scalar()
+    disponivel = Decimal(str(pagamento.valor)) - Decimal(str(estornado_anterior or 0))
+    if payload.valor > disponivel:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Estorno excede o valor ainda não estornado do pagamento "
+                f"(disponível: {float(disponivel):.2f})"
+            ),
+        )
+
+    estorno = FeeEstorno(
+        id=str(uuid4()),
+        fee_id=fee_id,
+        fee_payment_id=payment_id,
+        valor=payload.valor,
+        motivo=payload.motivo,
+        data_estorno=payload.data_estorno,
+    )
+    db.add(estorno)
+    await db.flush()
+
+    total_pago, _pos = await total_pago_efetivo(db, fee)
+    reaberto = False
+    if (
+        fee.status == FeeStatus.pago
+        and fee.valor is not None
+        and total_pago < Decimal(str(fee.valor))
+    ):
+        hoje = payload.data_estorno
+        fee.status = (
+            FeeStatus.atrasado
+            if fee.data_vencimento is not None and fee.data_vencimento < hoje
+            else FeeStatus.pendente
+        )
+        fee.data_pagamento = None
+        reaberto = True
+
+    await criar_audit_log(
+        db,
+        cu.id,
+        cu.role.value,
+        "ESTORNO",
+        "fees",
+        fee_id,
+        detalhes=(
+            f"Estorno {estorno.id} de {payload.valor} sobre pagamento "
+            f"{payment_id}; reaberto={reaberto}; motivo={payload.motivo[:200]}"
+        ),
+        dados_depois={
+            "estorno_id": estorno.id,
+            "fee_payment_id": payment_id,
+            "valor": float(payload.valor),
+            "motivo": payload.motivo,
+            "total_pago_efetivo": float(total_pago),
+            "reaberto": reaberto,
+        },
+    )
+    await db.commit()
+    return {
+        "id": estorno.id,
+        "total_pago": float(total_pago),
+        "saldo": (
+            float(max(Decimal(str(fee.valor)) - total_pago, Decimal("0")))
+            if fee.valor is not None
+            else None
+        ),
+        "reaberto": reaberto,
+        "detail": (
+            "Estorno registrado; honorário reaberto para cobrança"
+            if reaberto
+            else "Estorno registrado"
+        ),
+    }
+
+
+@router.get("/{fee_id}/estornos")
+async def listar_estornos(
+    fee_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Histórico de estornos do honorário (rastreabilidade do desmonte de caixa)."""
+    fee = await _fee_visivel(db, fee_id, cu)
+    if not fee:
+        raise HTTPException(status_code=404, detail="Honorário não encontrado")
+    estornos = (
+        await db.execute(
+            select(FeeEstorno)
+            .where(FeeEstorno.fee_id == fee_id)
+            .order_by(FeeEstorno.data_estorno.desc(), FeeEstorno.created_at.desc())
+        )
+    ).scalars().all()
+    return {
+        "fee_id": fee_id,
+        "estornos": [
+            {
+                "id": e.id,
+                "fee_payment_id": e.fee_payment_id,
+                "valor": float(e.valor),
+                "motivo": e.motivo,
+                "data_estorno": e.data_estorno.isoformat(),
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            }
+            for e in estornos
+        ],
     }
 
 

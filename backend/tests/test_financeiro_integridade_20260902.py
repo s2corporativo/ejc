@@ -207,6 +207,11 @@ class _ResultadoOneFake:
     def one(self):
         return self.values
 
+    def scalar(self):
+        # Compatível com consultas de agregação escalar (ex.: soma de
+        # estornos em fee_ledger_compat.total_pago_efetivo).
+        return self.values
+
 
 class _DBFake:
     def __init__(self, resultados):
@@ -223,7 +228,10 @@ def test_ledger_real_prevalece_sobre_fallback_legado_sem_duplicar():
         data_pagamento=date(2026, 8, 20),
         valor=Decimal("1000.00"),
     )
-    db = _DBFake([_ResultadoOneFake((Decimal("400.00"), 1))])
+    db = _DBFake([
+        _ResultadoOneFake((Decimal("400.00"), 1)),
+        _ResultadoOneFake(Decimal("0")),  # estornos: nenhum lançado
+    ])
 
     total, legado = asyncio.run(total_pago_efetivo(db, fee))
 

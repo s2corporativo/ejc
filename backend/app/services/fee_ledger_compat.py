@@ -22,13 +22,16 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.fee import Fee, FeePayment, FeeStatus
+from app.models.fee import Fee, FeeEstorno, FeePayment, FeeStatus
 
 
 LEDGER_COMPAT_CTES = """
 pagamentos_reais AS (
     SELECT fp.fee_id,
-           COALESCE(SUM(fp.valor), 0) AS total_pago,
+           GREATEST(COALESCE(SUM(fp.valor), 0) - COALESCE((
+               SELECT SUM(fe.valor) FROM fee_estornos fe
+               WHERE fe.fee_id = fp.fee_id
+           ), 0), 0) AS total_pago,
            COUNT(*) AS qtd_pagamentos
     FROM fee_payments fp
     JOIN fees f ON f.id = fp.fee_id
@@ -80,7 +83,13 @@ async def total_pago_efetivo(
     db: AsyncSession,
     fee: Fee,
 ) -> tuple[Decimal, bool]:
-    """Retorna total efetivo e se a origem é o fallback legado."""
+    """Retorna total efetivo e se a origem é o fallback legado.
+
+    O total EFETIVO é ``Σ pagamentos − Σ estornos`` do subledger (piso em
+    zero). Estorno é lançamento próprio de ``fee_estornos`` — o caixa real
+    muda quando um pagamento é revertido, e todo consumidor deste total
+    (saldo, quitação, resumo) precisa enxergar o mesmo número.
+    """
     total, qtd = (
         await db.execute(
             select(
@@ -90,7 +99,17 @@ async def total_pago_efetivo(
         )
     ).one()
     if int(qtd or 0) > 0:
-        return Decimal(str(total or 0)), False
+        estornos = (
+            await db.execute(
+                select(
+                    func.coalesce(func.sum(FeeEstorno.valor), 0)
+                ).where(FeeEstorno.fee_id == fee.id)
+            )
+        ).scalar()
+        efetivo = Decimal(str(total or 0)) - Decimal(str(estornos or 0))
+        if efetivo < 0:
+            efetivo = Decimal("0")
+        return efetivo, False
 
     if (
         fee.status == FeeStatus.pago

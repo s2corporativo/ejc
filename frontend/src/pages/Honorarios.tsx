@@ -62,6 +62,9 @@ export default function Honorarios() {
   const [pag, setPag] = useState<any>({});
   const [salvando, setSalvando] = useState(false);
   const [registrando, setRegistrando] = useState(false);
+  const [estModal, setEstModal] = useState<any>(null);
+  const [est, setEst] = useState<any>({});
+  const [estornando, setEstornando] = useState(false);
   const [rateioModal, setRateioModal] = useState<any>(null);
   const [pixModal, setPixModal] = useState<any>(null);
   const [pixCfg, setPixCfg] = useState<any>(() => {
@@ -186,6 +189,44 @@ export default function Honorarios() {
       toast.error(e.response?.data?.detail || "Erro ao registrar pagamento");
     } finally {
       setRegistrando(false);
+    }
+  };
+
+  // ── Estorno de pagamento (fluxo próprio e auditável — P2 da homologação) ──
+  const abrirEstorno = (fee: Fee, p: any) => {
+    const disponivel = Number(p.valor ?? 0) - Number(p.estornado ?? 0);
+    if (disponivel <= 0) {
+      toast.error("Este pagamento já está integralmente estornado.");
+      return;
+    }
+    setEstModal({ fee_id: fee.id, payment_id: p.id, disponivel });
+    setEst({ valor: disponivel, data_estorno: hojeISO(), motivo: "" });
+  };
+
+  const registrarEstorno = async () => {
+    if (!estModal || !est.valor || !est.data_estorno || !est.motivo?.trim() || estornando)
+      return;
+    if (Number(est.valor) > Number(estModal.disponivel)) {
+      toast.error(
+        `Estorno excede o disponível deste pagamento (máx. ${fmtMoney(estModal.disponivel)}).`,
+      );
+      return;
+    }
+    setEstornando(true);
+    try {
+      const r = await api.post(
+        `/fees/${estModal.fee_id}/pagamentos/${estModal.payment_id}/estorno`,
+        est,
+      );
+      toast.success(r.data?.detail || "Estorno registrado.");
+      setEstModal(null);
+      setEst({});
+      if (histModal?.fee) void abrirHistorico(histModal.fee);
+      load();
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Erro ao registrar estorno");
+    } finally {
+      setEstornando(false);
     }
   };
 
@@ -476,7 +517,7 @@ export default function Honorarios() {
           <Spinner />
         ) : histModal?.data ? (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="grid grid-cols-3 gap-3 text-sm">
               <div className="card p-3">
                 <div className="text-xs text-slate-400">Total recebido</div>
                 <div className="font-bold text-success-700">{fmtMoney(histModal.data.total_pago)}</div>
@@ -485,27 +526,114 @@ export default function Honorarios() {
                 <div className="text-xs text-slate-400">Saldo</div>
                 <div className="font-bold text-navy">{histModal.data.saldo == null ? "A apurar" : fmtMoney(histModal.data.saldo)}</div>
               </div>
+              <div className="card p-3">
+                <div className="text-xs text-slate-400">Estornado</div>
+                <div className="font-bold text-danger-600">{fmtMoney(histModal.data.total_estornado || 0)}</div>
+              </div>
             </div>
             {histModal.data.pagamentos?.length ? (
               <div className="overflow-x-auto border border-slate-100 rounded-lg">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
-                    <tr><th className="p-2 text-left">Data</th><th className="p-2 text-left">Forma</th><th className="p-2 text-right">Valor</th></tr>
+                    <tr><th className="p-2 text-left">Data</th><th className="p-2 text-left">Forma</th><th className="p-2 text-right">Valor</th><th className="p-2 text-right">Estorno</th></tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {histModal.data.pagamentos.map((p: any) => (
-                      <tr key={p.id}>
-                        <td className="p-2">{fmtDate(p.data_pagamento)}</td>
-                        <td className="p-2 capitalize">{(p.forma || "—").replace(/_/g, " ")}</td>
-                        <td className="p-2 text-right font-semibold">{fmtMoney(p.valor)}</td>
-                      </tr>
-                    ))}
+                    {histModal.data.pagamentos.map((p: any) => {
+                      const disponivel = Number(p.valor ?? 0) - Number(p.estornado ?? 0);
+                      return (
+                        <tr key={p.id}>
+                          <td className="p-2">{fmtDate(p.data_pagamento)}</td>
+                          <td className="p-2 capitalize">{(p.forma || "—").replace(/_/g, " ")}</td>
+                          <td className="p-2 text-right font-semibold">{fmtMoney(p.valor)}</td>
+                          <td className="p-2 text-right">
+                            {Number(p.estornado ?? 0) > 0 && (
+                              <span className="text-[11px] text-danger-600 mr-2">-{fmtMoney(p.estornado)}</span>
+                            )}
+                            <button
+                              className="btn-ghost px-2 py-1 text-[11px] text-danger-600 disabled:opacity-40"
+                              title="Estornar pagamento (com motivo, auditável)"
+                              disabled={disponivel <= 0}
+                              onClick={() => abrirEstorno(histModal.fee, p)}
+                            >
+                              Estornar
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             ) : <Empty message="Nenhum pagamento registrado" />}
+            {histModal.data.estornos?.length ? (
+              <div>
+                <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Estornos registrados</div>
+                <ul className="space-y-1 text-sm">
+                  {histModal.data.estornos.map((e: any) => (
+                    <li key={e.id} className="flex items-start justify-between gap-3 border border-slate-100 rounded-lg p-2">
+                      <span>
+                        <b className="text-danger-600">{fmtMoney(e.valor)}</b>
+                        <span className="text-slate-400"> · {fmtDate(e.data_estorno)} · </span>
+                        {e.motivo}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
         ) : null}
+      </Modal>
+
+      <Modal open={!!estModal} onClose={() => setEstModal(null)} title="Estornar pagamento">
+        {estModal && (
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600">
+              Disponível neste pagamento: <b>{fmtMoney(estModal.disponivel)}</b>. O estorno é um
+              lançamento auditável — o pagamento original permanece no histórico.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="label">Valor do estorno *</label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  max={estModal.disponivel}
+                  className="input"
+                  value={est.valor ?? ""}
+                  onChange={(e) => setEst({ ...est, valor: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="label">Data *</label>
+                <input
+                  type="date"
+                  className="input"
+                  value={est.data_estorno || ""}
+                  onChange={(e) => setEst({ ...est, data_estorno: e.target.value })}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="label">Motivo (obrigatório, fica no audit log) *</label>
+              <textarea
+                className="input"
+                rows={3}
+                placeholder="Ex.: pagamento lançado em duplicidade; devolução acordada com o cliente"
+                value={est.motivo || ""}
+                onChange={(e) => setEst({ ...est, motivo: e.target.value })}
+              />
+            </div>
+            <button
+              className="btn-primary w-full justify-center"
+              disabled={estornando || !est.valor || !est.data_estorno || !est.motivo?.trim()}
+              onClick={registrarEstorno}
+            >
+              {estornando ? "Estornando..." : "Confirmar estorno"}
+            </button>
+          </div>
+        )}
       </Modal>
 
       <Modal open={!!rateioModal} onClose={() => setRateioModal(null)} title="Rateio de Êxito — 50% Titular / 50% Escritório">

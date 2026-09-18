@@ -196,6 +196,12 @@ ADICOES_INTENCIONAIS = {
     ("/api/ajuizamento/filings/{filing_id}/cancelar", "POST"),
     ("/api/ajuizamento/filings/{filing_id}/transicoes", "GET"),
     ("/api/ajuizamento/protocolos", "GET"),
+    # Estorno de pagamento de honorário (achado P2 da homologação 18/09/2026):
+    # fluxo próprio e auditável que fecha o guard "registre eventual estorno
+    # em fluxo próprio" dos routers de fees. Mutação restrita a perfis
+    # fiduciários (_req_financeiro_mutacao); leitura segue o escopo canônico.
+    ("/api/fees/{fee_id}/pagamentos/{payment_id}/estorno", "POST"),
+    ("/api/fees/{fee_id}/estornos", "GET"),
 }
 
 REMOCOES_INTENCIONAIS = {

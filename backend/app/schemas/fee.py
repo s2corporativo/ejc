@@ -150,3 +150,66 @@ class FeeResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class FeeEstornoCreate(BaseModel):
+    """Estorno de pagamento de honorário — lançamento próprio e auditável.
+
+    Complementa a exigência dos guards de ``routers/fees.py`` ("registre
+    eventual estorno em fluxo próprio"): nunca se edita nem se apaga um
+    ``FeePayment``; o estorno é um lançamento novo, amarrado ao pagamento de
+    origem, com motivo obrigatório e valor estritamente positivo e limitado
+    ao saldo do pagamento original (a soma de estornos não pode superá-lo).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    valor: Decimal
+    data_estorno: date
+    motivo: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def _recusar_campo_desconhecido(cls, dados):
+        if isinstance(dados, dict):
+            desconhecidos = sorted(set(dados) - set(cls.model_fields))
+            if desconhecidos:
+                raise ValueError(
+                    f"campo(s) não reconhecido(s) em estorno: "
+                    f"{', '.join(desconhecidos)}. Use apenas: "
+                    f"{', '.join(sorted(cls.model_fields))}."
+                )
+        return dados
+
+    @field_validator("valor")
+    @classmethod
+    def _valor_positivo(cls, v: Decimal) -> Decimal:
+        if v <= 0:
+            raise ValueError(
+                "valor do estorno deve ser maior que zero "
+                "(R$ 0,00 não é estorno; correção contábil não se faz "
+                "com lançamento nulo)"
+            )
+        return v
+
+    @field_validator("motivo")
+    @classmethod
+    def _motivo_obrigatorio(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError(
+                "motivo do estorno é obrigatório: todo desmonte de caixa "
+                "precisa ser rastreável a uma justificativa explícita"
+            )
+        return v.strip()
+
+
+class FeeEstornoResponse(BaseModel):
+    id: str
+    fee_id: str
+    fee_payment_id: str
+    valor: Decimal
+    motivo: str
+    data_estorno: date
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
