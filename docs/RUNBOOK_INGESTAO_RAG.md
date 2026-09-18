@@ -35,28 +35,40 @@ fonte, defina a flag `=false` no `.env` do VPS e reinicie o backend
 
 O endpoint oficial permanece fixo em `https://comunicaapi.pje.jus.br/api/v1`.
 Se o host de produção tiver saída fora do Brasil e o CloudFront responder
-`403`/bloqueio geográfico, configure **somente** `DJEN_HTTP_PROXY_URL` com
-proxy HTTP(S) CONNECT privado/controlado cuja saída pública seja brasileira.
+`403`/bloqueio geográfico, o EJC usa a seguinte precedência:
+
+1. `DJEN_RELAY_URL` + `DJEN_RELAY_PRIVATE_KEY_B64`: relay HTTPS brasileiro
+   restrito ao DJEN, autenticado por assinatura Ed25519 de curta validade;
+2. `DJEN_HTTP_PROXY_URL`: proxy HTTP(S) CONNECT privado/controlado;
+3. conexão direta, quando a própria VPS já tiver egress brasileiro.
 
 Requisitos operacionais:
 
-- não usar proxy público/gratuito;
-- permitir destino apenas `comunicaapi.pje.jus.br:443`;
-- não realizar inspeção/interceptação TLS;
-- manter autenticação/credencial somente no segredo/.env da VPS;
-- o processo DJEN usa `trust_env=False`, portanto proxies globais do host não são herdados;
-- após alterar o .env, reiniciar o backend.
+- não usar proxy/relay público genérico;
+- relay deve aceitar somente GET, allowlist fechada de parâmetros e encaminhar
+  exclusivamente para `comunicaapi.pje.jus.br/api/v1/comunicacao`;
+- chave privada Ed25519 fica somente no segredo/.env da VPS e nunca no relay;
+- proxy CONNECT, quando usado, deve permitir destino apenas
+  `comunicaapi.pje.jus.br:443` e não interceptar TLS;
+- `trust_env=False` impede herdar proxies globais do host;
+- após alterar o .env, reiniciar backend e worker.
 
 Homologação mínima após configurar o egress:
 
-1. validar de dentro do container backend que a consulta oficial deixa de ser classificada como `geo_bloqueado`;
+1. confirmar que a consulta real deixa de ser `geo_bloqueado` e que o relay
+   reporta região brasileira;
 2. executar uma captura real de OAB e conferir paginação/total;
 3. repetir a captura para provar deduplicação/idempotência;
-4. confirmar `/api/intimacoes/status-captura` em sucesso ou `sucesso_sem_resultados` válido;
-5. conferir que nenhuma credencial de proxy ou teor integral desnecessário foi parar em logs;
-6. validar `/api/health` e `/api/health/ready` no SHA implantado.
+4. confirmar heartbeat DJEN em `ok` com `sucesso` ou
+   `sucesso_sem_resultados` válido;
+5. confirmar que DJEN→RAG falha alto se todas as OABs falharem;
+6. conferir que chave, URL sensível e teor integral desnecessário não aparecem em logs;
+7. validar `/api/health` e `/api/health/ready` no SHA implantado.
 
-Rollback operacional: remover `DJEN_HTTP_PROXY_URL` e reiniciar o backend restaura a conexão direta. O rollback de código é o revert do PR; não há migration nem transformação de dados.
+Rollback operacional: remover `DJEN_RELAY_URL` e
+`DJEN_RELAY_PRIVATE_KEY_B64` retorna ao proxy CONNECT; remover também
+`DJEN_HTTP_PROXY_URL` restaura conexão direta. Não há migration nem transformação
+de dados.
 
 ## 1) Ingestão automática (scheduler)
 
