@@ -23,7 +23,7 @@ export default function PortalLayout() {
           <div className="flex items-center gap-3">
             <img
               src={officeBranding.logoPath}
-              alt="De Paula Teixeira Sociedade de Advogados"
+              alt={officeBranding.officeName}
               className="brand-logo-img h-12 w-auto max-w-[220px] sm:h-14 sm:max-w-[260px]"
             />
             <div className="hidden text-[10px] font-semibold uppercase tracking-[0.25em] text-ouro-profundo sm:block">
@@ -69,7 +69,7 @@ export default function PortalLayout() {
         <Outlet />
       </main>
       <footer className="text-center text-[11px] text-slate-400 pb-6">
-        De Paula Teixeira Sociedade de Advogados · Betim/MG
+        {officeBranding.officeName} · Betim/MG
       </footer>
     </div>
   );

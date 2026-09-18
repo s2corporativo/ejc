@@ -376,8 +376,7 @@ export default function LayoutReference() {
             />
             {!navCollapsed && (
               <span className="ejc-sidebar-brand__copy">
-                <strong>EJC</strong>
-                <small>Ecossistema Jurídico Clóvis</small>
+                <strong>{officeBranding.officeName}</strong>
               </span>
             )}
           </Link>
@@ -474,7 +473,7 @@ export default function LayoutReference() {
       {iaDisponivel ? (
         <Link
           to="/inteligencia?tab=assistente"
-          className="fixed bottom-5 right-5 z-30 hidden h-11 w-11 items-center justify-center rounded-xl bg-[#485B5A] text-white shadow-float transition hover:-translate-y-0.5 hover:bg-[#3D504F] md:flex"
+          className="fixed bottom-5 right-5 z-30 hidden h-11 w-11 items-center justify-center rounded-xl bg-[#073C35] text-white shadow-float transition hover:-translate-y-0.5 hover:bg-[#052F2A] md:flex"
           aria-label="Assistente IA"
         >
           <Bot className="h-5 w-5" />

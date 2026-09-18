@@ -30,7 +30,7 @@ function BrandIntro({ className }: { className?: string }) {
     return (
       <img
         src={officeBranding.logoPath}
-        alt="De Paula Teixeira Sociedade de Advogados"
+        alt={officeBranding.officeName}
         className={`brand-logo-img h-40 w-auto max-w-[440px] ${className || ""}`}
       />
     );
@@ -44,7 +44,7 @@ function BrandIntro({ className }: { className?: string }) {
       preload="auto"
       poster={BRAND_INTRO_POSTER}
       onError={() => setFallback(true)}
-      aria-label="De Paula Teixeira Sociedade de Advogados"
+      aria-label={officeBranding.officeName}
     >
       <source src={BRAND_INTRO_VIDEO} type="video/mp4" />
     </video>
@@ -193,7 +193,7 @@ export default function LoginModern() {
             <div className="mb-8 flex items-center justify-center lg:hidden">
               <img
                 src={officeBranding.logoPath}
-                alt="De Paula Teixeira Sociedade de Advogados"
+                alt={officeBranding.officeName}
                 className="brand-logo-img h-28 w-auto max-w-[320px]"
               />
             </div>

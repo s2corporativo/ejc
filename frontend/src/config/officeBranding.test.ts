@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { getMailtoUrl, getWhatsAppUrl, officeBranding } from "./officeBranding";
+import {
+  getMailtoUrl,
+  getWhatsAppUrl,
+  officeBranding,
+  resolveLogoPath,
+  resolveOfficeName,
+} from "./officeBranding";
 
 describe("officeBranding", () => {
   it("não expõe configuração sem consumidor", () => {
@@ -15,6 +21,27 @@ describe("officeBranding", () => {
       "timezone",
       "whatsappNumber",
     ]);
+  });
+
+  it("normaliza nome institucional legado e preserva customização válida", () => {
+    expect(resolveOfficeName("")).toBe("EJC DePaula Teixeira Adv");
+    expect(resolveOfficeName("EJC — Ecossistema Jurídico Clóvis")).toBe(
+      "EJC DePaula Teixeira Adv",
+    );
+    expect(resolveOfficeName("Minha Marca Jurídica")).toBe("Minha Marca Jurídica");
+  });
+
+  it("normaliza logos legados e preserva caminho customizado", () => {
+    expect(resolveLogoPath("")).toBe("/brand/de-paula-teixeira-dt.png");
+    expect(resolveLogoPath("/brand/logo-hd.png")).toBe(
+      "/brand/de-paula-teixeira-dt.png",
+    );
+    expect(resolveLogoPath("/brand/ejc-wordmark.svg")).toBe(
+      "/brand/de-paula-teixeira-dt.png",
+    );
+    expect(resolveLogoPath("/brand/custom-logo.svg")).toBe(
+      "/brand/custom-logo.svg",
+    );
   });
 
   it("só monta link de contato quando há dado configurado", () => {
