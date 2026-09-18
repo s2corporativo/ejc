@@ -18,6 +18,14 @@ vi.mock("../stores/auth", () => ({
   ) => selector({ user: { role: papelAtual, full_name: "Clovis Teste" } }),
 }));
 
+vi.mock("../config/officeBranding", () => ({
+  officeBranding: {
+    officeName: "Marca Jurídica Configurada",
+  },
+  getWhatsAppUrl: () => "",
+  getMailtoUrl: () => "",
+}));
+
 vi.mock("./EntradaUnica", () => ({
   EntradaInteligente: ({ embedded }: { embedded?: boolean }) => (
     <div data-testid="entrada-unica" data-embedded={String(Boolean(embedded))}>
@@ -80,7 +88,7 @@ describe("DashboardUltra — Início canônico", () => {
       screen.getByRole("link", { name: "Comunicações processuais: 2" }),
     ).toBeTruthy();
     expect(screen.getByText("Olá, Clovis.")).toBeTruthy();
-    expect(screen.getByText("EJC DePaula Teixeira Adv")).toBeTruthy();
+    expect(screen.getByText("Marca Jurídica Configurada")).toBeTruthy();
     expect(screen.getByTestId("entrada-unica").dataset.embedded).toBe("true");
     expect(
       screen.getByRole("region", { name: "Radar Jurídico" }),
