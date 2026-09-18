@@ -376,7 +376,7 @@ export default function LayoutReference() {
             />
             {!navCollapsed && (
               <span className="ejc-sidebar-brand__copy">
-                <strong>EJC DePaula Teixeira Adv</strong>
+                <strong>{officeBranding.officeName}</strong>
               </span>
             )}
           </Link>
