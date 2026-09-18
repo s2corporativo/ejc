@@ -511,6 +511,7 @@ async def refresh(req: RefreshRequest, request: Request, response: Response,
 
 # ─── Logout ───────────────────────────────────────────────────────────────────
 @router.post("/logout")
+@limiter.limit("30/minute")
 async def logout(req: RefreshRequest, request: Request, response: Response,
                  db: AsyncSession = Depends(get_db)):
     token = _refresh_from(req, request)
