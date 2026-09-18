@@ -198,7 +198,7 @@ export default function DossieEstrategicoCaso({ caseId }: { caseId: string }) {
   // "pode levar alguns minutos" na tela do novo caso.
   useEffect(
     () => () => {
-      gerarRef.current && clearTimeout(gerarRef.current);
+      if (gerarRef.current) clearTimeout(gerarRef.current);
     },
     [caseId],
   );
@@ -263,7 +263,7 @@ export default function DossieEstrategicoCaso({ caseId }: { caseId: string }) {
 
   const gerar = async () => {
     setGerando(true);
-    gerarRef.current && clearTimeout(gerarRef.current);
+    if (gerarRef.current) clearTimeout(gerarRef.current);
     setGerandoHaTempo(false);
     gerarRef.current = setTimeout(() => setGerandoHaTempo(true), 90_000);
     try {
@@ -277,7 +277,7 @@ export default function DossieEstrategicoCaso({ caseId }: { caseId: string }) {
     } finally {
       setGerando(false);
       setGerandoHaTempo(false);
-      gerarRef.current && clearTimeout(gerarRef.current);
+      if (gerarRef.current) clearTimeout(gerarRef.current);
     }
   };
 

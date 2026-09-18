@@ -217,7 +217,7 @@ export default function LayoutReference() {
             >
               <Search className="h-4 w-4 shrink-0" />
               <span className="hidden truncate sm:inline">
-                Buscar clientes, casos, documentos, peças…
+                Buscar por clientes, processos, documentos…
               </span>
               <span className="truncate sm:hidden">Buscar…</span>
               <kbd className="ml-auto hidden px-1.5 py-0.5 text-[10px] font-medium sm:block">
@@ -486,7 +486,7 @@ export default function LayoutReference() {
       {iaDisponivel ? (
         <Link
           to="/inteligencia?tab=assistente"
-          className="fixed bottom-5 right-5 z-30 hidden h-11 w-11 items-center justify-center rounded-xl bg-[#485B5A] text-white shadow-float transition hover:-translate-y-0.5 hover:bg-[#3D504F] md:flex"
+          className="fixed bottom-5 right-5 z-30 hidden h-11 w-11 items-center justify-center rounded-xl bg-ejc-primary text-white shadow-float transition hover:-translate-y-0.5 hover:bg-ejc-primary-hover md:flex"
           aria-label="Assistente IA"
         >
           <Bot className="h-5 w-5" />
