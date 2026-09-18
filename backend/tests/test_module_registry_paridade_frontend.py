@@ -84,6 +84,10 @@ FRONTEND_SEM_MODULO_NO_BACKEND: set[str] = {
     # Telas utilitárias/administrativas sem módulo de negócio próprio
     "configuracoes", "ajuda", "lixeira", "ferramentas", "prompts",
     "governanca-ia", "banco-teses", "raio-x-processo",
+    # Workspace tributário (#1550 reconstruído como satélite): carteira de
+    # casos por ?area=tributario + fontes oficiais; conteúdo de negócio já
+    # catalogado via módulos de casos/áreas. Porta no hub /ferramentas.
+    "tributario",
 }
 
 

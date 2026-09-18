@@ -11,7 +11,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException, Response
+from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.models.case import Case
