@@ -179,8 +179,19 @@ steps:
       # (#1661), dois pipelines simultâneos disputam /var/cache/apt/archives;
       # sem timeout, o segundo falha o step inteiro ("Could not get lock",
       # flakes nos PRs #1632 e #1641). 300s cobre a janela do apt vizinho.
-      - apt-get -o DPkg::Lock::Timeout=300 update -qq
-      - apt-get -o DPkg::Lock::Timeout=300 install -y -qq --no-install-recommends jq libmagic1 poppler-utils tesseract-ocr libpango-1.0-0 libpangocairo-1.0-0 libcairo2 postgresql-client
+      # Retry tolerante a corrida: além do lock do apt (timeout acima), o
+      # dpkg também corre em /tmp/apt-dpkg-install-* contra o apt vizinho
+      # ("cannot access archive .../N-pkg.deb" — flakes reais em #1691,
+      # #1692, #1694, #1705...). 4 tentativas com backoff tornam a disputa
+      # inócua sem serializar os agentes.
+      - |
+        for tentativa in 1 2 3 4; do
+          apt-get -o DPkg::Lock::Timeout=300 update -qq && \
+          apt-get -o DPkg::Lock::Timeout=300 install -y -qq --no-install-recommends jq libmagic1 poppler-utils tesseract-ocr libpango-1.0-0 libpangocairo-1.0-0 libcairo2 postgresql-client && \
+          break
+          echo "apt falhou (tentativa $tentativa/4) — aguardando corrida do agente vizinho..."
+          sleep 20
+        done
       - cd backend
       - pip install --quiet -r requirements.txt
       # Fast gate: falhas estruturais baratas interrompem antes da suíte total.

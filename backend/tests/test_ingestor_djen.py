@@ -198,7 +198,7 @@ async def test_ingerir_upserta_cada_comunicacao(monkeypatch):
     # parâmetros da API: OAB + janela incremental + paginação conservadora
     p = chamadas[0]
     assert p["numeroOab"] == "12345" and p["ufOab"] == "MG"
-    assert p["itensPorPagina"] == 100 and p["pagina"] == 1
+    assert p["itensPorPagina"] == djen.ITENS_POR_PAGINA and p["pagina"] == 1
     assert p["dataDisponibilizacaoInicio"] <= p["dataDisponibilizacaoFim"]
     # <100 itens na página → parou na primeira (sequencial, sem excesso)
     assert len(chamadas) == 1

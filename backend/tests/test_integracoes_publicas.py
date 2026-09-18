@@ -147,7 +147,7 @@ async def test_djen_consulta_por_oab_monta_params(monkeypatch):
     _mock_async_client(monkeypatch, djen_mod, handler)
     out = await DjenComunicaClient().consultar_por_oab("104080", "MG")
     assert out["count"] == 1
-    assert visto["params"] == {"numeroOab": "104080", "ufOab": "MG", "pagina": "1"}
+    assert visto["params"] == {"numeroOab": "104080", "ufOab": "MG", "pagina": "1", "itensPorPagina": "50"}
 
 
 async def test_djen_erro_http_vira_djenerror(monkeypatch):
