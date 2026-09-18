@@ -22,6 +22,9 @@ import "./styles/ejc-reference-2026.css";
 // Camada final system-wide: estende o mesmo idioma visual às páginas internas,
 // portal e login sem alterar lógica, rotas, contratos de API ou permissões.
 import "./styles/ejc-reference-systemwide.css";
+// Identidade premium DPT (referência do Titular 18/09/2026): composição do
+// Início e acabamentos do shell sobre a paleta esmeralda + ouro.
+import "./styles/ejc-dashboard-premium.css";
 
 initTheme();
 
