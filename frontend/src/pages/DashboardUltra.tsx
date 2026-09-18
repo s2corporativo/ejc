@@ -126,7 +126,9 @@ export default function DashboardUltra() {
           <div>
             <span>Ecossistema Jurídico Clóvis</span>
             <h2>Centro de comando jurídico</h2>
-            <p>Operação centralizada, simples, rastreável e orientada à decisão.</p>
+            <p>
+              Operação centralizada, simples, rastreável e orientada à decisão.
+            </p>
           </div>
         </div>
       </header>
@@ -188,50 +190,50 @@ export default function DashboardUltra() {
 
       <div className="ejc-ai-dashboard__main-grid">
         <main className="ejc-ai-dashboard__workspace ejc-ai-dashboard__workspace--entry">
-        <div className="ejc-ai-dashboard__workspace-header">
-          <div>
-            <span>
-              <Sparkles aria-hidden="true" /> Entrada Única
-            </span>
-            <h2>
-              Conte o caso ou envie os documentos. O EJC identifica, organiza,
-              analisa e transforma o resultado em plano jurídico revisável.
-            </h2>
+          <div className="ejc-ai-dashboard__workspace-header">
+            <div>
+              <span>
+                <Sparkles aria-hidden="true" /> Entrada Única
+              </span>
+              <h2>
+                Conte o caso ou envie os documentos. O EJC identifica, organiza,
+                analisa e transforma o resultado em plano jurídico revisável.
+              </h2>
+            </div>
+            {canUseEntry && (
+              <Link to="/entrada" className="ejc-ai-dashboard__full-link">
+                Abrir em tela cheia <ArrowUpRight aria-hidden="true" />
+              </Link>
+            )}
           </div>
-          {canUseEntry && (
-            <Link to="/entrada" className="ejc-ai-dashboard__full-link">
-              Abrir em tela cheia <ArrowUpRight aria-hidden="true" />
-            </Link>
-          )}
-        </div>
 
-        {canUseLegal ? (
-          <EntradaInteligente embedded />
-        ) : canUseEntry ? (
-          <div className="ejc-reference-empty">
-            <p>
-              Use a Entrada Única para cadastro manual de cliente e caso, sem
-              depender de IA.
-            </p>
-            <Link to="/entrada" className="btn-primary mt-3 inline-flex">
-              Abrir Entrada Única
-            </Link>
-          </div>
-        ) : (
-          <div className="ejc-reference-empty">
-            A Entrada Única está disponível apenas aos perfis autorizados.
-          </div>
-        )}
-      </main>
+          {canUseLegal ? (
+            <EntradaInteligente embedded />
+          ) : canUseEntry ? (
+            <div className="ejc-reference-empty">
+              <p>
+                Use a Entrada Única para cadastro manual de cliente e caso, sem
+                depender de IA.
+              </p>
+              <Link to="/entrada" className="btn-primary mt-3 inline-flex">
+                Abrir Entrada Única
+              </Link>
+            </div>
+          ) : (
+            <div className="ejc-reference-empty">
+              A Entrada Única está disponível apenas aos perfis autorizados.
+            </div>
+          )}
+        </main>
 
         <section
           className="ejc-ai-dashboard__legal-radar"
           aria-label="Radar Jurídico"
         >
-        <div className="ejc-ai-dashboard__legal-radar-head">
-          <strong>Radar Jurídico</strong>
-          <Link to="/dpt360/radar">Abrir radar</Link>
-        </div>
+          <div className="ejc-ai-dashboard__legal-radar-head">
+            <strong>Radar Jurídico</strong>
+            <Link to="/dpt360/radar">Abrir radar</Link>
+          </div>
           <JurisprudentialAlertsStrip compact />
         </section>
       </div>
