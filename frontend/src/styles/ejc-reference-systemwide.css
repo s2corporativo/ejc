@@ -846,12 +846,15 @@ html:not(.dark) .ejc-modern-scope .text-primary-800 {
 
 /* Dashboard principal. */
 .ejc-ai-dashboard {
+  gap: 16px;
+}
+
+html:not(.dark) .ejc-ai-dashboard {
   --ejc-ai-navy: var(--ejc-petroleum);
   --ejc-ai-ink: var(--ejc-ink);
   --ejc-ai-ivory: var(--ejc-ice-soft);
   --ejc-ai-bronze: var(--ejc-gold-deep);
   --ejc-ai-blue: var(--ejc-petroleum);
-  gap: 16px;
 }
 
 html:not(.dark) .ejc-ai-dashboard__brandbar {
@@ -878,13 +881,13 @@ html:not(.dark) .ejc-ai-dashboard__brandbar {
   filter: drop-shadow(0 12px 25px rgba(40, 48, 43, 0.10));
 }
 
-.ejc-ai-dashboard__brand span {
-  color: var(--ejc-gold-deep);
+html:not(.dark) .ejc-ai-dashboard__brand span {
+  color: var(--ejc-petroleum-deep);
   font-size: 10px;
   letter-spacing: 0.16em;
 }
 
-.ejc-ai-dashboard__brand h2 {
+html:not(.dark) .ejc-ai-dashboard__brand h2 {
   margin: 4px 0 0;
   color: var(--ejc-petroleum-deep) !important;
   font-size: clamp(24px, 2.6vw, 38px) !important;
@@ -892,7 +895,7 @@ html:not(.dark) .ejc-ai-dashboard__brandbar {
   letter-spacing: -0.035em !important;
 }
 
-.ejc-ai-dashboard__brand p {
+html:not(.dark) .ejc-ai-dashboard__brand p {
   max-width: 570px;
   margin-top: 7px;
   color: var(--ejc-muted) !important;
