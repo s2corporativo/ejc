@@ -41,6 +41,7 @@ from app.services.djen_http import (
     DJEN_COMUNICACAO_URL,
     DJEN_ITENS_POR_PAGINA,
     criar_cliente_djen,
+    preparar_requisicao_djen,
 )
 
 # Siglas de duas letras que aparecem em rótulos de OAB e NÃO são unidade
@@ -313,8 +314,9 @@ async def enviar_emails_pendentes(resultado: DjenCapturaResultado) -> None:
     reraise=True,
 )
 async def _djen_get(params: dict) -> dict | list:
+    alvo, headers, _proxy = preparar_requisicao_djen(params)
     async with criar_cliente_djen(timeout=25) as client:
-        response = await client.get(BASE, params=params)
+        response = await client.get(alvo, params=params, headers=headers)
         response.raise_for_status()
         return response.json()
 
