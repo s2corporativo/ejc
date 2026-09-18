@@ -66,6 +66,37 @@ class FeePayment(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     fee = relationship("Fee", back_populates="payments")
+    estornos = relationship(
+        "FeeEstorno",
+        back_populates="pagamento",
+        cascade="save-update, merge",
+    )
+
+
+class FeeEstorno(Base):
+    """Estorno (reversão) de um pagamento de honorário — fluxo próprio e
+    auditável (fechamento do achado P2 da homologação 18/09/2026).
+
+    O ledger é APEND-ONLY: nunca se edita nem se apaga um ``FeePayment``.
+    O estorno é um lançamento novo, amarrado ao pagamento de origem, com
+    motivo obrigatório. ``total_pago_efetivo`` subtrai estornos, e a
+    reabertura do honorário (``pago`` → ``pendente``/``atrasado``) acontece
+    no endpoint, sob auditoria — nunca por edição silenciosa de status.
+    """
+
+    __tablename__ = "fee_estornos"
+
+    id             = Column(String(36), primary_key=True)
+    fee_id         = Column(String(36), ForeignKey("fees.id"), nullable=False, index=True)
+    fee_payment_id = Column(
+        String(36), ForeignKey("fee_payments.id"), nullable=False, index=True
+    )
+    valor        = Column(Numeric(14, 2), nullable=False)
+    motivo       = Column(Text, nullable=False)
+    data_estorno = Column(Date, nullable=False)
+    created_at   = Column(DateTime(timezone=True), server_default=func.now())
+
+    pagamento = relationship("FeePayment", back_populates="estornos")
 
 
 class FeeCobrancaEnvio(Base):
