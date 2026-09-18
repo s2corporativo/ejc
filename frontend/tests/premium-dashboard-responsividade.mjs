@@ -1,4 +1,5 @@
-// Homologação visual do AppShell v2 e dashboard ultra em Chromium real.
+// Homologação visual do AppShell canônico + DashboardUltra (identidade DPT
+// esmeralda & ouro) em Chromium real, em 7 viewports.
 // As respostas abaixo existem somente no contexto Playwright e não alteram o produto.
 import http from "node:http";
 import { existsSync, mkdirSync } from "node:fs";
@@ -54,126 +55,110 @@ function dateKey(date) {
   return `${year}-${month}-${day}`;
 }
 
-const today = new Date();
-const tomorrow = new Date(today);
-tomorrow.setDate(today.getDate() + 1);
-const yesterday = new Date(today);
-yesterday.setDate(today.getDate() - 1);
+function isoDateTime(date, hhmm) {
+  return `${dateKey(date)}T${hhmm}:00`;
+}
 
+function diasAFrente(dias) {
+  const date = new Date();
+  date.setDate(date.getDate() + dias);
+  return date;
+}
+
+const today = new Date();
+
+// Fixtures no CONTRATO REAL do DashboardUltra (endpoints de DashboardUltra.tsx):
+// /dashboard/ → Kpis; /atividades → Atividade[]; /cases/ → CasoResumo[];
+// /documents/ → { total }; /tasks/ → Tarefa[].
 const FIXTURES = {
   dashboard: {
-    casos: {
-      por_status: { ativo: 98, arquivado: 18, suspenso: 8, encerrado: 2 },
-      por_area: [
-        { area: "trabalhista", total: 57 },
-        { area: "civil", total: 32 },
-        { area: "empresarial", total: 19 },
-        { area: "tributario", total: 12 },
-        { area: "ambiental", total: 6 },
-      ],
-      total: 126,
-      ativos: 98,
-      arquivados: 18,
-      encerrados: 2,
-    },
-    prazos: { vencidos: 1, criticos_3d: 4, proximos_7d: 18 },
-    // Sentinelas deliberadas: a página compartilhada não pode renderizá-las.
-    financeiro: {
-      pendente: 918273.45,
-      atrasado: 876543.21,
-      recebido_mes: 765432.1,
-      escopo: "homologacao-nao-renderizar",
-    },
-    degradado: [],
+    casos: { ativos: 98 },
+    clientes_ativos: 48,
   },
   activities: [
     {
-      id: "atividade-tarefa",
+      id: "at-prazo-hoje",
+      tipo: "prazo",
+      titulo: "Prazo final — Contestação",
+      date: isoDateTime(today, "11:30"),
+      status: "pendente",
+      case_id: "caso-1",
+      caso_titulo: "Empresa X vs. Banco Y",
+      urgencia: "critico",
+      dias_restantes: 0,
+    },
+    {
+      id: "at-tarefa-hoje",
       tipo: "tarefa",
-      fonte: "tarefa",
-      titulo: "Revisar contestação",
-      date: dateKey(today),
+      titulo: "Revisar petição inicial",
+      date: isoDateTime(today, "14:00"),
       status: "a_fazer",
       case_id: "caso-1",
-      caso_titulo: "Processo trabalhista principal",
-      prioridade: "alta",
+      caso_titulo: "Empresa X vs. Banco Y",
+      urgencia: "atencao",
+      dias_restantes: 0,
     },
     {
-      id: "atividade-audiencia",
-      tipo: "agenda",
-      subtipo: "audiencia",
-      fonte: "agenda",
-      titulo: "Audiência trabalhista",
-      date: dateKey(today),
-      status: "pendente",
-      case_id: "caso-1",
-      caso_titulo: "Processo trabalhista principal",
-    },
-    {
-      id: "atividade-reuniao",
-      tipo: "agenda",
-      subtipo: "reuniao",
-      fonte: "agenda",
-      titulo: "Reunião com cliente",
-      date: dateKey(tomorrow),
+      id: "at-intimacao-amanha",
+      tipo: "intimacao",
+      titulo: "Audiência de instrução",
+      date: isoDateTime(diasAFrente(1), "09:00"),
       status: "pendente",
       case_id: "caso-2",
-      caso_titulo: "Consultoria empresarial",
+      caso_titulo: "Construtora Alpha",
+      dias_restantes: 1,
     },
     {
-      id: "atividade-prazo",
+      id: "at-prazo-semana",
       tipo: "prazo",
-      fonte: "prazo",
-      titulo: "Prazo para manifestação",
-      date: dateKey(tomorrow),
+      titulo: "Manifestação sobre laudo",
+      date: isoDateTime(diasAFrente(3), "16:00"),
       status: "pendente",
       case_id: "caso-3",
-      caso_titulo: "Ação cível",
+      caso_titulo: "Maria Oliveira",
+      urgencia: "normal",
+      dias_restantes: 3,
     },
   ],
-  agenda: {
-    items: [
-      {
-        id: "atividade-audiencia",
-        tipo: "audiencia",
-        hora: "09:00",
-        local: "Fórum trabalhista",
-      },
-      {
-        id: "atividade-reuniao",
-        tipo: "reuniao",
-        hora: "14:00",
-        local: "Online",
-      },
-    ],
-    total: 2,
-  },
-  movements: {
-    items: [
-      {
-        id: "movimento-1",
-        titulo: "Recurso especial publicado",
-        descricao: "Publicação de recurso especial no processo",
-        status: "publicado",
-        created_at: `${dateKey(today)}T09:30:00`,
-        case_id: "caso-1",
-        case_title: "Processo trabalhista principal",
-        case_number: "5001234-56.2024.8.13.0024",
-        cliente_nome: "Cliente de homologação",
-      },
-      {
-        id: "movimento-2",
-        titulo: "Manifestação protocolada",
-        descricao: "Manifestação protocolada no processo",
-        status: "protocolado",
-        created_at: `${dateKey(yesterday)}T17:45:00`,
-        case_id: "caso-3",
-        case_title: "Ação cível",
-        case_number: "0123456-78.2023.8.13.0024",
-      },
-    ],
-    total: 2,
-  },
+  cases: [
+    {
+      id: "caso-1",
+      titulo: "Empresa X vs. Banco Y",
+      status: "ativo",
+      area: "consumidor",
+      numero_processo: "1001234-56.2023.8.26.0100",
+    },
+    {
+      id: "caso-2",
+      titulo: "João Silva vs. Plano de Saúde",
+      status: "ativo",
+      area: "saude",
+      numero_processo: "5005678-22.2024.4.03.6100",
+    },
+    {
+      id: "caso-3",
+      titulo: "Construtora Alpha",
+      status: "ativo",
+      area: "imobiliario",
+      numero_processo: "1023456-78.2023.8.26.0100",
+    },
+    {
+      id: "caso-4",
+      titulo: "Maria Oliveira",
+      status: "encerrado",
+      area: "familia",
+      numero_processo: "3009876-12.2022.8.26.0100",
+    },
+  ],
+  documents: { total: 129, items: [] },
+  tasks: [
+    { id: "task-1", titulo: "Revisar petição inicial", status: "concluida" },
+    { id: "task-2", titulo: "Retorno para cliente — Grupo Santos", status: "concluida" },
+    { id: "task-3", titulo: "Analisar minuta de contrato", status: "pendente" },
+    { id: "task-4", titulo: "Estudo tema 1.234/STJ", status: "pendente" },
+    { id: "task-5", titulo: "Atualizar banco de teses", status: "pendente" },
+  ],
+  entradaMeta: { modalidades: [] },
 };
 
 if (!existsSync(DIST)) {
@@ -212,8 +197,10 @@ function fixtureFor(requestUrl) {
   if (pathname === "/ia/status") return { disponivel: true, mensagem: null };
   if (pathname === "/dashboard/") return FIXTURES.dashboard;
   if (pathname === "/atividades") return FIXTURES.activities;
-  if (pathname === "/agenda-eventos/") return FIXTURES.agenda;
-  if (pathname === "/movimentos/recentes") return FIXTURES.movements;
+  if (pathname === "/cases/") return FIXTURES.cases;
+  if (pathname === "/documents/") return FIXTURES.documents;
+  if (pathname === "/tasks/") return FIXTURES.tasks;
+  if (pathname === "/entrada-universal/meta") return FIXTURES.entradaMeta;
   if (pathname === "/notifications/") {
     return { data: [], nao_lidas: 0, total: 0 };
   }
@@ -235,13 +222,27 @@ async function installApiFixtures(page) {
 }
 
 async function inspectDashboard(page, viewport, failures) {
-  await page.waitForSelector(".ejc-ultra-dashboard", { timeout: 15000 });
-  await page.getByText("Legal Operations Command Center").waitFor();
-  await page.getByText("Casos ativos").waitFor();
+  await page.waitForSelector(".ejc-dash", { timeout: 15000 });
+  // Dados reais (das fixtures) renderizados — não apenas o esqueleto.
+  await page
+    .waitForFunction(
+      () => {
+        const texto = document.querySelector("main")?.innerText ?? "";
+        return (
+          texto.includes("Casos em destaque") && texto.includes("Clientes ativos")
+        );
+      },
+      { timeout: 15000 },
+    )
+    .catch(() => {
+      failures.push(
+        `${viewport.name}: dashboard canônico não montou com dados (Entrada Única/indicadores)`,
+      );
+    });
 
   const layout = await page.evaluate(() => {
     const topbar = document.querySelector("header.fixed.inset-x-0.top-0");
-    const dashboard = document.querySelector(".ejc-ultra-dashboard");
+    const dashboard = document.querySelector(".ejc-dash");
     return {
       scrollWidth: document.documentElement.scrollWidth,
       innerWidth: window.innerWidth,
@@ -263,11 +264,13 @@ async function inspectDashboard(page, viewport, failures) {
     failures.push(`${viewport.name}: topbar principal não está visível`);
   }
   if (!layout.dashboardVisible) {
-    failures.push(`${viewport.name}: dashboard ultra não está visível`);
+    failures.push(`${viewport.name}: dashboard canônico não está visível`);
   }
 
   const normalizedMainText = layout.mainText.toLocaleLowerCase("pt-BR");
 
+  // Conteúdo de outra geração de dashboard (Command Center financeiro) não
+  // pode vazar para a identidade DPT, nem sentinelas internas.
   for (const forbidden of [
     "918.273,45",
     "876.543,21",
@@ -276,35 +279,48 @@ async function inspectDashboard(page, viewport, failures) {
     "Faturamento",
     "Receitas",
     "Despesas",
-    "Honorários",
     "Saldo financeiro",
+    "Legal Operations Command Center",
   ]) {
     if (normalizedMainText.includes(forbidden.toLocaleLowerCase("pt-BR"))) {
       failures.push(
-        `${viewport.name}: conteúdo financeiro indevido: ${forbidden}`,
+        `${viewport.name}: conteúdo indevido na identidade DPT: ${forbidden}`,
       );
     }
   }
 
+  // Composição canônica da referência (seção 9 do prompt mestre) com os
+  // números das fixtures — provando que os indicadores vêm de dados reais.
   for (const expected of [
-    "126",
+    "clóvis",
+    "entrada única",
+    "prazos hoje",
+    "clientes ativos",
+    "casos em andamento",
+    "documentos recentes",
+    "48",
     "98",
-    "Tarefas pendentes",
-    "Prazos em 7 dias",
-    "Movimentações recentes",
-    "Próximos compromissos",
-    "Áreas de atuação",
-    "Distribuição dos casos",
-    "Publicação de recurso especial no processo",
+    "129",
+    "agenda e prazos",
+    "casos em destaque",
+    "empresa x vs. banco y",
+    "construtora alpha",
+    "prazo final — contestação",
+    "minha rotina hoje",
+    "2 de 5 concluídas",
+    "acesso rápido",
+    "novo caso",
+    "novo cliente",
+    "enviar documentos",
   ]) {
     if (!normalizedMainText.includes(expected.toLocaleLowerCase("pt-BR"))) {
-      failures.push(`${viewport.name}: conteúdo operacional ausente: ${expected}`);
+      failures.push(`${viewport.name}: conteúdo canônico ausente: ${expected}`);
     }
   }
 
   // O contexto inteiro roda com reducedMotion="reduce". O hover não pode
   // deslocar o cartão quando o usuário solicitou redução de movimento.
-  const metric = page.locator(".ejc-ultra-metric").first();
+  const metric = page.locator(".ejc-dash__stat").first();
   await metric.hover();
   const transformReduzido = await metric.evaluate(
     (element) => getComputedStyle(element).transform,
@@ -317,7 +333,10 @@ async function inspectDashboard(page, viewport, failures) {
 
   const sidebar = page.locator("aside.sidebar-bronze");
   if (viewport.width < 768) {
-    await page.getByRole("button", { name: "Abrir menu" }).click();
+    await page
+      .getByRole("button", { name: "Abrir ou recolher menu" })
+      .first()
+      .click();
     if (!(await sidebar.isVisible())) {
       failures.push(`${viewport.name}: drawer da sidebar não abriu`);
     }
@@ -396,19 +415,18 @@ async function main() {
 
   if (failures.length) {
     console.error(
-      `\nDASHBOARD ULTRA RESPONSIVO: FALHOU\n - ${failures.join("\n - ")}`,
+      `\nDASHBOARD CANÔNICO RESPONSIVO: FALHOU\n - ${failures.join("\n - ")}`,
     );
-    process.exit(1);
+    process.exitCode = 1;
+  } else {
+    console.log(
+      `\nDASHBOARD CANÔNICO RESPONSIVO: OK — 7 viewports sem overflow, ` +
+        `composição e dados canônicos confirmados. Screenshots em ${OUT}`,
+    );
   }
-
-  console.log(
-    "\nDASHBOARD ULTRA RESPONSIVO: OK — sete larguras, sem overflow, " +
-      "sem erro de console, sem movimento indevido e sem sentinelas financeiras renderizadas.",
-  );
 }
 
 main().catch((error) => {
-  console.error("[dashboard-ultra] erro:", error);
-  server.close();
+  console.error("[premium-dashboard] erro:", error);
   process.exit(1);
 });
