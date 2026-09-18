@@ -73,6 +73,7 @@ function formatClock(date: Date) {
  * do moduleRegistry e dos gates existentes; a simplificação é apenas de
  * arquitetura de informação, sem remoção funcional.
  */
+/** Shell canônico do EJC com navegação, marca institucional e controles globais. */
 export default function LayoutReference() {
   const user = useAuth((state) => state.user);
   const { disponivel: iaDisponivel } = useIaStatus();
@@ -356,7 +357,7 @@ export default function LayoutReference() {
 
       <aside
         className={cn(
-          "sidebar-bronze fixed bottom-0 left-0 top-0 z-40 flex-col transition-all",
+          "sidebar-bronze fixed bottom-0 left-0 top-0 z-[60] flex-col transition-all md:z-40",
           sidebarWidth,
           mobileOpen ? "flex w-[17rem] md:flex" : "hidden md:flex",
         )}
