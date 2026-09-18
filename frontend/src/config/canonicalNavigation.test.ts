@@ -18,35 +18,60 @@ function mod(key: string, label = key): ModuleRoute {
 }
 
 describe("canonicalNavigation", () => {
-  it("mantém exatamente os oito domínios na ordem canônica", () => {
+  it("mantém exatamente os onze domínios da referência premium DPT, na ordem canônica", () => {
     expect(CANONICAL_MAIN_NAV.map((item) => item.key)).toEqual([
       "dashboard",
-      "casos",
-      "clientes",
       "atividades",
-      "documentos",
-      "ramos",
+      "clientes",
+      "casos",
       "financeiro",
+      "documentos",
+      "inteligencia",
+      "banco-teses",
+      "radar",
+      "produtividade",
       "configuracoes",
     ]);
   });
 
-  it("preserva RBAC/lifecycle do conjunto recebido e aplica rótulos de menu", () => {
+  it("aplica os rótulos da referência (Agenda e Prazos, Radar Operacional, Relatórios…)", () => {
     const entrada = [
       mod("financeiro", "Financeiro"),
       mod("dashboard", "Início"),
       mod("atividades", "Prazos e Agenda"),
       mod("configuracoes", "Configurações"),
       mod("inteligencia", "IA Jurídica"),
+      mod("banco-teses", "Banco de Teses"),
+      mod("radar", "Radar"),
+      mod("produtividade", "Produtividade"),
     ];
 
     const saida = selectCanonicalMainNavigation(entrada);
     expect(saida.map((item) => [item.key, item.label])).toEqual([
       ["dashboard", "Início"],
-      ["atividades", "Agenda"],
+      ["atividades", "Agenda e Prazos"],
       ["financeiro", "Financeiro"],
-      ["configuracoes", "Administrativo"],
+      ["inteligencia", "Inteligência Jurídica"],
+      ["banco-teses", "Banco de Teses"],
+      ["radar", "Radar Operacional"],
+      ["produtividade", "Relatórios"],
+      ["configuracoes", "Configurações"],
     ]);
-    expect(saida.some((item) => item.key === "inteligencia")).toBe(false);
+  });
+
+  it("preserva RBAC/lifecycle: módulo ausente da carteira não vira link morto", () => {
+    const entrada = [
+      mod("dashboard", "Início"),
+      mod("clientes", "Clientes"),
+      mod("inteligencia", "IA Jurídica"),
+    ];
+
+    const saida = selectCanonicalMainNavigation(entrada);
+    expect(saida.map((item) => item.key)).toEqual([
+      "dashboard",
+      "clientes",
+      "inteligencia",
+    ]);
+    expect(saida.some((item) => item.key === "casos")).toBe(false);
   });
 });

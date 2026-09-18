@@ -20,7 +20,6 @@ import IaStatusBanner from "./IaStatusBanner";
 import ModuleLifecycleGate from "./ModuleLifecycleGate";
 import OnboardingTour from "./OnboardingTour";
 import SecurityMenu from "./SecurityMenu";
-import SidebarWeekCalendar from "./SidebarWeekCalendar";
 import { toast } from "./Toast";
 import { Tooltip, cn } from "./UI";
 import { selectCanonicalMainNavigation } from "../config/canonicalNavigation";
@@ -68,10 +67,10 @@ function formatClock(date: Date) {
 /**
  * AppShell canônico do EJC.
  *
- * A barra lateral expõe somente os oito domínios definidos em
- * canonicalNavigation. Rotas, componentes, RBAC e lifecycle continuam vindo
- * do moduleRegistry e dos gates existentes; a simplificação é apenas de
- * arquitetura de informação, sem remoção funcional.
+ * A barra lateral segue a referência visual premium DPT aprovada pelo
+ * Titular (18/09/2026): marca institucional, domínios canônicos e rodapé
+ * institucional (citação + cidade). Rotas, RBAC, lifecycle e funcionalidade
+ * continuam vindo do moduleRegistry e dos gates existentes.
  */
 /** Shell canônico do EJC com navegação, marca institucional e controles globais. */
 export default function LayoutReference() {
@@ -377,6 +376,7 @@ export default function LayoutReference() {
             {!navCollapsed && (
               <span className="ejc-sidebar-brand__copy">
                 <strong>{officeBranding.officeName}</strong>
+                <small>Ecossistema Jurídico Clóvis</small>
               </span>
             )}
           </Link>
@@ -397,7 +397,20 @@ export default function LayoutReference() {
           <div className="space-y-1">{visible.map(renderNavItem)}</div>
         </nav>
 
-        {!navCollapsed && <SidebarWeekCalendar />}
+        {!navCollapsed && (
+          <div className="ejc-sidebar-epigraph" aria-hidden="true">
+            <p className="ejc-sidebar-epigraph__quote">
+              “Estratégia jurídica para um amanhã mais seguro.”
+            </p>
+            <div className="ejc-sidebar-epigraph__figure">
+              <img src="/brand/sidebar-ponte.jpg" alt="" loading="lazy" />
+              <div className="ejc-sidebar-epigraph__city">
+                <strong>SÃO PAULO | BRASIL</strong>
+                <small>EXCELÊNCIA EM CADA DETALHE</small>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="border-t border-slate-200 bg-white">
           <div
@@ -473,7 +486,7 @@ export default function LayoutReference() {
       {iaDisponivel ? (
         <Link
           to="/inteligencia?tab=assistente"
-          className="fixed bottom-5 right-5 z-30 hidden h-11 w-11 items-center justify-center rounded-xl bg-[#073C35] text-white shadow-float transition hover:-translate-y-0.5 hover:bg-[#052F2A] md:flex"
+          className="fixed bottom-5 right-5 z-30 hidden h-11 w-11 items-center justify-center rounded-xl bg-[#485B5A] text-white shadow-float transition hover:-translate-y-0.5 hover:bg-[#3D504F] md:flex"
           aria-label="Assistente IA"
         >
           <Bot className="h-5 w-5" />
