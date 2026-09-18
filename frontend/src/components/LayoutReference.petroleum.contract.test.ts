@@ -46,6 +46,9 @@ describe("EJC DePaula Premium — contrato visual canônico", () => {
     expect(theme).toContain('.ejc-ai-dashboard__workspace--entry');
     expect(theme).toContain('html:not(.dark) .ejc-modern-scope :where(table, .table)');
     expect(theme).toContain('html:not(.dark) :where([role="dialog"], [role="menu"], .dropdown, .popover)');
+    expect(theme).toContain('/* Login e Portal do Cliente — mesma identidade');
+    expect(theme).toContain('.min-h-screen.bg-canvas > .brand-watermark + div');
+    expect(theme).toContain('.ejc-modern-scope > header:not(.fixed)');
     expect(theme).toContain('@media (max-width: 767px)');
     expect(theme).toContain('@media (prefers-reduced-motion: reduce)');
   });
