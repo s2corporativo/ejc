@@ -1,4 +1,5 @@
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router";
 import { cn } from "../lib/cn";
 import {
   AlertCircle,
@@ -7,7 +8,12 @@ import {
   ArrowDown,
   ArrowUp,
   Bot,
+  CalendarDays,
+  Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Eye,
   FileClock,
@@ -23,9 +29,23 @@ import {
   Send,
   ShieldAlert,
   ShieldCheck,
+  Upload,
   X,
   XCircle,
 } from "lucide-react";
+import {
+  addDays,
+  addMonths,
+  eachDayOfInterval,
+  endOfMonth,
+  endOfWeek,
+  format,
+  isSameMonth,
+  startOfMonth,
+  startOfWeek,
+} from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { Skeleton } from "./base/Skeleton";
 
 type Tone =
   | "slate"
@@ -1398,3 +1418,1135 @@ export function VisualLawDocument({
 // Formatadores canônicos pt-BR — implementação única em utils/formato.ts
 // (re-export mantido aqui porque ~20 telas já importam de components/UI).
 export { fmtMoney, fmtDate, fmtDateTime } from "../utils/formato";
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DESIGN SYSTEM CANÔNICO EJC — primitivos da identidade DPT
+   (PROMPT MESTRE, seção 11: nenhum módulo inventa novamente estes componentes.)
+   Cores/raio/sombra via tokens de src/styles/ejc-tokens.css (grupo tailwind
+   `ejc-*`); tipografia display via font-serif (Playfair Display). Tudo com
+   foco visível, estados disabled e contraste AA. Tema escuro herda dos tokens.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const EJC_FOCUS =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ejc-focus-ring)]";
+
+/** Botão quadrado só de ícone — `label` é obrigatório (a11y). */
+export function IconButton({
+  label,
+  className,
+  children,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      {...props}
+      aria-label={label}
+      title={label}
+      className={cn(
+        "inline-flex h-9 w-9 items-center justify-center rounded-lg border border-ejc-border bg-ejc-surface text-ejc-text-secondary transition-colors hover:bg-ejc-surface-muted hover:text-ejc-text disabled:cursor-not-allowed disabled:opacity-50",
+        EJC_FOCUS,
+        className,
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** Campo de busca com ícone, atalho de teclado opcional e botão de limpar. */
+export function SearchInput({
+  value,
+  onChange,
+  onClear,
+  placeholder = "Buscar…",
+  shortcut,
+  className,
+  ...props
+}: React.InputHTMLAttributes<HTMLInputElement> & {
+  value: string;
+  onChange: (value: string) => void;
+  onClear?: () => void;
+  placeholder?: string;
+  /** Ex.: "⌘ K" — exibido à direita quando o campo está vazio. */
+  shortcut?: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn("relative flex items-center", className)}>
+      <Search
+        className="pointer-events-none absolute left-3 h-4 w-4 text-ejc-text-subtle"
+        aria-hidden="true"
+      />
+      <input
+        {...props}
+        type="search"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={cn(
+          "h-10 w-full rounded-lg border border-ejc-border bg-ejc-surface pl-9 pr-9 text-sm text-ejc-text placeholder:text-ejc-text-subtle focus:outline-none focus:ring-2 focus:ring-[var(--ejc-focus-ring)] disabled:cursor-not-allowed disabled:opacity-60",
+        )}
+      />
+      {value ? (
+        <button
+          type="button"
+          onClick={() => {
+            onChange("");
+            onClear?.();
+          }}
+          aria-label="Limpar busca"
+          className="absolute right-2 rounded-md p-1 text-ejc-text-secondary hover:bg-ejc-surface-muted hover:text-ejc-text"
+        >
+          <X className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      ) : shortcut ? (
+        <kbd className="pointer-events-none absolute right-3 rounded border border-ejc-border px-1.5 py-0.5 text-[10px] font-medium text-ejc-text-subtle">
+          {shortcut}
+        </kbd>
+      ) : null}
+    </div>
+  );
+}
+
+/** Painel branco com cabeçalho serifado e rodapé opcional (idioma da referência). */
+export function Panel({
+  title,
+  icon,
+  actions,
+  footer,
+  children,
+  className,
+  bodyClassName,
+}: {
+  title?: ReactNode;
+  icon?: ReactNode;
+  actions?: ReactNode;
+  footer?: ReactNode;
+  children: ReactNode;
+  className?: string;
+  bodyClassName?: string;
+}) {
+  return (
+    <section
+      className={cn(
+        "overflow-hidden rounded-2xl border border-ejc-border bg-ejc-surface shadow-[var(--ejc-shadow-sm)]",
+        className,
+      )}
+    >
+      {(title || actions) && (
+        <header className="flex items-center justify-between gap-3 border-b border-ejc-border px-4 py-3">
+          <h3 className="flex min-w-0 items-center gap-2 font-serif text-[17px] font-semibold text-ejc-text">
+            {icon && (
+              <span aria-hidden="true" className="shrink-0 text-ejc-gold-ink">
+                {icon}
+              </span>
+            )}
+            <span className="truncate">{title}</span>
+          </h3>
+          {actions && (
+            <div className="flex shrink-0 items-center gap-2">{actions}</div>
+          )}
+        </header>
+      )}
+      <div className={cn("p-4", bodyClassName)}>{children}</div>
+      {footer && (
+        <footer className="border-t border-ejc-border px-4 py-3">
+          {footer}
+        </footer>
+      )}
+    </section>
+  );
+}
+
+const metricToneClasses = {
+  default: "border-ejc-border bg-ejc-surface text-ejc-text",
+  primary:
+    "border-transparent bg-[linear-gradient(160deg,var(--ejc-primary),var(--ejc-primary-dark))] text-white",
+} as const;
+
+/** Card de indicador — número + rótulo, clicável (href ou onClick). */
+export function MetricCard({
+  label,
+  value,
+  icon,
+  tone = "default",
+  href,
+  onClick,
+  className,
+}: {
+  label: string;
+  value: ReactNode;
+  icon?: ReactNode;
+  tone?: keyof typeof metricToneClasses;
+  href?: string;
+  onClick?: () => void;
+  className?: string;
+}) {
+  const dark = tone === "primary";
+  const inner = (
+    <>
+      {icon && (
+        <span
+          aria-hidden="true"
+          className={cn(
+            "flex h-10 w-10 items-center justify-center rounded-xl",
+            dark
+              ? "bg-white/10 text-ejc-gold-bright"
+              : "bg-ejc-gold-soft text-ejc-gold-ink",
+          )}
+        >
+          {icon}
+        </span>
+      )}
+      <div className="mt-3">
+        <strong
+          className={cn(
+            "block font-serif text-[28px] leading-none tracking-tight",
+            dark ? "text-white" : "text-ejc-text",
+          )}
+        >
+          {value}
+        </strong>
+        <small
+          className={cn(
+            "mt-1.5 block text-[13px] font-medium",
+            dark ? "text-white/70" : "text-ejc-text-secondary",
+          )}
+        >
+          {label}
+        </small>
+      </div>
+      <ChevronRight
+        aria-hidden="true"
+        className={cn(
+          "absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2",
+          dark ? "text-white/50" : "text-ejc-text-subtle",
+        )}
+      />
+    </>
+  );
+  const base = cn(
+    "relative flex flex-col rounded-2xl border p-5 transition-all",
+    metricToneClasses[tone],
+    (href || onClick) &&
+      "hover:-translate-y-0.5 hover:shadow-[var(--ejc-shadow-md)]",
+    EJC_FOCUS,
+    className,
+  );
+  const ariaLabel = `${label}: ${typeof value === "string" || typeof value === "number" ? value : ""}`;
+  if (href) {
+    return (
+      <Link to={href} className={base} aria-label={ariaLabel}>
+        {inner}
+      </Link>
+    );
+  }
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={base} aria-label={ariaLabel}>
+        {inner}
+      </button>
+    );
+  }
+  return <div className={base}>{inner}</div>;
+}
+
+/** Contêiner padrão de página (largura máxima + respiro vertical). */
+export function PageContainer({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("mx-auto w-full max-w-[1600px] space-y-4", className)}>
+      {children}
+    </div>
+  );
+}
+
+export type TabItem = {
+  key: string;
+  label: ReactNode;
+  badge?: ReactNode;
+};
+
+/** Abas acessíveis — pílula ativa em esmeralda (idioma da referência). */
+export function Tabs({
+  items,
+  value,
+  onChange,
+  ariaLabel,
+  className,
+}: {
+  items: readonly TabItem[];
+  value: string;
+  onChange: (key: string) => void;
+  ariaLabel: string;
+  className?: string;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label={ariaLabel}
+      className={cn(
+        "inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-xl bg-ejc-surface-muted p-1",
+        className,
+      )}
+    >
+      {items.map((item) => {
+        const active = item.key === value;
+        return (
+          <button
+            key={item.key}
+            role="tab"
+            type="button"
+            aria-selected={active}
+            onClick={() => onChange(item.key)}
+            className={cn(
+              "flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors",
+              active
+                ? "bg-ejc-primary text-white shadow-[var(--ejc-shadow-sm)]"
+                : "text-ejc-text-secondary hover:bg-ejc-surface hover:text-ejc-text",
+              EJC_FOCUS,
+            )}
+          >
+            {item.label}
+            {item.badge != null && (
+              <span
+                className={cn(
+                  "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+                  active
+                    ? "bg-white/15 text-white"
+                    : "bg-ejc-surface text-ejc-text-secondary",
+                )}
+              >
+                {item.badge}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Janela de páginas com reticências — utilitário do Pagination. */
+function paginaWindow(page: number, pageCount: number): (number | "…")[] {
+  const pages: (number | "…")[] = [1];
+  const start = Math.max(2, page - 1);
+  const end = Math.min(pageCount - 1, page + 1);
+  if (start > 2) pages.push("…");
+  for (let p = start; p <= end; p += 1) pages.push(p);
+  if (end < pageCount - 1) pages.push("…");
+  if (pageCount >= 2) pages.push(pageCount);
+  return pages;
+}
+
+/** Paginação canônica com contagem, janela numerada e navegação por teclado. */
+export function Pagination({
+  page,
+  pageCount,
+  onChange,
+  total,
+  unitLabel = "itens",
+  className,
+}: {
+  page: number;
+  pageCount: number;
+  onChange: (page: number) => void;
+  total?: number;
+  unitLabel?: string;
+  className?: string;
+}) {
+  if (pageCount <= 1) {
+    if (total == null) return null;
+    return (
+      <div
+        className={cn(
+          "px-1 py-2 text-xs text-ejc-text-secondary",
+          className,
+        )}
+      >
+        {total} {unitLabel}
+      </div>
+    );
+  }
+  return (
+    <nav
+      aria-label="Paginação"
+      className={cn(
+        "flex items-center justify-between gap-3 px-1 py-2",
+        className,
+      )}
+    >
+      <span className="text-xs text-ejc-text-secondary">
+        {total != null
+          ? `${total} ${unitLabel}`
+          : `Página ${page} de ${pageCount}`}
+      </span>
+      <div className="flex items-center gap-1">
+        <IconButton
+          label="Página anterior"
+          disabled={page <= 1}
+          onClick={() => onChange(page - 1)}
+        >
+          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+        </IconButton>
+        {paginaWindow(page, pageCount).map((p, i) =>
+          p === "…" ? (
+            <span
+              key={`gap-${i}`}
+              aria-hidden="true"
+              className="px-1.5 text-xs text-ejc-text-subtle"
+            >
+              …
+            </span>
+          ) : (
+            <button
+              key={p}
+              type="button"
+              aria-current={p === page ? "page" : undefined}
+              onClick={() => onChange(p)}
+              className={cn(
+                "h-9 min-w-9 rounded-lg px-2 text-sm font-medium transition-colors",
+                p === page
+                  ? "bg-ejc-primary text-white"
+                  : "text-ejc-text-secondary hover:bg-ejc-surface-muted hover:text-ejc-text",
+                EJC_FOCUS,
+              )}
+            >
+              {p}
+            </button>
+          ),
+        )}
+        <IconButton
+          label="Próxima página"
+          disabled={page >= pageCount}
+          onClick={() => onChange(page + 1)}
+        >
+          <ChevronRight className="h-4 w-4" aria-hidden="true" />
+        </IconButton>
+      </div>
+    </nav>
+  );
+}
+
+/** Trilha de navegação — último item é a página atual (aria-current). */
+export function Breadcrumb({
+  items,
+  className,
+}: {
+  items: { label: string; to?: string }[];
+  className?: string;
+}) {
+  return (
+    <nav aria-label="Trilha de navegação" className={className}>
+      <ol className="flex flex-wrap items-center gap-1.5 text-sm">
+        {items.map((item, i) => {
+          const last = i === items.length - 1;
+          return (
+            <li key={`${item.label}-${i}`} className="flex items-center gap-1.5">
+              {i > 0 && (
+                <ChevronRight
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5 text-ejc-text-subtle"
+                />
+              )}
+              {!last && item.to ? (
+                <Link
+                  to={item.to}
+                  className="text-ejc-text-secondary transition-colors hover:text-ejc-gold-ink"
+                >
+                  {item.label}
+                </Link>
+              ) : (
+                <span
+                  aria-current={last ? "page" : undefined}
+                  className={cn(
+                    last && "font-medium text-ejc-text",
+                    !last && "text-ejc-text-secondary",
+                  )}
+                >
+                  {item.label}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
+/** Barra de filtros — alinhamento e espaçamento canônicos. */
+export function FilterBar({
+  children,
+  ariaLabel = "Filtros",
+  className,
+}: {
+  children: ReactNode;
+  ariaLabel?: string;
+  className?: string;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      className={cn("flex flex-wrap items-center gap-2.5", className)}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Passos numerados — concluído (esmeralda), atual (anel ouro), futuro (mudo). */
+export function Stepper({
+  steps,
+  current,
+  className,
+}: {
+  steps: ReactNode[];
+  /** Índice do passo atual (0-based). Anteriores são marcados como concluídos. */
+  current: number;
+  className?: string;
+}) {
+  return (
+    <ol
+      aria-label="Etapas"
+      className={cn("flex flex-wrap items-center gap-2", className)}
+    >
+      {steps.map((step, i) => {
+        const done = i < current;
+        const active = i === current;
+        return (
+          <li
+            key={i}
+            aria-current={active ? "step" : undefined}
+            className="flex items-center gap-2"
+          >
+            <span
+              className={cn(
+                "flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold",
+                done && "bg-ejc-primary text-white",
+                active &&
+                  "bg-ejc-gold-soft text-ejc-gold-ink ring-2 ring-ejc-gold",
+                !done && !active && "bg-ejc-surface-muted text-ejc-text-secondary",
+              )}
+            >
+              {done ? (
+                <Check className="h-3.5 w-3.5" aria-hidden="true" />
+              ) : (
+                i + 1
+              )}
+            </span>
+            <span
+              className={cn(
+                "text-sm",
+                active ? "font-semibold text-ejc-text" : "text-ejc-text-secondary",
+              )}
+            >
+              {step}
+            </span>
+            {i < steps.length - 1 && (
+              <span aria-hidden="true" className="mx-1 h-px w-6 bg-ejc-border" />
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+const timelineDotClasses = {
+  gold: "bg-ejc-gold",
+  green: "bg-success-500",
+  red: "bg-danger-500",
+  blue: "bg-info-500",
+  gray: "bg-slate-400",
+} as const;
+
+/** Linha do tempo vertical — horário, marcador colorido, título e meta. */
+export function Timeline({
+  items,
+  className,
+}: {
+  items: {
+    key?: string;
+    title: ReactNode;
+    meta?: ReactNode;
+    time?: ReactNode;
+    dot?: keyof typeof timelineDotClasses;
+    onClick?: () => void;
+  }[];
+  className?: string;
+}) {
+  return (
+    <ol className={cn("space-y-1", className)}>
+      {items.map((item, i) => {
+        const content = (
+          <>
+            {item.time != null && (
+              <time className="w-11 shrink-0 pt-0.5 text-[13px] font-semibold tabular-nums text-ejc-text">
+                {item.time}
+              </time>
+            )}
+            <span
+              aria-hidden="true"
+              className={cn(
+                "mt-1.5 h-2 w-2 shrink-0 rounded-full",
+                timelineDotClasses[item.dot ?? "gold"],
+              )}
+            />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-ejc-text">
+                {item.title}
+              </span>
+              {item.meta != null && (
+                <span className="mt-0.5 block truncate text-xs text-ejc-text-secondary">
+                  {item.meta}
+                </span>
+              )}
+            </span>
+          </>
+        );
+        return (
+          <li key={item.key ?? i}>
+            {item.onClick ? (
+              <button
+                type="button"
+                onClick={item.onClick}
+                className={cn(
+                  "flex w-full items-start gap-3 rounded-xl px-2 py-2.5 text-left transition-colors hover:bg-ejc-surface-muted",
+                  EJC_FOCUS,
+                )}
+              >
+                {content}
+              </button>
+            ) : (
+              <div className="flex w-full items-start gap-3 px-2 py-2.5 text-left">
+                {content}
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+export type ActionMenuItem = {
+  label: string;
+  icon?: ReactNode;
+  onSelect: () => void;
+  danger?: boolean;
+  disabled?: boolean;
+};
+
+/** Menu de ações — popover com fecho por Esc/clique externo e foco gerenciado. */
+export function ActionMenu({
+  trigger,
+  items,
+  align = "right",
+  className,
+  triggerClassName,
+}: {
+  trigger: ReactNode;
+  items: ActionMenuItem[];
+  align?: "left" | "right";
+  className?: string;
+  triggerClassName?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const firstItemRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent | TouchEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    firstItemRef.current?.focus();
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className={cn("relative inline-block", className)}>
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          "inline-flex h-9 items-center gap-1.5 rounded-lg border border-ejc-border bg-ejc-surface px-3 text-sm font-medium text-ejc-text transition-colors hover:bg-ejc-surface-muted",
+          EJC_FOCUS,
+          triggerClassName,
+        )}
+      >
+        {trigger}
+        <ChevronDown
+          aria-hidden="true"
+          className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")}
+        />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          aria-orientation="vertical"
+          className={cn(
+            "absolute z-50 mt-2 min-w-[13rem] overflow-hidden rounded-xl border border-ejc-border bg-ejc-surface py-1 shadow-[var(--ejc-shadow-lg)] animate-pop",
+            align === "right" ? "right-0" : "left-0",
+          )}
+        >
+          {items.map((item, i) => (
+            <button
+              key={item.label}
+              ref={i === 0 ? firstItemRef : undefined}
+              role="menuitem"
+              type="button"
+              disabled={item.disabled}
+              onClick={() => {
+                setOpen(false);
+                item.onSelect();
+              }}
+              className={cn(
+                "flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm focus-visible:bg-ejc-surface-muted focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50",
+                item.danger
+                  ? "text-danger-600 hover:bg-danger-50"
+                  : "text-ejc-text hover:bg-ejc-surface-muted",
+              )}
+            >
+              {item.icon && (
+                <span aria-hidden="true" className="text-ejc-text-secondary">
+                  {item.icon}
+                </span>
+              )}
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export type ComboboxOption = { value: string; label: string };
+
+/** Seleção canônica (select nativo estilizado — acessível por padrão). */
+export function Combobox({
+  value,
+  onChange,
+  options,
+  placeholder,
+  ariaLabel,
+  name,
+  disabled,
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: ComboboxOption[];
+  placeholder?: string;
+  ariaLabel?: string;
+  name?: string;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={cn("relative", className)}>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={ariaLabel}
+        name={name}
+        disabled={disabled}
+        className="h-10 w-full appearance-none rounded-lg border border-ejc-border bg-ejc-surface px-3 pr-9 text-sm text-ejc-text transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--ejc-focus-ring)] disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {placeholder != null && <option value="">{placeholder}</option>}
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown
+        aria-hidden="true"
+        className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ejc-text-subtle"
+      />
+    </div>
+  );
+}
+
+/** Campo de data nativo estilizado (o browser fornece o calendário). */
+export function DatePicker({
+  className,
+  ...props
+}: React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <div className={cn("relative", className)}>
+      <input
+        type="date"
+        {...props}
+        className="h-10 w-full rounded-lg border border-ejc-border bg-ejc-surface px-3 pr-9 text-sm text-ejc-text transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--ejc-focus-ring)] disabled:cursor-not-allowed disabled:opacity-60"
+      />
+      <CalendarDays
+        aria-hidden="true"
+        className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ejc-text-subtle"
+      />
+    </div>
+  );
+}
+
+/** Calendário mensal canônico — marca eventos, hoje (ouro) e dia selecionado. */
+export function Calendar({
+  month,
+  initialMonth,
+  events,
+  selected,
+  onSelectDay,
+  onMonthChange,
+  className,
+}: {
+  /** Mês controlado (opcional). Sem ele o componente navega internamente. */
+  month?: Date;
+  initialMonth?: Date;
+  /** Datas ISO "yyyy-MM-dd" que recebem marcador dourado. */
+  events?: Iterable<string>;
+  /** Data ISO selecionada (anel ouro). */
+  selected?: string;
+  onSelectDay?: (iso: string) => void;
+  onMonthChange?: (month: Date) => void;
+  className?: string;
+}) {
+  const [mesInterno, setMesInterno] = useState<Date>(() =>
+    startOfMonth(initialMonth ?? new Date()),
+  );
+  const mesVisivel = month ? startOfMonth(month) : mesInterno;
+
+  const trocarMes = (delta: number) => {
+    const proximo = addMonths(mesVisivel, delta);
+    if (!month) setMesInterno(proximo);
+    onMonthChange?.(proximo);
+  };
+
+  const eventosSet = useMemo(
+    () => new Set(events ? Array.from(events) : []),
+    [events],
+  );
+
+  const dias = useMemo(() => {
+    const inicio = startOfWeek(mesVisivel, { weekStartsOn: 0 });
+    const fim = endOfWeek(endOfMonth(mesVisivel), { weekStartsOn: 0 });
+    return eachDayOfInterval({ start: inicio, end: fim });
+  }, [mesVisivel]);
+
+  const dow = useMemo(() => {
+    const domingo = startOfWeek(mesVisivel, { weekStartsOn: 0 });
+    return Array.from({ length: 7 }, (_, i) =>
+      format(addDays(domingo, i), "EEEEE", { locale: ptBR }),
+    );
+  }, [mesVisivel]);
+
+  const hojeISO = format(new Date(), "yyyy-MM-dd");
+  const rotuloMes = (() => {
+    const texto = format(mesVisivel, "MMMM 'de' yyyy", { locale: ptBR });
+    return texto.charAt(0).toUpperCase() + texto.slice(1);
+  })();
+
+  return (
+    <section
+      aria-label="Calendário"
+      className={cn(
+        "rounded-2xl border border-ejc-border bg-ejc-surface p-4",
+        className,
+      )}
+    >
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <strong className="min-w-0 truncate font-serif text-[15px] text-ejc-text">
+          {rotuloMes}
+        </strong>
+        <span className="flex shrink-0 items-center gap-1">
+          <IconButton label="Mês anterior" onClick={() => trocarMes(-1)}>
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+          </IconButton>
+          <IconButton label="Mês seguinte" onClick={() => trocarMes(1)}>
+            <ChevronRight className="h-4 w-4" aria-hidden="true" />
+          </IconButton>
+        </span>
+      </div>
+      <div className="grid grid-cols-7 gap-y-1 text-center">
+        {dow.map((d, i) => (
+          <span
+            key={`${d}-${i}`}
+            aria-hidden="true"
+            className="pb-1 text-[11px] font-semibold uppercase text-ejc-text-subtle"
+          >
+            {d}
+          </span>
+        ))}
+        {dias.map((dia) => {
+          const iso = format(dia, "yyyy-MM-dd");
+          const temEvento = eventosSet.has(iso);
+          const isHoje = iso === hojeISO;
+          const isSelecionado = selected === iso;
+          return (
+            <button
+              key={iso}
+              type="button"
+              aria-label={format(dia, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+              aria-current={isHoje ? "date" : undefined}
+              onClick={() => onSelectDay?.(iso)}
+              className={cn(
+                "relative mx-auto flex h-8 w-8 items-center justify-center rounded-full text-[13px] transition-colors",
+                !isSameMonth(dia, mesVisivel) && "text-ejc-text-subtle/60",
+                isSameMonth(dia, mesVisivel) &&
+                  !isHoje &&
+                  "text-ejc-text hover:bg-ejc-surface-muted",
+                isHoje && "bg-ejc-gold font-semibold text-ejc-primary-dark",
+                isSelecionado && !isHoje && "ring-2 ring-ejc-gold",
+                EJC_FOCUS,
+              )}
+            >
+              {format(dia, "d")}
+              {temEvento && (
+                <i
+                  aria-hidden="true"
+                  className="absolute bottom-0.5 h-1 w-1 rounded-full bg-ejc-gold-deep"
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/** Zona de upload — arrastar-e-soltar + seleção, com lista de arquivos. */
+export function FileUploader({
+  onFilesChange,
+  accept,
+  multiple = true,
+  disabled,
+  hint,
+  className,
+}: {
+  onFilesChange: (files: File[]) => void;
+  accept?: string;
+  multiple?: boolean;
+  disabled?: boolean;
+  hint?: string;
+  className?: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [dragging, setDragging] = useState(false);
+
+  const emit = (next: File[]) => {
+    setFiles(next);
+    onFilesChange(next);
+  };
+
+  return (
+    <div className={className}>
+      <div
+        role="button"
+        tabIndex={disabled ? -1 : 0}
+        onClick={() => !disabled && inputRef.current?.click()}
+        onKeyDown={(e) => {
+          if (!disabled && (e.key === "Enter" || e.key === " ")) {
+            e.preventDefault();
+            inputRef.current?.click();
+          }
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!disabled) setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          if (disabled) return;
+          const dropped = Array.from(e.dataTransfer.files);
+          emit(multiple ? [...files, ...dropped] : dropped.slice(0, 1));
+        }}
+        aria-disabled={disabled}
+        aria-label="Enviar arquivos"
+        className={cn(
+          "flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed px-6 py-8 text-center transition-colors",
+          dragging
+            ? "border-ejc-gold bg-ejc-gold-soft/40"
+            : "border-ejc-border-strong bg-ejc-surface-muted hover:border-ejc-gold",
+          disabled && "cursor-not-allowed opacity-60",
+          EJC_FOCUS,
+        )}
+      >
+        <Upload className="h-5 w-5 text-ejc-gold-ink" aria-hidden="true" />
+        <p className="text-sm font-medium text-ejc-text">
+          Arraste arquivos aqui ou clique para selecionar
+        </p>
+        {hint && <p className="text-xs text-ejc-text-secondary">{hint}</p>}
+        <input
+          ref={inputRef}
+          type="file"
+          accept={accept}
+          multiple={multiple}
+          disabled={disabled}
+          className="hidden"
+          onChange={(e) => {
+            const selected = Array.from(e.target.files ?? []);
+            emit(multiple ? [...files, ...selected] : selected.slice(0, 1));
+            e.target.value = "";
+          }}
+        />
+      </div>
+      {files.length > 0 && (
+        <ul className="mt-2.5 space-y-1.5">
+          {files.map((file, i) => (
+            <li
+              key={`${file.name}-${i}`}
+              className="flex items-center gap-3 rounded-lg border border-ejc-border bg-ejc-surface px-3 py-2 text-sm"
+            >
+              <span className="min-w-0 flex-1 truncate text-ejc-text">
+                {file.name}
+              </span>
+              <span className="shrink-0 text-xs text-ejc-text-secondary">
+                {(file.size / 1024).toFixed(0)} KB
+              </span>
+              <button
+                type="button"
+                onClick={() => emit(files.filter((_, idx) => idx !== i))}
+                aria-label={`Remover ${file.name}`}
+                className="shrink-0 rounded-md p-1 text-ejc-text-secondary transition-colors hover:bg-ejc-surface-muted hover:text-danger-600"
+              >
+                <X className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+export type DataGridColumn<T> = {
+  key: string;
+  header: ReactNode;
+  render: (row: T) => ReactNode;
+  className?: string;
+  align?: "left" | "center" | "right";
+};
+
+/**
+ * Grade de dados canônica — Table + estado vazio + skeleton + paginação.
+ * Para casos que escapam do formato, componha `Table` diretamente.
+ */
+export function DataGrid<T>({
+  columns,
+  rows,
+  keyOf,
+  loading = false,
+  empty,
+  page,
+  pageCount,
+  total,
+  onPageChange,
+  unitLabel,
+  className,
+}: {
+  columns: DataGridColumn<T>[];
+  rows: T[];
+  keyOf: (row: T, index: number) => string;
+  loading?: boolean;
+  empty?: ReactNode;
+  page?: number;
+  pageCount?: number;
+  total?: number;
+  onPageChange?: (page: number) => void;
+  unitLabel?: string;
+  className?: string;
+}) {
+  const alignClass = {
+    left: "text-left",
+    center: "text-center",
+    right: "text-right",
+  } as const;
+
+  return (
+    <div className={className}>
+      {loading ? (
+        <div className="space-y-2 rounded-2xl border border-ejc-border bg-ejc-surface p-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-9 w-full" />
+          ))}
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="rounded-2xl border border-ejc-border bg-ejc-surface p-2">
+          {empty ?? <EmptyState title="Nenhum registro" />}
+        </div>
+      ) : (
+        <Table>
+          <THead>
+            <TR zebra={false}>
+              {columns.map((col) => (
+                <TH
+                  key={col.key}
+                  className={cn(
+                    "px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-ejc-text-secondary",
+                    alignClass[col.align ?? "left"],
+                    col.className,
+                  )}
+                >
+                  {col.header}
+                </TH>
+              ))}
+            </TR>
+          </THead>
+          <tbody>
+            {rows.map((row, i) => (
+              <TR key={keyOf(row, i)}>
+                {columns.map((col) => (
+                  <TD
+                    key={col.key}
+                    className={cn(
+                      "text-ejc-text",
+                      alignClass[col.align ?? "left"],
+                      col.className,
+                    )}
+                  >
+                    {col.render(row)}
+                  </TD>
+                ))}
+              </TR>
+            ))}
+          </tbody>
+        </Table>
+      )}
+      {page != null && pageCount != null && onPageChange && (
+        <Pagination
+          page={page}
+          pageCount={pageCount}
+          onChange={onPageChange}
+          total={total}
+          unitLabel={unitLabel}
+        />
+      )}
+    </div>
+  );
+}
