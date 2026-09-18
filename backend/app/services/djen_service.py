@@ -209,6 +209,14 @@ def _classificar_erro_fonte(exc: Exception) -> str:
         return "payload_invalido"
     return "erro_interno"
 
+def classificar_erro_fonte(exc: Exception) -> str:
+    """Classificação sanitizada reutilizável pelos dois fluxos DJEN.
+
+    Retorna somente códigos operacionais estáveis; nunca inclui OAB, URL de
+    proxy, credencial ou corpo integral da resposta upstream.
+    """
+    return _classificar_erro_fonte(exc)
+
 
 def resumir_execucao(resultados: list[DjenCapturaResultado]) -> dict:
     if not resultados:
