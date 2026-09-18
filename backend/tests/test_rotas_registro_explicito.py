@@ -199,6 +199,15 @@ ADICOES_INTENCIONAIS = {
 }
 
 REMOCOES_INTENCIONAIS = {
+    # Saneamento 18/09/2026 (pós-auditoria de rotas): POST
+    # /cerebro/jurisprudencia/pesquisa respondia 503 INCONDICIONAL desde a
+    # auditoria de 2026-07-19 e não tinha NENHUM chamador (zero no frontend,
+    # zero no backend — verificado por varredura de api.* e rg). A trilha
+    # canônica de busca segue /api/search e /api/rag (RAG híbrido). Um router
+    # que só sabe recusar é superfície de API que promete o que ninguém
+    # constrói — e aparece no OpenAPI como promessa falsa.
+    ("/api/cerebro/jurisprudencia/pesquisa", "POST"),
+
     # `routers/jurisprudencia_externa.py` REMOVIDO (17/09/2026, Fase 7 —
     # auditoria §3.6 "Jurisprudência: 4 superfícies"). O router duplicava, em
     # REST, operações que já têm trilha canônica testada: BUSCA EXTERNA →
@@ -423,6 +432,53 @@ def test_paridade_openapi_com_snapshot_anterior():
         (("/api/ia-governanca/provedores", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
         (("/api/ia-governanca/rag-curadoria", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
         (("/api/ia-governanca/rag-curadoria/{doc_id}", "PATCH"), ["HTTPBearer", "_dep", "_req_admin_socio", "get_current_user", "get_db"]),
+        # Fase 8, onda 2-B (PR #1683): rate limit (`_dep`) nos endpoints de
+        # /api/clients classificados ONLY_AUTH + sensíveis no inventário P1.
+        # Só ACRESCENTA throttling fixed-window de 60s; os gates de papel
+        # existentes (`_req_clientes`, `_req_clientes_leitura`, `checker`)
+        # permanecem intatos — ver test_clients_rate_limit_gates.py.
+        (("/api/clients/", "GET"), ["HTTPBearer", "_dep", "_req_clientes_leitura", "get_current_user", "get_db"]),
+        (("/api/clients/", "POST"), ["HTTPBearer", "_dep", "_req_clientes", "get_current_user", "get_db"]),
+        (("/api/clients/resolver", "POST"), ["HTTPBearer", "_dep", "_req_clientes", "get_current_user", "get_db"]),
+        (("/api/clients/{client_id}", "DELETE"), ["HTTPBearer", "_dep", "checker", "get_current_user", "get_db"]),
+        (("/api/clients/{client_id}", "GET"), ["HTTPBearer", "_dep", "_req_clientes_leitura", "get_current_user", "get_db"]),
+        (("/api/clients/{client_id}", "PATCH"), ["HTTPBearer", "_dep", "_req_clientes", "get_current_user", "get_db"]),
+        (("/api/clients/{client_id}/criar-acesso", "POST"), ["HTTPBearer", "_dep", "checker", "get_current_user", "get_db"]),
+        (("/api/clients/{client_id}/dados-lgpd.json", "GET"), ["HTTPBearer", "_dep", "checker", "get_current_user", "get_db"]),
+        (("/api/clients/{client_id}/esquecimento", "POST"), ["HTTPBearer", "_dep", "checker", "get_current_user", "get_db"]),
+        (("/api/clients/{client_id}/esquecimento/bloqueios", "GET"), ["HTTPBearer", "_dep", "checker", "get_current_user", "get_db"]),
+        (("/api/clients/{client_id}/relatorio-lgpd", "GET"), ["HTTPBearer", "_dep", "checker", "get_current_user", "get_db"]),
+        # Fase 8, onda 2-A (PR #1682): rate limit (`_dep`) nos endpoints de
+        # /api/cases classificados ONLY_AUTH + sensíveis no inventário P1
+        # (listagem/criação, detalhe, exclusão e stats). Só ACRESCENTA
+        # throttling fixed-window de 60s; os gates existentes (checker de
+        # carteira) permanecem intatos — ver test_cases_rate_limit_gates.py.
+        (("/api/cases/", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/cases/", "POST"), ["HTTPBearer", "_dep", "checker", "get_current_user", "get_db"]),
+        (("/api/cases/stats", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/cases/{case_id}", "DELETE"), ["HTTPBearer", "_dep", "checker", "get_current_user", "get_db"]),
+        (("/api/cases/{case_id}", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/cases/{case_id}", "PATCH"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/cases/{case_id}/analisar", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/cases/{case_id}/aplicar-extracao", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/cases/{case_id}/arquivar", "POST"), ["HTTPBearer", "_dep", "checker", "get_current_user", "get_db"]),
+        (("/api/cases/{case_id}/desarquivar", "POST"), ["HTTPBearer", "_dep", "checker", "get_current_user", "get_db"]),
+        (("/api/cases/{case_id}/encerrar", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/cases/{case_id}/movimentos", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/cases/{case_id}/movimentos", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/cases/{case_id}/sincronizar-processo", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        # Fase 8, onda 2-C (PR #1684): rate limit (`_dep`) nos endpoints de
+        # /api/deadlines classificados ONLY_AUTH + sensíveis no inventário P1
+        # (listagem/criação, cálculo, export e exclusão). Só ACRESCENTA
+        # throttling fixed-window de 60s; autenticação e escopo permanecem.
+        (("/api/deadlines/", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/deadlines/", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/deadlines/calcular", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/deadlines/export.csv", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/deadlines/{deadline_id}", "DELETE"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/deadlines/{deadline_id}", "PATCH"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/deadlines/{deadline_id}/ciencia", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/deadlines/{deadline_id}/confirmar", "PATCH"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
         # Estabilização do Financeiro (este PR): precificação e proposta de
         # honorários passam a exigir `_req_advogado` (advogado+), não apenas
         # autenticação. É ato jurídico privativo — estagiário e secretaria
