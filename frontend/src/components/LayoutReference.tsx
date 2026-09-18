@@ -73,6 +73,7 @@ function formatClock(date: Date) {
  * do moduleRegistry e dos gates existentes; a simplificação é apenas de
  * arquitetura de informação, sem remoção funcional.
  */
+/** Shell canônico do EJC com navegação, marca institucional e controles globais. */
 export default function LayoutReference() {
   const user = useAuth((state) => state.user);
   const { disponivel: iaDisponivel } = useIaStatus();
@@ -133,8 +134,8 @@ export default function LayoutReference() {
     [user?.role, lifecycleSettings],
   );
 
-  const sidebarWidth = collapsed ? "md:w-[4.75rem]" : "md:w-[15.5rem]";
-  const contentMargin = collapsed ? "md:ml-[4.75rem]" : "md:ml-[15.5rem]";
+  const sidebarWidth = collapsed ? "md:w-[4.75rem]" : "md:w-[17rem]";
+  const contentMargin = collapsed ? "md:ml-[4.75rem]" : "md:ml-[17rem]";
   const navCollapsed = isSidebarNavigationCollapsed(collapsed, mobileOpen);
   const clock = formatClock(now);
   const whatsappUrl = getWhatsAppUrl();
@@ -172,10 +173,15 @@ export default function LayoutReference() {
   };
 
   return (
-    <div className="min-h-screen bg-canvas text-slate-900">
+    <div className="ejc-petroleum-shell min-h-screen bg-canvas text-slate-900">
       {!privacyMode && <CommandPalette />}
 
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-white">
+      <header
+        className={cn(
+          "ejc-app-header fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-white transition-all",
+          collapsed ? "md:left-[4.75rem]" : "md:left-[17rem]",
+        )}
+      >
         <div className="flex items-center gap-3 px-3 md:px-5">
           <button
             type="button"
@@ -194,13 +200,13 @@ export default function LayoutReference() {
 
           <Link
             to="/"
-            className="hidden shrink-0 items-center md:flex"
+            className="flex shrink-0 items-center md:hidden"
             aria-label="Ir para o início do EJC"
           >
             <img
               src={officeBranding.logoPath}
               alt={officeBranding.officeName}
-              className="brand-logo-img h-12 w-auto max-w-[230px] object-contain"
+              className="brand-logo-img h-9 w-auto max-w-[150px] object-contain"
             />
           </Link>
 
@@ -351,20 +357,33 @@ export default function LayoutReference() {
 
       <aside
         className={cn(
-          "sidebar-bronze fixed bottom-0 left-0 top-[72px] z-40 flex-col transition-all",
+          "sidebar-bronze fixed bottom-0 left-0 top-0 z-[60] flex-col transition-all md:z-40",
           sidebarWidth,
-          mobileOpen ? "flex w-[15.5rem] md:flex" : "hidden md:flex",
+          mobileOpen ? "flex w-[17rem] md:flex" : "hidden md:flex",
         )}
       >
-        <div className="flex items-center justify-between px-3 pt-3 md:hidden">
-          <img
-            src={officeBranding.logoPath}
-            alt={officeBranding.officeName}
-            className="h-11 w-auto max-w-[200px] object-contain"
-          />
+        <div className={cn("ejc-sidebar-brand", navCollapsed && "is-collapsed")}>
+          <Link
+            to="/"
+            onClick={() => setMobileOpen(false)}
+            className="ejc-sidebar-brand__link"
+            aria-label="Ir para o início do EJC"
+          >
+            <img
+              src={officeBranding.logoPath}
+              alt={officeBranding.officeName}
+              className="ejc-sidebar-brand__logo"
+            />
+            {!navCollapsed && (
+              <span className="ejc-sidebar-brand__copy">
+                <strong>EJC</strong>
+                <small>Ecossistema Jurídico Clóvis</small>
+              </span>
+            )}
+          </Link>
           <button
             type="button"
-            className="icon-btn h-8 w-8"
+            className="ejc-sidebar-brand__close icon-btn h-8 w-8 md:hidden"
             onClick={() => setMobileOpen(false)}
             aria-label="Fechar menu"
           >
@@ -455,7 +474,7 @@ export default function LayoutReference() {
       {iaDisponivel ? (
         <Link
           to="/inteligencia?tab=assistente"
-          className="fixed bottom-5 right-5 z-30 hidden h-11 w-11 items-center justify-center rounded-xl bg-[#0b2a55] text-white shadow-float transition hover:-translate-y-0.5 hover:bg-[#123968] md:flex"
+          className="fixed bottom-5 right-5 z-30 hidden h-11 w-11 items-center justify-center rounded-xl bg-[#485B5A] text-white shadow-float transition hover:-translate-y-0.5 hover:bg-[#3D504F] md:flex"
           aria-label="Assistente IA"
         >
           <Bot className="h-5 w-5" />
