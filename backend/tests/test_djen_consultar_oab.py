@@ -134,3 +134,41 @@ async def test_consultar_oab_erro_nao_retorna_sucesso_vazio(monkeypatch):
     assert resultado.items == []
     assert resultado.erro == "erro_interno"
     assert "segredo-nao-pode-vazar" not in str(resultado.to_dict())
+
+
+async def test_consultar_oab_total_prova_exaustao_em_pagina_cheia(monkeypatch):
+    monkeypatch.setattr(djen, "ITENS_POR_PAGINA", 2)
+    chamadas = []
+
+    async def _fake(params):
+        chamadas.append(params["pagina"])
+        return {"count": 2, "items": [{"id": "1"}, {"id": "2"}]}
+
+    monkeypatch.setattr(djen, "_djen_get", _fake)
+    resultado = await djen.consultar_oab("123456", "MG")
+    assert resultado.fonte_ok is True
+    assert resultado.recebidas == 2
+    assert chamadas == [1]
+
+
+async def test_consultar_oab_pagina_vazia_com_count_pendente_falha_fechado(monkeypatch):
+    monkeypatch.setattr(djen, "ITENS_POR_PAGINA", 2)
+    monkeypatch.setattr(djen, "MAX_RETRIES_PAGINA_VAZIA", 2)
+    monkeypatch.setattr(djen, "PAUSA_ENTRE_PAGINAS", 0)
+    chamadas = []
+
+    async def _fake(params):
+        chamadas.append(params["pagina"])
+        if params["pagina"] == 1:
+            return {"count": 3, "items": [{"id": "1"}, {"id": "2"}]}
+        return {"count": 3, "items": []}
+
+    monkeypatch.setattr(djen, "_djen_get", _fake)
+    resultado = await djen.consultar_oab("123456", "MG")
+    assert resultado.fonte_ok is False
+    assert resultado.erro == "pagina_vazia_incompleta"
+    assert chamadas == [1, 2, 2, 2]
+
+
+def test_djen_page_size_default_conservador():
+    assert djen.ITENS_POR_PAGINA == 50

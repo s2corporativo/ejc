@@ -31,6 +31,33 @@ fonte, defina a flag `=false` no `.env` do VPS e reinicie o backend
 > Premissa de worker único: com vários workers `uvicorn`, deixe
 > `ENABLE_SCHEDULER=false` nos workers extras (só um agenda os jobs).
 
+### Egress brasileiro do DJEN / Comunica CNJ
+
+O endpoint oficial permanece fixo em `https://comunicaapi.pje.jus.br/api/v1`.
+Se o host de produção tiver saída fora do Brasil e o CloudFront responder
+`403`/bloqueio geográfico, configure **somente** `DJEN_HTTP_PROXY_URL` com
+proxy HTTP(S) CONNECT privado/controlado cuja saída pública seja brasileira.
+
+Requisitos operacionais:
+
+- não usar proxy público/gratuito;
+- permitir destino apenas `comunicaapi.pje.jus.br:443`;
+- não realizar inspeção/interceptação TLS;
+- manter autenticação/credencial somente no segredo/.env da VPS;
+- o processo DJEN usa `trust_env=False`, portanto proxies globais do host não são herdados;
+- após alterar o .env, reiniciar o backend.
+
+Homologação mínima após configurar o egress:
+
+1. validar de dentro do container backend que a consulta oficial deixa de ser classificada como `geo_bloqueado`;
+2. executar uma captura real de OAB e conferir paginação/total;
+3. repetir a captura para provar deduplicação/idempotência;
+4. confirmar `/api/intimacoes/status-captura` em sucesso ou `sucesso_sem_resultados` válido;
+5. conferir que nenhuma credencial de proxy ou teor integral desnecessário foi parar em logs;
+6. validar `/api/health` e `/api/health/ready` no SHA implantado.
+
+Rollback operacional: remover `DJEN_HTTP_PROXY_URL` e reiniciar o backend restaura a conexão direta. O rollback de código é o revert do PR; não há migration nem transformação de dados.
+
 ## 1) Ingestão automática (scheduler)
 
 Com `ENABLE_SCHEDULER=true`, os jobs rodam sozinhos (horários UTC):

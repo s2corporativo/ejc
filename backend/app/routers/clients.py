@@ -97,7 +97,8 @@ class _ResolverClienteReq(BaseModel):
     cnpj: Optional[str] = None
 
 
-@router.post("/resolver")
+@router.post("/resolver",
+             dependencies=[Depends(rate_limit("clients-resolver", 10))])
 async def resolver_cliente(
     req: _ResolverClienteReq,
     db: AsyncSession = Depends(get_db),
@@ -407,7 +408,7 @@ async def checar_conflito(
     }
 
 
-@router.get("/")
+@router.get("/", dependencies=[Depends(rate_limit("clients-listar", 120))])
 async def listar(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=500),
     search: Optional[str] = None, status_f: Optional[str] = Query(None, alias="status"),
@@ -463,7 +464,8 @@ async def listar(
     }
 
 
-@router.post("/", response_model=ClientResponse, status_code=201)
+@router.post("/", response_model=ClientResponse, status_code=201,
+             dependencies=[Depends(rate_limit("clients-criar", 30))])
 async def criar(
     payload: ClientCreate,
     db: AsyncSession = Depends(get_db),
@@ -683,7 +685,8 @@ async def listar_pecas_geradas(
     return await listar_pecas_cliente(db, c)
 
 
-@router.get("/{client_id}", response_model=ClientResponse)
+@router.get("/{client_id}", response_model=ClientResponse,
+            dependencies=[Depends(rate_limit("clients-detalhe", 120))])
 async def detalhe(
     client_id: str,
     db: AsyncSession = Depends(get_db),
@@ -810,7 +813,8 @@ async def ia_analise_cliente(
     }
 
 
-@router.patch("/{client_id}", response_model=ClientResponse)
+@router.patch("/{client_id}", response_model=ClientResponse,
+              dependencies=[Depends(rate_limit("clients-atualizar", 30))])
 async def atualizar(
     client_id: str, payload: ClientUpdate,
     db: AsyncSession = Depends(get_db),
@@ -896,7 +900,8 @@ async def atualizar(
     return c
 
 
-@router.delete("/{client_id}", response_model=MsgResponse)
+@router.delete("/{client_id}", response_model=MsgResponse,
+               dependencies=[Depends(rate_limit("clients-excluir", 5))])
 async def remover(
     client_id: str,
     forcar: bool = Query(
@@ -958,7 +963,8 @@ class CriarAcessoReq(_BM):
     senha_inicial: str = _Field(min_length=SENHA_MIN_LEN)
 
 
-@router.post("/{client_id}/criar-acesso", status_code=201)
+@router.post("/{client_id}/criar-acesso", status_code=201,
+             dependencies=[Depends(rate_limit("clients-criar-acesso", 10))])
 async def criar_acesso_portal(
     client_id: str, payload: CriarAcessoReq,
     db: AsyncSession = Depends(get_db),
@@ -1009,7 +1015,8 @@ async def criar_acesso_portal(
     }
 
 
-@router.get("/{client_id}/relatorio-lgpd")
+@router.get("/{client_id}/relatorio-lgpd",
+            dependencies=[Depends(rate_limit("clients-relatorio-lgpd", 30))])
 async def relatorio_lgpd(
     client_id: str,
     db: AsyncSession = Depends(get_db),
@@ -1080,7 +1087,8 @@ async def relatorio_lgpd(
                           f'attachment; filename="lgpd_{client_id[:8]}.pdf"'})
 
 
-@router.get("/{client_id}/dados-lgpd.json")
+@router.get("/{client_id}/dados-lgpd.json",
+            dependencies=[Depends(rate_limit("clients-dados-lgpd", 30))])
 async def dados_lgpd_json(
     client_id: str,
     db: AsyncSession = Depends(get_db),
@@ -1139,7 +1147,8 @@ class EsquecimentoReq(_BM):
     forcar: bool = False
 
 
-@router.get("/{client_id}/esquecimento/bloqueios")
+@router.get("/{client_id}/esquecimento/bloqueios",
+            dependencies=[Depends(rate_limit("clients-bloqueios-esquecimento", 60))])
 async def verificar_bloqueios_esquecimento(
     client_id: str,
     db: AsyncSession = Depends(get_db),
@@ -1161,7 +1170,8 @@ async def verificar_bloqueios_esquecimento(
     }
 
 
-@router.post("/{client_id}/esquecimento", status_code=200)
+@router.post("/{client_id}/esquecimento", status_code=200,
+             dependencies=[Depends(rate_limit("clients-esquecimento", 5))])
 async def solicitar_esquecimento(
     client_id: str,
     req: EsquecimentoReq = EsquecimentoReq(),
