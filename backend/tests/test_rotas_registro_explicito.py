@@ -432,6 +432,22 @@ def test_paridade_openapi_com_snapshot_anterior():
         (("/api/ia-governanca/provedores", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
         (("/api/ia-governanca/rag-curadoria", "GET"), ["HTTPBearer", "_req_admin_socio", "get_current_user", "get_db"]),
         (("/api/ia-governanca/rag-curadoria/{doc_id}", "PATCH"), ["HTTPBearer", "_dep", "_req_admin_socio", "get_current_user", "get_db"]),
+        # Fase 8, onda 2-B (PR #1683): rate limit (`_dep`) nos endpoints de
+        # /api/clients classificados ONLY_AUTH + sensíveis no inventário P1.
+        # Só ACRESCENTA throttling fixed-window de 60s; os gates de papel
+        # existentes (`_req_clientes`, `_req_clientes_leitura`, `checker`)
+        # permanecem intatos — ver test_clients_rate_limit_gates.py.
+        (("/api/clients/", "GET"), ["HTTPBearer", "_dep", "_req_clientes_leitura", "get_current_user", "get_db"]),
+        (("/api/clients/", "POST"), ["HTTPBearer", "_dep", "_req_clientes", "get_current_user", "get_db"]),
+        (("/api/clients/resolver", "POST"), ["HTTPBearer", "_dep", "_req_clientes", "get_current_user", "get_db"]),
+        (("/api/clients/{client_id}", "DELETE"), ["HTTPBearer", "_dep", "checker", "get_current_user", "get_db"]),
+        (("/api/clients/{client_id}", "GET"), ["HTTPBearer", "_dep", "_req_clientes_leitura", "get_current_user", "get_db"]),
+        (("/api/clients/{client_id}", "PATCH"), ["HTTPBearer", "_dep", "_req_clientes", "get_current_user", "get_db"]),
+        (("/api/clients/{client_id}/criar-acesso", "POST"), ["HTTPBearer", "_dep", "checker", "get_current_user", "get_db"]),
+        (("/api/clients/{client_id}/dados-lgpd.json", "GET"), ["HTTPBearer", "_dep", "checker", "get_current_user", "get_db"]),
+        (("/api/clients/{client_id}/esquecimento", "POST"), ["HTTPBearer", "_dep", "checker", "get_current_user", "get_db"]),
+        (("/api/clients/{client_id}/esquecimento/bloqueios", "GET"), ["HTTPBearer", "_dep", "checker", "get_current_user", "get_db"]),
+        (("/api/clients/{client_id}/relatorio-lgpd", "GET"), ["HTTPBearer", "_dep", "checker", "get_current_user", "get_db"]),
         # Estabilização do Financeiro (este PR): precificação e proposta de
         # honorários passam a exigir `_req_advogado` (advogado+), não apenas
         # autenticação. É ato jurídico privativo — estagiário e secretaria
