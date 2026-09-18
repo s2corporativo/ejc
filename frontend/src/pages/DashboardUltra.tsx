@@ -56,6 +56,7 @@ const ENTRY_ROLES = new Set([
   "secretaria",
 ]);
 
+/** Início canônico do EJC com Entrada Única, sinais operacionais e Radar Jurídico. */
 export default function DashboardUltra() {
   const user = useAuth((state) => state.user);
   const [alerts, setAlerts] = useState<SmartAlertPayload | null>(null);
