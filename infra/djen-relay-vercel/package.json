@@ -1,0 +1,5 @@
+{
+  "name": "ejc-djen-egress-br",
+  "private": true,
+  "type": "module"
+}
