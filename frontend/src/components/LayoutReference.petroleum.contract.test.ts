@@ -20,6 +20,8 @@ describe("EJC Petroleum & Gold — contrato visual canônico", () => {
   it("mantém a marca institucional grande na sidebar sem alterar a navegação canônica", () => {
     expect(layout).toContain('md:w-[17rem]');
     expect(layout).toContain('md:left-[17rem]');
+    expect(layout).toContain('z-[60]');
+    expect(layout).toContain('md:z-40');
     expect(layout).toContain('ejc-sidebar-brand__logo');
     expect(layout).toContain('selectCanonicalMainNavigation');
     expect(layout).not.toContain('md:w-[15.5rem]');
@@ -37,6 +39,8 @@ describe("EJC Petroleum & Gold — contrato visual canônico", () => {
     expect(theme).toContain('--ejc-petroleum: #485b5a');
     expect(theme).toContain('--ejc-ice: #e5eded');
     expect(theme).toContain('--ejc-gold: #c19f4b');
+    expect(theme).toContain('html:not(.dark) .ejc-ai-dashboard');
+    expect(theme).toContain('color: var(--ejc-petroleum-deep)');
     expect(theme).toContain('.ejc-ai-dashboard__logo');
     expect(theme).toContain('@media (max-width: 767px)');
     expect(theme).toContain('@media (prefers-reduced-motion: reduce)');
