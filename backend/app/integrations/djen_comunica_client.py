@@ -38,6 +38,7 @@ from app.services.djen_http import (
     DJEN_COMUNICA_BASE_URL,
     DJEN_ITENS_POR_PAGINA,
     criar_cliente_djen,
+    preparar_requisicao_djen,
 )
 
 COMUNICA_BASE_URL = DJEN_COMUNICA_BASE_URL
@@ -78,8 +79,9 @@ class DjenComunicaClient:
         if data_fim:
             params["dataDisponibilizacaoFim"] = data_fim.isoformat()
 
+        alvo, headers, _proxy = preparar_requisicao_djen(params)
         async with criar_cliente_djen(timeout=self._timeout) as client:
-            resp = await client.get(f"{COMUNICA_BASE_URL}/comunicacao", params=params)
+            resp = await client.get(alvo, params=params, headers=headers)
         if resp.status_code != 200:
             raise DjenComunicaError(
                 f"DJEN/Comunica retornou HTTP {resp.status_code}"
@@ -90,8 +92,9 @@ class DjenComunicaClient:
         """Consulta comunicações vinculadas a um número de processo específico."""
         numero_limpo = "".join(ch for ch in numero_processo if ch.isdigit())
         params = {"numeroProcesso": numero_limpo}
+        alvo, headers, _proxy = preparar_requisicao_djen(params)
         async with criar_cliente_djen(timeout=self._timeout) as client:
-            resp = await client.get(f"{COMUNICA_BASE_URL}/comunicacao", params=params)
+            resp = await client.get(alvo, params=params, headers=headers)
         if resp.status_code != 200:
             raise DjenComunicaError(
                 f"DJEN/Comunica retornou HTTP {resp.status_code}"
