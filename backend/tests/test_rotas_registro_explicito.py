@@ -467,6 +467,18 @@ def test_paridade_openapi_com_snapshot_anterior():
         (("/api/cases/{case_id}/movimentos", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
         (("/api/cases/{case_id}/movimentos", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
         (("/api/cases/{case_id}/sincronizar-processo", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        # Fase 8, onda 2-C (PR #1684): rate limit (`_dep`) nos endpoints de
+        # /api/deadlines classificados ONLY_AUTH + sensíveis no inventário P1
+        # (listagem/criação, cálculo, export e exclusão). Só ACRESCENTA
+        # throttling fixed-window de 60s; autenticação e escopo permanecem.
+        (("/api/deadlines/", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/deadlines/", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/deadlines/calcular", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/deadlines/export.csv", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/deadlines/{deadline_id}", "DELETE"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/deadlines/{deadline_id}", "PATCH"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/deadlines/{deadline_id}/ciencia", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/deadlines/{deadline_id}/confirmar", "PATCH"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
         # Estabilização do Financeiro (este PR): precificação e proposta de
         # honorários passam a exigir `_req_advogado` (advogado+), não apenas
         # autenticação. É ato jurídico privativo — estagiário e secretaria
