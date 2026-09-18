@@ -177,7 +177,7 @@ export default function LayoutReference() {
 
       <header
         className={cn(
-          "ejc-app-header fixed right-0 top-0 z-50 border-b border-slate-200 bg-white transition-all",
+          "ejc-app-header fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-white transition-all",
           collapsed ? "md:left-[4.75rem]" : "md:left-[17rem]",
         )}
       >
@@ -473,7 +473,7 @@ export default function LayoutReference() {
       {iaDisponivel ? (
         <Link
           to="/inteligencia?tab=assistente"
-          className="fixed bottom-5 right-5 z-30 hidden h-11 w-11 items-center justify-center rounded-xl bg-[#0b2a55] text-white shadow-float transition hover:-translate-y-0.5 hover:bg-[#123968] md:flex"
+          className="fixed bottom-5 right-5 z-30 hidden h-11 w-11 items-center justify-center rounded-xl bg-[#485B5A] text-white shadow-float transition hover:-translate-y-0.5 hover:bg-[#3D504F] md:flex"
           aria-label="Assistente IA"
         >
           <Bot className="h-5 w-5" />
