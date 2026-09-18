@@ -120,7 +120,7 @@ export default function DashboardUltra() {
     <div className="ejc-ai-dashboard">
       <header className="ejc-ai-dashboard__brandbar ejc-ai-dashboard__welcome">
         <div className="ejc-ai-dashboard__welcome-copy">
-          <span>EJC DePaula Teixeira Adv</span>
+          <span>{officeBranding.officeName}</span>
           <h2>Olá, {firstName}.</h2>
           <p>
             Decisões jurídicas com organização, clareza e rastreabilidade.
