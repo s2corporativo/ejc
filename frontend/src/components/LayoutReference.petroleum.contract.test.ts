@@ -23,7 +23,7 @@ describe("EJC DePaula Premium — contrato visual canônico", () => {
     expect(layout).toContain('z-[60]');
     expect(layout).toContain('md:z-40');
     expect(layout).toContain('ejc-sidebar-brand__logo');
-    expect(layout).toContain('EJC DePaula Teixeira Adv');
+    expect(layout).toContain('{officeBranding.officeName}');
     expect(layout).toContain('selectCanonicalMainNavigation');
     expect(layout).not.toContain('Ecossistema Jurídico Clóvis');
   });
@@ -31,7 +31,7 @@ describe("EJC DePaula Premium — contrato visual canônico", () => {
   it("mantém Entrada Única como hero e Radar Jurídico na composição do início", () => {
     expect(dashboard).toContain('ejc-ai-dashboard__main-grid');
     expect(dashboard).toContain('ejc-ai-dashboard__welcome');
-    expect(dashboard).toContain('EJC DePaula Teixeira Adv');
+    expect(dashboard).toContain('{officeBranding.officeName}');
     expect(dashboard).toContain('Entrada Única');
     expect(dashboard).toContain('Radar Jurídico');
     expect(dashboard).toContain('<EntradaInteligente embedded />');
@@ -46,7 +46,16 @@ describe("EJC DePaula Premium — contrato visual canônico", () => {
     expect(theme).toContain('.ejc-ai-dashboard__workspace--entry');
     expect(theme).toContain('html:not(.dark) .ejc-modern-scope :where(table, .table)');
     expect(theme).toContain('html:not(.dark) :where([role="dialog"], [role="menu"], .dropdown, .popover)');
-    expect(theme).toContain('/* Login e Portal do Cliente — mesma identidade');
+    expect(theme).toContain(`html:not(.dark) .min-h-screen.bg-canvas > .brand-watermark + div {
+  background:
+    linear-gradient(
+      90deg,
+      var(--ejc-petroleum-deep) 0%,
+      #073c35 57%,
+      var(--ejc-ice) 57%,
+      #faf8f2 100%
+    ) !important;
+}`);
     expect(theme).toContain('.min-h-screen.bg-canvas > .brand-watermark + div');
     expect(theme).toContain('.ejc-modern-scope > header:not(.fixed)');
     expect(theme).toContain('@media (max-width: 767px)');
