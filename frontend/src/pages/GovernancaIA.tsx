@@ -102,7 +102,9 @@ export default function GovernancaIA() {
     try {
       const [d, c, p, f, g, mg, geo] = await Promise.allSettled([
         api.get("/ia-governanca/dashboard"),
-        api.get("/ia-governanca/rag-curadoria", { params: { page_size: 30 } }),
+        tab === "curadoria"
+          ? api.get("/ia-governanca/rag-curadoria", { params: { page_size: 30 } })
+          : Promise.resolve({ data: { data: [] } }),
         api.get("/ia-governanca/prompts"),
         api.get("/ia-governanca/fontes"),
         api.get("/ia-governanca/guardrails"),
