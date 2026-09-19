@@ -32,6 +32,25 @@ function asLista<T>(payload: unknown): T[] {
   return Array.isArray(data) ? (data as T[]) : [];
 }
 
+function listaParaTexto(itens: string[]): string {
+  return itens.join("\n");
+}
+
+function textoParaLista(texto: string): string[] {
+  return texto
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 20);
+}
+
+const NATUREZAS = [
+  ["judicial", "Judicial"],
+  ["extrajudicial", "Extrajudicial"],
+  ["administrativo", "Administrativo"],
+  ["consultoria", "Consultoria"],
+] as const;
+
 function nomeCliente(c: Client): string {
   return c.nome || c.razao_social || c.email || c.id;
 }
@@ -374,6 +393,112 @@ export function Confirmacao({
           </div>
         </div>
 
+        {/* Classificação jurídica inicial — toda sugestão continua editável/HITL. */}
+        <div className="grid gap-4 md:grid-cols-2">
+          <div>
+            <FieldLabel>Assunto</FieldLabel>
+            <div className="flex items-center gap-2">
+              <Input
+                value={proposta.assunto}
+                onChange={(e) => onChange({ assunto: e.target.value })}
+                placeholder="Ex.: negativação indevida"
+                aria-label="Assunto jurídico"
+              />
+              {proposta.assuntoConfianca != null && (
+                <ConfidenceBadge value={proposta.assuntoConfianca} />
+              )}
+            </div>
+          </div>
+
+          <div>
+            <FieldLabel>Natureza da demanda</FieldLabel>
+            <Select
+              value={proposta.naturezaDemanda}
+              onChange={(e) => onChange({ naturezaDemanda: e.target.value })}
+              aria-label="Natureza da demanda"
+            >
+              <option value="">A confirmar…</option>
+              {!NATUREZAS.some(([valor]) => valor === proposta.naturezaDemanda) &&
+                proposta.naturezaDemanda && (
+                  <option value={proposta.naturezaDemanda}>
+                    {proposta.naturezaDemanda}
+                  </option>
+                )}
+              {NATUREZAS.map(([valor, rotulo]) => (
+                <option key={valor} value={valor}>
+                  {rotulo}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <div>
+            <FieldLabel>Possível ação / procedimento</FieldLabel>
+            <div className="flex items-center gap-2">
+              <Input
+                value={proposta.naturezaProvavel}
+                onChange={(e) => onChange({ naturezaProvavel: e.target.value })}
+                placeholder="Hipótese jurídica a confirmar"
+                aria-label="Possível ação ou procedimento"
+              />
+              {proposta.naturezaConfianca != null && (
+                <ConfidenceBadge value={proposta.naturezaConfianca} />
+              )}
+            </div>
+          </div>
+
+          <div>
+            <FieldLabel>Prioridade do caso</FieldLabel>
+            <Select
+              value={proposta.prioridade}
+              onChange={(e) =>
+                onChange({
+                  prioridade: e.target.value as
+                    | "baixa"
+                    | "media"
+                    | "alta"
+                    | "critica",
+                })
+              }
+              aria-label="Prioridade do caso"
+            >
+              <option value="baixa">Baixa</option>
+              <option value="media">Média</option>
+              <option value="alta">Alta</option>
+              <option value="critica">Crítica</option>
+            </Select>
+          </div>
+        </div>
+
+        {(proposta.urgencia !== null || proposta.urgenciaMotivo) && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-800 dark:bg-amber-900/10">
+            <div className="flex flex-wrap items-center gap-2">
+              <FieldLabel>Urgência identificada</FieldLabel>
+              <Badge tone={proposta.urgencia ? "amber" : "slate"}>
+                {proposta.urgencia === true
+                  ? "possível urgência"
+                  : proposta.urgencia === false
+                    ? "sem urgência aparente"
+                    : "a confirmar"}
+              </Badge>
+              {proposta.urgenciaConfianca != null && (
+                <ConfidenceBadge value={proposta.urgenciaConfianca} />
+              )}
+            </div>
+            <Textarea
+              value={proposta.urgenciaMotivo}
+              onChange={(e) => onChange({ urgenciaMotivo: e.target.value })}
+              rows={2}
+              placeholder="Motivo da urgência ou ponto que exige conferência"
+              aria-label="Motivo da urgência"
+            />
+            <p className="mt-1 text-[11px] text-slate-400">
+              A prioridade acima só é gravada após sua confirmação; a IA não
+              torna um caso crítico automaticamente.
+            </p>
+          </div>
+        )}
+
         {/* Título */}
         <div>
           <FieldLabel>Título</FieldLabel>
@@ -474,6 +599,40 @@ export function Confirmacao({
           </div>
         )}
 
+        {/* Lacunas documentais/probatórias sugeridas na triagem. */}
+        <div className="grid gap-4 md:grid-cols-2">
+          <div>
+            <FieldLabel>Documentos faltantes</FieldLabel>
+            <Textarea
+              value={listaParaTexto(proposta.documentosFaltantes)}
+              onChange={(e) =>
+                onChange({ documentosFaltantes: textoParaLista(e.target.value) })
+              }
+              rows={4}
+              placeholder={"Um item por linha\nEx.: comprovante da negativação"}
+              aria-label="Documentos faltantes"
+            />
+            <p className="mt-1 text-[11px] text-slate-400">
+              Sugestões da triagem; remova o que não for necessário.
+            </p>
+          </div>
+          <div>
+            <FieldLabel>Provas / diligências necessárias</FieldLabel>
+            <Textarea
+              value={listaParaTexto(proposta.provasNecessarias)}
+              onChange={(e) =>
+                onChange({ provasNecessarias: textoParaLista(e.target.value) })
+              }
+              rows={4}
+              placeholder={"Um item por linha\nEx.: confirmar data do evento"}
+              aria-label="Provas necessárias"
+            />
+            <p className="mt-1 text-[11px] text-slate-400">
+              Hipóteses para revisão; não são tratadas como fatos confirmados.
+            </p>
+          </div>
+        </div>
+
         {/* Prazo detectado — só quando a análise achou um */}
         {proposta.prazo && (
           <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-800 dark:bg-amber-900/10">
@@ -539,6 +698,23 @@ export function Confirmacao({
             placeholder="Ex.: Notificação extrajudicial"
             aria-label="Próxima ação"
           />
+        </div>
+
+        <div>
+          <FieldLabel>Próximos passos</FieldLabel>
+          <Textarea
+            value={listaParaTexto(proposta.proximosPassos)}
+            onChange={(e) =>
+              onChange({ proximosPassos: textoParaLista(e.target.value) })
+            }
+            rows={4}
+            placeholder={"Um item por linha\nEx.: conferir documento X"}
+            aria-label="Próximos passos"
+          />
+          <p className="mt-1 text-[11px] text-slate-400">
+            Plano inicial de triagem. A “Próxima ação” acima continua sendo a
+            providência operacional imediata do caso.
+          </p>
         </div>
 
         {/* Responsável (por exceção: default é o próprio usuário) */}
