@@ -343,7 +343,7 @@ else
 fi
 
 log "Aprovando e indexando pendências da Base de Conhecimento"
-docker compose exec -T backend python -m scripts.reparar_conhecimento_rag --batch-size 50
+docker compose exec -T backend python -m scripts.reparar_conhecimento_rag --batch-size 20 --max-docs 20
 
 log "Subindo frontend"
 docker rm -f ejc_frontend >/dev/null 2>&1 || true
