@@ -513,7 +513,12 @@ async def get_sync_state(db: AsyncSession, folder_id: str) -> dict[str, Any] | N
 
 def _arquivo_auditado(f: DriveFile, allowed: set[str]) -> dict[str, Any]:
     decisao = classificar_drive_file(f.name, f.path, f.mime_type)
-    indexavel = f.mime_type in allowed and not decisao.excluir
+    restrito_sem_escopo = decisao.tipo_fonte == "peca_cliente_restrita"
+    indexavel = (
+        f.mime_type in allowed
+        and not decisao.excluir
+        and not restrito_sem_escopo
+    )
     return {
         "id": f.id,
         "name": f.name,
@@ -524,6 +529,7 @@ def _arquivo_auditado(f: DriveFile, allowed: set[str]) -> dict[str, Any]:
         "size": f.size,
         "web_view_link": f.web_view_link,
         "indexavel": indexavel,
+        "restrito_sem_escopo": restrito_sem_escopo,
         "categoria_sugerida": decisao.categoria,
         "confianca_sugerida": decisao.confianca,
         "prioridade": decisao.prioridade,
@@ -593,6 +599,24 @@ async def _processar_arquivo(
     categorizar_automaticamente: bool,
 ) -> dict[str, Any]:
     decisao = classificar_drive_file(file.name, file.path, file.mime_type)
+    if decisao.tipo_fonte == "peca_cliente_restrita":
+        # LGPD/sigilo: arquivo cliente-específico vindo do Drive não tem
+        # client_id/case_id confiável neste pipeline. Persisti-lo como
+        # conhecimento global, mesmo com categoria restrita, viola minimização
+        # e cria dado órfão. Fica somente na auditoria para curadoria/vínculo.
+        return {
+            "file_id": file.id,
+            "name": file.name,
+            "path": file.path,
+            "status": "ignorado",
+            "categoria": decisao.categoria,
+            "prioridade": decisao.prioridade,
+            "motivo": (
+                "Peça cliente-específica sem vínculo de client_id/case_id: "
+                "não baixada nem indexada por sigilo/LGPD."
+            ),
+        }
+
     if decisao.excluir:
         return {
             "file_id": file.id,

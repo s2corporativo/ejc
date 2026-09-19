@@ -1,11 +1,13 @@
 """WhatsApp via Evolution API — proxy endpoints"""
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from app.core.config import get_settings
 from app.core.security import get_current_user
 from app.core.ownership import is_gestao
 from app.models.user import User
+from app.services.notification_preferences import whatsapp_configurado
+from app.services.notification_service import normalizar_telefone_br
 import httpx
 import logging
-import os
 
 logger = logging.getLogger(__name__)
 
@@ -33,40 +35,60 @@ def _exigir_gestao(cu: User = Depends(get_current_user)) -> User:
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 
-# Lê os nomes oficiais do .env (EVOLUTION_API_URL / EVOLUTION_API_KEY); mantém
-# fallback para nomes legados. Sem key por instância, usa a apikey global.
-EVOLUTION_URL = os.getenv("EVOLUTION_API_URL") or os.getenv("EVOLUTION_URL", "http://evolution_api:8080")
-EVOLUTION_KEY = os.getenv("EVOLUTION_API_KEY") or os.getenv("EVOLUTION_KEY", "")
-INSTANCE      = os.getenv("EVOLUTION_INSTANCE", "ejc-escritorio")
-INSTANCE_KEY  = os.getenv("EVOLUTION_INSTANCE_KEY") or EVOLUTION_KEY
-
-def _headers_global():
-    return {"apikey": EVOLUTION_KEY, "Content-Type": "application/json"}
-
-def _headers_instance():
-    return {"apikey": INSTANCE_KEY, "Content-Type": "application/json"}
-
-
-async def _evo_get(path: str, use_instance_key=False):
-    h = _headers_instance() if use_instance_key else _headers_global()
-    async with httpx.AsyncClient(timeout=20) as client:
-        r = await client.get(f"{EVOLUTION_URL}{path}", headers=h)
-        return r.status_code, r.json() if r.headers.get("content-type","").startswith("application/json") else r.text
+def _config_evolution():
+    settings = get_settings()
+    if not settings.WHATSAPP_ENABLED:
+        raise HTTPException(503, "Canal WhatsApp desabilitado por configuração")
+    if not whatsapp_configurado(settings):
+        raise HTTPException(503, "Canal WhatsApp sem configuração completa")
+    return (
+        settings.EVOLUTION_API_URL.rstrip("/"),
+        settings.EVOLUTION_API_KEY,
+        settings.EVOLUTION_INSTANCE,
+        float(settings.EVOLUTION_TIMEOUT),
+    )
 
 
-async def _evo_post(path: str, body: dict, use_instance_key=False):
-    h = _headers_instance() if use_instance_key else _headers_global()
-    async with httpx.AsyncClient(timeout=20) as client:
-        r = await client.post(f"{EVOLUTION_URL}{path}", headers=h, json=body)
-        return r.status_code, r.json() if r.headers.get("content-type","").startswith("application/json") else r.text
+async def _evo_get(path: str):
+    url, key, _instance_name, timeout = _config_evolution()
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.get(
+            f"{url}{path}",
+            headers={"apikey": key, "Content-Type": "application/json"},
+        )
+        if response.status_code >= 400:
+            raise HTTPException(502, "Serviço de WhatsApp recusou a operação")
+        if response.headers.get("content-type", "").startswith("application/json"):
+            return response.json()
+        return {}
+
+
+async def _evo_post(path: str, body: dict):
+    url, key, _instance_name, timeout = _config_evolution()
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.post(
+            f"{url}{path}",
+            headers={"apikey": key, "Content-Type": "application/json"},
+            json=body,
+        )
+        if response.status_code >= 400:
+            raise HTTPException(502, "Serviço de WhatsApp recusou a operação")
+        if response.headers.get("content-type", "").startswith("application/json"):
+            return response.json()
+        return {}
+
+
+def _instance() -> str:
+    return _config_evolution()[2]
 
 
 @router.get("/status")
 async def get_status(current_user=Depends(_exigir_envio)):
     """Retorna status da instância WhatsApp"""
     try:
-        status_code, data = await _evo_get(f"/instance/connectionState/{INSTANCE}", use_instance_key=True)
-        return data
+        return await _evo_get(f"/instance/connectionState/{_instance()}")
+    except HTTPException:
+        raise
     except Exception:
         logger.warning("Falha ao consultar status da instância WhatsApp", exc_info=True)
         return {"state": "error", "detail": "Falha ao consultar o serviço de WhatsApp"}
@@ -76,8 +98,9 @@ async def get_status(current_user=Depends(_exigir_envio)):
 async def get_qrcode(current_user=Depends(_exigir_gestao)):
     """Retorna QR Code para conectar o WhatsApp"""
     try:
-        status_code, data = await _evo_get(f"/instance/connect/{INSTANCE}", use_instance_key=True)
-        return data
+        return await _evo_get(f"/instance/connect/{_instance()}")
+    except HTTPException:
+        raise
     except Exception:
         logger.warning("Falha ao obter QR Code do WhatsApp", exc_info=True)
         raise HTTPException(502, "Falha ao comunicar com o serviço de WhatsApp")
@@ -89,22 +112,16 @@ async def send_message(
     current_user=Depends(_exigir_envio),
 ):
     """Envia mensagem de texto para um número"""
-    phone = body.get("phone", "").replace("+", "").replace("-", "").replace(" ", "")
-    if not phone.startswith("55"):
-        phone = "55" + phone
-    message = body.get("message", "")
+    phone = normalizar_telefone_br(body.get("phone"))
+    message = str(body.get("message") or "").strip()
     if not phone or not message:
-        raise HTTPException(422, "phone e message obrigatórios")
+        raise HTTPException(422, "phone válido e message são obrigatórios")
 
     try:
-        status_code, data = await _evo_post(
-            f"/message/sendText/{INSTANCE}",
+        return await _evo_post(
+            f"/message/sendText/{_instance()}",
             {"number": phone, "text": message},
-            use_instance_key=True
         )
-        if status_code >= 400:
-            raise HTTPException(status_code, detail=str(data))
-        return data
     except HTTPException:
         raise
     except Exception:
@@ -119,12 +136,13 @@ async def list_chats(
 ):
     """Lista conversas recentes"""
     try:
-        status_code, data = await _evo_post(
-            f"/chat/findChats/{INSTANCE}",
+        data = await _evo_post(
+            f"/chat/findChats/{_instance()}",
             {"limit": limit},
-            use_instance_key=True
         )
-        return data if isinstance(data, list) else data
+        return data if isinstance(data, (list, dict)) else []
+    except HTTPException:
+        raise
     except Exception:
         return []
 
@@ -135,18 +153,22 @@ async def get_messages(
     current_user=Depends(_exigir_envio),
 ):
     """Busca mensagens de uma conversa"""
-    phone = body.get("phone", "").replace("+", "").replace(" ", "").replace("-", "")
-    if not phone.startswith("55"):
-        phone = "55" + phone
+    phone = normalizar_telefone_br(body.get("phone"))
+    if not phone:
+        raise HTTPException(422, "phone inválido")
     jid = phone + "@s.whatsapp.net"
-    limit = body.get("limit", 30)
+    try:
+        limit = max(1, min(int(body.get("limit", 30)), 100))
+    except (TypeError, ValueError):
+        raise HTTPException(422, "limit inválido")
 
     try:
-        status_code, data = await _evo_post(
-            f"/chat/findMessages/{INSTANCE}",
+        data = await _evo_post(
+            f"/chat/findMessages/{_instance()}",
             {"where": {"key": {"remoteJid": jid}}, "limit": limit},
-            use_instance_key=True
         )
         return data if isinstance(data, (list, dict)) else []
+    except HTTPException:
+        raise
     except Exception:
         return []

@@ -247,9 +247,30 @@ async def _probe_integracoes(settings: Settings) -> dict[str, Any]:
     _map = {"ready": "ok", "attention": "alerta", "disabled": "desligado"}
     itens: list[dict[str, Any]] = []
 
-    # Reusa o painel existente (não duplica); grupo "Inteligência" é coberto pelos
-    # probes de IA e RAG, então fica de fora daqui.
-    painel = build_integration_status(settings)
+    # Reusa a mesma fonte de verdade do painel administrativo: configuração,
+    # último teste do Cofre e estado operacional persistido. Falha no DB degrada
+    # para configuração-only sem derrubar a Central de Diagnóstico.
+    credenciais: dict[str, str] = {}
+    operacao: dict[str, dict[str, Any]] = {}
+    try:
+        from app.core.database import AsyncSessionLocal
+        from app.services import credential_vault_service
+        from app.services.integration_runtime_status import coletar_estados_operacionais
+
+        async with AsyncSessionLocal() as db:
+            try:
+                credenciais = await credential_vault_service.estados_credenciais(db)
+            except Exception:
+                await db.rollback()
+            operacao = await coletar_estados_operacionais(db)
+    except Exception:
+        logger.debug("Estado operacional das integrações indisponível", exc_info=True)
+
+    painel = build_integration_status(
+        settings,
+        credential_states=credenciais,
+        operational_states=operacao,
+    )
     for it in painel["items"]:
         if it.get("group") == "Inteligência":
             continue
@@ -262,22 +283,6 @@ async def _probe_integracoes(settings: Settings) -> dict[str, Any]:
                 if it["status"] == "attention" else ""
             ),
         })
-
-    # Integrações não cobertas pelo painel (lidas só via flags — sem tocar nos
-    # serviços): Infosimples, Google Drive (base de conhecimento) e índices BCB.
-    itens.append(_item_integracao(
-        "infosimples", "Infosimples (consultas pagas)", "Jurídico",
-        settings.INFOSIMPLES_ENABLED, bool(settings.INFOSIMPLES_TOKEN),
-    ))
-    itens.append(_item_integracao(
-        "google_drive", "Google Drive (base de conhecimento)", "Conhecimento",
-        os.getenv("GOOGLE_DRIVE_ENABLED", "false").strip().lower() in {"1", "true", "yes"},
-        bool(os.getenv("GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID", "").strip()),
-    ))
-    itens.append(_item_integracao(
-        "indices_bcb", "Índices oficiais BCB", "Jurídico",
-        settings.INDICES_BCB_ENABLED, True,  # API pública, sem credencial
-    ))
 
     total = len(itens)
     n_ok = sum(i["status"] == "ok" for i in itens)
