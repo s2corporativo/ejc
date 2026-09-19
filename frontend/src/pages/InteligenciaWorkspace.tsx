@@ -30,7 +30,7 @@ const AgenteIA = lazy(() => import("./AgenteIA"));
 const IA = lazy(() => import("./IA"));
 const AssistenteIA = lazy(() => import("./AssistenteIA"));
 const FerramentasIA = lazy(() => import("./FerramentasIA"));
-const Conhecimento = lazy(() => import("./Conhecimento"));
+const PesquisaJuridica = lazy(() => import("./PesquisaJuridica"));
 const Jurimetria = lazy(() => import("./Jurimetria"));
 const ConhecimentoGovernado = lazy(() => import("./ConhecimentoGovernado"));
 const DashboardIA = lazy(() => import("./DashboardIA"));
