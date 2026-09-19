@@ -688,7 +688,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
       "/api/ai/skills",
       "/api/jurimetria",
       "/api/rag",
-      "/api/conteudo",
+      "/api/conhecimento",
       "/api/honorarios-oab",
       "/api/ia-saude",
       "/api/ia-governanca",
