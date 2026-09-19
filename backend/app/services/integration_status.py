@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
+import os
 from datetime import datetime, timezone
 from typing import Any
 
@@ -24,6 +25,8 @@ class IntegrationStatus:
     # sem_permissao|indisponivel). None = sem teste registrado (default → o
     # contrato histórico status ∈ disabled|attention|ready não muda).
     credential_state: str | None = None
+    operational_state: str | None = None
+    last_operational_at: str | None = None
     # Conectores judiciais: o que cada integração REALMENTE oferece ao fluxo
     # do caso (consultar, sincronizar movimentações, partes, audiências,
     # baixar documentos, intimações, protocolar). None = não é conector
@@ -131,6 +134,42 @@ def _aplicar_estados_credencial(
     return saida
 
 
+_OPERATIONAL_ATTENTION = frozenset({
+    "erro", "alerta", "indisponivel", "sem_resultado", "nunca_executou",
+    "nao_homologado",
+})
+
+
+def _aplicar_estados_operacionais(
+    items: list[IntegrationStatus],
+    operational_states: dict[str, dict[str, Any]],
+) -> list[IntegrationStatus]:
+    """Refina o painel com evidencia operacional persistida e sanitizada."""
+    saida: list[IntegrationStatus] = []
+    for it in items:
+        obs = operational_states.get(it.key)
+        if not obs:
+            saida.append(it)
+            continue
+        state = str(obs.get("state") or "").strip().lower() or None
+        detail = str(obs.get("detail") or "").strip()
+        checked_at = obs.get("checked_at")
+        novo_status = it.status
+        novo_detail = it.detail
+        if it.status != "disabled" and state in _OPERATIONAL_ATTENTION:
+            novo_status = "attention"
+            if detail:
+                novo_detail = detail
+        elif it.status == "ready" and state == "ok" and detail:
+            novo_detail = detail
+        saida.append(replace(
+            it, status=novo_status, detail=novo_detail,
+            operational_state=state,
+            last_operational_at=str(checked_at) if checked_at else None,
+        ))
+    return saida
+
+
 def _status(
     *,
     key: str,
@@ -191,7 +230,9 @@ def _estado_overlay_seguro() -> dict[str, Any]:
 
 
 def build_integration_status(
-    settings: Settings, credential_states: dict[str, str] | None = None,
+    settings: Settings,
+    credential_states: dict[str, str] | None = None,
+    operational_states: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Retorna apenas metadados seguros; nunca retorna segredo ou valor sensível.
 
@@ -308,6 +349,60 @@ def build_integration_status(
             ),
         ),
         _status(
+            key="stj",
+            label="STJ Dados Abertos",
+            group="Conhecimento",
+            enabled=settings.ENABLE_SCHEDULER,
+            configured=True,
+            ready_detail="Ingestor oficial STJ agendado; estado operacional informa a última execução.",
+            mode="jurisprudência oficial",
+        ),
+        _status(
+            key="planalto",
+            label="Planalto — legislação federal",
+            group="Conhecimento",
+            enabled=settings.ENABLE_SCHEDULER,
+            configured=True,
+            ready_detail="Ingestor oficial Planalto agendado; estado operacional informa a última execução.",
+            mode="legislação oficial",
+        ),
+        _status(
+            key="camara",
+            label="Câmara dos Deputados",
+            group="Conhecimento",
+            enabled=settings.ENABLE_SCHEDULER,
+            configured=True,
+            ready_detail="Ingestor da Câmara agendado; estado operacional informa a última execução.",
+            mode="proposições legislativas",
+        ),
+        _status(
+            key="senado",
+            label="Senado Federal",
+            group="Conhecimento",
+            enabled=settings.ENABLE_SCHEDULER,
+            configured=True,
+            ready_detail="Ingestor do Senado agendado; estado operacional informa a última execução.",
+            mode="matérias legislativas",
+        ),
+        _status(
+            key="anpd",
+            label="ANPD — regulamentações e guias",
+            group="Conhecimento",
+            enabled=settings.CONHECIMENTO_INGEST_ENABLED,
+            configured=True,
+            ready_detail="Ingestor ANPD habilitado; estado operacional informa a última execução.",
+            mode="fonte pública",
+        ),
+        _status(
+            key="normas_rfb",
+            label="Normas RFB",
+            group="Conhecimento",
+            enabled=settings.CONHECIMENTO_INGEST_ENABLED,
+            configured=True,
+            ready_detail="Ingestor Normas RFB habilitado; estado operacional informa a última execução.",
+            mode="fonte pública",
+        ),
+        _status(
             key="djen",
             label="DJEN / Comunica CNJ",
             group="Jurídico",
@@ -333,6 +428,22 @@ def build_integration_status(
             ready_detail=("Federa legislação estadual (ALMG)/municipal (Betim) e "
                           "jurisprudência de TJ/TRT/TRF/TST/STJ/STF por temas."),
             mode=f"até {settings.LEXML_INGEST_MAX_POR_TEMA} itens/tema",
+        ),
+        _status(
+            key="google_drive_knowledge",
+            label="Google Drive Knowledge",
+            group="Conhecimento",
+            enabled=os.getenv("GOOGLE_DRIVE_ENABLED", "").strip().casefold()
+                    in {"1", "true", "yes", "on", "sim"},
+            configured=bool(os.getenv("GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID", "").strip()),
+            ready_detail=(
+                "Google Drive Knowledge habilitado e pasta institucional configurada; "
+                "o estado operacional informa se ja houve sincronizacao."
+            ),
+            missing_detail=(
+                "Google Drive Knowledge habilitado sem GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID."
+            ),
+            mode="Drive -> RAG",
         ),
         _status(
             key="transparencia",
@@ -462,6 +573,8 @@ def build_integration_status(
     ]
     if credential_states:
         items = _aplicar_estados_credencial(items, credential_states)
+    if operational_states:
+        items = _aplicar_estados_operacionais(items, operational_states)
     items = _aplicar_capacidades(items)
     counts = {
         "total": len(items),
@@ -470,7 +583,7 @@ def build_integration_status(
         "disabled": sum(item.status == "disabled" for item in items),
     }
     return {
-        "mode": "configuration_only",
+        "mode": ("configuration_and_runtime" if operational_states else "configuration_only"),
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "summary": counts,
         "items": [asdict(item) for item in items],
@@ -480,7 +593,10 @@ def build_integration_status(
         # os consumidores existentes não mudam.
         "credential_overlay": _estado_overlay_seguro(),
         "notice": (
-            "O painel verifica somente habilitação e presença de configuração. "
-            "Não revela valores sensíveis e não substitui healthchecks de conectividade."
+            ("O painel combina configuração, último teste de credencial e estado operacional persistido; "
+             "não revela valores sensíveis. Probes externos ativos permanecem na Central de Diagnóstico."
+             if operational_states else
+             "O painel verifica somente habilitação e presença de configuração. "
+             "Não revela valores sensíveis e não substitui healthchecks de conectividade.")
         ),
     }

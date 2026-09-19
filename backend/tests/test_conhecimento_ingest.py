@@ -625,3 +625,41 @@ async def test_endpoint_audita_e_agenda_background(monkeypatch):
     assert len(bg.tasks) == 2                              # conhecimento + lexml
     assert audits and audits[0]["acao"] == "INGESTAO_FONTES_OFICIAIS"
     assert audits[0]["user_id"] == "u1"
+
+
+def test_anpd_paginas_oficiais_atuais_nao_sao_bloqueadas_pelo_filtro():
+    urls = [item[2] for item in anpd.PAGINAS]
+    assert any("/acesso-a-informacao/" in u for u in urls)
+    assert any("/centrais-de-conteudo/" in u for u in urls)
+    for url in urls:
+        html = (
+            '<div id="content-core">'
+            '<a href="resolucao-teste">Resolução CD/ANPD nº 99, de 2026</a>'
+            '</div>'
+        )
+        assert anpd.extrair_links(html, url)
+
+
+def test_parse_resultados_rfb_layout_atual_normasinternet2():
+    html = """
+    <table>
+      <tr class='linhaResultados'>
+        <td><a href='https://normasinternet2.receita.fazenda.gov.br/#/consulta/externa/143499/vs/abc'>Solução de Consulta</a></td>
+        <td><a href='https://normasinternet2.receita.fazenda.gov.br/#/consulta/externa/143499/vs/abc'>123</a></td>
+        <td><a href='https://normasinternet2.receita.fazenda.gov.br/#/consulta/externa/143499/vs/abc'>Cosit</a></td>
+        <td><a href='https://normasinternet2.receita.fazenda.gov.br/#/consulta/externa/143499/vs/abc'>19/09/2026</a></td>
+        <td><a href='https://normasinternet2.receita.fazenda.gov.br/#/consulta/externa/143499/vs/abc'>
+          Ementa oficial suficientemente descritiva para identificação do ato e
+          descoberta jurídica, sem representar o inteiro teor da norma.
+        </a></td>
+      </tr>
+    </table>
+    """
+    atos = rfb.parse_resultados(html)
+    assert len(atos) == 1
+    ato = atos[0]
+    assert ato["id_ato"] == "143499"
+    assert ato["titulo"].startswith("Solução de Consulta Cosit nº 123")
+    assert "Ementa oficial" in ato["ementa"]
+    assert ato["fonte_url"].startswith("https://normasinternet2.receita.fazenda.gov.br/")
+    assert ato["inteiro_teor"] is False
