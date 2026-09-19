@@ -280,8 +280,9 @@ def classificar_drive_file(nome: str, caminho: str | None = None, mime_type: str
     # Precedência: material NORMATIVO genérico (súmula/legislação/jurisprudência)
     # já retornou acima e nunca chega aqui. Esta detecção vem ANTES do ramo
     # "modelo_documento_juridico"/"doutrina"/fallback: uma peça vinculada a um
-    # cliente/processo concreto é marcada como RESTRITA (peca_interna) para não
-    # vazar no RAG compartilhado. Um modelo/minuta GENÉRICO (sem nº de processo,
+    # cliente/processo concreto é marcada como RESTRITA (peca_interna) e
+    # BLOQUEADA para ingestão automática sem escopo. Um modelo/minuta GENÉRICO
+    # (sem nº de processo,
     # CPF/CNPJ ou pasta de cliente) não dispara aqui e segue como
     # modelo_documento_juridico no ramo abaixo.
     peca_cliente_sinais = _detectar_peca_cliente(nome, caminho, texto)
