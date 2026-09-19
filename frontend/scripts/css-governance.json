@@ -1,0 +1,19 @@
+{
+  "allowed_global_imports": [
+    "./styles/fonts.css",
+    "./index.css",
+    "./styles/bronze-elegance.css",
+    "./styles/site-system.css",
+    "./styles/workspace-executive.css",
+    "./styles/premium-shell.css",
+    "./styles/premium-dashboard.css",
+    "./styles/saas-ultra-v2.css",
+    "./styles/saas-ultra-accessibility.css",
+    "./styles/ejc-reference-2026.css",
+    "./styles/ejc-reference-systemwide.css",
+    "./styles/ejc-dashboard-premium.css",
+    "./styles/ejc-tokens.css"
+  ],
+  "max_global_css_imports": 13,
+  "tokens_must_be_last": "./styles/ejc-tokens.css"
+}
