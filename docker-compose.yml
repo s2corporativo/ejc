@@ -20,6 +20,10 @@ services:
     # Teto de memória — ver a nota em `backend` abaixo. Folga generosa: um
     # Postgres morto por OOM é pior que um container lento.
     mem_limit: ${EJC_DB_MEM_LIMIT:-3g}
+    # PostgreSQL/pgvector usa shared memory para operações paralelas. O default
+    # Docker de 64 MiB ficou pequeno para HNSW/consultas vetoriais; 256 MiB é
+    # conservador dentro do teto de 3 GiB e pode ser ajustado por ambiente.
+    shm_size: "${EJC_DB_SHM_SIZE:-256m}"
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -79,6 +83,10 @@ services:
       GIT_SHA: ${GIT_SHA:-}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       DATABASE_URL_SYNC: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      # Credencial DDL exclusiva do Alembic. Vazio mantém o fallback para
+      # DATABASE_URL_SYNC durante o rollout; depois do provisionamento de
+      # ejc_migrator, definir no .env sem expor a senha no repositório.
+      MIGRATION_DATABASE_URL: "${MIGRATION_DATABASE_URL:-}"
       UPLOAD_DIR: /app/uploads
       BACKUP_DIR: /app/backups
       # O entrypoint aplica `alembic upgrade head` no boot SOMENTE quando
