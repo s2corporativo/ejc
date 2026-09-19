@@ -681,14 +681,17 @@ export default function KnowledgeGovernancePanel() {
                       {docsTotalPages > 1 && (
                         <div className="mt-2 flex items-center justify-between gap-2">
                           <span className="text-[11px] text-slate-400">
-                            Página {docsPage} de {docsTotalPages} · {docsTotal} documento(s)
+                            Página {docsPage} de {docsTotalPages} · {docsTotal}{" "}
+                            documento(s)
                           </span>
                           <div className="flex gap-1">
                             <button
                               type="button"
                               className="btn btn-ghost px-2 py-1 text-xs"
                               disabled={docsPage <= 1 || loading}
-                              onClick={() => setDocsPage((page) => Math.max(1, page - 1))}
+                              onClick={() =>
+                                setDocsPage((page) => Math.max(1, page - 1))
+                              }
                             >
                               Anterior
                             </button>
