@@ -29,6 +29,8 @@ export interface DuplicadoCliente {
   rotulo: string;
 }
 
+export type PrioridadeTriagem = "baixa" | "media" | "alta" | "critica";
+
 export interface Proposta {
   rascunhoId: string;
   clienteId: string | null;
@@ -39,12 +41,24 @@ export interface Proposta {
   clienteConfianca: number | null;
   area: string;
   areaConfianca: number | null;
+  assunto: string;
+  assuntoConfianca: number | null;
+  naturezaDemanda: string;
+  naturezaProvavel: string;
+  naturezaConfianca: number | null;
+  urgencia: boolean | null;
+  urgenciaMotivo: string;
+  urgenciaConfianca: number | null;
+  prioridade: PrioridadeTriagem;
   titulo: string;
   fatos: string;
   parteContraria: string;
   documentos: DocumentoProposto[];
+  documentosFaltantes: string[];
+  provasNecessarias: string[];
   prazo: PrazoProposto | null;
   proximaAcao: string;
+  proximosPassos: string[];
   advogadoResponsavelId: string;
   conflitoAlertas: string[];
   duplicados: DuplicadoCliente[];
@@ -87,6 +101,19 @@ function obj(v: unknown): Record<string, unknown> {
 
 function lista(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
+}
+
+function listaTexto(v: unknown): string[] {
+  return lista(v)
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function prioridadeTriagem(v: unknown): PrioridadeTriagem {
+  return ["baixa", "media", "alta", "critica"].includes(str(v))
+    ? (str(v) as PrioridadeTriagem)
+    : "media";
 }
 
 /** Normaliza confiança para 0-100 (aceita fração 0-1, percentual, ou os
@@ -183,6 +210,9 @@ export function normalizarAnalise(
 
   const cliente = obj(r.cliente);
   const area = obj(r.area);
+  const assunto = obj(r.assunto);
+  const natureza = obj(r.natureza);
+  const urgencia = obj(r.urgencia);
   const conflito = obj(r.conflito);
   const duplicados = obj(r.duplicados);
 
@@ -233,12 +263,25 @@ export function normalizarAnalise(
     clienteConfianca: confiancaPct(cliente.confianca),
     area: str(area.valor),
     areaConfianca: confiancaPct(area.confianca),
+    assunto: str(assunto.valor),
+    assuntoConfianca: confiancaPct(assunto.confianca),
+    naturezaDemanda: str(natureza.tipo),
+    naturezaProvavel: str(natureza.acao),
+    naturezaConfianca: confiancaPct(natureza.confianca),
+    urgencia:
+      typeof urgencia.valor === "boolean" ? urgencia.valor : null,
+    urgenciaMotivo: str(urgencia.justificativa),
+    urgenciaConfianca: confiancaPct(urgencia.confianca),
+    prioridade: prioridadeTriagem(urgencia.prioridade_sugerida),
     titulo: str(r.titulo),
     fatos: str(r.fatos),
     parteContraria: str(r.parte_contraria),
     documentos,
+    documentosFaltantes: listaTexto(r.documentos_faltantes),
+    provasNecessarias: listaTexto(r.provas_necessarias),
     prazo,
     proximaAcao: str(r.proxima_acao),
+    proximosPassos: listaTexto(r.proximos_passos),
     advogadoResponsavelId: meuId,
     conflitoAlertas: lista(conflito.alertas).map(textoDeAchado).filter(Boolean),
     duplicados: lista(duplicados.clientes).map(normalizarDuplicado),
@@ -264,6 +307,14 @@ export function montarPayloadCriacao(p: Proposta): Record<string, unknown> {
     fatos: p.fatos.trim() || undefined,
     parte_contraria: p.parteContraria.trim() || undefined,
     documentos_ids: documentosIds,
+    assunto: p.assunto.trim() || undefined,
+    natureza_demanda: p.naturezaDemanda.trim() || undefined,
+    natureza_provavel: p.naturezaProvavel.trim() || undefined,
+    prioridade: p.prioridade,
+    urgencia_motivo: p.urgenciaMotivo.trim() || undefined,
+    documentos_faltantes: p.documentosFaltantes,
+    provas_necessarias: p.provasNecessarias,
+    proximos_passos: p.proximosPassos,
     proxima_acao: p.proximaAcao.trim() || undefined,
     advogado_responsavel_id: p.advogadoResponsavelId || undefined,
     confirmo_dados_revisados: true,
