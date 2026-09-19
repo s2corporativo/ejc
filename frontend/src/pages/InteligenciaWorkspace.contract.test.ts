@@ -58,7 +58,7 @@ describe("Inteligência Jurídica — contrato canônico da auditoria 2026-09-18
       "/api/ai/skills",
       "/api/jurimetria",
       "/api/rag",
-      "/api/conteudo",
+      "/api/conhecimento",
       "/api/honorarios-oab",
       "/api/ia-saude",
       "/api/ia-governanca",
