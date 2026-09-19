@@ -21,6 +21,9 @@ export type IntegrationItem = {
   status: IntegrationState;
   detail: string;
   mode?: string | null;
+  credential_state?: string | null;
+  operational_state?: string | null;
+  last_checked_at?: string | null;
   /** Conectores judiciais: o que a integração oferece ao fluxo do caso
    * (`capacidades` em GET /system-modules/integrations). Ausente nos demais. */
   capacidades?: Record<string, boolean> | null;
@@ -61,7 +64,7 @@ export type CredentialOverlayState = {
 };
 
 type IntegrationPayload = {
-  mode: "configuration_only";
+  mode: "configuration_only" | "configuration_and_operational";
   checked_at: string;
   summary: {
     total: number;
@@ -76,7 +79,7 @@ type IntegrationPayload = {
 
 const STATUS_META = {
   ready: {
-    label: "Configurada",
+    label: "Pronta",
     className: "badge-success",
     icon: CheckCircle2,
     iconClass: "text-success-600 bg-success-50",
@@ -174,14 +177,14 @@ export default function IntegrationHealthPanel() {
   return (
     <div className="space-y-5">
       <SectionCard
-        title="Status de configuração"
-        subtitle="Somente habilitação e presença de configuração; nenhum segredo é retornado ao navegador."
+        title="Status das integrações"
+        subtitle="Combina configuração, Cofre de Credenciais e última evidência operacional disponível; nenhum segredo é retornado ao navegador."
       >
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-4">
             {[
               ["Total", data?.summary.total ?? "—"],
-              ["Configuradas", data?.summary.ready ?? "—"],
+              ["Prontas", data?.summary.ready ?? "—"],
               ["Atenção", data?.summary.attention ?? "—"],
               ["Desabilitadas", data?.summary.disabled ?? "—"],
             ].map(([label, value]) => (
@@ -268,6 +271,17 @@ export default function IntegrationHealthPanel() {
                       {item.mode && (
                         <div className="mt-2 text-[11px] text-slate-400">
                           Modo: {item.mode}
+                        </div>
+                      )}
+                      {(item.operational_state || item.last_checked_at) && (
+                        <div className="mt-1 text-[11px] text-slate-400">
+                          {item.operational_state
+                            ? `Operação: ${item.operational_state}`
+                            : "Operação: sem evidência"}
+                          {item.last_checked_at &&
+                            ` · última evidência ${new Date(
+                              item.last_checked_at,
+                            ).toLocaleString("pt-BR")}`}
                         </div>
                       )}
                       {item.capacidades && (
