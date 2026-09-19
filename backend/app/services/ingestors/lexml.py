@@ -12,7 +12,8 @@
 #
 # ESPELHA a estrutura do ingestor TJMG (tjmg.py): catálogo de temas curados →
 # busca best-effort por tema → upsert idempotente com dedup por chave_origem →
-# métricas (novos, total). Falha de rede/fonte NUNCA derruba a execução.
+# métricas (novos, total). Falhas isoladas degradam; bloqueio anti-bot global
+# interrompe imediatamente para não martelar a fonte sem possibilidade de êxito.
 #
 # COBERTURA (honesta): a busca do LexML é por TERMOS (não há parâmetro de
 # "autoridade" na assinatura de buscar_lexml). Miramos os tribunais/casas/
@@ -353,12 +354,17 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
         try:
             itens = await buscar_lexml(consulta, tipo=tipo, por_pagina=max_item)
         except LexMLBloqueadoError as e:
-            # Contado à parte: bloqueio anti-bot não é "não achei nada", é "não
-            # perguntei". Se TODAS as consultas forem bloqueadas, a execução
-            # inteira falha ao final em vez de reportar (0, 0) como sucesso.
+            # O desafio anti-bot é uma condição do federador/egress, não do
+            # termo pesquisado. Repetir dezenas de consultas após a primeira
+            # detecção só aumenta carga, latência e risco de bloqueio sem
+            # produzir dado algum. Falha imediatamente e deixa o scheduler
+            # registrar a fonte como erro.
             bloqueadas += 1
             logger.warning("LexML %s %r bloqueado: %s", tipo, consulta, e)
-            continue
+            raise LexMLBloqueadoError(
+                "LexML bloqueou a consulta por desafio anti-bot; ingestão "
+                "interrompida sem repetir o restante do plano."
+            ) from e
         except Exception as e:   # rede/XML — nunca derruba a execução inteira
             # Contado junto com os bloqueios: consulta que ESTOUROU também não
             # é "não achei nada". Sem este contador, uma queda de rede em 100%
