@@ -251,6 +251,7 @@ steps:
       - npm ci --prefer-offline
       # Ordenado do mais barato para o mais caro; qualquer falha interrompe.
       - npm run lint
+      - npm run audit:css:verificar
       - npm test
       - npm run build
     when:
