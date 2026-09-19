@@ -35,6 +35,10 @@ const governance = readFileSync(
   resolve(ROOT, "src/pages/GovernancaIA.tsx"),
   "utf8",
 );
+const jurimetry = readFileSync(
+  resolve(ROOT, "src/pages/Jurimetria.tsx"),
+  "utf8",
+);
 const fees = readFileSync(
   resolve(ROOT, "src/components/EstimadorHonorarios.tsx"),
   "utf8",
@@ -58,12 +62,18 @@ describe("Inteligência Jurídica — contrato canônico da auditoria 2026-09-18
     expect(legalResearchPage).toContain("fonte oficial");
   });
 
-  it("restringe Jurimetria estratégica aos gestores no agregador", () => {
+  it("preserva Jurimetria operacional para a equipe jurídica e segmenta blocos estratégicos", () => {
     const bloco = workspace.slice(
       workspace.indexOf('k: "jurimetria"'),
       workspace.indexOf('k: "conhecimento"'),
     );
-    expect(bloco).toContain("roles: GESTORES");
+    expect(bloco).toContain("roles: EQUIPE_JURIDICA_UI");
+    expect(jurimetry).toContain("podeVerEstrategico");
+    expect(jurimetry).toContain('api.get("/jurimetria/overview")');
+    expect(jurimetry).toContain('api.get("/jurimetria/por-area")');
+    expect(jurimetry).toContain('api.get("/jurimetria/por-tribunal")');
+    expect(jurimetry).toContain('api.get("/jurimetria/por-tese")');
+    expect(jurimetry).toContain("podeVerEstrategico && (");
   });
 
   it("expõe Saúde e Governança dentro de Estado da IA", () => {
