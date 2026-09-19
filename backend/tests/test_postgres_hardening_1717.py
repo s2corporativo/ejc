@@ -23,6 +23,12 @@ def test_compose_separa_runtime_migration_e_amplia_shm():
     assert 'MIGRATION_DATABASE_URL: "${MIGRATION_DATABASE_URL:-}"' in src
 
 
+def test_env_runtime_nao_documenta_segredo_de_migrator():
+    src = (ROOT / ".env.example").read_text(encoding="utf-8")
+    assert "\nMIGRATION_DATABASE_URL=" not in src
+    assert "MIGRATION_DATABASE_URL NÃO pertence a este env_file" in src
+
+
 def test_backfill_pii_e_fail_closed_e_nao_loga_valores():
     src = (
         ROOT / "backend/scripts/backfill_case_partes_pii.py"
