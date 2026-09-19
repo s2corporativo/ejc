@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.models.ai_skill import EjcSkill
 from app.services import ai_skill_service
-from app.services.ai_skill_service import _marcar_uso, skills_sem_uso
+from app.services.ai_skill_service import _marcar_uso, functional_group, skills_sem_uso
 
 
 def _skill(**kw) -> EjcSkill:
@@ -25,6 +25,29 @@ def _skill(**kw) -> EjcSkill:
     )
     base.update(kw)
     return EjcSkill(**base)
+
+
+# ── grupo funcional do catálogo ─────────────────────────────────────────────
+
+def test_functional_group_deriva_metadado_no_backend():
+    assert functional_group(
+        _skill(name="analise_estrategica", display_name="Análise estratégica")
+    ) == "analisar"
+    assert functional_group(
+        _skill(name="peticao_inicial", display_name="Petição inicial")
+    ) == "produzir"
+    assert functional_group(
+        _skill(name="revisar_documento", display_name="Revisar documento")
+    ) == "revisar"
+    assert functional_group(
+        _skill(name="preparar_audiencia", display_name="Preparar audiência")
+    ) == "preparar"
+
+
+def test_functional_group_sem_sinal_cai_em_produzir():
+    assert functional_group(
+        _skill(name="fluxo_especial", display_name="Fluxo especial")
+    ) == "produzir"
 
 
 # ── _marcar_uso ────────────────────────────────────────────────────────────
