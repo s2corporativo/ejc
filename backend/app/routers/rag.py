@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, AsyncSessionLocal
 from app.core.rate_limit import rate_limit
-from app.core.security import get_current_user, require_roles
+from app.core.security import get_current_user, require_roles, requer_equipe_juridica
 from app.models.user import User
 from app.models.rag import KnowledgeDoc, KnowledgeChunk, FonteIngestao
 from app.services.ai_service import buscar_contexto_rag, _RESTRICTED_CATS
@@ -372,6 +372,9 @@ async def buscar(
     fallbacks lexicais. Manter SQL próprio nesta rota criou um bypass desses
     controles; por isso a rota não executa mais retrieval paralelo.
     """
+    requer_equipe_juridica(
+        cu, "Pesquisa jurídica restrita à equipe jurídica"
+    )
     cats = categorias if categorias else None
     resultados = await buscar_contexto_rag(
         db, q, limite=limite, categorias=cats, incluir_historico=incluir_historico

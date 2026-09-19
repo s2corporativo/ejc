@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -10,6 +10,7 @@ class SkillListItem(BaseModel):
     description: Optional[str]
     engine: str
     area: str
+    functional_group: Literal["analisar", "produzir", "revisar", "preparar"]
     requires_case: bool
     requires_human_review: bool
     oab_restricted: bool
@@ -52,6 +53,7 @@ class ContextualActionItem(BaseModel):
     display_name: str
     description: Optional[str] = None
     area: str
+    functional_group: Literal["analisar", "produzir", "revisar", "preparar"]
     requires_case: bool
     requires_human_review: bool
     oab_restricted: bool

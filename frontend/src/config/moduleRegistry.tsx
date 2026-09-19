@@ -667,8 +667,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   {
     key: "inteligencia",
     path: "/inteligencia",
-    // Rótulo canônico da navegação (fonte única — antes havia override no shell).
-    label: "IA Jurídica",
+    // Rótulo canônico alinhado ao menu principal e ao workspace.
+    label: "Inteligência Jurídica",
     description:
       "Pesquisa jurídica, análise, jurimetria, conhecimento e precificação de honorários.",
     group: "Pesquisar & IA",
@@ -682,10 +682,16 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     sensitive: true,
     usesAI: true,
     backendPrefixes: [
+      "/api/ia",
       "/api/ai",
       "/api/ai/core",
       "/api/ai/skills",
+      "/api/jurimetria",
+      "/api/rag",
+      "/api/conhecimento",
       "/api/honorarios-oab",
+      "/api/ia-saude",
+      "/api/ia-governanca",
     ],
   },
   {
