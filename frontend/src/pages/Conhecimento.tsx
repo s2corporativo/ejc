@@ -26,6 +26,7 @@ import {
 } from "../components/UI";
 import { asList } from "../lib/list";
 import { mensagemErroHttp } from "../lib/iaErro";
+import { useAuth } from "../stores/auth";
 
 // ── Categorias ────────────────────────────────────────────────────────────────
 // Sem `peca_escritorio`/`precedente_interno`: são categorias RESTRITAS no
@@ -71,7 +72,7 @@ const CATS: { value: string; label: string; icon: any; cor: string }[] = [
   },
 ];
 
-const catMeta = (v: string) => CATS.find((c) => c.value === v) ?? CATS[7];
+const catMeta = (v: string) => CATS.find((c) => c.value === v) ?? CATS[CATS.length - 1];
 
 // ── Status badge ─────────────────────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
@@ -766,6 +767,10 @@ function SecaoImportarJuris({ onImportado }: { onImportado: () => void }) {
 }
 
 export default function Conhecimento() {
+  const user = useAuth((state) => state.user);
+  const role = user?.role ?? "";
+  const podeIngerir = ["superadmin", "admin", "socio", "advogado"].includes(role);
+  const podeExcluir = ["superadmin", "admin", "socio"].includes(role);
   const [docs, setDocs] = useState<any>(null);
   const [erroDocs, setErroDocs] = useState(false);
   const [total, setTotal] = useState(0);
@@ -834,17 +839,19 @@ export default function Conhecimento() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="IA Jurídica"
-        title="Base de Conhecimento"
-        subtitle="Peças vencedoras, teses e súmulas que a IA usa para gerar documentos quando estão vetorizadas (status por documento abaixo)"
+        eyebrow="Inteligência Jurídica"
+        title="Pesquisa e validação de fontes"
+        subtitle="Pesquise a base governada do escritório, confira a origem dos resultados e administre o acervo conforme seu perfil de acesso."
         actions={
-          <button
-            className="btn btn-primary gap-2"
-            onClick={() => setModal(true)}
-          >
-            <Plus size={15} />
-            Adicionar conteúdo
-          </button>
+          podeIngerir ? (
+            <button
+              className="btn btn-primary gap-2"
+              onClick={() => setModal(true)}
+            >
+              <Plus size={15} />
+              Adicionar conteúdo
+            </button>
+          ) : null
         }
       />
 
@@ -911,6 +918,13 @@ export default function Conhecimento() {
                       )}
                     </div>
                   </div>
+                  {(r.fonte || r.tribunal || r.confianca) && (
+                    <p className="mb-2 text-[11px] text-slate-400">
+                      {[r.tribunal, r.fonte, r.confianca && `confiança: ${r.confianca}`]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  )}
                   <p className="text-sm text-slate-600 leading-relaxed">
                     {r.conteudo?.slice(0, 500)}
                     {(r.conteudo?.length ?? 0) > 500 && "…"}
@@ -923,7 +937,7 @@ export default function Conhecimento() {
       </div>
 
       {/* Importar jurisprudência (APIs oficiais) */}
-      <SecaoImportarJuris onImportado={() => load(1, catFiltro)} />
+      {podeIngerir && <SecaoImportarJuris onImportado={() => load(1, catFiltro)} />}
 
       {/* Filtros + lista */}
       <div className="space-y-4">
@@ -1037,13 +1051,16 @@ export default function Conhecimento() {
                         {fmtDate(d.created_at)}
                       </td>
                       <td className="px-4 py-3">
-                        <button
-                          onClick={() => remover(d.id)}
-                          disabled={removendo === d.id}
-                          className="p-1.5 rounded-lg text-slate-300 hover:text-danger-500 hover:bg-danger-50 transition-colors"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        {podeExcluir && (
+                          <button
+                            onClick={() => remover(d.id)}
+                            disabled={removendo === d.id}
+                            className="p-1.5 rounded-lg text-slate-300 hover:text-danger-500 hover:bg-danger-50 transition-colors"
+                            aria-label={`Remover ${d.titulo}`}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -1079,15 +1096,17 @@ export default function Conhecimento() {
         )}
       </div>
 
-      <ModalIngestao
-        open={modal}
-        onClose={() => setModal(false)}
-        onSalvo={() => {
-          load(1, catFiltro);
-          setPagina(1);
-        }}
-      />
-      {modalPdf && (
+      {podeIngerir && (
+        <ModalIngestao
+          open={modal}
+          onClose={() => setModal(false)}
+          onSalvo={() => {
+            load(1, catFiltro);
+            setPagina(1);
+          }}
+        />
+      )}
+      {podeIngerir && modalPdf && (
         <ModalIngestPdf
           modo={modalPdf}
           onClose={() => setModalPdf(null)}
