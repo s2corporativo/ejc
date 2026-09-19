@@ -85,10 +85,9 @@ services:
       # do container PostgreSQL. Fallback preserva instalações existentes.
       DATABASE_URL: "${APP_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}}"
       DATABASE_URL_SYNC: "${APP_DATABASE_URL_SYNC:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}}"
-      # Credencial DDL exclusiva do Alembic. Vazio mantém o fallback para
-      # DATABASE_URL_SYNC durante o rollout; depois do provisionamento de
-      # ejc_migrator, definir no .env sem expor a senha no repositório.
-      MIGRATION_DATABASE_URL: "${MIGRATION_DATABASE_URL:-}"
+      # MIGRATION_DATABASE_URL é deliberadamente AUSENTE do runtime. Quando
+      # existir um papel ejc_migrator, a esteira fornece a variável apenas ao
+      # container one-shot que executa Alembic; nunca pelo env_file do backend.
       UPLOAD_DIR: /app/uploads
       BACKUP_DIR: /app/backups
       # O entrypoint aplica `alembic upgrade head` no boot SOMENTE quando
