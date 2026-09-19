@@ -35,17 +35,26 @@ REGRAS:
 - Baseie-se APENAS no relato. É PROIBIDO inventar lei, súmula, julgado ou fato.
 - Os percentuais são estimativas técnicas internas de triagem, para priorização pelo advogado — nunca promessa de resultado a cliente.
 - Se o relato não permitir avaliar um item, use valor null e confianca baixa (<40).
-- Áreas válidas: civil, trabalhista, consumidor, familia, ambiental, criminal, previdenciario.
+- Áreas válidas: civil, trabalhista, consumidor, familia, ambiental, criminal, previdenciario, empresarial, tributario, administrativo, bancario, imobiliario, sucessoes, constitucional, digital_lgpd, transito, saude, medico, agrario, agronegocio, eleitoral, internacional, contratual, societario, licitacoes.
+- "assunto" deve ser curto e descritivo (ex.: negativação indevida, rescisão contratual).
+- "natureza_demanda" é apenas uma hipótese operacional: judicial, extrajudicial, administrativo ou consultoria.
+- Em documentos_faltantes/provas_necessarias, liste somente itens materialmente úteis ao relato; se não houver base, devolva lista vazia.
+- Em proximos_passos, indique providências preliminares verificáveis, sem assumir fatos não narrados.
 
 Responda APENAS com JSON estrito (sem markdown, sem texto fora do JSON), neste formato:
 {
   "area_direito": {"valor": "<uma das áreas válidas>", "confianca": 0-100},
+  "assunto": {"valor": "<assunto jurídico em poucas palavras>", "confianca": 0-100},
+  "natureza_demanda": {"valor": "<judicial|extrajudicial|administrativo|consultoria>", "confianca": 0-100},
   "competencia": {"valor": "<ex.: JEC, Justiça Comum Estadual, Justiça do Trabalho, Justiça Federal>", "confianca": 0-100},
-  "possivel_acao": {"valor": "<nome técnico da ação cabível>", "confianca": 0-100},
-  "urgencia": {"valor": true|false, "justificativa": "<1 frase>", "confianca": 0-100},
-  "tutela_liminar": {"valor": true|false, "justificativa": "<1 frase>", "confianca": 0-100},
+  "possivel_acao": {"valor": "<nome técnico da ação/procedimento cabível, ou null>", "confianca": 0-100},
+  "urgencia": {"valor": true|false|null, "justificativa": "<1 frase ou null>", "confianca": 0-100},
+  "tutela_liminar": {"valor": true|false|null, "justificativa": "<1 frase ou null>", "confianca": 0-100},
   "prescricao": {"dentro_prazo": true|false|null, "alerta": "<prazo legal + base legal, ou o que falta para avaliar>", "confianca": 0-100},
   "valor_causa": {"valor": <número em reais ou null>, "faixa": "<ex.: R$ 5.000 a R$ 15.000>", "confianca": 0-100},
+  "documentos_faltantes": ["<documento ainda necessário>"],
+  "provas_necessarias": ["<prova ou diligência probatória ainda necessária>"],
+  "proximos_passos": ["<providência preliminar 1>", "<providência preliminar 2>"],
   "pedidos_possiveis": ["<pedido 1>", "<pedido 2>"],
   "riscos": ["<risco 1>", "<risco 2>"],
   "chance_exito": {"percentual": 0-100, "justificativa": "<1 frase>", "confianca": 0-100}
@@ -106,6 +115,8 @@ def normalizar_painel(dados: Optional[dict]) -> dict:
     exito = d.get("chance_exito") if isinstance(d.get("chance_exito"), dict) else {}
     return {
         "area_direito": _item(d.get("area_direito")),
+        "assunto": _item(d.get("assunto")),
+        "natureza_demanda": _item(d.get("natureza_demanda")),
         "competencia": _item(d.get("competencia")),
         "possivel_acao": _item(d.get("possivel_acao")),
         "urgencia": _item(d.get("urgencia"), ("justificativa",)),
@@ -118,6 +129,9 @@ def normalizar_painel(dados: Optional[dict]) -> dict:
             "confianca": _conf(prescricao.get("confianca")),
         },
         "valor_causa": _item(d.get("valor_causa"), ("faixa",)),
+        "documentos_faltantes": _lista_str(d.get("documentos_faltantes"), 12),
+        "provas_necessarias": _lista_str(d.get("provas_necessarias"), 12),
+        "proximos_passos": _lista_str(d.get("proximos_passos"), 12),
         "pedidos_possiveis": _lista_str(d.get("pedidos_possiveis")),
         "riscos": _lista_str(d.get("riscos")),
         "chance_exito": {

@@ -314,15 +314,17 @@ def _prepara_ingestor_tjmg(monkeypatch, fake_buscar):
     monkeypatch.setattr(tjmg, "upsert_documento", fake_upsert)
 
 
-async def test_ingestor_tjmg_loga_falha_de_rede(monkeypatch, caplog):
+async def test_ingestor_tjmg_falha_total_de_rede_nao_vira_sucesso_vazio(monkeypatch, caplog):
     async def fake_buscar(palavras, por_pagina=10, *, metricas=None, **kw):
         if metricas is not None:
             metricas.update(rede_falhou=True, html_bytes=0, blocos=0)
         return []
 
     _prepara_ingestor_tjmg(monkeypatch, fake_buscar)
+    import pytest
     with caplog.at_level(logging.INFO, logger="ejc.ingestao.tjmg"):
-        assert await tjmg.ingerir(_FakeDB()) == (0, 0)
+        with pytest.raises(RuntimeError, match="falhou em todos"):
+            await tjmg.ingerir(_FakeDB())
     assert any("falha de rede" in r.message for r in caplog.records)
     assert not any("layout" in r.message for r in caplog.records)
 
