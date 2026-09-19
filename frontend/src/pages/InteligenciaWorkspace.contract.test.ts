@@ -11,6 +11,14 @@ const registry = readFileSync(
   resolve(ROOT, "src/config/moduleRegistry.tsx"),
   "utf8",
 );
+const toolsPage = readFileSync(
+  resolve(ROOT, "src/pages/FerramentasIA.tsx"),
+  "utf8",
+);
+const aiService = readFileSync(
+  resolve(ROOT, "src/services/ai.ts"),
+  "utf8",
+);
 const knowledge = readFileSync(
   resolve(ROOT, "src/pages/Conhecimento.tsx"),
   "utf8",
@@ -95,6 +103,13 @@ describe("Inteligência Jurídica — contrato canônico da auditoria 2026-09-18
     );
     expect(tabs).not.toContain("Curadoria da base de conhecimento");
     expect(governance).toContain('tab === "curadoria"');
+  });
+
+  it("consome o grupo funcional vindo do backend sem heurística local", () => {
+    expect(aiService).toContain("functional_group:");
+    expect(toolsPage).toContain("skill.functional_group");
+    expect(toolsPage).not.toContain("_GRUPO_KEYWORDS");
+    expect(toolsPage).not.toContain("classificarGrupo");
   });
 
   it("usa o normalizador canônico de erros no estimador de honorários", () => {
