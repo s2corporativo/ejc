@@ -81,8 +81,10 @@ services:
       # SHA do commit publicado — exposto em /api/health como prova de qual
       # código está no ar (deploy_vps_safe.sh exporta e confere depois).
       GIT_SHA: ${GIT_SHA:-}
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      # Runtime pode usar papel de menor privilégio sem alterar o papel bootstrap
+      # do container PostgreSQL. Fallback preserva instalações existentes.
+      DATABASE_URL: "${APP_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}}"
+      DATABASE_URL_SYNC: "${APP_DATABASE_URL_SYNC:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}}"
       # Credencial DDL exclusiva do Alembic. Vazio mantém o fallback para
       # DATABASE_URL_SYNC durante o rollout; depois do provisionamento de
       # ejc_migrator, definir no .env sem expor a senha no repositório.
