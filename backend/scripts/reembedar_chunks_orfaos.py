@@ -51,13 +51,21 @@ logger = logging.getLogger("ejc.reembedar_orfaos")
 # não filtra por status_indexacao de propósito: é exatamente o caso de doc já
 # rotulado 'indexado' com chunks órfãos que queremos capturar.
 _SQL_DOCS_COM_ORFAO = text("""
-    SELECT DISTINCT kd.id
+    SELECT DISTINCT
+           kd.id,
+           CASE WHEN kd.status_indexacao = 'erro' THEN 1 ELSE 0 END AS bucket
     FROM knowledge_docs kd
     JOIN knowledge_chunks kc ON kc.doc_id = kd.id
     WHERE kd.deleted_at IS NULL AND kd.vigente = true
       AND kc.embedding IS NULL
-      AND kd.id > :after
-    ORDER BY kd.id
+      AND (
+            CASE WHEN kd.status_indexacao = 'erro' THEN 1 ELSE 0 END > :after_bucket
+         OR (
+                CASE WHEN kd.status_indexacao = 'erro' THEN 1 ELSE 0 END = :after_bucket
+            AND kd.id > :after
+         )
+      )
+    ORDER BY bucket, kd.id
     LIMIT :limit
 """)
 
@@ -135,6 +143,10 @@ async def reembedar(
     batch_size = max(1, int(batch_size))
     limite_total = None if max_docs is None else max(1, int(max_docs))
     total_ok = total_erro = total_dry = processados = 0
+    # Cursor composto por bucket+id: docs que falham migram para bucket=1 e
+    # deixam os ainda não tentados (bucket=0) avançarem nas rodadas seguintes.
+    # Isso evita starvation sem abandonar retentativas.
+    after_bucket = -1
     after = ""
     while True:
         if limite_total is not None and processados >= limite_total:
@@ -145,12 +157,17 @@ async def reembedar(
 
         async with AsyncSessionLocal() as db:
             lote = (await db.execute(
-                _SQL_DOCS_COM_ORFAO, {"limit": limite_lote, "after": after}
+                _SQL_DOCS_COM_ORFAO,
+                {
+                    "limit": limite_lote,
+                    "after_bucket": after_bucket,
+                    "after": after,
+                },
             )).all()
             if not lote:
                 break
 
-            for (doc_id,) in lote:
+            for doc_id, _bucket in lote:
                 try:
                     async with db.begin_nested():
                         resultado = await _reembedar_doc(db, doc_id, dry_run)
@@ -178,6 +195,7 @@ async def reembedar(
             )
 
         after = str(lote[-1][0])
+        after_bucket = int(lote[-1][1])
 
     limitado = limite_total is not None and processados >= limite_total
     logger.info(
