@@ -1,5 +1,7 @@
 # ── alembic/env.py ────────────────────────────────────────────────────────────
-# Alembic usa driver SYNC (psycopg2) — DATABASE_URL_SYNC do .env.
+# Alembic usa driver SYNC (psycopg2). Em produção, prefira a credencial
+# exclusiva de migração via MIGRATION_DATABASE_URL; DATABASE_URL_SYNC permanece
+# como fallback temporário/compatibilidade para desenvolvimento e rollout.
 import os
 import sys
 from logging.config import fileConfig
@@ -15,11 +17,13 @@ import app.models  # noqa — registra todos os modelos no metadata
 config = context.config
 
 # URL do .env (nunca hardcode)
-db_url = os.environ.get(
-    "DATABASE_URL_SYNC",
-    "postgresql://ejc_user:ejc_pass@db:5432/ejc_db",
+db_url = (
+    (os.environ.get("MIGRATION_DATABASE_URL") or "").strip()
+    or (os.environ.get("DATABASE_URL_SYNC") or "").strip()
+    or "postgresql://ejc_user:ejc_pass@db:5432/ejc_db"
 )
-config.set_main_option("sqlalchemy.url", db_url)
+# ConfigParser interpreta %; URLs percent-encoded precisam duplicar o sinal.
+config.set_main_option("sqlalchemy.url", db_url.replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

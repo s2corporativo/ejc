@@ -20,6 +20,10 @@ services:
     # Teto de memória — ver a nota em `backend` abaixo. Folga generosa: um
     # Postgres morto por OOM é pior que um container lento.
     mem_limit: ${EJC_DB_MEM_LIMIT:-3g}
+    # PostgreSQL/pgvector usa shared memory para operações paralelas. O default
+    # Docker de 64 MiB ficou pequeno para HNSW/consultas vetoriais; 256 MiB é
+    # conservador dentro do teto de 3 GiB e pode ser ajustado por ambiente.
+    shm_size: "${EJC_DB_SHM_SIZE:-256m}"
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -77,8 +81,13 @@ services:
       # SHA do commit publicado — exposto em /api/health como prova de qual
       # código está no ar (deploy_vps_safe.sh exporta e confere depois).
       GIT_SHA: ${GIT_SHA:-}
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      # Runtime pode usar papel de menor privilégio sem alterar o papel bootstrap
+      # do container PostgreSQL. Fallback preserva instalações existentes.
+      DATABASE_URL: "${APP_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}}"
+      DATABASE_URL_SYNC: "${APP_DATABASE_URL_SYNC:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}}"
+      # MIGRATION_DATABASE_URL é deliberadamente AUSENTE do runtime. Quando
+      # existir um papel ejc_migrator, a esteira fornece a variável apenas ao
+      # container one-shot que executa Alembic; nunca pelo env_file do backend.
       UPLOAD_DIR: /app/uploads
       BACKUP_DIR: /app/backups
       # O entrypoint aplica `alembic upgrade head` no boot SOMENTE quando
@@ -180,8 +189,8 @@ services:
       # SHA do commit publicado — exposto em /api/health como prova de qual
       # código está no ar (deploy_vps_safe.sh exporta e confere depois).
       GIT_SHA: ${GIT_SHA:-}
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      DATABASE_URL: "${APP_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}}"
+      DATABASE_URL_SYNC: "${APP_DATABASE_URL_SYNC:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}}"
       UPLOAD_DIR: /app/uploads
       REDIS_URL: redis://redis:6379/0
       CELERY_ENABLED: "true"

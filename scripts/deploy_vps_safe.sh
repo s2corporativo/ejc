@@ -9,6 +9,7 @@ MIGRATIONS_BACKWARD_COMPATIBLE="${MIGRATIONS_BACKWARD_COMPATIBLE:-0}"
 RUN_SEEDS="${RUN_SEEDS:-0}"
 ENSURE_DAILY_BACKUP="${ENSURE_DAILY_BACKUP:-1}"
 REQUIRE_PREDEPLOY_BACKUP="${REQUIRE_PREDEPLOY_BACKUP:-1}"
+MIGRATION_DATABASE_URL_FILE="${MIGRATION_DATABASE_URL_FILE:-/opt/ejc/secrets/migration_database_url}"
 
 log() { echo "[$(date '+%F %T')] $*"; }
 timestamp() { date +"%Y%m%d_%H%M%S"; }
@@ -287,7 +288,21 @@ docker compose build backend worker
 
 if [ "$RUN_MIGRATIONS" = "1" ]; then
   log "Aplicando migration expand-only antes da troca da API"
-  docker compose run --rm --no-deps -T backend alembic upgrade head
+  if [ -f "$MIGRATION_DATABASE_URL_FILE" ]; then
+    migration_mode="$(stat -c '%a' "$MIGRATION_DATABASE_URL_FILE" 2>/dev/null || true)"
+    case "$migration_mode" in
+      400|600) ;;
+      *) die_policy "arquivo da credencial de migration deve estar em modo 0400 ou 0600" ;;
+    esac
+    MIGRATION_DATABASE_URL="$(cat "$MIGRATION_DATABASE_URL_FILE")"
+    [ -n "$MIGRATION_DATABASE_URL" ] || die_policy "arquivo da credencial de migration está vazio"
+    export MIGRATION_DATABASE_URL
+    docker compose run --rm --no-deps -T -e MIGRATION_DATABASE_URL backend alembic upgrade head
+    unset MIGRATION_DATABASE_URL
+  else
+    log "AVISO: credencial dedicada de migration ainda não provisionada; usando fallback DATABASE_URL_SYNC somente neste container one-shot."
+    docker compose run --rm --no-deps -T backend alembic upgrade head
+  fi
 else
   log "Nenhuma migration pendente; schema preservado."
 fi

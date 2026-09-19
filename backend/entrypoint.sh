@@ -22,6 +22,9 @@ export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
 # Celery era processado (o container ainda ficava "healthy" pelo healthcheck HTTP).
 if [ "$#" -gt 0 ]; then
     echo "[entrypoint] Comando explícito recebido — executando sem migrations/seed: $*"
+    # O worker não precisa conhecer a credencial bootstrap do PostgreSQL nem a
+    # credencial DDL. Mantém apenas DATABASE_URL/APP_DATABASE_URL de runtime.
+    unset POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB MIGRATION_DATABASE_URL
     exec "$@"
 fi
 
@@ -48,6 +51,9 @@ echo "[entrypoint] Semeando usuário admin (idempotente)..."
 python seeds/seed_all.py
 
 echo "[entrypoint] Iniciando uvicorn..."
+# Após migrations/seeds, a API não precisa conhecer credenciais bootstrap/DDL.
+# Remover do ambiente do PID 1 reduz o impacto de eventual comprometimento do app.
+unset POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB MIGRATION_DATABASE_URL
 # ATENÇÃO (item 11 — auditoria pré-produção): NÃO adicionar --workers N sem
 # antes migrar TODOS os contadores de segurança para armazenamento compartilhado:
 #   • anti-brute-force do login (services/security_service.py: dict em memória)
