@@ -785,6 +785,11 @@ export default function Conhecimento() {
   const [modal, setModal] = useState(false);
   const [modalPdf, setModalPdf] = useState<"pdf" | "url" | null>(null);
   const [removendo, setRemovendo] = useState<string | null>(null);
+  const [textoCitacoes, setTextoCitacoes] = useState("");
+  const [consultarDatajud, setConsultarDatajud] = useState(false);
+  const [validandoCitacoes, setValidandoCitacoes] = useState(false);
+  const [relatorioCitacoes, setRelatorioCitacoes] = useState<any>(null);
+  const [erroCitacoes, setErroCitacoes] = useState<string | null>(null);
 
   const PER_PAGE = 30;
 
@@ -822,6 +827,26 @@ export default function Conhecimento() {
     setResultados(null);
     setBusca("");
     setBuscaInput("");
+  };
+
+  const validarCitacoes = async () => {
+    if (!textoCitacoes.trim()) return;
+    setValidandoCitacoes(true);
+    setRelatorioCitacoes(null);
+    setErroCitacoes(null);
+    try {
+      const { data } = await api.post("/ai/citacoes/verificar", {
+        texto: textoCitacoes,
+        consultar_datajud: consultarDatajud,
+      });
+      setRelatorioCitacoes(data);
+    } catch (error: any) {
+      setErroCitacoes(
+        mensagemErroHttp(error, "Não foi possível verificar as citações."),
+      );
+    } finally {
+      setValidandoCitacoes(false);
+    }
   };
 
   const remover = async (id: string) => {
@@ -939,6 +964,137 @@ export default function Conhecimento() {
                 </div>
               );
             })}
+          </div>
+        )}
+      </div>
+
+      {/* Validação determinística de citações — sem LLM. */}
+      <div className="card p-5">
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Validar citações e fontes
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              Confere processos, recursos, súmulas e artigos contra a base
+              governada. A conferência automática não substitui a leitura da
+              fonte oficial antes do protocolo.
+            </p>
+          </div>
+          {relatorioCitacoes?.score != null && (
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-navy">
+              Score {relatorioCitacoes.score}/100
+            </span>
+          )}
+        </div>
+
+        <textarea
+          className="input min-h-[120px] resize-y"
+          value={textoCitacoes}
+          onChange={(event) => setTextoCitacoes(event.target.value)}
+          placeholder="Cole aqui o trecho, minuta ou lista de citações que deseja conferir…"
+          maxLength={200000}
+        />
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <label className="flex items-center gap-2 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={consultarDatajud}
+              onChange={(event) => setConsultarDatajud(event.target.checked)}
+            />
+            Confirmar números CNJ no DataJud quando a integração estiver
+            disponível
+          </label>
+          <button
+            className="btn btn-primary"
+            disabled={!textoCitacoes.trim() || validandoCitacoes}
+            onClick={() => void validarCitacoes()}
+          >
+            {validandoCitacoes ? <Spinner /> : <CheckCircle2 size={15} />}
+            Verificar citações
+          </button>
+        </div>
+
+        {erroCitacoes && (
+          <div
+            role="alert"
+            className="mt-3 rounded-lg border border-danger-200 bg-danger-50 p-3 text-sm text-danger-700"
+          >
+            {erroCitacoes}
+          </div>
+        )}
+
+        {relatorioCitacoes && (
+          <div className="mt-4 space-y-3">
+            <div className="grid gap-2 sm:grid-cols-3">
+              <div className="rounded-lg bg-slate-50 p-3">
+                <p className="text-[10px] font-bold uppercase text-slate-400">
+                  Detectadas
+                </p>
+                <p className="mt-1 font-semibold text-navy">
+                  {relatorioCitacoes.total ?? 0}
+                </p>
+              </div>
+              <div className="rounded-lg bg-slate-50 p-3">
+                <p className="text-[10px] font-bold uppercase text-slate-400">
+                  Confirmadas
+                </p>
+                <p className="mt-1 font-semibold text-navy">
+                  {relatorioCitacoes.confirmadas ?? 0}
+                </p>
+              </div>
+              <div className="rounded-lg bg-slate-50 p-3">
+                <p className="text-[10px] font-bold uppercase text-slate-400">
+                  A conferir
+                </p>
+                <p className="mt-1 font-semibold text-navy">
+                  {relatorioCitacoes.nao_encontradas ?? 0}
+                </p>
+              </div>
+            </div>
+
+            {(relatorioCitacoes.citacoes ?? []).map(
+              (citacao: any, index: number) => (
+                <div
+                  key={`${citacao.tipo ?? "citacao"}-${index}`}
+                  className="rounded-xl border border-slate-200 p-3"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <p className="text-sm font-semibold text-navy">
+                      {citacao.citacao || citacao.trecho || "Citação"}
+                    </p>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-600">
+                      {citacao.status || "não classificada"}
+                    </span>
+                  </div>
+                  {(citacao.tribunal || citacao.fonte_verificacao) && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      {[citacao.tribunal, citacao.fonte_verificacao]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  )}
+                  {citacao.aviso && (
+                    <p className="mt-2 text-xs text-slate-600">
+                      {citacao.aviso}
+                    </p>
+                  )}
+                </div>
+              ),
+            )}
+
+            {(relatorioCitacoes.avisos ?? []).length > 0 && (
+              <div className="rounded-lg border border-warn-200 bg-warn-50 p-3">
+                {(relatorioCitacoes.avisos ?? []).map(
+                  (aviso: string, index: number) => (
+                    <p key={index} className="text-xs text-warn-800">
+                      • {aviso}
+                    </p>
+                  ),
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
