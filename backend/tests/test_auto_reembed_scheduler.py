@@ -35,6 +35,7 @@ async def test_pula_quando_embeddings_indisponiveis(monkeypatch):
 async def test_reembeda_com_batch_quando_disponivel(monkeypatch):
     monkeypatch.setattr(sched.settings, "RAG_AUTO_REEMBED_ENABLED", True)
     monkeypatch.setattr(sched.settings, "RAG_AUTO_REEMBED_BATCH", 7)
+    monkeypatch.setattr(sched.settings, "RAG_AUTO_REEMBED_MAX_DOCS_PER_RUN", 11)
     monkeypatch.setattr(es, "disponivel", lambda: True)
     capturado = {}
     import scripts.reembedar_chunks_orfaos as reemb
@@ -45,6 +46,7 @@ async def test_reembeda_com_batch_quando_disponivel(monkeypatch):
     monkeypatch.setattr(reemb, "reembedar", _spy)
     await sched._reembedar_rag_orfaos()
     assert capturado.get("batch_size") == 7
+    assert capturado.get("max_docs") == 11
 
 
 async def test_erro_no_reembed_nao_propaga(monkeypatch):
