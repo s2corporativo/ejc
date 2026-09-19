@@ -33,9 +33,11 @@ describe("Inteligência Jurídica — contrato canônico da auditoria 2026-09-18
   });
 
   it("restringe Jurimetria estratégica aos gestores no agregador", () => {
-    expect(workspace).toMatch(
-      /k:\s*"jurimetria"[\s\S]*?roles:\s*GESTORES/,
+    const bloco = workspace.slice(
+      workspace.indexOf('k: "jurimetria"'),
+      workspace.indexOf('k: "conhecimento"'),
     );
+    expect(bloco).toContain("roles: GESTORES");
   });
 
   it("expõe Saúde e Governança dentro de Estado da IA", () => {
