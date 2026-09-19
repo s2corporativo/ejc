@@ -11,6 +11,10 @@ const registry = readFileSync(
   resolve(ROOT, "src/config/moduleRegistry.tsx"),
   "utf8",
 );
+const knowledge = readFileSync(
+  resolve(ROOT, "src/pages/Conhecimento.tsx"),
+  "utf8",
+);
 const knowledgeGovernance = readFileSync(
   resolve(ROOT, "src/components/KnowledgeGovernancePanel.tsx"),
   "utf8",
@@ -32,6 +36,12 @@ describe("Inteligência Jurídica — contrato canônico da auditoria 2026-09-18
     expect(workspace).toContain('sub === "pesquisa"');
     expect(workspace).toContain("<Conhecimento />");
     expect(workspace).not.toContain("<ConteudoJuridico />");
+  });
+
+  it("oferece validação determinística de citações na pesquisa jurídica", () => {
+    expect(knowledge).toContain('api.post("/ai/citacoes/verificar"');
+    expect(knowledge).toContain("consultar_datajud: consultarDatajud");
+    expect(knowledge).toContain("A conferência automática não substitui");
   });
 
   it("restringe Jurimetria estratégica aos gestores no agregador", () => {
