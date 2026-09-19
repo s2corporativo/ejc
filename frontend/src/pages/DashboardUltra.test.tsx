@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
+import { addDays, format } from "date-fns";
 
 const getMock = vi.fn();
 const patchMock = vi.fn();
@@ -34,6 +35,11 @@ vi.mock("./EntradaUnica", () => ({
 
 import DashboardUltra from "./DashboardUltra";
 
+const dataBase = new Date();
+const hoje = format(dataBase, "yyyy-MM-dd");
+const amanha = format(addDays(dataBase, 1), "yyyy-MM-dd");
+const futuro = format(addDays(dataBase, 5), "yyyy-MM-dd");
+
 const kpisOk = {
   casos: { ativos: 3, total: 9 },
   clientes_ativos: 48,
@@ -46,16 +52,17 @@ const atividadesOk = {
       id: "a1",
       tipo: "prazo",
       titulo: "Prazo final — Contestação",
-      date: "2026-09-18T11:30:00",
+      date: `${hoje}T11:30:00`,
       dias_restantes: 0,
       urgencia: "critico",
+      case_id: "c1",
       caso_titulo: "Empresa X vs. Banco Y",
     },
     {
       id: "a2",
       tipo: "tarefa",
       titulo: "Revisão de teses",
-      date: "2026-09-18T17:30:00",
+      date: `${hoje}T17:30:00`,
       dias_restantes: 0,
       urgencia: "normal",
       caso_titulo: null,
@@ -64,9 +71,10 @@ const atividadesOk = {
       id: "a3",
       tipo: "intimacao",
       titulo: "Intimação — audiência",
-      date: "2026-09-19T09:00:00",
+      date: `${amanha}T09:00:00`,
       dias_restantes: 1,
       urgencia: "atencao",
+      case_id: "c2",
       caso_titulo: "João Silva vs. Plano de Saúde",
     },
   ],
@@ -79,6 +87,10 @@ const casosOk = {
       titulo: "Empresa X vs. Banco Y",
       status: "aberto",
       area: "civel",
+      prioridade: "alta",
+      risco: "alto",
+      proxima_acao: "Protocolar contestação",
+      proxima_acao_prazo: `${hoje}T18:00:00`,
       numero_processo: "1001234-56.2023.8.26.0100",
     },
     {
@@ -86,6 +98,8 @@ const casosOk = {
       titulo: "João Silva vs. Plano de Saúde",
       status: "encerrado",
       area: "saude",
+      prioridade: "baixa",
+      proxima_acao: "Arquivar comprovantes",
       numero_processo: null,
       numero_interno: "DPT-2026-0042",
     },
@@ -97,9 +111,32 @@ const casosOk = {
 
 const tarefasOk = {
   data: [
-    { id: "t1", titulo: "Revisar petição inicial", status: "pendente" },
-    { id: "t2", titulo: "Retorno para cliente — Grupo Santos", status: "pendente" },
-    { id: "t3", titulo: "Estudo tema 1.234/STJ", status: "concluida" },
+    {
+      id: "t1",
+      titulo: "Revisar petição inicial",
+      status: "pendente",
+      prioridade: "alta",
+      data_limite: hoje,
+    },
+    {
+      id: "t2",
+      titulo: "Retorno para cliente — Grupo Santos",
+      status: "pendente",
+      data_limite: null,
+    },
+    {
+      id: "t3",
+      titulo: "Estudo tema 1.234/STJ",
+      status: "concluida",
+      data_limite: hoje,
+      concluida_em: `${hoje}T08:00:00`,
+    },
+    {
+      id: "t4",
+      titulo: "Tarefa futura que não pertence à rotina de hoje",
+      status: "pendente",
+      data_limite: futuro,
+    },
   ],
 };
 
@@ -179,7 +216,7 @@ describe("DashboardUltra — identidade premium DPT", () => {
     expect(screen.queryByText("Prazo final — Contestação")).not.toBeTruthy();
   });
 
-  it("lista casos em destaque com chip de status honesto", async () => {
+  it("prioriza casos em destaque por risco, prazo e próxima ação", async () => {
     mockGetOk();
     renderizar();
 
@@ -190,6 +227,33 @@ describe("DashboardUltra — identidade premium DPT", () => {
     expect(chips.length).toBeGreaterThan(0);
     expect(screen.getByText("Conclusão")).toBeTruthy();
     expect(screen.getByText(/Proc. nº 1001234-56\.2023\.8\.26\.0100/)).toBeTruthy();
+    expect(screen.getByText(/Próxima: Protocolar contestação/)).toBeTruthy();
+  });
+
+  it("filtra a agenda pelo dia selecionado no calendário", async () => {
+    mockGetOk();
+    renderizar();
+
+    const hojeLabel = format(dataBase, "dd/MM/yyyy");
+    const botaoDia = await screen.findByRole("button", { name: hojeLabel });
+    fireEvent.click(botaoDia);
+
+    expect(screen.getByRole("button", { name: "Remover filtro de data" })).toBeTruthy();
+    expect(screen.getByText("Prazo final — Contestação")).toBeTruthy();
+    expect(screen.queryByText("Intimação — audiência")).not.toBeTruthy();
+  });
+
+  it("mostra na rotina apenas tarefas acionáveis hoje e conclusões do dia", async () => {
+    mockGetOk();
+    renderizar();
+
+    expect(await screen.findByText("Revisar petição inicial")).toBeTruthy();
+    expect(screen.getByText("Retorno para cliente — Grupo Santos")).toBeTruthy();
+    expect(screen.getByText("Estudo tema 1.234/STJ")).toBeTruthy();
+    expect(
+      screen.queryByText("Tarefa futura que não pertence à rotina de hoje"),
+    ).not.toBeTruthy();
+    expect(screen.getByText("1 de 3 concluídas")).toBeTruthy();
   });
 
   it("conclui tarefa da rotina via PATCH e reage ao clique", async () => {
