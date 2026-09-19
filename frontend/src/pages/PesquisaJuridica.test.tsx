@@ -100,6 +100,6 @@ describe("PesquisaJuridica — P0 Inteligência Jurídica", () => {
     );
     expect(await screen.findByText("Verificada")).toBeTruthy();
     expect(screen.getByText("100%")).toBeTruthy();
-    expect(screen.getByText(/DataJud/)).toBeTruthy();
+    expect(screen.getByText(/Fonte de verificação:/).textContent).toContain("DataJud");
   });
 });
