@@ -182,7 +182,13 @@ async def collect_operational_states(db) -> dict[str, dict[str, Any]]:
     try:
         from app.models.rag import FonteIngestao
 
-        map_slug = {"djen": "djen", "tjmg": "tjmg", "lexml": "lexml"}
+        map_slug = {
+            "djen": "djen",
+            "tjmg": "tjmg",
+            "lexml": "lexml",
+            "anpd": "anpd",
+            "normas_rfb": "normas_rfb",
+        }
         rows = (
             await db.execute(
                 select(FonteIngestao).where(FonteIngestao.slug.in_(list(map_slug)))
@@ -539,6 +545,22 @@ def build_integration_status(
             ready_detail=("Federa legislação estadual (ALMG)/municipal (Betim) e "
                           "jurisprudência de TJ/TRT/TRF/TST/STJ/STF por temas."),
             mode=f"até {settings.LEXML_INGEST_MAX_POR_TEMA} itens/tema",
+        ),
+        _status(
+            key="anpd",
+            label="ANPD — regulamentações e guias",
+            group="Conhecimento",
+            enabled=settings.CONHECIMENTO_INGEST_ENABLED,
+            configured=True,
+            ready_detail="Fonte oficial ANPD habilitada para ingestão de conhecimento.",
+        ),
+        _status(
+            key="normas_rfb",
+            label="Normas RFB",
+            group="Conhecimento",
+            enabled=settings.CONHECIMENTO_INGEST_ENABLED,
+            configured=True,
+            ready_detail="Fonte de normas tributárias RFB habilitada para ingestão de conhecimento.",
         ),
         _status(
             key="transparencia",
