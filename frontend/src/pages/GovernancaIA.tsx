@@ -3,7 +3,6 @@ import { useSearchParams } from "react-router";
 import { toast } from "../components/Toast";
 import {
   BrainCircuit,
-  Database,
   FileCheck2,
   Gavel,
   ListChecks,
@@ -217,11 +216,6 @@ export default function GovernancaIA() {
 
   const tabs = [
     { k: "visao", label: "Visão geral", icon: BrainCircuit },
-    {
-      k: "curadoria",
-      label: "Curadoria da base de conhecimento",
-      icon: Database,
-    },
     { k: "mgjec", label: "MG/JEC", icon: Gavel },
     { k: "prompts", label: "Prompts", icon: SlidersHorizontal },
     { k: "fontes", label: "Fontes", icon: FileCheck2 },
@@ -233,7 +227,7 @@ export default function GovernancaIA() {
       <PageHeader
         eyebrow="Governança"
         title="Governança da IA"
-        subtitle="Curadoria, prompts, revisão do advogado, fontes e controles de risco da inteligência jurídica"
+        subtitle="Custos, prompts, fontes, revisão humana e controles de risco da inteligência jurídica"
       />
 
       <div className="flex flex-wrap gap-2 mb-5">
