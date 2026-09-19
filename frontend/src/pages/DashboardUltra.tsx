@@ -236,7 +236,7 @@ export default function DashboardUltra() {
   }, [carregar]);
 
   const alternarTarefa = useCallback(async (tarefa: Tarefa) => {
-    const novoStatus = tarefa.status === "concluida" ? "pendente" : "concluida";
+    const novoStatus = tarefa.status === "concluida" ? "a_fazer" : "concluida";
     const novoConcluidaEm =
       novoStatus === "concluida" ? new Date().toISOString() : null;
     setTarefas((atual) =>
