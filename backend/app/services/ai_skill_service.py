@@ -82,7 +82,7 @@ def functional_group(skill: EjcSkill) -> str:
     Mantém a semântica histórica: empate preserva o primeiro grupo com maior
     score e ausência de palavra-chave cai em produzir.
     """
-    texto = f"{skill.name} {skill.display_name} {skill.description or ''}".lower()
+    texto = f"{skill.name} {skill.description or ''}".lower()
     melhor = "produzir"
     melhor_score = 0
     for grupo, keywords in _FUNCTIONAL_GROUP_KEYWORDS.items():
