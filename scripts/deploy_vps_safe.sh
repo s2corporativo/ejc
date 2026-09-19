@@ -67,6 +67,30 @@ cleanup_temp_files() {
   rm -f -- "$DEPLOYED_SHA_TMP" >/dev/null 2>&1 || true
 }
 
+connect_optional_evolution_network() {
+  # Evolution API é operada fora do compose do EJC nesta VPS. Se a rede
+  # dedicada existir, reconecta backend/worker após force-recreate. Em hosts
+  # sem Evolution, este bloco é no-op e não cria dependência de infraestrutura.
+  if ! docker network inspect evolution_net >/dev/null 2>&1; then
+    log "Evolution API: rede evolution_net ausente; integração WhatsApp permanece opcional."
+    return 0
+  fi
+
+  local container
+  for container in ejc_backend ejc_worker; do
+    docker inspect "$container" >/dev/null 2>&1 || continue
+    if docker inspect -f '{{json .NetworkSettings.Networks}}' "$container" \
+      | grep -q '"evolution_net"'; then
+      continue
+    fi
+    if docker network connect evolution_net "$container"; then
+      log "Evolution API: ${container} conectado à rede interna evolution_net."
+    else
+      log "AVISO: não foi possível conectar ${container} à evolution_net; WhatsApp seguirá degradado."
+    fi
+  done
+}
+
 # Restaura o snapshot transacional do .env somente quando o conteúdo mudou;
 # se estiver idêntico, limita-se a garantir modo 0600 sem reescrever o arquivo.
 restore_env() {
@@ -116,6 +140,7 @@ rollback_transaction() {
     export GIT_SHA="${OLD_GIT_SHA:-desconhecido}"
     restore_previous_image_refs || log "ERRO CRÍTICO: restauração de referências de imagem ficou incompleta."
     RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate backend worker frontend
+    connect_optional_evolution_network
     sleep 8
     if bash "$APP_DIR/scripts/post_deploy_check.sh"; then
       log "Rollback confirmado pelo post-deploy check."
@@ -307,6 +332,7 @@ fi
 
 log "Atualizando worker"
 RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate worker
+connect_optional_evolution_network
 
 if [ "$ENSURE_DAILY_BACKUP" = "1" ]; then
   log "Garantindo agendamento e prova recente do backup cifrado"
