@@ -251,7 +251,7 @@ export default function InteligenciaWorkspace() {
             {tab === "honorarios" && <EstimadorHonorarios />}
             {tab === "jurimetria" && <Jurimetria />}
             {tab === "conhecimento" && sub === "pesquisa" && (
-              <Conhecimento />
+              <PesquisaJuridica />
             )}
             {tab === "conhecimento" && sub === "curadoria" && (
               <ConhecimentoGovernado />
