@@ -56,12 +56,41 @@ async def coletar_estados_operacionais(db: AsyncSession) -> dict[str, dict[str, 
 
     try:
         from app.models.processo_eletronico import CredencialProcessoEletronico
-        qtd = int((await db.execute(
-            select(func.count()).select_from(CredencialProcessoEletronico).where(CredencialProcessoEletronico.ativo.is_(True))
-        )).scalar() or 0)
+
+        ativas = int(
+            (
+                await db.execute(
+                    select(func.count())
+                    .select_from(CredencialProcessoEletronico)
+                    .where(CredencialProcessoEletronico.ativo.is_(True))
+                )
+            ).scalar()
+            or 0
+        )
+        verificadas = int(
+            (
+                await db.execute(
+                    select(func.count())
+                    .select_from(CredencialProcessoEletronico)
+                    .where(
+                        CredencialProcessoEletronico.ativo.is_(True),
+                        CredencialProcessoEletronico.ultima_verificacao.is_not(None),
+                    )
+                )
+            ).scalar()
+            or 0
+        )
         estados["processo_eletronico"] = {
-            "state": "ok" if qtd else "nao_homologado",
-            "detail": f"Processo eletrônico com {qtd} credencial(is) ativa(s)." if qtd else "Infraestrutura MNI disponível, mas não há credencial ativa de tribunal.",
+            "state": "ok" if verificadas else "nao_homologado",
+            "detail": (
+                f"Processo eletrônico com {verificadas} credencial(is) ativa(s) já verificadas."
+                if verificadas
+                else (
+                    f"Há {ativas} credencial(is) MNI ativa(s), mas nenhuma possui verificação registrada."
+                    if ativas
+                    else "Infraestrutura MNI disponível, mas não há credencial ativa de tribunal."
+                )
+            ),
         }
     except Exception:
         await db.rollback()
@@ -69,12 +98,35 @@ async def coletar_estados_operacionais(db: AsyncSession) -> dict[str, dict[str, 
     if get_settings().JUDICIAL_FILING_ENABLED:
         try:
             from app.models.ajuizamento import JudicialIntegrationProfile
-            qtd = int((await db.execute(
-                select(func.count()).select_from(JudicialIntegrationProfile).where(JudicialIntegrationProfile.ativo.is_(True))
-            )).scalar() or 0)
+
+            homologados = int(
+                (
+                    await db.execute(
+                        select(func.count())
+                        .select_from(JudicialIntegrationProfile)
+                        .where(
+                            JudicialIntegrationProfile.ativo.is_(True),
+                            JudicialIntegrationProfile.homologated_at.is_not(None),
+                            JudicialIntegrationProfile.authorized.is_(True),
+                            JudicialIntegrationProfile.production_endpoint_verified.is_(True),
+                            JudicialIntegrationProfile.credentials_valid.is_(True),
+                            JudicialIntegrationProfile.filing_supported.is_(True),
+                        )
+                    )
+                ).scalar()
+                or 0
+            )
             estados["ajuizamento"] = {
-                "state": "ok" if qtd else "nao_homologado",
-                "detail": f"Ajuizamento possui {qtd} perfil(is) ativo(s) de tribunal." if qtd else "Ajuizamento habilitado sem perfil de tribunal ativo/homologado.",
+                "state": "ok" if homologados else "nao_homologado",
+                "detail": (
+                    f"Ajuizamento possui {homologados} perfil(is) integralmente homologado(s)."
+                    if homologados
+                    else (
+                        "Ajuizamento habilitado sem perfil que reúna homologação, "
+                        "autorização, endpoint de produção verificado, credencial válida "
+                        "e suporte a protocolo."
+                    )
+                ),
             }
         except Exception:
             await db.rollback()
