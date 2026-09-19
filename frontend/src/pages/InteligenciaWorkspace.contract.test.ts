@@ -19,8 +19,12 @@ const aiService = readFileSync(
   resolve(ROOT, "src/services/ai.ts"),
   "utf8",
 );
-const knowledge = readFileSync(
-  resolve(ROOT, "src/pages/Conhecimento.tsx"),
+const legalResearchPage = readFileSync(
+  resolve(ROOT, "src/pages/PesquisaJuridica.tsx"),
+  "utf8",
+);
+const legalResearchService = readFileSync(
+  resolve(ROOT, "src/services/legalResearch.ts"),
   "utf8",
 );
 const knowledgeGovernance = readFileSync(
@@ -39,17 +43,19 @@ const fees = readFileSync(
 describe("Inteligência Jurídica — contrato canônico da auditoria 2026-09-18", () => {
   it("liga Pesquisa e validação de fontes à base governada real", () => {
     expect(workspace).toContain(
-      'const Conhecimento = lazy(() => import("./Conhecimento"))',
+      'const PesquisaJuridica = lazy(() => import("./PesquisaJuridica"))',
     );
     expect(workspace).toContain('sub === "pesquisa"');
-    expect(workspace).toContain("<Conhecimento />");
+    expect(workspace).toContain("<PesquisaJuridica />");
     expect(workspace).not.toContain("<ConteudoJuridico />");
   });
 
   it("oferece validação determinística de citações na pesquisa jurídica", () => {
-    expect(knowledge).toContain('api.post("/ai/citacoes/verificar"');
-    expect(knowledge).toContain("consultar_datajud: consultarDatajud");
-    expect(knowledge).toContain("A conferência automática não substitui");
+    expect(legalResearchService).toContain('"/ai/citacoes/verificar"');
+    expect(legalResearchService).toContain("consultar_datajud: consultarDatajud");
+    expect(legalResearchPage).toContain("Validação determinística anti-alucinação");
+    expect(legalResearchPage).toContain("confira");
+    expect(legalResearchPage).toContain("fonte oficial");
   });
 
   it("restringe Jurimetria estratégica aos gestores no agregador", () => {
