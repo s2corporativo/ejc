@@ -114,14 +114,14 @@ const tarefasOk = {
     {
       id: "t1",
       titulo: "Revisar petição inicial",
-      status: "pendente",
+      status: "a_fazer",
       prioridade: "alta",
       data_limite: hoje,
     },
     {
       id: "t2",
       titulo: "Retorno para cliente — Grupo Santos",
-      status: "pendente",
+      status: "a_fazer",
       data_limite: null,
     },
     {
@@ -134,7 +134,7 @@ const tarefasOk = {
     {
       id: "t4",
       titulo: "Tarefa futura que não pertence à rotina de hoje",
-      status: "pendente",
+      status: "a_fazer",
       data_limite: futuro,
     },
   ],
@@ -269,6 +269,23 @@ describe("DashboardUltra — identidade premium DPT", () => {
     await waitFor(() =>
       expect(patchMock).toHaveBeenCalledWith("/tasks/t1", {
         status: "concluida",
+      }),
+    );
+  });
+
+  it("reabre tarefa concluída com status canônico a_fazer", async () => {
+    mockGetOk();
+    patchMock.mockResolvedValue({ data: {} });
+    renderizar();
+
+    const botao = await screen.findByRole("button", {
+      name: /Estudo tema 1\.234\/STJ/,
+    });
+    fireEvent.click(botao);
+
+    await waitFor(() =>
+      expect(patchMock).toHaveBeenCalledWith("/tasks/t3", {
+        status: "a_fazer",
       }),
     );
   });
