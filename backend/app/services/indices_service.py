@@ -170,6 +170,9 @@ async def _db_carregar(codigo: int) -> dict | None:
 
 
 async def _ensure_cache_table(db) -> None:
+    from app.core.database import runtime_ddl_permitido
+    if not runtime_ddl_permitido(db):
+        return
     from sqlalchemy import text as sqltext
     await db.execute(sqltext("""
         CREATE TABLE IF NOT EXISTS indices_bcb_cache (
