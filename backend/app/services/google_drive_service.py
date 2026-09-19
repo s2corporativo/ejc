@@ -444,6 +444,9 @@ def _resolver_categoria(
 
 
 async def ensure_sync_state_table(db: AsyncSession) -> None:
+    from app.core.database import runtime_ddl_permitido
+    if not runtime_ddl_permitido(db):
+        return
     await db.execute(sqltext("""
         CREATE TABLE IF NOT EXISTS google_drive_sync_state (
             folder_id TEXT PRIMARY KEY,
