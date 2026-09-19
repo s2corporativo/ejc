@@ -37,10 +37,11 @@ function listaParaTexto(itens: string[]): string {
 }
 
 function textoParaLista(texto: string): string[] {
+  // Mantém a última linha vazia enquanto o advogado digita. O schema do
+  // backend remove vazios antes de persistir o snapshot confirmado.
   return texto
     .split("\n")
     .map((item) => item.trim())
-    .filter(Boolean)
     .slice(0, 20);
 }
 
