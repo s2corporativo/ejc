@@ -167,6 +167,7 @@ def _acao_contextual(item: dict) -> dict:
         "display_name": skill.display_name,
         "description": skill.description,
         "area": skill.area,
+        "functional_group": ai_skill_service.functional_group(skill),
         "requires_case": skill.requires_case,
         "requires_human_review": skill.requires_human_review,
         "oab_restricted": skill.oab_restricted,
@@ -266,7 +267,22 @@ async def listar_skills(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    return await ai_skill_service.listar_skills(db, area=area)
+    skills = await ai_skill_service.listar_skills(db, area=area)
+    return [
+        {
+            "id": skill.id,
+            "name": skill.name,
+            "display_name": skill.display_name,
+            "description": skill.description,
+            "engine": skill.engine,
+            "area": skill.area,
+            "functional_group": ai_skill_service.functional_group(skill),
+            "requires_case": skill.requires_case,
+            "requires_human_review": skill.requires_human_review,
+            "oab_restricted": skill.oab_restricted,
+        }
+        for skill in skills
+    ]
 
 
 @router.post("/execute", response_model=SkillExecuteResponse, dependencies=[Depends(rate_limit("ai-skills-execute", 15))])

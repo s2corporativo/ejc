@@ -59,98 +59,6 @@ const FUNCIONAL_LABELS: Record<
   preparar: { label: "Preparar", icon: "📦" },
 };
 
-const _GRUPO_KEYWORDS: Record<FuncionalGrupo, string[]> = {
-  analisar: [
-    "raio-x",
-    "raiox",
-    "analise",
-    "analisar",
-    "resumo",
-    "resumir",
-    "cronologia",
-    "extrair",
-    "identificar",
-    "localizar",
-    "avaliar",
-    "casador",
-    "detector",
-    "auditor",
-    "provas",
-    "inconsist",
-    "risc",
-    "dossie",
-    "score",
-    "checklist",
-  ],
-  produzir: [
-    "peticao",
-    "contestacao",
-    "replica",
-    "recurso",
-    "contrato",
-    "parecer",
-    "notificacao",
-    "procuracao",
-    "relatorio",
-    "redigir",
-    "gerar",
-    "minuta",
-    "peca",
-    "embargos",
-    "agravo",
-    "apelacao",
-    "mandado",
-    "habeas",
-    "cumprimento",
-  ],
-  revisar: [
-    "corrigir",
-    "conferir",
-    "revisar",
-    "verificar",
-    "coerenc",
-    "fundament",
-    "linguagem",
-    "calculo",
-    "valor",
-    "ausente",
-    "contradicao",
-    "jurisprudenc",
-  ],
-  preparar: [
-    "audiencia",
-    "reuniao",
-    "negociacao",
-    "sustentacao",
-    "diligencia",
-    "checklist",
-    "preparar",
-    "estrateg",
-    "defesa",
-    "orient",
-  ],
-};
-
-function classificarGrupo(skill: {
-  name: string;
-  description?: string | null;
-}): FuncionalGrupo {
-  const texto = `${skill.name} ${skill.description || ""}`.toLowerCase();
-  let melhor: FuncionalGrupo = "produzir";
-  let melhorScore = 0;
-  for (const [grupo, keywords] of Object.entries(_GRUPO_KEYWORDS) as [
-    FuncionalGrupo,
-    string[],
-  ][]) {
-    const score = keywords.filter((kw) => texto.includes(kw)).length;
-    if (score > melhorScore) {
-      melhorScore = score;
-      melhor = grupo;
-    }
-  }
-  return melhor;
-}
-
 const MEDIA_EXTENSIONS = [
   ".flac",
   ".mp3",
@@ -208,7 +116,7 @@ export default function FerramentasIA() {
     const termo = busca.trim().toLocaleLowerCase("pt-BR");
     return skills.filter((skill) => {
       if (area !== "todas" && skill.area !== area) return false;
-      if (grupo !== "todos" && classificarGrupo(skill) !== grupo) return false;
+      if (grupo !== "todos" && skill.functional_group !== grupo) return false;
       if (!termo) return true;
       return `${skill.display_name} ${skill.description || ""}`
         .toLocaleLowerCase("pt-BR")
@@ -375,8 +283,8 @@ export default function FerramentasIA() {
                 }`}
               >
                 <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  {FUNCIONAL_LABELS[classificarGrupo(skill)].icon}{" "}
-                  {FUNCIONAL_LABELS[classificarGrupo(skill)].label} ·{" "}
+                  {FUNCIONAL_LABELS[skill.functional_group].icon}{" "}
+                  {FUNCIONAL_LABELS[skill.functional_group].label} ·{" "}
                   {AREA_LABEL[skill.area] || skill.area}
                 </span>
                 <span className="mt-0.5 block text-sm font-semibold text-slate-800">

@@ -235,6 +235,8 @@ export default function KnowledgeGovernancePanel() {
   const [health, setHealth] = useState<Health | null>(null);
   const [coverage, setCoverage] = useState<Coverage | null>(null);
   const [docs, setDocs] = useState<DocListItem[]>([]);
+  const [docsPage, setDocsPage] = useState(1);
+  const [docsTotal, setDocsTotal] = useState(0);
   const [selectedId, setSelectedId] = useState("");
   const [details, setDetails] = useState<DocDetails | null>(null);
   const [form, setForm] = useState<GovernanceForm>(INITIAL_FORM);
@@ -248,19 +250,22 @@ export default function KnowledgeGovernancePanel() {
   // notas obrigatórias + POST /rag/governanca/docs/{id}/revisar).
   const [revisao, setRevisao] = useState<DecisaoRevisao | null>(null);
 
-  const loadOverview = async () => {
+  const loadOverview = async (page = docsPage) => {
     setLoading(true);
     try {
       const [healthRes, coverageRes, docsRes] = await Promise.all([
         api.get("/rag/governanca/saude"),
         api.get("/rag/governanca/cobertura"),
-        api.get("/rag/docs", { params: { page: 1, page_size: 100 } }),
+        api.get("/rag/docs", { params: { page, page_size: 50 } }),
       ]);
       setHealth(healthRes.data as Health);
       setCoverage(coverageRes.data as Coverage);
       const list = asList(docsRes.data) as DocListItem[];
       setDocs(list);
-      setSelectedId((current) => current || list[0]?.id || "");
+      setDocsTotal(Number(docsRes.data?.total ?? list.length));
+      setSelectedId((current) =>
+        list.some((doc) => doc.id === current) ? current : list[0]?.id || "",
+      );
     } catch (error: any) {
       toast.error(
         mensagemErroHttp(error, "Falha ao carregar a governança da base."),
@@ -271,8 +276,8 @@ export default function KnowledgeGovernancePanel() {
   };
 
   useEffect(() => {
-    void loadOverview();
-  }, []);
+    void loadOverview(docsPage);
+  }, [docsPage]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -418,6 +423,7 @@ export default function KnowledgeGovernancePanel() {
   };
 
   const summary = health?.summary;
+  const docsTotalPages = Math.max(1, Math.ceil(docsTotal / 50));
 
   return (
     <section className="card overflow-hidden">
@@ -672,6 +678,36 @@ export default function KnowledgeGovernancePanel() {
                           </option>
                         ))}
                       </select>
+                      {docsTotalPages > 1 && (
+                        <div className="mt-2 flex items-center justify-between gap-2">
+                          <span className="text-[11px] text-slate-400">
+                            Página {docsPage} de {docsTotalPages} · {docsTotal}{" "}
+                            documento(s)
+                          </span>
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              className="btn btn-ghost px-2 py-1 text-xs"
+                              disabled={docsPage <= 1 || loading}
+                              onClick={() =>
+                                setDocsPage((page) => Math.max(1, page - 1))
+                              }
+                            >
+                              Anterior
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-ghost px-2 py-1 text-xs"
+                              disabled={docsPage >= docsTotalPages || loading}
+                              onClick={() =>
+                                setDocsPage((page) => Math.min(docsTotalPages, page + 1))
+                              }
+                            >
+                              Próxima
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <div>
                       <label className="label">Pergunta de teste</label>

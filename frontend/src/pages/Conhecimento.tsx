@@ -71,7 +71,8 @@ const CATS: { value: string; label: string; icon: any; cor: string }[] = [
   },
 ];
 
-const catMeta = (v: string) => CATS.find((c) => c.value === v) ?? CATS[7];
+const catMeta = (v: string) =>
+  CATS.find((c) => c.value === v) ?? CATS[CATS.length - 1];
 
 // ── Status badge ─────────────────────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {

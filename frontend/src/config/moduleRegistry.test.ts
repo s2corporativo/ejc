@@ -312,7 +312,7 @@ describe("navegação canônica do shell (Fase 4)", () => {
       STAFF_ROUTES.map((route) => [route.key, route.label]),
     );
     expect(labels.get("atividades")).toBe("Prazos e Agenda");
-    expect(labels.get("inteligencia")).toBe("IA Jurídica");
+    expect(labels.get("inteligencia")).toBe("Inteligência Jurídica");
     expect(labels.get("configuracoes")).toBe("Configurações");
     expect(labels.get("financeiro")).toBe("Financeiro");
   });

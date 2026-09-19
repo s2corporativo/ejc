@@ -11,6 +11,7 @@ import {
   Wrench,
   AlertTriangle,
   Calculator,
+  ShieldCheck,
 } from "lucide-react";
 import ErrorBoundary from "../components/ErrorBoundary";
 import {
@@ -29,16 +30,25 @@ const AgenteIA = lazy(() => import("./AgenteIA"));
 const IA = lazy(() => import("./IA"));
 const AssistenteIA = lazy(() => import("./AssistenteIA"));
 const FerramentasIA = lazy(() => import("./FerramentasIA"));
-const ConteudoJuridico = lazy(() => import("./ConteudoJuridico"));
+const PesquisaJuridica = lazy(() => import("./PesquisaJuridica"));
 const Jurimetria = lazy(() => import("./Jurimetria"));
 const ConhecimentoGovernado = lazy(() => import("./ConhecimentoGovernado"));
 const DashboardIA = lazy(() => import("./DashboardIA"));
+const GovernancaIA = lazy(() => import("./GovernancaIA"));
 const EstimadorHonorarios = lazy(
   () => import("../components/EstimadorHonorarios"),
 );
 
 const GESTORES: readonly string[] = ["superadmin", "admin", "socio"];
 const ADVOGADOS: readonly string[] = ["superadmin", "admin", "socio", "advogado"];
+const EQUIPE_JURIDICA_UI: readonly string[] = [
+  "superadmin",
+  "admin",
+  "socio",
+  "advogado",
+  "advogado_auxiliar",
+  "estagiario",
+];
 
 const TABS = [
   {
@@ -65,7 +75,12 @@ const TABS = [
     icon: Calculator,
     roles: ADVOGADOS,
   },
-  { k: "jurimetria", label: "Analisar dados e resultados", icon: Scale },
+  {
+    k: "jurimetria",
+    label: "Analisar dados e resultados",
+    icon: Scale,
+    roles: EQUIPE_JURIDICA_UI,
+  },
   {
     k: "conhecimento",
     label: "Conhecimento jurídico",
@@ -85,6 +100,10 @@ const TABS = [
     label: "Estado da inteligência artificial",
     icon: Activity,
     roles: GESTORES,
+    subs: [
+      { k: "saude", label: "Saúde", icon: Activity },
+      { k: "governanca", label: "Governança", icon: ShieldCheck },
+    ],
   },
 ] as const;
 
@@ -240,12 +259,13 @@ export default function InteligenciaWorkspace() {
             {tab === "honorarios" && <EstimadorHonorarios />}
             {tab === "jurimetria" && <Jurimetria />}
             {tab === "conhecimento" && sub === "pesquisa" && (
-              <ConteudoJuridico />
+              <PesquisaJuridica />
             )}
             {tab === "conhecimento" && sub === "curadoria" && (
               <ConhecimentoGovernado />
             )}
-            {tab === "saude" && <DashboardIA />}
+            {tab === "saude" && sub === "saude" && <DashboardIA />}
+            {tab === "saude" && sub === "governanca" && <GovernancaIA />}
           </Suspense>
         </ErrorBoundary>
       </div>

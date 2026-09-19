@@ -19,6 +19,7 @@ export type Skill = {
   description?: string | null;
   engine: string;
   area: string;
+  functional_group: "analisar" | "produzir" | "revisar" | "preparar";
   requires_case: boolean;
   requires_human_review: boolean;
   oab_restricted: boolean;

@@ -12,6 +12,11 @@ vi.mock("../lib/api", () => ({
   },
 }));
 
+vi.mock("../stores/auth", () => ({
+  useAuth: (selector: (state: { user: { role: string } }) => unknown) =>
+    selector({ user: { role: "socio" } }),
+}));
+
 function resposta(url: string) {
   if (url === "/jurimetria/desfechos") {
     return {

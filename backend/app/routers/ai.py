@@ -71,6 +71,9 @@ async def verificar_citacoes_juris(
 
     Sem chamada a LLM (100% determinístico) — por isso não gera AILog.
     """
+    requer_equipe_juridica(
+        cu, "Verificação de citações restrita à equipe jurídica"
+    )
     from app.services.verificador_jurisprudencia import verificar_jurisprudencia
     return await verificar_jurisprudencia(
         db, req.texto, consultar_datajud=req.consultar_datajud)
