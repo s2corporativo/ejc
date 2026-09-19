@@ -350,7 +350,12 @@ async def ingerir_arquivos_lote(
                 doc.tipo = classificacao.get("tipo_catalogo")
                 doc.descricao = f"Entrada Universal — lote {batch.id}; confiança média {meta_extracao.get('confianca_media', 0):.0%}"
             except Exception as exc:
-                logger.warning("Extração falhou para %s: %s", virtual["nome"], exc)
+                # LGPD: filename pode conter nome/CPF/número de processo.
+                # O log usa apenas identificadores técnicos e a classe do erro.
+                logger.warning(
+                    "Extração falhou no documento %s do lote %s (%s)",
+                    doc.id, batch.id, type(exc).__name__,
+                )
                 item.extraction_status = "erro"
                 item.extraction_meta = {"paginas": [], "page_count": 0, "confianca_media": 0, "avisos": [str(exc)[:300]]}
                 item.classification = {"tipo": "outro_documento", "nome": "Não classificado", "confianca": 0, "metodo": "falha_extracao"}
