@@ -7,6 +7,7 @@ import { toast } from "../components/Toast";
 import { asList } from "../lib/list";
 import { mensagemErroHttp } from "../lib/iaErro";
 import { useCarregar } from "../lib/useCarregar";
+import { useAuth } from "../stores/auth";
 
 const TRIBUNAIS = ["TJMG", "STJ", "STF", "TRF1", "TRT3"];
 
@@ -80,6 +81,10 @@ function fmtData(value: string | null | undefined) {
 }
 
 export default function Jurimetria() {
+  const user = useAuth((state) => state.user);
+  const podeVerEstrategico = Boolean(
+    user?.role && ["superadmin", "admin", "socio"].includes(user.role),
+  );
   const [desfechos, setDesfechos] = useState<any>(null);
   const [ragCoverage, setRagCoverage] = useState<any>(null);
   const [mgCoverage, setMgCoverage] = useState<any>(null);
@@ -94,6 +99,7 @@ export default function Jurimetria() {
   const [loadingPred, setLoadingPred] = useState(false);
 
   const prever = async () => {
+    if (!podeVerEstrategico) return;
     setLoadingPred(true);
     try {
       const r = await api.get(
@@ -124,7 +130,9 @@ export default function Jurimetria() {
   const carga = useCarregar(
     async () => {
       const [a, b, c, d] = await Promise.allSettled([
-        api.get("/jurimetria/overview"),
+        podeVerEstrategico
+          ? api.get("/jurimetria/overview")
+          : Promise.resolve({ data: null }),
         api.get("/jurimetria/por-area"),
         api.get("/jurimetria/por-tribunal"),
         api.get("/jurimetria/por-tese"),
@@ -140,7 +148,7 @@ export default function Jurimetria() {
         tese: d.status === "fulfilled" ? asList(d.value.data) : [],
       };
     },
-    [],
+    [podeVerEstrategico],
     {
       vazio: () => false,
       fallbackErro: "Não foi possível carregar a jurimetria.",
@@ -153,10 +161,14 @@ export default function Jurimetria() {
   const tese = carga.dados?.tese ?? [];
 
   useEffect(() => {
-    api
-      .get("/jurimetria/desfechos")
-      .then((r: any) => setDesfechos(r.data))
-      .catch(() => setDesfechos(null));
+    if (podeVerEstrategico) {
+      api
+        .get("/jurimetria/desfechos")
+        .then((r: any) => setDesfechos(r.data))
+        .catch(() => setDesfechos(null));
+    } else {
+      setDesfechos(null);
+    }
     api
       .get("/jurimetria/interno/stats")
       .then((r: any) => setInternalStats(r.data))
@@ -168,7 +180,7 @@ export default function Jurimetria() {
       if (rag.status === "fulfilled") setRagCoverage(rag.value.data);
       if (mg.status === "fulfilled") setMgCoverage(mg.value.data);
     });
-  }, []);
+  }, [podeVerEstrategico]);
 
   const carregarBenchmarks = async (tribunal: string) => {
     const requestId = ++benchmarkRequestRef.current;
@@ -192,8 +204,13 @@ export default function Jurimetria() {
   };
 
   useEffect(() => {
+    if (!podeVerEstrategico) {
+      setBenchmarks(null);
+      setLoadingExt(false);
+      return;
+    }
     void carregarBenchmarks(selectedTribunal);
-  }, [selectedTribunal]);
+  }, [selectedTribunal, podeVerEstrategico]);
 
   if (loading)
     return (
@@ -236,11 +253,13 @@ export default function Jurimetria() {
 
       {/* Cards resumo escritório */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <StatCard
-          label="Taxa de Teses Decididas"
-          value={taxa != null ? `${(taxa * 100).toFixed(1)}%` : "—"}
-          sub="procedentes ÷ decididas"
-        />
+        {podeVerEstrategico && (
+          <StatCard
+            label="Taxa de Teses Decididas"
+            value={taxa != null ? `${(taxa * 100).toFixed(1)}%` : "—"}
+            sub="procedentes ÷ decididas"
+          />
+        )}
         <StatCard
           label="Áreas"
           value={area.length}
@@ -397,8 +416,9 @@ export default function Jurimetria() {
         </div>
       )}
 
-      {/* Histórico interno por tribunal */}
-      <div className="card p-5 mb-6">
+      {/* Histórico interno por tribunal — bloco estratégico (sócio+) */}
+      {podeVerEstrategico && (
+        <div className="card p-5 mb-6">
         <div className="flex flex-wrap items-center gap-3 mb-2">
           <div className="flex items-center gap-1.5">
             <Database size={16} className="text-primary-500" />
@@ -490,7 +510,8 @@ export default function Jurimetria() {
             Sem dados para {selectedTribunal} na base interna do escritório.
           </p>
         )}
-      </div>
+        </div>
+      )}
 
       {/* Gráficos internos do escritório */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -539,8 +560,9 @@ export default function Jurimetria() {
         </div>
       )}
 
-      {/* Análise prospectiva descritiva */}
-      <div className="card p-5 mt-4">
+      {/* Análise prospectiva descritiva — bloco estratégico (sócio+) */}
+      {podeVerEstrategico && (
+        <div className="card p-5 mt-4">
         <h3 className="font-semibold text-sm text-gray-500 uppercase mb-1">
           Análise Prospectiva — Histórico Interno
         </h3>
@@ -647,7 +669,8 @@ export default function Jurimetria() {
             )}
           </>
         )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
