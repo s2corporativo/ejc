@@ -1,8 +1,10 @@
 """WhatsApp via Evolution API — proxy endpoints"""
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from app.core.config import get_settings
 from app.core.security import get_current_user
 from app.core.ownership import is_gestao
 from app.models.user import User
+from app.services.notification_service import normalizar_telefone_br
 import httpx
 import logging
 import os
@@ -31,41 +33,75 @@ def _exigir_gestao(cu: User = Depends(get_current_user)) -> User:
         raise HTTPException(403, "Pareamento do WhatsApp restrito à gestão")
     return cu
 
-router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
+def _exigir_whatsapp_habilitado() -> None:
+    """Kill switch único: flag desligada bloqueia também as rotas manuais."""
+    if not get_settings().WHATSAPP_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="WhatsApp desabilitado por configuração.",
+        )
 
-# Lê os nomes oficiais do .env (EVOLUTION_API_URL / EVOLUTION_API_KEY); mantém
-# fallback para nomes legados. Sem key por instância, usa a apikey global.
-EVOLUTION_URL = os.getenv("EVOLUTION_API_URL") or os.getenv("EVOLUTION_URL", "http://evolution_api:8080")
-EVOLUTION_KEY = os.getenv("EVOLUTION_API_KEY") or os.getenv("EVOLUTION_KEY", "")
-INSTANCE      = os.getenv("EVOLUTION_INSTANCE", "ejc-escritorio")
-INSTANCE_KEY  = os.getenv("EVOLUTION_INSTANCE_KEY") or EVOLUTION_KEY
 
-def _headers_global():
-    return {"apikey": EVOLUTION_KEY, "Content-Type": "application/json"}
+router = APIRouter(
+    prefix="/whatsapp",
+    tags=["whatsapp"],
+    dependencies=[Depends(_exigir_whatsapp_habilitado)],
+)
 
-def _headers_instance():
-    return {"apikey": INSTANCE_KEY, "Content-Type": "application/json"}
+
+def _evolution_config() -> tuple[str, str, str, str, float]:
+    """Resolve a configuração vigente a cada chamada.
+
+    Usa o singleton de Settings (incluindo overlay do Cofre) em vez de
+    capturar segredo/URL no import do módulo. Nomes legados ficam apenas como
+    fallback de compatibilidade.
+    """
+    settings = get_settings()
+    base = (settings.EVOLUTION_API_URL or os.getenv("EVOLUTION_URL") or "").strip().rstrip("/")
+    key = (settings.EVOLUTION_API_KEY or os.getenv("EVOLUTION_KEY") or "").strip()
+    instance = (settings.EVOLUTION_INSTANCE or "ejc-escritorio").strip()
+    instance_key = (os.getenv("EVOLUTION_INSTANCE_KEY") or key).strip()
+    timeout = float(settings.EVOLUTION_TIMEOUT or 20)
+    if not (base and key and instance):
+        raise HTTPException(
+            status_code=503,
+            detail="Evolution API não configurada para o WhatsApp.",
+        )
+    return base, key, instance, instance_key, timeout
+
+
+def _headers(key: str):
+    return {"apikey": key, "Content-Type": "application/json"}
 
 
 async def _evo_get(path: str, use_instance_key=False):
-    h = _headers_instance() if use_instance_key else _headers_global()
-    async with httpx.AsyncClient(timeout=20) as client:
-        r = await client.get(f"{EVOLUTION_URL}{path}", headers=h)
-        return r.status_code, r.json() if r.headers.get("content-type","").startswith("application/json") else r.text
+    base, key, _instance, instance_key, timeout = _evolution_config()
+    h = _headers(instance_key if use_instance_key else key)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.get(f"{base}{path}", headers=h)
+        data = r.json() if r.headers.get("content-type", "").startswith("application/json") else None
+        return r.status_code, data
 
 
 async def _evo_post(path: str, body: dict, use_instance_key=False):
-    h = _headers_instance() if use_instance_key else _headers_global()
-    async with httpx.AsyncClient(timeout=20) as client:
-        r = await client.post(f"{EVOLUTION_URL}{path}", headers=h, json=body)
-        return r.status_code, r.json() if r.headers.get("content-type","").startswith("application/json") else r.text
+    base, key, _instance, instance_key, timeout = _evolution_config()
+    h = _headers(instance_key if use_instance_key else key)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.post(f"{base}{path}", headers=h, json=body)
+        data = r.json() if r.headers.get("content-type", "").startswith("application/json") else None
+        return r.status_code, data
 
 
 @router.get("/status")
 async def get_status(current_user=Depends(_exigir_envio)):
     """Retorna status da instância WhatsApp"""
     try:
-        status_code, data = await _evo_get(f"/instance/connectionState/{INSTANCE}", use_instance_key=True)
+        _base, _key, instance, _instance_key, _timeout = _evolution_config()
+        status_code, data = await _evo_get(
+            f"/instance/connectionState/{instance}", use_instance_key=True
+        )
+        if status_code >= 400:
+            return {"state": "error", "detail": f"Evolution API respondeu HTTP {status_code}."}
         return data
     except Exception:
         logger.warning("Falha ao consultar status da instância WhatsApp", exc_info=True)
@@ -76,7 +112,12 @@ async def get_status(current_user=Depends(_exigir_envio)):
 async def get_qrcode(current_user=Depends(_exigir_gestao)):
     """Retorna QR Code para conectar o WhatsApp"""
     try:
-        status_code, data = await _evo_get(f"/instance/connect/{INSTANCE}", use_instance_key=True)
+        _base, _key, instance, _instance_key, _timeout = _evolution_config()
+        status_code, data = await _evo_get(
+            f"/instance/connect/{instance}", use_instance_key=True
+        )
+        if status_code >= 400:
+            raise HTTPException(status_code, "Evolution API recusou o pareamento.")
         return data
     except Exception:
         logger.warning("Falha ao obter QR Code do WhatsApp", exc_info=True)
@@ -89,21 +130,23 @@ async def send_message(
     current_user=Depends(_exigir_envio),
 ):
     """Envia mensagem de texto para um número"""
-    phone = body.get("phone", "").replace("+", "").replace("-", "").replace(" ", "")
-    if not phone.startswith("55"):
-        phone = "55" + phone
-    message = body.get("message", "")
+    phone = normalizar_telefone_br(body.get("phone"))
+    message = str(body.get("message") or "").strip()
     if not phone or not message:
-        raise HTTPException(422, "phone e message obrigatórios")
+        raise HTTPException(422, "phone válido e message são obrigatórios")
 
     try:
+        _base, _key, instance, _instance_key, _timeout = _evolution_config()
         status_code, data = await _evo_post(
-            f"/message/sendText/{INSTANCE}",
+            f"/message/sendText/{instance}",
             {"number": phone, "text": message},
-            use_instance_key=True
+            use_instance_key=True,
         )
         if status_code >= 400:
-            raise HTTPException(status_code, detail=str(data))
+            raise HTTPException(
+                status_code,
+                detail="Evolution API recusou o envio.",
+            )
         return data
     except HTTPException:
         raise
@@ -119,12 +162,15 @@ async def list_chats(
 ):
     """Lista conversas recentes"""
     try:
+        _base, _key, instance, _instance_key, _timeout = _evolution_config()
         status_code, data = await _evo_post(
-            f"/chat/findChats/{INSTANCE}",
+            f"/chat/findChats/{instance}",
             {"limit": limit},
-            use_instance_key=True
+            use_instance_key=True,
         )
-        return data if isinstance(data, list) else data
+        if status_code >= 400:
+            return []
+        return data if isinstance(data, (list, dict)) else []
     except Exception:
         return []
 
@@ -135,18 +181,21 @@ async def get_messages(
     current_user=Depends(_exigir_envio),
 ):
     """Busca mensagens de uma conversa"""
-    phone = body.get("phone", "").replace("+", "").replace(" ", "").replace("-", "")
-    if not phone.startswith("55"):
-        phone = "55" + phone
+    phone = normalizar_telefone_br(body.get("phone"))
+    if not phone:
+        raise HTTPException(422, "phone inválido")
     jid = phone + "@s.whatsapp.net"
     limit = body.get("limit", 30)
 
     try:
+        _base, _key, instance, _instance_key, _timeout = _evolution_config()
         status_code, data = await _evo_post(
-            f"/chat/findMessages/{INSTANCE}",
+            f"/chat/findMessages/{instance}",
             {"where": {"key": {"remoteJid": jid}}, "limit": limit},
-            use_instance_key=True
+            use_instance_key=True,
         )
+        if status_code >= 400:
+            return []
         return data if isinstance(data, (list, dict)) else []
     except Exception:
         return []

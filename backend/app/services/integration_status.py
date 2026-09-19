@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
+import os
+
+from sqlalchemy import func, select, text
 
 from app.core.config import Settings
 from app.services.ai.provider_registry import PROVIDERS_SUPORTADOS, provider_elegivel_com
@@ -24,6 +27,10 @@ class IntegrationStatus:
     # sem_permissao|indisponivel). None = sem teste registrado (default → o
     # contrato histórico status ∈ disabled|attention|ready não muda).
     credential_state: str | None = None
+    # Estado operacional derivado de evidência persistida (último job/sync/
+    # homologação). None = não coletado. Nunca contém erro bruto/segredo.
+    operational_state: str | None = None
+    last_checked_at: str | None = None
     # Conectores judiciais: o que cada integração REALMENTE oferece ao fluxo
     # do caso (consultar, sincronizar movimentações, partes, audiências,
     # baixar documentos, intimações, protocolar). None = não é conector
@@ -131,6 +138,209 @@ def _aplicar_estados_credencial(
     return saida
 
 
+
+def _iso(value: Any) -> str | None:
+    return value.isoformat() if isinstance(value, datetime) else None
+
+
+def _aplicar_estados_operacionais(
+    items: list[IntegrationStatus],
+    operational_states: dict[str, dict[str, Any]],
+) -> list[IntegrationStatus]:
+    """Rebaixa falso verde usando somente evidência operacional sanitizada.
+
+    O contrato público continua status disabled|attention|ready. Integração
+    desabilitada nunca vira falha; evidência operacional apenas enriquece o
+    item e rebaixa ready quando há erro/ausência comprovada.
+    """
+    saida: list[IntegrationStatus] = []
+    for it in items:
+        op = operational_states.get(it.key)
+        if not op:
+            saida.append(it)
+            continue
+        estado = str(op.get("state") or "")
+        detail = str(op.get("detail") or it.detail)
+        checked_at = op.get("checked_at")
+        status = it.status
+        if status == "ready" and estado in {"attention", "error", "not_ready"}:
+            status = "attention"
+        saida.append(replace(
+            it,
+            status=status,
+            detail=detail if status == "attention" else it.detail,
+            operational_state=estado or None,
+            last_checked_at=checked_at,
+        ))
+    return saida
+
+
+async def collect_operational_states(db) -> dict[str, dict[str, Any]]:
+    """Coleta metadados operacionais sem segredos e sem I/O externo."""
+    out: dict[str, dict[str, Any]] = {}
+
+    try:
+        from app.models.rag import FonteIngestao
+
+        map_slug = {
+            "djen": "djen",
+            "tjmg": "tjmg",
+            "lexml": "lexml",
+            "anpd": "anpd",
+            "normas_rfb": "normas_rfb",
+        }
+        rows = (
+            await db.execute(
+                select(FonteIngestao).where(FonteIngestao.slug.in_(list(map_slug)))
+            )
+        ).scalars().all()
+        for fonte in rows:
+            key = map_slug.get(fonte.slug)
+            if not key:
+                continue
+            ultimo = (fonte.ultimo_status or "").lower()
+            nunca_produziu = not bool(fonte.ja_produziu)
+            zeros = int(fonte.execucoes_zeradas_consecutivas or 0)
+            if ultimo in {"erro", "parcial"}:
+                state = "error"
+                detail = "Última execução operacional falhou; consulte o diagnóstico da fonte."
+            elif nunca_produziu and zeros >= 3:
+                state = "attention"
+                detail = (
+                    "A fonte executa, mas não produz resultados há execuções consecutivas; "
+                    "não tratar como ausência de dados."
+                )
+            else:
+                state = "ok"
+                detail = "Última execução operacional sem erro registrado."
+            out[key] = {
+                "state": state,
+                "detail": detail,
+                "checked_at": _iso(fonte.ultima_execucao),
+            }
+    except Exception:
+        pass
+
+    try:
+        from app.models.processo_eletronico import (
+            CredencialProcessoEletronico,
+            Tribunal,
+        )
+
+        tribunais = int((await db.execute(
+            select(func.count()).select_from(Tribunal).where(Tribunal.ativo.is_(True))
+        )).scalar() or 0)
+        credenciais = int((await db.execute(
+            select(func.count()).select_from(CredencialProcessoEletronico).where(
+                CredencialProcessoEletronico.ativo.is_(True)
+            )
+        )).scalar() or 0)
+        if tribunais and credenciais:
+            out["processo_eletronico"] = {
+                "state": "ok",
+                "detail": f"MNI com {tribunais} tribunal(is) e credencial ativa cadastrada.",
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+            }
+        else:
+            out["processo_eletronico"] = {
+                "state": "not_ready",
+                "detail": (
+                    "Infraestrutura MNI disponível, mas falta tribunal ativo ou "
+                    "credencial de advogado homologada."
+                ),
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+            }
+    except Exception:
+        pass
+
+    try:
+        from app.models.ajuizamento import JudicialIntegrationProfile
+
+        homologados = int((await db.execute(
+            select(func.count()).select_from(JudicialIntegrationProfile).where(
+                JudicialIntegrationProfile.ativo.is_(True),
+                JudicialIntegrationProfile.authorized.is_(True),
+                JudicialIntegrationProfile.credentials_valid.is_(True),
+                JudicialIntegrationProfile.filing_supported.is_(True),
+                JudicialIntegrationProfile.homologated_at.is_not(None),
+            )
+        )).scalar() or 0)
+        out["ajuizamento"] = {
+            "state": "ok" if homologados else "not_ready",
+            "detail": (
+                f"{homologados} perfil(is) de tribunal homologado(s) para protocolo."
+                if homologados
+                else "Nenhum perfil de tribunal está homologado para protocolo eletrônico."
+            ),
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception:
+        pass
+
+    try:
+        existe = (await db.execute(
+            text("SELECT to_regclass('public.google_drive_sync_state')")
+        )).scalar()
+        if not existe:
+            out["google_drive_knowledge"] = {
+                "state": "not_ready",
+                "detail": "Google Drive Knowledge configurado, mas nenhuma sincronização foi iniciada.",
+                "checked_at": None,
+            }
+        else:
+            row = (await db.execute(text(
+                "SELECT last_sync_at, last_status FROM google_drive_sync_state "
+                "ORDER BY last_sync_at DESC NULLS LAST LIMIT 1"
+            ))).mappings().first()
+            if not row:
+                out["google_drive_knowledge"] = {
+                    "state": "not_ready",
+                    "detail": "Google Drive Knowledge ainda não possui sincronização registrada.",
+                    "checked_at": None,
+                }
+            else:
+                status = str(row.get("last_status") or "").lower()
+                ok = status in {"ok", "sucesso", "success"}
+                out["google_drive_knowledge"] = {
+                    "state": "ok" if ok else "error",
+                    "detail": (
+                        "Última sincronização Google Drive Knowledge concluída."
+                        if ok else "Última sincronização Google Drive Knowledge falhou."
+                    ),
+                    "checked_at": _iso(row.get("last_sync_at")),
+                }
+    except Exception:
+        pass
+
+    return out
+
+
+def _env_true(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "sim", "on"}
+
+
+def _drive_auth_configurado() -> bool:
+    modo = (os.getenv("GOOGLE_DRIVE_AUTH_MODE", "auto") or "auto").strip().lower()
+    oauth = bool(
+        os.getenv("GOOGLE_DRIVE_OAUTH_USER_FILE", "").strip()
+        or os.getenv("GOOGLE_DRIVE_OAUTH_USER_JSON", "").strip()
+        or (
+            os.getenv("GOOGLE_DRIVE_OAUTH_CLIENT_ID", "").strip()
+            and os.getenv("GOOGLE_DRIVE_OAUTH_CLIENT_SECRET", "").strip()
+            and os.getenv("GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN", "").strip()
+        )
+    )
+    service_account = bool(
+        os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", "").strip()
+        or os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON", "").strip()
+    )
+    if modo == "oauth":
+        return oauth
+    if modo == "service_account":
+        return service_account
+    return oauth or service_account
+
+
 def _status(
     *,
     key: str,
@@ -191,7 +401,9 @@ def _estado_overlay_seguro() -> dict[str, Any]:
 
 
 def build_integration_status(
-    settings: Settings, credential_states: dict[str, str] | None = None,
+    settings: Settings,
+    credential_states: dict[str, str] | None = None,
+    operational_states: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Retorna apenas metadados seguros; nunca retorna segredo ou valor sensível.
 
@@ -335,6 +547,22 @@ def build_integration_status(
             mode=f"até {settings.LEXML_INGEST_MAX_POR_TEMA} itens/tema",
         ),
         _status(
+            key="anpd",
+            label="ANPD — regulamentações e guias",
+            group="Conhecimento",
+            enabled=settings.CONHECIMENTO_INGEST_ENABLED,
+            configured=True,
+            ready_detail="Fonte oficial ANPD habilitada para ingestão de conhecimento.",
+        ),
+        _status(
+            key="normas_rfb",
+            label="Normas RFB",
+            group="Conhecimento",
+            enabled=settings.CONHECIMENTO_INGEST_ENABLED,
+            configured=True,
+            ready_detail="Fonte de normas tributárias RFB habilitada para ingestão de conhecimento.",
+        ),
+        _status(
             key="transparencia",
             label="Portal da Transparência / CGU",
             group="Jurídico",
@@ -380,6 +608,21 @@ def build_integration_status(
             configured=bool(settings.INFOSIMPLES_TOKEN),
             ready_detail="Agregador comercial habilitado com token presente e teto diário de custo.",
             mode=f"teto {settings.INFOSIMPLES_MAX_CONSULTAS_DIA} consultas/dia",
+        ),
+        _status(
+            key="google_drive_knowledge",
+            label="Google Drive Knowledge",
+            group="Conhecimento",
+            enabled=_env_true("GOOGLE_DRIVE_ENABLED"),
+            configured=bool(
+                os.getenv("GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID", "").strip()
+                and _drive_auth_configurado()
+            ),
+            ready_detail="Google Drive Knowledge habilitado com pasta e autenticação configuradas.",
+            missing_detail=(
+                "Google Drive Knowledge habilitado, mas pasta ou autenticação está incompleta."
+            ),
+            mode=(os.getenv("GOOGLE_DRIVE_AUTH_MODE", "auto").strip().lower() or "auto"),
         ),
         _status(
             key="email",
@@ -462,6 +705,8 @@ def build_integration_status(
     ]
     if credential_states:
         items = _aplicar_estados_credencial(items, credential_states)
+    if operational_states:
+        items = _aplicar_estados_operacionais(items, operational_states)
     items = _aplicar_capacidades(items)
     counts = {
         "total": len(items),
@@ -470,7 +715,7 @@ def build_integration_status(
         "disabled": sum(item.status == "disabled" for item in items),
     }
     return {
-        "mode": "configuration_only",
+        "mode": "configuration_and_operational",
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "summary": counts,
         "items": [asdict(item) for item in items],
@@ -480,7 +725,8 @@ def build_integration_status(
         # os consumidores existentes não mudam.
         "credential_overlay": _estado_overlay_seguro(),
         "notice": (
-            "O painel verifica somente habilitação e presença de configuração. "
-            "Não revela valores sensíveis e não substitui healthchecks de conectividade."
+            "O painel combina configuração, último teste do Cofre e evidência "
+            "operacional persistida. Não revela valores sensíveis; testes de rede "
+            "continuam separados quando aplicável."
         ),
     }
