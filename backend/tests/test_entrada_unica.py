@@ -22,7 +22,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.database import Base
-from app.models.case import Case, CaseMovimento, CaseParte, CaseStatus
+from app.models.case import (
+    Case,
+    CaseMovimento,
+    CaseParte,
+    CasePrioridade,
+    CaseStatus,
+)
 from app.models.client import Client
 from app.models.deadline import Deadline
 from app.models.document import DocConfidencialidade, Document
@@ -70,6 +76,31 @@ def test_gates_default_off():
     assert p.conflict_confirmed is False
     assert p.duplicate_confirmed is False
     assert p.documentos_ids == []
+    assert p.prioridade == "media"
+
+
+def test_triagem_normaliza_campos_sem_inventar_ausentes():
+    from app.services.triagem_entrevista_service import normalizar_painel
+
+    painel = normalizar_painel({
+        "assunto": {"valor": "Negativação indevida", "confianca": 88},
+        "natureza_demanda": {"valor": "judicial", "confianca": 72},
+        "urgencia": {
+            "valor": True,
+            "justificativa": "Restrição de crédito ativa.",
+            "confianca": 80,
+        },
+        "documentos_faltantes": ["Consulta atualizada"],
+        "provas_necessarias": ["Confirmar data da inscrição"],
+        "proximos_passos": ["Conferir quitação"],
+    })
+    assert painel["assunto"]["valor"] == "Negativação indevida"
+    assert painel["natureza_demanda"]["valor"] == "judicial"
+    assert painel["urgencia"]["valor"] is True
+    assert painel["documentos_faltantes"] == ["Consulta atualizada"]
+    assert painel["provas_necessarias"] == ["Confirmar data da inscrição"]
+    assert painel["proximos_passos"] == ["Conferir quitação"]
+    assert painel["possivel_acao"]["valor"] is None
 
 
 # ── (a) analisar só-texto com IA indisponível → degradado, não 500 ───────────
@@ -91,6 +122,66 @@ async def test_analisar_so_texto_com_ia_desabilitada_degrada(monkeypatch):
     assert proposta["documentos"] == []
     assert proposta["proxima_acao"]  # G1: sempre há "o que fazer agora"
     assert proposta["revisao_obrigatoria"] is True
+
+
+@pytest.mark.anyio
+async def test_analisar_triagem_completa_vira_proposta_editavel(monkeypatch):
+    from app.core.config import get_settings
+    from app.services import triagem_entrevista_service as tes
+
+    monkeypatch.setattr(get_settings(), "AI_ENABLED", True)
+
+    async def _triagem(*args, **kwargs):
+        return {
+            "analise": {
+                "area_direito": {"valor": "consumidor", "confianca": 91},
+                "assunto": {"valor": "Negativação indevida", "confianca": 88},
+                "natureza_demanda": {"valor": "judicial", "confianca": 80},
+                "possivel_acao": {
+                    "valor": "Ação declaratória de inexistência de débito",
+                    "confianca": 82,
+                },
+                "urgencia": {
+                    "valor": True,
+                    "justificativa": "Restrição de crédito ativa.",
+                    "confianca": 76,
+                },
+                "documentos_faltantes": ["Consulta atualizada"],
+                "provas_necessarias": ["Confirmar data da negativação"],
+                "proximos_passos": ["Conferir quitação", "Avaliar tutela"],
+            },
+            "ai_log_id": "ai-1",
+        }
+
+    async def _cliente(*args, **kwargs):
+        return (
+            {"client_id": None, "nome": None, "ja_cadastrado": False,
+             "origem": None, "confianca": None},
+            [],
+            [],
+        )
+
+    async def _sem_conflito(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr(tes, "analisar_relato", _triagem)
+    monkeypatch.setattr(entrada_service, "identificar_cliente", _cliente)
+    monkeypatch.setattr(entrada_service, "analisar_conflito", _sem_conflito)
+
+    batch = DocumentIntakeBatch(id="bt", status="processando", created_by="u1")
+    proposta = await entrada_service.analisar_entrada(
+        None, _user_ns(), batch=batch, files=[], texto=RELATO,
+    )
+
+    assert proposta["area"]["valor"] == "consumidor"
+    assert proposta["assunto"]["valor"] == "Negativação indevida"
+    assert proposta["natureza"]["tipo"] == "judicial"
+    assert proposta["natureza"]["acao"].startswith("Ação declaratória")
+    assert proposta["urgencia"]["valor"] is True
+    assert proposta["urgencia"]["prioridade_sugerida"] == "alta"
+    assert proposta["documentos_faltantes"] == ["Consulta atualizada"]
+    assert proposta["provas_necessarias"] == ["Confirmar data da negativação"]
+    assert proposta["proximos_passos"] == ["Conferir quitação", "Avaliar tutela"]
 
 
 @pytest.mark.anyio
@@ -196,6 +287,14 @@ def _payload(**kw) -> CriarCasoEntradaRequest:
         titulo="Negativação indevida — Fulano de Tal",
         fatos="Fatos revisados na conferência.",
         parte_contraria=None, documentos_ids=["d1"],
+        assunto="Negativação indevida",
+        natureza_demanda="judicial",
+        natureza_provavel="Ação declaratória de inexistência de débito",
+        prioridade="alta",
+        urgencia_motivo="Restrição de crédito ativa.",
+        documentos_faltantes=["Consulta atualizada do cadastro restritivo"],
+        provas_necessarias=["Confirmar data exata da negativação"],
+        proximos_passos=["Conferir quitação", "Avaliar tutela de urgência"],
         advogado_responsavel_id="u1", confirmo_dados_revisados=True,
     )
     base.update(kw)
@@ -250,6 +349,19 @@ async def test_criar_caso_feliz_e_idempotente(sessao_db, numeracao_fake, auditor
     assert caso.status == CaseStatus.em_instrucao
     assert caso.proxima_acao  # G1
     assert caso.descricao_fatos == "Fatos revisados na conferência."
+    assert caso.prioridade == CasePrioridade.alta
+
+    batch = await sessao_db.get(DocumentIntakeBatch, "b1")
+    triagem = batch.resultado["entrada_unica"]["triagem_confirmada"]
+    assert triagem["assunto"] == "Negativação indevida"
+    assert triagem["natureza_demanda"] == "judicial"
+    assert triagem["prioridade"] == "alta"
+    assert triagem["documentos_faltantes"] == [
+        "Consulta atualizada do cadastro restritivo"
+    ]
+    assert triagem["proximos_passos"] == [
+        "Conferir quitação", "Avaliar tutela de urgência"
+    ]
 
     doc = await sessao_db.get(Document, "d1")
     assert doc.case_id == caso.id and doc.client_id == r1["client_id"]

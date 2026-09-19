@@ -39,6 +39,19 @@ class CriarCasoEntradaRequest(BaseModel):
     parte_contraria: str | None = Field(default=None, max_length=255)
     documentos_ids: list[str] = Field(default_factory=list, max_length=40)
     prazo: PrazoEntrada | None = None
+
+    # Triagem jurídica revisada. Estes campos são aditivos e não exigem nova
+    # tabela: prioridade alimenta Case.prioridade; os demais permanecem no
+    # snapshot auditável da Entrada Única ligado ao caso.
+    assunto: str | None = Field(default=None, max_length=255)
+    natureza_demanda: str | None = Field(default=None, max_length=50)
+    natureza_provavel: str | None = Field(default=None, max_length=500)
+    prioridade: str = Field(default="media", pattern="^(baixa|media|alta|critica)$")
+    urgencia_motivo: str | None = Field(default=None, max_length=1_000)
+    documentos_faltantes: list[str] = Field(default_factory=list, max_length=20)
+    provas_necessarias: list[str] = Field(default_factory=list, max_length=20)
+    proximos_passos: list[str] = Field(default_factory=list, max_length=20)
+
     # G1: omitido → default preenchido na criação (caso sempre nasce com
     # "o que fazer agora").
     proxima_acao: str | None = Field(default=None, max_length=2_000)
@@ -48,6 +61,21 @@ class CriarCasoEntradaRequest(BaseModel):
     # conflito/duplicado exige reconhecimento explícito (409 sem estes flags).
     conflict_confirmed: bool = False
     duplicate_confirmed: bool = False
+
+    @field_validator(
+        "documentos_faltantes", "provas_necessarias", "proximos_passos"
+    )
+    @classmethod
+    def _listas_triagem_seguras(cls, valores: list[str]) -> list[str]:
+        limpos: list[str] = []
+        for valor in valores:
+            item = valor.strip()
+            if not item:
+                continue
+            if len(item) > 500:
+                raise ValueError("itens da triagem devem ter no máximo 500 caracteres")
+            limpos.append(item)
+        return limpos
 
     @field_validator("confirmo_dados_revisados")
     @classmethod
