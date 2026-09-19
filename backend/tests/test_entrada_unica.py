@@ -125,6 +125,66 @@ async def test_analisar_so_texto_com_ia_desabilitada_degrada(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_analisar_triagem_completa_vira_proposta_editavel(monkeypatch):
+    from app.core.config import get_settings
+    from app.services import triagem_entrevista_service as tes
+
+    monkeypatch.setattr(get_settings(), "AI_ENABLED", True)
+
+    async def _triagem(*args, **kwargs):
+        return {
+            "analise": {
+                "area_direito": {"valor": "consumidor", "confianca": 91},
+                "assunto": {"valor": "Negativação indevida", "confianca": 88},
+                "natureza_demanda": {"valor": "judicial", "confianca": 80},
+                "possivel_acao": {
+                    "valor": "Ação declaratória de inexistência de débito",
+                    "confianca": 82,
+                },
+                "urgencia": {
+                    "valor": True,
+                    "justificativa": "Restrição de crédito ativa.",
+                    "confianca": 76,
+                },
+                "documentos_faltantes": ["Consulta atualizada"],
+                "provas_necessarias": ["Confirmar data da negativação"],
+                "proximos_passos": ["Conferir quitação", "Avaliar tutela"],
+            },
+            "ai_log_id": "ai-1",
+        }
+
+    async def _cliente(*args, **kwargs):
+        return (
+            {"client_id": None, "nome": None, "ja_cadastrado": False,
+             "origem": None, "confianca": None},
+            [],
+            [],
+        )
+
+    async def _sem_conflito(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr(tes, "analisar_relato", _triagem)
+    monkeypatch.setattr(entrada_service, "identificar_cliente", _cliente)
+    monkeypatch.setattr(entrada_service, "analisar_conflito", _sem_conflito)
+
+    batch = DocumentIntakeBatch(id="bt", status="processando", created_by="u1")
+    proposta = await entrada_service.analisar_entrada(
+        None, _user_ns(), batch=batch, files=[], texto=RELATO,
+    )
+
+    assert proposta["area"]["valor"] == "consumidor"
+    assert proposta["assunto"]["valor"] == "Negativação indevida"
+    assert proposta["natureza"]["tipo"] == "judicial"
+    assert proposta["natureza"]["acao"].startswith("Ação declaratória")
+    assert proposta["urgencia"]["valor"] is True
+    assert proposta["urgencia"]["prioridade_sugerida"] == "alta"
+    assert proposta["documentos_faltantes"] == ["Consulta atualizada"]
+    assert proposta["provas_necessarias"] == ["Confirmar data da negativação"]
+    assert proposta["proximos_passos"] == ["Conferir quitação", "Avaliar tutela"]
+
+
+@pytest.mark.anyio
 async def test_analisar_so_texto_com_gateway_fora_degrada(monkeypatch):
     from app.core.config import get_settings
     from app.services import triagem_entrevista_service as tes
