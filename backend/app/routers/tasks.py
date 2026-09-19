@@ -259,3 +259,30 @@ async def remover(
     if not t:
         raise HTTPException(status_code=404, detail="Tarefa não encontrada")
     await _verificar_acesso_tarefa(db, cu, t)
+    t.deleted_at = datetime.now(timezone.utc)
+
+    # Mantém a solicitação e seu histórico, mas remove a referência para uma
+    # tarefa que deixou de existir operacionalmente.
+    atendimento = (await db.execute(
+        select(Atendimento).where(Atendimento.task_id == t.id)
+    )).scalar_one_or_none()
+    if atendimento is not None:
+        atendimento.task_id = None
+        atendimento.solicitacao_alerta_nivel = None
+        atendimento.updated_at = datetime.now(timezone.utc)
+
+    await db.commit()
+
+    if atendimento is not None:
+        role = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
+        await registrar_acao(
+            db,
+            cu.id,
+            "atualizar",
+            "atendimentos",
+            atendimento.id,
+            "Tarefa vinculada removida; solicitação mantida na linha do tempo",
+            user_role=role,
+            dados_depois={"tarefa_vinculada": False},
+        )
+    return MsgResponse(detail="Tarefa removida")
