@@ -3,11 +3,15 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.database import get_db
 from app.core.security import require_admin, require_roles
 from app.models.user import User
 from app.services.integration_status import build_integration_status
+from app.services.integration_runtime_status import coletar_estados_operacionais
+from app.services import credential_vault_service
 from app.services.module_registry import gerar_mapa_modulos, resumir_mapa_modulos
 
 router = APIRouter(prefix="/system-modules", tags=["Mapa de Modulos"])
@@ -51,6 +55,15 @@ async def mapa_modulos(request: Request, cu: User = Depends(_gestores)):
 
 
 @router.get("/integrations")
-async def status_integracoes(cu: User = Depends(require_admin)):
-    """Inventário de configuração sem chaves, tokens, senhas ou valores do ambiente."""
-    return build_integration_status(get_settings())
+async def status_integracoes(
+    cu: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Inventário seguro: configuração + Cofre + último estado operacional persistido."""
+    try:
+        credenciais = await credential_vault_service.estados_credenciais(db)
+    except Exception:
+        await db.rollback()
+        credenciais = {}
+    operacao = await coletar_estados_operacionais(db)
+    return build_integration_status(get_settings(), credential_states=credenciais, operational_states=operacao)

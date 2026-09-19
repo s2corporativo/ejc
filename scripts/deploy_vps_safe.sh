@@ -161,6 +161,18 @@ EOF
   exit 2
 fi
 
+connect_evolution_network_if_present() {
+  local container="$1"
+  # Evolution pertence a outro compose e mantém sua API sem exposição pública.
+  # Se a rede externa existir, reconecta o container EJC após cada recreate.
+  # Ausência da rede é neutra: WhatsApp é opt-in e o diagnóstico sinaliza isso.
+  if docker network inspect evolution_net >/dev/null 2>&1; then
+    if docker inspect "$container" >/dev/null 2>&1; then
+      docker network connect evolution_net "$container" >/dev/null 2>&1 || true
+    fi
+  fi
+}
+
 log "EJC deploy seguro iniciado para ${DOMAIN}"
 if [ "$REQUIRE_PREDEPLOY_BACKUP" = "0" ]; then
   log "AVISO CRÍTICO: REQUIRE_PREDEPLOY_BACKUP=0 foi definido explicitamente; contingência sem prova nova de backup está habilitada."
@@ -283,6 +295,7 @@ fi
 DEPLOY_MUTATED=1
 log "Subindo backend novo sem migration automática no entrypoint"
 RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate backend
+connect_evolution_network_if_present ejc_backend
 backend_ok=0
 for _ in $(seq 1 12); do
   sleep 5
@@ -307,6 +320,7 @@ fi
 
 log "Atualizando worker"
 RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate worker
+connect_evolution_network_if_present ejc_worker
 
 if [ "$ENSURE_DAILY_BACKUP" = "1" ]; then
   log "Garantindo agendamento e prova recente do backup cifrado"

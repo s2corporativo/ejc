@@ -185,6 +185,11 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
         brutos += blocos_tema
         # Os três zeros diferentes, distinguidos e logados na camada certa:
         if met.get("rede_falhou"):
+            # buscar_tjmg degrada rede/HTTP para lista vazia para não quebrar a
+            # busca interativa. No ingestor agendado isso NÃO pode virar
+            # sucesso vazio: conta como falha de tema e, se ocorrer em todos,
+            # a execução falha alto no bloco final.
+            temas_com_falha += 1
             logger.warning("TJMG tema %r: falha de rede/HTTP na origem — "
                            "0 itens (não é ausência de julgados)", tema)
         elif met.get("html_bytes", 0) > 0 and blocos_tema == 0:
