@@ -185,8 +185,14 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
         brutos += blocos_tema
         # Os três zeros diferentes, distinguidos e logados na camada certa:
         if met.get("rede_falhou"):
+            # buscar_tjmg degrada para [] em falha HTTP/transporte e sinaliza
+            # a causa nas métricas. Sem contar essa via como falha, todos os
+            # temas podiam retornar 0 por 401/timeout e o job terminava
+            # "sucesso 0/0" — falso verde operacional.
+            temas_com_falha += 1
             logger.warning("TJMG tema %r: falha de rede/HTTP na origem — "
                            "0 itens (não é ausência de julgados)", tema)
+            continue
         elif met.get("html_bytes", 0) > 0 and blocos_tema == 0:
             logger.warning(
                 "TJMG tema %r: HTML recebido (%d bytes) mas 0 blocos casaram o "
