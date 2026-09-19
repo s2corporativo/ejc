@@ -21,6 +21,8 @@ from __future__ import annotations
 import logging
 from types import SimpleNamespace
 
+import pytest
+
 import app.services.conhecimento_ingest as ci
 import app.services.conhecimento_ingest.anpd as anpd
 import app.services.conhecimento_ingest.normas_rfb as rfb
@@ -322,7 +324,8 @@ async def test_ingestor_tjmg_loga_falha_de_rede(monkeypatch, caplog):
 
     _prepara_ingestor_tjmg(monkeypatch, fake_buscar)
     with caplog.at_level(logging.INFO, logger="ejc.ingestao.tjmg"):
-        assert await tjmg.ingerir(_FakeDB()) == (0, 0)
+        with pytest.raises(RuntimeError, match="falhou em todos"):
+            await tjmg.ingerir(_FakeDB())
     assert any("falha de rede" in r.message for r in caplog.records)
     assert not any("layout" in r.message for r in caplog.records)
 
