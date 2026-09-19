@@ -287,13 +287,12 @@ def classificar_drive_file(nome: str, caminho: str | None = None, mime_type: str
     peca_cliente_sinais = _detectar_peca_cliente(nome, caminho, texto)
     if peca_cliente_sinais:
         return DriveTaxonomyDecision(
-            "peca_interna", "media", 70, "peca_cliente_restrita",
-            area, False,
+            "peca_interna", "bloqueado", 0, "peca_cliente_restrita",
+            area, True,
             "Peça/documento cliente-específico (nº de processo CNJ, CPF/CNPJ ou "
-            "pasta de cliente): conteúdo legítimo, porém RESTRITO por sigilo/LGPD. "
-            "Fica fora do RAG compartilhado (categoria restrita); via Drive não há "
-            "vínculo de client_id, então não é recuperável até que o escopo do "
-            "cliente seja atribuído — priorize a curadoria manual.",
+            "pasta de cliente): bloqueado para ingestão automática por sigilo/LGPD. "
+            "O fluxo genérico do Drive não possui client_id/case_id; o documento "
+            "só pode entrar no RAG por fluxo explicitamente escopado ao cliente/caso.",
             peca_cliente_sinais + sinais,
         )
 
