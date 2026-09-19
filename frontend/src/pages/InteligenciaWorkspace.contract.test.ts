@@ -26,7 +26,9 @@ const fees = readFileSync(
 
 describe("Inteligência Jurídica — contrato canônico da auditoria 2026-09-18", () => {
   it("liga Pesquisa e validação de fontes à base governada real", () => {
-    expect(workspace).toContain('const Conhecimento = lazy(() => import("./Conhecimento"))');
+    expect(workspace).toContain(
+      'const Conhecimento = lazy(() => import("./Conhecimento"))',
+    );
     expect(workspace).toContain('sub === "pesquisa"');
     expect(workspace).toContain("<Conhecimento />");
     expect(workspace).not.toContain("<ConteudoJuridico />");
