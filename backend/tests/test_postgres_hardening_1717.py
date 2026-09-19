@@ -20,7 +20,7 @@ def test_compose_separa_runtime_migration_e_amplia_shm():
     assert 'shm_size: "${EJC_DB_SHM_SIZE:-256m}"' in src
     assert 'APP_DATABASE_URL:-postgresql+asyncpg://' in src
     assert 'APP_DATABASE_URL_SYNC:-postgresql://' in src
-    assert 'MIGRATION_DATABASE_URL: "${MIGRATION_DATABASE_URL:-}"' in src
+    assert 'MIGRATION_DATABASE_URL: "' not in src
 
 
 def test_env_runtime_nao_documenta_segredo_de_migrator():
