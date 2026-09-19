@@ -718,6 +718,9 @@ class Settings(BaseSettings):
     # O script manual (scripts.reembedar_chunks_orfaos) segue como fallback.
     RAG_AUTO_REEMBED_ENABLED: bool = True
     RAG_AUTO_REEMBED_BATCH: int = 20
+    # Limite TOTAL por rodada automática. O batch limita memória por encode,
+    # mas sem este teto o reparador atravessa todo o backlog numa só execução.
+    RAG_AUTO_REEMBED_MAX_DOCS_PER_RUN: int = 20
     # Seed nasce vetorizado (C1): ao final de seeds/seed_all.py, se o provider
     # de embeddings estiver disponível, os chunks órfãos do seed são
     # reembedados na hora (idempotente) — sem isto a busca semântica fica vazia
