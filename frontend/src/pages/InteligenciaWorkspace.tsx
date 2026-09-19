@@ -11,6 +11,7 @@ import {
   Wrench,
   AlertTriangle,
   Calculator,
+  ShieldCheck,
 } from "lucide-react";
 import ErrorBoundary from "../components/ErrorBoundary";
 import {
@@ -29,10 +30,11 @@ const AgenteIA = lazy(() => import("./AgenteIA"));
 const IA = lazy(() => import("./IA"));
 const AssistenteIA = lazy(() => import("./AssistenteIA"));
 const FerramentasIA = lazy(() => import("./FerramentasIA"));
-const ConteudoJuridico = lazy(() => import("./ConteudoJuridico"));
+const Conhecimento = lazy(() => import("./Conhecimento"));
 const Jurimetria = lazy(() => import("./Jurimetria"));
 const ConhecimentoGovernado = lazy(() => import("./ConhecimentoGovernado"));
 const DashboardIA = lazy(() => import("./DashboardIA"));
+const GovernancaIA = lazy(() => import("./GovernancaIA"));
 const EstimadorHonorarios = lazy(
   () => import("../components/EstimadorHonorarios"),
 );
@@ -65,7 +67,12 @@ const TABS = [
     icon: Calculator,
     roles: ADVOGADOS,
   },
-  { k: "jurimetria", label: "Analisar dados e resultados", icon: Scale },
+  {
+    k: "jurimetria",
+    label: "Analisar dados e resultados",
+    icon: Scale,
+    roles: GESTORES,
+  },
   {
     k: "conhecimento",
     label: "Conhecimento jurídico",
@@ -85,6 +92,10 @@ const TABS = [
     label: "Estado da inteligência artificial",
     icon: Activity,
     roles: GESTORES,
+    subs: [
+      { k: "saude", label: "Saúde", icon: Activity },
+      { k: "governanca", label: "Governança", icon: ShieldCheck },
+    ],
   },
 ] as const;
 
@@ -240,12 +251,13 @@ export default function InteligenciaWorkspace() {
             {tab === "honorarios" && <EstimadorHonorarios />}
             {tab === "jurimetria" && <Jurimetria />}
             {tab === "conhecimento" && sub === "pesquisa" && (
-              <ConteudoJuridico />
+              <Conhecimento />
             )}
             {tab === "conhecimento" && sub === "curadoria" && (
               <ConhecimentoGovernado />
             )}
-            {tab === "saude" && <DashboardIA />}
+            {tab === "saude" && sub === "saude" && <DashboardIA />}
+            {tab === "saude" && sub === "governanca" && <GovernancaIA />}
           </Suspense>
         </ErrorBoundary>
       </div>
