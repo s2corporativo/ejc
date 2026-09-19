@@ -76,3 +76,13 @@ def test_scheduler_limita_total_do_auto_reembed():
     assert "RAG_AUTO_REEMBED_MAX_DOCS_PER_RUN" in sched
     assert "max_docs: int | None = None" in reparador
     assert "processados >= limite_total" in reparador
+
+
+def test_deploy_nao_varre_backlog_rag_inteiro():
+    deploy = (ROOT / "scripts/deploy_vps_safe.sh").read_text(encoding="utf-8")
+    repair = (
+        ROOT / "backend/scripts/reparar_conhecimento_rag.py"
+    ).read_text(encoding="utf-8")
+    assert "reparar_conhecimento_rag --batch-size 20 --max-docs 20" in deploy
+    assert "max_docs: int | None = None" in repair
+    assert "max_docs=max_docs" in repair
