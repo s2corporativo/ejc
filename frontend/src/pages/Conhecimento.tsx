@@ -988,7 +988,14 @@ export default function Conhecimento() {
           )}
         </div>
 
+        <label
+          htmlFor="validar-citacoes-texto"
+          className="mb-1 block text-xs font-medium text-slate-600"
+        >
+          Texto ou trecho para conferência
+        </label>
         <textarea
+          id="validar-citacoes-texto"
           className="input min-h-[120px] resize-y"
           value={textoCitacoes}
           onChange={(event) => setTextoCitacoes(event.target.value)}
