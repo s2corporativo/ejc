@@ -283,8 +283,8 @@ export default function FerramentasIA() {
                 }`}
               >
                 <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  {FUNCIONAL_LABELS[classificarGrupo(skill)].icon}{" "}
-                  {FUNCIONAL_LABELS[classificarGrupo(skill)].label} ·{" "}
+                  {FUNCIONAL_LABELS[skill.functional_group].icon}{" "}
+                  {FUNCIONAL_LABELS[skill.functional_group].label} ·{" "}
                   {AREA_LABEL[skill.area] || skill.area}
                 </span>
                 <span className="mt-0.5 block text-sm font-semibold text-slate-800">
