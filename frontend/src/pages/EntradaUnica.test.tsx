@@ -53,6 +53,18 @@ const RESPOSTA_COMPLETA = {
     casos_anteriores: 2,
   },
   area: { valor: "consumidor", confianca: 0.8 },
+  assunto: { valor: "Negativação indevida", confianca: 0.88 },
+  natureza: {
+    tipo: "judicial",
+    acao: "Ação declaratória de inexistência de débito",
+    confianca: 0.82,
+  },
+  urgencia: {
+    valor: true,
+    prioridade_sugerida: "alta",
+    justificativa: "Restrição de crédito ativa.",
+    confianca: 0.79,
+  },
   titulo: "Negativação indevida — Maria S. da Costa",
   fatos: "Negativação indevida após quitação do contrato em 12/03/2026.",
   parte_contraria: "Banco X S/A",
@@ -65,6 +77,8 @@ const RESPOSTA_COMPLETA = {
     },
     { document_id: "d2", nome: "Contrato", classificacao: null },
   ],
+  documentos_faltantes: ["Consulta atualizada do cadastro restritivo"],
+  provas_necessarias: ["Confirmar data da negativação"],
   prazo: {
     descricao: "15 dias úteis a partir de 12/07/2026",
     data: "2026-08-02",
@@ -72,6 +86,7 @@ const RESPOSTA_COMPLETA = {
     requer_confirmacao_humana: true,
   },
   proxima_acao: "Notificação extrajudicial",
+  proximos_passos: ["Conferir quitação", "Avaliar tutela de urgência"],
   conflito: {
     alertas: ['Parte contrária "Banco X S/A" consta como cliente ativo.'],
   },
@@ -193,6 +208,32 @@ describe("EntradaUnica — confirmação (tela B)", () => {
     expect(
       (screen.getByLabelText("Parte contrária") as HTMLInputElement).value,
     ).toBe("Banco X S/A");
+    expect(
+      (screen.getByLabelText("Assunto jurídico") as HTMLInputElement).value,
+    ).toBe("Negativação indevida");
+    expect(
+      (screen.getByLabelText("Natureza da demanda") as HTMLSelectElement).value,
+    ).toBe("judicial");
+    expect(
+      (screen.getByLabelText("Possível ação ou procedimento") as HTMLInputElement)
+        .value,
+    ).toBe("Ação declaratória de inexistência de débito");
+    expect(
+      (screen.getByLabelText("Prioridade do caso") as HTMLSelectElement).value,
+    ).toBe("alta");
+    expect(
+      (screen.getByLabelText("Motivo da urgência") as HTMLTextAreaElement).value,
+    ).toBe("Restrição de crédito ativa.");
+    expect(
+      (screen.getByLabelText("Documentos faltantes") as HTMLTextAreaElement)
+        .value,
+    ).toContain("Consulta atualizada");
+    expect(
+      (screen.getByLabelText("Provas necessárias") as HTMLTextAreaElement).value,
+    ).toContain("Confirmar data");
+    expect(
+      (screen.getByLabelText("Próximos passos") as HTMLTextAreaElement).value,
+    ).toContain("Avaliar tutela");
 
     // Documentos com classificação e não reconhecido
     expect(screen.getByText("Comprovante de pagamento")).toBeTruthy();
@@ -327,6 +368,29 @@ describe("contrato criar-caso (regressões do review)", () => {
       }),
     );
     expect(semIso.prazo).toBeUndefined();
+  });
+
+  it("leva triagem revisada ao payload de criação", () => {
+    const payload = montarPayloadCriacao(
+      propostaBase({
+        assunto: "Negativação indevida",
+        naturezaDemanda: "judicial",
+        naturezaProvavel: "Ação declaratória",
+        prioridade: "alta",
+        urgenciaMotivo: "Restrição ativa",
+        documentosFaltantes: ["Consulta atualizada"],
+        provasNecessarias: ["Confirmar data"],
+        proximosPassos: ["Conferir quitação"],
+      }),
+    );
+    expect(payload.assunto).toBe("Negativação indevida");
+    expect(payload.natureza_demanda).toBe("judicial");
+    expect(payload.natureza_provavel).toBe("Ação declaratória");
+    expect(payload.prioridade).toBe("alta");
+    expect(payload.urgencia_motivo).toBe("Restrição ativa");
+    expect(payload.documentos_faltantes).toEqual(["Consulta atualizada"]);
+    expect(payload.provas_necessarias).toEqual(["Confirmar data"]);
+    expect(payload.proximos_passos).toEqual(["Conferir quitação"]);
   });
 
   it("escolher cliente existente NÃO auto-confirma duplicidade (gate do servidor)", () => {

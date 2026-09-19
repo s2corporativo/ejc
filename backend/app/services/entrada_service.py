@@ -35,7 +35,13 @@ from app.core.config import get_settings
 from app.core.ownership import is_gestao
 from app.core.security import EQUIPE_JURIDICA, ROLE_LEVEL
 from app.models.audit_log import criar_audit_log
-from app.models.case import Case, CaseArea, CaseMovimento, CaseStatus
+from app.models.case import (
+    Case,
+    CaseArea,
+    CaseMovimento,
+    CasePrioridade,
+    CaseStatus,
+)
 from app.models.case_parte import CaseParte
 from app.models.client import Client
 from app.models.deadline import Deadline
@@ -338,6 +344,18 @@ async def analisar_entrada(
     def _s(v: Any, teto: int = 500) -> str | None:
         return str(v).strip()[:teto] if isinstance(v, (str, int, float)) and str(v).strip() else None
 
+    def _ls(v: Any, *, limite: int = 12, teto: int = 500) -> list[str]:
+        if not isinstance(v, list):
+            return []
+        itens: list[str] = []
+        for item in v:
+            texto_item = _s(item, teto)
+            if texto_item:
+                itens.append(texto_item)
+            if len(itens) >= limite:
+                break
+        return itens
+
     nome_extraido = _s(dados_pessoais.get("nome"), 255)
     cliente, duplicados_clientes, avisos_cli = await identificar_cliente(
         db, cu,
@@ -356,12 +374,48 @@ async def analisar_entrada(
     else:
         area = {"valor": _s(analise_docs.get("area"), 50), "confianca": None}
 
+    assunto_txt = painel.get("assunto") or {}
+    assunto = {
+        "valor": _s(assunto_txt.get("valor"), 255),
+        "confianca": assunto_txt.get("confianca"),
+        "requer_confirmacao_humana": True,
+    }
+
+    natureza_txt = painel.get("natureza_demanda") or {}
+    natureza_demanda = _s(natureza_txt.get("valor"), 50)
+    urgencia_txt = painel.get("urgencia") or {}
+    urgencia_valor = (
+        urgencia_txt.get("valor")
+        if isinstance(urgencia_txt.get("valor"), bool)
+        else None
+    )
+    prioridade_sugerida = "alta" if urgencia_valor is True else "media"
+    urgencia = {
+        "valor": urgencia_valor,
+        "prioridade_sugerida": prioridade_sugerida,
+        "justificativa": _s(urgencia_txt.get("justificativa"), 1_000),
+        "confianca": urgencia_txt.get("confianca"),
+        "requer_confirmacao_humana": True,
+    }
+    documentos_faltantes = _ls(painel.get("documentos_faltantes"))
+    provas_necessarias = _ls(painel.get("provas_necessarias"))
+    proximos_passos = _ls(painel.get("proximos_passos"))
+
     # Fatos: o relato do advogado é a fonte primária (determinística); o
     # resumo executivo dos documentos entra como fallback (rascunho de IA).
     fatos = (texto or "").strip() or _s(resumo_exec.get("fatos"), 10_000)
 
-    acao = _s((painel.get("possivel_acao") or {}).get("valor"), 200)
-    titulo_base = acao or _s(analise_docs.get("tipo_documento_principal"), 200)
+    acao_item = painel.get("possivel_acao") or {}
+    acao = _s(acao_item.get("valor"), 500)
+    natureza = {
+        "tipo": natureza_demanda,
+        "acao": acao,
+        "confianca": acao_item.get("confianca") or natureza_txt.get("confianca"),
+        "requer_confirmacao_humana": True,
+    }
+    titulo_base = acao or assunto["valor"] or _s(
+        analise_docs.get("tipo_documento_principal"), 200
+    )
     nome_cliente = cliente.get("nome")
     if titulo_base and nome_cliente:
         titulo = f"{titulo_base} — {nome_cliente}"[:255]
@@ -370,6 +424,7 @@ async def analisar_entrada(
 
     proxima_acao = (
         _s(resumo_exec.get("providencia_principal"), 500)
+        or (proximos_passos[0] if proximos_passos else None)
         or (f"Avaliar cabimento de: {acao}" if acao else None)
         or PROXIMA_ACAO_DEFAULT
     )
@@ -408,12 +463,18 @@ async def analisar_entrada(
         "rascunho_id": batch.id,
         "cliente": cliente,
         "area": {**area, "requer_confirmacao_humana": True},
+        "assunto": assunto,
+        "natureza": natureza,
+        "urgencia": urgencia,
         "titulo": titulo,
         "fatos": fatos,
         "parte_contraria": parte_contraria,
         "documentos": documentos,
+        "documentos_faltantes": documentos_faltantes,
+        "provas_necessarias": provas_necessarias,
         "prazo": prazo,
         "proxima_acao": proxima_acao,
+        "proximos_passos": proximos_passos,
         "conflito": {"alertas": conflito_alertas},
         "duplicados": {"clientes": duplicados_clientes},
         "degradado": degradado,
@@ -559,6 +620,7 @@ async def criar_caso_do_rascunho(
         titulo=payload.titulo,
         area=CaseArea(payload.area),
         status=CaseStatus.aberto,
+        prioridade=CasePrioridade(payload.prioridade),
         descricao_fatos=payload.fatos,
         parte_contraria=payload.parte_contraria,
         client_id=client.id,
@@ -685,6 +747,25 @@ async def criar_caso_do_rascunho(
             f"prazo {deadline_id or '-'}; numero {numero}"
         ),
     )
+
+    # Snapshot da triagem CONFIRMADA: preserva assunto/natureza/lacunas sem
+    # criar schema paralelo ou migration prematura. O batch já fica ligado ao
+    # Case abaixo, mantendo origem, revisão humana e rastreabilidade.
+    resultado_atual = dict(batch.resultado or {})
+    entrada_atual = dict(resultado_atual.get("entrada_unica") or {})
+    entrada_atual["triagem_confirmada"] = {
+        "assunto": payload.assunto,
+        "natureza_demanda": payload.natureza_demanda,
+        "natureza_provavel": payload.natureza_provavel,
+        "prioridade": payload.prioridade,
+        "urgencia_motivo": payload.urgencia_motivo,
+        "documentos_faltantes": payload.documentos_faltantes,
+        "provas_necessarias": payload.provas_necessarias,
+        "proximos_passos": payload.proximos_passos,
+        "confirmada_por": user.id,
+    }
+    resultado_atual["entrada_unica"] = entrada_atual
+    batch.resultado = resultado_atual
 
     # Idempotência: o rascunho aponta para o caso criado.
     batch.case_id = case.id
