@@ -732,7 +732,7 @@ export default function DashboardUltra() {
                   type="button"
                   className={classes.join(" ")}
                   aria-label={format(dia, "dd/MM/yyyy")}
-                  aria-selected={diaSelecionado === chave}
+                  aria-pressed={diaSelecionado === chave}
                   aria-current={
                     chave === format(new Date(), "yyyy-MM-dd")
                       ? "date"
