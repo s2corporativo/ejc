@@ -48,6 +48,50 @@ _AREA_TASK = {
 # antes (não acessa IA interna); estagiário/secretaria/financeiro ficam de fora.
 _ROLES_OAB = {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar"}
 
+# Metadado funcional do catálogo: fonte única para agrupamento da UI.
+# Não exige coluna/migration porque é uma classificação de apresentação
+# derivada dos metadados autorais já persistidos na skill.
+_FUNCTIONAL_GROUP_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "analisar": (
+        "raio-x", "raiox", "analise", "analisar", "resumo", "resumir",
+        "cronologia", "extrair", "identificar", "localizar", "avaliar",
+        "casador", "detector", "auditor", "provas", "inconsist", "risc",
+        "dossie", "score", "checklist",
+    ),
+    "produzir": (
+        "peticao", "contestacao", "replica", "recurso", "contrato", "parecer",
+        "notificacao", "procuracao", "relatorio", "redigir", "gerar", "minuta",
+        "peca", "embargos", "agravo", "apelacao", "mandado", "habeas",
+        "cumprimento",
+    ),
+    "revisar": (
+        "corrigir", "conferir", "revisar", "verificar", "coerenc",
+        "fundament", "linguagem", "calculo", "valor", "ausente",
+        "contradicao", "jurisprudenc",
+    ),
+    "preparar": (
+        "audiencia", "reuniao", "negociacao", "sustentacao", "diligencia",
+        "checklist", "preparar", "estrateg", "defesa", "orient",
+    ),
+}
+
+
+def functional_group(skill: EjcSkill) -> str:
+    """Agrupa a skill para navegação sem duplicar a regra no frontend.
+
+    Mantém a semântica histórica: empate preserva o primeiro grupo com maior
+    score e ausência de palavra-chave cai em produzir.
+    """
+    texto = f"{skill.name} {skill.display_name} {skill.description or ''}".lower()
+    melhor = "produzir"
+    melhor_score = 0
+    for grupo, keywords in _FUNCTIONAL_GROUP_KEYWORDS.items():
+        score = sum(1 for keyword in keywords if keyword in texto)
+        if score > melhor_score:
+            melhor = grupo
+            melhor_score = score
+    return melhor
+
 
 def _aplicar_guardrails_juridicos(skill_name: str, texto: str) -> tuple[str, list[str]]:
     """Guardrail jurídico DETERMINÍSTICO (Issue #554) — não confia só no
