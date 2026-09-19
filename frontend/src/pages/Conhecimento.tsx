@@ -72,7 +72,8 @@ const CATS: { value: string; label: string; icon: any; cor: string }[] = [
   },
 ];
 
-const catMeta = (v: string) => CATS.find((c) => c.value === v) ?? CATS[CATS.length - 1];
+const catMeta = (v: string) =>
+  CATS.find((c) => c.value === v) ?? CATS[CATS.length - 1];
 
 // ── Status badge ─────────────────────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
@@ -769,7 +770,9 @@ function SecaoImportarJuris({ onImportado }: { onImportado: () => void }) {
 export default function Conhecimento() {
   const user = useAuth((state) => state.user);
   const role = user?.role ?? "";
-  const podeIngerir = ["superadmin", "admin", "socio", "advogado"].includes(role);
+  const podeIngerir = ["superadmin", "admin", "socio", "advogado"].includes(
+    role,
+  );
   const podeExcluir = ["superadmin", "admin", "socio"].includes(role);
   const [docs, setDocs] = useState<any>(null);
   const [erroDocs, setErroDocs] = useState(false);
@@ -920,7 +923,11 @@ export default function Conhecimento() {
                   </div>
                   {(r.fonte || r.tribunal || r.confianca) && (
                     <p className="mb-2 text-[11px] text-slate-400">
-                      {[r.tribunal, r.fonte, r.confianca && `confiança: ${r.confianca}`]
+                      {[
+                        r.tribunal,
+                        r.fonte,
+                        r.confianca && `confiança: ${r.confianca}`,
+                      ]
                         .filter(Boolean)
                         .join(" · ")}
                     </p>
@@ -937,7 +944,9 @@ export default function Conhecimento() {
       </div>
 
       {/* Importar jurisprudência (APIs oficiais) */}
-      {podeIngerir && <SecaoImportarJuris onImportado={() => load(1, catFiltro)} />}
+      {podeIngerir && (
+        <SecaoImportarJuris onImportado={() => load(1, catFiltro)} />
+      )}
 
       {/* Filtros + lista */}
       <div className="space-y-4">
