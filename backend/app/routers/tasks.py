@@ -134,7 +134,8 @@ async def listar(
         {"id": t.id, "titulo": t.titulo, "descricao": t.descricao,
          "status": t.status.value, "prioridade": t.prioridade,
          "data_limite": t.data_limite, "case_id": t.case_id,
-         "responsavel_id": t.responsavel_id, "created_at": t.created_at}
+         "responsavel_id": t.responsavel_id, "created_at": t.created_at,
+         "concluida_em": t.concluida_em}
         for t in rows
     ]}
 

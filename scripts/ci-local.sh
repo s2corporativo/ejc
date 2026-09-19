@@ -344,6 +344,7 @@ run_frontend() {
   check_node
   log "Frontend: npm ci…"; (cd frontend && npm ci --no-audit --no-fund)
   log "Frontend: Prettier…"; (cd frontend && npm run format:check) | tee "$REPORT_DIR/prettier.log"
+  log "Frontend: governança CSS…"; (cd frontend && npm run audit:css:verificar) | tee "$REPORT_DIR/css-audit.log"
   log "Frontend: Vitest…"; (cd frontend && npm run test -- --reporter=dot) | tee "$REPORT_DIR/vitest.log"
   log "Frontend: npm audit high…"; (cd frontend && npm audit --audit-level=high) | tee "$REPORT_DIR/npm-audit.log"
   log "Frontend: typecheck/build…"; (cd frontend && npm run build) | tee "$REPORT_DIR/frontend-build.log"
