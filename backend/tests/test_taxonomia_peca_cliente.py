@@ -9,12 +9,14 @@ def _cat(nome, caminho=None, mime=None):
     return classificar_drive_file(nome, caminho, mime).categoria
 
 
-# ── Peça de cliente → peca_interna (categoria RESTRITA / fail-closed no RAG) ──
+# ── Peça de cliente → peca_interna e bloqueio de ingestão sem escopo ─────────
 
 def test_contestacao_com_numero_cnj_vira_peca_interna():
     dec = classificar_drive_file("Contestação 0801234-56.2023.8.13.0079 Fulano.docx")
     assert dec.categoria == "peca_interna"
-    assert dec.excluir is False
+    assert dec.excluir is True
+    assert dec.confianca == "bloqueado"
+    assert dec.prioridade == 0
     assert dec.tipo_fonte == "peca_cliente_restrita"
     assert any(s.startswith("processo_cnj:") for s in dec.sinais)
 
