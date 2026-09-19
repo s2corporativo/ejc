@@ -60,11 +60,23 @@ type CasoResumo = {
   titulo?: string;
   status?: string;
   area?: string;
+  prioridade?: string;
+  risco?: string | null;
+  proxima_acao?: string | null;
+  proxima_acao_prazo?: string | null;
   numero_processo?: string | null;
   numero_interno?: string | null;
+  created_at?: string | null;
 };
 
-type Tarefa = { id: string; titulo?: string; status?: string };
+type Tarefa = {
+  id: string;
+  titulo?: string;
+  status?: string;
+  prioridade?: string;
+  data_limite?: string | null;
+  concluida_em?: string | null;
+};
 
 type Kpis = {
   casos?: { ativos?: number };
@@ -110,6 +122,65 @@ function saudacaoPorHora(): string {
   return "Boa noite";
 }
 
+function scoreCaso(caso: CasoResumo, atividades: Atividade[] | null): number {
+  let score = 0;
+  const status = (caso.status ?? "").toLowerCase();
+  const prioridade = (caso.prioridade ?? "").toLowerCase();
+  const risco = (caso.risco ?? "").toLowerCase();
+
+  if (status === "encerrado" || status === "arquivado") score -= 100;
+  else score += 40;
+
+  if (prioridade === "urgente") score += 30;
+  else if (prioridade === "alta") score += 20;
+
+  if (risco === "critico" || risco === "crítico") score += 35;
+  else if (risco === "alto") score += 25;
+
+  if (caso.proxima_acao_prazo) {
+    const prazo = Date.parse(caso.proxima_acao_prazo);
+    if (!Number.isNaN(prazo)) {
+      const dias = Math.ceil((prazo - Date.now()) / 86_400_000);
+      if (dias < 0) score += 100;
+      else if (dias === 0) score += 90;
+      else if (dias <= 3) score += 70;
+      else if (dias <= 7) score += 45;
+      else if (dias <= 30) score += 15;
+    }
+  }
+
+  for (const atividade of atividades ?? []) {
+    if (!caso.id || atividade.case_id !== caso.id) continue;
+    const dias = atividade.dias_restantes;
+    if (atividade.urgencia === "vencido") score += 120;
+    else if (atividade.urgencia === "critico") score += 95;
+    else if (atividade.urgencia === "atencao") score += 55;
+    if (dias !== null && dias !== undefined) {
+      if (dias < 0) score += 120;
+      else if (dias === 0) score += 85;
+      else if (dias <= 3) score += 60;
+      else if (dias <= 7) score += 35;
+    }
+  }
+
+  return score;
+}
+
+function scoreTarefaHoje(tarefa: Tarefa, hoje: string): number {
+  let score = 0;
+  const prioridade = (tarefa.prioridade ?? "").toLowerCase();
+  if (prioridade === "urgente") score += 50;
+  else if (prioridade === "alta") score += 30;
+
+  const limite = tarefa.data_limite?.slice(0, 10);
+  if (!limite) score += 10;
+  else if (limite < hoje) score += 80;
+  else if (limite === hoje) score += 60;
+
+  if (tarefa.status === "concluida") score -= 5;
+  return score;
+}
+
 export default function DashboardUltra() {
   const user = useAuth((state) => state.user);
   const navigate = useNavigate();
@@ -123,6 +194,7 @@ export default function DashboardUltra() {
   );
   const [tarefas, setTarefas] = useState<Tarefa[] | null>(null);
   const [aba, setAba] = useState<AbaAgenda>("hoje");
+  const [diaSelecionado, setDiaSelecionado] = useState<string | null>(null);
   const [mesOffset, setMesOffset] = useState(0);
 
   const carregar = useCallback(async () => {
@@ -133,7 +205,7 @@ export default function DashboardUltra() {
     const [rKpis, rAtiv, rCasos, rDocs, rTarefas] = await Promise.allSettled([
       api.get("/dashboard/"),
       api.get("/atividades", { params: { apenas_pendentes: true } }),
-      api.get("/cases/", { params: { page: 1, page_size: 4 } }),
+      api.get("/cases/", { params: { page: 1, page_size: 20 } }),
       api.get("/documents/", {
         params: { page: 1, page_size: 1, data_inicio: inicioDocs },
       }),
@@ -164,10 +236,14 @@ export default function DashboardUltra() {
   }, [carregar]);
 
   const alternarTarefa = useCallback(async (tarefa: Tarefa) => {
-    const novoStatus = tarefa.status === "concluida" ? "pendente" : "concluida";
+    const novoStatus = tarefa.status === "concluida" ? "a_fazer" : "concluida";
+    const novoConcluidaEm =
+      novoStatus === "concluida" ? new Date().toISOString() : null;
     setTarefas((atual) =>
       (atual ?? []).map((item) =>
-        item.id === tarefa.id ? { ...item, status: novoStatus } : item,
+        item.id === tarefa.id
+          ? { ...item, status: novoStatus, concluida_em: novoConcluidaEm }
+          : item,
       ),
     );
     try {
@@ -175,7 +251,13 @@ export default function DashboardUltra() {
     } catch {
       setTarefas((atual) =>
         (atual ?? []).map((item) =>
-          item.id === tarefa.id ? { ...item, status: tarefa.status } : item,
+          item.id === tarefa.id
+            ? {
+                ...item,
+                status: tarefa.status,
+                concluida_em: tarefa.concluida_em ?? null,
+              }
+            : item,
         ),
       );
       toast.error("Não foi possível atualizar a tarefa.");
@@ -193,6 +275,11 @@ export default function DashboardUltra() {
 
   const agendaFiltrada = useMemo(() => {
     if (!atividades) return null;
+    if (diaSelecionado) {
+      return atividades
+        .filter((a) => a.date?.slice(0, 10) === diaSelecionado)
+        .slice(0, 6);
+    }
     const dentroDaAba = atividades.filter((a) => {
       const d = a.dias_restantes;
       if (aba === "hoje") return d === 0;
@@ -200,23 +287,46 @@ export default function DashboardUltra() {
       return d !== null && d !== undefined && d >= 2 && d <= 7;
     });
     return dentroDaAba.slice(0, 6);
-  }, [atividades, aba]);
+  }, [atividades, aba, diaSelecionado]);
 
-  const rotinaPendentes = useMemo(
-    () =>
-      (tarefas ?? []).filter((t) => t.status !== "concluida").slice(0, 5),
-    [tarefas],
-  );
-  const rotinaConcluidas = useMemo(() => {
-    const pendentesIds = new Set(rotinaPendentes.map((t) => t.id));
-    return (tarefas ?? [])
-      .filter((t) => t.status === "concluida" && !pendentesIds.has(t.id))
-      .slice(0, Math.max(0, 5 - rotinaPendentes.length));
-  }, [tarefas, rotinaPendentes]);
+  const casosEmDestaque = useMemo(() => {
+    if (!casos) return null;
+    return casos
+      .map((caso, index) => ({
+        caso,
+        index,
+        score: scoreCaso(caso, atividades),
+      }))
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        const aCriado = Date.parse(a.caso.created_at ?? "") || 0;
+        const bCriado = Date.parse(b.caso.created_at ?? "") || 0;
+        if (bCriado !== aCriado) return bCriado - aCriado;
+        return a.index - b.index;
+      })
+      .slice(0, 4)
+      .map(({ caso }) => caso);
+  }, [casos, atividades]);
 
-  const rotinaTotal = (tarefas ?? []).length;
-  const rotinaFeitas =
-    rotinaTotal - (tarefas ?? []).filter((t) => t.status !== "concluida").length;
+  const hoje = format(new Date(), "yyyy-MM-dd");
+  const rotinaHoje = useMemo(() => {
+    if (!tarefas) return [];
+    return tarefas
+      .filter((tarefa) => {
+        if (tarefa.status === "concluida") {
+          return tarefa.concluida_em?.slice(0, 10) === hoje;
+        }
+        const limite = tarefa.data_limite?.slice(0, 10);
+        return !limite || limite <= hoje;
+      })
+      .sort((a, b) => scoreTarefaHoje(b, hoje) - scoreTarefaHoje(a, hoje))
+      .slice(0, 5);
+  }, [tarefas, hoje]);
+
+  const rotinaPendentes = rotinaHoje.filter((t) => t.status !== "concluida");
+  const rotinaConcluidas = rotinaHoje.filter((t) => t.status === "concluida");
+  const rotinaTotal = rotinaHoje.length;
+  const rotinaFeitas = rotinaConcluidas.length;
 
   const mesVisivel = useMemo(
     () => addMonths(startOfMonth(new Date()), mesOffset),
@@ -405,12 +515,26 @@ export default function DashboardUltra() {
                   role="tab"
                   aria-selected={aba === valor}
                   className={aba === valor ? "is-active" : ""}
-                  onClick={() => setAba(valor)}
+                  onClick={() => {
+                    setDiaSelecionado(null);
+                    setAba(valor);
+                  }}
                 >
                   {rotulo}
                 </button>
               ))}
             </div>
+            {diaSelecionado && (
+              <button
+                type="button"
+                className="ejc-dash__date-filter"
+                onClick={() => setDiaSelecionado(null)}
+                aria-label="Remover filtro de data"
+              >
+                {format(new Date(`${diaSelecionado}T12:00:00`), "dd/MM/yyyy")}
+                <span aria-hidden="true">×</span>
+              </button>
+            )}
           </div>
           <ol className="ejc-dash__timeline">
             {agendaFiltrada === null ? (
@@ -456,12 +580,12 @@ export default function DashboardUltra() {
             </Link>
           </div>
           <ul className="ejc-dash__cases">
-            {casos === null ? (
+            {casosEmDestaque === null ? (
               <li className="ejc-dash__empty">Casos indisponíveis agora.</li>
-            ) : casos.length === 0 ? (
+            ) : casosEmDestaque.length === 0 ? (
               <li className="ejc-dash__empty">Nenhum caso cadastrado ainda.</li>
             ) : (
-              casos.map((c) => {
+              casosEmDestaque.map((c) => {
                 const chip = chipDeCaso(c.status);
                 const meta =
                   c.numero_processo
@@ -485,6 +609,7 @@ export default function DashboardUltra() {
                           c.area
                             ? c.area.charAt(0).toUpperCase() + c.area.slice(1)
                             : "",
+                          c.proxima_acao ? `Próxima: ${c.proxima_acao}` : "",
                         ]
                           .filter(Boolean)
                           .join("  ·  ")}
@@ -600,17 +725,22 @@ export default function DashboardUltra() {
               const classes = ["ejc-dash__calendar-day"];
               if (!isSameMonth(dia, mesVisivel)) classes.push("is-out");
               if (temAtividade) classes.push("has-event");
+              if (diaSelecionado === chave) classes.push("is-selected");
               return (
                 <button
                   key={chave}
                   type="button"
                   className={classes.join(" ")}
+                  aria-label={format(dia, "dd/MM/yyyy")}
+                  aria-pressed={diaSelecionado === chave}
                   aria-current={
                     chave === format(new Date(), "yyyy-MM-dd")
                       ? "date"
                       : undefined
                   }
-                  onClick={() => navigate(`/atividades/dia/${chave}`)}
+                  onClick={() =>
+                    setDiaSelecionado((atual) => (atual === chave ? null : chave))
+                  }
                 >
                   {format(dia, "d")}
                   {temAtividade && <i aria-hidden="true" />}
