@@ -41,6 +41,14 @@ const EstimadorHonorarios = lazy(
 
 const GESTORES: readonly string[] = ["superadmin", "admin", "socio"];
 const ADVOGADOS: readonly string[] = ["superadmin", "admin", "socio", "advogado"];
+const EQUIPE_JURIDICA_UI: readonly string[] = [
+  "superadmin",
+  "admin",
+  "socio",
+  "advogado",
+  "advogado_auxiliar",
+  "estagiario",
+];
 
 const TABS = [
   {
@@ -71,7 +79,7 @@ const TABS = [
     k: "jurimetria",
     label: "Analisar dados e resultados",
     icon: Scale,
-    roles: GESTORES,
+    roles: EQUIPE_JURIDICA_UI,
   },
   {
     k: "conhecimento",
