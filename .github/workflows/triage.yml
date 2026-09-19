@@ -1,0 +1,79 @@
+name: Triage (stale-bot + auto-label priority)
+
+# NOT a CI workflow — apenas automação de triagem de issues.
+# O CI do EJC continua sendo o Woodpecker self-hosted (ver docs/CI_SEM_GITHUB.md).
+# Esta workflow só roda em issues: marca stales e aplica label de prioridade
+# por regex no título. Pode ser removida sem afetar build/deploy.
+
+on:
+  schedule:
+    # 06:17 UTC diariamente (horário atípico p/ distribuir carga no GitHub)
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+  issues:
+    types: [opened, edited, reopened]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  stale-bot:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          days-before-stale: 30
+          days-before-close: 7
+          days-before-pr-stale: -1     # não mexer em PRs
+          days-before-pr-close: -1
+          stale-issue-label: 'stale'
+          stale-issue-message: |
+            ⏰ Este issue está sem atividade há 30 dias. Marcado como `stale`.
+            Será fechado em 7 dias se não houver update. Qualquer comentário remove o label.
+          close-issue-message: |
+            🗂️ Fechado automaticamente por inatividade (stale 30d + 7d sem update).
+            Reabra com contexto atualizado se ainda for relevante.
+          exempt-issue-labels: 'P0,P0-bloqueador,security,seguranca,em-andamento,blocked,in-progress'
+          operations-per-run: 80
+          remove-stale-when-updated: true
+          enable-statistics: true
+
+  auto-label-priority:
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply priority label from title
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = (context.payload.issue.title || '').toUpperCase();
+            const num = context.payload.issue.number;
+            const existing = context.payload.issue.labels.map(l => l.name);
+            const priorities = ['P3','P2','P1','P0']; // check longest-first to avoid P0 matching P01
+            let label = null;
+            for (const p of priorities) {
+              const re = new RegExp('(^|\\s|\\[)' + p + '(\\b|[-:.\\s\\]])');
+              if (re.test(' ' + title + ' ')) { label = p; break; }
+            }
+            if (!label) return;
+            if (existing.includes(label)) {
+              console.log(`#${num} já tem ${label}`);
+              return;
+            }
+            try {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: num,
+                labels: [label]
+              });
+              console.log(`#${num} recebeu ${label}`);
+            } catch (e) {
+              // label pode não existir — cria implicitamente via API
+              if (e.status === 422) {
+                console.log(`#${num}: label ${label} não existe no repo — criar antes de rodar.`);
+              } else { throw e; }
+            }
