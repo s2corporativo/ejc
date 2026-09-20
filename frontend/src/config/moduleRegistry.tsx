@@ -155,7 +155,9 @@ export type LegacyRedirect = {
   reason: string;
 };
 
-const Dashboard = lazy(() => import("../pages/Dashboard"));
+// FE-04 (Onda 2 do plano 2026-09-20): o wrapper pages/Dashboard.tsx (1 linha
+// sobre DashboardUltra) foi eliminado — o registry aponta direto ao canônico.
+const Dashboard = lazy(() => import("../pages/DashboardUltra"));
 const Dpt360Workspace = lazy(() => import("../pages/dpt360/Dpt360Workspace"));
 const Clientes = lazy(() => import("../pages/Clientes"));
 const CadastroManual = lazy(() => import("../pages/CadastroManual"));
