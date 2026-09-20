@@ -793,6 +793,24 @@ class TestOrchestrator:
             )
         assert exc.value.status_code == 403
 
+    async def test_cliente_externo_enum_real_bloqueado_403(self, nucleo_mocks):
+        from app.models.user import UserRole
+        from app.services.ai.core.orchestrator import orchestrator
+
+        user_enum = SimpleNamespace(
+            id="usuario-fake-1",
+            role=UserRole.cliente_externo,
+        )
+        assert str(UserRole.cliente_externo) != "cliente_externo"
+        with pytest.raises(HTTPException) as exc:
+            await orchestrator.run(
+                db=None,
+                user=user_enum,
+                task_type="chat",
+                mensagem="Qual o andamento do meu caso?",
+            )
+        assert exc.value.status_code == 403
+
     async def test_advogado_bloqueado_em_agente_tecnico_403(self, nucleo_mocks):
         from app.services.ai.core.orchestrator import orchestrator
         with pytest.raises(HTTPException) as exc:
