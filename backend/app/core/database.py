@@ -58,6 +58,22 @@ class Base(DeclarativeBase):
     pass
 
 
+def runtime_ddl_permitido(db: object) -> bool:
+    """Permite DDL de conveniência somente em SQLite de testes.
+
+    PostgreSQL é schema-managed por Alembic. Fakes sem get_bind também
+    retornam False, evitando que testes unitários dependam de CREATE TABLE.
+    """
+    get_bind = getattr(db, "get_bind", None)
+    if not callable(get_bind):
+        return False
+    try:
+        bind = get_bind()
+    except Exception:
+        return False
+    return getattr(getattr(bind, "dialect", None), "name", None) == "sqlite"
+
+
 # ── Dependency injection para FastAPI ────────────────────────────────────────
 async def get_db() -> AsyncSession:
     """Injeta uma sessão e garante rollback/fechamento em caso de erro."""
