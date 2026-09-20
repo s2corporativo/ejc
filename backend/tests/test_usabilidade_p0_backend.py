@@ -23,7 +23,9 @@ from app.core.ai_errors import (
     MSG_IA_NAO_ATIVADA,
     MSG_IA_NAO_ATIVADA_CURTA,
     MSG_PII_BLOQUEADA,
+    MSG_SIGILO_BLOQUEADO,
     MSG_TRANSCRICAO_NAO_ATIVADA,
+    SafeAIError,
     http_erro_ia,
     mensagem_ia_para_usuario,
 )
@@ -116,6 +118,33 @@ def test_http_erro_ia_nao_vaza_detalhe_tecnico():
     assert http.detail == MSG_IA_INDISPONIVEL
     for jargao in ("task=", "localhost", "connection", "provedores"):
         assert jargao not in http.detail
+
+
+def test_excecao_arbitraria_com_pii_nunca_vira_mensagem_publica(caplog):
+    pii = "CPF 123.456.789-09 de Fulano"
+    exc = RuntimeError(f"SDK body={pii}")
+
+    assert mensagem_ia_para_usuario(exc) == MSG_IA_INDISPONIVEL
+    http = http_erro_ia(exc, 503, contexto="pii-regressao")
+    assert http.detail == MSG_IA_INDISPONIVEL
+    assert pii not in caplog.text
+    assert "123.456.789-09" not in caplog.text
+
+
+def test_safe_ai_error_preserva_orientacao_de_pii_e_sigilo():
+    pii = SafeAIError(
+        "bloqueio interno seguro",
+        code="pii_blocked",
+        technical_type="PrivacyPolicy",
+    )
+    sigilo = SafeAIError(
+        "bloqueio interno seguro",
+        code="sigilo_blocked",
+        technical_type="PrivacyPolicy",
+    )
+
+    assert mensagem_ia_para_usuario(pii) == MSG_PII_BLOQUEADA
+    assert mensagem_ia_para_usuario(sigilo) == MSG_SIGILO_BLOQUEADO
 
 
 # ── Infra fake p/ endpoints de auth (padrão de test_bloco6_auth.py) ───────────

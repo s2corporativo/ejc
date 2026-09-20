@@ -12,6 +12,7 @@ from uuid import uuid4
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.ai_errors import descricao_tecnica_segura, mensagem_ia_para_usuario
 from app.core.config import get_settings
 from app.services.sanitizer import sanitizar_pii, validar_sem_pii
 from app.services.case_context import montar_dossie
@@ -357,7 +358,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
                              "versao": getattr(r, "versao", None),
                              "score": round(float(r.sim), 4)}
     except Exception as _e:
-        logger.warning(f"Fusao lexical (RRF) falhou, mantendo semantico: {_e}")
+        logger.warning("Fusao lexical (RRF) falhou, mantendo semantico: %s", descricao_tecnica_segura(_e))
         return semanticos
     # A-3 (auditoria IA 2026-07-17): perna FULL-TEXT (tsvector 'portuguese',
     # BM25-like) — melhor para termos raros/citações exatas (art./súmula/nº CNJ).
@@ -406,7 +407,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
                                  "versao": getattr(r, "versao", None),
                                  "score": round(float(r.rank), 4)}
         except Exception as _ef:
-            logger.warning(f"Fusao FTS (RRF) falhou, ignorando esta perna: {_ef}")
+            logger.warning("Fusao FTS (RRF) falhou, ignorando esta perna: %s", descricao_tecnica_segura(_ef))
     ordenados = sorted(fusion.items(), key=lambda kv: kv[1], reverse=True)
     saida = []
     for cid, _s in ordenados[:limite]:
@@ -436,7 +437,10 @@ async def _hyde_expandir(consulta: str) -> str:
         hipotese = (getattr(resp, "texto", "") or "").strip()
         return f"{consulta}\n{hipotese}" if hipotese else consulta
     except Exception as e:  # HyDE nunca quebra a busca
-        logger.warning("HyDE indisponivel (usando consulta original): %s", str(e)[:150])
+        logger.warning(
+            "HyDE indisponivel (usando consulta original): %s",
+            descricao_tecnica_segura(e),
+        )
         return consulta
 
 
@@ -567,7 +571,7 @@ async def buscar_contexto_rag(
                     return await _reranker.rerank(consulta, fundidos, limite)
                 # Sem vetores gravados ainda → cai no textual abaixo
             except Exception as e:
-                logger.warning(f"Busca vetorial falhou, usando textual: {e}")
+                logger.warning("Busca vetorial falhou, usando textual: %s", descricao_tecnica_segura(e))
 
     # Tentativa 1: busca textual nos chunks (funciona sem embeddings)
     termos = [t for t in consulta.replace(",", " ").split() if len(t) >= 3][:8]
@@ -623,7 +627,7 @@ async def buscar_contexto_rag(
         # Reranqueia também o fallback textual (rerank off → res_txt[:limite]).
         return await _reranker.rerank(consulta, res_txt, limite)
     except Exception as e:
-        logger.warning(f"RAG search falhou: {e}")
+        logger.warning("RAG search falhou: %s", descricao_tecnica_segura(e))
         return []
 
 
@@ -832,8 +836,13 @@ async def analisar_caso(
             modo_sanitizacao=modo_sigilo,
         )
     except Exception as e:
-        logger.error(f"AI Gateway falhou: {e}")
-        return {"erro": f"Falha na IA: {str(e)[:200]}"}
+        logger.error("AI Gateway falhou: %s", descricao_tecnica_segura(e))
+        return {
+            "erro": mensagem_ia_para_usuario(
+                e,
+                padrao="Falha na IA — tente novamente",
+            )
+        }
 
     # 4. AI LOG (rastreabilidade LGPD + HITL)
     log = AILog(
@@ -886,7 +895,16 @@ async def resumir_documento(
             task_type="chat_rapido", temperature=0.1, max_tokens=1200, nivel="alto",
         )
     except Exception as e:
-        return {"erro": f"Falha na IA: {str(e)[:200]}"}
+        logger.error(
+            "AI Gateway (resumo_doc) falhou: %s",
+            descricao_tecnica_segura(e),
+        )
+        return {
+            "erro": mensagem_ia_para_usuario(
+                e,
+                padrao="Falha na IA — tente novamente",
+            )
+        }
 
     log = AILog(
         id=str(uuid4()), user_id=user_id, case_id=case_id,
@@ -943,8 +961,16 @@ async def extrair_prazos_ia(
             task_type="resumo", temperature=0.0, max_tokens=1500, nivel="alto",
         )
     except Exception as e:
-        logger.error(f"AI Gateway (detectar-prazos) falhou: {e}")
-        return {"erro": f"Falha na IA: {str(e)[:200]}"}
+        logger.error(
+            "AI Gateway (detectar-prazos) falhou: %s",
+            descricao_tecnica_segura(e),
+        )
+        return {
+            "erro": mensagem_ia_para_usuario(
+                e,
+                padrao="Falha na IA — tente novamente",
+            )
+        }
 
     from app.services.documento_service import _parse_json, _prazos_extraidos
     llm = _parse_json(resposta) or {}
@@ -1123,7 +1149,7 @@ async def detectar_teses_ocultas(
             "aviso": "⚠️ RASCUNHO — teses exigem verificação e validação do advogado (HITL).",
         }
     except Exception as e:
-        logger.error(f"Groq teses ocultas: {e}")
+        logger.error("IA teses ocultas falhou: %s", descricao_tecnica_segura(e))
         return {"erro": "Serviço de IA indisponível no momento"}
 
 
@@ -1147,7 +1173,7 @@ async def auditar_peca(
             "aviso": "⚠️ Auditoria automática — não substitui a revisão do advogado.",
         }
     except Exception as e:
-        logger.error(f"Groq auditor: {e}")
+        logger.error("IA auditoria de peça falhou: %s", descricao_tecnica_segura(e))
         return {"erro": "Serviço de IA indisponível no momento"}
 
 
@@ -1172,7 +1198,7 @@ async def preparar_audiencia(
             "aviso": "⚠️ Material preparatório — adapte à sua estratégia.",
         }
     except Exception as e:
-        logger.error(f"Groq audiência: {e}")
+        logger.error("IA preparação de audiência falhou: %s", descricao_tecnica_segura(e))
         return {"erro": "Serviço de IA indisponível no momento"}
 
 
@@ -1312,5 +1338,5 @@ async def analisar_contrato(
                      "do advogado responsável. Base legal limitada às fontes citadas.",
         }
     except Exception as e:
-        logger.error(f"Groq contrato: {e}")
+        logger.error("IA análise contratual falhou: %s", descricao_tecnica_segura(e))
         return {"erro": "Serviço de IA indisponível no momento"}
