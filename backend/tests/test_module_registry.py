@@ -82,6 +82,18 @@ def test_gerar_mapa_modulos_detecta_manual_e_endpoint():
     mapa = gerar_mapa_modulos(rotas, ["clientes"])
     clientes = next(m for m in mapa if m["module_key"] == "clientes")
     assert clientes["tem_manual"] is True
+    assert clientes["precisa_documentacao"] is False
+    assert clientes["qtd_endpoints_detectados"] == 1
+    assert clientes["precisa_revisao"] is False
+
+
+def test_ausencia_de_manual_nao_vira_falso_positivo_funcional():
+    rotas = [{"path": "/api/clients/", "methods": ["GET"], "name": "listar"}]
+    mapa = gerar_mapa_modulos(rotas, [])
+    clientes = next(m for m in mapa if m["module_key"] == "clientes")
+
+    assert clientes["tem_manual"] is False
+    assert clientes["precisa_documentacao"] is True
     assert clientes["qtd_endpoints_detectados"] == 1
     assert clientes["precisa_revisao"] is False
 
@@ -91,6 +103,7 @@ def test_resumir_mapa_modulos():
     resumo = resumir_mapa_modulos(mapa)
     assert resumo["total"] == len(MODULE_REGISTRY)
     assert resumo["sem_manual"] == len(MODULE_REGISTRY)
+    assert resumo["precisam_documentacao"] == len(MODULE_REGISTRY)
     assert resumo["sem_endpoint_detectado"] == len(MODULE_REGISTRY)
     assert resumo["ativos"] > 0
     assert resumo["beta"] >= 1
