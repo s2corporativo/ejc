@@ -87,6 +87,9 @@ export default function AssistenteIA() {
   const navigationState = location.state as { perguntaRapida?: string } | null;
   const [tool, setTool] = useState<Tool>("pesquisa");
   const [perfil, setPerfil] = useState("juridica");
+  const [provider, setProvider] = useState<"auto" | "anthropic">("auto");
+  const providerPayload =
+    provider === "anthropic" ? { provider: "anthropic" as const } : {};
   // A pergunta rápida chega pelo state interno do React Router, sem ser
   // exposta na URL. O conteúdo não é enviado automaticamente: o profissional
   // ainda revisa e confirma explicitamente o envio dentro da ferramenta de IA.
@@ -126,20 +129,27 @@ export default function AssistenteIA() {
         ({ data } = await api.post("/ia/conversar", {
           texto,
           area: "pesquisa_juridica",
+          ...providerPayload,
         }));
       else if (tool === "resumir")
-        ({ data } = await api.post("/ia/resumir", { texto }));
+        ({ data } = await api.post("/ia/resumir", { texto, ...providerPayload }));
       else if (tool === "traduzir")
         ({ data } = await api.post("/ia/conversar", {
           mensagem: PREFIXO_TRADUZIR + texto,
+          ...providerPayload,
         }));
       else if (tool === "especialista")
-        ({ data } = await api.post("/ia/analisar", { texto, perfil }));
+        ({ data } = await api.post("/ia/analisar", {
+          texto,
+          perfil,
+          ...providerPayload,
+        }));
       else
         ({ data } = await api.post("/ia/redigir", {
           texto: mensagemMinuta(),
           area: area || undefined,
           opcoes: { tipo_peca: tipoPeca },
+          ...providerPayload,
         }));
       setRes(data);
     } catch (e: any) {
@@ -202,6 +212,25 @@ export default function AssistenteIA() {
           </button>
         ))}
       </div>
+
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <label htmlFor="provider-ia" className="text-sm font-medium text-slate-600">
+          Motor:
+        </label>
+        <select
+          id="provider-ia"
+          value={provider}
+          onChange={(e) => setProvider(e.target.value as "auto" | "anthropic")}
+          className="input h-9 w-auto text-sm"
+        >
+          <option value="auto">Automático — Groq / Maritaca</option>
+          <option value="anthropic">Claude — usar nesta solicitação</option>
+        </select>
+        <span className="text-xs text-slate-400">
+          Claude só é consumido quando selecionado explicitamente.
+        </span>
+      </div>
+
       {tool === "especialista" && (
         <div className="mb-3 flex items-center gap-2">
           <span className="text-sm text-slate-500">Perfil:</span>
@@ -337,6 +366,12 @@ export default function AssistenteIA() {
                     <li key={i}>⚠️ {a}</li>
                   ))}
                 </ul>
+              )}
+              {res?.provider && (
+                <p className="text-xs text-slate-400">
+                  Motor utilizado: <strong>{res.provider}</strong>
+                  {res.modelo ? ` · ${res.modelo}` : ""}
+                </p>
               )}
               {avisoHitl && (
                 <p
