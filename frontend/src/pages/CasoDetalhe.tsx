@@ -66,6 +66,8 @@ import TabProcessos from "./CasoDetalhe/TabProcessos";
 import TabDocumentos from "./CasoDetalhe/TabDocumentos";
 import TabPrazos from "./CasoDetalhe/TabPrazos";
 import TabPecas from "./CasoDetalhe/TabPecas";
+import { DataRoomPanel } from "./DataRoom";
+import { filtrarTabsW3 } from "../config/w3Tabs";
 import TabTimeline from "./CasoDetalhe/TabTimeline";
 
 export const TABS = [
@@ -80,8 +82,13 @@ export const TABS = [
   { key: "etiquetas", label: "Etiquetas" },
   { key: "checklists", label: "Checklists" },
   { key: "documentos", label: "Documentos" },
-  // Tela C (Bloco 3): a produção de peças passa a ter superfície no caso —
-  // duplicação temporária com o módulo /pecas aceita pelo titular (2026-08-02).
+  // Onda 3 (§3: Data Room → contexto de Caso/Documento): salas do caso
+  // embutidas no workspace — atrás de flag (config/w3Tabs.ts) com rollback
+  // por perfil; a página global /data-room segue no menu Administração.
+  { key: "dataroom", label: "Data Room" },
+  // Tela C (Bloco 3) e Onda 3: a produção de peças tem superfície no caso —
+  // a aba reusa o componente canônico `Pecas` (mesmo CRUD, motor e gates);
+  // /pecas segue no menu 9 como superfície global/por-cliente (§3, mapa 5).
   { key: "pecas", label: "Peças" },
   { key: "provas", label: "Provas" },
   { key: "contratos", label: "Contratos" },
@@ -666,7 +673,12 @@ export default function CasoDetalhe() {
     ? LEGACY_CASE_TAB_REDIRECTS[rawTab]
     : undefined;
   const tabCandidata = tabRedirecionada ?? rawTab;
-  const tabConhecida = TABS.some((t) => t.key === tabCandidata);
+  // Aba conhecida = existe no TABS E está visível (flags da Onda 3). Deep-link
+  // para aba com flag OFF cai honestamente no Resumo — sem tela vazia.
+  const tabConhecida =
+    !!tabCandidata &&
+    TABS.some((t) => t.key === tabCandidata) &&
+    filtrarTabsW3([tabCandidata]).length > 0;
   const activeTab: TabKey = tabConhecida ? (tabCandidata as TabKey) : "resumo";
 
   useEffect(() => {
@@ -726,6 +738,10 @@ export default function CasoDetalhe() {
       case "documentos":
         // Tela C: upload embutido na aba — a ação acontece dentro do caso.
         return <TabDocumentos caseId={id} />;
+      case "dataroom":
+        // Onda 3: Data Room do caso — mesma superfície canônica (sem segundo
+        // CRUD), escopada ao caso; criação já vincula case_id.
+        return <DataRoomPanel caseId={id} />;
       case "pecas":
         // Tela C: peças do caso — criação, PDF de minuta e conferir-e-assinar.
         return <TabPecas caseId={id} />;
@@ -985,7 +1001,7 @@ export default function CasoDetalhe() {
                 {grp.label}
               </span>
               {grp.tabs.length > 1 &&
-                grp.tabs.map((k) => {
+                filtrarTabsW3(grp.tabs).map((k) => {
                   const t = TABS.find((x) => x.key === k)!;
                   return (
                     <button
