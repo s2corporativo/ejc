@@ -158,11 +158,18 @@ class SingleAICoreOrchestrator:
         mensagem_sana, pii_removida = sanitizar_ou_abortar(mensagem, nomes or None)
 
         # 5) Policy central de providers ──────────────────────────────────────
+        provider_solicitado = str(params.get("provider") or "").strip().lower() or None
+        if provider_solicitado == "auto":
+            provider_solicitado = None
+        if provider_solicitado not in {None, "groq", "maritaca", "anthropic", "ollama"}:
+            raise HTTPException(422, "Provedor de IA inválido.")
+
         decisao = AIProviderPolicy().avaliar(
             f"{mensagem_sana}\n{ctx.texto}",
             intent.tarefa.value,
             ja_sanitizado=True,
             exige_fonte=intent.exige_fonte,
+            provider_solicitado=provider_solicitado,
         )
         if not decisao.permitido:
             # V2-5.5 (auditoria): esta rejeição acontece ANTES do gateway —
@@ -301,6 +308,7 @@ class SingleAICoreOrchestrator:
             nivel_inteligencia=nivel_inteligencia,
             entidades=entidades or None,
             modo_sanitizacao=modo_sigilo,
+            provider_override=provider_solicitado,
         )
 
         # 7) Validação da resposta (citações, promessas, base verificável) ────
