@@ -30,12 +30,17 @@ async def _ids_recuperaveis(db: AsyncSession) -> set[str]:
     """Ids dos documentos vigentes que PASSAM no gate de recuperação do RAG —
     exatamente o fragmento `ai_service.filtros_gate_rag()` (C3): a saúde da
     base conta como "utilizável" só o que a busca de fato devolve."""
-    from app.services.ai_service import filtros_gate_rag
+    from app.services.ai_service import (
+        filtros_gate_rag,
+        filtro_elegibilidade_rag_metricas,
+    )
 
     sql = (
         "SELECT kd.id FROM knowledge_docs kd "
         "WHERE kd.deleted_at IS NULL AND kd.vigente = TRUE "
-        f"{filtros_gate_rag()}"
+        f"{filtro_elegibilidade_rag_metricas()} "
+        f"{filtros_gate_rag()} "
+        "AND EXISTS (SELECT 1 FROM knowledge_chunks kc WHERE kc.doc_id = kd.id)"
     )
     # SQL literal com bind params; a regra marca todo text(), sem olhar
     # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
@@ -779,7 +784,8 @@ async def test_document_retrieval(
     ).scalar_one_or_none()
     if not doc:
         return None
-    if doc.categoria in {"peca_interna", "peca_escritorio", "precedente_interno", "comunicacao_processual"} and doc.client_id:
+    from app.services.ai_service import _RESTRICTED_CATS
+    if doc.categoria in set(_RESTRICTED_CATS) and doc.client_id:
         return {
             "documento_id": doc.id,
             "pergunta": question,
