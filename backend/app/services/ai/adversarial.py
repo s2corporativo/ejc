@@ -161,9 +161,11 @@ def escolher_provider_diverso(
     provedor_origem: str | None,
     modo_sanitizacao=None,
 ) -> str | None:
-    """Primeiro provider ELEGÍVEL diferente do que gerou a peça, na ordem de
-    AI_PROVIDER_PRIORITY. None = nenhum diverso elegível (a crítica roda na
-    cadeia automática do gateway, possivelmente no mesmo provider).
+    """Seleciona o provider da crítica respeitando sigilo e política funcional.
+
+    Fora de LOCAL_COMPLETO, crítica jurídica usa Maritaca/Sabiá; se a peça já
+    veio da Maritaca, aceita o mesmo provider em vez de degradar para Groq ou
+    consumir Claude sem solicitação. Em sigilo reforçado, só providers locais.
 
     `modo_sanitizacao=LOCAL_COMPLETO` (sigilo reforçado) restringe os candidatos
     a providers LOCAIS: o SIGILO VENCE A DIVERSIDADE. Sem esse filtro, forçar o
@@ -183,15 +185,20 @@ def escolher_provider_diverso(
     candidatos = prioridade + [p for p in _PROVIDERS_CONHECIDOS if p not in prioridade]
     if somente_local:
         candidatos = [p for p in candidatos if p not in ai_gateway._PROVIDERS_EXTERNOS]
-    for p in candidatos:
-        if p != (provedor_origem or "").lower() and ai_gateway._provider_elegivel(p):
-            return p
-    # Sigilo reforçado: sem local DIVERSO, aceita o próprio provedor de origem
-    # (que é local, senão a peça já teria sido bloqueada) antes de desistir.
-    if somente_local:
+        for p in candidatos:
+            if p != (provedor_origem or "").lower() and ai_gateway._provider_elegivel(p):
+                return p
         origem = (provedor_origem or "").lower()
         if origem in candidatos and ai_gateway._provider_elegivel(origem):
             return origem
+        return None
+
+    # Política operacional: crítica/adversarial é raciocínio jurídico, portanto
+    # usa Maritaca/Sabiá. Mesmo quando a peça original veio da própria Maritaca,
+    # prefere-se repetir o provider a degradar automaticamente para Groq
+    # (reservado a tarefas corriqueiras) ou Claude (somente sob demanda).
+    if ai_gateway._provider_elegivel("maritaca"):
+        return "maritaca"
     return None
 
 
