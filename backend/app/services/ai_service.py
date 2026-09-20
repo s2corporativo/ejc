@@ -454,7 +454,12 @@ async def _hyde_expandir(consulta: str, modo_sanitizacao=None) -> str:
         hipotese = (getattr(resp, "texto", "") or "").strip()
         return f"{consulta}\n{hipotese}" if hipotese else consulta
     except Exception as e:  # HyDE nunca quebra a busca
-        logger.warning("HyDE indisponivel (usando consulta original): %s", str(e)[:150])
+        # Não registrar corpo da exceção: providers podem ecoar fragmentos do
+        # prompt/consulta em mensagens de erro.
+        logger.warning(
+            "HyDE indisponivel (usando consulta original): %s",
+            type(e).__name__,
+        )
         return consulta
 
 
@@ -547,8 +552,7 @@ async def buscar_contexto_rag(
                 hyde_permitido = False
                 logger.warning(
                     "HyDE desabilitado: não foi possível confirmar o piso de sigilo "
-                    "do caso %s (%s)",
-                    scope_case_id,
+                    "(%s)",
                     type(exc).__name__,
                 )
         consulta_emb = (
