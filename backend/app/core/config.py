@@ -1268,8 +1268,9 @@ class Settings(BaseSettings):
             _derivar("OLLAMA_ENABLED", False)
             _derivar("ANTHROPIC_ENABLED", True)
             _derivar("GROQ_ENABLED", True)
-            # Maritaca só entra se o operador a ligou explicitamente (não é
-            # soberana por default — ver comentário de MARITACA_ENABLED).
+            # Maritaca entra no perfil externo quando habilitada; o default
+            # atual é ligado, mas sem chave continua inelegível. Soberania
+            # nacional exige explicitamente modelos -br-sp + guarda próprio.
             _derivar(
                 "AI_PROVIDER_PRIORITY",
                 "groq,maritaca,anthropic" if self.MARITACA_ENABLED else "groq,anthropic",
