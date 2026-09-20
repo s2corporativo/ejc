@@ -670,7 +670,33 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
 
 .ejc-dash__manifesto,
 .ejc-dash__calendar,
-.ejc-dash__routine,
+.ejc-dash__routine {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* Painel único da coluna direita (referência 1:1): manifesto, calendário
+   e rotina vivem na MESMA superfície esmeralda — sem gaps entre eles. */
+.ejc-dash__side-panel {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  align-content: start;
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 85% -10%, rgba(234, 202, 127, 0.14), transparent 46%),
+    linear-gradient(165deg, #0b4535 0%, var(--ejc-dash-green-deep) 100%);
+  box-shadow: 0 18px 44px rgba(4, 41, 31, 0.26);
+}
+
+.ejc-dash__side-panel > .ejc-dash__calendar,
+.ejc-dash__side-panel > .ejc-dash__routine {
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
 .ejc-dash__quote {
   position: relative;
   overflow: hidden;
@@ -1084,9 +1110,12 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__quote p {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .ejc-dash__manifesto {
+  .ejc-dash__side-panel {
     grid-column: 1 / -1;
-    min-height: 170px;
+  }
+
+  .ejc-dash__quote {
+    grid-column: 1 / -1;
   }
 }
 
