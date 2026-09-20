@@ -87,7 +87,8 @@ class AIProviderPolicy:
              sanitiza e checa residual; PII residual → remove externos.
           3. Cadeia vazia → permitido=False com motivo SEGURO (tipos de PII,
              nunca os valores — o conteúdo jamais é ecoado).
-          4. Tarefas complexas priorizam Anthropic; econômicas, Ollama/Groq.
+          4. Tarefas complexas priorizam Maritaca; econômicas, Groq/Ollama.
+             Claude só entra quando provider_override="anthropic".
         """
         s = get_settings()
         task = (task_type or "").strip().lower()
@@ -121,8 +122,8 @@ class AIProviderPolicy:
 
         # ── Priorização por perfil da tarefa ─────────────────────────────────
         if task in TAREFAS_COMPLEXAS and "maritaca" in elegiveis:
-            # Sem Anthropic elegível, o melhor raciocínio jurídico PT-BR
-            # EXTERNO é o Sabiá (Maritaca) — priorizado à frente do groq, mas
+            # Sabiá/Maritaca é o provider automático de mérito PT-BR —
+            # priorizado à frente do Groq, mas
             # NUNCA à frente de provider LOCAL elegível (minimização LGPD: o
             # dado só sai do VPS quando não há opção local).
             locais = [p for p in elegiveis if p not in PROVIDERS_EXTERNOS]
