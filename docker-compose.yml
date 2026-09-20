@@ -122,16 +122,18 @@ services:
       # Anthropic primeiro (melhor qualidade jurídica); Maritaca (Sabiá,
       # legal-tuned PT-BR) como 2º externo; Groq depois.
       # Requer ANTHROPIC_API_KEY no .env do VPS (segredo — nunca versionado).
-      AI_PROVIDER_PRIORITY: "anthropic,maritaca,groq,ollama"
+      AI_PROVIDER_PRIORITY: "groq,maritaca,ollama,anthropic"
       # Maritaca: default alinhado ao código (config.py) e ao .env.example —
       # DESLIGADA até decisão explícita no .env (MARITACA_ENABLED=true). Antes o
       # compose ligava por padrão e divergia das outras duas fontes (análise
       # E2E 03/09/2026, A2); com chave presente, dado jurídico pseudonimizado
       # saía para um destino não soberano sem ninguém ter habilitado.
-      MARITACA_ENABLED: "${MARITACA_ENABLED:-false}"
+      MARITACA_ENABLED: "${MARITACA_ENABLED:-true}"
       # Perfil de IA (opcional): externo | local | hibrido | desligado — deriva
       # os *_ENABLED e a prioridade; vazio = flags manuais (config.py).
       AI_PROFILE: "${AI_PROFILE:-}"
+      # Claude disponível somente por solicitação explícita no sistema.
+      ANTHROPIC_AUTO_ROUTING_ENABLED: "${ANTHROPIC_AUTO_ROUTING_ENABLED:-false}"
     volumes:
       - uploads_data:/app/uploads
       - backups_data:/app/backups
@@ -199,9 +201,9 @@ services:
       # Mesma política de IA da API (o worker também roda tarefas de IA na fila):
       # sem Ollama local neste stack; IA externa com mascaramento de PII.
       OLLAMA_ENABLED: "false"
-      AI_PROVIDER_PRIORITY: "anthropic,maritaca,groq,ollama"
+      AI_PROVIDER_PRIORITY: "groq,maritaca,ollama,anthropic"
       # Mesmo default da API: Maritaca desligada até decisão explícita no .env.
-      MARITACA_ENABLED: "${MARITACA_ENABLED:-false}"
+      MARITACA_ENABLED: "${MARITACA_ENABLED:-true}"
       AI_PROFILE: "${AI_PROFILE:-}"
     volumes:
       - uploads_data:/app/uploads
