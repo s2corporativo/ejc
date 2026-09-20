@@ -56,7 +56,10 @@ describe("EJC Identidade Premium DPT — contrato visual canônico", () => {
     expect(theme).toContain('--ejc-ice: #f5f4ef');
     expect(theme).toContain('--ejc-gold: #cfa961');
     expect(theme).toContain('linear-gradient(180deg, #0b3d30 0%, #01201b 100%)');
-    expect(theme).toContain('linear-gradient(135deg, var(--ejc-gold) 0%, #e0c074 100%)');
+    // Referência DPT: item ativo da sidebar em OURO TRANSLÚCIDO (não sólido),
+    // com filete interno dourado — gradiente canônico fixado em contrato.
+    expect(theme).toContain('rgba(201, 155, 59, 0.46) 0%');
+    expect(theme).toContain('rgba(201, 155, 59, 0.3) 100%');
     expect(premium).toContain('--ejc-dash-green: #0a4132');
     expect(premium).toContain('--ejc-dash-gold: #cfa961');
     expect(premium).toContain('"Playfair Display", Georgia, "Times New Roman", serif');

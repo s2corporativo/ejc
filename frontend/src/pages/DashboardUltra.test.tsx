@@ -225,7 +225,7 @@ describe("DashboardUltra — identidade premium DPT", () => {
     ).toBeGreaterThan(0);
     const chips = screen.getAllByText("Em andamento");
     expect(chips.length).toBeGreaterThan(0);
-    expect(screen.getByText("Conclusão")).toBeTruthy();
+    expect(screen.getByText("Concluso")).toBeTruthy();
     expect(screen.getByText(/Proc. nº 1001234-56\.2023\.8\.26\.0100/)).toBeTruthy();
     expect(screen.getByText(/Próxima: Protocolar contestação/)).toBeTruthy();
   });

@@ -1,8 +1,20 @@
 // Tela A da Entrada Única: estado inicial (relato + dropzone) e estado
 // "analisando" com progresso honesto por etapa (wireframes A.1 e A.2 de
 // docs/DESENHO_BLOCO3_TELAS.md).
+// Variantes: "full" (página /entrada, relato + dropzone) e "pill" (herói da
+// Entrada Única no Dashboard — pílula branca da referência DPT, mesma lógica,
+// mesmas validações e mesmo fluxo de análise).
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, FileText, Loader2, Upload, X } from "lucide-react";
+import {
+  ArrowRight,
+  CheckCircle2,
+  FileText,
+  Loader2,
+  Paperclip,
+  Sparkles,
+  Upload,
+  X,
+} from "lucide-react";
 import { Button, Card, Textarea, cn } from "../../components/UI";
 import { toast } from "../../components/Toast";
 import type { EntradaMeta } from "./types";
@@ -24,6 +36,7 @@ export function TelaInicial({
   onArquivos,
   meta,
   onAnalisar,
+  variant = "full",
 }: {
   texto: string;
   onTexto: (v: string) => void;
@@ -31,9 +44,11 @@ export function TelaInicial({
   onArquivos: (v: File[]) => void;
   meta: EntradaMeta;
   onAnalisar: () => void;
+  variant?: "full" | "pill";
 }) {
   const [arrastando, setArrastando] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const pillRef = useRef<HTMLTextAreaElement>(null);
 
   const adicionar = (novos: FileList | File[] | null) => {
     if (!novos) return;
@@ -48,6 +63,103 @@ export function TelaInicial({
     }
     onArquivos(candidatos);
   };
+
+  const submeterPill = () => {
+    if (!podeAnalisar(texto, arquivos)) {
+      toast.info(
+        `Descreva o caso com pelo menos ${MINIMO_RELATO} caracteres ou anexe um documento para analisar.`,
+      );
+      return;
+    }
+    onAnalisar();
+  };
+
+  // Pílula canônica do herói do Dashboard (referência DPT): mesma lógica da
+  // TelaInicial — relato + anexos + análise — na superfície compacta branca.
+  if (variant === "pill") {
+    return (
+      <div className="ejc-entry-pillzone">
+        <div
+          role="group"
+          aria-label="Entrada Única: relato e documentos"
+          onDragOver={(e) => {
+            e.preventDefault();
+            setArrastando(true);
+          }}
+          onDragLeave={() => setArrastando(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setArrastando(false);
+            adicionar(e.dataTransfer?.files ?? null);
+          }}
+          className={cn("ejc-entry-pill", arrastando && "is-drag")}
+        >
+          <Sparkles className="ejc-entry-pill__spark" aria-hidden="true" />
+          <textarea
+            ref={pillRef}
+            className="ejc-entry-pill__input"
+            value={texto}
+            onChange={(e) => onTexto(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                submeterPill();
+              }
+            }}
+            rows={1}
+            placeholder="Digite aqui o seu pedido, descreva o caso ou anexe documentos…"
+            aria-label="Relato do cliente"
+          />
+          <button
+            type="button"
+            className="ejc-entry-pill__clip"
+            onClick={() => inputRef.current?.click()}
+            aria-label="Anexar documentos"
+          >
+            <Paperclip aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="ejc-entry-pill__send"
+            onClick={submeterPill}
+            aria-label="Analisar relato e documentos"
+          >
+            <ArrowRight aria-hidden="true" />
+          </button>
+          <input
+            ref={inputRef}
+            data-testid="entrada-file-input"
+            type="file"
+            multiple
+            accept={meta.formatos.join(",")}
+            className="hidden"
+            onChange={(e) => {
+              adicionar(e.target.files);
+              e.target.value = "";
+            }}
+          />
+        </div>
+        {arquivos.length > 0 && (
+          <ul className="ejc-entry-pillzone__files">
+            {arquivos.map((arquivo, i) => (
+              <li key={`${arquivo.name}-${i}`}>
+                <FileText aria-hidden="true" />
+                <span>{arquivo.name}</span>
+                <small>{(arquivo.size / 1024 / 1024).toFixed(1)} MB</small>
+                <button
+                  type="button"
+                  aria-label={`Remover ${arquivo.name}`}
+                  onClick={() => onArquivos(arquivos.filter((_, j) => j !== i))}
+                >
+                  <X aria-hidden="true" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">

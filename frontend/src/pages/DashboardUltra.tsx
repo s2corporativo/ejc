@@ -13,16 +13,20 @@ import { ptBR } from "date-fns/locale";
 import {
   BarChart3,
   BookOpen,
+  Briefcase,
   CalendarClock,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   FileText,
   FolderKanban,
+  FilePlus2,
   Plus,
   Scale,
   Sparkles,
   Upload,
   Users,
+  Zap,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { toast } from "../components/Toast";
@@ -110,9 +114,26 @@ function pontoClasse(a: Atividade): string {
 }
 
 function chipDeCaso(status?: string): { rotulo: string; classe: string } {
-  if (status === "encerrado") return { rotulo: "Conclusão", classe: "is-gold" };
+  if (status === "encerrado") return { rotulo: "Concluso", classe: "is-gold" };
   if (status === "arquivado") return { rotulo: "Arquivado", classe: "is-gray" };
   return { rotulo: "Em andamento", classe: "is-green" };
+}
+
+function dataDaAba(aba: AbaAgenda): string {
+  const base =
+    aba === "amanha" ? new Date(Date.now() + 86_400_000) : new Date();
+  return format(base, "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
+}
+
+function semanaDaAba(aba: AbaAgenda): string {
+  if (aba !== "semana") return "";
+  // Mesmo intervalo do filtro `agendaFiltrada` (dias_restantes 2..7): a
+  // legenda mostra exatamente o período exibido, sem dias fantasmas.
+  const inicio = new Date(Date.now() + 2 * 86_400_000);
+  const fim = new Date(Date.now() + 7 * 86_400_000);
+  return `${format(inicio, "dd")} a ${format(fim, "dd 'de' MMMM", {
+    locale: ptBR,
+  })}`;
 }
 
 function saudacaoPorHora(): string {
@@ -226,7 +247,9 @@ export default function DashboardUltra() {
         : null,
     );
     setTarefas(
-      rTarefas.status === "fulfilled" ? asList<Tarefa>(rTarefas.value.data) : null,
+      rTarefas.status === "fulfilled"
+        ? asList<Tarefa>(rTarefas.value.data)
+        : null,
     );
     setCarregado(true);
   }, []);
@@ -380,13 +403,10 @@ export default function DashboardUltra() {
         </div>
       </header>
 
-      <section
-        className="ejc-dash__entry"
-        aria-label="Entrada Única"
-      >
+      <section className="ejc-dash__entry" aria-label="Entrada Única">
         <div className="ejc-dash__entry-head">
           <span className="ejc-dash__entry-icon" aria-hidden="true">
-            <Sparkles />
+            <FilePlus2 />
           </span>
           <div className="ejc-dash__entry-copy">
             <h2>Entrada Única</h2>
@@ -415,7 +435,9 @@ export default function DashboardUltra() {
           </div>
         ) : (
           <div className="ejc-dash__entry-body ejc-dash__entry-body--plain">
-            <p>A Entrada Única está disponível apenas aos perfis autorizados.</p>
+            <p>
+              A Entrada Única está disponível apenas aos perfis autorizados.
+            </p>
           </div>
         )}
 
@@ -495,7 +517,12 @@ export default function DashboardUltra() {
       <div className="ejc-dash__panels">
         <section className="ejc-dash__panel" aria-label="Agenda e Prazos">
           <div className="ejc-dash__panel-head">
-            <h3>Agenda e Prazos</h3>
+            <div className="ejc-dash__panel-title">
+              <span className="ejc-dash__panel-ico" aria-hidden="true">
+                <CalendarDays />
+              </span>
+              <h3>Agenda e Prazos</h3>
+            </div>
             <Link to="/atividades" className="ejc-dash__panel-more">
               Ver todos <ChevronRight aria-hidden="true" />
             </Link>
@@ -524,7 +551,7 @@ export default function DashboardUltra() {
                 </button>
               ))}
             </div>
-            {diaSelecionado && (
+            {diaSelecionado ? (
               <button
                 type="button"
                 className="ejc-dash__date-filter"
@@ -534,6 +561,25 @@ export default function DashboardUltra() {
                 {format(new Date(`${diaSelecionado}T12:00:00`), "dd/MM/yyyy")}
                 <span aria-hidden="true">×</span>
               </button>
+            ) : (
+              <p className="ejc-dash__panel-date" aria-hidden="true">
+                {aba === "semana" ? (
+                  <strong>{semanaDaAba(aba)}</strong>
+                ) : (
+                  <>
+                    <strong>{dataDaAba(aba)}</strong>
+                    <span>
+                      {format(
+                        aba === "amanha"
+                          ? new Date(Date.now() + 86_400_000)
+                          : new Date(),
+                        "EEEE",
+                        { locale: ptBR },
+                      )}
+                    </span>
+                  </>
+                )}
+              </p>
             )}
           </div>
           <ol className="ejc-dash__timeline">
@@ -561,7 +607,7 @@ export default function DashboardUltra() {
                       <small>
                         {a.caso_titulo
                           ? a.caso_titulo
-                          : ROTULO_TIPO[a.tipo ?? ""] ?? "Atividade"}
+                          : (ROTULO_TIPO[a.tipo ?? ""] ?? "Atividade")}
                       </small>
                     </span>
                     <ChevronRight aria-hidden="true" />
@@ -574,7 +620,12 @@ export default function DashboardUltra() {
 
         <section className="ejc-dash__panel" aria-label="Casos em destaque">
           <div className="ejc-dash__panel-head">
-            <h3>Casos em destaque</h3>
+            <div className="ejc-dash__panel-title">
+              <span className="ejc-dash__panel-ico" aria-hidden="true">
+                <Briefcase />
+              </span>
+              <h3>Casos em destaque</h3>
+            </div>
             <Link to="/casos" className="ejc-dash__panel-more">
               Ver todos <ChevronRight aria-hidden="true" />
             </Link>
@@ -587,12 +638,11 @@ export default function DashboardUltra() {
             ) : (
               casosEmDestaque.map((c) => {
                 const chip = chipDeCaso(c.status);
-                const meta =
-                  c.numero_processo
-                    ? `Proc. nº ${c.numero_processo}`
-                    : c.numero_interno
-                      ? `Caso ${c.numero_interno}`
-                      : "";
+                const meta = c.numero_processo
+                  ? `Proc. nº ${c.numero_processo}`
+                  : c.numero_interno
+                    ? `Caso ${c.numero_interno}`
+                    : "";
                 return (
                   <li key={c.id ?? c.titulo}>
                     <button
@@ -626,7 +676,7 @@ export default function DashboardUltra() {
 
       <section className="ejc-dash__quick" aria-label="Acesso rápido">
         <div className="ejc-dash__quick-head">
-          <Sparkles aria-hidden="true" />
+          <Zap aria-hidden="true" />
           <strong>Acesso rápido</strong>
         </div>
         <div className="ejc-dash__quick-items">
@@ -670,130 +720,138 @@ export default function DashboardUltra() {
       </section>
 
       <aside className="ejc-dash__side" aria-label="Painel lateral">
-        <div className="ejc-dash__manifesto">
-          <img
-            src="/brand/dashboard-themis.jpg"
-            alt=""
-            aria-hidden="true"
-            loading="lazy"
-          />
-          <p>
-            Direito
-            <br />
-            que constrói
-            <br />
-            possibilidades.
-          </p>
-        </div>
-
-        <div className="ejc-dash__calendar">
-          <div className="ejc-dash__calendar-head">
-            <strong>
-              {(() => {
-                const mes = format(mesVisivel, "MMMM 'de' yyyy", {
-                  locale: ptBR,
-                });
-                return mes.charAt(0).toUpperCase() + mes.slice(1);
-              })()}
-            </strong>
-            <span>
-              <button
-                type="button"
-                aria-label="Mês anterior"
-                onClick={() => setMesOffset((v) => v - 1)}
-              >
-                <ChevronLeft aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                aria-label="Mês seguinte"
-                onClick={() => setMesOffset((v) => v + 1)}
-              >
-                <ChevronRight aria-hidden="true" />
-              </button>
-            </span>
-          </div>
-          <div className="ejc-dash__calendar-grid" role="grid">
-            {DIAS_CURTOS.map((d, i) => (
-              <span key={`${d}-${i}`} className="ejc-dash__calendar-dow">
-                {d}
-              </span>
-            ))}
-            {diasDoMes.map((dia) => {
-              const chave = format(dia, "yyyy-MM-dd");
-              const temAtividade = diasComAtividade.has(chave);
-              const classes = ["ejc-dash__calendar-day"];
-              if (!isSameMonth(dia, mesVisivel)) classes.push("is-out");
-              if (temAtividade) classes.push("has-event");
-              if (diaSelecionado === chave) classes.push("is-selected");
-              return (
-                <button
-                  key={chave}
-                  type="button"
-                  className={classes.join(" ")}
-                  aria-label={format(dia, "dd/MM/yyyy")}
-                  aria-pressed={diaSelecionado === chave}
-                  aria-current={
-                    chave === format(new Date(), "yyyy-MM-dd")
-                      ? "date"
-                      : undefined
-                  }
-                  onClick={() =>
-                    setDiaSelecionado((atual) => (atual === chave ? null : chave))
-                  }
-                >
-                  {format(dia, "d")}
-                  {temAtividade && <i aria-hidden="true" />}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="ejc-dash__routine">
-          <div className="ejc-dash__routine-head">
-            <strong>Minha rotina hoje</strong>
-            <small>
-              {carregado && tarefas
-                ? `${rotinaFeitas} de ${rotinaTotal} concluídas`
-                : "carregando…"}
-            </small>
-          </div>
-          <div className="ejc-dash__routine-bar" aria-hidden="true">
-            <i
-              style={{
-                width:
-                  rotinaTotal > 0
-                    ? `${Math.round((rotinaFeitas / rotinaTotal) * 100)}%`
-                    : "0%",
-              }}
+        {/* Painel único da referência: manifesto + calendário + rotina
+            compartilham a mesma superfície esmeralda (sem costuras). */}
+        <div className="ejc-dash__side-panel">
+          <div className="ejc-dash__manifesto">
+            <img
+              src="/brand/dashboard-themis.jpg"
+              alt=""
+              aria-hidden="true"
+              loading="lazy"
             />
+            <p>
+              Direito
+              <br />
+              que constrói
+              <br />
+              possibilidades.
+            </p>
           </div>
-          <ul>
-            {rotinaPendentes.map((t) => (
-              <li key={t.id}>
-                <button type="button" onClick={() => void alternarTarefa(t)}>
-                  <span className="ejc-dash__check" aria-hidden="true" />
-                  {t.titulo || "Tarefa"}
-                </button>
-              </li>
-            ))}
-            {rotinaConcluidas.map((t) => (
-              <li key={t.id}>
+
+          <div className="ejc-dash__calendar">
+            <div className="ejc-dash__calendar-head">
+              <strong>
+                {(() => {
+                  const mes = format(mesVisivel, "MMMM 'de' yyyy", {
+                    locale: ptBR,
+                  });
+                  return mes.charAt(0).toUpperCase() + mes.slice(1);
+                })()}
+              </strong>
+              <span>
                 <button
                   type="button"
-                  className="is-done"
-                  onClick={() => void alternarTarefa(t)}
+                  aria-label="Mês anterior"
+                  onClick={() => setMesOffset((v) => v - 1)}
                 >
-                  <span className="ejc-dash__check" aria-hidden="true" />
-                  {t.titulo || "Tarefa"}
+                  <ChevronLeft aria-hidden="true" />
                 </button>
-              </li>
-            ))}
-            {carregado && tarefas && rotinaTotal === 0 && (
-              <li className="ejc-dash__empty">Nenhuma tarefa sua por agora.</li>
-            )}
-          </ul>
+                <button
+                  type="button"
+                  aria-label="Mês seguinte"
+                  onClick={() => setMesOffset((v) => v + 1)}
+                >
+                  <ChevronRight aria-hidden="true" />
+                </button>
+              </span>
+            </div>
+            <div className="ejc-dash__calendar-grid" role="grid">
+              {DIAS_CURTOS.map((d, i) => (
+                <span key={`${d}-${i}`} className="ejc-dash__calendar-dow">
+                  {d}
+                </span>
+              ))}
+              {diasDoMes.map((dia) => {
+                const chave = format(dia, "yyyy-MM-dd");
+                const temAtividade = diasComAtividade.has(chave);
+                const classes = ["ejc-dash__calendar-day"];
+                if (!isSameMonth(dia, mesVisivel)) classes.push("is-out");
+                if (temAtividade) classes.push("has-event");
+                if (diaSelecionado === chave) classes.push("is-selected");
+                return (
+                  <button
+                    key={chave}
+                    type="button"
+                    className={classes.join(" ")}
+                    aria-label={format(dia, "dd/MM/yyyy")}
+                    aria-pressed={diaSelecionado === chave}
+                    aria-current={
+                      chave === format(new Date(), "yyyy-MM-dd")
+                        ? "date"
+                        : undefined
+                    }
+                    onClick={() =>
+                      setDiaSelecionado((atual) =>
+                        atual === chave ? null : chave,
+                      )
+                    }
+                  >
+                    {format(dia, "d")}
+                    {temAtividade && <i aria-hidden="true" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="ejc-dash__routine">
+            <div className="ejc-dash__routine-head">
+              <strong>Minha rotina hoje</strong>
+              <small>
+                {carregado && tarefas
+                  ? `${rotinaFeitas} de ${rotinaTotal} concluídas`
+                  : "carregando…"}
+              </small>
+            </div>
+            <div className="ejc-dash__routine-bar" aria-hidden="true">
+              <i
+                style={{
+                  width:
+                    rotinaTotal > 0
+                      ? `${Math.round((rotinaFeitas / rotinaTotal) * 100)}%`
+                      : "0%",
+                }}
+              />
+            </div>
+            <ul>
+              {rotinaPendentes.map((t) => (
+                <li key={t.id}>
+                  <button type="button" onClick={() => void alternarTarefa(t)}>
+                    <span className="ejc-dash__check" aria-hidden="true" />
+                    {t.titulo || "Tarefa"}
+                  </button>
+                </li>
+              ))}
+              {rotinaConcluidas.map((t) => (
+                <li key={t.id}>
+                  <button
+                    type="button"
+                    className="is-done"
+                    onClick={() => void alternarTarefa(t)}
+                  >
+                    <span className="ejc-dash__check" aria-hidden="true" />
+                    {t.titulo || "Tarefa"}
+                  </button>
+                </li>
+              ))}
+              {carregado && tarefas && rotinaTotal === 0 && (
+                <li className="ejc-dash__empty">
+                  Nenhuma tarefa sua por agora.
+                </li>
+              )}
+            </ul>
+          </div>
         </div>
 
         <div className="ejc-dash__quote">
@@ -808,8 +866,7 @@ export default function DashboardUltra() {
 
       <footer className="ejc-dash__footer">
         <span>
-          {officeBranding.officeName} <i aria-hidden="true">|</i> São
-          Paulo - SP
+          {officeBranding.officeName} <i aria-hidden="true">|</i> São Paulo - SP
         </span>
         <span className="ejc-dash__footer-tag">
           <i aria-hidden="true" /> Mais que soluções. Parcerias duradouras.

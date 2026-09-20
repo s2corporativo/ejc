@@ -670,7 +670,33 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
 
 .ejc-dash__manifesto,
 .ejc-dash__calendar,
-.ejc-dash__routine,
+.ejc-dash__routine {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* Painel único da coluna direita (referência 1:1): manifesto, calendário
+   e rotina vivem na MESMA superfície esmeralda — sem gaps entre eles. */
+.ejc-dash__side-panel {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  align-content: start;
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 85% -10%, rgba(234, 202, 127, 0.14), transparent 46%),
+    linear-gradient(165deg, #0b4535 0%, var(--ejc-dash-green-deep) 100%);
+  box-shadow: 0 18px 44px rgba(4, 41, 31, 0.26);
+}
+
+.ejc-dash__side-panel > .ejc-dash__calendar,
+.ejc-dash__side-panel > .ejc-dash__routine {
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
 .ejc-dash__quote {
   position: relative;
   overflow: hidden;
@@ -1084,9 +1110,12 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__quote p {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .ejc-dash__manifesto {
+  .ejc-dash__side-panel {
     grid-column: 1 / -1;
-    min-height: 170px;
+  }
+
+  .ejc-dash__quote {
+    grid-column: 1 / -1;
   }
 }
 
@@ -1155,6 +1184,10 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__quote p {
     transform: none;
   }
 
+  .ejc-entry-pill__send:hover {
+    transform: none;
+  }
+
   .ejc-dash__routine-bar i {
     transition: none !important;
   }
@@ -1202,5 +1235,299 @@ html:not(.dark) .sidebar-bronze .sidebar-nav-item svg {
 }
 
 html:not(.dark) .sidebar-bronze .sidebar-nav-item.is-active svg {
-  color: #4a3a12 !important;
+  /* Ouro brilhante (mesma cor da camada systemwide) — o valor antigo
+     #4a3a12 conflitava com o fundo ativo translúcido e perdia contraste. */
+  color: var(--ejc-gold-bright) !important;
+}
+/* ═════════════════════════════════════════════════════════════════════════ */
+/* FIDELIDADE CANÔNICA 1:1 — referência DPT (mockup aprovado pelo Titular)    */
+/* Pílula da Entrada Única · ícones dos painéis · data das abas               */
+/* ═════════════════════════════════════════════════════════════════════════ */
+
+/* Ícone do herói em círculo dourado (referência: documento com +) */
+.ejc-dash__entry-icon {
+  border-radius: 999px;
+}
+
+/* ── Pílula branca da Entrada Única (herói do Dashboard) ─────────────────── */
+.ejc-entry-pillzone {
+  min-width: 0;
+}
+
+.ejc-entry-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 999px;
+  background: #ffffff;
+  padding: 9px 10px 9px 20px;
+  box-shadow: 0 10px 26px rgba(4, 41, 31, 0.22);
+  transition: box-shadow 0.15s ease, outline-color 0.15s ease;
+  outline: 1px solid transparent;
+}
+
+.ejc-entry-pill:focus-within {
+  outline-color: rgba(234, 202, 127, 0.55);
+  box-shadow: 0 12px 30px rgba(4, 41, 31, 0.3);
+}
+
+.ejc-entry-pill.is-drag {
+  outline-color: rgba(234, 202, 127, 0.85);
+  background: #fffdf6;
+}
+
+.ejc-entry-pill__spark {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: var(--ejc-dash-gold);
+}
+
+.ejc-entry-pill__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-height: 120px;
+  border: 0;
+  background: transparent;
+  color: #22332c;
+  font-family: var(--ejc-font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  resize: none;
+}
+
+.ejc-entry-pill__input::placeholder {
+  color: #8b978f;
+}
+
+.ejc-entry-pill__input:focus {
+  outline: none;
+}
+
+.ejc-entry-pill__clip {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  color: #5c6b63;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.ejc-entry-pill__clip svg {
+  width: 17px;
+  height: 17px;
+}
+
+.ejc-entry-pill__clip:hover {
+  background: #f1f0ea;
+  color: var(--ejc-dash-green);
+}
+
+/* A regra legada "ouro sobre esmeralda" para botões do entry-body
+   (definida antes, com !important) atingia também o clipe de anexo e os
+   botões de remover chip — controles NEUTROS na pílula branca. O override
+   abaixo supera a especificidade da regra legada e restaura o visual
+   distinto do mockup. */
+html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"].ejc-entry-pill__clip {
+  background: transparent !important;
+  border: 0 !important;
+  color: #5c6b63 !important;
+}
+
+html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"].ejc-entry-pill__clip:hover {
+  background: #f1f0ea !important;
+  color: var(--ejc-dash-green) !important;
+}
+
+html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body .ejc-entry-pillzone__files button[type="button"] {
+  background: transparent !important;
+  border: 0 !important;
+  color: rgba(255, 255, 255, 0.78) !important;
+}
+
+.ejc-entry-pill__send {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--ejc-dash-gold) 0%, #e0c074 100%);
+  color: #05261d;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.22);
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.ejc-entry-pill__send svg {
+  width: 18px;
+  height: 18px;
+}
+
+.ejc-entry-pill__send:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+
+.ejc-entry-pill__send:focus-visible {
+  outline: 2px solid rgba(234, 202, 127, 0.9);
+  outline-offset: 2px;
+}
+
+/* Anexos da pílula — chips compactos sobre o verde */
+.ejc-entry-pillzone__files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.ejc-entry-pillzone__files li {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  font-size: 12px;
+  padding: 5px 11px;
+  max-width: 100%;
+}
+
+/* Nomes longos de arquivo não podem empurrar o tamanho/botão remover
+   para fora da pílula — mesma disciplina de truncamento da lista cheia. */
+.ejc-entry-pillzone__files li span {
+  min-width: 0;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ejc-entry-pillzone__files li svg {
+  width: 13px;
+  height: 13px;
+  color: var(--ejc-dash-gold-bright);
+}
+
+.ejc-entry-pillzone__files li small {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 10.5px;
+}
+
+.ejc-entry-pillzone__files li button {
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.ejc-entry-pillzone__files li button svg {
+  width: 12px;
+  height: 12px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.ejc-entry-pillzone__files li button:hover svg {
+  color: #ffffff;
+}
+
+/* ── Cabeçalho dos painéis com ícone quadrado esmeralda ──────────────────── */
+.ejc-dash__panel-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ejc-dash__panel-ico {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  background: linear-gradient(150deg, var(--ejc-dash-green) 0%, var(--ejc-dash-green-deep) 100%);
+  color: var(--ejc-dash-gold-bright);
+  box-shadow: 0 4px 10px rgba(4, 41, 31, 0.18);
+}
+
+.ejc-dash__panel-ico svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ── Data canônica à direita das abas da Agenda ──────────────────────────── */
+.ejc-dash__panel-date {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  margin-bottom: 12px;
+  text-align: right;
+}
+
+.ejc-dash__panel-date strong {
+  color: var(--ejc-dash-ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ejc-dash__panel-date span {
+  color: var(--ejc-dash-muted);
+  font-size: 11px;
+}
+
+@media (max-width: 640px) {
+  .ejc-dash__panel-date {
+    display: none;
+  }
+
+  .ejc-entry-pill {
+    padding-left: 14px;
+  }
+
+  .ejc-dash__entry-icon {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+/* A regra legada .ejc-dash__entry-body textarea (min-height 104px, raio 14px)
+   não pode vazar para o textarea da PÍLULA canônica — especificidade maior
+   garante a pílula compacta de uma linha da referência DPT. */
+.ejc-dash__entry .ejc-entry-pill__input,
+.ejc-dash__entry-body .ejc-entry-pill__input {
+  min-height: 0 !important;
+  height: auto !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  background: transparent !important;
+  font-size: 14px !important;
+}
+
+/* Menu canônico completo (11 domínios da referência) cabe em 900px de
+   viewport sem rolagem — densidade calibrada da sidebar DPT. */
+@media (min-width: 768px) {
+  html:not(.dark) .sidebar-bronze nav {
+    padding: 12px 12px 8px !important;
+  }
+
+  html:not(.dark) .sidebar-bronze .sidebar-nav-item {
+    min-height: 40px !important;
+    margin-bottom: 2px !important;
+  }
+
+  html:not(.dark) .sidebar-bronze .ejc-sidebar-epigraph__quote {
+    padding: 10px 20px 8px;
+    font-size: 12.5px;
+  }
+
+  html:not(.dark) .sidebar-bronze .ejc-sidebar-epigraph__figure {
+    height: 100px;
+  }
 }
