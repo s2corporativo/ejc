@@ -37,12 +37,29 @@ router = APIRouter(prefix="/rag", tags=["Base de Conhecimento"])
 async def stats_conhecimento(db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     """Contagens da base de conhecimento (dashboard de Conhecimento)."""
     from sqlalchemy import text as _t
-    total_docs = (await db.execute(_t("SELECT count(*) FROM knowledge_docs WHERE deleted_at IS NULL"))).scalar() or 0
-    total_chunks = (await db.execute(_t("SELECT count(*) FROM knowledge_chunks"))).scalar() or 0
-    com_emb = (await db.execute(_t("SELECT count(*) FROM knowledge_chunks WHERE embedding IS NOT NULL"))).scalar() or 0
+    # Dashboard reporta o CORPUS OPERACIONAL: somente versão vigente e não
+    # excluída. Histórico continua preservado para auditoria, mas não pode
+    # parecer "chunk sem vetor" do RAG atual.
+    total_docs = (await db.execute(_t(
+        "SELECT count(*) FROM knowledge_docs "
+        "WHERE deleted_at IS NULL AND vigente = TRUE"
+    ))).scalar() or 0
+    total_chunks = (await db.execute(_t(
+        "SELECT count(*) FROM knowledge_chunks kc "
+        "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
+        "WHERE kd.deleted_at IS NULL AND kd.vigente = TRUE"
+    ))).scalar() or 0
+    com_emb = (await db.execute(_t(
+        "SELECT count(*) FROM knowledge_chunks kc "
+        "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
+        "WHERE kd.deleted_at IS NULL AND kd.vigente = TRUE "
+        "AND kc.embedding IS NOT NULL"
+    ))).scalar() or 0
     rows = (await db.execute(_t(
-        "SELECT categoria, count(*) AS n FROM knowledge_docs WHERE deleted_at IS NULL "
-        "GROUP BY categoria ORDER BY n DESC"))).all()
+        "SELECT categoria, count(*) AS n FROM knowledge_docs "
+        "WHERE deleted_at IS NULL AND vigente = TRUE "
+        "GROUP BY categoria ORDER BY n DESC"
+    ))).all()
     return {
         "total_docs": total_docs, "total_chunks": total_chunks, "chunks_indexados": com_emb,
         "por_categoria": [{"categoria": r[0] or "outros", "total": r[1]} for r in rows],
@@ -61,7 +78,7 @@ async def status_indexacao_rag(
     from sqlalchemy import text as _t
     rows = (await db.execute(_t(
         "SELECT status_indexacao AS s, count(*) AS n "
-        "FROM knowledge_docs WHERE deleted_at IS NULL "
+        "FROM knowledge_docs WHERE deleted_at IS NULL AND vigente = TRUE "
         "GROUP BY status_indexacao"
     ))).all()
     vetorizado = sem_vetor = erro = 0
