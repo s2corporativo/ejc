@@ -263,11 +263,10 @@ def normalizar_car_demonstrativo(item: dict) -> dict:
 # ── Estado persistido (sem migration — precedente backup_drive_state) ─────────
 
 async def _ensure_tabela(db: AsyncSession) -> None:
-    """Cria a tabela de uso/cache se não existir (idempotente).
-
-    Uma LINHA por consulta EXECUTADA (cobrada) na API: o contador diário é
-    COUNT(*) do dia e o cache é o `resultado` da linha de sucesso.
-    """
+    """Compatibilidade SQLite; PostgreSQL é gerido pela migration 162."""
+    from app.core.database import runtime_ddl_permitido
+    if not runtime_ddl_permitido(db):
+        return
     await db.execute(sqltext("""
         CREATE TABLE IF NOT EXISTS infosimples_uso (
             id VARCHAR(36) PRIMARY KEY,
