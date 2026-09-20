@@ -185,6 +185,11 @@ class Settings(BaseSettings):
     ANTHROPIC_EFFORT: str = "high"
     # Liga/desliga o provider Anthropic sem remover a chave do .env.
     ANTHROPIC_ENABLED: bool = True
+    # Política operacional: Claude fica disponível, mas NÃO participa do
+    # roteamento/fallback automático. Só é usado quando uma superfície do EJC
+    # o solicita explicitamente (provider_override="anthropic") ou no modo
+    # agêntico aberto deliberadamente pelo usuário (tool-use).
+    ANTHROPIC_EXPLICIT_ONLY: bool = True
     # Timeout do client Anthropic (segundos) — tarefas complexas podem demorar.
     ANTHROPIC_TIMEOUT_SECONDS: int = 120
     # Teto DURO de tokens de saída por chamada (controle de custo).
@@ -215,8 +220,9 @@ class Settings(BaseSettings):
     AI_WEB_SEARCH_CUSTO_USD_POR_1000: float = 10.0
 
     # ── IA — Maritaca (Sabiá) — provider BRASILEIRO, OpenAI-compatible ─────
-    # PLUGÁVEL: nasce DESLIGADO (MARITACA_ENABLED=false) → sistema idêntico ao
-    # atual. Provider EXTERNO ao VPS → passa pela MESMA barreira LGPD
+    # Provider jurídico PT-BR preferencial para leitura, análise e pesquisa.
+    # Nasce LIGADO por política operacional; sem MARITACA_API_KEY permanece
+    # inelegível e o gateway cai com segurança para Groq/Ollama. Provider EXTERNO ao VPS → passa pela MESMA barreira LGPD
     # (pseudonimização). Chave definida APENAS no .env (nunca aqui).
     # Soberania de dados NÃO é o default e NÃO é automática: depende de DUAS
     # coisas juntas — (1) configurar MARITACA_MODEL/MARITACA_MODEL_RAPIDO nas
@@ -224,7 +230,7 @@ class Settings(BaseSettings):
     # processam 100% em território nacional (+30% de custo); e (2) ligar o guarda
     # MARITACA_EXIGIR_SOBERANIA=true, que passa a EXIGIR essas variantes no boot.
     # Os defaults abaixo ("sabia-4"/"sabiazinho-4") NÃO são soberanos.
-    MARITACA_ENABLED: bool = False
+    MARITACA_ENABLED: bool = True
     MARITACA_API_KEY: str = ""
     MARITACA_BASE_URL: str = "https://chat.maritaca.ai/api"
     MARITACA_MODEL: str = "sabia-4"            # qualidade/generalista (128k)
@@ -334,7 +340,7 @@ class Settings(BaseSettings):
     # tudo que roda fora do compose (dev, testes, scripts, deploy alternativo).
     # Ollama fica por último: é rede de segurança para o caso de os externos
     # caírem ou de PII residual barrar a saída do dado (ver provider_policy).
-    AI_PROVIDER_PRIORITY: str = "anthropic,maritaca,groq,ollama"
+    AI_PROVIDER_PRIORITY: str = "groq,maritaca,ollama,anthropic"
     # ── Níveis de sanitização de PII por tipo de tarefa (LGPD art. 33/46) ─────
     # JSON OPCIONAL (string) mapeando task_type → modo de sanitização, que
     # SOBREPÕE o default de app/services/ai/sanitization_policy.py. Modos:
@@ -367,14 +373,14 @@ class Settings(BaseSettings):
     # neste tier e é onde o erro jurídico nasce — não vai a provedor de
     # raciocínio inferior (decisão do titular, 2026-09-05). groq segue como
     # fallback da cadeia se elegível.
-    ROTEAMENTO_PROVIDER_LEVE: str = "anthropic"
+    ROTEAMENTO_PROVIDER_LEVE: str = "groq"
     # médio = anthropic: o stack de produção não sobe ollama (compose:
     # OLLAMA_ENABLED=false) — apontar o tier médio para provider morto só gerava
     # tentativa-e-fallback a cada tarefa. O MODELO do tier médio é COMPLEXO
     # (Opus), NÃO Haiku — ver model_router._model_do_provider (anti-rebaixamento
     # P1: só o tier LEVE usa o modelo rápido).
-    ROTEAMENTO_PROVIDER_MEDIO: str = "anthropic"
-    ROTEAMENTO_PROVIDER_PESADO: str = "anthropic"  # modelo forte p/ raciocínio
+    ROTEAMENTO_PROVIDER_MEDIO: str = "maritaca"
+    ROTEAMENTO_PROVIDER_PESADO: str = "maritaca"  # leitura/raciocínio jurídico PT-BR
     # Limiares (score inteiro) que separam os tiers leve|medio|pesado.
     ROTEAMENTO_LIMIAR_MEDIO: int = 3
     ROTEAMENTO_LIMIAR_PESADO: int = 6
@@ -1279,14 +1285,14 @@ class Settings(BaseSettings):
             # soberana por default — ver comentário de MARITACA_ENABLED).
             _derivar(
                 "AI_PROVIDER_PRIORITY",
-                "anthropic,maritaca,groq" if self.MARITACA_ENABLED else "anthropic,groq",
+                "groq,maritaca,anthropic" if self.MARITACA_ENABLED else "groq,anthropic",
             )
         elif perfil == "hibrido":
             _derivar("AI_EXTERNAL_PROVIDERS_ALLOWED", True)
             _derivar("OLLAMA_ENABLED", True)
             _derivar("ANTHROPIC_ENABLED", True)
             _derivar("GROQ_ENABLED", True)
-            _derivar("AI_PROVIDER_PRIORITY", "anthropic,maritaca,groq,ollama")
+            _derivar("AI_PROVIDER_PRIORITY", "groq,maritaca,ollama,anthropic")
         else:
             raise ValueError(
                 f"AI_PROFILE inválido: {self.AI_PROFILE!r} "
