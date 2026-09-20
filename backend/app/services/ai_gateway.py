@@ -975,10 +975,24 @@ def _resolver_cadeia(
     if not bool(getattr(get_settings(), "ANTHROPIC_AUTO_ROUTING_ENABLED", False)):
         candidatos = [p for p in candidatos if p != "anthropic"]
 
-    if task_type in _TAREFAS_MERITO and "maritaca" in candidatos:
-        candidatos = ["maritaca"] + [p for p in candidatos if p != "maritaca"]
-    elif task_type in _TAREFAS_ECONOMICAS and "groq" in candidatos:
-        candidatos = ["groq"] + [p for p in candidatos if p != "groq"]
+    # Afinidade estrita definida pelo titular:
+    # - mérito jurídico automático: Maritaca (+ Ollama local);
+    # - rotina: Groq (+ Ollama local);
+    # - Claude: somente provider_force explícito (ou flag de rollback).
+    if not bool(getattr(get_settings(), "ANTHROPIC_AUTO_ROUTING_ENABLED", False)):
+        if task_type in _TAREFAS_MERITO:
+            candidatos = [p for p in candidatos if p in {"maritaca", "ollama"}]
+            if "maritaca" in candidatos:
+                candidatos = ["maritaca"] + [p for p in candidatos if p != "maritaca"]
+        elif task_type in _TAREFAS_ECONOMICAS:
+            candidatos = [p for p in candidatos if p in {"groq", "ollama"}]
+            if "groq" in candidatos:
+                candidatos = ["groq"] + [p for p in candidatos if p != "groq"]
+    else:
+        # Rollback operacional: reabilita o comportamento anterior de Claude
+        # automático nas tarefas de mérito.
+        if task_type in _TAREFAS_MERITO and "anthropic" in candidatos:
+            candidatos = ["anthropic"] + [p for p in candidatos if p != "anthropic"]
 
     # Roteamento inteligente: promove o provider proposto à frente SE elegível e
     # SE participa da cadeia da tarefa (não inventa provedor fora do TASK_ROUTING).
