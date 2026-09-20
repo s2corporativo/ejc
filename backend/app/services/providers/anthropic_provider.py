@@ -18,6 +18,7 @@
 from __future__ import annotations
 import asyncio
 
+from app.core.ai_errors import SafeAIError
 from app.core.config import get_settings
 
 _client = None
@@ -303,13 +304,19 @@ async def chat(messages: list[dict], model: str | None,
                         return client.messages.create(**kwargs)
                     except anthropic.APIError as e2:
                         status2 = getattr(e2, "status_code", None)
-                        raise RuntimeError(
+                        raise SafeAIError(
                             f"Anthropic API falhou ({type(e2).__name__}"
-                            + (f", HTTP {status2}" if status2 else "") + ")"
+                            + (f", HTTP {status2}" if status2 else "") + ")",
+                            code="provider_failure",
+                            technical_type=type(e2).__name__,
+                            status_code=status2,
                         ) from None
-                raise RuntimeError(
+                raise SafeAIError(
                     f"Anthropic API falhou ({type(e).__name__}"
-                    + (f", HTTP {status}" if status else "") + ")"
+                    + (f", HTTP {status}" if status else "") + ")",
+                    code="provider_failure",
+                    technical_type=type(e).__name__,
+                    status_code=status,
                 ) from None
 
         # pause_turn (busca web longa): a API pausa o turno server-side; reenvia
@@ -433,9 +440,12 @@ async def chat_tools(messages: list[dict], model: str | None,
             return client.messages.create(**kwargs)
         except anthropic.APIError as e:
             status = getattr(e, "status_code", None)
-            raise RuntimeError(
+            raise SafeAIError(
                 f"Anthropic API falhou ({type(e).__name__}"
-                + (f", HTTP {status}" if status else "") + ")"
+                + (f", HTTP {status}" if status else "") + ")",
+                code="provider_failure",
+                technical_type=type(e).__name__,
+                status_code=status,
             ) from None
 
     resp = await asyncio.to_thread(_call)
