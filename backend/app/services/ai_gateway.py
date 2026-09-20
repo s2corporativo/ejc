@@ -14,8 +14,9 @@
 #   groq (rotina/baixo custo) · maritaca (Sabiá — leitura e mérito PT-BR)
 #   ollama (local/sigilo) · anthropic (Claude — uso explícito sob demanda)
 #
-# Fallback automático: se o modelo primário falhar, tenta o próximo da cadeia.
-# Quando AI_PROVIDER="auto" → Ollama (local) tem prioridade; Groq como fallback.
+# Fallback automático: se o primário falhar, tenta o próximo elegível.
+# No automático: Groq atende rotina; Maritaca mérito/pesquisa; Ollama é local;
+# Claude só entra por seleção explícita no EJC.
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 import asyncio
@@ -1252,11 +1253,9 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
                 {"role": "user", "content": mensagem}], nivel_efetivo,
                 task_label=tarefa_label)
 
-    # Cadeia: provedor da tarefa → Ollama (LOCAL) → Groq (externo).
-    # LGPD (minimização de transferência internacional, art. 33/46): o LOCAL vem
-    # ANTES do externo — se o provedor primário cair, tentamos o Ollama local
-    # antes de mandar dados (ainda que sanitizados) ao Groq nos EUA. Espelha a
-    # cadeia por task_type do chat() (ollama→…→groq), que já respeita essa ordem.
+    # Cadeia legada: provider canônico da tarefa (Groq ou Maritaca) → Ollama
+    # local, quando habilitado → Groq como contingência nas tarefas de mérito.
+    # Claude não é configurado automaticamente neste caminho.
     cadeia: list[tuple[str, str | None]] = [(cfg.provider, cfg.model)]
     if settings.OLLAMA_ENABLED and cfg.provider != "ollama":
         cadeia.append(("ollama", None))
@@ -1459,7 +1458,7 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
         })
     # Fallback NÃO silencioso: se a resposta NÃO veio do PRIMEIRO provedor
     # REALMENTE tentado (cadeia[0], já restrita por LOCAL_COMPLETO), sinaliza a
-    # degradação (ex.: Anthropic/Opus → Groq) com o motivo PII-safe. Usa
+    # degradação (ex.: Maritaca → Ollama/Groq) com motivo PII-safe. Usa
     # cadeia[0] e NÃO cfg.provider: no modo LOCAL_COMPLETO os externos são
     # removidos e o Ollama vira o primário LEGÍTIMO — comparar com cfg.provider
     # marcaria um "fallback" FALSO. Espelha o critério posicional do chat().
