@@ -57,6 +57,11 @@ class _CapacidadeRequestBase(BaseModel):
     area: Optional[str] = Field(None, max_length=60)
     perfil: Optional[str] = Field(None, max_length=40)
     opcoes: Optional[dict] = None
+    provider: Optional[str] = Field(
+        None,
+        pattern="^(auto|groq|maritaca|anthropic|ollama)$",
+        description="auto | groq | maritaca | anthropic | ollama",
+    )
 
 
 class AnalisarRequest(_CapacidadeRequestBase):
