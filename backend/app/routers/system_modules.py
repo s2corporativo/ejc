@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
@@ -52,10 +53,13 @@ async def mapa_modulos(
 ):
     rotas_api = _coletar_rotas_api(request.app)
     try:
-        result = await db.execute(
-            select(ModuleHelp.module_key)
-            .where(ModuleHelp.ativo.is_(True))
-            .distinct()
+        result = await asyncio.wait_for(
+            db.execute(
+                select(ModuleHelp.module_key)
+                .where(ModuleHelp.ativo.is_(True))
+                .distinct()
+            ),
+            timeout=1.5,
         )
         helps_ativos: list[str] | None = [
             str(key) for key in result.scalars().all() if key
