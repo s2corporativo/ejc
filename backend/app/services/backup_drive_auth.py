@@ -72,8 +72,29 @@ def auth_status() -> dict[str, Any]:
         source = "oauth_refresh_token"
     else:
         source = "none"
+    mode = auth_mode()
+    try:
+        from app.services import google_drive_service as gdrive
+
+        inherited_configured = bool(gdrive.auth_status().get("configured"))
+    except Exception:
+        inherited_configured = False
+
+    dedicated_sa = service_account_file or service_account_json
+    dedicated_oauth = oauth_user_file or oauth_user_json or oauth_trio_completo
+    if mode == "service_account":
+        configured = dedicated_sa
+    elif mode == "oauth":
+        configured = dedicated_oauth
+    elif mode == "inherit":
+        configured = inherited_configured
+    else:  # auto: mesma precedência de build_credentials()
+        configured = dedicated_sa or dedicated_oauth or inherited_configured
+
     return {
-        "auth_mode": auth_mode(),
+        "auth_mode": mode,
+        "configured": configured,
+        "inherited_configured": inherited_configured,
         "credential_source": source,
         "credencial_dedicada_configurada": credencial_dedicada,
         "oauth_user_file_configurado": oauth_user_file,
