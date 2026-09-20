@@ -402,6 +402,25 @@ async def test_ingerir_rfb_upserta_com_chave_e_metadados(monkeypatch):
     assert any("tributação previdenciária" in u["conteudo"] for u in ups)
 
 
+async def test_ingerir_rfb_limita_fonte_longa_sem_perder_url_integral(monkeypatch):
+    url_longa = (
+        "https://normasinternet2.receita.fazenda.gov.br/#/consulta/externa/115115/vs/"
+        + "x" * 400
+    )
+    html = (
+        '<table><tr class="linhaResultados">'
+        '<td>Instrução Normativa</td><td>2006</td><td>RFB</td>'
+        '<td>01/02/2021</td><td>' + ('Ementa tributária ' * 20) + '</td>'
+        '<td><a href="' + url_longa + '">abrir</a></td>'
+        '</tr></table>'
+    )
+    ups = _prepara_rfb(monkeypatch, resultados_por_termo={"IRPF": html})
+    resumo = await rfb.ingerir(_FakeDB())
+    assert resumo["novos"] == 1
+    assert len(ups[0]["fonte"]) == 255
+    assert ups[0]["extra"]["consultar_inteiro_teor_em"] == url_longa
+
+
 async def test_ingerir_rfb_teto_de_docs(monkeypatch):
     linhas = "".join(
         f'<a href="link.action?visao=anotado&idAto={1000 + i}">Instru&ccedil;&atilde;o '
