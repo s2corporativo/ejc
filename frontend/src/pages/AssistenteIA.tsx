@@ -346,6 +346,21 @@ export default function AssistenteIA() {
           )}
           {res && (
             <div className="space-y-3">
+              {(res.provider || res.modelo) && (
+                <div
+                  data-testid="motor-ia-usado"
+                  className="flex flex-wrap items-center gap-2 text-xs text-slate-500"
+                >
+                  <span className="font-semibold text-slate-600">Motor usado:</span>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">
+                    {res.provider || "provider não informado"}
+                    {res.modelo ? ` · ${res.modelo}` : ""}
+                  </span>
+                  {res.fallback_ativado && (
+                    <span className="text-warn-700">fallback registrado</span>
+                  )}
+                </div>
+              )}
               <Markdown
                 source={conteudo}
                 className="text-sm text-slate-700 leading-relaxed"
