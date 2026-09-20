@@ -437,7 +437,10 @@ async def _hyde_expandir(consulta: str) -> str:
         hipotese = (getattr(resp, "texto", "") or "").strip()
         return f"{consulta}\n{hipotese}" if hipotese else consulta
     except Exception as e:  # HyDE nunca quebra a busca
-        logger.warning("HyDE indisponivel (usando consulta original): %s", str(e)[:150])
+        logger.warning(
+            "HyDE indisponivel (usando consulta original): %s",
+            descricao_tecnica_segura(e),
+        )
         return consulta
 
 
