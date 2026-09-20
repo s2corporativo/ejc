@@ -1485,18 +1485,16 @@
   background-color: rgba(255, 245, 230, 0.06);
 }
 
-/* Tintas primárias (creme/dourado suave) → dourado translúcido */
+/* Tintas primary seguem Tech Blue; amber permanece status semântico. */
 .dark
   :where(
     .bg-primary-50,
     .bg-primary-100,
     .bg-primary-50\/40,
     .bg-primary-50\/50,
-    .bg-primary-50\/60,
-    .bg-amber-50,
-    .bg-amber-100
+    .bg-primary-50\/60
   ) {
-  background-color: rgba(212, 175, 55, 0.12);
+  background-color: rgba(14, 165, 233, 0.12);
 }
 .dark
   :where(
@@ -1505,7 +1503,7 @@
     .hover\:bg-primary-50\/60:hover,
     .hover\:bg-primary-100:hover
   ) {
-  background-color: rgba(212, 175, 55, 0.14);
+  background-color: rgba(14, 165, 233, 0.16);
 }
 .dark
   :where(
@@ -1514,12 +1512,18 @@
     .text-primary-800,
     .text-primary-900
   ) {
-  color: #e5ce7f;
+  color: #7dd3fc;
+}
+.dark :where(.border-primary-200) {
+  border-color: rgba(56, 189, 248, 0.32);
+}
+.dark :where(.bg-amber-50, .bg-amber-100) {
+  background-color: rgba(212, 175, 55, 0.12);
 }
 .dark :where(.text-amber-700, .text-amber-800, .text-amber-900) {
   color: #e8d48a;
 }
-.dark :where(.border-amber-200, .border-amber-300, .border-primary-200) {
+.dark :where(.border-amber-200, .border-amber-300) {
   border-color: rgba(212, 175, 55, 0.3);
 }
 
