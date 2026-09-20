@@ -72,7 +72,10 @@ async def _porta(
             mensagem=body.mensagem,
             area=body.area,
             perfil=body.perfil,
-            opcoes=body.opcoes,
+            opcoes=(
+                {**(body.opcoes or {}), "provider_override": body.provider}
+                if body.provider else body.opcoes
+            ),
         )
     except HTTPException:
         raise
