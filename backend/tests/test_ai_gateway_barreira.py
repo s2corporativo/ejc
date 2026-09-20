@@ -122,3 +122,33 @@ async def test_a_barreira_de_resposta_vazia_aciona_o_fallback_da_cadeia(monkeypa
     assert resp.texto == "resposta real"
     assert resp.fallback_ativado is True
     assert chamadas["n"] == 2
+
+
+async def test_falha_arbitraria_do_provider_nao_ecoa_pii_no_gateway(monkeypatch):
+    pii = "maria cpf 999.888.777-66"
+
+    async def _fake_prov(*args, **kwargs):
+        raise RuntimeError(f"timeout: request body={pii}")
+
+    monkeypatch.setattr(gw, "_chamar_provedor", _fake_prov)
+    monkeypatch.setattr(
+        gw,
+        "_resolver_cadeia",
+        lambda *a, **k: [("anthropic", None), ("groq", None)],
+    )
+    monkeypatch.setattr(
+        gw.settings,
+        "AI_REQUIRE_SANITIZATION_FOR_EXTERNAL",
+        False,
+    )
+    monkeypatch.setattr(gw.settings, "AI_CHAIN_DEADLINE_SECONDS", 30)
+
+    with pytest.raises(RuntimeError) as exc:
+        await gw.chat(
+            [{"role": "user", "content": "conteúdo fictício"}],
+            task_type="resumo",
+        )
+
+    assert pii not in str(exc.value)
+    assert "999.888.777-66" not in str(exc.value)
+    assert getattr(exc.value, "ai_error_code", None) == "provider_failure"
