@@ -65,8 +65,7 @@ def test_cadeia_ignora_preferido_inelegivel(monkeypatch):
 
 def test_cadeia_preferido_fora_do_task_routing_e_ignorado(monkeypatch):
     # Provedor proposto pelo roteador que NÃO participa da cadeia da tarefa não
-    # é inventado. Desde I8 (03/09) `resumo` já inclui anthropic, então o caso
-    # de "fora do TASK_ROUTING" é exercitado com um provedor inexistente.
+    # é inventado; usa-se um nome inexistente para exercitar o contrato.
     _prep(monkeypatch)
     cadeia = g._resolver_cadeia(
         "resumo", provider_force=None, model_override=None,
@@ -90,10 +89,10 @@ async def test_chat_roteamento_off_usa_cadeia_por_task_type(monkeypatch):
     _prep(monkeypatch, ROTEAMENTO_INTELIGENTE_ENABLED=False)
     cap = {}
     _mock_provedor(monkeypatch, cap)
-    # `resumo` está fora do conjunto de mérito: a cadeia sai da prioridade
-    # configurada (ollama-first neste _prep), sem tier de roteamento.
+    # Mesmo sem o roteador por complexidade, o perfil econômico do gateway
+    # promove Groq para tarefas corriqueiras.
     resp = await g.chat([{"role": "user", "content": "oi"}], task_type="resumo")
-    assert cap["provider"] == "ollama"
+    assert cap["provider"] == "groq"
     assert resp.roteamento_tier is None
 
 
