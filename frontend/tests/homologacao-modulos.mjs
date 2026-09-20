@@ -23,16 +23,16 @@ const VIEWPORTS = [
 ];
 
 const ROUTES = [
-  { name: "agenda", path: "/atividades" },
-  { name: "clientes", path: "/clientes" },
-  { name: "casos", path: "/casos" },
-  { name: "financeiro", path: "/financeiro" },
-  { name: "documentos", path: "/documentos" },
-  { name: "inteligencia", path: "/inteligencia" },
-  { name: "banco-teses", path: "/teses" },
-  { name: "radar", path: "/radar" },
-  { name: "relatorios", path: "/produtividade" },
-  { name: "configuracoes", path: "/configuracoes" },
+  { name: "agenda", path: "/atividades", sentinel: "Agenda" },
+  { name: "clientes", path: "/clientes", sentinel: "Clientes" },
+  { name: "casos", path: "/casos", sentinel: "Casos e Processos" },
+  { name: "financeiro", path: "/financeiro", sentinel: "Financeiro" },
+  { name: "documentos", path: "/documentos", sentinel: "Documentos" },
+  { name: "inteligencia", path: "/inteligencia", sentinel: "" },
+  { name: "banco-teses", path: "/teses", sentinel: "" },
+  { name: "radar", path: "/radar", sentinel: "" },
+  { name: "relatorios", path: "/produtividade", sentinel: "" },
+  { name: "configuracoes", path: "/configuracoes", sentinel: "Configura" },
 ];
 
 const USER = {
@@ -63,8 +63,39 @@ const PAGINADO = { data: [], total: 0, page: 1, page_size: 50 };
 const LISTAS_FIXAS = {
   cases: PAGINADO,
   clients: PAGINADO,
+  documents: PAGINADO,
   activities: [],
   tasks: [],
+  teses: [],
+  // Contratos nomeados (responses não-lista que as páginas leem por campo):
+  "teses/impacto-regulatorio": {
+    periodo_dias: 7,
+    publicacoes_varridas: 0,
+    total: 0,
+    teses_afetadas: [],
+  },
+  "compliance/radar": { itens: [], total: 0, fontes_com_erro: [] },
+  "regulatorio/digest-semanal": {
+    total_alertas: 0,
+    nao_lidos: 0,
+    por_fonte: {},
+    top_keywords: [],
+    itens_recentes: [],
+    desde: "",
+  },
+  "analytics/produtividade": {
+    periodo: "30",
+    desde: "",
+    resumo: {
+      total_horas: 0,
+      horas_faturavel: 0,
+      pct_faturavel: 0,
+      lancamentos: 0,
+    },
+    por_advogado: [],
+    por_area: [],
+    trend: [],
+  },
 };
 
 if (!existsSync(DIST)) {
@@ -169,12 +200,16 @@ async function main() {
         await page.waitForTimeout(400);
 
         const layout = await page.evaluate(() => ({
+          pathname: window.location.pathname,
           scrollWidth: document.documentElement.scrollWidth,
           innerWidth: window.innerWidth,
           sidebarVisible: Boolean(
             document.querySelector("aside.sidebar-bronze"),
           ),
-          mainText: (document.querySelector("main")?.innerText || "").slice(0, 400),
+          mainText: (document.querySelector("main")?.innerText || "").slice(
+            0,
+            1200,
+          ),
         }));
 
         const overflow = layout.scrollWidth - layout.innerWidth;
@@ -185,6 +220,39 @@ async function main() {
         }
         if (viewport.width >= 1024 && !layout.sidebarVisible) {
           failures.push(`${viewport.name} ${rota.path}: sidebar ausente`);
+        }
+
+        // A rota tem que TER RENDERIZADO: sem redirect silencioso (p.ex. para
+        // / ou /login), sem 404 e sem fallback vazio de error boundary.
+        if (!layout.pathname.endsWith(rota.path)) {
+          failures.push(
+            `${viewport.name} ${rota.path}: redirect inesperado para ${layout.pathname}`,
+          );
+        }
+        const texto = layout.mainText.toLocaleLowerCase("pt-BR");
+        for (const proibido of [
+          "página não encontrada",
+          "erro ao carregar",
+          "a rota que você tentou acessar",
+        ]) {
+          if (texto.includes(proibido)) {
+            failures.push(
+              `${viewport.name} ${rota.path}: conteúdo de falha renderizado ("${proibido}")`,
+            );
+          }
+        }
+        if (layout.mainText.trim().length < 20) {
+          failures.push(
+            `${viewport.name} ${rota.path}: página sem conteúdo (fallback vazio?)`,
+          );
+        }
+        if (
+          rota.sentinel &&
+          !texto.includes(rota.sentinel.toLocaleLowerCase("pt-BR"))
+        ) {
+          failures.push(
+            `${viewport.name} ${rota.path}: sentinela ausente ("${rota.sentinel}")`,
+          );
         }
 
         await page.screenshot({

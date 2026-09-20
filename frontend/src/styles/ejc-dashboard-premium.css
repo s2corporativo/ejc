@@ -1184,6 +1184,10 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__quote p {
     transform: none;
   }
 
+  .ejc-entry-pill__send:hover {
+    transform: none;
+  }
+
   .ejc-dash__routine-bar i {
     transition: none !important;
   }
@@ -1231,7 +1235,9 @@ html:not(.dark) .sidebar-bronze .sidebar-nav-item svg {
 }
 
 html:not(.dark) .sidebar-bronze .sidebar-nav-item.is-active svg {
-  color: #4a3a12 !important;
+  /* Ouro brilhante (mesma cor da camada systemwide) — o valor antigo
+     #4a3a12 conflitava com o fundo ativo translúcido e perdia contraste. */
+  color: var(--ejc-gold-bright) !important;
 }
 /* ═════════════════════════════════════════════════════════════════════════ */
 /* FIDELIDADE CANÔNICA 1:1 — referência DPT (mockup aprovado pelo Titular)    */
@@ -1319,6 +1325,28 @@ html:not(.dark) .sidebar-bronze .sidebar-nav-item.is-active svg {
   color: var(--ejc-dash-green);
 }
 
+/* A regra legada "ouro sobre esmeralda" para botões do entry-body
+   (definida antes, com !important) atingia também o clipe de anexo e os
+   botões de remover chip — controles NEUTROS na pílula branca. O override
+   abaixo supera a especificidade da regra legada e restaura o visual
+   distinto do mockup. */
+html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"].ejc-entry-pill__clip {
+  background: transparent !important;
+  border: 0 !important;
+  color: #5c6b63 !important;
+}
+
+html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"].ejc-entry-pill__clip:hover {
+  background: #f1f0ea !important;
+  color: var(--ejc-dash-green) !important;
+}
+
+html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body .ejc-entry-pillzone__files button[type="button"] {
+  background: transparent !important;
+  border: 0 !important;
+  color: rgba(255, 255, 255, 0.78) !important;
+}
+
 .ejc-entry-pill__send {
   display: grid;
   place-items: center;
@@ -1367,6 +1395,17 @@ html:not(.dark) .sidebar-bronze .sidebar-nav-item.is-active svg {
   color: #ffffff;
   font-size: 12px;
   padding: 5px 11px;
+  max-width: 100%;
+}
+
+/* Nomes longos de arquivo não podem empurrar o tamanho/botão remover
+   para fora da pílula — mesma disciplina de truncamento da lista cheia. */
+.ejc-entry-pillzone__files li span {
+  min-width: 0;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ejc-entry-pillzone__files li svg {

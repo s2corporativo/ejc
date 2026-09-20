@@ -127,8 +127,10 @@ function dataDaAba(aba: AbaAgenda): string {
 
 function semanaDaAba(aba: AbaAgenda): string {
   if (aba !== "semana") return "";
-  const inicio = new Date();
-  const fim = new Date(Date.now() + 6 * 86_400_000);
+  // Mesmo intervalo do filtro `agendaFiltrada` (dias_restantes 2..7): a
+  // legenda mostra exatamente o período exibido, sem dias fantasmas.
+  const inicio = new Date(Date.now() + 2 * 86_400_000);
+  const fim = new Date(Date.now() + 7 * 86_400_000);
   return `${format(inicio, "dd")} a ${format(fim, "dd 'de' MMMM", {
     locale: ptBR,
   })}`;
