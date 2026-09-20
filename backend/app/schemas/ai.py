@@ -1,7 +1,7 @@
 # ── app/schemas/ai.py ────────────────────────────────────────────────────────
 from __future__ import annotations
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Literal
 
 # Teto de 200.000 chars replica o de VerificarCitacoesRequest (já validado em
 # produção) — protege o gateway/provedor de payload sem limite (auditoria de
@@ -56,6 +56,9 @@ class _CapacidadeRequestBase(BaseModel):
     case_id: Optional[str] = Field(None, max_length=64)
     area: Optional[str] = Field(None, max_length=60)
     perfil: Optional[str] = Field(None, max_length=40)
+    # Seleção deliberada no EJC. O automático NÃO envia este campo; Claude só
+    # pode ser solicitado explicitamente pela interface.
+    provider: Optional[Literal["anthropic"]] = None
     opcoes: Optional[dict] = None
 
 
