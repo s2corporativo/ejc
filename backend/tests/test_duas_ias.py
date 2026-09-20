@@ -576,7 +576,7 @@ async def test_ingestao_ailog_com_caso_revalida_ownership_e_propaga_escopo(monke
         case_id="caso-1",
         status_hitl=AIStatusHITL.revisado,
         resposta="Resposta jurídica revisada com conteúdo suficiente para destilação governada no RAG.",
-        tipo_uso=AITipoUso.analise,
+        tipo_uso=AITipoUso.analise_caso,
         created_at=datetime.now(timezone.utc),
     )
     cu = SimpleNamespace(id="user-1", role=SimpleNamespace(value="advogado"))
