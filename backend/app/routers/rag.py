@@ -6,7 +6,7 @@ from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, UploadFile, File, Form
 from pydantic import BaseModel
-from sqlalchemy import select, update, func as sqlfunc
+from sqlalchemy import select, update, func as sqlfunc, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, AsyncSessionLocal
@@ -41,31 +41,30 @@ router = APIRouter(prefix="/rag", tags=["Base de Conhecimento"])
 @router.get("/stats")
 async def stats_conhecimento(db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     """Contagens da base de conhecimento (dashboard de Conhecimento)."""
-    from sqlalchemy import text as _t
     # Dashboard reporta o CORPUS RECUPERÁVEL: versão vigente, não excluída,
     # ownership estrutural válido e o MESMO gate jurídico do retrieval.
-    # Histórico, pendentes, normas sem vigência comprovada e docs estruturalmente
-    # inválidos permanecem preservados, mas não inflam os números operacionais.
+    # O filtro é constante interna auditada; binds continuam sendo usados para
+    # qualquer dado variável. nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     where_rag = (
         "kd.deleted_at IS NULL AND kd.vigente = TRUE "
         f"{filtro_elegibilidade_rag_metricas()} "
         f"{filtros_gate_rag()}"
     )
-    total_docs = (await db.execute(_t(
+    total_docs = (await db.execute(text(
         f"SELECT count(*) FROM knowledge_docs kd WHERE {where_rag} "
         "AND EXISTS (SELECT 1 FROM knowledge_chunks kc0 WHERE kc0.doc_id = kd.id)"
     ))).scalar() or 0
-    total_chunks = (await db.execute(_t(
+    total_chunks = (await db.execute(text(
         "SELECT count(*) FROM knowledge_chunks kc "
         "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
         f"WHERE {where_rag}"
     ))).scalar() or 0
-    com_emb = (await db.execute(_t(
+    com_emb = (await db.execute(text(
         "SELECT count(*) FROM knowledge_chunks kc "
         "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
         f"WHERE {where_rag} AND kc.embedding IS NOT NULL"
     ))).scalar() or 0
-    rows = (await db.execute(_t(
+    rows = (await db.execute(text(
         "SELECT kd.categoria, count(*) AS n FROM knowledge_docs kd "
         f"WHERE {where_rag} "
         "AND EXISTS (SELECT 1 FROM knowledge_chunks kc0 WHERE kc0.doc_id = kd.id) "
@@ -86,13 +85,13 @@ async def status_indexacao_rag(
     Deriva de `knowledge_docs.status_indexacao` (indexado→vetorizado). Não
     re-embeda nada — apenas reporta. Usado pelo painel de Conhecimento.
     """
-    from sqlalchemy import text as _t
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     where_rag = (
         "kd.deleted_at IS NULL AND kd.vigente = TRUE "
         f"{filtro_elegibilidade_rag_metricas()} "
         f"{filtros_gate_rag()}"
     )
-    rows = (await db.execute(_t(
+    rows = (await db.execute(text(
         "SELECT kd.status_indexacao AS s, count(*) AS n "
         "FROM knowledge_docs kd "
         f"WHERE {where_rag} "
