@@ -65,7 +65,7 @@ _AVISOU_SEM_EMBEDDINGS = False  # warning único de degradação p/ ILIKE
 # persistido em base_rag/client_id/case_id. `_RESTRICTED_CATS` permanece apenas
 # como trava residual para legado malclassificado sem identificadores.
 _RESTRICTED_CATS = ["peca_interna", "peca_escritorio", "precedente_interno",
-                    "comunicacao_processual"]
+                    "comunicacao_processual", "andamento_processual"]
 
 # Contrato único, aplicado a TODAS as pernas de retrieval:
 # 1) global: base_rag=publica + nenhum ownership + categoria não-legada-restrita;
@@ -102,6 +102,20 @@ _FILTRO_ELIGIBILIDADE_RAG = (
     "AND (COALESCE(kd.base_rag::text, '') <> 'caso' OR kd.case_id IS NOT NULL)"
     "))"
 )
+
+
+def filtro_elegibilidade_rag_metricas() -> str:
+    """Versão sem bind do filtro neutro, somente para métricas agregadas.
+
+    A lista vem de constante interna, nunca de entrada do usuário. Mantém
+    painéis/saúde alinhados ao contrato de ownership do retrieval sem obrigar
+    cada consulta agregada a propagar :restr_cats.
+    """
+    cats = ",".join("'" + cat.replace("'", "''") + "'" for cat in _RESTRICTED_CATS)
+    return _FILTRO_ELIGIBILIDADE_RAG.replace(
+        "kd.categoria <> ALL(:restr_cats)",
+        f"kd.categoria NOT IN ({cats})",
+    )
 
 
 def _params_escopo_rag(
@@ -338,7 +352,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
             FROM knowledge_chunks kc
             JOIN knowledge_docs kd ON kd.id = kc.doc_id
             WHERE kd.deleted_at IS NULL
-              AND similarity(kc.conteudo, :q) > 0.05
+              AND kc.conteudo % :q
               {filtro}
               {_FILTRO_ESCOPO_RAG}
               {_FILTRO_VIGENTE_RAG}
@@ -346,6 +360,9 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
             ORDER BY sim DESC
             LIMIT :lim
         """)
+        # O operador % usa o índice GIN pg_trgm; SET LOCAL limita o threshold
+        # à transação atual e evita Seq Scan da expressão similarity()>limiar.
+        await db.execute(_text("SET LOCAL pg_trgm.similarity_threshold = 0.05"))
         rows = await db.execute(sql, params)
         for rank, r in enumerate(rows):
             cid = r.id
@@ -415,7 +432,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
     return saida
 
 
-async def _hyde_expandir(consulta: str) -> str:
+async def _hyde_expandir(consulta: str, modo_sanitizacao=None) -> str:
     """HyDE (auditoria IA 2026-07-17, O-6): gera uma 'resposta hipotética' curta e
     a concatena à consulta para EMBUTIR na busca VETORIAL — melhora o recall quando
     o vocabulário do caso novo difere do registrado. Só afeta a perna densa; a
@@ -433,6 +450,7 @@ async def _hyde_expandir(consulta: str) -> str:
              {"role": "user", "content": consulta[:1000]}],
             task_type="resumo",              # tier leve/barato
             temperature=0.3, max_tokens=256, nivel_inteligencia="padrao",
+            modo_sanitizacao=modo_sanitizacao,
         )
         hipotese = (getattr(resp, "texto", "") or "").strip()
         return f"{consulta}\n{hipotese}" if hipotese else consulta
@@ -452,6 +470,7 @@ async def buscar_contexto_rag(
     incluir_historico: bool = False,
     incluir_ficticio: bool = False,
     scope_case_id: str | None = None,
+    modo_sanitizacao=None,
 ) -> list[dict]:
     """
     Busca semântica na base de conhecimento via pgvector.
@@ -509,9 +528,35 @@ async def buscar_contexto_rag(
                 "recall reduzido. Habilite embeddings em produção."
             )
     if _emb_on():
-        # HyDE (O-6, OFF por default): enriquece SÓ a query densa; a lexical usa
-        # a consulta real. modo="query": prefixo E5 só se o modelo for E5.
-        consulta_emb = await _hyde_expandir(consulta)
+        # HyDE pode chamar provider externo. Com caso vinculado, o retrieval
+        # deriva novamente o piso de sigilo na própria fronteira; falha na
+        # leitura desabilita só o HyDE e preserva a busca original.
+        hyde_modo = modo_sanitizacao
+        hyde_permitido = True
+        if scope_case_id:
+            try:
+                async with db.begin_nested():
+                    modo_caso = await _modo_sigilo_caso(db, scope_case_id)
+                if modo_caso is not None:
+                    from app.services.ai.sanitization_policy import (
+                        modo_para_task,
+                        reforcar_sigilo,
+                    )
+                    hyde_modo = reforcar_sigilo(
+                        hyde_modo or modo_para_task("resumo"),
+                        modo_caso,
+                    )
+            except Exception as exc:
+                hyde_permitido = False
+                logger.warning(
+                    "HyDE desabilitado: não foi possível confirmar o piso de sigilo (%s)",
+                    descricao_tecnica_segura(exc),
+                )
+        consulta_emb = (
+            await _hyde_expandir(consulta, modo_sanitizacao=hyde_modo)
+            if hyde_permitido
+            else consulta
+        )
         vetores = await gerar_embeddings([consulta_emb], modo="query")
         if vetores:
             vec = vetores[0]
