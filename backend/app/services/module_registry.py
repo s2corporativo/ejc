@@ -264,9 +264,12 @@ def module_keys_registradas() -> set[str]:
     return {str(item["module_key"]) for item in MODULE_REGISTRY}
 
 
-def gerar_mapa_modulos(rotas_api: list[dict[str, Any]], helps_ativos: list[str]) -> list[dict[str, Any]]:
+def gerar_mapa_modulos(
+    rotas_api: list[dict[str, Any]],
+    helps_ativos: list[str] | None,
+) -> list[dict[str, Any]]:
     api_paths = [str(r.get("path", "")) for r in rotas_api]
-    helps = set(helps_ativos)
+    helps = None if helps_ativos is None else set(helps_ativos)
     mapa: list[dict[str, Any]] = []
     for item in MODULE_REGISTRY:
         prefixes = [str(p) for p in item.get("backend_prefixes", [])]
@@ -274,8 +277,8 @@ def gerar_mapa_modulos(rotas_api: list[dict[str, Any]], helps_ativos: list[str])
         key = str(item["module_key"])
         mapa.append({
             **item,
-            "tem_manual": key in helps,
-            "precisa_documentacao": key not in helps,
+            "tem_manual": None if helps is None else key in helps,
+            "precisa_documentacao": None if helps is None else key not in helps,
             "qtd_endpoints_detectados": len(endpoints),
             "endpoints_detectados": sorted(endpoints)[:50],
             # Ausência de manual é dívida documental, não evidência de módulo
@@ -292,9 +295,12 @@ def resumir_mapa_modulos(mapa: list[dict[str, Any]]) -> dict[str, int]:
         "ativos": sum(1 for m in mapa if m.get("status") == "ativo"),
         "beta": sum(1 for m in mapa if m.get("status") == "beta"),
         "legados": sum(1 for m in mapa if m.get("status") == "legado"),
-        "sem_manual": sum(1 for m in mapa if not m.get("tem_manual")),
+        "sem_manual": sum(1 for m in mapa if m.get("tem_manual") is False),
         "precisam_documentacao": sum(
-            1 for m in mapa if m.get("precisa_documentacao")
+            1 for m in mapa if m.get("precisa_documentacao") is True
+        ),
+        "documentacao_desconhecida": sum(
+            1 for m in mapa if m.get("tem_manual") is None
         ),
         "sem_endpoint_detectado": sum(1 for m in mapa if int(m.get("qtd_endpoints_detectados", 0)) == 0),
         "usam_ia": sum(1 for m in mapa if m.get("usa_ia")),
