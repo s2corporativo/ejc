@@ -538,6 +538,63 @@ class TestIsolamentoCriticaDoGateEIngestao:
         assert MARCADOR_AILOG not in capturado["conteudo"]
 
 
+@pytest.mark.asyncio
+async def test_ingestao_ailog_com_caso_revalida_ownership_e_propaga_escopo(monkeypatch):
+    from app.routers import rag as rag_router
+    from app.routers.rag import IngerirAILogRequest, ingerir_ai_log_aprovado
+    from app.models.ai_log import AIStatusHITL, AITipoUso
+    from app.services import ingestion_service, ai_service
+    from app.core import ownership
+
+    capturado = {}
+    ownership_calls = []
+
+    async def fake_upsert(db, **kw):
+        capturado.update(kw)
+        return "novo"
+
+    async def fake_audit(*a, **kw):
+        return None
+
+    async def fake_scope(db, case_id):
+        assert case_id == "caso-1"
+        return "cli-1"
+
+    async def fake_ownership(db, cu, case_id):
+        ownership_calls.append((str(cu.id), case_id))
+        return SimpleNamespace(id=case_id, client_id="cli-1")
+
+    monkeypatch.setattr(ingestion_service, "upsert_documento", fake_upsert)
+    monkeypatch.setattr(rag_router, "chunk_texto", lambda t: ["c1"])
+    monkeypatch.setattr(rag_router, "criar_audit_log", fake_audit)
+    monkeypatch.setattr(ai_service, "_escopo_cliente_do_caso", fake_scope)
+    monkeypatch.setattr(ownership, "verificar_acesso_caso", fake_ownership)
+
+    log = SimpleNamespace(
+        id="log-case",
+        user_id="user-1",
+        case_id="caso-1",
+        status_hitl=AIStatusHITL.revisado,
+        resposta="Resposta jurídica revisada com conteúdo suficiente para destilação governada no RAG.",
+        tipo_uso=AITipoUso.analise,
+        created_at=datetime.now(timezone.utc),
+    )
+    cu = SimpleNamespace(id="user-1", role=SimpleNamespace(value="advogado"))
+
+    out = await ingerir_ai_log_aprovado(
+        "log-case",
+        IngerirAILogRequest(categoria="conhecimento_ia"),
+        db=_ExecDB(log),
+        cu=cu,
+    )
+
+    assert out["ok"] is True
+    assert ownership_calls == [("user-1", "caso-1")]
+    assert capturado["client_id"] == "cli-1"
+    assert capturado["case_id"] == "caso-1"
+    assert capturado["extra"]["rag_status"] == "pendente"
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 4c. Hardening: marcador reservado forjado no texto de entrada é neutralizado
 # ══════════════════════════════════════════════════════════════════════════════
