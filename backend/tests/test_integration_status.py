@@ -1,5 +1,6 @@
 from app.core.config import Settings
 from app.services.integration_status import build_integration_status
+from app.services.integration_runtime_status import _classificar_backup_estado
 
 
 def _items_by_key(payload):
@@ -119,3 +120,88 @@ def test_runtime_antigo_nao_rebaixa_integracao_desligada():
     ))["tjmg"]
     assert item["status"] == "disabled"
     assert item["operational_state"] == "erro"
+
+
+def test_backup_usa_flag_canonica_em_vez_de_backup_remote(monkeypatch):
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="development",
+        BACKUP_ENABLED=True,
+        BACKUP_REMOTE="",
+        BACKUP_ENCRYPTION_KEY="presente-sem-expor",
+        BACKUP_DESTINO="rclone",
+        BACKUP_RCLONE_REMOTE="onedrive:EJC-Backups",
+    )
+
+    backup = _items_by_key(build_integration_status(settings))["backup_offsite"]
+
+    assert backup["enabled"] is True
+    assert backup["configured"] is True
+    assert backup["status"] == "ready"
+    assert "rclone" in (backup["mode"] or "")
+
+
+def test_backup_habilitado_sem_configuracao_completa_exige_atencao():
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="development",
+        BACKUP_ENABLED=True,
+        BACKUP_ENCRYPTION_KEY="",
+        BACKUP_DESTINO="rclone",
+        BACKUP_RCLONE_REMOTE="onedrive:EJC-Backups",
+    )
+
+    backup = _items_by_key(build_integration_status(settings))["backup_offsite"]
+
+    assert backup["enabled"] is True
+    assert backup["configured"] is False
+    assert backup["status"] == "attention"
+
+
+def test_backup_runtime_sucesso_confirma_offsite():
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="development",
+        BACKUP_ENABLED=True,
+        BACKUP_ENCRYPTION_KEY="presente-sem-expor",
+        BACKUP_DESTINO="rclone",
+        BACKUP_RCLONE_REMOTE="onedrive:EJC-Backups",
+    )
+    item = _items_by_key(build_integration_status(
+        settings,
+        operational_states={
+            "backup_offsite": {
+                "state": "ok",
+                "detail": "Último backup cifrado concluiu o envio offsite com sucesso.",
+                "checked_at": "2026-09-20T00:03:28+00:00",
+            }
+        },
+    ))["backup_offsite"]
+
+    assert item["status"] == "ready"
+    assert item["operational_state"] == "ok"
+    assert item["last_operational_at"] == "2026-09-20T00:03:28+00:00"
+    assert "sucesso" in item["detail"]
+
+
+def test_classificador_backup_nao_expoe_erro_bruto():
+    estado = _classificar_backup_estado({
+        "last_status": "erro",
+        "offsite_ok": False,
+        "last_run_at": None,
+        "last_error": "token-secreto-nao-pode-vazar",
+    })
+
+    assert estado["state"] == "erro"
+    assert "token-secreto-nao-pode-vazar" not in str(estado)
+
+
+def test_classificador_backup_parcial_distingue_local_de_offsite():
+    estado = _classificar_backup_estado({
+        "last_status": "parcial",
+        "offsite_ok": False,
+        "last_run_at": None,
+    })
+
+    assert estado["state"] == "alerta"
+    assert "offsite" in estado["detail"].lower()
