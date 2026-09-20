@@ -57,12 +57,14 @@ export const CASE_NAV_SECTIONS: readonly CaseNavSection[] = [
   {
     // Documentos é o agrupador visível: reúne arquivos recebidos e produzidos
     // sem criar um módulo paralelo. Peças, provas, contratos e procurações
-    // preservam suas abas/deep-links internos.
+    // preservam suas abas/deep-links internos. "dataroom" (Onda 3, §3: Data
+    // Room → contexto de Caso) entra atrás de flag em config/w3Tabs.ts —
+    // CasoDetalhe filtra a exibição via filtrarTabsW3().
     label: "Documentos",
     tab: "documentos",
     icon: FileStack,
     descricao: "Documentos, peças, provas, contratos e procurações do caso.",
-    tabs: ["documentos", "pecas", "provas", "contratos", "procuracoes"],
+    tabs: ["documentos", "pecas", "provas", "contratos", "procuracoes", "dataroom"],
   },
   {
     label: "Estratégia",

@@ -37,7 +37,16 @@ interface LinkRecemGerado {
   expira_em?: string;
 }
 
-export default function DataRoom() {
+/**
+ * Painel de Data Room — superfície única do recurso (sem segundo CRUD).
+ *
+ * Sem props: página global /data-room com todas as salas acessíveis ao
+ * usuário (contrato §3 do plano 2026-09-20 mantém o menu Administration
+ * para gestão geral). Com `caseId` (Onda 3 — Data Room → contexto de
+ * Caso): lista só as salas vinculadas ao caso e novas salas já nascem
+ * com case_id (o backend DataRoomIn aceita case_id/client_id).
+ */
+export function DataRoomPanel({ caseId }: { caseId?: string }) {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState(false);
@@ -54,17 +63,21 @@ export default function DataRoom() {
     setErro(false);
     api
       .get("/data-rooms?per_page=50")
-      .then((r) => setRooms(asList<Room>(r.data)))
+      .then((r) => {
+        const todas = asList<Room>(r.data);
+        setRooms(caseId ? todas.filter((s) => s.case_id === caseId) : todas);
+      })
       .catch(() => setErro(true))
       .finally(() => setLoading(false));
   };
   useEffect(() => {
     carregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const criar = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.post("/data-rooms", form);
+    await api.post("/data-rooms", caseId ? { ...form, case_id: caseId } : form);
     setNovo(false);
     setForm({ nome: "", descricao: "" });
     carregar();
@@ -129,8 +142,12 @@ export default function DataRoom() {
   return (
     <div>
       <PageHeader
-        title="Data Room"
-        subtitle="Salas seguras de documentos com links de acesso externo"
+        title={caseId ? "Data Room do caso" : "Data Room"}
+        subtitle={
+          caseId
+            ? "Salas seguras deste caso com links de acesso externo"
+            : "Salas seguras de documentos com links de acesso externo"
+        }
         actions={
           <button onClick={() => setNovo(true)} className="btn-primary text-sm">
             + Nova sala
@@ -167,7 +184,9 @@ export default function DataRoom() {
           ))}
           {rooms.length === 0 && (
             <p className="text-gray-400 text-sm col-span-full text-center py-12">
-              Nenhuma sala criada
+              {caseId
+                ? "Nenhuma sala vinculada a este caso"
+                : "Nenhuma sala criada"}
             </p>
           )}
         </div>
@@ -182,8 +201,11 @@ export default function DataRoom() {
         >
           <form onSubmit={criar} className="space-y-3">
             <div>
-              <label className="label">Nome *</label>
+              <label className="label" htmlFor="sala-nome">
+                Nome *
+              </label>
               <input
+                id="sala-nome"
                 required
                 value={form.nome}
                 onChange={(e) =>
@@ -193,8 +215,11 @@ export default function DataRoom() {
               />
             </div>
             <div>
-              <label className="label">Descrição</label>
+              <label className="label" htmlFor="sala-descricao">
+                Descrição
+              </label>
               <textarea
+                id="sala-descricao"
                 rows={2}
                 value={form.descricao}
                 onChange={(e) =>
@@ -357,4 +382,9 @@ export default function DataRoom() {
       )}
     </div>
   );
+}
+
+/** Superfície global /data-room — todas as salas acessíveis ao usuário. */
+export default function DataRoom() {
+  return <DataRoomPanel />;
 }
