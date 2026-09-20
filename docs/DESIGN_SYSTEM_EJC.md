@@ -2,8 +2,8 @@
 
 ## Autoridade visual
 
-A identidade canônica do EJC é a referência DPT aprovada em 18/09/2026:
-verde-esmeralda profundo, ouro institucional, marfim/off-white, títulos
+A identidade canônica do EJC é a referência Tech Blue DPT aprovada em
+20/09/2026: navy profundo, azul elétrico/ciano, neutros frios, títulos
 editoriais serifados e interface sans-serif limpa.
 
 A imagem de referência define o **idioma visual**. O código vigente define a
@@ -12,17 +12,17 @@ rotas, RBAC, contratos de API ou fluxos jurídicos por elementos cenográficos.
 
 ## Fonte única de verdade
 
-| Assunto | Fonte canônica |
-|---|---|
-| Tokens semânticos de cor, raio, sombra e tipografia | `frontend/src/styles/ejc-tokens.css` |
-| Mapeamento Tailwind dos tokens | `frontend/tailwind.config.js` |
-| Primitivos React reutilizáveis | `frontend/src/components/UI.tsx` |
-| AppShell | `frontend/src/components/LayoutReference.tsx` |
-| Dashboard/Início | `frontend/src/pages/DashboardUltra.tsx` |
-| Composição premium do Dashboard | `frontend/src/styles/ejc-dashboard-premium.css` |
-| Acabamento global de páginas antigas e novas | `frontend/src/styles/ejc-reference-systemwide.css` |
-| Auditoria de CSS | `frontend/scripts/auditar-css.mjs` |
-| Governança das camadas globais | `frontend/scripts/css-governance.json` |
+| Assunto                                             | Fonte canônica                                     |
+| --------------------------------------------------- | -------------------------------------------------- |
+| Tokens semânticos de cor, raio, sombra e tipografia | `frontend/src/styles/ejc-tokens.css`               |
+| Mapeamento Tailwind dos tokens                      | `frontend/tailwind.config.js`                      |
+| Primitivos React reutilizáveis                      | `frontend/src/components/UI.tsx`                   |
+| AppShell                                            | `frontend/src/components/LayoutReference.tsx`      |
+| Dashboard/Início                                    | `frontend/src/pages/DashboardUltra.tsx`            |
+| Composição premium do Dashboard                     | `frontend/src/styles/ejc-dashboard-premium.css`    |
+| Acabamento global de páginas antigas e novas        | `frontend/src/styles/ejc-reference-systemwide.css` |
+| Auditoria de CSS                                    | `frontend/scripts/auditar-css.mjs`                 |
+| Governança das camadas globais                      | `frontend/scripts/css-governance.json`             |
 
 Os tokens `--ejc-*` devem ser preferidos em toda evolução visual. Não criar
 paleta local quando já existir token semântico equivalente.
@@ -31,9 +31,9 @@ paleta local quando já existir token semântico equivalente.
 
 Famílias principais:
 
-- **Esmeralda:** superfícies institucionais, sidebar e ações estruturais.
-- **Ouro:** destaque, foco, seleção e elementos editoriais.
-- **Marfim/off-white:** canvas principal.
+- **Navy:** superfícies institucionais, sidebar e ações estruturais.
+- **Azul/ciano:** destaque, foco, seleção e elementos editoriais.
+- **Névoa fria/off-white:** canvas principal.
 - **Branco:** superfícies de trabalho.
 - **Tinta escura:** texto principal.
 - **Cores semânticas:** sucesso, atenção, perigo e informação.
@@ -58,7 +58,7 @@ incremental e comprovada:
 1. alterar o componente ou a camada que já é dona do elemento;
 2. preferir tokens e primitivos canônicos;
 3. remover CSS antigo somente após evidência de que não possui consumidores;
-4. nunca trocar o visual DPT por uma identidade paralela;
+4. nunca trocar o visual Tech Blue DPT por uma identidade paralela;
 5. nunca fazer big-bang rewrite apenas para saneamento visual.
 
 O gate `npm run audit:css:verificar` impede aumento das camadas globais do
@@ -146,7 +146,7 @@ No CI oficial, a governança CSS roda antes da suíte de frontend.
 
 ## Critérios de aceite
 
-- [ ] identidade DPT preservada;
+- [ ] identidade Tech Blue DPT preservada;
 - [ ] nenhuma nova camada global de CSS criada sem decisão explícita;
 - [ ] tokens canônicos continuam por último no cascade;
 - [ ] dados do dashboard são reais ou degradam explicitamente;
