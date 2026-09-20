@@ -18,8 +18,8 @@ from app.services.sanitizer import sanitizar_pii, validar_sem_pii
 # Provedores que processam dados FORA do VPS (LGPD: exigem sanitização).
 PROVIDERS_EXTERNOS = {"anthropic", "groq", "maritaca"}
 
-# Tarefas complexas (raciocínio jurídico profundo) → priorizam Anthropic
-# quando elegível. Aceita tanto nomes de TarefaIA quanto task_types do gateway.
+# Tarefas complexas (raciocínio jurídico profundo) → priorizam Maritaca no
+# roteamento automático. Claude fica reservado à solicitação explícita.
 TAREFAS_COMPLEXAS = {
     "analise_caso", "minutas", "dossie", "pesquisa_juridica",
     "estrategia", "analise_juridica", "elaboracao_peca",
@@ -77,6 +77,7 @@ class AIProviderPolicy:
         *,
         ja_sanitizado: bool = False,
         exige_fonte: bool = False,
+        provider_solicitado: str | None = None,
     ) -> PolicyDecision:
         """
         Decide a cadeia de provedores para `task_type` dado o conteúdo.
@@ -93,7 +94,18 @@ class AIProviderPolicy:
         task = (task_type or "").strip().lower()
         motivos: list[str] = []
 
-        elegiveis = [p for p in self._ordem_prioridade() if self._elegivel(p)]
+        solicitado = (provider_solicitado or "").strip().lower()
+        if solicitado and solicitado not in {"groq", "maritaca", "anthropic", "ollama"}:
+            solicitado = ""
+
+        if solicitado:
+            elegiveis = [solicitado] if self._elegivel(solicitado) else []
+            motivos.append(f"provedor solicitado explicitamente: {solicitado}")
+        else:
+            elegiveis = [p for p in self._ordem_prioridade() if self._elegivel(p)]
+            if not bool(getattr(s, "ANTHROPIC_AUTO_ROUTING_ENABLED", False)):
+                elegiveis = [p for p in elegiveis if p != "anthropic"]
+                motivos.append("Claude reservado para solicitação explícita")
 
         # ── Barreira LGPD: destino externo exige conteúdo sem PII ────────────
         sanitizar_antes = False
@@ -113,10 +125,7 @@ class AIProviderPolicy:
                 )
 
         # ── Priorização por perfil da tarefa ─────────────────────────────────
-        if task in TAREFAS_COMPLEXAS and "anthropic" in elegiveis:
-            elegiveis = ["anthropic"] + [p for p in elegiveis if p != "anthropic"]
-            motivos.append("tarefa complexa — Anthropic priorizado")
-        elif task in TAREFAS_COMPLEXAS and "maritaca" in elegiveis:
+        if not solicitado and task in TAREFAS_COMPLEXAS and "maritaca" in elegiveis:
             # Sem Anthropic elegível, o melhor raciocínio jurídico PT-BR
             # EXTERNO é o Sabiá (Maritaca) — priorizado à frente do groq, mas
             # NUNCA à frente de provider LOCAL elegível (minimização LGPD: o
@@ -125,11 +134,11 @@ class AIProviderPolicy:
             externos = [p for p in elegiveis
                         if p in PROVIDERS_EXTERNOS and p != "maritaca"]
             elegiveis = locais + ["maritaca"] + externos
-            motivos.append("tarefa complexa — Maritaca (Sabiá) priorizada entre externos")
-        elif task in TAREFAS_ECONOMICAS:
-            econ = [p for p in elegiveis if p in ("ollama", "groq")]
-            elegiveis = econ + [p for p in elegiveis if p not in econ]
-            motivos.append("tarefa econômica — Ollama/Groq priorizados")
+            motivos.append("tarefa complexa — Maritaca (Sabiá) priorizada")
+        elif not solicitado and task in TAREFAS_ECONOMICAS:
+            econ = [p for p in elegiveis if p == "groq"]
+            elegiveis = econ + [p for p in elegiveis if p != "groq"]
+            motivos.append("tarefa econômica — Groq priorizado")
 
         requer_hitl = bool(s.AI_REQUIRE_HITL)
 
