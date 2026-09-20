@@ -93,6 +93,26 @@ async def test_scope_client_sem_scope_case_gera_debug(_sem_embeddings, caplog):
     assert any("escopo de cliente sem caso" in r.getMessage() for r in caplog.records)
 
 
+async def test_rag_nao_vaza_mensagem_bruta_de_excecao_no_log(_sem_embeddings, caplog):
+    segredo = "CPF 123.456.789-09 token sk-nao-logar"
+
+    class _DBFalha:
+        async def execute(self, stmt, params=None):
+            raise RuntimeError(segredo)
+
+    with caplog.at_level(logging.WARNING, logger=ai_service.logger.name):
+        resultado = await ai_service.buscar_contexto_rag(
+            _DBFalha(), "consulta", limite=3
+        )
+
+    assert resultado == []
+    mensagens = "\n".join(r.getMessage() for r in caplog.records)
+    assert segredo not in mensagens
+    assert "123.456.789-09" not in mensagens
+    assert "sk-nao-logar" not in mensagens
+    assert "RuntimeError" in mensagens
+
+
 def test_semantica_do_filtro_por_caso():
     """O contrato novo é ownership/base, não lista de categorias por caso."""
     assert not hasattr(ai_service, "_CASE_SCOPED_CATS")
