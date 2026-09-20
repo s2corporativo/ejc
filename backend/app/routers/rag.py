@@ -13,6 +13,7 @@ from app.core.database import get_db, AsyncSessionLocal
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, require_roles, requer_equipe_juridica
 from app.models.user import User
+from app.models.audit_log import criar_audit_log
 from app.models.rag import KnowledgeDoc, KnowledgeChunk, FonteIngestao
 from app.services.ai_service import buscar_contexto_rag, _RESTRICTED_CATS
 from app.services.embedding_service import gerar_embeddings, disponivel as emb_disponivel
@@ -397,6 +398,10 @@ async def listar_docs(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # Metadados de documentos de caso também são informação jurídica protegida.
+    # A listagem global do acervo é superfície da equipe jurídica, não do portal
+    # do cliente nem de papéis financeiro/secretaria.
+    requer_equipe_juridica(cu, "Acesso ao acervo RAG restrito à equipe jurídica")
     q = select(KnowledgeDoc).where(KnowledgeDoc.deleted_at.is_(None))
     if categoria:
         q = q.where(KnowledgeDoc.categoria == categoria)
@@ -603,6 +608,14 @@ async def ingest_fontes_oficiais(
 
 
 # ── Destilação RAG com gate humano (#15) ─────────────────────────────────────
+_AILOG_RAG_CATEGORIAS = {
+    "conhecimento_ia",
+    "tese_juridica",
+    "referencia_interna",
+    "precedente_interno",
+}
+
+
 class IngerirAILogRequest(BaseModel):
     categoria: str = "conhecimento_ia"
     titulo_override: str | None = None
@@ -621,6 +634,19 @@ async def ingerir_ai_log_aprovado(
     """
     from app.models.ai_log import AILog, AIStatusHITL
     from app.services.ingestion_service import upsert_documento
+    from app.services.ai_service import _escopo_cliente_do_caso
+
+    requer_equipe_juridica(
+        cu, "Destilação de conhecimento RAG restrita à equipe jurídica"
+    )
+    if req.categoria not in _AILOG_RAG_CATEGORIAS:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Categoria não permitida para conhecimento derivado de IA. "
+                f"Permitidas: {', '.join(sorted(_AILOG_RAG_CATEGORIAS))}"
+            ),
+        )
 
     log = (await db.execute(
         select(AILog).where(AILog.id == log_id, AILog.user_id == cu.id)
@@ -640,6 +666,19 @@ async def ingerir_ai_log_aprovado(
     fonte  = f"ejc_ia_{log.tipo_uso.value}"
     chave  = f"ai_log_{log.id}"
 
+    case_id = getattr(log, "case_id", None)
+    client_id = await _escopo_cliente_do_caso(db, case_id) if case_id else None
+    if case_id and not client_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Não foi possível confirmar o escopo do caso; ingestão RAG bloqueada.",
+        )
+    if req.categoria == "precedente_interno" and not client_id:
+        raise HTTPException(
+            status_code=422,
+            detail="precedente_interno exige vínculo com caso/cliente.",
+        )
+
     resultado = await upsert_documento(
         db,
         titulo=titulo,
@@ -648,12 +687,40 @@ async def ingerir_ai_log_aprovado(
         chave_origem=chave,
         fonte=fonte,
         extra={
-            "rag_status": "aprovado",
+            # HITL do output de IA NÃO substitui a curadoria do conhecimento.
+            # O documento nasce pendente e só entra no retrieval após revisão
+            # explícita no fluxo de Governança RAG.
+            "rag_status": "pendente",
+            "requires_human_review": True,
+            "human_reviewed": False,
             "origem": "ai_log_hitl",
             "status_hitl": log.status_hitl.value,
-            "aprovado_por": str(cu.id),
+            "destilado_por": str(cu.id),
         },
+        client_id=client_id,
+        case_id=case_id,
         confianca="media",
+    )
+    doc = (await db.execute(
+        select(KnowledgeDoc).where(
+            KnowledgeDoc.chave_origem == chave,
+            KnowledgeDoc.deleted_at.is_(None),
+            KnowledgeDoc.vigente.is_(True),
+            KnowledgeDoc.client_id == client_id if client_id else KnowledgeDoc.client_id.is_(None),
+        ).limit(1)
+    )).scalars().first()
+    role = getattr(getattr(cu, "role", None), "value", getattr(cu, "role", None))
+    await criar_audit_log(
+        db,
+        str(cu.id),
+        str(role or ""),
+        "RAG_DESTILAR_AILOG",
+        "knowledge_docs",
+        str(doc.id) if doc else None,
+        detalhes=(
+            f"ai_log={log_id} categoria={req.categoria} "
+            f"escopo={'caso' if case_id else 'institucional'}"
+        ),
     )
     await db.commit()
 
@@ -667,5 +734,5 @@ async def ingerir_ai_log_aprovado(
         "chunks_estimados": chunks_estimados,
         "categoria": req.categoria,
         "titulo": titulo,
-        "aviso": "Output ingerido no RAG como conhecimento institucional. Disponível nas próximas consultas.",
+        "aviso": "Output destilado para o RAG em estado pendente; requer curadoria antes de entrar nas consultas.",
     }
