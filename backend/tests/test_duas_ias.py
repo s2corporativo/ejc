@@ -434,6 +434,12 @@ class _CitacoesResult:
     def scalar_one_or_none(self):
         return self._obj
 
+    def scalars(self):
+        return self
+
+    def first(self):
+        return self._obj
+
 
 class _ExecDB:
     """DB mínimo com execute()→scalar_one_or_none() e commit() (fluxos router)."""
@@ -503,8 +509,13 @@ class TestIsolamentoCriticaDoGateEIngestao:
         monkeypatch.setattr(ingestion_service, "upsert_documento", fake_upsert)
         monkeypatch.setattr(rag_router, "chunk_texto", lambda t: ["c1", "c2"])
 
+        async def fake_audit(*a, **kw):
+            return None
+
+        monkeypatch.setattr(rag_router, "criar_audit_log", fake_audit)
+
         log = SimpleNamespace(
-            id="log-1", user_id="user-1",
+            id="log-1", user_id="user-1", case_id=None,
             status_hitl=AIStatusHITL.revisado,
             tipo_uso=AITipoUso.redacao_peca,
             created_at=_dt.datetime(2026, 7, 5),
@@ -513,10 +524,16 @@ class TestIsolamentoCriticaDoGateEIngestao:
         )
         out = await ingerir_ai_log_aprovado(
             "log-1", IngerirAILogRequest(), db=_ExecDB(log),
-            cu=SimpleNamespace(id="user-1"),
+            cu=SimpleNamespace(
+                id="user-1",
+                role=SimpleNamespace(value="advogado"),
+            ),
         )
         assert out["ok"] is True
         assert capturado["conteudo"] == log.resposta
+        assert capturado["extra"]["rag_status"] == "pendente"
+        assert capturado["extra"]["requires_human_review"] is True
+        assert capturado["extra"]["human_reviewed"] is False
         assert "verificar fonte" not in capturado["conteudo"]
         assert MARCADOR_AILOG not in capturado["conteudo"]
 
