@@ -118,7 +118,8 @@ class SingleAICoreOrchestrator:
                         skill_pipeline.append(native_name)
 
         # 2) Permissão (RBAC/ABAC) ────────────────────────────────────────────
-        role = str(getattr(user, "role", "") or "")
+        raw_role = getattr(user, "role", "")
+        role = getattr(raw_role, "value", raw_role) or ""
         if user is not None and role == "cliente_externo":
             raise HTTPException(403, "Funções de IA internas não estão disponíveis no portal do cliente.")
         if agente.roles_permitidos and (user is None or role not in agente.roles_permitidos):
