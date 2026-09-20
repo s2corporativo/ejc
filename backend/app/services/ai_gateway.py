@@ -1261,16 +1261,13 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
                 {"role": "user", "content": mensagem}], nivel_efetivo,
                 task_label=tarefa_label)
 
-    # Cadeia: provedor da tarefa → Ollama (LOCAL) → Groq (externo).
-    # LGPD (minimização de transferência internacional, art. 33/46): o LOCAL vem
-    # ANTES do externo — se o provedor primário cair, tentamos o Ollama local
-    # antes de mandar dados (ainda que sanitizados) ao Groq nos EUA. Espelha a
-    # cadeia por task_type do chat() (ollama→…→groq), que já respeita essa ordem.
+    # Afinidade estrita também no caminho legado por tarefa:
+    # - cfg.provider=maritaca (mérito/leitura/pesquisa) NÃO cai em Groq;
+    # - cfg.provider=groq (rotina) NÃO cai em Maritaca;
+    # - Ollama pode servir de fallback LOCAL quando habilitado.
     cadeia: list[tuple[str, str | None]] = [(cfg.provider, cfg.model)]
     if settings.OLLAMA_ENABLED and cfg.provider != "ollama":
         cadeia.append(("ollama", None))
-    if cfg.provider != "groq":
-        cadeia.append(("groq", None))
 
     # ── Modo 1 (LOCAL_COMPLETO) — sigilo reforçado: nunca sai do VPS. Remove
     # externos; sem provedor local ELEGÍVEL → bloqueio SEGURO (externo nunca é
