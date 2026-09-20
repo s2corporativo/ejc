@@ -80,6 +80,22 @@ def test_rotina_nao_usa_maritaca_se_groq_indisponivel(monkeypatch):
     assert all(p != "maritaca" for p, _ in decisao.provider_chain)
 
 
+def test_area_juridica_direta_e_tratada_como_merito(monkeypatch):
+    decisao = _policy(monkeypatch).avaliar(
+        "analise defesa criminal", "criminal", ja_sanitizado=True,
+    )
+    assert [p for p, _ in decisao.provider_chain][0] == "maritaca"
+    assert "groq" not in [p for p, _ in decisao.provider_chain]
+
+
+def test_honorarios_e_tratado_como_rotina(monkeypatch):
+    decisao = _policy(monkeypatch).avaliar(
+        "consulte honorarios", "honorarios", ja_sanitizado=True,
+    )
+    assert [p for p, _ in decisao.provider_chain][0] == "groq"
+    assert "maritaca" not in [p for p, _ in decisao.provider_chain]
+
+
 def test_claude_entra_quando_solicitado_explicitamente(monkeypatch):
     decisao = _policy(monkeypatch).avaliar(
         "faça uma análise com Claude",
