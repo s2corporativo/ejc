@@ -173,18 +173,25 @@ export default function IntegrationHealthPanel() {
     () => avisoOverlayCofre(data?.credential_overlay),
     [data?.credential_overlay],
   );
+  const runtimeDisponivel = data?.mode === "configuration_and_runtime";
+  const statusSubtitle = runtimeDisponivel
+    ? "Combina configuração, Cofre de Credenciais e última evidência operacional persistida; nenhum segredo é retornado ao navegador."
+    : "Mostra habilitação e presença de configuração. Este backend não forneceu evidência operacional; nenhum segredo é retornado ao navegador.";
 
   return (
     <div className="space-y-5">
       <SectionCard
         title="Status das integrações"
-        subtitle="Combina configuração, Cofre de Credenciais e última evidência operacional persistida; nenhum segredo é retornado ao navegador."
+        subtitle={statusSubtitle}
       >
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-4">
             {[
               ["Total", data?.summary.total ?? "—"],
-              ["Prontas", data?.summary.ready ?? "—"],
+              [
+                runtimeDisponivel ? "Prontas" : "Configuradas",
+                data?.summary.ready ?? "—",
+              ],
               ["Atenção", data?.summary.attention ?? "—"],
               ["Desabilitadas", data?.summary.disabled ?? "—"],
             ].map(([label, value]) => (
@@ -262,7 +269,9 @@ export default function IntegrationHealthPanel() {
                           {item.label}
                         </div>
                         <span className={`badge ${meta.className}`}>
-                          {meta.label}
+                          {item.status === "ready" && !runtimeDisponivel
+                            ? "Configurada"
+                            : meta.label}
                         </span>
                       </div>
                       <p className="mt-1 text-xs leading-5 text-slate-500">
