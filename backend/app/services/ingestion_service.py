@@ -455,7 +455,7 @@ async def upsert_documento(
             or anterior.get("rag_status") == "recusado"
             or _vigencia_de_curadoria(anterior)
         )
-        if houve_decisao_humana:
+        if houve_decisao_humana and preservar_aprovacao_rag:
             extra_nova_versao["previous_rag_status"] = anterior.get("rag_status")
             extra_nova_versao["rag_status"] = "pendente"
             extra_nova_versao["requires_human_review"] = True
