@@ -16,11 +16,11 @@
 | Diferenças locais | 0 (`git status` limpo; main == origin/main) |
 | Última entrega merged | PR #1724 (reconstrução visual canônica, squash `c1be69255`) — **em produção**, validado por `/api/health` + CSS byte-idêntico |
 | PRs abertas relacionadas | #1723 (sanitização str(e) gateway/ai_service — CRITICAL), #1722 (deep_research modo_sanitizacao — CRITICAL LGPD), #1721 (RBAC cliente_externo no-op — CRITICAL), #1719 (PostgreSQL hardening fase 2), #1715 (integrações externas / falsos verdes), #1713 (remove premium-dashboard.css órfão), #1720 (stale-bot triage) |
-| Inventário regenerado | `python scripts/generate_architecture_inventory.py --check` → **8.077 itens**, fingerprint `d7a1618a549a4566…`, gate `all_items_classified: true`, `needs_review: 7.531` |
+| Inventário regenerado | `python scripts/generate_architecture_inventory.py --check` → **8.077 itens**, fingerprint `39582ab0c8103c11…`, gate `all_items_classified: true`, `needs_review: 7.531` |
 | Graphify | `graphify` binário indisponível no sandbox de execução → NÃO EXECUTADO (índice auxiliar; nada foi classificado com base nele — todo achado abaixo foi confirmado no código-fonte) |
 | Produção em execução | `https://ejc.depaulateixeira.adv.br` — commit `c1be69255`, health `ok` |
 
-Artefatos do inventário (regenerados nesta auditoria): `docs/audit/inventory/manifest.json`, `architecture_inventory.csv`, `architecture_inventory.json`, `duplicate_families.json`, `classification_review.csv`.
+Artefatos do inventário (regenerados nesta auditoria): `docs/audit/inventory/manifest.json`, `architecture_inventory.csv`, `architecture_inventory.json`, `duplicate_families.json`, `classification_review.csv`. O fingerprint do manifesto corresponde ao commit versionado nestes artefatos (`39582ab0…`); qualquer alteração futura no código exige regeneração para manter os números sincronizados.
 
 ---
 
@@ -51,7 +51,7 @@ Artefatos do inventário (regenerados nesta auditoria): `docs/audit/inventory/ma
 
 ### 1.4 Núcleo IA (verificado de ponta a ponta)
 
-Fluxo canônico confirmado: `POST /api/ai/core/{chat|task|analyze|generate|report}` → `orchestrator.run()` → intent_classifier (determinístico) → RBAC/ABAC → context_builder (ownership fail-closed) → ai_guard.sanitizar → AIProviderPolicy → gateway (cadeia ollama→anthropic→maritaca→groq, piso de sigilo, barreira LGPD única) → response_validator → AILog (erro PROPAGA) → hitl_policy. **Nenhum bypass de gateway encontrado** (único SDK de IA importado em todo `app/` está dentro de `services/providers/anthropic_provider.py`).
+Fluxo canônico confirmado: `POST /api/ai/core/{chat|task|analyze|generate|report}` → `orchestrator.run()` → intent_classifier (determinístico) → RBAC/ABAC → context_builder (ownership fail-closed) → ai_guard.sanitizar → AIProviderPolicy → gateway (cadeia por prioridade de produção `anthropic→maritaca→groq→ollama` conforme `config.py:337`/compose, com `OLLAMA_ENABLED=false` no runtime atual — o item local fica indisponível no fim da fila, piso de sigilo, barreira LGPD única) → response_validator → AILog (erro PROPAGA) → hitl_policy. **Nenhum bypass de gateway encontrado** (único SDK de IA importado em todo `app/` está dentro de `services/providers/anthropic_provider.py`).
 
 ---
 
@@ -83,7 +83,7 @@ Fluxo canônico confirmado: `POST /api/ai/core/{chat|task|analyze|generate|repor
 | Catálogos: assinaturas, workflow, checklists, prompts, datajud, diário-oficial | rotas próprias | fora do menu 11 | por domínio | MANTER (hub Ferramentas) |
 | Admin: usuarios, auditoria, mapa-modulos, diagnostico, lixeira, ia-governança(+provedores) | rotas próprias | fora do menu 11 (gestores/admin) | por domínio | MANTER → Administração (alvo) |
 | CRMLeads | `/crm-leads` | hidden | `/api/clients` | INVESTIGAR (módulo oculto **sem RBAC de rota**) |
-| 48 redirects legados + 3 dinâmicos | `LEGACY_REDIRECTS` | — | — | REDIRECIONAR (manter 90 dias c/ telemetria) |
+| 48 redirects legados + 3 dinâmicos | `LEGACY_REDIRECTS` | — | — | REDIRECIONAR (manter 90 dias c/ telemetria — expurgo condicionado à instrumentação frontend, ver §12.5) |
 
 ### 2.2 Backend — routers por domínio (principais; tabela completa no inventário CSV)
 
@@ -122,7 +122,7 @@ Fluxo canônico confirmado: `POST /api/ai/core/{chat|task|analyze|generate|repor
    ├── Central (atividades + relacionamento), AgendaDia
    ├── deadlines globais, audiências, calendário ICS
    └── intimações DJEN, workflow SLA, checklists operacionais
-5. PEÇAS (superfície de produção revisada; cada peça pertence a um Caso)
+5. PEÇAS (superfície de produção revisada; cada peça pertence a um Caso ou a um cliente — peças sem caso, ex.: contratos e procurações de admissão `geracao_documental_cliente.py:389-405`, continuam acessíveis nesta superfície global/por-cliente mesmo após W3/W5)
    ├── catálogo + geração (peca_geracao) + auditoria de peça
    └── HITL: ai_generated + human_reviewed obrigatórios (já no model)
 6. CONHECIMENTO JURÍDICO
@@ -215,7 +215,7 @@ Fluxo canônico confirmado: `POST /api/ai/core/{chat|task|analyze|generate|repor
 | 6 tabelas criadas em runtime (`indices_bcb_cache`, `radar_legislativo_visto`, `infosimples_uso`, `transparencia_cache`, `google_drive_sync_state`, `backup_drive_state`) | invisíveis ao Alembic; trazer para migrations antes de qualquer refactor |
 | `processes` (modelo sobre tabela criada por SQL cru na 048) | padrão documentado no cabeçalho; não mexer sem plano |
 | `case_partes` plaintext legado + `trabalhista_cases.cid` | rollout de criptografia em curso (158); Fase B só após `legacy_plaintext_count=0` comprovado |
-| Redirects `LEGACY_REDIRECTS` (48) + ramos de agregador com handler legado pulado (`ramos.py:87-98`) | manter com telemetria de rotas (`route_usage_metrics` já existe) por 90 dias antes de expurgo |
+| Redirects `LEGACY_REDIRECTS` (48) + ramos de agregador com handler legado pulado (`ramos.py:87-98`) | manter por 90 dias antes de expurgo; `route_usage.py` monitora apenas 16 templates de backend e NÃO registra paths de frontend (legados nunca chegam ao service) — pré-condição: instrumentar navegação frontend (ou sinal visível ao servidor) antes de tratar métrica como prova de desuso |
 | `/crm-leads` | módulo oculto sem RBAC de rota — decidir: ativar com RBAC, redirecionar ou desativar |
 | `regulatorio.py` (router montado, 1 ep) | **sem nenhum teste** (único "N" absoluto); cobrir com teste antes de qualquer mudança |
 | `document_persistence/document_hash` cadeias | vivas, mas cadeia version_* parcialmente morta — mapear dependências antes |
@@ -257,7 +257,7 @@ Classificação completa (SEMPRE ATIVA/AGENDADA/SOB DEMANDA/CONDITION-BASED/DESA
 
 Tabela fechada (ID, Módulo, Arquivo, Problema, Status, Ação, Risco, Dependências, Teste, Rollback, Ordem) em **`docs/audit/BACKLOG_LIMPEZA_2026-09-20.csv`**. Resumo de prioridades:
 
-- **P0 (risco de segurança/dados)** — 2FA desligado por default (P1-S1 abaixo); 3 downloads de arquivo gerado sem titularidade (`ambiental_estrategia.py:239` sem gate; `trabalhista_liquidacao.py:337` capability-UUID); PRs #1721/#1722/#1723 (CRITICAL) pendentes de merge.
+- **P0 (risco de segurança/dados)** — 2FA default: risco ACEITO por decisão permanente do Titular (ver P1/S1 — não é ação de backlog); 3 downloads de arquivo gerado sem titularidade (`ambiental_estrategia.py:239` sem gate; `trabalhista_liquidacao.py:337` capability-UUID; `previdenciario_beneficio.py:230-245` + `tributario_fiscal.py:364-383` idem — S10); PRs #1721/#1722/#1723 (CRITICAL) pendentes de merge.
 - **P1 (duplicação com impacto operacional)** — G1 cache IA off; B2 DJEN duplo; G3 polling 60 s; B1 DataJud 3 rotinas; B6 corpos mortos de scheduler.
 - **P2 (simplificação estrutural)** — F1-F11 (consolidações frontend), B3/B5 (peças/ingestão), módulo alvo de 9, routers "só JWT" sem gate de papel (60+), bundle eager (LoginModern, EntradaUniversalGlobal, CommandPalette, SecurityMenu, PortalLayout).
 - **P3 (limpeza física)** — seção 5 (dead code), camadas CSS legadas, redirects expirados, tabelas órfãs após evidência.
@@ -270,7 +270,7 @@ Status de execução: **TODOS os itens NÃO INICIADO** nesta etapa (nenhuma limp
 
 | Wave | Escopo | Branch base | Riscos | Testes/condição de promoção | Rollback |
 |---|---|---|---|---|---|
-| W1 | Navegação/moduleRegistry → menu 9 | feat/w1-menu-9 | regressão de deep-links | tsc+vitest+test:navegacao; telemetria de redirects estável | revert PR |
+| W1 | Navegação/moduleRegistry → menu 9 | feat/w1-menu-9 | regressão de deep-links | tsc+vitest+test:navegacao; redirects intactos (telemetria de redirects exige instrumentação frontend prévia — §4/BE-10 associado) | revert PR |
 | W2 | Dashboard | feat/w2-dashboard | baixo (já canônico) | visual 4 viewports | revert |
 | W3 | Caso como workspace central (absorve peças/docs/prazos como tabs) | feat/w3-caso-workspace | médio: 13 tabs atuais + novas tabs | test:navegacao + e2e tabs + RBAC | feature flag por tab |
 | W4 | Agenda/Prazos/Tarefas/Intimações | feat/w4-agenda | médio (jobs dependem) | testes de scheduler com frozen time | revert + flag |
@@ -291,17 +291,18 @@ Cada wave: PR único, gates obrigatórios (tsc/eslint/vitest/test:responsive/bui
 
 | Prio | Risco | Caminho | Mitigação proposta |
 |---|---|---|---|
-| P0/S1 | **2FA desligado por default** (`TWO_FACTOR_AUTH_ENABLED=false`, `REQUIRE_2FA_ROLES=""`); política "temporária" suprime TOTP em runtime | `core/two_factor_policy.py:26,39-40`, `.env.example:34-35` | ativar para roles `superadmin/admin/socio` (infra já completa e testada) |
+| P1/S1 | 2FA desligado por default (`TWO_FACTOR_AUTH_ENABLED=false`, `REQUIRE_2FA_ROLES=""`) | `core/two_factor_policy.py:26,39-40`, `.env.example:34-35` | **RISCO ACEITO — decisão permanente do Titular** (`docs/GOVERNANCA_IA.md:224-233`: 2FA permanece OFF por default; auditorias registram o risco, sem convertê-lo em correção obrigatória). Só reabrir mediante NOVO pedido expresso do Titular. Infra de ativação permanece implementada e testada para uso futuro. |
 | P0/S2 | Download de peça ambiental sem gate de papel/ownership (qualquer autenticado) | `routers/ambiental_estrategia.py:239` | replicar gate do análogo trabalhista + binding usuário↔arquivo |
 | P1/S3 | Download planilha trabalhista: confidencialidade = não-guessabilidade do UUID | `routers/trabalhista_liquidacao.py:337` | idem |
 | P1/S4 | PRs CRITICAL em aberto: RBAC cliente_externo no-op (#1721), sanitização deep_research (#1722), str(e) gateway (#1723) | PRs | merge imediato após CI |
-| P2/S5 | Sem CSP no app (produção já serve CSP/Permissions-Policy no **nginx do host** — drift repo↔prod a reconciliar) | `nginx/ejc.conf:50-53` vs headers reais | trazer CSP para o repo + testes de header |
+| P2/S5 | CSP e Permissions-Policy JÁ versionadas e ativas no caminho do frontend (`frontend/nginx.conf:19-26`, replicadas em cada location que sobrescreve cache, instaladas no image via `frontend/Dockerfile:11-13`) | drift potencial entre `frontend/nginx.conf` e `nginx/ejc.conf` do host — reconciliar duplicidade | ação reduzida a verificar propagação real dos headers (evita headers duplicados conflitantes) |
 | P2/S6 | JWT HS256 simétrico sem rotação por kid | `core/security.py:172` | aceito por design; planejar rotação documentada |
 | P2/S7 | `GET /ia/logs` (sócio+) sem filtro de caso | `routers/ai.py:172-192` | revisar necessidade de filtro por caso |
 | P3/S8 | Rate limit em memória é por-processo se Redis off | `core/rate_limit.py:7-10` | manter Redis on (compose já ativa) |
 | P3/S9 | Comentário obsoleto "sanitizar_pii PASSTHROUGH" em langfuse_client pode induzir regressão | `observability/langfuse_client.py:10-11` | corrigir comentário |
+| P1/S10 | IDOR por capability-UUID em arquivos gerados, além dos já listados em S2/S3: `previdenciario_beneficio.py:230-245` e `tributario_fiscal.py:364-383` autorizam só por papel e servem qualquer UUID gerado sem binding a criador/cliente/caso | `routers/previdenciario_beneficio.py`, `routers/tributario_fiscal.py` | replicar binding usuario↔arquivo dos análogos + teste de RBAC (backlog SEC-05) |
 
-**Integridade confirmada (não simplificar)**: AuthMiddleware global + confinamento portal; ownership canônico (`core/ownership.py`, `client_ownership.py` — varredura anti-IDOR: nenhum endpoint de recurso sem gate, exceto S2/S3); AuditLog WORM por trigger DB (migration 131); PII Fernet+HMAC cego; barreira LGPD única no gateway; HITL inegociável; sigilo reforçado com piso LOCAL_COMPLETO inão-rebaixável; sanitização de log; ICS HMAC; webhook público com secret timing-safe; rate limit Redis em ~260 endpoints.
+**Integridade confirmada (não simplificar)**: AuthMiddleware global + confinamento portal; ownership canônico (`core/ownership.py`, `client_ownership.py` — varredura anti-IDOR: nenhum endpoint de recurso sem gate; exceções conhecidas por capability-UUID estão em S2/S3 **e** S10, todas em backlog p/ binding); AuditLog WORM por trigger DB (migration 131); PII Fernet+HMAC cego; barreira LGPD única no gateway; HITL inegociável; sigilo reforçado com piso LOCAL_COMPLETO inão-rebaixável; sanitização de log; ICS HMAC; webhook público com secret timing-safe; rate limit Redis em ~260 endpoints.
 
 ---
 
@@ -309,10 +310,10 @@ Cada wave: PR único, gates obrigatórios (tsc/eslint/vitest/test:responsive/bui
 
 1. **Branch protection + squash-merge**: cada wave entra por PR revisável; revert = 1 commit.
 2. **Feature flags/env**: todo job tem gate (`ENABLE_SCHEDULER`, gates por fonte); portas IA têm flag de roteamento; menu 9 atrás de flag até homologação.
-3. **Banco**: somente migrations **aditivas** em upgrade (nenhum drop_table no upgrade — confirmado nas 152); drops apenas em downgrade ou em wave de expurgo com dump prévio + `MIGRATION_RESERVATIONS.md` atualizado + guardas de teste.
+3. **Banco**: regra para as waves futuras = migrations **aditivas** em upgrade (a base legada NÃO é totalmente aditiva — `145_drop_orphan_db_only_columns.py:92-96` e `112_client_pii_drop_plaintext.py:99-112` fazem drop em `upgrade()`); drops só em downgrade ou wave de expurgo com dump prévio + `MIGRATION_RESERVATIONS.md` atualizado + guardas de teste. Rollback de schema ≠ restauração de dados.
 4. **CSS/UI**: camadas legadas preservadas até W12 (rollback visual por remoção de import em main.tsx).
-5. **Aliases HTTP**: consolidar endpoints mantendo alias por 90 dias com telemetria (`route_usage_metrics`/`ai_provider_metrics` já implementados) antes de REMOVER APÓS TELEMETRIA.
-6. **Dados**: export obrigatório (`/api/export`, backup cifrado Drive) antes de qualquer saneamento/fusão (`saneamento.py` já exige).
+5. **Aliases HTTP e redirects frontend**: consolidar endpoints mantendo alias por 90 dias com telemetria (`route_usage_metrics`/`ai_provider_metrics` implementados e limitados a 16 templates de backend — redirects legados do frontend EXIGEM instrumentação de navegação antes de qualquer expurgo) antes de REMOVER APÓS TELEMETRIA.
+6. **Dados**: export obrigatório (`/api/export`, backup cifrado Drive) antes de qualquer saneamento/fusão. ⚠️ Hoje `routers/saneamento.py:220-221` só exige `confirmar=true` — NÃO há gate verificável de backup, e `services/saneamento/fusao.py:124-135,171-182` pode apagar linhas colidentes de forma irreversível. A fusão é, neste momento, **irreversível**: a implementação do gate de backup/restauração é pré-condição no backlog antes de qualquer fusão real.
 7. **Produção**: deploy automático 5 min pós-merge; rollback de deploy = revert na main → CI → timer; `/api/health` expõe commit para verificação imediata.
 
 ---
@@ -342,7 +343,7 @@ Cada wave: PR único, gates obrigatórios (tsc/eslint/vitest/test:responsive/bui
 | Chamadas de IA | via gateway único; cache de resposta DISPONÍVEL mas OFF; embeddings locais (sem custo API) | ai_gateway/config |
 | Testes | frontend vitest 818 ✓; backend 700 arquivos de teste | suites |
 | PRs abertas | 7 (#1713-#1723) | GitHub API |
-| Inventário geral | 8.077 itens classificados; needs_review 7.531; fingerprint d7a1618a… | manifest.json |
+| Inventário geral | 8.077 itens classificados; needs_review 7.531; fingerprint 39582ab0… (artefatos regenerados e versionados neste PR) | manifest.json |
 
 ---
 
