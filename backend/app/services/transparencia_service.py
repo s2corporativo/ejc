@@ -138,8 +138,10 @@ def normalizar_sancao(item: dict) -> dict:
 # ── Estado persistido (sem migration — precedente infosimples_uso) ────────────
 
 async def _ensure_tabela(db: AsyncSession) -> None:
-    """Cria a tabela de cache se não existir (idempotente). Uma linha por
-    (dia, base, cnpj): o resultado normalizado daquela base no dia."""
+    """Compatibilidade SQLite; PostgreSQL é gerido pela migration 162."""
+    from app.core.database import runtime_ddl_permitido
+    if not runtime_ddl_permitido(db):
+        return
     await db.execute(sqltext("""
         CREATE TABLE IF NOT EXISTS transparencia_cache (
             id VARCHAR(36) PRIMARY KEY,
