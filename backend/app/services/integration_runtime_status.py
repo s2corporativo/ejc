@@ -131,6 +131,55 @@ async def coletar_estados_operacionais(db: AsyncSession) -> dict[str, dict[str, 
         except Exception:
             await db.rollback()
 
+    try:
+        existe_backup = (
+            await db.execute(text("SELECT to_regclass('public.backup_drive_state')"))
+        ).scalar()
+        if not existe_backup:
+            estados["backup_offsite"] = {
+                "state": "nunca_executou",
+                "detail": "Backup habilitado sem execução persistida registrada.",
+            }
+        else:
+            row = (
+                await db.execute(
+                    text(
+                        "SELECT last_run_at,last_status,offsite_ok "
+                        "FROM backup_drive_state WHERE id=1"
+                    )
+                )
+            ).first()
+            if not row:
+                estados["backup_offsite"] = {
+                    "state": "nunca_executou",
+                    "detail": "Backup habilitado sem execução persistida registrada.",
+                }
+            else:
+                last_run_at, last_status, offsite_ok = row
+                status = (last_status or "").strip().lower()
+                if offsite_ok is True:
+                    state = "ok"
+                    detail = "Último ciclo confirmou envio offsite do backup cifrado."
+                elif status == "erro":
+                    state = "erro"
+                    detail = "Último ciclo de backup registrou falha."
+                else:
+                    state = "alerta"
+                    detail = (
+                        "Último ciclo não confirmou envio offsite; "
+                        "há prova local ou execução parcial a revisar."
+                    )
+                estados["backup_offsite"] = {
+                    "state": state,
+                    "detail": detail,
+                    "checked_at": last_run_at.isoformat() if last_run_at else None,
+                }
+    except Exception:
+        await db.rollback()
+        estados["backup_offsite"] = {
+            "state": "indisponivel",
+            "detail": "Não foi possível ler o estado persistido do backup.",
+        }
     if __import__("os").getenv("GOOGLE_DRIVE_ENABLED", "").strip().casefold() in {"1", "true", "yes", "on", "sim"}:
         try:
             existe = (await db.execute(text("SELECT to_regclass('public.google_drive_sync_state')"))).scalar()
