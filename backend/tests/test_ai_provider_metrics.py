@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.services.ai.provider_metrics_runtime import normalizar_erro
+from app.services.ai.provider_metrics_runtime import _tipo_erro_seguro, normalizar_erro
 
 
 class _Resposta:
@@ -66,3 +66,16 @@ def test_normalizar_erro_preserva_metadado_estruturado_sem_ler_mensagem():
     assert http_status == 429
     assert reason == "RateLimitError (HTTP 429)"
     assert pii not in reason
+
+
+def test_tipo_erro_seguro_preserva_subtipo_estruturado_sem_ler_mensagem():
+    from app.core.ai_errors import SafeAIError
+
+    exc = SafeAIError(
+        "CPF 123.456.789-09 não pode aparecer",
+        code="provider_failure",
+        technical_type="RateLimitError",
+        status_code=429,
+    )
+
+    assert _tipo_erro_seguro(exc) == "RateLimitError"
