@@ -950,6 +950,13 @@ def _resolver_cadeia(
     provedor de PARTIDA: se elegível, vai à frente da cadeia; o resto do fallback
     é preservado. Inelegível → ignorado (cadeia normal). NUNCA sobrepõe um
     provider_force explícito nem a barreira de elegibilidade/PII."""
+    # Compatibilidade: algumas superfícies antigas selecionam diretamente um
+    # modelo Claude sem mandar provider. Um model_override "claude-*" é uma
+    # requisição explícita e deliberada de Anthropic — nunca deve ser aplicado
+    # por engano a Maritaca/Groq.
+    if not provider_force and (model_override or "").strip().lower().startswith("claude-"):
+        provider_force = "anthropic"
+
     if provider_force in ("groq", "ollama", "anthropic", "maritaca"):
         if _provider_elegivel(provider_force):
             return [(provider_force, _resolver_modelo(provider_force, task_type, model_override))]
