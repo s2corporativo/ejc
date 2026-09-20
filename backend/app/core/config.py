@@ -229,7 +229,7 @@ class Settings(BaseSettings):
     # processam 100% em território nacional (+30% de custo); e (2) ligar o guarda
     # MARITACA_EXIGIR_SOBERANIA=true, que passa a EXIGIR essas variantes no boot.
     # Os defaults abaixo ("sabia-4"/"sabiazinho-4") NÃO são soberanos.
-    MARITACA_ENABLED: bool = False
+    MARITACA_ENABLED: bool = True
     MARITACA_API_KEY: str = ""
     MARITACA_BASE_URL: str = "https://chat.maritaca.ai/api"
     MARITACA_MODEL: str = "sabia-4"            # qualidade/generalista (128k)
@@ -1280,18 +1280,17 @@ class Settings(BaseSettings):
             _derivar("OLLAMA_ENABLED", False)
             _derivar("ANTHROPIC_ENABLED", True)
             _derivar("GROQ_ENABLED", True)
-            # Maritaca só entra se o operador a ligou explicitamente (não é
-            # soberana por default — ver comentário de MARITACA_ENABLED).
+            _derivar("MARITACA_ENABLED", True)
             _derivar(
                 "AI_PROVIDER_PRIORITY",
-                "anthropic,maritaca,groq" if self.MARITACA_ENABLED else "anthropic,groq",
+                "groq,maritaca,anthropic",
             )
         elif perfil == "hibrido":
             _derivar("AI_EXTERNAL_PROVIDERS_ALLOWED", True)
             _derivar("OLLAMA_ENABLED", True)
             _derivar("ANTHROPIC_ENABLED", True)
             _derivar("GROQ_ENABLED", True)
-            _derivar("AI_PROVIDER_PRIORITY", "anthropic,maritaca,groq,ollama")
+            _derivar("AI_PROVIDER_PRIORITY", "groq,maritaca,ollama,anthropic")
         else:
             raise ValueError(
                 f"AI_PROFILE inválido: {self.AI_PROFILE!r} "
