@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from app.core.config import Settings
 from app.services.integration_status import build_integration_status
 from app.services.integration_runtime_status import _classificar_backup_estado
@@ -205,3 +206,64 @@ def test_classificador_backup_parcial_distingue_local_de_offsite():
 
     assert estado["state"] == "alerta"
     assert "offsite" in estado["detail"].lower()
+
+
+def test_backup_parcial_com_offsite_confirmado_permanece_ok():
+    agora = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)
+    estado = _classificar_backup_estado(
+        {
+            "last_status": "parcial",
+            "offsite_ok": True,
+            "last_run_at": agora - timedelta(hours=2),
+        },
+        agora=agora,
+    )
+
+    assert estado["state"] == "ok"
+    assert "aviso local" in estado["detail"].lower()
+
+
+def test_backup_sucesso_antigo_vira_alerta_por_prova_vencida():
+    agora = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)
+    estado = _classificar_backup_estado(
+        {
+            "last_status": "sucesso",
+            "offsite_ok": True,
+            "last_run_at": agora - timedelta(hours=27),
+        },
+        agora=agora,
+    )
+
+    assert estado["state"] == "alerta"
+    assert "26 horas" in estado["detail"]
+
+
+def test_backup_gdrive_inherit_respeita_google_drive_auth_mode(monkeypatch):
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="development",
+        BACKUP_ENABLED=True,
+        BACKUP_ENCRYPTION_KEY="presente-sem-expor",
+        BACKUP_DESTINO="gdrive",
+        BACKUP_DRIVE_FOLDER_ID="folder-fake",
+    )
+    monkeypatch.setenv("BACKUP_GOOGLE_DRIVE_AUTH_MODE", "inherit")
+    monkeypatch.setenv("GOOGLE_DRIVE_AUTH_MODE", "oauth")
+    monkeypatch.setenv(
+        "GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON",
+        '{"type":"service_account"}',
+    )
+    for name in (
+        "GOOGLE_DRIVE_OAUTH_USER_FILE",
+        "GOOGLE_DRIVE_OAUTH_USER_JSON",
+        "GOOGLE_DRIVE_OAUTH_CLIENT_ID",
+        "GOOGLE_DRIVE_OAUTH_CLIENT_SECRET",
+        "GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    backup = _items_by_key(build_integration_status(settings))["backup_offsite"]
+
+    assert backup["enabled"] is True
+    assert backup["configured"] is False
+    assert backup["status"] == "attention"
