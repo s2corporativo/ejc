@@ -399,6 +399,7 @@ export function EntradaInteligente({ embedded = false }: { embedded?: boolean })
           onArquivos={setArquivos}
           meta={meta}
           onAnalisar={analisar}
+          variant={embedded ? "pill" : "full"}
         />
       )}
       {fase === "analisando" && (

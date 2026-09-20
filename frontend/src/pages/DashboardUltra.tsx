@@ -13,16 +13,20 @@ import { ptBR } from "date-fns/locale";
 import {
   BarChart3,
   BookOpen,
+  Briefcase,
   CalendarClock,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   FileText,
   FolderKanban,
+  FilePlus2,
   Plus,
   Scale,
   Sparkles,
   Upload,
   Users,
+  Zap,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { toast } from "../components/Toast";
@@ -110,9 +114,24 @@ function pontoClasse(a: Atividade): string {
 }
 
 function chipDeCaso(status?: string): { rotulo: string; classe: string } {
-  if (status === "encerrado") return { rotulo: "Conclusão", classe: "is-gold" };
+  if (status === "encerrado") return { rotulo: "Concluso", classe: "is-gold" };
   if (status === "arquivado") return { rotulo: "Arquivado", classe: "is-gray" };
   return { rotulo: "Em andamento", classe: "is-green" };
+}
+
+function dataDaAba(aba: AbaAgenda): string {
+  const base =
+    aba === "amanha" ? new Date(Date.now() + 86_400_000) : new Date();
+  return format(base, "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
+}
+
+function semanaDaAba(aba: AbaAgenda): string {
+  if (aba !== "semana") return "";
+  const inicio = new Date();
+  const fim = new Date(Date.now() + 6 * 86_400_000);
+  return `${format(inicio, "dd")} a ${format(fim, "dd 'de' MMMM", {
+    locale: ptBR,
+  })}`;
 }
 
 function saudacaoPorHora(): string {
@@ -386,7 +405,7 @@ export default function DashboardUltra() {
       >
         <div className="ejc-dash__entry-head">
           <span className="ejc-dash__entry-icon" aria-hidden="true">
-            <Sparkles />
+            <FilePlus2 />
           </span>
           <div className="ejc-dash__entry-copy">
             <h2>Entrada Única</h2>
@@ -495,7 +514,12 @@ export default function DashboardUltra() {
       <div className="ejc-dash__panels">
         <section className="ejc-dash__panel" aria-label="Agenda e Prazos">
           <div className="ejc-dash__panel-head">
-            <h3>Agenda e Prazos</h3>
+            <div className="ejc-dash__panel-title">
+              <span className="ejc-dash__panel-ico" aria-hidden="true">
+                <CalendarDays />
+              </span>
+              <h3>Agenda e Prazos</h3>
+            </div>
             <Link to="/atividades" className="ejc-dash__panel-more">
               Ver todos <ChevronRight aria-hidden="true" />
             </Link>
@@ -524,7 +548,7 @@ export default function DashboardUltra() {
                 </button>
               ))}
             </div>
-            {diaSelecionado && (
+            {diaSelecionado ? (
               <button
                 type="button"
                 className="ejc-dash__date-filter"
@@ -534,6 +558,25 @@ export default function DashboardUltra() {
                 {format(new Date(`${diaSelecionado}T12:00:00`), "dd/MM/yyyy")}
                 <span aria-hidden="true">×</span>
               </button>
+            ) : (
+              <p className="ejc-dash__panel-date" aria-hidden="true">
+                {aba === "semana" ? (
+                  <strong>{semanaDaAba(aba)}</strong>
+                ) : (
+                  <>
+                    <strong>{dataDaAba(aba)}</strong>
+                    <span>
+                      {format(
+                        aba === "amanha"
+                          ? new Date(Date.now() + 86_400_000)
+                          : new Date(),
+                        "EEEE",
+                        { locale: ptBR },
+                      )}
+                    </span>
+                  </>
+                )}
+              </p>
             )}
           </div>
           <ol className="ejc-dash__timeline">
@@ -574,7 +617,12 @@ export default function DashboardUltra() {
 
         <section className="ejc-dash__panel" aria-label="Casos em destaque">
           <div className="ejc-dash__panel-head">
-            <h3>Casos em destaque</h3>
+            <div className="ejc-dash__panel-title">
+              <span className="ejc-dash__panel-ico" aria-hidden="true">
+                <Briefcase />
+              </span>
+              <h3>Casos em destaque</h3>
+            </div>
             <Link to="/casos" className="ejc-dash__panel-more">
               Ver todos <ChevronRight aria-hidden="true" />
             </Link>
@@ -626,7 +674,7 @@ export default function DashboardUltra() {
 
       <section className="ejc-dash__quick" aria-label="Acesso rápido">
         <div className="ejc-dash__quick-head">
-          <Sparkles aria-hidden="true" />
+          <Zap aria-hidden="true" />
           <strong>Acesso rápido</strong>
         </div>
         <div className="ejc-dash__quick-items">
