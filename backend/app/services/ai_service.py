@@ -12,6 +12,7 @@ from uuid import uuid4
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.ai_errors import descricao_tecnica_segura, mensagem_ia_para_usuario
 from app.core.config import get_settings
 from app.services.sanitizer import sanitizar_pii, validar_sem_pii
 from app.services.case_context import montar_dossie
@@ -436,7 +437,10 @@ async def _hyde_expandir(consulta: str) -> str:
         hipotese = (getattr(resp, "texto", "") or "").strip()
         return f"{consulta}\n{hipotese}" if hipotese else consulta
     except Exception as e:  # HyDE nunca quebra a busca
-        logger.warning("HyDE indisponivel (usando consulta original): %s", str(e)[:150])
+        logger.warning(
+            "HyDE indisponivel (usando consulta original): %s",
+            descricao_tecnica_segura(e),
+        )
         return consulta
 
 
@@ -832,8 +836,13 @@ async def analisar_caso(
             modo_sanitizacao=modo_sigilo,
         )
     except Exception as e:
-        logger.error(f"AI Gateway falhou: {e}")
-        return {"erro": f"Falha na IA: {str(e)[:200]}"}
+        logger.error("AI Gateway falhou: %s", descricao_tecnica_segura(e))
+        return {
+            "erro": mensagem_ia_para_usuario(
+                e,
+                padrao="Falha na IA — tente novamente",
+            )
+        }
 
     # 4. AI LOG (rastreabilidade LGPD + HITL)
     log = AILog(
@@ -886,7 +895,16 @@ async def resumir_documento(
             task_type="chat_rapido", temperature=0.1, max_tokens=1200, nivel="alto",
         )
     except Exception as e:
-        return {"erro": f"Falha na IA: {str(e)[:200]}"}
+        logger.error(
+            "AI Gateway (resumo_doc) falhou: %s",
+            descricao_tecnica_segura(e),
+        )
+        return {
+            "erro": mensagem_ia_para_usuario(
+                e,
+                padrao="Falha na IA — tente novamente",
+            )
+        }
 
     log = AILog(
         id=str(uuid4()), user_id=user_id, case_id=case_id,
@@ -943,8 +961,16 @@ async def extrair_prazos_ia(
             task_type="resumo", temperature=0.0, max_tokens=1500, nivel="alto",
         )
     except Exception as e:
-        logger.error(f"AI Gateway (detectar-prazos) falhou: {e}")
-        return {"erro": f"Falha na IA: {str(e)[:200]}"}
+        logger.error(
+            "AI Gateway (detectar-prazos) falhou: %s",
+            descricao_tecnica_segura(e),
+        )
+        return {
+            "erro": mensagem_ia_para_usuario(
+                e,
+                padrao="Falha na IA — tente novamente",
+            )
+        }
 
     from app.services.documento_service import _parse_json, _prazos_extraidos
     llm = _parse_json(resposta) or {}
