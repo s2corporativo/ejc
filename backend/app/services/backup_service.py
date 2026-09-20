@@ -451,6 +451,9 @@ def _rotacionar_sync(service, folder_id: str, retencao_dias: int) -> int:
 # ── Estado persistido (sem migration — precedente google_drive_sync_state) ───
 
 async def _ensure_state_table(db: AsyncSession) -> None:
+    from app.core.database import runtime_ddl_permitido
+    if not runtime_ddl_permitido(db):
+        return
     await db.execute(sqltext("""
         CREATE TABLE IF NOT EXISTS backup_drive_state (
             id SMALLINT PRIMARY KEY DEFAULT 1,
