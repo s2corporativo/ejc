@@ -1100,7 +1100,7 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__quote p {
 }
 
 /* ───────────────────────────────────────────────────────────────────────── */
-/* Sidebar — rodapé institucional (citação + ponte + cidade)                 */
+/* Sidebar — rodapé institucional (citação + panorama de Betim/MG)          */
 /* ───────────────────────────────────────────────────────────────────────── */
 
 .ejc-sidebar-epigraph {
@@ -1121,21 +1121,34 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__quote p {
 
 .ejc-sidebar-epigraph__figure {
   position: relative;
-  height: 118px;
+  height: 132px;
 }
 
 .ejc-sidebar-epigraph__figure img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  opacity: 0.85;
+  /* Panorama de Betim/MG: enquadra a faixa do pôr do sol sobre a serra
+     e os telhados (a foto é vertical-dominante de céu). */
+  object-position: 50% 56%;
+  opacity: 0.92;
+  filter: saturate(0.78) brightness(0.9) contrast(1.02);
 }
 
 .ejc-sidebar-epigraph__figure::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(2, 32, 26, 0.55), transparent 45%);
+  /* Plano de fundo navy (mesma família de tokens da sidebar): a foto
+     dissolve no fundo do menu no topo e escurece sob o rótulo da cidade
+     na base — substitui o overlay verde da paleta anterior. */
+  background: linear-gradient(
+    180deg,
+    var(--ejc-sidebar-bottom) 0%,
+    rgba(15, 39, 71, 0.16) 38%,
+    rgba(7, 24, 46, 0.5) 66%,
+    rgba(7, 24, 46, 0.92) 100%
+  );
 }
 
 .ejc-sidebar-epigraph__city {

@@ -405,9 +405,12 @@ export default function LayoutReference() {
               “Estratégia jurídica para um amanhã mais seguro.”
             </p>
             <div className="ejc-sidebar-epigraph__figure">
-              <img src="/brand/sidebar-ponte.jpg" alt="" loading="lazy" />
+              {/* Panorama real de Betim/MG (sede do escritório). Fonte:
+                  anúncio "Suíte Vista Panorâmica Betim". O overlay navy do
+                  CSS integra a foto ao plano de fundo da sidebar. */}
+              <img src="/brand/sidebar-betim.jpg" alt="" loading="lazy" />
               <div className="ejc-sidebar-epigraph__city">
-                <strong>SÃO PAULO | BRASIL</strong>
+                <strong>BETIM | MINAS GERAIS</strong>
                 <small>EXCELÊNCIA EM CADA DETALHE</small>
               </div>
             </div>
