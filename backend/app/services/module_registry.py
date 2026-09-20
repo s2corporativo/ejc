@@ -275,9 +275,13 @@ def gerar_mapa_modulos(rotas_api: list[dict[str, Any]], helps_ativos: list[str])
         mapa.append({
             **item,
             "tem_manual": key in helps,
+            "precisa_documentacao": key not in helps,
             "qtd_endpoints_detectados": len(endpoints),
             "endpoints_detectados": sorted(endpoints)[:50],
-            "precisa_revisao": key not in helps or len(endpoints) == 0 or item.get("status") != "ativo",
+            # Ausência de manual é dívida documental, não evidência de módulo
+            # quebrado. Revisão funcional fica restrita a ausência de endpoint
+            # ou lifecycle não-ativo, evitando falso positivo universal.
+            "precisa_revisao": len(endpoints) == 0 or item.get("status") != "ativo",
         })
     return mapa
 
@@ -289,6 +293,9 @@ def resumir_mapa_modulos(mapa: list[dict[str, Any]]) -> dict[str, int]:
         "beta": sum(1 for m in mapa if m.get("status") == "beta"),
         "legados": sum(1 for m in mapa if m.get("status") == "legado"),
         "sem_manual": sum(1 for m in mapa if not m.get("tem_manual")),
+        "precisam_documentacao": sum(
+            1 for m in mapa if m.get("precisa_documentacao")
+        ),
         "sem_endpoint_detectado": sum(1 for m in mapa if int(m.get("qtd_endpoints_detectados", 0)) == 0),
         "usam_ia": sum(1 for m in mapa if m.get("usa_ia")),
         "dados_sensiveis": sum(1 for m in mapa if m.get("dados_sensiveis")),
