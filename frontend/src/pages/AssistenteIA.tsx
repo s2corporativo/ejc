@@ -17,6 +17,15 @@ import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
 import { MENSAGEM_IA_NAO_ATIVADA, useIaStatus } from "../lib/iaStatus";
 
 type Tool = "pesquisa" | "resumir" | "traduzir" | "minuta" | "especialista";
+type ProviderIA = "auto" | "groq" | "maritaca" | "anthropic" | "ollama";
+
+const PROVIDERS: Array<{ value: ProviderIA; label: string; desc: string }> = [
+  { value: "auto", label: "Automático", desc: "Groq no cotidiano; Maritaca em leitura, análise e pesquisa." },
+  { value: "groq", label: "Groq", desc: "Tarefas corriqueiras e rápidas." },
+  { value: "maritaca", label: "Maritaca", desc: "Leitura, análise, raciocínio e pesquisa jurídica." },
+  { value: "anthropic", label: "Claude", desc: "Somente quando solicitado explicitamente." },
+  { value: "ollama", label: "Local", desc: "IA local quando habilitada; indicado para sigilo reforçado." },
+];
 
 // Instrução do próprio usuário (não é system prompt): a capacidade `conversar`
 // responde a pergunta; aqui a pergunta é "explique isto ao cliente".
@@ -87,6 +96,7 @@ export default function AssistenteIA() {
   const navigationState = location.state as { perguntaRapida?: string } | null;
   const [tool, setTool] = useState<Tool>("pesquisa");
   const [perfil, setPerfil] = useState("juridica");
+  const [provider, setProvider] = useState<ProviderIA>("auto");
   // A pergunta rápida chega pelo state interno do React Router, sem ser
   // exposta na URL. O conteúdo não é enviado automaticamente: o profissional
   // ainda revisa e confirma explicitamente o envio dentro da ferramenta de IA.
@@ -126,20 +136,23 @@ export default function AssistenteIA() {
         ({ data } = await api.post("/ia/conversar", {
           texto,
           area: "pesquisa_juridica",
+          provider,
         }));
       else if (tool === "resumir")
-        ({ data } = await api.post("/ia/resumir", { texto }));
+        ({ data } = await api.post("/ia/resumir", { texto, provider }));
       else if (tool === "traduzir")
         ({ data } = await api.post("/ia/conversar", {
           mensagem: PREFIXO_TRADUZIR + texto,
+          provider,
         }));
       else if (tool === "especialista")
-        ({ data } = await api.post("/ia/analisar", { texto, perfil }));
+        ({ data } = await api.post("/ia/analisar", { texto, perfil, provider }));
       else
         ({ data } = await api.post("/ia/redigir", {
           texto: mensagemMinuta(),
           area: area || undefined,
           opcoes: { tipo_peca: tipoPeca },
+          provider,
         }));
       setRes(data);
     } catch (e: any) {
@@ -202,6 +215,30 @@ export default function AssistenteIA() {
           </button>
         ))}
       </div>
+      <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <label className="label">Motor de IA</label>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {PROVIDERS.map((p) => (
+            <button
+              key={p.value}
+              type="button"
+              onClick={() => setProvider(p.value)}
+              title={p.desc}
+              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                provider === p.value
+                  ? "border-ai-600 bg-ai-600 text-white"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-ai-300"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          {PROVIDERS.find((p) => p.value === provider)?.desc}
+        </p>
+      </div>
+
       {tool === "especialista" && (
         <div className="mb-3 flex items-center gap-2">
           <span className="text-sm text-slate-500">Perfil:</span>
