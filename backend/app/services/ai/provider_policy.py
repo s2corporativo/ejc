@@ -64,11 +64,10 @@ class AIProviderPolicy:
             p = p.strip().lower()
             if p and p not in vistos:
                 vistos.append(p)
-        # Default sem AI_PROVIDER_PRIORITY: qualidade primeiro (modelo forte),
-        # maritaca antes do groq — para tarefa jurídica PT-BR o Sabiá rankeia
-        # acima de um generalista — e a IA local por último, como rede de
-        # segurança (é ela que atende quando PII residual barra os externos).
-        return vistos or ["anthropic", "maritaca", "groq", "ollama"]
+        # Default sem AI_PROVIDER_PRIORITY: Groq no cotidiano, Maritaca em
+        # leitura/análise/pesquisa, Ollama para fallback local e Claude somente
+        # sob solicitação explícita (salvo flag de rollback).
+        return vistos or ["groq", "maritaca", "ollama", "anthropic"]
 
     def avaliar(
         self,
@@ -88,7 +87,8 @@ class AIProviderPolicy:
              sanitiza e checa residual; PII residual → remove externos.
           3. Cadeia vazia → permitido=False com motivo SEGURO (tipos de PII,
              nunca os valores — o conteúdo jamais é ecoado).
-          4. Tarefas complexas priorizam Anthropic; econômicas, Ollama/Groq.
+          4. Tarefas complexas priorizam Maritaca; econômicas priorizam Groq.
+             Claude só entra automaticamente se ANTHROPIC_AUTO_ROUTING_ENABLED=true.
         """
         s = get_settings()
         task = (task_type or "").strip().lower()
@@ -126,14 +126,9 @@ class AIProviderPolicy:
 
         # ── Priorização por perfil da tarefa ─────────────────────────────────
         if not solicitado and task in TAREFAS_COMPLEXAS and "maritaca" in elegiveis:
-            # Sem Anthropic elegível, o melhor raciocínio jurídico PT-BR
-            # EXTERNO é o Sabiá (Maritaca) — priorizado à frente do groq, mas
-            # NUNCA à frente de provider LOCAL elegível (minimização LGPD: o
-            # dado só sai do VPS quando não há opção local).
-            locais = [p for p in elegiveis if p not in PROVIDERS_EXTERNOS]
-            externos = [p for p in elegiveis
-                        if p in PROVIDERS_EXTERNOS and p != "maritaca"]
-            elegiveis = locais + ["maritaca"] + externos
+            # Maritaca é o motor automático de leitura/análise/pesquisa.
+            # Sigilo LOCAL_COMPLETO continua prevalecendo depois no gateway.
+            elegiveis = ["maritaca"] + [p for p in elegiveis if p != "maritaca"]
             motivos.append("tarefa complexa — Maritaca (Sabiá) priorizada")
         elif not solicitado and task in TAREFAS_ECONOMICAS:
             econ = [p for p in elegiveis if p == "groq"]
