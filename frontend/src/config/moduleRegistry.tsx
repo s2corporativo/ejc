@@ -760,8 +760,11 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Pesquisar & IA",
     icon: ShieldAlert,
     component: Radar,
+    // RBAC de ROTA preservado (compliance: superadmin/admin/sócio/advogado —
+    // contrato "não alarga acesso"). O menu canônico da referência DPT passa a
+    // exibi-lo; a visibilidade no menu não concede acesso novo.
     roles: ROLES.compliance,
-    status: "hidden",
+    showInNav: true,
     helpKey: "compliance",
     sensitive: true,
     usesAI: true,
@@ -818,7 +821,10 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Gerir o escritório",
     icon: BarChart3,
     component: Produtividade,
-    status: "hidden",
+    // Menu canônico da referência DPT (Relatórios): restrito a gestores
+    // (superadmin/admin/sócio) — perfis operacionais continuam sem acesso.
+    roles: ROLES.gestores,
+    showInNav: true,
     helpKey: "produtividade",
     sensitive: true,
   },

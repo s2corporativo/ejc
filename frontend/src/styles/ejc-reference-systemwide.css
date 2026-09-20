@@ -730,14 +730,20 @@ html:not(.dark) .sidebar-bronze .sidebar-nav-item:hover {
 
 html:not(.dark) .sidebar-bronze .sidebar-nav-item.is-active {
   border: 0 !important;
-  background: linear-gradient(135deg, var(--ejc-gold) 0%, #e0c074 100%) !important;
-  color: #05261d !important;
+  background: linear-gradient(
+    135deg,
+    rgba(201, 155, 59, 0.46) 0%,
+    rgba(201, 155, 59, 0.3) 100%
+  ) !important;
+  color: #ffffff !important;
   font-weight: 700 !important;
-  box-shadow: 0 8px 20px rgba(2, 32, 26, 0.35) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(234, 202, 127, 0.26),
+    0 6px 16px rgba(2, 32, 26, 0.28) !important;
 }
 
 html:not(.dark) .sidebar-bronze .sidebar-nav-item.is-active svg {
-  color: #4a3a12 !important;
+  color: var(--ejc-gold-bright) !important;
 }
 
 html:not(.dark) .sidebar-bronze .ejc-sidebar-month {
