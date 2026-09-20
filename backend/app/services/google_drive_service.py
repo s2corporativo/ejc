@@ -155,13 +155,51 @@ def allowed_mime_types() -> set[str]:
 
 
 def auth_status() -> dict[str, Any]:
+    """Estado sanitizado que espelha exatamente a seleção de _build_credentials."""
+    auth_mode = os.getenv("GOOGLE_DRIVE_AUTH_MODE", "auto").strip().lower() or "auto"
+    oauth_user_file = bool(os.getenv("GOOGLE_DRIVE_OAUTH_USER_FILE", "").strip())
+    oauth_user_json = bool(os.getenv("GOOGLE_DRIVE_OAUTH_USER_JSON", "").strip())
+    oauth_client_id = bool(os.getenv("GOOGLE_DRIVE_OAUTH_CLIENT_ID", "").strip())
+    oauth_client_secret = bool(
+        os.getenv("GOOGLE_DRIVE_OAUTH_CLIENT_SECRET", "").strip()
+    )
+    oauth_refresh_token = bool(
+        os.getenv("GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN", "").strip()
+    )
+    oauth_trio_completo = (
+        oauth_client_id and oauth_client_secret and oauth_refresh_token
+    )
+    oauth_configurado = (
+        oauth_user_file or oauth_user_json or oauth_trio_completo
+    )
+    service_account_file = bool(
+        os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", "").strip()
+    )
+    service_account_json = bool(
+        os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON", "").strip()
+    )
+    service_account_configurada = service_account_file or service_account_json
+
+    if auth_mode == "oauth":
+        configured = oauth_configurado
+    elif auth_mode == "service_account":
+        configured = service_account_configurada
+    elif auth_mode == "auto":
+        configured = oauth_configurado or service_account_configurada
+    else:
+        configured = False
+
     return {
-        "auth_mode": os.getenv("GOOGLE_DRIVE_AUTH_MODE", "auto").strip().lower() or "auto",
-        "oauth_user_file_configurado": bool(os.getenv("GOOGLE_DRIVE_OAUTH_USER_FILE", "").strip()),
-        "oauth_user_json_configurado": bool(os.getenv("GOOGLE_DRIVE_OAUTH_USER_JSON", "").strip()),
-        "oauth_refresh_token_configurado": bool(os.getenv("GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN", "").strip()),
-        "service_account_file_configurado": bool(os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", "").strip()),
-        "service_account_json_configurado": bool(os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON", "").strip()),
+        "auth_mode": auth_mode,
+        "configured": configured,
+        "oauth_user_file_configurado": oauth_user_file,
+        "oauth_user_json_configurado": oauth_user_json,
+        "oauth_client_id_configurado": oauth_client_id,
+        "oauth_client_secret_configurado": oauth_client_secret,
+        "oauth_refresh_token_configurado": oauth_refresh_token,
+        "oauth_trio_completo": oauth_trio_completo,
+        "service_account_file_configurado": service_account_file,
+        "service_account_json_configurado": service_account_json,
     }
 
 
