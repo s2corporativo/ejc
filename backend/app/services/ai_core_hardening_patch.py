@@ -153,7 +153,13 @@ def _instalar_hyde_local_fail_closed() -> None:
     original = ai_service._hyde_expandir
 
     @functools.wraps(original)
-    async def hyde_local_only(consulta: str) -> str:
+    async def hyde_local_only(consulta: str, modo_sanitizacao=None) -> str:
+        """Adapter transitório compatível com o contrato canônico do HyDE.
+
+        O argumento recebido é deliberadamente ignorado aqui: este hardening
+        impõe LOCAL_COMPLETO como piso absoluto, inclusive se o caller pedir
+        política menos restritiva.
+        """
         if not getattr(ai_service.settings, "RAG_HYDE_ENABLED", False) or not (
             consulta or ""
         ).strip():
