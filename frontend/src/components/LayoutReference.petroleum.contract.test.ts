@@ -27,7 +27,7 @@ describe("EJC Identidade Premium DPT — contrato visual canônico", () => {
     expect(layout).toContain('z-[60]');
     expect(layout).toContain('md:z-40');
     expect(layout).toContain('ejc-sidebar-brand__logo');
-    expect(layout).toContain('selectCanonicalMainNavigation');
+    expect(layout).toContain('selectMainNavigation');
     expect(layout).toContain('officeName');
     expect(layout).toContain('ejc-sidebar-epigraph');
     expect(layout).not.toContain('md:w-[15.5rem]');

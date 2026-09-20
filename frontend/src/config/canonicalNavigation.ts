@@ -7,11 +7,27 @@ import type { ModuleRoute } from "./moduleRegistry";
  * Este arquivo define apenas quais domínios aparecem na navegação principal,
  * sua ordem e o rótulo específico de menu quando ele difere do rótulo da rota.
  *
- * Ordem e rótulos seguem a referência visual premium DPT aprovada pelo
- * Titular em 18/09/2026 (dashboard "EJC DePaula Teixeira Adv"): 11 domínios,
- * incluindo Inteligência Jurídica, Banco de Teses, Radar Operacional e
- * Relatórios (→ /produtividade). Módulos ausentes na carteira/perfil seguem
- * filtrados por RBAC/lifecycle — nenhum link morto é gerado.
+ * Dois menus canônicos convivem aqui (Onda 1 do plano de limpeza
+ * 2026-09-20 — docs/audit/AUDITORIA_REAL_2026-09-20.md §3 e §10):
+ *
+ * 1. `CANONICAL_MAIN_NAV` — menu atual de 11 domínios da referência visual
+ *    premium DPT aprovada pelo Titular (18/09/2026). É o DEFAULT enquanto o
+ *    menu de 9 estiver atrás de flag.
+ *
+ * 2. `CANONICAL_MENU_9_NAV` — menu alvo de 9 módulos do mapa funcional
+ *    auditado (DASHBOARD, CLIENTES, CASOS, AGENDA E PRAZOS, PEÇAS,
+ *    CONHECIMENTO JURÍDICO, FINANCEIRO, PORTAL DO CLIENTE, ADMINISTRAÇÃO).
+ *    Nada é removido do sistema por sair do menu: as rotas absorvidas
+ *    (Documentos, Banco de Teses, Radar, Relatórios/Produtividade) seguem
+ *    vivas no registry, acessíveis por deep-link, ⌘K e contexto — a Onda 3+
+ *    é que as absorve de fato como tabs/workspace.
+ *
+ * A troca é controlada por flag (`ejc_menu9` em localStorage com default
+ * `VITE_EJC_MENU_9`), rollback imediato sem deploy, até a homologação
+ * (W12). RBAC/lifecycle continuam filtrando o resultado — nenhum link
+ * morto é gerado: "portal" não possui ModuleRoute de staff (o Portal do
+ * Cliente tem shell próprio confinado por middleware) e é descartado em
+ * runtime para usuários internos.
  */
 export const CANONICAL_MAIN_NAV = [
   { key: "dashboard", label: "Início" },
@@ -27,14 +43,87 @@ export const CANONICAL_MAIN_NAV = [
   { key: "configuracoes", label: "Configurações" },
 ] as const;
 
+/** Menu alvo de 9 módulos (mapa funcional auditado, §3 do plano 2026-09-20). */
+export const CANONICAL_MENU_9_NAV = [
+  { key: "dashboard", label: "Início" },
+  { key: "clientes", label: "Clientes" },
+  { key: "casos", label: "Casos" },
+  { key: "atividades", label: "Agenda e Prazos" },
+  { key: "pecas", label: "Peças" },
+  { key: "inteligencia", label: "Conhecimento Jurídico" },
+  { key: "financeiro", label: "Financeiro" },
+  // Domínio 8 do mapa-alvo. Mantido no contrato canônico por completude, mas
+  // sem ModuleRoute de staff: o seletor descarta a chave quando o registry
+  // não a expõe (sem link morto). O portal tem shell próprio (/portal,
+  // PortalLayout) confinado a cliente_externo por middleware.
+  { key: "portal", label: "Portal do Cliente" },
+  { key: "configuracoes", label: "Administração" },
+] as const;
+
 export type CanonicalMainNavKey = (typeof CANONICAL_MAIN_NAV)[number]["key"];
 
-export function selectCanonicalMainNavigation(
+const MENU9_STORAGE_KEY = "ejc_menu9";
+
+/**
+ * Flag do menu de 9 módulos — atrás de flag até a homologação (W12).
+ * Override local (`localStorage.ejc_menu9 = "true"|"false"`) vence o default
+ * de ambiente (`VITE_EJC_MENU_9=true`), permitindo rollback imediato por
+ * perfil sem deploy.
+ */
+export function isMenu9Enabled(): boolean {
+  try {
+    if (typeof window !== "undefined" && window.localStorage) {
+      const local = window.localStorage.getItem(MENU9_STORAGE_KEY);
+      if (local === "true") return true;
+      if (local === "false") return false;
+    }
+  } catch {
+    // storage indisponível (privacidade/incognito) — cai no default de env
+  }
+  return import.meta.env?.VITE_EJC_MENU_9 === "true";
+}
+
+/** Override local da flag (uso em homologação/diagnóstico; não exposto em UI). */
+export function setMenu9Enabled(enabled: boolean): void {
+  try {
+    window.localStorage.setItem(MENU9_STORAGE_KEY, String(enabled));
+  } catch {
+    // storage indisponível — flag permanece no default de env
+  }
+}
+
+function selectFromNav(
+  nav: ReadonlyArray<{ key: string; label: string }>,
   modules: ModuleRoute[],
 ): ModuleRoute[] {
   const byKey = new Map(modules.map((item) => [item.key, item]));
-  return CANONICAL_MAIN_NAV.flatMap(({ key, label }) => {
+  return nav.flatMap(({ key, label }) => {
     const item = byKey.get(key);
     return item ? [{ ...item, label }] : [];
   });
+}
+
+/** Menu default atual (11 domínios da referência premium DPT). */
+export function selectCanonicalMainNavigation(
+  modules: ModuleRoute[],
+): ModuleRoute[] {
+  return selectFromNav(CANONICAL_MAIN_NAV, modules);
+}
+
+export type MainNavigationOptions = {
+  /** Força um dos dois menus (testes/homologação); ausente = flag. */
+  menu9?: boolean;
+};
+
+/**
+ * Seletor canônico do shell: honra a flag do menu de 9 (ou o override
+ * explícito) e mantém o comportamento de RBAC/lifecycle do chamador —
+ * módulos ausentes da carteira nunca viram link morto.
+ */
+export function selectMainNavigation(
+  modules: ModuleRoute[],
+  options?: MainNavigationOptions,
+): ModuleRoute[] {
+  const menu9 = options?.menu9 ?? isMenu9Enabled();
+  return selectFromNav(menu9 ? CANONICAL_MENU_9_NAV : CANONICAL_MAIN_NAV, modules);
 }

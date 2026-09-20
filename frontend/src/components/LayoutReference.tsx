@@ -22,7 +22,9 @@ import OnboardingTour from "./OnboardingTour";
 import SecurityMenu from "./SecurityMenu";
 import { toast } from "./Toast";
 import { Tooltip, cn } from "./UI";
-import { selectCanonicalMainNavigation } from "../config/canonicalNavigation";
+import {
+  selectMainNavigation,
+} from "../config/canonicalNavigation";
 import {
   getMailtoUrl,
   getWhatsAppUrl,
@@ -124,7 +126,7 @@ export default function LayoutReference() {
 
   const visible = useMemo(
     () =>
-      selectCanonicalMainNavigation(
+      selectMainNavigation(
         filterModulesByLifecycle(
           getNavigationModules(user?.role),
           lifecycleSettings,
