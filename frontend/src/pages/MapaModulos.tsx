@@ -15,6 +15,8 @@ type Modulo = {
   usa_ia: boolean;
   dados_sensiveis: boolean;
   qtd_endpoints_detectados?: number;
+  tem_manual?: boolean | null;
+  precisa_documentacao?: boolean | null;
   precisa_revisao?: boolean;
   origem?: "frontend" | "backend" | "ambos";
 };
@@ -24,6 +26,7 @@ type Payload = {
   modulos?: Modulo[];
   rotas_api_detectadas?: number;
   modo?: string;
+  documentacao_modo?: "persistida" | "indisponivel";
 };
 
 const statusClass: Record<string, string> = {
@@ -84,6 +87,8 @@ export default function MapaModulos() {
         dados_sensiveis:
           module.sensitive ?? backendModule?.dados_sensiveis ?? true,
         qtd_endpoints_detectados: backendModule?.qtd_endpoints_detectados ?? 0,
+        tem_manual: backendModule?.tem_manual,
+        precisa_documentacao: backendModule?.precisa_documentacao,
         precisa_revisao:
           Boolean(backendModule?.precisa_revisao) || !backendModule,
         origem: backendModule ? "ambos" : "frontend",
@@ -125,8 +130,13 @@ export default function MapaModulos() {
       backend: modulos.filter((module) => module.origem === "backend").length,
       usam_ia: modulos.filter((module) => module.usa_ia).length,
       revisar: modulos.filter((module) => module.precisa_revisao).length,
+      manual_pendente:
+        data?.documentacao_modo === "indisponivel"
+          ? null
+          : modulos.filter((module) => module.precisa_documentacao === true)
+              .length,
     }),
-    [modulos],
+    [data?.documentacao_modo, modulos],
   );
 
   if (loading) return <Spinner />;
@@ -142,17 +152,17 @@ export default function MapaModulos() {
       <PageHeader
         eyebrow="Administração"
         title="Mapa de Módulos"
-        subtitle="Cruzamento entre o manifesto de rotas do frontend e o registro de dependências e endpoints do backend. Divergências são marcadas para revisão."
+        subtitle="Cruzamento entre frontend, backend e ajuda persistida. Divergência funcional e documentação pendente são indicadores distintos."
       />
 
-      <div className="grid gap-3 md:grid-cols-5">
+      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
         {Object.entries(resumo).map(([key, value]) => (
           <div key={key} className="card p-4">
             <div className="text-xs uppercase tracking-wide text-slate-400">
               {key.split("_").join(" ")}
             </div>
             <div className="mt-1 text-2xl font-bold text-slate-950">
-              {value}
+              {value ?? "—"}
             </div>
           </div>
         ))}
@@ -241,6 +251,16 @@ export default function MapaModulos() {
                     {module.precisa_revisao && (
                       <div className="mt-1 font-semibold text-amber-700">
                         revisar divergência
+                      </div>
+                    )}
+                    {module.precisa_documentacao === true && (
+                      <div className="mt-1 font-semibold text-sky-700">
+                        manual pendente
+                      </div>
+                    )}
+                    {module.precisa_documentacao === null && (
+                      <div className="mt-1 font-semibold text-slate-500">
+                        manual: estado indisponível
                       </div>
                     )}
                   </td>
