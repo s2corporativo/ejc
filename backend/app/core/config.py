@@ -185,6 +185,11 @@ class Settings(BaseSettings):
     ANTHROPIC_EFFORT: str = "high"
     # Liga/desliga o provider Anthropic sem remover a chave do .env.
     ANTHROPIC_ENABLED: bool = True
+    # Política operacional 20/09/2026: Claude fica DISPONÍVEL, mas fora do
+    # roteamento automático. Só entra quando o usuário o solicita explicitamente
+    # na própria interface/API (provider="anthropic"). True restaura o
+    # comportamento antigo de permitir Claude na cadeia automática.
+    ANTHROPIC_AUTO_ROUTING_ENABLED: bool = False
     # Timeout do client Anthropic (segundos) — tarefas complexas podem demorar.
     ANTHROPIC_TIMEOUT_SECONDS: int = 120
     # Teto DURO de tokens de saída por chamada (controle de custo).
@@ -334,7 +339,7 @@ class Settings(BaseSettings):
     # tudo que roda fora do compose (dev, testes, scripts, deploy alternativo).
     # Ollama fica por último: é rede de segurança para o caso de os externos
     # caírem ou de PII residual barrar a saída do dado (ver provider_policy).
-    AI_PROVIDER_PRIORITY: str = "anthropic,maritaca,groq,ollama"
+    AI_PROVIDER_PRIORITY: str = "groq,maritaca,ollama,anthropic"
     # ── Níveis de sanitização de PII por tipo de tarefa (LGPD art. 33/46) ─────
     # JSON OPCIONAL (string) mapeando task_type → modo de sanitização, que
     # SOBREPÕE o default de app/services/ai/sanitization_policy.py. Modos:
@@ -367,14 +372,14 @@ class Settings(BaseSettings):
     # neste tier e é onde o erro jurídico nasce — não vai a provedor de
     # raciocínio inferior (decisão do titular, 2026-09-05). groq segue como
     # fallback da cadeia se elegível.
-    ROTEAMENTO_PROVIDER_LEVE: str = "anthropic"
+    ROTEAMENTO_PROVIDER_LEVE: str = "groq"
     # médio = anthropic: o stack de produção não sobe ollama (compose:
     # OLLAMA_ENABLED=false) — apontar o tier médio para provider morto só gerava
     # tentativa-e-fallback a cada tarefa. O MODELO do tier médio é COMPLEXO
     # (Opus), NÃO Haiku — ver model_router._model_do_provider (anti-rebaixamento
     # P1: só o tier LEVE usa o modelo rápido).
-    ROTEAMENTO_PROVIDER_MEDIO: str = "anthropic"
-    ROTEAMENTO_PROVIDER_PESADO: str = "anthropic"  # modelo forte p/ raciocínio
+    ROTEAMENTO_PROVIDER_MEDIO: str = "maritaca"
+    ROTEAMENTO_PROVIDER_PESADO: str = "maritaca"  # leitura/análise/pesquisa jurídica
     # Limiares (score inteiro) que separam os tiers leve|medio|pesado.
     ROTEAMENTO_LIMIAR_MEDIO: int = 3
     ROTEAMENTO_LIMIAR_PESADO: int = 6
