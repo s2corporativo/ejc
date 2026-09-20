@@ -339,8 +339,11 @@ async def termos_monitorados(db) -> dict[str, list[str]]:
 
 # ── Dedup persistente (CREATE TABLE IF NOT EXISTS — sem migration) ───────────
 async def _ensure_tabela(db) -> None:
+    from app.core.database import runtime_ddl_permitido
+    if not runtime_ddl_permitido(db):
+        return
     from sqlalchemy import text
-    # DDL portátil (Postgres e SQLite nos testes) — chave natural fonte+id.
+    # Compatibilidade SQLite; PostgreSQL é gerido pela migration 162.
     await db.execute(text("""
         CREATE TABLE IF NOT EXISTS radar_legislativo_visto (
             fonte VARCHAR(20) NOT NULL,
