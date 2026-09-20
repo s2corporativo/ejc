@@ -194,6 +194,27 @@ async def test_porta_delega_ao_nucleo_sem_forcar_nivel(nucleo):
     assert r["custo_estimado_brl"] == 0.12
 
 
+async def test_claude_explicito_e_propago_ao_nucleo(nucleo):
+    r = await ia_capacidades.conversar(
+        ConversarRequest(
+            texto="Pesquise a tese jurídica indicada.",
+            provider="anthropic",
+        ),
+        _FakeDB(), _adv(),
+    )
+    assert nucleo["provider_override"] == "anthropic"
+    assert r["capacidade"] == "conversar"
+
+
+def test_schema_nao_permite_forcar_groq_ou_maritaca():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        ConversarRequest(texto="Pergunta jurídica", provider="groq")
+    with pytest.raises(ValidationError):
+        ConversarRequest(texto="Pergunta jurídica", provider="maritaca")
+
+
 async def test_cada_capacidade_tem_task_type_proprio(nucleo):
     from app.schemas.ai import ExtrairRequest, ResumirRequest
 
