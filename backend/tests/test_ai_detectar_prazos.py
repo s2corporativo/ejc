@@ -114,6 +114,33 @@ async def test_detectar_prazos_texto_curto_422():
 
 
 
+async def test_detectar_prazos_preserva_orientacao_lgpd_sem_ecoar_erro(monkeypatch):
+    import app.services.ai_service as svc
+    from app.core.ai_errors import MSG_PII_BLOQUEADA, SafeAIError
+
+    monkeypatch.setattr(svc.settings, "AI_ENABLED", True)
+
+    async def bloqueio(*a, **kw):
+        raise SafeAIError(
+            "detalhe interno seguro",
+            code="pii_blocked",
+            technical_type="PrivacyPolicy",
+        )
+
+    monkeypatch.setattr(svc, "_gateway_text", bloqueio)
+
+    with pytest.raises(HTTPException) as exc:
+        await detectar_prazos(
+            ResumirDocRequest(texto=TEXTO_INTIMACAO),
+            db=_FakeDB(),
+            cu=_user(),
+        )
+
+    assert exc.value.status_code == 502
+    assert exc.value.detail == MSG_PII_BLOQUEADA
+    assert "detalhe interno" not in exc.value.detail
+
+
 async def test_detectar_prazos_gateway_indisponivel_502(monkeypatch):
     import app.services.ai_service as svc
     monkeypatch.setattr(svc.settings, "AI_ENABLED", True)
