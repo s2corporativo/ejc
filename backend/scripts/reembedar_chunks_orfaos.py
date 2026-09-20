@@ -51,13 +51,21 @@ logger = logging.getLogger("ejc.reembedar_orfaos")
 # não filtra por status_indexacao de propósito: é exatamente o caso de doc já
 # rotulado 'indexado' com chunks órfãos que queremos capturar.
 _SQL_DOCS_COM_ORFAO = text("""
-    SELECT DISTINCT kd.id
+    SELECT DISTINCT
+           kd.id,
+           CASE WHEN kd.status_indexacao = 'erro' THEN 1 ELSE 0 END AS bucket
     FROM knowledge_docs kd
     JOIN knowledge_chunks kc ON kc.doc_id = kd.id
     WHERE kd.deleted_at IS NULL AND kd.vigente = true
       AND kc.embedding IS NULL
-      AND kd.id > :after
-    ORDER BY kd.id
+      AND (
+            CASE WHEN kd.status_indexacao = 'erro' THEN 1 ELSE 0 END > :after_bucket
+         OR (
+                CASE WHEN kd.status_indexacao = 'erro' THEN 1 ELSE 0 END = :after_bucket
+            AND kd.id > :after
+         )
+      )
+    ORDER BY bucket, kd.id
     LIMIT :limit
 """)
 
@@ -113,43 +121,66 @@ async def _reembedar_doc(db, doc_id: str, dry_run: bool) -> str:
     return "ok"
 
 
-async def reembedar(batch_size: int = 20, dry_run: bool = False) -> dict:
-    """Reembeda chunks órfãos em lotes. Retorna contagens
-    {"ok", "erros", "dry_run", "disponivel"} — consumidas pelo seed (C1) para
-    logar quantos documentos nasceram vetorizados; o CLI ignora o retorno."""
+async def reembedar(
+    batch_size: int = 20,
+    dry_run: bool = False,
+    max_docs: int | None = None,
+) -> dict:
+    """Reembeda chunks órfãos em lotes, com teto total opcional por rodada.
+
+    batch_size limita cada iteração; max_docs limita a execução inteira.
+    O scheduler sempre usa teto conservador; CLI/seed mantêm None por
+    compatibilidade e execução supervisionada.
+    """
     if not emb_disponivel():
         logger.error("Embeddings indisponíveis (EMBEDDINGS_ENABLED off ou "
                      "provider ausente). Abortando sem alterar nada.")
-        return {"ok": 0, "erros": 0, "dry_run": 0, "disponivel": False}
+        return {
+            "ok": 0, "erros": 0, "dry_run": 0, "processados": 0,
+            "disponivel": False,
+        }
 
-    total_ok = total_erro = total_dry = 0
-    # Paginação por chave estável. OFFSET sobre um conjunto que encolhe a cada
-    # commit pulava documentos (os já resolvidos saíam da consulta e deslocavam
-    # os restantes). `after` visita cada id no máximo uma vez nesta execução;
-    # erros ficam órfãos para a próxima execução, sem loop infinito.
+    batch_size = max(1, int(batch_size))
+    limite_total = None if max_docs is None else max(1, int(max_docs))
+    total_ok = total_erro = total_dry = processados = 0
+    # Cursor composto por bucket+id: docs que falham migram para bucket=1 e
+    # deixam os ainda não tentados (bucket=0) avançarem nas rodadas seguintes.
+    # Isso evita starvation sem abandonar retentativas.
+    after_bucket = -1
     after = ""
     while True:
+        if limite_total is not None and processados >= limite_total:
+            break
+        limite_lote = batch_size
+        if limite_total is not None:
+            limite_lote = min(limite_lote, limite_total - processados)
+
         async with AsyncSessionLocal() as db:
             lote = (await db.execute(
-                _SQL_DOCS_COM_ORFAO, {"limit": batch_size, "after": after}
+                _SQL_DOCS_COM_ORFAO,
+                {
+                    "limit": limite_lote,
+                    "after_bucket": after_bucket,
+                    "after": after,
+                },
             )).all()
             if not lote:
                 break
 
-            for (doc_id,) in lote:
+            for doc_id, _bucket in lote:
                 try:
-                    # SAVEPOINT por documento: erro SQL (ex.: vetor inválido)
-                    # não deixa a transação inteira abortada nem impede os
-                    # documentos seguintes do lote.
                     async with db.begin_nested():
                         resultado = await _reembedar_doc(db, doc_id, dry_run)
                 except Exception as e:
-                    logger.warning("[reembedar] doc %s falhou: %s", doc_id, str(e)[:200])
+                    logger.warning(
+                        "[reembedar] doc %s falhou: %s", doc_id, str(e)[:200]
+                    )
                     await db.execute(text(
                         "UPDATE knowledge_docs SET status_indexacao='erro' WHERE id=:id"
                     ), {"id": doc_id})
                     resultado = "erro"
 
+                processados += 1
                 if resultado == "ok":
                     total_ok += 1
                 elif resultado == "dry-run":
@@ -159,17 +190,26 @@ async def reembedar(batch_size: int = 20, dry_run: bool = False) -> dict:
 
             await db.commit()
             logger.info(
-                "[reembedar] lote (after=%s) commitado — ok=%s erro=%s dry-run=%s",
-                after or "<inicio>", total_ok, total_erro, total_dry,
+                "[reembedar] lote commitado — processados=%s ok=%s erro=%s dry-run=%s",
+                processados, total_ok, total_erro, total_dry,
             )
 
         after = str(lote[-1][0])
+        after_bucket = int(lote[-1][1])
 
-    logger.info("[reembedar] concluído — ok=%s erros=%s dry-run=%s",
-                total_ok, total_erro, total_dry)
-    return {"ok": total_ok, "erros": total_erro, "dry_run": total_dry,
-            "disponivel": True}
-
+    limitado = limite_total is not None and processados >= limite_total
+    logger.info(
+        "[reembedar] concluído — processados=%s ok=%s erros=%s dry-run=%s limitado=%s",
+        processados, total_ok, total_erro, total_dry, limitado,
+    )
+    return {
+        "ok": total_ok,
+        "erros": total_erro,
+        "dry_run": total_dry,
+        "processados": processados,
+        "limitado": limitado,
+        "disponivel": True,
+    }
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(
