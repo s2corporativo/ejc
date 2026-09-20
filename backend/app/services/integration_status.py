@@ -230,72 +230,14 @@ def _estado_overlay_seguro() -> dict[str, Any]:
 
 
 
-def _env_present(name: str) -> bool:
-    return bool(os.getenv(name, "").strip())
-
-
 def _backup_gdrive_auth_configured() -> bool:
-    """Verifica apenas presença/completude de configuração; nunca lê valores."""
-    mode = os.getenv("BACKUP_GOOGLE_DRIVE_AUTH_MODE", "").strip().lower() or "auto"
-    if mode not in {"auto", "oauth", "service_account", "inherit"}:
+    """Delega ao contrato canônico do backup; não duplica regra de credencial."""
+    try:
+        from app.services.backup_drive_auth import auth_status
+
+        return bool(auth_status().get("configured"))
+    except Exception:
         return False
-
-    dedicated_service_account = any(
-        _env_present(name)
-        for name in (
-            "BACKUP_GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE",
-            "BACKUP_GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON",
-        )
-    )
-    dedicated_oauth = any(
-        _env_present(name)
-        for name in (
-            "BACKUP_GOOGLE_DRIVE_OAUTH_USER_FILE",
-            "BACKUP_GOOGLE_DRIVE_OAUTH_USER_JSON",
-        )
-    ) or all(
-        _env_present(name)
-        for name in (
-            "BACKUP_GOOGLE_DRIVE_OAUTH_CLIENT_ID",
-            "BACKUP_GOOGLE_DRIVE_OAUTH_CLIENT_SECRET",
-            "BACKUP_GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN",
-        )
-    )
-
-    inherited_service_account = any(
-        _env_present(name)
-        for name in (
-            "GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE",
-            "GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON",
-        )
-    )
-    inherited_oauth = any(
-        _env_present(name)
-        for name in (
-            "GOOGLE_DRIVE_OAUTH_USER_FILE",
-            "GOOGLE_DRIVE_OAUTH_USER_JSON",
-        )
-    ) or all(
-        _env_present(name)
-        for name in (
-            "GOOGLE_DRIVE_OAUTH_CLIENT_ID",
-            "GOOGLE_DRIVE_OAUTH_CLIENT_SECRET",
-            "GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN",
-        )
-    )
-
-    if mode == "service_account":
-        return dedicated_service_account
-    if mode == "oauth":
-        return dedicated_oauth
-    if mode == "inherit":
-        return inherited_service_account or inherited_oauth
-    return (
-        dedicated_service_account
-        or dedicated_oauth
-        or inherited_service_account
-        or inherited_oauth
-    )
 
 
 def _backup_configuration(settings: Settings) -> tuple[bool, str]:
