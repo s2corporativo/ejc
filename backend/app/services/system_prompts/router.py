@@ -13,7 +13,7 @@ from app.core.config import get_settings
 
 _settings = get_settings()
 _MARITACA = _settings.MARITACA_MODEL
-_MARITACA_MARITACA_RAPIDO = _settings.MARITACA_MODEL_MARITACA_RAPIDO or _MARITACA
+_MARITACA_RAPIDO = _settings.MARITACA_MODEL_RAPIDO or _MARITACA
 _GROQ = _settings.GROQ_MODEL
 
 
