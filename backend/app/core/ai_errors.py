@@ -36,10 +36,55 @@ MSG_PII_BLOQUEADA = (
     "Este conteúdo contém dados pessoais e não pôde ser enviado à IA externa. "
     "Remova dados pessoais do texto ou procure o administrador."
 )
+MSG_SIGILO_BLOQUEADO = (
+    "Este caso exige processamento por IA local por motivo de sigilo, mas a "
+    "IA local necessária não está disponível. Procure o administrador do sistema."
+)
 MSG_TRANSCRICAO_NAO_ATIVADA = (
     "A transcrição por IA não está ativada nesta instalação. "
     "Procure o administrador."
 )
+
+class SafeAIError(RuntimeError):
+    """Erro de IA com metadados explicitamente seguros para log/telemetria.
+
+    A mensagem interna passada ao construtor também deve ser sanitizada. Campos
+    estruturados evitam que camadas superiores tenham de inspecionar `str(e)`
+    de SDKs, que pode conter request body/PII.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "technical",
+        technical_type: str | None = None,
+        status_code: int | None = None,
+        public_message: str | None = None,
+    ):
+        super().__init__(message)
+        self.ai_error_code = (code or "technical")[:80]
+        self.technical_type = (technical_type or type(self).__name__)[:100]
+        self.status_code = status_code
+        self.public_message = public_message
+
+
+def descricao_tecnica_segura(erro) -> str:
+    """Descrição para logs sem ler mensagem arbitrária de exceção."""
+    if not isinstance(erro, BaseException):
+        return "erro"
+    tipo = getattr(erro, "technical_type", None) or type(erro).__name__
+    status = getattr(erro, "status_code", None) or getattr(
+        getattr(erro, "response", None), "status_code", None
+    )
+    codigo = getattr(erro, "ai_error_code", None)
+    partes = [str(tipo)[:100]]
+    if status:
+        partes.append(f"HTTP {status}")
+    if codigo:
+        partes.append(f"codigo={str(codigo)[:80]}")
+    return " | ".join(partes)
+
 
 # ── Classificação do erro técnico ─────────────────────────────────────────────
 # Bloqueio LGPD/PII (ai_gateway: "Conteúdo com dados pessoais…", "PII residual…",
@@ -64,14 +109,26 @@ _RE_TECNICO = re.compile(
 
 
 def mensagem_ia_para_usuario(erro, padrao: str = MSG_IA_INDISPONIVEL) -> str:
-    """Converte um erro (exceção ou string) de IA em mensagem leiga PT-BR.
+    """Converte erro de IA em mensagem leiga sem ecoar exceção arbitrária.
 
-    - Bloqueio de PII → MSG_PII_BLOQUEADA
-    - Transcrição não ativada → MSG_TRANSCRICAO_NAO_ATIVADA
-    - Qualquer texto técnico (provider/chave/.env/rede/task=) ou vazio → `padrao`
-    - Mensagem já legível de regra de negócio (ex.: "Texto insuficiente…") passa
-      intacta — a tradução nunca esconde orientação útil ao usuário.
+    Strings explícitas continuam aceitas para regras de negócio legadas.
+    Exceções só podem fornecer mensagem pública por `SafeAIError`; qualquer
+    outra exceção cai no padrão, porque `str(e)` pode conter PII.
     """
+    if isinstance(erro, SafeAIError):
+        if erro.public_message:
+            return erro.public_message[:300]
+        if erro.ai_error_code in {"pii_blocked", "lgpd_blocked"}:
+            return MSG_PII_BLOQUEADA
+        if erro.ai_error_code == "sigilo_blocked":
+            return MSG_SIGILO_BLOQUEADO
+        if erro.ai_error_code == "transcription_disabled":
+            return MSG_TRANSCRICAO_NAO_ATIVADA
+        return padrao
+
+    if isinstance(erro, BaseException):
+        return padrao
+
     txt = str(erro or "").strip()
     if _RE_PII.search(txt):
         return MSG_PII_BLOQUEADA
@@ -91,10 +148,9 @@ def http_erro_ia(
     """Camada de borda: loga o DETALHE TÉCNICO (interno) e devolve HTTPException
     com `detail` leigo. Usar `raise http_erro_ia(e, ...)` nos routers de IA."""
     logger.error(
-        "[IA] %s falhou: %s: %s",
+        "[IA] %s falhou: %s",
         contexto or "chamada de IA",
-        type(erro).__name__ if isinstance(erro, BaseException) else "erro",
-        str(erro)[:500],
+        descricao_tecnica_segura(erro),
     )
     return HTTPException(status_code=status_code,
                          detail=mensagem_ia_para_usuario(erro, padrao))
