@@ -61,9 +61,20 @@ class _Rows:
         return iter(())
 
 
+class _Nested:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
 class _DB:
     def __init__(self):
         self.sqls = []
+
+    def begin_nested(self):
+        return _Nested()
 
     async def execute(self, stmt, params=None):
         self.sqls.append(str(stmt))
@@ -197,6 +208,46 @@ async def test_nova_versao_com_decisao_humana_volta_para_pendente():
     assert novo.extra["human_reviewed"] is False
     assert novo.extra["previous_rag_status"] == "recusado"
     assert "curadoria" not in novo.extra
+
+
+@pytest.mark.asyncio
+async def test_peca_autoritativa_nao_e_rebaixada_por_revisao_da_versao_anterior():
+    from app.services.ingestion_service import upsert_documento
+
+    existente = KnowledgeDoc(
+        id="old-piece",
+        titulo="Peça",
+        categoria="peca_interna",
+        chave_origem="peca:1",
+        hash_conteudo="hash-antigo",
+        status_indexacao="indexado",
+        versao=1,
+        vigente=True,
+        client_id="cli-1",
+        case_id="case-1",
+        extra={"rag_status": "aprovado", "human_reviewed": True},
+    )
+    db = _UpsertDB(existente)
+
+    resultado = await upsert_documento(
+        db,
+        titulo="Peça",
+        categoria="peca_interna",
+        conteudo=(
+            "Conteúdo final e formalmente aprovado da peça jurídica, alterado "
+            "após a versão anterior e suficientemente longo para nova versão."
+        ),
+        chave_origem="peca:1",
+        client_id="cli-1",
+        case_id="case-1",
+        extra={"rag_status": "aprovado", "human_reviewed": True},
+        embutir_vetores=False,
+    )
+
+    novo = next(x for x in db.added if isinstance(x, KnowledgeDoc))
+    assert resultado == "atualizado"
+    assert novo.extra["rag_status"] == "aprovado"
+    assert novo.extra["human_reviewed"] is True
 
 
 def test_dashboard_rag_usa_os_mesmos_gates_do_retrieval():
