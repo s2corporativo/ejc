@@ -5,14 +5,14 @@
 #
 # Fluxo:
 #   Frontend → Backend Router → AI Gateway → Provedor adequado
-#   (Ollama local · Anthropic/Claude p/ tarefa jurídica pesada · Maritaca/Sabiá
-#    PT-BR · Groq último recurso)
+#   (Groq p/ rotina · Maritaca/Sabiá p/ leitura/raciocínio jurídico ·
+#    Ollama local p/ sigilo · Claude somente quando requisitado no EJC)
 #
 # Roteamento por tipo de tarefa (ver TASK_ROUTING): cada tarefa lista os
 # provedores candidatos; a ordem final vem de AI_PROVIDER_PRIORITY filtrada
 # por elegibilidade (chave + ENABLED + soberania). Provedores atuais:
-#   ollama (local, custo zero) · anthropic (Claude — raciocínio profundo)
-#   maritaca (Sabiá — PT-BR jurídico, IA brasileira) · groq (último recurso)
+#   groq (rotina/baixo custo) · maritaca (Sabiá — leitura e mérito PT-BR)
+#   ollama (local/sigilo) · anthropic (Claude — uso explícito sob demanda)
 #
 # Fallback automático: se o modelo primário falhar, tenta o próximo da cadeia.
 # Quando AI_PROVIDER="auto" → Ollama (local) tem prioridade; Groq como fallback.
@@ -452,7 +452,7 @@ async def chat(
       messages        — mensagens no formato OpenAI [{role, content}, ...]
       task_type       — tipo de tarefa (define qual modelo usar)
       model_override  — forçar modelo específico (ex: "deepseek-r1:14b")
-      provider_override — forçar provedor ("groq" | "ollama")
+      provider_override — forçar provedor ("groq" | "maritaca" | "ollama" | "anthropic")
       entidades       — nomes próprios a pseudonimizar por tipo (opcional):
                         {"cliente": [...], "empresa": [...], "advogado": [...],
                         "parte_contraria": [...]}. Só usado em modo
@@ -965,14 +965,18 @@ def _resolver_cadeia(
     base = TASK_ROUTING.get(task_type, TASK_ROUTING["analise_juridica"])
     candidatos = _ordenar_por_prioridade([p for p, _ in base])
 
-    # Tarefa de mérito jurídico começa pelo provedor de raciocínio profundo.
-    # A AIProviderPolicy já decidia isso ("tarefa complexa — Anthropic
-    # priorizado") e o gateway a IGNORAVA, resolvendo a cadeia só por
-    # AI_PROVIDER_PRIORITY: duas fontes de verdade divergentes, e quem valia
-    # era a do gateway (auditoria de 18/08). Agora a regra é uma só. A
-    # elegibilidade e a barreira de PII continuam sendo aplicadas abaixo.
-    if task_type in _TAREFAS_MERITO and "anthropic" in candidatos:
-        candidatos = ["anthropic"] + [p for p in candidatos if p != "anthropic"]
+    # Política operacional 20/09/2026:
+    # - Groq atende tarefas corriqueiras/rápidas;
+    # - Maritaca atende leitura, raciocínio jurídico e pesquisa;
+    # - Claude NÃO entra em fallback automático quando ANTHROPIC_EXPLICIT_ONLY.
+    #   Continua disponível via provider_force/provider_override explícito e
+    #   no modo agêntico que o usuário abre deliberadamente.
+    if getattr(settings, "ANTHROPIC_EXPLICIT_ONLY", True):
+        candidatos = [p for p in candidatos if p != "anthropic"]
+    if task_type in _TAREFAS_MERITO and "maritaca" in candidatos:
+        candidatos = ["maritaca"] + [p for p in candidatos if p != "maritaca"]
+    elif task_type in _TAREFAS_ECONOMICAS and "groq" in candidatos:
+        candidatos = ["groq"] + [p for p in candidatos if p != "groq"]
 
     # Roteamento inteligente: promove o provider proposto à frente SE elegível e
     # SE participa da cadeia da tarefa (não inventa provedor fora do TASK_ROUTING).
