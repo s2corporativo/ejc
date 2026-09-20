@@ -82,9 +82,10 @@ def test_audiencia_usa_modelo_forte():
     from app.services.system_prompts.router import (
         CONFIGURACOES,
         TarefaIA,
-        _COMPLEXO,
+        _MARITACA,
     )
 
     cfg = CONFIGURACOES[TarefaIA.AUDIENCIA]
-    assert cfg.model == _COMPLEXO
+    assert cfg.provider == "maritaca"
+    assert cfg.model == _MARITACA
     assert cfg.max_tokens >= 3000
