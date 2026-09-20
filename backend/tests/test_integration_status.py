@@ -119,3 +119,91 @@ def test_runtime_antigo_nao_rebaixa_integracao_desligada():
     ))["tjmg"]
     assert item["status"] == "disabled"
     assert item["operational_state"] == "erro"
+
+
+def test_backup_offsite_usa_flag_canonica_e_nao_backup_remote_legado():
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="development",
+        BACKUP_ENABLED=True,
+        BACKUP_REMOTE="",
+        BACKUP_ENCRYPTION_KEY="chave-configurada",
+        BACKUP_DESTINO="rclone",
+        BACKUP_RCLONE_REMOTE="onedrive:EJC-Backups",
+    )
+
+    item = _items_by_key(build_integration_status(settings))["backup_offsite"]
+
+    assert item["enabled"] is True
+    assert item["configured"] is True
+    assert item["status"] == "ready"
+    assert item["mode"].startswith("rclone")
+
+
+def test_backup_offsite_habilitado_sem_destino_fica_attention():
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="development",
+        BACKUP_ENABLED=True,
+        BACKUP_ENCRYPTION_KEY="chave-configurada",
+        BACKUP_DESTINO="rclone",
+        BACKUP_RCLONE_REMOTE="",
+    )
+
+    item = _items_by_key(build_integration_status(settings))["backup_offsite"]
+
+    assert item["enabled"] is True
+    assert item["configured"] is False
+    assert item["status"] == "attention"
+
+
+def test_backup_offsite_runtime_sucesso_confirma_estado_operacional():
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="development",
+        BACKUP_ENABLED=True,
+        BACKUP_ENCRYPTION_KEY="chave-configurada",
+        BACKUP_DESTINO="gdrive",
+        BACKUP_DRIVE_FOLDER_ID="pasta-backup",
+    )
+    item = _items_by_key(
+        build_integration_status(
+            settings,
+            operational_states={
+                "backup_offsite": {
+                    "state": "ok",
+                    "detail": "Último ciclo confirmou envio offsite do backup cifrado.",
+                    "checked_at": "2026-09-20T00:03:28+00:00",
+                }
+            },
+        )
+    )["backup_offsite"]
+
+    assert item["status"] == "ready"
+    assert item["operational_state"] == "ok"
+    assert item["last_operational_at"] == "2026-09-20T00:03:28+00:00"
+
+
+def test_backup_offsite_runtime_falha_rebaixa_para_attention():
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="development",
+        BACKUP_ENABLED=True,
+        BACKUP_ENCRYPTION_KEY="chave-configurada",
+        BACKUP_DESTINO="gdrive",
+        BACKUP_DRIVE_FOLDER_ID="pasta-backup",
+    )
+    item = _items_by_key(
+        build_integration_status(
+            settings,
+            operational_states={
+                "backup_offsite": {
+                    "state": "erro",
+                    "detail": "Último ciclo de backup registrou falha.",
+                }
+            },
+        )
+    )["backup_offsite"]
+
+    assert item["status"] == "attention"
+    assert item["operational_state"] == "erro"
