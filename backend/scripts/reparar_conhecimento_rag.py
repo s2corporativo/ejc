@@ -107,7 +107,8 @@ async def aprovar_existentes(batch_size: int = 200, dry_run: bool = False) -> di
 
 
 async def executar(*, batch_size: int = 200, dry_run: bool = False,
-                   sem_vetorizacao: bool = False) -> dict[str, Any]:
+                   sem_vetorizacao: bool = False,
+                   max_docs: int | None = None) -> dict[str, Any]:
     orfaos_antes = await _contar_chunks_orfaos()
     resumo = await aprovar_existentes(batch_size=batch_size, dry_run=dry_run)
 
@@ -115,7 +116,10 @@ async def executar(*, batch_size: int = 200, dry_run: bool = False,
     if not dry_run and not sem_vetorizacao:
         if embeddings_disponiveis():
             from scripts.reembedar_chunks_orfaos import reembedar
-            await reembedar(batch_size=max(1, min(batch_size, 100)))
+            await reembedar(
+                batch_size=max(1, min(batch_size, 100)),
+                max_docs=max_docs,
+            )
             vetorizacao = "executada"
         else:
             vetorizacao = "indisponivel"
@@ -142,9 +146,14 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size", type=int, default=200)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--sem-vetorizacao", action="store_true")
+    parser.add_argument(
+        "--max-docs", type=int, default=None,
+        help="Teto total de documentos a vetorizar nesta execução.",
+    )
     args = parser.parse_args()
     asyncio.run(executar(
         batch_size=max(1, args.batch_size),
         dry_run=args.dry_run,
         sem_vetorizacao=args.sem_vetorizacao,
+        max_docs=args.max_docs,
     ))
