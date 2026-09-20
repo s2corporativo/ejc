@@ -507,11 +507,9 @@ class TestExecutarTarefaIAModos:
         assert CPF_FAKE not in str(registrado.get("resposta", ""))
         assert registrado.get("pii_removida") is True
 
-    async def test_fallback_local_antes_de_externo(self, s, monkeypatch):
-        """P1b (LGPD): na cadeia própria de executar_tarefa_ia o LOCAL (Ollama)
-        é tentado ANTES do fallback externo. ANALISE_CASO tem cfg.provider=maritaca
-        → cadeia [maritaca, ollama, groq]. Todos falhando, a ORDEM de tentativa
-        prova o local-antes-de-externo (antes era groq antes de ollama)."""
+    async def test_merito_nao_cai_em_groq_no_caminho_legado(self, s, monkeypatch):
+        """ANALISE_CASO usa Maritaca e pode cair no Ollama local, mas NUNCA
+        degrada automaticamente para Groq (reservado às tarefas corriqueiras)."""
         from app.services import ai_gateway
         from app.services.system_prompts import TarefaIA
 
@@ -525,8 +523,8 @@ class TestExecutarTarefaIAModos:
         monkeypatch.setattr(ai_gateway, "_chamar_provedor", _fake_provedor)
         with pytest.raises(RuntimeError):
             await ai_gateway.executar_tarefa_ia(TarefaIA.ANALISE_CASO, "texto limpo")
-        assert "ollama" in ordem and "groq" in ordem
-        assert ordem.index("ollama") < ordem.index("groq")   # local antes do externo
+        assert ordem[:2] == ["maritaca", "ollama"]
+        assert "groq" not in ordem
 
     async def test_fallback_nao_silencioso_no_dict(self, s, monkeypatch):
         """P1b: degradação Opus/Anthropic → outro provedor NÃO é silenciosa — o
