@@ -702,6 +702,12 @@ async def ingerir_ai_log_aprovado(
     chave  = f"ai_log_{log.id}"
 
     case_id = getattr(log, "case_id", None)
+    if case_id:
+        # Defense-in-depth: possuir o AILog não autoriza, por si só, a gravar
+        # conhecimento no escopo de um caso. Revalida a carteira/ownership no
+        # momento da escrita no RAG.
+        from app.core.ownership import verificar_acesso_caso
+        await verificar_acesso_caso(db, cu, case_id)
     client_id = await _escopo_cliente_do_caso(db, case_id) if case_id else None
     if case_id and not client_id:
         raise HTTPException(
