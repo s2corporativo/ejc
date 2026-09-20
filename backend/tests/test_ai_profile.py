@@ -34,7 +34,7 @@ def test_local_so_ollama():
     assert s.AI_PROVIDER_PRIORITY == "ollama"
 
 
-def test_externo_sem_ollama_e_maritaca_opt_in():
+def test_externo_sem_ollama_com_maritaca_ativa():
     s = Settings(**_BASE, AI_PROFILE="externo")
     assert s.AI_EXTERNAL_PROVIDERS_ALLOWED is True
     assert s.OLLAMA_ENABLED is False
@@ -44,7 +44,7 @@ def test_externo_sem_ollama_e_maritaca_opt_in():
     assert s2.AI_PROFILE == "externo"  # canonizado
 
 
-def test_hibrido_tudo_com_ollama_por_ultimo():
+def test_hibrido_com_ollama_e_claude_manual():
     s = Settings(**_BASE, AI_PROFILE="hibrido")
     assert s.OLLAMA_ENABLED is True and s.ANTHROPIC_ENABLED is True
     assert s.AI_PROVIDER_PRIORITY == "groq,maritaca,ollama,anthropic"
