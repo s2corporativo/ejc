@@ -220,8 +220,8 @@ class Settings(BaseSettings):
     AI_WEB_SEARCH_CUSTO_USD_POR_1000: float = 10.0
 
     # ── IA — Maritaca (Sabiá) — provider BRASILEIRO, OpenAI-compatible ─────
-    # PLUGÁVEL: nasce DESLIGADO (MARITACA_ENABLED=false) → sistema idêntico ao
-    # atual. Provider EXTERNO ao VPS → passa pela MESMA barreira LGPD
+    # ATIVA por padrão na política operacional de 20/09/2026, desde que exista
+    # MARITACA_API_KEY. Provider EXTERNO ao VPS → passa pela MESMA barreira LGPD
     # (pseudonimização). Chave definida APENAS no .env (nunca aqui).
     # Soberania de dados NÃO é o default e NÃO é automática: depende de DUAS
     # coisas juntas — (1) configurar MARITACA_MODEL/MARITACA_MODEL_RAPIDO nas
@@ -327,18 +327,10 @@ class Settings(BaseSettings):
     # (vocabulário de TASK_ROUTING; aliases como "redacao_peca" são
     # normalizados antes da comparação).
     DUAS_IAS_TASK_TYPES: str = "elaboracao_peca,auditoria_peca,analise_juridica,estrategia"
-    # Ordem de preferência entre provedores ELEGÍVEIS (csv). A policy ainda
-    # filtra por habilitação/chave e prioriza Anthropic em tarefas complexas.
-    # Maritaca antes do groq: para tarefa jurídica PT-BR o Sabiá rankeia acima
-    # de um generalista; só entra na cadeia se elegível (ENABLED + chave).
-    #
-    # Ordem por QUALIDADE (decisão do titular, 18/08): o modelo forte atende
-    # primeiro. O default anterior era "ollama,..." — um modelo local de 8-14B
-    # na frente do Claude para redigir peça e analisar caso. O docker-compose de
-    # produção já corrigia isso por env; o default do CÓDIGO não, e valia para
-    # tudo que roda fora do compose (dev, testes, scripts, deploy alternativo).
-    # Ollama fica por último: é rede de segurança para o caso de os externos
-    # caírem ou de PII residual barrar a saída do dado (ver provider_policy).
+    # Ordem de preferência entre provedores ELEGÍVEIS (csv). Política atual:
+    # Groq para rotina; Maritaca/Sabiá para leitura, análise e pesquisa jurídica;
+    # Ollama como opção local/sigilo; Claude permanece disponível, mas é removido
+    # da cadeia automática salvo ANTHROPIC_AUTO_ROUTING_ENABLED=true.
     AI_PROVIDER_PRIORITY: str = "groq,maritaca,ollama,anthropic"
     # ── Níveis de sanitização de PII por tipo de tarefa (LGPD art. 33/46) ─────
     # JSON OPCIONAL (string) mapeando task_type → modo de sanitização, que
@@ -351,7 +343,7 @@ class Settings(BaseSettings):
     AI_SANITIZATION_MODE_MAP: str = ""
     # ── Intake de documentos (importação inteligente) ─────────────────────
     # True (default) = a interpretação do documento importado usa a cadeia
-    # automática do gateway (ollama→anthropic→groq): se o Ollama local cair,
+    # automática do gateway (Maritaca/Groq; Ollama quando elegível): se o local cair,
     # o texto — JÁ SANITIZADO (sanitizar_pii + barreira final do gateway) —
     # pode ir a provedor EXTERNO (EUA → transferência internacional, art. 33
     # LGPD; o dado pessoal exato NUNCA sai, é extraído localmente por regex).
@@ -362,22 +354,15 @@ class Settings(BaseSettings):
     # ── Fase 6 — Roteamento inteligente por complexidade/custo ────────────
     # Ligado por padrão: o model_router (heurística DETERMINÍSTICA, sem IA)
     # propõe o provedor de PARTIDA da cadeia por complexidade estimada do
-    # input — tarefas pesadas partem do Anthropic, leves do provedor barato.
+    # input — tarefas leves partem do Groq; médias/pesadas da Maritaca.
     # O gateway AINDA aplica elegibilidade/kill-switch/barreira PII e o
     # fallback continua. False via .env = comportamento por task_type intacto.
     ROTEAMENTO_INTELIGENTE_ENABLED: bool = True
     # Provedor preferido por TIER de complexidade (o roteador só PROPÕE; se
     # inelegível, o gateway ignora e usa a cadeia normal por prioridade).
-    # leve = anthropic (modelo RÁPIDO): a conversa livre da Sala Jurídica cai
-    # neste tier e é onde o erro jurídico nasce — não vai a provedor de
-    # raciocínio inferior (decisão do titular, 2026-09-05). groq segue como
-    # fallback da cadeia se elegível.
+    # leve = Groq: conversa, resumo, triagem e tarefas corriqueiras.
     ROTEAMENTO_PROVIDER_LEVE: str = "groq"
-    # médio = anthropic: o stack de produção não sobe ollama (compose:
-    # OLLAMA_ENABLED=false) — apontar o tier médio para provider morto só gerava
-    # tentativa-e-fallback a cada tarefa. O MODELO do tier médio é COMPLEXO
-    # (Opus), NÃO Haiku — ver model_router._model_do_provider (anti-rebaixamento
-    # P1: só o tier LEVE usa o modelo rápido).
+    # médio = Maritaca: leitura, interpretação e análise jurídica.
     ROTEAMENTO_PROVIDER_MEDIO: str = "maritaca"
     ROTEAMENTO_PROVIDER_PESADO: str = "maritaca"  # leitura/análise/pesquisa jurídica
     # Limiares (score inteiro) que separam os tiers leve|medio|pesado.
