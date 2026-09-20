@@ -28,8 +28,8 @@ const VIEWPORTS = [
 const USER = {
   id: "usuario-homologacao",
   email: "advogado.homologacao@example.test",
-  full_name: "Clóvis Soares",
-  role: "advogado",
+  full_name: "Carlos Almeida",
+  role: "socio",
   permissions: [],
   avatar_url: null,
 };
@@ -65,7 +65,22 @@ function diasAFrente(dias) {
   return date;
 }
 
-const today = new Date();
+// O contexto Playwright roda em America/Sao_Paulo; o host pode estar em UTC.
+// Ancorar as fixtures na data de SÃO PAULO evita janelas intermitentes
+// (21:00–24:00 SP = dia seguinte em UTC) em que o dashboard válido reprovava
+// ("2 de 5 concluídas" → "0 de 0"). Meio-dia neutraliza DST.
+function agoraSaoPaulo(dias = 0) {
+  const data = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(Date.now() + dias * 86_400_000));
+  const [ano, mes, dia] = data.split("-").map(Number);
+  return new Date(ano, mes - 1, dia, 12, 0, 0);
+}
+
+const today = agoraSaoPaulo();
 
 // Fixtures no CONTRATO REAL do DashboardUltra (endpoints de DashboardUltra.tsx):
 // /dashboard/ → Kpis; /atividades → Atividade[]; /cases/ → CasoResumo[];
@@ -320,7 +335,7 @@ async function inspectDashboard(page, viewport, failures) {
   // Composição canônica da referência (seção 9 do prompt mestre) com os
   // números das fixtures — provando que os indicadores vêm de dados reais.
   for (const expected of [
-    "clóvis",
+    "carlos",
     "entrada única",
     "prazos hoje",
     "clientes ativos",

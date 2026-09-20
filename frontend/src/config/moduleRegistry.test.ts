@@ -253,6 +253,11 @@ describe("moduleRegistry", () => {
     expect(STAFF_ROUTES.some((m) => m.path === "/casos/novo")).toBe(true);
 
     const canonical = new Set(STAFF_ROUTES.map((route) => route.path));
+    // "/radar" saiu da lista de proibidos: o menu canônico da referência DPT
+    // (aprovada pelo Titular) exibe Radar Operacional para perfis compliance
+    // (inclui advogado). O RBAC da ROTA não mudou — contrato "não alarga
+    // acesso" segue intacto; apenas a visibilidade no menu acompanha a
+    // referência. "/produtividade" continua restrita a gestores.
     for (const path of [
       "/crm-leads",
       "/assinaturas",
@@ -260,7 +265,6 @@ describe("moduleRegistry", () => {
       "/checklists",
       "/datajud",
       "/diario-oficial",
-      "/radar",
       "/produtividade",
       "/ia-governanca",
       "/auditoria",
