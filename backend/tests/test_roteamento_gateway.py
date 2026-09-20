@@ -21,15 +21,18 @@ def _prep(monkeypatch, **kw):
         ANTHROPIC_API_KEY="sk-x",
         ANTHROPIC_ENABLED=True,
         AI_EXTERNAL_PROVIDERS_ALLOWED=True,
-        AI_PROVIDER_PRIORITY="ollama,anthropic,groq",
+        AI_PROVIDER_PRIORITY="groq,maritaca,ollama,anthropic",
+        ANTHROPIC_AUTO_ROUTING_ENABLED=False,
+        MARITACA_ENABLED=True,
+        MARITACA_API_KEY="mk",
         OLLAMA_ENABLED=True,
         GROQ_API_KEY="gk",
         ROTEAMENTO_INTELIGENTE_ENABLED=False,
         ROTEAMENTO_LIMIAR_MEDIO=3,
         ROTEAMENTO_LIMIAR_PESADO=6,
         ROTEAMENTO_PROVIDER_LEVE="groq",
-        ROTEAMENTO_PROVIDER_MEDIO="ollama",
-        ROTEAMENTO_PROVIDER_PESADO="anthropic",
+        ROTEAMENTO_PROVIDER_MEDIO="maritaca",
+        ROTEAMENTO_PROVIDER_PESADO="maritaca",
     )
     base.update(kw)
     for k, v in base.items():
@@ -42,20 +45,20 @@ def test_cadeia_promove_preferido_elegivel(monkeypatch):
     _prep(monkeypatch)
     cadeia = g._resolver_cadeia(
         "elaboracao_peca", provider_force=None, model_override=None,
-        provider_preferido="anthropic", model_preferido="claude-opus-4-8",
+        provider_preferido="maritaca", model_preferido="sabia-4",
     )
-    assert cadeia[0] == ("anthropic", "claude-opus-4-8")   # promovido à frente
+    assert cadeia[0] == ("maritaca", "sabia-4")   # promovido à frente
     assert any(p == "ollama" for p, _ in cadeia)           # fallback preservado
 
 
 def test_cadeia_ignora_preferido_inelegivel(monkeypatch):
-    # Kill-switch de soberania: externos inelegíveis → anthropic proposto é ignorado.
+    # Kill-switch de soberania: externos inelegíveis → maritaca proposta é ignorada.
     _prep(monkeypatch, AI_EXTERNAL_PROVIDERS_ALLOWED=False)
     cadeia = g._resolver_cadeia(
         "elaboracao_peca", provider_force=None, model_override=None,
-        provider_preferido="anthropic", model_preferido="claude-opus-4-8",
+        provider_preferido="maritaca", model_preferido="sabia-4",
     )
-    assert all(p != "anthropic" for p, _ in cadeia)        # externo bloqueado fora
+    assert all(p != "maritaca" for p, _ in cadeia)        # externo bloqueado fora
     assert cadeia[0][0] == "ollama"                        # cadeia normal
 
 
@@ -69,7 +72,7 @@ def test_cadeia_preferido_fora_do_task_routing_e_ignorado(monkeypatch):
         provider_preferido="provedor_inexistente", model_preferido="x",
     )
     assert all(p != "provedor_inexistente" for p, _ in cadeia)
-    assert cadeia and cadeia[0][0] == "ollama"
+    assert cadeia and cadeia[0][0] == "groq"
 
 
 # ── chat() on/off ─────────────────────────────────────────────────────────────
@@ -89,18 +92,18 @@ async def test_chat_roteamento_off_usa_cadeia_por_task_type(monkeypatch):
     # `resumo` está fora do conjunto de mérito: a cadeia sai da prioridade
     # configurada (ollama-first neste _prep), sem tier de roteamento.
     resp = await g.chat([{"role": "user", "content": "oi"}], task_type="resumo")
-    assert cap["provider"] == "ollama"
+    assert cap["provider"] == "groq"
     assert resp.roteamento_tier is None
 
 
-async def test_chat_roteamento_off_ainda_usa_modelo_forte_no_merito(monkeypatch):
-    """Mesmo com o roteamento inteligente DESLIGADO, tarefa de mérito começa
-    pelo provedor de raciocínio profundo (decisão do titular, 18/08)."""
+async def test_chat_roteamento_off_usa_maritaca_no_merito(monkeypatch):
+    """Mesmo com roteamento inteligente desligado, mérito jurídico começa
+    pela Maritaca conforme a política operacional atual."""
     _prep(monkeypatch, ROTEAMENTO_INTELIGENTE_ENABLED=False)
     cap = {}
     _mock_provedor(monkeypatch, cap)
     resp = await g.chat([{"role": "user", "content": "oi"}], task_type="elaboracao_peca")
-    assert cap["provider"] == "anthropic"
+    assert cap["provider"] == "maritaca"
     assert resp.roteamento_tier is None
 
 
@@ -108,10 +111,10 @@ async def test_chat_roteamento_on_promove_provedor(monkeypatch):
     _prep(monkeypatch, ROTEAMENTO_INTELIGENTE_ENABLED=True)
     cap = {}
     _mock_provedor(monkeypatch, cap)
-    # estrategia é tarefa pesada (peso 6) → tier pesado → anthropic proposto
+    # estrategia é tarefa pesada (peso 6) → tier pesado → maritaca proposta
     resp = await g.chat([{"role": "user", "content": "questão estratégica complexa"}],
                         task_type="estrategia")
-    assert cap["provider"] == "anthropic"
+    assert cap["provider"] == "maritaca"
     assert resp.roteamento_tier == "pesado"
     assert resp.roteamento_score is not None
 
@@ -127,7 +130,8 @@ async def test_chat_roteamento_on_respeita_kill_switch(monkeypatch):
 
 
 async def test_chat_calcula_custo_estimado(monkeypatch):
-    _prep(monkeypatch, ROTEAMENTO_INTELIGENTE_ENABLED=False)
+    _prep(monkeypatch, ROTEAMENTO_INTELIGENTE_ENABLED=False,
+          ANTHROPIC_AUTO_ROUTING_ENABLED=True)
     async def _fake(provider, model, messages, temperature, max_tokens):
         return "r", {"model": "claude-opus-4-8", "input_tokens": 1_000_000, "output_tokens": 0}
     monkeypatch.setattr(g, "_chamar_provedor", _fake)
@@ -136,6 +140,19 @@ async def test_chat_calcula_custo_estimado(monkeypatch):
     resp = await g.chat([{"role": "user", "content": "x"}], task_type="estrategia")
     # Opus 4.8 = $5/1M input; 1M tokens input → $5 × USD_BRL (default 5.70) ≈ 28.5
     assert resp.custo_estimado_brl > 0
+
+
+async def test_chat_claude_so_quando_solicitado(monkeypatch):
+    _prep(monkeypatch, ROTEAMENTO_INTELIGENTE_ENABLED=True)
+    cap = {}
+    _mock_provedor(monkeypatch, cap)
+    resp = await g.chat(
+        [{"role": "user", "content": "análise complexa"}],
+        task_type="estrategia",
+        provider_override="anthropic",
+    )
+    assert cap["provider"] == "anthropic"
+    assert resp.roteamento_tier is None
 
 
 async def test_chat_override_desliga_roteamento(monkeypatch):
@@ -184,7 +201,7 @@ class TestEndpointRoteamentoPreview:
 
         out = await roteamento_preview(task_type="estrategia", tamanho=100, cu=_U())
         assert out["tier"] == "pesado"
-        assert out["provider_proposto"] == "anthropic"
+        assert out["provider_proposto"] == "maritaca"
         assert out["provider_elegivel"] is True
         assert out["roteamento_habilitado"] is True
 
@@ -197,7 +214,7 @@ class TestEndpointRoteamentoPreview:
             role = type("R", (), {"value": "admin"})()
 
         out = await roteamento_preview(task_type="estrategia", tamanho=100, cu=_U())
-        assert out["provider_proposto"] == "anthropic"
+        assert out["provider_proposto"] == "maritaca"
         assert out["provider_elegivel"] is False  # kill-switch
 
     async def test_preview_403_para_papel_baixo(self, monkeypatch):
