@@ -197,3 +197,16 @@ async def test_nova_versao_com_decisao_humana_volta_para_pendente():
     assert novo.extra["human_reviewed"] is False
     assert novo.extra["previous_rag_status"] == "recusado"
     assert "curadoria" not in novo.extra
+
+
+def test_dashboard_rag_usa_os_mesmos_gates_do_retrieval():
+    import inspect
+
+    from app.routers.rag import stats_conhecimento, status_indexacao_rag
+
+    for fn in (stats_conhecimento, status_indexacao_rag):
+        src = inspect.getsource(fn)
+        assert "filtro_elegibilidade_rag_metricas()" in src
+        assert "filtros_gate_rag()" in src
+        assert "vigente = TRUE" in src
+        assert "EXISTS (SELECT 1 FROM knowledge_chunks" in src
