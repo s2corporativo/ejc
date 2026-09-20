@@ -261,3 +261,50 @@ def test_dashboard_rag_usa_os_mesmos_gates_do_retrieval():
         assert "filtros_gate_rag()" in src
         assert "vigente = TRUE" in src
         assert "EXISTS (SELECT 1 FROM knowledge_chunks" in src
+
+
+@pytest.mark.asyncio
+async def test_nova_versao_preserva_vigencia_juridica_curada_mas_reabre_curadoria_rag():
+    from app.services.ingestion_service import upsert_documento
+
+    existente = KnowledgeDoc(
+        id="old-legal",
+        titulo="Norma",
+        categoria="legislacao",
+        chave_origem="teste:norma",
+        hash_conteudo="hash-antigo",
+        status_indexacao="indexado",
+        versao=1,
+        vigente=True,
+        extra={
+            "rag_status": "aprovado",
+            "human_reviewed": True,
+            "legal_status": "revogada",
+            "legal_status_origem": "curadoria:u-1",
+            "legal_status_verificado_em": "2026-09-19T12:00:00+00:00",
+        },
+    )
+    db = _UpsertDB(existente)
+
+    await upsert_documento(
+        db,
+        titulo="Norma atualizada",
+        categoria="legislacao",
+        conteudo=(
+            "Nova redação oficial suficientemente longa para versionamento, "
+            "sem permitir que o ingestor reverta a decisão humana de vigência."
+        ),
+        chave_origem="teste:norma",
+        extra={
+            "rag_status": "aprovado",
+            "legal_status": "vigente",
+            "legal_status_origem": "fonte:automatica",
+        },
+        embutir_vetores=False,
+    )
+
+    novo = next(x for x in db.added if isinstance(x, KnowledgeDoc))
+    assert novo.extra["rag_status"] == "pendente"
+    assert novo.extra["human_reviewed"] is False
+    assert novo.extra["legal_status"] == "revogada"
+    assert novo.extra["legal_status_origem"] == "curadoria:u-1"
