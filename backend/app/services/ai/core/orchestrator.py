@@ -118,7 +118,11 @@ class SingleAICoreOrchestrator:
                         skill_pipeline.append(native_name)
 
         # 2) Permissão (RBAC/ABAC) ────────────────────────────────────────────
-        role = str(getattr(user, "role", "") or "")
+        # `UserRole` é `(str, Enum)` sem `__str__`: em Python 3.11+,
+        # `str(role)` devolve "UserRole.cliente_externo" (não o valor) e o gate
+        # NUNCA dispara em produção. Compara pelo valor — funciona para enum e
+        # para string. Mesmo padrão de `capacidades._bloquear_cliente_externo`.
+        role = getattr(getattr(user, "role", ""), "value", getattr(user, "role", "")) or ""
         if user is not None and role == "cliente_externo":
             raise HTTPException(403, "Funções de IA internas não estão disponíveis no portal do cliente.")
         if agente.roles_permitidos and (user is None or role not in agente.roles_permitidos):

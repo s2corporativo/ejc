@@ -793,6 +793,31 @@ class TestOrchestrator:
             )
         assert exc.value.status_code == 403
 
+    async def test_cliente_externo_enum_real_bloqueado_403(self, nucleo_mocks):
+        """Reproduz o bug de produção (auditoria 1-A, achado #1):
+
+        `UserRole(str, Enum)` em Python 3.11+ devolve
+        ``'UserRole.cliente_externo'`` em ``str(role)`` — não o valor
+        ``'cliente_externo'``. Gate que usa ``str(role) == 'cliente_externo'``
+        é no-op em produção. O teste anterior
+        (``test_cliente_externo_bloqueado_403``) mascara o bug passando a
+        role como STRING (``_user('cliente_externo')``), não como Enum.
+
+        Este teste passa a role como Enum real (igual ao que o ORM carrega do
+        banco em produção) — falharia no código pré-fix e passa após.
+        """
+        from app.models.user import UserRole
+        from app.services.ai.core.orchestrator import orchestrator
+        user_enum = SimpleNamespace(id="usuario-fake-1", role=UserRole.cliente_externo)
+        # Sanity: confirma que str(enum) NÃO é o valor (caso Python mude o comportamento)
+        assert str(UserRole.cliente_externo) != "cliente_externo"
+        with pytest.raises(HTTPException) as exc:
+            await orchestrator.run(
+                db=None, user=user_enum,
+                task_type="chat", mensagem="Qual o andamento do meu caso?",
+            )
+        assert exc.value.status_code == 403
+
     async def test_advogado_bloqueado_em_agente_tecnico_403(self, nucleo_mocks):
         from app.services.ai.core.orchestrator import orchestrator
         with pytest.raises(HTTPException) as exc:
