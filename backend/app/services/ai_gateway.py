@@ -26,6 +26,12 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from app.core.ai_errors import (
+    MSG_PII_BLOQUEADA,
+    MSG_SIGILO_BLOQUEADO,
+    SafeAIError,
+    descricao_tecnica_segura,
+)
 from app.core.config import get_settings
 from app.services import legal_base
 from app.services.ai_cost import custo_busca_web_brl, estimar_custo_brl
@@ -515,7 +521,10 @@ async def chat(
             roteamento_tier, roteamento_score = decisao.tier, decisao.score
             logger.info("[Gateway] roteamento inteligente → %s", decisao.motivo)
         except Exception as e:  # roteamento nunca quebra a chamada de IA
-            logger.warning("[Gateway] roteamento inteligente falhou: %s", str(e)[:200])
+            logger.warning(
+                "[Gateway] roteamento inteligente falhou: %s",
+                descricao_tecnica_segura(e),
+            )
 
     # Cadeia de tentativas
     cadeia = _resolver_cadeia(
@@ -525,10 +534,10 @@ async def chat(
     if not cadeia:
         # Sem candidato elegível: kill-switch externo ligado e nenhum provider
         # local disponível. Falha honesta, sem tocar em rede externa.
-        raise RuntimeError(
-            f"Nenhum provedor de IA elegível para task={task_type}. "
-            "Verifique AI_ENABLED (kill-switch global), "
-            "AI_EXTERNAL_PROVIDERS_ALLOWED e a disponibilidade do Ollama."
+        raise SafeAIError(
+            f"Nenhum provedor de IA elegível para task={task_type}.",
+            code="no_provider",
+            technical_type="ProviderPolicy",
         )
 
     # ── Modo 1 (LOCAL_COMPLETO) — sigilo reforçado: a tarefa NUNCA pode ir a
@@ -537,7 +546,12 @@ async def chat(
     if modo_sanitizacao == ModoSanitizacao.LOCAL_COMPLETO:
         cadeia = _restringir_cadeia_local_completo(cadeia, modo_sanitizacao, task_type_original)
         if not cadeia:
-            raise RuntimeError(_MSG_BLOQUEIO_LOCAL_COMPLETO)
+            raise SafeAIError(
+                _MSG_BLOQUEIO_LOCAL_COMPLETO,
+                code="sigilo_blocked",
+                technical_type="PrivacyPolicy",
+                public_message=MSG_SIGILO_BLOQUEADO,
+            )
 
     # ── Cache de resposta (opt-in): dedup de requisição idêntica dentro do TTL.
     # A6: consultado SÓ DEPOIS de confirmada uma cadeia elegível — com o
@@ -686,39 +700,54 @@ async def chat(
                                          metadata={"provider": provider, "task_type": task_type})
                     continue
                 except Exception as e:
-                    ultimo_erro = str(e)[:200]  # trilha INTERNA (logger + RuntimeError)
-                    # B1: no que sai ao Langfuse (fallback_motivo → metadata; evento),
-                    # nunca o str(e) cru (pode conter PII/detalhe do provider): só a
-                    # CLASSE do erro (+ status HTTP quando houver).
-                    _status = getattr(e, "status_code", None) or getattr(
-                        getattr(e, "response", None), "status_code", None
-                    )
-                    erro_traco = type(e).__name__ + (f" (HTTP {_status})" if _status else "")
+                    # Nunca inspeciona str(e): SDKs podem ecoar request body/PII.
+                    # SafeAIError preserva subtipo/status em atributos; exceções
+                    # arbitrárias degradam para a classe, sem conteúdo.
+                    erro_traco = descricao_tecnica_segura(e)
+                    ultimo_erro = erro_traco
                     fallback_motivo = f"{provider}: {erro_traco}"
                     logger.warning(
-                        f"[Gateway] {provider}/{model} falhou, tentando próximo: {ultimo_erro}"
+                        "[Gateway] %s/%s falhou, tentando próximo: %s",
+                        provider,
+                        model,
+                        erro_traco,
                     )
-                    _lf.registrar_evento(_trace, name=f"fallback:{provider}",
-                                         metadata={"provider": provider, "model": model,
-                                                   "task_type": task_type, "erro": erro_traco})
+                    _lf.registrar_evento(
+                        _trace,
+                        name=f"fallback:{provider}",
+                        metadata={
+                            "provider": provider,
+                            "model": model,
+                            "task_type": task_type,
+                            "erro": erro_traco,
+                        },
+                    )
     except TimeoutError:
         _lf.flush()
         logger.warning(
             "[Gateway] deadline da cadeia (%ss) estourado para task=%s após %d provedor(es)",
             get_settings().AI_CHAIN_DEADLINE_SECONDS, task_type, len(cadeia),
         )
-        raise RuntimeError(_MSG_DEADLINE_CADEIA)
+        raise SafeAIError(
+            _MSG_DEADLINE_CADEIA,
+            code="deadline",
+            technical_type="ProviderChainTimeout",
+        )
 
     _lf.flush()
     if bloqueado_por_pii:
         # Mensagem segura: não ecoa o conteúdo nem os valores de PII.
-        raise RuntimeError(
-            "Conteúdo com dados pessoais não pode ir a provider externo — "
-            "configure Ollama ou revise o texto"
+        raise SafeAIError(
+            "Conteúdo com dados pessoais não pode ir a provider externo.",
+            code="pii_blocked",
+            technical_type="PrivacyPolicy",
+            public_message=MSG_PII_BLOQUEADA,
         )
-    raise RuntimeError(
+    raise SafeAIError(
         f"Todos os provedores falharam para task={task_type}. "
-        f"Último erro: {ultimo_erro}"
+        f"Último erro seguro: {ultimo_erro}",
+        code="provider_failure",
+        technical_type="ProviderChainError",
     )
 
 
@@ -817,7 +846,10 @@ async def health() -> dict:
             modelos_ollama = list(await ollama_provider.modelos_disponiveis() or [])
             ollama_ok = len(modelos_ollama) > 0
         except Exception as e:  # sonda local nunca derruba o painel
-            logger.debug("[Gateway] health do Ollama falhou: %s", str(e)[:120])
+            logger.debug(
+                "[Gateway] health do Ollama falhou: %s",
+                descricao_tecnica_segura(e),
+            )
 
     def _externo(nome: str, modelo: str | None) -> dict:
         return {
@@ -1231,15 +1263,21 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
                 "reforçado) e não há provedor local elegível — bloqueada (LGPD).",
                 tarefa_label,
             )
-            raise RuntimeError(_MSG_BLOQUEIO_LOCAL_COMPLETO)
+            raise SafeAIError(
+                _MSG_BLOQUEIO_LOCAL_COMPLETO,
+                code="sigilo_blocked",
+                technical_type="PrivacyPolicy",
+                public_message=MSG_SIGILO_BLOQUEADO,
+            )
 
     # A6: kill-switch ANTES do cache — sem provedor elegível (AI_ENABLED=false,
     # externos bloqueados sem Ollama…) a tarefa falha honestamente, mesmo que
     # exista resposta cacheada dentro do TTL.
     if not any(_provider_elegivel(p) for p, _ in cadeia):
-        raise RuntimeError(
-            "Nenhum provedor disponível para a tarefa. Último erro: nenhum "
-            "provedor elegível (habilitação/chave/soberania)"
+        raise SafeAIError(
+            "Nenhum provedor disponível para a tarefa.",
+            code="no_provider",
+            technical_type="ProviderPolicy",
         )
 
     # #40: dedup de chamada de IA no caminho por tarefa — reusa o mesmo ai_cache
@@ -1321,17 +1359,15 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
                                    f"PII residual ({', '.join(_pulado.residual)}) após sanitização (LGPD).")
                     continue
                 except Exception as e:
-                    ultimo_erro = str(e)[:120]  # trilha INTERNA (logger) — pode ter PII
+                    erro_traco = descricao_tecnica_segura(e)
+                    ultimo_erro = erro_traco
                     if fallback_motivo is None:
-                        # Só a CLASSE do erro (+ status HTTP) no motivo exposto — PII-safe.
-                        _status = getattr(e, "status_code", None) or getattr(
-                            getattr(e, "response", None), "status_code", None
-                        )
-                        fallback_motivo = f"{provider}: " + type(e).__name__ + (
-                            f" (HTTP {_status})" if _status else ""
-                        )
-                    logger.warning(f"[Gateway] {provider} falhou em executar_tarefa_ia; "
-                                   f"tentando próximo: {ultimo_erro}")
+                        fallback_motivo = f"{provider}: {erro_traco}"
+                    logger.warning(
+                        "[Gateway] %s falhou em executar_tarefa_ia; tentando próximo: %s",
+                        provider,
+                        erro_traco,
+                    )
                     continue
                 provedor_usado = provider
                 # resposta_log = versão PSEUDONIMIZADA (sem PII real); no modo reversível
@@ -1345,14 +1381,25 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
             "[Gateway] deadline da cadeia (%ss) estourado em executar_tarefa_ia task=%s",
             get_settings().AI_CHAIN_DEADLINE_SECONDS, tarefa_label,
         )
-        raise RuntimeError(_MSG_DEADLINE_CADEIA)
+        raise SafeAIError(
+            _MSG_DEADLINE_CADEIA,
+            code="deadline",
+            technical_type="ProviderChainTimeout",
+        )
     if provedor_usado is None:
         if bloqueado_por_pii:
-            raise RuntimeError(
-                "Conteúdo com dados pessoais não pode ir a provider externo — "
-                "configure Ollama ou revise o texto"
+            raise SafeAIError(
+                "Conteúdo com dados pessoais não pode ir a provider externo.",
+                code="pii_blocked",
+                technical_type="PrivacyPolicy",
+                public_message=MSG_PII_BLOQUEADA,
             )
-        raise RuntimeError(f"Nenhum provedor disponível para a tarefa. Último erro: {ultimo_erro}")
+        raise SafeAIError(
+            f"Nenhum provedor disponível para a tarefa. "
+            f"Último erro seguro: {ultimo_erro}",
+            code="provider_failure",
+            technical_type="ProviderChainError",
+        )
 
     inp = usage.get("input_tokens") or 0
     out = usage.get("output_tokens") or 0
@@ -1571,7 +1618,12 @@ async def chat_agentico(
         # nesta fase → bloqueio seguro (o conteúdo nunca é enviado).
         cadeia = _restringir_cadeia_local_completo(cadeia, modo_sanitizacao, task_type_original)
         if not cadeia:
-            raise RuntimeError(_MSG_BLOQUEIO_LOCAL_COMPLETO)
+            raise SafeAIError(
+                _MSG_BLOQUEIO_LOCAL_COMPLETO,
+                code="sigilo_blocked",
+                technical_type="PrivacyPolicy",
+                public_message=MSG_SIGILO_BLOQUEADO,
+            )
     cadeia_tools = [(p, m) for (p, m) in cadeia if p == "anthropic"]
     # Se AI_PROVIDER forçou um provider sem tool-use, mas o Anthropic está
     # elegível, ainda o usamos (única opção agêntica) — desde que não seja
