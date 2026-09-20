@@ -6,6 +6,7 @@ import logging
 from typing import Optional
 
 from groq import AsyncGroq, GroqError
+from app.core.ai_errors import SafeAIError
 from app.core.config import get_settings
 
 logger = logging.getLogger("ejc.ai.groq")
@@ -72,9 +73,12 @@ async def chat(
         # sem barreira. Mensagem CURTA e segura: tipo + status, sem corpo,
         # sem stack. `from None` corta a cadeia de exceção original.
         status = getattr(e, "status_code", None)
-        raise RuntimeError(
+        raise SafeAIError(
             f"Groq API falhou ({type(e).__name__}"
-            + (f", HTTP {status}" if status else "") + ")"
+            + (f", HTTP {status}" if status else "") + ")",
+            code="provider_failure",
+            technical_type=type(e).__name__,
+            status_code=status,
         ) from None
     if not resp.choices:
         raise RuntimeError("Groq retornou resposta vazia")
@@ -127,9 +131,12 @@ async def transcrever(
         # a auditoria de IA, 18/08): era o único caminho deste provider que
         # ainda deixava a exceção crua do SDK propagar.
         status = getattr(e, "status_code", None)
-        raise RuntimeError(
+        raise SafeAIError(
             f"Groq API (transcrição) falhou ({type(e).__name__}"
-            + (f", HTTP {status}" if status else "") + ")"
+            + (f", HTTP {status}" if status else "") + ")",
+            code="provider_failure",
+            technical_type=type(e).__name__,
+            status_code=status,
         ) from None
     texto = (getattr(resp, "text", None) or "").strip()
     if not texto:
