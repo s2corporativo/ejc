@@ -18,14 +18,14 @@ from app.services.sanitizer import sanitizar_pii, validar_sem_pii
 # Provedores que processam dados FORA do VPS (LGPD: exigem sanitização).
 PROVIDERS_EXTERNOS = {"anthropic", "groq", "maritaca"}
 
-# Tarefas complexas (raciocínio jurídico profundo) → priorizam Anthropic
-# quando elegível. Aceita tanto nomes de TarefaIA quanto task_types do gateway.
+# Tarefas complexas (leitura/raciocínio jurídico) → priorizam Maritaca/Sabiá
+# no roteamento automático. Claude só entra por requisição explícita.
 TAREFAS_COMPLEXAS = {
     "analise_caso", "minutas", "dossie", "pesquisa_juridica",
     "estrategia", "analise_juridica", "elaboracao_peca",
 }
 
-# Tarefas simples/econômicas → preferem Ollama/Groq (custo ~zero).
+# Tarefas simples/econômicas → preferem Groq; Ollama pode servir de fallback local.
 TAREFAS_ECONOMICAS = {"resumo", "triagem", "chat_rapido"}
 
 
@@ -122,15 +122,11 @@ class AIProviderPolicy:
 
         # ── Priorização por perfil da tarefa ─────────────────────────────────
         if task in TAREFAS_COMPLEXAS and "maritaca" in elegiveis:
-            # Sabiá/Maritaca é o provider automático de mérito PT-BR —
-            # priorizado à frente do Groq, mas
-            # NUNCA à frente de provider LOCAL elegível (minimização LGPD: o
-            # dado só sai do VPS quando não há opção local).
-            locais = [p for p in elegiveis if p not in PROVIDERS_EXTERNOS]
-            externos = [p for p in elegiveis
-                        if p in PROVIDERS_EXTERNOS and p != "maritaca"]
-            elegiveis = locais + ["maritaca"] + externos
-            motivos.append("tarefa complexa — Maritaca (Sabiá) priorizada entre externos")
+            # Sabiá/Maritaca é o provider automático de mérito PT-BR.
+            # Sigilo LOCAL_COMPLETO é tratado pela sanitization policy/gateway;
+            # fora desse piso, a política funcional pedida é Maritaca primeiro.
+            elegiveis = ["maritaca"] + [p for p in elegiveis if p != "maritaca"]
+            motivos.append("tarefa complexa — Maritaca (Sabiá) priorizada")
         elif task in TAREFAS_ECONOMICAS:
             econ = [p for p in ("groq", "ollama") if p in elegiveis]
             elegiveis = econ + [p for p in elegiveis if p not in econ]
