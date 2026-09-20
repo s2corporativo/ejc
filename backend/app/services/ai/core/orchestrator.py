@@ -150,7 +150,6 @@ class SingleAICoreOrchestrator:
             user=user,
             usar_rag=usar_rag,
             exige_fonte=intent.exige_fonte,
-            provider_override=provider_override,
         )
 
         # 4) Sanitização LGPD do input ("sanitiza e segue" — 2026-07-06; não
@@ -167,6 +166,7 @@ class SingleAICoreOrchestrator:
             intent.tarefa.value,
             ja_sanitizado=True,
             exige_fonte=intent.exige_fonte,
+            provider_override=provider_override,
         )
         if not decisao.permitido:
             # V2-5.5 (auditoria): esta rejeição acontece ANTES do gateway —
