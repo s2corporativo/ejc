@@ -98,6 +98,17 @@ def test_ausencia_de_manual_nao_vira_falso_positivo_funcional():
     assert clientes["precisa_revisao"] is False
 
 
+def test_help_key_consolidado_evitar_divida_documental_falsa():
+    rotas = [{"path": "/api/ajuizamento", "methods": ["GET"], "name": "ajuizar"}]
+    mapa = gerar_mapa_modulos(rotas, ["casos"])
+    ajuizamento = next(m for m in mapa if m["module_key"] == "ajuizamento")
+
+    assert ajuizamento["help_key"] == "casos"
+    assert ajuizamento["tem_manual"] is True
+    assert ajuizamento["precisa_documentacao"] is False
+    assert ajuizamento["precisa_revisao"] is False
+
+
 def test_documentacao_indisponivel_nao_inventa_pendencia():
     rotas = [{"path": "/api/clients/", "methods": ["GET"], "name": "listar"}]
     mapa = gerar_mapa_modulos(rotas, None)
