@@ -8,6 +8,45 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 
 
+
+def _classificar_backup_estado(row: Any | None) -> dict[str, Any]:
+    """Traduz telemetria persistida em estado seguro, sem expor erro bruto."""
+    if not row:
+        return {
+            "state": "nunca_executou",
+            "detail": "Backup habilitado, mas ainda não há execução registrada.",
+        }
+
+    status = str(row.get("last_status") or "").strip().lower()
+    offsite_ok = row.get("offsite_ok")
+    checked_at = row.get("last_run_at")
+
+    if status == "sucesso" and offsite_ok is True:
+        state = "ok"
+        detail = "Último backup cifrado concluiu o envio offsite com sucesso."
+    elif status == "erro":
+        state = "erro"
+        detail = "A última execução do backup registrou falha."
+    elif status == "parcial" or offsite_ok is False:
+        state = "alerta"
+        detail = (
+            "A última execução preservou estado local, mas o envio offsite "
+            "não foi confirmado."
+        )
+    else:
+        state = "alerta"
+        detail = (
+            "Há execução de backup registrada, mas a prova do envio offsite "
+            "está incompleta."
+        )
+
+    return {
+        "state": state,
+        "detail": detail,
+        "checked_at": checked_at.isoformat() if checked_at else None,
+    }
+
+
 async def coletar_estados_operacionais(db: AsyncSession) -> dict[str, dict[str, Any]]:
     """Lê estado persistido; não faz chamadas externas nem expõe erro bruto."""
     estados: dict[str, dict[str, Any]] = {}
@@ -159,6 +198,36 @@ async def coletar_estados_operacionais(db: AsyncSession) -> dict[str, dict[str, 
         except Exception:
             await db.rollback()
             estados["google_drive_knowledge"] = {"state": "alerta", "detail": "Não foi possível ler o estado persistido do Google Drive Knowledge."}
+
+    if get_settings().BACKUP_ENABLED:
+        try:
+            existe = (
+                await db.execute(
+                    text("SELECT to_regclass('public.backup_drive_state')")
+                )
+            ).scalar()
+            if not existe:
+                estados["backup_offsite"] = _classificar_backup_estado(None)
+            else:
+                row = (
+                    await db.execute(
+                        text(
+                            "SELECT last_run_at,last_status,offsite_ok "
+                            "FROM backup_drive_state WHERE id = 1"
+                        )
+                    )
+                ).mappings().first()
+                estados["backup_offsite"] = _classificar_backup_estado(row)
+        except Exception:
+            await db.rollback()
+            estados["backup_offsite"] = {
+                "state": "alerta",
+                "detail": (
+                    "Backup habilitado, mas o estado operacional persistido "
+                    "não pôde ser lido."
+                ),
+            }
+
     return estados
 
 
