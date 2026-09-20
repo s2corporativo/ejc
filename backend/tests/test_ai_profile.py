@@ -38,16 +38,16 @@ def test_externo_sem_ollama_e_maritaca_opt_in():
     s = Settings(**_BASE, AI_PROFILE="externo")
     assert s.AI_EXTERNAL_PROVIDERS_ALLOWED is True
     assert s.OLLAMA_ENABLED is False
-    assert s.AI_PROVIDER_PRIORITY == "anthropic,groq"
+    assert s.AI_PROVIDER_PRIORITY == "groq,maritaca,anthropic"
     s2 = Settings(**_BASE, AI_PROFILE="Externo", MARITACA_ENABLED=True)
-    assert s2.AI_PROVIDER_PRIORITY == "anthropic,maritaca,groq"
+    assert s2.AI_PROVIDER_PRIORITY == "groq,maritaca,anthropic"
     assert s2.AI_PROFILE == "externo"  # canonizado
 
 
 def test_hibrido_tudo_com_ollama_por_ultimo():
     s = Settings(**_BASE, AI_PROFILE="hibrido")
     assert s.OLLAMA_ENABLED is True and s.ANTHROPIC_ENABLED is True
-    assert s.AI_PROVIDER_PRIORITY == "anthropic,maritaca,groq,ollama"
+    assert s.AI_PROVIDER_PRIORITY == "groq,maritaca,ollama,anthropic"
 
 
 def test_perfil_invalido_falha_no_boot():
