@@ -102,6 +102,19 @@ _FILTRO_ELIGIBILIDADE_RAG = (
     "))"
 )
 
+def filtro_elegibilidade_rag_metricas() -> str:
+    """Versão sem bind do filtro neutro, somente para métricas agregadas.
+
+    A lista vem de constante interna, nunca de entrada do usuário. Mantém
+    painéis/saúde alinhados ao contrato de ownership do retrieval sem obrigar
+    cada consulta agregada a propagar :restr_cats.
+    """
+    cats = ",".join("'" + c.replace("'", "''") + "'" for c in _RESTRICTED_CATS)
+    return _FILTRO_ELIGIBILIDADE_RAG.replace(
+        "kd.categoria <> ALL(:restr_cats)",
+        f"kd.categoria NOT IN ({cats})",
+    )
+
 
 def _params_escopo_rag(
     scope_client_id: str | None,
