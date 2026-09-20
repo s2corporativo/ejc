@@ -541,7 +541,10 @@ async def buscar_contexto_rag(
         hyde_permitido = True
         if scope_case_id:
             try:
-                modo_caso = await _modo_sigilo_caso(db, scope_case_id)
+                # SAVEPOINT: erro SQL na leitura do sigilo não pode deixar a
+                # transação PostgreSQL abortada e derrubar o retrieval inteiro.
+                async with db.begin_nested():
+                    modo_caso = await _modo_sigilo_caso(db, scope_case_id)
                 if modo_caso is not None:
                     from app.services.ai.sanitization_policy import modo_para_task, reforcar_sigilo
                     hyde_modo = reforcar_sigilo(
