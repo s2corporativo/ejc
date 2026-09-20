@@ -832,8 +832,11 @@ async def analisar_caso(
             modo_sanitizacao=modo_sigilo,
         )
     except Exception as e:
-        logger.error(f"AI Gateway falhou: {e}")
-        return {"erro": f"Falha na IA: {str(e)[:200]}"}
+        # Auditoria 1-A achado #3: NÃO ecoar str(e) cru ao usuário — em
+        # LOCAL_COMPLETO (Ollama recebe PII real), exceções de SDK podem
+        # carregar trecho do request body. Logar só a classe; retornar leigo.
+        logger.error("AI Gateway falhou: %s", type(e).__name__)
+        return {"erro": "Falha na IA — tente novamente"}
 
     # 4. AI LOG (rastreabilidade LGPD + HITL)
     log = AILog(
@@ -886,7 +889,9 @@ async def resumir_documento(
             task_type="chat_rapido", temperature=0.1, max_tokens=1200, nivel="alto",
         )
     except Exception as e:
-        return {"erro": f"Falha na IA: {str(e)[:200]}"}
+        # Auditoria 1-A achado #3: retorno leigo sem str(e) cru.
+        logger.error("AI Gateway (resumo_doc) falhou: %s", type(e).__name__)
+        return {"erro": "Falha na IA — tente novamente"}
 
     log = AILog(
         id=str(uuid4()), user_id=user_id, case_id=case_id,
@@ -943,8 +948,9 @@ async def extrair_prazos_ia(
             task_type="resumo", temperature=0.0, max_tokens=1500, nivel="alto",
         )
     except Exception as e:
-        logger.error(f"AI Gateway (detectar-prazos) falhou: {e}")
-        return {"erro": f"Falha na IA: {str(e)[:200]}"}
+        # Auditoria 1-A achado #3: retorno leigo sem str(e) cru.
+        logger.error("AI Gateway (detectar-prazos) falhou: %s", type(e).__name__)
+        return {"erro": "Falha na IA — tente novamente"}
 
     from app.services.documento_service import _parse_json, _prazos_extraidos
     llm = _parse_json(resposta) or {}

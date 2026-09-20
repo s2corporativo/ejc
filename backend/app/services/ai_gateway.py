@@ -686,14 +686,16 @@ async def chat(
                                          metadata={"provider": provider, "task_type": task_type})
                     continue
                 except Exception as e:
-                    ultimo_erro = str(e)[:200]  # trilha INTERNA (logger + RuntimeError)
-                    # B1: no que sai ao Langfuse (fallback_motivo → metadata; evento),
-                    # nunca o str(e) cru (pode conter PII/detalhe do provider): só a
-                    # CLASSE do erro (+ status HTTP quando houver).
+                    # Auditoria 1-A achado #3: NÃO usar str(e)[:N] cru — em
+                    # LOCAL_COMPLETO (Ollama recebe PII real), exceções de SDK
+                    # podem ecoar trecho do request body. Truncar ≠ sanitizar.
+                    # Mesmo padrão de `provider_metrics_runtime.normalizar_erro`:
+                    # só `type(e).__name__` + HTTP status (se houver).
                     _status = getattr(e, "status_code", None) or getattr(
                         getattr(e, "response", None), "status_code", None
                     )
                     erro_traco = type(e).__name__ + (f" (HTTP {_status})" if _status else "")
+                    ultimo_erro = erro_traco  # trilha INTERNA sanitizada (logger + RuntimeError)
                     fallback_motivo = f"{provider}: {erro_traco}"
                     logger.warning(
                         f"[Gateway] {provider}/{model} falhou, tentando próximo: {ultimo_erro}"
@@ -1321,15 +1323,16 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
                                    f"PII residual ({', '.join(_pulado.residual)}) após sanitização (LGPD).")
                     continue
                 except Exception as e:
-                    ultimo_erro = str(e)[:120]  # trilha INTERNA (logger) — pode ter PII
+                    # Auditoria 1-A achado #3: NÃO usar str(e)[:N] cru — em
+                    # LOCAL_COMPLETO (Ollama recebe PII real), exceções de SDK
+                    # podem ecoar trecho do request body. Truncar ≠ sanitizar.
+                    _status = getattr(e, "status_code", None) or getattr(
+                        getattr(e, "response", None), "status_code", None
+                    )
+                    erro_traco = type(e).__name__ + (f" (HTTP {_status})" if _status else "")
+                    ultimo_erro = erro_traco  # trilha INTERNA sanitizada (logger + RuntimeError)
                     if fallback_motivo is None:
-                        # Só a CLASSE do erro (+ status HTTP) no motivo exposto — PII-safe.
-                        _status = getattr(e, "status_code", None) or getattr(
-                            getattr(e, "response", None), "status_code", None
-                        )
-                        fallback_motivo = f"{provider}: " + type(e).__name__ + (
-                            f" (HTTP {_status})" if _status else ""
-                        )
+                        fallback_motivo = f"{provider}: {erro_traco}"
                     logger.warning(f"[Gateway] {provider} falhou em executar_tarefa_ia; "
                                    f"tentando próximo: {ultimo_erro}")
                     continue

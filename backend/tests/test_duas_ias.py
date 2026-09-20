@@ -218,6 +218,55 @@ class TestCriticarPeca:
         assert c.citacoes is None
         assert any("indisponível" in a for a in c.alertas)
 
+    async def test_critica_falha_nao_persiste_str_e_cru_com_pii(self, s, monkeypatch):
+        """Auditoria 1-A achado #4: quando o gateway falha, o alerta persistido
+        em AILog.critica_adversarial (campo WORM) NÃO pode conter str(e) cru.
+
+        Em LOCAL_COMPLETO (Ollama recebe PII real), exceções de SDK podem
+        carregar trecho do request body no str(e). Persistir esse texto em
+        AILog.critica_adversarial cria um repositório WORM de PII em claro.
+
+        O fix usa só `type(e).__name__` (classe do erro) — PII-safe e
+        suficiente para diagnóstico.
+        """
+        from app.services import ai_gateway
+        from app.services.ai import adversarial
+
+        PII_NO_ERRO = "maria cpf 999.888.777-66"
+
+        async def chat_que_lanca_com_pii(*args, **kwargs):
+            # Simula exceção de SDK ecoando request body (caso real em
+            # LOCAL_COMPLETO com Ollama, provedores que fazem echo de 4xx).
+            raise RuntimeError(f"timeout: body='{PII_NO_ERRO}'")
+
+        monkeypatch.setattr(ai_gateway, "chat", chat_que_lanca_com_pii)
+
+        c = await adversarial.criticar_peca(
+            db=object(), texto_peca=TEXTO_PECA,
+            task_type_origem="peca_estrategica",
+            provedor_origem="anthropic",
+        )
+        # Crítica falhou → disponivel=False, mas persiste alerta no AILog
+        assert c.disponivel is False
+        assert c.alertas, "deveria ter ao menos um alerta explicando a falha"
+
+        # O PII crú NÃO pode estar em nenhum alerta (vai parar no AILog WORM)
+        for alerta in c.alertas:
+            assert PII_NO_ERRO not in alerta, (
+                f"Alerta vazou PII em claro (vai para AILog.critica_adversarial WORM): {alerta!r}"
+            )
+
+        # Sanity: o alerta ainda é útil p/ diagnóstico (contém a classe do erro)
+        assert any("RuntimeError" in a for a in c.alertas), (
+            f"Alerta deveria mencionar a classe do erro: {c.alertas!r}"
+        )
+
+        # E ao formatar para AILog, o PII também não aparece
+        formatado = adversarial.formatar_para_ailog(c)
+        assert PII_NO_ERRO not in formatado, (
+            f"formatar_para_ailog vazou PII: {formatado!r}"
+        )
+
     def test_extrair_nota_robustez(self):
         from app.services.ai.adversarial import extrair_nota_robustez
         assert extrair_nota_robustez("NOTA DE ROBUSTEZ: 85") == 85

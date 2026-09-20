@@ -122,3 +122,39 @@ async def test_a_barreira_de_resposta_vazia_aciona_o_fallback_da_cadeia(monkeypa
     assert resp.texto == "resposta real"
     assert resp.fallback_ativado is True
     assert chamadas["n"] == 2
+
+
+# ── Auditoria 1-A achado #3: RuntimeError não ecoa str(e) cru com PII ──────
+# Em LOCAL_COMPLETO (Ollama recebe PII real), exceções de SDK podem carregar
+# trecho do request body no str(e). Truncar [:200] não sanitiza. O gateway
+# deve construir RuntimeError só com `type(e).__name__` (+ HTTP status).
+async def test_runtime_error_nao_ecoa_str_e_cru_com_pii(monkeypatch):
+    """Simula exceção de SDK carregando PII no str(e) e verifica que o
+    RuntimeError propagado pelo gateway NÃO contém o PII."""
+    PII_NO_ERRO = "joão da silva cpf 123.456.789-00"
+
+    async def _fake_prov_raises(provider, model, messages_envio, temp, maxt):
+        # Em produção, SDKs podem ecoar trecho do request body na mensagem
+        # de erro (ex.: timeout com payload, 4xx com echo). Simulamos aqui.
+        raise RuntimeError(f"SDK error: request body was: {PII_NO_ERRO}")
+
+    monkeypatch.setattr(gw, "_chamar_provedor", _fake_prov_raises)
+    monkeypatch.setattr(gw, "_resolver_cadeia",
+                        lambda *a, **k: [("anthropic", None), ("groq", None)])
+    monkeypatch.setattr(gw.settings, "AI_REQUIRE_SANITIZATION_FOR_EXTERNAL", False)
+    # Garante que o deadline da cadeia não dispara antes de todos os providers falharem
+    monkeypatch.setattr(gw.settings, "AI_CHAIN_DEADLINE_SECONDS", 30)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        await gw.chat([{"role": "user", "content": "oi"}], task_type="resumo")
+
+    msg = str(exc_info.value)
+    # O PII crú NÃO pode aparecer na mensagem que sobe ao chamador (e
+    # eventualmente ao usuário via ai_service.py).
+    assert PII_NO_ERRO not in msg, (
+        f"RuntimeError vazou str(e) cru com PII: {msg!r}"
+    )
+    # Sanity: a mensagem ainda é útil para diagnóstico (contém a classe do erro)
+    assert "RuntimeError" in msg or "erro" in msg.lower(), (
+        f"RuntimeError sem informação de diagnóstico: {msg!r}"
+    )

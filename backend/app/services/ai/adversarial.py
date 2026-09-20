@@ -268,7 +268,7 @@ async def criticar_peca(
         except Exception as e:
             logger.warning(
                 "[DuasIAs] Não foi possível resolver o sigilo do caso %s — "
-                "crítica PULADA (fail-closed): %s", case_id, str(e)[:200],
+                "crítica PULADA (fail-closed): %s", case_id, type(e).__name__,
             )
             return CriticaAdversarial(
                 disponivel=False,
@@ -340,14 +340,18 @@ async def criticar_peca(
         logger.warning(
             "[DuasIAs] Crítica adversarial indisponível — peça segue para HITL. "
             "task_origem=%s provider_origem=%s provider_tentado=%s erro=%s",
-            task_type_origem, provedor_origem, provider_escolhido, str(e)[:200],
+            task_type_origem, provedor_origem, provider_escolhido, type(e).__name__,
         )
         return CriticaAdversarial(
             disponivel=False,
             provedor_origem=provedor_origem,
             task_type_origem=task_type_origem,
             aviso=AVISO_INDISPONIVEL,
-            alertas=[f"Falha na IA Crítica: {str(e)[:200]}"],
+            # Auditoria 1-A achado #4: NÃO persistir str(e)[:N] cru em
+            # AILog.critica_adversarial (WORM) — em LOCAL_COMPLETO com Ollama,
+            # exceções de SDK podem ecoar request body com PII real. Só a
+            # classe do erro é PII-safe e suficiente para diagnóstico.
+            alertas=[f"Falha na IA Crítica (classe do erro: {type(e).__name__})"],
         )
 
     alertas: list[str] = []
@@ -384,7 +388,7 @@ async def criticar_peca(
                 "Gate de citações indisponível para o relatório de crítica — "
                 "verifique manualmente toda jurisprudência sugerida."
             )
-            logger.warning("[DuasIAs] Gate de citações falhou na crítica: %s", str(e)[:200])
+            logger.warning("[DuasIAs] Gate de citações falhou na crítica: %s", type(e).__name__)
     else:
         alertas.append(
             "Gate de citações não executado (sem sessão de banco) — verifique "
@@ -472,6 +476,6 @@ async def anexar_critica_ao_log(db, log_id: str | None, critica: CriticaAdversar
     except Exception as e:
         logger.warning(
             "[DuasIAs] Falha ao anexar crítica ao AILog %s (peça não bloqueada): %s",
-            log_id, str(e)[:200],
+            log_id, type(e).__name__,
         )
         return False
