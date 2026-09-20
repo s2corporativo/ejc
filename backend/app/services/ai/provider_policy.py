@@ -22,11 +22,15 @@ PROVIDERS_EXTERNOS = {"anthropic", "groq", "maritaca"}
 # roteamento automático. Claude fica reservado à solicitação explícita.
 TAREFAS_COMPLEXAS = {
     "analise_caso", "minutas", "dossie", "pesquisa_juridica",
-    "estrategia", "analise_juridica", "elaboracao_peca",
+    "estrategia", "analise_juridica", "elaboracao_peca", "auditoria_peca",
+    "analise_contrato", "jurimetria", "critica_adversarial", "rag_query",
+    "prazos", "audiencia", "ambiental", "trabalhista", "criminal", "familia",
+    "administrativo", "sucessoes", "imobiliario", "constitucional", "juizados",
+    "civel",
 }
 
 # Tarefas simples/econômicas → preferem Ollama/Groq (custo ~zero).
-TAREFAS_ECONOMICAS = {"resumo", "triagem", "chat_rapido"}
+TAREFAS_ECONOMICAS = {"resumo", "triagem", "chat_rapido", "honorarios"}
 
 
 @dataclass
