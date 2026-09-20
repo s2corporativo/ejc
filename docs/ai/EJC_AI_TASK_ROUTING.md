@@ -35,25 +35,21 @@ Fallback por keywords na mensagem (`_KEYWORDS_PARA_AGENTE`, linhas 86-98, mais e
 
 ## 3. TarefaIA → ConfiguracaoIA (system_prompts/router.py:53-72)
 
-`get_configuracao(tarefa)` devolve provider/model/prompt_key/max_tokens/temperature. `_RAPIDO`=ANTHROPIC_MODEL_RAPIDO, `_COMPLEXO`=ANTHROPIC_MODEL_COMPLEXO (defaults Haiku), `_GROQ`=llama-3.3-70b-versatile:
+`get_configuracao(tarefa)` devolve provider/model/prompt_key/max_tokens/temperature.
+O caminho legado segue a mesma política: Groq para triagem/resumo/default;
+Maritaca/Sabiá para leitura, análise, prazos, peças e pesquisa. Claude não é
+selecionado por este router; é uma escolha explícita no gateway/interface.
 
-| TarefaIA | Provider/modelo | max_tokens | temp | Justificativa |
-|---|---|---|---|---|
-| TRIAGEM | groq | 1200 | 0.1 | Classificação — Groq grátis |
-| RESUMO | groq | 900 | 0.2 | Sumarização — Groq grátis |
-| PRAZOS | anthropic/_RAPIDO | 1200 | 0.0 | Prazo fatal — precisão |
-| HONORARIOS | anthropic/_RAPIDO | 1800 | 0.1 | Honorários OAB/MG |
-| AUDIENCIA | anthropic/_RAPIDO | 2000 | 0.2 | Preparação de audiência |
-| RAG_QUERY | anthropic/_RAPIDO | 1500 | 0.1 | Síntese de RAG |
-| ANALISE_CASO | anthropic/_COMPLEXO | 4000 | 0.1 | Análise estratégica |
-| DOSSIE | anthropic/_COMPLEXO | 5000 | 0.1 | Dossiê completo |
-| MINUTAS | anthropic/_COMPLEXO | 6000 | 0.15 | Redação de peças |
-| AMBIENTAL | anthropic/_COMPLEXO | 4000 | 0.1 | Direito ambiental técnico |
-| TRABALHISTA | anthropic/_COMPLEXO | 3500 | 0.1 | CLT + TST |
-| CRIMINAL | anthropic/_COMPLEXO | 3000 | 0.1 | Criminal — sensível |
-| FAMILIA | anthropic/_COMPLEXO | 3000 | 0.1 | Família — sensível |
-| PESQUISA_JURIDICA | anthropic/_COMPLEXO | 3000 | 0.2 | Pesquisa jurisprudencial |
-| DEFAULT | anthropic/_RAPIDO | 2000 | 0.2 | Fallback — Haiku |
+| TarefaIA | Provider/modelo automático | Uso |
+|---|---|---|
+| TRIAGEM, RESUMO, DEFAULT | Groq | tarefas corriqueiras/econômicas |
+| PRAZOS, HONORARIOS, AUDIENCIA | Maritaca/Sabiá | leitura e raciocínio jurídico |
+| RAG_QUERY, PESQUISA_JURIDICA | Maritaca/Sabiá | leitura/síntese das fontes recuperadas e pesquisa |
+| ANALISE_CASO, DOSSIE | Maritaca/Sabiá | análise e estratégia |
+| MINUTAS e áreas jurídicas especializadas | Maritaca/Sabiá | redação/análise de mérito |
+
+Claude/Anthropic continua disponível com `provider_override="anthropic"`,
+acionado explicitamente no EJC.
 
 No núcleo, o orchestrator usa `cfg.temperature`/`cfg.max_tokens` e o system prompt do `prompt_key` do agente (orchestrator.py:126-127, 143). O provider/model da tabela é usado diretamente pelo caminho legado `executar_tarefa_ia` (ai_gateway.py:408-445); no caminho do núcleo quem decide o provider é a cadeia do gateway (abaixo).
 
@@ -65,13 +61,14 @@ No núcleo, o orchestrator usa `cfg.temperature`/`cfg.max_tokens` e o system pro
 
 | task_type | Cadeia declarada (ordem do TASK_ROUTING) | Modelo Ollama |
 |---|---|---|
-| analise_juridica | ollama → anthropic → groq | OLLAMA_MODEL_ANALISE (deepseek-r1:8b) |
-| elaboracao_peca | ollama → anthropic → groq | OLLAMA_MODEL_PETICAO (qwen2.5:14b) |
-| resumo | ollama → groq | OLLAMA_MODEL_RESUMO (gemma3:9b) |
-| chat_rapido | ollama → groq | OLLAMA_MODEL_CHAT (gemma3:9b) |
-| analise_contrato | ollama → anthropic → groq | OLLAMA_MODEL_CONTRATO (deepseek-r1:8b) |
-| estrategia | ollama → anthropic → groq | OLLAMA_MODEL_ANALISE |
-| auditoria_peca | ollama → anthropic → groq | OLLAMA_MODEL_PETICAO |
-| jurimetria | ollama → anthropic → groq | OLLAMA_MODEL_ANALISE |
+| analise_juridica | Maritaca → (Ollama) → Groq | leitura/pesquisa jurídica |
+| elaboracao_peca | Maritaca → (Ollama) → Groq | redação automática |
+| resumo | Groq → (Ollama) → Maritaca | rotina |
+| chat_rapido | Groq → (Ollama) → Maritaca | rotina |
+| analise_contrato | Maritaca → (Ollama) → Groq | leitura/raciocínio |
+| estrategia | Maritaca → (Ollama) → Groq | mérito |
+| auditoria_peca | Maritaca → (Ollama) → Groq | revisão |
+| jurimetria | Maritaca → (Ollama) → Groq | análise |
 
-Ordem final = `_ordenar_por_prioridade` por `AI_PROVIDER_PRIORITY` (default `ollama,anthropic,groq`) + filtro `_provider_elegivel` (ai_gateway.py:272-330): ollama exige OLLAMA_ENABLED; anthropic exige ENABLED+chave+AI_EXTERNAL_PROVIDERS_ALLOWED (modelo = ANTHROPIC_MODEL_COMPLEXO, linha 305); groq exige chave+externos permitidos. Cadeia vazia → último recurso `("groq", ...)` que falha com erro claro (linhas 327-329). `provider_override`/`AI_PROVIDER != "auto"` força um único provider (linhas 179-182, 316-317). Em cada tentativa a provider externo aplica-se a barreira final de PII (linhas 192-207); falha → próximo da cadeia com `fallback_ativado`/`fallback_motivo` no `GatewayResponse` (linhas 135-148).
+Ordem final usa `AI_PROVIDER_PRIORITY=groq,maritaca,ollama,anthropic` e,
+depois, a promoção por perfil da tarefa + filtro `_provider_elegivel` (ai_gateway.py:272-330): ollama exige OLLAMA_ENABLED; anthropic exige ENABLED+chave+AI_EXTERNAL_PROVIDERS_ALLOWED (modelo = ANTHROPIC_MODEL_COMPLEXO, linha 305); groq exige chave+externos permitidos. Cadeia vazia → último recurso `("groq", ...)` que falha com erro claro (linhas 327-329). `provider_override`/`AI_PROVIDER != "auto"` força um único provider (linhas 179-182, 316-317). Em cada tentativa a provider externo aplica-se a barreira final de PII (linhas 192-207); falha → próximo da cadeia com `fallback_ativado`/`fallback_motivo` no `GatewayResponse` (linhas 135-148).
