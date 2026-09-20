@@ -22,16 +22,20 @@ EMAIL_FAKE = "maria.exemplo@teste-ficticio.com.br"
 
 @pytest.fixture
 def s(monkeypatch):
-    """Settings cacheada com baseline determinística p/ os testes do núcleo:
-    Anthropic habilitado c/ chave fake, Groq c/ chave fake, Ollama desligado."""
+    """Baseline determinística: Groq+Maritaca automáticos, Claude disponível
+    apenas sob requisição explícita, Ollama desligado."""
     st = get_settings()
     monkeypatch.setattr(st, "ANTHROPIC_ENABLED", True)
     monkeypatch.setattr(st, "ANTHROPIC_API_KEY", "sk-ant-fake-para-testes")
     monkeypatch.setattr(st, "GROQ_API_KEY", "gsk-fake-para-testes")
+    monkeypatch.setattr(st, "GROQ_ENABLED", True)
+    monkeypatch.setattr(st, "MARITACA_ENABLED", True)
+    monkeypatch.setattr(st, "MARITACA_API_KEY", "mk-fake-para-testes")
+    monkeypatch.setattr(st, "ANTHROPIC_EXPLICIT_ONLY", True)
     monkeypatch.setattr(st, "OLLAMA_ENABLED", False)
     monkeypatch.setattr(st, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
     monkeypatch.setattr(st, "AI_REQUIRE_SANITIZATION_FOR_EXTERNAL", True)
-    monkeypatch.setattr(st, "AI_PROVIDER_PRIORITY", "ollama,anthropic,groq")
+    monkeypatch.setattr(st, "AI_PROVIDER_PRIORITY", "groq,maritaca,ollama,anthropic")
     monkeypatch.setattr(st, "AI_PROVIDER", "auto")
     monkeypatch.setattr(st, "AI_REQUIRE_HITL", True)
     return st
@@ -48,9 +52,13 @@ def _providers(decisao) -> list[str]:
 class TestAIProviderPolicy:
     def test_anthropic_elegivel_com_chave_e_externos_permitidos(self, s):
         from app.services.ai.provider_policy import AIProviderPolicy
-        d = AIProviderPolicy().avaliar("texto limpo sem dados pessoais", "analise_juridica")
+        d = AIProviderPolicy().avaliar(
+            "texto limpo sem dados pessoais",
+            "analise_juridica",
+            provider_override="anthropic",
+        )
         assert d.permitido is True
-        assert "anthropic" in _providers(d)
+        assert _providers(d) == ["anthropic"]
 
     def test_anthropic_inelegivel_sem_chave(self, s, monkeypatch):
         from app.services.ai.provider_policy import AIProviderPolicy
@@ -99,19 +107,20 @@ class TestAIProviderPolicy:
         assert d.permitido is True
         assert d.sanitizar_antes is True  # destino externo exige sanitização
 
-    def test_tarefa_complexa_prioriza_anthropic(self, s, monkeypatch):
+    def test_tarefa_complexa_prioriza_maritaca_e_exclui_claude_auto(self, s, monkeypatch):
         from app.services.ai.provider_policy import AIProviderPolicy
         monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
         d = AIProviderPolicy().avaliar("texto limpo", "analise_juridica")
-        assert _providers(d)[0] == "anthropic"
+        assert _providers(d)[0] == "maritaca"
+        assert "anthropic" not in _providers(d)
 
     def test_tarefa_economica_prioriza_local_barato(self, s, monkeypatch):
         from app.services.ai.provider_policy import AIProviderPolicy
         monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
         d = AIProviderPolicy().avaliar("texto limpo", "resumo")
-        assert _providers(d)[0] in ("ollama", "groq")
-        assert _providers(d)[0] == "ollama"  # prioridade ollama,anthropic,groq
-        # Sem Ollama, cai no Groq (custo ~zero) antes do Anthropic.
+        assert _providers(d)[0] == "groq"
+        # Sem Ollama, permanece no Groq (custo baixo); Claude continua fora
+        # até uma requisição explícita.
         monkeypatch.setattr(s, "OLLAMA_ENABLED", False)
         d2 = AIProviderPolicy().avaliar("texto limpo", "resumo")
         assert _providers(d2)[0] == "groq"
@@ -204,7 +213,7 @@ class TestModosSanitizacaoGateway:
             [{"role": "user", "content": f"Analise o caso do CPF {CPF_FAKE}."}],
             task_type="analise_caso",
         )
-        assert capturado["provider"] in ("anthropic", "groq")
+        assert capturado["provider"] in ("maritaca", "groq")
         # Provider recebeu marcador, nunca o CPF real.
         assert "[CPF_1]" in capturado["conteudo"]
         assert CPF_FAKE not in capturado["conteudo"]
@@ -500,10 +509,9 @@ class TestExecutarTarefaIAModos:
         assert registrado.get("pii_removida") is True
 
     async def test_fallback_local_antes_de_externo(self, s, monkeypatch):
-        """P1b (LGPD): na cadeia própria de executar_tarefa_ia o LOCAL (Ollama)
-        é tentado ANTES do externo (Groq). ANALISE_CASO tem cfg.provider=anthropic
-        → cadeia [anthropic, ollama, groq]. Todos falhando, a ORDEM de tentativa
-        prova o local-antes-de-externo (antes era groq antes de ollama)."""
+        """Na cadeia legada de mérito: Maritaca → Ollama → Groq. Se a Maritaca
+        falha e a IA local está habilitada, o fallback local ocorre antes de um
+        segundo envio externo."""
         from app.services import ai_gateway
         from app.services.system_prompts import TarefaIA
 
@@ -521,8 +529,8 @@ class TestExecutarTarefaIAModos:
         assert ordem.index("ollama") < ordem.index("groq")   # local antes do externo
 
     async def test_fallback_nao_silencioso_no_dict(self, s, monkeypatch):
-        """P1b: degradação Opus/Anthropic → outro provedor NÃO é silenciosa — o
-        dict de retorno carrega fallback_ativado/fallback_motivo (PII-safe)."""
+        """Degradação Maritaca → fallback NÃO é silenciosa; o retorno registra
+        fallback_ativado/fallback_motivo de forma PII-safe."""
         from app.services import ai_gateway
         from app.services.system_prompts import TarefaIA
 
@@ -531,16 +539,15 @@ class TestExecutarTarefaIAModos:
 
         async def _fake_provedor(provider, model, messages, temperature, max_tokens):
             chamadas.append(provider)
-            if provider == "anthropic":           # primário falha
+            if provider == "maritaca":            # primário automático falha
                 raise RuntimeError("primario indisponivel")
             return "rascunho", {"model": model or provider, "input_tokens": 1, "output_tokens": 1}
 
         monkeypatch.setattr(ai_gateway, "_chamar_provedor", _fake_provedor)
         out = await ai_gateway.executar_tarefa_ia(TarefaIA.ANALISE_CASO, "texto limpo")
-        # Respondeu por um provedor de fallback (ollama, local), não o primário.
-        assert out["provider"] != "anthropic"
+        assert out["provider"] != "maritaca"
         assert out["fallback_ativado"] is True
-        assert out["fallback_motivo"] and out["fallback_motivo"].startswith("anthropic:")
+        assert out["fallback_motivo"] and out["fallback_motivo"].startswith("maritaca:")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -548,15 +555,20 @@ class TestExecutarTarefaIAModos:
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestResolverCadeia:
-    def test_analise_juridica_inclui_anthropic_na_ordem_de_prioridade(self, s):
+    def test_analise_juridica_usa_maritaca_e_exclui_claude_auto(self, s):
         from app.services.ai_gateway import _resolver_cadeia
         cadeia = _resolver_cadeia("analise_juridica", None, None)
         providers = [p for p, _ in cadeia]
-        assert "anthropic" in providers
-        # Ollama OFF → anthropic vem antes de groq (AI_PROVIDER_PRIORITY).
-        assert providers.index("anthropic") < providers.index("groq")
-        modelo_anthropic = dict(cadeia)["anthropic"]
-        assert modelo_anthropic == (s.ANTHROPIC_MODEL_COMPLEXO or s.ANTHROPIC_MODEL_RAPIDO)
+        assert providers[0] == "maritaca"
+        assert "anthropic" not in providers
+
+    def test_anthropic_continua_disponivel_por_requisicao_explicita(self, s):
+        from app.services.ai_gateway import _resolver_cadeia
+        cadeia = _resolver_cadeia("analise_juridica", "anthropic", None)
+        assert [p for p, _ in cadeia] == ["anthropic"]
+        assert dict(cadeia)["anthropic"] == (
+            s.ANTHROPIC_MODEL_COMPLEXO or s.ANTHROPIC_MODEL_RAPIDO
+        )
 
     def test_sem_externos_e_sem_ollama_cadeia_vazia_fail_closed(self, s, monkeypatch):
         # Hardening (PR #322 — ai_core_hardening_patch.resolver_fail_closed): sem
