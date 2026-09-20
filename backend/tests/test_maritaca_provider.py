@@ -1,4 +1,4 @@
-"""Testes do provider Maritaca (Sabiá) — plugável, default OFF, externo (LGPD).
+"""Testes do provider Maritaca (Sabiá) — jurídico automático, externo (LGPD).
 
 Sem rede: a única função de I/O (`_post`) é mockada; settings via monkeypatch
 na instância cacheada de get_settings() (mesmo padrão de test_agente_ia).
@@ -110,7 +110,7 @@ def test_desabilitado_nao_elegivel_e_fora_da_cadeia(monkeypatch):
     st = get_settings()
     monkeypatch.setattr(st, "MARITACA_ENABLED", False, raising=False)
     monkeypatch.setattr(st, "MARITACA_API_KEY", "", raising=False)
-    # Default OFF: inelegível e ausente da cadeia (comportamento atual preservado).
+    # Kill-switch explícito: desligada fica inelegível e ausente da cadeia.
     assert ai_gateway._provider_elegivel("maritaca") is False
     cadeia = ai_gateway._resolver_cadeia("elaboracao_peca", None, None)
     assert "maritaca" not in [p for p, _ in cadeia]
