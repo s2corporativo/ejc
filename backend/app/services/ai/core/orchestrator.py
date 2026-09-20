@@ -91,6 +91,9 @@ class SingleAICoreOrchestrator:
         # "alto" aqui anulava AI_NIVEL_INTELIGENCIA_MERITO=maximo para todo o
         # núcleo (o piso só vale quando o chamador não pede nível).
         nivel_inteligencia: str | None = None,
+        # Provider explícito vem de uma ação deliberada da interface (ex.:
+        # "Usar Claude"). None mantém o roteamento automático Groq/Maritaca.
+        provider_override: str | None = None,
     ) -> dict:
         params = params or {}
 
@@ -147,6 +150,7 @@ class SingleAICoreOrchestrator:
             user=user,
             usar_rag=usar_rag,
             exige_fonte=intent.exige_fonte,
+            provider_override=provider_override,
         )
 
         # 4) Sanitização LGPD do input ("sanitiza e segue" — 2026-07-06; não
@@ -299,6 +303,7 @@ class SingleAICoreOrchestrator:
             temperature=cfg.temperature,
             max_tokens=cfg.max_tokens,
             nivel_inteligencia=nivel_inteligencia,
+            provider_override=provider_override,
             entidades=entidades or None,
             modo_sanitizacao=modo_sigilo,
         )
