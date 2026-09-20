@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import func, select, text
@@ -9,8 +10,12 @@ from app.core.config import get_settings
 
 
 
-def _classificar_backup_estado(row: Any | None) -> dict[str, Any]:
-    """Traduz telemetria persistida em estado seguro, sem expor erro bruto."""
+def _classificar_backup_estado(
+    row: Any | None,
+    *,
+    agora: datetime | None = None,
+) -> dict[str, Any]:
+    """Classifica prova offsite com a mesma janela diária do heartbeat (26 h)."""
     if not row:
         return {
             "state": "nunca_executou",
@@ -20,30 +25,64 @@ def _classificar_backup_estado(row: Any | None) -> dict[str, Any]:
     status = str(row.get("last_status") or "").strip().lower()
     offsite_ok = row.get("offsite_ok")
     checked_at = row.get("last_run_at")
+    checked_iso = checked_at.isoformat() if checked_at else None
 
-    if status == "sucesso" and offsite_ok is True:
-        state = "ok"
-        detail = "Último backup cifrado concluiu o envio offsite com sucesso."
-    elif status == "erro":
-        state = "erro"
-        detail = "A última execução do backup registrou falha."
-    elif status == "parcial" or offsite_ok is False:
-        state = "alerta"
-        detail = (
-            "A última execução preservou estado local, mas o envio offsite "
-            "não foi confirmado."
-        )
-    else:
-        state = "alerta"
-        detail = (
-            "Há execução de backup registrada, mas a prova do envio offsite "
-            "está incompleta."
-        )
+    if status == "erro":
+        return {
+            "state": "erro",
+            "detail": "A última execução do backup registrou falha.",
+            "checked_at": checked_iso,
+        }
+
+    if checked_at is None:
+        return {
+            "state": "alerta",
+            "detail": (
+                "Há estado de backup persistido, mas sem horário de execução; "
+                "a prova offsite não pode ser considerada atual."
+            ),
+        }
+
+    if checked_at.tzinfo is None:
+        checked_at = checked_at.replace(tzinfo=timezone.utc)
+    now = agora or datetime.now(timezone.utc)
+    if now - checked_at > timedelta(hours=26):
+        return {
+            "state": "alerta",
+            "detail": (
+                "A última prova de backup offsite está vencida para a cadência "
+                "diária esperada (mais de 26 horas)."
+            ),
+            "checked_at": checked_iso,
+        }
+
+    if offsite_ok is True:
+        detail = "Último backup cifrado confirmou o envio offsite."
+        if status == "parcial":
+            detail += " O ciclo teve aviso local, sem invalidar a cópia offsite."
+        return {
+            "state": "ok",
+            "detail": detail,
+            "checked_at": checked_iso,
+        }
+
+    if offsite_ok is False:
+        return {
+            "state": "alerta",
+            "detail": (
+                "A última execução não confirmou o envio offsite; a cópia local "
+                "não substitui a continuidade externa."
+            ),
+            "checked_at": checked_iso,
+        }
 
     return {
-        "state": state,
-        "detail": detail,
-        "checked_at": checked_at.isoformat() if checked_at else None,
+        "state": "alerta",
+        "detail": (
+            "Há execução de backup registrada, mas a prova do envio offsite "
+            "está incompleta."
+        ),
+        "checked_at": checked_iso,
     }
 
 
