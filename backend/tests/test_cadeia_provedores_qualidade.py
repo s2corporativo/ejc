@@ -1,21 +1,11 @@
-"""Cadeia de provedores e piso de raciocínio (decisão do titular, 18/08).
+"""Política operacional de provedores de IA (20/09/2026).
 
-O titular reportou que o nível de inteligência precisava ser "altíssimo" e
-perguntou por que o Ollama estava na configuração. A auditoria do módulo achou
-três coisas que puxavam a qualidade para baixo, todas por DEFAULT do código:
-
-  1. `AI_PROVIDER_PRIORITY` começava por "ollama" — um modelo local de 8-14B
-     na frente do Claude para redigir peça e analisar caso;
-  2. `OLLAMA_ENABLED` nascia True, mas o stack padrão não sobe o serviço
-     (profile opt-in "ia-local") — provider morto na frente da cadeia;
-  3. o gateway ignorava a priorização por complexidade que a AIProviderPolicy
-     já calculava ("tarefa complexa — Anthropic priorizado"), e o piso de
-     raciocínio era "padrao" para todo call site que não pedisse nível — que
-     é a maioria.
-
-O docker-compose de produção já corrigia (1) e (2) por env; o default do código
-não, e valia para tudo que roda fora do compose. Estes testes fixam os defaults
-e as regras, para que a próxima mudança de configuração seja deliberada.
+Contrato atual:
+  - Groq atende tarefas corriqueiras e de baixo custo;
+  - Maritaca/Sabiá atende leitura, análise, pesquisa e mérito jurídico;
+  - Ollama é opt-in para sigilo/fallback local;
+  - Claude permanece habilitável, mas só é consumido quando requisitado
+    explicitamente no próprio EJC (ou no modo agêntico deliberado).
 """
 from app.core.config import Settings
 from app.services import ai_gateway as g
@@ -23,13 +13,14 @@ from app.services import ai_gateway as g
 
 # ── Defaults de configuração ─────────────────────────────────────────────────
 
-def test_prioridade_default_comeca_pelo_modelo_forte():
-    ordem = [p.strip() for p in Settings().AI_PROVIDER_PRIORITY.split(",")]
-    assert ordem[0] == "anthropic"
-    # A IA local fica por último: é rede de segurança, não caminho padrão.
-    assert ordem[-1] == "ollama"
-    # Sabiá (PT-BR jurídico) antes do generalista.
-    assert ordem.index("maritaca") < ordem.index("groq")
+def test_prioridade_default_segue_politica_operacional():
+    s = Settings()
+    ordem = [p.strip() for p in s.AI_PROVIDER_PRIORITY.split(",")]
+    assert ordem[0] == "groq"
+    assert ordem.index("maritaca") < ordem.index("ollama")
+    assert ordem[-1] == "anthropic"
+    assert s.ANTHROPIC_EXPLICIT_ONLY is True
+    assert s.MARITACA_ENABLED is True
 
 
 def test_ollama_nasce_desligado():
