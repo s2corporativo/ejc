@@ -1245,7 +1245,11 @@ async def _reembedar_rag_orfaos():
             return
         from scripts.reembedar_chunks_orfaos import reembedar
         resultado = await reembedar(
-            batch_size=int(getattr(settings, "RAG_AUTO_REEMBED_BATCH", 20)))
+            batch_size=int(getattr(settings, "RAG_AUTO_REEMBED_BATCH", 20)),
+            max_docs=int(
+                getattr(settings, "RAG_AUTO_REEMBED_MAX_DOCS_PER_RUN", 20)
+            ),
+        )
     except Exception as e:  # nunca derruba o scheduler
         logger.warning("[Scheduler] auto-reembed falhou (será retentado): %s", str(e)[:200])
         from app.services.heartbeat_service import JOB_REEMBED_RAG
