@@ -358,7 +358,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
                              "versao": getattr(r, "versao", None),
                              "score": round(float(r.sim), 4)}
     except Exception as _e:
-        logger.warning(f"Fusao lexical (RRF) falhou, mantendo semantico: {_e}")
+        logger.warning("Fusao lexical (RRF) falhou, mantendo semantico: %s", descricao_tecnica_segura(_e))
         return semanticos
     # A-3 (auditoria IA 2026-07-17): perna FULL-TEXT (tsvector 'portuguese',
     # BM25-like) — melhor para termos raros/citações exatas (art./súmula/nº CNJ).
@@ -407,7 +407,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
                                  "versao": getattr(r, "versao", None),
                                  "score": round(float(r.rank), 4)}
         except Exception as _ef:
-            logger.warning(f"Fusao FTS (RRF) falhou, ignorando esta perna: {_ef}")
+            logger.warning("Fusao FTS (RRF) falhou, ignorando esta perna: %s", descricao_tecnica_segura(_ef))
     ordenados = sorted(fusion.items(), key=lambda kv: kv[1], reverse=True)
     saida = []
     for cid, _s in ordenados[:limite]:
@@ -571,7 +571,7 @@ async def buscar_contexto_rag(
                     return await _reranker.rerank(consulta, fundidos, limite)
                 # Sem vetores gravados ainda → cai no textual abaixo
             except Exception as e:
-                logger.warning(f"Busca vetorial falhou, usando textual: {e}")
+                logger.warning("Busca vetorial falhou, usando textual: %s", descricao_tecnica_segura(e))
 
     # Tentativa 1: busca textual nos chunks (funciona sem embeddings)
     termos = [t for t in consulta.replace(",", " ").split() if len(t) >= 3][:8]
@@ -627,7 +627,7 @@ async def buscar_contexto_rag(
         # Reranqueia também o fallback textual (rerank off → res_txt[:limite]).
         return await _reranker.rerank(consulta, res_txt, limite)
     except Exception as e:
-        logger.warning(f"RAG search falhou: {e}")
+        logger.warning("RAG search falhou: %s", descricao_tecnica_segura(e))
         return []
 
 
@@ -1149,7 +1149,7 @@ async def detectar_teses_ocultas(
             "aviso": "⚠️ RASCUNHO — teses exigem verificação e validação do advogado (HITL).",
         }
     except Exception as e:
-        logger.error(f"Groq teses ocultas: {e}")
+        logger.error("IA teses ocultas falhou: %s", descricao_tecnica_segura(e))
         return {"erro": "Serviço de IA indisponível no momento"}
 
 
@@ -1173,7 +1173,7 @@ async def auditar_peca(
             "aviso": "⚠️ Auditoria automática — não substitui a revisão do advogado.",
         }
     except Exception as e:
-        logger.error(f"Groq auditor: {e}")
+        logger.error("IA auditoria de peça falhou: %s", descricao_tecnica_segura(e))
         return {"erro": "Serviço de IA indisponível no momento"}
 
 
@@ -1198,7 +1198,7 @@ async def preparar_audiencia(
             "aviso": "⚠️ Material preparatório — adapte à sua estratégia.",
         }
     except Exception as e:
-        logger.error(f"Groq audiência: {e}")
+        logger.error("IA preparação de audiência falhou: %s", descricao_tecnica_segura(e))
         return {"erro": "Serviço de IA indisponível no momento"}
 
 
@@ -1338,5 +1338,5 @@ async def analisar_contrato(
                      "do advogado responsável. Base legal limitada às fontes citadas.",
         }
     except Exception as e:
-        logger.error(f"Groq contrato: {e}")
+        logger.error("IA análise contratual falhou: %s", descricao_tecnica_segura(e))
         return {"erro": "Serviço de IA indisponível no momento"}
