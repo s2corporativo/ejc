@@ -229,6 +229,23 @@ def _estado_overlay_seguro() -> dict[str, Any]:
         return {"status": "indisponivel", "aplicado": False}
 
 
+def _backup_configurado(settings: Settings) -> bool:
+    """Valida requisitos declarativos seguros do backup canônico.
+
+    A execução real é refinada pelo estado persistido do backup.
+    BACKUP_REMOTE é legado e não participa da decisão.
+    """
+    if not settings.BACKUP_ENABLED:
+        return False
+    if not (settings.BACKUP_ENCRYPTION_KEY or "").strip():
+        return False
+    destino = (settings.BACKUP_DESTINO or "gdrive").strip().lower()
+    if destino == "gdrive":
+        return bool((settings.BACKUP_DRIVE_FOLDER_ID or "").strip())
+    if destino == "rclone":
+        return bool((settings.BACKUP_RCLONE_REMOTE or "").strip())
+    return False
+
 def build_integration_status(
     settings: Settings,
     credential_states: dict[str, str] | None = None,
@@ -565,10 +582,20 @@ def build_integration_status(
             key="backup_offsite",
             label="Backup offsite",
             group="Infraestrutura",
-            enabled=bool(settings.BACKUP_REMOTE),
-            configured=bool(settings.BACKUP_REMOTE),
-            ready_detail="Destino remoto declarado; a execução deve ser confirmada pelos logs de backup.",
-            mode=f"retenção local {settings.BACKUP_RETENTION_DAYS} dias",
+            enabled=settings.BACKUP_ENABLED,
+            configured=_backup_configurado(settings),
+            ready_detail=(
+                "Backup cifrado habilitado e destino offsite declarado; "
+                "o último resultado operacional refina este estado."
+            ),
+            missing_detail=(
+                "Backup habilitado, mas faltam requisitos do destino canônico "
+                "(chave de criptografia e pasta Drive ou remote rclone)."
+            ),
+            mode=(
+                f"{(settings.BACKUP_DESTINO or 'gdrive').strip().lower()} · "
+                f"retenção local {settings.BACKUP_RETENTION_DAYS} dias"
+            ),
         ),
     ]
     if credential_states:
