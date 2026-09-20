@@ -1,145 +1,1756 @@
-# Inventário Arquitetural Completo do EJC — Fase 0
+# Inventário Arquitetural EJC — Fase 0
 
-Fingerprint das fontes analisadas: `151548336fdf253a08998b0c8fd60de840ccf8b40c70cc4d304ac2994db2cf94`
+Gerado em: 2026-09-20T13:13:37.395397+00:00
+Fingerprint das fontes: `39582ab0c8103c118532b5c4e694f68ca71131c3469b02b9961e5609315614a2`
 
-> Este inventário é conservador e auditável. Nenhum item pode ser removido apenas por heurística. A classificação `excluir após migração` exige prova de ausência de consumidores, migração/backfill, telemetria, testes e rollback.
+> Este inventário é descritivo e conservador. Nenhuma exclusão deve ocorrer apenas por heurística. 
+> Itens marcados para exclusão exigem migração, telemetria, busca de consumidores e plano de rollback.
 
-## Cobertura efetiva
+## Cobertura
 
-- **5.493 itens individualizados e classificados**;
-- **85 páginas** e **90 componentes** React;
-- **58 rotas frontend**;
-- **163 routers**, sendo **162 montados** e **1 não montado**;
-- **810 endpoints FastAPI**;
-- **233 serviços backend**;
-- **98 tabelas ORM**;
-- **2.098 funções Python** e **1.221 funções TypeScript/TSX**;
-- **492 classes Python**.
+- Itens totais: **8077**
+- Páginas: **189**
+- Rotas frontend: **59**
+- Endpoints backend: **896**
+- Serviços backend: **354**
+- Tabelas ORM detectadas: **133**
+- Routers não montados: **9**
+- Itens que ainda exigem revisão humana: **7500**
 
-## Resultado da classificação
+## Classificação
 
 | Classificação | Quantidade |
 |---|---:|
-| manter | 5.053 |
-| consolidar | 180 |
-| renomear | 25 |
-| redirecionar | 5 |
-| corrigir | 208 |
-| desativar | 0 |
-| excluir após migração | 22 |
+| manter | 7685 |
+| consolidar | 192 |
+| renomear | 24 |
+| redirecionar | 0 |
+| corrigir | 79 |
+| desativar | 92 |
+| excluir após migração | 5 |
 
-Todos os **5.493 itens** receberam uma classificação válida. A maioria permanece em `manter` por padrão conservador até revisão funcional específica.
+## Tipos inventariados
 
-## Achados estruturais prioritários
+| Tipo | Quantidade |
+|---|---:|
+| class | 760 |
+| component | 111 |
+| endpoint | 896 |
+| frontend_function | 1675 |
+| frontend_route | 59 |
+| function | 3540 |
+| model_file | 72 |
+| page | 189 |
+| python_module | 128 |
+| router | 160 |
+| service | 354 |
+| table | 133 |
 
-1. **Caso × Processo:** a entidade `Process` 1:N já é canônica, mas `Case` ainda conserva campos processuais achatados. A ação correta é migrar dependências e dados, não criar novo módulo.
-2. **CasoDetalhe:** permanece a principal página de alto acoplamento e deve ser decomposta por abas/domínios sem alterar contratos externos.
-3. **Registro central:** `backend/app/main.py` e `frontend/src/config/moduleRegistry.tsx` concentram responsabilidades de montagem, catálogo, RBAC e navegação; devem ser modularizados gradualmente.
-4. **IA:** há várias fachadas especializadas. Devem ser consolidados contratos, schemas, HITL, auditoria e fallback no núcleo canônico, sem eliminar capacidades jurídicas especializadas.
-5. **Peças:** `legal_docs` deve permanecer como trilha canônica; `peca_geracao`, `peca_geracao_router` e fluxos correlatos precisam convergir para uma máquina de estados única.
-6. **Rotas históricas:** `/prazos`, `/tarefas`, `/intimacoes`, `/suspensoes` e `/knowledge-hub` devem permanecer como aliases/redirecionamentos durante a migração.
-7. **Implementação não montada:** somente `backend/app/modules/case_partes/router.py` permaneceu realmente sem caminho até o FastAPI. Existe versão canônica montada em `backend/app/routers/case_partes.py`; a versão paralela é candidata à exclusão após migração.
+## Origem das classificações
 
-## Famílias objetivas candidatas à consolidação
+| Origem | Quantidade |
+|---|---:|
+| conservative-default | 7251 |
+| mount-analysis | 92 |
+| naming-heuristic | 5 |
+| override | 137 |
+| parent-override | 409 |
+| refined-default | 150 |
+| refined-duplicate-family | 2 |
+| refined-mount-analysis | 31 |
 
-### Frontend
+## Famílias candidatas à consolidação
 
-- `frontend/src/pages/Dashboard.tsx`
-- `frontend/src/pages/DashboardModern.tsx`
-
-### Backend — routers
-
-- `backend/app/routers/data_room.py`
-- `backend/app/routers/data_room_v4.py`
-- `backend/app/routers/peca_geracao.py`
-- `backend/app/routers/peca_geracao_router.py`
-- `backend/app/routers/sala_de_guerra.py`
-- `backend/app/routers/sala_de_guerra_v3.py`
-- `backend/app/routers/teses.py`
-- `backend/app/routers/teses_v4.py`
-
-### Backend — serviços
-
+### `service:backend/app/services:google_drive`
 - `backend/app/services/google_drive.py`
 - `backend/app/services/google_drive_service.py`
 
-## Routers com maior superfície
 
-| Router | Endpoints |
-|---|---:|
-| `backend/app/routers/ramos.py` | 81 |
-| `backend/app/routers/ai.py` | 20 |
-| `backend/app/routers/cases.py` | 19 |
-| `backend/app/routers/raio_x.py` | 17 |
-| `backend/app/routers/clients.py` | 14 |
-| `backend/app/routers/legal_docs.py` | 14 |
-| `backend/app/routers/novos_modulos.py` | 14 |
-| `backend/app/routers/users.py` | 14 |
-| `backend/app/routers/rag.py` | 13 |
-| `backend/app/routers/atendimentos.py` | 12 |
-| `backend/app/routers/documents.py` | 12 |
+## Páginas
 
-## Decisões explícitas principais
+| Tipo | Item | Arquivo/rota | Classificação | Fonte | Revisão |
+|---|---|---|---|---|---|
+| page | `AcessibilidadeEstrutura.test` | `frontend/src/pages/AcessibilidadeEstrutura.test.tsx` | **manter** | conservative-default | sim |
+| page | `AgendaDia.test` | `frontend/src/pages/AgendaDia.test.tsx` | **manter** | conservative-default | sim |
+| page | `AgendaDia` | `frontend/src/pages/AgendaDia.tsx` | **manter** | conservative-default | sim |
+| page | `AgenteIA` | `frontend/src/pages/AgenteIA.tsx` | **manter** | conservative-default | sim |
+| page | `Ajuda` | `frontend/src/pages/Ajuda.tsx` | **manter** | conservative-default | sim |
+| page | `Ajuizamento` | `frontend/src/pages/Ajuizamento.tsx` | **manter** | refined-default | sim |
+| page | `AjuizamentoPerfis` | `frontend/src/pages/AjuizamentoPerfis.tsx` | **manter** | conservative-default | sim |
+| page | `Assinaturas.test` | `frontend/src/pages/Assinaturas.test.tsx` | **manter** | conservative-default | sim |
+| page | `Assinaturas` | `frontend/src/pages/Assinaturas.tsx` | **manter** | conservative-default | sim |
+| page | `AssistenteIA.test` | `frontend/src/pages/AssistenteIA.test.tsx` | **manter** | conservative-default | sim |
+| page | `AssistenteIA` | `frontend/src/pages/AssistenteIA.tsx` | **manter** | conservative-default | sim |
+| page | `Auditoria` | `frontend/src/pages/Auditoria.tsx` | **manter** | refined-default | sim |
+| page | `BancoTeses.test` | `frontend/src/pages/BancoTeses.test.tsx` | **manter** | conservative-default | sim |
+| page | `BancoTeses` | `frontend/src/pages/BancoTeses.tsx` | **manter** | conservative-default | sim |
+| page | `CRMLeads` | `frontend/src/pages/CRMLeads.tsx` | **manter** | conservative-default | sim |
+| page | `CadastroManual.contexto.test` | `frontend/src/pages/CadastroManual.contexto.test.tsx` | **manter** | conservative-default | sim |
+| page | `CadastroManual` | `frontend/src/pages/CadastroManual.tsx` | **manter** | conservative-default | sim |
+| page | `CasoDetalhe.test` | `frontend/src/pages/CasoDetalhe.test.tsx` | **manter** | conservative-default | sim |
+| page | `CasoDetalhe` | `frontend/src/pages/CasoDetalhe.tsx` | **corrigir** | override | não |
+| page | `CaseDocumentActions` | `frontend/src/pages/CasoDetalhe/CaseDocumentActions.tsx` | **manter** | conservative-default | sim |
+| page | `IaDefensivaCaso` | `frontend/src/pages/CasoDetalhe/IaDefensivaCaso.tsx` | **manter** | conservative-default | sim |
+| page | `TabDocumentos.contexto.test` | `frontend/src/pages/CasoDetalhe/TabDocumentos.contexto.test.tsx` | **manter** | conservative-default | sim |
+| page | `TabDocumentos.test` | `frontend/src/pages/CasoDetalhe/TabDocumentos.test.tsx` | **manter** | conservative-default | sim |
+| page | `TabDocumentos` | `frontend/src/pages/CasoDetalhe/TabDocumentos.tsx` | **manter** | conservative-default | sim |
+| page | `TabFerramentas` | `frontend/src/pages/CasoDetalhe/TabFerramentas.tsx` | **manter** | conservative-default | sim |
+| page | `TabIndicadoresJuridicos` | `frontend/src/pages/CasoDetalhe/TabIndicadoresJuridicos.tsx` | **manter** | conservative-default | sim |
+| page | `TabMemoria` | `frontend/src/pages/CasoDetalhe/TabMemoria.tsx` | **manter** | conservative-default | sim |
+| page | `TabPartes.test` | `frontend/src/pages/CasoDetalhe/TabPartes.test.tsx` | **manter** | conservative-default | sim |
+| page | `TabPartes` | `frontend/src/pages/CasoDetalhe/TabPartes.tsx` | **manter** | conservative-default | sim |
+| page | `TabPecas.test` | `frontend/src/pages/CasoDetalhe/TabPecas.test.tsx` | **manter** | conservative-default | sim |
+| page | `TabPecas` | `frontend/src/pages/CasoDetalhe/TabPecas.tsx` | **manter** | conservative-default | sim |
+| page | `TabPrazos` | `frontend/src/pages/CasoDetalhe/TabPrazos.tsx` | **manter** | conservative-default | sim |
+| page | `TabProcessos` | `frontend/src/pages/CasoDetalhe/TabProcessos.tsx` | **manter** | conservative-default | sim |
+| page | `TabResumo` | `frontend/src/pages/CasoDetalhe/TabResumo.tsx` | **manter** | conservative-default | sim |
+| page | `TabRisco` | `frontend/src/pages/CasoDetalhe/TabRisco.tsx` | **manter** | conservative-default | sim |
+| page | `TabScore` | `frontend/src/pages/CasoDetalhe/TabScore.tsx` | **manter** | conservative-default | sim |
+| page | `TabTeses` | `frontend/src/pages/CasoDetalhe/TabTeses.tsx` | **manter** | conservative-default | sim |
+| page | `TabTimeline.test` | `frontend/src/pages/CasoDetalhe/TabTimeline.test.tsx` | **manter** | conservative-default | sim |
+| page | `TabTimeline` | `frontend/src/pages/CasoDetalhe/TabTimeline.tsx` | **manter** | conservative-default | sim |
+| page | `TesesVinculadasPanel` | `frontend/src/pages/CasoDetalhe/TesesVinculadasPanel.tsx` | **manter** | conservative-default | sim |
+| page | `Casos.status.test` | `frontend/src/pages/Casos.status.test.tsx` | **manter** | conservative-default | sim |
+| page | `Casos` | `frontend/src/pages/Casos.tsx` | **manter** | conservative-default | sim |
+| page | `Central` | `frontend/src/pages/Central.tsx` | **manter** | conservative-default | sim |
+| page | `CentralAtividades` | `frontend/src/pages/CentralAtividades.tsx` | **manter** | conservative-default | sim |
+| page | `acoesLegadas` | `frontend/src/pages/CentralAtividades/acoesLegadas.tsx` | **manter** | conservative-default | sim |
+| page | `CentralDiagnostico.test` | `frontend/src/pages/CentralDiagnostico.test.tsx` | **manter** | conservative-default | sim |
+| page | `CentralDiagnostico` | `frontend/src/pages/CentralDiagnostico.tsx` | **manter** | conservative-default | sim |
+| page | `CentralRelacionamento` | `frontend/src/pages/CentralRelacionamento.tsx` | **manter** | conservative-default | sim |
+| page | `Checklists.error.test` | `frontend/src/pages/Checklists.error.test.tsx` | **manter** | conservative-default | sim |
+| page | `Checklists` | `frontend/src/pages/Checklists.tsx` | **manter** | refined-default | sim |
+| page | `Clientes.admissao.test` | `frontend/src/pages/Clientes.admissao.test.tsx` | **manter** | conservative-default | sim |
+| page | `Clientes.exclusao.test` | `frontend/src/pages/Clientes.exclusao.test.tsx` | **manter** | conservative-default | sim |
+| page | `Clientes` | `frontend/src/pages/Clientes.tsx` | **manter** | conservative-default | sim |
+| page | `Configuracoes` | `frontend/src/pages/Configuracoes.tsx` | **manter** | conservative-default | sim |
+| page | `Configurar2FA` | `frontend/src/pages/Configurar2FA.tsx` | **manter** | conservative-default | sim |
+| page | `Conhecimento` | `frontend/src/pages/Conhecimento.tsx` | **manter** | conservative-default | sim |
+| page | `ConhecimentoGovernado` | `frontend/src/pages/ConhecimentoGovernado.tsx` | **manter** | conservative-default | sim |
+| page | `ConteudoJuridico.test` | `frontend/src/pages/ConteudoJuridico.test.tsx` | **manter** | conservative-default | sim |
+| page | `ConteudoJuridico` | `frontend/src/pages/ConteudoJuridico.tsx` | **manter** | conservative-default | sim |
+| page | `Dashboard.test` | `frontend/src/pages/Dashboard.test.tsx` | **manter** | conservative-default | sim |
+| page | `Dashboard` | `frontend/src/pages/Dashboard.tsx` | **manter** | refined-default | sim |
+| page | `DashboardIA.test` | `frontend/src/pages/DashboardIA.test.tsx` | **manter** | conservative-default | sim |
+| page | `DashboardIA` | `frontend/src/pages/DashboardIA.tsx` | **manter** | conservative-default | sim |
+| page | `DashboardUltra.test` | `frontend/src/pages/DashboardUltra.test.tsx` | **manter** | conservative-default | sim |
+| page | `DashboardUltra` | `frontend/src/pages/DashboardUltra.tsx` | **manter** | conservative-default | sim |
+| page | `DataJudBusca.contexto.test` | `frontend/src/pages/DataJudBusca.contexto.test.tsx` | **manter** | conservative-default | sim |
+| page | `DataJudBusca` | `frontend/src/pages/DataJudBusca.tsx` | **manter** | conservative-default | sim |
+| page | `DataRoom` | `frontend/src/pages/DataRoom.tsx` | **manter** | conservative-default | sim |
+| page | `Despesas` | `frontend/src/pages/Despesas.tsx` | **manter** | refined-default | sim |
+| page | `DespesasRecorrentes` | `frontend/src/pages/DespesasRecorrentes.tsx` | **manter** | conservative-default | sim |
+| page | `DiarioOficial` | `frontend/src/pages/DiarioOficial.tsx` | **manter** | conservative-default | sim |
+| page | `Documentos.test` | `frontend/src/pages/Documentos.test.tsx` | **manter** | conservative-default | sim |
+| page | `Documentos` | `frontend/src/pages/Documentos.tsx` | **manter** | conservative-default | sim |
+| page | `DossieCliente.test` | `frontend/src/pages/DossieCliente.test.tsx` | **manter** | conservative-default | sim |
+| page | `DossieCliente` | `frontend/src/pages/DossieCliente.tsx` | **manter** | conservative-default | sim |
+| page | `EntradaUnica.contexto.test` | `frontend/src/pages/EntradaUnica.contexto.test.tsx` | **manter** | conservative-default | sim |
+| page | `EntradaUnica.test` | `frontend/src/pages/EntradaUnica.test.tsx` | **manter** | conservative-default | sim |
+| page | `EntradaUnica` | `frontend/src/pages/EntradaUnica.tsx` | **manter** | conservative-default | sim |
+| page | `Confirmacao` | `frontend/src/pages/EntradaUnica/Confirmacao.tsx` | **manter** | conservative-default | sim |
+| page | `DossieJuridico` | `frontend/src/pages/EntradaUnica/DossieJuridico.tsx` | **manter** | conservative-default | sim |
+| page | `TelaEnvio` | `frontend/src/pages/EntradaUnica/TelaEnvio.tsx` | **manter** | conservative-default | sim |
+| page | `EntrevistaInteligente.chanceExito.test` | `frontend/src/pages/EntrevistaInteligente.chanceExito.test.tsx` | **manter** | conservative-default | sim |
+| page | `EntrevistaInteligente` | `frontend/src/pages/EntrevistaInteligente.tsx` | **manter** | conservative-default | sim |
+| page | `Ferramentas.lifecycle.test` | `frontend/src/pages/Ferramentas.lifecycle.test.tsx` | **manter** | conservative-default | sim |
+| page | `Ferramentas` | `frontend/src/pages/Ferramentas.tsx` | **manter** | conservative-default | sim |
+| page | `FerramentasIA` | `frontend/src/pages/FerramentasIA.tsx` | **manter** | conservative-default | sim |
+| page | `FinanceiroDashboard` | `frontend/src/pages/FinanceiroDashboard.tsx` | **manter** | conservative-default | sim |
+| page | `FinanceiroWorkspace` | `frontend/src/pages/FinanceiroWorkspace.tsx` | **manter** | conservative-default | sim |
+| page | `GestaoDocumental` | `frontend/src/pages/GestaoDocumental.tsx` | **manter** | conservative-default | sim |
+| page | `GovernancaIA` | `frontend/src/pages/GovernancaIA.tsx` | **manter** | conservative-default | sim |
+| page | `Honorarios` | `frontend/src/pages/Honorarios.tsx` | **manter** | refined-default | sim |
+| page | `HonorariosPercentualExito.test` | `frontend/src/pages/HonorariosPercentualExito.test.tsx` | **manter** | conservative-default | sim |
+| page | `IA` | `frontend/src/pages/IA.tsx` | **manter** | conservative-default | sim |
+| page | `InteligenciaWorkspace` | `frontend/src/pages/InteligenciaWorkspace.tsx` | **manter** | conservative-default | sim |
+| page | `JornadaCaso` | `frontend/src/pages/JornadaCaso.tsx` | **manter** | conservative-default | sim |
+| page | `Jurimetria.truth.test` | `frontend/src/pages/Jurimetria.truth.test.tsx` | **manter** | conservative-default | sim |
+| page | `Jurimetria` | `frontend/src/pages/Jurimetria.tsx` | **manter** | refined-default | sim |
+| page | `Kanban.test` | `frontend/src/pages/Kanban.test.tsx` | **manter** | conservative-default | sim |
+| page | `Kanban` | `frontend/src/pages/Kanban.tsx` | **manter** | refined-default | sim |
+| page | `Lixeira.pagination.test` | `frontend/src/pages/Lixeira.pagination.test.tsx` | **manter** | conservative-default | sim |
+| page | `Lixeira` | `frontend/src/pages/Lixeira.tsx` | **manter** | conservative-default | sim |
+| page | `LoginModern` | `frontend/src/pages/LoginModern.tsx` | **manter** | conservative-default | sim |
+| page | `MapaModulos` | `frontend/src/pages/MapaModulos.tsx` | **manter** | conservative-default | sim |
+| page | `NotFound` | `frontend/src/pages/NotFound.tsx` | **manter** | conservative-default | sim |
+| page | `NotasFiscais` | `frontend/src/pages/NotasFiscais.tsx` | **manter** | conservative-default | sim |
+| page | `OfficeContracts` | `frontend/src/pages/OfficeContracts.tsx` | **manter** | conservative-default | sim |
+| page | `PainelProvedoresIA.status.test` | `frontend/src/pages/PainelProvedoresIA.status.test.tsx` | **manter** | conservative-default | sim |
+| page | `PainelProvedoresIA` | `frontend/src/pages/PainelProvedoresIA.tsx` | **manter** | conservative-default | sim |
+| page | `Pecas.citacoes.test` | `frontend/src/pages/Pecas.citacoes.test.tsx` | **manter** | conservative-default | sim |
+| page | `Pecas` | `frontend/src/pages/Pecas.tsx` | **manter** | conservative-default | sim |
+| page | `PesquisaJuridica.test` | `frontend/src/pages/PesquisaJuridica.test.tsx` | **manter** | conservative-default | sim |
+| page | `PesquisaJuridica` | `frontend/src/pages/PesquisaJuridica.tsx` | **manter** | conservative-default | sim |
+| page | `Produtividade.export.test` | `frontend/src/pages/Produtividade.export.test.tsx` | **manter** | conservative-default | sim |
+| page | `Produtividade` | `frontend/src/pages/Produtividade.tsx` | **manter** | refined-default | sim |
+| page | `Prompts.test` | `frontend/src/pages/Prompts.test.tsx` | **manter** | conservative-default | sim |
+| page | `Prompts` | `frontend/src/pages/Prompts.tsx` | **manter** | conservative-default | sim |
+| page | `Radar` | `frontend/src/pages/Radar.tsx` | **manter** | conservative-default | sim |
+| page | `RadarCompliance` | `frontend/src/pages/RadarCompliance.tsx` | **manter** | conservative-default | sim |
+| page | `RadarRegulatorio` | `frontend/src/pages/RadarRegulatorio.tsx` | **manter** | conservative-default | sim |
+| page | `RaioXProcesso` | `frontend/src/pages/RaioXProcesso.tsx` | **manter** | conservative-default | sim |
+| page | `RamosHub` | `frontend/src/pages/RamosHub.tsx` | **renomear** | override | não |
+| page | `RecuperarSenha` | `frontend/src/pages/RecuperarSenha.tsx` | **manter** | conservative-default | sim |
+| page | `RedefinirSenha` | `frontend/src/pages/RedefinirSenha.tsx` | **manter** | conservative-default | sim |
+| page | `SalaJuridica.autosave.test` | `frontend/src/pages/SalaJuridica.autosave.test.tsx` | **manter** | conservative-default | sim |
+| page | `SalaJuridica.test` | `frontend/src/pages/SalaJuridica.test.tsx` | **manter** | conservative-default | sim |
+| page | `SalaJuridica` | `frontend/src/pages/SalaJuridica.tsx` | **manter** | conservative-default | sim |
+| page | `Sociedade` | `frontend/src/pages/Sociedade.tsx` | **manter** | conservative-default | sim |
+| page | `SociedadeWorkspace` | `frontend/src/pages/SociedadeWorkspace.tsx` | **manter** | conservative-default | sim |
+| page | `TributarioWorkspace` | `frontend/src/pages/TributarioWorkspace.tsx` | **manter** | conservative-default | sim |
+| page | `TrocarSenha` | `frontend/src/pages/TrocarSenha.tsx` | **manter** | conservative-default | sim |
+| page | `Usuarios` | `frontend/src/pages/Usuarios.tsx` | **manter** | conservative-default | sim |
+| page | `Workflow` | `frontend/src/pages/Workflow.tsx` | **manter** | refined-default | sim |
+| page | `Central.test` | `frontend/src/pages/__tests__/Central.test.tsx` | **manter** | conservative-default | sim |
+| page | `Configuracoes.test` | `frontend/src/pages/__tests__/Configuracoes.test.tsx` | **manter** | conservative-default | sim |
+| page | `DiarioOficial.test` | `frontend/src/pages/__tests__/DiarioOficial.test.tsx` | **manter** | conservative-default | sim |
+| page | `JornadaCaso.test` | `frontend/src/pages/__tests__/JornadaCaso.test.tsx` | **manter** | conservative-default | sim |
+| page | `NotFound.test` | `frontend/src/pages/__tests__/NotFound.test.tsx` | **manter** | conservative-default | sim |
+| page | `Sociedade.test` | `frontend/src/pages/__tests__/Sociedade.test.tsx` | **manter** | conservative-default | sim |
+| page | `CasosFiltros` | `frontend/src/pages/casos/CasosFiltros.tsx` | **manter** | conservative-default | sim |
+| page | `CasosTabela` | `frontend/src/pages/casos/CasosTabela.tsx` | **manter** | conservative-default | sim |
+| page | `NovoCasoDocumentoModal` | `frontend/src/pages/casos/NovoCasoDocumentoModal.tsx` | **manter** | conservative-default | sim |
+| page | `PreviewExtracaoModal` | `frontend/src/pages/casos/PreviewExtracaoModal.tsx` | **manter** | conservative-default | sim |
+| page | `RevisaoCriacaoModal` | `frontend/src/pages/casos/RevisaoCriacaoModal.tsx` | **manter** | conservative-default | sim |
+| page | `ClienteNaoAcompanhado` | `frontend/src/pages/dpt360/ClienteNaoAcompanhado.tsx` | **manter** | conservative-default | sim |
+| page | `CompanyLegalTwin.test` | `frontend/src/pages/dpt360/CompanyLegalTwin.test.tsx` | **manter** | conservative-default | sim |
+| page | `CompanyLegalTwin` | `frontend/src/pages/dpt360/CompanyLegalTwin.tsx` | **manter** | conservative-default | sim |
+| page | `Dpt360Workspace.test` | `frontend/src/pages/dpt360/Dpt360Workspace.test.tsx` | **manter** | conservative-default | sim |
+| page | `Dpt360Workspace` | `frontend/src/pages/dpt360/Dpt360Workspace.tsx` | **manter** | conservative-default | sim |
+| page | `DptDiagnosis.test` | `frontend/src/pages/dpt360/DptDiagnosis.test.tsx` | **manter** | conservative-default | sim |
+| page | `DptDiagnosis` | `frontend/src/pages/dpt360/DptDiagnosis.tsx` | **manter** | conservative-default | sim |
+| page | `DptFeatureRouter.test` | `frontend/src/pages/dpt360/DptFeatureRouter.test.tsx` | **manter** | conservative-default | sim |
+| page | `DptFeatureRouter` | `frontend/src/pages/dpt360/DptFeatureRouter.tsx` | **manter** | conservative-default | sim |
+| page | `DptIntelligence.selects.test` | `frontend/src/pages/dpt360/DptIntelligence.selects.test.tsx` | **manter** | conservative-default | sim |
+| page | `DptIntelligence` | `frontend/src/pages/dpt360/DptIntelligence.tsx` | **manter** | conservative-default | sim |
+| page | `DptObligations.test` | `frontend/src/pages/dpt360/DptObligations.test.tsx` | **manter** | conservative-default | sim |
+| page | `DptObligations` | `frontend/src/pages/dpt360/DptObligations.tsx` | **manter** | conservative-default | sim |
+| page | `DptOpportunities.test` | `frontend/src/pages/dpt360/DptOpportunities.test.tsx` | **manter** | conservative-default | sim |
+| page | `DptOpportunities` | `frontend/src/pages/dpt360/DptOpportunities.tsx` | **manter** | conservative-default | sim |
+| page | `DptPortalGuard.test` | `frontend/src/pages/dpt360/DptPortalGuard.test.tsx` | **manter** | conservative-default | sim |
+| page | `DptPortalGuard` | `frontend/src/pages/dpt360/DptPortalGuard.tsx` | **manter** | conservative-default | sim |
+| page | `DptRadar.test` | `frontend/src/pages/dpt360/DptRadar.test.tsx` | **manter** | conservative-default | sim |
+| page | `DptRadar` | `frontend/src/pages/dpt360/DptRadar.tsx` | **manter** | conservative-default | sim |
+| page | `DptReports.test` | `frontend/src/pages/dpt360/DptReports.test.tsx` | **manter** | conservative-default | sim |
+| page | `DptReports` | `frontend/src/pages/dpt360/DptReports.tsx` | **manter** | conservative-default | sim |
+| page | `DptTools.test` | `frontend/src/pages/dpt360/DptTools.test.tsx` | **manter** | conservative-default | sim |
+| page | `DptTools` | `frontend/src/pages/dpt360/DptTools.tsx` | **manter** | conservative-default | sim |
+| page | `NovaPecaManualModal` | `frontend/src/pages/pecas/NovaPecaManualModal.tsx` | **manter** | conservative-default | sim |
+| page | `PecaMaisAcoes` | `frontend/src/pages/pecas/PecaMaisAcoes.tsx` | **manter** | conservative-default | sim |
+| page | `PecaWorkspaceModal` | `frontend/src/pages/pecas/PecaWorkspaceModal.tsx` | **manter** | conservative-default | sim |
+| page | `PecasLista` | `frontend/src/pages/pecas/PecasLista.tsx` | **manter** | conservative-default | sim |
+| page | `ProtocoloModal` | `frontend/src/pages/pecas/ProtocoloModal.tsx` | **manter** | conservative-default | sim |
+| page | `RevisaoJuridicaModal` | `frontend/src/pages/pecas/RevisaoJuridicaModal.tsx` | **manter** | conservative-default | sim |
+| page | `TemplateModal` | `frontend/src/pages/pecas/TemplateModal.tsx` | **manter** | conservative-default | sim |
+| page | `pecasBadges` | `frontend/src/pages/pecas/pecasBadges.tsx` | **manter** | conservative-default | sim |
+| page | `PortalAssinaturas` | `frontend/src/pages/portal/PortalAssinaturas.tsx` | **manter** | conservative-default | sim |
+| page | `PortalCasoDetalhe` | `frontend/src/pages/portal/PortalCasoDetalhe.tsx` | **manter** | conservative-default | sim |
+| page | `PortalCasos` | `frontend/src/pages/portal/PortalCasos.tsx` | **manter** | conservative-default | sim |
+| page | `PortalDashboard` | `frontend/src/pages/portal/PortalDashboard.tsx` | **manter** | conservative-default | sim |
+| page | `PortalDocumentos` | `frontend/src/pages/portal/PortalDocumentos.tsx` | **manter** | conservative-default | sim |
+| page | `PortalFinanceiro` | `frontend/src/pages/portal/PortalFinanceiro.tsx` | **manter** | conservative-default | sim |
+| page | `PortalMensagens` | `frontend/src/pages/portal/PortalMensagens.tsx` | **manter** | conservative-default | sim |
+| page | `FichaEspecializada.reset.test` | `frontend/src/pages/ramos/FichaEspecializada.reset.test.tsx` | **manter** | conservative-default | sim |
+| page | `FichaEspecializada` | `frontend/src/pages/ramos/FichaEspecializada.tsx` | **manter** | conservative-default | sim |
+| page | `RamoAnalise.test` | `frontend/src/pages/ramos/RamoAnalise.test.tsx` | **manter** | conservative-default | sim |
+| page | `RamoAnalise` | `frontend/src/pages/ramos/RamoAnalise.tsx` | **manter** | conservative-default | sim |
+| page | `RamoBase.test` | `frontend/src/pages/ramos/RamoBase.test.tsx` | **manter** | conservative-default | sim |
+| page | `RamoBase` | `frontend/src/pages/ramos/RamoBase.tsx` | **renomear** | override | não |
+| page | `RamoFerramenta.test` | `frontend/src/pages/ramos/RamoFerramenta.test.tsx` | **manter** | conservative-default | sim |
+| page | `RamoFerramenta` | `frontend/src/pages/ramos/RamoFerramenta.tsx` | **manter** | conservative-default | sim |
 
-### Manter
+## Rotas frontend
 
-- `backend/app/models/process.py` — entidade canônica Processo;
-- `backend/app/routers/ai_core.py` — fachada canônica da IA;
-- `backend/app/services/ai_gateway.py` e `backend/app/services/ai/core/*` — núcleo/gateway de IA;
-- `backend/app/routers/legal_docs.py` — trilha canônica de peças/documentos jurídicos;
-- cofre de credenciais: router e service.
+| Tipo | Item | Arquivo/rota | Classificação | Fonte | Revisão |
+|---|---|---|---|---|---|
+| frontend_route | `/login` | `/login:88` | **manter** | conservative-default | sim |
+| frontend_route | `/recuperar-senha` | `/recuperar-senha:89` | **manter** | conservative-default | sim |
+| frontend_route | `/redefinir-senha` | `/redefinir-senha:90` | **manter** | conservative-default | sim |
+| frontend_route | `/trocar-senha` | `/trocar-senha:91` | **manter** | conservative-default | sim |
+| frontend_route | `/configurar-2fa` | `/configurar-2fa:100` | **manter** | conservative-default | sim |
+| frontend_route | `/portal` | `/portal:109` | **manter** | conservative-default | sim |
+| frontend_route | `/ia-governanca/provedores` | `/ia-governanca/provedores:182` | **manter** | conservative-default | sim |
+| frontend_route | `/clientes/:clientId/dossie` | `/clientes/:clientId/dossie:201` | **manter** | conservative-default | sim |
+| frontend_route | `/casos/:caseId/sala-de-guerra` | `/casos/:caseId/sala-de-guerra:205` | **manter** | conservative-default | sim |
+| frontend_route | `/ramos/:slug` | `/ramos/:slug:209` | **manter** | conservative-default | sim |
+| frontend_route | `*` | `*:215` | **manter** | conservative-default | sim |
+| frontend_route | `dashboard` | `/:239` | **manter** | conservative-default | sim |
+| frontend_route | `dpt360` | `/dpt360:255` | **manter** | conservative-default | sim |
+| frontend_route | `entrada` | `/entrada:278` | **manter** | conservative-default | sim |
+| frontend_route | `caso-novo` | `/casos/novo:301` | **manter** | conservative-default | sim |
+| frontend_route | `crm` | `/crm-leads:318` | **manter** | conservative-default | sim |
+| frontend_route | `cadastro-manual` | `/cadastro-manual:347` | **manter** | conservative-default | sim |
+| frontend_route | `cliente-detalhe` | `/clientes/:clientId:365` | **manter** | conservative-default | sim |
+| frontend_route | `sala-juridica` | `/sala-juridica:379` | **manter** | conservative-default | sim |
+| frontend_route | `raio-x-processo` | `/raio-x:397` | **manter** | conservative-default | sim |
+| frontend_route | `casos` | `/casos:415` | **manter** | conservative-default | sim |
+| frontend_route | `caso-detalhe` | `/casos/:id:431` | **manter** | conservative-default | sim |
+| frontend_route | `caso-jornada` | `/casos/:id/jornada:443` | **consolidar** | override | não |
+| frontend_route | `ajuizamento` | `/ajuizamento:455` | **manter** | conservative-default | sim |
+| frontend_route | `ajuizamento-perfis` | `/ajuizamento/perfis:471` | **manter** | conservative-default | sim |
+| frontend_route | `caso-entrevista` | `/casos/:id/entrevista:487` | **manter** | conservative-default | sim |
+| frontend_route | `ramos` | `/areas-de-atuacao:503` | **manter** | conservative-default | sim |
+| frontend_route | `ramo-detalhe` | `/areas-de-atuacao/:slug:518` | **manter** | conservative-default | sim |
+| frontend_route | `atividades` | `/atividades:556` | **manter** | conservative-default | sim |
+| frontend_route | `atividades-dia` | `/atividades/dia/:date:580` | **manter** | conservative-default | sim |
+| frontend_route | `documentos` | `/documentos:594` | **manter** | conservative-default | sim |
+| frontend_route | `pecas` | `/pecas:610` | **manter** | conservative-default | sim |
+| frontend_route | `assinaturas` | `/assinaturas:627` | **manter** | conservative-default | sim |
+| frontend_route | `workflow` | `/workflow:640` | **manter** | conservative-default | sim |
+| frontend_route | `checklists` | `/checklists:653` | **manter** | conservative-default | sim |
+| frontend_route | `inteligencia` | `/inteligencia:667` | **manter** | conservative-default | sim |
+| frontend_route | `banco-teses` | `/teses:697` | **manter** | conservative-default | sim |
+| frontend_route | `prompts` | `/prompts:713` | **manter** | conservative-default | sim |
+| frontend_route | `datajud` | `/datajud:727` | **manter** | conservative-default | sim |
+| frontend_route | `diario-oficial` | `/diario-oficial:740` | **manter** | conservative-default | sim |
+| frontend_route | `radar` | `/radar:754` | **manter** | conservative-default | sim |
+| frontend_route | `financeiro` | `/financeiro:773` | **manter** | conservative-default | sim |
+| frontend_route | `sociedade` | `/gestao-escritorio/sociedade:795` | **manter** | conservative-default | sim |
+| frontend_route | `produtividade` | `/produtividade:816` | **manter** | conservative-default | sim |
+| frontend_route | `configuracoes` | `/configuracoes:831` | **manter** | conservative-default | sim |
+| frontend_route | `governanca-ia` | `/ia-governanca:845` | **manter** | conservative-default | sim |
+| frontend_route | `central-diagnostico` | `/diagnostico:860` | **manter** | conservative-default | sim |
+| frontend_route | `auditoria` | `/auditoria:878` | **manter** | conservative-default | sim |
+| frontend_route | `mapa-modulos` | `/mapa-modulos:892` | **manter** | conservative-default | sim |
+| frontend_route | `usuarios` | `/usuarios:906` | **manter** | conservative-default | sim |
+| frontend_route | `lixeira` | `/lixeira:923` | **manter** | conservative-default | sim |
+| frontend_route | `ajuda` | `/ajuda:937` | **manter** | conservative-default | sim |
+| frontend_route | `ferramentas` | `/ferramentas:949` | **manter** | conservative-default | sim |
+| frontend_route | `portal-casos` | `casos:1352` | **manter** | conservative-default | sim |
+| frontend_route | `portal-caso-detalhe` | `casos/:id:1362` | **manter** | conservative-default | sim |
+| frontend_route | `portal-financeiro` | `financeiro:1371` | **manter** | conservative-default | sim |
+| frontend_route | `portal-assinaturas` | `assinaturas:1381` | **manter** | conservative-default | sim |
+| frontend_route | `portal-mensagens` | `mensagens:1391` | **manter** | conservative-default | sim |
+| frontend_route | `portal-documentos` | `documentos:1401` | **manter** | conservative-default | sim |
 
-### Consolidar
+## Endpoints backend
 
-- Jornada do caso no Orquestrador;
-- dashboards paralelos;
-- fachadas de IA e IA especializada, preservando responsabilidades jurídicas;
-- Data Room, Teses, Sala de Guerra e geração de peças;
-- serviços paralelos do Google Drive.
+| Tipo | Item | Arquivo/rota | Classificação | Fonte | Revisão |
+|---|---|---|---|---|---|
+| endpoint | `consultar_processo_datajud` | `/api/integracoes/datajud/processos/{tribunal}/{numero_processo}:145` | **manter** | conservative-default | sim |
+| endpoint | `consultar_djen_por_oab` | `/api/integracoes/djen/oab/{uf}/{numero_oab}:172` | **manter** | conservative-default | sim |
+| endpoint | `consultar_djen_por_processo` | `/api/integracoes/djen/processos/{numero_processo}:200` | **manter** | conservative-default | sim |
+| endpoint | `consultar_cnpj` | `/api/integracoes/brasilapi/cnpj/{cnpj}:217` | **manter** | conservative-default | sim |
+| endpoint | `consultar_cep` | `/api/integracoes/brasilapi/cep/{cep}:234` | **manter** | conservative-default | sim |
+| endpoint | `versao_tpu` | `/api/integracoes/cnj/tpu/versao:250` | **manter** | conservative-default | sim |
+| endpoint | `pesquisar_tpu` | `/api/integracoes/cnj/tpu/pesquisar:262` | **manter** | conservative-default | sim |
+| endpoint | `listar_acordaos_tcu` | `/api/integracoes/tcu/acordaos:282` | **manter** | conservative-default | sim |
+| endpoint | `municipios_ibge` | `/api/integracoes/ibge/municipios/{uf}:299` | **manter** | conservative-default | sim |
+| endpoint | `canonicalizar_municipio_ibge` | `/api/integracoes/ibge/canonicalizar:313` | **manter** | conservative-default | sim |
+| endpoint | `recursos_ckan_oficiais` | `/api/integracoes/dados-publicos/{fonte}/recursos:334` | **manter** | conservative-default | sim |
+| endpoint | `recursos_pgfn` | `/api/integracoes/pgfn/divida-ativa/recursos:366` | **manter** | conservative-default | sim |
+| endpoint | `buscar_querido_diario` | `/api/integracoes/querido-diario/{codigo_ibge}:387` | **manter** | conservative-default | sim |
+| endpoint | `listar_camadas_sisema` | `/api/integracoes/ide-sisema/camadas:412` | **manter** | conservative-default | sim |
+| endpoint | `consultar_sisema` | `/api/integracoes/ide-sisema/feicoes:433` | **manter** | conservative-default | sim |
+| endpoint | `health` | `/api/api/health:597` | **corrigir** | parent-override | não |
+| endpoint | `readiness` | `/api/api/health/ready:620` | **corrigir** | parent-override | não |
+| endpoint | `dashboard` | `/api/dpt360/dashboard:43` | **manter** | refined-mount-analysis | não |
+| endpoint | `company_profile` | `/api/dpt360/companies/{client_id}:76` | **manter** | refined-mount-analysis | não |
+| endpoint | `diagnostic_readiness` | `/api/dpt360/diagnostics/readiness/{client_id}:90` | **manter** | refined-mount-analysis | não |
+| endpoint | `radar_today` | `/api/dpt360/radar/today:113` | **manter** | refined-mount-analysis | não |
+| endpoint | `executive_report` | `/api/dpt360/reports/executive/{client_id}:122` | **manter** | refined-mount-analysis | não |
+| endpoint | `intake_opportunity_queue` | `/api/dpt360/intake/opportunities:138` | **manter** | refined-mount-analysis | não |
+| endpoint | `intake_opportunity` | `/api/dpt360/intake/opportunities:152` | **manter** | refined-mount-analysis | não |
+| endpoint | `run_action` | `/api/dpt360/actions:166` | **manter** | refined-mount-analysis | não |
+| endpoint | `mudar_ciclo_vida_oportunidade` | `/api/dpt360/oportunidades/{batch_id}/ciclo-vida:182` | **manter** | refined-mount-analysis | não |
+| endpoint | `meu_estilo` | `/api/advogado-estilo/me:22` | **manter** | refined-mount-analysis | não |
+| endpoint | `listar` | `/api/agenda-eventos/:103` | **manter** | conservative-default | sim |
+| endpoint | `criar` | `/api/agenda-eventos/:142` | **manter** | conservative-default | sim |
+| endpoint | `atualizar` | `/api/agenda-eventos/{evento_id}:180` | **manter** | conservative-default | sim |
+| endpoint | `remover` | `/api/agenda-eventos/{evento_id}:248` | **manter** | conservative-default | sim |
+| endpoint | `verificar_citacoes_juris` | `/api/ai/citacoes/verificar:58` | **consolidar** | parent-override | não |
+| endpoint | `analisar` | `/api/ai/analisar-caso:83` | **consolidar** | parent-override | não |
+| endpoint | `dossie_caso` | `/api/ai/dossie/{case_id}:122` | **consolidar** | parent-override | não |
+| endpoint | `resumir` | `/api/ai/resumir-documento:148` | **consolidar** | parent-override | não |
+| endpoint | `listar_logs` | `/api/ai/logs:173` | **consolidar** | parent-override | não |
+| endpoint | `atualizar_hitl` | `/api/ai/logs/{log_id}/hitl:248` | **consolidar** | parent-override | não |
+| endpoint | `citacoes_do_log` | `/api/ai/logs/{log_id}/citacoes:327` | **consolidar** | parent-override | não |
+| endpoint | `feedback_resposta_ia` | `/api/ai/logs/{log_id}/feedback:390` | **consolidar** | parent-override | não |
+| endpoint | `resumo_feedback_ia` | `/api/ai/logs/feedback/resumo:428` | **consolidar** | parent-override | não |
+| endpoint | `teses_ocultas` | `/api/ai/teses-ocultas:498` | **consolidar** | parent-override | não |
+| endpoint | `auditar` | `/api/ai/auditar-peca:524` | **consolidar** | parent-override | não |
+| endpoint | `audiencia` | `/api/ai/preparar-audiencia:574` | **consolidar** | parent-override | não |
+| endpoint | `gateway_health` | `/api/ai/gateway/health:596` | **consolidar** | parent-override | não |
+| endpoint | `roteamento_preview` | `/api/ai/roteamento/preview:606` | **consolidar** | parent-override | não |
+| endpoint | `assistente_estrategico` | `/api/ai/casos/{case_id}/assistente:679` | **consolidar** | parent-override | não |
+| endpoint | `dual_ia` | `/api/ai/casos/{case_id}/dual:827` | **consolidar** | parent-override | não |
+| endpoint | `visual_law` | `/api/ai/caso/{case_id}/visual-law:975` | **consolidar** | parent-override | não |
+| endpoint | `motor_estrategia` | `/api/ai/caso/{case_id}/estrategia:1017` | **consolidar** | parent-override | não |
+| endpoint | `analisar_contrato_endpoint` | `/api/ai/analisar-contrato:1144` | **consolidar** | parent-override | não |
+| endpoint | `detectar_prazos` | `/api/ai/detectar-prazos:1175` | **consolidar** | parent-override | não |
+| endpoint | `traduzir_andamento` | `/api/ai/traduzir-andamento:1279` | **consolidar** | parent-override | não |
+| endpoint | `resumir_texto` | `/api/ai/resumir-texto:1311` | **consolidar** | parent-override | não |
+| endpoint | `gerar_minuta` | `/api/ai/gerar-minuta:1358` | **consolidar** | parent-override | não |
+| endpoint | `pesquisar` | `/api/ai/pesquisar:1446` | **consolidar** | parent-override | não |
+| endpoint | `sugestao_honorarios` | `/api/ai/sugestao-honorarios:1521` | **consolidar** | parent-override | não |
+| endpoint | `core_chat` | `/api/ai/core/chat:118` | **manter** | parent-override | não |
+| endpoint | `core_task` | `/api/ai/core/task:136` | **manter** | parent-override | não |
+| endpoint | `core_analyze` | `/api/ai/core/analyze:156` | **manter** | parent-override | não |
+| endpoint | `core_generate` | `/api/ai/core/generate:176` | **manter** | parent-override | não |
+| endpoint | `core_report` | `/api/ai/core/report:194` | **manter** | parent-override | não |
+| endpoint | `core_agents` | `/api/ai/core/agents:214` | **manter** | parent-override | não |
+| endpoint | `core_skills` | `/api/ai/core/skills:227` | **manter** | parent-override | não |
+| endpoint | `core_native_skills_coverage` | `/api/ai/core/native-skills/coverage:233` | **manter** | parent-override | não |
+| endpoint | `core_status` | `/api/ai/core/status:239` | **manter** | parent-override | não |
+| endpoint | `listar_acoes_contextuais` | `/api/ai/skills/contextual:228` | **consolidar** | parent-override | não |
+| endpoint | `listar_skills` | `/api/ai/skills/list:265` | **consolidar** | parent-override | não |
+| endpoint | `executar_skill` | `/api/ai/skills/execute:289` | **consolidar** | parent-override | não |
+| endpoint | `executar_skill_documento` | `/api/ai/skills/execute-doc:330` | **consolidar** | parent-override | não |
+| endpoint | `transcrever_midia` | `/api/ai/skills/transcribe-media:482` | **consolidar** | parent-override | não |
+| endpoint | `status_ia` | `/api/ai/status:87` | **consolidar** | parent-override | não |
+| endpoint | `executar_ia` | `/api/ai/executar:112` | **consolidar** | parent-override | não |
+| endpoint | `capacidades` | `/api/ajuizamento/capacidades:83` | **manter** | conservative-default | sim |
+| endpoint | `listar_perfis` | `/api/ajuizamento/perfis:104` | **manter** | conservative-default | sim |
+| endpoint | `criar_perfil` | `/api/ajuizamento/perfis:109` | **manter** | conservative-default | sim |
+| endpoint | `atualizar_perfil` | `/api/ajuizamento/perfis/{perfil_id}:123` | **manter** | conservative-default | sim |
+| endpoint | `listar_tpu` | `/api/ajuizamento/tpu/{tipo}:142` | **manter** | conservative-default | sim |
+| endpoint | `sincronizar_tpu` | `/api/ajuizamento/tpu/sincronizar:153` | **manter** | conservative-default | sim |
+| endpoint | `importar_tpu` | `/api/ajuizamento/tpu/importar:164` | **manter** | conservative-default | sim |
+| endpoint | `listar_filings` | `/api/ajuizamento/filings:175` | **manter** | conservative-default | sim |
+| endpoint | `criar_filing` | `/api/ajuizamento/filings:193` | **manter** | conservative-default | sim |
+| endpoint | `obter_filing` | `/api/ajuizamento/filings/{filing_id}:208` | **manter** | conservative-default | sim |
+| endpoint | `atualizar_filing` | `/api/ajuizamento/filings/{filing_id}:214` | **manter** | conservative-default | sim |
+| endpoint | `validar_filing` | `/api/ajuizamento/filings/{filing_id}/validar:230` | **manter** | conservative-default | sim |
+| endpoint | `aprovar_filing` | `/api/ajuizamento/filings/{filing_id}/aprovar:244` | **manter** | conservative-default | sim |
+| endpoint | `assinar_filing` | `/api/ajuizamento/filings/{filing_id}/assinar:261` | **manter** | conservative-default | sim |
+| endpoint | `protocolar_filing` | `/api/ajuizamento/filings/{filing_id}/protocolar:279` | **manter** | conservative-default | sim |
+| endpoint | `confirmar_manual` | `/api/ajuizamento/filings/{filing_id}/confirmar-manual:298` | **manter** | conservative-default | sim |
+| endpoint | `sincronizar_filing` | `/api/ajuizamento/filings/{filing_id}/sincronizar:314` | **manter** | conservative-default | sim |
+| endpoint | `cancelar_filing` | `/api/ajuizamento/filings/{filing_id}/cancelar:330` | **manter** | conservative-default | sim |
+| endpoint | `transicoes_filing` | `/api/ajuizamento/filings/{filing_id}/transicoes:343` | **manter** | conservative-default | sim |
+| endpoint | `protocolos` | `/api/ajuizamento/protocolos:363` | **manter** | conservative-default | sim |
+| endpoint | `simular` | `/api/ambiental/estrategia/simular:92` | **manter** | conservative-default | sim |
+| endpoint | `peca_conversao` | `/api/ambiental/estrategia/peca-conversao:215` | **manter** | conservative-default | sim |
+| endpoint | `download_peca` | `/api/ambiental/estrategia/peca/{arquivo_id}/download:239` | **manter** | conservative-default | sim |
+| endpoint | `analisar_documento` | `/api/analise-bancaria/contrato:132` | **manter** | conservative-default | sim |
+| endpoint | `modalidades` | `/api/analise-bancaria/modalidades:169` | **manter** | conservative-default | sim |
+| endpoint | `taxa_media` | `/api/analise-bancaria/taxa-media:196` | **manter** | conservative-default | sim |
+| endpoint | `calcular_cet_endpoint` | `/api/analise-bancaria/cet:234` | **manter** | conservative-default | sim |
+| endpoint | `avaliar_abusividade_endpoint` | `/api/analise-bancaria/abusividade:269` | **manter** | conservative-default | sim |
+| endpoint | `jurimetria_endpoint` | `/api/analytics/jurimetria:32` | **manter** | conservative-default | sim |
+| endpoint | `taskscore_endpoint` | `/api/analytics/taskscore:48` | **manter** | conservative-default | sim |
+| endpoint | `funil_endpoint` | `/api/analytics/funil:57` | **manter** | conservative-default | sim |
+| endpoint | `rentabilidade_endpoint` | `/api/analytics/rentabilidade:66` | **manter** | conservative-default | sim |
+| endpoint | `onboarding_pendencias` | `/api/analytics/onboarding:76` | **manter** | conservative-default | sim |
+| endpoint | `onboarding_cliente` | `/api/analytics/onboarding/{client_id}:86` | **manter** | conservative-default | sim |
+| endpoint | `case_health_ranking` | `/api/analytics/case-health:100` | **manter** | conservative-default | sim |
+| endpoint | `case_health_detalhe` | `/api/analytics/case-health/{case_id}:111` | **manter** | conservative-default | sim |
+| endpoint | `status_andamentos` | `/api/casos/{case_id}/andamentos/status:37` | **manter** | conservative-default | sim |
+| endpoint | `sincronizar_andamentos` | `/api/casos/{case_id}/andamentos/sincronizar:58` | **manter** | conservative-default | sim |
+| endpoint | `preview` | `/api/anexos/preview:76` | **manter** | conservative-default | sim |
+| endpoint | `gerar` | `/api/anexos/gerar:109` | **manter** | conservative-default | sim |
+| endpoint | `razoes` | `/api/anexos/razoes:132` | **manter** | conservative-default | sim |
+| endpoint | `criar_api_key` | `/api/api-keys:50` | **manter** | refined-mount-analysis | não |
+| endpoint | `listar_api_keys` | `/api/api-keys:83` | **manter** | refined-mount-analysis | não |
+| endpoint | `revogar_api_key` | `/api/api-keys/{key_id}/revogar:95` | **manter** | refined-mount-analysis | não |
+| endpoint | `route_manifest` | `/api/architecture/routes:16` | **manter** | conservative-default | sim |
+| endpoint | `semantic_route_audit` | `/api/architecture/semantic-audit:22` | **manter** | conservative-default | sim |
+| endpoint | `uso_de_rotas` | `/api/architecture/uso-rotas:36` | **manter** | conservative-default | sim |
+| endpoint | `domain_contracts` | `/api/architecture/contracts:60` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/areas:13` | **manter** | conservative-default | sim |
+| endpoint | `listar_atendimentos` | `/api/atendimentos:428` | **manter** | conservative-default | sim |
+| endpoint | `criar_atendimento` | `/api/atendimentos:520` | **manter** | conservative-default | sim |
+| endpoint | `listar_responsaveis` | `/api/atendimentos/responsaveis:630` | **manter** | conservative-default | sim |
+| endpoint | `resumo_solicitacoes` | `/api/atendimentos/solicitacoes-resumo:658` | **manter** | conservative-default | sim |
+| endpoint | `meus_atendimentos` | `/api/atendimentos/meus:759` | **manter** | conservative-default | sim |
+| endpoint | `por_advogado` | `/api/atendimentos/por-advogado/{advogado_id}:786` | **manter** | conservative-default | sim |
+| endpoint | `dashboard_atendimentos` | `/api/atendimentos/dashboard:821` | **manter** | conservative-default | sim |
+| endpoint | `stats_mensais` | `/api/atendimentos/stats:853` | **manter** | conservative-default | sim |
+| endpoint | `historico_atendimento` | `/api/atendimentos/{atendimento_id}/historico:910` | **manter** | conservative-default | sim |
+| endpoint | `obter_atendimento` | `/api/atendimentos/{atendimento_id}:948` | **manter** | conservative-default | sim |
+| endpoint | `atualizar_atendimento` | `/api/atendimentos/{atendimento_id}:963` | **manter** | conservative-default | sim |
+| endpoint | `remover_atendimento` | `/api/atendimentos/{atendimento_id}:1086` | **manter** | conservative-default | sim |
+| endpoint | `listar_atividades` | `/api/atividades:18` | **manter** | conservative-default | sim |
+| endpoint | `alertas_inteligentes` | `/api/atividades/alertas-inteligentes:90` | **manter** | conservative-default | sim |
+| endpoint | `atualizar_estado_alerta` | `/api/atividades/alertas/{source_type}/{source_id}:101` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/audit/:20` | **manter** | conservative-default | sim |
+| endpoint | `login` | `/api/auth/login:179` | **manter** | conservative-default | sim |
+| endpoint | `refresh` | `/api/auth/refresh:345` | **manter** | conservative-default | sim |
+| endpoint | `logout` | `/api/auth/logout:515` | **manter** | conservative-default | sim |
+| endpoint | `alterar_senha` | `/api/auth/alterar-senha:535` | **manter** | conservative-default | sim |
+| endpoint | `recuperar_senha` | `/api/auth/recuperar-senha:634` | **manter** | conservative-default | sim |
+| endpoint | `redefinir_senha` | `/api/auth/redefinir-senha:662` | **manter** | conservative-default | sim |
+| endpoint | `totp_setup` | `/api/auth/totp/setup:684` | **manter** | conservative-default | sim |
+| endpoint | `totp_verificar` | `/api/auth/totp/verificar:730` | **manter** | conservative-default | sim |
+| endpoint | `totp_desativar` | `/api/auth/totp/desativar:805` | **manter** | conservative-default | sim |
+| endpoint | `executar_backup_manual` | `/api/admin/backup/executar:29` | **manter** | conservative-default | sim |
+| endpoint | `status_backup` | `/api/admin/backup/status:101` | **manter** | conservative-default | sim |
+| endpoint | `upload` | `/api/bank-analysis/upload:39` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/bank-analysis/:122` | **manter** | conservative-default | sim |
+| endpoint | `detalhe` | `/api/bank-analysis/{analysis_id}:150` | **manter** | conservative-default | sim |
+| endpoint | `excel` | `/api/bank-analysis/{analysis_id}/excel:172` | **manter** | conservative-default | sim |
+| endpoint | `documento` | `/api/bank-analysis/{analysis_id}/documento:189` | **manter** | conservative-default | sim |
+| endpoint | `gerar_peca` | `/api/bank-analysis/{analysis_id}/gerar-peca:273` | **manter** | conservative-default | sim |
+| endpoint | `remover` | `/api/bank-analysis/{analysis_id}:349` | **manter** | conservative-default | sim |
+| endpoint | `tipos_rescisao` | `/api/calculadoras/tipos-rescisao:60` | **manter** | conservative-default | sim |
+| endpoint | `rescisao` | `/api/calculadoras/trabalhista/rescisao:66` | **manter** | conservative-default | sim |
+| endpoint | `inss_endpoint` | `/api/calculadoras/inss:81` | **manter** | conservative-default | sim |
+| endpoint | `irrf_endpoint` | `/api/calculadoras/irrf:90` | **manter** | conservative-default | sim |
+| endpoint | `correcao_monetaria` | `/api/calculadoras/correcao-monetaria:102` | **manter** | conservative-default | sim |
+| endpoint | `prescricao_tipos` | `/api/calculadoras/prescricao/tipos:132` | **manter** | conservative-default | sim |
+| endpoint | `prescricao` | `/api/calculadoras/prescricao:142` | **manter** | conservative-default | sim |
+| endpoint | `custas_tjmg_endpoint` | `/api/calculadoras/custas-tjmg:154` | **manter** | conservative-default | sim |
+| endpoint | `minha_url_calendario_revogavel` | `/api/calendar/me/url:103` | **manter** | conservative-default | sim |
+| endpoint | `rotacionar_url_calendario` | `/api/calendar/me/rotate:117` | **manter** | conservative-default | sim |
+| endpoint | `feed_ics` | `/api/calendar/{user_id}/{token}.ics:166` | **manter** | conservative-default | sim |
+| endpoint | `consultar_imovel` | `/api/car/imovel:68` | **manter** | conservative-default | sim |
+| endpoint | `consultar_demonstrativo` | `/api/car/demonstrativo:97` | **manter** | conservative-default | sim |
+| endpoint | `obter_inteligencia` | `/api/cases/{case_id}/inteligencia:61` | **manter** | conservative-default | sim |
+| endpoint | `obter_snapshot` | `/api/cases/{case_id}/inteligencia/{snapshot_id}:78` | **manter** | conservative-default | sim |
+| endpoint | `aprovar` | `/api/cases/{case_id}/inteligencia/{snapshot_id}/aprovar:96` | **manter** | conservative-default | sim |
+| endpoint | `listar_partes` | `/api/cases/{case_id}/partes:139` | **manter** | conservative-default | sim |
+| endpoint | `criar_parte` | `/api/cases/{case_id}/partes:158` | **manter** | conservative-default | sim |
+| endpoint | `remover_parte` | `/api/cases/{case_id}/partes/{parte_id}:225` | **manter** | conservative-default | sim |
+| endpoint | `atualizar_parte` | `/api/cases/{case_id}/partes/{parte_id}:251` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/cases/:112` | **manter** | conservative-default | sim |
+| endpoint | `stats_casos` | `/api/cases/stats:177` | **manter** | conservative-default | sim |
+| endpoint | `criar` | `/api/cases/:243` | **manter** | conservative-default | sim |
+| endpoint | `detalhe` | `/api/cases/{case_id}:358` | **manter** | conservative-default | sim |
+| endpoint | `atualizar` | `/api/cases/{case_id}:380` | **manter** | conservative-default | sim |
+| endpoint | `arquivar_caso` | `/api/cases/{case_id}/arquivar:523` | **manter** | conservative-default | sim |
+| endpoint | `desarquivar_caso` | `/api/cases/{case_id}/desarquivar:563` | **manter** | conservative-default | sim |
+| endpoint | `reabrir_caso` | `/api/cases/{case_id}/reabrir:606` | **manter** | conservative-default | sim |
+| endpoint | `excluir` | `/api/cases/{case_id}:661` | **manter** | conservative-default | sim |
+| endpoint | `gerar_documentos` | `/api/cases/{case_id}/gerar-documentos:768` | **manter** | conservative-default | sim |
+| endpoint | `listar_movimentos` | `/api/cases/{case_id}/movimentos:807` | **manter** | conservative-default | sim |
+| endpoint | `criar_movimento` | `/api/cases/{case_id}/movimentos:833` | **manter** | conservative-default | sim |
+| endpoint | `editar_movimento` | `/api/cases/{case_id}/movimentos/{movimento_id}:869` | **manter** | conservative-default | sim |
+| endpoint | `excluir_movimento` | `/api/cases/{case_id}/movimentos/{movimento_id}:909` | **manter** | conservative-default | sim |
+| endpoint | `sincronizar_processo` | `/api/cases/{case_id}/sincronizar-processo:944` | **manter** | conservative-default | sim |
+| endpoint | `diagnostico_encerramento` | `/api/cases/{case_id}/encerrar/diagnostico:1037` | **manter** | conservative-default | sim |
+| endpoint | `encerrar_caso` | `/api/cases/{case_id}/encerrar:1061` | **manter** | conservative-default | sim |
+| endpoint | `aplicar_extracao` | `/api/cases/{case_id}/aplicar-extracao:1379` | **manter** | conservative-default | sim |
+| endpoint | `teses_sugeridas` | `/api/cases/{case_id}/teses-sugeridas:1579` | **manter** | conservative-default | sim |
+| endpoint | `analisar_caso_ia` | `/api/cases/{case_id}/analisar:1689` | **manter** | conservative-default | sim |
+| endpoint | `listar_areas` | `/api/cases/{case_id}/areas:16` | **manter** | conservative-default | sim |
+| endpoint | `adicionar_area` | `/api/cases/{case_id}/areas:25` | **manter** | conservative-default | sim |
+| endpoint | `remover_area` | `/api/cases/{case_id}/areas/{area}:46` | **manter** | conservative-default | sim |
+| endpoint | `listar_lancamentos` | `/api/centro-custos:99` | **manter** | conservative-default | sim |
+| endpoint | `criar_lancamento` | `/api/centro-custos:136` | **manter** | conservative-default | sim |
+| endpoint | `resumo_caso` | `/api/centro-custos/caso/{case_id}/resumo:180` | **manter** | conservative-default | sim |
+| endpoint | `consolidado_geral` | `/api/centro-custos/consolidado:241` | **manter** | conservative-default | sim |
+| endpoint | `atualizar_lancamento` | `/api/centro-custos/{lancamento_id}:312` | **manter** | conservative-default | sim |
+| endpoint | `remover_lancamento` | `/api/centro-custos/{lancamento_id}:334` | **manter** | conservative-default | sim |
+| endpoint | `status_cerebro` | `/api/cerebro/status:18` | **manter** | conservative-default | sim |
+| endpoint | `analise_estrategica` | `/api/cerebro/analise-estrategica:22` | **manter** | conservative-default | sim |
+| endpoint | `listar_teses` | `/api/cerebro/teses:73` | **manter** | conservative-default | sim |
+| endpoint | `listar_templates` | `/api/checklists/templates:125` | **manter** | conservative-default | sim |
+| endpoint | `criar_template` | `/api/checklists/templates:154` | **manter** | conservative-default | sim |
+| endpoint | `remover_template` | `/api/checklists/templates/{template_id}:186` | **manter** | conservative-default | sim |
+| endpoint | `instanciar_checklist` | `/api/checklists/instanciar:205` | **manter** | conservative-default | sim |
+| endpoint | `gerar_checklist_ia_endpoint` | `/api/checklists/caso/{case_id}/gerar-ia:284` | **manter** | conservative-default | sim |
+| endpoint | `checklists_do_caso` | `/api/checklists/casos/{case_id}:315` | **manter** | conservative-default | sim |
+| endpoint | `obter_checklist` | `/api/checklists/{checklist_id}:341` | **manter** | conservative-default | sim |
+| endpoint | `marcar_item` | `/api/checklists/{checklist_id}/itens/{item_id}/marcar:364` | **manter** | conservative-default | sim |
+| endpoint | `adicionar_item` | `/api/checklists/{checklist_id}/itens:429` | **manter** | conservative-default | sim |
+| endpoint | `cancelar_checklist` | `/api/checklists/{checklist_id}:463` | **manter** | conservative-default | sim |
+| endpoint | `resolver_cliente` | `/api/clients/resolver:102` | **manter** | conservative-default | sim |
+| endpoint | `verificar_conflito` | `/api/clients/verificar-conflito:180` | **manter** | conservative-default | sim |
+| endpoint | `checar_conflito` | `/api/clients/checar-conflito:242` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/clients/:412` | **manter** | conservative-default | sim |
+| endpoint | `criar` | `/api/clients/:469` | **manter** | conservative-default | sim |
+| endpoint | `gerar_documentos_cliente` | `/api/clients/{client_id}/gerar-documentos:620` | **manter** | conservative-default | sim |
+| endpoint | `listar_pecas_geradas` | `/api/clients/{client_id}/pecas-geradas:671` | **manter** | conservative-default | sim |
+| endpoint | `detalhe` | `/api/clients/{client_id}:690` | **manter** | conservative-default | sim |
+| endpoint | `ia_analise_cliente` | `/api/clients/{client_id}/ia-analise:712` | **manter** | conservative-default | sim |
+| endpoint | `atualizar` | `/api/clients/{client_id}:818` | **manter** | conservative-default | sim |
+| endpoint | `remover` | `/api/clients/{client_id}:905` | **manter** | conservative-default | sim |
+| endpoint | `criar_acesso_portal` | `/api/clients/{client_id}/criar-acesso:968` | **manter** | conservative-default | sim |
+| endpoint | `relatorio_lgpd` | `/api/clients/{client_id}/relatorio-lgpd:1020` | **manter** | conservative-default | sim |
+| endpoint | `dados_lgpd_json` | `/api/clients/{client_id}/dados-lgpd.json:1092` | **manter** | conservative-default | sim |
+| endpoint | `verificar_bloqueios_esquecimento` | `/api/clients/{client_id}/esquecimento/bloqueios:1152` | **manter** | conservative-default | sim |
+| endpoint | `solicitar_esquecimento` | `/api/clients/{client_id}/esquecimento:1175` | **manter** | conservative-default | sim |
+| endpoint | `termo_consentimento_ia` | `/api/compliance/cases/{case_id}/termo-consentimento-ia:135` | **manter** | conservative-default | sim |
+| endpoint | `radar_compliance` | `/api/compliance/radar:266` | **manter** | conservative-default | sim |
+| endpoint | `listar_empresas` | `/api/consumidor-monitor/empresas:153` | **manter** | conservative-default | sim |
+| endpoint | `dados_empresa` | `/api/consumidor-monitor/empresa/{nome_empresa}:168` | **manter** | conservative-default | sim |
+| endpoint | `triagem_jec` | `/api/consumidor-monitor/triagem-jec:206` | **manter** | conservative-default | sim |
+| endpoint | `painel_reclamacoes` | `/api/consumidor-monitor/painel-semanal:279` | **manter** | conservative-default | sim |
+| endpoint | `gerar_faq` | `/api/conteudo/faq:61` | **manter** | conservative-default | sim |
+| endpoint | `gerar_glossario` | `/api/conteudo/glossario:80` | **manter** | conservative-default | sim |
+| endpoint | `listar_contratos` | `/api/contratos:181` | **manter** | conservative-default | sim |
+| endpoint | `criar_contrato` | `/api/contratos:216` | **manter** | conservative-default | sim |
+| endpoint | `obter_contrato` | `/api/contratos/{contrato_id}:245` | **manter** | conservative-default | sim |
+| endpoint | `atualizar_contrato` | `/api/contratos/{contrato_id}:277` | **manter** | conservative-default | sim |
+| endpoint | `transicionar_status` | `/api/contratos/{contrato_id}/transicao:302` | **manter** | conservative-default | sim |
+| endpoint | `arquivar_contrato` | `/api/contratos/{contrato_id}:342` | **manter** | conservative-default | sim |
+| endpoint | `checklist_conversao` | `/api/cases/{case_id}/converter-judicial/checklist:248` | **manter** | conservative-default | sim |
+| endpoint | `converter_judicial` | `/api/cases/{case_id}/converter-judicial:260` | **manter** | conservative-default | sim |
+| endpoint | `listar_cofre` | `/api/cofre-credenciais:244` | **manter** | parent-override | não |
+| endpoint | `historico_campo` | `/api/cofre-credenciais/{provider_key}/{field_key}/historico:282` | **manter** | parent-override | não |
+| endpoint | `importar_env` | `/api/cofre-credenciais/importar-env:298` | **manter** | parent-override | não |
+| endpoint | `testar_credencial` | `/api/cofre-credenciais/{provider_key}/testar:321` | **manter** | parent-override | não |
+| endpoint | `cadastrar_credencial` | `/api/cofre-credenciais/{provider_key}/{field_key}:349` | **manter** | parent-override | não |
+| endpoint | `revogar_credencial` | `/api/cofre-credenciais/{provider_key}/{field_key}:389` | **manter** | parent-override | não |
+| endpoint | `dashboard` | `/api/dashboard/:41` | **manter** | conservative-default | sim |
+| endpoint | `relatorio_mensal` | `/api/dashboard/relatorio-mensal:226` | **manter** | conservative-default | sim |
+| endpoint | `listar_data_rooms` | `/api/data-rooms:315` | **consolidar** | parent-override | não |
+| endpoint | `criar_data_room` | `/api/data-rooms:349` | **consolidar** | parent-override | não |
+| endpoint | `obter_data_room` | `/api/data-rooms/{room_id}:371` | **consolidar** | parent-override | não |
+| endpoint | `adicionar_arquivo` | `/api/data-rooms/{room_id}/arquivos:436` | **consolidar** | parent-override | não |
+| endpoint | `publicar_arquivo` | `/api/data-rooms/{room_id}/arquivos/{arquivo_id}/publicacao:481` | **consolidar** | parent-override | não |
+| endpoint | `remover_arquivo` | `/api/data-rooms/{room_id}/arquivos/{arquivo_id}:536` | **consolidar** | parent-override | não |
+| endpoint | `gerar_link` | `/api/data-rooms/{room_id}/links:561` | **consolidar** | parent-override | não |
+| endpoint | `revogar_link` | `/api/data-rooms/{room_id}/links/{link_id}:604` | **consolidar** | parent-override | não |
+| endpoint | `acessar_link_publico` | `/api/data-rooms/acesso/{token}:633` | **consolidar** | parent-override | não |
+| endpoint | `manifesto_publico` | `/api/data-rooms/acesso/{token}/manifesto:741` | **consolidar** | parent-override | não |
+| endpoint | `download_publico` | `/api/data-rooms/acesso/{token}/arquivos/{arquivo_id}:756` | **consolidar** | parent-override | não |
+| endpoint | `remover_data_room` | `/api/data-rooms/{room_id}:794` | **consolidar** | parent-override | não |
+| endpoint | `lookup_process` | `/api/datajud/process/{numero_cnj}:42` | **manter** | conservative-default | sim |
+| endpoint | `sync_case` | `/api/datajud/cases/{case_id}/sync:83` | **manter** | conservative-default | sim |
+| endpoint | `sync_prazos` | `/api/datajud/cases/{case_id}/sync-prazos:126` | **manter** | conservative-default | sim |
+| endpoint | `consultar_status_feed` | `/api/{case_id}/andamentos/inteligencia:20` | **manter** | refined-mount-analysis | não |
+| endpoint | `alimentar_inteligencia_do_caso` | `/api/datajud/intelligence/{case_id}/andamentos/alimentar-ia:33` | **manter** | refined-mount-analysis | não |
+| endpoint | `reconstruir_feed_lote` | `/api/datajud/intelligence/reconstruir-lote:63` | **manter** | refined-mount-analysis | não |
+| endpoint | `calcular` | `/api/deadlines/calcular:203` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/deadlines/:267` | **manter** | conservative-default | sim |
+| endpoint | `exportar_csv` | `/api/deadlines/export.csv:313` | **manter** | conservative-default | sim |
+| endpoint | `criar` | `/api/deadlines/:360` | **manter** | conservative-default | sim |
+| endpoint | `atualizar` | `/api/deadlines/{deadline_id}:476` | **manter** | conservative-default | sim |
+| endpoint | `confirmar` | `/api/deadlines/{deadline_id}/confirmar:549` | **manter** | conservative-default | sim |
+| endpoint | `confirmar_ciencia` | `/api/deadlines/{deadline_id}/ciencia:575` | **manter** | conservative-default | sim |
+| endpoint | `cancelar` | `/api/deadlines/{deadline_id}:601` | **manter** | conservative-default | sim |
+| endpoint | `meta` | `/api/defesas-revisoes/meta:243` | **manter** | conservative-default | sim |
+| endpoint | `analisar` | `/api/defesas-revisoes/analisar:260` | **manter** | conservative-default | sim |
+| endpoint | `comparar_documentos` | `/api/defesas-revisoes/avancado/comparar-documentos:191` | **manter** | conservative-default | sim |
+| endpoint | `critica_adversarial` | `/api/defesas-revisoes/avancado/adversarial:222` | **manter** | conservative-default | sim |
+| endpoint | `calcular_viabilidade` | `/api/defesas-revisoes/avancado/viabilidade:257` | **manter** | conservative-default | sim |
+| endpoint | `calcular_especialidade` | `/api/defesas-revisoes/avancado/calcular-especialidade:288` | **manter** | conservative-default | sim |
+| endpoint | `persistir_resultado` | `/api/defesas-revisoes/avancado/persistir:350` | **manter** | conservative-default | sim |
+| endpoint | `analisar_decisao` | `/api/defesas-revisoes/avancado/analisar-decisao:451` | **manter** | conservative-default | sim |
+| endpoint | `memoria_institucional` | `/api/defesas-revisoes/avancado/memoria/{modalidade}:486` | **manter** | conservative-default | sim |
+| endpoint | `gerar_pacote_seguro` | `/api/defesas-revisoes/avancado/pacote:176` | **manter** | conservative-default | sim |
+| endpoint | `get_resumo` | `/api/despesas/resumo:120` | **manter** | conservative-default | sim |
+| endpoint | `list_despesas` | `/api/despesas:184` | **manter** | conservative-default | sim |
+| endpoint | `export_despesas_csv` | `/api/despesas/export/csv:232` | **manter** | conservative-default | sim |
+| endpoint | `create_despesa` | `/api/despesas:297` | **manter** | conservative-default | sim |
+| endpoint | `update_despesa` | `/api/despesas/{despesa_id}:336` | **manter** | conservative-default | sim |
+| endpoint | `delete_despesa` | `/api/despesas/{despesa_id}:397` | **manter** | conservative-default | sim |
+| endpoint | `por_caso` | `/api/despesas-processuais/casos/{case_id}:97` | **manter** | conservative-default | sim |
+| endpoint | `lancar` | `/api/despesas-processuais/:140` | **manter** | conservative-default | sim |
+| endpoint | `faturar` | `/api/despesas-processuais/caso/{case_id}/faturar:179` | **manter** | conservative-default | sim |
+| endpoint | `remover` | `/api/despesas-processuais/{entry_id}:259` | **manter** | conservative-default | sim |
+| endpoint | `central_diagnostico` | `/api/diagnostico/central:47` | **manter** | conservative-default | sim |
+| endpoint | `integridade_diagnostico` | `/api/diagnostico/integridade:65` | **manter** | conservative-default | sim |
+| endpoint | `status_monitor_dou` | `/api/diario-oficial/status:48` | **manter** | conservative-default | sim |
+| endpoint | `listar_keywords` | `/api/diario-oficial/keywords:64` | **manter** | conservative-default | sim |
+| endpoint | `criar_keyword` | `/api/diario-oficial/keywords:79` | **manter** | conservative-default | sim |
+| endpoint | `remover_keyword` | `/api/diario-oficial/keywords/{keyword_id}:93` | **manter** | conservative-default | sim |
+| endpoint | `listar_alertas` | `/api/diario-oficial/alertas:112` | **manter** | conservative-default | sim |
+| endpoint | `marcar_lido` | `/api/diario-oficial/alertas/{alerta_id}/marcar-lido:149` | **manter** | conservative-default | sim |
+| endpoint | `contar_nao_lidos` | `/api/diario-oficial/alertas/nao-lidos/count:167` | **manter** | conservative-default | sim |
+| endpoint | `listar_tipos` | `/api/documents/tipos:229` | **manter** | conservative-default | sim |
+| endpoint | `sugerir_tipo_documento` | `/api/documents/sugerir-tipo:261` | **manter** | conservative-default | sim |
+| endpoint | `upload` | `/api/documents/upload:329` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/documents/:503` | **manter** | conservative-default | sim |
+| endpoint | `detalhar` | `/api/documents/{doc_id}:634` | **manter** | conservative-default | sim |
+| endpoint | `download` | `/api/documents/{doc_id}/download:662` | **manter** | conservative-default | sim |
+| endpoint | `remover` | `/api/documents/{doc_id}:759` | **manter** | conservative-default | sim |
+| endpoint | `atualizar_metadados` | `/api/documents/{doc_id}:805` | **manter** | conservative-default | sim |
+| endpoint | `publicar_no_portal` | `/api/documents/{doc_id}/publicacao-portal:911` | **manter** | conservative-default | sim |
+| endpoint | `classificar_tipo_documento` | `/api/documents/{doc_id}/classificar:1007` | **manter** | conservative-default | sim |
+| endpoint | `upload_para_drive` | `/api/documents/drive/upload:1064` | **manter** | conservative-default | sim |
+| endpoint | `link_documento` | `/api/documents/drive/{file_id}/link:1217` | **manter** | conservative-default | sim |
+| endpoint | `download_documento` | `/api/documents/drive/{file_id}/download:1243` | **manter** | conservative-default | sim |
+| endpoint | `deletar_documento_drive` | `/api/documents/drive/{file_id}:1285` | **manter** | conservative-default | sim |
+| endpoint | `dossie_cliente` | `/api/clients/{client_id}/dossie:90` | **manter** | conservative-default | sim |
+| endpoint | `gerar` | `/api/dossie/{case_id}/gerar:67` | **manter** | conservative-default | sim |
+| endpoint | `obter_atual` | `/api/dossie/{case_id}:91` | **manter** | conservative-default | sim |
+| endpoint | `modulos_deterministicos` | `/api/dossie/{case_id}/modulos:129` | **manter** | conservative-default | sim |
+| endpoint | `historico` | `/api/dossie/{case_id}/historico:148` | **manter** | conservative-default | sim |
+| endpoint | `aprovar` | `/api/dossie/{case_id}/{dossie_id}/aprovar:170` | **manter** | conservative-default | sim |
+| endpoint | `exportar_pdf` | `/api/dossie/{case_id}/{dossie_id}/pdf:215` | **manter** | conservative-default | sim |
+| endpoint | `analisar` | `/api/entrada/analisar:47` | **manter** | conservative-default | sim |
+| endpoint | `criar_caso` | `/api/entrada/{rascunho_id}/criar-caso:113` | **manter** | conservative-default | sim |
+| endpoint | `meta` | `/api/entrada-universal/meta:283` | **manter** | conservative-default | sim |
+| endpoint | `processar` | `/api/entrada-universal/processar:372` | **manter** | conservative-default | sim |
+| endpoint | `obter_lote` | `/api/entrada-universal/{batch_id}:491` | **manter** | conservative-default | sim |
+| endpoint | `preparar_pacote` | `/api/entrada-universal/{batch_id}/preparar-pacote:523` | **manter** | conservative-default | sim |
+| endpoint | `vincular_lote_ao_caso` | `/api/entrada-universal/{batch_id}/vincular-caso:616` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/environmental/:75` | **manter** | conservative-default | sim |
+| endpoint | `criar` | `/api/environmental/:101` | **manter** | conservative-default | sim |
+| endpoint | `atualizar` | `/api/environmental/{env_id}:144` | **manter** | conservative-default | sim |
+| endpoint | `remover` | `/api/environmental/{env_id}:185` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/etiquetas:33` | **manter** | conservative-default | sim |
+| endpoint | `criar` | `/api/etiquetas:39` | **manter** | conservative-default | sim |
+| endpoint | `remover` | `/api/etiquetas/{etiqueta_id}:52` | **manter** | conservative-default | sim |
+| endpoint | `do_caso` | `/api/cases/{case_id}/etiquetas:61` | **manter** | conservative-default | sim |
+| endpoint | `atribuir` | `/api/cases/{case_id}/etiquetas:73` | **manter** | conservative-default | sim |
+| endpoint | `desatribuir` | `/api/cases/{case_id}/etiquetas/{etiqueta_id}:92` | **manter** | conservative-default | sim |
+| endpoint | `evolution_webhook` | `/api/webhooks/evolution:73` | **manter** | conservative-default | sim |
+| endpoint | `export_clientes` | `/api/export/clientes.csv:52` | **manter** | conservative-default | sim |
+| endpoint | `export_casos` | `/api/export/casos.csv:85` | **manter** | conservative-default | sim |
+| endpoint | `export_caso_pdf` | `/api/export/casos/{case_id}.pdf:103` | **manter** | conservative-default | sim |
+| endpoint | `export_docx` | `/api/export/docx:173` | **manter** | conservative-default | sim |
+| endpoint | `export_honorarios` | `/api/export/honorarios.csv:205` | **manter** | conservative-default | sim |
+| endpoint | `extrato_caso` | `/api/extratos/detalhado/{case_id}:20` | **manter** | conservative-default | sim |
+| endpoint | `extrato_advogado` | `/api/extratos/advogado/{user_id}:47` | **manter** | conservative-default | sim |
+| endpoint | `extrato_socio` | `/api/extratos/socio/{user_id}:76` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/fees/:97` | **manter** | conservative-default | sim |
+| endpoint | `resumo` | `/api/fees/resumo:145` | **manter** | conservative-default | sim |
+| endpoint | `criar` | `/api/fees/:238` | **manter** | conservative-default | sim |
+| endpoint | `atualizar` | `/api/fees/{fee_id}:277` | **manter** | conservative-default | sim |
+| endpoint | `listar_pagamentos` | `/api/fees/{fee_id}/pagamentos:344` | **manter** | conservative-default | sim |
+| endpoint | `registrar_pagamento` | `/api/fees/{fee_id}/pagamentos:423` | **manter** | conservative-default | sim |
+| endpoint | `estornar_pagamento` | `/api/fees/{fee_id}/pagamentos/{payment_id}/estorno:541` | **manter** | conservative-default | sim |
+| endpoint | `listar_estornos` | `/api/fees/{fee_id}/estornos:675` | **manter** | conservative-default | sim |
+| endpoint | `cancelar` | `/api/fees/{fee_id}:708` | **manter** | conservative-default | sim |
+| endpoint | `pre_preencher_ficha` | `/api/triagem/ficha/pre-preencher:99` | **manter** | conservative-default | sim |
+| endpoint | `obter_ficha` | `/api/triagem/ficha:113` | **manter** | conservative-default | sim |
+| endpoint | `salvar_ficha` | `/api/triagem/ficha:126` | **manter** | conservative-default | sim |
+| endpoint | `consolidado` | `/api/financeiro/consolidado:69` | **manter** | conservative-default | sim |
+| endpoint | `pendencias_operacionais` | `/api/financeiro/atencao:282` | **manter** | conservative-default | sim |
+| endpoint | `demonstrativo_gerencial` | `/api/financeiro/demonstrativo:449` | **manter** | conservative-default | sim |
+| endpoint | `fechamento_inteligente` | `/api/financeiro/fechamento-inteligente:566` | **manter** | conservative-default | sim |
+| endpoint | `listar_socios` | `/api/sociedade/socios:135` | **manter** | conservative-default | sim |
+| endpoint | `cadastrar_socio` | `/api/sociedade/socios:154` | **manter** | conservative-default | sim |
+| endpoint | `atualizar_socio` | `/api/sociedade/socios/{socio_id}:192` | **manter** | conservative-default | sim |
+| endpoint | `calcular_distribuicao` | `/api/sociedade/distribuicao:253` | **manter** | conservative-default | sim |
+| endpoint | `listar_distribuicoes` | `/api/sociedade/distribuicao:340` | **manter** | conservative-default | sim |
+| endpoint | `aprovar_distribuicao` | `/api/sociedade/distribuicao/{dist_id}/aprovar:372` | **manter** | conservative-default | sim |
+| endpoint | `status_google_drive` | `/api/rag/google-drive/status:32` | **manter** | conservative-default | sim |
+| endpoint | `listar_arquivos_google_drive` | `/api/rag/google-drive/files:54` | **manter** | conservative-default | sim |
+| endpoint | `auditar_google_drive` | `/api/rag/google-drive/audit:74` | **manter** | conservative-default | sim |
+| endpoint | `preview_curadoria_google_drive` | `/api/rag/google-drive/curadoria/preview:93` | **manter** | conservative-default | sim |
+| endpoint | `aplicar_curadoria_google_drive` | `/api/rag/google-drive/curadoria/apply:116` | **manter** | conservative-default | sim |
+| endpoint | `sincronizar_google_drive` | `/api/rag/google-drive/sync:157` | **manter** | conservative-default | sim |
+| endpoint | `reindexar_arquivo_google_drive` | `/api/rag/google-drive/reindex/{file_id}:182` | **manter** | conservative-default | sim |
+| endpoint | `itens_tabela` | `/api/honorarios-oab/tabela:92` | **manter** | conservative-default | sim |
+| endpoint | `estimar` | `/api/honorarios-oab/estimar:101` | **manter** | conservative-default | sim |
+| endpoint | `listar_itens` | `/api/honorarios-oab/itens:202` | **manter** | conservative-default | sim |
+| endpoint | `criar_item` | `/api/honorarios-oab/itens:223` | **manter** | conservative-default | sim |
+| endpoint | `encerrar_vigencia` | `/api/honorarios-oab/itens/{item_id}/encerrar-vigencia:276` | **manter** | conservative-default | sim |
+| endpoint | `sugerir_proposta_honorarios` | `/api/honorarios-oab/casos/{case_id}/proposta/sugerir:358` | **manter** | conservative-default | sim |
+| endpoint | `criar_proposta_honorarios` | `/api/honorarios-oab/casos/{case_id}/proposta:376` | **manter** | conservative-default | sim |
+| endpoint | `obter_propostas_honorarios` | `/api/honorarios-oab/casos/{case_id}/proposta:408` | **manter** | conservative-default | sim |
+| endpoint | `aprovar_proposta_honorarios` | `/api/honorarios-oab/propostas/{proposta_id}/aprovar:430` | **manter** | conservative-default | sim |
+| endpoint | `rejeitar_proposta_honorarios` | `/api/honorarios-oab/propostas/{proposta_id}/rejeitar:445` | **manter** | conservative-default | sim |
+| endpoint | `provisionamento` | `/api/honorarios-oab/cases/{case_id}/provisionamento:477` | **manter** | conservative-default | sim |
+| endpoint | `teto_etico` | `/api/honorarios-oab/cases/{case_id}/teto-etico:501` | **manter** | conservative-default | sim |
+| endpoint | `preview_rateio` | `/api/honorarios-oab/{fee_id}/rateio:611` | **manter** | conservative-default | sim |
+| endpoint | `gerar_rateio` | `/api/honorarios-oab/{fee_id}/rateio:622` | **manter** | conservative-default | sim |
+| endpoint | `critica_adversarial_endpoint` | `/api/ia/critica-adversarial:44` | **consolidar** | parent-override | não |
+| endpoint | `agente_stream` | `/api/ia/agente/stream:37` | **consolidar** | parent-override | não |
+| endpoint | `analisar` | `/api/ia/analisar:85` | **consolidar** | parent-override | não |
+| endpoint | `redigir` | `/api/ia/redigir:96` | **consolidar** | parent-override | não |
+| endpoint | `resumir` | `/api/ia/resumir:107` | **consolidar** | parent-override | não |
+| endpoint | `conversar` | `/api/ia/conversar:118` | **consolidar** | parent-override | não |
+| endpoint | `extrair` | `/api/ia/extrair:129` | **consolidar** | parent-override | não |
+| endpoint | `validar_citacoes_endpoint` | `/api/ia/validar-citacoes:30` | **consolidar** | parent-override | não |
+| endpoint | `status_ia_defensiva` | `/api/ia-defensiva/status:51` | **consolidar** | parent-override | não |
+| endpoint | `historico_ia_defensiva` | `/api/ia-defensiva/historico/{case_id}:99` | **consolidar** | parent-override | não |
+| endpoint | `atualizar_status_ia_defensiva` | `/api/ia-defensiva/historico/{log_id}/status:147` | **consolidar** | parent-override | não |
+| endpoint | `analisar_ia_defensiva` | `/api/ia-defensiva/analisar:177` | **consolidar** | parent-override | não |
+| endpoint | `listar_perfis` | `/api/ia-especializada/perfis:53` | **consolidar** | parent-override | não |
+| endpoint | `consultar` | `/api/ia-especializada/{perfil}:68` | **consolidar** | parent-override | não |
+| endpoint | `dashboard_governanca` | `/api/ia-governanca/dashboard:249` | **manter** | parent-override | não |
+| endpoint | `listar_curadoria` | `/api/ia-governanca/rag-curadoria:394` | **manter** | parent-override | não |
+| endpoint | `atualizar_curadoria` | `/api/ia-governanca/rag-curadoria/{doc_id}:455` | **manter** | parent-override | não |
+| endpoint | `governanca_prompts` | `/api/ia-governanca/prompts:482` | **manter** | parent-override | não |
+| endpoint | `governanca_prompts_sistema` | `/api/ia-governanca/prompts-sistema:498` | **manter** | parent-override | não |
+| endpoint | `fontes_ingestao` | `/api/ia-governanca/fontes:514` | **manter** | parent-override | não |
+| endpoint | `coletar_tjmg_agora` | `/api/ia-governanca/fontes/tjmg/coletar:546` | **manter** | parent-override | não |
+| endpoint | `guardrails` | `/api/ia-governanca/guardrails:594` | **manter** | parent-override | não |
+| endpoint | `geometria_jurisprudencia_mg` | `/api/ia-governanca/jurisprudencia-mg/geometria:612` | **manter** | parent-override | não |
+| endpoint | `importar_jurisprudencia_mg` | `/api/ia-governanca/jurisprudencia-mg:639` | **manter** | parent-override | não |
+| endpoint | `extrair_jurisprudencia_url` | `/api/ia-governanca/jurisprudencia-mg/extrair-url:704` | **manter** | parent-override | não |
+| endpoint | `listar_jurisprudencia_mg` | `/api/ia-governanca/jurisprudencia-mg:741` | **manter** | parent-override | não |
+| endpoint | `painel_provedores` | `/api/ia-governanca/provedores:819` | **manter** | parent-override | não |
+| endpoint | `ia_status` | `/api/ia/status:33` | **consolidar** | parent-override | não |
+| endpoint | `dashboard` | `/api/ia-saude/dashboard:136` | **consolidar** | parent-override | não |
+| endpoint | `estado_operacional` | `/api/ia-saude/estado-operacional:212` | **consolidar** | parent-override | não |
+| endpoint | `get_indice` | `/api/cases/{case_id}/indice-risco:24` | **manter** | conservative-default | sim |
+| endpoint | `recalcular` | `/api/cases/{case_id}/indice-risco/recalcular:49` | **manter** | conservative-default | sim |
+| endpoint | `series` | `/api/indices/series:59` | **manter** | conservative-default | sim |
+| endpoint | `taxa_juros` | `/api/indices/taxa-juros:66` | **manter** | conservative-default | sim |
+| endpoint | `ptax` | `/api/indices/ptax:84` | **manter** | conservative-default | sim |
+| endpoint | `atualizar_valor` | `/api/indices/atualizar-valor:104` | **manter** | conservative-default | sim |
+| endpoint | `serie_periodo` | `/api/indices/{indice}:137` | **manter** | conservative-default | sim |
+| endpoint | `consultar_cpf` | `/api/infosimples/receita/cpf:141` | **manter** | conservative-default | sim |
+| endpoint | `consultar_cnpj` | `/api/infosimples/receita/cnpj:174` | **manter** | conservative-default | sim |
+| endpoint | `status_infosimples` | `/api/infosimples/status:67` | **manter** | conservative-default | sim |
+| endpoint | `consultar_processo_tjmg` | `/api/infosimples/tjmg/processo:79` | **manter** | conservative-default | sim |
+| endpoint | `analise_completa` | `/api/intake/casos/{case_id}/analise-completa:365` | **manter** | conservative-default | sim |
+| endpoint | `radar_legislativo` | `/api/intelligence/radar/legislativo:22` | **manter** | conservative-default | sim |
+| endpoint | `analise_impacto` | `/api/intelligence/analise-impacto:40` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/intimacoes/:94` | **manter** | conservative-default | sim |
+| endpoint | `status_captura` | `/api/intimacoes/status-captura:137` | **manter** | conservative-default | sim |
+| endpoint | `processar` | `/api/intimacoes/{com_id}/processar:230` | **manter** | conservative-default | sim |
+| endpoint | `sugerir_prazo` | `/api/intimacoes/{com_id}/sugerir-prazo:274` | **manter** | conservative-default | sim |
+| endpoint | `prazo_sugerido` | `/api/intimacoes/{com_id}/prazo-sugerido:284` | **manter** | conservative-default | sim |
+| endpoint | `aceitar_prazo` | `/api/intimacoes/{com_id}/aceitar-prazo:299` | **manter** | conservative-default | sim |
+| endpoint | `recusar_prazo` | `/api/intimacoes/{com_id}/recusar-prazo:429` | **manter** | conservative-default | sim |
+| endpoint | `capturar_agora` | `/api/intimacoes/capturar-agora:467` | **manter** | conservative-default | sim |
+| endpoint | `overview` | `/api/jurimetria/overview:70` | **manter** | conservative-default | sim |
+| endpoint | `por_area` | `/api/jurimetria/por-area:135` | **manter** | conservative-default | sim |
+| endpoint | `por_magistrado` | `/api/jurimetria/por-magistrado:189` | **manter** | conservative-default | sim |
+| endpoint | `por_tribunal` | `/api/jurimetria/por-tribunal:249` | **manter** | conservative-default | sim |
+| endpoint | `por_tese` | `/api/jurimetria/por-tese:304` | **manter** | conservative-default | sim |
+| endpoint | `tendencias` | `/api/jurimetria/tendencias:342` | **manter** | conservative-default | sim |
+| endpoint | `analise_prospectiva_qualitativa` | `/api/jurimetria/analise-prospectiva:387` | **manter** | conservative-default | sim |
+| endpoint | `analise_prospectiva_qualitativa` | `/api/jurimetria/predicao-exito:387` | **manter** | conservative-default | sim |
+| endpoint | `desfechos` | `/api/jurimetria/desfechos:494` | **manter** | conservative-default | sim |
+| endpoint | `stats_internos` | `/api/jurimetria/ext/stats:524` | **manter** | conservative-default | sim |
+| endpoint | `stats_internos` | `/api/jurimetria/interno/stats:524` | **manter** | conservative-default | sim |
+| endpoint | `benchmarks_internos` | `/api/jurimetria/ext/benchmarks:566` | **manter** | conservative-default | sim |
+| endpoint | `benchmarks_internos` | `/api/jurimetria/interno/benchmarks:566` | **manter** | conservative-default | sim |
+| endpoint | `analise_prospectiva` | `/api/jurimetria/ext/predicao/provimento:612` | **manter** | conservative-default | sim |
+| endpoint | `analise_prospectiva` | `/api/jurimetria/interno/analise-prospectiva:612` | **manter** | conservative-default | sim |
+| endpoint | `predicao_treinar` | `/api/jurimetria/ext/predicao/treinar:700` | **manter** | conservative-default | sim |
+| endpoint | `ingerir_datajud` | `/api/jurimetria/ext/ingerir/datajud:716` | **manter** | conservative-default | sim |
+| endpoint | `tribunais_status` | `/api/jurimetria/tribunais/status:741` | **manter** | conservative-default | sim |
+| endpoint | `tribunais_desfechos` | `/api/jurimetria/tribunais/desfechos:749` | **manter** | conservative-default | sim |
+| endpoint | `cobertura_rag` | `/api/jurimetria/cobertura-rag:789` | **manter** | conservative-default | sim |
+| endpoint | `cobertura_mg_jec` | `/api/jurimetria/cobertura-mg-jec:800` | **manter** | conservative-default | sim |
+| endpoint | `importar_jurisprudencia` | `/api/conhecimento/importar-jurisprudencia:53` | **manter** | conservative-default | sim |
+| endpoint | `listar_fontes` | `/api/conhecimento/importar-jurisprudencia/fontes:87` | **manter** | conservative-default | sim |
+| endpoint | `status_importacao` | `/api/conhecimento/importar-jurisprudencia/status/{job_id}:115` | **manter** | conservative-default | sim |
+| endpoint | `listar_jurisprudencias` | `/api/jurisprudencias:82` | **manter** | conservative-default | sim |
+| endpoint | `criar_jurisprudencia` | `/api/jurisprudencias:119` | **manter** | conservative-default | sim |
+| endpoint | `obter_jurisprudencia` | `/api/jurisprudencias/{juri_id}:133` | **manter** | conservative-default | sim |
+| endpoint | `atualizar_jurisprudencia` | `/api/jurisprudencias/{juri_id}:154` | **manter** | conservative-default | sim |
+| endpoint | `remover_jurisprudencia` | `/api/jurisprudencias/{juri_id}:178` | **manter** | conservative-default | sim |
+| endpoint | `classificar_com_ia` | `/api/jurisprudencias/{juri_id}/classificar-ia:198` | **manter** | conservative-default | sim |
+| endpoint | `list_kanban_columns` | `/api/kanban/columns:45` | **manter** | conservative-default | sim |
+| endpoint | `update_case_kanban` | `/api/cases/{case_id}/kanban:59` | **manter** | conservative-default | sim |
+| endpoint | `gerar_kit_documental` | `/api/cases/{case_id}/kit-documental:65` | **manter** | conservative-default | sim |
+| endpoint | `listar_documentos_candidatos` | `/api/cases/{case_id}/documentos/candidatos:100` | **manter** | conservative-default | sim |
+| endpoint | `vincular_documento_ao_caso` | `/api/cases/{case_id}/documentos/{document_id}/vincular:124` | **manter** | conservative-default | sim |
+| endpoint | `criar_sessao` | `/api/sala-juridica:62` | **manter** | conservative-default | sim |
+| endpoint | `listar_sessoes` | `/api/sala-juridica:83` | **manter** | conservative-default | sim |
+| endpoint | `detalhar_sessao` | `/api/sala-juridica/{session_id}:115` | **manter** | conservative-default | sim |
+| endpoint | `atualizar_sessao` | `/api/sala-juridica/{session_id}:135` | **manter** | conservative-default | sim |
+| endpoint | `enviar_mensagem` | `/api/sala-juridica/{session_id}/mensagens:157` | **manter** | conservative-default | sim |
+| endpoint | `atualizar_estado` | `/api/sala-juridica/{session_id}/estado:171` | **manter** | conservative-default | sim |
+| endpoint | `obter_estado` | `/api/sala-juridica/{session_id}/estado:192` | **manter** | conservative-default | sim |
+| endpoint | `confirmar_proxima_acao` | `/api/sala-juridica/{session_id}/proxima-acao/confirmar:211` | **manter** | conservative-default | sim |
+| endpoint | `anexar_documentos` | `/api/sala-juridica/{session_id}/anexos:234` | **manter** | conservative-default | sim |
+| endpoint | `conversao_preview` | `/api/sala-juridica/{session_id}/conversao/preview:335` | **manter** | conservative-default | sim |
+| endpoint | `converter` | `/api/sala-juridica/{session_id}/converter:355` | **manter** | conservative-default | sim |
+| endpoint | `vincular_caso` | `/api/sala-juridica/{session_id}/vincular-caso:383` | **manter** | conservative-default | sim |
+| endpoint | `exportar` | `/api/sala-juridica/{session_id}/exportar:413` | **manter** | conservative-default | sim |
+| endpoint | `saida_alternativa` | `/api/sala-juridica/{session_id}/saida:452` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/legal-docs/:356` | **manter** | parent-override | não |
+| endpoint | `criar` | `/api/legal-docs/:431` | **manter** | parent-override | não |
+| endpoint | `detalhe` | `/api/legal-docs/{doc_id}:469` | **manter** | parent-override | não |
+| endpoint | `status_validacao_juridica` | `/api/legal-docs/{doc_id}/validacao:490` | **manter** | parent-override | não |
+| endpoint | `validar_peca_juridica` | `/api/legal-docs/{doc_id}/validar:504` | **manter** | parent-override | não |
+| endpoint | `atualizar` | `/api/legal-docs/{doc_id}:542` | **manter** | parent-override | não |
+| endpoint | `checar_jurisprudencia_peca` | `/api/legal-docs/{doc_id}/jurisprudencia-check:661` | **manter** | parent-override | não |
+| endpoint | `revisar` | `/api/legal-docs/{doc_id}/revisar:675` | **manter** | parent-override | não |
+| endpoint | `aprovar` | `/api/legal-docs/{doc_id}/aprovar:775` | **manter** | parent-override | não |
+| endpoint | `conferir_e_assinar` | `/api/legal-docs/{doc_id}/conferir-e-assinar:833` | **manter** | parent-override | não |
+| endpoint | `registrar_protocolo` | `/api/legal-docs/{doc_id}/protocolo:1014` | **manter** | parent-override | não |
+| endpoint | `remover` | `/api/legal-docs/{doc_id}:1127` | **manter** | parent-override | não |
+| endpoint | `exportar_pdf_minuta` | `/api/legal-docs/{doc_id}/pdf-minuta:1210` | **manter** | parent-override | não |
+| endpoint | `exportar_pdf` | `/api/legal-docs/{doc_id}/pdf:1263` | **manter** | parent-override | não |
+| endpoint | `documento_unico_impressao` | `/api/legal-docs/{doc_id}/documento-unico-impressao:1314` | **manter** | parent-override | não |
+| endpoint | `exportar_docx` | `/api/legal-docs/{doc_id}/exportar-docx:1441` | **manter** | parent-override | não |
+| endpoint | `listar` | `/api/lgpd/registros:136` | **manter** | conservative-default | sim |
+| endpoint | `criar` | `/api/lgpd/registros:160` | **manter** | conservative-default | sim |
+| endpoint | `atualizar` | `/api/lgpd/registros/{registro_id}:197` | **manter** | conservative-default | sim |
+| endpoint | `remover` | `/api/lgpd/registros/{registro_id}:219` | **manter** | conservative-default | sim |
+| endpoint | `resumo` | `/api/lgpd/registros/{client_id}/resumo:251` | **manter** | conservative-default | sim |
+| endpoint | `gerar_ripd` | `/api/lgpd/registros/{client_id}/ripd:375` | **manter** | conservative-default | sim |
+| endpoint | `download_ripd` | `/api/lgpd/registros/ripd/{arquivo_id}/download:420` | **manter** | conservative-default | sim |
+| endpoint | `montar` | `/api/cases/{case_id}/matriz-teses/montar:50` | **manter** | conservative-default | sim |
+| endpoint | `obter` | `/api/cases/{case_id}/matriz-teses:90` | **manter** | conservative-default | sim |
+| endpoint | `aprovar` | `/api/cases/{case_id}/matriz-teses/teses/{tese_id}/aprovar:111` | **manter** | conservative-default | sim |
+| endpoint | `descartar` | `/api/cases/{case_id}/matriz-teses/teses/{tese_id}/descartar:123` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/memoria-institucional:90` | **manter** | conservative-default | sim |
+| endpoint | `criar` | `/api/memoria-institucional:138` | **manter** | conservative-default | sim |
+| endpoint | `obter` | `/api/memoria-institucional/{mem_id}:174` | **manter** | conservative-default | sim |
+| endpoint | `atualizar` | `/api/memoria-institucional/{mem_id}:183` | **manter** | conservative-default | sim |
+| endpoint | `remover` | `/api/memoria-institucional/{mem_id}:225` | **manter** | conservative-default | sim |
+| endpoint | `listar_mensagens` | `/api/cases/{case_id}/mensagens:45` | **manter** | conservative-default | sim |
+| endpoint | `enviar_mensagem` | `/api/cases/{case_id}/mensagens:70` | **manter** | conservative-default | sim |
+| endpoint | `buscar_ajuda` | `/api/module-help/:51` | **manter** | conservative-default | sim |
+| endpoint | `diagnostico_sistema` | `/api/module-help/diagnostico-sistema:66` | **manter** | conservative-default | sim |
+| endpoint | `preencher_minimo` | `/api/module-help/preencher-minimo:75` | **manter** | conservative-default | sim |
+| endpoint | `ajuda_do_modulo` | `/api/module-help/{module_key:path}:83` | **manter** | conservative-default | sim |
+| endpoint | `criar_ajuda` | `/api/module-help/:99` | **manter** | conservative-default | sim |
+| endpoint | `atualizar_ajuda` | `/api/module-help/{help_id}:112` | **manter** | conservative-default | sim |
+| endpoint | `desativar_ajuda` | `/api/module-help/{help_id}:131` | **manter** | conservative-default | sim |
+| endpoint | `listar_module_settings` | `/api/system-modules/settings:59` | **manter** | conservative-default | sim |
+| endpoint | `salvar_module_setting` | `/api/system-modules/settings/{module_key}:82` | **manter** | conservative-default | sim |
+| endpoint | `remover_module_setting` | `/api/system-modules/settings/{module_key}:140` | **manter** | conservative-default | sim |
+| endpoint | `analisar` | `/api/cases/{case_id}/motor-peca/analisar:104` | **manter** | conservative-default | sim |
+| endpoint | `gerar` | `/api/cases/{case_id}/motor-peca/gerar:247` | **manter** | conservative-default | sim |
+| endpoint | `recentes` | `/api/movimentos/recentes:16` | **manter** | conservative-default | sim |
+| endpoint | `status_nfse` | `/api/nfse/status:356` | **manter** | conservative-default | sim |
+| endpoint | `listar_nfse` | `/api/nfse:369` | **manter** | conservative-default | sim |
+| endpoint | `registrar_nfse_manual` | `/api/nfse/manual:403` | **manter** | conservative-default | sim |
+| endpoint | `cancelar_nfse_manual` | `/api/nfse/manual/{nota_id}/cancelar:531` | **manter** | conservative-default | sim |
+| endpoint | `emitir_nfse` | `/api/nfse/emitir:570` | **manter** | conservative-default | sim |
+| endpoint | `obter_nfse` | `/api/nfse/{nota_id}:741` | **manter** | conservative-default | sim |
+| endpoint | `baixar_pdf_nfse` | `/api/nfse/{nota_id}/pdf:768` | **manter** | conservative-default | sim |
+| endpoint | `baixar_xml_nfse` | `/api/nfse/{nota_id}/xml:804` | **manter** | conservative-default | sim |
+| endpoint | `cancelar_nfse` | `/api/nfse/{nota_id}/cancelar:840` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/notifications/:65` | **manter** | conservative-default | sim |
+| endpoint | `obter_preferencias` | `/api/notifications/preferences:151` | **manter** | conservative-default | sim |
+| endpoint | `atualizar_preferencias` | `/api/notifications/preferences:160` | **manter** | conservative-default | sim |
+| endpoint | `marcar_lida` | `/api/notifications/{notif_id}/ler:196` | **manter** | conservative-default | sim |
+| endpoint | `marcar_todas` | `/api/notifications/ler-todas:213` | **manter** | conservative-default | sim |
+| endpoint | `vapid_key` | `/api/notifications/push/vapid-key:245` | **manter** | conservative-default | sim |
+| endpoint | `listar_dispositivos_push` | `/api/notifications/push/subscriptions:253` | **manter** | conservative-default | sim |
+| endpoint | `revogar_dispositivo_push` | `/api/notifications/push/subscriptions/{subscription_id}:273` | **manter** | conservative-default | sim |
+| endpoint | `push_subscribe` | `/api/notifications/push/subscribe:304` | **manter** | conservative-default | sim |
+| endpoint | `precificacao_tabela` | `/api/modulos/precificacao/tabela:38` | **manter** | conservative-default | sim |
+| endpoint | `precificacao_calcular` | `/api/modulos/precificacao/calcular/{rule_id}:49` | **manter** | conservative-default | sim |
+| endpoint | `criar_regra` | `/api/modulos/precificacao/regras:79` | **manter** | conservative-default | sim |
+| endpoint | `inadimplencia_alertas` | `/api/modulos/inadimplencia/alertas:95` | **manter** | conservative-default | sim |
+| endpoint | `inadimplencia_varrer` | `/api/modulos/inadimplencia/varrer:110` | **manter** | conservative-default | sim |
+| endpoint | `resolver_alerta` | `/api/modulos/inadimplencia/alertas/{alert_id}/resolver:125` | **manter** | conservative-default | sim |
+| endpoint | `get_ambiental` | `/api/casos/{case_id}/ambiental:166` | **manter** | conservative-default | sim |
+| endpoint | `upsert_ambiental` | `/api/casos/{case_id}/ambiental:183` | **manter** | conservative-default | sim |
+| endpoint | `listar_templates` | `/api/modulos/due-diligence/templates:258` | **manter** | conservative-default | sim |
+| endpoint | `criar_template` | `/api/modulos/due-diligence/templates:290` | **manter** | conservative-default | sim |
+| endpoint | `cofre_logs` | `/api/modulos/cofre/documentos/{document_id}/logs:316` | **manter** | conservative-default | sim |
+| endpoint | `cofre_registrar_acesso` | `/api/modulos/cofre/documentos/{document_id}/registrar-acesso:346` | **manter** | conservative-default | sim |
+| endpoint | `cofre_sensibilidade` | `/api/modulos/cofre/documentos/{document_id}/sensibilidade:399` | **manter** | conservative-default | sim |
+| endpoint | `cofre_relatorio` | `/api/modulos/cofre/relatorio:430` | **manter** | conservative-default | sim |
+| endpoint | `registrar_erro_frontend` | `/api/observabilidade/frontend-error:28` | **manter** | conservative-default | sim |
+| endpoint | `list_contracts` | `/api/office-contracts:78` | **manter** | conservative-default | sim |
+| endpoint | `list_expiring` | `/api/office-contracts/expiring:106` | **manter** | conservative-default | sim |
+| endpoint | `create_contract` | `/api/office-contracts:148` | **manter** | conservative-default | sim |
+| endpoint | `get_contract` | `/api/office-contracts/{contract_id}:184` | **manter** | conservative-default | sim |
+| endpoint | `update_contract` | `/api/office-contracts/{contract_id}:196` | **manter** | conservative-default | sim |
+| endpoint | `delete_contract` | `/api/office-contracts/{contract_id}:248` | **manter** | conservative-default | sim |
+| endpoint | `visao` | `/api/cases/{case_id}/orquestrador:49` | **manter** | conservative-default | sim |
+| endpoint | `avancar` | `/api/cases/{case_id}/orquestrador/avancar:64` | **manter** | conservative-default | sim |
+| endpoint | `list_withdrawals` | `/api/partner-withdrawals:80` | **manter** | conservative-default | sim |
+| endpoint | `create_withdrawal` | `/api/partner-withdrawals:113` | **manter** | conservative-default | sim |
+| endpoint | `approve_withdrawal` | `/api/partner-withdrawals/{withdrawal_id}/approve:171` | **manter** | conservative-default | sim |
+| endpoint | `reject_withdrawal` | `/api/partner-withdrawals/{withdrawal_id}/reject:210` | **manter** | conservative-default | sim |
+| endpoint | `pay_withdrawal` | `/api/partner-withdrawals/{withdrawal_id}/pay:249` | **manter** | conservative-default | sim |
+| endpoint | `delete_withdrawal` | `/api/partner-withdrawals/{withdrawal_id}:288` | **manter** | conservative-default | sim |
+| endpoint | `meta_pecas` | `/api/pecas/meta:77` | **consolidar** | parent-override | não |
+| endpoint | `gerar_peca` | `/api/pecas/gerar:117` | **consolidar** | parent-override | não |
+| endpoint | `listar_pecas` | `/api/pecas/:356` | **consolidar** | parent-override | não |
+| endpoint | `deep_research_juridica` | `/api/pecas/deep-research/juridica:415` | **consolidar** | parent-override | não |
+| endpoint | `gerar_demonstrativo` | `/api/pecas/demonstrativo:502` | **consolidar** | parent-override | não |
+| endpoint | `list_pending_items` | `/api/clients/{client_id}/pending-items:168` | **manter** | conservative-default | sim |
+| endpoint | `create_pending_item` | `/api/clients/{client_id}/pending-items:191` | **manter** | conservative-default | sim |
+| endpoint | `update_pending_item` | `/api/clients/{client_id}/pending-items/{item_id}:235` | **manter** | conservative-default | sim |
+| endpoint | `delete_pending_item` | `/api/clients/{client_id}/pending-items/{item_id}:279` | **manter** | conservative-default | sim |
+| endpoint | `cobranca` | `/api/pix/cobranca:95` | **manter** | conservative-default | sim |
+| endpoint | `meus_casos` | `/api/portal/meus-casos:40` | **manter** | conservative-default | sim |
+| endpoint | `caso_detalhe` | `/api/portal/casos/{case_id}:86` | **manter** | conservative-default | sim |
+| endpoint | `documentos` | `/api/portal/documentos:131` | **manter** | conservative-default | sim |
+| endpoint | `financeiro` | `/api/portal/financeiro:155` | **manter** | conservative-default | sim |
+| endpoint | `mensagens_nao_lidas` | `/api/portal/mensagens/nao-lidas:242` | **manter** | conservative-default | sim |
+| endpoint | `listar_mensagens_portal` | `/api/portal/casos/{case_id}/mensagens:260` | **manter** | conservative-default | sim |
+| endpoint | `enviar_mensagem_portal` | `/api/portal/casos/{case_id}/mensagens:286` | **manter** | conservative-default | sim |
+| endpoint | `listar_solicitacoes_portal` | `/api/portal/solicitacoes-documentos:66` | **manter** | conservative-default | sim |
+| endpoint | `upload_item_solicitacao` | `/api/portal/solicitacoes-documentos/itens/{item_id}/upload:127` | **manter** | conservative-default | sim |
+| endpoint | `buscar_precedentes_endpoint` | `/api/precedentes/buscar:37` | **manter** | refined-mount-analysis | não |
+| endpoint | `regras_transicao` | `/api/previdenciario/ferramentas/regras-transicao:82` | **manter** | conservative-default | sim |
+| endpoint | `parecer_pdf` | `/api/previdenciario/ferramentas/parecer-pdf:206` | **manter** | conservative-default | sim |
+| endpoint | `download_parecer` | `/api/previdenciario/ferramentas/parecer/{arquivo_id}/download:232` | **manter** | conservative-default | sim |
+| endpoint | `listar_processos` | `/api/cases/{case_id}/processes:39` | **corrigir** | parent-override | não |
+| endpoint | `criar_processo` | `/api/cases/{case_id}/processes:51` | **corrigir** | parent-override | não |
+| endpoint | `atualizar_processo` | `/api/processes/{pid}:80` | **corrigir** | parent-override | não |
+| endpoint | `definir_principal` | `/api/processes/{pid}/principal:110` | **corrigir** | parent-override | não |
+| endpoint | `arquivar_processo` | `/api/processes/{pid}/arquivar:136` | **corrigir** | parent-override | não |
+| endpoint | `desarquivar_processo` | `/api/processes/{pid}/desarquivar:170` | **corrigir** | parent-override | não |
+| endpoint | `remover_processo` | `/api/processes/{pid}:196` | **corrigir** | parent-override | não |
+| endpoint | `sincronizar` | `/api/processo-eletronico/sincronizar:55` | **manter** | conservative-default | sim |
+| endpoint | `status_sincronizacao` | `/api/processo-eletronico/status/{case_id}:87` | **manter** | conservative-default | sim |
+| endpoint | `listar_credenciais` | `/api/processo-eletronico/credenciais:117` | **manter** | conservative-default | sim |
+| endpoint | `criar_credencial` | `/api/processo-eletronico/credenciais:144` | **manter** | conservative-default | sim |
+| endpoint | `testar_credencial` | `/api/processo-eletronico/credenciais/{credencial_id}/testar:186` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/procuracoes/:40` | **manter** | conservative-default | sim |
+| endpoint | `criar` | `/api/procuracoes/:79` | **manter** | conservative-default | sim |
+| endpoint | `gerar_minuta` | `/api/procuracoes/{proc_id}/minuta:104` | **manter** | conservative-default | sim |
+| endpoint | `revogar` | `/api/procuracoes/{proc_id}/revogar:161` | **manter** | conservative-default | sim |
+| endpoint | `produtividade` | `/api/analytics/produtividade:29` | **manter** | conservative-default | sim |
+| endpoint | `registrar_exportacao_produtividade` | `/api/analytics/produtividade/export-event:143` | **manter** | conservative-default | sim |
+| endpoint | `roi_por_area` | `/api/analytics/roi-por-area:170` | **manter** | conservative-default | sim |
+| endpoint | `listar_prompts` | `/api/prompts-juridicos:128` | **manter** | conservative-default | sim |
+| endpoint | `criar_prompt` | `/api/prompts-juridicos:161` | **manter** | conservative-default | sim |
+| endpoint | `obter_prompt` | `/api/prompts-juridicos/{prompt_id}:181` | **manter** | conservative-default | sim |
+| endpoint | `atualizar_prompt` | `/api/prompts-juridicos/{prompt_id}:201` | **manter** | conservative-default | sim |
+| endpoint | `remover_prompt` | `/api/prompts-juridicos/{prompt_id}:233` | **manter** | conservative-default | sim |
+| endpoint | `executar_prompt` | `/api/prompts-juridicos/{prompt_id}/executar:253` | **manter** | conservative-default | sim |
+| endpoint | `listar_provas` | `/api/casos/{case_id}/provas:129` | **manter** | conservative-default | sim |
+| endpoint | `criar_prova` | `/api/casos/{case_id}/provas:153` | **manter** | conservative-default | sim |
+| endpoint | `atualizar_prova` | `/api/casos/{case_id}/provas/{prova_id}:187` | **manter** | conservative-default | sim |
+| endpoint | `remover_prova` | `/api/casos/{case_id}/provas/{prova_id}:218` | **manter** | conservative-default | sim |
+| endpoint | `sugerir_provas_faltantes` | `/api/casos/{case_id}/provas/sugerir-faltantes:382` | **manter** | conservative-default | sim |
+| endpoint | `matriz_provas_referencia` | `/api/casos/{case_id}/provas/matriz:477` | **manter** | conservative-default | sim |
+| endpoint | `gerar_documento_unico` | `/api/casos/{case_id}/provas/documento-unico:618` | **manter** | conservative-default | sim |
+| endpoint | `download_documento_unico` | `/api/casos/{case_id}/provas/documento-unico/{arquivo_id}/download:680` | **manter** | conservative-default | sim |
+| endpoint | `verificar` | `/api/qualidade/verificar-citacoes:68` | **manter** | conservative-default | sim |
+| endpoint | `consistencia` | `/api/qualidade/consistencia:75` | **manter** | conservative-default | sim |
+| endpoint | `simular_adversario` | `/api/qualidade/simular-adversario:91` | **manter** | conservative-default | sim |
+| endpoint | `proposicoes` | `/api/radar-legislativo/proposicoes:24` | **manter** | conservative-default | sim |
+| endpoint | `stats_conhecimento` | `/api/rag/stats:36` | **manter** | conservative-default | sim |
+| endpoint | `status_indexacao_rag` | `/api/rag/status:52` | **manter** | conservative-default | sim |
+| endpoint | `ingerir_pdf` | `/api/rag/ingest-pdf:184` | **manter** | conservative-default | sim |
+| endpoint | `ingerir_url` | `/api/rag/ingest-url:231` | **manter** | conservative-default | sim |
+| endpoint | `ingerir` | `/api/rag/ingest:334` | **manter** | conservative-default | sim |
+| endpoint | `buscar` | `/api/rag/buscar:358` | **manter** | conservative-default | sim |
+| endpoint | `listar_docs` | `/api/rag/docs:394` | **manter** | conservative-default | sim |
+| endpoint | `remover_doc` | `/api/rag/docs/{doc_id}:426` | **manter** | conservative-default | sim |
+| endpoint | `monitor_legislativo` | `/api/rag/monitor-legislativo:444` | **manter** | conservative-default | sim |
+| endpoint | `seed_base_conhecimento` | `/api/rag/seed:500` | **manter** | conservative-default | sim |
+| endpoint | `ingest_fontes_oficiais` | `/api/rag/ingest-fontes-oficiais:552` | **manter** | conservative-default | sim |
+| endpoint | `ingerir_ai_log_aprovado` | `/api/rag/ingerir-ai-log/{log_id}:611` | **manter** | conservative-default | sim |
+| endpoint | `saude_base_conhecimento` | `/api/rag/governanca/saude:202` | **manter** | refined-mount-analysis | não |
+| endpoint | `cobertura_juridica` | `/api/rag/governanca/cobertura:211` | **manter** | refined-mount-analysis | não |
+| endpoint | `detalhar_governanca_documento` | `/api/rag/governanca/docs/{doc_id}:220` | **manter** | refined-mount-analysis | não |
+| endpoint | `atualizar_governanca_documento` | `/api/rag/governanca/docs/{doc_id}:232` | **manter** | refined-mount-analysis | não |
+| endpoint | `revisar_documento_conhecimento` | `/api/rag/governanca/docs/{doc_id}/revisar:327` | **manter** | refined-mount-analysis | não |
+| endpoint | `testar_conhecimento_documento` | `/api/rag/governanca/docs/{doc_id}/testar:392` | **manter** | refined-mount-analysis | não |
+| endpoint | `comparar_versoes_documento` | `/api/rag/governanca/docs/{doc_id}/comparar:410` | **manter** | refined-mount-analysis | não |
+| endpoint | `executar_testes_juridicos` | `/api/rag/governanca/testes-juridicos:423` | **manter** | refined-mount-analysis | não |
+| endpoint | `ingerir_lote` | `/api/rag/knowledge-base/batch:313` | **manter** | conservative-default | sim |
+| endpoint | `status_lote` | `/api/rag/knowledge-base/status:459` | **manter** | conservative-default | sim |
+| endpoint | `stats` | `/api/raio-x/stats:139` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/raio-x/:175` | **manter** | conservative-default | sim |
+| endpoint | `criar` | `/api/raio-x/:224` | **manter** | conservative-default | sim |
+| endpoint | `contextual` | `/api/raio-x/contextual/{case_id}:256` | **manter** | conservative-default | sim |
+| endpoint | `contextual_analise_advogado` | `/api/raio-x/contextual/{case_id}/analise-advogado:341` | **manter** | conservative-default | sim |
+| endpoint | `detalhar` | `/api/raio-x/{analise_id}:358` | **manter** | conservative-default | sim |
+| endpoint | `atualizar` | `/api/raio-x/{analise_id}:370` | **manter** | conservative-default | sim |
+| endpoint | `analisar_documentos` | `/api/raio-x/{analise_id}/documentos/analisar:443` | **manter** | conservative-default | sim |
+| endpoint | `reanalisar` | `/api/raio-x/{analise_id}/reanalisar:529` | **manter** | conservative-default | sim |
+| endpoint | `analise_advogado_por_documentos` | `/api/raio-x/{analise_id}/analise-advogado:596` | **manter** | conservative-default | sim |
+| endpoint | `download` | `/api/raio-x/{analise_id}/documentos/{documento_id}/download:624` | **manter** | conservative-default | sim |
+| endpoint | `exportar` | `/api/raio-x/{analise_id}/exportar:651` | **manter** | conservative-default | sim |
+| endpoint | `conversao_preview` | `/api/raio-x/{analise_id}/conversao/preview:686` | **manter** | conservative-default | sim |
+| endpoint | `converter` | `/api/raio-x/{analise_id}/converter:696` | **manter** | conservative-default | sim |
+| endpoint | `arquivar` | `/api/raio-x/{analise_id}/arquivar:713` | **manter** | conservative-default | sim |
+| endpoint | `descartar` | `/api/raio-x/{analise_id}/descartar:729` | **manter** | conservative-default | sim |
+| endpoint | `excluir` | `/api/raio-x/{analise_id}:745` | **manter** | conservative-default | sim |
+| endpoint | `adm_listar` | `/api/admin-esp:97` | **desativar** | mount-analysis | sim |
+| endpoint | `adm_criar` | `/api/admin-esp:104` | **desativar** | mount-analysis | sim |
+| endpoint | `adm_atualizar` | `/api/admin-esp/{aid}:128` | **desativar** | mount-analysis | sim |
+| endpoint | `adm_remover` | `/api/admin-esp/{aid}:134` | **desativar** | mount-analysis | sim |
+| endpoint | `adm_multa_transito` | `/api/admin-esp/ferramentas/recurso-multa-transito:234` | **desativar** | mount-analysis | sim |
+| endpoint | `transito_prazos_recurso` | `/api/transito/ferramentas/prazos-recurso:255` | **desativar** | mount-analysis | sim |
+| endpoint | `transito_pontuacao_cnh` | `/api/transito/ferramentas/pontuacao-cnh:279` | **desativar** | mount-analysis | sim |
+| endpoint | `ban_listar` | `/api/bancario:101` | **desativar** | mount-analysis | sim |
+| endpoint | `ban_criar` | `/api/bancario:108` | **desativar** | mount-analysis | sim |
+| endpoint | `ban_atualizar` | `/api/bancario/{bid}:126` | **desativar** | mount-analysis | sim |
+| endpoint | `ban_remover` | `/api/bancario/{bid}:132` | **desativar** | mount-analysis | sim |
+| endpoint | `ban_juros` | `/api/bancario/ferramentas/analise-juros:138` | **desativar** | mount-analysis | sim |
+| endpoint | `ban_superendiv` | `/api/bancario/ferramentas/superendividamento:183` | **desativar** | mount-analysis | sim |
+| endpoint | `ban_ba` | `/api/bancario/ferramentas/busca-apreensao:232` | **desativar** | mount-analysis | sim |
+| endpoint | `civ_listar` | `/api/civel:104` | **desativar** | mount-analysis | sim |
+| endpoint | `civ_criar` | `/api/civel:111` | **desativar** | mount-analysis | sim |
+| endpoint | `civ_atualizar` | `/api/civel/{cid}:131` | **desativar** | mount-analysis | sim |
+| endpoint | `civ_remover` | `/api/civel/{cid}:137` | **desativar** | mount-analysis | sim |
+| endpoint | `civ_prazo_contestacao` | `/api/civel/ferramentas/prazos-contestacao:149` | **desativar** | mount-analysis | sim |
+| endpoint | `civ_alimentos` | `/api/civel/ferramentas/alimentos-calcular:217` | **desativar** | mount-analysis | sim |
+| endpoint | `civ_usucapiao` | `/api/civel/ferramentas/usucapiao-verificar:268` | **desativar** | mount-analysis | sim |
+| endpoint | `emp_tipos` | `/api/empresarial/tipos:104` | **desativar** | mount-analysis | sim |
+| endpoint | `emp_listar` | `/api/empresarial:115` | **desativar** | mount-analysis | sim |
+| endpoint | `emp_criar` | `/api/empresarial:123` | **desativar** | mount-analysis | sim |
+| endpoint | `emp_atualizar` | `/api/empresarial/{eid}:134` | **desativar** | mount-analysis | sim |
+| endpoint | `emp_remover` | `/api/empresarial/{eid}:140` | **desativar** | mount-analysis | sim |
+| endpoint | `emp_prazos_rj` | `/api/empresarial/ferramentas/prazos-rj:146` | **desativar** | mount-analysis | sim |
+| endpoint | `emp_cade` | `/api/empresarial/ferramentas/verificar-cade:224` | **desativar** | mount-analysis | sim |
+| endpoint | `civ_prescricao_consumidor` | `/api/civel/ferramentas/prescricao-consumidor:59` | **desativar** | mount-analysis | sim |
+| endpoint | `civ_dano_moral` | `/api/civel/ferramentas/calculo-dano-moral:123` | **desativar** | mount-analysis | sim |
+| endpoint | `civ_partilha_divorcio` | `/api/civel/ferramentas/partilha-divorcio:236` | **desativar** | mount-analysis | sim |
+| endpoint | `civ_rescisao_locacao` | `/api/civel/ferramentas/rescisao-locacao:268` | **desativar** | mount-analysis | sim |
+| endpoint | `trab_verbas_rescisorias` | `/api/trabalhista-esp/ferramentas/verbas-rescisorias:326` | **desativar** | mount-analysis | sim |
+| endpoint | `adm_reajuste_contrato` | `/api/admin-esp/ferramentas/reajuste-contrato-administrativo:397` | **desativar** | mount-analysis | sim |
+| endpoint | `bancario_taxas_bacen` | `/api/bancario/ferramentas/taxas-bacen:442` | **desativar** | mount-analysis | sim |
+| endpoint | `trib_auto_infracao_prazos` | `/api/tributario/ferramentas/auto-infracao-prazos:471` | **desativar** | mount-analysis | sim |
+| endpoint | `trib_prescricao_decadencia` | `/api/tributario/ferramentas/prescricao-decadencia:515` | **desativar** | mount-analysis | sim |
+| endpoint | `trib_parcelamento` | `/api/tributario/ferramentas/parcelamento:598` | **desativar** | mount-analysis | sim |
+| endpoint | `trib_simples_nacional` | `/api/tributario/ferramentas/simples-nacional:661` | **desativar** | mount-analysis | sim |
+| endpoint | `trib_regime_tributario` | `/api/tributario/ferramentas/regime-tributario:716` | **desativar** | mount-analysis | sim |
+| endpoint | `trib_reforma_tributaria` | `/api/tributario/ferramentas/reforma-tributaria:822` | **desativar** | mount-analysis | sim |
+| endpoint | `amb_auto_infracao` | `/api/ambiental/ferramentas/auto-infracao-ambiental:876` | **desativar** | mount-analysis | sim |
+| endpoint | `amb_crimes_ambientais` | `/api/ambiental/ferramentas/crimes-ambientais:957` | **desativar** | mount-analysis | sim |
+| endpoint | `amb_tac` | `/api/ambiental/ferramentas/tac-ambiental:1006` | **desativar** | mount-analysis | sim |
+| endpoint | `amb_licenciamento` | `/api/ambiental/ferramentas/licenciamento:1077` | **desativar** | mount-analysis | sim |
+| endpoint | `amb_reserva_legal` | `/api/ambiental/ferramentas/reserva-legal:1141` | **desativar** | mount-analysis | sim |
+| endpoint | `pen_listar` | `/api/penal:97` | **desativar** | mount-analysis | sim |
+| endpoint | `pen_criar` | `/api/penal:104` | **desativar** | mount-analysis | sim |
+| endpoint | `pen_atualizar` | `/api/penal/{pid}:119` | **desativar** | mount-analysis | sim |
+| endpoint | `pen_remover` | `/api/penal/{pid}:125` | **desativar** | mount-analysis | sim |
+| endpoint | `pen_prazos` | `/api/penal/ferramentas/prazos-processuais:131` | **desativar** | mount-analysis | sim |
+| endpoint | `pen_anpp` | `/api/penal/ferramentas/verificar-anpp:185` | **desativar** | mount-analysis | sim |
+| endpoint | `pen_prescricao` | `/api/penal/ferramentas/prescricao-punitiva:263` | **desativar** | mount-analysis | sim |
+| endpoint | `trab_listar` | `/api/trabalhista-esp:100` | **desativar** | mount-analysis | sim |
+| endpoint | `trab_criar` | `/api/trabalhista-esp:107` | **desativar** | mount-analysis | sim |
+| endpoint | `trab_atualizar` | `/api/trabalhista-esp/{tid}:121` | **desativar** | mount-analysis | sim |
+| endpoint | `trab_remover` | `/api/trabalhista-esp/{tid}:127` | **desativar** | mount-analysis | sim |
+| endpoint | `trab_prazos` | `/api/trabalhista-esp/ferramentas/prazos:140` | **desativar** | mount-analysis | sim |
+| endpoint | `trab_prescricao` | `/api/trabalhista-esp/ferramentas/prescricao-trabalhista:184` | **desativar** | mount-analysis | sim |
+| endpoint | `trab_deposito` | `/api/trabalhista-esp/ferramentas/deposito-recursal:237` | **desativar** | mount-analysis | sim |
+| endpoint | `trib_auto_infracao_prazos` | `/api<dinâmica>:28` | **desativar** | mount-analysis | sim |
+| endpoint | `consumidor_devolucao_dobro` | `/api/consumidor/ferramentas/devolucao-dobro:41` | **desativar** | mount-analysis | sim |
+| endpoint | `consumidor_prazos_cdc` | `/api/consumidor/ferramentas/prazos-cdc:132` | **desativar** | mount-analysis | sim |
+| endpoint | `familia_debito_alimentos` | `/api/familia/ferramentas/debito-alimentos:196` | **desativar** | mount-analysis | sim |
+| endpoint | `imobiliario_reajuste_aluguel` | `/api/imobiliario/ferramentas/reajuste-aluguel:272` | **desativar** | mount-analysis | sim |
+| endpoint | `imobiliario_prazos_despejo` | `/api/imobiliario/ferramentas/prazos-despejo:323` | **desativar** | mount-analysis | sim |
+| endpoint | `previdenciario_prazos` | `/api/previdenciario/ferramentas/prazos:376` | **desativar** | mount-analysis | sim |
+| endpoint | `lgpd_multa` | `/api/digital_lgpd/ferramentas/multa-lgpd:468` | **desativar** | mount-analysis | sim |
+| endpoint | `lgpd_prazos` | `/api/digital_lgpd/ferramentas/prazos-lgpd:510` | **desativar** | mount-analysis | sim |
+| endpoint | `previdenciario_tempo_contribuicao` | `/api/previdenciario/ferramentas/tempo-contribuicao:553` | **desativar** | mount-analysis | sim |
+| endpoint | `previdenciario_carencia` | `/api/previdenciario/ferramentas/carencia:584` | **desativar** | mount-analysis | sim |
+| endpoint | `familia_itcmd` | `/api/familia/ferramentas/itcmd-inventario:651` | **desativar** | mount-analysis | sim |
+| endpoint | `penal_prescricao` | `/api/penal/ferramentas/prescricao-penal:703` | **desativar** | mount-analysis | sim |
+| endpoint | `penal_dosimetria` | `/api/penal/ferramentas/dosimetria:725` | **desativar** | mount-analysis | sim |
+| endpoint | `trabalhista_horas_extras` | `/api/trabalhista-esp/ferramentas/horas-extras:832` | **desativar** | mount-analysis | sim |
+| endpoint | `trabalhista_horas_extras_alias` | `/api/trabalhista/ferramentas/horas-extras:896` | **desativar** | mount-analysis | sim |
+| endpoint | `empresarial_juros_mora` | `/api/empresarial/ferramentas/juros-mora:931` | **desativar** | mount-analysis | sim |
+| endpoint | `tributario_multa_mora` | `/api/tributario/ferramentas/multa-mora:1097` | **desativar** | mount-analysis | sim |
+| endpoint | `bancario_juros_abusivos` | `/api/bancario/ferramentas/juros-abusivos:1184` | **desativar** | mount-analysis | sim |
+| endpoint | `imobiliario_distrato` | `/api/imobiliario/ferramentas/distrato:1215` | **desativar** | mount-analysis | sim |
+| endpoint | `transito_valor_multa` | `/api/transito/ferramentas/valor-multa:1285` | **desativar** | mount-analysis | sim |
+| endpoint | `consumidor_negativacao` | `/api/consumidor/ferramentas/negativacao-indevida:1320` | **desativar** | mount-analysis | sim |
+| endpoint | `adm_ms` | `/api/admin-esp/ferramentas/mandado-seguranca:1390` | **desativar** | mount-analysis | sim |
+| endpoint | `digest_semanal` | `/api/regulatorio/digest-semanal:26` | **manter** | conservative-default | sim |
+| endpoint | `relatorio_mensal` | `/api/relatorio/mensal:27` | **manter** | conservative-default | sim |
+| endpoint | `relatorio_financeiro_cliente` | `/api/clients/{client_id}/relatorio-financeiro:87` | **manter** | conservative-default | sim |
+| endpoint | `listar_excecoes` | `/api/saneamento/excecoes:141` | **manter** | conservative-default | sim |
+| endpoint | `listar_duplicatas` | `/api/saneamento/duplicatas:177` | **manter** | conservative-default | sim |
+| endpoint | `aplicar_duplicata` | `/api/saneamento/duplicatas/{plano_id}/aplicar:207` | **manter** | conservative-default | sim |
+| endpoint | `listar_indicativos` | `/api/saneamento/indicativos:295` | **manter** | conservative-default | sim |
+| endpoint | `decidir_indicativo` | `/api/saneamento/indicativos/{indicativo_id}/decidir:327` | **manter** | conservative-default | sim |
+| endpoint | `listar_divergencias` | `/api/saneamento/divergencias:399` | **manter** | conservative-default | sim |
+| endpoint | `cobertura_tpu` | `/api/saneamento/tpu/cobertura:437` | **manter** | conservative-default | sim |
+| endpoint | `acionar_varredura` | `/api/saneamento/varredura:453` | **manter** | conservative-default | sim |
+| endpoint | `listar_scores` | `/api/cases/{case_id}/score-juridico:36` | **manter** | conservative-default | sim |
+| endpoint | `calcular_score` | `/api/cases/{case_id}/score-juridico/calcular:55` | **manter** | conservative-default | sim |
+| endpoint | `busca_global` | `/api/search:194` | **manter** | conservative-default | sim |
+| endpoint | `criar_solicitacao` | `/api/signatures/:75` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/signatures/:163` | **manter** | conservative-default | sim |
+| endpoint | `visualizar_documento` | `/api/signatures/{sig_id}/documento:245` | **manter** | conservative-default | sim |
+| endpoint | `confirmar_visualizacao_documento` | `/api/signatures/{sig_id}/documento-visualizado:303` | **manter** | conservative-default | sim |
+| endpoint | `assinar` | `/api/signatures/{sig_id}/assinar:347` | **manter** | conservative-default | sim |
+| endpoint | `semear_template_due_diligence` | `/api/empresarial/sociedades/due-diligence/template:148` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/empresarial/sociedades:187` | **manter** | conservative-default | sim |
+| endpoint | `criar` | `/api/empresarial/sociedades:233` | **manter** | conservative-default | sim |
+| endpoint | `detalhe` | `/api/empresarial/sociedades/{sociedade_id}:267` | **manter** | conservative-default | sim |
+| endpoint | `atualizar` | `/api/empresarial/sociedades/{sociedade_id}:309` | **manter** | conservative-default | sim |
+| endpoint | `remover` | `/api/empresarial/sociedades/{sociedade_id}:333` | **manter** | conservative-default | sim |
+| endpoint | `adicionar_socio` | `/api/empresarial/sociedades/{sociedade_id}/socios:350` | **manter** | conservative-default | sim |
+| endpoint | `atualizar_socio` | `/api/empresarial/sociedades/socios/{socio_id}:395` | **manter** | conservative-default | sim |
+| endpoint | `remover_socio` | `/api/empresarial/sociedades/socios/{socio_id}:419` | **manter** | conservative-default | sim |
+| endpoint | `registrar_evento` | `/api/empresarial/sociedades/{sociedade_id}/eventos:449` | **manter** | conservative-default | sim |
+| endpoint | `criar_solicitacao` | `/api/casos/{case_id}/solicitacoes-documentos:85` | **manter** | conservative-default | sim |
+| endpoint | `listar_solicitacoes` | `/api/casos/{case_id}/solicitacoes-documentos:180` | **manter** | conservative-default | sim |
+| endpoint | `ingerir_seed` | `/api/sumulas/ingerir-seed:30` | **manter** | conservative-default | sim |
+| endpoint | `buscar_sumulas` | `/api/sumulas/buscar:58` | **manter** | conservative-default | sim |
+| endpoint | `verificar_conflito` | `/api/sumulas/verificar-conflito:104` | **manter** | conservative-default | sim |
+| endpoint | `tribunais` | `/api/suspensoes/tribunais:61` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/suspensoes/:67` | **manter** | conservative-default | sim |
+| endpoint | `criar` | `/api/suspensoes/:90` | **manter** | conservative-default | sim |
+| endpoint | `remover` | `/api/suspensoes/{suspensao_id}:117` | **manter** | conservative-default | sim |
+| endpoint | `simular` | `/api/suspensoes/simular:142` | **manter** | conservative-default | sim |
+| endpoint | `mapa_modulos` | `/api/system-modules/mapa:46` | **manter** | conservative-default | sim |
+| endpoint | `status_integracoes` | `/api/system-modules/integrations:58` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/tasks/:103` | **manter** | conservative-default | sim |
+| endpoint | `criar` | `/api/tasks/:144` | **manter** | conservative-default | sim |
+| endpoint | `atualizar` | `/api/tasks/{task_id}:180` | **manter** | conservative-default | sim |
+| endpoint | `remover` | `/api/tasks/{task_id}:251` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/templates/:113` | **manter** | conservative-default | sim |
+| endpoint | `detalhe` | `/api/templates/{tpl_id}:141` | **manter** | conservative-default | sim |
+| endpoint | `criar` | `/api/templates/:160` | **manter** | conservative-default | sim |
+| endpoint | `gerar_peca` | `/api/templates/{tpl_id}/gerar:183` | **manter** | conservative-default | sim |
+| endpoint | `remover` | `/api/templates/{tpl_id}:235` | **manter** | conservative-default | sim |
+| endpoint | `listar_teses` | `/api/teses:107` | **consolidar** | parent-override | não |
+| endpoint | `criar_tese` | `/api/teses:157` | **consolidar** | parent-override | não |
+| endpoint | `ranking_teses` | `/api/teses/ranking:174` | **consolidar** | parent-override | não |
+| endpoint | `busca_avancada` | `/api/teses/busca-avancada:196` | **consolidar** | parent-override | não |
+| endpoint | `teses_do_caso` | `/api/teses/casos/{case_id}:253` | **consolidar** | parent-override | não |
+| endpoint | `impacto_regulatorio` | `/api/teses/impacto-regulatorio:279` | **consolidar** | parent-override | não |
+| endpoint | `obter_tese` | `/api/teses/{tese_id}:360` | **consolidar** | parent-override | não |
+| endpoint | `atualizar_tese` | `/api/teses/{tese_id}:376` | **consolidar** | parent-override | não |
+| endpoint | `arquivar_tese` | `/api/teses/{tese_id}:396` | **consolidar** | parent-override | não |
+| endpoint | `casos_candidatos` | `/api/teses/{tese_id}/casos-candidatos:413` | **consolidar** | parent-override | não |
+| endpoint | `vincular_caso` | `/api/teses/{tese_id}/vincular-caso:499` | **consolidar** | parent-override | não |
+| endpoint | `sugerir_teses_ia` | `/api/teses/sugerir-ia:529` | **consolidar** | parent-override | não |
+| endpoint | `motor_teses` | `/api/teses/motor:786` | **consolidar** | parent-override | não |
+| endpoint | `motor_teses_async` | `/api/teses/motor/async:845` | **consolidar** | parent-override | não |
+| endpoint | `motor_teses_async_status` | `/api/teses/motor/async/{task_id}:880` | **consolidar** | parent-override | não |
+| endpoint | `por_caso` | `/api/timesheet/casos/{case_id}:50` | **manter** | conservative-default | sim |
+| endpoint | `lancar` | `/api/timesheet/:76` | **manter** | conservative-default | sim |
+| endpoint | `faturar` | `/api/timesheet/caso/{case_id}/faturar:94` | **manter** | conservative-default | sim |
+| endpoint | `remover` | `/api/timesheet/{entry_id}:143` | **manter** | conservative-default | sim |
+| endpoint | `calcular` | `/api/trabalhista/liquidacao/calcular:141` | **manter** | conservative-default | sim |
+| endpoint | `planilha_pdf` | `/api/trabalhista/liquidacao/planilha-pdf:313` | **manter** | conservative-default | sim |
+| endpoint | `download_planilha` | `/api/trabalhista/liquidacao/planilha/{arquivo_id}/download:337` | **manter** | conservative-default | sim |
+| endpoint | `status_transparencia` | `/api/transparencia/status:47` | **manter** | conservative-default | sim |
+| endpoint | `consultar_sancoes` | `/api/transparencia/sancoes:59` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/trash/:113` | **manter** | conservative-default | sim |
+| endpoint | `restaurar` | `/api/trash/{entidade}/{registro_id}/restaurar:154` | **manter** | conservative-default | sim |
+| endpoint | `purgar` | `/api/trash/{entidade}/{registro_id}/purgar:200` | **manter** | conservative-default | sim |
+| endpoint | `entrevista_inteligente` | `/api/triagem/entrevista:54` | **manter** | conservative-default | sim |
+| endpoint | `analisar_xml` | `/api/tributario/fiscal/analisar-xml:96` | **manter** | conservative-default | sim |
+| endpoint | `relatorio_pdf` | `/api/tributario/fiscal/relatorio-pdf:339` | **manter** | conservative-default | sim |
+| endpoint | `download_relatorio` | `/api/tributario/fiscal/relatorio/{arquivo_id}/download:368` | **manter** | conservative-default | sim |
+| endpoint | `meu_perfil` | `/api/users/me:153` | **manter** | conservative-default | sim |
+| endpoint | `minha_seguranca` | `/api/users/me/security:159` | **manter** | conservative-default | sim |
+| endpoint | `minhas_sessoes` | `/api/users/me/sessions:183` | **manter** | conservative-default | sim |
+| endpoint | `revogar_outras_sessoes` | `/api/users/me/sessions/revoke-others:221` | **manter** | conservative-default | sim |
+| endpoint | `revogar_sessao` | `/api/users/me/sessions/{session_id}/revoke:261` | **manter** | conservative-default | sim |
+| endpoint | `meu_qr_totp` | `/api/users/me/totp-qr:304` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/users/:342` | **manter** | conservative-default | sim |
+| endpoint | `criar` | `/api/users/:364` | **manter** | conservative-default | sim |
+| endpoint | `atualizar` | `/api/users/{user_id}:488` | **manter** | conservative-default | sim |
+| endpoint | `desativar` | `/api/users/{user_id}:574` | **manter** | conservative-default | sim |
+| endpoint | `minha_url_calendario` | `/api/users/me/calendar-url:613` | **manter** | conservative-default | sim |
+| endpoint | `enviar_avatar` | `/api/users/me/avatar:687` | **manter** | conservative-default | sim |
+| endpoint | `remover_avatar` | `/api/users/me/avatar:720` | **manter** | conservative-default | sim |
+| endpoint | `obter_avatar` | `/api/users/{user_id}/avatar:743` | **manter** | conservative-default | sim |
+| endpoint | `cep` | `/api/utils/cep/{cep}:18` | **manter** | conservative-default | sim |
+| endpoint | `cnpj` | `/api/utils/cnpj/{cnpj}:29` | **manter** | conservative-default | sim |
+| endpoint | `cpf_check` | `/api/utils/validar-cpf/{cpf}:39` | **manter** | conservative-default | sim |
+| endpoint | `status_validador` | `/api/validador-juridico/status:33` | **manter** | conservative-default | sim |
+| endpoint | `validar` | `/api/validador-juridico/validar:51` | **manter** | conservative-default | sim |
+| endpoint | `timeline_visual` | `/api/visual-law/casos/{case_id}/timeline:47` | **manter** | conservative-default | sim |
+| endpoint | `matriz_risco` | `/api/visual-law/casos/{case_id}/matriz-risco:88` | **manter** | conservative-default | sim |
+| endpoint | `alertas` | `/api/visual-law/casos/{case_id}/alertas:118` | **manter** | conservative-default | sim |
+| endpoint | `breakeven` | `/api/visual-law/breakeven:145` | **manter** | conservative-default | sim |
+| endpoint | `get_status` | `/api/whatsapp/status:86` | **manter** | conservative-default | sim |
+| endpoint | `get_qrcode` | `/api/whatsapp/qrcode:98` | **manter** | conservative-default | sim |
+| endpoint | `send_message` | `/api/whatsapp/send:110` | **manter** | conservative-default | sim |
+| endpoint | `list_chats` | `/api/whatsapp/chats:133` | **manter** | conservative-default | sim |
+| endpoint | `get_messages` | `/api/whatsapp/messages:151` | **manter** | conservative-default | sim |
+| endpoint | `listar_templates` | `/api/workflow/templates:113` | **manter** | conservative-default | sim |
+| endpoint | `criar_template` | `/api/workflow/templates:141` | **manter** | conservative-default | sim |
+| endpoint | `arquivar_template` | `/api/workflow/templates/{template_id}:170` | **manter** | conservative-default | sim |
+| endpoint | `workflow_do_caso` | `/api/workflow/casos/{case_id}:189` | **manter** | conservative-default | sim |
+| endpoint | `iniciar_workflow` | `/api/workflow/casos/{case_id}/iniciar:229` | **manter** | conservative-default | sim |
+| endpoint | `aplicar_workflow_padrao` | `/api/workflow/casos/{case_id}/aplicar-padrao:277` | **manter** | conservative-default | sim |
+| endpoint | `avancar_etapa` | `/api/workflow/casos/{case_id}/avancar:368` | **manter** | conservative-default | sim |
+| endpoint | `concluir_workflow` | `/api/workflow/casos/{case_id}/concluir:469` | **manter** | conservative-default | sim |
 
-### Renomear
+## Serviços
 
-- vocabulário interno `Ramos` para `Áreas de Atuação`, preservando aliases de compatibilidade;
-- enum/símbolos correlatos durante migração controlada.
+| Tipo | Item | Arquivo/rota | Classificação | Fonte | Revisão |
+|---|---|---|---|---|---|
+| service | `__init__` | `backend/app/services/__init__.py` | **manter** | refined-default | sim |
+| service | `abusividade_service` | `backend/app/services/abusividade_service.py` | **manter** | conservative-default | sim |
+| service | `activity_alert_service` | `backend/app/services/activity_alert_service.py` | **manter** | refined-default | sim |
+| service | `advogado_style_service` | `backend/app/services/advogado_style_service.py` | **manter** | conservative-default | sim |
+| service | `__init__` | `backend/app/services/ai/__init__.py` | **manter** | refined-default | sim |
+| service | `adversarial` | `backend/app/services/ai/adversarial.py` | **manter** | conservative-default | sim |
+| service | `__init__` | `backend/app/services/ai/agent/__init__.py` | **manter** | refined-default | sim |
+| service | `budget` | `backend/app/services/ai/agent/budget.py` | **manter** | conservative-default | sim |
+| service | `hitl_state` | `backend/app/services/ai/agent/hitl_state.py` | **manter** | conservative-default | sim |
+| service | `loop` | `backend/app/services/ai/agent/loop.py` | **manter** | conservative-default | sim |
+| service | `__init__` | `backend/app/services/ai/agent/tools/__init__.py` | **manter** | refined-default | sim |
+| service | `context` | `backend/app/services/ai/agent/tools/context.py` | **manter** | conservative-default | sim |
+| service | `escrita` | `backend/app/services/ai/agent/tools/escrita.py` | **manter** | conservative-default | sim |
+| service | `leitura` | `backend/app/services/ai/agent/tools/leitura.py` | **manter** | conservative-default | sim |
+| service | `motores` | `backend/app/services/ai/agent/tools/motores.py` | **manter** | conservative-default | sim |
+| service | `registry` | `backend/app/services/ai/agent/tools/registry.py` | **manter** | conservative-default | sim |
+| service | `__init__` | `backend/app/services/ai/core/__init__.py` | **manter** | override | não |
+| service | `agent_registry` | `backend/app/services/ai/core/agent_registry.py` | **manter** | override | não |
+| service | `audit_logger` | `backend/app/services/ai/core/audit_logger.py` | **manter** | override | não |
+| service | `capacidades` | `backend/app/services/ai/core/capacidades.py` | **manter** | override | não |
+| service | `context_builder` | `backend/app/services/ai/core/context_builder.py` | **manter** | override | não |
+| service | `dpt360_protocol` | `backend/app/services/ai/core/dpt360_protocol.py` | **manter** | override | não |
+| service | `dpt360_registry` | `backend/app/services/ai/core/dpt360_registry.py` | **manter** | override | não |
+| service | `ejc_skill_catalog` | `backend/app/services/ai/core/ejc_skill_catalog.py` | **manter** | override | não |
+| service | `hitl_policy` | `backend/app/services/ai/core/hitl_policy.py` | **manter** | override | não |
+| service | `intent_classifier` | `backend/app/services/ai/core/intent_classifier.py` | **manter** | override | não |
+| service | `orchestrator` | `backend/app/services/ai/core/orchestrator.py` | **manter** | override | não |
+| service | `response_validator` | `backend/app/services/ai/core/response_validator.py` | **manter** | override | não |
+| service | `skill_registry` | `backend/app/services/ai/core/skill_registry.py` | **manter** | override | não |
+| service | `delimitador` | `backend/app/services/ai/delimitador.py` | **manter** | conservative-default | sim |
+| service | `entidades_caso` | `backend/app/services/ai/entidades_caso.py` | **manter** | conservative-default | sim |
+| service | `juridico_guardrails` | `backend/app/services/ai/juridico_guardrails.py` | **manter** | conservative-default | sim |
+| service | `model_router` | `backend/app/services/ai/model_router.py` | **manter** | conservative-default | sim |
+| service | `ner_local` | `backend/app/services/ai/ner_local.py` | **manter** | conservative-default | sim |
+| service | `pertinencia` | `backend/app/services/ai/pertinencia.py` | **manter** | conservative-default | sim |
+| service | `provider_metrics_runtime` | `backend/app/services/ai/provider_metrics_runtime.py` | **manter** | conservative-default | sim |
+| service | `provider_policy` | `backend/app/services/ai/provider_policy.py` | **manter** | conservative-default | sim |
+| service | `provider_registry` | `backend/app/services/ai/provider_registry.py` | **manter** | conservative-default | sim |
+| service | `provider_registry_runtime` | `backend/app/services/ai/provider_registry_runtime.py` | **manter** | conservative-default | sim |
+| service | `pseudonymizer` | `backend/app/services/ai/pseudonymizer.py` | **manter** | conservative-default | sim |
+| service | `reranker` | `backend/app/services/ai/reranker.py` | **manter** | conservative-default | sim |
+| service | `sanitization_policy` | `backend/app/services/ai/sanitization_policy.py` | **manter** | conservative-default | sim |
+| service | `skill_router` | `backend/app/services/ai/skill_router.py` | **manter** | conservative-default | sim |
+| service | `ai_cache` | `backend/app/services/ai_cache.py` | **manter** | conservative-default | sim |
+| service | `ai_contextual` | `backend/app/services/ai_contextual.py` | **manter** | conservative-default | sim |
+| service | `ai_core_hardening_patch` | `backend/app/services/ai_core_hardening_patch.py` | **manter** | conservative-default | sim |
+| service | `ai_cost` | `backend/app/services/ai_cost.py` | **manter** | conservative-default | sim |
+| service | `ai_document_chunking` | `backend/app/services/ai_document_chunking.py` | **manter** | conservative-default | sim |
+| service | `ai_gateway` | `backend/app/services/ai_gateway.py` | **manter** | override | não |
+| service | `ai_guard` | `backend/app/services/ai_guard.py` | **manter** | conservative-default | sim |
+| service | `ai_service` | `backend/app/services/ai_service.py` | **manter** | refined-default | sim |
+| service | `ai_skill_service` | `backend/app/services/ai_skill_service.py` | **manter** | refined-default | sim |
+| service | `__init__` | `backend/app/services/ajuizamento/__init__.py` | **manter** | refined-default | sim |
+| service | `assinatura` | `backend/app/services/ajuizamento/assinatura.py` | **manter** | conservative-default | sim |
+| service | `auditoria` | `backend/app/services/ajuizamento/auditoria.py` | **manter** | refined-default | sim |
+| service | `canonico` | `backend/app/services/ajuizamento/canonico.py` | **manter** | conservative-default | sim |
+| service | `capacidades` | `backend/app/services/ajuizamento/capacidades.py` | **manter** | refined-default | sim |
+| service | `__init__` | `backend/app/services/ajuizamento/conectores/__init__.py` | **manter** | refined-default | sim |
+| service | `base` | `backend/app/services/ajuizamento/conectores/base.py` | **manter** | refined-default | sim |
+| service | `datajud` | `backend/app/services/ajuizamento/conectores/datajud.py` | **manter** | refined-default | sim |
+| service | `eproc` | `backend/app/services/ajuizamento/conectores/eproc.py` | **manter** | conservative-default | sim |
+| service | `pdpj` | `backend/app/services/ajuizamento/conectores/pdpj.py` | **manter** | conservative-default | sim |
+| service | `pje_mni` | `backend/app/services/ajuizamento/conectores/pje_mni.py` | **manter** | conservative-default | sim |
+| service | `roteador` | `backend/app/services/ajuizamento/conectores/roteador.py` | **manter** | conservative-default | sim |
+| service | `estados` | `backend/app/services/ajuizamento/estados.py` | **manter** | conservative-default | sim |
+| service | `orquestrador` | `backend/app/services/ajuizamento/orquestrador.py` | **manter** | refined-default | sim |
+| service | `perfis` | `backend/app/services/ajuizamento/perfis.py` | **manter** | conservative-default | sim |
+| service | `preflight` | `backend/app/services/ajuizamento/preflight.py` | **manter** | conservative-default | sim |
+| service | `registro_protocolo` | `backend/app/services/ajuizamento/registro_protocolo.py` | **manter** | conservative-default | sim |
+| service | `sincronizacao` | `backend/app/services/ajuizamento/sincronizacao.py` | **manter** | conservative-default | sim |
+| service | `tpu_service` | `backend/app/services/ajuizamento/tpu_service.py` | **manter** | refined-default | sim |
+| service | `__init__` | `backend/app/services/ambiental/__init__.py` | **manter** | refined-default | sim |
+| service | `estrategia_auto` | `backend/app/services/ambiental/estrategia_auto.py` | **manter** | conservative-default | sim |
+| service | `analise_estrategica` | `backend/app/services/analise_estrategica.py` | **manter** | conservative-default | sim |
+| service | `anexos_service` | `backend/app/services/anexos_service.py` | **manter** | refined-default | sim |
+| service | `autofix_scanner` | `backend/app/services/autofix_scanner.py` | **manter** | conservative-default | sim |
+| service | `backup_drive_auth` | `backend/app/services/backup_drive_auth.py` | **manter** | conservative-default | sim |
+| service | `backup_execution_service` | `backend/app/services/backup_execution_service.py` | **manter** | conservative-default | sim |
+| service | `backup_lock` | `backend/app/services/backup_lock.py` | **manter** | conservative-default | sim |
+| service | `backup_service` | `backend/app/services/backup_service.py` | **manter** | conservative-default | sim |
+| service | `bank_report` | `backend/app/services/bank_report.py` | **manter** | conservative-default | sim |
+| service | `bank_statement` | `backend/app/services/bank_statement.py` | **manter** | conservative-default | sim |
+| service | `bcb_service` | `backend/app/services/bcb_service.py` | **manter** | conservative-default | sim |
+| service | `__init__` | `backend/app/services/calc/__init__.py` | **manter** | refined-default | sim |
+| service | `cet` | `backend/app/services/calc/cet.py` | **manter** | conservative-default | sim |
+| service | `custas_tjmg` | `backend/app/services/calc/custas_tjmg.py` | **manter** | conservative-default | sim |
+| service | `liquidacao_trabalhista` | `backend/app/services/calc/liquidacao_trabalhista.py` | **manter** | conservative-default | sim |
+| service | `prescricao` | `backend/app/services/calc/prescricao.py` | **manter** | conservative-default | sim |
+| service | `previdenciario_beneficio` | `backend/app/services/calc/previdenciario_beneficio.py` | **manter** | refined-default | sim |
+| service | `tax_tables` | `backend/app/services/calc/tax_tables.py` | **manter** | conservative-default | sim |
+| service | `trabalhista` | `backend/app/services/calc/trabalhista.py` | **manter** | refined-default | sim |
+| service | `calculo_acordo` | `backend/app/services/calculo_acordo.py` | **manter** | conservative-default | sim |
+| service | `calendario_tribunal` | `backend/app/services/calendario_tribunal.py` | **manter** | conservative-default | sim |
+| service | `case_automacao` | `backend/app/services/case_automacao.py` | **manter** | conservative-default | sim |
+| service | `case_closure_service` | `backend/app/services/case_closure_service.py` | **manter** | conservative-default | sim |
+| service | `case_context` | `backend/app/services/case_context.py` | **manter** | conservative-default | sim |
+| service | `case_health` | `backend/app/services/case_health.py` | **manter** | conservative-default | sim |
+| service | `case_integrity_service` | `backend/app/services/case_integrity_service.py` | **manter** | conservative-default | sim |
+| service | `case_intel` | `backend/app/services/case_intel.py` | **manter** | conservative-default | sim |
+| service | `case_intelligence_service` | `backend/app/services/case_intelligence_service.py` | **manter** | refined-default | sim |
+| service | `case_mutation_guard` | `backend/app/services/case_mutation_guard.py` | **manter** | conservative-default | sim |
+| service | `case_numeracao` | `backend/app/services/case_numeracao.py` | **manter** | conservative-default | sim |
+| service | `checklist_ia` | `backend/app/services/checklist_ia.py` | **manter** | conservative-default | sim |
+| service | `citation_check` | `backend/app/services/citation_check.py` | **manter** | conservative-default | sim |
+| service | `citation_gate` | `backend/app/services/citation_gate.py` | **manter** | conservative-default | sim |
+| service | `client_anonimizacao` | `backend/app/services/client_anonimizacao.py` | **manter** | conservative-default | sim |
+| service | `cobranca_cliente_service` | `backend/app/services/cobranca_cliente_service.py` | **manter** | conservative-default | sim |
+| service | `conflito_interesses` | `backend/app/services/conflito_interesses.py` | **manter** | conservative-default | sim |
+| service | `conflito_service` | `backend/app/services/conflito_service.py` | **manter** | conservative-default | sim |
+| service | `__init__` | `backend/app/services/conhecimento_ingest/__init__.py` | **manter** | refined-default | sim |
+| service | `anpd` | `backend/app/services/conhecimento_ingest/anpd.py` | **manter** | conservative-default | sim |
+| service | `base` | `backend/app/services/conhecimento_ingest/base.py` | **manter** | refined-default | sim |
+| service | `normas_rfb` | `backend/app/services/conhecimento_ingest/normas_rfb.py` | **manter** | conservative-default | sim |
+| service | `crawler_precedentes` | `backend/app/services/crawler_precedentes.py` | **manter** | conservative-default | sim |
+| service | `credential_registry` | `backend/app/services/credential_registry.py` | **manter** | conservative-default | sim |
+| service | `credential_testers` | `backend/app/services/credential_testers.py` | **manter** | conservative-default | sim |
+| service | `credential_vault_service` | `backend/app/services/credential_vault_service.py` | **manter** | override | não |
+| service | `dashboard_service` | `backend/app/services/dashboard_service.py` | **manter** | refined-default | sim |
+| service | `data_room_public` | `backend/app/services/data_room_public.py` | **manter** | conservative-default | sim |
+| service | `datajud_cognitive_feed` | `backend/app/services/datajud_cognitive_feed.py` | **manter** | conservative-default | sim |
+| service | `datajud_cognitive_patch` | `backend/app/services/datajud_cognitive_patch.py` | **manter** | conservative-default | sim |
+| service | `datajud_service` | `backend/app/services/datajud_service.py` | **manter** | refined-default | sim |
+| service | `datajud_sync_service` | `backend/app/services/datajud_sync_service.py` | **manter** | conservative-default | sim |
+| service | `deadline_calculator` | `backend/app/services/deadline_calculator.py` | **manter** | conservative-default | sim |
+| service | `deep_research_service` | `backend/app/services/deep_research_service.py` | **manter** | conservative-default | sim |
+| service | `diagnostico_juridico_service` | `backend/app/services/diagnostico_juridico_service.py` | **manter** | conservative-default | sim |
+| service | `diagnostico_service` | `backend/app/services/diagnostico_service.py` | **manter** | refined-default | sim |
+| service | `diario_oficial_service` | `backend/app/services/diario_oficial_service.py` | **manter** | refined-default | sim |
+| service | `djen_http` | `backend/app/services/djen_http.py` | **manter** | conservative-default | sim |
+| service | `djen_service` | `backend/app/services/djen_service.py` | **manter** | refined-default | sim |
+| service | `document_access_policy` | `backend/app/services/document_access_policy.py` | **manter** | conservative-default | sim |
+| service | `document_analysis_hook` | `backend/app/services/document_analysis_hook.py` | **manter** | conservative-default | sim |
+| service | `document_case_link_service` | `backend/app/services/document_case_link_service.py` | **manter** | conservative-default | sim |
+| service | `document_classifier` | `backend/app/services/document_classifier.py` | **manter** | conservative-default | sim |
+| service | `document_content_policy` | `backend/app/services/document_content_policy.py` | **manter** | conservative-default | sim |
+| service | `document_extraction_adapter` | `backend/app/services/document_extraction_adapter.py` | **manter** | conservative-default | sim |
+| service | `document_format` | `backend/app/services/document_format.py` | **manter** | conservative-default | sim |
+| service | `document_hash_service` | `backend/app/services/document_hash_service.py` | **manter** | conservative-default | sim |
+| service | `document_ingestion_orchestrator` | `backend/app/services/document_ingestion_orchestrator.py` | **manter** | conservative-default | sim |
+| service | `document_ingestion_service` | `backend/app/services/document_ingestion_service.py` | **manter** | conservative-default | sim |
+| service | `document_intake_service` | `backend/app/services/document_intake_service.py` | **manter** | refined-default | sim |
+| service | `document_persistence_service` | `backend/app/services/document_persistence_service.py` | **manter** | conservative-default | sim |
+| service | `document_reference_guard` | `backend/app/services/document_reference_guard.py` | **manter** | conservative-default | sim |
+| service | `document_remote_hash_service` | `backend/app/services/document_remote_hash_service.py` | **manter** | conservative-default | sim |
+| service | `document_rescan_service` | `backend/app/services/document_rescan_service.py` | **manter** | refined-default | sim |
+| service | `document_storage_uow` | `backend/app/services/document_storage_uow.py` | **manter** | conservative-default | sim |
+| service | `document_upload_stream` | `backend/app/services/document_upload_stream.py` | **manter** | conservative-default | sim |
+| service | `document_version_audit_service` | `backend/app/services/document_version_audit_service.py` | **manter** | conservative-default | sim |
+| service | `document_version_chain_readiness_service` | `backend/app/services/document_version_chain_readiness_service.py` | **manter** | conservative-default | sim |
+| service | `document_version_service` | `backend/app/services/document_version_service.py` | **manter** | conservative-default | sim |
+| service | `documental` | `backend/app/services/documental.py` | **manter** | conservative-default | sim |
+| service | `documento_service` | `backend/app/services/documento_service.py` | **manter** | conservative-default | sim |
+| service | `docx_service` | `backend/app/services/docx_service.py` | **manter** | conservative-default | sim |
+| service | `dossie_documental_canonico` | `backend/app/services/dossie_documental_canonico.py` | **manter** | conservative-default | sim |
+| service | `dossie_modulos` | `backend/app/services/dossie_modulos.py` | **manter** | conservative-default | sim |
+| service | `dossie_service` | `backend/app/services/dossie_service.py` | **manter** | conservative-default | sim |
+| service | `due_diligence_empresarial` | `backend/app/services/due_diligence_empresarial.py` | **manter** | conservative-default | sim |
+| service | `embedding_service` | `backend/app/services/embedding_service.py` | **manter** | conservative-default | sim |
+| service | `entrada_expurgo_service` | `backend/app/services/entrada_expurgo_service.py` | **manter** | conservative-default | sim |
+| service | `entrada_juridica_service` | `backend/app/services/entrada_juridica_service.py` | **manter** | conservative-default | sim |
+| service | `entrada_service` | `backend/app/services/entrada_service.py` | **manter** | refined-default | sim |
+| service | `entrada_universal_service` | `backend/app/services/entrada_universal_service.py` | **manter** | refined-default | sim |
+| service | `event_bus` | `backend/app/services/event_bus.py` | **manter** | conservative-default | sim |
+| service | `event_subscribers` | `backend/app/services/event_subscribers.py` | **manter** | conservative-default | sim |
+| service | `evento_processual` | `backend/app/services/evento_processual.py` | **manter** | conservative-default | sim |
+| service | `extracao_estruturada` | `backend/app/services/extracao_estruturada.py` | **manter** | conservative-default | sim |
+| service | `fee_ledger_compat` | `backend/app/services/fee_ledger_compat.py` | **manter** | conservative-default | sim |
+| service | `fee_proposal_service` | `backend/app/services/fee_proposal_service.py` | **manter** | refined-default | sim |
+| service | `feriados_service` | `backend/app/services/feriados_service.py` | **manter** | conservative-default | sim |
+| service | `ficha_triagem_service` | `backend/app/services/ficha_triagem_service.py` | **manter** | refined-default | sim |
+| service | `__init__` | `backend/app/services/fiscal/__init__.py` | **manter** | refined-default | sim |
+| service | `nfe_parser` | `backend/app/services/fiscal/nfe_parser.py` | **manter** | conservative-default | sim |
+| service | `recuperacao_creditos` | `backend/app/services/fiscal/recuperacao_creditos.py` | **manter** | conservative-default | sim |
+| service | `funil` | `backend/app/services/funil.py` | **manter** | conservative-default | sim |
+| service | `geracao_documental` | `backend/app/services/geracao_documental.py` | **manter** | conservative-default | sim |
+| service | `geracao_documental_cliente` | `backend/app/services/geracao_documental_cliente.py` | **manter** | conservative-default | sim |
+| service | `google_drive` | `backend/app/services/google_drive.py` | **consolidar** | refined-duplicate-family | sim |
+| service | `google_drive_service` | `backend/app/services/google_drive_service.py` | **consolidar** | refined-duplicate-family | sim |
+| service | `google_drive_taxonomy` | `backend/app/services/google_drive_taxonomy.py` | **manter** | conservative-default | sim |
+| service | `heartbeat_service` | `backend/app/services/heartbeat_service.py` | **manter** | conservative-default | sim |
+| service | `homologacao_ferramentas` | `backend/app/services/homologacao_ferramentas.py` | **manter** | conservative-default | sim |
+| service | `ia_defensiva_service` | `backend/app/services/ia_defensiva_service.py` | **manter** | refined-default | sim |
+| service | `ia_parser` | `backend/app/services/ia_parser.py` | **manter** | conservative-default | sim |
+| service | `impacto_regulatorio` | `backend/app/services/impacto_regulatorio.py` | **manter** | conservative-default | sim |
+| service | `inadimplencia_service` | `backend/app/services/inadimplencia_service.py` | **manter** | conservative-default | sim |
+| service | `indices_service` | `backend/app/services/indices_service.py` | **manter** | refined-default | sim |
+| service | `infosimples_service` | `backend/app/services/infosimples_service.py` | **manter** | refined-default | sim |
+| service | `ingestao_saude` | `backend/app/services/ingestao_saude.py` | **manter** | conservative-default | sim |
+| service | `ingestion_service` | `backend/app/services/ingestion_service.py` | **manter** | conservative-default | sim |
+| service | `__init__` | `backend/app/services/ingestors/__init__.py` | **manter** | refined-default | sim |
+| service | `camara` | `backend/app/services/ingestors/camara.py` | **manter** | conservative-default | sim |
+| service | `djen` | `backend/app/services/ingestors/djen.py` | **manter** | refined-default | sim |
+| service | `lexml` | `backend/app/services/ingestors/lexml.py` | **manter** | refined-default | sim |
+| service | `planalto` | `backend/app/services/ingestors/planalto.py` | **manter** | conservative-default | sim |
+| service | `senado` | `backend/app/services/ingestors/senado.py` | **manter** | conservative-default | sim |
+| service | `stj` | `backend/app/services/ingestors/stj.py` | **manter** | refined-default | sim |
+| service | `tjmg` | `backend/app/services/ingestors/tjmg.py` | **manter** | refined-default | sim |
+| service | `integration_runtime_status` | `backend/app/services/integration_runtime_status.py` | **manter** | conservative-default | sim |
+| service | `integration_status` | `backend/app/services/integration_status.py` | **manter** | conservative-default | sim |
+| service | `integridade_service` | `backend/app/services/integridade_service.py` | **manter** | conservative-default | sim |
+| service | `jurimetria` | `backend/app/services/jurimetria.py` | **manter** | refined-default | sim |
+| service | `__init__` | `backend/app/services/jurimetria_tribunais/__init__.py` | **manter** | refined-default | sim |
+| service | `agregacao` | `backend/app/services/jurimetria_tribunais/agregacao.py` | **manter** | conservative-default | sim |
+| service | `coleta` | `backend/app/services/jurimetria_tribunais/coleta.py` | **manter** | conservative-default | sim |
+| service | `servico` | `backend/app/services/jurimetria_tribunais/servico.py` | **manter** | conservative-default | sim |
+| service | `tpu_desfechos` | `backend/app/services/jurimetria_tribunais/tpu_desfechos.py` | **manter** | conservative-default | sim |
+| service | `__init__` | `backend/app/services/juris_import/__init__.py` | **manter** | refined-default | sim |
+| service | `base` | `backend/app/services/juris_import/base.py` | **manter** | refined-default | sim |
+| service | `ingest` | `backend/app/services/juris_import/ingest.py` | **manter** | conservative-default | sim |
+| service | `lexml` | `backend/app/services/juris_import/lexml.py` | **manter** | refined-default | sim |
+| service | `stj` | `backend/app/services/juris_import/stj.py` | **manter** | refined-default | sim |
+| service | `tcu` | `backend/app/services/juris_import/tcu.py` | **manter** | conservative-default | sim |
+| service | `tjmg` | `backend/app/services/juris_import/tjmg.py` | **manter** | refined-default | sim |
+| service | `jurisprudencia_externa` | `backend/app/services/jurisprudencia_externa.py` | **manter** | conservative-default | sim |
+| service | `knowledge_autoapproval` | `backend/app/services/knowledge_autoapproval.py` | **manter** | conservative-default | sim |
+| service | `knowledge_governance` | `backend/app/services/knowledge_governance.py` | **manter** | conservative-default | sim |
+| service | `legal_base` | `backend/app/services/legal_base.py` | **manter** | conservative-default | sim |
+| service | `__init__` | `backend/app/services/legal_brain/__init__.py` | **manter** | refined-default | sim |
+| service | `area_specializations` | `backend/app/services/legal_brain/area_specializations.py` | **manter** | conservative-default | sim |
+| service | `brain` | `backend/app/services/legal_brain/brain.py` | **manter** | conservative-default | sim |
+| service | `case_state_bridge` | `backend/app/services/legal_brain/case_state_bridge.py` | **manter** | conservative-default | sim |
+| service | `contracts` | `backend/app/services/legal_brain/contracts.py` | **manter** | conservative-default | sim |
+| service | `evidence` | `backend/app/services/legal_brain/evidence.py` | **manter** | conservative-default | sim |
+| service | `issue_engine` | `backend/app/services/legal_brain/issue_engine.py` | **manter** | conservative-default | sim |
+| service | `precedent_validity` | `backend/app/services/legal_brain/precedent_validity.py` | **manter** | conservative-default | sim |
+| service | `rag_research` | `backend/app/services/legal_brain/rag_research.py` | **manter** | conservative-default | sim |
+| service | `research_loop` | `backend/app/services/legal_brain/research_loop.py` | **manter** | conservative-default | sim |
+| service | `shadow` | `backend/app/services/legal_brain/shadow.py` | **manter** | conservative-default | sim |
+| service | `skill_contracts` | `backend/app/services/legal_brain/skill_contracts.py` | **manter** | conservative-default | sim |
+| service | `skill_factory` | `backend/app/services/legal_brain/skill_factory.py` | **manter** | conservative-default | sim |
+| service | `legal_case_orchestrator` | `backend/app/services/legal_case_orchestrator.py` | **manter** | conservative-default | sim |
+| service | `legal_chat_service` | `backend/app/services/legal_chat_service.py` | **manter** | refined-default | sim |
+| service | `legal_chunker` | `backend/app/services/legal_chunker.py` | **manter** | conservative-default | sim |
+| service | `legal_graph` | `backend/app/services/legal_graph.py` | **manter** | conservative-default | sim |
+| service | `lgpd_service` | `backend/app/services/lgpd_service.py` | **manter** | conservative-default | sim |
+| service | `malware_scan_service` | `backend/app/services/malware_scan_service.py` | **manter** | conservative-default | sim |
+| service | `matriz_provas` | `backend/app/services/matriz_provas.py` | **manter** | conservative-default | sim |
+| service | `matriz_teses_service` | `backend/app/services/matriz_teses_service.py` | **manter** | refined-default | sim |
+| service | `mni_connector` | `backend/app/services/mni_connector.py` | **manter** | conservative-default | sim |
+| service | `module_help_seed` | `backend/app/services/module_help_seed.py` | **manter** | conservative-default | sim |
+| service | `module_registry` | `backend/app/services/module_registry.py` | **manter** | conservative-default | sim |
+| service | `motor_peca_service` | `backend/app/services/motor_peca_service.py` | **manter** | refined-default | sim |
+| service | `movimento_ia` | `backend/app/services/movimento_ia.py` | **manter** | conservative-default | sim |
+| service | `__init__` | `backend/app/services/nfse/__init__.py` | **manter** | refined-default | sim |
+| service | `base` | `backend/app/services/nfse/base.py` | **manter** | refined-default | sim |
+| service | `nuvem_fiscal` | `backend/app/services/nfse/nuvem_fiscal.py` | **manter** | conservative-default | sim |
+| service | `notification_preferences` | `backend/app/services/notification_preferences.py` | **manter** | conservative-default | sim |
+| service | `notification_service` | `backend/app/services/notification_service.py` | **manter** | refined-default | sim |
+| service | `__init__` | `backend/app/services/observability/__init__.py` | **manter** | refined-default | sim |
+| service | `langfuse_client` | `backend/app/services/observability/langfuse_client.py` | **manter** | conservative-default | sim |
+| service | `ocr_service` | `backend/app/services/ocr_service.py` | **manter** | conservative-default | sim |
+| service | `onboarding` | `backend/app/services/onboarding.py` | **manter** | conservative-default | sim |
+| service | `pdf_service` | `backend/app/services/pdf_service.py` | **manter** | conservative-default | sim |
+| service | `peca_numeracao` | `backend/app/services/peca_numeracao.py` | **manter** | conservative-default | sim |
+| service | `peca_residuos` | `backend/app/services/peca_residuos.py` | **manter** | conservative-default | sim |
+| service | `peca_service` | `backend/app/services/peca_service.py` | **manter** | conservative-default | sim |
+| service | `peca_workflow_service` | `backend/app/services/peca_workflow_service.py` | **manter** | conservative-default | sim |
+| service | `pii_crypto` | `backend/app/services/pii_crypto.py` | **manter** | conservative-default | sim |
+| service | `precificacao_service` | `backend/app/services/precificacao_service.py` | **manter** | conservative-default | sim |
+| service | `processo_eletronico_credential_service` | `backend/app/services/processo_eletronico_credential_service.py` | **manter** | conservative-default | sim |
+| service | `processo_eletronico_document_mapper` | `backend/app/services/processo_eletronico_document_mapper.py` | **manter** | conservative-default | sim |
+| service | `processo_service` | `backend/app/services/processo_service.py` | **corrigir** | override | não |
+| service | `__init__` | `backend/app/services/providers/__init__.py` | **manter** | refined-default | sim |
+| service | `anthropic_provider` | `backend/app/services/providers/anthropic_provider.py` | **manter** | conservative-default | sim |
+| service | `groq_provider` | `backend/app/services/providers/groq_provider.py` | **manter** | conservative-default | sim |
+| service | `maritaca_provider` | `backend/app/services/providers/maritaca_provider.py` | **manter** | conservative-default | sim |
+| service | `ollama_provider` | `backend/app/services/providers/ollama_provider.py` | **manter** | conservative-default | sim |
+| service | `querido_diario_monitor` | `backend/app/services/querido_diario_monitor.py` | **manter** | conservative-default | sim |
+| service | `radar_legislativo` | `backend/app/services/radar_legislativo.py` | **manter** | refined-default | sim |
+| service | `radar_poder` | `backend/app/services/radar_poder.py` | **manter** | conservative-default | sim |
+| service | `rag_coverage` | `backend/app/services/rag_coverage.py` | **manter** | conservative-default | sim |
+| service | `rag_drive_reclassifier` | `backend/app/services/rag_drive_reclassifier.py` | **manter** | conservative-default | sim |
+| service | `raio_x_advogado_service` | `backend/app/services/raio_x_advogado_service.py` | **manter** | conservative-default | sim |
+| service | `raio_x_enrichment` | `backend/app/services/raio_x_enrichment.py` | **manter** | conservative-default | sim |
+| service | `raio_x_export_service` | `backend/app/services/raio_x_export_service.py` | **manter** | conservative-default | sim |
+| service | `raio_x_service` | `backend/app/services/raio_x_service.py` | **manter** | refined-default | sim |
+| service | `relatorio_dono_service` | `backend/app/services/relatorio_dono_service.py` | **manter** | conservative-default | sim |
+| service | `rentabilidade` | `backend/app/services/rentabilidade.py` | **manter** | conservative-default | sim |
+| service | `rito_engine` | `backend/app/services/rito_engine.py` | **manter** | conservative-default | sim |
+| service | `route_usage` | `backend/app/services/route_usage.py` | **manter** | conservative-default | sim |
+| service | `__init__` | `backend/app/services/saneamento/__init__.py` | **manter** | refined-default | sim |
+| service | `dedup` | `backend/app/services/saneamento/dedup.py` | **manter** | conservative-default | sim |
+| service | `encerramento` | `backend/app/services/saneamento/encerramento.py` | **manter** | conservative-default | sim |
+| service | `fusao` | `backend/app/services/saneamento/fusao.py` | **manter** | conservative-default | sim |
+| service | `produtor` | `backend/app/services/saneamento/produtor.py` | **manter** | conservative-default | sim |
+| service | `reconciliacao` | `backend/app/services/saneamento/reconciliacao.py` | **manter** | conservative-default | sim |
+| service | `tpu` | `backend/app/services/saneamento/tpu.py` | **manter** | refined-default | sim |
+| service | `sanitizer` | `backend/app/services/sanitizer.py` | **manter** | conservative-default | sim |
+| service | `scheduler` | `backend/app/services/scheduler.py` | **manter** | conservative-default | sim |
+| service | `scheduler_financeiro` | `backend/app/services/scheduler_financeiro.py` | **manter** | conservative-default | sim |
+| service | `security_service` | `backend/app/services/security_service.py` | **manter** | conservative-default | sim |
+| service | `seed_conhecimento` | `backend/app/services/seed_conhecimento.py` | **manter** | conservative-default | sim |
+| service | `sociedades_service` | `backend/app/services/sociedades_service.py` | **manter** | conservative-default | sim |
+| service | `solicitacao_documento_service` | `backend/app/services/solicitacao_documento_service.py` | **manter** | refined-default | sim |
+| service | `status_transicao` | `backend/app/services/status_transicao.py` | **manter** | conservative-default | sim |
+| service | `sumulas_ingestion` | `backend/app/services/sumulas_ingestion.py` | **manter** | conservative-default | sim |
+| service | `__init__` | `backend/app/services/system_prompts/__init__.py` | **manter** | refined-default | sim |
+| service | `administrativo` | `backend/app/services/system_prompts/administrativo.py` | **manter** | conservative-default | sim |
+| service | `agrario` | `backend/app/services/system_prompts/agrario.py` | **manter** | conservative-default | sim |
+| service | `agronegocio` | `backend/app/services/system_prompts/agronegocio.py` | **manter** | conservative-default | sim |
+| service | `ambiental` | `backend/app/services/system_prompts/ambiental.py` | **manter** | conservative-default | sim |
+| service | `analise_caso` | `backend/app/services/system_prompts/analise_caso.py` | **manter** | conservative-default | sim |
+| service | `audiencia` | `backend/app/services/system_prompts/audiencia.py` | **manter** | conservative-default | sim |
+| service | `bancario` | `backend/app/services/system_prompts/bancario.py` | **manter** | conservative-default | sim |
+| service | `base` | `backend/app/services/system_prompts/base.py` | **manter** | refined-default | sim |
+| service | `blocos_condicionais` | `backend/app/services/system_prompts/blocos_condicionais.py` | **manter** | conservative-default | sim |
+| service | `civel` | `backend/app/services/system_prompts/civel.py` | **manter** | conservative-default | sim |
+| service | `constitucional` | `backend/app/services/system_prompts/constitucional.py` | **manter** | conservative-default | sim |
+| service | `consumidor` | `backend/app/services/system_prompts/consumidor.py` | **manter** | conservative-default | sim |
+| service | `contratual` | `backend/app/services/system_prompts/contratual.py` | **manter** | conservative-default | sim |
+| service | `criminal` | `backend/app/services/system_prompts/criminal.py` | **manter** | conservative-default | sim |
+| service | `eleitoral` | `backend/app/services/system_prompts/eleitoral.py` | **manter** | conservative-default | sim |
+| service | `empresarial` | `backend/app/services/system_prompts/empresarial.py` | **manter** | conservative-default | sim |
+| service | `familia` | `backend/app/services/system_prompts/familia.py` | **manter** | conservative-default | sim |
+| service | `honorarios` | `backend/app/services/system_prompts/honorarios.py` | **manter** | refined-default | sim |
+| service | `imobiliario` | `backend/app/services/system_prompts/imobiliario.py` | **manter** | conservative-default | sim |
+| service | `internacional` | `backend/app/services/system_prompts/internacional.py` | **manter** | conservative-default | sim |
+| service | `inventario` | `backend/app/services/system_prompts/inventario.py` | **manter** | conservative-default | sim |
+| service | `juizados` | `backend/app/services/system_prompts/juizados.py` | **manter** | conservative-default | sim |
+| service | `lgpd_digital` | `backend/app/services/system_prompts/lgpd_digital.py` | **manter** | conservative-default | sim |
+| service | `medico` | `backend/app/services/system_prompts/medico.py` | **manter** | conservative-default | sim |
+| service | `minutas` | `backend/app/services/system_prompts/minutas.py` | **manter** | conservative-default | sim |
+| service | `modo_executivo` | `backend/app/services/system_prompts/modo_executivo.py` | **manter** | conservative-default | sim |
+| service | `padrao_ouro` | `backend/app/services/system_prompts/padrao_ouro.py` | **manter** | conservative-default | sim |
+| service | `pesquisa_juridica` | `backend/app/services/system_prompts/pesquisa_juridica.py` | **manter** | conservative-default | sim |
+| service | `prazos` | `backend/app/services/system_prompts/prazos.py` | **manter** | conservative-default | sim |
+| service | `previdenciario` | `backend/app/services/system_prompts/previdenciario.py` | **manter** | conservative-default | sim |
+| service | `sala_juridica` | `backend/app/services/system_prompts/sala_juridica.py` | **manter** | conservative-default | sim |
+| service | `saude` | `backend/app/services/system_prompts/saude.py` | **manter** | conservative-default | sim |
+| service | `sucessoes` | `backend/app/services/system_prompts/sucessoes.py` | **manter** | conservative-default | sim |
+| service | `templates_documentos` | `backend/app/services/system_prompts/templates_documentos.py` | **manter** | conservative-default | sim |
+| service | `trabalhista` | `backend/app/services/system_prompts/trabalhista.py` | **manter** | refined-default | sim |
+| service | `transito` | `backend/app/services/system_prompts/transito.py` | **manter** | conservative-default | sim |
+| service | `triagem` | `backend/app/services/system_prompts/triagem.py` | **manter** | conservative-default | sim |
+| service | `tributario` | `backend/app/services/system_prompts/tributario.py` | **manter** | conservative-default | sim |
+| service | `taskscore` | `backend/app/services/taskscore.py` | **manter** | conservative-default | sim |
+| service | `tese_caso_matcher` | `backend/app/services/tese_caso_matcher.py` | **manter** | conservative-default | sim |
+| service | `tese_vinculo_service` | `backend/app/services/tese_vinculo_service.py` | **manter** | conservative-default | sim |
+| service | `tpu_translator` | `backend/app/services/tpu_translator.py` | **manter** | conservative-default | sim |
+| service | `transparencia_service` | `backend/app/services/transparencia_service.py` | **manter** | refined-default | sim |
+| service | `triagem_entrevista_service` | `backend/app/services/triagem_entrevista_service.py` | **manter** | refined-default | sim |
+| service | `tribunal_registry` | `backend/app/services/tribunal_registry.py` | **manter** | conservative-default | sim |
+| service | `tributario_paf` | `backend/app/services/tributario_paf.py` | **manter** | conservative-default | sim |
+| service | `upload_lote_service` | `backend/app/services/upload_lote_service.py` | **manter** | conservative-default | sim |
+| service | `validador_juridico_service` | `backend/app/services/validador_juridico_service.py` | **manter** | refined-default | sim |
+| service | `validators_service` | `backend/app/services/validators_service.py` | **manter** | conservative-default | sim |
+| service | `vault_crypto` | `backend/app/services/vault_crypto.py` | **manter** | conservative-default | sim |
+| service | `verificador_jurisprudencia` | `backend/app/services/verificador_jurisprudencia.py` | **manter** | conservative-default | sim |
+| service | `vigencia_dados_juridicos` | `backend/app/services/vigencia_dados_juridicos.py` | **manter** | conservative-default | sim |
+| service | `visual_law` | `backend/app/services/visual_law.py` | **manter** | refined-default | sim |
+| service | `visual_law_core` | `backend/app/services/visual_law_core.py` | **manter** | conservative-default | sim |
+| service | `visual_law_files` | `backend/app/services/visual_law_files.py` | **manter** | conservative-default | sim |
+| service | `visual_law_pdf` | `backend/app/services/visual_law_pdf.py` | **manter** | conservative-default | sim |
+| service | `visual_law_theme` | `backend/app/services/visual_law_theme.py` | **manter** | conservative-default | sim |
 
-### Redirecionar
+## Tabelas
 
-- `/prazos`, `/tarefas`, `/intimacoes`, `/suspensoes` → Central de Atividades;
-- `/knowledge-hub` → Pesquisa e IA.
+| Tipo | Item | Arquivo/rota | Classificação | Fonte | Revisão |
+|---|---|---|---|---|---|
+| table | `activity_alert_states` | `backend/app/models/activity_alert.py:8` | **manter** | conservative-default | sim |
+| table | `ai_logs` | `backend/app/models/ai_log.py:210` | **manter** | conservative-default | sim |
+| table | `ai_provider_metrics` | `backend/app/models/ai_provider_metric.py:10` | **manter** | conservative-default | sim |
+| table | `ejc_skills` | `backend/app/models/ai_skill.py:6` | **manter** | conservative-default | sim |
+| table | `judicial_integration_profiles` | `backend/app/models/ajuizamento.py:58` | **manter** | conservative-default | sim |
+| table | `judicial_filings` | `backend/app/models/ajuizamento.py:110` | **manter** | conservative-default | sim |
+| table | `judicial_filing_transicoes` | `backend/app/models/ajuizamento.py:170` | **manter** | conservative-default | sim |
+| table | `judicial_filing_attempts` | `backend/app/models/ajuizamento.py:185` | **manter** | conservative-default | sim |
+| table | `judicial_protocols` | `backend/app/models/ajuizamento.py:211` | **manter** | conservative-default | sim |
+| table | `judicial_sync_events` | `backend/app/models/ajuizamento.py:241` | **manter** | conservative-default | sim |
+| table | `judicial_tpu_itens` | `backend/app/models/ajuizamento.py:256` | **manter** | conservative-default | sim |
+| table | `api_keys` | `backend/app/models/api_key.py:17` | **manter** | conservative-default | sim |
+| table | `atendimentos` | `backend/app/models/atendimento.py:33` | **manter** | conservative-default | sim |
+| table | `audit_logs` | `backend/app/models/audit_log.py:14` | **manter** | conservative-default | sim |
+| table | `bank_analyses` | `backend/app/models/bank_analysis.py:10` | **manter** | conservative-default | sim |
+| table | `bank_transactions` | `backend/app/models/bank_analysis.py:32` | **manter** | conservative-default | sim |
+| table | `bank_abusive_charges` | `backend/app/models/bank_analysis.py:44` | **manter** | conservative-default | sim |
+| table | `calendar_feed_credentials` | `backend/app/models/calendar_feed_credential.py:9` | **manter** | conservative-default | sim |
+| table | `cases` | `backend/app/models/case.py:73` | **corrigir** | override | não |
+| table | `case_movimentos` | `backend/app/models/case.py:221` | **manter** | conservative-default | sim |
+| table | `case_despesas` | `backend/app/models/case_despesa.py:12` | **manter** | conservative-default | sim |
+| table | `case_intelligence_snapshots` | `backend/app/models/case_intelligence.py:48` | **manter** | conservative-default | sim |
+| table | `case_partes` | `backend/app/models/case_parte.py:11` | **manter** | conservative-default | sim |
+| table | `caso_areas` | `backend/app/models/caso_area.py:10` | **manter** | conservative-default | sim |
+| table | `centro_custos` | `backend/app/models/centro_custo.py:28` | **manter** | conservative-default | sim |
+| table | `checklist_templates` | `backend/app/models/checklist.py:22` | **manter** | conservative-default | sim |
+| table | `checklist_template_items` | `backend/app/models/checklist.py:45` | **manter** | conservative-default | sim |
+| table | `case_checklists` | `backend/app/models/checklist.py:55` | **manter** | conservative-default | sim |
+| table | `case_checklist_items` | `backend/app/models/checklist.py:76` | **manter** | conservative-default | sim |
+| table | `clients` | `backend/app/models/client.py:30` | **manter** | conservative-default | sim |
+| table | `contratos_societarios` | `backend/app/models/contrato_societario.py:35` | **manter** | conservative-default | sim |
+| table | `contrato_historico` | `backend/app/models/contrato_societario.py:78` | **manter** | conservative-default | sim |
+| table | `data_rooms` | `backend/app/models/data_room.py:19` | **manter** | conservative-default | sim |
+| table | `data_room_arquivos` | `backend/app/models/data_room.py:48` | **manter** | conservative-default | sim |
+| table | `data_room_links` | `backend/app/models/data_room.py:80` | **manter** | conservative-default | sim |
+| table | `data_room_acesso_logs` | `backend/app/models/data_room.py:106` | **manter** | conservative-default | sim |
+| table | `dataroom_salas` | `backend/app/models/dataroom_teses_v4_compat.py:21` | **manter** | conservative-default | sim |
+| table | `teses_juridicas_v4` | `backend/app/models/dataroom_teses_v4_compat.py:36` | **manter** | conservative-default | sim |
+| table | `deadlines` | `backend/app/models/deadline.py:31` | **manter** | conservative-default | sim |
+| table | `diario_oficial_keywords` | `backend/app/models/diario_oficial.py:12` | **manter** | conservative-default | sim |
+| table | `diario_oficial_alertas` | `backend/app/models/diario_oficial.py:25` | **manter** | conservative-default | sim |
+| table | `djen_comunicacoes` | `backend/app/models/djen.py:8` | **manter** | conservative-default | sim |
+| table | `documents` | `backend/app/models/document.py:17` | **manter** | conservative-default | sim |
+| table | `document_intake_batches` | `backend/app/models/document_intake.py:10` | **manter** | conservative-default | sim |
+| table | `document_intake_items` | `backend/app/models/document_intake.py:51` | **manter** | conservative-default | sim |
+| table | `document_hash_rescan_batches` | `backend/app/models/document_rescan.py:22` | **manter** | conservative-default | sim |
+| table | `document_hash_rescan_items` | `backend/app/models/document_rescan.py:48` | **manter** | conservative-default | sim |
+| table | `dossies_estrategicos` | `backend/app/models/dossie_estrategico.py:12` | **manter** | conservative-default | sim |
+| table | `dpt_diagnosticos` | `backend/app/models/dpt_diagnostico.py:40` | **manter** | conservative-default | sim |
+| table | `environmental_cases` | `backend/app/models/environmental.py:34` | **manter** | conservative-default | sim |
+| table | `empresarial_cases` | `backend/app/models/especializado.py:47` | **manter** | conservative-default | sim |
+| table | `civel_cases` | `backend/app/models/especializado.py:142` | **manter** | conservative-default | sim |
+| table | `penal_cases` | `backend/app/models/especializado.py:242` | **manter** | conservative-default | sim |
+| table | `trabalhista_cases` | `backend/app/models/especializado.py:342` | **manter** | conservative-default | sim |
+| table | `admin_cases` | `backend/app/models/especializado.py:456` | **manter** | conservative-default | sim |
+| table | `bancario_cases` | `backend/app/models/especializado.py:540` | **manter** | conservative-default | sim |
+| table | `fees` | `backend/app/models/fee.py:30` | **manter** | conservative-default | sim |
+| table | `fee_payments` | `backend/app/models/fee.py:56` | **manter** | conservative-default | sim |
+| table | `fee_estornos` | `backend/app/models/fee.py:76` | **manter** | conservative-default | sim |
+| table | `fee_cobranca_envios` | `backend/app/models/fee.py:107` | **manter** | conservative-default | sim |
+| table | `fee_proposals` | `backend/app/models/fee_proposal.py:35` | **manter** | conservative-default | sim |
+| table | `feriados` | `backend/app/models/feriado.py:9` | **manter** | conservative-default | sim |
+| table | `fichas_triagem` | `backend/app/models/ficha_triagem.py:22` | **manter** | conservative-default | sim |
+| table | `integration_credentials` | `backend/app/models/integration_credential.py:29` | **manter** | conservative-default | sim |
+| table | `jurisprudencias_internas` | `backend/app/models/jurisprudencia_interna.py:20` | **manter** | conservative-default | sim |
+| table | `legal_chat_sessions` | `backend/app/models/legal_chat.py:59` | **manter** | conservative-default | sim |
+| table | `legal_chat_messages` | `backend/app/models/legal_chat.py:119` | **manter** | conservative-default | sim |
+| table | `legal_chat_attachments` | `backend/app/models/legal_chat.py:154` | **manter** | conservative-default | sim |
+| table | `legal_chat_state_versions` | `backend/app/models/legal_chat.py:182` | **manter** | conservative-default | sim |
+| table | `legal_docs` | `backend/app/models/legal_doc.py:33` | **manter** | conservative-default | sim |
+| table | `lgpd_registros_tratamento` | `backend/app/models/lgpd_tratamento.py:45` | **manter** | conservative-default | sim |
+| table | `legal_issues` | `backend/app/models/matriz_teses.py:38` | **manter** | conservative-default | sim |
+| table | `thesis_candidates` | `backend/app/models/matriz_teses.py:53` | **manter** | conservative-default | sim |
+| table | `authority_records` | `backend/app/models/matriz_teses.py:94` | **manter** | conservative-default | sim |
+| table | `evidence_links` | `backend/app/models/matriz_teses.py:119` | **manter** | conservative-default | sim |
+| table | `notas_fiscais_servico` | `backend/app/models/nfse.py:28` | **manter** | conservative-default | sim |
+| table | `notifications` | `backend/app/models/notification.py:9` | **manter** | conservative-default | sim |
+| table | `notification_preferences` | `backend/app/models/notification.py:38` | **manter** | conservative-default | sim |
+| table | `password_reset_tokens` | `backend/app/models/password_reset.py:4` | **manter** | conservative-default | sim |
+| table | `user_known_ips` | `backend/app/models/password_reset.py:14` | **manter** | conservative-default | sim |
+| table | `preliminares` | `backend/app/models/preliminar.py:54` | **manter** | conservative-default | sim |
+| table | `preliminar_documentos` | `backend/app/models/preliminar.py:142` | **manter** | conservative-default | sim |
+| table | `preliminar_mensagens` | `backend/app/models/preliminar.py:170` | **manter** | conservative-default | sim |
+| table | `preliminar_estados` | `backend/app/models/preliminar.py:205` | **manter** | conservative-default | sim |
+| table | `processes` | `backend/app/models/process.py:23` | **manter** | conservative-default | sim |
+| table | `tribunais` | `backend/app/models/processo_eletronico.py:42` | **manter** | conservative-default | sim |
+| table | `credenciais_processo_eletronico` | `backend/app/models/processo_eletronico.py:68` | **manter** | conservative-default | sim |
+| table | `sincronizacao_processo_eletronico` | `backend/app/models/processo_eletronico.py:107` | **manter** | conservative-default | sim |
+| table | `documentos_processo_eletronico_dedup` | `backend/app/models/processo_eletronico.py:136` | **manter** | conservative-default | sim |
+| table | `procuracoes` | `backend/app/models/procuracao.py:8` | **manter** | conservative-default | sim |
+| table | `prompts_juridicos` | `backend/app/models/prompt_juridico.py:25` | **manter** | conservative-default | sim |
+| table | `provas` | `backend/app/models/prova.py:32` | **manter** | conservative-default | sim |
+| table | `push_subscriptions` | `backend/app/models/push.py:6` | **manter** | conservative-default | sim |
+| table | `knowledge_docs` | `backend/app/models/rag.py:22` | **manter** | conservative-default | sim |
+| table | `knowledge_chunks` | `backend/app/models/rag.py:80` | **manter** | conservative-default | sim |
+| table | `fontes_ingestao` | `backend/app/models/rag.py:97` | **manter** | conservative-default | sim |
+| table | `raio_x_analises` | `backend/app/models/raio_x.py:11` | **manter** | conservative-default | sim |
+| table | `raio_x_documentos` | `backend/app/models/raio_x.py:55` | **manter** | conservative-default | sim |
+| table | `module_help` | `backend/app/models/redesign.py:17` | **manter** | conservative-default | sim |
+| table | `area_modulos_mapping` | `backend/app/models/redesign.py:37` | **manter** | conservative-default | sim |
+| table | `document_types_master` | `backend/app/models/redesign.py:62` | **manter** | conservative-default | sim |
+| table | `tabela_oab_honorarios` | `backend/app/models/redesign.py:85` | **manter** | conservative-default | sim |
+| table | `route_usage_metrics` | `backend/app/models/route_usage_metric.py:8` | **manter** | conservative-default | sim |
+| table | `saneamento_tpu_movimento` | `backend/app/models/saneamento.py:31` | **manter** | conservative-default | sim |
+| table | `saneamento_datajud_snapshot` | `backend/app/models/saneamento.py:50` | **manter** | conservative-default | sim |
+| table | `saneamento_excecao_numero` | `backend/app/models/saneamento.py:74` | **manter** | conservative-default | sim |
+| table | `saneamento_plano_dedup` | `backend/app/models/saneamento.py:90` | **manter** | conservative-default | sim |
+| table | `saneamento_indicativo_encerramento` | `backend/app/models/saneamento.py:106` | **manter** | conservative-default | sim |
+| table | `saneamento_divergencia` | `backend/app/models/saneamento.py:128` | **manter** | conservative-default | sim |
+| table | `saneamento_execucao` | `backend/app/models/saneamento.py:145` | **manter** | conservative-default | sim |
+| table | `scheduler_heartbeat` | `backend/app/models/scheduler_heartbeat.py:17` | **manter** | conservative-default | sim |
+| table | `signature_requests` | `backend/app/models/signature.py:15` | **manter** | conservative-default | sim |
+| table | `sociedades_cliente` | `backend/app/models/sociedade_cliente.py:41` | **manter** | conservative-default | sim |
+| table | `socios_sociedade` | `backend/app/models/sociedade_cliente.py:59` | **manter** | conservative-default | sim |
+| table | `eventos_societarios` | `backend/app/models/sociedade_cliente.py:79` | **manter** | conservative-default | sim |
+| table | `socios` | `backend/app/models/socio.py:19` | **manter** | conservative-default | sim |
+| table | `distribuicoes_lucro` | `backend/app/models/socio.py:40` | **manter** | conservative-default | sim |
+| table | `solicitacoes_documentos` | `backend/app/models/solicitacao_documento.py:25` | **manter** | conservative-default | sim |
+| table | `solicitacao_documento_itens` | `backend/app/models/solicitacao_documento.py:47` | **manter** | conservative-default | sim |
+| table | `suspensoes_tribunal` | `backend/app/models/suspensao.py:10` | **manter** | conservative-default | sim |
+| table | `system_module_settings` | `backend/app/models/system_module_setting.py:8` | **manter** | conservative-default | sim |
+| table | `tasks` | `backend/app/models/task.py:13` | **manter** | conservative-default | sim |
+| table | `doc_templates` | `backend/app/models/template.py:7` | **manter** | conservative-default | sim |
+| table | `teses` | `backend/app/models/tese.py:27` | **manter** | conservative-default | sim |
+| table | `tese_caso_links` | `backend/app/models/tese.py:62` | **manter** | conservative-default | sim |
+| table | `time_entries` | `backend/app/models/time_entry.py:6` | **manter** | conservative-default | sim |
+| table | `users` | `backend/app/models/user.py:21` | **manter** | conservative-default | sim |
+| table | `refresh_tokens` | `backend/app/models/user.py:102` | **manter** | conservative-default | sim |
+| table | `wiki_paginas` | `backend/app/models/wiki.py:16` | **manter** | conservative-default | sim |
+| table | `workflow_templates` | `backend/app/models/workflow.py:21` | **manter** | conservative-default | sim |
+| table | `workflow_etapas` | `backend/app/models/workflow.py:35` | **manter** | conservative-default | sim |
+| table | `case_workflows` | `backend/app/models/workflow.py:50` | **manter** | conservative-default | sim |
+| table | `workflow_historico` | `backend/app/models/workflow.py:66` | **manter** | conservative-default | sim |
 
-### Corrigir
+## Routers não montados
 
-- campos processuais legados em `Case`;
-- `CasoDetalhe.tsx`;
-- montagem monolítica em `main.py`;
-- registro central `moduleRegistry`;
-- router/service de Processos;
-- router `ramos.py`.
+| Tipo | Item | Arquivo/rota | Classificação | Fonte | Revisão |
+|---|---|---|---|---|---|
+| router | `ramos_admin_esp` | `backend/app/routers/ramos_admin_esp.py` | **desativar** | mount-analysis | sim |
+| router | `ramos_bancario` | `backend/app/routers/ramos_bancario.py` | **desativar** | mount-analysis | sim |
+| router | `ramos_civel` | `backend/app/routers/ramos_civel.py` | **desativar** | mount-analysis | sim |
+| router | `ramos_empresarial` | `backend/app/routers/ramos_empresarial.py` | **desativar** | mount-analysis | sim |
+| router | `ramos_ferramentas_complementares` | `backend/app/routers/ramos_ferramentas_complementares.py` | **desativar** | mount-analysis | sim |
+| router | `ramos_penal` | `backend/app/routers/ramos_penal.py` | **desativar** | mount-analysis | sim |
+| router | `ramos_trabalhista_esp` | `backend/app/routers/ramos_trabalhista_esp.py` | **desativar** | mount-analysis | sim |
+| router | `ramos_tributario_paf` | `backend/app/routers/ramos_tributario_paf.py` | **desativar** | mount-analysis | sim |
+| router | `ramos_vitrine` | `backend/app/routers/ramos_vitrine.py` | **desativar** | mount-analysis | sim |
 
-### Excluir após migração
+## Critério de remoção
 
-- `LegacyClientListAdapter.tsx` e teste associado;
-- página histórica `KnowledgeHub.tsx`;
-- implementação paralela não montada `backend/app/modules/case_partes/router.py`;
-- demais itens históricos identificados no inventário integral somente após verificação de consumidores.
+Um item classificado como `excluir após migração` somente pode ser removido após:
 
-## Critério obrigatório antes de excluir
+1. comprovação de ausência de consumidores frontend, scripts, jobs, webhooks e integrações;
+2. período de telemetria ou logs sem uso;
+3. alias/redirecionamento quando houver rota pública ou favorita histórica;
+4. migração/backfill de dados quando houver persistência;
+5. testes de regressão e rollback documentado;
+6. aprovação explícita no PR de remoção.
 
-1. localizar consumidores frontend, imports dinâmicos, scripts, jobs, workers, webhooks, portal e APIs públicas;
-2. comprovar ausência de uso por logs/telemetria;
-3. criar alias ou camada de compatibilidade quando houver rota histórica;
-4. executar migração/backfill dos dados persistidos;
-5. validar testes unitários, integração, E2E e rollback;
-6. obter aprovação explícita no PR de remoção.
+## Arquivos complementares
 
-## Artefatos integrais
-
-O workflow `Architecture Inventory — Phase 0` produz:
-
-- `architecture_inventory.json` — inventário integral estruturado;
-- `architecture_inventory.csv` — todos os itens, pronto para filtro em planilha;
-- `classification_review.csv` — itens dependentes de revisão humana;
-- `duplicate_families.json` — famílias objetivas da mesma camada;
-- `manifest.json` — contagens, fingerprint e gate de classificação.
-
-Nenhuma alteração funcional, rota, permissão, migration ou dado de produção foi modificada nesta Fase 0.
+- `architecture_inventory.json`: representação integral e estruturada;
+- `architecture_inventory.csv`: planilha única para triagem e filtros;
+- `classification_review.csv`: somente itens que exigem revisão humana;
+- `duplicate_families.json`: famílias candidatas à consolidação;
+- `manifest.json`: contagens, fingerprint e resultado do gate.
