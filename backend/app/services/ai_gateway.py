@@ -112,12 +112,17 @@ _TAREFAS_SAIDA_ESTRUTURADA = {
 _TAREFAS_MERITO = {
     "analise_juridica", "elaboracao_peca", "estrategia", "auditoria_peca",
     "analise_contrato", "jurimetria", "critica_adversarial",
+    # Vocabulário legado/por área que pode chegar direto ao gateway.
+    "analise_caso", "minutas", "dossie", "pesquisa_juridica", "rag_query",
+    "prazos", "audiencia", "ambiental", "trabalhista", "criminal", "familia",
+    "administrativo", "sucessoes", "imobiliario", "constitucional", "juizados",
+    "civel",
 }
 
 # Tarefas econômicas: resumir/triar/responder rápido. FIRAC aqui não melhora o
 # resultado — muda o gênero do texto (um resumo vira análise) e ainda queima
 # token. Mesmo conjunto da AIProviderPolicy.
-_TAREFAS_ECONOMICAS = {"resumo", "triagem", "chat_rapido"}
+_TAREFAS_ECONOMICAS = {"resumo", "triagem", "chat_rapido", "honorarios"}
 
 
 def _nivel_piso(task_label: str | None) -> str:
@@ -167,9 +172,9 @@ def _aplicar_nivel(
     return [extra] + messages
 
 
-# Cadeias: Ollama (local, custo zero) → Anthropic (qualidade, se houver chave)
-# → Groq (grátis, último recurso). Tarefas simples (resumo/chat) pulam o
-# Anthropic — Groq grátis basta e mantém o custo baixo.
+# TASK_ROUTING lista capacidades técnicas possíveis; _resolver_cadeia aplica
+# depois a política operacional de afinidade (Groq rotina; Maritaca mérito;
+# Ollama local; Claude explícito).
 TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
     # Tarefas COMPLEXAS incluem "anthropic" na cadeia (Núcleo Único): entra na
     # ordem de AI_PROVIDER_PRIORITY quando elegível (chave + ENABLED +
