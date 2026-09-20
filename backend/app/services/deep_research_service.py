@@ -17,6 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
 from app.services.ai.entidades_caso import entidades_do_caso
+from app.services.ai.sanitization_policy import (
+    ModoSanitizacao,
+    modo_para_task,
+    modo_sigilo_por_case_id,
+    reforcar_sigilo,
+)
 from app.services.ai_cost import estimar_custo_brl
 from app.services.ai_gateway import chat as gw_chat
 from app.services.ai_service import buscar_contexto_rag
@@ -85,10 +91,14 @@ def _subquestoes_deterministicas(tese: str, fatos: str, area: str | None, max_su
 async def decompor_tese(
     tese: str, fatos: str, area: str | None, max_subquestoes: int = 5,
     *, uso: list | None = None, entidades: dict[str, list[str]] | None = None,
+    modo_sanitizacao: ModoSanitizacao | None = None,
 ) -> list[str]:
     """Decompõe a tese em subquestões. `uso` (opcional) acumula a resposta do
     gateway para que o chamador some tokens/custo das DUAS chamadas no AILog
-    (B7); `entidades` pseudonimiza os nomes do caso de forma reversível."""
+    (B7); `entidades` pseudonimiza os nomes do caso de forma reversível;
+    `modo_sanitizacao` (auditoria 1-A achado #2) propaga o piso de sigilo
+    do caso (LOCAL_COMPLETO para sigilo_reforcado) — sem isto, crimes
+    sexuais/menores saem pseudonimizados em vez de bloquearem no local."""
     fallback = _subquestoes_deterministicas(tese, fatos, area, max_subquestoes)
     try:
         resp = await gw_chat(
@@ -104,6 +114,7 @@ async def decompor_tese(
             temperature=0.1,
             max_tokens=500,
             entidades=entidades,
+            modo_sanitizacao=modo_sanitizacao,
         )
         if uso is not None:
             uso.append(resp)
@@ -159,13 +170,22 @@ async def executar_deep_research(db: AsyncSession, entrada: DeepResearchInput, *
     # ai_service.detectar_teses_ocultas): com case_id, o gateway troca os
     # nomes por placeholders antes do provedor e reidrata na volta.
     entidades = None
+    modo_efetivo: ModoSanitizacao | None = None
     if entidade_case := entrada.case_id:
         entidades = await entidades_do_caso(db, entidade_case) or None
+        # Auditoria 1-A achado #2: propagar o piso de sigilo do caso.
+        # Casos com sigilo_reforcado=True (crimes sexuais / menores / infância)
+        # devem rodar em LOCAL_COMPLETO — pseudonimização reversível não basta,
+        # o piso não-rebaixável do `reforcar_sigilo` garante que o provedor
+        # externo NUNCA recebe nem mesmo os marcadores. Sem isto, o deep
+        # research vazava PII pseudonimizada a Anthropic/Groq/Maritaca.
+        modo_do_caso = await modo_sigilo_por_case_id(db, entidade_case)
+        modo_efetivo = reforcar_sigilo(modo_para_task("analise_juridica"), modo_do_caso)
 
     usos: list = []   # respostas do gateway (decomposição + síntese) p/ custo
     subquestoes = await decompor_tese(
         tese_limpa, fatos_limpos, area, entrada.max_subquestoes,
-        uso=usos, entidades=entidades,
+        uso=usos, entidades=entidades, modo_sanitizacao=modo_efetivo,
     )
     consultas = [f"{area or ''} {tese_limpa} {q}".strip() for q in subquestoes]
 
@@ -215,6 +235,7 @@ async def executar_deep_research(db: AsyncSession, entrada: DeepResearchInput, *
         temperature=0.15,
         max_tokens=3500,
         entidades=entidades,
+        modo_sanitizacao=modo_efetivo,
     )
     usos.append(resp)
     tokens_in, tokens_out, custo = _somar_uso(usos)
