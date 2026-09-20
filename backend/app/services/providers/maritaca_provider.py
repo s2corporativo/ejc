@@ -22,6 +22,7 @@ from typing import Any
 
 import httpx
 
+from app.core.ai_errors import SafeAIError
 from app.core.config import get_settings
 
 logger = logging.getLogger("ejc.ai.maritaca")
@@ -59,12 +60,19 @@ async def _post(payload: dict[str, Any]) -> dict[str, Any]:
         return resp.json()
     except httpx.HTTPStatusError as e:
         status = e.response.status_code if e.response is not None else None
-        raise RuntimeError(
+        raise SafeAIError(
             "Maritaca API falhou (HTTPStatusError"
-            + (f", HTTP {status}" if status else "") + ")"
+            + (f", HTTP {status}" if status else "") + ")",
+            code="provider_failure",
+            technical_type=type(e).__name__,
+            status_code=status,
         ) from None
     except httpx.HTTPError as e:
-        raise RuntimeError(f"Maritaca API falhou ({type(e).__name__})") from None
+        raise SafeAIError(
+            f"Maritaca API falhou ({type(e).__name__})",
+            code="provider_failure",
+            technical_type=type(e).__name__,
+        ) from None
 
 
 def _usage(data: dict[str, Any], model: str) -> dict[str, Any]:
