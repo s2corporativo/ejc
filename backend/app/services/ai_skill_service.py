@@ -25,6 +25,22 @@ settings = get_settings()
 _ENGINE_PROVIDER = {"anthropic": "anthropic", "groq": "groq", "ollama": "ollama",
                     "maritaca": "maritaca"}
 
+
+def _provider_override_skill(engine: str | None) -> str | None:
+    """Converte o engine legado da skill em override somente quando necessário.
+
+    Com ANTHROPIC_EXPLICIT_ONLY=true, skills não podem furar a política central
+    por terem sido gravadas historicamente com engine=anthropic/groq. Deixamos
+    Groq/Maritaca no roteamento automático por task_type e preservamos apenas
+    Ollama como override explícito de soberania/local. Desligar a flag restaura
+    o comportamento legado integral.
+    """
+    provider = _ENGINE_PROVIDER.get((engine or "").strip().lower(), "groq")
+    if getattr(settings, "ANTHROPIC_EXPLICIT_ONLY", True):
+        return "ollama" if provider == "ollama" else None
+    return provider
+
+
 _AREA_TASK = {
     "juridico": "elaboracao_peca",
     "financeiro": "analise_juridica",
@@ -238,7 +254,7 @@ async def executar_skill(
         {"role": "user", "content": user_content},
     ])
 
-    provider = _ENGINE_PROVIDER.get(skill.engine, "groq")
+    provider = _provider_override_skill(skill.engine)
     task_type = _AREA_TASK.get(skill.area, "analise_juridica")
 
     # ── PISO DE SIGILO (pente fino 03/09) ────────────────────────────────────
@@ -302,6 +318,7 @@ async def executar_skill(
         "skill": skill.display_name,
         "skill_name": skill.name,
         "engine": skill.engine,
+        "provider": resp.provedor,
         "is_rascunho": True,
         "requer_revisao": skill.requires_human_review or bool(alertas_juridicos),
         "tokens_usados": inp + out,
@@ -396,7 +413,7 @@ async def executar_skill_documento_longo(
         for nomes in (entidades or {}).values()
         for nome in nomes
     ]
-    provider = _ENGINE_PROVIDER.get(skill.engine, "groq")
+    provider = _provider_override_skill(skill.engine)
     semaforo = asyncio.Semaphore(2)
 
     # PISO DE SIGILO resolvido UMA vez para as N+1 chamadas desta função
@@ -539,6 +556,7 @@ async def executar_skill_documento_longo(
         "skill": skill.display_name,
         "skill_name": skill.name,
         "engine": skill.engine,
+        "provider": final.provedor,
         "is_rascunho": True,
         "requer_revisao": skill.requires_human_review or bool(alertas_juridicos),
         "tokens_usados": tokens_input + tokens_output,
