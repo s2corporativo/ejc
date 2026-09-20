@@ -15,7 +15,12 @@ from app.core.security import get_current_user, require_roles, requer_equipe_jur
 from app.models.user import User
 from app.models.audit_log import criar_audit_log
 from app.models.rag import KnowledgeDoc, KnowledgeChunk, FonteIngestao
-from app.services.ai_service import buscar_contexto_rag, _RESTRICTED_CATS
+from app.services.ai_service import (
+    buscar_contexto_rag,
+    _RESTRICTED_CATS,
+    filtro_elegibilidade_rag_metricas,
+    filtros_gate_rag,
+)
 from app.services.embedding_service import gerar_embeddings, disponivel as emb_disponivel
 # Chunker ÚNICO do RAG (heurística de fronteira de frase) — o mesmo usado pela
 # ingestão automática (ingestion_service). Evita qualidade de recuperação
@@ -37,28 +42,34 @@ router = APIRouter(prefix="/rag", tags=["Base de Conhecimento"])
 async def stats_conhecimento(db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     """Contagens da base de conhecimento (dashboard de Conhecimento)."""
     from sqlalchemy import text as _t
-    # Dashboard reporta o CORPUS OPERACIONAL: somente versão vigente e não
-    # excluída. Histórico continua preservado para auditoria, mas não pode
-    # parecer "chunk sem vetor" do RAG atual.
+    # Dashboard reporta o CORPUS RECUPERÁVEL: versão vigente, não excluída,
+    # ownership estrutural válido e o MESMO gate jurídico do retrieval.
+    # Histórico, pendentes, normas sem vigência comprovada e docs estruturalmente
+    # inválidos permanecem preservados, mas não inflam os números operacionais.
+    where_rag = (
+        "kd.deleted_at IS NULL AND kd.vigente = TRUE "
+        f"{filtro_elegibilidade_rag_metricas()} "
+        f"{filtros_gate_rag()}"
+    )
     total_docs = (await db.execute(_t(
-        "SELECT count(*) FROM knowledge_docs "
-        "WHERE deleted_at IS NULL AND vigente = TRUE"
+        f"SELECT count(*) FROM knowledge_docs kd WHERE {where_rag} "
+        "AND EXISTS (SELECT 1 FROM knowledge_chunks kc0 WHERE kc0.doc_id = kd.id)"
     ))).scalar() or 0
     total_chunks = (await db.execute(_t(
         "SELECT count(*) FROM knowledge_chunks kc "
         "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
-        "WHERE kd.deleted_at IS NULL AND kd.vigente = TRUE"
+        f"WHERE {where_rag}"
     ))).scalar() or 0
     com_emb = (await db.execute(_t(
         "SELECT count(*) FROM knowledge_chunks kc "
         "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
-        "WHERE kd.deleted_at IS NULL AND kd.vigente = TRUE "
-        "AND kc.embedding IS NOT NULL"
+        f"WHERE {where_rag} AND kc.embedding IS NOT NULL"
     ))).scalar() or 0
     rows = (await db.execute(_t(
-        "SELECT categoria, count(*) AS n FROM knowledge_docs "
-        "WHERE deleted_at IS NULL AND vigente = TRUE "
-        "GROUP BY categoria ORDER BY n DESC"
+        "SELECT kd.categoria, count(*) AS n FROM knowledge_docs kd "
+        f"WHERE {where_rag} "
+        "AND EXISTS (SELECT 1 FROM knowledge_chunks kc0 WHERE kc0.doc_id = kd.id) "
+        "GROUP BY kd.categoria ORDER BY n DESC"
     ))).all()
     return {
         "total_docs": total_docs, "total_chunks": total_chunks, "chunks_indexados": com_emb,
@@ -76,10 +87,17 @@ async def status_indexacao_rag(
     re-embeda nada — apenas reporta. Usado pelo painel de Conhecimento.
     """
     from sqlalchemy import text as _t
+    where_rag = (
+        "kd.deleted_at IS NULL AND kd.vigente = TRUE "
+        f"{filtro_elegibilidade_rag_metricas()} "
+        f"{filtros_gate_rag()}"
+    )
     rows = (await db.execute(_t(
-        "SELECT status_indexacao AS s, count(*) AS n "
-        "FROM knowledge_docs WHERE deleted_at IS NULL AND vigente = TRUE "
-        "GROUP BY status_indexacao"
+        "SELECT kd.status_indexacao AS s, count(*) AS n "
+        "FROM knowledge_docs kd "
+        f"WHERE {where_rag} "
+        "AND EXISTS (SELECT 1 FROM knowledge_chunks kc0 WHERE kc0.doc_id = kd.id) "
+        "GROUP BY kd.status_indexacao"
     ))).all()
     vetorizado = sem_vetor = erro = 0
     for s, n in rows:
