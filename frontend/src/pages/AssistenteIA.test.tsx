@@ -83,6 +83,26 @@ describe("AssistenteIA — portas canônicas", () => {
     expect(postMock.mock.calls[0][0]).toBe("/ia/conversar");
   });
 
+  it("Claude só é enviado quando selecionado explicitamente", async () => {
+    postMock.mockResolvedValue({ data: RESPOSTA_CANONICA });
+    montar();
+
+    fireEvent.change(screen.getByPlaceholderText("Sua pergunta jurídica…"), {
+      target: { value: "Qual a tese aplicável neste caso?" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Executar/ }));
+    await waitFor(() => expect(postMock).toHaveBeenCalledTimes(1));
+    expect((postMock.mock.calls[0][1] as any).provider).toBeUndefined();
+
+    postMock.mockClear();
+    fireEvent.change(screen.getByLabelText("Motor:"), {
+      target: { value: "anthropic" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Executar/ }));
+    await waitFor(() => expect(postMock).toHaveBeenCalledTimes(1));
+    expect((postMock.mock.calls[0][1] as any).provider).toBe("anthropic");
+  });
+
   it("resumir chama /ia/resumir", async () => {
     postMock.mockResolvedValue({ data: RESPOSTA_CANONICA });
     montar();
