@@ -443,6 +443,32 @@ async def upsert_documento(
         # vigência — se houver — continua aplicável ao diploma atualizado.
         extra_nova_versao = dict(extra or {})
         anterior = dict(existente.extra or {})
+
+        # Conteúdo mudou: uma decisão HUMANA sobre a versão anterior não pode
+        # promover automaticamente o texto novo. Mantemos a trilha mínima da
+        # decisão anterior, mas a nova versão volta para curadoria pendente.
+        # Fontes automáticas oficiais que nunca passaram por revisão humana
+        # preservam sua política própria de autoaprovação.
+        houve_decisao_humana = (
+            bool(anterior.get("human_reviewed"))
+            or bool(anterior.get("curadoria"))
+            or anterior.get("rag_status") == "recusado"
+        )
+        if houve_decisao_humana:
+            extra_nova_versao["previous_rag_status"] = anterior.get("rag_status")
+            extra_nova_versao["rag_status"] = "pendente"
+            extra_nova_versao["requires_human_review"] = True
+            extra_nova_versao["human_reviewed"] = False
+            for campo in (
+                "curadoria",
+                "aprovado_por",
+                "revisado_por",
+                "revisado_em",
+                "governance_updated_by",
+                "governance_updated_at",
+            ):
+                extra_nova_versao.pop(campo, None)
+
         if _vigencia_de_curadoria(anterior):
             for campo in _CAMPOS_VIGENCIA:
                 if campo in anterior:
