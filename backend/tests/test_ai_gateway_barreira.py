@@ -136,6 +136,7 @@ async def test_falha_arbitraria_do_provider_nao_ecoa_pii_no_gateway(monkeypatch)
         "_resolver_cadeia",
         lambda *a, **k: [("anthropic", None), ("groq", None)],
     )
+    monkeypatch.setattr(gw, "_provider_elegivel", lambda provider: True)
     monkeypatch.setattr(
         gw.settings,
         "AI_REQUIRE_SANITIZATION_FOR_EXTERNAL",
