@@ -229,6 +229,90 @@ def _estado_overlay_seguro() -> dict[str, Any]:
         return {"status": "indisponivel", "aplicado": False}
 
 
+
+def _env_present(name: str) -> bool:
+    return bool(os.getenv(name, "").strip())
+
+
+def _backup_gdrive_auth_configured() -> bool:
+    """Verifica apenas presença/completude de configuração; nunca lê valores."""
+    mode = os.getenv("BACKUP_GOOGLE_DRIVE_AUTH_MODE", "").strip().lower() or "auto"
+    if mode not in {"auto", "oauth", "service_account", "inherit"}:
+        return False
+
+    dedicated_service_account = any(
+        _env_present(name)
+        for name in (
+            "BACKUP_GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE",
+            "BACKUP_GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON",
+        )
+    )
+    dedicated_oauth = any(
+        _env_present(name)
+        for name in (
+            "BACKUP_GOOGLE_DRIVE_OAUTH_USER_FILE",
+            "BACKUP_GOOGLE_DRIVE_OAUTH_USER_JSON",
+        )
+    ) or all(
+        _env_present(name)
+        for name in (
+            "BACKUP_GOOGLE_DRIVE_OAUTH_CLIENT_ID",
+            "BACKUP_GOOGLE_DRIVE_OAUTH_CLIENT_SECRET",
+            "BACKUP_GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN",
+        )
+    )
+
+    inherited_service_account = any(
+        _env_present(name)
+        for name in (
+            "GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE",
+            "GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON",
+        )
+    )
+    inherited_oauth = any(
+        _env_present(name)
+        for name in (
+            "GOOGLE_DRIVE_OAUTH_USER_FILE",
+            "GOOGLE_DRIVE_OAUTH_USER_JSON",
+        )
+    ) or all(
+        _env_present(name)
+        for name in (
+            "GOOGLE_DRIVE_OAUTH_CLIENT_ID",
+            "GOOGLE_DRIVE_OAUTH_CLIENT_SECRET",
+            "GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN",
+        )
+    )
+
+    if mode == "service_account":
+        return dedicated_service_account
+    if mode == "oauth":
+        return dedicated_oauth
+    if mode == "inherit":
+        return inherited_service_account or inherited_oauth
+    return (
+        dedicated_service_account
+        or dedicated_oauth
+        or inherited_service_account
+        or inherited_oauth
+    )
+
+
+def _backup_configuration(settings: Settings) -> tuple[bool, str]:
+    """Fonte segura do estado estático do backup; BACKUP_REMOTE é legado."""
+    destino = (settings.BACKUP_DESTINO or "gdrive").strip().lower()
+    chave = bool((settings.BACKUP_ENCRYPTION_KEY or "").strip())
+    if destino == "rclone":
+        alvo = bool((settings.BACKUP_RCLONE_REMOTE or "").strip())
+    elif destino == "gdrive":
+        alvo = bool((settings.BACKUP_DRIVE_FOLDER_ID or "").strip())
+        alvo = alvo and _backup_gdrive_auth_configured()
+    else:
+        alvo = False
+    configured = bool(settings.BACKUP_ENABLED and chave and alvo)
+    return configured, destino
+
+
 def build_integration_status(
     settings: Settings,
     credential_states: dict[str, str] | None = None,
@@ -241,6 +325,8 @@ def build_integration_status(
     item ganha `credential_state` e um item `ready` cujo teste falhou é rebaixado
     para `attention`. Omitido (default) → comportamento e contrato idênticos ao
     histórico (os consumidores atuais chamam sem esse argumento)."""
+    backup_configured, backup_destino = _backup_configuration(settings)
+
     items = [
         # Elegibilidade pela fonte única (provider_registry): antes esta cópia
         # local ignorava GROQ_ENABLED e AI_EXTERNAL_PROVIDERS_ALLOWED e dizia
@@ -565,10 +651,21 @@ def build_integration_status(
             key="backup_offsite",
             label="Backup offsite",
             group="Infraestrutura",
-            enabled=bool(settings.BACKUP_REMOTE),
-            configured=bool(settings.BACKUP_REMOTE),
-            ready_detail="Destino remoto declarado; a execução deve ser confirmada pelos logs de backup.",
-            mode=f"retenção local {settings.BACKUP_RETENTION_DAYS} dias",
+            enabled=bool(settings.BACKUP_ENABLED),
+            configured=backup_configured,
+            ready_detail=(
+                "Backup cifrado configurado; o estado operacional persistido "
+                "confirma a última execução quando disponível."
+            ),
+            disabled_detail="Backup automático desabilitado por configuração.",
+            missing_detail=(
+                "Backup habilitado, mas falta chave de criptografia ou "
+                "configuração do destino offsite."
+            ),
+            mode=(
+                f"{backup_destino} · retenção local "
+                f"{settings.BACKUP_RETENTION_DAYS} dias"
+            ),
         ),
     ]
     if credential_states:
