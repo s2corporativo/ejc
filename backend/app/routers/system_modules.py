@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import require_admin, require_roles
+from app.models.redesign import ModuleHelp
 from app.models.user import User
 from app.services.integration_status import build_integration_status
 from app.services.integration_runtime_status import coletar_estados_operacionais
@@ -43,14 +46,40 @@ def _coletar_rotas_api(app: Any | None) -> list[dict[str, Any]]:
 
 
 @router.get("/mapa")
-async def mapa_modulos(request: Request, cu: User = Depends(_gestores)):
+async def mapa_modulos(
+    request: Request,
+    cu: User = Depends(_gestores),
+    db: AsyncSession = Depends(get_db),
+):
     rotas_api = _coletar_rotas_api(request.app)
-    mapa = gerar_mapa_modulos(rotas_api, [])
+    try:
+        result = await asyncio.wait_for(
+            db.execute(
+                select(ModuleHelp.module_key)
+                .where(ModuleHelp.ativo.is_(True))
+                .distinct()
+            ),
+            timeout=1.5,
+        )
+        helps_ativos: list[str] | None = [
+            str(key) for key in result.scalars().all() if key
+        ]
+    except Exception:
+        # Falha ao ler a ajuda não pode virar afirmação falsa de que todos os
+        # módulos estão sem manual. O mapa continua funcional e declara o
+        # estado documental como desconhecido.
+        await db.rollback()
+        helps_ativos = None
+
+    mapa = gerar_mapa_modulos(rotas_api, helps_ativos)
     return {
         "resumo": resumir_mapa_modulos(mapa),
         "modulos": mapa,
         "rotas_api_detectadas": len(rotas_api),
         "modo": "somente_leitura",
+        "documentacao_modo": (
+            "persistida" if helps_ativos is not None else "indisponivel"
+        ),
     }
 
 
