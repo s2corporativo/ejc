@@ -59,11 +59,16 @@ def _where(mg_jec_only: bool) -> str:
     da recuperação (C3): cobertura nunca conta documento que a busca exclui
     (sem rag_status aprovado, vigência não verificada, súmula em quarentena,
     corpus fictício, revogado). Import tardio: ai_service é módulo pesado."""
-    from app.services.ai_service import filtros_gate_rag
+    from app.services.ai_service import (
+        filtros_gate_rag,
+        filtro_elegibilidade_rag_metricas,
+    )
 
     base = (
         "kd.deleted_at IS NULL AND COALESCE(kd.vigente, TRUE) = TRUE "
-        f"{filtros_gate_rag()}"
+        f"{filtro_elegibilidade_rag_metricas()} "
+        f"{filtros_gate_rag()} "
+        "AND EXISTS (SELECT 1 FROM knowledge_chunks kc0 WHERE kc0.doc_id = kd.id)"
     )
     return f"{base} AND {_filtro_mg_jec()}" if mg_jec_only else base
 
