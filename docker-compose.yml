@@ -225,6 +225,10 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        # Flag do menu de 9 módulos (Onda 1) — default ATIVO no código.
+        # Rollback global: VITE_EJC_MENU_9=false no .env do host + rebuild.
+        VITE_EJC_MENU_9: ${VITE_EJC_MENU_9:-}
     container_name: ejc_frontend
     restart: unless-stopped
     logging: *ejc-logging

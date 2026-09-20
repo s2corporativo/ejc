@@ -10,21 +10,23 @@ import type { ModuleRoute } from "./moduleRegistry";
  * Dois menus canônicos convivem aqui (Onda 1 do plano de limpeza
  * 2026-09-20 — docs/audit/AUDITORIA_REAL_2026-09-20.md §3 e §10):
  *
- * 1. `CANONICAL_MAIN_NAV` — menu atual de 11 domínios da referência visual
- *    premium DPT aprovada pelo Titular (18/09/2026). É o DEFAULT enquanto o
- *    menu de 9 estiver atrás de flag.
- *
- * 2. `CANONICAL_MENU_9_NAV` — menu alvo de 9 módulos do mapa funcional
+ * 1. `CANONICAL_MENU_9_NAV` — menu alvo de 9 módulos do mapa funcional
  *    auditado (DASHBOARD, CLIENTES, CASOS, AGENDA E PRAZOS, PEÇAS,
  *    CONHECIMENTO JURÍDICO, FINANCEIRO, PORTAL DO CLIENTE, ADMINISTRAÇÃO).
+ *    É o DEFAULT desde a ativação da flag pelo Titular (21/09/2026), após a
+ *    homologação da Onda 1 (PR #1742, CI verde, gates completos).
  *    Nada é removido do sistema por sair do menu: as rotas absorvidas
  *    (Documentos, Banco de Teses, Radar, Relatórios/Produtividade) seguem
  *    vivas no registry, acessíveis por deep-link, ⌘K e contexto — a Onda 3+
  *    é que as absorve de fato como tabs/workspace.
  *
- * A troca é controlada por flag (`ejc_menu9` em localStorage com default
- * `VITE_EJC_MENU_9`), rollback imediato sem deploy, até a homologação
- * (W12). RBAC/lifecycle continuam filtrando o resultado — nenhum link
+ * 2. `CANONICAL_MAIN_NAV` — menu de 11 domínios da referência visual
+ *    premium DPT aprovada pelo Titular (18/09/2026). Mantido como ROLLBACK:
+ *    continua acessível sem deploy via override local (abaixo).
+ *
+ * A troca é controlada por flag (`ejc_menu9` em localStorage vence o default
+ * de ambiente `VITE_EJC_MENU_9`) — rollback imediato por perfil sem deploy.
+ * RBAC/lifecycle continuam filtrando o resultado — nenhum link
  * morto é gerado: "portal" não possui ModuleRoute de staff (o Portal do
  * Cliente tem shell próprio confinado por middleware) e é descartado em
  * runtime para usuários internos.
@@ -65,10 +67,13 @@ export type CanonicalMainNavKey = (typeof CANONICAL_MAIN_NAV)[number]["key"];
 const MENU9_STORAGE_KEY = "ejc_menu9";
 
 /**
- * Flag do menu de 9 módulos — atrás de flag até a homologação (W12).
- * Override local (`localStorage.ejc_menu9 = "true"|"false"`) vence o default
- * de ambiente (`VITE_EJC_MENU_9=true`), permitindo rollback imediato por
- * perfil sem deploy.
+ * Flag do menu de 9 módulos — ATIVADA por decisão do Titular (21/09/2026),
+ * após homologação da Onda 1 (PR #1742: gates completos, CI verde).
+ *
+ * Precedência: `localStorage.ejc_menu9 = "true"|"false"` vence o ambiente;
+ * `VITE_EJC_MENU_9="false"` desativa globalmente (opt-out de infra).
+ * Rollback: por perfil via localStorage (imediato, sem deploy) ou global via
+ * env + rebuild / revert do commit de ativação.
  */
 export function isMenu9Enabled(): boolean {
   try {
@@ -80,7 +85,7 @@ export function isMenu9Enabled(): boolean {
   } catch {
     // storage indisponível (privacidade/incognito) — cai no default de env
   }
-  return import.meta.env?.VITE_EJC_MENU_9 === "true";
+  return import.meta.env?.VITE_EJC_MENU_9 !== "false";
 }
 
 /** Override local da flag (uso em homologação/diagnóstico; não exposto em UI). */

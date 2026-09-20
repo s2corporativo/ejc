@@ -149,7 +149,7 @@ describe("canonicalNavigation — Onda 1 (menu 9 do mapa funcional auditado)", (
     expect(saida.some((item) => item.key === "portal")).toBe(false);
   });
 
-  it("flag OFF (default) mantém os 11 domínios da referência DPT — rollback imediato", () => {
+  it("flag OFF (rollback explícito) mantém os 11 domínios da referência DPT", () => {
     const entrada = [
       mod("dashboard", "Início"),
       mod("documentos", "Documentos"),
@@ -170,13 +170,22 @@ describe("canonicalNavigation — Onda 1 (menu 9 do mapa funcional auditado)", (
     ]);
   });
 
-  it("sem override explícito, o seletor honra a flag (localStorage > env)", () => {
-    // Sem flag: env default undefined → menu 11.
+  it("sem override explícito, o seletor honra a flag (localStorage > env); default ATIVO", () => {
+    // Default promovido: sem override local e sem env, o menu 9 assume.
     const entrada = [
       mod("dashboard", "Início"),
       mod("inteligencia", "Inteligência Jurídica"),
       mod("configuracoes", "Configurações"),
     ];
+    expect(isMenu9Enabled()).toBe(true);
+    expect(selectMainNavigation(entrada).map((item) => item.label)).toEqual([
+      "Início",
+      "Conhecimento Jurídico",
+      "Administração",
+    ]);
+
+    // Override local OFF → rollback imediato por perfil, sem deploy (menu 11).
+    setMenu9Enabled(false);
     expect(isMenu9Enabled()).toBe(false);
     expect(selectMainNavigation(entrada).map((item) => item.key)).toEqual([
       "dashboard",
@@ -184,8 +193,7 @@ describe("canonicalNavigation — Onda 1 (menu 9 do mapa funcional auditado)", (
       "configuracoes",
     ]);
 
-    // Override local ON → menu 9 (inteligencia relabelada, configurações vira
-    // Administração).
+    // Override local ON reativa o menu 9.
     setMenu9Enabled(true);
     expect(isMenu9Enabled()).toBe(true);
     const saida9 = selectMainNavigation(entrada);
