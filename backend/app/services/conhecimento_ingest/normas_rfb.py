@@ -247,7 +247,7 @@ async def ingerir(db: AsyncSession) -> dict:
                     categoria="legislacao_tributaria",
                     conteudo=texto,
                     chave_origem=chave,
-                    fonte=url,
+                    fonte=url[:255],
                     # Conteúdo raspado (tolerante a layout) → confiança MEDIA
                     # (distingue de jurisprudência curada no gate de citação).
                     confianca="media",
