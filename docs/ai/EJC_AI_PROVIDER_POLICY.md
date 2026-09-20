@@ -2,9 +2,10 @@
 
 Data: 2026-07-04 · Código: `backend/app/services/ai/provider_policy.py`.
 
-> **Estado atual (03/09/2026 — análise ponta a ponta, A9).** As seções abaixo
-> descrevem o desenho de julho e envelheceram em pontos materiais. O que vale
-> hoje, conferido no código:
+> **Estado atual (20/09/2026).** Política operacional vigente: **Groq** para
+> tarefas corriqueiras/baixo custo; **Maritaca/Sabiá** para leitura, análise,
+> raciocínio e pesquisa jurídica; **Ollama** para sigilo/fallback local; e
+> **Claude/Anthropic somente quando requisitado explicitamente no EJC**.
 >
 > - **Quatro provedores**: `ollama`, `anthropic`, `maritaca`, `groq`
 >   (`provider_registry.PROVIDERS_SUPORTADOS`). A Maritaca (Sabiá) existe desde
@@ -18,17 +19,17 @@ Data: 2026-07-04 · Código: `backend/app/services/ai/provider_policy.py`.
 >   TODOS desde AUD27-P0-1) + flag própria (`OLLAMA_ENABLED`, `ANTHROPIC_ENABLED`,
 >   `MARITACA_ENABLED`, `GROQ_ENABLED`) + chave (externos) +
 >   `AI_EXTERNAL_PROVIDERS_ALLOWED` (externos).
-> - **Prioridade default**: `AI_PROVIDER_PRIORITY="anthropic,maritaca,groq,ollama"`
->   (`config.py`), com Ollama por último como rede de segurança — não mais
->   `ollama,anthropic,groq`.
+> - **Prioridade default**: `AI_PROVIDER_PRIORITY="groq,maritaca,ollama,anthropic"`.
+>   Com `ANTHROPIC_EXPLICIT_ONLY=true`, o Anthropic é retirado da cadeia
+>   automática; a posição final existe apenas para compatibilidade/configuração.
 > - **Perfil de IA**: `AI_PROFILE=externo|local|hibrido|desligado` deriva as
 >   flags acima e a prioridade (`config._aplicar_perfil_ia`); vazio = flags
 >   manuais. Código, `.env.example` e `docker-compose.yml` compartilham os
->   mesmos defaults (`MARITACA_ENABLED=false` até decisão explícita).
-> - **Cadeias por tarefa** (`ai_gateway.TASK_ROUTING`): as tarefas econômicas
->   (`resumo`, `chat_rapido`) terminam com `anthropic` (modelo rápido) para que
->   a cadeia nunca fique vazia no desenho de produção sem Ollama; deadline
->   agregado da cadeia em `AI_CHAIN_DEADLINE_SECONDS`.
+>   mesmos defaults (`MARITACA_ENABLED=true`; sem chave, permanece inelegível).
+> - **Cadeias por tarefa**: `resumo/chat_rapido` promovem Groq; tarefas de
+>   mérito (`analise_juridica`, `estrategia`, `elaboracao_peca`,
+>   `analise_contrato`, `jurimetria`) promovem Maritaca. Claude entra apenas
+>   com `provider_override="anthropic"` ou no modo agêntico deliberado.
 > - **Modelos e custo**: `ANTHROPIC_MODEL_COMPLEXO=claude-opus-4-8`,
 >   `ANTHROPIC_MODEL_RAPIDO=claude-haiku-4-5-20251001`; tabela de preços em
 >   `services/ai_cost.py` (inclui tokens de prompt caching).
@@ -40,7 +41,8 @@ A `AIProviderPolicy` (provider_policy.py:43) decide, ANTES de qualquer chamada d
 
 ```python
 AIProviderPolicy().avaliar(texto_completo, task_type, *,
-                           ja_sanitizado=False, exige_fonte=False) -> PolicyDecision
+                           ja_sanitizado=False, exige_fonte=False,
+                           provider_override=None) -> PolicyDecision
 ```
 
 `PolicyDecision` (provider_policy.py:32-40):
@@ -70,12 +72,18 @@ O orchestrator invoca a policy após a sanitização do input (`ja_sanitizado=Tr
 
 ## 3. Ordem base — `AI_PROVIDER_PRIORITY`
 
-CSV em Settings (default `ollama,anthropic,groq`, config.py:92). `_ordem_prioridade` (provider_policy.py:60-68) deduplica e normaliza; vazio → fallback `["ollama","anthropic","groq"]`. Cadeia base = prioridade filtrada por elegibilidade.
+CSV em Settings: `groq,maritaca,ollama,anthropic`. A ordem é filtrada pela
+elegibilidade. Se `ANTHROPIC_EXPLICIT_ONLY=true`, Claude é removido do
+automático. Um `provider_override="anthropic"` válido cria uma cadeia explícita
+somente com Claude, ainda sujeita aos gates de chave, LGPD e sigilo.
 
 ## 4. Priorização por perfil de tarefa (provider_policy.py:21-29, 112-119)
 
-- `TAREFAS_COMPLEXAS` = {analise_caso, minutas, dossie, pesquisa_juridica, estrategia, analise_juridica, elaboracao_peca} → se Anthropic elegível, vai para a FRENTE da cadeia ("tarefa complexa — Anthropic priorizado").
-- `TAREFAS_ECONOMICAS` = {resumo, triagem, chat_rapido} → Ollama/Groq à frente (custo ~zero).
+- `TAREFAS_COMPLEXAS` → Maritaca/Sabiá à frente para leitura, análise,
+  estratégia, redação e pesquisa jurídica.
+- `TAREFAS_ECONOMICAS` = {resumo, triagem, chat_rapido} → Groq à frente;
+  Ollama pode servir de fallback local quando habilitado.
+- Anthropic não é promovido automaticamente; só entra por requisição explícita.
 - Aceita tanto nomes de `TarefaIA` quanto task_types do gateway.
 
 ## 5. Barreira LGPD (provider_policy.py:95-110)
@@ -94,9 +102,10 @@ A policy decide no núcleo, mas o `ai_gateway` **não confia** nessa decisão: a
 
 | Cenário | Cadeia resultante | Por quê |
 |---|---|---|
-| Análise de caso/minuta/dossiê, conteúdo limpo | anthropic → ollama → groq | Tarefa complexa prioriza Claude (MODEL_COMPLEXO) |
-| Resumo/triagem/chat rápido | ollama → groq | Econômicas; Anthropic nem entra no TASK_ROUTING de resumo/chat |
+| Análise, leitura, minuta, dossiê ou pesquisa jurídica | maritaca → (ollama) → groq | Maritaca é o motor automático de mérito PT-BR |
+| Resumo/triagem/chat rápido | groq → (ollama) → maritaca | Groq atende rotina; fallback preservado |
+| Solicitação explícita "Claude" | anthropic | Sem fallback silencioso na policy; se inelegível, a solicitação é bloqueada com motivo seguro |
 | Qualquer tarefa com PII residual após sanitização | somente ollama | Externos removidos (LGPD) |
 | PII residual e `OLLAMA_ENABLED=false` | (vazia) → HTTP 422 | Bloqueio com motivo seguro |
 | `AI_EXTERNAL_PROVIDERS_ALLOWED=false` | somente ollama | Modo soberania total |
-| `ANTHROPIC_ENABLED=false` (kill-switch) | ollama → groq | Claude fora sem apagar a chave |
+| `ANTHROPIC_ENABLED=false` (kill-switch) | automático inalterado | Claude explícito fica indisponível sem apagar a chave |
