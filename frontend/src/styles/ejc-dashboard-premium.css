@@ -1,8 +1,8 @@
 /* ══════════════════════════════════════════════════════════════════════════
-   EJC — Identidade Premium DPT (referência aprovada pelo Titular 18/09/2026)
+   EJC — Identidade Tech Blue DPT (aprovada pelo Titular em 20/09/2026)
    Camada de composição do Início (DashboardUltra) e acabamentos do shell.
 
-   Fidelidade ao mockup "EJC DePaula Teixeira Adv":
+   Evolução da referência "EJC DePaula Teixeira Adv":
    • verde-esmeralda profundo nos cartões institucionais (#0a4132 → #04291f)
    • ouro (#cfa961 / #eaca7f) como acento cirúrgico
    • tela quente off-white, cartões brancos, tipografia serif de display
@@ -10,14 +10,14 @@
    ══════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  --ejc-dash-green: #0a4132;
-  --ejc-dash-green-deep: #04291f;
+  --ejc-dash-green: #0f2747;
+  --ejc-dash-green-deep: #07182e;
   --ejc-dash-green-soft: rgba(255, 255, 255, 0.08);
-  --ejc-dash-gold: #cfa961;
-  --ejc-dash-gold-bright: #eaca7f;
-  --ejc-dash-gold-deep: #a8873c;
-  --ejc-dash-ink: #10382c;
-  --ejc-dash-muted: #6d7f78;
+  --ejc-dash-gold: #38bdf8;
+  --ejc-dash-gold-bright: #7dd3fc;
+  --ejc-dash-gold-deep: #0284c7;
+  --ejc-dash-ink: #132a4a;
+  --ejc-dash-muted: #526176;
   --ejc-dash-serif: "Playfair Display", Georgia, "Times New Roman", serif;
 }
 
@@ -100,9 +100,17 @@
   border-radius: 22px;
   padding: 22px 24px 20px;
   background:
-    radial-gradient(circle at 88% -20%, rgba(234, 202, 127, 0.16), transparent 42%),
-    linear-gradient(165deg, var(--ejc-dash-green) 0%, var(--ejc-dash-green-deep) 100%);
-  box-shadow: 0 24px 58px rgba(4, 41, 31, 0.28);
+    radial-gradient(
+      circle at 88% -20%,
+      rgba(56, 189, 248, 0.2),
+      transparent 42%
+    ),
+    linear-gradient(
+      165deg,
+      var(--ejc-dash-green) 0%,
+      var(--ejc-dash-green-deep) 100%
+    );
+  box-shadow: 0 24px 58px rgba(7, 24, 46, 0.28);
 }
 
 .ejc-dash__entry-head {
@@ -118,7 +126,7 @@
   width: 46px;
   height: 46px;
   flex: 0 0 auto;
-  border: 1.5px solid rgba(234, 202, 127, 0.55);
+  border: 1.5px solid rgba(56, 189, 248, 0.55);
   border-radius: 14px;
   color: var(--ejc-dash-gold-bright);
 }
@@ -147,7 +155,7 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-copy p {
 .ejc-dash__entry-tag {
   margin-left: auto;
   align-self: flex-start;
-  color: rgba(234, 202, 127, 0.85) !important;
+  color: rgba(125, 211, 252, 0.9) !important;
   font-size: 9px;
   font-weight: 650;
   letter-spacing: 0.18em;
@@ -197,7 +205,9 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body--plain p {
   font-size: 12.5px;
   font-weight: 600;
   padding: 9px 16px;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .ejc-dash__chip svg {
@@ -208,7 +218,7 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body--plain p {
 
 .ejc-dash__chip:hover {
   background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(234, 202, 127, 0.6);
+  border-color: rgba(56, 189, 248, 0.6);
 }
 
 /* EntradaInteligente embutido — acabamento premium sobre o padrão existente */
@@ -228,17 +238,30 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body--plain p {
 
 /* Botão “Analisar” do fluxo embutido — ouro sobre esmeralda, como na
    referência (sobrepõe o estilo padrão do design system com segurança). */
-html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button:not(.ejc-dash__chip),
+html:not(.dark)
+  .ejc-modern-scope
+  .ejc-dash__entry-body
+  button:not(.ejc-dash__chip),
 html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"] {
   border-radius: 999px !important;
-  background: linear-gradient(135deg, var(--ejc-dash-gold-bright), var(--ejc-dash-gold)) !important;
+  background: linear-gradient(
+    135deg,
+    var(--ejc-dash-gold-bright),
+    var(--ejc-dash-gold)
+  ) !important;
   color: var(--ejc-dash-green-deep) !important;
   font-weight: 700 !important;
   border: 0 !important;
 }
 
-html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button:not(.ejc-dash__chip):disabled,
-html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:disabled {
+html:not(.dark)
+  .ejc-modern-scope
+  .ejc-dash__entry-body
+  button:not(.ejc-dash__chip):disabled,
+html:not(.dark)
+  .ejc-modern-scope
+  .ejc-dash__entry-body
+  button[type="button"]:disabled {
   opacity: 0.55 !important;
 }
 
@@ -248,7 +271,7 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
 }
 
 .ejc-dash__entry-body [role="button"][aria-label*="documentos"]:hover {
-  border-color: rgba(234, 202, 127, 0.65) !important;
+  border-color: rgba(56, 189, 248, 0.65) !important;
   background: rgba(255, 255, 255, 0.09) !important;
 }
 
@@ -260,7 +283,11 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
 .ejc-dash__entry-body .btn,
 .ejc-dash__entry-body button[class*="bg-primary"] {
   border-radius: 999px !important;
-  background: linear-gradient(135deg, var(--ejc-dash-gold-bright), var(--ejc-dash-gold)) !important;
+  background: linear-gradient(
+    135deg,
+    var(--ejc-dash-gold-bright),
+    var(--ejc-dash-gold)
+  ) !important;
   color: var(--ejc-dash-green-deep) !important;
   font-weight: 700 !important;
 }
@@ -285,7 +312,9 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
   background: #ffffff;
   box-shadow: 0 10px 28px rgba(23, 48, 39, 0.06);
   padding: 16px 18px;
-  transition: transform 0.15s ease, border-color 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .ejc-dash__stat:hover {
@@ -338,8 +367,16 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
 .ejc-dash__stat.is-dark {
   border: 0;
   background:
-    radial-gradient(circle at 90% -30%, rgba(234, 202, 127, 0.22), transparent 46%),
-    linear-gradient(160deg, var(--ejc-dash-green) 0%, var(--ejc-dash-green-deep) 100%);
+    radial-gradient(
+      circle at 90% -30%,
+      rgba(56, 189, 248, 0.22),
+      transparent 46%
+    ),
+    linear-gradient(
+      160deg,
+      var(--ejc-dash-green) 0%,
+      var(--ejc-dash-green-deep) 100%
+    );
   box-shadow: 0 18px 40px rgba(4, 41, 31, 0.3);
 }
 
@@ -352,7 +389,7 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
 }
 
 .ejc-dash__stat.is-dark .ejc-dash__stat-icon {
-  background: rgba(234, 202, 127, 0.16);
+  background: rgba(56, 189, 248, 0.16);
   color: var(--ejc-dash-gold-bright);
 }
 
@@ -435,7 +472,9 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
   font-size: 11.5px;
   font-weight: 650;
   padding: 6px 14px;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .ejc-dash__tabs button.is-active {
@@ -503,11 +542,21 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
   border-radius: 999px;
 }
 
-.ejc-dash__dot.is-red { background: #d84c4c; }
-.ejc-dash__dot.is-orange { background: #e8961e; }
-.ejc-dash__dot.is-green { background: #2c9a5f; }
-.ejc-dash__dot.is-blue { background: #4a7fd6; }
-.ejc-dash__dot.is-gold { background: var(--ejc-dash-gold); }
+.ejc-dash__dot.is-red {
+  background: #d84c4c;
+}
+.ejc-dash__dot.is-orange {
+  background: #e8961e;
+}
+.ejc-dash__dot.is-green {
+  background: #2c9a5f;
+}
+.ejc-dash__dot.is-blue {
+  background: #4a7fd6;
+}
+.ejc-dash__dot.is-gold {
+  background: var(--ejc-dash-gold);
+}
 
 .ejc-dash__item strong {
   display: block;
@@ -545,9 +594,18 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
   padding: 3px 10px;
 }
 
-.ejc-dash__case-chip.is-green { background: #e4f3ea; color: #1d7a45; }
-.ejc-dash__case-chip.is-gold { background: #f6eed9; color: #8f7117; }
-.ejc-dash__case-chip.is-gray { background: #edf0ee; color: #67716c; }
+.ejc-dash__case-chip.is-green {
+  background: #e4f3ea;
+  color: #1d7a45;
+}
+.ejc-dash__case-chip.is-gold {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+.ejc-dash__case-chip.is-gray {
+  background: #edf0ee;
+  color: #67716c;
+}
 
 .ejc-dash__cases button {
   grid-template-columns: minmax(0, 1fr) 16px;
@@ -558,7 +616,9 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
   row-gap: 3px;
 }
 
-.ejc-dash__cases .ejc-dash__case-chip { grid-area: chip; }
+.ejc-dash__cases .ejc-dash__case-chip {
+  grid-area: chip;
+}
 .ejc-dash__cases strong {
   grid-area: titulo;
   display: block;
@@ -579,7 +639,9 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
   white-space: nowrap;
 }
 
-.ejc-dash__cases button > svg { grid-area: chev; }
+.ejc-dash__cases button > svg {
+  grid-area: chev;
+}
 
 .ejc-dash__empty {
   color: var(--ejc-dash-muted);
@@ -687,8 +749,12 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
   align-content: start;
   border-radius: 20px;
   background:
-    radial-gradient(circle at 85% -10%, rgba(234, 202, 127, 0.14), transparent 46%),
-    linear-gradient(165deg, #0b4535 0%, var(--ejc-dash-green-deep) 100%);
+    radial-gradient(
+      circle at 85% -10%,
+      rgba(56, 189, 248, 0.16),
+      transparent 46%
+    ),
+    linear-gradient(165deg, #17365f 0%, var(--ejc-dash-green-deep) 100%);
   box-shadow: 0 18px 44px rgba(4, 41, 31, 0.26);
 }
 
@@ -702,8 +768,12 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
   overflow: hidden;
   border-radius: 20px;
   background:
-    radial-gradient(circle at 85% -10%, rgba(234, 202, 127, 0.14), transparent 46%),
-    linear-gradient(165deg, #0b4535 0%, var(--ejc-dash-green-deep) 100%);
+    radial-gradient(
+      circle at 85% -10%,
+      rgba(56, 189, 248, 0.16),
+      transparent 46%
+    ),
+    linear-gradient(165deg, #17365f 0%, var(--ejc-dash-green-deep) 100%);
   box-shadow: 0 18px 44px rgba(4, 41, 31, 0.26);
 }
 
@@ -827,7 +897,7 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__manifesto p {
 }
 
 .ejc-dash__calendar-day.is-selected {
-  background: rgba(234, 202, 127, 0.16);
+  background: rgba(56, 189, 248, 0.16);
   box-shadow: inset 0 0 0 1.5px var(--ejc-dash-gold-bright);
   color: #ffffff;
   font-weight: 700;
@@ -836,7 +906,7 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__manifesto p {
 .ejc-dash__calendar-day[aria-current="date"].is-selected {
   background: var(--ejc-dash-gold);
   color: var(--ejc-dash-green-deep);
-  box-shadow: 0 0 0 2px rgba(234, 202, 127, 0.3);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.3);
 }
 
 .ejc-dash__calendar-day.has-event i {
@@ -871,7 +941,7 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__manifesto p {
 }
 
 .ejc-dash__routine-head small {
-  color: rgba(234, 202, 127, 0.85);
+  color: rgba(125, 211, 252, 0.9);
   font-size: 10.5px;
 }
 
@@ -887,7 +957,11 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__manifesto p {
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--ejc-dash-gold), var(--ejc-dash-gold-bright));
+  background: linear-gradient(
+    90deg,
+    var(--ejc-dash-gold),
+    var(--ejc-dash-gold-bright)
+  );
   transition: width 0.3s ease;
 }
 
@@ -1084,7 +1158,7 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__quote p {
 .ejc-sidebar-epigraph__city small {
   display: block;
   margin-top: 4px;
-  color: rgba(234, 202, 127, 0.85);
+  color: rgba(125, 211, 252, 0.9);
   font-size: 8px;
   letter-spacing: 0.22em;
 }
@@ -1215,7 +1289,7 @@ html:not(.dark) .sidebar-bronze > div:first-child button {
 }
 
 html:not(.dark) .sidebar-bronze > div:first-child button:hover {
-  color: #eaca7f !important;
+  color: #7dd3fc !important;
   background: rgba(255, 255, 255, 0.06) !important;
 }
 
@@ -1262,17 +1336,19 @@ html:not(.dark) .sidebar-bronze .sidebar-nav-item.is-active svg {
   background: #ffffff;
   padding: 9px 10px 9px 20px;
   box-shadow: 0 10px 26px rgba(4, 41, 31, 0.22);
-  transition: box-shadow 0.15s ease, outline-color 0.15s ease;
+  transition:
+    box-shadow 0.15s ease,
+    outline-color 0.15s ease;
   outline: 1px solid transparent;
 }
 
 .ejc-entry-pill:focus-within {
-  outline-color: rgba(234, 202, 127, 0.55);
+  outline-color: rgba(56, 189, 248, 0.55);
   box-shadow: 0 12px 30px rgba(4, 41, 31, 0.3);
 }
 
 .ejc-entry-pill.is-drag {
-  outline-color: rgba(234, 202, 127, 0.85);
+  outline-color: rgba(56, 189, 248, 0.85);
   background: #fffdf6;
 }
 
@@ -1312,7 +1388,9 @@ html:not(.dark) .sidebar-bronze .sidebar-nav-item.is-active svg {
   flex: 0 0 auto;
   border-radius: 999px;
   color: #5c6b63;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .ejc-entry-pill__clip svg {
@@ -1330,18 +1408,28 @@ html:not(.dark) .sidebar-bronze .sidebar-nav-item.is-active svg {
    botões de remover chip — controles NEUTROS na pílula branca. O override
    abaixo supera a especificidade da regra legada e restaura o visual
    distinto do mockup. */
-html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"].ejc-entry-pill__clip {
+html:not(.dark)
+  .ejc-modern-scope
+  .ejc-dash__entry-body
+  button[type="button"].ejc-entry-pill__clip {
   background: transparent !important;
   border: 0 !important;
   color: #5c6b63 !important;
 }
 
-html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"].ejc-entry-pill__clip:hover {
+html:not(.dark)
+  .ejc-modern-scope
+  .ejc-dash__entry-body
+  button[type="button"].ejc-entry-pill__clip:hover {
   background: #f1f0ea !important;
   color: var(--ejc-dash-green) !important;
 }
 
-html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body .ejc-entry-pillzone__files button[type="button"] {
+html:not(.dark)
+  .ejc-modern-scope
+  .ejc-dash__entry-body
+  .ejc-entry-pillzone__files
+  button[type="button"] {
   background: transparent !important;
   border: 0 !important;
   color: rgba(255, 255, 255, 0.78) !important;
@@ -1355,9 +1443,11 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body .ejc-entry-pillzone__fil
   flex: 0 0 auto;
   border-radius: 999px;
   background: linear-gradient(135deg, var(--ejc-dash-gold) 0%, #e0c074 100%);
-  color: #05261d;
+  color: #07182e;
   box-shadow: 0 6px 14px rgba(0, 0, 0, 0.22);
-  transition: transform 0.15s ease, filter 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    filter 0.15s ease;
 }
 
 .ejc-entry-pill__send svg {
@@ -1371,7 +1461,7 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body .ejc-entry-pillzone__fil
 }
 
 .ejc-entry-pill__send:focus-visible {
-  outline: 2px solid rgba(234, 202, 127, 0.9);
+  outline: 2px solid rgba(56, 189, 248, 0.9);
   outline-offset: 2px;
 }
 
@@ -1450,7 +1540,11 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body .ejc-entry-pillzone__fil
   height: 32px;
   flex: 0 0 auto;
   border-radius: 10px;
-  background: linear-gradient(150deg, var(--ejc-dash-green) 0%, var(--ejc-dash-green-deep) 100%);
+  background: linear-gradient(
+    150deg,
+    var(--ejc-dash-green) 0%,
+    var(--ejc-dash-green-deep) 100%
+  );
   color: var(--ejc-dash-gold-bright);
   box-shadow: 0 4px 10px rgba(4, 41, 31, 0.18);
 }
