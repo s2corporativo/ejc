@@ -119,15 +119,11 @@ services:
       # pseudonimização de PII (CPF/CNPJ → [CPF]/[CNPJ]). Para usar IA local,
       # suba um serviço `ollama` e volte para "true".
       OLLAMA_ENABLED: "false"
-      # Anthropic primeiro (melhor qualidade jurídica); Maritaca (Sabiá,
-      # legal-tuned PT-BR) como 2º externo; Groq depois.
-      # Requer ANTHROPIC_API_KEY no .env do VPS (segredo — nunca versionado).
+      # Política operacional: Groq para rotina; Maritaca/Sabiá para leitura,
+      # análise e pesquisa jurídica; Claude somente sob seleção explícita.
       AI_PROVIDER_PRIORITY: "groq,maritaca,ollama,anthropic"
-      # Maritaca: default alinhado ao código (config.py) e ao .env.example —
-      # DESLIGADA até decisão explícita no .env (MARITACA_ENABLED=true). Antes o
-      # compose ligava por padrão e divergia das outras duas fontes (análise
-      # E2E 03/09/2026, A2); com chave presente, dado jurídico pseudonimizado
-      # saía para um destino não soberano sem ninguém ter habilitado.
+      # Maritaca habilitada por padrão na política atual; sem MARITACA_API_KEY
+      # permanece inelegível. Continua sujeita à pseudonimização/LGPD.
       MARITACA_ENABLED: "${MARITACA_ENABLED:-true}"
       # Perfil de IA (opcional): externo | local | hibrido | desligado — deriva
       # os *_ENABLED e a prioridade; vazio = flags manuais (config.py).
@@ -202,9 +198,10 @@ services:
       # sem Ollama local neste stack; IA externa com mascaramento de PII.
       OLLAMA_ENABLED: "false"
       AI_PROVIDER_PRIORITY: "groq,maritaca,ollama,anthropic"
-      # Mesmo default da API: Maritaca desligada até decisão explícita no .env.
+      # Mesma política da API: Maritaca preferida no mérito; Claude manual.
       MARITACA_ENABLED: "${MARITACA_ENABLED:-true}"
       AI_PROFILE: "${AI_PROFILE:-}"
+      ANTHROPIC_AUTO_ROUTING_ENABLED: "${ANTHROPIC_AUTO_ROUTING_ENABLED:-false}"
     volumes:
       - uploads_data:/app/uploads
       - fastembed_cache:/tmp/fastembed_cache
