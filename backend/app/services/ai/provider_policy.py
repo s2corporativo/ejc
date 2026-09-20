@@ -125,15 +125,21 @@ class AIProviderPolicy:
                 )
 
         # ── Priorização por perfil da tarefa ─────────────────────────────────
-        if not solicitado and task in TAREFAS_COMPLEXAS and "maritaca" in elegiveis:
-            # Maritaca é o motor automático de leitura/análise/pesquisa.
-            # Sigilo LOCAL_COMPLETO continua prevalecendo depois no gateway.
-            elegiveis = ["maritaca"] + [p for p in elegiveis if p != "maritaca"]
-            motivos.append("tarefa complexa — Maritaca (Sabiá) priorizada")
+        if not solicitado and task in TAREFAS_COMPLEXAS:
+            # Afinidade ESTRITA: mérito jurídico automático usa Maritaca; Ollama
+            # pode permanecer como fallback local/sigilo. Groq não assume mérito
+            # silenciosamente e Claude só entra sob solicitação explícita.
+            elegiveis = [p for p in elegiveis if p in {"maritaca", "ollama"}]
+            if "maritaca" in elegiveis:
+                elegiveis = ["maritaca"] + [p for p in elegiveis if p != "maritaca"]
+            motivos.append("tarefa complexa — afinidade Maritaca/Ollama")
         elif not solicitado and task in TAREFAS_ECONOMICAS:
-            econ = [p for p in elegiveis if p == "groq"]
-            elegiveis = econ + [p for p in elegiveis if p != "groq"]
-            motivos.append("tarefa econômica — Groq priorizado")
+            # Afinidade ESTRITA: rotina usa Groq; Ollama pode servir de fallback
+            # local. Maritaca não é consumida por rotina automaticamente.
+            elegiveis = [p for p in elegiveis if p in {"groq", "ollama"}]
+            if "groq" in elegiveis:
+                elegiveis = ["groq"] + [p for p in elegiveis if p != "groq"]
+            motivos.append("tarefa econômica — afinidade Groq/Ollama")
 
         requer_hitl = bool(s.AI_REQUIRE_HITL)
 
