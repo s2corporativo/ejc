@@ -1,5 +1,14 @@
 # EJC — AIProviderPolicy (política central de provedores)
 
+> **Política operacional vigente — 20/09/2026**
+>
+> - **Groq** é o motor automático de tarefas corriqueiras, resumo, triagem e conversa rápida.
+> - **Maritaca/Sabiá** é o motor automático de leitura, análise, raciocínio jurídico, RAG/pesquisa e jurisprudência.
+> - **Claude/Anthropic** permanece habilitável e elegível, porém **não participa do roteamento automático** com `ANTHROPIC_AUTO_ROUTING_ENABLED=false`; entra somente por seleção explícita `provider="anthropic"` no sistema. A flag `true` é rollback operacional.
+> - **Ollama** continua sendo a opção local e o único destino admitido quando a política de sigilo exigir `LOCAL_COMPLETO`.
+> - Todo provider externo continua sujeito a pseudonimização/sanitização, kill-switch, RBAC/ownership, AILog, gate de citações e HITL.
+> - A ausência de chave não é mascarada: Groq/Maritaca/Claude ficam inelegíveis individualmente sem suas credenciais; nenhuma credencial é versionada.
+
 Data: 2026-07-04 · Código: `backend/app/services/ai/provider_policy.py`.
 
 > **Estado atual (03/09/2026 — análise ponta a ponta, A9).** As seções abaixo
