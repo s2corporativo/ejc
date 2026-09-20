@@ -28,12 +28,17 @@ _TRACE: ContextVar[_TraceContext | None] = ContextVar(
 )
 
 
+def _tipo_erro_seguro(exc: Exception) -> str:
+    """Normaliza somente o subtipo técnico confiável, sem ler str(exc)."""
+    return (getattr(exc, "technical_type", None) or type(exc).__name__)[:100]
+
+
 def normalizar_erro(exc: Exception) -> tuple[str, int | None, str]:
     """Retorna somente metadados seguros; nunca persiste a mensagem da exceção."""
     http_status = getattr(exc, "status_code", None) or getattr(
         getattr(exc, "response", None), "status_code", None
     )
-    error_type = type(exc).__name__[:100]
+    error_type = _tipo_erro_seguro(exc)
     if error_type == "_ProviderPulado":
         return "bloqueado_lgpd", http_status, "Bloqueio preventivo de PII (LGPD)"
     reason = error_type + (f" (HTTP {http_status})" if http_status else "")
@@ -200,7 +205,7 @@ def _instalar_instrumentacao(ai_gateway) -> None:
                 # o painel distingue isso de um sucesso obtido via fallback.
                 fallback_triggered=True,
                 fallback_reason=motivo[:2000],
-                error_type=type(exc).__name__[:100],
+                error_type=_tipo_erro_seguro(exc),
                 http_status=http_status,
             )
             raise
