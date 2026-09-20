@@ -29,8 +29,13 @@ router = APIRouter(prefix="/ai/core", tags=["IA — Núcleo Único"])
 
 
 def _staff_only(cu: User) -> None:
-    """cliente_externo NUNCA acessa o núcleo (o orchestrator revalida)."""
-    if str(getattr(cu, "role", "")) == "cliente_externo":
+    """cliente_externo NUNCA acessa o núcleo (o orchestrator revalida).
+
+    UserRole é (str, Enum), mas str(role) pode devolver o nome do Enum em vez
+    do valor. A comparação pelo atributo value funciona para Enum e string.
+    """
+    role = getattr(cu, "role", "")
+    if getattr(role, "value", role) == "cliente_externo":
         raise HTTPException(403, "Funções de IA internas não estão disponíveis no portal do cliente.")
 
 
