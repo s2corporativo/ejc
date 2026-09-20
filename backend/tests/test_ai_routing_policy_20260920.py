@@ -54,6 +54,32 @@ def test_auto_merito_prioriza_maritaca_e_exclui_claude(monkeypatch):
     assert "anthropic" not in providers
 
 
+def test_merito_nao_usa_groq_se_maritaca_indisponivel(monkeypatch):
+    policy = _policy(monkeypatch)
+    monkeypatch.setattr(
+        pp.AIProviderPolicy,
+        "_elegivel",
+        staticmethod(lambda provider: provider in {"groq", "anthropic"}),
+    )
+    decisao = policy.avaliar(
+        "analise juridicamente esta tese", "analise_juridica", ja_sanitizado=True,
+    )
+    assert decisao.permitido is False
+    assert all(p != "groq" for p, _ in decisao.provider_chain)
+
+
+def test_rotina_nao_usa_maritaca_se_groq_indisponivel(monkeypatch):
+    policy = _policy(monkeypatch)
+    monkeypatch.setattr(
+        pp.AIProviderPolicy,
+        "_elegivel",
+        staticmethod(lambda provider: provider in {"maritaca", "anthropic"}),
+    )
+    decisao = policy.avaliar("resuma este texto", "resumo", ja_sanitizado=True)
+    assert decisao.permitido is False
+    assert all(p != "maritaca" for p, _ in decisao.provider_chain)
+
+
 def test_claude_entra_quando_solicitado_explicitamente(monkeypatch):
     decisao = _policy(monkeypatch).avaliar(
         "faça uma análise com Claude",
