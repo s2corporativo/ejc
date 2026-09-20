@@ -7,8 +7,9 @@ Contrato consolidado (Núcleo Único + API 2026):
   - provider: system prompt vira bloco com cache_control (prompt caching);
   - provider: Haiku/legado mantém temperature, sem extra_body, com teto
     ANTHROPIC_MAX_TOKENS;
-  - gateway: cadeia respeita AI_PROVIDER_PRIORITY + elegibilidade; sem chave
-    a Claude é pulada; provider_force inelegível degrada para cadeia automática;
+  - gateway: Claude não participa do roteamento automático; continua
+    disponível por provider_force/model_override explícito; sem chave, uma
+    solicitação explícita degrada/é bloqueada conforme a porta de entrada;
   - tabela de preços corrigida (Opus 4.8 = 5/25, não 15/75).
 """
 from __future__ import annotations
@@ -128,41 +129,38 @@ def _prep(monkeypatch, *, tem_chave=True, ollama=True):
     monkeypatch.setattr(g.settings, "ANTHROPIC_API_KEY", "sk-x" if tem_chave else "")
     monkeypatch.setattr(g.settings, "ANTHROPIC_ENABLED", True)
     monkeypatch.setattr(g.settings, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
-    monkeypatch.setattr(g.settings, "AI_PROVIDER_PRIORITY", "ollama,anthropic,groq")
+    monkeypatch.setattr(g.settings, "AI_PROVIDER_PRIORITY", "groq,maritaca,ollama,anthropic")
+    monkeypatch.setattr(g.settings, "ANTHROPIC_EXPLICIT_ONLY", True)
     monkeypatch.setattr(g.settings, "OLLAMA_ENABLED", ollama)
+    monkeypatch.setattr(g.settings, "GROQ_ENABLED", True)
     monkeypatch.setattr(g.settings, "GROQ_API_KEY", "gk")
+    monkeypatch.setattr(g.settings, "MARITACA_ENABLED", True)
+    monkeypatch.setattr(g.settings, "MARITACA_API_KEY", "mk")
 
 
-def test_gateway_tarefa_complexa_inclui_claude(monkeypatch):
+def test_gateway_tarefa_complexa_usa_maritaca_e_exclui_claude_auto(monkeypatch):
     _prep(monkeypatch, tem_chave=True, ollama=False)
     cadeia = g._resolver_cadeia("estrategia", provider_force=None, model_override=None)
-    # Sem Ollama, Claude assume a frente com o modelo COMPLEXO configurado.
-    assert cadeia[0] == ("anthropic", g.settings.ANTHROPIC_MODEL_COMPLEXO)
-    assert any(p == "groq" for p, _ in cadeia)             # fallback preservado
+    assert cadeia[0] == ("maritaca", g.settings.MARITACA_MODEL)
+    assert all(p != "anthropic" for p, _ in cadeia)
+    assert any(p == "groq" for p, _ in cadeia)
 
 
-def test_gateway_tarefa_de_merito_comeca_pelo_modelo_forte(monkeypatch):
-    """Decisão do titular (18/08): trabalho jurídico de mérito começa pelo
-    provedor de raciocínio profundo, mesmo com a IA local ligada.
-
-    Antes, o gateway ordenava só por AI_PROVIDER_PRIORITY — e com o default
-    antigo ("ollama,...") um modelo local de 8-14B redigia a peça e o Claude
-    virava fallback. A AIProviderPolicy já decidia o contrário para tarefa
-    complexa; quem valia era o gateway."""
+def test_gateway_tarefa_de_merito_comeca_pela_maritaca(monkeypatch):
+    """Trabalho jurídico de mérito usa Sabiá/Maritaca automaticamente; Claude
+    só entra por solicitação explícita."""
     _prep(monkeypatch, tem_chave=True, ollama=True)
     cadeia = g._resolver_cadeia("elaboracao_peca", provider_force=None, model_override=None)
-    assert cadeia[0] == ("anthropic", g.settings.ANTHROPIC_MODEL_COMPLEXO)
-    # A IA local permanece na cadeia como rede de segurança.
+    assert cadeia[0] == ("maritaca", g.settings.MARITACA_MODEL)
     assert any(p == "ollama" for p, _ in cadeia)
+    assert all(p != "anthropic" for p, _ in cadeia)
 
 
-def test_gateway_fora_do_merito_respeita_a_ordem_configurada(monkeypatch):
-    """A promoção vale para MÉRITO. Fora dele, quem manda é AI_PROVIDER_PRIORITY
-    — é assim que o operador escolhe local-first (soberania de dados)."""
+def test_gateway_tarefa_economica_promove_groq(monkeypatch):
     _prep(monkeypatch, tem_chave=True, ollama=True)
-    monkeypatch.setattr(g.settings, "AI_PROVIDER_PRIORITY", "ollama,anthropic,groq")
     cadeia = g._resolver_cadeia("resumo", provider_force=None, model_override=None)
-    assert cadeia[0][0] == "ollama"
+    assert cadeia[0][0] == "groq"
+    assert all(p != "anthropic" for p, _ in cadeia)
 
 
 def test_gateway_pula_claude_sem_chave(monkeypatch):
@@ -172,28 +170,21 @@ def test_gateway_pula_claude_sem_chave(monkeypatch):
     assert any(p == "groq" for p, _ in cadeia)
 
 
-def test_gateway_tarefa_simples_usa_claude_so_como_ultimo_recurso(monkeypatch):
-    """I8/A1 (análise E2E 03/09): `resumo`/`chat_rapido` passam a ter Anthropic
-    na cadeia — antes, no desenho de produção (Ollama off, Groq/Maritaca sem
-    chave) a cadeia ficava VAZIA com Anthropic saudável. Mas ele não vira o
-    primeiro: o local/grátis continua na frente, e o modelo é o RÁPIDO."""
+def test_gateway_tarefa_simples_nunca_consume_claude_auto(monkeypatch):
     _prep(monkeypatch, tem_chave=True)
-    monkeypatch.setattr(g.settings, "ANTHROPIC_MODEL_RAPIDO", "claude-haiku-4-5")
-    monkeypatch.setattr(g.settings, "ANTHROPIC_MODEL_COMPLEXO", "claude-opus-4-8")
     for task in ("resumo", "chat_rapido"):
         cadeia = g._resolver_cadeia(task, provider_force=None, model_override=None)
         provs = [p for p, _ in cadeia]
-        assert cadeia[0][0] == "ollama"                    # local primeiro
-        assert "anthropic" in provs                        # cadeia completa
-        assert dict(cadeia)["anthropic"] == "claude-haiku-4-5"  # modelo rápido
+        assert cadeia[0][0] == "groq"
+        assert "anthropic" not in provs
 
 
-def test_gateway_tarefa_simples_sem_locais_cai_no_claude_em_vez_de_vazio(monkeypatch):
-    """Cenário de produção do compose: só Anthropic elegível → cadeia NÃO vazia."""
+def test_gateway_so_claude_elegivel_nao_o_usa_automaticamente(monkeypatch):
     _prep(monkeypatch, tem_chave=True, ollama=False)
     monkeypatch.setattr(g.settings, "GROQ_API_KEY", "")
+    monkeypatch.setattr(g.settings, "MARITACA_API_KEY", "")
     cadeia = g._resolver_cadeia("chat_rapido", provider_force=None, model_override=None)
-    assert [p for p, _ in cadeia] == ["anthropic"]
+    assert cadeia == []
 
 
 def test_gateway_force_anthropic_com_chave(monkeypatch):
@@ -213,11 +204,11 @@ def test_gateway_force_anthropic_sem_chave_degrada(monkeypatch):
     assert all(p != "anthropic" for p, _ in cadeia)
 
 
-def test_gateway_model_override_tem_prioridade(monkeypatch):
+def test_gateway_modelo_claude_equivale_a_requisicao_explicita(monkeypatch):
     _prep(monkeypatch, tem_chave=True, ollama=False)
     cadeia = g._resolver_cadeia("elaboracao_peca", provider_force=None,
                                 model_override="claude-sonnet-5")
-    assert cadeia[0] == ("anthropic", "claude-sonnet-5")
+    assert cadeia == [("anthropic", "claude-sonnet-5")]
 
 
 # ── Preços corrigidos ─────────────────────────────────────────────────────────
