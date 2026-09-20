@@ -784,7 +784,8 @@ async def test_document_retrieval(
     ).scalar_one_or_none()
     if not doc:
         return None
-    if doc.categoria in {"peca_interna", "peca_escritorio", "precedente_interno", "comunicacao_processual"} and doc.client_id:
+    from app.services.ai_service import _RESTRICTED_CATS
+    if doc.categoria in set(_RESTRICTED_CATS) and doc.client_id:
         return {
             "documento_id": doc.id,
             "pergunta": question,
