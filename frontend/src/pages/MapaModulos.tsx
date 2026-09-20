@@ -130,11 +130,13 @@ export default function MapaModulos() {
       backend: modulos.filter((module) => module.origem === "backend").length,
       usam_ia: modulos.filter((module) => module.usa_ia).length,
       revisar: modulos.filter((module) => module.precisa_revisao).length,
-      manual_pendente: modulos.filter(
-        (module) => module.precisa_documentacao === true,
-      ).length,
+      manual_pendente:
+        data?.documentacao_modo === "indisponivel"
+          ? null
+          : modulos.filter((module) => module.precisa_documentacao === true)
+              .length,
     }),
-    [modulos],
+    [data?.documentacao_modo, modulos],
   );
 
   if (loading) return <Spinner />;
@@ -160,7 +162,7 @@ export default function MapaModulos() {
               {key.split("_").join(" ")}
             </div>
             <div className="mt-1 text-2xl font-bold text-slate-950">
-              {value}
+              {value ?? "—"}
             </div>
           </div>
         ))}
