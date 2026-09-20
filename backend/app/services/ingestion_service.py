@@ -470,11 +470,11 @@ async def upsert_documento(
                 extra_nova_versao.pop(campo, None)
 
         if _vigencia_de_curadoria(anterior):
-            for campo in _CAMPOS_VIGENCIA:
-                if campo in anterior:
-                    extra_nova_versao[campo] = anterior[campo]
-                else:
-                    extra_nova_versao.pop(campo, None)
+            # O texto material mudou: a verificação humana de vigência da
+            # versão anterior não prova a situação jurídica deste novo texto.
+            # Não copiamos o bloco curado; o payload da fonte (se houver) fica
+            # como evidência própria e o gate de vigência continua fail-closed.
+            extra_nova_versao["previous_legal_status"] = anterior.get("legal_status")
         db.add(KnowledgeDoc(
             id=doc_id, titulo=titulo, categoria=categoria,
             fonte=fonte, tribunal=tribunal, extra=extra_nova_versao,
