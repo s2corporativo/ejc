@@ -438,9 +438,9 @@ async def upsert_documento(
         # G4 — base_rag derivada de client_id/case_id
         from app.models.rag import BaseRag
         base = BaseRag.caso if case_id else (BaseRag.escritorio if client_id else BaseRag.publica)
-        # Preservar campos curados de vigência na nova versão (mesmo padrão do
-        # caminho "inalterado"). CONTEÚDO mudou, mas a decisão humana sobre
-        # vigência — se houver — continua aplicável ao diploma atualizado.
+        # Conteúdo materialmente alterado cria uma nova unidade de revisão.
+        # Estado humano da versão anterior serve apenas como trilha histórica;
+        # não é prova suficiente para promover ou validar juridicamente o texto novo.
         extra_nova_versao = dict(extra or {})
         anterior = dict(existente.extra or {})
 
