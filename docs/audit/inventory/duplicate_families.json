@@ -1,24 +1,4 @@
 {
-  "page:frontend/src/pages:dashboard": [
-    "frontend/src/pages/Dashboard.tsx",
-    "frontend/src/pages/DashboardModern.tsx"
-  ],
-  "router:backend/app/routers:data_room": [
-    "backend/app/routers/data_room.py",
-    "backend/app/routers/data_room_v4.py"
-  ],
-  "router:backend/app/routers:peca_geracao": [
-    "backend/app/routers/peca_geracao.py",
-    "backend/app/routers/peca_geracao_router.py"
-  ],
-  "router:backend/app/routers:sala_de_guerra": [
-    "backend/app/routers/sala_de_guerra.py",
-    "backend/app/routers/sala_de_guerra_v3.py"
-  ],
-  "router:backend/app/routers:teses": [
-    "backend/app/routers/teses.py",
-    "backend/app/routers/teses_v4.py"
-  ],
   "service:backend/app/services:google_drive": [
     "backend/app/services/google_drive.py",
     "backend/app/services/google_drive_service.py"
