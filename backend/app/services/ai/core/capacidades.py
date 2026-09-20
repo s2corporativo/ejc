@@ -178,7 +178,10 @@ async def _executar(
     # Sobras de `opcoes` viram parâmetros do plano de skills (tipo_peca, fatos,
     # formato de extração…). Ficam no dossiê de auditoria do próprio pipeline.
     for chave, valor in op.items():
-        if chave not in ("usar_rag", "nivel_inteligencia", "document_id", "process_id"):
+        if chave not in (
+            "usar_rag", "nivel_inteligencia", "document_id", "process_id",
+            "provider_override",
+        ):
             params.setdefault(chave, valor)
 
     dominio = (area or "").strip() or _DOMINIO_POR_PERFIL.get((perfil or "").strip())
@@ -196,6 +199,7 @@ async def _executar(
         usar_rag=bool((opcoes or {}).get("usar_rag", True)),
         # None de propósito: o PISO por tarefa decide o nível.
         nivel_inteligencia=(opcoes or {}).get("nivel_inteligencia"),
+        provider_override=(opcoes or {}).get("provider_override"),
     )
     return canonizar(capacidade, bruto)
 
