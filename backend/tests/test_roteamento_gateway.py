@@ -120,7 +120,7 @@ async def test_chat_roteamento_on_promove_provedor(monkeypatch):
 
 
 async def test_chat_roteamento_on_respeita_kill_switch(monkeypatch):
-    # Roteador propõe anthropic, mas externos bloqueados → cai p/ ollama local.
+    # Roteador propõe Maritaca, mas externos bloqueados → cai p/ Ollama local.
     _prep(monkeypatch, ROTEAMENTO_INTELIGENTE_ENABLED=True,
           AI_EXTERNAL_PROVIDERS_ALLOWED=False)
     cap = {}
@@ -137,8 +137,12 @@ async def test_chat_calcula_custo_estimado(monkeypatch):
     monkeypatch.setattr(g, "_chamar_provedor", _fake)
     monkeypatch.setattr(g.settings, "AI_PROVIDER_PRIORITY", "anthropic,groq")
     monkeypatch.setattr(g.settings, "OLLAMA_ENABLED", False)
-    resp = await g.chat([{"role": "user", "content": "x"}], task_type="estrategia")
-    # Opus 4.8 = $5/1M input; 1M tokens input → $5 × USD_BRL (default 5.70) ≈ 28.5
+    resp = await g.chat(
+        [{"role": "user", "content": "x"}],
+        task_type="estrategia",
+        provider_override="anthropic",
+    )
+    # Claude solicitado explicitamente: custo continua contabilizado.
     assert resp.custo_estimado_brl > 0
 
 
