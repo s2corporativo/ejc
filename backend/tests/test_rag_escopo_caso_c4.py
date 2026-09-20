@@ -152,9 +152,13 @@ async def test_deep_research_propaga_scope_case_id_entidades_e_custo(monkeypatch
     async def fake_entidades(db, case_id):
         return {"cliente": ["Fulano de Tal"]}
 
+    async def fake_modo_sigilo(db, case_id):
+        return None
+
     monkeypatch.setattr(dr, "gw_chat", fake_chat)
     monkeypatch.setattr(dr, "buscar_precedentes", fake_precedentes)
     monkeypatch.setattr(dr, "entidades_do_caso", fake_entidades)
+    monkeypatch.setattr(dr, "modo_sigilo_por_case_id", fake_modo_sigilo)
     monkeypatch.setattr(ai_service.settings, "GROQ_PRECO_INPUT_BRL_POR_MILHAO", 1.0, raising=False)
     monkeypatch.setattr(ai_service.settings, "GROQ_PRECO_OUTPUT_BRL_POR_MILHAO", 2.0, raising=False)
 
