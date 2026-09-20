@@ -170,10 +170,11 @@ class AIProviderPolicy:
                 )
             else:
                 bloqueio = (
-                    "Nenhum provedor de IA está configurado. Configure a IA "
-                    "externa (defina ANTHROPIC_API_KEY no ambiente e mantenha "
-                    "AI_EXTERNAL_PROVIDERS_ALLOWED=true) ou habilite uma IA local "
-                    "(OLLAMA_ENABLED=true com um serviço Ollama disponível)."
+                    "Nenhum provedor elegível para esta tarefa. Verifique a "
+                    "configuração do motor previsto para a função (Groq para "
+                    "rotina; Maritaca para mérito jurídico) ou selecione "
+                    "explicitamente outro motor disponível no sistema. Para "
+                    "conteúdo que exige execução local, habilite o Ollama."
                 )
             return PolicyDecision(
                 permitido=False,
