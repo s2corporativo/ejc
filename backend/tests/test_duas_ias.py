@@ -202,7 +202,34 @@ class TestCriticarPeca:
         assert c.disponivel is False
         assert c.relatorio is None
         assert c.aviso == adversarial.AVISO_INDISPONIVEL
-        assert any("Falha na IA Crítica" in a for a in c.alertas)
+        assert any("revisão humana" in a.lower() for a in c.alertas)
+        assert all("RuntimeError" not in a for a in c.alertas)
+
+    async def test_falha_da_critica_nao_persiste_pii_nem_classe_interna(
+        self, s, monkeypatch,
+    ):
+        from app.services import ai_gateway
+        from app.services.ai import adversarial
+
+        pii = "maria cpf 999.888.777-66"
+
+        async def explode(*args, **kwargs):
+            raise RuntimeError(f"timeout: body={pii}")
+
+        monkeypatch.setattr(ai_gateway, "chat", explode)
+        c = await adversarial.criticar_peca(
+            db=object(),
+            texto_peca=TEXTO_PECA,
+            provedor_origem="anthropic",
+        )
+
+        assert c.disponivel is False
+        assert c.alertas
+        persistido = adversarial.formatar_para_ailog(c)
+        assert pii not in persistido
+        assert "999.888.777-66" not in persistido
+        assert "RuntimeError" not in persistido
+        assert "revisão humana" in persistido.lower()
 
     async def test_falha_do_gate_nao_derruba_critica(self, s, monkeypatch):
         from app.services import ai_gateway, citation_gate

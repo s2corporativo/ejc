@@ -53,8 +53,12 @@ async def test_erro_com_status_code_inclui_o_status(monkeypatch):
 
     monkeypatch.setattr(gp, "get_client", lambda: _FakeClient(excecao_do_sdk))
 
-    with pytest.raises(RuntimeError, match="HTTP 401"):
+    with pytest.raises(RuntimeError, match="HTTP 401") as exc:
         await gp.chat(messages=[{"role": "user", "content": "oi"}])
+
+    assert getattr(exc.value, "technical_type", None) == "GroqError"
+    assert getattr(exc.value, "status_code", None) == 401
+    assert getattr(exc.value, "ai_error_code", None) == "provider_failure"
 
 
 async def test_erro_sem_status_code_nao_quebra(monkeypatch):
