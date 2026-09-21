@@ -1118,33 +1118,6 @@ async def _briefing_matinal_advogado():
         logger.error(f"[Scheduler] briefing_matinal_advogado: {e}", exc_info=True)
 
 
-async def _verificar_sincronia_datajud():
-    """Alerta se processos estão há mais de 3 dias sem sincronizar — Auditoria Item 32."""
-    from datetime import datetime, timezone
-    from app.core.database import AsyncSessionLocal
-    from app.services.notification_service import criar_notificacao_interna
-    try:
-        async with AsyncSessionLocal() as db:
-            limite = datetime.now(timezone.utc) - timedelta(days=3)
-            rows = await db.execute(text("""
-                SELECT id, numero_processo, advogado_responsavel_id FROM cases
-                WHERE deleted_at IS NULL AND status NOT IN ('encerrado','arquivado')
-                  AND (last_synced_at IS NULL OR last_synced_at < :lim)
-                  AND numero_processo IS NOT NULL
-            """), {"lim": limite})
-            for r in rows:
-                if r.advogado_responsavel_id:
-                    await criar_notificacao_interna(
-                        db, r.advogado_responsavel_id,
-                        "⚠️ Sincronização Pendente",
-                        f"O processo {r.numero_processo} está há mais de 3 dias sem atualização oficial.",
-                        tipo="sistema", link=f"/casos/{r.id}"
-                    )
-            await db.commit()
-    except Exception as e:
-        logger.error(f"[Scheduler] Sincronia DataJud: {e}")
-
-
 
 async def _alertar_procuracoes():
     """Procurações vencendo em 30 dias (semanal)."""
