@@ -926,6 +926,8 @@ class Settings(BaseSettings):
     BACKUP_REMOTE: str = ""
     BACKUP_DIR: str = "/app/backups"
     BACKUP_RETENTION_DAYS: int = 7  # retenção da cópia cifrada local "quente"
+    # After validated offsite upload, remove the local encrypted staging copy.
+    BACKUP_DELETE_LOCAL_AFTER_OFFSITE: bool = True
     # Backup diário cifrado → local + Google Drive/rclone (backup_service.py).
     # Prefere identidade exclusiva BACKUP_GOOGLE_DRIVE_* com escrita. O modo
     # herdado GOOGLE_DRIVE_* existe apenas para compatibilidade explícita.

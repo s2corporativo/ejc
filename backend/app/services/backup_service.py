@@ -364,7 +364,7 @@ def _upload_drive_sync(service, caminho: str, nome: str, folder_id: str) -> dict
     ).execute()
 
 
-def _upload_rclone_sync(caminho: str, nome: str, remote: str) -> None:
+def _upload_rclone_sync(caminho: str, nome: str, remote: str) -> int:
     """Envia UM artefato já cifrado via `rclone copyto` (BACKUP_DESTINO=rclone).
 
     Bloqueante — chamar via asyncio.to_thread. O conteúdo já é Fernet, então
@@ -389,6 +389,51 @@ def _upload_rclone_sync(caminho: str, nome: str, remote: str) -> None:
         raise RuntimeError(
             f"rclone copyto retornou código {r.returncode}: {stderr[:300]}"
         )
+
+    local_bytes = os.path.getsize(caminho)
+    probe = subprocess.run(
+        ["rclone", "size", "--json", destino],
+        timeout=settings.BACKUP_RCLONE_TIMEOUT,
+        capture_output=True,
+        text=True,
+    )
+    if probe.returncode != 0:
+        stderr = (probe.stderr or "").strip()
+        raise RuntimeError(
+            f"rclone size retornou código {probe.returncode}: {stderr[:300]}"
+        )
+    try:
+        remote_bytes = int(json.loads(probe.stdout or "{}").get("bytes", -1))
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise RuntimeError("rclone size retornou resposta inválida") from exc
+    if remote_bytes != local_bytes:
+        raise RuntimeError(
+            f"tamanho remoto divergiu após upload: local={local_bytes} remoto={remote_bytes}"
+        )
+    return remote_bytes
+
+
+def _remover_artefatos_locais_sync(
+    artefatos: list[dict[str, Any]], backup_dir: str
+) -> int:
+    """Remove somente o conjunto canonico desta execucao apos offsite validado."""
+    dir_fd = open_backup_dir_fd(backup_dir)
+    removidos = 0
+    try:
+        for art in artefatos:
+            nome = str(art.get("nome") or "")
+            _validar_nome_local(nome)
+            try:
+                os.unlink(nome, dir_fd=dir_fd)
+            except FileNotFoundError:
+                continue
+            art["local_removido_pos_offsite"] = True
+            removidos += 1
+        if removidos:
+            os.fsync(dir_fd)
+        return removidos
+    finally:
+        os.close(dir_fd)
 
 
 def _listar_backups_sync(service, folder_id: str) -> list[dict[str, Any]]:
@@ -701,9 +746,10 @@ async def executar_backup(
                                 "onedrive:EJC-Backups)."
                             )
                         for art in artefatos:
-                            await asyncio.to_thread(
+                            remote_bytes = await asyncio.to_thread(
                                 _upload_rclone_sync, art["caminho"], art["nome"], remote,
                             )
+                            art["offsite_bytes_validado"] = remote_bytes
                             art.pop("caminho", None)
                         # Retenção no remote rclone é gerida fora do ciclo
                         # (ver runbook) — nada é apagado automaticamente aqui.
@@ -728,6 +774,21 @@ async def executar_backup(
                             _rotacionar_sync, service, folder_id, settings.BACKUP_RETENCAO_DIAS
                         )
                     offsite_ok = True
+                    if (
+                        settings.BACKUP_DELETE_LOCAL_AFTER_OFFSITE
+                        and destino == "rclone"
+                    ):
+                        removidos_local_pos_offsite = await asyncio.to_thread(
+                            _remover_artefatos_locais_sync,
+                            artefatos,
+                            settings.BACKUP_DIR,
+                        )
+                        if removidos_local_pos_offsite:
+                            logger.info(
+                                "[Backup] copia local transitoria removida apos "
+                                "offsite validado: %d artefato(s)",
+                                removidos_local_pos_offsite,
+                            )
                 except Exception as exc:
                     if settings.BACKUP_OFFSITE_OBRIGATORIO:
                         raise
