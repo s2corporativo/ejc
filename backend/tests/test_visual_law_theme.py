@@ -88,20 +88,10 @@ def test_pdf_service_html_base_dourado_e_sem_tokens():
     assert "§OURO" not in pdf_service._HTML_BASE    # tokens todos substituídos
 
 
-# ── Visual Law PDF (Sala de Guerra): weasyprint + stateless ──────────────────
-
-def test_cronologia_nao_acumula_paginas_entre_chamadas(tmp_path):
-    """Regressão do bug do singleton FPDF: a instância global acumulava as
-    páginas da chamada anterior — o 2º PDF saía com a cronologia do 1º."""
-    from pypdf import PdfReader
-    from app.services.visual_law_pdf import visual_law_pdf
-
-    eventos = [{"data": "01/01/2026", "evento": "Distribuição da inicial"}]
-    p1, p2 = tmp_path / "a.pdf", tmp_path / "b.pdf"
-    visual_law_pdf.gerar_cronologia(eventos, str(p1))
-    visual_law_pdf.gerar_cronologia(eventos, str(p2))
-    assert len(PdfReader(str(p1)).pages) == len(PdfReader(str(p2)).pages) == 1
-
+# ── Visual Law PDF (Sala de Guerra) REMOVIDO na W10 ──────────────────────────
+# services/visual_law_pdf.py era código morto comprovado (Auditoria Real
+# 2026-09-20 §5: 0 referências em app/). O teste de regressão do singleton
+# FPDF acompanhava o módulo e foi removido junto.
 
 # ── Diagramas Mermaid recebem o init dourado (determinístico) ─────────────────
 
