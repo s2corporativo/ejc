@@ -34,12 +34,16 @@ _RAG_CHUNKS = [
 ]
 
 
-def _jurimetria(n, taxa_com_acordo, suficiente, grupo="civil"):
+def _jurimetria(n, taxa_exito, suficiente, grupo="civil", taxa_com_acordo=None):
+    if taxa_com_acordo is None:
+        taxa_com_acordo = taxa_exito
     return {
         "global": {"n": n},
         "grupos": [{
             "grupo": grupo, "n": n,
-            "taxa_exito": taxa_com_acordo, "taxa_exito_com_acordo": taxa_com_acordo,
+            "taxa_exito": taxa_exito,
+            "taxa_exito_com_acordo": taxa_com_acordo,
+            "taxa_acordo": max(0.0, taxa_com_acordo - taxa_exito),
             "amostra_suficiente": suficiente,
         }],
     }
@@ -112,14 +116,20 @@ async def test_probabilidade_null_com_amostra_insuficiente(monkeypatch):
     assert any("insuficiente" in a.lower() for a in r.avisos)
 
 
-async def test_probabilidade_e_taxa_real_da_jurimetria(monkeypatch):
-    calls = _setup(monkeypatch, jurimetria_data=_jurimetria(12, 66.7, True),
-                   rag_chunks=_RAG_CHUNKS)
+async def test_probabilidade_usa_exito_judicial_sem_somar_acordo(monkeypatch):
+    calls = _setup(
+        monkeypatch,
+        jurimetria_data=_jurimetria(
+            12, 41.7, True, taxa_com_acordo=66.7,
+        ),
+        rag_chunks=_RAG_CHUNKS,
+    )
     r = await _analisar(area="Civel")   # "Civel" → grupo "civil" (sinônimo)
-    assert r.probabilidade_exito == 0.667          # 66.7% real, não heurística
+    assert r.probabilidade_exito == 0.417
     assert r.n_amostra == 12
     assert "12" in r.fonte_probabilidade
     assert "jurimetria" in r.fonte_probabilidade.lower()
+    assert "sem contabilizar acordos" in r.fonte_probabilidade.lower()
     assert calls["jurimetria_dimensao"] == "area"
 
 
