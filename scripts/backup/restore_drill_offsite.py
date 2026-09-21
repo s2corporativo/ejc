@@ -16,7 +16,13 @@ from app.services.backup_service import decifrar_arquivo
 settings = get_settings()
 
 def run(args, env=None, timeout=900):
-    return subprocess.run(args, check=True, capture_output=True, text=True, env=env, timeout=timeout)
+    try:
+        return subprocess.run(args, check=True, capture_output=True, text=True, env=env, timeout=timeout)
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "").strip()[:1200]
+        raise RuntimeError(
+            f"command failed rc={exc.returncode} cmd={args[0]}: {detail}"
+        ) from exc
 
 def conn():
     u = urlparse(settings.DATABASE_URL_SYNC)
