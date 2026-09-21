@@ -48,8 +48,9 @@ AVISO_HITL = ("Rascunho gerado por IA e estatística interna — NÃO é parecer
 # Ver `metodo_probabilidade` no schema de resposta.
 _METODO_PROBABILIDADE = "estatistica_historica_deterministica"
 AVISO_METODO_PROBABILIDADE = (
-    "A probabilidade de êxito NÃO é uma predição de IA/LLM: é uma taxa "
-    "estatística determinística calculada sobre os casos ENCERRADOS reais do "
+    "A probabilidade de êxito NÃO é uma predição de IA/LLM: é a taxa histórica "
+    "determinística de êxito judicial (sem somar acordos), calculada sobre os "
+    "casos ENCERRADOS reais do "
     "escritório (jurimetria interna). Apenas as sugestões contextualizadas "
     "abaixo são geradas por IA (rascunho sujeito a revisão — HITL/OAB)."
 )
@@ -151,12 +152,12 @@ class VereditoIA:
             grupo = _grupo_da_area(dados.get("grupos", []), area_juridica)
             n_amostra = int(grupo["n"]) if grupo else 0
             if grupo and grupo.get("amostra_suficiente") and \
-                    grupo.get("taxa_exito_com_acordo") is not None:
-                probabilidade = round(grupo["taxa_exito_com_acordo"] / 100.0, 3)
+                    grupo.get("taxa_exito") is not None:
+                probabilidade = round(grupo["taxa_exito"] / 100.0, 3)
                 fonte_prob = (
-                    f"Jurimetria interna: taxa histórica real de desfecho favorável "
-                    f"(êxito total + parcial + acordo) em {grupo['n']} caso(s) "
-                    f"encerrado(s) da área '{grupo['grupo']}'."
+                    f"Jurimetria interna: taxa histórica de êxito judicial "
+                    f"(êxito total + parcial, sem contabilizar acordos) em "
+                    f"{grupo['n']} caso(s) encerrado(s) da área '{grupo['grupo']}'."
                 )
             else:
                 avisos.append(
