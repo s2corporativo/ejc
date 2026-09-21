@@ -159,7 +159,7 @@ class Case(Base):
     # Classe B do plano-mestre. Sem isto, desarquivar/reabrir sempre jogava o
     # caso de volta para "aberto", perdendo o estágio real em que estava.
     status_anterior   = Column(String(20), nullable=True)
-    resultado         = Column(String(50), nullable=True)  # exito_total|exito_parcial|acordo|improcedente
+    resultado         = Column(String(50), nullable=True)  # canônico atual: exito|exito_parcial|acordo|derrota|desistencia|arquivado; aliases históricos lidos pela jurimetria
     # Pós-Mortem Jurídico (ECJ): cada caso encerrado vira aprendizado institucional
     motivo_resultado     = Column(Text, nullable=True)
     provas_determinantes = Column(Text, nullable=True)
