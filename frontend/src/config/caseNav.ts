@@ -40,6 +40,9 @@ export const CASE_NAV_SECTIONS: readonly CaseNavSection[] = [
   },
   {
     // "Histórico e encerramento" (memoria) foi absorvido por Atividades.
+    // Onda 4 (§10: Agenda/Prazos/Tarefas/Intimações): "tarefas" e "intimacoes"
+    // entram como abas SOMENTE LEITURA do workspace (escrita única na Central
+    // /atividades) — atrás de flag em config/w3Tabs.ts, padrão da Onda 3.
     label: "Atividades",
     tab: "timeline",
     icon: Activity,
@@ -50,6 +53,8 @@ export const CASE_NAV_SECTIONS: readonly CaseNavSection[] = [
       "mensagens",
       "prazos",
       "audiencias",
+      "tarefas",
+      "intimacoes",
       "checklists",
       "memoria",
     ],

@@ -25,9 +25,7 @@ from app.services.djen_service import (
 
 router = APIRouter(prefix="/intimacoes", tags=["Intimações DJEN"])
 
-PRAZO_DJEN_MOTIVO_BLOQUEIO = (
-    "calculo_automatico_bloqueado_ate_motor_auditavel_por_regime"
-)
+PRAZO_DJEN_MOTIVO_BLOQUEIO = "calculo_automatico_bloqueado_ate_motor_auditavel_por_regime"
 
 
 def _calcular_sugestao(c: DjenComunicacao) -> dict:
@@ -70,11 +68,7 @@ async def _carregar_comunicacao(
     db: AsyncSession,
     cu: User,
 ) -> DjenComunicacao:
-    c = (
-        await db.execute(
-            select(DjenComunicacao).where(DjenComunicacao.id == com_id)
-        )
-    ).scalar_one_or_none()
+    c = (await db.execute(select(DjenComunicacao).where(DjenComunicacao.id == com_id))).scalar_one_or_none()
     if not c or (not is_gestao(cu) and c.advogado_id != cu.id):
         raise HTTPException(status_code=404, detail="Comunicação não encontrada")
     return c
@@ -93,24 +87,30 @@ class AceitarPrazoRequest(BaseModel):
 @router.get("/")
 async def listar(
     apenas_pendentes: bool = True,
+    case_id: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(30, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
     q = select(DjenComunicacao)
-    if not is_gestao(cu):
+    # Onda 4 (§10): contexto de caso no workspace — a aba "Intimações" do
+    # CasoDetalhe lista as comunicações DJEN vinculadas ao caso. A carteira
+    # aqui é do CASO (responsável/auxiliar, padrão canônico de atividades.py),
+    # não da OAB capturante — por isso o predicado advogado_id NÃO se aplica
+    # nesta visão escopada. Sem case_id, comportamento anterior preservado.
+    if case_id:
+        if not is_gestao(cu):
+            await verificar_acesso_caso(db, cu, case_id)
+        q = q.where(DjenComunicacao.case_id == case_id)
+    elif not is_gestao(cu):
         q = q.where(DjenComunicacao.advogado_id == cu.id)
     if apenas_pendentes:
         q = q.where(DjenComunicacao.processada == False)  # noqa: E712
     q = q.order_by(DjenComunicacao.data_disponibilizacao.desc())
 
-    total = (
-        await db.execute(select(sqlfunc.count()).select_from(q.subquery()))
-    ).scalar()
-    rows = (
-        await db.execute(q.offset((page - 1) * page_size).limit(page_size))
-    ).scalars().all()
+    total = (await db.execute(select(sqlfunc.count()).select_from(q.subquery()))).scalar()
+    rows = (await db.execute(q.offset((page - 1) * page_size).limit(page_size))).scalars().all()
     return {
         "data": [
             {
@@ -122,9 +122,7 @@ async def listar(
                 "texto": (comunicacao.texto_resumo or "")[:500],
                 "case_id": comunicacao.case_id,
                 "processada": comunicacao.processada,
-                "prazo_sugerido_status": (
-                    comunicacao.prazo_sugerido_status or "nenhum"
-                ),
+                "prazo_sugerido_status": (comunicacao.prazo_sugerido_status or "nenhum"),
                 "prazo_deadline_id": comunicacao.prazo_deadline_id,
             }
             for comunicacao in rows
@@ -145,11 +143,7 @@ async def status_captura(
     from app.services import heartbeat_service as hb
 
     heartbeat = (
-        await db.execute(
-            select(SchedulerHeartbeat).where(
-                SchedulerHeartbeat.job_name == hb.JOB_DJEN
-            )
-        )
+        await db.execute(select(SchedulerHeartbeat).where(SchedulerHeartbeat.job_name == hb.JOB_DJEN))
     ).scalar_one_or_none()
 
     if heartbeat is not None:
@@ -165,18 +159,13 @@ async def status_captura(
         sucesso = avaliacao["status"] == "ok"
         encontradas = (
             await db.execute(
-                _t(
-                    "SELECT count(*) FROM djen_comunicacoes "
-                    "WHERE created_at >= :inicio"
-                ),
+                _t("SELECT count(*) FROM djen_comunicacoes WHERE created_at >= :inicio"),
                 {"inicio": ultima_execucao - timedelta(minutes=5)},
             )
         ).scalar() or 0
         erro = None
         if falhou:
-            erro = (
-                heartbeat.detail or "Última execução do job DJEN falhou."
-            )[:300]
+            erro = (heartbeat.detail or "Última execução do job DJEN falhou.")[:300]
         elif defasado:
             idade = avaliacao["idade_horas"] or 0
             erro = (
@@ -193,11 +182,7 @@ async def status_captura(
             "ultima_execucao": ultima_execucao,
         }
 
-    ultimo = (
-        await db.execute(
-            _t("SELECT max(created_at) FROM djen_comunicacoes")
-        )
-    ).scalar()
+    ultimo = (await db.execute(_t("SELECT max(created_at) FROM djen_comunicacoes"))).scalar()
     if ultimo is None:
         return {
             "executado_em": None,
@@ -209,10 +194,7 @@ async def status_captura(
         }
     encontradas = (
         await db.execute(
-            _t(
-                "SELECT count(*) FROM djen_comunicacoes "
-                "WHERE created_at >= :inicio"
-            ),
+            _t("SELECT count(*) FROM djen_comunicacoes WHERE created_at >= :inicio"),
             {"inicio": ultimo - timedelta(minutes=5)},
         )
     ).scalar() or 0
@@ -288,9 +270,7 @@ async def prazo_sugerido(
 ):
     comunicacao = await _carregar_comunicacao(com_id, db, cu)
     sugestao = _calcular_sugestao(comunicacao)
-    sugestao["prazo_sugerido_status"] = (
-        comunicacao.prazo_sugerido_status or "nenhum"
-    )
+    sugestao["prazo_sugerido_status"] = comunicacao.prazo_sugerido_status or "nenhum"
     sugestao["prazo_deadline_id"] = comunicacao.prazo_deadline_id
     return sugestao
 
@@ -310,18 +290,12 @@ async def aceitar_prazo(
     if not comunicacao.case_id:
         raise HTTPException(
             status_code=422,
-            detail=(
-                "Intimação não vinculada a um caso — vincule um caso antes "
-                "de gerar o prazo."
-            ),
+            detail=("Intimação não vinculada a um caso — vincule um caso antes de gerar o prazo."),
         )
 
     await verificar_acesso_caso(db, cu, comunicacao.case_id)
 
-    if (
-        comunicacao.prazo_sugerido_status == "aceito"
-        and comunicacao.prazo_deadline_id
-    ):
+    if comunicacao.prazo_sugerido_status == "aceito" and comunicacao.prazo_deadline_id:
         existente = (
             await db.execute(
                 select(Deadline).where(
@@ -360,9 +334,7 @@ async def aceitar_prazo(
 
     data_prazo = payload.data_prazo
     base_legal = "Vencimento informado manualmente após revisão humana"
-    titulo = payload.titulo or (
-        f"Prazo DJEN — proc. {comunicacao.numero_processo or 's/ número'}"
-    )[:255]
+    titulo = payload.titulo or (f"Prazo DJEN — proc. {comunicacao.numero_processo or 's/ número'}")[:255]
 
     disponibilizacao = comunicacao.data_disponibilizacao
     if isinstance(disponibilizacao, datetime):
@@ -388,11 +360,7 @@ async def aceitar_prazo(
         data_intimacao=None,
         base_legal=base_legal,
         case_id=comunicacao.case_id,
-        responsavel_id=(
-            payload.responsavel_id
-            or comunicacao.advogado_id
-            or cu.id
-        ),
+        responsavel_id=(payload.responsavel_id or comunicacao.advogado_id or cu.id),
         origem="djen",
     )
     db.add(prazo)
@@ -469,9 +437,7 @@ async def capturar_agora(
     cu: User = Depends(get_current_user),
 ):
     """Captura manual sem contaminar o heartbeat do job agendado."""
-    if not (cu.djen_oab_numero or "").strip() or not (
-        cu.djen_oab_uf or ""
-    ).strip():
+    if not (cu.djen_oab_numero or "").strip() or not (cu.djen_oab_uf or "").strip():
         raise HTTPException(
             status_code=422,
             detail="Configure sua OAB (número e UF) no seu perfil de usuário",
@@ -482,10 +448,7 @@ async def capturar_agora(
         await db.rollback()
         raise HTTPException(
             status_code=503,
-            detail=(
-                "Captura DJEN indisponível no momento "
-                f"(código: {resultado.erro or 'erro_interno'})."
-            ),
+            detail=(f"Captura DJEN indisponível no momento (código: {resultado.erro or 'erro_interno'})."),
         )
 
     await db.commit()
