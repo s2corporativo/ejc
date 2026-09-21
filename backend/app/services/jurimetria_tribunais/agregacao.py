@@ -26,6 +26,18 @@ from app.services.jurimetria_tribunais.coleta import MUNICIPIOS
 
 MIN_AMOSTRA = 10  # abaixo disso a taxa é exibida com aviso, não escondida
 
+def _ic_ratio(sucessos: int, total: int) -> dict | None:
+    """IC95% na mesma escala 0..1 das taxas públicas deste módulo."""
+    ic = intervalo_wilson(sucessos, total)
+    if not ic:
+        return None
+    return {
+        "inferior": round(ic["inferior"] / 100.0, 4),
+        "superior": round(ic["superior"] / 100.0, 4),
+        "nivel": ic["nivel"],
+        "metodo": ic["metodo"],
+    }
+
 _MERITO = (tpu.PROCEDENCIA, tpu.PROCEDENCIA_PARCIAL, tpu.IMPROCEDENCIA)
 _CONTAGENS = (*_MERITO, tpu.ACORDO, tpu.SEM_MERITO)
 
@@ -101,13 +113,13 @@ def _fechar_grupo(g: dict[str, Any]) -> dict[str, Any]:
         round(favoraveis / decididos, 4) if decididos else None
     )
     saida["intervalo_confianca_95_procedencia"] = (
-        intervalo_wilson(favoraveis, decididos) if decididos else None
+        _ic_ratio(favoraveis, decididos) if decididos else None
     )
     saida["taxa_acordo"] = (
         round(g[tpu.ACORDO] / com_desfecho, 4) if com_desfecho else None
     )
     saida["intervalo_confianca_95_acordo"] = (
-        intervalo_wilson(g[tpu.ACORDO], com_desfecho) if com_desfecho else None
+        _ic_ratio(g[tpu.ACORDO], com_desfecho) if com_desfecho else None
     )
     saida["amostra_pequena"] = decididos < MIN_AMOSTRA
     saida["tempo_sentenca"] = {
@@ -215,7 +227,7 @@ def agregar(
         ),
         "taxa_reforma": round(reformas / n_recurso, 4) if n_recurso else None,
         "intervalo_confianca_95_reforma": (
-            intervalo_wilson(reformas, n_recurso) if n_recurso else None
+            _ic_ratio(reformas, n_recurso) if n_recurso else None
         ),
         "amostra_pequena": n_recurso < MIN_AMOSTRA,
     }
