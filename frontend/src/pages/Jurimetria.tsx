@@ -8,6 +8,10 @@ import { asList } from "../lib/list";
 import { mensagemErroHttp } from "../lib/iaErro";
 import { useCarregar } from "../lib/useCarregar";
 import { useAuth } from "../stores/auth";
+import {
+  pesquisarFontesJuridicas,
+  type FontePesquisaJuridica,
+} from "../services/legalResearch";
 
 const TRIBUNAIS = ["TJMG", "STJ", "STF", "TRF1", "TRT3"];
 
@@ -80,6 +84,32 @@ function fmtData(value: string | null | undefined) {
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("pt-BR");
 }
 
+function skillAreaKey(value: string) {
+  const normal = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "");
+  const aliases: Record<string, string> = {
+    civel: "civil",
+    penal: "criminal",
+    tributaria: "tributario",
+    previdenciaria: "previdenciario",
+    trabalhista: "trabalhista",
+    consumidor: "consumidor",
+    ambiental: "ambiental",
+    empresarial: "empresarial",
+    administrativo: "administrativo",
+    bancario: "bancario",
+    familia: "familia",
+    imobiliario: "imobiliario",
+    transito: "transito",
+    lgpd: "digital_lgpd",
+  };
+  return aliases[normal] ?? normal;
+}
+
 export default function Jurimetria() {
   const user = useAuth((state) => state.user);
   const podeVerEstrategico = Boolean(
@@ -88,6 +118,95 @@ export default function Jurimetria() {
   const [desfechos, setDesfechos] = useState<any>(null);
   const [ragCoverage, setRagCoverage] = useState<any>(null);
   const [mgCoverage, setMgCoverage] = useState<any>(null);
+
+  // Evidência jurídica relacionada ao recorte — reutiliza RAG, Banco de Teses
+  // e catálogo canônico de skills; não cria base ou motor paralelo.
+  const [evidenceForm, setEvidenceForm] = useState({
+    area: "",
+    tribunal: "TJMG",
+    assunto: "",
+  });
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const [evidenceSources, setEvidenceSources] = useState<FontePesquisaJuridica[]>([]);
+  const [evidenceTeses, setEvidenceTeses] = useState<any[]>([]);
+  const [evidenceSkills, setEvidenceSkills] = useState<any[]>([]);
+  const [evidenceQuery, setEvidenceQuery] = useState("");
+
+  const buscarEvidencias = async () => {
+    const consulta = [
+      evidenceForm.tribunal,
+      evidenceForm.area,
+      evidenceForm.assunto,
+    ]
+      .map((v) => v.trim())
+      .filter(Boolean)
+      .join(" ");
+    if (consulta.length < 3) {
+      toast.error("Informe ao menos área, tribunal ou assunto para pesquisar.");
+      return;
+    }
+    setEvidenceLoading(true);
+    try {
+      const [fontes, tesesResp, skillsResp] = await Promise.allSettled([
+        pesquisarFontesJuridicas(consulta, 6),
+        api.get("/jurimetria/por-tese", {
+          params: {
+            area: evidenceForm.area || undefined,
+            min_usos: 1,
+            limit: 30,
+          },
+        }),
+        api.get("/ai/core/skills"),
+      ]);
+
+      setEvidenceQuery(consulta);
+      setEvidenceSources(
+        fontes.status === "fulfilled" ? fontes.value.resultados : [],
+      );
+
+      let tesesRelacionadas =
+        tesesResp.status === "fulfilled" ? asList(tesesResp.value.data) : [];
+      if (evidenceForm.tribunal.trim()) {
+        const tribunal = evidenceForm.tribunal.trim().toLowerCase();
+        tesesRelacionadas = tesesRelacionadas.filter(
+          (t: any) =>
+            !t.tribunal ||
+            String(t.tribunal).toLowerCase().includes(tribunal),
+        );
+      }
+      if (evidenceForm.assunto.trim()) {
+        const termos = evidenceForm.assunto
+          .toLowerCase()
+          .split(/\s+/)
+          .filter((v) => v.length > 2);
+        const filtradas = tesesRelacionadas.filter((t: any) => {
+          const texto = `${t.titulo ?? ""} ${t.area_juridica ?? ""}`.toLowerCase();
+          return termos.some((termo) => texto.includes(termo));
+        });
+        if (filtradas.length) tesesRelacionadas = filtradas;
+      }
+      setEvidenceTeses(tesesRelacionadas.slice(0, 6));
+
+      const skills = skillsResp.status === "fulfilled" ? asList(skillsResp.value.data) : [];
+      const areaKey = skillAreaKey(evidenceForm.area);
+      const nomes = new Set([
+        "modulo_jurimetria",
+        areaKey ? `ramo_${areaKey}` : "",
+      ]);
+      setEvidenceSkills(
+        skills.filter((skill: any) => nomes.has(String(skill.nome))).slice(0, 4),
+      );
+    } catch (err) {
+      setEvidenceSources([]);
+      setEvidenceTeses([]);
+      setEvidenceSkills([]);
+      toast.error(
+        mensagemErroHttp(err, "Não foi possível carregar as evidências relacionadas."),
+      );
+    } finally {
+      setEvidenceLoading(false);
+    }
+  };
 
   // Análise prospectiva por histórico interno (heurística descritiva, não ML).
   const [predForm, setPredForm] = useState({
@@ -257,7 +376,11 @@ export default function Jurimetria() {
           <StatCard
             label="Taxa de Teses Decididas"
             value={taxa != null ? `${(taxa * 100).toFixed(1)}%` : "—"}
-            sub="procedentes ÷ decididas"
+            sub={
+              ov?.intervalo_confianca_95
+                ? `IC95% ${(ov.intervalo_confianca_95.inferior * 100).toFixed(1)}%–${(ov.intervalo_confianca_95.superior * 100).toFixed(1)}%`
+                : "procedentes ÷ decididas"
+            }
           />
         )}
         <StatCard
@@ -276,6 +399,151 @@ export default function Jurimetria() {
       {/* Jurimetria dos TRIBUNAIS (Issue #1527) — DataJud/TJMG. Coexiste com os
           painéis do escritório acima; o componente rotula a diferença. */}
       <JurimetriaTribunais />
+
+      <div className="card p-5 mb-6">
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div>
+            <h3 className="font-semibold text-sm text-gray-700 uppercase">
+              Evidência jurídica relacionada ao recorte
+            </h3>
+            <p className="text-xs text-gray-400 mt-1">
+              Pesquisa o RAG governado, métricas canônicas do Banco de Teses e
+              skills existentes. Os materiais contextualizam o recorte; não são
+              causa da estatística nem previsão do caso concreto.
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+          <input
+            value={evidenceForm.area}
+            onChange={(e) =>
+              setEvidenceForm((p) => ({ ...p, area: e.target.value }))
+            }
+            placeholder="Área: consumidor, civil, trabalhista..."
+            className="w-full text-sm border rounded-lg px-3 py-2"
+          />
+          <input
+            value={evidenceForm.tribunal}
+            onChange={(e) =>
+              setEvidenceForm((p) => ({ ...p, tribunal: e.target.value }))
+            }
+            placeholder="Tribunal"
+            className="w-full text-sm border rounded-lg px-3 py-2"
+          />
+          <input
+            value={evidenceForm.assunto}
+            onChange={(e) =>
+              setEvidenceForm((p) => ({ ...p, assunto: e.target.value }))
+            }
+            placeholder="Assunto: negativação indevida..."
+            className="w-full text-sm border rounded-lg px-3 py-2"
+          />
+        </div>
+        <button
+          onClick={() => void buscarEvidencias()}
+          disabled={evidenceLoading}
+          className="btn-primary mb-4"
+        >
+          {evidenceLoading ? "Pesquisando..." : "Relacionar evidências"}
+        </button>
+
+        {evidenceQuery && !evidenceLoading && (
+          <p className="text-[11px] text-gray-400 mb-3">
+            Consulta governada: {evidenceQuery}
+          </p>
+        )}
+
+        {!evidenceLoading &&
+          evidenceQuery &&
+          evidenceSources.length === 0 &&
+          evidenceTeses.length === 0 &&
+          evidenceSkills.length === 0 && (
+            <p className="text-sm text-gray-400 py-3">
+              Nenhuma evidência relacionada encontrada para este recorte.
+            </p>
+          )}
+
+        {(evidenceSources.length > 0 ||
+          evidenceTeses.length > 0 ||
+          evidenceSkills.length > 0) && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div>
+              <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">
+                Precedentes e fontes
+              </h4>
+              <div className="space-y-2">
+                {evidenceSources.map((fonte, i) => (
+                  <div
+                    key={fonte.chunk_id ?? fonte.doc_id ?? i}
+                    className="border rounded-lg p-3"
+                  >
+                    <p className="text-sm font-medium text-gray-700">
+                      {fonte.titulo || "Fonte jurídica"}
+                    </p>
+                    <p className="text-[11px] text-gray-400">
+                      {[fonte.tribunal, fonte.categoria, fonte.fonte]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                    {fonte.conteudo && (
+                      <p className="text-xs text-gray-600 mt-1 line-clamp-3">
+                        {fonte.conteudo}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">
+                Teses relacionadas
+              </h4>
+              <div className="space-y-2">
+                {evidenceTeses.map((t: any) => (
+                  <div key={t.id} className="border rounded-lg p-3">
+                    <p className="text-sm font-medium text-gray-700">{t.titulo}</p>
+                    <p className="text-[11px] text-gray-400">
+                      n decidido: {t.decididos ?? 0}
+                      {t.taxa_sucesso != null
+                        ? ` · taxa histórica ${(t.taxa_sucesso * 100).toFixed(1)}%`
+                        : ""}
+                    </p>
+                    {t.intervalo_confianca_95 && (
+                      <p className="text-[11px] text-gray-400">
+                        IC95%{" "}
+                        {(t.intervalo_confianca_95.inferior * 100).toFixed(1)}%–
+                        {(t.intervalo_confianca_95.superior * 100).toFixed(1)}%
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">
+                Skills aplicáveis
+              </h4>
+              <div className="space-y-2">
+                {evidenceSkills.map((skill: any) => (
+                  <div key={skill.nome} className="border rounded-lg p-3">
+                    <p className="text-sm font-medium text-gray-700">
+                      {skill.nome}
+                    </p>
+                    <p className="text-xs text-gray-600 mt-1">
+                      {skill.finalidade}
+                    </p>
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      {skill.riscos}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Cobertura real do conhecimento */}
       {(ragCoverage || mgCoverage) && (
@@ -455,19 +723,19 @@ export default function Jurimetria() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="text-center">
               <p className="text-2xl font-bold text-gray-800">
-                {benchmarks.tempo_tramitacao?.media_dias != null
-                  ? `${Math.round(benchmarks.tempo_tramitacao.media_dias)}d`
+                {(benchmarks.tempo_no_ejc ?? benchmarks.tempo_tramitacao)?.media_dias != null
+                  ? `${Math.round((benchmarks.tempo_no_ejc ?? benchmarks.tempo_tramitacao).media_dias)}d`
                   : "—"}
               </p>
-              <p className="text-xs text-gray-500">Duração média</p>
+              <p className="text-xs text-gray-500">Tempo médio no EJC</p>
             </div>
             <div className="text-center">
               <p className="text-2xl font-bold text-gray-800">
-                {benchmarks.tempo_tramitacao?.mediana_dias != null
-                  ? `${Math.round(benchmarks.tempo_tramitacao.mediana_dias)}d`
+                {(benchmarks.tempo_no_ejc ?? benchmarks.tempo_tramitacao)?.mediana_dias != null
+                  ? `${Math.round((benchmarks.tempo_no_ejc ?? benchmarks.tempo_tramitacao).mediana_dias)}d`
                   : "—"}
               </p>
-              <p className="text-xs text-gray-500">Mediana duração</p>
+              <p className="text-xs text-gray-500">Mediana no EJC</p>
             </div>
             <div className="text-center col-span-2">
               <p className="text-2xl font-bold text-gray-800">
@@ -656,11 +924,13 @@ export default function Jurimetria() {
                 <p className="text-xs text-gray-500">Acordos (fora da taxa)</p>
               </div>
               <div className="text-center p-3 bg-primary-50 rounded-lg border border-primary-100">
-                <p className="text-2xl font-bold capitalize text-primary-700">
-                  {predicao.confianca}
+                <p className="text-lg font-bold text-primary-700">
+                  {predicao.intervalo_confianca_95
+                    ? `${predicao.intervalo_confianca_95.inferior}%–${predicao.intervalo_confianca_95.superior}%`
+                    : "—"}
                 </p>
                 <p className="text-xs text-primary-600">
-                  Amostra: {predicao.amostra} decididos
+                  IC 95% · n={predicao.amostra} decididos
                 </p>
               </div>
             </div>
