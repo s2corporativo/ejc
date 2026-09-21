@@ -204,20 +204,21 @@ def secao_origem():
 def secao_agregacao():
     print("[M32] 2. Agregações — recálculo SQL no banco")
     authed("socio")
-    # 5 casos encerrados com resultado → amostra mínima; taxas recalculadas
+    # 5 decisões + 1 acordo: o piso estatístico usa decisões classificáveis,
+    # e o acordo permanece visível fora do denominador judicial.
     casos = []
-    resumo = {"exito_total": 2, "exito_parcial": 1, "acordo": 1,
-              "improcedente": 1}
+    resumo = {"exito": 2, "exito_parcial": 1, "acordo": 1,
+              "derrota": 2}
     for i, (res, cnt) in enumerate(resumo.items()):
         for k in range(cnt):
             cid = _criar_caso_qa(
                 "tributario", f"EJC_QA_M32_{i}_{k}", "encerrado", res)
             if cid:
                 casos.append(cid)
-    if len(casos) == 5:
-        _pass("5 casos sintéticos encerrados com resultado criados")
+    if len(casos) == 6:
+        _pass("6 casos sintéticos criados (5 decisões + 1 acordo)")
     else:
-        _fail(f"só {len(casos)}/5 casos sintéticos criados")
+        _fail(f"só {len(casos)}/6 casos sintéticos criados")
 
     r = S.get(f"{API}/api/analytics/jurimetria", timeout=30)
     j = r.json() if r.status_code == 200 else {}
@@ -226,15 +227,24 @@ def secao_agregacao():
     rows = pgsql(
         "SELECT resultado FROM cases WHERE status IN ('encerrado','arquivado') "
         "AND resultado IS NOT NULL AND deleted_at IS NULL")
+    conhecidos = (
+        "exito", "exito_total", "exito_parcial", "acordo",
+        "derrota", "improcedente",
+    )
     linhas = [r["resultado"].strip().lower() for r in rows
-              if r["resultado"] and r["resultado"].strip().lower()
-              in ("exito_total", "exito_parcial", "acordo", "improcedente")]
+              if r["resultado"] and r["resultado"].strip().lower() in conhecidos]
     linhas += ["outro"] * (len(rows) - len(linhas))
     n = len(linhas)
-    fav = sum(1 for l in linhas if l in ("exito_total", "exito_parcial"))
+    fav = sum(1 for l in linhas if l in ("exito", "exito_total", "exito_parcial"))
+    desfav = sum(1 for l in linhas if l in ("derrota", "improcedente"))
     acorde = sum(1 for l in linhas if l == "acordo")
-    tax_exito = round(fav / n * 100, 1) if n else None
-    tax_com_acordo = round((fav + acorde) / n * 100, 1) if n else None
+    decididos = fav + desfav
+    tax_exito = round(fav / decididos * 100, 1) if decididos else None
+    base_com_acordo = decididos + acorde
+    tax_com_acordo = (
+        round((fav + acorde) / base_com_acordo * 100, 1)
+        if base_com_acordo else None
+    )
 
     if r.status_code == 200 and g.get("n") == n \
             and abs((g.get("taxa_exito") or 0) - (tax_exito or 0)) < 0.01 \
@@ -246,12 +256,12 @@ def secao_agregacao():
         _fail(f"divergência API×SQL: API n={g.get('n')} taxa={g.get('taxa_exito')} "
               f"vs SQL n={n} taxa={tax_exito}")
 
-    if n >= 5:
+    if decididos >= 5:
         aviso = j.get("aviso")
         if not aviso:
-            _pass(f"amostra {n}≥5: sem aviso de insuficiência (correto)")
+            _pass(f"amostra decidida {decididos}≥5: sem aviso de insuficiência")
         else:
-            _fail(f"aviso indevido com n={n}: {aviso}")
+            _fail(f"aviso indevido com n_decididos={decididos}: {aviso}")
 
     # Por área (agregação por grupo)
     r = S.get(f"{API}/api/analytics/jurimetria",
@@ -264,12 +274,13 @@ def secao_agregacao():
         "AND status IN ('encerrado','arquivado') "
         "AND area='tributario' AND resultado IS NOT NULL")
     lis = [x["resultado"].strip().lower() for x in rows2
-           if x["resultado"] and x["resultado"].strip().lower()
-           in ("exito_total", "exito_parcial", "acordo", "improcedente")]
+           if x["resultado"] and x["resultado"].strip().lower() in conhecidos]
     lis += ["outro"] * (len(rows2) - len(lis))
     nt = len(lis)
-    favt = sum(1 for l in lis if l in ("exito_total", "exito_parcial"))
-    tax_trib_sql = round(favt / nt * 100, 1) if nt else None
+    favt = sum(1 for l in lis if l in ("exito", "exito_total", "exito_parcial"))
+    desfavt = sum(1 for l in lis if l in ("derrota", "improcedente"))
+    decididost = favt + desfavt
+    tax_trib_sql = round(favt / decididost * 100, 1) if decididost else None
     if grp_trib.get("n") == nt and abs(
             (grp_trib.get("taxa_exito") or 0) - (tax_trib_sql or 0)) < 0.01:
         _pass(f"agregação por área validada contra SQL: grupo tributario "
@@ -298,10 +309,12 @@ def secao_zero():
     r = S.get(f"{API}/api/analytics/jurimetria", timeout=30)
     j = r.json() if r.status_code == 200 else {}
     g = j.get("global", {})
-    if g.get("n") == n_banco and (g.get("taxa_exito") is None or n_banco > 0) \
-            and g.get("amostra_suficiente") == (n_banco >= 5):
-        _pass(f"n={n_banco} (base real): taxa={'None' if n_banco == 0 else g.get('taxa_exito')}, "
-              f"amostra_suficiente={'true' if n_banco >= 5 else 'false'} "
+    n_decididos = int(g.get("n_decididos") or 0)
+    if g.get("n") == n_banco and (g.get("taxa_exito") is None or n_decididos > 0) \
+            and g.get("amostra_suficiente") == (n_decididos >= 5):
+        _pass(f"n={n_banco}, decididos={n_decididos}: "
+              f"taxa={'None' if n_decididos == 0 else g.get('taxa_exito')}, "
+              f"amostra_suficiente={'true' if n_decididos >= 5 else 'false'} "
               f"— divisão por zero tratada")
     else:
         _fail(f"n esperado {n_banco}; obtido: {g}")
@@ -472,7 +485,7 @@ def secao_estatisticas():
     n_pre = pre[0]["n"] if pre else 0
     assert n_pre == 0, f"área ambiental já contém {n_pre} encerrados"
     casos = []
-    for k, res in enumerate(("exito_total", "acordo", "improcedente")):
+    for k, res in enumerate(("exito", "acordo", "derrota")):
         cid = _criar_caso_qa("ambiental", f"EJC_QA_M32D_{k}",
                              "encerrado", res)
         if cid:
