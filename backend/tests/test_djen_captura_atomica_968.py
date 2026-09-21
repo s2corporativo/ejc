@@ -5,6 +5,7 @@ Prova as invariantes que não dependem da API externa:
 - processo ambíguo nunca é vinculado automaticamente;
 - deduplicação da comunicação é responsabilidade atômica do PostgreSQL.
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -85,19 +86,33 @@ async def test_busca_de_casos_do_lote_executa_uma_unica_query():
     }
 
 
-def test_insert_comunicacao_usa_on_conflict_do_nothing_e_returning():
-    stmt = djen_service._stmt_inserir_comunicacao(
-        {
-            "id": "00000000-0000-0000-0000-000000000001",
-            "comunicacao_id_externo": "cnj-externo-1",
-            "advogado_id": "00000000-0000-0000-0000-000000000002",
-            "numero_processo": "0000001-02.2020.8.13.0000",
-            "tribunal": "TJMG",
-            "tipo_comunicacao": "Intimação",
-            "data_disponibilizacao": None,
-            "texto_resumo": "conteúdo fictício",
-            "case_id": None,
-        }
+def test_insert_comunicacoes_usa_on_conflict_do_nothing_e_returning():
+    """G5/W11: INSERT em LOTE — uma viagem por captura; idempotência intacta."""
+    stmt = djen_service._stmt_inserir_comunicacoes_lote(
+        [
+            {
+                "id": "00000000-0000-0000-0000-000000000001",
+                "comunicacao_id_externo": "cnj-externo-1",
+                "advogado_id": "00000000-0000-0000-0000-000000000002",
+                "numero_processo": "0000001-02.2020.8.13.0000",
+                "tribunal": "TJMG",
+                "tipo_comunicacao": "Intimação",
+                "data_disponibilizacao": None,
+                "texto_resumo": "conteúdo fictício",
+                "case_id": None,
+            },
+            {
+                "id": "00000000-0000-0000-0000-000000000003",
+                "comunicacao_id_externo": "cnj-externo-2",
+                "advogado_id": "00000000-0000-0000-0000-000000000002",
+                "numero_processo": None,
+                "tribunal": "STJ",
+                "tipo_comunicacao": "Intimação",
+                "data_disponibilizacao": None,
+                "texto_resumo": "conteúdo fictício 2",
+                "case_id": None,
+            },
+        ]
     )
     sql = str(
         stmt.compile(
@@ -108,6 +123,9 @@ def test_insert_comunicacao_usa_on_conflict_do_nothing_e_returning():
 
     assert "ON CONFLICT (COMUNICACAO_ID_EXTERNO) DO NOTHING" in sql
     assert "RETURNING DJEN_COMUNICACOES.ID" in sql
+    # O RETURNING traz o id externo junto — é o que separa nova de duplicata
+    # sem uma segunda viagem ao banco.
+    assert "COMUNICACAO_ID_EXTERNO" in sql
 
 
 def test_servico_nao_faz_select_previo_por_id_externo():
