@@ -5,8 +5,8 @@
 #
 # Fluxo:
 #   Frontend → Backend Router → AI Gateway → Provedor adequado
-#   (Ollama local · Anthropic/Claude p/ tarefa jurídica pesada · Maritaca/Sabiá
-#    PT-BR · Groq último recurso)
+#   (Groq p/ tarefas corriqueiras · Maritaca/Sabiá p/ leitura/análise/pesquisa
+#    jurídica · Ollama p/ sigilo/local · Anthropic/Claude somente sob solicitação explícita)
 #
 # Roteamento por tipo de tarefa (ver TASK_ROUTING): cada tarefa lista os
 # provedores candidatos; a ordem final vem de AI_PROVIDER_PRIORITY filtrada
@@ -112,12 +112,17 @@ _TAREFAS_SAIDA_ESTRUTURADA = {
 _TAREFAS_MERITO = {
     "analise_juridica", "elaboracao_peca", "estrategia", "auditoria_peca",
     "analise_contrato", "jurimetria", "critica_adversarial",
+    # Vocabulário legado/por área que pode chegar direto ao gateway.
+    "analise_caso", "minutas", "dossie", "pesquisa_juridica", "rag_query",
+    "prazos", "audiencia", "ambiental", "trabalhista", "criminal", "familia",
+    "administrativo", "sucessoes", "imobiliario", "constitucional", "juizados",
+    "civel",
 }
 
 # Tarefas econômicas: resumir/triar/responder rápido. FIRAC aqui não melhora o
 # resultado — muda o gênero do texto (um resumo vira análise) e ainda queima
 # token. Mesmo conjunto da AIProviderPolicy.
-_TAREFAS_ECONOMICAS = {"resumo", "triagem", "chat_rapido"}
+_TAREFAS_ECONOMICAS = {"resumo", "triagem", "chat_rapido", "honorarios"}
 
 
 def _nivel_piso(task_label: str | None) -> str:
@@ -167,9 +172,9 @@ def _aplicar_nivel(
     return [extra] + messages
 
 
-# Cadeias: Ollama (local, custo zero) → Anthropic (qualidade, se houver chave)
-# → Groq (grátis, último recurso). Tarefas simples (resumo/chat) pulam o
-# Anthropic — Groq grátis basta e mantém o custo baixo.
+# TASK_ROUTING lista capacidades técnicas possíveis; _resolver_cadeia aplica
+# depois a política operacional de afinidade (Groq rotina; Maritaca mérito;
+# Ollama local; Claude explícito).
 TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
     # Tarefas COMPLEXAS incluem "anthropic" na cadeia (Núcleo Único): entra na
     # ordem de AI_PROVIDER_PRIORITY quando elegível (chave + ENABLED +
@@ -452,7 +457,8 @@ async def chat(
       messages        — mensagens no formato OpenAI [{role, content}, ...]
       task_type       — tipo de tarefa (define qual modelo usar)
       model_override  — forçar modelo específico (ex: "deepseek-r1:14b")
-      provider_override — forçar provedor ("groq" | "ollama")
+      provider_override — forçar provedor ("groq" | "maritaca" | "anthropic" | "ollama");
+                          "anthropic" é o caminho explícito para solicitar Claude
       entidades       — nomes próprios a pseudonimizar por tipo (opcional):
                         {"cliente": [...], "empresa": [...], "advogado": [...],
                         "parte_contraria": [...]}. Só usado em modo
@@ -965,14 +971,33 @@ def _resolver_cadeia(
     base = TASK_ROUTING.get(task_type, TASK_ROUTING["analise_juridica"])
     candidatos = _ordenar_por_prioridade([p for p, _ in base])
 
-    # Tarefa de mérito jurídico começa pelo provedor de raciocínio profundo.
-    # A AIProviderPolicy já decidia isso ("tarefa complexa — Anthropic
-    # priorizado") e o gateway a IGNORAVA, resolvendo a cadeia só por
-    # AI_PROVIDER_PRIORITY: duas fontes de verdade divergentes, e quem valia
-    # era a do gateway (auditoria de 18/08). Agora a regra é uma só. A
-    # elegibilidade e a barreira de PII continuam sendo aplicadas abaixo.
-    if task_type in _TAREFAS_MERITO and "anthropic" in candidatos:
-        candidatos = ["anthropic"] + [p for p in candidatos if p != "anthropic"]
+    # Política operacional 20/09/2026:
+    # - Groq atende o cotidiano;
+    # - Maritaca atende leitura/análise/pesquisa jurídica;
+    # - Claude NÃO entra automaticamente, mesmo como fallback, salvo se a flag
+    #   de rollback ANTHROPIC_AUTO_ROUTING_ENABLED estiver explicitamente ligada.
+    #   provider_force="anthropic" continua funcionando para solicitação humana.
+    if not bool(getattr(get_settings(), "ANTHROPIC_AUTO_ROUTING_ENABLED", False)):
+        candidatos = [p for p in candidatos if p != "anthropic"]
+
+    # Afinidade estrita definida pelo titular:
+    # - mérito jurídico automático: Maritaca (+ Ollama local);
+    # - rotina: Groq (+ Ollama local);
+    # - Claude: somente provider_force explícito (ou flag de rollback).
+    if not bool(getattr(get_settings(), "ANTHROPIC_AUTO_ROUTING_ENABLED", False)):
+        if task_type in _TAREFAS_MERITO:
+            candidatos = [p for p in candidatos if p in {"maritaca", "ollama"}]
+            if "maritaca" in candidatos:
+                candidatos = ["maritaca"] + [p for p in candidatos if p != "maritaca"]
+        elif task_type in _TAREFAS_ECONOMICAS:
+            candidatos = [p for p in candidatos if p in {"groq", "ollama"}]
+            if "groq" in candidatos:
+                candidatos = ["groq"] + [p for p in candidatos if p != "groq"]
+    else:
+        # Rollback operacional: reabilita o comportamento anterior de Claude
+        # automático nas tarefas de mérito.
+        if task_type in _TAREFAS_MERITO and "anthropic" in candidatos:
+            candidatos = ["anthropic"] + [p for p in candidatos if p != "anthropic"]
 
     # Roteamento inteligente: promove o provider proposto à frente SE elegível e
     # SE participa da cadeia da tarefa (não inventa provedor fora do TASK_ROUTING).
@@ -1241,16 +1266,13 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
                 {"role": "user", "content": mensagem}], nivel_efetivo,
                 task_label=tarefa_label)
 
-    # Cadeia: provedor da tarefa → Ollama (LOCAL) → Groq (externo).
-    # LGPD (minimização de transferência internacional, art. 33/46): o LOCAL vem
-    # ANTES do externo — se o provedor primário cair, tentamos o Ollama local
-    # antes de mandar dados (ainda que sanitizados) ao Groq nos EUA. Espelha a
-    # cadeia por task_type do chat() (ollama→…→groq), que já respeita essa ordem.
+    # Afinidade estrita também no caminho legado por tarefa:
+    # - cfg.provider=maritaca (mérito/leitura/pesquisa) NÃO cai em Groq;
+    # - cfg.provider=groq (rotina) NÃO cai em Maritaca;
+    # - Ollama pode servir de fallback LOCAL quando habilitado.
     cadeia: list[tuple[str, str | None]] = [(cfg.provider, cfg.model)]
     if settings.OLLAMA_ENABLED and cfg.provider != "ollama":
         cadeia.append(("ollama", None))
-    if cfg.provider != "groq":
-        cadeia.append(("groq", None))
 
     # ── Modo 1 (LOCAL_COMPLETO) — sigilo reforçado: nunca sai do VPS. Remove
     # externos; sem provedor local ELEGÍVEL → bloqueio SEGURO (externo nunca é
@@ -1629,6 +1651,7 @@ async def chat_agentico(
     # elegível, ainda o usamos (única opção agêntica) — desde que não seja
     # LOCAL_COMPLETO (já tratado acima).
     if (not cadeia_tools and modo_sanitizacao != ModoSanitizacao.LOCAL_COMPLETO
+            and bool(getattr(get_settings(), "ANTHROPIC_AUTO_ROUTING_ENABLED", False))
             and _provider_elegivel("anthropic")):
         cadeia_tools = [("anthropic", _resolver_modelo("anthropic", task_type, None))]
     if not cadeia_tools or not _provider_elegivel("anthropic"):
