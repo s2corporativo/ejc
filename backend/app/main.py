@@ -126,7 +126,6 @@ from app.routers import notifications
 from app.routers import novos_modulos
 from app.routers import entrada_universal  # P3: registro explícito
 from app.routers import defesas_revisoes
-from app.routers import defesas_revisoes_pacote_seguro
 from app.routers import defesas_revisoes_avancado
 from app.routers import orquestrador
 from app.routers import observabilidade
@@ -506,7 +505,6 @@ app.include_router(notifications.router, prefix=API)
 app.include_router(novos_modulos.router, prefix=API)  # P3: prefixo /modulos no router
 app.include_router(entrada_universal.router, prefix=API) # P3: registro explícito (antes: routers/__init__.py montava dentro de novos_modulos)
 app.include_router(defesas_revisoes.router, prefix=API)
-app.include_router(defesas_revisoes_pacote_seguro.router, prefix=API)
 app.include_router(defesas_revisoes_avancado.router, prefix=API)
 app.include_router(novos_modulos.casos_router, prefix=API)
 app.include_router(observabilidade.router, prefix=API)

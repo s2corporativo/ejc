@@ -224,6 +224,8 @@ async def parecer_pdf(
     path = os.path.join(out_dir, f"parecer_{arquivo_id}.pdf")
     with open(path, "wb") as fh:
         fh.write(pdf_bytes)
+    # Auditoria §11/S10: binding usuário↔arquivo — capability URL não basta.
+    _vlf.registrar_origem(out_dir, arquivo_id, criado_por=cu.id)
     return {"download_url": f"/previdenciario/ferramentas/parecer/{arquivo_id}/download"}
 
 
@@ -241,5 +243,7 @@ async def download_parecer(
     if not os.path.isfile(path):
         raise HTTPException(404, "Parecer não encontrado — gere via POST "
                                  "/previdenciario/ferramentas/parecer-pdf.")
+    # Auditoria §11/S10: só o criador (ou gestão) baixa — fail-closed.
+    _vlf.exigir_origem(_parecer_dir(), arquivo_id, cu)
     return FileResponse(path, media_type="application/pdf",
                         filename="simulacao_aposentadoria_ec103.pdf")
