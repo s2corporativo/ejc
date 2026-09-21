@@ -35,7 +35,7 @@ class Tese(Base):
     contra_argumento = Column(Text)        # o que o adversário pode responder
     area_juridica = Column(String(60))     # trabalhista, civel, ambiental...
     tribunal     = Column(String(120))     # ex: TRT-3, TJMG, STJ
-    magistrado   = Column(String(200))     # magistrado associado (analytics)
+    magistrado   = Column(String(200))     # metadado legado da tese; NÃO usar como magistrado real do caso/decisão
     tags         = Column(Text)            # CSV: "responsabilidade,consumidor"
     observacoes  = Column(Text)
 
@@ -46,7 +46,7 @@ class Tese(Base):
     vezes_usada  = Column(Integer, default=0, nullable=False)
     vezes_venceu = Column(Integer, default=0, nullable=False)
     vezes_perdeu = Column(Integer, default=0, nullable=False)
-    taxa_sucesso = Column(Float)           # calculada: vezes_venceu/vezes_usada
+    taxa_sucesso = Column(Float)           # cache reconciliável: vezes_venceu/(vezes_venceu+vezes_perdeu)
 
     # Metadados
     created_by   = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
