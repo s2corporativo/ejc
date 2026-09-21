@@ -79,7 +79,7 @@ A partir dos dados de um caso (já sanitizados), pré-preencha uma FICHA DE TRIA
 REGRAS:
 - Baseie-se APENAS nos dados fornecidos. É PROIBIDO inventar lei, súmula, julgado ou fato.
 - Se os dados não permitirem avaliar um campo, use valor null e confianca baixa (<40).
-- Os percentuais são estimativas técnicas internas de triagem — nunca promessa de resultado.
+- A confianca 0-100 mede apenas a confiança no preenchimento daquele campo; NÃO representa chance de êxito do caso.
 - risco_processual só pode ser: "baixo", "medio" ou "alto".
 
 Responda APENAS com JSON estrito (sem markdown, sem texto fora do JSON), neste formato:
