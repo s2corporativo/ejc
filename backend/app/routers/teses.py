@@ -528,6 +528,21 @@ async def vincular_caso(
     )
     t.updated_at = datetime.now(timezone.utc)
 
+    from app.models.audit_log import criar_audit_log
+    await criar_audit_log(
+        db,
+        cu.id,
+        cu.role.value,
+        "CREATE",
+        "tese_caso_links",
+        link.id,
+        detalhes="Vínculo tese-caso criado por decisão humana.",
+        dados_depois={
+            "tese_id": tese_id,
+            "case_id": req.case_id,
+            "resultado": link.resultado,
+        },
+    )
     await db.commit()
     return {"id": link.id, "taxa_sucesso": t.taxa_sucesso}
 
@@ -560,6 +575,7 @@ async def atualizar_resultado_vinculo_tese(
         raise HTTPException(404, "Vínculo tese-caso não encontrado")
 
     await verificar_acesso_caso(db, cu, link.case_id)
+    resultado_anterior = link.resultado
     from app.services.tese_vinculo_service import atualizar_resultado_vinculo
 
     await atualizar_resultado_vinculo(db, link=link, resultado=req.resultado)
@@ -568,6 +584,19 @@ async def atualizar_resultado_vinculo_tese(
             select(Tese).where(Tese.id == tese_id, Tese.deleted_at.is_(None))
         )
     ).scalar_one_or_none()
+
+    from app.models.audit_log import criar_audit_log
+    await criar_audit_log(
+        db,
+        cu.id,
+        cu.role.value,
+        "UPDATE",
+        "tese_caso_links",
+        link.id,
+        detalhes="Desfecho de tese em caso atualizado por decisão humana.",
+        dados_antes={"resultado": resultado_anterior},
+        dados_depois={"resultado": link.resultado},
+    )
     await db.commit()
     return {
         "id": link.id,
