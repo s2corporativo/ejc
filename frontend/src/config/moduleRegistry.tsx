@@ -1,4 +1,16 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from "react";
+import { Navigate } from "react-router";
+
+// W10 (Auditoria 2026-09-20 §5): o módulo "caso-novo" não é uma tela de
+// criação — App troca a rota por <LegacyRedirect to="/entrada"> (preserva
+// modo/client_id/query/hash). O componente abaixo só satisfaz o contrato do
+// registro e documenta o destino; nunca é renderizado de fato.
+function CasoNovoRedirectInterno() {
+  return <Navigate to="/entrada" replace />;
+}
+const CasoNovoLegacyRedirect = lazy(async () => ({
+  default: CasoNovoRedirectInterno,
+}));
 import {
   BarChart3,
   Bell,
@@ -308,7 +320,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
       "Compatibilidade da abertura guiada histórica; novos atalhos usam Entrada Jurídica.",
     group: "Trabalhar um caso",
     icon: Plus,
-    component: Casos,
+    component: CasoNovoLegacyRedirect,
     roles: ROLES.clientes,
     showInNav: false,
     essential: false,
