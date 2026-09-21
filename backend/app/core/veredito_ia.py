@@ -6,8 +6,8 @@ probabilidade por heurística fixa (base 0.5 + bônus por palavra-chave) e
 jurisprudência hardcoded ("Jurisprudência relevante 1", http://link1.com) —
 inaceitável num sistema jurídico. Agora usa SOMENTE motores reais do EJC:
 
-  1. PROBABILIDADE — jurimetria interna (app/services/jurimetria.py) sobre os
-     casos ENCERRADOS reais da área. Amostra < MIN_AMOSTRA → probabilidade None
+  1. TAXA HISTÓRICA — jurimetria interna (app/services/jurimetria.py) sobre as
+     decisões classificáveis reais da área. Amostra < MIN_AMOSTRA → valor None
      com explicação honesta (padrão OAB já adotado no motor estratégico:
      estatística inventada viola a OAB).
   2. JURISPRUDÊNCIA — RAG interno (pgvector, buscar_contexto_rag) nas categorias
@@ -43,15 +43,15 @@ logger = logging.getLogger("ejc.veredito_ia")
 AVISO_HITL = ("Rascunho gerado por IA e estatística interna — NÃO é parecer. "
               "Revisão humana por advogado é obrigatória antes de qualquer uso (HITL/OAB).")
 
-# Honestidade epistêmica: `probabilidade_exito` NÃO é predição de LLM — é taxa
-# estatística determinística (jurimetria sobre casos ENCERRADOS reais).
-# Ver `metodo_probabilidade` no schema de resposta.
+# Compatibilidade: o schema legado ainda chama o campo de probabilidade_exito,
+# mas o valor é SOMENTE taxa histórica descritiva entre decisões classificáveis.
+# Não é probabilidade calibrada do caso concreto.
 _METODO_PROBABILIDADE = "estatistica_historica_deterministica"
 AVISO_METODO_PROBABILIDADE = (
-    "A probabilidade de êxito NÃO é uma predição de IA/LLM: é uma taxa "
-    "estatística determinística calculada sobre os casos ENCERRADOS reais do "
-    "escritório (jurimetria interna). Apenas as sugestões contextualizadas "
-    "abaixo são geradas por IA (rascunho sujeito a revisão — HITL/OAB)."
+    "O percentual histórico NÃO é probabilidade de êxito do caso: é taxa "
+    "descritiva entre decisões classificáveis do escritório. Acordos e "
+    "resultados sem mérito ficam fora do denominador. Sugestões de IA são "
+    "rascunho sujeito a revisão humana — HITL/OAB."
 )
 
 # Categorias PÚBLICAS de jurisprudência no RAG (mesmo conjunto do motor de teses).
@@ -149,25 +149,32 @@ class VereditoIA:
         try:
             dados = await calcular_jurimetria(db, user, dimensao="area")
             grupo = _grupo_da_area(dados.get("grupos", []), area_juridica)
-            n_amostra = int(grupo["n"]) if grupo else 0
+            n_amostra = int(grupo.get("n_decididos") or 0) if grupo else 0
             if grupo and grupo.get("amostra_suficiente") and \
-                    grupo.get("taxa_exito_com_acordo") is not None:
-                probabilidade = round(grupo["taxa_exito_com_acordo"] / 100.0, 3)
+                    grupo.get("taxa_exito") is not None:
+                # Campo legado `probabilidade_exito` recebe taxa histórica, não
+                # previsão do caso; acordo não entra como vitória judicial.
+                probabilidade = round(grupo["taxa_exito"] / 100.0, 3)
+                ic = grupo.get("intervalo_confianca_95")
                 fonte_prob = (
-                    f"Jurimetria interna: taxa histórica real de desfecho favorável "
-                    f"(êxito total + parcial + acordo) em {grupo['n']} caso(s) "
-                    f"encerrado(s) da área '{grupo['grupo']}'."
+                    f"Jurimetria interna: taxa histórica de êxito judicial em "
+                    f"{n_amostra} decisão(ões) classificável(is) da área "
+                    f"'{grupo['grupo']}', com acordos fora do denominador"
+                    + (
+                        f" (IC95% {ic['inferior']}%–{ic['superior']}%)."
+                        if ic else "."
+                    )
                 )
             else:
                 avisos.append(
-                    f"Amostra histórica insuficiente na área '{area_juridica}' "
-                    f"(n={n_amostra} < {MIN_AMOSTRA} casos encerrados): probabilidade "
-                    "NÃO informada — estatística inventada viola o padrão OAB do escritório."
+                    f"Amostra histórica decidida insuficiente na área '{area_juridica}' "
+                    f"(n={n_amostra} < {MIN_AMOSTRA}): percentual histórico NÃO "
+                    "informado; não se inventa probabilidade do caso concreto."
                 )
         except Exception as e:
             logger.warning(f"Veredito IA: jurimetria indisponível: {e}")
             avisos.append("Jurimetria interna indisponível no momento — "
-                          "probabilidade não calculada.")
+                          "taxa histórica não calculada.")
 
         # ── 2. Teses vitoriosas: Victory Vault removido (CORTE-3) — lista vazia ──
         teses_similares: List[TeseVitoriosaSimilar] = []
