@@ -1087,14 +1087,16 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://redis:6379/0"
     CELERY_ENABLED: bool = False
 
-    # Cache de resposta da IA (opt-in): evita refazer a chamada ao provedor —
-    # e o custo em tokens — quando a MESMA requisição (task_type + messages +
-    # parâmetros) se repete numa janela curta (ex.: reenvio após falha de rede,
-    # ou dois membros pedindo a mesma análise). Default DESLIGADO: comportamento
-    # idêntico ao atual. Requer Redis; se indisponível, cai para "sem cache"
-    # (fallback gracioso, mesmo espírito do dispatcher/embeddings). Só armazena
-    # respostas bem-sucedidas; TTL curto para não servir análise obsoleta.
-    AI_RESPONSE_CACHE_ENABLED: bool = False
+    # Cache de resposta da IA (gargalo G1 — Auditoria 2026-09-20): evita refazer
+    # a chamada ao provedor — e o custo em tokens — quando a MESMA requisição
+    # (task_type + messages + parâmetros) se repete numa janela curta (ex.:
+    # reenvio após falha de rede, ou dois membros pedindo a mesma análise).
+    # Default LIGADO (G1: "ligar 1 flag" — redução direta de custo/latência).
+    # Requer Redis; se indisponível, cai para "sem cache" (fallback gracioso,
+    # mesmo espírito do dispatcher/embeddings). Só armazena respostas
+    # bem-sucedidas; TTL curto para não servir análise obsoleta. Rollback:
+    # AI_RESPONSE_CACHE_ENABLED=false no .env do VPS (sem deploy de código).
+    AI_RESPONSE_CACHE_ENABLED: bool = True
     AI_RESPONSE_CACHE_TTL: int = 300  # segundos
 
     # Rate limit distribuído (multi-worker): False (default) usa contador
