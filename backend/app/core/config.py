@@ -368,10 +368,11 @@ class Settings(BaseSettings):
     # router (ia_agente.py) sempre documentou. A IA opera como agente (decide →
     # chama ferramenta → lê resultado → decide), reusando o núcleo e TODOS os
     # guardrails (barreira LGPD, RBAC, AILog, gate de citações, HITL).
-    # LIGADO por default desde 2026-09-05 (decisão do titular): HITL retomável
-    # e fail-closed já homologados (AI-030/031); sem Redis nenhuma escrita
-    # executa. Desligar via .env continua possível.
-    AI_AGENT_ENABLED: bool = True
+    # O agente permanece DESATIVADO por default: nesta fase o loop de tool-use
+    # é suportado apenas pelo Anthropic e exige seleção operacional explícita
+    # AI_PROVIDER=anthropic. Isso evita um agente "ligado" com AI_PROVIDER=auto
+    # quando Claude está fora do roteamento automático.
+    AI_AGENT_ENABLED: bool = False
     # Teto de PASSOS do loop (nunca infinito). 8 não bastava para um ciclo
     # completo dossiê → precedentes → cronologia → rito → providências → prazo
     # → OAB → minuta sem nenhuma iteração de correção.
