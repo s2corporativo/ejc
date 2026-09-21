@@ -110,18 +110,30 @@ export default function LayoutReference() {
   }, [privacyMode]);
 
   useEffect(() => {
-    const loadNotifications = () =>
-      api
+    const loadNotifications = () => {
+      // G3 (Auditoria 2026-09-20): polling pausa com a aba em segundo plano —
+      // 0 chamadas enquanto o usuário não está vendo, sem trocar SSE/proxy.
+      if (typeof document !== "undefined" && document.hidden) return;
+      return api
         .get("/notifications/?apenas_nao_lidas=false&limit=15")
         .then((response) => {
           setNotifications(response.data.data ?? []);
           setNotifCount(response.data.nao_lidas ?? 0);
         })
         .catch(() => {});
+    };
 
     loadNotifications();
     const timer = window.setInterval(loadNotifications, 60_000);
-    return () => window.clearInterval(timer);
+    // Ao voltar para a aba, atualiza imediatamente (não espera o próximo tick).
+    const onVisibilidade = () => {
+      if (!document.hidden) loadNotifications();
+    };
+    document.addEventListener("visibilitychange", onVisibilidade);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibilidade);
+    };
   }, []);
 
   const visible = useMemo(

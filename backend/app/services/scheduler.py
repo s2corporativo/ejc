@@ -272,9 +272,15 @@ async def _alertar_prazos():
                       AND d.data_prazo <= :alvo AND d.data_prazo >= :piso AND d.{flag} = false
                       AND d.responsavel_id IS NOT NULL
                 """), {"alvo": alvo, "piso": piso_data})
+                # G4 (Auditoria 2026-09-20): COMMIT em LOTE de 20 — a janela de
+                # re-notificação em caso de crash continua limitada (≤20 itens,
+                # commit do resíduo no fim), mas o número de round-trips de
+                # escrita cai ~20×. A idempotência de 2ª passada segue garantida
+                # pela flag (UPDATE com WHERE id) + dedup de Notification.
+                _lote = 0
                 for r in rows:
                     # Try/except POR destinatário: a falha de um não aborta o
-                    # lote; commit por item logo após marcar a flag (idempotência).
+                    # lote; rollback só do item em falha.
                     try:
                         venc = r.data_prazo.strftime('%d/%m/%Y')
                         dias_reais = (r.data_prazo - hoje).days
@@ -300,12 +306,16 @@ async def _alertar_prazos():
                         await db.execute(text(
                             f"UPDATE deadlines SET {flag}=true WHERE id=:id"
                         ), {"id": r.id})
-                        await db.commit()
+                        _lote += 1
+                        if _lote % 20 == 0:
+                            await db.commit()
                     except Exception as e:
                         await db.rollback()
                         logger.error(
                             f"[Scheduler] alertar_prazos falhou p/ deadline {r.id}: {e}"
                         )
+                if _lote % 20 != 0:
+                    await db.commit()
     except Exception as e:
         _hb_status, _hb_detail = "erro", str(e)
         logger.error(f"[Scheduler] alertar_prazos: {e}")
