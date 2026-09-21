@@ -86,6 +86,7 @@ ADICOES_INTENCIONAIS = {
     # restrita à EQUIPE_JURIDICA e filtrada pela visibilidade de casos do
     # usuário — não cria vínculo nem expõe caso que ele já não pudesse abrir.
     ("/api/teses/{tese_id}/casos-candidatos", "GET"),
+    ("/api/teses/{tese_id}/vinculos/{link_id}/resultado", "PATCH"),
     # Issue #1246 (frente 1 do plano de evolução): impacto do radar regulatório
     # sobre o Banco de Teses — quais teses reler à luz do que saiu no Diário.
     # Leitura, determinística (sem IA), restrita à EQUIPE_JURIDICA. Os alertas
