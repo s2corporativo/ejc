@@ -209,6 +209,7 @@ def _classificar_erro_fonte(exc: Exception) -> str:
         return "payload_invalido"
     return "erro_interno"
 
+
 def classificar_erro_fonte(exc: Exception) -> str:
     """Classificação sanitizada reutilizável pelos dois fluxos DJEN.
 
@@ -236,15 +237,9 @@ def resumir_execucao(resultados: list[DjenCapturaResultado]) -> dict:
         }
 
     elegiveis = sum(1 for resultado in resultados if resultado.configurada)
-    sucessos = sum(
-        1
-        for resultado in resultados
-        if resultado.configurada and resultado.fonte_ok
-    )
+    sucessos = sum(1 for resultado in resultados if resultado.configurada and resultado.fonte_ok)
     falhas = sum(1 for resultado in resultados if not resultado.fonte_ok)
-    erros = Counter(
-        resultado.erro for resultado in resultados if resultado.erro
-    )
+    erros = Counter(resultado.erro for resultado in resultados if resultado.erro)
 
     if falhas and sucessos:
         heartbeat_status, estado = "erro", "parcial"
@@ -344,10 +339,7 @@ def normalizar_processo(numero: str | None) -> str:
 def _numero_processo_item(item: dict) -> str:
     """Extrai o número CNJ de um item sem assumir um único nome de campo."""
     numero = normalizar_processo(
-        item.get("numero_processo")
-        or item.get("numeroProcesso")
-        or item.get("numeroprocessocommascara")
-        or ""
+        item.get("numero_processo") or item.get("numeroProcesso") or item.get("numeroprocessocommascara") or ""
     )
     if numero:
         return numero
@@ -366,11 +358,7 @@ def _indexar_casos_unicos(casos: list[Case]) -> tuple[dict[str, Case], int]:
         if numero:
             por_numero[numero].append(caso)
 
-    unicos = {
-        numero: encontrados[0]
-        for numero, encontrados in por_numero.items()
-        if len(encontrados) == 1
-    }
+    unicos = {numero: encontrados[0] for numero, encontrados in por_numero.items() if len(encontrados) == 1}
     ambiguos = sum(1 for encontrados in por_numero.values() if len(encontrados) > 1)
     return unicos, ambiguos
 
@@ -397,15 +385,19 @@ async def buscar_casos_ativos_por_processos(
         "g",
     )
     casos = (
-        await db.execute(
-            select(Case).where(
-                Case.deleted_at.is_(None),
-                Case.numero_processo.isnot(None),
-                Case.status.notin_([CaseStatus.encerrado, CaseStatus.arquivado]),
-                numero_normalizado.in_(alvos),
+        (
+            await db.execute(
+                select(Case).where(
+                    Case.deleted_at.is_(None),
+                    Case.numero_processo.isnot(None),
+                    Case.status.notin_([CaseStatus.encerrado, CaseStatus.arquivado]),
+                    numero_normalizado.in_(alvos),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     unicos, ambiguos = _indexar_casos_unicos(list(casos))
     if ambiguos:
         logger.warning(
@@ -449,9 +441,7 @@ def _parse_data_disp(raw: str | None) -> date | None:
             )
         except ValueError:
             pass
-    logger.warning(
-        "DJEN: data de disponibilização ausente ou inválida; mantendo sem data"
-    )
+    logger.warning("DJEN: data de disponibilização ausente ou inválida; mantendo sem data")
     return None
 
 
@@ -462,9 +452,7 @@ def _extrair_items(payload: dict | list) -> list[dict]:
         items = payload
     else:
         raise TypeError("payload DJEN sem coleção")
-    if not isinstance(items, list) or any(
-        not isinstance(item, dict) for item in items
-    ):
+    if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
         raise TypeError("items DJEN inválidos")
     return items
 
@@ -529,7 +517,9 @@ async def consultar_oab(
                         continue
                     logger.error(
                         "DJEN: página %s vazia com %s/%s itens; janela incompleta",
-                        pagina, len(todos), total_fonte,
+                        pagina,
+                        len(todos),
+                        total_fonte,
                     )
                     return DjenConsultaResultado(
                         fonte_ok=False,
@@ -538,9 +528,7 @@ async def consultar_oab(
                         paginas=paginas,
                         janela_dias=dias,
                     )
-                return DjenConsultaResultado(
-                    fonte_ok=True, items=todos, paginas=paginas, janela_dias=dias
-                )
+                return DjenConsultaResultado(fonte_ok=True, items=todos, paginas=paginas, janela_dias=dias)
 
             retries_vazia = 0
             for item in lote:
@@ -552,13 +540,9 @@ async def consultar_oab(
                 todos.append(item)
 
             if total_fonte is not None and len(todos) >= total_fonte:
-                return DjenConsultaResultado(
-                    fonte_ok=True, items=todos, paginas=paginas, janela_dias=dias
-                )
+                return DjenConsultaResultado(fonte_ok=True, items=todos, paginas=paginas, janela_dias=dias)
             if len(lote) < ITENS_POR_PAGINA and total_fonte is None:
-                return DjenConsultaResultado(
-                    fonte_ok=True, items=todos, paginas=paginas, janela_dias=dias
-                )
+                return DjenConsultaResultado(fonte_ok=True, items=todos, paginas=paginas, janela_dias=dias)
 
             pagina += 1
             await asyncio.sleep(PAUSA_ENTRE_PAGINAS)
@@ -588,15 +572,22 @@ async def consultar_oab(
         )
 
 
-def _stmt_inserir_comunicacao(valores: dict):
-    """INSERT idempotente: somente o vencedor da corrida cria efeitos derivados."""
+def _stmt_inserir_comunicacoes_lote(valores: list[dict]):
+    """INSERT em LOTE idempotente (gargalo G5 — Auditoria 2026-09-20).
+
+    Uma única viagem ao banco para todas as comunicações da captura; o
+    ``ON CONFLICT DO NOTHING`` preserva a semântica anterior (somente o
+    vencedor da corrida cria efeitos derivados) e o ``RETURNING`` devolve
+    APENAS as linhas realmente inseridas — quem não voltar é duplicata.
+    """
     return (
         pg_insert(DjenComunicacao)
-        .values(**valores)
-        .on_conflict_do_nothing(
-            index_elements=[DjenComunicacao.comunicacao_id_externo]
+        .values(valores)
+        .on_conflict_do_nothing(index_elements=[DjenComunicacao.comunicacao_id_externo])
+        .returning(
+            DjenComunicacao.id,
+            DjenComunicacao.comunicacao_id_externo,
         )
-        .returning(DjenComunicacao.id)
     )
 
 
@@ -606,11 +597,7 @@ async def _emails_usuarios(
 ) -> dict[str, str]:
     if not user_ids:
         return {}
-    rows = (
-        await db.execute(
-            select(User.id, User.email).where(User.id.in_(user_ids))
-        )
-    ).all()
+    rows = (await db.execute(select(User.id, User.email).where(User.id.in_(user_ids)))).all()
     return {str(user_id): email for user_id, email in rows if email}
 
 
@@ -645,14 +632,13 @@ async def _ingerir_rag_do_caso(db: AsyncSession, item: dict, caso: Case) -> str 
         doc["extra"]["rag_status"] = "pendente"
         doc["extra"]["tipo_fonte"] = "comunicacao_processual_oficial"
         doc["extra"]["origem_captura"] = "djen_service"
-        async with db.begin_nested():   # savepoint: erro não derruba a captura
-            return await ingestion_service.upsert_documento(
-                db, embutir_vetores=False, **doc
-            )
+        async with db.begin_nested():  # savepoint: erro não derruba a captura
+            return await ingestion_service.upsert_documento(db, embutir_vetores=False, **doc)
     except Exception as exc:  # noqa: BLE001 — RAG é acessório da captura
         logger.warning(
             "DJEN→RAG: ingestão da comunicação do caso %s pulada (%s)",
-            caso.id, type(exc).__name__,
+            caso.id,
+            type(exc).__name__,
         )
         return None
 
@@ -667,22 +653,24 @@ async def _capturar_configurado(
     ignoradas = 0
     emails: list[EmailDjenPendente] = []
 
-    processos = {
-        numero
-        for item in consulta.items
-        if (numero := _numero_processo_item(item))
-    }
+    processos = {numero for item in consulta.items if (numero := _numero_processo_item(item))}
     casos_por_processo = await buscar_casos_ativos_por_processos(db, processos)
     responsaveis = {
         str(caso.advogado_responsavel_id)
         for caso in casos_por_processo.values()
-        if caso.advogado_responsavel_id
-        and str(caso.advogado_responsavel_id) != str(adv.id)
+        if caso.advogado_responsavel_id and str(caso.advogado_responsavel_id) != str(adv.id)
     }
     emails_por_usuario = await _emails_usuarios(db, responsaveis)
 
     from app.services.notification_service import criar_notificacao_interna
 
+    # ── Fase 1 (G5/W11): preparação + INSERT em LOTE ────────────────────────
+    # Antes: um INSERT com ON CONFLICT por item (N viagens ao banco).
+    # Agora: uma única viagem para toda a captura; o RETURNING devolve só as
+    # linhas realmente inseridas, então duplicata continua sendo quem NÃO
+    # voltou — mesma semântica de idempotência da captura atômica (#968).
+    linhas: list[dict] = []
+    metadados: dict[str, dict] = {}
     for item in consulta.items:
         external_id = str(item.get("id") or item.get("hash") or "")
         if not external_id:
@@ -693,48 +681,46 @@ async def _capturar_configurado(
         numero_processo = _numero_processo_item(item)
         caso = casos_por_processo.get(numero_processo) if numero_processo else None
         if caso:
-            marcador = (
-                "\n[vinculação automática ao caso pelo nº do processo "
-                f"{numero_processo} — conferir]"
-            )
+            marcador = "\n[vinculação automática ao caso pelo nº do processo " f"{numero_processo} — conferir]"
             texto = texto[: 2000 - len(marcador)] + marcador
 
         tribunal = item.get("siglaTribunal") or item.get("sigla_tribunal")
-        tipo_comunicacao = (
-            item.get("tipoComunicacao")
-            or item.get("tipo_comunicacao")
-            or ""
-        )[:60]
-        numero_fonte = (
-            item.get("numero_processo")
-            or item.get("numeroProcesso")
-            or numero_processo
-            or None
+        tipo_comunicacao = (item.get("tipoComunicacao") or item.get("tipo_comunicacao") or "")[:60]
+        numero_fonte = item.get("numero_processo") or item.get("numeroProcesso") or numero_processo or None
+        linhas.append(
+            {
+                "id": str(uuid4()),
+                "comunicacao_id_externo": external_id,
+                "advogado_id": adv.id,
+                "numero_processo": numero_fonte,
+                "tribunal": tribunal,
+                "tipo_comunicacao": tipo_comunicacao,
+                "data_disponibilizacao": _parse_data_disp(
+                    item.get("data_disponibilizacao") or item.get("dataDisponibilizacao")
+                ),
+                "texto_resumo": texto,
+                "case_id": caso.id if caso else None,
+            }
         )
-        comunicacao_id = str(uuid4())
-        inserido = (
-            await db.execute(
-                _stmt_inserir_comunicacao(
-                    {
-                        "id": comunicacao_id,
-                        "comunicacao_id_externo": external_id,
-                        "advogado_id": adv.id,
-                        "numero_processo": numero_fonte,
-                        "tribunal": tribunal,
-                        "tipo_comunicacao": tipo_comunicacao,
-                        "data_disponibilizacao": _parse_data_disp(
-                            item.get("data_disponibilizacao")
-                            or item.get("dataDisponibilizacao")
-                        ),
-                        "texto_resumo": texto,
-                        "case_id": caso.id if caso else None,
-                    }
-                )
-            )
-        ).scalar_one_or_none()
-        if not inserido:
-            duplicadas += 1
+        metadados[external_id] = {"item": item, "caso": caso}
+
+    inseridos: dict[str, str] = {}
+    if linhas:
+        resultado_lote = await db.execute(_stmt_inserir_comunicacoes_lote(linhas))
+        inseridos = {str(external): str(comunicacao_id) for comunicacao_id, external in resultado_lote.all()}
+
+    novas = len(inseridos)
+    duplicadas = len(metadados) - novas
+
+    # ── Fase 2: efeitos derivados SOMENTE das comunicações novas ────────────
+    for external_id, info in metadados.items():
+        if external_id not in inseridos:
             continue
+        item = info["item"]
+        caso = info["caso"]
+        tribunal = item.get("siglaTribunal") or item.get("sigla_tribunal")
+        tipo_comunicacao = (item.get("tipoComunicacao") or item.get("tipo_comunicacao") or "")[:60]
+        numero_fonte = item.get("numero_processo") or item.get("numeroProcesso") or _numero_processo_item(item) or None
 
         if caso:
             # Intimação de processo vinculado a caso ativo também vira
@@ -753,20 +739,10 @@ async def _capturar_configurado(
                 )
             )
 
-        destinatario_id = (
-            caso.advogado_responsavel_id
-            if caso and caso.advogado_responsavel_id
-            else adv.id
-        )
+        destinatario_id = caso.advogado_responsavel_id if caso and caso.advogado_responsavel_id else adv.id
         titulo = "📨 Nova intimação no DJEN"
-        mensagem = (
-            f"{tribunal or 'Tribunal'} · proc. "
-            f"{numero_fonte or '—'} · {tipo_comunicacao}"
-            + (
-                " · vinculada automaticamente ao caso (conferir)"
-                if caso
-                else ""
-            )
+        mensagem = f"{tribunal or 'Tribunal'} · proc. " f"{numero_fonte or '—'} · {tipo_comunicacao}" + (
+            " · vinculada automaticamente ao caso (conferir)" if caso else ""
         )
         await criar_notificacao_interna(
             db,
@@ -778,22 +754,16 @@ async def _capturar_configurado(
         )
 
         email_destino = (
-            adv.email
-            if str(destinatario_id) == str(adv.id)
-            else emails_por_usuario.get(str(destinatario_id))
+            adv.email if str(destinatario_id) == str(adv.id) else emails_por_usuario.get(str(destinatario_id))
         )
         if email_destino:
             emails.append(
                 EmailDjenPendente(
                     destinatario=email_destino,
                     assunto=f"[EJC] {titulo}",
-                    html=(
-                        f"<p>{mensagem}</p><p>Trate a intimação na tela "
-                        "<b>Intimações</b> do EJC.</p>"
-                    ),
+                    html=(f"<p>{mensagem}</p><p>Trate a intimação na tela " "<b>Intimações</b> do EJC.</p>"),
                 )
             )
-        novas += 1
 
     return DjenCapturaResultado(
         configurada=True,
@@ -879,9 +849,7 @@ async def capturar_para_advogado(
         )
     numero, uf = oab_para_captura(adv)
     if not numero or not uf:
-        return registrar_resultado_execucao(
-            DjenCapturaResultado.sem_configuracao()
-        )
+        return registrar_resultado_execucao(DjenCapturaResultado.sem_configuracao())
 
     consulta = await consultar_oab(numero, uf, dias=dias)
     if not consulta.fonte_ok:
