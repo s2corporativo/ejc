@@ -449,17 +449,10 @@ def dados_do_painel_entrevista(analise: dict) -> dict:
         dados["pedidos_principais"] = "\n".join(f"- {p.strip()}" for p in pedidos)[:8000]
 
     riscos = [r for r in (analise.get("riscos") or []) if isinstance(r, str) and r.strip()]
-    exito = analise.get("chance_exito") if isinstance(analise.get("chance_exito"), dict) else {}
     nota_partes: list[str] = []
     if riscos:
         nota_partes.append("Riscos identificados na entrevista:\n" +
                            "\n".join(f"- {r.strip()}" for r in riscos))
-    if _conf(exito.get("percentual")) is not None:
-        just = exito.get("justificativa")
-        nota_partes.append(
-            f"Estimativa interna de êxito (triagem): {_conf(exito.get('percentual'))}%"
-            + (f" — {str(just).strip()}" if isinstance(just, str) and just.strip() else "")
-        )
     if nota_partes:
         dados["risco_nota"] = "\n\n".join(nota_partes)[:8000]
 
