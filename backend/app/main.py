@@ -171,6 +171,7 @@ from app.routers import ambiental_estrategia
 from app.routers import tasks
 from app.routers import templates
 from app.routers import teses
+from app.routers import teses_governanca  # migration 162
 from app.routers import timesheet
 from app.routers import trash
 from app.routers import users
@@ -570,6 +571,7 @@ app.include_router(ambiental_estrategia.router, prefix=API)  # vertical Ambienta
 app.include_router(tasks.router, prefix=API)
 app.include_router(templates.router, prefix=API)
 app.include_router(teses.router, prefix=API)
+app.include_router(teses_governanca.router, prefix=API)  # migration 162 — pinned + fluxo de aprovação + fork + versões
 app.include_router(timesheet.router, prefix=API)
 app.include_router(trash.router, prefix=API)
 app.include_router(users.router, prefix=API)
