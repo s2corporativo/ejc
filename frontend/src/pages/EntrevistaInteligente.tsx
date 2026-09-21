@@ -64,8 +64,6 @@ interface EntrevistaAnalise {
   // resultado. Tipado aqui apenas para compatibilidade; o backend atual o
   // neutraliza. NÃO reintroduzir sem fonte estatística reproduzível e revisão
   // jurídica.
-  // quebrar o parse da resposta; NÃO reintroduzir a exibição sem decisão
-  // nova do titular.
   chance_exito: {
     percentual: number | null;
     justificativa: string | null;
