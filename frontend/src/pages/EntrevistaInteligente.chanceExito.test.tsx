@@ -1,12 +1,10 @@
 // @vitest-environment jsdom
 // V2-4.2 (plano-mestre) / decisão D4 — a métrica "chance de êxito" (percentual
 // GERADO POR IA, com barra colorida) deixou de ser exibida na Entrevista
-// Inteligente: risco Código de Ética OAB art. 34, XXIX (vedação a captação/
-// mercantilização inadequada da expectativa do cliente) + fragilidade
-// estatística (poucos casos para calibrar). A API continua devolvendo o
-// campo `chance_exito` (não foi removido do contrato) — só a renderização
-// foi retirada. Este teste prova que o painel de triagem não expõe mais o
-// percentual nem a justificativa, mesmo quando a resposta os traz.
+// Inteligente: LLM não constitui base estatística calibrada e o percentual
+// pode induzir expectativa indevida de resultado. O campo legado permanece
+// no contrato, porém o backend o neutraliza. Este teste também protege a UI
+// contra payloads antigos que ainda o tragam.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
