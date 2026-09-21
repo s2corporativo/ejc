@@ -176,3 +176,20 @@ def test_critica_automatica_nao_escolhe_claude_manual_only(monkeypatch):
     monkeypatch.setattr(ai_gateway, "_provider_elegivel", lambda provider: provider in {"anthropic", "groq"})
     escolhido = adversarial.escolher_provider_diverso("maritaca")
     assert escolhido == "groq"
+
+
+def test_canonizacao_preserva_metadados_de_fallback():
+    from app.services.ai.core.capacidades import canonizar
+
+    out = canonizar(
+        "conversar",
+        {
+            "conteudo": "resposta",
+            "provider": "ollama",
+            "fallback_ativado": True,
+            "fallback_motivo": "maritaca: RuntimeError",
+            "alertas": [],
+        },
+    )
+    assert out["fallback_ativado"] is True
+    assert out["fallback_motivo"] == "maritaca: RuntimeError"
