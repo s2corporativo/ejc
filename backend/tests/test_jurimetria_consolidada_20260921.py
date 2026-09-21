@@ -17,6 +17,8 @@ from app.services.tese_vinculo_service import (
     normalizar_resultado_tese,
     reconciliar_metricas_tese,
 )
+from app.services.jurimetria_tribunais.snapshots import preparar_snapshot
+from scripts.avaliar_jurimetria_gold import avaliar, validar_item
 
 
 def test_taxonomia_case_reconhece_write_path_e_aliases_historicos() -> None:
@@ -167,3 +169,87 @@ async def test_atualizar_resultado_vinculo_reconcilia_na_mesma_transacao() -> No
 
     assert link.resultado == "procedente"
     assert tese.taxa_sucesso == pytest.approx(0.75)
+
+
+def _resposta_snapshot_minima() -> dict:
+    return {
+        "fonte": "DataJud/CNJ — API Pública (api_publica_tjmg)",
+        "escopo": {
+            "tribunal": "TJMG",
+            "municipios": ["Betim"],
+            "classe": 436,
+            "assunto": 10433,
+            "desde": "2026-01-01",
+            "ate": "2026-08-31",
+        },
+        "coleta": {
+            "coletado_em": "2026-09-21T12:00:00Z",
+            "n_documentos": 187,
+            "truncado": False,
+        },
+        "tpu": {"versao": "26/05/2026"},
+        "total": {
+            "n": 187,
+            "decididos_merito": 120,
+            "taxa_procedencia": 0.63,
+            "intervalo_confianca_95_procedencia": {
+                "inferior": 54.1,
+                "superior": 70.9,
+                "nivel": 0.95,
+                "metodo": "wilson",
+            },
+        },
+        "por_municipio": [],
+        "por_assunto": [],
+        "por_municipio_assunto": [],
+        "reforma_2grau": {"taxa_reforma": None},
+        "fontes_complementares": {},
+    }
+
+
+def test_snapshot_guarda_apenas_agregado_minimizado() -> None:
+    dados = preparar_snapshot(_resposta_snapshot_minima())
+    assert dados["tribunal"] == "TJMG"
+    assert dados["n_documentos"] == 187
+    assert "total" in dados["agregado"]
+    serializado = str(dados).lower()
+    assert "numeroprocesso" not in serializado
+    assert "partes" not in serializado
+
+
+def test_snapshot_rejeita_identificador_processual_mesmo_em_objeto_aninhado() -> None:
+    resposta = _resposta_snapshot_minima()
+    resposta["total"]["numeroProcesso"] = "0000000-00.2026.8.13.0000"
+    with pytest.raises(ValueError, match="chave sensível"):
+        preparar_snapshot(resposta)
+
+
+def test_gold_evaluator_calcula_matriz_sem_identificador() -> None:
+    itens = [
+        {
+            "id": "g001",
+            "esperado": "procedencia",
+            "movimentos": [{"codigo": 219, "dataHora": "2026-01-10T10:00:00Z"}],
+        },
+        {
+            "id": "g002",
+            "esperado": "improcedencia",
+            "movimentos": [{"codigo": 220, "dataHora": "2026-01-11T10:00:00Z"}],
+        },
+    ]
+    resultado = avaliar(itens)
+    assert resultado["n"] == 2
+    assert resultado["acuracia"] == 1.0
+    assert resultado["taxa_indeterminacao"] == 0.0
+
+
+def test_gold_evaluator_recusa_pii_ou_numero_de_processo() -> None:
+    with pytest.raises(ValueError):
+        validar_item(
+            {
+                "id": "g001",
+                "esperado": "procedencia",
+                "movimentos": [],
+                "numeroProcesso": "0000000-00.2026.8.13.0000",
+            }
+        )
