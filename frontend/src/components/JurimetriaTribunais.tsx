@@ -13,7 +13,19 @@ type Grupo = {
   sem_resolucao_merito: number;
   decididos_merito: number;
   taxa_procedencia: number | null;
+  intervalo_confianca_95_procedencia?: {
+    inferior: number;
+    superior: number;
+    nivel: number;
+    metodo: string;
+  } | null;
   taxa_acordo: number | null;
+  intervalo_confianca_95_acordo?: {
+    inferior: number;
+    superior: number;
+    nivel: number;
+    metodo: string;
+  } | null;
   amostra_pequena: boolean;
   tempo_sentenca: {
     n: number;
@@ -76,6 +88,12 @@ type Desfechos = {
     provimento_parcial: number;
     nao_provimento: number;
     taxa_reforma: number | null;
+    intervalo_confianca_95_reforma?: {
+      inferior: number;
+      superior: number;
+      nivel: number;
+      metodo: string;
+    } | null;
     amostra_pequena: boolean;
     disponivel?: boolean;
     motivo?: string;
@@ -100,22 +118,38 @@ function pctGrupo(g: Grupo): string {
   return pct(g.amostra_pequena ? null : g.taxa_procedencia);
 }
 
+function ic95(
+  valor:
+    | { inferior: number; superior: number; nivel?: number; metodo?: string }
+    | null
+    | undefined,
+): string | null {
+  return valor
+    ? `IC95% ${valor.inferior.toFixed(1)}%–${valor.superior.toFixed(1)}%`
+    : null;
+}
+
 function Taxa({
   rotulo,
   valor,
   sub,
   pequena,
+  intervalo,
 }: {
   rotulo: string;
   valor: string;
   sub: string;
   pequena?: boolean;
+  intervalo?: string | null;
 }) {
   return (
     <div className="text-center p-3 bg-gray-50 rounded-lg border border-black/[0.05]">
       <p className="text-2xl font-bold text-gray-800">{valor}</p>
       <p className="text-xs text-gray-500">{rotulo}</p>
       <p className="text-[11px] text-gray-400">{sub}</p>
+      {!pequena && intervalo && (
+        <p className="text-[11px] text-gray-400">{intervalo}</p>
+      )}
       {pequena && (
         <p className="text-[11px] text-amber-700 mt-1">
           amostra pequena — taxa não publicada
@@ -169,12 +203,14 @@ function RecorteExterno({
           rotulo="Procedência"
           valor={pct(pequena ? null : recorte.total.taxa_procedencia)}
           sub={`${recorte.total.decididos_merito} decididos no mérito`}
+          intervalo={ic95(recorte.total.intervalo_confianca_95_procedencia)}
           pequena={pequena}
         />
         <Taxa
           rotulo="Acordo"
           valor={pct(pequena ? null : recorte.total.taxa_acordo)}
           sub={`${recorte.total.acordo} homologados`}
+          intervalo={ic95(recorte.total.intervalo_confianca_95_acordo)}
           pequena={pequena}
         />
       </div>
@@ -292,6 +328,9 @@ export default function JurimetriaTribunais() {
                     : dados.total.taxa_procedencia,
                 )}
                 sub={`${dados.total.decididos_merito} decididos no mérito`}
+                intervalo={ic95(
+                  dados.total.intervalo_confianca_95_procedencia,
+                )}
                 pequena={dados.total.amostra_pequena}
               />
               <Taxa
@@ -300,6 +339,7 @@ export default function JurimetriaTribunais() {
                   dados.total.amostra_pequena ? null : dados.total.taxa_acordo,
                 )}
                 sub={`${dados.total.acordo} de ${dados.total.n_com_desfecho} com desfecho`}
+                intervalo={ic95(dados.total.intervalo_confianca_95_acordo)}
                 pequena={dados.total.amostra_pequena}
               />
               <Taxa
@@ -319,6 +359,9 @@ export default function JurimetriaTribunais() {
                     ? "não publicada neste recorte geográfico"
                     : `${dados.reforma_2grau.n_com_recurso_julgado} recursos julgados na amostra`
                 }
+                intervalo={ic95(
+                  dados.reforma_2grau.intervalo_confianca_95_reforma,
+                )}
                 pequena={
                   dados.reforma_2grau.disponivel !== false &&
                   dados.reforma_2grau.amostra_pequena
@@ -360,7 +403,11 @@ export default function JurimetriaTribunais() {
                     >
                       <td className="py-1">{m.nome}</td>
                       <td className="py-1 text-right">{m.n}</td>
-                      <td className="py-1 text-right" title={m.amostra_pequena ? "amostra pequena" : undefined}>
+                      <td className="py-1 text-right" title={
+                          m.amostra_pequena
+                            ? "amostra pequena"
+                            : ic95(m.intervalo_confianca_95_procedencia) ?? undefined
+                        }>
                         {pctGrupo(m)}
                       </td>
                       <td className="py-1 text-right">
@@ -391,7 +438,11 @@ export default function JurimetriaTribunais() {
                     >
                       <td className="py-1">{a.assunto}</td>
                       <td className="py-1 text-right">{a.n}</td>
-                      <td className="py-1 text-right" title={a.amostra_pequena ? "amostra pequena" : undefined}>
+                      <td className="py-1 text-right" title={
+                          a.amostra_pequena
+                            ? "amostra pequena"
+                            : ic95(a.intervalo_confianca_95_procedencia) ?? undefined
+                        }>
                         {pctGrupo(a)}
                       </td>
                     </tr>
@@ -424,7 +475,11 @@ export default function JurimetriaTribunais() {
                       <td className="py-1">{r.municipio_nome}</td>
                       <td className="py-1">{r.assunto}</td>
                       <td className="py-1 text-right">{r.n}</td>
-                      <td className="py-1 text-right" title={r.amostra_pequena ? "amostra pequena" : undefined}>
+                      <td className="py-1 text-right" title={
+                          r.amostra_pequena
+                            ? "amostra pequena"
+                            : ic95(r.intervalo_confianca_95_procedencia) ?? undefined
+                        }>
                         {pctGrupo(r)}
                       </td>
                     </tr>
