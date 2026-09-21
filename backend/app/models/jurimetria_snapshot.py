@@ -16,11 +16,16 @@ from app.core.database import Base
 class JurimetriaSnapshot(Base):
     __tablename__ = "jurimetria_snapshots"
     __table_args__ = (
+        Index(
+            "ux_jurimetria_snapshots_snapshot_key",
+            "snapshot_key",
+            unique=True,
+        ),
         Index("ix_jurimetria_snapshots_tribunal_coleta", "tribunal", "coletado_em"),
     )
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    snapshot_key = Column(String(64), nullable=False, unique=True, index=True)
+    snapshot_key = Column(String(64), nullable=False)
     fonte = Column(String(160), nullable=False)
     tribunal = Column(String(20), nullable=False)
     filtros = Column(JSONB, nullable=False, default=dict)
