@@ -164,7 +164,7 @@ def _estimativa_sucesso(analise: dict) -> dict:
     jur = jur if isinstance(jur, dict) else {}
     return {
         "percentual": None,
-        "status": "sem_base_estatistica",
+        "status": "sem_base_verificavel",
         "base_estimativa": _texto(jur.get("base_estimativa"), 1_500),
         "observacao": (
             "A IA não estima probabilidade de êxito. Consulte a jurimetria "
