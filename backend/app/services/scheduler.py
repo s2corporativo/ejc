@@ -1383,7 +1383,9 @@ async def _job_jurimetria_tribunais_snapshot() -> None:
     from app.services.jurimetria_tribunais.servico import desfechos
     from app.services.jurimetria_tribunais.snapshots import salvar_snapshot
 
-    job_name = "jurimetria_tribunais_snapshot"
+    from app.services.heartbeat_service import JOB_JURIMETRIA_SNAPSHOT
+
+    job_name = JOB_JURIMETRIA_SNAPSHOT
     try:
         resposta = await desfechos(None)
         async with AsyncSessionLocal() as db:
