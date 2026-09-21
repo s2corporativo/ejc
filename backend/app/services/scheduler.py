@@ -1369,6 +1369,40 @@ async def _job_querido_diario_monitor():
     await _bater_ponto(JOB_QUERIDO_DIARIO, status, json.dumps(resultado)[:200])
 
 
+async def _job_jurimetria_tribunais_snapshot() -> None:
+    """Snapshot semanal somente agregado da jurimetria externa.
+
+    O gate é independente e default OFF. O job nunca recebe/persiste os
+    documentos brutos: coleta/agregação acontece no serviço externo e somente
+    a resposta agregada passa para a camada de snapshot.
+    """
+    if not getattr(settings, "JURIMETRIA_TRIBUNAIS_SNAPSHOT_ENABLED", False):
+        return
+
+    import json
+    from app.services.jurimetria_tribunais.servico import desfechos
+    from app.services.jurimetria_tribunais.snapshots import salvar_snapshot
+
+    job_name = "jurimetria_tribunais_snapshot"
+    try:
+        resposta = await desfechos(None)
+        async with AsyncSessionLocal() as db:
+            snapshot, criado = await salvar_snapshot(db, resposta)
+            await db.commit()
+        detalhe = {
+            "criado": criado,
+            "n_documentos": int(snapshot.n_documentos or 0),
+            "amostra_truncada": bool(snapshot.amostra_truncada),
+            "tribunal": snapshot.tribunal,
+        }
+        await _bater_ponto(job_name, "ok", json.dumps(detalhe, ensure_ascii=False))
+    except Exception as exc:
+        logger.warning(
+            "[Jurimetria] snapshot agregado falhou (%s)", type(exc).__name__
+        )
+        await _bater_ponto(job_name, "erro", type(exc).__name__)
+
+
 def start_scheduler():
     """Inicia jobs APENAS se ENABLE_SCHEDULER=true (evita duplicação)."""
     if not settings.ENABLE_SCHEDULER:
@@ -1429,6 +1463,16 @@ def start_scheduler():
     # (sáb 05h) — federa legislação estadual (ALMG)/municipal (Betim) e
     # jurisprudência de TJ/TRT-3/TRF-6/TST/STJ/STF/juizados por jurisdição+tema.
     s.add_job(job_ingestao_lexml,    CronTrigger(day_of_week="sat", hour=5, minute=0), id="ing_lexml", replace_existing=True)
+    # Série histórica agregada da jurimetria externa; opt-in, após os jobs
+    # semanais de TJMG/LexML. Não persiste documentos individuais.
+    s.add_job(
+        _job_jurimetria_tribunais_snapshot,
+        CronTrigger(day_of_week="sat", hour=6, minute=0),
+        id="jurimetria_tribunais_snapshot",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
     # Conhecimento oficial (ANPD + Normas RFB) → RAG: gate interno
     # CONHECIMENTO_INGEST_ENABLED (default True). Semanal, DOMINGO 03h00 UTC
     # (trigger declara a própria timezone — o scheduler roda em America/Sao_Paulo).
