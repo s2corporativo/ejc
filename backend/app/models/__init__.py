@@ -30,6 +30,7 @@ from app.models.feriado import Feriado
 from app.models.procuracao import Procuracao
 from app.models.rag import KnowledgeDoc, KnowledgeChunk
 from app.models.api_key import ApiKey
+from app.models.jurimetria_snapshot import JurimetriaSnapshot
 
 __all__ = [
     "User", "RefreshToken", "UserRole",
@@ -46,7 +47,7 @@ __all__ = [
     "AILog", "AIStatusHITL", "AITipoUso", "AIProviderMetric",
     "Notification", "ActivityAlertState", "Feriado", "Procuracao",
     "KnowledgeDoc", "KnowledgeChunk",
-    "ApiKey",
+    "ApiKey", "JurimetriaSnapshot",
 ]
 from app.models.template import DocTemplate  # noqa
 from app.models.task import Task, TaskStatus  # noqa
