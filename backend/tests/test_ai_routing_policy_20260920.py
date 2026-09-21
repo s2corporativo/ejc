@@ -110,3 +110,53 @@ def test_claude_entra_quando_solicitado_explicitamente(monkeypatch):
 def test_porta_canonica_aceita_selecao_de_claude():
     req = ConversarRequest(texto="Analise esta questão jurídica.", provider="anthropic")
     assert req.provider == "anthropic"
+
+
+def test_rollback_reabilita_claude_no_merito(monkeypatch):
+    s = _settings()
+    s.ANTHROPIC_AUTO_ROUTING_ENABLED = True
+    monkeypatch.setattr(pp, "get_settings", lambda: s)
+    monkeypatch.setattr(
+        pp.AIProviderPolicy,
+        "_elegivel",
+        staticmethod(lambda provider: provider in {"maritaca", "anthropic", "ollama"}),
+    )
+    decisao = pp.AIProviderPolicy().avaliar(
+        "analise juridicamente esta tese", "analise_juridica", ja_sanitizado=True,
+    )
+    assert decisao.provider_chain[0] == ("anthropic", None)
+
+
+def test_provider_explicito_indisponivel_informa_a_causa(monkeypatch):
+    from app.services.ai import provider_registry
+
+    policy = _policy(monkeypatch)
+    monkeypatch.setattr(pp.AIProviderPolicy, "_elegivel", staticmethod(lambda provider: False))
+    monkeypatch.setattr(provider_registry, "motivo_inelegivel", lambda provider: "GROQ_API_KEY ausente")
+    decisao = policy.avaliar(
+        "resuma", "resumo", ja_sanitizado=True, provider_solicitado="groq",
+    )
+    assert decisao.permitido is False
+    assert "groq" in (decisao.bloqueio_motivo or "").lower()
+    assert "GROQ_API_KEY ausente" in (decisao.bloqueio_motivo or "")
+
+
+def test_orchestrator_mapeia_honorarios_como_rotina():
+    from app.services.ai.core.orchestrator import _TAREFA_PARA_GATEWAY
+    from app.services.system_prompts.router import TarefaIA
+
+    assert _TAREFA_PARA_GATEWAY[TarefaIA.HONORARIOS] == "honorarios"
+
+
+def test_critica_automatica_nao_escolhe_claude_manual_only(monkeypatch):
+    from app.services.ai import adversarial
+    from app.services import ai_gateway
+
+    cfg = SimpleNamespace(
+        AI_PROVIDER_PRIORITY="anthropic,groq,maritaca,ollama",
+        ANTHROPIC_AUTO_ROUTING_ENABLED=False,
+    )
+    monkeypatch.setattr(adversarial, "get_settings", lambda: cfg)
+    monkeypatch.setattr(ai_gateway, "_provider_elegivel", lambda provider: provider in {"anthropic", "groq"})
+    escolhido = adversarial.escolher_provider_diverso("maritaca")
+    assert escolhido == "groq"
