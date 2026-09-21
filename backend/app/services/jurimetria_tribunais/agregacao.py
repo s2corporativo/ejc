@@ -20,6 +20,7 @@ from datetime import datetime
 from statistics import mean, median
 from typing import Any
 
+from app.services.jurimetria import intervalo_wilson
 from app.services.jurimetria_tribunais import tpu_desfechos as tpu
 from app.services.jurimetria_tribunais.coleta import MUNICIPIOS
 
@@ -95,13 +96,18 @@ def _fechar_grupo(g: dict[str, Any]) -> dict[str, Any]:
     dias = g.pop("_dias")
     saida = dict(g)
     saida["decididos_merito"] = decididos
+    favoraveis = g[tpu.PROCEDENCIA] + g[tpu.PROCEDENCIA_PARCIAL]
     saida["taxa_procedencia"] = (
-        round((g[tpu.PROCEDENCIA] + g[tpu.PROCEDENCIA_PARCIAL]) / decididos, 4)
-        if decididos
-        else None
+        round(favoraveis / decididos, 4) if decididos else None
+    )
+    saida["intervalo_confianca_95_procedencia"] = (
+        intervalo_wilson(favoraveis, decididos) if decididos else None
     )
     saida["taxa_acordo"] = (
         round(g[tpu.ACORDO] / com_desfecho, 4) if com_desfecho else None
+    )
+    saida["intervalo_confianca_95_acordo"] = (
+        intervalo_wilson(g[tpu.ACORDO], com_desfecho) if com_desfecho else None
     )
     saida["amostra_pequena"] = decididos < MIN_AMOSTRA
     saida["tempo_sentenca"] = {
@@ -208,6 +214,9 @@ def agregar(
             1 for r in recursal.values() if r == tpu.NAO_PROVIMENTO
         ),
         "taxa_reforma": round(reformas / n_recurso, 4) if n_recurso else None,
+        "intervalo_confianca_95_reforma": (
+            intervalo_wilson(reformas, n_recurso) if n_recurso else None
+        ),
         "amostra_pequena": n_recurso < MIN_AMOSTRA,
     }
 
