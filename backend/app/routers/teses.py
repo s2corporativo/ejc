@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from uuid import uuid4
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -64,10 +64,17 @@ class TesePatch(BaseModel):
     status:           Optional[TeseStatus] = None
 
 
+ResultadoTese = Literal["procedente", "improcedente", "acordo", "pendente"]
+
+
 class LinkIn(BaseModel):
     case_id:    str
-    resultado:  Optional[str] = None   # procedente|improcedente|acordo|pendente
+    resultado:  Optional[ResultadoTese] = "pendente"
     observacao: Optional[str] = None
+
+
+class LinkResultadoPatch(BaseModel):
+    resultado: ResultadoTese
 
 
 class SugestaoIARequest(BaseModel):
@@ -523,6 +530,54 @@ async def vincular_caso(
 
     await db.commit()
     return {"id": link.id, "taxa_sucesso": t.taxa_sucesso}
+
+
+@router.patch("/{tese_id}/vinculos/{link_id}/resultado")
+async def atualizar_resultado_vinculo_tese(
+    tese_id: str,
+    link_id: str,
+    req: LinkResultadoPatch,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Registra o desfecho humano de uma tese aplicada a um caso.
+
+    Não infere o resultado da tese a partir do resultado global do caso:
+    uma tese pode ser rejeitada em um caso globalmente favorável e vice-versa.
+    """
+    if not _pode_editar(cu):
+        raise HTTPException(403)
+
+    link = (
+        await db.execute(
+            select(TeseCasoLink).where(
+                TeseCasoLink.id == link_id,
+                TeseCasoLink.tese_id == tese_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not link:
+        raise HTTPException(404, "Vínculo tese-caso não encontrado")
+
+    await verificar_acesso_caso(db, cu, link.case_id)
+    from app.services.tese_vinculo_service import (
+        atualizar_resultado_vinculo,
+        reconciliar_metricas_tese,
+    )
+
+    await atualizar_resultado_vinculo(db, link=link, resultado=req.resultado)
+    tese = await reconciliar_metricas_tese(db, tese_id)
+    await db.commit()
+    return {
+        "id": link.id,
+        "resultado": link.resultado,
+        "tese_id": tese_id,
+        "taxa_sucesso": tese.taxa_sucesso if tese else None,
+        "vezes_usada": tese.vezes_usada if tese else None,
+        "vezes_venceu": tese.vezes_venceu if tese else None,
+        "vezes_perdeu": tese.vezes_perdeu if tese else None,
+        "fonte_metrica": "tese_caso_links",
+    }
 
 
 @router.post("/sugerir-ia", dependencies=[Depends(rate_limit("teses-sugerir-ia", 15))])
