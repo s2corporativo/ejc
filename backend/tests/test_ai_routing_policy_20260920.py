@@ -164,7 +164,7 @@ def test_orchestrator_mapeia_honorarios_como_rotina():
     assert _TAREFA_PARA_GATEWAY[TarefaIA.HONORARIOS] == "honorarios"
 
 
-def test_critica_automatica_nao_escolhe_claude_manual_only(monkeypatch):
+def test_critica_automatica_nao_degrada_merito_para_groq_ou_claude(monkeypatch):
     from app.services.ai import adversarial
     from app.services import ai_gateway
 
@@ -173,9 +173,11 @@ def test_critica_automatica_nao_escolhe_claude_manual_only(monkeypatch):
         ANTHROPIC_AUTO_ROUTING_ENABLED=False,
     )
     monkeypatch.setattr(adversarial, "get_settings", lambda: cfg)
-    monkeypatch.setattr(ai_gateway, "_provider_elegivel", lambda provider: provider in {"anthropic", "groq"})
-    escolhido = adversarial.escolher_provider_diverso("maritaca")
-    assert escolhido == "groq"
+    monkeypatch.setattr(
+        ai_gateway, "_provider_elegivel",
+        lambda provider: provider in {"anthropic", "groq"},
+    )
+    assert adversarial.escolher_provider_diverso("maritaca") is None
 
 
 def test_canonizacao_preserva_metadados_de_fallback():
