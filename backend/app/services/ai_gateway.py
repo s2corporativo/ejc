@@ -1651,6 +1651,7 @@ async def chat_agentico(
     # elegível, ainda o usamos (única opção agêntica) — desde que não seja
     # LOCAL_COMPLETO (já tratado acima).
     if (not cadeia_tools and modo_sanitizacao != ModoSanitizacao.LOCAL_COMPLETO
+            and bool(getattr(get_settings(), "ANTHROPIC_AUTO_ROUTING_ENABLED", False))
             and _provider_elegivel("anthropic")):
         cadeia_tools = [("anthropic", _resolver_modelo("anthropic", task_type, None))]
     if not cadeia_tools or not _provider_elegivel("anthropic"):
