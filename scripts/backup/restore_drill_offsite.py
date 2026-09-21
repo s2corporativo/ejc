@@ -43,15 +43,28 @@ def main():
     key = (settings.BACKUP_ENCRYPTION_KEY or "").strip()
     if not remote or not key:
         raise RuntimeError("backup remote/key missing")
-    names = run(["rclone","lsf",remote,"--files-only","--include","ejc_backup_*_db.dump.enc"]).stdout.splitlines()
-    names = sorted(x.strip() for x in names if x.strip())
-    if not names:
-        raise RuntimeError("no database backup found offsite")
-    latest = names[-1]
+    listing = json.loads(run([
+        "rclone", "lsjson", remote, "--files-only",
+        "--include", "ejc_backup_*.enc"
+    ]).stdout or "[]")
+    sizes = {
+        str(item.get("Name") or ""): int(item.get("Size") or 0)
+        for item in listing
+        if not item.get("IsDir")
+    }
+    candidates = []
+    for name, size in sizes.items():
+        if not name.endswith("_db.dump.enc") or size <= 0:
+            continue
+        prefix = name[:-len("_db.dump.enc")]
+        uploads = prefix + "_uploads.tar.gz.enc"
+        if sizes.get(uploads, 0) > 0:
+            candidates.append(name)
+    if not candidates:
+        raise RuntimeError("no complete database+uploads backup found offsite")
+    latest = sorted(candidates)[-1]
     remote_file = f"{remote.rstrip('/')}/{latest}"
-    remote_bytes = int(json.loads(run(["rclone","size","--json",remote_file]).stdout).get("bytes",-1))
-    if remote_bytes <= 0:
-        raise RuntimeError("remote backup empty")
+    remote_bytes = sizes[latest]
     c = conn()
     target = ("ejc_restore_offsite_" + secrets.token_hex(5))[:63]
     created = False
