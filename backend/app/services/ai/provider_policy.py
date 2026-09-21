@@ -97,17 +97,24 @@ class AIProviderPolicy:
         s = get_settings()
         task = (task_type or "").strip().lower()
         motivos: list[str] = []
+        auto_anthropic = bool(getattr(s, "ANTHROPIC_AUTO_ROUTING_ENABLED", False))
+        solicitado_inelegivel: str | None = None
 
         solicitado = (provider_solicitado or "").strip().lower()
         if solicitado and solicitado not in {"groq", "maritaca", "anthropic", "ollama"}:
             solicitado = ""
 
         if solicitado:
-            elegiveis = [solicitado] if self._elegivel(solicitado) else []
+            if self._elegivel(solicitado):
+                elegiveis = [solicitado]
+            else:
+                elegiveis = []
+                from app.services.ai.provider_registry import motivo_inelegivel
+                solicitado_inelegivel = motivo_inelegivel(solicitado) or "indisponível"
             motivos.append(f"provedor solicitado explicitamente: {solicitado}")
         else:
             elegiveis = [p for p in self._ordem_prioridade() if self._elegivel(p)]
-            if not bool(getattr(s, "ANTHROPIC_AUTO_ROUTING_ENABLED", False)):
+            if not auto_anthropic:
                 elegiveis = [p for p in elegiveis if p != "anthropic"]
                 motivos.append("Claude reservado para solicitação explícita")
 
@@ -132,11 +139,19 @@ class AIProviderPolicy:
         if not solicitado and task in TAREFAS_COMPLEXAS:
             # Afinidade ESTRITA: mérito jurídico automático usa Maritaca; Ollama
             # pode permanecer como fallback local/sigilo. Groq não assume mérito
-            # silenciosamente e Claude só entra sob solicitação explícita.
-            elegiveis = [p for p in elegiveis if p in {"maritaca", "ollama"}]
-            if "maritaca" in elegiveis:
+            # silenciosamente. A flag de rollback reabilita Anthropic no automático.
+            permitidos = {"maritaca", "ollama"}
+            if auto_anthropic:
+                permitidos.add("anthropic")
+            elegiveis = [p for p in elegiveis if p in permitidos]
+            if auto_anthropic and "anthropic" in elegiveis:
+                elegiveis = ["anthropic"] + [p for p in elegiveis if p != "anthropic"]
+                motivos.append("tarefa complexa — rollback Anthropic automático ativo")
+            elif "maritaca" in elegiveis:
                 elegiveis = ["maritaca"] + [p for p in elegiveis if p != "maritaca"]
-            motivos.append("tarefa complexa — afinidade Maritaca/Ollama")
+                motivos.append("tarefa complexa — afinidade Maritaca/Ollama")
+            else:
+                motivos.append("tarefa complexa — afinidade Maritaca/Ollama")
         elif not solicitado and task in TAREFAS_ECONOMICAS:
             # Afinidade ESTRITA: rotina usa Groq; Ollama pode servir de fallback
             # local. Maritaca não é consumida por rotina automaticamente.
@@ -165,6 +180,12 @@ class AIProviderPolicy:
                     "A IA está desligada no sistema (kill-switch AI_ENABLED). "
                     "Nenhum provedor — nem local — responde enquanto ela estiver "
                     "desligada; religue em AI_ENABLED=true para voltar a usar."
+                )
+            elif solicitado and solicitado_inelegivel:
+                bloqueio = (
+                    f"O provedor solicitado ({solicitado}) não está disponível: "
+                    f"{solicitado_inelegivel}. Selecione outro motor disponível "
+                    "ou corrija a configuração desse provedor."
                 )
             elif removido_por_pii:
                 bloqueio = (
