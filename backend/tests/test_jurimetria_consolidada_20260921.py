@@ -224,6 +224,13 @@ def test_snapshot_rejeita_identificador_processual_mesmo_em_objeto_aninhado() ->
         preparar_snapshot(resposta)
 
 
+def test_snapshot_rejeita_numero_cnj_oculto_em_valor_textual() -> None:
+    resposta = _resposta_snapshot_minima()
+    resposta["total"]["observacao"] = "processo 0000000-00.2026.8.13.0000"
+    with pytest.raises(ValueError, match="identificador sensível"):
+        preparar_snapshot(resposta)
+
+
 def test_gold_evaluator_calcula_matriz_sem_identificador() -> None:
     itens = [
         {
