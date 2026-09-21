@@ -98,19 +98,24 @@ def _suprimir_taxas_se_truncado(
         grupo = agregado.get(chave)
         if isinstance(grupo, dict):
             grupo["taxa_procedencia"] = None
+            grupo["intervalo_confianca_95_procedencia"] = None
             grupo["taxa_acordo"] = None
+            grupo["intervalo_confianca_95_acordo"] = None
             if isinstance(grupo.get("tempo_sentenca"), dict):
                 grupo["tempo_sentenca"]["mediana_dias"] = None
                 grupo["tempo_sentenca"]["media_dias"] = None
     for chave in ("por_municipio", "por_assunto", "por_municipio_assunto"):
         for grupo in agregado.get(chave) or []:
             grupo["taxa_procedencia"] = None
+            grupo["intervalo_confianca_95_procedencia"] = None
             grupo["taxa_acordo"] = None
+            grupo["intervalo_confianca_95_acordo"] = None
             if isinstance(grupo.get("tempo_sentenca"), dict):
                 grupo["tempo_sentenca"]["mediana_dias"] = None
                 grupo["tempo_sentenca"]["media_dias"] = None
     if isinstance(agregado.get("reforma_2grau"), dict):
         agregado["reforma_2grau"]["taxa_reforma"] = None
+        agregado["reforma_2grau"]["intervalo_confianca_95_reforma"] = None
 
     agregado["amostra_truncada"] = True
     agregado["aviso_amostragem"] = (
