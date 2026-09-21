@@ -30,15 +30,18 @@ RELATORIO_OK = (
 
 @pytest.fixture
 def s(monkeypatch):
-    """Baseline: Anthropic e Groq elegíveis, Ollama OFF, Duas IAs OFF."""
+    """Baseline: Maritaca/Anthropic/Groq elegíveis, Ollama OFF, Duas IAs OFF."""
     st = get_settings()
     monkeypatch.setattr(st, "ANTHROPIC_ENABLED", True)
     monkeypatch.setattr(st, "ANTHROPIC_API_KEY", "sk-ant-fake-para-testes")
     monkeypatch.setattr(st, "GROQ_API_KEY", "gsk-fake-para-testes")
+    monkeypatch.setattr(st, "MARITACA_ENABLED", True)
+    monkeypatch.setattr(st, "MARITACA_API_KEY", "mk-fake-para-testes")
     monkeypatch.setattr(st, "OLLAMA_ENABLED", False)
     monkeypatch.setattr(st, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
     monkeypatch.setattr(st, "AI_REQUIRE_SANITIZATION_FOR_EXTERNAL", True)
-    monkeypatch.setattr(st, "AI_PROVIDER_PRIORITY", "ollama,anthropic,groq")
+    monkeypatch.setattr(st, "AI_PROVIDER_PRIORITY", "ollama,maritaca,anthropic,groq")
+    monkeypatch.setattr(st, "ANTHROPIC_AUTO_ROUTING_ENABLED", False)
     monkeypatch.setattr(st, "AI_PROVIDER", "auto")
     monkeypatch.setattr(st, "DUAS_IAS_ENABLED", False)
     monkeypatch.setattr(st, "DUAS_IAS_TASK_TYPES", "elaboracao_peca,auditoria_peca")
@@ -64,13 +67,13 @@ def _fake_chat(box: dict, *, texto: str = RELATORIO_OK, provedor: str = "anthrop
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestProviderDiverso:
-    def test_origem_ollama_prefere_anthropic(self, s):
+    def test_origem_ollama_prefere_maritaca(self, s):
         from app.services.ai.adversarial import escolher_provider_diverso
-        assert escolher_provider_diverso("ollama") == "anthropic"
+        assert escolher_provider_diverso("ollama") == "maritaca"
 
-    def test_origem_anthropic_cai_no_groq_sem_ollama(self, s):
+    def test_origem_anthropic_usa_maritaca_sem_ollama(self, s):
         from app.services.ai.adversarial import escolher_provider_diverso
-        assert escolher_provider_diverso("anthropic") == "groq"
+        assert escolher_provider_diverso("anthropic") == "maritaca"
 
     def test_origem_anthropic_prefere_ollama_quando_ligado(self, s, monkeypatch):
         from app.services.ai.adversarial import escolher_provider_diverso
@@ -79,8 +82,8 @@ class TestProviderDiverso:
 
     def test_nenhum_diverso_elegivel_devolve_none(self, s, monkeypatch):
         from app.services.ai.adversarial import escolher_provider_diverso
-        monkeypatch.setattr(s, "ANTHROPIC_API_KEY", "")
-        # Só groq elegível e groq é o próprio origem.
+        monkeypatch.setattr(s, "MARITACA_API_KEY", "")
+        # Só Groq/Anthropic elegíveis; ambos são proibidos no automático de mérito.
         assert escolher_provider_diverso("groq") is None
 
 
@@ -111,7 +114,8 @@ class TestGatePorFlag:
     def test_task_critica_tem_cadeia_no_gateway(self, s):
         from app.services.ai_gateway import _resolver_cadeia
         providers = [p for p, _ in _resolver_cadeia("critica_adversarial", None, None)]
-        assert "anthropic" in providers  # tarefa complexa inclui Anthropic
+        assert providers and providers[0] == "maritaca"
+        assert "anthropic" not in providers and "groq" not in providers
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -124,7 +128,7 @@ class TestCriticarPeca:
         from app.services.ai import adversarial
 
         box: dict = {}
-        monkeypatch.setattr(ai_gateway, "chat", _fake_chat(box, provedor="anthropic"))
+        monkeypatch.setattr(ai_gateway, "chat", _fake_chat(box, provedor="maritaca"))
 
         gate_calls: list[str] = []
 
@@ -141,9 +145,9 @@ class TestCriticarPeca:
         assert c.disponivel is True
         assert c.nota_robustez == 72
         assert c.provider_diverso is True
-        assert c.provedor == "anthropic" and c.provedor_origem == "ollama"
+        assert c.provedor == "maritaca" and c.provedor_origem == "ollama"
         # Pediu explicitamente o provider diverso ao gateway.
-        assert box["provider_override"] == "anthropic"
+        assert box["provider_override"] == "maritaca"
         assert box["task_type"] == "critica_adversarial"
         # A PRÓPRIA crítica passou pelo gate de citações.
         assert gate_calls == [RELATORIO_OK]
@@ -334,12 +338,12 @@ class TestCriticaProtegeNomesLGPD:
             texto_peca=texto_peca,
             contexto_caso="Cliente João da Silva; parte contrária Construtora Alfa Ltda.",
             task_type_origem="elaboracao_peca",
-            provedor_origem="ollama",  # crítica cai no anthropic (externo)
+            provedor_origem="ollama",  # crítica cai na Maritaca (externo jurídico)
             case_id="c1",
         )
 
         # (a) provider EXTERNO recebeu SÓ marcadores — nenhum nome real vazou.
-        assert capturado["provider"] in ("anthropic", "groq")
+        assert capturado["provider"] == "maritaca"
         for nome in ("João da Silva", "Construtora Alfa Ltda", "Banco Omega S.A."):
             assert nome not in capturado["conteudo"], f"vazou ao externo: {nome!r}"
         assert "[CLIENTE_1]" in capturado["conteudo"]
