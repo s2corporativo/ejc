@@ -358,6 +358,8 @@ async def relatorio_pdf(
     path = os.path.join(out_dir, f"pre_auditoria_{arquivo_id}.pdf")
     with open(path, "wb") as fh:
         fh.write(pdf_bytes)
+    # Auditoria §11/S10: binding usuário↔arquivo — capability URL não basta.
+    _vlf.registrar_origem(out_dir, arquivo_id, criado_por=cu.id)
     return {"download_url": f"/tributario/fiscal/relatorio/{arquivo_id}/download"}
 
 
@@ -377,6 +379,8 @@ async def download_relatorio(
             404,
             "Relatório não encontrado — gere via POST /tributario/fiscal/relatorio-pdf.",
         )
+    # Auditoria §11/S10: só o criador (ou gestão) baixa — fail-closed.
+    _vlf.exigir_origem(_relatorio_dir(), arquivo_id, cu)
     return FileResponse(
         path,
         media_type="application/pdf",

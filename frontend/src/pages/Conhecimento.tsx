@@ -26,6 +26,8 @@ import {
 } from "../components/UI";
 import { asList } from "../lib/list";
 import { mensagemErroHttp } from "../lib/iaErro";
+import { pesquisarFontesJuridicas } from "../services/legalResearch";
+import KnowledgeGovernancePanel from "../components/KnowledgeGovernancePanel";
 
 // ── Categorias ────────────────────────────────────────────────────────────────
 // Sem `peca_escritorio`/`precedente_interno`: são categorias RESTRITAS no
@@ -805,10 +807,10 @@ export default function Conhecimento() {
   const buscar = async () => {
     if (buscaInput.length < 3) return;
     setBusca(buscaInput);
-    const { data } = await api.get("/rag/buscar", {
-      params: { q: buscaInput, limite: 8 },
-    });
-    setResultados(data.resultados ?? data);
+    // F8 (Auditoria 2026-09-20): consumo canônico do service de pesquisa —
+    // mesma superfície usada pelo resto do sistema (contrato /rag/buscar).
+    const resposta = await pesquisarFontesJuridicas(buscaInput, 8);
+    setResultados(resposta.resultados);
   };
 
   const limparBusca = () => {
@@ -834,6 +836,10 @@ export default function Conhecimento() {
 
   return (
     <div className="space-y-6">
+      {/* FE-13 (Auditoria 2026-09-20): o painel de governança fazia parte do
+          wrapper ConhecimentoGovernado (1 consumidor) — agora vive aqui, na
+          página canônica; o wrapper foi removido. */}
+      <KnowledgeGovernancePanel />
       <PageHeader
         eyebrow="IA Jurídica"
         title="Base de Conhecimento"

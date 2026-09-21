@@ -329,6 +329,8 @@ async def planilha_pdf(consolidacao: LiquidacaoOut,
     path = os.path.join(out_dir, f"liquidacao_{arquivo_id}.pdf")
     with open(path, "wb") as fh:
         fh.write(pdf_bytes)
+    # Auditoria §11/S10: binding usuário↔arquivo — capability URL não basta.
+    _vlf.registrar_origem(out_dir, arquivo_id, criado_por=cu.id)
     return {"download_url": f"/trabalhista/liquidacao/planilha/{arquivo_id}/download"}
 
 
@@ -344,5 +346,7 @@ async def download_planilha(arquivo_id: str,
     if not os.path.isfile(path):
         raise HTTPException(404, "Planilha não encontrada — gere via POST "
                                  "/trabalhista/liquidacao/planilha-pdf.")
+    # Auditoria §11/S3: só o criador (ou gestão) baixa — fail-closed.
+    _vlf.exigir_origem(_pdf_dir(), arquivo_id, cu)
     return FileResponse(path, media_type="application/pdf",
                         filename="planilha_liquidacao_sentenca.pdf")

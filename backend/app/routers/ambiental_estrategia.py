@@ -231,6 +231,8 @@ async def peca_conversao(payload: PecaConversaoIn,
     path = os.path.join(out_dir, f"requerimento_{arquivo_id}.pdf")
     with open(path, "wb") as fh:
         fh.write(pdf_bytes)
+    # Auditoria §11/S2 (P0): binding usuário↔arquivo — capability URL não basta.
+    _vlf.registrar_origem(out_dir, arquivo_id, criado_por=cu.id)
     return {"download_url": f"/ambiental/estrategia/peca/{arquivo_id}/download"}
 
 
@@ -245,5 +247,7 @@ async def download_peca(arquivo_id: str, cu: User = Depends(get_current_user)):
     if not os.path.isfile(path):
         raise HTTPException(404, "Peça não encontrada — gere via POST "
                                  "/ambiental/estrategia/peca-conversao.")
+    # Auditoria §11/S2 (P0): só o criador (ou gestão) baixa — fail-closed.
+    _vlf.exigir_origem(_peca_dir(), arquivo_id, cu)
     return FileResponse(path, media_type="application/pdf",
                         filename="requerimento_conversao_multa.pdf")

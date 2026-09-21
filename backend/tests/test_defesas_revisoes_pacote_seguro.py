@@ -1,5 +1,5 @@
 from app.core.fastapi_compat import flatten_routes
-from app.routers.defesas_revisoes_pacote_seguro import planejar_pacote, router as pacote_router
+from app.routers.defesas_revisoes_avancado import planejar_pacote, router as pacote_router
 
 
 def test_pacote_bloqueia_kit_e_motor_quando_documentacao_nao_apta():
@@ -59,4 +59,4 @@ def test_rota_pacote_existe_so_na_implementacao_segura():
         and "POST" in getattr(route, "methods", set())
     ]
     assert len(rotas) == 1
-    assert rotas[0].endpoint.__module__.endswith("defesas_revisoes_pacote_seguro")
+    assert rotas[0].endpoint.__module__.endswith("defesas_revisoes_avancado")
