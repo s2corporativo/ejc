@@ -134,7 +134,9 @@ function ic95(
     | undefined,
 ): string | null {
   return valor
-    ? `IC95% ${valor.inferior.toFixed(1)}%–${valor.superior.toFixed(1)}%`
+    ? `IC95% ${(valor.inferior * 100).toFixed(1)}%–${(
+        valor.superior * 100
+      ).toFixed(1)}%`
     : null;
 }
 
