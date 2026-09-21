@@ -201,4 +201,86 @@ describe("Jurimetria — verdade da fonte", () => {
       expect(screen.queryByText("999d")).toBeNull();
     });
   });
+
+  it("relaciona o recorte ao RAG, teses canônicas e skills existentes", async () => {
+    getMock.mockImplementation((url: string, config?: any) => {
+      if (url === "/rag/buscar") {
+        return Promise.resolve({
+          data: {
+            query: "TJMG consumidor negativação",
+            modo: "semantica",
+            pipeline: "hibrida_governada",
+            resultados: [
+              {
+                chunk_id: "c1",
+                titulo: "Precedente TJMG",
+                tribunal: "TJMG",
+                categoria: "jurisprudencia",
+                fonte: "fonte oficial",
+                conteudo: "Trecho relacionado ao assunto pesquisado.",
+              },
+            ],
+          },
+        });
+      }
+      if (url === "/jurimetria/por-tese" && config?.params) {
+        return Promise.resolve({
+          data: [
+            {
+              id: "t1",
+              titulo: "Negativação indevida",
+              area_juridica: "consumidor",
+              tribunal: "TJMG",
+              decididos: 12,
+              taxa_sucesso: 0.75,
+              intervalo_confianca_95: {
+                inferior: 0.4677,
+                superior: 0.9111,
+              },
+            },
+          ],
+        });
+      }
+      if (url === "/ai/core/skills") {
+        return Promise.resolve({
+          data: [
+            {
+              nome: "ramo_consumidor",
+              finalidade: "Método de Direito do Consumidor",
+              riscos: "alto",
+            },
+            {
+              nome: "modulo_jurimetria",
+              finalidade: "Método do módulo de jurimetria",
+              riscos: "médio",
+            },
+          ],
+        });
+      }
+      return Promise.resolve(resposta(url));
+    });
+
+    render(<Jurimetria />);
+
+    fireEvent.change(
+      await screen.findByPlaceholderText(
+        "Área: consumidor, civil, trabalhista...",
+      ),
+      { target: { value: "consumidor" } },
+    );
+    fireEvent.change(
+      screen.getByPlaceholderText("Assunto: negativação indevida..."),
+      { target: { value: "negativação" } },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Relacionar evidências" }),
+    );
+
+    expect(await screen.findByText("Precedente TJMG")).toBeTruthy();
+    expect(screen.getByText("Negativação indevida")).toBeTruthy();
+    expect(screen.getByText("ramo_consumidor")).toBeTruthy();
+    expect(screen.getByText("modulo_jurimetria")).toBeTruthy();
+    expect(screen.getByText(/taxa histórica 75.0%/i)).toBeTruthy();
+  });
+
 });
