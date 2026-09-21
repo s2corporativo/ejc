@@ -37,7 +37,7 @@ def test_estimativa_nao_exibe_percentual_sem_base_verificavel():
         {"jurimetria": {"chance_sucesso_percent": 82, "base_estimativa": None}}
     )
     assert out["percentual"] is None
-    assert out["status"] == "sem_base_estatistica"
+    assert out["status"] == "sem_base_verificavel"
 
 
 def test_estimativa_ignora_percentual_llm_mesmo_com_base_textual():
@@ -51,7 +51,7 @@ def test_estimativa_ignora_percentual_llm_mesmo_com_base_textual():
         }
     )
     assert out["percentual"] is None
-    assert out["status"] == "sem_base_estatistica"
+    assert out["status"] == "sem_base_verificavel"
     assert out["tempo_estimado_meses"] == 18
     assert "não estima probabilidade" in out["observacao"]
 
