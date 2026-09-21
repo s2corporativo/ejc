@@ -3,6 +3,9 @@
 Testes sem Redis: validam estabilidade da chave, NO-OP quando desligado e o gate
 que impede persistir respostas reidratadas com PII real.
 """
+
+from types import SimpleNamespace
+
 from app.services import ai_cache
 
 
@@ -35,6 +38,7 @@ def test_tarefa_local_completo_nao_usa_cache(monkeypatch):
     """A6 (análise E2E 03/09): LOCAL_COMPLETO trafega em CLARO para o provedor
     local — a resposta pode carregar dado pessoal real e não pode ir ao Redis."""
     from app.services.ai.sanitization_policy import ModoSanitizacao
+
     monkeypatch.setattr(
         "app.services.ai.sanitization_policy.modo_para_task",
         lambda _task: ModoSanitizacao.LOCAL_COMPLETO,
@@ -46,6 +50,7 @@ def test_tarefa_local_completo_nao_usa_cache(monkeypatch):
 def test_tarefa_mascaramento_pode_usar_cache(monkeypatch):
     """Só o mascaramento IRREVERSÍVEL continua cacheável."""
     from app.services.ai.sanitization_policy import ModoSanitizacao
+
     monkeypatch.setattr(
         "app.services.ai.sanitization_policy.modo_para_task",
         lambda _task: ModoSanitizacao.MASCARAMENTO,
@@ -54,7 +59,19 @@ def test_tarefa_mascaramento_pode_usar_cache(monkeypatch):
     assert k.startswith("ai:resp:")
 
 
-def test_desligado_por_default_e_no_op():
+def test_ligado_por_default_g1_auditoria_20260920():
+    """G1 (Auditoria Real 2026-09-20): cache IA default LIGADO — redução direta
+    de custo/latência; rollback por env (AI_RESPONSE_CACHE_ENABLED=false)."""
+    assert ai_cache.habilitado() is True
+
+
+def test_desligado_por_env_e_no_op(monkeypatch):
+    """Rollback documentado: flag OFF → habilitado() False, obter/gravar no-op."""
+    monkeypatch.setattr(
+        ai_cache,
+        "get_settings",
+        lambda: SimpleNamespace(AI_RESPONSE_CACHE_ENABLED=False),
+    )
     assert ai_cache.habilitado() is False
 
 
@@ -83,6 +100,7 @@ async def test_cache_hit_zera_tokens_e_custo(monkeypatch):
     # Simula tarefa MASCARAMENTO (cacheável) e uma cadeia ELEGÍVEL (A6: o cache
     # só é consultado depois de confirmada a cadeia) para exercitar o hit.
     from app.services import ai_gateway
+    from types import SimpleNamespace
     from app.services import ai_cache as _c
     from app.services.ai.sanitization_policy import ModoSanitizacao
 
@@ -95,12 +113,19 @@ async def test_cache_hit_zera_tokens_e_custo(monkeypatch):
     monkeypatch.setattr(ai_gateway.settings, "AI_PROVIDER", "auto")
 
     async def _fake_obter(_key):
-        return {"texto": "resposta cacheada", "modelo": "m", "provedor": "ollama",
-                "input_tokens": 500, "output_tokens": 800, "custo_estimado_brl": 1.23}
+        return {
+            "texto": "resposta cacheada",
+            "modelo": "m",
+            "provedor": "ollama",
+            "input_tokens": 500,
+            "output_tokens": 800,
+            "custo_estimado_brl": 1.23,
+        }
 
     monkeypatch.setattr(_c, "obter", _fake_obter)
     resp = await ai_gateway.chat(
-        messages=[{"role": "user", "content": "oi"}], task_type="chat_rapido",
+        messages=[{"role": "user", "content": "oi"}],
+        task_type="chat_rapido",
     )
     assert resp.cache_hit is True
     assert resp.texto == "resposta cacheada"
