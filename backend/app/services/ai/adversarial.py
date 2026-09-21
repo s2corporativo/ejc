@@ -181,6 +181,8 @@ def escolher_provider_diverso(
         if p.strip()
     ]
     candidatos = prioridade + [p for p in _PROVIDERS_CONHECIDOS if p not in prioridade]
+    if not bool(getattr(get_settings(), "ANTHROPIC_AUTO_ROUTING_ENABLED", False)):
+        candidatos = [p for p in candidatos if p != "anthropic"]
     if somente_local:
         candidatos = [p for p in candidatos if p not in ai_gateway._PROVIDERS_EXTERNOS]
     for p in candidatos:
