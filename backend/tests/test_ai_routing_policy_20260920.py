@@ -127,6 +127,22 @@ def test_rollback_reabilita_claude_no_merito(monkeypatch):
     assert decisao.provider_chain[0] == ("anthropic", None)
 
 
+def test_rollback_reabilita_claude_como_fallback_na_rotina(monkeypatch):
+    s = _settings()
+    s.ANTHROPIC_AUTO_ROUTING_ENABLED = True
+    monkeypatch.setattr(pp, "get_settings", lambda: s)
+    monkeypatch.setattr(
+        pp.AIProviderPolicy,
+        "_elegivel",
+        staticmethod(lambda provider: provider in {"anthropic"}),
+    )
+    decisao = pp.AIProviderPolicy().avaliar(
+        "resuma este andamento", "resumo", ja_sanitizado=True,
+    )
+    assert decisao.permitido is True
+    assert decisao.provider_chain == [("anthropic", None)]
+
+
 def test_provider_explicito_indisponivel_informa_a_causa(monkeypatch):
     from app.services.ai import provider_registry
 
