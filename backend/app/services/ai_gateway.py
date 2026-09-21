@@ -590,6 +590,8 @@ async def chat(
             output_tokens=0,
             duracao_ms=0,
             custo_estimado_brl=0.0,
+            fallback_ativado=bool(_cached.get("fallback_ativado", False)),
+            fallback_motivo=_cached.get("fallback_motivo"),
             cache_hit=True,
         )
 
@@ -691,6 +693,8 @@ async def chat(
                         "texto": texto, "modelo": modelo_real, "provedor": provider,
                         "input_tokens": inp, "output_tokens": out,
                         "custo_estimado_brl": custo_brl,
+                        "fallback_ativado": fallback_ativado,
+                        "fallback_motivo": fallback_motivo if fallback_ativado else None,
                     })
                     return resp
                 except _ProviderPulado as _pulado:
@@ -1341,7 +1345,8 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
             "nivel_inteligencia": nivel_efetivo, "tarefa": tarefa_label,
             "is_rascunho": True, "requer_revisao": True,
             "tokens_usados": 0, "custo_estimado_brl": 0.0, "cache_hit": True,
-            "fallback_ativado": False, "fallback_motivo": None,
+            "fallback_ativado": bool(_cached.get("fallback_ativado", False)),
+            "fallback_motivo": _cached.get("fallback_motivo"),
         }
 
     texto = usage = provedor_usado = None
@@ -1461,22 +1466,20 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
             ) if t) or None,
             tokens_input=inp, tokens_output=out, custo_estimado=custo,
         )
+    # Fallback NÃO silencioso: se a resposta NÃO veio do PRIMEIRO provedor
+    # REALMENTE tentado (cadeia[0], já restrita por LOCAL_COMPLETO), sinaliza a
+    # degradação com motivo PII-safe. Calculado ANTES do cache para preservar o
+    # mesmo metadado em cache hit.
+    fallback_ativado = provedor_usado != cadeia[0][0]
     # #40: cacheia só sucesso e SEM PII reidratada — no modo reversível o `texto`
     # foi reidratado com PII real e NÃO deve ir para o cache (Redis/memória).
     if not pii_removida_log:
         await ai_cache.gravar(_cache_key, {
             "texto": texto, "modelo": f"{provedor_usado}/{modelo_real}",
             "provedor": provedor_usado,
+            "fallback_ativado": fallback_ativado,
+            "fallback_motivo": fallback_motivo if fallback_ativado else None,
         })
-    # Fallback NÃO silencioso: se a resposta NÃO veio do PRIMEIRO provedor
-    # REALMENTE tentado (cadeia[0], já restrita por LOCAL_COMPLETO), sinaliza a
-    # degradação (ex.: Anthropic/Opus → Groq) com o motivo PII-safe. Usa
-    # cadeia[0] e NÃO cfg.provider: no modo LOCAL_COMPLETO os externos são
-    # removidos e o Ollama vira o primário LEGÍTIMO — comparar com cfg.provider
-    # marcaria um "fallback" FALSO. Espelha o critério posicional do chat().
-    # Consumidores (AiResponse extra="ignore"; dict.get em escrita.py/
-    # run_eval.py) ignoram chaves extras — aditivo/seguro.
-    fallback_ativado = provedor_usado != cadeia[0][0]
     return {
         "conteudo": texto, "modelo": f"{provedor_usado}/{modelo_real}", "provider": provedor_usado,
         "nivel_inteligencia": nivel_efetivo,
@@ -1631,9 +1634,20 @@ async def chat_agentico(
     # Identidade/base do escritório (BASE_PROMPT/16 regras) no system do agente.
     messages = legal_base.aplicar_base(messages, task_type)
 
-    # Cadeia: reusa a resolução/elegibilidade e FILTRA para providers com
-    # tool-use (só anthropic nesta fase).
-    provider_force = settings.AI_PROVIDER if settings.AI_PROVIDER != "auto" else None
+    # Cadeia agêntica: nesta fase o tool-use é suportado somente pelo
+    # Anthropic. O agente exige seleção operacional EXPLÍCITA do provider;
+    # AI_PROVIDER=auto não pode religar Claude por uma rota lateral.
+    if (settings.AI_PROVIDER or "").strip().lower() != "anthropic":
+        raise SafeAIError(
+            "Módulo agêntico requer AI_PROVIDER=anthropic explicitamente configurado.",
+            code="agent_provider_not_explicit",
+            technical_type="ProviderPolicy",
+            public_message=(
+                "O agente de IA está indisponível nesta configuração. "
+                "A administração deve habilitar o modo agêntico com o motor compatível."
+            ),
+        )
+    provider_force = "anthropic"
     cadeia = _resolver_cadeia(task_type, provider_force, None)
     if modo_sanitizacao == ModoSanitizacao.LOCAL_COMPLETO:
         # Sigilo reforçado: nunca sai do VPS. Não há provider LOCAL com tool-use
@@ -1647,13 +1661,6 @@ async def chat_agentico(
                 public_message=MSG_SIGILO_BLOQUEADO,
             )
     cadeia_tools = [(p, m) for (p, m) in cadeia if p == "anthropic"]
-    # Se AI_PROVIDER forçou um provider sem tool-use, mas o Anthropic está
-    # elegível, ainda o usamos (única opção agêntica) — desde que não seja
-    # LOCAL_COMPLETO (já tratado acima).
-    if (not cadeia_tools and modo_sanitizacao != ModoSanitizacao.LOCAL_COMPLETO
-            and bool(getattr(get_settings(), "ANTHROPIC_AUTO_ROUTING_ENABLED", False))
-            and _provider_elegivel("anthropic")):
-        cadeia_tools = [("anthropic", _resolver_modelo("anthropic", task_type, None))]
     if not cadeia_tools or not _provider_elegivel("anthropic"):
         raise RuntimeError(
             "Módulo agêntico requer um provedor com suporte a tool-use (Anthropic) "
