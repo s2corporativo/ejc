@@ -22,6 +22,7 @@ JOB_BACKUP_DRIVE = "backup_drive"
 JOB_REEMBED_RAG = "reembed_rag_orfaos"
 JOB_QUERIDO_DIARIO = "querido_diario_monitor"
 JOB_RADAR_LEGISLATIVO = "radar_legislativo"
+JOB_JURIMETRIA_SNAPSHOT = "jurimetria_tribunais_snapshot"
 
 _MAX_DIARIO = 26
 _MAX_DATAJUD = 14
@@ -97,6 +98,11 @@ JOBS_MONITORADOS: dict[str, dict[str, Any]] = {
         "label": "Radar Legislativo (Câmara, Senado, ALMG)",
         "max_age_horas": _MAX_DIARIO,
         "cadencia": "diário 07h00 UTC",
+    },
+    JOB_JURIMETRIA_SNAPSHOT: {
+        "label": "Snapshot agregado da jurimetria dos tribunais",
+        "max_age_horas": _MAX_SEMANAL,
+        "cadencia": "semanal (sábados 06h00)",
     },
 }
 
