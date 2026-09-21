@@ -79,12 +79,9 @@ def test_pesquisa_juridica_impoe_hierarquia_e_contraponto():
 
 def test_audiencia_usa_modelo_forte():
     """Ato irrepetível não roda no modelo econômico."""
-    from app.services.system_prompts.router import (
-        CONFIGURACOES,
-        TarefaIA,
-        _COMPLEXO,
-    )
+    from app.services.system_prompts.router import CONFIGURACOES, TarefaIA, _MARITACA
 
     cfg = CONFIGURACOES[TarefaIA.AUDIENCIA]
-    assert cfg.model == _COMPLEXO
+    assert cfg.provider == "maritaca"
+    assert cfg.model == _MARITACA
     assert cfg.max_tokens >= 3000
