@@ -385,7 +385,9 @@ async def analisar_caso(
                 jur["chance_sucesso_percent"] = None
                 if percentual_llm is not None:
                     atuais = resultado.get("alertas")
-                    atuais = list(atuais) if isinstance(atuais, list) else []
+                    atuais = list(atuais) if isinstance(atuais, list) else (
+                        [atuais] if isinstance(atuais, str) and atuais.strip() else []
+                    )
                     aviso = (
                         "Percentual de êxito sugerido pela IA foi descartado. "
                         "Use apenas jurimetria histórica com amostra identificada."
