@@ -526,6 +526,9 @@ class Settings(BaseSettings):
     # Cache TTL (segundos) do agregado por consulta — em memória (worker
     # único). 0 desliga. Erro do CNJ nunca entra no cache.
     JURIMETRIA_TRIBUNAIS_CACHE_TTL_SEGUNDOS: int = 3600
+    # Snapshot semanal persistido SOMENTE de agregados; opt-in independente.
+    # Nunca persiste processos, partes ou payload bruto do DataJud.
+    JURIMETRIA_TRIBUNAIS_SNAPSHOT_ENABLED: bool = False
 
     # ── Infosimples — consultas PAGAS a sites públicos (TJMG, Receita…) ──
     # Agregador comercial (https://infosimples.com/consultas/): cada consulta
