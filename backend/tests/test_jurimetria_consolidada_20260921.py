@@ -12,7 +12,11 @@ from app.services.jurimetria import (
     intervalo_wilson,
 )
 from app.services.jurimetria_tribunais import agregacao
-from app.services.tese_vinculo_service import normalizar_resultado_tese
+from app.services.tese_vinculo_service import (
+    atualizar_resultado_vinculo,
+    normalizar_resultado_tese,
+    reconciliar_metricas_tese,
+)
 
 
 def test_taxonomia_case_reconhece_write_path_e_aliases_historicos() -> None:
@@ -92,3 +96,74 @@ async def test_por_magistrado_fica_fail_closed_sem_dado_confiavel() -> None:
 
     assert exc.value.status_code == 409
     assert "desabilitada" in str(exc.value.detail).lower()
+
+
+class _ResultMetricas:
+    def __init__(self, *, row=None, tese=None):
+        self._row = row
+        self._tese = tese
+
+    def one(self):
+        return self._row
+
+    def scalar_one_or_none(self):
+        return self._tese
+
+
+class _FakeDBMetricas:
+    def __init__(self, row, tese):
+        self.row = row
+        self.tese = tese
+        self.calls = 0
+        self.flushes = 0
+
+    async def flush(self):
+        self.flushes += 1
+
+    async def execute(self, _query):
+        self.calls += 1
+        if self.calls % 2 == 1:
+            return _ResultMetricas(row=self.row)
+        return _ResultMetricas(tese=self.tese)
+
+
+@pytest.mark.asyncio
+async def test_reconciliacao_tese_usa_apenas_decididos_no_denominador() -> None:
+    tese = SimpleNamespace(
+        vezes_usada=0,
+        vezes_venceu=0,
+        vezes_perdeu=0,
+        taxa_sucesso=None,
+    )
+    db = _FakeDBMetricas(
+        SimpleNamespace(total=17, venceu=2, perdeu=1),
+        tese,
+    )
+
+    reconciliada = await reconciliar_metricas_tese(db, "tese-1")
+
+    assert reconciliada is tese
+    assert tese.vezes_usada == 17
+    assert tese.vezes_venceu == 2
+    assert tese.vezes_perdeu == 1
+    assert tese.taxa_sucesso == pytest.approx(2 / 3, abs=0.0001)
+
+
+@pytest.mark.asyncio
+async def test_atualizar_resultado_vinculo_reconcilia_na_mesma_transacao() -> None:
+    tese = SimpleNamespace(
+        vezes_usada=0,
+        vezes_venceu=0,
+        vezes_perdeu=0,
+        taxa_sucesso=None,
+    )
+    db = _FakeDBMetricas(
+        SimpleNamespace(total=4, venceu=3, perdeu=1),
+        tese,
+    )
+    link = SimpleNamespace(tese_id="tese-1", resultado="pendente")
+
+    await atualizar_resultado_vinculo(db, link=link, resultado="procedente")
+
+    assert link.resultado == "procedente"
+    assert tese.taxa_sucesso == pytest.approx(0.75)
