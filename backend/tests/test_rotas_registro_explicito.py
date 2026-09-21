@@ -63,6 +63,7 @@ ADICOES_INTENCIONAIS = {
     # DATAJUD_ENABLED/DATAJUD_API_KEY, responde 503 controlado.
     ("/api/jurimetria/tribunais/status", "GET"),
     ("/api/jurimetria/tribunais/desfechos", "GET"),
+    ("/api/jurimetria/tribunais/historico", "GET"),
     ("/api/architecture/uso-rotas", "GET"),
     # PR #1378 — consolidação do Financeiro/Fiscal. Rotas novas deliberadas,
     # autenticadas e de leitura. O subledger respeita escopo/ownership do fee;
