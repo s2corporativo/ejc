@@ -32,7 +32,7 @@ const AssistenteIA = lazy(() => import("./AssistenteIA"));
 const FerramentasIA = lazy(() => import("./FerramentasIA"));
 const PesquisaJuridica = lazy(() => import("./PesquisaJuridica"));
 const Jurimetria = lazy(() => import("./Jurimetria"));
-const ConhecimentoGovernado = lazy(() => import("./ConhecimentoGovernado"));
+const Conhecimento = lazy(() => import("./Conhecimento"));
 const DashboardIA = lazy(() => import("./DashboardIA"));
 const GovernancaIA = lazy(() => import("./GovernancaIA"));
 const EstimadorHonorarios = lazy(
@@ -262,7 +262,7 @@ export default function InteligenciaWorkspace() {
               <PesquisaJuridica />
             )}
             {tab === "conhecimento" && sub === "curadoria" && (
-              <ConhecimentoGovernado />
+              <Conhecimento />
             )}
             {tab === "saude" && sub === "saude" && <DashboardIA />}
             {tab === "saude" && sub === "governanca" && <GovernancaIA />}
