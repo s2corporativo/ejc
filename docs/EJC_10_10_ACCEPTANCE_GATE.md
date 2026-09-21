@@ -1,8 +1,8 @@
 # EJC 10/10 — Critérios objetivos de certificação
 
-**Status atual:** NÃO CERTIFICADO 10/10  
-**Data-base:** 20/07/2026  
-**Fase atual:** código estabilizado; governança administrativa, continuidade real e homologação operacional ainda pendentes.  
+**Status atual:** NÃO CERTIFICADO 10/10 — congelamento de features decretado em 22/09/2026 para certificação (ver §2-A)  
+**Data-base:** 20/07/2026 (original) · **Atualização de evidências:** 22/09/2026 (§2-A)  
+**Fase atual:** ondas de absorção W1–W11 executadas e homologação de produção registrada (W12); certificação condicionada a G0 (proteção da main), rollback drill e RPO/RTO.  
 **Regra:** o EJC somente pode receber a classificação 10/10 quando todos os gates abaixo estiverem comprovados por evidência automatizada e homologação humana.
 
 ## 1. Princípio de certificação
@@ -74,6 +74,66 @@ As seguintes ondas ainda precisam ser reaplicadas semanticamente sobre a `main` 
 - homologar os fluxos jurídicos E2E com dados fictícios e usuários reais do escritório;
 - medir desempenho dos fluxos críticos;
 - concluir as Ondas 3 a 7 sem reintroduzir redundâncias.
+
+## 2-A. Situação verificada em 2026-09-22 — pente fino, congelamento e evidências
+
+**Status desta data-base:** features **CONGELADAS** por decisão do Titular
+(sistema em uso a partir de 23/09/2026). Nenhuma onda nova entra até a
+certificação 10/10; apenas hotfix de segurança/produção com gate integral.
+
+### Evidências frescas (2026-09-22)
+
+**Produção** (verificada por HTTP público, sem acesso privilegiado):
+
+- `/api/health` → `status ok`, commit `0cf3a429e` (= head main − 1; #1775
+  aguardando janela de deploy), environment `production`;
+- CSP efetiva: `img-src 'self' data: blob:` — hotfix de blob em produção
+  confirmado no header real (o item ① do plano do Titular já está vivo);
+- `/brand/sidebar-betim.jpg` → 200 (fundo Betim/MG do menu lateral em
+  produção, com overlay navy — item ② também vivo);
+- e2e de navegação `test:navegacao` contra produção com credenciais reais do
+  Titular: **82 rotas OK, 0 tela branca, 0 pageerror, 0 5xx (4 puladas —
+  rotas `:id` sem seed, disciplina sem mock)**.
+
+**Frontend local (mesma ordem de gates do CI + suítes locais extras):**
+
+- `tsc --noEmit` ✓ · `eslint src` ✓ · `vitest run` ✓ (148 arquivos) ·
+  `vite build` ✓ · `audit:css:verificar` ✓ · `test:responsive` ✓ ·
+  `test:premium-responsive` ✓ (7 viewports) · `test:navegacao` ✓ (acima).
+
+**Backend local (gates estruturais + suíte completa sem PG):**
+
+- `compileall app` ✓ · `alembic heads` ✓ — head único `161_fee_estornos` ·
+  `pytest tests -q` → **7659 passed, 455 skipped, 0 falhas** (os 455 são os
+  gates DB-level que se auto-pulam sem `RUN_DB_TESTS=1` e permanecem como
+  deveriam no CI com PostgreSQL 16 + pgvector real);
+- 1 falso negativo de ambiente investigado e descartado
+  (`test_mensagem_erro_sem_coletor` — desalinhamento pyOpenSSL × cryptography
+  do venv local; 8/8 após alinhamento; main não tem regressão).
+
+**Backlog (docs/audit/BACKLOG_LIMPEZA_2026-09-20.csv):**
+
+- **P0 = 0 abertos** — SEC-02/SEC-05 executados (W5), SEC-03 verificado HOJE
+  no código (PR #1763 já aplica binding fail-closed), SEC-04 verificado HOJE
+  no GitHub (#1732/#1737/#1735 merged);
+- P1: BE-04 executado HOJE (`test_regulatorio_digest.py` 8/8 — o único router
+  sem teste do sistema passou a ter cobertura); W8.2 (504 de IA por timeout do
+  nginx do host) preparado em branch `ops/w8.2-nginx-ai-timeout` com runbook
+  de aplicação de 5 min no host;
+- P1 restantes para pós-certificação: OPS-02/OPS-04 (consolidação de jobs,
+  exigem dry-run 48h — NÃO executar na véspera do go-live), BE-11 (PII
+  plaintext, depende de W11), LGPD-01 (ROPA — ação operacional anual).
+
+### Congelamento e próximos passos para a certificação
+
+1. Congelado o estado: nenhuma feature nova; PRs abertos pendentes só com
+   correção/hotfix;
+2. Aplicar W8.2 no host (RUNBOOK_W82_APLICACAO.md) — dor real em produção;
+3. G0: proteção administrativa da `main` (checks obrigatórios, PR obrigatório,
+   bloqueio de push/force) — segue o único gate de governança não comprovado;
+4. Ensaio de rollback de release + backup restore drill (G1/G7) com evidence;
+5. ROPA/PII (LGPD-01) e consolidação de jobs (OPS-02/04) após o go-live,
+   dentro de ondas próprias com gate integral.
 
 ## 3. Gates obrigatórios
 
