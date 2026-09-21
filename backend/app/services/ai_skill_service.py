@@ -206,6 +206,17 @@ async def executar_skill(
     )
 
     system_prompt = skill.system_prompt
+    # ── Teses do escritório (migration 162) ─────────────────────────────────
+    # Injeta Teses aprovadas (pinned + da área) no system_prompt. Conteúdo
+    # AUTORAL do escritório (gravado por sócio), então pode ir no SYSTEM —
+    # diferentemente do RAG (ingestão externa), que vai no USER por segurança.
+    try:
+        from app.services.tese_governanca_service import injetar_no_prompt
+        system_prompt = await injetar_no_prompt(
+            db, system_prompt, area=skill.area, user_id=user_id
+        )
+    except Exception as _exc_teses:  # noqa: BLE001 — Teses são enriquecimento
+        logger.warning("Teses indisponíveis no prompt: %s", type(_exc_teses).__name__)
     # ── ANTI-INJEÇÃO (pente fino 03/09) ──────────────────────────────────────
     # O RAG ia para o SYSTEM, cru. `system` é o papel de MÁXIMA confiança do
     # modelo, e o conteúdo vem da base de conhecimento, que aceita ingestão de
@@ -450,6 +461,14 @@ async def executar_skill_documento_longo(
         for indice, resposta, _ in parciais
     )
     system_prompt = skill.system_prompt
+    # ── Teses do escritório (migration 162) — mesmo bloco de executar_skill ─
+    try:
+        from app.services.tese_governanca_service import injetar_no_prompt
+        system_prompt = await injetar_no_prompt(
+            db, system_prompt, area=skill.area, user_id=user_id
+        )
+    except Exception as _exc_teses:  # noqa: BLE001
+        logger.warning("Teses indisponíveis no prompt (doc longo): %s", type(_exc_teses).__name__)
     from app.services.ai import delimitador
     _tok_final = delimitador.novo_token()
     _rag_bloco = ""
