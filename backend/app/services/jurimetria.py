@@ -142,6 +142,7 @@ async def jurimetria(db: AsyncSession, user: User, dimensao: str | None = None) 
             "taxa_exito": "(êxito total + êxito parcial) / decisões classificáveis",
             "taxa_exito_com_acordo": "(êxito + acordo) / (decisões classificáveis + acordo) — legado",
             "intervalo_confianca": "Wilson 95% sobre decisões classificáveis",
+            "min_amostra": MIN_AMOSTRA,
             "min_amostra_decidida": MIN_AMOSTRA,
         },
         "global": _resumo(global_amostra),
@@ -173,9 +174,9 @@ async def jurimetria(db: AsyncSession, user: User, dimensao: str | None = None) 
         resultado["dimensao"] = dimensao
         resultado["grupos"] = detalhado
 
-    if resultado["global"]["n"] < MIN_AMOSTRA:
+    if resultado["global"]["n_decididos"] < MIN_AMOSTRA:
         resultado["aviso"] = (
-            f"Amostra global de {resultado['global']['n']} caso(s) — abaixo de "
-            f"{MIN_AMOSTRA}. Taxas são meramente indicativas, sem valor estatístico."
+            f"Amostra decidida global de {resultado['global']['n_decididos']} caso(s) — "
+            f"abaixo de {MIN_AMOSTRA}. A taxa judicial não deve orientar decisão isoladamente."
         )
     return resultado
