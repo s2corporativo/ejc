@@ -26,7 +26,7 @@ def upgrade() -> None:
     op.create_table(
         "jurimetria_snapshots",
         sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("snapshot_key", sa.String(64), nullable=False, unique=True),
+        sa.Column("snapshot_key", sa.String(64), nullable=False),
         sa.Column("fonte", sa.String(160), nullable=False),
         sa.Column("tribunal", sa.String(20), nullable=False),
         sa.Column("filtros", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
@@ -43,7 +43,7 @@ def upgrade() -> None:
         ),
     )
     op.create_index(
-        "ix_jurimetria_snapshots_snapshot_key",
+        "ux_jurimetria_snapshots_snapshot_key",
         "jurimetria_snapshots",
         ["snapshot_key"],
         unique=True,
@@ -61,7 +61,7 @@ def downgrade() -> None:
         table_name="jurimetria_snapshots",
     )
     op.drop_index(
-        "ix_jurimetria_snapshots_snapshot_key",
+        "ux_jurimetria_snapshots_snapshot_key",
         table_name="jurimetria_snapshots",
     )
     op.drop_table("jurimetria_snapshots")
