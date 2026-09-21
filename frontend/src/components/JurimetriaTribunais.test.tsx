@@ -112,12 +112,28 @@ describe("JurimetriaTribunais — coexistência rotulada com a jurimetria do esc
           data: {
             habilitado: true,
             datajud_habilitado: true,
+            snapshot_habilitado: true,
             tpu_versao: "26/05/2026",
           },
         };
       }
       if (url === "/jurimetria/tribunais/desfechos") {
         return { data: DESFECHOS };
+      }
+      if (url === "/jurimetria/tribunais/historico") {
+        return {
+          data: {
+            items: [
+              {
+                id: "s1",
+                tribunal: "TJMG",
+                n_documentos: 52,
+                amostra_truncada: false,
+                coletado_em: "2026-09-20T12:00:00Z",
+              },
+            ],
+          },
+        };
       }
       throw new Error(`url inesperada ${url}`);
     });
@@ -134,6 +150,7 @@ describe("JurimetriaTribunais — coexistência rotulada com a jurimetria do esc
     expect(screen.getByText(/Justiça do Trabalho — TRT3\/MG/)).toBeTruthy();
     expect(screen.getByText(/n=14/)).toBeTruthy();
     expect(screen.getByText(/n=80/)).toBeTruthy();
+    expect(screen.getByText(/Histórico agregado: 1 snapshot/)).toBeTruthy();
 
     const contagem = screen.getByText("Contagem").closest("tr")!;
     expect(contagem.textContent).toContain("—");
