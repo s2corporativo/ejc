@@ -155,10 +155,17 @@ class AIProviderPolicy:
         elif not solicitado and task in TAREFAS_ECONOMICAS:
             # Afinidade ESTRITA: rotina usa Groq; Ollama pode servir de fallback
             # local. Maritaca não é consumida por rotina automaticamente.
-            elegiveis = [p for p in elegiveis if p in {"groq", "ollama"}]
+            # A flag de rollback recoloca Anthropic no fallback automático.
+            permitidos = {"groq", "ollama"}
+            if auto_anthropic:
+                permitidos.add("anthropic")
+            elegiveis = [p for p in elegiveis if p in permitidos]
             if "groq" in elegiveis:
                 elegiveis = ["groq"] + [p for p in elegiveis if p != "groq"]
-            motivos.append("tarefa econômica — afinidade Groq/Ollama")
+            motivos.append(
+                "tarefa econômica — afinidade Groq/Ollama"
+                + ("/Anthropic rollback" if auto_anthropic else "")
+            )
 
         requer_hitl = bool(s.AI_REQUIRE_HITL)
 
