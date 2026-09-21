@@ -50,10 +50,10 @@ SYS_TRIAGEM = (
     ' "pontos_fracos": "<fragilidades e riscos>",'
     ' "provas_necessarias": ["<prova/documento>", "..."],'
     ' "oportunidades": "<oportunidades estratégicas>",'
-    ' "chance_exito": <inteiro 0-100>,'
     ' "complexidade": "<baixa|media|alta>"}\n'
     "Baseie-se só nos fatos. NÃO invente jurisprudência nem números de processo. "
-    "Se faltarem dados, seja conservador na chance de êxito."
+    "NÃO estime percentual ou probabilidade de êxito; descreva apenas riscos, "
+    "forças, fragilidades e lacunas verificáveis."
 )
 
 
@@ -142,7 +142,6 @@ async def triagem_caso(case_id: str) -> None:
             opp = (data.get("oportunidades") or "").strip()
             fracos = (data.get("pontos_fracos") or "").strip()
             provas = data.get("provas_necessarias") or []
-            chance = data.get("chance_exito")
             complex_ = (data.get("complexidade") or "").strip()
             assunto = (data.get("assunto") or "").strip()
             # Normaliza para o canônico (aceita valores legados "civel"/"penal");
@@ -165,7 +164,7 @@ async def triagem_caso(case_id: str) -> None:
 
             resumo_mov = (
                 f"IA – Triagem automática: área≈{area_sug or area_atual} · "
-                f"assunto={assunto or '—'} · chance≈{chance}% · "
+                f"assunto={assunto or '—'} · "
                 f"complexidade={complex_ or '—'}. RASCUNHO — revisão por advogado (OAB)."
             )
             db.add(CaseMovimento(
@@ -212,7 +211,6 @@ async def triagem_caso(case_id: str) -> None:
                         "teses": {"principal": tese or None, "secundarias": sec},
                         "riscos": {
                             "pontos_fracos": fracos or None,
-                            "chance_exito": chance,
                             "complexidade": complex_ or None,
                         },
                         "provas": provas,
