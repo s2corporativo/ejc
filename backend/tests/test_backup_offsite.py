@@ -54,6 +54,7 @@ def _prepara(monkeypatch, tmp_path, **overrides):
         "BACKUP_RCLONE_REMOTE": "onedrive:EJC-Backups",
         "BACKUP_RCLONE_TIMEOUT": 123,
         "BACKUP_OFFSITE_OBRIGATORIO": False,
+        "BACKUP_DELETE_LOCAL_AFTER_OFFSITE": False,
         "BACKUP_DRIVE_FOLDER_ID": "",
         "BACKUP_DIR": str(backup_dir),
         "BACKUP_RETENTION_DAYS": 7,
@@ -82,11 +83,20 @@ async def test_destino_rclone_chama_subprocess_com_args_corretos(monkeypatch, tm
         stderr = ""
 
     def _fake_run(cmd, **kwargs):
-        # O artefato enviado precisa estar CIFRADO (nunca em claro).
-        with open(cmd[3], "rb") as f:  # cmd = [rclone, copyto, --, caminho, destino]
-            Fernet(CHAVE.encode()).decrypt(f.read())  # levanta se não-Fernet
-        chamadas.append({"cmd": cmd, **kwargs})
-        return _Retorno()
+        if cmd[1] == "copyto":
+            with open(cmd[3], "rb") as f:
+                payload = f.read()
+                Fernet(CHAVE.encode()).decrypt(payload)
+            chamadas.append({"cmd": cmd, **kwargs})
+            _fake_run.remote_size = len(payload)
+            return _Retorno()
+        if cmd[1] == "size":
+            class _Size:
+                returncode = 0
+                stderr = ""
+                stdout = '{"bytes": %d}' % getattr(_fake_run, "remote_size", 0)
+            return _Size()
+        raise AssertionError(cmd)
 
     monkeypatch.setattr(backup_service.shutil, "which", lambda nome: f"/usr/bin/{nome}")
     monkeypatch.setattr(backup_service.subprocess, "run", _fake_run)
@@ -256,3 +266,36 @@ def test_contrato_infra_rclone_no_container():
     # rotaciona ~1h); mount :ro quebraria o backup diário (review PR #484).
     linha_mount = next(l for l in compose.splitlines() if "/root/.config/rclone" in l)
     assert not linha_mount.rstrip().endswith(":ro")
+
+
+async def test_rclone_sucesso_remove_local_quando_politica_ativa(monkeypatch, tmp_path):
+    from pathlib import Path
+    _prepara(monkeypatch, tmp_path, BACKUP_DELETE_LOCAL_AFTER_OFFSITE=True)
+    remote_sizes = {}
+
+    class _Ret:
+        returncode = 0
+        stderr = ""
+        stdout = ""
+
+    def _fake_run(cmd, **kwargs):
+        if cmd[1] == "copyto":
+            remote_sizes[cmd[4]] = Path(cmd[3]).stat().st_size
+            return _Ret()
+        if cmd[1] == "size":
+            class _Size:
+                returncode = 0
+                stderr = ""
+                stdout = '{"bytes": %d}' % remote_sizes[cmd[3]]
+            return _Size()
+        raise AssertionError(cmd)
+
+    monkeypatch.setattr(backup_service.shutil, "which", lambda nome: f"/usr/bin/{nome}")
+    monkeypatch.setattr(backup_service.subprocess, "run", _fake_run)
+
+    resultado = await backup_service.executar_backup(_FakeDB(), origem="manual")
+    assert resultado["ok"] is True
+    assert resultado["offsite_ok"] is True
+    for art in resultado["artefatos"]:
+        assert art["local_removido_pos_offsite"] is True
+        assert not (tmp_path / "backups" / art["nome"]).exists()

@@ -9,6 +9,7 @@ MIGRATIONS_BACKWARD_COMPATIBLE="${MIGRATIONS_BACKWARD_COMPATIBLE:-0}"
 RUN_SEEDS="${RUN_SEEDS:-0}"
 ENSURE_DAILY_BACKUP="${ENSURE_DAILY_BACKUP:-1}"
 REQUIRE_PREDEPLOY_BACKUP="${REQUIRE_PREDEPLOY_BACKUP:-1}"
+MIN_FREE_GB="${MIN_FREE_GB:-20}"
 MIGRATION_DATABASE_URL_FILE="${MIGRATION_DATABASE_URL_FILE:-/opt/ejc/secrets/migration_database_url}"
 
 log() { echo "[$(date '+%F %T')] $*"; }
@@ -17,6 +18,7 @@ die_policy() { printf 'ERRO DE POLÍTICA: %s\n' "$*" >&2; exit 2; }
 
 case "$REQUIRE_PREDEPLOY_BACKUP" in 0|1) ;; *) die_policy "REQUIRE_PREDEPLOY_BACKUP deve ser 0 ou 1";; esac
 case "$ENSURE_DAILY_BACKUP" in 0|1) ;; *) die_policy "ENSURE_DAILY_BACKUP deve ser 0 ou 1";; esac
+[[ "$MIN_FREE_GB" =~ ^[1-9][0-9]*$ ]] || die_policy "MIN_FREE_GB deve ser inteiro >= 1"
 if [ "$REQUIRE_PREDEPLOY_BACKUP" = "1" ] && [ "$ENSURE_DAILY_BACKUP" != "1" ]; then
   die_policy "ENSURE_DAILY_BACKUP=0 é incompatível com REQUIRE_PREDEPLOY_BACKUP=1"
 fi
@@ -186,6 +188,15 @@ GIT_SHA="${TARGET_SHA:-$(git rev-parse HEAD 2>/dev/null || true)}"
 export GIT_SHA
 log "Versão a publicar: ${GIT_SHA}"
 docker compose config --quiet
+
+AVAIL_KB="$(df -Pk "${APP_DIR}" | awk 'NR==2 {print $4}')"
+MIN_FREE_KB="$((MIN_FREE_GB * 1024 * 1024))"
+if [ -z "$AVAIL_KB" ] || [ "$AVAIL_KB" -lt "$MIN_FREE_KB" ]; then
+  log "ERRO CRÍTICO: espaço livre insuficiente para deploy (${AVAIL_KB:-0} KB; mínimo ${MIN_FREE_GB} GB)."
+  log "Deploy bloqueado antes de backup/build para evitar ENOSPC em Docker/PostgreSQL."
+  exit 1
+fi
+log "Gate de capacidade aprovado: mínimo ${MIN_FREE_GB} GB livres."
 
 log "Verificando pré-requisitos de backup"
 BACKUP_SAIDA=""
