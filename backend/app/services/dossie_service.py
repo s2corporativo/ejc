@@ -1,7 +1,7 @@
 # ── app/services/dossie_service.py ────────────────────────────────────────────
 # Montagem do Dossiê Estratégico — agrega dados do caso + IA (via AI Gateway).
 # Resultado = rascunho (DossieStatus.rascunho / HITL obrigatório).
-# Enriquecimento IA: dossiê narrativo + SWOT + probabilidade de êxito +
+# Enriquecimento IA: dossiê narrativo + SWOT + análise qualitativa de riscos +
 # próximos passos acionáveis + jurisprudência relacionada (RAG).
 # LGPD: todo dado enviado ao provedor passa por sanitizar_pii/validar_sem_pii.
 from __future__ import annotations
@@ -196,7 +196,7 @@ def _montar_prompt(dados: dict, rag: list[dict]) -> str:
         "4. Histórico de Comunicações",
         "5. Pendências e Próximos Passos Acionáveis (lista objetiva, com responsável e prazo sugerido)",
         "6. Análise SWOT Estratégica (Forças, Fraquezas, Oportunidades, Ameaças)",
-        "7. Probabilidade de Êxito (baixa/média/alta, COM justificativa baseada nos dados — NUNCA prometa resultado)",
+        "7. Fatores Favoráveis, Desfavoráveis e Incertezas (análise qualitativa; NÃO atribua probabilidade/chance de êxito)",
         "8. Jurisprudência Relacionada (cite [Fonte N] das fontes fornecidas; se não houver, escreva 'sem base na biblioteca interna')",
         "9. Recomendações Estratégicas da IA",
         "",
