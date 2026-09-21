@@ -79,12 +79,13 @@ O orchestrator invoca a policy após a sanitização do input (`ja_sanitizado=Tr
 
 ## 3. Ordem base — `AI_PROVIDER_PRIORITY`
 
-CSV em Settings (default `ollama,anthropic,groq`, config.py:92). `_ordem_prioridade` (provider_policy.py:60-68) deduplica e normaliza; vazio → fallback `["ollama","anthropic","groq"]`. Cadeia base = prioridade filtrada por elegibilidade.
+CSV em Settings: `groq,maritaca,ollama,anthropic`. `_ordem_prioridade` deduplica e normaliza; vazio usa essa mesma ordem-base. Depois da elegibilidade, a afinidade por tarefa restringe a cadeia.
 
 ## 4. Priorização por perfil de tarefa (provider_policy.py:21-29, 112-119)
 
-- `TAREFAS_COMPLEXAS` = {analise_caso, minutas, dossie, pesquisa_juridica, estrategia, analise_juridica, elaboracao_peca} → se Anthropic elegível, vai para a FRENTE da cadeia ("tarefa complexa — Anthropic priorizado").
-- `TAREFAS_ECONOMICAS` = {resumo, triagem, chat_rapido} → Ollama/Groq à frente (custo ~zero).
+- `TAREFAS_COMPLEXAS` → Maritaca primeiro, com Ollama como alternativa local; Groq não assume mérito silenciosamente.
+- `TAREFAS_ECONOMICAS` → Groq primeiro, com Ollama como alternativa local; Maritaca não é consumida silenciosamente por rotina.
+- Anthropic só entra automaticamente com `ANTHROPIC_AUTO_ROUTING_ENABLED=true`; seleção explícita continua permitida quando elegível.
 - Aceita tanto nomes de `TarefaIA` quanto task_types do gateway.
 
 ## 5. Barreira LGPD (provider_policy.py:95-110)
@@ -103,9 +104,9 @@ A policy decide no núcleo, mas o `ai_gateway` **não confia** nessa decisão: a
 
 | Cenário | Cadeia resultante | Por quê |
 |---|---|---|
-| Análise de caso/minuta/dossiê, conteúdo limpo | anthropic → ollama → groq | Tarefa complexa prioriza Claude (MODEL_COMPLEXO) |
-| Resumo/triagem/chat rápido | ollama → groq | Econômicas; Anthropic nem entra no TASK_ROUTING de resumo/chat |
+| Análise de caso/minuta/dossiê, conteúdo limpo | maritaca → ollama | Mérito jurídico usa Maritaca; sem degradação silenciosa para Groq/Claude |
+| Resumo/triagem/chat rápido | groq → ollama | Rotina usa Groq; sem consumo silencioso de Maritaca/Claude |
 | Qualquer tarefa com PII residual após sanitização | somente ollama | Externos removidos (LGPD) |
 | PII residual e `OLLAMA_ENABLED=false` | (vazia) → HTTP 422 | Bloqueio com motivo seguro |
 | `AI_EXTERNAL_PROVIDERS_ALLOWED=false` | somente ollama | Modo soberania total |
-| `ANTHROPIC_ENABLED=false` (kill-switch) | ollama → groq | Claude fora sem apagar a chave |
+| `ANTHROPIC_AUTO_ROUTING_ENABLED=false` | Claude fora do automático | Continua disponível por seleção explícita, sujeito à elegibilidade |
