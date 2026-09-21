@@ -229,6 +229,9 @@ services:
         # Flag do menu de 9 módulos (Onda 1) — default ATIVO no código.
         # Rollback global: VITE_EJC_MENU_9=false no .env do host + rebuild.
         VITE_EJC_MENU_9: ${VITE_EJC_MENU_9:-}
+        # Abas Tarefas/Intimações no workspace do caso (Onda 4) — mesmo
+        # caminho até o Vite; rollback global idêntico.
+        VITE_EJC_W4_TABS: ${VITE_EJC_W4_TABS:-}
     container_name: ejc_frontend
     restart: unless-stopped
     logging: *ejc-logging

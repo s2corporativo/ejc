@@ -94,15 +94,19 @@ async def listar(
     cu: User = Depends(get_current_user),
 ):
     q = select(DjenComunicacao)
-    if not is_gestao(cu):
+    # Onda 4 (§10): contexto de caso no workspace — a aba "Intimações" do
+    # CasoDetalhe lista as comunicações DJEN vinculadas ao caso. A carteira
+    # aqui é do CASO (responsável/auxiliar, padrão canônico de atividades.py),
+    # não da OAB capturante — por isso o predicado advogado_id NÃO se aplica
+    # nesta visão escopada. Sem case_id, comportamento anterior preservado.
+    if case_id:
+        if not is_gestao(cu):
+            await verificar_acesso_caso(db, cu, case_id)
+        q = q.where(DjenComunicacao.case_id == case_id)
+    elif not is_gestao(cu):
         q = q.where(DjenComunicacao.advogado_id == cu.id)
     if apenas_pendentes:
         q = q.where(DjenComunicacao.processada == False)  # noqa: E712
-    # Onda 4 (§10): contexto de caso no workspace — a aba "Intimações" do
-    # CasoDetalhe lista as comunicações DJEN vinculadas ao caso (aditivo;
-    # sem case_id o comportamento é exatamente o anterior).
-    if case_id:
-        q = q.where(DjenComunicacao.case_id == case_id)
     q = q.order_by(DjenComunicacao.data_disponibilizacao.desc())
 
     total = (await db.execute(select(sqlfunc.count()).select_from(q.subquery()))).scalar()

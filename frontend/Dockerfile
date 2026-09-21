@@ -12,6 +12,10 @@ COPY . .
 # contexto, então o ARG/ENV é o único caminho válido até o Vite.
 ARG VITE_EJC_MENU_9
 ENV VITE_EJC_MENU_9=$VITE_EJC_MENU_9
+# Flags das abas das ondas 3/4 (config/w3Tabs.ts): rollback global idêntico —
+# VITE_EJC_W4_TABS=false desliga Tarefas e Intimações no workspace do caso.
+ARG VITE_EJC_W4_TABS
+ENV VITE_EJC_W4_TABS=$VITE_EJC_W4_TABS
 RUN sed -i "s/ejc-v3/ejc-v3-$(date +%s)/" public/sw.js
 RUN npm run build
 

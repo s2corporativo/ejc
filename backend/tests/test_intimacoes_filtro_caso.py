@@ -14,6 +14,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import Select
@@ -68,6 +69,25 @@ def _tem_predicado_case_id(db: _CapturaDB) -> bool:
     return any(isinstance(stmt, Select) and _where_contem_case_id(stmt) for stmt in db.statements)
 
 
+def _tem_predicado_advogado(db: _CapturaDB) -> bool:
+    return any(
+        isinstance(stmt, Select)
+        and (w := getattr(stmt, "whereclause", None)) is not None
+        and "advogado_id" in str(w.compile())
+        for stmt in db.statements
+    )
+
+
+@pytest.fixture(autouse=True)
+def _acesso_caso_passa(monkeypatch):
+    """Visão escopada valida acesso ao caso (responsável/auxiliar) — passa aqui."""
+
+    async def _passa(db, cu, case_id):
+        return SimpleNamespace(id=case_id)
+
+    monkeypatch.setattr(router_mod, "verificar_acesso_caso", _passa)
+
+
 def test_intimacoes_sem_case_id_nao_filtra_por_caso():
     db = _CapturaDB()
     r = _client(db).get("/intimacoes/", params={"apenas_pendentes": False})
@@ -83,6 +103,18 @@ def test_intimacoes_com_case_id_filtra_por_caso():
     )
     assert r.status_code == 200, r.text
     assert _tem_predicado_case_id(db)
+    # Carteira do CASO (responsável/auxiliar — padrão atividades.py), NÃO da
+    # OAB capturante: a visão escopada não pode esconder comunicação capturada
+    # pelo advogado responsável quando quem consulta é o auxiliar.
+    assert not _tem_predicado_advogado(db)
+
+
+def test_intimacoes_sem_case_id_mantem_filtro_de_oab_para_perfis_baixos():
+    db = _CapturaDB()
+    r = _client(db).get("/intimacoes/", params={"apenas_pendentes": False})
+    assert r.status_code == 200, r.text
+    # Comportamento anterior preservado na visão global do advogado.
+    assert _tem_predicado_advogado(db)
 
 
 def test_intimacoes_case_id_vazio_comporta_se_como_ausente():
