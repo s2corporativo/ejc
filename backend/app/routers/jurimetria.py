@@ -21,7 +21,12 @@ from app.models.user import User
 # Cobertura APENAS do bloco `CONSOLIDAÇÃO 12/08/2026` abaixo; não mexer sem
 # checar o bloco.
 from app.core.security import requer_equipe_juridica as _je_requer_equipe_juridica
-from app.services.jurimetria import MIN_AMOSTRA as _je_MIN_AMOSTRA
+from app.services.jurimetria import (
+    MIN_AMOSTRA as _je_MIN_AMOSTRA,
+    RESULTADOS_DESFAVORAVEIS as _RESULTADOS_DESFAVORAVEIS,
+    RESULTADOS_FAVORAVEIS as _RESULTADOS_FAVORAVEIS,
+    intervalo_wilson as _intervalo_wilson,
+)
 
 
 def _req_staff(cu: User = Depends(get_current_user)) -> User:
@@ -64,6 +69,20 @@ def _taxa_decidida(venceu: int, perdeu: int) -> float | None:
     """
     decididos = int(venceu or 0) + int(perdeu or 0)
     return round(int(venceu or 0) / decididos, 4) if decididos else None
+
+
+def _ic_decidida(venceu: int, perdeu: int) -> dict | None:
+    """IC95% de Wilson no mesmo domínio 0..1 de taxa_sucesso."""
+    decididos = int(venceu or 0) + int(perdeu or 0)
+    ic = _intervalo_wilson(int(venceu or 0), decididos)
+    if not ic:
+        return None
+    return {
+        "inferior": round(ic["inferior"] / 100.0, 4),
+        "superior": round(ic["superior"] / 100.0, 4),
+        "nivel": ic["nivel"],
+        "metodo": ic["metodo"],
+    }
 
 
 @router.get("/overview")
@@ -122,6 +141,7 @@ async def overview(
         "acordo": acordo,
         "pendente": pendente,
         "taxa_sucesso_geral": _taxa_decidida(venceu, perdeu),
+        "intervalo_confianca_95": _ic_decidida(venceu, perdeu),
         "taxa_sucesso_denominador": "procedente + improcedente",
         "acordo_excluido_da_taxa": True,
         "pendente_excluido_da_taxa": True,
@@ -180,70 +200,34 @@ async def por_area(
                 "acordo": int(r.acordo or 0),
                 "pendente": int(r.pendente or 0),
                 "taxa_sucesso": _taxa_decidida(venceu, perdeu),
+                "intervalo_confianca_95": _ic_decidida(venceu, perdeu),
             }
         )
     return resultado
 
 
-@router.get("/por-magistrado")
+@router.get("/por-magistrado", deprecated=True)
 async def por_magistrado(
     area: Optional[str] = Query(None),
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Desempenho por magistrado com amostra decidida explícita."""
+    """Métrica desabilitada até existir magistrado real no processo/decisão.
+
+    O campo legado Tese.magistrado descreve metadado da tese, não prova quem
+    julgou cada caso. Publicar taxa comportamental com essa origem seria
+    semanticamente incorreto. A rota permanece apenas para compatibilidade.
+    """
     if not _is_staff(cu):
         raise HTTPException(403)
-
-    q = (
-        select(
-            Tese.magistrado,
-            func.count(TeseCasoLink.id).label("total"),
-            func.count(
-                sa_case((TeseCasoLink.resultado == "procedente", 1))
-            ).label("venceu"),
-            func.count(
-                sa_case((TeseCasoLink.resultado == "improcedente", 1))
-            ).label("perdeu"),
-            func.count(sa_case((TeseCasoLink.resultado == "acordo", 1))).label(
-                "acordo"
-            ),
-            func.count(sa_case((TeseCasoLink.resultado == "pendente", 1))).label(
-                "pendente"
-            ),
-        )
-        .join(Tese, Tese.id == TeseCasoLink.tese_id)
-        .where(Tese.deleted_at.is_(None), Tese.magistrado.isnot(None))
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            "Métrica por magistrado desabilitada: a base atual não possui vínculo "
+            "confiável processo/decisão→magistrado. Use tribunal/comarca/assunto."
+        ),
     )
-    if area:
-        q = q.where(Tese.area_juridica.ilike(f"%{area}%"))
-
-    q = (
-        q.group_by(Tese.magistrado)
-        .order_by(func.count(TeseCasoLink.id).desc())
-        .limit(limit)
-    )
-    rows = (await db.execute(q)).all()
-
-    resultado = []
-    for r in rows:
-        venceu = int(r.venceu or 0)
-        perdeu = int(r.perdeu or 0)
-        resultado.append(
-            {
-                "magistrado": r.magistrado,
-                "total": int(r.total or 0),
-                "decididos": venceu + perdeu,
-                "venceu": venceu,
-                "perdeu": perdeu,
-                "acordo": int(r.acordo or 0),
-                "pendente": int(r.pendente or 0),
-                "taxa_sucesso": _taxa_decidida(venceu, perdeu),
-            }
-        )
-    return resultado
-
 
 @router.get("/por-tribunal")
 async def por_tribunal(
@@ -295,6 +279,7 @@ async def por_tribunal(
                 "acordo": int(r.acordo or 0),
                 "pendente": int(r.pendente or 0),
                 "taxa_sucesso": _taxa_decidida(venceu, perdeu),
+                "intervalo_confianca_95": _ic_decidida(venceu, perdeu),
             }
         )
     return resultado
@@ -308,35 +293,78 @@ async def por_tese(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Ranking legado de teses; taxa persistida no próprio cadastro da tese."""
+    """Métricas por tese derivadas da fonte canônica tese_caso_links."""
     if not _is_staff(cu):
         raise HTTPException(403)
 
-    q = select(Tese).where(
-        Tese.deleted_at.is_(None),
-        Tese.status == TeseStatus.ativa,
-        Tese.vezes_usada >= min_usos,
+    q = (
+        select(
+            Tese.id,
+            Tese.titulo,
+            Tese.area_juridica,
+            Tese.tribunal,
+            func.count(TeseCasoLink.id).label("total"),
+            func.count(
+                sa_case((TeseCasoLink.resultado == "procedente", 1))
+            ).label("venceu"),
+            func.count(
+                sa_case((TeseCasoLink.resultado == "improcedente", 1))
+            ).label("perdeu"),
+            func.count(
+                sa_case((TeseCasoLink.resultado == "acordo", 1))
+            ).label("acordo"),
+            func.count(
+                sa_case((TeseCasoLink.resultado == "pendente", 1))
+            ).label("pendente"),
+        )
+        .join(TeseCasoLink, TeseCasoLink.tese_id == Tese.id)
+        .where(
+            Tese.deleted_at.is_(None),
+            Tese.status == TeseStatus.ativa,
+        )
     )
     if area:
         q = q.where(Tese.area_juridica.ilike(f"%{area}%"))
-    q = q.order_by(Tese.taxa_sucesso.desc().nullslast()).limit(limit)
+    q = q.group_by(Tese.id, Tese.titulo, Tese.area_juridica, Tese.tribunal)
+    rows = (await db.execute(q)).all()
 
-    teses = (await db.execute(q)).scalars().all()
-    return [
-        {
-            "id": t.id,
-            "titulo": t.titulo,
-            "area_juridica": t.area_juridica,
-            "tribunal": t.tribunal,
-            "vezes_usada": t.vezes_usada,
-            "vezes_venceu": t.vezes_venceu,
-            "vezes_perdeu": t.vezes_perdeu,
-            "taxa_sucesso": t.taxa_sucesso,
-            "fonte_metrica": "campo agregado da tese",
-        }
-        for t in teses
-    ]
+    resultado = []
+    for r in rows:
+        total = int(r.total or 0)
+        if total < min_usos:
+            continue
+        venceu = int(r.venceu or 0)
+        perdeu = int(r.perdeu or 0)
+        decididos = venceu + perdeu
+        resultado.append(
+            {
+                "id": r.id,
+                "titulo": r.titulo,
+                "area_juridica": r.area_juridica,
+                "tribunal": r.tribunal,
+                "vezes_usada": total,
+                "vezes_venceu": venceu,
+                "vezes_perdeu": perdeu,
+                "acordo": int(r.acordo or 0),
+                "pendente": int(r.pendente or 0),
+                "decididos": decididos,
+                "taxa_sucesso": _taxa_decidida(venceu, perdeu),
+                "intervalo_confianca_95": _ic_decidida(venceu, perdeu),
+                "amostra_suficiente": decididos >= _je_MIN_AMOSTRA,
+                "fonte_metrica": "tese_caso_links",
+                "denominador": "procedente + improcedente",
+            }
+        )
 
+    resultado.sort(
+        key=lambda item: (
+            item["taxa_sucesso"] is not None,
+            item["taxa_sucesso"] or -1,
+            item["decididos"],
+        ),
+        reverse=True,
+    )
+    return resultado[:limit]
 
 @router.get("/tendencias")
 async def tendencias(
@@ -377,6 +405,7 @@ async def tendencias(
             "acordo": int(r.acordo or 0),
             "pendente": int(r.pendente or 0),
             "taxa": _taxa_decidida(r.venceu, r.perdeu),
+            "intervalo_confianca_95": _ic_decidida(r.venceu, r.perdeu),
         }
         for r in rows
     ]
@@ -448,8 +477,6 @@ RESULTADO_LABEL = {
     "derrota": "Derrota",
     "improcedente": "Improcedente",
 }
-_RESULTADOS_FAVORAVEIS = {"exito", "exito_total", "exito_parcial"}
-_RESULTADOS_DESFAVORAVEIS = {"derrota", "improcedente"}
 
 
 async def _por_resultado(db: AsyncSession, tribunal: Optional[str] = None):
@@ -592,12 +619,22 @@ async def benchmarks_internos(
     dias_mediana = int(tempo["dias_mediana"] or 0)
     return {
         "tribunal": tribunal or "todos",
+        "tempo_no_ejc": {
+            "total_casos": int(tempo["total_processos"] or 0),
+            "media_dias": dias_medio,
+            "mediana_dias": dias_mediana,
+            "inicio": "cases.created_at",
+            "fim": "cases.data_encerramento",
+            "nao_e_tempo_processual": True,
+        },
+        # Alias legado preservado; o metadado explicita que NÃO é tramitação judicial.
         "tempo_tramitacao": {
             "total_processos": int(tempo["total_processos"] or 0),
-            # Campo canônico novo + alias legado para consumidores antigos.
             "media_dias": dias_medio,
             "mediana_dias": dias_mediana,
             "dias_medio": dias_medio,
+            "nao_e_tempo_processual": True,
+            "rotulo_recomendado": "Tempo no EJC até encerramento",
         },
         "por_resultado": por_resultado,
         "total_encerrados_com_resultado": total,
@@ -675,6 +712,7 @@ async def analise_prospectiva(
         }
 
     taxa = round(favoraveis / decididos * 100, 1)
+    ic95 = _intervalo_wilson(favoraveis, decididos)
     aviso_classe = (
         f" A classe TPU informada ('{classe}') é apenas referência e não entrou "
         "no cálculo, pois a base interna não possui esse filtro."
@@ -687,7 +725,8 @@ async def analise_prospectiva(
         # Alias legado, semanticamente documentado como taxa histórica.
         "probabilidade_provimento": taxa,
         "metodo": f"taxa histórica interna — {escopo}",
-        "confianca": "baixa" if decididos < 10 else "média" if decididos < 50 else "alta",
+        "intervalo_confianca_95": ic95,
+        "confianca": "descritiva_com_ic95",
         "aviso": (
             "Indicador descritivo do histórico do escritório; não representa "
             "probabilidade estatisticamente calibrada de decisão futura."
