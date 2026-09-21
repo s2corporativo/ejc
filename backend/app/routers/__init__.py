@@ -9,7 +9,6 @@
 from app.routers import (  # noqa: E402 — re-exports deliberados
     defesas_revisoes as defesas_revisoes,
     defesas_revisoes_avancado as defesas_revisoes_avancado,
-    defesas_revisoes_pacote_seguro as defesas_revisoes_pacote_seguro,
     entrada_universal as entrada_universal,
     novos_modulos as novos_modulos,
 )
@@ -19,5 +18,5 @@ from app.routers import (  # noqa: E402 — re-exports deliberados
 # defesas_revisoes.py e ROLES_PACOTE em defesas_revisoes_avancado.py — sem
 # mutação de conjuntos compartilhados no import.
 
-# POST /defesas-revisoes/avancado/pacote existe SÓ no pacote seguro (a
-# implementação legada foi removida do router avançado — sem sombreamento).
+# POST /defesas-revisoes/avancado/pacote vive no router avançado (fusão B3/W5:
+# o arquivo do pacote seguro foi absorvido; implementação legada segue removida).
