@@ -149,7 +149,7 @@ class VereditoIA:
         try:
             dados = await calcular_jurimetria(db, user, dimensao="area")
             grupo = _grupo_da_area(dados.get("grupos", []), area_juridica)
-            n_amostra = int(grupo.get("n_decididos") or 0) if grupo else 0
+            n_amostra = int(grupo.get("n_decididos") or grupo.get("n") or 0) if grupo else 0
             if grupo and grupo.get("amostra_suficiente") and \
                     grupo.get("taxa_exito") is not None:
                 # Campo legado `probabilidade_exito` recebe taxa histórica, não
