@@ -48,7 +48,7 @@ def test_payload_snapshot_preserva_raciocinio_juridico_sem_inventar_campos():
     assert payload["fatos"] == _PARECER["sumario_fatos"]
     assert payload["pontos_fortes"] == _PARECER["pontos_fortes"]
     assert payload["riscos"]["pontos_fracos"] == _PARECER["pontos_fracos"]
-    assert payload["riscos"]["chance_exito"] == 65
+    assert "chance_exito" not in payload["riscos"]
     assert payload["teses"]["principal"] == "Inadimplemento contratual"
     assert payload["teses"]["secundarias"] == ["Perdas e danos"]
     assert payload["teses"]["detalhe"][0]["forca"] == "alta"
