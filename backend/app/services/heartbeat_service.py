@@ -99,11 +99,6 @@ JOBS_MONITORADOS: dict[str, dict[str, Any]] = {
         "max_age_horas": _MAX_DIARIO,
         "cadencia": "diário 07h00 UTC",
     },
-    JOB_JURIMETRIA_SNAPSHOT: {
-        "label": "Snapshot agregado da jurimetria dos tribunais",
-        "max_age_horas": _MAX_SEMANAL,
-        "cadencia": "semanal (sábados 06h00)",
-    },
 }
 
 #: Job de captura/ingestão → slug da fonte correspondente em `fontes_ingestao`.
