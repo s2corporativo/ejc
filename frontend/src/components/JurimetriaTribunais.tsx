@@ -107,7 +107,16 @@ type Desfechos = {
 type Status = {
   habilitado: boolean;
   datajud_habilitado: boolean;
+  snapshot_habilitado?: boolean;
   tpu_versao: string;
+};
+
+type HistoricoItem = {
+  id: string;
+  tribunal: string;
+  n_documentos: number;
+  amostra_truncada: boolean;
+  coletado_em: string | null;
 };
 
 function pct(v: number | null | undefined): string {
@@ -233,6 +242,7 @@ export default function JurimetriaTribunais() {
   const [dados, setDados] = useState<Desfechos | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [indisponivel, setIndisponivel] = useState<string | null>(null);
+  const [historico, setHistorico] = useState<HistoricoItem[]>([]);
 
   useEffect(() => {
     let ativo = true;
@@ -249,6 +259,18 @@ export default function JurimetriaTribunais() {
         }
         const r = await api.get<Desfechos>("/jurimetria/tribunais/desfechos");
         if (ativo) setDados(r.data);
+        if (s.data.snapshot_habilitado) {
+          try {
+            const h = await api.get<{ items: HistoricoItem[] }>(
+              "/jurimetria/tribunais/historico",
+              { params: { tribunal: "TJMG", limit: 12 } },
+            );
+            if (ativo) setHistorico(h.data.items ?? []);
+          } catch {
+            // Histórico é complementar: falha nele não derruba o painel atual.
+            if (ativo) setHistorico([]);
+          }
+        }
       } catch (e: any) {
         if (!ativo) return;
         const st = e?.response?.status;
@@ -307,6 +329,15 @@ export default function JurimetriaTribunais() {
 
       {!carregando && dados && (
         <>
+          {status?.snapshot_habilitado && (
+            <p className="text-[11px] text-gray-400 mb-3">
+              {historico.length > 0
+                ? `Histórico agregado: ${historico.length} snapshot(s) · última coleta ${new Date(
+                    historico[0].coletado_em || "",
+                  ).toLocaleDateString("pt-BR")}`
+                : "Histórico agregado ativado; aguardando a primeira coleta semanal."}
+            </p>
+          )}
           {dados.amostra_truncada && (
             <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
               Limite máximo de registros atingido. As contagens permanecem
