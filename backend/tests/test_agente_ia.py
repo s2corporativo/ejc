@@ -82,7 +82,7 @@ class TestSelecaoProviderAgentico:
                 [{"role": "user", "content": "analise"}], [],
                 task_type="estrategia",
             )
-        assert exc.value.code == "agent_provider_not_explicit"
+        assert exc.value.ai_error_code == "agent_provider_not_explicit"
 
 
 class TestBarreiraAgenticaPseudonimiza:
