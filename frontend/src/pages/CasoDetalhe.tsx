@@ -65,6 +65,8 @@ import TabProcessos from "./CasoDetalhe/TabProcessos";
 // próprios (padrão Tab*.tsx): upload embutido, prazo inline, peças e composer.
 import TabDocumentos from "./CasoDetalhe/TabDocumentos";
 import TabPrazos from "./CasoDetalhe/TabPrazos";
+import TabTarefas from "./CasoDetalhe/TabTarefas";
+import TabIntimacoes from "./CasoDetalhe/TabIntimacoes";
 import TabPecas from "./CasoDetalhe/TabPecas";
 import { DataRoomPanel } from "./DataRoom";
 import { filtrarTabsW3 } from "../config/w3Tabs";
@@ -95,6 +97,12 @@ export const TABS = [
   { key: "procuracoes", label: "Procurações" },
   { key: "prazos", label: "Prazos" },
   { key: "audiencias", label: "Audiências" },
+  // Onda 4 (§10: Agenda/Prazos/Tarefas/Intimações): abas SOMENTE LEITURA do
+  // workspace — a escrita continua ÚNICA na Central /atividades (padrão da
+  // aba Prazos). Entram atrás de flag (config/w3Tabs.ts) com rollback por
+  // perfil; deep-link com flag OFF cai no Resumo via filtrarTabsW3().
+  { key: "tarefas", label: "Tarefas" },
+  { key: "intimacoes", label: "Intimações" },
   { key: "financeiro", label: "Financeiro" },
   { key: "custos", label: "Centro de Custos" },
   { key: "liquidez", label: "Acordo & Liquidez" },
@@ -802,6 +810,13 @@ export default function CasoDetalhe() {
             )}
           />
         );
+      case "tarefas":
+        // Onda 4: tarefas do caso — somente leitura; escrita única na Central.
+        return <TabTarefas caseId={id} />;
+      case "intimacoes":
+        // Onda 4: intimações DJEN do caso — somente leitura; tratamento único
+        // na Central (processar, aceitar/recusar prazo).
+        return <TabIntimacoes caseId={id} />;
       case "financeiro":
         return (
           <TabLista
