@@ -22,7 +22,19 @@ const GRUPO = {
   sem_resolucao_merito: 2,
   decididos_merito: 24,
   taxa_procedencia: 0.75,
+  intervalo_confianca_95_procedencia: {
+    inferior: 0.551,
+    superior: 0.879,
+    nivel: 0.95,
+    metodo: "wilson",
+  },
   taxa_acordo: 0.1333,
+  intervalo_confianca_95_acordo: {
+    inferior: 0.053,
+    superior: 0.296,
+    nivel: 0.95,
+    metodo: "wilson",
+  },
   amostra_pequena: false,
   tempo_sentenca: { n: 20, mediana_dias: 412, media_dias: 455 },
 };
@@ -67,6 +79,12 @@ const DESFECHOS = {
     provimento_parcial: 2,
     nao_provimento: 7,
     taxa_reforma: 0.4167,
+    intervalo_confianca_95_reforma: {
+      inferior: 0.193,
+      superior: 0.681,
+      nivel: 0.95,
+      metodo: "wilson",
+    },
     amostra_pequena: false,
   },
   fontes_complementares: {
@@ -143,6 +161,8 @@ describe("JurimetriaTribunais — coexistência rotulada com a jurimetria do esc
     expect(screen.getAllByText(/24 decididos no mérito/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("412 dias")).toBeTruthy();
     expect(screen.getByText("41.7%")).toBeTruthy();
+    expect(screen.getAllByText(/IC95% 55\.1%–87\.9%/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/IC95% 19\.3%–68\.1%/)).toBeTruthy();
     expect(screen.getByText(/Não é o desempenho do escritório/)).toBeTruthy();
     expect(screen.getByText(/TPU 26\/05\/2026/)).toBeTruthy();
     expect(screen.getByText(/proxy, não leitura da sentença/)).toBeTruthy();
