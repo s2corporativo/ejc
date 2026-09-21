@@ -17,7 +17,6 @@ from uuid import uuid4
 
 from sqlalchemy import select
 
-from app.core.database import async_session_factory
 from app.models.tese import Tese, TeseStatus
 from app.models.user import User
 
@@ -679,7 +678,6 @@ async def run_seed() -> dict:
     async with async_session_factory() as db:
         revisor_id = await _find_revisor(db)
         for s in SEED:
-            slug = _slugify(s["titulo"])
             existing = (
                 await db.execute(select(Tese).where(Tese.titulo == s["titulo"]))
             ).scalar_one_or_none()
