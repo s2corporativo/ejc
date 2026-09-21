@@ -103,18 +103,42 @@ async def analisar(
     if req.case_id:
         from app.core.ownership import verificar_acesso_caso
         await verificar_acesso_caso(db, cu, req.case_id)
+    # W8 (BE-14 — plano de limpeza §10): o MOTOR é o Núcleo único
+    # (orchestrator → agente por intenção → auditoria canônica). A pipeline de
+    # segurança é equivalente ao motor legado (mesma sanitização LGPD, mesmo
+    # escopo RAG cliente/caso, dossiê sanitizado + precedentes internos via
+    # context_builder). Flag de porta: IA_MOTOR_CANONICO=false volta ao motor
+    # legado SEM deploy. O gate de ownership acima roda ANTES do motor nos
+    # dois modos — tests/test_ai_idor_case_id_gates.py fixa essa ordem.
+    from app.core.config import get_settings
+    from app.services.ai.core import capacidades
+    if get_settings().IA_MOTOR_CANONICO:
+        envelope = await capacidades.analisar(
+            db, cu,
+            case_id=req.case_id,
+            texto=req.descricao_fatos,
+            area=req.area,
+            opcoes={"nomes_proteger": req.nomes_proteger},
+        )
+        if envelope.get("erro"):
+            raise http_erro_ia(envelope["erro"], 502)
+        # Compatibilidade com os consumidores da porta legada: IA.tsx lê
+        # `resposta`/`aviso`/`fontes_usadas`; TabResumo.tsx lê `analise`
+        # (e hoje o modal fica vazio porque o motor legado nunca devolveu
+        # essa chave — com o núcleo, o campo passa a existir de fato).
+        envelope.setdefault("resposta", envelope.get("conteudo") or "")
+        envelope["analise"] = envelope.get("conteudo") or ""
+        envelope.setdefault("ai_log_id", envelope.get("log_id"))
+        envelope["aviso"] = envelope.get("aviso_hitl") or envelope.get("aviso")
+        envelope["fontes_usadas"] = len(envelope.get("fontes_rag") or [])
+        return envelope
     resultado = await analisar_caso(
         db, cu.id, req.descricao_fatos, req.area,
         nomes_proteger=req.nomes_proteger, case_id=req.case_id,
     )
     if "erro" in resultado:
         raise http_erro_ia(resultado["erro"], 502)
-    # PORTA CANÔNICA: POST /ia/analisar (capacidades.analisar). A troca do MOTOR
-    # deste endpoint (ai_service.analisar_caso → Núcleo) fica para a entrega que
-    # também puder ajustar tests/test_ai_idor_case_id_gates.py, que fixa a
-    # chamada a `analisar_caso` como contrato. O CONTRATO DE SAÍDA já é o
-    # canônico: mesmas chaves das cinco portas, com o carimbo HITL único.
-    from app.services.ai.core import capacidades
+    # Saída canônica: mesmas chaves das cinco portas, com o carimbo HITL único.
     return {**resultado, **capacidades.canonizar("analisar", resultado)}
 
 
@@ -158,14 +182,30 @@ async def resumir(
     if req.case_id:
         from app.core.ownership import verificar_acesso_caso
         await verificar_acesso_caso(db, cu, req.case_id)
+    # W8 (BE-14): motor canônico com flag de porta — mesmo padrão de
+    # /analisar-caso acima. Gate de ownership ANTES do motor nos dois modos.
+    from app.core.config import get_settings
+    from app.services.ai.core import capacidades
+    if get_settings().IA_MOTOR_CANONICO:
+        envelope = await capacidades.resumir(
+            db, cu,
+            case_id=req.case_id,
+            texto=req.texto,
+        )
+        if envelope.get("erro"):
+            raise http_erro_ia(envelope["erro"], 502)
+        # Apelidos de compatibilidade com os consumidores da porta legada
+        # (IA.tsx lê `resposta`/`aviso`/`fontes_usadas`).
+        envelope.setdefault("resposta", envelope.get("conteudo") or "")
+        envelope.setdefault("ai_log_id", envelope.get("log_id"))
+        envelope["aviso"] = envelope.get("aviso_hitl") or envelope.get("aviso") \
+            or "⚠️ Resumo gerado por IA — confira com o documento original."
+        envelope["fontes_usadas"] = len(envelope.get("fontes_rag") or [])
+        return envelope
     resultado = await resumir_documento(db, cu.id, req.texto, case_id=req.case_id)
     if "erro" in resultado:
         raise http_erro_ia(resultado["erro"], 502)
-    # PORTA CANÔNICA: POST /ia/resumir (capacidades.resumir). Mesmo caso de
-    # `/analisar-caso`: a saída já é a canônica; a troca do motor depende de
-    # tests/test_ai_idor_case_id_gates.py, que fixa a chamada a
-    # `resumir_documento` como contrato desta rota.
-    from app.services.ai.core import capacidades
+    # Saída canônica: mesmas chaves das cinco portas, com o carimbo HITL único.
     return {**resultado, **capacidades.canonizar("resumir", resultado)}
 
 

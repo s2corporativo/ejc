@@ -35,6 +35,17 @@ from app.schemas.ai import (
 pytestmark = pytest.mark.anyio
 
 
+@pytest.fixture(autouse=True)
+def _motor_legado_neste_arquivo(monkeypatch):
+    """Este arquivo fixa a fiação do MOTOR LEGADO (contrato original das
+    portas). O modo canônico (W8/BE-14, default de produção) tem suíte
+    própria em test_ia_motor_canonico_w8.py — incluindo o gate-antes-do-motor
+    no modo canônico."""
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "IA_MOTOR_CANONICO", False)
+
+
 def _user() -> User:
     return User(id="u-adv-1", role=UserRole.advogado)
 

@@ -1099,6 +1099,21 @@ class Settings(BaseSettings):
     AI_RESPONSE_CACHE_ENABLED: bool = True
     AI_RESPONSE_CACHE_TTL: int = 300  # segundos
 
+    # Motor canônico nas portas legadas (W8/BE-14 — plano de limpeza
+    # 2026-09-20 §10): `/ai/analisar-caso` e `/ai/resumir-documento` passam a
+    # rodar no NÚCLEO único (orchestrator → agente por intenção → auditoria
+    # canônica) em vez do motor legado `ai_service`. A pipeline de segurança
+    # (sanitização LGPD, escopo RAG por cliente/caso, dossiê sanitizado,
+    # precedentes internos) é a mesma nos dois motores — o núcleo reusa
+    # `montar_dossie` e `buscar_contexto_rag` com os MESMOS escopos
+    # (context_builder.py). O CONTRATO de saída fica estável: o router sobre o
+    # envelope canônico com os apelidos que os consumidores já leem
+    # (`resposta`, `analise`, `ai_log_id`, `aviso`, `fontes_usadas`).
+    # Rollback: IA_MOTOR_CANONICO=false no .env do VPS (sem deploy de código —
+    # mesmo padrão do menu 9 e do G1). Gate de ownership (case_id) roda ANTES
+    # do motor nos dois modos (tests/test_ai_idor_case_id_gates.py).
+    IA_MOTOR_CANONICO: bool = True
+
     # Rate limit distribuído (multi-worker): False (default) usa contador
     # fixed-window em memória — correto só com uvicorn --workers 1. True passa
     # a contar no Redis (compartilhado entre processos), habilitando >1 worker.
