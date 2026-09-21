@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -27,6 +28,12 @@ _AGGREGATE_KEYS = {
 }
 _FILTER_KEYS = {"tribunal", "municipios", "classe", "assunto", "desde", "ate"}
 
+_SENSITIVE_VALUE_PATTERNS = (
+    re.compile(r"\b\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\b"),  # CNJ
+    re.compile(r"\b\d{3}\.\d{3}\.\d{3}-\d{2}\b"),                 # CPF
+    re.compile(r"\b\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}\b"),         # CNPJ
+)
+
 
 def _assert_minimizado(valor: Any, caminho: str = "snapshot") -> None:
     if isinstance(valor, dict):
@@ -40,6 +47,11 @@ def _assert_minimizado(valor: Any, caminho: str = "snapshot") -> None:
     elif isinstance(valor, list):
         for idx, item in enumerate(valor):
             _assert_minimizado(item, f"{caminho}[{idx}]")
+    elif isinstance(valor, str):
+        if any(p.search(valor) for p in _SENSITIVE_VALUE_PATTERNS):
+            raise ValueError(
+                f"snapshot jurimétrico rejeitado: identificador sensível em {caminho}"
+            )
 
 
 def _parse_coletado_em(valor: str | None) -> datetime:
