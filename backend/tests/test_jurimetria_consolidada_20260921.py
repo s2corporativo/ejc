@@ -81,10 +81,10 @@ def test_jurimetria_externa_expoe_ic95() -> None:
     fechado = agregacao._fechar_grupo(g)
     assert fechado["taxa_procedencia"] == 0.6
     assert fechado["intervalo_confianca_95_procedencia"]["inferior"] == pytest.approx(
-        31.3, abs=0.1
+        0.313, abs=0.001
     )
     assert fechado["intervalo_confianca_95_procedencia"]["superior"] == pytest.approx(
-        83.2, abs=0.1
+        0.832, abs=0.001
     )
 
 
