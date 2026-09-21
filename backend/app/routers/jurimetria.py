@@ -824,6 +824,23 @@ async def tribunais_desfechos(
         ) from None
 
 
+@router.get("/tribunais/historico")
+async def tribunais_historico(
+    tribunal: Optional[str] = Query(None, max_length=20),
+    limit: int = Query(24, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_req_staff),
+):
+    """Série histórica agregada; nunca contém processo, parte ou decisão bruta."""
+    from app.services.jurimetria_tribunais.snapshots import listar_snapshots
+
+    return {
+        "items": await listar_snapshots(db, tribunal=tribunal, limit=limit),
+        "fonte": "snapshots agregados da jurimetria DataJud",
+        "sem_pii_processual": True,
+    }
+
+
 @router.get("/cobertura-rag")
 async def cobertura_rag(
     db: AsyncSession = Depends(get_db),
