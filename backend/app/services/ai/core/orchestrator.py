@@ -56,7 +56,7 @@ _TAREFA_PARA_GATEWAY: dict[TarefaIA, str] = {
     TarefaIA.MINUTAS: "elaboracao_peca",
     TarefaIA.PRAZOS: "analise_juridica",
     TarefaIA.AUDIENCIA: "analise_juridica",
-    TarefaIA.HONORARIOS: "analise_juridica",
+    TarefaIA.HONORARIOS: "honorarios",
     TarefaIA.PESQUISA_JURIDICA: "analise_juridica",
     TarefaIA.RAG_QUERY: "analise_juridica",
     TarefaIA.TRIAGEM: "resumo",
@@ -405,6 +405,8 @@ class SingleAICoreOrchestrator:
             "prompt_versao": prompt_versao(system_prompt),
             "modelo": modelo_canonico,
             "provider": resp.provedor,
+            "fallback_ativado": bool(getattr(resp, "fallback_ativado", False)),
+            "fallback_motivo": getattr(resp, "fallback_motivo", None),
             "fontes": [
                 {"titulo": f.get("titulo"), "categoria": f.get("categoria"),
                  "fonte": f.get("fonte")} for f in ctx.fontes
