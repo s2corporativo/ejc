@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -320,6 +321,56 @@ def _tamanho_diretorio(caminho: str) -> int:
     return total
 
 
+def _sha256_arquivo(caminho: str) -> str:
+    """Calcula a identidade do artefato cifrado sem expor seu conteúdo."""
+    digest = hashlib.sha256()
+    with open(caminho, "rb") as arquivo:
+        for bloco in iter(lambda: arquivo.read(1024 * 1024), b""):
+            digest.update(bloco)
+    return digest.hexdigest()
+
+
+def _criar_manifesto_cifrado(
+    artefatos: list[dict[str, Any]], tmp: str, ts: datetime, chave: str,
+) -> dict[str, Any]:
+    """Cria um manifesto autenticável e o publica como terceiro artefato.
+
+    O manifesto acompanha o conjunto no destino offsite e permite confirmar,
+    durante um restore drill, que banco e uploads pertencem ao mesmo ciclo.
+    O arquivo JSON em claro existe apenas no diretório temporário e é removido
+    imediatamente após a cifra.
+    """
+    registros = []
+    for artefato in artefatos:
+        registros.append({
+            "nome": artefato["nome"],
+            "bytes_original": artefato.get("bytes_original"),
+            "bytes_cifrado": artefato.get("bytes_cifrado"),
+            "sha256_cifrado": _sha256_arquivo(artefato["caminho"]),
+        })
+    manifesto = {
+        "formato": "ejc-backup-manifest-v1",
+        "backup_id": ts.strftime("%Y%m%dT%H%M%SZ"),
+        "created_at": ts.isoformat(),
+        "app_commit": os.getenv("APP_COMMIT") or os.getenv("GIT_COMMIT"),
+        "artefatos": registros,
+    }
+    claro = os.path.join(tmp, "manifest.json")
+    cifrado = os.path.join(tmp, "manifest.json.enc")
+    payload = json.dumps(manifesto, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    with open(claro, "wb") as arquivo:
+        arquivo.write(payload)
+    manifesto_bytes = cifrar_arquivo(claro, cifrado, chave)
+    os.unlink(claro)
+    return {
+        "nome": _nome_artefato("manifest.json", ts),
+        "caminho": cifrado,
+        "bytes_original": len(payload),
+        "bytes_cifrado": manifesto_bytes,
+        "sha256_cifrado": _sha256_arquivo(cifrado),
+    }
+
+
 def _tar_uploads_para(destino: str) -> int:
     """Empacota UPLOAD_DIR em tar.gz. Bloqueante — usar asyncio.to_thread.
 
@@ -411,6 +462,69 @@ def _upload_rclone_sync(caminho: str, nome: str, remote: str) -> int:
             f"tamanho remoto divergiu após upload: local={local_bytes} remoto={remote_bytes}"
         )
     return remote_bytes
+
+
+def selecionar_para_rotacao_rclone(
+    arquivos: list[dict[str, Any]], *, retencao_dias: int,
+    agora: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Seleciona somente arquivos canônicos antigos no remote rclone."""
+    agora = agora or datetime.now(timezone.utc)
+    corte = agora - timedelta(days=retencao_dias)
+    apagar: list[dict[str, Any]] = []
+    for arquivo in arquivos:
+        caminho = str(arquivo.get("Path") or arquivo.get("Name") or "")
+        # Uploads canônicos são publicados na raiz do remote. Não seguir
+        # caminhos aninhados evita que uma configuração ampla remova arquivos
+        # de outro namespace.
+        if "/" in caminho or not caminho.startswith(PREFIXO_BACKUP):
+            continue
+        criado_raw = str(arquivo.get("ModTime") or "").replace("Z", "+00:00")
+        try:
+            criado = datetime.fromisoformat(criado_raw)
+        except ValueError:
+            continue
+        if criado.tzinfo is None:
+            criado = criado.replace(tzinfo=timezone.utc)
+        if criado < corte:
+            apagar.append(arquivo)
+    return apagar
+
+
+def _rotacionar_rclone_sync(remote: str, retencao_dias: int) -> int:
+    """Lista e remove apenas backups EJC expirados do remote rclone."""
+    resultado = subprocess.run(
+        ["rclone", "lsjson", "--files-only", "--recursive", remote],
+        timeout=settings.BACKUP_RCLONE_TIMEOUT,
+        capture_output=True, text=True,
+    )
+    if resultado.returncode != 0:
+        raise RuntimeError(
+            f"rclone lsjson retornou código {resultado.returncode}: "
+            f"{(resultado.stderr or '')[:300]}"
+        )
+    try:
+        arquivos = json.loads(resultado.stdout or "[]")
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("rclone lsjson retornou resposta inválida") from exc
+    removidos = 0
+    for arquivo in selecionar_para_rotacao_rclone(
+        arquivos, retencao_dias=retencao_dias,
+    ):
+        nome = str(arquivo.get("Path") or arquivo.get("Name") or "")
+        alvo = f"{remote.rstrip('/')}/{nome}"
+        apagado = subprocess.run(
+            ["rclone", "deletefile", "--", alvo],
+            timeout=settings.BACKUP_RCLONE_TIMEOUT,
+            capture_output=True, text=True,
+        )
+        if apagado.returncode != 0:
+            raise RuntimeError(
+                f"rclone deletefile retornou código {apagado.returncode}: "
+                f"{(apagado.stderr or '')[:300]}"
+            )
+        removidos += 1
+    return removidos
 
 
 def _remover_artefatos_locais_sync(
@@ -705,7 +819,14 @@ async def executar_backup(
                 else:
                     avisos.append(f"UPLOAD_DIR inexistente: {settings.UPLOAD_DIR}")
 
-                # 4) Persiste o conjunto CIFRADO no volume de continuidade.
+                # 4) Manifesto do conjunto: cifrado junto com banco e uploads.
+                # Ele referencia os hashes dos artefatos já cifrados e permite
+                # validar integridade/pertencimento durante a restauração.
+                artefatos.append(
+                    _criar_manifesto_cifrado(artefatos, tmp, ts, fernet_chave)
+                )
+
+                # 5) Persiste o conjunto CIFRADO no volume de continuidade.
                 # `local_ok` só muda depois de todos os artefatos estarem publicados
                 # e fsyncados em BACKUP_DIR. O dump/tar em claro já foi removido.
                 persistidos = await asyncio.to_thread(
@@ -730,7 +851,7 @@ async def executar_backup(
                         "[Backup] rotação local falhou (tipo=%s)", type(exc).__name__
                     )
 
-                # 5) Envio OFFSITE — Google Drive (fluxo original) ou rclone
+                # 6) Envio OFFSITE — Google Drive (fluxo original) ou rclone
                 #    (ex.: OneDrive). Falha aqui NÃO invalida a prova local:
                 #    com BACKUP_OFFSITE_OBRIGATORIO=false vira status
                 #    "parcial" com aviso grave (deploy segue com a prova
@@ -751,8 +872,23 @@ async def executar_backup(
                             )
                             art["offsite_bytes_validado"] = remote_bytes
                             art.pop("caminho", None)
-                        # Retenção no remote rclone é gerida fora do ciclo
-                        # (ver runbook) — nada é apagado automaticamente aqui.
+                        try:
+                            removidos = await asyncio.to_thread(
+                                _rotacionar_rclone_sync,
+                                remote,
+                                settings.BACKUP_RETENTION_DAYS,
+                            )
+                        except Exception as exc:
+                            # A cópia atual foi validada; retenção falha como
+                            # aviso operacional e não apaga a prova do ciclo.
+                            avisos.append(
+                                "AVISO: rotação do remote rclone falhou; "
+                                "verifique o crescimento do destino"
+                            )
+                            logger.warning(
+                                "[Backup] rotação rclone falhou (tipo=%s)",
+                                type(exc).__name__,
+                            )
                     else:
                         folder_id = (settings.BACKUP_DRIVE_FOLDER_ID or "").strip()
                         if not folder_id:
@@ -769,7 +905,7 @@ async def executar_backup(
                             art["drive_file_id"] = enviado.get("id")
                             art.pop("caminho", None)
 
-                        # 6) Rotação offsite: mantém BACKUP_RETENCAO_DIAS dias (só prefixo EJC).
+                        # 7) Rotação offsite: mantém BACKUP_RETENCAO_DIAS dias (só prefixo EJC).
                         removidos = await asyncio.to_thread(
                             _rotacionar_sync, service, folder_id, settings.BACKUP_RETENCAO_DIAS
                         )

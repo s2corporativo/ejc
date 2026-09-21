@@ -63,14 +63,16 @@ As evidências acima registram IDs e estados, sem copiar credenciais, conteúdo 
 - o backup continua exigindo cifragem e confirmação de transferência offsite antes do deploy;
 - não há alteração de RBAC, autenticação, dados de clientes ou contratos de API;
 - o deploy é fail-closed quando não existe confirmação de envio fora da VPS;
-- política de retenção do remote e teste de restauração não são inferidos de `offsite_ok` e permanecem controles separados.
+- a retenção do remote rclone é executada pelo próprio ciclo, limitada ao prefixo
+  `ejc_backup_` e a `BACKUP_RETENTION_DAYS`; o teste de restauração permanece um
+  controle separado de continuidade.
 
 ## Riscos residuais e limitações
 
 - backend e worker ainda executam como root no container. A migração para usuário dedicado é transversal (volumes, migrations, uploads, caches, rclone e Celery) e foi isolada na Issue #1192 para implantação própria, sem misturá-la a este hotfix;
 - a credencial service-account dedicada encontrada no mount operacional não está utilizável; o destino offsite funcional neste incidente é o remote rclone existente. Corrigir a service account deve ocorrer separadamente, sem copiar segredo para Git;
 - o pin do rclone reduz variação de runtime, mas futuras atualizações precisam repetir build e prova de transferência offsite;
-- este hotfix prova criação, cifragem e envio offsite do backup. **Não prova duração de retenção no remote nem restauração integral**; esses controles exigem política externa verificável e exercício de restore em ambiente isolado.
+- este hotfix prova criação, cifragem, envio offsite e rotação segura do backup. **Não prova restauração integral**; esse controle exige exercício de restore em ambiente isolado.
 
 ## Critérios de validação da recuperação
 
@@ -84,5 +86,4 @@ O patch de runtime não altera schema nem dados. Se o novo runtime falhar, o rol
 
 - priorizar e agendar a Issue #1192 (runtime não-root) em janela própria;
 - decidir a correção ou substituição da credencial service-account dedicada do backup;
-- definir e documentar a política de retenção do remote rclone;
 - definir periodicidade e executar teste real de restauração offsite em ambiente isolado.

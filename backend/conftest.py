@@ -12,6 +12,14 @@ import os
 
 os.environ.setdefault("APP_ENV", "development")
 os.environ.setdefault("FERIADOS_BRASILAPI_ENABLED", "true")
+# Testes nunca devem gerar uma chave Fernet aleatória a cada processo nem
+# tentar enviar eventos para um coletor externo. Esta chave é exclusiva para a
+# suíte; produção exige VAULT_MASTER_KEYS configurada fora do repositório.
+os.environ.setdefault(
+    "VAULT_MASTER_KEYS",
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+)
+os.environ.setdefault("SENTRY_DSN", "")
 
 # ── Engine global: fail-safe contra cross-loop entre testes ──────────────────
 # pytest-asyncio (asyncio_mode=auto) cria um event loop NOVO por função de
@@ -65,6 +73,25 @@ def _rate_limit_zerado_por_teste():
     # Teardown simétrico: nenhum estado do contador próprio ou do slowapi
     # deve vazar para o teste seguinte, mesmo se o teste atual falhar.
     _resetar_estado()
+
+
+@pytest.fixture(autouse=True)
+def _sentry_transport_noop(monkeypatch):
+    """Preserva o teste de inicialização sem enviar eventos para a rede."""
+    import sentry_sdk
+
+    original_init = sentry_sdk.init
+
+    def _init_sem_rede(*args, **kwargs):
+        dsn = kwargs.get("dsn") or (args[0] if args else "")
+        # DSNs inválidos continuam passando pelo SDK para preservar o teste de
+        # fail-closed; somente um DSN com formato válido recebe transporte no-op.
+        if isinstance(dsn, str) and "://" in dsn and "@" in dsn:
+            kwargs.setdefault("transport", lambda event, hint=None: None)
+        return original_init(*args, **kwargs)
+
+    monkeypatch.setattr(sentry_sdk, "init", _init_sem_rede)
+    yield
 
 
 # ── Guarda: ninguém recria o singleton de Settings entre testes (Issue #620) ─

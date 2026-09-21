@@ -211,11 +211,12 @@ async def test_ciclo_completo_com_fakes(monkeypatch, tmp_path):
 
     assert resultado["ok"] is True and resultado["status"] == "sucesso"
     assert resultado["rotacao_removidos"] == 2
-    assert len(enviados) == 2  # db.dump.enc + uploads.tar.gz.enc
+    assert len(enviados) == 3  # banco + uploads + manifesto cifrado
     nomes = [n for n, _ in enviados]
     assert all(n.startswith(backup_service.PREFIXO_BACKUP) for n in nomes)
     assert any(n.endswith("_db.dump.enc") for n in nomes)
     assert any(n.endswith("_uploads.tar.gz.enc") for n in nomes)
+    assert any(n.endswith("_manifest.json.enc") for n in nomes)
     assert all(pasta == "pasta123" for _, pasta in enviados)
     # Nenhum segredo no resultado (vai para log/estado/status).
     assert CHAVE not in str(resultado)
@@ -307,5 +308,7 @@ async def test_uploads_acima_do_limite_gera_parcial(monkeypatch, tmp_path):
     resultado = await backup_service.executar_backup(_FakeDB(), origem="agendado")
     assert resultado["status"] == "parcial"
     assert resultado["ok"] is True
-    assert len(enviados) == 1 and enviados[0].endswith("_db.dump.enc")
+    assert len(enviados) == 2
+    assert any(nome.endswith("_db.dump.enc") for nome in enviados)
+    assert any(nome.endswith("_manifest.json.enc") for nome in enviados)
     assert any("BACKUP_UPLOADS_MAX_MB" in a for a in resultado["avisos"])

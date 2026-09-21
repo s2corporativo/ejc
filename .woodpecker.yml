@@ -78,6 +78,7 @@ steps:
       - bash scripts/tests/test_backup_wrapper.sh
       - bash scripts/tests/test_ci_secret_gate.sh
       - bash scripts/tests/test_rag_activation.sh
+      - python -m unittest discover -s scripts/tests -p 'test_ai_architecture.py' -v
       - bash -n scripts/legacy_script_guard.sh
       - bash scripts/tests/test_legacy_script_guards.sh
     # Contratos leves rodam sempre: seus insumos cruzam código, exemplos e scanners.
@@ -163,6 +164,9 @@ steps:
       DATABASE_URL: postgresql+asyncpg://ejc_user@db:5432/ejc_db
       DATABASE_URL_SYNC: postgresql://ejc_user@db:5432/ejc_db
       SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user@db:5432/ejc_db
+      APP_ENV: development
+      SENTRY_DSN: ""
+      VAULT_MASTER_KEYS: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       # O CI já sobe PostgreSQL+pgvector e aplica `alembic upgrade head`.
       # Sem esta flag, os testes DB-level se auto-pulam e o gate fica mais
       # fraco que o portão local obrigatório do repositório.
@@ -185,25 +189,49 @@ steps:
       # #1692, #1694, #1705...). 4 tentativas com backoff tornam a disputa
       # inócua sem serializar os agentes.
       - |
+        apt_ok=0
         for tentativa in 1 2 3 4; do
-          apt-get -o DPkg::Lock::Timeout=300 update -qq && \
-          apt-get -o DPkg::Lock::Timeout=300 install -y -qq --no-install-recommends jq libmagic1 poppler-utils tesseract-ocr libpango-1.0-0 libpangocairo-1.0-0 libcairo2 postgresql-client && \
-          break
+          if apt-get -o DPkg::Lock::Timeout=300 update -qq && \
+             apt-get -o DPkg::Lock::Timeout=300 install -y -qq --no-install-recommends jq libmagic1 poppler-utils tesseract-ocr libpango-1.0-0 libpangocairo-1.0-0 libcairo2 postgresql-client; then
+            apt_ok=1
+            break
+          fi
           echo "apt falhou (tentativa $tentativa/4) — aguardando corrida do agente vizinho..."
           sleep 20
         done
+        if [ "$apt_ok" != "1" ]; then
+          echo "apt não conseguiu instalar as dependências após 4 tentativas" >&2
+          exit 1
+        fi
       - cd backend
       - pip install --quiet -r requirements.txt
       # Fast gate: falhas estruturais baratas interrompem antes da suíte total.
       # Não substitui testes de módulo nem o pytest completo.
       - python -m compileall app -q
       - python -m alembic heads
-      - until pg_isready -h db -U ejc_user -q; do sleep 1; done
+      # Fail-closed: não deixar o pipeline pendurado indefinidamente se o
+      # serviço PostgreSQL não iniciar ou se o alias db não resolver.
+      - timeout 120s bash -c 'until pg_isready -h db -U ejc_user -d ejc_db -q; do sleep 2; done'
       - python -m alembic upgrade head
       - python -m unittest discover -s ../scripts/tests -p test_woodpecker_scopes.py -v
       - pytest tests/test_alembic_single_head.py tests/test_rotas_registro_explicito.py -q
+      # Smoke contra o processo uvicorn real, não somente TestClient.
+      - |
+        set -e
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 >/tmp/ejc-uvicorn-live.log 2>&1 &
+        api_pid=$!
+        trap 'kill "$api_pid" 2>/dev/null || true' EXIT
+        BASE_URL=http://127.0.0.1:8000 bash ../scripts/tests/test_live_api.sh
+        kill "$api_pid" 2>/dev/null || true
+        wait "$api_pid" 2>/dev/null || true
+        trap - EXIT
       # Gate completo obrigatório quando backend/configuração compartilhada muda.
-      - pytest tests -q
+      - |
+        set +e
+        pytest tests -q --junitxml=/tmp/ejc-backend-tests.xml
+        pytest_rc=$?
+        python ../scripts/tests/classify_pytest_results.py /tmp/ejc-backend-tests.xml | tee /tmp/ejc-backend-tests-classification.json
+        exit "$pytest_rc"
     when:
       - event: push
         branch: main
