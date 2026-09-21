@@ -53,6 +53,9 @@ def status() -> dict[str, Any]:
     return {
         "habilitado": enabled("jurimetria_tribunais"),
         "datajud_habilitado": bool(s.DATAJUD_ENABLED and s.DATAJUD_API_KEY),
+        "snapshot_habilitado": bool(
+            getattr(s, "JURIMETRIA_TRIBUNAIS_SNAPSHOT_ENABLED", False)
+        ),
         "fonte": FONTE_TJMG,
         "alias": ALIAS_TJMG,
         "fontes_externas": [
