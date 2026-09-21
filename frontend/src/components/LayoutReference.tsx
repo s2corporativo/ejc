@@ -9,7 +9,9 @@ import {
   Mail,
   Menu,
   MessageCircle,
+  Moon,
   Search,
+  Sun,
   X,
 } from "lucide-react";
 import CaseContextBar from "./CaseContextBar";
@@ -43,6 +45,7 @@ import { isSidebarNavigationCollapsed } from "../lib/sidebarNavigation";
 import { useAuth } from "../stores/auth";
 import { useModuleLifecycleStore } from "../stores/moduleLifecycle";
 import { usePreferencesStore } from "../stores/preferences";
+import { useThemeStore } from "../stores/theme";
 
 function formatClock(date: Date) {
   const dateText = new Intl.DateTimeFormat("pt-BR", {
@@ -78,6 +81,7 @@ function formatClock(date: Date) {
 export default function LayoutReference() {
   const user = useAuth((state) => state.user);
   const { disponivel: iaDisponivel } = useIaStatus();
+  const { isDark, setTheme } = useThemeStore();
   const lifecycleSettings = useModuleLifecycleStore((state) => state.settings);
   const { sidebarCollapsed: collapsed, setSidebarCollapsed } =
     usePreferencesStore();
@@ -252,6 +256,21 @@ export default function LayoutReference() {
           </div>
 
           <HelpButton moduleKey={moduleKey} />
+
+          <button
+            type="button"
+            onClick={() => setTheme(isDark ? "light" : "dark")}
+            className="icon-btn hidden sm:flex"
+            title={isDark ? "Ativar modo claro" : "Ativar modo escuro"}
+            aria-label={isDark ? "Ativar modo claro" : "Ativar modo escuro"}
+            aria-pressed={isDark}
+          >
+            {isDark ? (
+              <Sun className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <Moon className="h-4 w-4" aria-hidden="true" />
+            )}
+          </button>
 
           <button
             type="button"
