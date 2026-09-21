@@ -560,13 +560,14 @@ async def atualizar_resultado_vinculo_tese(
         raise HTTPException(404, "Vínculo tese-caso não encontrado")
 
     await verificar_acesso_caso(db, cu, link.case_id)
-    from app.services.tese_vinculo_service import (
-        atualizar_resultado_vinculo,
-        reconciliar_metricas_tese,
-    )
+    from app.services.tese_vinculo_service import atualizar_resultado_vinculo
 
     await atualizar_resultado_vinculo(db, link=link, resultado=req.resultado)
-    tese = await reconciliar_metricas_tese(db, tese_id)
+    tese = (
+        await db.execute(
+            select(Tese).where(Tese.id == tese_id, Tese.deleted_at.is_(None))
+        )
+    ).scalar_one_or_none()
     await db.commit()
     return {
         "id": link.id,
