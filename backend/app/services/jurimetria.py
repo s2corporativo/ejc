@@ -40,12 +40,19 @@ def _resumo(amostra: list[str]) -> dict:
         dist[r] += 1
     favor = dist["exito_total"] + dist["exito_parcial"]
     acordo = dist["acordo"]
+    taxa_exito = round(favor / n * 100, 1) if n else None
+    taxa_acordo = round(acordo / n * 100, 1) if n else None
+    taxa_favoravel_ou_acordo = round((favor + acordo) / n * 100, 1) if n else None
     return {
         "n": n,
         "distribuicao": dist,
-        # taxa de êxito SEM contar acordo, e taxa COM acordo — ambas explícitas
-        "taxa_exito": round(favor / n * 100, 1) if n else None,
-        "taxa_exito_com_acordo": round((favor + acordo) / n * 100, 1) if n else None,
+        # Êxito judicial e composição consensual são conceitos distintos.
+        "taxa_exito": taxa_exito,
+        "taxa_acordo": taxa_acordo,
+        "taxa_desfecho_favoravel_ou_acordo": taxa_favoravel_ou_acordo,
+        # Compatibilidade temporária: não usar este alias como probabilidade de
+        # êxito. Consumidores novos devem escolher a métrica semanticamente correta.
+        "taxa_exito_com_acordo": taxa_favoravel_ou_acordo,
         "taxa_improcedencia": round(dist["improcedente"] / n * 100, 1) if n else None,
         "amostra_suficiente": n >= MIN_AMOSTRA,
     }
@@ -79,8 +86,10 @@ async def jurimetria(db: AsyncSession, user: User, dimensao: str | None = None) 
         "escopo": "todos os casos" if pode_ver_todos(user) else "casos do usuário",
         "criterio": "casos encerrados/arquivados com resultado registrado",
         "definicoes": {
-            "taxa_exito": "(êxito total + êxito parcial) / n",
-            "taxa_exito_com_acordo": "(êxito total + êxito parcial + acordo) / n",
+            "taxa_exito": "(êxito total + êxito parcial) / n; não inclui acordo",
+            "taxa_acordo": "acordo / n",
+            "taxa_desfecho_favoravel_ou_acordo": "(êxito total + êxito parcial + acordo) / n",
+            "taxa_exito_com_acordo": "alias legado de taxa_desfecho_favoravel_ou_acordo; não usar como probabilidade de êxito",
             "min_amostra": MIN_AMOSTRA,
         },
         "global": _resumo(global_amostra),
