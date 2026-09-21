@@ -65,6 +65,9 @@ async def _porta(
         from app.core.ownership import verificar_acesso_caso
         await verificar_acesso_caso(db, cu, body.case_id)
     try:
+        opcoes = dict(body.opcoes or {})
+        if getattr(body, "provider", None):
+            opcoes["provider"] = body.provider
         return await capacidades.PORTAS[capacidade](
             db, cu,
             case_id=body.case_id,
@@ -72,7 +75,7 @@ async def _porta(
             mensagem=body.mensagem,
             area=body.area,
             perfil=body.perfil,
-            opcoes=body.opcoes,
+            opcoes=opcoes,
         )
     except HTTPException:
         raise
