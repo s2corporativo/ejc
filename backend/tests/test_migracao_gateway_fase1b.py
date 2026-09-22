@@ -1,3 +1,4 @@
+# CI: este arquivo fixa contratos de roteamento usados pela política Groq/Maritaca/Claude.
 # ── tests/test_migracao_gateway_fase1b.py ────────────────────────────────────
 # FASE 1b — Orquestrador Jurídico (docs/arquivo/planos/MAPA_PROMPTS_IA03.md §5
 # Passo 2): a camada
