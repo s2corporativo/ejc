@@ -26,6 +26,7 @@ import api, {
   analiseAdvogadoPorAnalise,
   type AnaliseAdvogadoResult,
 } from "../lib/api";
+import { useAreas } from "../lib/areas";
 import {
   acoesContextuais,
   executarSkill,
@@ -128,7 +129,6 @@ type ConversionPreview = {
   bloqueia: boolean;
 };
 
-type Area = { slug: string; nome: string; ativo?: boolean };
 type ReviewFields = {
   numero_processo: string;
   area: string;
@@ -141,34 +141,6 @@ type ReviewFields = {
   posicao_cliente: string;
   sintese: string;
 };
-
-const FALLBACK_AREAS: Area[] = [
-  ["civil", "Direito Cível"],
-  ["trabalhista", "Direito Trabalhista"],
-  ["consumidor", "Direito do Consumidor"],
-  ["familia", "Direito de Família"],
-  ["sucessoes", "Direito das Sucessões"],
-  ["ambiental", "Direito Ambiental"],
-  ["criminal", "Direito Penal"],
-  ["previdenciario", "Direito Previdenciário"],
-  ["empresarial", "Direito Empresarial"],
-  ["tributario", "Direito Tributário"],
-  ["administrativo", "Direito Administrativo"],
-  ["licitacoes", "Licitações e Contratos"],
-  ["bancario", "Direito Bancário"],
-  ["imobiliario", "Direito Imobiliário"],
-  ["constitucional", "Direito Constitucional"],
-  ["digital_lgpd", "Direito Digital e LGPD"],
-  ["transito", "Direito de Trânsito"],
-  ["saude", "Direito da Saúde"],
-  ["medico", "Direito Médico"],
-  ["agrario", "Direito Agrário"],
-  ["agronegocio", "Direito do Agronegócio"],
-  ["eleitoral", "Direito Eleitoral"],
-  ["internacional", "Direito Internacional"],
-  ["contratual", "Direito Contratual"],
-  ["societario", "Direito Societário"],
-].map(([slug, nome]) => ({ slug, nome }));
 
 const CONVERSION_ROLES = new Set([
   "superadmin",
@@ -300,7 +272,8 @@ export default function RaioXProcesso() {
   const user = useAuth((state) => state.user);
   const canConvert = CONVERSION_ROLES.has(String(user?.role || ""));
 
-  const [areas, setAreas] = useState<Area[]>(FALLBACK_AREAS);
+  const areasRemotas = useAreas();
+  const areas = areasRemotas;
   const [items, setItems] = useState<Analise[]>([]);
   const [stats, setStats] = useState<Stats>({
     total: 0,
@@ -362,18 +335,6 @@ export default function RaioXProcesso() {
   const [confirmDuplicate, setConfirmDuplicate] = useState(false);
   const [confirmConflict, setConfirmConflict] = useState(false);
   const [confirmText, setConfirmText] = useState("");
-
-  useEffect(() => {
-    api
-      .get("/areas")
-      .then(({ data }) => {
-        const list = Array.isArray(data) ? data : data?.areas;
-        if (Array.isArray(list) && list.length) {
-          setAreas(list.filter((item: Area) => item.ativo !== false));
-        }
-      })
-      .catch(() => undefined);
-  }, []);
 
   const loadList = useCallback(async () => {
     const params: Record<string, unknown> = { page_size: 100 };
@@ -526,11 +487,9 @@ export default function RaioXProcesso() {
     acoesContextuais({
       surface: "processos",
       case_id: contextualCaseId || undefined,
-      area:
-        String(identification.area || selected?.area || "") || undefined,
+      area: String(identification.area || selected?.area || "") || undefined,
       phase:
-        String(identification.etapa_atual || selected?.fase || "") ||
-        undefined,
+        String(identification.etapa_atual || selected?.fase || "") || undefined,
       document_type: documentType,
       limit: 6,
     })

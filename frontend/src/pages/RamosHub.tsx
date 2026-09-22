@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   Banknote,
@@ -24,7 +24,7 @@ import {
   Users,
   Vote,
 } from "lucide-react";
-import api from "../lib/api";
+import { useAreas } from "../lib/areas";
 import { CANONICAL_ROUTES } from "../config/canonicalRoutes";
 import { ROLES } from "../config/moduleRegistry";
 import { Badge, Button, Card, PageHeader } from "../components/UI";
@@ -321,28 +321,10 @@ function AreaCard({
 export default function RamosHub() {
   const role = useAuth((state) => state.user?.role);
   const podeCriarCaso = podeCriarCasoNoHub(role);
-  const [areas, setAreas] = useState<Area[]>(FALLBACK_AREAS);
+  const areasRemotas = useAreas();
+  const areas = useMemo(() => mesclarAreas(areasRemotas), [areasRemotas]);
   const [busca, setBusca] = useState("");
   const [favoritos, setFavoritos] = useState<string[]>(lerFavoritos);
-
-  useEffect(() => {
-    let ativo = true;
-    api
-      .get("/areas")
-      .then((resposta) => {
-        if (!ativo) return;
-        const remotas = Array.isArray(resposta.data?.areas)
-          ? (resposta.data.areas as Area[])
-          : [];
-        setAreas(mesclarAreas(remotas));
-      })
-      .catch(() => {
-        if (ativo) setAreas(FALLBACK_AREAS);
-      });
-    return () => {
-      ativo = false;
-    };
-  }, []);
 
   const alternarFavorito = (slug: string) => {
     setFavoritos((atuais) => {
