@@ -368,11 +368,14 @@ class Settings(BaseSettings):
     # router (ia_agente.py) sempre documentou. A IA opera como agente (decide →
     # chama ferramenta → lê resultado → decide), reusando o núcleo e TODOS os
     # guardrails (barreira LGPD, RBAC, AILog, gate de citações, HITL).
-    # O agente permanece DESATIVADO por default: nesta fase o loop de tool-use
-    # é suportado apenas pelo Anthropic e exige seleção operacional explícita
-    # AI_PROVIDER=anthropic. Isso evita um agente "ligado" com AI_PROVIDER=auto
-    # quando Claude está fora do roteamento automático.
+    # O agente permanece DESATIVADO por default. Nesta fase o loop de tool-use
+    # é suportado apenas pelo Anthropic e usa uma seleção operacional própria,
+    # independente do AI_PROVIDER global. Assim o agente pode ser habilitado com
+    # Claude sem forçar as chamadas comuns a sair de Groq/Maritaca.
     AI_AGENT_ENABLED: bool = False
+    # Provider EXCLUSIVO do módulo agêntico. Vazio = fail-closed mesmo que o
+    # agente seja ligado. Nesta fase o único valor aceito em runtime é anthropic.
+    AI_AGENT_PROVIDER: str = ""
     # Teto de PASSOS do loop (nunca infinito). 8 não bastava para um ciclo
     # completo dossiê → precedentes → cronologia → rito → providências → prazo
     # → OAB → minuta sem nenhuma iteração de correção.
