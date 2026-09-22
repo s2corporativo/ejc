@@ -167,7 +167,7 @@ class SingleAICoreOrchestrator:
         decisao = AIProviderPolicy().avaliar(
             f"{mensagem_sana}\n{ctx.texto}",
             intent.tarefa.value,
-            ja_sanitizado=True,
+            ja_sanitizado=False,
             exige_fonte=intent.exige_fonte,
             provider_solicitado=provider_solicitado,
         )
