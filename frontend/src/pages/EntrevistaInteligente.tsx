@@ -59,12 +59,11 @@ interface EntrevistaAnalise {
   pedidos_possiveis: string[];
   riscos: string[];
   // V2-4.2 / decisão D4 do plano-mestre (2026-08-24): a API ainda devolve
-  // este campo (percentual GERADO POR IA, não estatística), mas deixou de
-  // ser renderizado -- risco OAB art. 34, XXIX (vedação a captação/
-  // mercantilização inadequada da expectativa do cliente) + fragilidade
-  // estatística (poucos casos para calibrar). Tipado aqui só para não
-  // quebrar o parse da resposta; NÃO reintroduzir a exibição sem decisão
-  // nova do titular.
+  // este campo legado, mas deixou de ser renderizado. Percentual gerado por
+  // LLM não é estatística calibrada e pode induzir expectativa indevida sobre
+  // resultado. Tipado aqui apenas para compatibilidade; o backend atual o
+  // neutraliza. NÃO reintroduzir sem fonte estatística reproduzível e revisão
+  // jurídica.
   chance_exito: {
     percentual: number | null;
     justificativa: string | null;

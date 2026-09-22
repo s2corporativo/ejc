@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Copy, Loader2, LogOut, ShieldCheck } from "lucide-react";
 import { useNavigate } from "react-router";
-import api, { logout } from "../lib/api";
+import api, { logout, setAccessToken } from "../lib/api";
 import type { LoginResponse } from "../types";
 import { useAuth } from "../stores/auth";
 
@@ -49,7 +49,7 @@ export default function Configurar2FA() {
       const { data } = await api.post<LoginResponse>("/auth/totp/verificar", {
         codigo: code,
       });
-      localStorage.setItem("ejc_access", data.access_token);
+      setAccessToken(data.access_token);
       await bootstrap();
       navigate("/", { replace: true });
     } catch (err: any) {

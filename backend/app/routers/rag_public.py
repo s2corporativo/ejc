@@ -16,11 +16,8 @@
 # outro processo) — o integrador deve confirmar via GET /status.
 from __future__ import annotations
 
-import ipaddress
 import logging
-import socket
 from typing import List, Optional
-from urllib.parse import urlparse
 from uuid import uuid4
 
 import httpx
@@ -33,6 +30,7 @@ from app.core.api_key_auth import require_api_key
 from app.core.config import get_settings
 from app.core.database import get_db, AsyncSessionLocal
 from app.core.rate_limit import consumir
+from app.core.safe_outbound_url import validar_url_publica, url_com_ip_fixado
 from app.models.api_key import ApiKey
 from app.models.rag import KnowledgeDoc
 from app.routers.ia_governanca import Confianca
@@ -113,33 +111,11 @@ def validar_callback_url(url: str, *, exigir_https: bool | None = None) -> str:
     isso, uma nova resolução DNS no background permitiria DNS rebinding
     (validação vê IP público; POST resolve de novo e cai em IP privado).
     """
-    p = urlparse(url)
-    if p.scheme not in ("http", "https"):
-        raise ValueError("callback_url deve usar http(s)")
     if exigir_https is None:
         exigir_https = get_settings().APP_ENV == "production"
-    if exigir_https and p.scheme != "https":
-        raise ValueError("callback_url deve usar https em produção")
-    host = p.hostname
-    if not host:
-        raise ValueError("callback_url sem host")
-    try:
-        infos = socket.getaddrinfo(host, None)
-    except socket.gaierror:
-        raise ValueError("host da callback_url não resolve")
-    ips_validos: list[str] = []
-    for info in infos:
-        try:
-            ip = ipaddress.ip_address(info[4][0])
-        except ValueError:
-            continue
-        if (ip.is_private or ip.is_loopback or ip.is_link_local
-                or ip.is_multicast or ip.is_reserved or ip.is_unspecified):
-            raise ValueError("callback_url aponta para endereço privado/loopback (bloqueado)")
-        ips_validos.append(str(ip))
-    if not ips_validos:
-        raise ValueError("host da callback_url não resolve para IP utilizável")
-    return ips_validos[0]
+    return validar_url_publica(
+        url, exigir_https=exigir_https, rotulo="callback_url"
+    )
 
 
 # ── Resumo de status por chave_origem (compartilhado batch/status/callback) ──
@@ -199,11 +175,7 @@ def _filtros_doc_escopo_batch(chave_origem: str, client_id: str | None) -> list:
 def _url_com_ip_fixado(url: str, ip: str) -> tuple[str, str]:
     """Substitui o host da URL pelo IP validado. Retorna (url_fixada, host
     original) — o host vai no header `Host` e no SNI/verificação TLS."""
-    p = urlparse(url)
-    host = p.hostname or ""
-    porta = f":{p.port}" if p.port else ""
-    ip_fmt = f"[{ip}]" if ":" in ip else ip
-    return p._replace(netloc=f"{ip_fmt}{porta}").geturl(), host
+    return url_com_ip_fixado(url, ip)
 
 
 async def _postar_callback(url: str, payload: dict, ip: str | None = None) -> bool:

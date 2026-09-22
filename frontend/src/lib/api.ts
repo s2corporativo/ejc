@@ -1,7 +1,7 @@
 // ── API client com refresh automático ────────────────────
-// O access token curto vive em localStorage (ejc_access). O refresh token
-// vive num cookie httpOnly (ejc_refresh) setado/lido pelo backend — por isso
-// TODAS as chamadas usam withCredentials para o navegador enviar o cookie.
+// O access token curto vive SOMENTE em memória. O refresh token vive num
+// cookie httpOnly (ejc_refresh) setado/lido pelo backend — por isso TODAS as
+// chamadas usam withCredentials para o navegador enviar o cookie.
 import axios from "axios";
 import { toast } from "../components/Toast";
 import type { AuthTokens, Deadline } from "../types";
@@ -9,9 +9,25 @@ import type { AuthTokens, Deadline } from "../types";
 export const API_BASE_URL = "/api/v1";
 const api = axios.create({ baseURL: API_BASE_URL, withCredentials: true });
 
-/** Access token curto atualmente em localStorage (ou null). */
+let accessToken: string | null = null;
+const LEGACY_ACCESS_KEY = "ejc_access";
+
+// Limpa eventual token persistido por versões anteriores. O valor nunca é lido.
+if (typeof localStorage !== "undefined") {
+  try {
+    localStorage.removeItem(LEGACY_ACCESS_KEY);
+  } catch {
+    // Storage indisponível não impede sessão em memória.
+  }
+}
+
+/** Access token curto somente em memória de módulo. */
 export function getAccessToken(): string | null {
-  return localStorage.getItem("ejc_access");
+  return accessToken;
+}
+
+export function setAccessToken(token: string | null): void {
+  accessToken = token;
 }
 
 api.interceptors.request.use((config) => {
@@ -31,8 +47,8 @@ let refreshing: Promise<string> | null = null;
 
 /**
  * Renova o access token usando o refresh que está no cookie httpOnly
- * `ejc_refresh`. Sem body — o cookie carrega o refresh. Grava apenas o novo
- * access em localStorage. Chamadas concorrentes compartilham a mesma Promise.
+ * `ejc_refresh`. Sem body — o cookie carrega o refresh. Mantém o novo access
+ * somente em memória. Chamadas concorrentes compartilham a mesma Promise.
  */
 export function refreshAccessToken(): Promise<string> {
   refreshing ??= axios
@@ -44,7 +60,7 @@ export function refreshAccessToken(): Promise<string> {
     .post<AuthTokens>("/api/auth/refresh", {}, { withCredentials: true })
     .then((res) => {
       const token = res.data.access_token;
-      localStorage.setItem("ejc_access", token);
+      setAccessToken(token);
       return token;
     })
     .finally(() => {
@@ -379,7 +395,7 @@ export async function avancarOrquestrador(
 export function logout(redirectTo?: unknown) {
   // O backend limpa o cookie httpOnly ejc_refresh; o cookie vai junto via withCredentials.
   axios.post("/api/auth/logout", {}, { withCredentials: true }).catch(() => {});
-  localStorage.removeItem("ejc_access");
+  setAccessToken(null);
   localStorage.removeItem("ejc_user");
   // Rascunho de intake carrega dados pessoais extraídos de documentos — não
   // pode sobreviver ao fim da sessão (LGPD). Limpa pela CHAVE para não criar

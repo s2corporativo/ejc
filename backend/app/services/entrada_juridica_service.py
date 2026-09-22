@@ -154,30 +154,22 @@ def _correlacionar_fato_prova_tese(
 
 
 def _estimativa_sucesso(analise: dict) -> dict:
+    """Contrato legado sem probabilidade produzida por LLM.
+
+    A análise estratégica é qualitativa. Percentuais só podem vir do motor
+    estatístico determinístico de jurimetria, que possui amostra/definição
+    próprias e não é executado nesta função.
+    """
     jur = analise.get("jurimetria") if isinstance(analise, dict) else None
     jur = jur if isinstance(jur, dict) else {}
-    base = _texto(jur.get("base_estimativa"), 1_500)
-    raw = jur.get("chance_sucesso_percent")
-    try:
-        percentual = float(raw) if raw is not None else None
-    except (TypeError, ValueError):
-        percentual = None
-    if percentual is None or not (0 <= percentual <= 100) or not base:
-        return {
-            "percentual": None,
-            "status": "sem_base_verificavel",
-            "base_estimativa": base,
-            "observacao": (
-                "Não há base concreta suficiente para exibir percentual de êxito. "
-                "O EJC não fabrica probabilidade."
-            ),
-        }
     return {
-        "percentual": round(percentual, 1),
-        "status": "estimativa_interna_com_base",
-        "base_estimativa": base,
-        "observacao": _texto(jur.get("observacao"), 1_000)
-        or "Estimativa interna, não é promessa de resultado e exige validação humana.",
+        "percentual": None,
+        "status": "sem_base_verificavel",
+        "base_estimativa": _texto(jur.get("base_estimativa"), 1_500),
+        "observacao": (
+            "A IA não estima probabilidade de êxito. Consulte a jurimetria "
+            "histórica quando houver amostra suficiente e definição aplicável."
+        ),
         "tempo_estimado_meses": jur.get("tempo_estimado_meses"),
         "faixa_valor_min": jur.get("faixa_valor_min"),
         "faixa_valor_max": jur.get("faixa_valor_max"),

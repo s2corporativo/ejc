@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from functools import lru_cache
 
 from app.core.config import get_settings
 
@@ -144,27 +145,39 @@ def coletor_erros_ativo() -> bool:
     return _sentry_inicializado
 
 
-async def check_migrations_head() -> bool | None:
-    """
-    Readiness: True se o alembic_version do banco == head(s) das migrations.
+@lru_cache(maxsize=1)
+def _migration_heads() -> frozenset[str]:
+    """Heads Alembic do CÓDIGO, imutáveis durante a vida deste processo.
 
-    Retorna None (indeterminado) quando alembic não está configurado ou ocorre
-    qualquer erro — nesse caso o resultado é apenas informativo e NÃO bloqueia
-    o readiness. Nunca levanta.
+    Parsear todo o grafo custa ~0,7–0,8 s no host de produção e o readiness
+    rodava isso em toda chamada. Sob carga compartilhada, o teto de 3 s podia
+    estourar e gerar falso 503 mesmo com banco e schema corretos. O cache é
+    seguro porque um novo artefato/migration implica novo processo/deploy.
+    """
+    from pathlib import Path
+
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    backend_dir = Path(__file__).resolve().parents[2]  # .../backend
+    cfg = Config(str(backend_dir / "alembic.ini"))
+    cfg.set_main_option("script_location", str(backend_dir / "alembic"))
+    return frozenset(ScriptDirectory.from_config(cfg).get_heads())
+
+
+async def check_migrations_head() -> bool | None:
+    """True quando o alembic_version do banco coincide com a head do código.
+
+    O grafo Alembic do código é cacheado por processo; o banco continua sendo
+    consultado em TODA chamada de readiness. Qualquer erro retorna None e o
+    endpoint permanece fail-closed (503) como antes.
     """
     try:
-        from pathlib import Path
-
-        from alembic.config import Config
-        from alembic.script import ScriptDirectory
         from sqlalchemy import text
 
         from app.core.database import engine
 
-        backend_dir = Path(__file__).resolve().parents[2]  # .../backend
-        cfg = Config(str(backend_dir / "alembic.ini"))
-        cfg.set_main_option("script_location", str(backend_dir / "alembic"))
-        heads = set(ScriptDirectory.from_config(cfg).get_heads())
+        heads = set(_migration_heads())
         if not heads:
             return None
 

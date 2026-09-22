@@ -57,6 +57,11 @@ class _CapacidadeRequestBase(BaseModel):
     area: Optional[str] = Field(None, max_length=60)
     perfil: Optional[str] = Field(None, max_length=40)
     opcoes: Optional[dict] = None
+    provider: Optional[str] = Field(
+        None,
+        pattern="^(auto|groq|maritaca|anthropic|ollama)$",
+        description="auto | groq | maritaca | anthropic | ollama",
+    )
 
 
 class AnalisarRequest(_CapacidadeRequestBase):
@@ -102,6 +107,8 @@ class RespostaCapacidadeIA(BaseModel):
     tarefa: Optional[str] = None
     modelo: Optional[str] = None
     provider: Optional[str] = None
+    fallback_ativado: bool = False
+    fallback_motivo: Optional[str] = None
     log_id: Optional[str] = None
     is_rascunho: bool = True
     requer_revisao: bool = True

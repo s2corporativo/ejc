@@ -100,7 +100,6 @@ async def test_cache_hit_zera_tokens_e_custo(monkeypatch):
     # Simula tarefa MASCARAMENTO (cacheável) e uma cadeia ELEGÍVEL (A6: o cache
     # só é consultado depois de confirmada a cadeia) para exercitar o hit.
     from app.services import ai_gateway
-    from types import SimpleNamespace
     from app.services import ai_cache as _c
     from app.services.ai.sanitization_policy import ModoSanitizacao
 
@@ -120,6 +119,8 @@ async def test_cache_hit_zera_tokens_e_custo(monkeypatch):
             "input_tokens": 500,
             "output_tokens": 800,
             "custo_estimado_brl": 1.23,
+            "fallback_ativado": True,
+            "fallback_motivo": "groq: RuntimeError",
         }
 
     monkeypatch.setattr(_c, "obter", _fake_obter)
@@ -131,3 +132,136 @@ async def test_cache_hit_zera_tokens_e_custo(monkeypatch):
     assert resp.texto == "resposta cacheada"
     assert resp.input_tokens == 0 and resp.output_tokens == 0
     assert resp.custo_estimado_brl == 0.0
+    assert resp.fallback_ativado is True
+    assert resp.fallback_motivo == "groq: RuntimeError"
+
+
+
+async def test_cache_write_preserva_metadados_de_fallback_chat(monkeypatch):
+    from app.services import ai_gateway
+    from app.services import ai_cache as _c
+    from app.services.ai.sanitization_policy import ModoSanitizacao
+
+    monkeypatch.setattr(
+        "app.services.ai.sanitization_policy.modo_para_task",
+        lambda _task: ModoSanitizacao.MASCARAMENTO,
+    )
+    s = ai_gateway.settings
+    monkeypatch.setattr(s, "AI_ENABLED", True)
+    monkeypatch.setattr(s, "AI_PROVIDER", "auto")
+    monkeypatch.setattr(s, "AI_PROVIDER_PRIORITY", "groq,ollama")
+    monkeypatch.setattr(s, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
+    monkeypatch.setattr(s, "GROQ_ENABLED", True)
+    monkeypatch.setattr(s, "GROQ_API_KEY", "gk")
+    monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
+    monkeypatch.setattr(s, "ANTHROPIC_AUTO_ROUTING_ENABLED", False)
+
+    chamadas = []
+
+    async def fake_provider(provider, model, messages, temperature, max_tokens):
+        chamadas.append(provider)
+        if provider == "groq":
+            raise RuntimeError("falha simulada")
+        return "ok", {"model": model or provider, "input_tokens": 1, "output_tokens": 1}
+
+    gravado = {}
+
+    async def fake_obter(_key):
+        return None
+
+    async def fake_gravar(_key, dados):
+        gravado.update(dados)
+
+    monkeypatch.setattr(ai_gateway, "_chamar_provedor", fake_provider)
+    monkeypatch.setattr(_c, "obter", fake_obter)
+    monkeypatch.setattr(_c, "gravar", fake_gravar)
+
+    resp = await ai_gateway.chat(
+        [{"role": "user", "content": "resuma"}],
+        task_type="resumo",
+    )
+    assert chamadas[:2] == ["groq", "ollama"]
+    assert resp.fallback_ativado is True
+    assert gravado["fallback_ativado"] is True
+    assert gravado["fallback_motivo"].startswith("groq:")
+
+
+async def test_cache_write_preserva_metadados_de_fallback_executar_tarefa(monkeypatch):
+    from app.services import ai_gateway
+    from app.services import ai_cache as _c
+    from app.services.ai.sanitization_policy import ModoSanitizacao
+    from app.services.system_prompts import TarefaIA
+
+    monkeypatch.setattr(
+        "app.services.ai.sanitization_policy.modo_para_task",
+        lambda _task: ModoSanitizacao.MASCARAMENTO,
+    )
+    st = ai_gateway.settings
+    monkeypatch.setattr(st, "AI_ENABLED", True)
+    monkeypatch.setattr(st, "AI_PROVIDER", "auto")
+    monkeypatch.setattr(st, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
+    monkeypatch.setattr(st, "GROQ_ENABLED", True)
+    monkeypatch.setattr(st, "GROQ_API_KEY", "gk")
+    monkeypatch.setattr(st, "OLLAMA_ENABLED", True)
+
+    chamadas = []
+    gravado = {}
+
+    async def fake_provider(provider, model, messages, temperature, max_tokens):
+        chamadas.append(provider)
+        if provider == "groq":
+            raise RuntimeError("falha simulada")
+        return "ok", {"model": model or provider, "input_tokens": 1, "output_tokens": 1}
+
+    async def fake_obter(_key):
+        return None
+
+    async def fake_gravar(_key, dados):
+        gravado.update(dados)
+
+    monkeypatch.setattr(ai_gateway, "_chamar_provedor", fake_provider)
+    monkeypatch.setattr(_c, "obter", fake_obter)
+    monkeypatch.setattr(_c, "gravar", fake_gravar)
+
+    out = await ai_gateway.executar_tarefa_ia(TarefaIA.RESUMO, "resuma este andamento")
+    assert chamadas[:2] == ["groq", "ollama"]
+    assert out["fallback_ativado"] is True
+    assert out["fallback_motivo"].startswith("groq:")
+    assert gravado["fallback_ativado"] is True
+    assert gravado["fallback_motivo"].startswith("groq:")
+
+
+async def test_cache_hit_preserva_metadados_de_fallback_executar_tarefa(monkeypatch):
+    from app.services import ai_gateway
+    from app.services import ai_cache as _c
+    from app.services.ai.sanitization_policy import ModoSanitizacao
+    from app.services.system_prompts import TarefaIA
+
+    monkeypatch.setattr(
+        "app.services.ai.sanitization_policy.modo_para_task",
+        lambda _task: ModoSanitizacao.MASCARAMENTO,
+    )
+    st = ai_gateway.settings
+    monkeypatch.setattr(st, "AI_ENABLED", True)
+    monkeypatch.setattr(st, "AI_PROVIDER", "auto")
+    monkeypatch.setattr(st, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
+    monkeypatch.setattr(st, "GROQ_ENABLED", True)
+    monkeypatch.setattr(st, "GROQ_API_KEY", "gk")
+    monkeypatch.setattr(st, "OLLAMA_ENABLED", True)
+
+    async def fake_obter(_key):
+        return {
+            "texto": "resposta cacheada",
+            "modelo": "ollama/modelo-local",
+            "provedor": "ollama",
+            "fallback_ativado": True,
+            "fallback_motivo": "groq: RuntimeError",
+        }
+
+    monkeypatch.setattr(_c, "obter", fake_obter)
+
+    out = await ai_gateway.executar_tarefa_ia(TarefaIA.RESUMO, "resuma este andamento")
+    assert out["cache_hit"] is True
+    assert out["provider"] == "ollama"
+    assert out["fallback_ativado"] is True
+    assert out["fallback_motivo"] == "groq: RuntimeError"

@@ -56,7 +56,7 @@ _TAREFA_PARA_GATEWAY: dict[TarefaIA, str] = {
     TarefaIA.MINUTAS: "elaboracao_peca",
     TarefaIA.PRAZOS: "analise_juridica",
     TarefaIA.AUDIENCIA: "analise_juridica",
-    TarefaIA.HONORARIOS: "analise_juridica",
+    TarefaIA.HONORARIOS: "honorarios",
     TarefaIA.PESQUISA_JURIDICA: "analise_juridica",
     TarefaIA.RAG_QUERY: "analise_juridica",
     TarefaIA.TRIAGEM: "resumo",
@@ -158,11 +158,18 @@ class SingleAICoreOrchestrator:
         mensagem_sana, pii_removida = sanitizar_ou_abortar(mensagem, nomes or None)
 
         # 5) Policy central de providers ──────────────────────────────────────
+        provider_solicitado = str(params.get("provider") or "").strip().lower() or None
+        if provider_solicitado == "auto":
+            provider_solicitado = None
+        if provider_solicitado not in {None, "groq", "maritaca", "anthropic", "ollama"}:
+            raise HTTPException(422, "Provedor de IA inválido.")
+
         decisao = AIProviderPolicy().avaliar(
             f"{mensagem_sana}\n{ctx.texto}",
             intent.tarefa.value,
             ja_sanitizado=True,
             exige_fonte=intent.exige_fonte,
+            provider_solicitado=provider_solicitado,
         )
         if not decisao.permitido:
             # V2-5.5 (auditoria): esta rejeição acontece ANTES do gateway —
@@ -301,6 +308,7 @@ class SingleAICoreOrchestrator:
             nivel_inteligencia=nivel_inteligencia,
             entidades=entidades or None,
             modo_sanitizacao=modo_sigilo,
+            provider_override=provider_solicitado,
         )
 
         # 7) Validação da resposta (citações, promessas, base verificável) ────
@@ -397,6 +405,8 @@ class SingleAICoreOrchestrator:
             "prompt_versao": prompt_versao(system_prompt),
             "modelo": modelo_canonico,
             "provider": resp.provedor,
+            "fallback_ativado": bool(getattr(resp, "fallback_ativado", False)),
+            "fallback_motivo": getattr(resp, "fallback_motivo", None),
             "fontes": [
                 {"titulo": f.get("titulo"), "categoria": f.get("categoria"),
                  "fonte": f.get("fonte")} for f in ctx.fontes

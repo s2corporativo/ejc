@@ -40,19 +40,20 @@ def test_estimativa_nao_exibe_percentual_sem_base_verificavel():
     assert out["status"] == "sem_base_verificavel"
 
 
-def test_estimativa_exibe_percentual_quando_ha_base_concreta():
+def test_estimativa_ignora_percentual_llm_mesmo_com_base_textual():
     out = _estimativa_sucesso(
         {
             "jurimetria": {
                 "chance_sucesso_percent": 64.25,
-                "base_estimativa": "amostra interna validada do mesmo tribunal e classe",
+                "base_estimativa": "texto sugerido pelo modelo",
                 "tempo_estimado_meses": 18,
             }
         }
     )
-    assert out["percentual"] == 64.2
-    assert out["status"] == "estimativa_interna_com_base"
+    assert out["percentual"] is None
+    assert out["status"] == "sem_base_verificavel"
     assert out["tempo_estimado_meses"] == 18
+    assert "não estima probabilidade" in out["observacao"]
 
 
 def test_matriz_fato_prova_tese_nunca_confirma_automaticamente():

@@ -371,11 +371,14 @@ class TestCriticaAdversarial:
         st = get_settings()
         monkeypatch.setattr(st, "ANTHROPIC_ENABLED", True)
         monkeypatch.setattr(st, "ANTHROPIC_API_KEY", "sk-ant-fake-para-testes")
+        monkeypatch.setattr(st, "MARITACA_ENABLED", True)
+        monkeypatch.setattr(st, "MARITACA_API_KEY", "mk-fake-para-testes")
         monkeypatch.setattr(st, "GROQ_API_KEY", "gsk-fake-para-testes")
         monkeypatch.setattr(st, "OLLAMA_ENABLED", True)
         monkeypatch.setattr(st, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
         monkeypatch.setattr(st, "AI_PROVIDER", "auto")
-        monkeypatch.setattr(st, "AI_PROVIDER_PRIORITY", "anthropic,groq,ollama")
+        monkeypatch.setattr(st, "AI_PROVIDER_PRIORITY", "groq,maritaca,ollama,anthropic")
+        monkeypatch.setattr(st, "ANTHROPIC_AUTO_ROUTING_ENABLED", False)
         capturado: dict = {}
 
         async def fake_chat(messages, **kw):
@@ -436,7 +439,7 @@ class TestCriticaAdversarial:
         )
         assert c.disponivel is True
         assert gateway_ok["modo_sanitizacao"] != ModoSanitizacao.LOCAL_COMPLETO
-        assert gateway_ok["provider_override"] == "anthropic"
+        assert gateway_ok["provider_override"] == "maritaca"
 
     async def test_modo_do_chamador_eleva_o_piso_sem_case_id(
             self, gateway_ok):
