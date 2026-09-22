@@ -1401,7 +1401,7 @@ def start_scheduler():
               id="telemetria_rotas_expurgo", replace_existing=True, max_instances=1, coalesce=True)
 
     # Jobs v3.x — integrações oficiais (guardas internas pulam se não configurado)
-    s.add_job(job_djen_intimacoes,  CronTrigger(hour=6,  minute=30), id="djen",        replace_existing=True)
+    s.add_job(job_djen_consolidado, CronTrigger(hour=6,  minute=30), id="djen",        replace_existing=True)
     s.add_job(job_datajud_sync,     CronTrigger(hour="8,16", minute=45), id="datajud",  replace_existing=True)
     s.add_job(job_relatorio_mensal, CronTrigger(day=1,  hour=7, minute=30), id="relatorio_mensal", replace_existing=True)
 
@@ -1417,9 +1417,13 @@ def start_scheduler():
     s.add_job(_purgar_dados_lgpd, CronTrigger(day_of_week="sun", hour=2, minute=30), id="purga_lgpd", replace_existing=True)
     s.add_job(job_ingestao_camara,   CronTrigger(hour=4, minute=0),          id="ing_camara",   replace_existing=True)
     s.add_job(job_ingestao_senado,   CronTrigger(hour=4, minute=20),         id="ing_senado",   replace_existing=True)
-    # DJEN → RAG: gate interno DJEN_INGEST_ENABLED (default True — LIGADO por
-    # decisão do titular; desligue com DJEN_INGEST_ENABLED=false).
-    s.add_job(job_ingestao_djen,     CronTrigger(hour=5, minute=0),          id="ing_djen",     replace_existing=True)
+    # DJEN_INGEST_ENABLED (default True) — gate do job consolidado.
+    # id="ing_djen" — componente consolidado;
+    # job_ingestao_djen continua no fluxo, mas o antigo job separado não é
+    # registrado. O gate DJEN_INGEST_ENABLED continua sendo o gate real.
+    # DJEN → tabela de intimações + RAG: uma única execução diária. Os dois
+    # consumidores usam consultar_oab/_djen_get e compartilham páginas no Redis,
+    # evitando duas viagens à mesma API para a mesma OAB/janela.
     # TJMG → RAG: gate interno TJMG_INGEST_ENABLED (default True — LIGADO por
     # decisão do titular; desligue com TJMG_INGEST_ENABLED=false). Semanal
     # (sáb 04h30) — crawler de jurisprudência estadual MG por temas curados.
@@ -1847,6 +1851,22 @@ def djen_entra_no_job(advogado) -> bool:
     if (getattr(advogado, "djen_oab_numero", "") or "").strip():
         return True
     return all(oab_para_captura(advogado))
+
+
+async def job_djen_consolidado():
+    """06h30 — captura operacional e arquivamento RAG na mesma janela.
+
+    A coleta HTTP é canônica e cacheada no Redis; cada consumidor mantém sua
+    própria persistência e pode falhar isoladamente sem impedir o outro.
+    """
+    try:
+        await job_ingestao_djen()
+    except Exception as exc:
+        logger.error("[DJEN] ingestão RAG falhou no job consolidado: %s", exc)
+    try:
+        await job_djen_intimacoes()
+    except Exception as exc:
+        logger.error("[DJEN] captura operacional falhou no job consolidado: %s", exc)
 
 
 async def job_djen_intimacoes():

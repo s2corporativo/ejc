@@ -19,6 +19,7 @@
 from __future__ import annotations
 import asyncio
 import hashlib
+import json
 import logging
 import re
 import time
@@ -171,13 +172,52 @@ async def _aguardar_rate_limit() -> None:
 async def _datajud_search(alias: str, payload: dict, headers: dict) -> dict:
     await _aguardar_rate_limit()
     s = get_settings()
+    cache = None
+    cache_key = "datajud:consulta:" + hashlib.sha256(
+        json.dumps({"alias": alias, "payload": payload}, sort_keys=True, default=str).encode()
+    ).hexdigest()
+    try:
+        import redis.asyncio as aioredis
+        if s.REDIS_URL and _cache_ttl_segundos() > 0:
+            cache = aioredis.from_url(
+                s.REDIS_URL, socket_connect_timeout=0.5, socket_timeout=0.5,
+                decode_responses=True,
+            )
+            valor = await cache.get(cache_key)
+            if valor:
+                return json.loads(valor)
+    except Exception:
+        cache = None
+    finally:
+        if cache is not None:
+            try:
+                await cache.aclose()
+            except Exception:
+                pass
     base = (s.DATAJUD_BASE_URL or BASE).rstrip("/")
     async with httpx.AsyncClient(timeout=s.DATAJUD_TIMEOUT_SECONDS) as client:
         response = await client.post(
             f"{base}/{alias}/_search", json=payload, headers=headers
         )
         response.raise_for_status()
-        return response.json()
+        resultado = response.json()
+    try:
+        import redis.asyncio as aioredis
+        if s.REDIS_URL and _cache_ttl_segundos() > 0:
+            cache = aioredis.from_url(
+                s.REDIS_URL, socket_connect_timeout=0.5, socket_timeout=0.5,
+                decode_responses=True,
+            )
+            await cache.set(cache_key, json.dumps(resultado, default=str), ex=_cache_ttl_segundos())
+    except Exception:
+        pass
+    finally:
+        if cache is not None:
+            try:
+                await cache.aclose()
+            except Exception:
+                pass
+    return resultado
 
 
 async def buscar_lote_paginado(

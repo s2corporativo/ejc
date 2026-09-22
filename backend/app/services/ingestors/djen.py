@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import re
 from collections import Counter
@@ -183,16 +184,73 @@ async def _coletar_oab(numero: str, uf: str, ini: str, fim: str) -> list[dict]:
     pagina = 1
     retries_vazia = 0
     while pagina <= MAX_PAGINAS:
-        r = await fetch(BASE, params={
+        params = {
             "numeroOab": numero,
             "ufOab": uf,
             "dataDisponibilizacaoInicio": ini,
             "dataDisponibilizacaoFim": fim,
             "itensPorPagina": ITENS_POR_PAGINA,
             "pagina": pagina,
-        }, timeout=30, proxy=obter_proxy_djen(), trust_env=False)
+        }
+        cache = None
+        cache_key = "djen:consulta:" + hashlib.sha256(
+            json.dumps(params, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
         try:
-            payload = r.json()
+            import redis.asyncio as aioredis
+            url = getattr(get_settings(), "REDIS_URL", "")
+            ttl = int(getattr(get_settings(), "DJEN_CACHE_TTL_SEGUNDOS", 900) or 0)
+            if url and ttl > 0:
+                cache = aioredis.from_url(
+                    url, socket_connect_timeout=0.5, socket_timeout=0.5,
+                    decode_responses=True,
+                )
+                cached = await cache.get(cache_key)
+                if cached:
+                    payload = json.loads(cached)
+                    r = None
+                else:
+                    r = await fetch(BASE, params=params, timeout=30,
+                                    proxy=obter_proxy_djen(), trust_env=False)
+            else:
+                r = await fetch(BASE, params=params, timeout=30,
+                                proxy=obter_proxy_djen(), trust_env=False)
+        except Exception:
+            r = await fetch(BASE, params=params, timeout=30,
+                            proxy=obter_proxy_djen(), trust_env=False)
+        finally:
+            if cache is not None:
+                try:
+                    await cache.aclose()
+                except Exception:
+                    pass
+        if r is not None:
+            try:
+                payload = r.json()
+            except ValueError:
+                payload = None
+            if payload is not None:
+                try:
+                    import redis.asyncio as aioredis
+                    url = getattr(get_settings(), "REDIS_URL", "")
+                    ttl = int(getattr(get_settings(), "DJEN_CACHE_TTL_SEGUNDOS", 900) or 0)
+                    if url and ttl > 0:
+                        cache = aioredis.from_url(
+                            url, socket_connect_timeout=0.5, socket_timeout=0.5,
+                            decode_responses=True,
+                        )
+                        await cache.set(cache_key, json.dumps(payload, ensure_ascii=False), ex=ttl)
+                except Exception:
+                    pass
+                finally:
+                    if cache is not None:
+                        try:
+                            await cache.aclose()
+                        except Exception:
+                            pass
+        try:
+            if payload is None:
+                raise ValueError
             lote = _extrair_itens(payload)
         except ValueError:
             logger.warning(f"DJEN OAB {numero}/{uf} p.{pagina}: JSON inválido")

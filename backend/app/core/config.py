@@ -612,6 +612,9 @@ class Settings(BaseSettings):
     # margem para atraso de disponibilização sem reprocessar demais (o upsert
     # é idempotente por chave_origem, então sobreposição é inofensiva).
     DJEN_INGEST_JANELA_DIAS: int = 2
+    # TTL da página no Redis: captura operacional e ingestão RAG compartilham
+    # a mesma consulta quando executadas na mesma janela.
+    DJEN_CACHE_TTL_SEGUNDOS: int = 900
     # Captura por advogado (djen_service.capturar_para_advogado): intimação de
     # processo VINCULADO a caso ativo também entra no RAG como
     # `comunicacao_processual` restrita ao cliente/caso, com rag_status

@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -316,10 +317,55 @@ async def enviar_emails_pendentes(resultado: DjenCapturaResultado) -> None:
     reraise=True,
 )
 async def _djen_get(params: dict) -> dict | list:
+    from app.core.config import get_settings
+
+    bruto = json.dumps(params, ensure_ascii=False, sort_keys=True, default=str)
+    chave = "djen:consulta:" + hashlib.sha256(bruto.encode("utf-8")).hexdigest()
+    cache = None
+    try:
+        import redis.asyncio as aioredis
+        url = getattr(get_settings(), "REDIS_URL", "")
+        if url:
+            cache = aioredis.from_url(
+                url, socket_connect_timeout=0.5, socket_timeout=0.5,
+                decode_responses=True,
+            )
+            valor = await cache.get(chave)
+            if valor:
+                return json.loads(valor)
+    except Exception:
+        cache = None
+    finally:
+        if cache is not None:
+            try:
+                await cache.aclose()
+            except Exception:
+                pass
+
     async with criar_cliente_djen(timeout=25) as client:
         response = await client.get(BASE, params=params)
         response.raise_for_status()
-        return response.json()
+        payload = response.json()
+
+    try:
+        import redis.asyncio as aioredis
+        url = getattr(get_settings(), "REDIS_URL", "")
+        ttl = int(getattr(get_settings(), "DJEN_CACHE_TTL_SEGUNDOS", 900) or 0)
+        if url and ttl > 0:
+            cache = aioredis.from_url(
+                url, socket_connect_timeout=0.5, socket_timeout=0.5,
+                decode_responses=True,
+            )
+            await cache.set(chave, json.dumps(payload, ensure_ascii=False), ex=ttl)
+    except Exception:
+        pass
+    finally:
+        if cache is not None:
+            try:
+                await cache.aclose()
+            except Exception:
+                pass
+    return payload
 
 
 CNJ_REGEX = re.compile(r"\d{7}-?\d{2}\.?\d{4}\.?\d\.?\d{2}\.?\d{4}")
