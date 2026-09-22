@@ -3,11 +3,12 @@
 // termina linhas em `\r\n` → frames fecham com `\r\n\r\n`. O parser precisa
 // aceitar os dois framings e não descartar o frame final sem terminador.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { streamSSE, type SSEEvent } from "./stream";
+import { authFetch, streamSSE, type SSEEvent } from "./stream";
+import { getAccessToken, logout, refreshAccessToken } from "./api";
 
 // streamSSE → authFetch → token/refresh de api.ts; aqui isolamos o parser.
 vi.mock("./api", () => ({
-  getAccessToken: () => null,
+  getAccessToken: vi.fn(() => null),
   refreshAccessToken: vi.fn(),
   logout: vi.fn(),
 }));
@@ -39,6 +40,59 @@ async function coletar(chunks: string[]): Promise<SSEEvent[]> {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.mocked(getAccessToken).mockReturnValue(null);
+  vi.mocked(refreshAccessToken).mockReset();
+  vi.mocked(logout).mockReset();
+});
+
+describe("authFetch — contrato de autenticação do streaming", () => {
+  it("injeta Bearer e credenciais de cookie no primeiro request", async () => {
+    vi.mocked(getAccessToken).mockReturnValue("access-old");
+    const resposta = new Response(null, { status: 200 });
+    const fetchMock = vi.fn(async () => resposta);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await authFetch("/api/stream", { method: "POST" });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [, init] = fetchMock.mock.calls[0];
+    expect(new Headers(init?.headers).get("Authorization")).toBe(
+      "Bearer access-old",
+    );
+    expect(init?.credentials).toBe("include");
+  });
+
+  it("renova uma vez e repete o request quando recebe 401", async () => {
+    vi.mocked(getAccessToken).mockReturnValue("access-old");
+    vi.mocked(refreshAccessToken).mockResolvedValue("access-new");
+    const fetchMock = vi
+      .fn<() => Promise<Response>>()
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const resposta = await authFetch("/api/stream", { method: "POST" });
+
+    expect(resposta.status).toBe(200);
+    expect(refreshAccessToken).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(
+      new Headers(fetchMock.mock.calls[1][1]?.headers).get("Authorization"),
+    ).toBe("Bearer access-new");
+  });
+
+  it("faz logout e devolve o 401 original quando o refresh falha", async () => {
+    vi.mocked(refreshAccessToken).mockRejectedValue(new Error("expired"));
+    const resposta = new Response(null, { status: 401 });
+    const fetchMock = vi.fn(async () => resposta);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const resultado = await authFetch("/api/stream", { method: "POST" });
+
+    expect(resultado).toBe(resposta);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(logout).toHaveBeenCalledOnce();
+  });
 });
 
 describe("streamSSE — framing LF (\\n\\n, streams legados)", () => {

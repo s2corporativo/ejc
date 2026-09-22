@@ -21,6 +21,10 @@ A Wave 4 consolida superfícies que permaneceram funcionais após a limpeza estr
 
 Foi adicionado o contrato `areas.consolidation.contract.test.ts`, que verifica a existência do único fetch no hook, a preservação do fallback/cache e a ausência de fetch duplicado nos consumidores.
 
+## Execução — FE-07
+
+O runtime `lib/stream.ts` foi preservado como a única camada de `fetch` cru para respostas SSE POST. Foram adicionados testes para o `Bearer`, credenciais de cookie, renovação única após HTTP 401, logout quando o refresh falha e os quatro consumidores reais: `AgenteIA`, `PecaGeneratorModal`, `AnaliseExtratos` e `BancarioForense`. Não foi feita uma migração artificial para Axios, pois ela perderia o corpo incremental do stream.
+
 ## Validação prevista
 
 A etapa FE-08 deve passar pelo contrato específico, pelos testes de áreas/RamosHub, TypeScript, build Vite e suíte frontend completa. A próxima etapa recomendada é FE-10, após inventariar exports e consumidores de `dpt360/api.ts`, `radarApi.ts` e `reportApi.ts`. FE-07 permanece uma decisão de preservação, não uma exclusão automática.
