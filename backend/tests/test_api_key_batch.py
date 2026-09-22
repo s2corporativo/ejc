@@ -484,8 +484,9 @@ def test_chave_invalida_consome_cota_por_ip_e_leva_429(ctx):
 # M-2: DNS rebinding do callback_url ------------------------------------------
 
 def test_validar_callback_url_retorna_ip_publico(monkeypatch):
+    import app.core.safe_outbound_url as sou
     import app.routers.rag_public as rp
-    monkeypatch.setattr(rp.socket, "getaddrinfo",
+    monkeypatch.setattr(sou.socket, "getaddrinfo",
                         lambda host, port: _addrinfo("93.184.216.34"))
     ip = rp.validar_callback_url("https://exemplo.com/hook", exigir_https=False)
     assert ip == "93.184.216.34"
@@ -522,6 +523,7 @@ async def test_postar_callback_fixa_ip_com_host_e_sni(monkeypatch):
 def test_dns_rebinding_entre_validacao_e_post_nao_tem_efeito(ctx, monkeypatch):
     """DNS devolve IP público na validação e IP privado depois: o callback em
     background usa o IP FIXADO na validação — o IP privado nunca é alcançado."""
+    import app.core.safe_outbound_url as sou
     import app.routers.rag_public as rp
 
     resolucoes = {"n": 0}
@@ -531,7 +533,7 @@ def test_dns_rebinding_entre_validacao_e_post_nao_tem_efeito(ctx, monkeypatch):
         # 1ª resolução (validação) → público; depois → privado (rebinding)
         return _addrinfo("93.184.216.34" if resolucoes["n"] == 1 else "10.0.0.5")
 
-    monkeypatch.setattr(rp.socket, "getaddrinfo", _dns_rebind)
+    monkeypatch.setattr(sou.socket, "getaddrinfo", _dns_rebind)
 
     capturas = []
 
