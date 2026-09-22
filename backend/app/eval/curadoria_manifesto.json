@@ -1,0 +1,33 @@
+{
+  "versao": "0.1.0",
+  "status": "benchmark_fonte_curada_sem_casos_atestados",
+  "regra": "A fila não conta como gold; somente casos reais validados por gold_governance contam.",
+  "meta_total": 75,
+  "areas": {
+    "consumidor": 15,
+    "trabalhista": 15,
+    "civel": 15,
+    "penal": 15,
+    "tributario": 15
+  },
+  "cenarios_por_area": {
+    "normal": 5,
+    "fronteira": 5,
+    "excecao": 5
+  },
+  "casos_atestados": 0,
+  "casos_candidatos": 10,
+  "itens_benchmark_fonte_curada": 14,
+  "slots_pendentes": 75,
+  "gate": {
+    "comando": "python -m app.eval.gold_governance --require-real --dir app/eval --areas consumidor,trabalhista,civel,penal,tributario --min-casos-area 15 --min-total 75 --cenarios normal,fronteira,excecao --min-casos-cenario 25",
+    "resultado_atual": "bloqueado_por_ausencia_de_casos_reais"
+  },
+  "rag_benchmark": {
+    "arquivo": "app/eval/benchmarks/rag_source_curated.jsonl",
+    "itens": 14,
+    "ultimo_resultado": "recall_zero_por_indisponibilidade_de_banco_e_embedding_no_ambiente_de_auditoria"
+  },
+  "nao_atestado_por": "Manus AI",
+  "observacao": "Os 10 candidatos existentes são fictícios e permanecem fora da certificação. É necessária entrada autorizada de casos reais pseudonimizados e curadoria jurídica humana."
+}

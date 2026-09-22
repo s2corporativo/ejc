@@ -1477,9 +1477,13 @@ class PesquisaIn(_BaseModel_consolidacao):
 
 SYS_PESQUISA = (
     "Você é assistente de pesquisa jurídica do escritório. Responda à pergunta "
-    "usando PRINCIPALMENTE o contexto fornecido (base interna). Seja objetivo, cite "
-    "as fontes do contexto e, se a base não cobrir, diga isso explicitamente em vez "
-    "de inventar. Não dê garantias de resultado."
+    "usando PRINCIPALMENTE o contexto fornecido (base interna). Seja objetivo e cite "
+    "somente fontes que aparecem no contexto. Diferencie norma vigente, precedente "
+    "vinculante, jurisprudência persuasiva e material interno. Se a base não cobrir, "
+    "diga isso explicitamente em vez de inventar. Liste fatos/documentos faltantes, "
+    "riscos, limites de aplicação e o que precisa ser conferido na fonte oficial. "
+    "Nunca dê garantias de resultado, prazo ou valor. Responda como rascunho para "
+    "revisão obrigatória de advogado."
 )
 
 @router.post("/pesquisar", dependencies=[Depends(rate_limit("ia-pesquisar", 15))])
@@ -1489,6 +1493,38 @@ async def pesquisar(body: PesquisaIn, db: AsyncSession = Depends(get_db),
         raise HTTPException(503, "IA desabilitada")
     pergunta_limpa, pii = _sanitizar_ou_abortar_consolidacao(body.pergunta)
     contexto = await _buscar_contexto_rag_consolidacao(db, pergunta_limpa, limite=6)
+    if not contexto:
+        # Fail-closed: sem fonte recuperada, não chamar o modelo. Uma resposta
+        # prosaica aqui poderia parecer uma conclusão jurídica mesmo quando a
+        # base, o banco ou os embeddings estão indisponíveis.
+        from app.services.research_contract import montar_envelope
+        resposta_sem_base = (
+            "Não foi localizada fonte verificável na base de conhecimento para "
+            "esta pergunta. Não é seguro produzir uma conclusão jurídica. "
+            "Pesquise a fonte oficial e reúna os fatos/documentos faltantes "
+            "antes de prosseguir."
+        )
+        log_id = await _log(
+            db, cu.id, _AITipoUso_consolidacao.consulta_rag, None,
+            pergunta_limpa, pii, resposta_sem_base, None,
+            task_type="estrategia",
+        )
+        envelope = montar_envelope(
+            resposta=resposta_sem_base,
+            pergunta=pergunta_limpa,
+            contexto=[],
+            pii_removida=pii,
+            log_id=log_id,
+        )
+        from app.services.ai.core import capacidades
+        legado = {
+            **envelope,
+            "modelo": None,
+            "tokens_input": 0,
+            "tokens_output": 0,
+            "aviso": "⚠️ Sem fonte recuperada — nenhuma conclusão jurídica foi gerada.",
+        }
+        return {**legado, **capacidades.canonizar("conversar", legado)}
     ctx_txt, _ = _sanitizar_pii_consolidacao(
         "\n\n".join(f"- {c.get('titulo','')}: {(c.get('conteudo') or '')[:600]}"
                     for c in contexto) or "(base sem resultados relevantes)"
@@ -1515,13 +1551,20 @@ async def pesquisar(body: PesquisaIn, db: AsyncSession = Depends(get_db),
     # jurídica é pergunta e resposta fundamentada na base. Motor legado pelo
     # mesmo motivo das rotas acima; saída já canônica.
     from app.services.ai.core import capacidades
+    from app.services.research_contract import montar_envelope
+    envelope = montar_envelope(
+        resposta=resposta,
+        pergunta=pergunta_limpa,
+        contexto=contexto,
+        pii_removida=pii,
+        log_id=log_id,
+    )
     legado = {
-        "ai_log_id": log_id, "resposta": resposta,
+        **envelope,
         "modelo": _modelo_log_consolidacao(resp),
         "tokens_input": _tokens_input_consolidacao(resp),
         "tokens_output": _tokens_output_consolidacao(resp),
-        "fontes": [{"titulo": c.get("titulo"), "categoria": c.get("categoria")} for c in contexto],
-        "aviso": "⚠️ Resposta gerada por IA — confira as fontes antes de usar em peça ou orientar o cliente.",
+        "aviso": "⚠️ Rascunho gerado por IA — revisão humana obrigatória antes de usar em peça ou orientar cliente.",
     }
     return {**legado, **capacidades.canonizar("conversar", legado)}
 
@@ -1593,4 +1636,3 @@ async def sugestao_honorarios(body: HonorariosIn, db: AsyncSession = Depends(get
         "aviso": "⚠️ Valores REFERENCIAIS da OAB/MG. Honorário é livremente pactuado — "
                  "o advogado define o valor final. Confira na tabela oficial.",
     }
-

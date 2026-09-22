@@ -41,11 +41,21 @@ CATEGORIA_MODELO = "modelo_documento_juridico"
 # Temas comuns para a importação inicial OPCIONAL de jurisprudência real
 # (LexML/STJ via services/juris_import — dedup idempotente por chave_origem).
 TEMAS_JURISPRUDENCIA_INICIAL: list[str] = [
-    "dano moral consumidor",
-    "responsabilidade civil prestação de serviço",
-    "revisional contrato bancário juros",
-    "horas extras vínculo empregatício",
-    "alimentos guarda compartilhada",
+    "responsabilidade bancária fraude fortuito interno Tema 466 Súmula 479",
+    "consumidor CDC instituições financeiras Súmula 297 STJ",
+    "superendividamento crédito responsável Lei 14.181 mínimo existencial",
+    "terceirização Tema 725 STF responsabilidade subsidiária",
+    "negociação coletiva Tema 1046 STF",
+    "prescrição trabalhista CLT art. 11 Súmula 308 TST",
+    "responsabilidade civil Código Civil dano nexo causal",
+    "tutela provisória CPC arts. 294 300 311 Tema 988 STJ",
+    "Marco Civil Internet Tema 987 STF provedor",
+    "investigação criminal Súmula Vinculante 14 STF",
+    "Lei de Drogas tráfico cadeia de custódia",
+    "execução fiscal prescrição redirecionamento Tema 444 STJ",
+    "decadência prescrição tributária CTN Súmula Vinculante 8",
+    "Tema 69 STF ICMS base PIS COFINS",
+    "reforma tributária EC 132 LC 214 LC 227",
 ]
 
 _README_BASE = """

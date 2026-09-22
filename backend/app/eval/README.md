@@ -15,6 +15,48 @@ Sem régua, toda melhoria é aposta.
 > - **Peças** (`gold_set_pecas.jsonl`, seção 7): casos curados para avaliar o
 >   pipeline de geração de peças (incl. o laço de auto-crítica das Duas IAs).
 
+### Benchmark provisório por proveniência
+
+Enquanto o gold humano não está disponível, `benchmarks/rag_source_curated.jsonl`
+contém 14 fichas da Biblioteca Jurídica que têm URL oficial, snapshot local,
+data de verificação e `gerado_por_IA=false`. Ele serve para medir recuperação de
+fontes versionadas e **não conta como gold jurídico**, porque não contém casos
+reais atestados. Regenere-o somente a partir do acervo versionado:
+
+```bash
+python -m app.eval.build_source_benchmark
+python -m app.eval.run_eval \
+  --gold app/eval/benchmarks/rag_source_curated.jsonl --k 6 \
+  --out /tmp/rag-source-baseline.json
+```
+
+Resultado `recall=0` acompanhado de falha de conexão, banco ou embedding é
+falha operacional, não evidência de baixa qualidade jurídica.
+
+### Homologação inicial sem casos próprios
+
+`research_acceptance.synthetic.jsonl` contém 20 perguntas explicitamente
+sintéticas, distribuídas entre consumidor, trabalhista, cível/processual, penal
+e tributário. Elas testam se a pesquisa retorna autoridade, exige prova e
+documentos, reconhece lacunas e mantém revisão humana. Não são casos do
+escritório e não contam como gold set.
+
+```bash
+python -m app.eval.run_research_acceptance
+```
+
+Para verificar mudanças nas páginas oficiais em produção, execute o monitor
+determinístico e persista o manifesto fora do repositório:
+
+```bash
+python -m app.eval.check_public_sources \
+  --out /var/lib/ejc/fontes-publicas-manifesto.json
+```
+
+Código de saída `2` significa alteração ou erro de consulta e exige
+revalidação humana; o monitor nunca promove automaticamente uma fonte nova a
+fundamento apto para citação.
+
 ## 1. Monte o gold set
 
 Consulte também [`GUIA_CURADORIA_GOLD_SET.md`](GUIA_CURADORIA_GOLD_SET.md),

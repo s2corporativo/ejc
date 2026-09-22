@@ -527,7 +527,8 @@ async def buscar_contexto_rag(
             # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
             # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             sql_v = text(f"""
-                SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
+                SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+                       kd.tribunal, kd.extra, kd.atualizado_em, kd.vigente, kd.revisado, kd.versao,
                        {_SQL_CONFIANCA},
                        (kc.embedding <=> :vec) AS dist
                 FROM knowledge_chunks kc
@@ -557,6 +558,11 @@ async def buscar_contexto_rag(
                     {"chunk_id": r.id, "doc_id": r.doc_id, "conteudo": r.conteudo,
                      "titulo": r.titulo,
                      "categoria": r.categoria, "fonte": r.fonte,
+                     "tribunal": getattr(r, "tribunal", None),
+                     "extra": getattr(r, "extra", None),
+                     "atualizado_em": getattr(r, "atualizado_em", None),
+                     "vigente": getattr(r, "vigente", True),
+                     "revisado": getattr(r, "revisado", True),
                      "confianca": r.confianca,
                      "versao": getattr(r, "versao", None),
                      "score": round(1 - r.dist, 4)}   # cosine similarity
@@ -601,7 +607,8 @@ async def buscar_contexto_rag(
     # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
     # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     sql = text(f"""
-        SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
+        SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+               kd.tribunal, kd.extra, kd.atualizado_em, kd.vigente, kd.revisado, kd.versao,
                {_SQL_CONFIANCA}
         FROM knowledge_chunks kc
         JOIN knowledge_docs kd ON kd.id = kc.doc_id
@@ -619,6 +626,11 @@ async def buscar_contexto_rag(
             {
                 "chunk_id": r.id, "doc_id": r.doc_id, "conteudo": r.conteudo,
                 "titulo": r.titulo, "categoria": r.categoria, "fonte": r.fonte,
+                "tribunal": getattr(r, "tribunal", None),
+                "extra": getattr(r, "extra", None),
+                "atualizado_em": getattr(r, "atualizado_em", None),
+                "vigente": getattr(r, "vigente", True),
+                "revisado": getattr(r, "revisado", True),
                 "confianca": r.confianca,
                 "versao": getattr(r, "versao", None),
             }

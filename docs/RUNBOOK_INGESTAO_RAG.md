@@ -13,6 +13,29 @@ responde `403` a `.gov.br`/`.jus.br`), então a ingestão **não** roda a partir
 delas — e não se deve contornar esse bloqueio. Os testes dos ingestores são
 offline (mocks/fixtures); a coleta viva é sempre no VPS.
 
+## Semente pública para escritório sem casos próprios
+
+O catálogo versionado `backend/app/eval/fontes_publicas_iniciais.json` define a
+primeira base pública do EJC. Ele separa normas vigentes, precedentes
+vinculantes, jurisprudência persuasiva e material informativo. Não contém casos
+do escritório, experiência própria, pareceres ou gold set humano.
+
+O seed inicial de jurisprudência usa 15 consultas focadas em consumidor,
+trabalhista, cível/processual, penal e tributário. Para executar em produção,
+com autenticação de `admin`, `socio` ou `superadmin`:
+
+```bash
+curl -sS -X POST "$BASE/api/rag/seed?incluir_jurisprudencia=true" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Esse endpoint é idempotente e agenda o importador oficial configurado
+(LexML/STJ). Se uma fonte estiver desabilitada ou indisponível, o sistema deve
+registrar o job como parcial/erro; não preencher a lacuna com texto de IA.
+Depois, conferir a tabela `fontes_ingestao`, a proveniência e uma busca por
+Tema/lei no painel do RAG. O operador deve preservar URL, órgão, identificador,
+data de consulta, versão/hash e nível de confiança.
+
 ## Estado dos gates (produção)
 
 Todos ligados por default (`backend/app/core/config.py`). Para desligar uma
