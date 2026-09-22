@@ -316,6 +316,7 @@ async def test_triagem_grava_snapshot_no_caminho_feliz(monkeypatch):
     s = snaps[0]
     assert s.origem == "triagem" and s.versao == 1 and s.congelado is False
     assert s.payload["area"] == "trabalhista"
+    assert "chance_exito" not in s.payload.get("riscos", {})
     assert s.ai_log_ids and s.criado_por is None  # automático, rastreável
 
 

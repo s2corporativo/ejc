@@ -21,7 +21,8 @@ PROMPT_ANALISE = ("""Você é um advogado sênior brasileiro com 20 anos de expe
 - NUNCA invente jurisprudência, número de acórdão, súmula, artigo de lei ou processo.
 - Onde NÃO houver base suficiente, use null (campo) ou lista vazia. É obrigatório admitir a lacuna em vez de inventar.
 - Jurisprudência só pode ser citada se constar da BASE DE CONHECIMENTO INTERNA; caso contrário use exatamente "verificar: [tema] no [tribunal]" ou null.
-- Estimativas de jurimetria NÃO são promessa de resultado e dependem de validação humana; só preencha números se houver base_estimativa concreta.
+- NÃO estime percentual, probabilidade ou chance de êxito. O campo chance_sucesso_percent deve permanecer null; taxas só podem vir do motor estatístico determinístico do EJC, fora desta chamada de LLM.
+- Prazo e faixa de valor só podem ser preenchidos quando houver base_estimativa concreta no contexto; caso contrário use null.
 
 ## COMO LER (POSTURA DE ADVOGADO, NÃO DE EXTRATOR)
 Você não está resumindo o documento: está formando o JUÍZO PROFISSIONAL que um
@@ -116,8 +117,8 @@ Retorne este JSON (use null/listas vazias quando não houver base — NÃO inven
     "tempo_estimado_meses": null,
     "faixa_valor_min": null,
     "faixa_valor_max": null,
-    "base_estimativa": "base CONCRETA da estimativa (tribunal, tipo de caso, histórico); se não houver, mantenha os números acima como null",
-    "observacao": "estimativa NÃO é promessa de resultado; depende de prova e de validação humana"
+    "base_estimativa": "base CONCRETA apenas para prazo/faixa de valor; se não houver, mantenha esses números como null",
+    "observacao": "chance_sucesso_percent é sempre null: a IA não estima probabilidade de êxito"
   }},
   "proximos_passos": [
     {{"prazo": "imediato|7 dias|30 dias|60 dias", "acao": "descrição da ação", "prioridade": "alta|media|baixa"}}
@@ -375,6 +376,25 @@ async def analisar_caso(
             return {"erro": "Falha ao parsear resposta da IA"}
         if isinstance(resultado, dict):
             resultado["_fontes_rag"] = _fontes_rag
+            # Defesa em profundidade: mesmo que o modelo ignore o prompt e
+            # devolva percentual, LLM não é fonte estatística. Mantém o campo
+            # legado por compatibilidade, mas sempre nulo.
+            jur = resultado.get("jurimetria")
+            if isinstance(jur, dict):
+                percentual_llm = jur.get("chance_sucesso_percent")
+                jur["chance_sucesso_percent"] = None
+                if percentual_llm is not None:
+                    atuais = resultado.get("alertas")
+                    atuais = list(atuais) if isinstance(atuais, list) else (
+                        [atuais] if isinstance(atuais, str) and atuais.strip() else []
+                    )
+                    aviso = (
+                        "Percentual de êxito sugerido pela IA foi descartado. "
+                        "Use apenas jurimetria histórica com amostra identificada."
+                    )
+                    if aviso not in atuais:
+                        atuais.append(aviso)
+                    resultado["alertas"] = atuais
             # A3 (auditoria 2026-06-30) + dívida 5.2 (auditoria 2026-08-18): a
             # análise passa pela validação canônica do núcleo — citações contra a
             # base oficial (anti-alucinação), grounding, promessa de resultado

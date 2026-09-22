@@ -524,17 +524,14 @@ export default function AnaliseEstrategica({
             >
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <div className="bg-primary-50 rounded-xl p-4 border border-primary-100 text-center">
-                  <div className="text-xl font-bold text-primary-600 mb-1">
-                    {analise.jurimetria.chance_sucesso_percent ?? "—"}%
+                  <div className="text-sm font-bold text-primary-700 mb-1">
+                    Não estimada por IA
                   </div>
-                  <div className="text-xs text-slate-500">Chance de Êxito</div>
-                  <div className="mt-2 h-2 bg-primary-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary-500 rounded-full"
-                      style={{
-                        width: `${analise.jurimetria.chance_sucesso_percent ?? 0}%`,
-                      }}
-                    />
+                  <div className="text-xs text-slate-500">
+                    Probabilidade de êxito
+                  </div>
+                  <div className="text-xs text-slate-400 mt-1">
+                    Consulte a jurimetria histórica quando houver amostra suficiente.
                   </div>
                 </div>
                 <div className="bg-ai-50 rounded-xl p-4 border border-ai-100 text-center">

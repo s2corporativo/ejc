@@ -40,8 +40,9 @@ class AnaliseTeseResponse(BaseModel):
     fonte_probabilidade: Optional[str] = None
     # Honestidade epistêmica (auditoria do Núcleo Único de IA, seção 13, item 3):
     # "Veredito IA" é um nome de produto, não uma predição de LLM.
-    # `probabilidade_exito` vem de jurimetria interna — taxa estatística
-    # DETERMINÍSTICA sobre casos ENCERRADOS reais do escritório
+    # `probabilidade_exito` vem de jurimetria interna — taxa histórica
+    # DETERMINÍSTICA de êxito judicial sobre casos ENCERRADOS reais do escritório,
+    # sem contabilizar acordos como vitória judicial
     # (app.services.jurimetria), sem inferência de modelo de linguagem. Só
     # `sugestoes_contextualizadas` é gerado por LLM (rascunho HITL). Este campo
     # existe para o frontend nunca rotular o número como "predição de IA".

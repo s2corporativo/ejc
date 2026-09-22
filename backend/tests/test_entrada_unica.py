@@ -103,6 +103,24 @@ def test_triagem_normaliza_campos_sem_inventar_ausentes():
     assert painel["possivel_acao"]["valor"] is None
 
 
+def test_triagem_descarta_chance_exito_legada_da_ia():
+    from app.services.triagem_entrevista_service import normalizar_painel
+
+    painel = normalizar_painel({
+        "riscos": ["prova documental incompleta"],
+        "chance_exito": {
+            "percentual": 91,
+            "justificativa": "texto especulativo",
+            "confianca": 99,
+        },
+    })
+    assert painel["chance_exito"] == {
+        "percentual": None,
+        "justificativa": None,
+        "confianca": None,
+    }
+
+
 # ── (a) analisar só-texto com IA indisponível → degradado, não 500 ───────────
 
 @pytest.mark.anyio
