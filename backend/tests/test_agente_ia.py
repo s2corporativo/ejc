@@ -42,7 +42,8 @@ def s(monkeypatch):
     monkeypatch.setattr(st, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
     monkeypatch.setattr(st, "AI_REQUIRE_SANITIZATION_FOR_EXTERNAL", True)
     monkeypatch.setattr(st, "OLLAMA_ENABLED", False)
-    monkeypatch.setattr(st, "AI_PROVIDER", "anthropic")
+    monkeypatch.setattr(st, "AI_PROVIDER", "auto")
+    monkeypatch.setattr(st, "AI_AGENT_PROVIDER", "anthropic")
     monkeypatch.setattr(st, "GROQ_API_KEY", "")
     monkeypatch.setattr(st, "AI_SANITIZATION_MODE_MAP", "")
     return st
@@ -72,11 +73,12 @@ def _historico_com_pii() -> list[dict]:
 
 
 class TestSelecaoProviderAgentico:
-    async def test_chat_agentico_recusa_provider_auto(self, s, monkeypatch):
+    async def test_chat_agentico_recusa_provider_agentico_nao_explicito(self, s, monkeypatch):
         from app.services import ai_gateway
         from app.core.ai_errors import SafeAIError
 
-        monkeypatch.setattr(s, "AI_PROVIDER", "auto")
+        assert s.AI_PROVIDER == "auto"
+        monkeypatch.setattr(s, "AI_AGENT_PROVIDER", "")
         with pytest.raises(SafeAIError) as exc:
             await ai_gateway.chat_agentico(
                 [{"role": "user", "content": "analise"}], [],
