@@ -9,11 +9,8 @@ import {
 import { ToastContainer } from "./components/Toast";
 import { Spinner } from "./components/UI";
 import ErrorBoundary from "./components/ErrorBoundary";
-import EntradaUniversalGlobal from "./components/EntradaUniversalGlobal";
-import FlowEnhancements from "./components/FlowEnhancements";
 import LayoutReference from "./components/LayoutReference";
 import LegacyRedirect from "./components/LegacyRedirect";
-import PortalLayout from "./components/PortalLayout";
 import ProviderPanelShortcut from "./components/ProviderPanelShortcut";
 import {
   PortalOnly,
@@ -29,8 +26,12 @@ import {
   type ModuleRoute,
 } from "./config/moduleRegistry";
 import { useAuth } from "./stores/auth";
-import Login from "./pages/LoginModern";
-
+const Login = lazy(() => import("./pages/Login"));
+const EntradaUniversalGlobal = lazy(
+  () => import("./components/EntradaUniversalGlobal"),
+);
+const FlowEnhancements = lazy(() => import("./components/FlowEnhancements"));
+const PortalLayout = lazy(() => import("./components/PortalLayout"));
 const RecuperarSenha = lazy(() => import("./pages/RecuperarSenha"));
 const RedefinirSenha = lazy(() => import("./pages/RedefinirSenha"));
 const TrocarSenha = lazy(() => import("./pages/TrocarSenha"));
