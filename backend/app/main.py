@@ -203,6 +203,7 @@ from app.core.observability import (
     coletor_erros_ativo,
     init_sentry,
     uptime_seconds,
+    warm_migration_heads,
 )
 init_sentry()
 
@@ -266,6 +267,18 @@ async def lifespan(app: FastAPI):
     # Startup
     db_ok = await _passo_de_boot("check_db", check_db, padrao=False)
     logger.info(f"[EJC] Banco de dados: {'OK' if db_ok else 'FALHA'}")
+
+    # ScriptDirectory.get_heads() é relativamente caro em cold start. Se esse
+    # trabalho acontecer dentro do readiness, pode exceder o teto curto de 3 s
+    # mesmo com banco saudável. Pré-aquecemos o DAG fora do event loop e dentro
+    # do teto geral de startup; o endpoint fica reduzido à consulta no banco.
+    migration_heads_ok = await _passo_de_boot(
+        "migration_heads", warm_migration_heads, padrao=False
+    )
+    logger.info(
+        "[EJC] Alembic heads: %s",
+        "OK" if migration_heads_ok else "NÃO COMPROVADOS",
+    )
     # Timbre dos documentos: setting institucional vazia FAZ SUMIR o segmento da
     # peça (não imprime mais "[CEP - preencher em .env]" no papel que o cliente
     # assina). Para a pendência não ficar silenciosa, ela é anunciada aqui.

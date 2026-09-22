@@ -10,9 +10,12 @@
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
+from functools import lru_cache
+from pathlib import Path
 
 from app.core.config import get_settings
 
@@ -144,27 +147,57 @@ def coletor_erros_ativo() -> bool:
     return _sentry_inicializado
 
 
-async def check_migrations_head() -> bool | None:
-    """
-    Readiness: True se o alembic_version do banco == head(s) das migrations.
+def _load_migration_heads() -> frozenset[str]:
+    """Resolve o DAG Alembic no filesystem.
 
-    Retorna None (indeterminado) quando alembic não está configurado ou ocorre
-    qualquer erro — nesse caso o resultado é apenas informativo e NÃO bloqueia
-    o readiness. Nunca levanta.
+    ScriptDirectory percorre o catálogo de migrations e pode levar vários
+    segundos em cold start. O chamador deve executá-lo fora do event loop.
+    """
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    backend_dir = Path(__file__).resolve().parents[2]  # .../backend
+    cfg = Config(str(backend_dir / "alembic.ini"))
+    cfg.set_main_option("script_location", str(backend_dir / "alembic"))
+    return frozenset(ScriptDirectory.from_config(cfg).get_heads())
+
+
+@lru_cache(maxsize=1)
+def _expected_migration_heads() -> frozenset[str]:
+    """Head(s) esperados são imutáveis durante a vida do processo."""
+    return _load_migration_heads()
+
+
+async def warm_migration_heads() -> bool:
+    """Pré-aquece o DAG Alembic sem bloquear o event loop do FastAPI."""
+    try:
+        heads = await asyncio.to_thread(_expected_migration_heads)
+        if not heads:
+            logger.error("Alembic sem head canônico durante o startup")
+            return False
+        logger.info("Alembic head(s) pré-aquecidos: %s", ",".join(sorted(heads)))
+        return True
+    except Exception as exc:
+        logger.error(
+            "Falha ao pré-aquecer Alembic heads (%s)",
+            type(exc).__name__,
+        )
+        return False
+
+
+async def check_migrations_head() -> bool | None:
+    """Confirma que alembic_version corresponde ao head do código.
+
+    O DAG do filesystem é calculado uma vez e pré-aquecido no lifespan.
+    Mesmo em chamada isolada, o cálculo roda em thread para não bloquear o
+    event loop; depois do warm-up, resta somente a consulta curta ao banco.
     """
     try:
-        from pathlib import Path
-
-        from alembic.config import Config
-        from alembic.script import ScriptDirectory
         from sqlalchemy import text
 
         from app.core.database import engine
 
-        backend_dir = Path(__file__).resolve().parents[2]  # .../backend
-        cfg = Config(str(backend_dir / "alembic.ini"))
-        cfg.set_main_option("script_location", str(backend_dir / "alembic"))
-        heads = set(ScriptDirectory.from_config(cfg).get_heads())
+        heads = set(await asyncio.to_thread(_expected_migration_heads))
         if not heads:
             return None
 
@@ -172,5 +205,9 @@ async def check_migrations_head() -> bool | None:
             res = await conn.execute(text("SELECT version_num FROM alembic_version"))
             current = {row[0] for row in res}
         return current == heads
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "Não foi possível comprovar o head Alembic (%s)",
+            type(exc).__name__,
+        )
         return None
