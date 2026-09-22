@@ -1,12 +1,11 @@
 // @vitest-environment jsdom
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { DptRadarToday } from "./radarApi";
+import { getDptRadarToday, type DptRadarToday } from "./api";
 import DptRadar from "./DptRadar";
-import { getDptRadarToday } from "./radarApi";
 
-vi.mock("./radarApi", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./radarApi")>()),
+vi.mock("./api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./api")>()),
   getDptRadarToday: vi.fn(),
 }));
 

@@ -2,11 +2,11 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { DptCompany } from "./api";
+import { getDptExecutiveReport, type DptCompany } from "./api";
 import DptReports from "./DptReports";
-import { getDptExecutiveReport } from "./reportApi";
 
-vi.mock("./reportApi", () => ({
+vi.mock("./api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./api")>()),
   getDptExecutiveReport: vi.fn(),
 }));
 

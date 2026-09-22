@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ExternalLink, Radar, ShieldAlert } from "lucide-react";
-import { getDptRadarToday, type DptRadarToday } from "./radarApi";
+import { getDptRadarToday, type DptRadarToday } from "./api";
 
 const AREA_ORDER = [
   "tributario",

@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { FileText, ShieldAlert, ShieldCheck } from "lucide-react";
-import type { DptCompany } from "./api";
+import {
+  getDptExecutiveReport,
+  type DptCompany,
+  type DptExecutiveReport,
+} from "./api";
 import DptPortalGuard from "./DptPortalGuard";
-import { getDptExecutiveReport, type DptExecutiveReport } from "./reportApi";
 
 function traceText(value: unknown): string {
   try {

@@ -207,3 +207,79 @@ export async function runDptAction(payload: {
   );
   return response.data;
 }
+
+export type DptRadarImpact = {
+  client_id: string;
+  empresa: string;
+  aderencia: "alta" | "media" | "baixa";
+  fundamento: string;
+  status: "possivel_impacto";
+};
+
+export type DptRadarItem = {
+  id: string;
+  fonte?: string | null;
+  titulo?: string | null;
+  resumo?: string | null;
+  link?: string | null;
+  data_publicacao?: string | null;
+  area: string;
+  estado_conhecimento: string;
+  vigencia: string;
+  rag: string;
+  impactos: DptRadarImpact[];
+};
+
+export type DptRadarToday = {
+  generated_at: string;
+  periodo_horas: number;
+  total_publicacoes: number;
+  publicacoes_classificadas: number;
+  por_area: Record<string, number>;
+  empresas_potencialmente_impactadas: number;
+  itens: DptRadarItem[];
+  fontes_ativas: string[];
+  dependencias_pendentes: string[];
+  regra_impacto: string;
+  cobertura: "completa" | "parcial";
+};
+
+export async function getDptRadarToday(hours = 24): Promise<DptRadarToday> {
+  const response = await api.get<DptRadarToday>("/dpt360/radar/today", {
+    params: { hours },
+  });
+  return response.data;
+}
+
+export type DptExecutiveReport = {
+  client_id: string;
+  empresa: string;
+  periodo_dias: number;
+  generated_at: string;
+  status: "rascunho";
+  requer_revisao: boolean;
+  cobertura_completa: boolean;
+  cobertura_notas: string[];
+  situacao_juridica: Array<Record<string, unknown>>;
+  principais_riscos: Array<Record<string, unknown>>;
+  providencias_futuras: Array<Record<string, unknown>>;
+  pendencias: Record<string, unknown>;
+  casos: Array<Record<string, unknown>>;
+  mudancas_juridicas_relevantes: Array<Record<string, unknown>>;
+  recomendacoes: string[];
+  proximos_passos: string[];
+  nota: string;
+  cobertura: "completa" | "parcial";
+  notas_cobertura: string[];
+};
+
+export async function getDptExecutiveReport(
+  clientId: string,
+  days = 30,
+): Promise<DptExecutiveReport> {
+  const response = await api.get<DptExecutiveReport>(
+    `/dpt360/reports/executive/${clientId}`,
+    { params: { days } },
+  );
+  return response.data;
+}

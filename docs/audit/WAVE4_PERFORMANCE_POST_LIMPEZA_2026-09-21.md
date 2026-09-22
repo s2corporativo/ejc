@@ -25,6 +25,10 @@ Foi adicionado o contrato `areas.consolidation.contract.test.ts`, que verifica a
 
 O runtime `lib/stream.ts` foi preservado como a única camada de `fetch` cru para respostas SSE POST. Foram adicionados testes para o `Bearer`, credenciais de cookie, renovação única após HTTP 401, logout quando o refresh falha e os quatro consumidores reais: `AgenteIA`, `PecaGeneratorModal`, `AnaliseExtratos` e `BancarioForense`. Não foi feita uma migração artificial para Axios, pois ela perderia o corpo incremental do stream.
 
+## Execução — FE-10
+
+Os tipos e chamadas de Radar e Relatório Executivo foram incorporados à fachada `pages/dpt360/api.ts`. `DptRadar` e `DptReports` agora importam exclusivamente dessa fachada; os módulos paralelos `radarApi.ts` e `reportApi.ts` foram removidos após a migração dos testes. O contrato `dptApi.consolidation.contract.test.ts` impede a reintrodução dos módulos HTTP duplicados.
+
 ## Validação prevista
 
 A etapa FE-08 deve passar pelo contrato específico, pelos testes de áreas/RamosHub, TypeScript, build Vite e suíte frontend completa. A próxima etapa recomendada é FE-10, após inventariar exports e consumidores de `dpt360/api.ts`, `radarApi.ts` e `reportApi.ts`. FE-07 permanece uma decisão de preservação, não uma exclusão automática.
