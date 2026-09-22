@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +27,7 @@ from app.schemas.ai import (
     AnalisarCasoRequest, ResumirDocRequest, HITLRevisaoRequest,
     VerificarCitacoesRequest,
 )
+from app.services.contract_migration import mark_contract_response
 
 router = APIRouter(prefix="/ai", tags=["Inteligência Artificial"])
 _logger = logging.getLogger("ejc.routers.ai")
@@ -41,8 +42,8 @@ _logger = logging.getLogger("ejc.routers.ai")
 # devolvem TAMBÉM o envelope canônico (conteudo, capacidade, tarefa, modelo,
 # provider, log_id, is_rascunho, requer_revisao, status_hitl, aviso_hitl,
 # fontes_rag, citacoes, custo_estimado_brl, tokens), montado por
-# `capacidades.canonizar()`. Sem header de depreciação: quem chama hoje segue
-# funcionando e passa a ler as MESMAS chaves da porta nova.
+# `capacidades.canonizar()`. Os adaptadores permanecem compatíveis, mas agora
+# enviam headers de depreciação para que consumidores possam migrar sem corte.
 #
 # A troca do MOTOR (pipeline artesanal → Núcleo) destes endpoints é o passo
 # seguinte e está bloqueada por testes que fixam o pipeline legado como
@@ -84,6 +85,7 @@ async def analisar(
     req: AnalisarCasoRequest,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
+    response: Response = None,
 ):
     """
     Sugestão de teses a partir dos fatos.
@@ -131,6 +133,7 @@ async def analisar(
         envelope.setdefault("ai_log_id", envelope.get("log_id"))
         envelope["aviso"] = envelope.get("aviso_hitl") or envelope.get("aviso")
         envelope["fontes_usadas"] = len(envelope.get("fontes_rag") or [])
+        mark_contract_response(response, route="/ai/analisar-caso", legacy_adapter=True)
         return envelope
     resultado = await analisar_caso(
         db, cu.id, req.descricao_fatos, req.area,
@@ -139,7 +142,9 @@ async def analisar(
     if "erro" in resultado:
         raise http_erro_ia(resultado["erro"], 502)
     # Saída canônica: mesmas chaves das cinco portas, com o carimbo HITL único.
-    return {**resultado, **capacidades.canonizar("analisar", resultado)}
+    resposta = {**resultado, **capacidades.canonizar("analisar", resultado)}
+    mark_contract_response(response, route="/ai/analisar-caso", legacy_adapter=True)
+    return resposta
 
 
 @router.get("/dossie/{case_id}")
@@ -173,6 +178,7 @@ async def resumir(
     req: ResumirDocRequest,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
+    response: Response = None,
 ):
     if len(req.texto.strip()) < 50:
         raise HTTPException(status_code=422, detail="Texto muito curto")
@@ -201,12 +207,15 @@ async def resumir(
         envelope["aviso"] = envelope.get("aviso_hitl") or envelope.get("aviso") \
             or "⚠️ Resumo gerado por IA — confira com o documento original."
         envelope["fontes_usadas"] = len(envelope.get("fontes_rag") or [])
+        mark_contract_response(response, route="/ai/resumir-documento", legacy_adapter=True)
         return envelope
     resultado = await resumir_documento(db, cu.id, req.texto, case_id=req.case_id)
     if "erro" in resultado:
         raise http_erro_ia(resultado["erro"], 502)
     # Saída canônica: mesmas chaves das cinco portas, com o carimbo HITL único.
-    return {**resultado, **capacidades.canonizar("resumir", resultado)}
+    resposta = {**resultado, **capacidades.canonizar("resumir", resultado)}
+    mark_contract_response(response, route="/ai/resumir-documento", legacy_adapter=True)
+    return resposta
 
 
 @router.get("/logs")
