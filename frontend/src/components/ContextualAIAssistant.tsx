@@ -20,6 +20,8 @@ import {
   acoesContextuais as buscarAcoesContextuais,
   executarSkill,
   executarSkillDocumento,
+  registrarAplicacaoHITL,
+  registrarFeedbackIA,
   type ContextualAction,
   type SkillExecuteResponse,
 } from "../services/ai";
@@ -201,7 +203,7 @@ export default function ContextualAIAssistant({
   const registrarStatusAplicado = async () => {
     if (!result?.ai_log_id) return;
     try {
-      await api.patch(`/ai/logs/${result.ai_log_id}/hitl`, {
+      await registrarAplicacaoHITL(result.ai_log_id, {
         status: "aplicado",
         override_citacoes: false,
       });
@@ -265,9 +267,7 @@ export default function ContextualAIAssistant({
   const avaliar = async (valor: "util" | "nao_util") => {
     if (!result?.ai_log_id) return;
     try {
-      await api.post(`/ai/logs/${result.ai_log_id}/feedback`, {
-        feedback: valor,
-      });
+      await registrarFeedbackIA(result.ai_log_id, valor);
       setFeedback(valor);
       toast.success("Feedback registrado.");
     } catch {

@@ -14,6 +14,7 @@ import { Spinner } from "../../components/UI";
 import type { Case } from "../../types";
 import { ramosDaArea } from "../ramos/ramosConfig";
 import type { FerramentaConfig } from "../ramos/ramosConfig";
+import { analisarContrato } from "../../services/ai";
 import {
   camposVisiveis,
   chavesObsoletas,
@@ -229,7 +230,7 @@ function AnaliseContratoIA({ caseId }: { caseId: string }) {
     setLoading(true);
     setResultado(null);
     try {
-      const { data } = await api.post("/ai/analisar-contrato", {
+      const data = await analisarContrato({
         texto_contrato: texto,
         tipo_contrato: tipo,
         case_id: caseId,
@@ -252,7 +253,7 @@ function AnaliseContratoIA({ caseId }: { caseId: string }) {
     try {
       // Prompt de comparação montado no servidor (modo "comparacao") —
       // o cliente envia apenas os dois textos brutos.
-      const { data } = await api.post("/ai/analisar-contrato", {
+      const data = await analisarContrato({
         texto_contrato: texto,
         texto_contrato_2: texto2,
         modo: "comparacao",

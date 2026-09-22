@@ -156,3 +156,61 @@ export async function transcreverMidia(
   );
   return data;
 }
+
+/** Sugestão de honorários para a superfície de caso. */
+export async function sugerirHonorarios(payload: {
+  area?: string | null;
+  descricao: string;
+  valor_causa?: number | null;
+}): Promise<Record<string, unknown>> {
+  const { data } = await api.post<Record<string, unknown>>(
+    "/ai/sugestao-honorarios",
+    payload,
+  );
+  return data;
+}
+
+/** Análise de caso com governança centralizada no backend. */
+export async function analisarCaso(payload: {
+  descricao_fatos?: string | null;
+  area?: string | null;
+  case_id?: string | null;
+  nomes_proteger?: string[];
+}): Promise<Record<string, unknown>> {
+  const { data } = await api.post<Record<string, unknown>>(
+    "/ai/analisar-caso",
+    payload,
+  );
+  return data;
+}
+
+/** Análise ou comparação de contratos. */
+export async function analisarContrato(payload: {
+  texto_contrato: string;
+  texto_contrato_2?: string;
+  modo?: string;
+  tipo_contrato: string;
+  case_id?: string;
+}): Promise<Record<string, unknown>> {
+  const { data } = await api.post<Record<string, unknown>>(
+    "/ai/analisar-contrato",
+    payload,
+  );
+  return data;
+}
+
+/** Registra a aplicação de uma saída AI após revisão humana. */
+export async function registrarAplicacaoHITL(
+  aiLogId: string,
+  payload: { status: "aplicado"; override_citacoes: boolean },
+): Promise<void> {
+  await api.patch(`/ai/logs/${aiLogId}/hitl`, payload);
+}
+
+/** Registra feedback explícito sobre uma saída AI. */
+export async function registrarFeedbackIA(
+  aiLogId: string,
+  feedback: "util" | "nao_util",
+): Promise<void> {
+  await api.post(`/ai/logs/${aiLogId}/feedback`, { feedback });
+}

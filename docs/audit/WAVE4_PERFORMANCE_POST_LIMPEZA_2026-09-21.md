@@ -29,6 +29,10 @@ O runtime `lib/stream.ts` foi preservado como a única camada de `fetch` cru par
 
 Os tipos e chamadas de Radar e Relatório Executivo foram incorporados à fachada `pages/dpt360/api.ts`. `DptRadar` e `DptReports` agora importam exclusivamente dessa fachada; os módulos paralelos `radarApi.ts` e `reportApi.ts` foram removidos após a migração dos testes. O contrato `dptApi.consolidation.contract.test.ts` impede a reintrodução dos módulos HTTP duplicados.
 
+## Execução — FE-11
+
+As operações de sugestão de honorários, análise de caso, análise/comparação de contratos, aplicação HITL e feedback foram adicionadas a `services/ai.ts`. `TabResumo`, `TabFerramentas` e `ContextualAIAssistant` deixaram de montar endpoints `/ai/*` diretamente e passaram a usar funções tipadas da fachada. O contrato `ai.consolidation.contract.test.ts` verifica a existência dessas operações e bloqueia o retorno de chamadas raw nos consumidores migrados.
+
 ## Validação prevista
 
 A etapa FE-08 deve passar pelo contrato específico, pelos testes de áreas/RamosHub, TypeScript, build Vite e suíte frontend completa. A próxima etapa recomendada é FE-10, após inventariar exports e consumidores de `dpt360/api.ts`, `radarApi.ts` e `reportApi.ts`. FE-07 permanece uma decisão de preservação, não uma exclusão automática.
