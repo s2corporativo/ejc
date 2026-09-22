@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-CASES = Path(__file__).with_name("research_acceptance.synthetic.jsonl")
+CASES = Path(__file__).with_name("research_acceptance.synthetic.example.jsonl")
 CATALOG = Path(__file__).with_name("fontes_publicas_iniciais.json")
 
 

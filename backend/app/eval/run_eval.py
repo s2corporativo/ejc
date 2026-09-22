@@ -401,8 +401,15 @@ def _smoke(areas_obrigatorias: str | None = None, min_casos_area: int = 0) -> in
     # *.example.* são amostras de formato — não provam cobertura de nada).
     cobertura: dict[str, int] = {}
     for arq in arquivos:
+        nome_arq = os.path.basename(arq).lower()
+        # Fixtures sintéticas têm sua própria régua de aceitação e não usam o
+        # contrato de gold set (query/fatos + expected_titulos). Não podem
+        # contaminar nem reprovar o smoke jurídico atestado.
+        if (".synthetic." in nome_arq or ".sintetico." in nome_arq
+                or nome_arq == "curadoria_queue.jsonl"):
+            continue
         casos = _carregar_gold(arq)
-        eh_exemplo = ".example." in os.path.basename(arq)
+        eh_exemplo = ".example." in nome_arq
         ids_vistos: set[str] = set()
         erros_arq: list[str] = []
         for i, caso in enumerate(casos, 1):

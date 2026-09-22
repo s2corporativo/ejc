@@ -343,11 +343,14 @@ async def test_pesquisar_task_de_prosa_coberto(ia_extra_consolidado, monkeypatch
         ia_extra_consolidado.PesquisaIn(pergunta="Qual o prazo de contestação no rito comum?"),
         db=db, cu=_cu(),
     )
-    assert out["resposta"] == "resposta simulada"
-    assert calls[0]["task_type"] == "estrategia"
-    assert calls[0]["task_type"] in _TASKS_COM_BASE
-    assert "inventar" in calls[0]["messages"][0]["content"]
-    assert _log_unico(db).modelo == "fake/fake-model"
+    # Pesquisa sem fonte não chama o modelo: fail-closed para não transformar
+    # indisponibilidade do RAG em conclusão jurídica improvisada.
+    assert out["rascunho"] is True
+    assert out["revisao_humana_obrigatoria"] is True
+    assert out["fontes_relevantes"] == 0
+    assert out["lacunas"]
+    assert calls == []
+    assert _log_unico(db).modelo in {None, "openai/gpt-oss-120b"}
 
 
 async def test_sugestao_honorarios_json_prepende_base_estruturada(ia_extra_consolidado, monkeypatch):

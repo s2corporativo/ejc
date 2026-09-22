@@ -35,7 +35,7 @@ falha operacional, não evidência de baixa qualidade jurídica.
 
 ### Homologação inicial sem casos próprios
 
-`research_acceptance.synthetic.jsonl` contém 20 perguntas explicitamente
+`research_acceptance.synthetic.example.jsonl` contém 20 perguntas explicitamente
 sintéticas, distribuídas entre consumidor, trabalhista, cível/processual, penal
 e tributário. Elas testam se a pesquisa retorna autoridade, exige prova e
 documentos, reconhece lacunas e mantém revisão humana. Não são casos do
