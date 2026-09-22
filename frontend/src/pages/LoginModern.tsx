@@ -8,7 +8,7 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import api from "../lib/api";
+import api, { setAccessToken } from "../lib/api";
 import type { LoginResponse } from "../types";
 import { useAuth } from "../stores/auth";
 import { usePreferencesStore } from "../stores/preferences";
@@ -84,7 +84,7 @@ export default function LoginModern() {
         password,
         ...(totpCode ? { totp_code: totpCode } : {}),
       });
-      localStorage.setItem("ejc_access", data.access_token);
+      setAccessToken(data.access_token);
       const user = {
         id: data.user_id,
         email,
