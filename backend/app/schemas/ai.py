@@ -15,6 +15,7 @@ class AnalisarCasoRequest(BaseModel):
     area: str
     case_id: Optional[str] = None
     nomes_proteger: Optional[List[str]] = None   # cliente, parte contrária
+    request_id: Optional[str] = Field(None, min_length=1, max_length=100)
 
 class ResumirDocRequest(BaseModel):
     texto: str = Field(..., max_length=_MAX_TEXTO_IA)
