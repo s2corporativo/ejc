@@ -2,8 +2,8 @@
 # Entrevista Inteligente (Jornada do Caso — etapa 2 / Triagem).
 # POST /triagem/entrevista: o advogado descreve o ocorrido em texto livre e a
 # IA devolve um painel estruturado de triagem preliminar (área, competência,
-# possível ação, urgência, tutela, prescrição, valor da causa, pedidos, riscos,
-# chance de êxito) — cada item com confiança 0-100.
+# possível ação, urgência, tutela, prescrição, valor da causa, pedidos e riscos)
+# — cada item aplicável com confiança 0-100; confiança não é chance de êxito.
 #
 # O pipeline (sanitizar_ou_abortar → ai_gateway.chat(task_type="triagem") →
 # registrar_ai_log) vive em services/triagem_entrevista_service.py — núcleo

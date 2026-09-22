@@ -33,7 +33,7 @@ Receberá o relato livre de um ocorrido (já sanitizado de PII) e fará triagem 
 
 REGRAS:
 - Baseie-se APENAS no relato. É PROIBIDO inventar lei, súmula, julgado ou fato.
-- Os percentuais são estimativas técnicas internas de triagem, para priorização pelo advogado — nunca promessa de resultado a cliente.
+- NÃO estime percentual, probabilidade ou chance de êxito. Avalie riscos apenas de forma qualitativa e verificável.
 - Se o relato não permitir avaliar um item, use valor null e confianca baixa (<40).
 - Áreas válidas: civil, trabalhista, consumidor, familia, ambiental, criminal, previdenciario, empresarial, tributario, administrativo, bancario, imobiliario, sucessoes, constitucional, digital_lgpd, transito, saude, medico, agrario, agronegocio, eleitoral, internacional, contratual, societario, licitacoes.
 - "assunto" deve ser curto e descritivo (ex.: negativação indevida, rescisão contratual).
@@ -56,8 +56,7 @@ Responda APENAS com JSON estrito (sem markdown, sem texto fora do JSON), neste f
   "provas_necessarias": ["<prova ou diligência probatória ainda necessária>"],
   "proximos_passos": ["<providência preliminar 1>", "<providência preliminar 2>"],
   "pedidos_possiveis": ["<pedido 1>", "<pedido 2>"],
-  "riscos": ["<risco 1>", "<risco 2>"],
-  "chance_exito": {"percentual": 0-100, "justificativa": "<1 frase>", "confianca": 0-100}
+  "riscos": ["<risco 1>", "<risco 2>"]
 }"""
 
 
@@ -112,7 +111,6 @@ def normalizar_painel(dados: Optional[dict]) -> dict:
     """Painel sempre com TODOS os campos — itens ausentes viram null (fallback)."""
     d = dados or {}
     prescricao = d.get("prescricao") if isinstance(d.get("prescricao"), dict) else {}
-    exito = d.get("chance_exito") if isinstance(d.get("chance_exito"), dict) else {}
     return {
         "area_direito": _item(d.get("area_direito")),
         "assunto": _item(d.get("assunto")),
@@ -134,11 +132,12 @@ def normalizar_painel(dados: Optional[dict]) -> dict:
         "proximos_passos": _lista_str(d.get("proximos_passos"), 12),
         "pedidos_possiveis": _lista_str(d.get("pedidos_possiveis")),
         "riscos": _lista_str(d.get("riscos")),
+        # Compatibilidade de contrato: o campo legado permanece, porém a IA
+        # não produz nem propaga percentual de êxito.
         "chance_exito": {
-            "percentual": _conf(exito.get("percentual")),
-            "justificativa": (str(exito.get("justificativa"))[:600]
-                              if exito.get("justificativa") is not None else None),
-            "confianca": _conf(exito.get("confianca")),
+            "percentual": None,
+            "justificativa": None,
+            "confianca": None,
         },
     }
 

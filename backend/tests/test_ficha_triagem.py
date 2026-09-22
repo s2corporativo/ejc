@@ -352,7 +352,8 @@ def test_dados_do_painel_entrevista_mapeia_campos():
     assert dados["valor_causa"] == "R$ 8.000 a R$ 12.000"
     assert "dano moral" in dados["pedidos_principais"]
     assert "prova frágil" in dados["risco_nota"]
-    assert "65%" in dados["risco_nota"]
+    assert "65%" not in dados["risco_nota"]
+    assert "êxito" not in dados["risco_nota"].lower()
     conf = dados["confianca"]
     assert conf["competencia"] == 80
     assert conf["tutela_urgencia"] == 60

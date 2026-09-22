@@ -40,16 +40,9 @@ def payload_snapshot_documento(resultado: dict, doc_id: str) -> dict:
     brecha ou tese não é inventada para preencher um formato.
     """
     estrategia = resultado.get("estrategia")
-    jurimetria = (
-        resultado.get("jurimetria")
-        if isinstance(resultado.get("jurimetria"), dict)
-        else {}
-    )
-
     riscos = {
         "itens": _lista(resultado.get("riscos")),
         "pontos_fracos": _lista(resultado.get("pontos_fracos")),
-        "chance_exito": jurimetria.get("chance_sucesso_percent"),
     }
     riscos = {chave: valor for chave, valor in riscos.items() if valor not in (None, [], "")}
 
