@@ -202,6 +202,41 @@ export function Confirmacao({
         </Alert>
       ))}
 
+      {proposta.inteligenciaJuridica && (
+        <Card className="border-ai-200 bg-ai-50/40 p-4 dark:border-ai-800 dark:bg-ai-900/20">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Inteligência jurídica estruturada
+              </p>
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                Contrato {proposta.inteligenciaJuridica.versaoContrato} · revisão humana obrigatória
+              </p>
+            </div>
+            <Badge tone={proposta.inteligenciaJuridica.status === "degradado" ? "amber" : "purple"}>
+              {proposta.inteligenciaJuridica.status}
+            </Badge>
+          </div>
+          {proposta.inteligenciaJuridica.informacoesFaltantes.length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Pontos que podem mudar a análise
+              </p>
+              <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-slate-700 dark:text-slate-200">
+                {proposta.inteligenciaJuridica.informacoesFaltantes.slice(0, 5).map((item) => (
+                  <li key={`${item.pergunta}-${item.motivo}`}>{item.pergunta}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {proposta.inteligenciaJuridica.honorarios.aviso && (
+            <p className="mt-3 text-xs text-slate-500">
+              {proposta.inteligenciaJuridica.honorarios.aviso}
+            </p>
+          )}
+        </Card>
+      )}
+
       {erro409 && (
         <Alert variant="danger" title="O servidor recusou a criação">
           {erro409} Revise os achados abaixo e confirme os itens exigidos.
