@@ -77,11 +77,16 @@ def s(monkeypatch):
     monkeypatch.setattr(st, "AI_ENABLED", True)
     monkeypatch.setattr(st, "ANTHROPIC_ENABLED", True)
     monkeypatch.setattr(st, "ANTHROPIC_API_KEY", "sk-ant-fake-para-testes")
+    monkeypatch.setattr(st, "MARITACA_ENABLED", True)
+    monkeypatch.setattr(st, "MARITACA_API_KEY", "mk-fake-para-testes")
     monkeypatch.setattr(st, "GROQ_API_KEY", "gsk-fake-para-testes")
     monkeypatch.setattr(st, "OLLAMA_ENABLED", False)
     monkeypatch.setattr(st, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
     monkeypatch.setattr(st, "AI_REQUIRE_SANITIZATION_FOR_EXTERNAL", True)
     monkeypatch.setattr(st, "AI_PROVIDER", "auto")
+    monkeypatch.setattr(st, "AI_PROVIDER_PRIORITY", "groq,maritaca,ollama,anthropic")
+    monkeypatch.setattr(st, "ANTHROPIC_AUTO_ROUTING_ENABLED", False)
+    monkeypatch.setattr(st, "ROTEAMENTO_INTELIGENTE_ENABLED", False)
     return st
 
 

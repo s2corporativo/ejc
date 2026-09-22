@@ -131,6 +131,9 @@ def _prep(monkeypatch, *, tem_chave=True, ollama=True):
     monkeypatch.setattr(g.settings, "AI_PROVIDER_PRIORITY", "ollama,anthropic,groq")
     monkeypatch.setattr(g.settings, "OLLAMA_ENABLED", ollama)
     monkeypatch.setattr(g.settings, "GROQ_API_KEY", "gk")
+    # Esta suíte cobre o comportamento Anthropic legado/rollback. O contrato
+    # padrão manual-only é coberto em test_ai_routing_policy_20260920.py.
+    monkeypatch.setattr(g.settings, "ANTHROPIC_AUTO_ROUTING_ENABLED", True)
 
 
 def test_gateway_tarefa_complexa_inclui_claude(monkeypatch):

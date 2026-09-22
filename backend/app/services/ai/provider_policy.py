@@ -18,15 +18,19 @@ from app.services.sanitizer import sanitizar_pii, validar_sem_pii
 # Provedores que processam dados FORA do VPS (LGPD: exigem sanitização).
 PROVIDERS_EXTERNOS = {"anthropic", "groq", "maritaca"}
 
-# Tarefas complexas (raciocínio jurídico profundo) → priorizam Anthropic
-# quando elegível. Aceita tanto nomes de TarefaIA quanto task_types do gateway.
+# Tarefas complexas (raciocínio jurídico profundo) → priorizam Maritaca no
+# roteamento automático. Claude fica reservado à solicitação explícita.
 TAREFAS_COMPLEXAS = {
     "analise_caso", "minutas", "dossie", "pesquisa_juridica",
-    "estrategia", "analise_juridica", "elaboracao_peca",
+    "estrategia", "analise_juridica", "elaboracao_peca", "auditoria_peca",
+    "analise_contrato", "jurimetria", "critica_adversarial", "rag_query",
+    "prazos", "audiencia", "ambiental", "trabalhista", "criminal", "familia",
+    "administrativo", "sucessoes", "imobiliario", "constitucional", "juizados",
+    "civel",
 }
 
 # Tarefas simples/econômicas → preferem Ollama/Groq (custo ~zero).
-TAREFAS_ECONOMICAS = {"resumo", "triagem", "chat_rapido"}
+TAREFAS_ECONOMICAS = {"resumo", "triagem", "chat_rapido", "honorarios"}
 
 
 @dataclass
@@ -64,11 +68,10 @@ class AIProviderPolicy:
             p = p.strip().lower()
             if p and p not in vistos:
                 vistos.append(p)
-        # Default sem AI_PROVIDER_PRIORITY: qualidade primeiro (modelo forte),
-        # maritaca antes do groq — para tarefa jurídica PT-BR o Sabiá rankeia
-        # acima de um generalista — e a IA local por último, como rede de
-        # segurança (é ela que atende quando PII residual barra os externos).
-        return vistos or ["anthropic", "maritaca", "groq", "ollama"]
+        # Default sem AI_PROVIDER_PRIORITY: Groq no cotidiano, Maritaca em
+        # leitura/análise/pesquisa, Ollama para fallback local e Claude somente
+        # sob solicitação explícita (salvo flag de rollback).
+        return vistos or ["groq", "maritaca", "ollama", "anthropic"]
 
     def avaliar(
         self,
@@ -77,6 +80,7 @@ class AIProviderPolicy:
         *,
         ja_sanitizado: bool = False,
         exige_fonte: bool = False,
+        provider_solicitado: str | None = None,
     ) -> PolicyDecision:
         """
         Decide a cadeia de provedores para `task_type` dado o conteúdo.
@@ -87,13 +91,32 @@ class AIProviderPolicy:
              sanitiza e checa residual; PII residual → remove externos.
           3. Cadeia vazia → permitido=False com motivo SEGURO (tipos de PII,
              nunca os valores — o conteúdo jamais é ecoado).
-          4. Tarefas complexas priorizam Anthropic; econômicas, Ollama/Groq.
+          4. Tarefas complexas priorizam Maritaca; econômicas priorizam Groq.
+             Claude só entra automaticamente se ANTHROPIC_AUTO_ROUTING_ENABLED=true.
         """
         s = get_settings()
         task = (task_type or "").strip().lower()
         motivos: list[str] = []
+        auto_anthropic = bool(getattr(s, "ANTHROPIC_AUTO_ROUTING_ENABLED", False))
+        solicitado_inelegivel: str | None = None
 
-        elegiveis = [p for p in self._ordem_prioridade() if self._elegivel(p)]
+        solicitado = (provider_solicitado or "").strip().lower()
+        if solicitado and solicitado not in {"groq", "maritaca", "anthropic", "ollama"}:
+            solicitado = ""
+
+        if solicitado:
+            if self._elegivel(solicitado):
+                elegiveis = [solicitado]
+            else:
+                elegiveis = []
+                from app.services.ai.provider_registry import motivo_inelegivel
+                solicitado_inelegivel = motivo_inelegivel(solicitado) or "indisponível"
+            motivos.append(f"provedor solicitado explicitamente: {solicitado}")
+        else:
+            elegiveis = [p for p in self._ordem_prioridade() if self._elegivel(p)]
+            if not auto_anthropic:
+                elegiveis = [p for p in elegiveis if p != "anthropic"]
+                motivos.append("Claude reservado para solicitação explícita")
 
         # ── Barreira LGPD: destino externo exige conteúdo sem PII ────────────
         sanitizar_antes = False
@@ -113,23 +136,36 @@ class AIProviderPolicy:
                 )
 
         # ── Priorização por perfil da tarefa ─────────────────────────────────
-        if task in TAREFAS_COMPLEXAS and "anthropic" in elegiveis:
-            elegiveis = ["anthropic"] + [p for p in elegiveis if p != "anthropic"]
-            motivos.append("tarefa complexa — Anthropic priorizado")
-        elif task in TAREFAS_COMPLEXAS and "maritaca" in elegiveis:
-            # Sem Anthropic elegível, o melhor raciocínio jurídico PT-BR
-            # EXTERNO é o Sabiá (Maritaca) — priorizado à frente do groq, mas
-            # NUNCA à frente de provider LOCAL elegível (minimização LGPD: o
-            # dado só sai do VPS quando não há opção local).
-            locais = [p for p in elegiveis if p not in PROVIDERS_EXTERNOS]
-            externos = [p for p in elegiveis
-                        if p in PROVIDERS_EXTERNOS and p != "maritaca"]
-            elegiveis = locais + ["maritaca"] + externos
-            motivos.append("tarefa complexa — Maritaca (Sabiá) priorizada entre externos")
-        elif task in TAREFAS_ECONOMICAS:
-            econ = [p for p in elegiveis if p in ("ollama", "groq")]
-            elegiveis = econ + [p for p in elegiveis if p not in econ]
-            motivos.append("tarefa econômica — Ollama/Groq priorizados")
+        if not solicitado and task in TAREFAS_COMPLEXAS:
+            # Afinidade ESTRITA: mérito jurídico automático usa Maritaca; Ollama
+            # pode permanecer como fallback local/sigilo. Groq não assume mérito
+            # silenciosamente. A flag de rollback reabilita Anthropic no automático.
+            permitidos = {"maritaca", "ollama"}
+            if auto_anthropic:
+                permitidos.add("anthropic")
+            elegiveis = [p for p in elegiveis if p in permitidos]
+            if auto_anthropic and "anthropic" in elegiveis:
+                elegiveis = ["anthropic"] + [p for p in elegiveis if p != "anthropic"]
+                motivos.append("tarefa complexa — rollback Anthropic automático ativo")
+            elif "maritaca" in elegiveis:
+                elegiveis = ["maritaca"] + [p for p in elegiveis if p != "maritaca"]
+                motivos.append("tarefa complexa — afinidade Maritaca/Ollama")
+            else:
+                motivos.append("tarefa complexa — afinidade Maritaca/Ollama")
+        elif not solicitado and task in TAREFAS_ECONOMICAS:
+            # Afinidade ESTRITA: rotina usa Groq; Ollama pode servir de fallback
+            # local. Maritaca não é consumida por rotina automaticamente.
+            # A flag de rollback recoloca Anthropic no fallback automático.
+            permitidos = {"groq", "ollama"}
+            if auto_anthropic:
+                permitidos.add("anthropic")
+            elegiveis = [p for p in elegiveis if p in permitidos]
+            if "groq" in elegiveis:
+                elegiveis = ["groq"] + [p for p in elegiveis if p != "groq"]
+            motivos.append(
+                "tarefa econômica — afinidade Groq/Ollama"
+                + ("/Anthropic rollback" if auto_anthropic else "")
+            )
 
         requer_hitl = bool(s.AI_REQUIRE_HITL)
 
@@ -152,6 +188,12 @@ class AIProviderPolicy:
                     "Nenhum provedor — nem local — responde enquanto ela estiver "
                     "desligada; religue em AI_ENABLED=true para voltar a usar."
                 )
+            elif solicitado and solicitado_inelegivel:
+                bloqueio = (
+                    f"O provedor solicitado ({solicitado}) não está disponível: "
+                    f"{solicitado_inelegivel}. Selecione outro motor disponível "
+                    "ou corrija a configuração desse provedor."
+                )
             elif removido_por_pii:
                 bloqueio = (
                     "Este conteúdo tem dados pessoais que não podem ir a uma IA "
@@ -160,10 +202,11 @@ class AIProviderPolicy:
                 )
             else:
                 bloqueio = (
-                    "Nenhum provedor de IA está configurado. Configure a IA "
-                    "externa (defina ANTHROPIC_API_KEY no ambiente e mantenha "
-                    "AI_EXTERNAL_PROVIDERS_ALLOWED=true) ou habilite uma IA local "
-                    "(OLLAMA_ENABLED=true com um serviço Ollama disponível)."
+                    "Nenhum provedor elegível para esta tarefa. Verifique a "
+                    "configuração do motor previsto para a função (Groq para "
+                    "rotina; Maritaca para mérito jurídico) ou selecione "
+                    "explicitamente outro motor disponível no sistema. Para "
+                    "conteúdo que exige execução local, habilite o Ollama."
                 )
             return PolicyDecision(
                 permitido=False,
