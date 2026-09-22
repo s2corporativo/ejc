@@ -25,8 +25,8 @@ Data: 2026-07-04 · Código: `backend/app/services/ai/provider_policy.py`.
 >   seleção explícita, porém `ANTHROPIC_AUTO_ROUTING_ENABLED=false` o exclui do
 >   automático. `true` é rollback operacional.
 > - **Agente com tool-use**: opt-in; requer `AI_AGENT_ENABLED=true` e
->   `AI_PROVIDER=anthropic` explicitamente. `AI_PROVIDER=auto` não pode
->   religar Claude por uma rota lateral.
+>   `AI_AGENT_PROVIDER=anthropic` explicitamente. O `AI_PROVIDER` global
+>   permanece em `auto`, preservando Groq/Maritaca nas chamadas comuns.
 > - **Perfis**: `AI_PROFILE=externo|local|hibrido|desligado` continuam
 >   derivando habilitação e prioridade sem contornar kill-switches explícitos.
 > - **Deadline agregado**: `AI_CHAIN_DEADLINE_SECONDS`.
