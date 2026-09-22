@@ -123,6 +123,15 @@ services:
       # Claude somente sob seleção explícita; Ollama local quando disponível.
       AI_PROVIDER_PRIORITY: "groq,maritaca,ollama,anthropic"
       MARITACA_ENABLED: "${MARITACA_ENABLED:-true}"
+      MANUS_ENABLED: "${MANUS_ENABLED:-false}"
+      MANUS_AUTO_ROUTING_ENABLED: "${MANUS_AUTO_ROUTING_ENABLED:-false}"
+      MANUS_API_BASE_URL: "${MANUS_API_BASE_URL:-https://api.manus.ai}"
+      MANUS_API_KEY: "${MANUS_API_KEY:-}"
+      MANUS_AGENT_PROFILE: "${MANUS_AGENT_PROFILE:-max}"
+      MANUS_CONNECT_TIMEOUT: "${MANUS_CONNECT_TIMEOUT:-10}"
+      MANUS_READ_TIMEOUT: "${MANUS_READ_TIMEOUT:-30}"
+      MANUS_WRITE_TIMEOUT: "${MANUS_WRITE_TIMEOUT:-30}"
+      MANUS_MAX_INPUT_CHARS: "${MANUS_MAX_INPUT_CHARS:-16000}"
       ANTHROPIC_AUTO_ROUTING_ENABLED: "${ANTHROPIC_AUTO_ROUTING_ENABLED:-false}"
       AI_AGENT_PROVIDER: "${AI_AGENT_PROVIDER:-}"
       # Perfil de IA (opcional): externo | local | hibrido | desligado — deriva

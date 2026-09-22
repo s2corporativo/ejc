@@ -229,6 +229,19 @@ class Settings(BaseSettings):
     # Os defaults abaixo ("sabia-4"/"sabiazinho-4") NÃO são soberanos.
     MARITACA_ENABLED: bool = True
     MARITACA_API_KEY: str = ""
+
+    # ── Manus — raciocínio profundo EXPLÍCITO ─────────────────────────────
+    # Nunca participa do roteamento automático. A integração é assíncrona,
+    # manual e pseudonimizada em /api/manus/deep-reasoning.
+    MANUS_ENABLED: bool = False
+    MANUS_AUTO_ROUTING_ENABLED: bool = False
+    MANUS_API_BASE_URL: str = "https://api.manus.ai"
+    MANUS_API_KEY: str = ""
+    MANUS_AGENT_PROFILE: str = "max"
+    MANUS_CONNECT_TIMEOUT: float = 10.0
+    MANUS_READ_TIMEOUT: float = 30.0
+    MANUS_WRITE_TIMEOUT: float = 30.0
+    MANUS_MAX_INPUT_CHARS: int = 16000
     MARITACA_BASE_URL: str = "https://chat.maritaca.ai/api"
     MARITACA_MODEL: str = "sabia-4"            # qualidade/generalista (128k)
     MARITACA_MODEL_RAPIDO: str = "sabiazinho-4"  # rápido/barato
@@ -1436,19 +1449,26 @@ class Settings(BaseSettings):
                 (self.ANTHROPIC_ENABLED and self.ANTHROPIC_API_KEY)
                 or self.GROQ_API_KEY
                 or (self.MARITACA_ENABLED and self.MARITACA_API_KEY)
+                or (self.MANUS_ENABLED and self.MANUS_API_KEY)
             ))
             if (externo_elegivel
                     and not self.AI_REQUIRE_SANITIZATION_FOR_EXTERNAL
                     and not self.AI_ACCEPT_EXTERNAL_WITHOUT_SANITIZATION):
                 raise ValueError(
                     "AI_REQUIRE_SANITIZATION_FOR_EXTERNAL=false com provider "
-                    "externo elegível (Anthropic/Groq/Maritaca) em produção: "
+                    "externo elegível (Anthropic/Groq/Maritaca/Manus) em produção: "
                     "dados pessoais poderiam ir em claro a provedor fora do VPS "
                     "(LGPD art. 33/46). Mantenha "
                     "AI_REQUIRE_SANITIZATION_FOR_EXTERNAL=true; se houver parecer "
                     "do encarregado de dados para a exceção, defina explicitamente "
                     "AI_ACCEPT_EXTERNAL_WITHOUT_SANITIZATION=true no .env."
                 )
+            if self.MANUS_AUTO_ROUTING_ENABLED:
+                raise ValueError(
+                    "MANUS_AUTO_ROUTING_ENABLED deve permanecer false: Manus é "
+                    "somente Raciocínio Profundo por seleção explícita."
+                )
+
             # ── Soberania Maritaca (opt-in) — exige modelos "-br-sp" ──────────
             # Só valida quando o modo soberania está LIGADO e o provider ativo.
             if self.MARITACA_EXIGIR_SOBERANIA and self.MARITACA_ENABLED:
