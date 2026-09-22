@@ -28,8 +28,10 @@ from app.models.notification import Notification
 settings = get_settings()
 logger = logging.getLogger("ejc.security")
 
-# ── Anti-brute-force (em memória, ok para worker único) ──────────────────────
-# Estrutura: {chave: [timestamps de falhas]}
+# ── Anti-brute-force ──────────────────────────────────────────────────────────
+# Redis é o backend compartilhado quando RATE_LIMIT_REDIS_ENABLED=true;
+# memória permanece como fallback fail-open para desenvolvimento/indisponibilidade.
+# Estrutura local: {chave: [timestamps de falhas]}
 _falhas: dict[str, list[datetime]] = defaultdict(list)
 JANELA_SEGUNDOS   = 15 * 60   # janela de 15 minutos
 MAX_FALHAS        = 5          # tentativas antes do bloqueio
@@ -81,6 +83,89 @@ def esta_bloqueado(chave: str, max_falhas: int = MAX_FALHAS) -> tuple[bool, int]
 
 def limpar_falhas(chave: str) -> None:
     _falhas.pop(chave, None)
+
+
+_bf_redis_client = None
+_LUA_BF_INCREMENT = """
+local n = redis.call('INCR', KEYS[1])
+if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+return {n, redis.call('TTL', KEYS[1])}
+"""
+
+
+def _bf_redis_key(chave: str) -> str:
+    return "bf:" + hashlib.sha256(str(chave).encode("utf-8")).hexdigest()
+
+
+async def _get_bf_redis():
+    global _bf_redis_client
+    if _bf_redis_client is not None:
+        return _bf_redis_client
+    try:
+        import redis.asyncio as aioredis
+        if not get_settings().REDIS_URL:
+            return None
+        _bf_redis_client = aioredis.from_url(
+            get_settings().REDIS_URL,
+            socket_connect_timeout=0.5,
+            socket_timeout=0.5,
+            decode_responses=True,
+        )
+        return _bf_redis_client
+    except Exception:
+        return None
+
+
+async def esta_bloqueado_distribuido(
+    chave: str, max_falhas: int = MAX_FALHAS,
+) -> tuple[bool, int]:
+    """Consulta o bloqueio no Redis e cai para memória se necessário."""
+    if not get_settings().RATE_LIMIT_REDIS_ENABLED:
+        return esta_bloqueado(chave, max_falhas=max_falhas)
+    cli = await _get_bf_redis()
+    if cli is None:
+        return esta_bloqueado(chave, max_falhas=max_falhas)
+    try:
+        valor = await cli.get(_bf_redis_key(chave))
+        ttl = await cli.ttl(_bf_redis_key(chave))
+        if int(valor or 0) >= max_falhas:
+            return True, max(0, int(ttl))
+        return False, 0
+    except Exception as exc:
+        logger.warning("[security] Redis indisponível na consulta de bloqueio: %s", type(exc).__name__)
+        return esta_bloqueado(chave, max_falhas=max_falhas)
+
+
+async def registrar_falha_distribuida(chave: str) -> None:
+    """Registra uma falha em contador Redis atômico ou no fallback local."""
+    if not get_settings().RATE_LIMIT_REDIS_ENABLED:
+        registrar_falha(chave)
+        return
+    cli = await _get_bf_redis()
+    if cli is None:
+        registrar_falha(chave)
+        return
+    try:
+        await cli.eval(
+            _LUA_BF_INCREMENT, 1, _bf_redis_key(chave), JANELA_SEGUNDOS,
+        )
+    except Exception as exc:
+        logger.warning("[security] Redis indisponível ao registrar falha: %s", type(exc).__name__)
+        registrar_falha(chave)
+
+
+async def limpar_falhas_distribuida(chave: str) -> None:
+    """Limpa contador Redis e local após autenticação bem-sucedida."""
+    limpar_falhas(chave)
+    if not get_settings().RATE_LIMIT_REDIS_ENABLED:
+        return
+    cli = await _get_bf_redis()
+    if cli is None:
+        return
+    try:
+        await cli.delete(_bf_redis_key(chave))
+    except Exception as exc:
+        logger.warning("[security] Redis indisponível ao limpar falha: %s", type(exc).__name__)
 
 
 # ── Política de senha forte (definição de senha NOVA) ────────────────────────

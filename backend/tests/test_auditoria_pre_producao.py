@@ -16,6 +16,7 @@ IP/e-mail únicos por teste para isolar os contadores anti-brute-force).
 from __future__ import annotations
 
 import io
+import hashlib
 import types
 from datetime import datetime, timedelta, timezone
 
@@ -286,7 +287,7 @@ def test_login_sem_codigo_totp_nao_consome_orcamento_principal():
 
 
 def test_login_totp_codigo_errado_continua_no_orcamento_principal():
-    """Código TOTP ERRADO (≠ passo pendente) segue contando em ip:/em:."""
+    """Código TOTP errado segue contando no orçamento IP+e-mail."""
     from app.services.security_service import esta_bloqueado
 
     secret = pyotp.random_base32()
@@ -299,8 +300,13 @@ def test_login_totp_codigo_errado_continua_no_orcamento_principal():
     for _ in range(5):
         assert _login(client, ip, code="000000",
                       email="totp-errado@teste.com").status_code == 401
-    bloqueado, _seg = esta_bloqueado("em:totp-errado@teste.com")
+    email_hash = hashlib.sha256("totp-errado@teste.com".encode()).hexdigest()
+    bloqueado, _seg = esta_bloqueado(f"ip_em:{ip}:{email_hash}")
     assert bloqueado
+    bloqueado_outro_ip, _seg = esta_bloqueado(
+        f"ip_em:10.31.0.99:{email_hash}"
+    )
+    assert not bloqueado_outro_ip
     assert _login(client, ip, code="000000",
                   email="totp-errado@teste.com").status_code == 429
 

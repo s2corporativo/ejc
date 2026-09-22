@@ -24,7 +24,7 @@ from app.core.rate_limit import limiter
 from app.core.security import get_current_user
 from app.models.audit_log import criar_audit_log
 from app.models.user import User
-from app.services.datajud_service import _SEG_TR_ALIAS, DataJudDesabilitadoError
+from app.services import datajud_service
 
 from app.integrations.brasilapi_client import BrasilApiClient, BrasilApiError
 from app.integrations.ckan_public_client import (
@@ -32,11 +32,7 @@ from app.integrations.ckan_public_client import (
     CkanPublicError,
 )
 from app.integrations.cnj_sgt_client import CnjSgtClient, CnjSgtError
-from app.integrations.datajud_client import (
-    TRIBUNAL_ALIASES,
-    DataJudClient,
-    DataJudError,
-)
+from app.integrations.datajud_client import TRIBUNAL_ALIASES, DataJudError
 from app.integrations.djen_comunica_client import (
     DjenComunicaClient,
     DjenComunicaError,
@@ -60,7 +56,14 @@ djen_router = APIRouter(prefix="/integracoes/djen", tags=["integracoes"])
 # main.py enquanto ele está sob lock de outro PR.
 brasilapi_router = APIRouter(prefix="/integracoes", tags=["integracoes"])
 
-_datajud = DataJudClient()
+class _DataJudCanonicalAdapter:
+    """Compatibilidade do contrato antigo sobre o serviço canônico."""
+
+    async def consultar_processo(self, numero: str, _alias: str | None = None):
+        return await datajud_service.consultar_processo(numero)
+
+
+_datajud = _DataJudCanonicalAdapter()
 _djen = DjenComunicaClient()
 _brasilapi = BrasilApiClient()
 _cnj_sgt = CnjSgtClient()
@@ -82,9 +85,9 @@ _CKAN_DEFAULT_QUERY = {
     "tse": "candidatos 2026",
 }
 
-_ALIAS_POR_SIGLA: dict = {
+_ALIAS_POR_SIGLA = {
     alias.removeprefix("api_publica_").upper(): alias
-    for alias in _SEG_TR_ALIAS.values()
+    for alias in datajud_service._SEG_TR_ALIAS.values()
 }
 _ALIAS_POR_SIGLA.update(TRIBUNAL_ALIASES)
 
@@ -158,10 +161,16 @@ async def consultar_processo_datajud(
         )
     numero = _somente_digitos(numero_processo, 20, "Número de processo (CNJ)")
     try:
+        # Família DataJud possui uma única implementação de transporte,
+        # retry, cache e governança. O parâmetro tribunal permanece no
+        # contrato HTTP, mas o alias oficial é derivado do número CNJ pela
+        # fachada canônica para impedir divergência entre routers.
         resultado = await _datajud.consultar_processo(numero, alias)
-    except DataJudDesabilitadoError as exc:
+    except datajud_service.DataJudDesabilitadoError as exc:
         raise HTTPException(503, str(exc))
-    except _ERROS_UPSTREAM as exc:
+    except (datajud_service.TribunalNaoMapeadoError, ValueError) as exc:
+        raise HTTPException(400, str(exc))
+    except (DataJudError, httpx.HTTPError) as exc:
         raise _falha_upstream("DataJud", exc)
     await _auditar_consulta(db, current_user, "integracoes_datajud", numero)
     return resultado

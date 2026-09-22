@@ -3,6 +3,7 @@
 # refresh com rotação, logout, troca de senha, reset por e-mail.
 import base64
 import binascii
+import hashlib
 import io
 import logging
 from datetime import datetime, timezone, timedelta
@@ -26,7 +27,8 @@ from app.models.user import User, RefreshToken
 from app.models.audit_log import criar_audit_log
 from app.services import pii_crypto
 from app.services.security_service import (
-    esta_bloqueado, registrar_falha, limpar_falhas, obter_ip_real,
+    esta_bloqueado_distribuido, registrar_falha_distribuida,
+    limpar_falhas_distribuida, obter_ip_real,
     verificar_novo_dispositivo,
     solicitar_reset, confirmar_reset,
     validar_forca_senha,
@@ -182,11 +184,15 @@ async def login(
 ):
     ip = obter_ip_real(request)
     chave_bf = f"ip:{ip}"        # bloqueia o IP
-    chave_em = f"em:{req.email.lower()}"  # bloqueia o e-mail
+    # O e-mail isolado permitia que qualquer terceiro travasse a conta da
+    # vítima. Vincular ao IP mantém a proteção contra tentativa coordenada sem
+    # transformar o endereço em identificador claro no backend de contagem.
+    email_hash = hashlib.sha256(req.email.lower().encode()).hexdigest()
+    chave_em = f"ip_em:{ip}:{email_hash}"
 
     # ── 1. Anti-brute-force ──────────────────────────────────────────
-    bloq_ip, seg_ip = esta_bloqueado(chave_bf)
-    bloq_em, seg_em = esta_bloqueado(chave_em)
+    bloq_ip, seg_ip = await esta_bloqueado_distribuido(chave_bf)
+    bloq_em, seg_em = await esta_bloqueado_distribuido(chave_em)
     if bloq_ip or bloq_em:
         restante = max(seg_ip, seg_em)
         raise HTTPException(
@@ -205,8 +211,8 @@ async def login(
     )).scalar_one_or_none()
 
     if not user or not verify_password(req.password, user.hashed_password):
-        registrar_falha(chave_bf)
-        registrar_falha(chave_em)
+        await registrar_falha_distribuida(chave_bf)
+        await registrar_falha_distribuida(chave_em)
         await criar_audit_log(
             db, None, None, "LOGIN_FALHA", "users",
             detalhes=f"Tentativa: {req.email[:50]}",
@@ -225,7 +231,7 @@ async def login(
             # ainda limita a sondagem de senhas válidas (o passo confirma
             # email+senha corretos); o audit preserva a trilha.
             chave_pend = f"totp_pend:{ip}"
-            bloq_pend, seg_pend = esta_bloqueado(
+            bloq_pend, seg_pend = await esta_bloqueado_distribuido(
                 chave_pend, max_falhas=TOTP_PENDENTE_MAX_FALHAS)
             if bloq_pend:
                 raise HTTPException(
@@ -233,7 +239,7 @@ async def login(
                     detail=f"Muitas tentativas. Tente novamente em {seg_pend//60+1} min.",
                     headers={"Retry-After": str(seg_pend)},
                 )
-            registrar_falha(chave_pend)
+            await registrar_falha_distribuida(chave_pend)
             await criar_audit_log(
                 db, user.id, user.role.value, "LOGIN_TOTP_PENDENTE", "users",
                 user.id, detalhes="Senha válida sem código TOTP", ip=ip,
@@ -256,8 +262,8 @@ async def login(
             )
         totp = pyotp.TOTP(secret)
         if not totp.verify(req.totp_code, valid_window=1):
-            registrar_falha(chave_bf)
-            registrar_falha(chave_em)
+            await registrar_falha_distribuida(chave_bf)
+            await registrar_falha_distribuida(chave_em)
             await criar_audit_log(db, user.id, user.role.value, "LOGIN_TOTP_FALHA", "users", user.id, ip=ip)
             await db.commit()
             raise HTTPException(status_code=401, detail="Código TOTP inválido ou expirado")
@@ -265,8 +271,8 @@ async def login(
         _recifrar_totp_legado(user, secret, legado)
 
     # ── 4. Login OK / gate obrigatório de 2FA ───────────────────
-    limpar_falhas(chave_bf)
-    limpar_falhas(chave_em)
+    await limpar_falhas_distribuida(chave_bf)
+    await limpar_falhas_distribuida(chave_em)
 
     exige_setup_2fa = _papel_exige_2fa(user.role.value) and not user.totp_enabled
     if exige_setup_2fa:
@@ -839,7 +845,7 @@ async def totp_desativar(
     # com access token roubado adivinhando códigos aqui NÃO pode trancar o
     # /login legítimo da vítima — e o bloqueio deste endpoint não depende do IP.
     chave_totp = f"totp_desativar:{user.email.lower()}"
-    bloqueado, seg = esta_bloqueado(chave_totp)
+    bloqueado, seg = await esta_bloqueado_distribuido(chave_totp)
     if bloqueado:
         raise HTTPException(
             status_code=429,
@@ -856,9 +862,9 @@ async def totp_desativar(
     if not totp.verify(req.codigo, valid_window=1):
         # Código TOTP inválido conta no anti-brute-force (chave própria acima) —
         # este endpoint autenticado permitia adivinhar o código sem custo.
-        registrar_falha(chave_totp)
+        await registrar_falha_distribuida(chave_totp)
         raise HTTPException(status_code=400, detail="Código inválido")
-    limpar_falhas(chave_totp)
+    await limpar_falhas_distribuida(chave_totp)
     user.totp_enabled = False
     user.totp_secret = None
     await criar_audit_log(db, user.id, user.role.value, "TOTP_DESATIVADO", "users", user.id, ip=obter_ip_real(request))
