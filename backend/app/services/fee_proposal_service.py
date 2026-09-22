@@ -170,6 +170,51 @@ async def sugerir_proposta(db, case: Case, area: str,
     }
 
 
+async def referencia_honorarios_entrada(
+    db, area: str | None, tipo_acao: str | None = None
+) -> dict:
+    """Consulta candidatos da tabela para a entrada preliminar, sem persistir.
+
+    A entrada ainda não possui ``Case`` nem complexidade confirmada. Por isso
+    este método não calcula faixas e não escolhe um item como aplicável; apenas
+    devolve referências vigentes para confirmação humana. O cálculo completo
+    continua em ``sugerir_proposta`` após a criação do caso.
+    """
+    area_limpa = str(area or "").strip()
+    if not area_limpa:
+        return {
+            "disponivel": False,
+            "seccional": "OAB/MG",
+            "candidatos": [],
+            "aviso": "Área jurídica não confirmada; honorários pendentes de revisão.",
+        }
+    itens = await _itens_oab_vigentes(db, area_limpa, date.today(), limite=20)
+    candidatos = [
+        {
+            "item_codigo": (item.item_codigo or "").strip() or None,
+            "descricao": item.descricao,
+            "valor_minimo": float(item.valor_minimo) if item.valor_minimo is not None else None,
+            "percentual": float(item.percentual) if item.percentual is not None else None,
+            "fonte": item.fonte,
+            "vigencia_inicio": item.vigencia_inicio.isoformat() if item.vigencia_inicio else None,
+            "vigencia_fim": item.vigencia_fim.isoformat() if item.vigencia_fim else None,
+        }
+        for item in itens
+    ]
+    return {
+        "disponivel": bool(candidatos),
+        "seccional": "OAB/MG",
+        "servico_identificado": tipo_acao,
+        "candidatos": candidatos,
+        "aviso": (
+            "Referências da tabela OAB/MG vigente — confirme o serviço e o item; "
+            "não constitui proposta nem valor contratado."
+            if candidatos
+            else "Tabela OAB/MG sem item aplicável para a área; consulte a fonte oficial vigente."
+        ),
+    }
+
+
 # ── CRUD/ciclo de vida ───────────────────────────────────────────────────────
 
 def _req_advogado_service(cu: User) -> None:

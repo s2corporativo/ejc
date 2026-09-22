@@ -2,10 +2,10 @@
    EJC — Identidade Tech Blue DPT (aprovada pelo Titular em 20/09/2026)
    Camada de composição do Início (DashboardUltra) e acabamentos do shell.
 
-   Evolução da referência "EJC DePaula Teixeira Adv":
-   • verde-esmeralda profundo nos cartões institucionais (#0a4132 → #04291f)
-   • ouro (#cfa961 / #eaca7f) como acento cirúrgico
-   • tela quente off-white, cartões brancos, tipografia serif de display
+   Evolução visual refinada da referência Tech Blue DPT:
+   • navy profundo nos cartões institucionais (#0f2747 → #07182e)
+   • azul/ciano (#38bdf8 / #7dd3fc) como acento cirúrgico
+   • canvas frio, cartões brancos, tipografia serif de display
    Todos os dados são reais; esta camada não altera contratos, RBAC ou rotas.
    ══════════════════════════════════════════════════════════════════════════ */
 
@@ -307,10 +307,10 @@ html:not(.dark)
   display: flex;
   flex-direction: column;
   gap: 2px;
-  border: 1px solid rgba(16, 56, 44, 0.08);
-  border-radius: 18px;
+  border: 1px solid rgba(15, 39, 71, 0.1);
+  border-radius: 16px;
   background: #ffffff;
-  box-shadow: 0 10px 28px rgba(23, 48, 39, 0.06);
+  box-shadow: 0 8px 24px rgba(15, 39, 71, 0.055);
   padding: 16px 18px;
   transition:
     transform 0.15s ease,
@@ -319,7 +319,7 @@ html:not(.dark)
 
 .ejc-dash__stat:hover {
   transform: translateY(-2px);
-  border-color: rgba(207, 169, 97, 0.5);
+  border-color: rgba(56, 189, 248, 0.5);
 }
 
 .ejc-dash__stat-icon {
@@ -328,8 +328,8 @@ html:not(.dark)
   width: 38px;
   height: 38px;
   margin-bottom: 10px;
-  border-radius: 12px;
-  background: rgba(207, 169, 97, 0.14);
+  border-radius: 11px;
+  background: var(--ejc-gold-soft);
   color: var(--ejc-dash-gold-deep);
 }
 
@@ -358,7 +358,7 @@ html:not(.dark)
   width: 26px;
   height: 26px;
   transform: translateY(-50%);
-  border: 1px solid rgba(16, 56, 44, 0.12);
+  border: 1px solid rgba(15, 39, 71, 0.14);
   border-radius: 999px;
   padding: 4px;
   color: var(--ejc-dash-muted);
@@ -377,7 +377,7 @@ html:not(.dark)
       var(--ejc-dash-green) 0%,
       var(--ejc-dash-green-deep) 100%
     );
-  box-shadow: 0 18px 40px rgba(4, 41, 31, 0.3);
+  box-shadow: 0 18px 40px rgba(7, 24, 46, 0.24);
 }
 
 .ejc-dash__stat.is-dark strong {
@@ -409,10 +409,10 @@ html:not(.dark)
 }
 
 .ejc-dash__panel {
-  border: 1px solid rgba(16, 56, 44, 0.08);
-  border-radius: 20px;
+  border: 1px solid rgba(15, 39, 71, 0.1);
+  border-radius: 16px;
   background: #ffffff;
-  box-shadow: 0 10px 28px rgba(23, 48, 39, 0.05);
+  box-shadow: 0 8px 24px rgba(15, 39, 71, 0.05);
   padding: 18px 20px;
 }
 
@@ -460,9 +460,9 @@ html:not(.dark)
   display: inline-flex;
   gap: 4px;
   margin-bottom: 12px;
-  border: 1px solid rgba(16, 56, 44, 0.09);
+  border: 1px solid rgba(15, 39, 71, 0.1);
   border-radius: 999px;
-  background: #f6f5f0;
+  background: #f3f7fb;
   padding: 4px;
 }
 
@@ -487,9 +487,9 @@ html:not(.dark)
   align-items: center;
   gap: 6px;
   margin-bottom: 12px;
-  border: 1px solid rgba(207, 169, 97, 0.35);
+  border: 1px solid rgba(56, 189, 248, 0.35);
   border-radius: 999px;
-  background: rgba(207, 169, 97, 0.1);
+  background: var(--ejc-gold-soft);
   color: var(--ejc-dash-gold-deep);
   font-size: 11px;
   font-weight: 700;
@@ -526,7 +526,7 @@ html:not(.dark)
 
 .ejc-dash__timeline button:hover,
 .ejc-dash__cases button:hover {
-  background: #f7f6f1;
+  background: #f5f9fd;
 }
 
 .ejc-dash__timeline time {
@@ -657,10 +657,10 @@ html:not(.dark)
   display: flex;
   align-items: center;
   gap: 18px;
-  border: 1px solid rgba(16, 56, 44, 0.08);
-  border-radius: 20px;
+  border: 1px solid rgba(15, 39, 71, 0.1);
+  border-radius: 16px;
   background: #ffffff;
-  box-shadow: 0 10px 28px rgba(23, 48, 39, 0.05);
+  box-shadow: 0 8px 24px rgba(15, 39, 71, 0.05);
   padding: 14px 20px;
 }
 
@@ -708,7 +708,7 @@ html:not(.dark)
 }
 
 .ejc-dash__quick-items a:hover {
-  background: #f7f6f1;
+  background: #f5f9fd;
 }
 
 .ejc-dash__quick-items a span {
@@ -716,7 +716,7 @@ html:not(.dark)
   place-items: center;
   width: 34px;
   height: 34px;
-  border: 1px solid rgba(207, 169, 97, 0.4);
+  border: 1px solid rgba(56, 189, 248, 0.42);
   border-radius: 999px;
   color: var(--ejc-dash-gold-deep);
 }
@@ -747,7 +747,8 @@ html:not(.dark)
   overflow: hidden;
   display: grid;
   align-content: start;
-  border-radius: 20px;
+  border: 1px solid rgba(125, 211, 252, 0.16);
+  border-radius: 18px;
   background:
     radial-gradient(
       circle at 85% -10%,
@@ -1348,7 +1349,7 @@ html:not(.dark) .sidebar-bronze .sidebar-nav-item.is-active svg {
   border-radius: 999px;
   background: #ffffff;
   padding: 9px 10px 9px 20px;
-  box-shadow: 0 10px 26px rgba(4, 41, 31, 0.22);
+  box-shadow: 0 10px 26px rgba(7, 24, 46, 0.2);
   transition:
     box-shadow 0.15s ease,
     outline-color 0.15s ease;
@@ -1357,12 +1358,12 @@ html:not(.dark) .sidebar-bronze .sidebar-nav-item.is-active svg {
 
 .ejc-entry-pill:focus-within {
   outline-color: rgba(56, 189, 248, 0.55);
-  box-shadow: 0 12px 30px rgba(4, 41, 31, 0.3);
+  box-shadow: 0 12px 30px rgba(7, 24, 46, 0.26);
 }
 
 .ejc-entry-pill.is-drag {
   outline-color: rgba(56, 189, 248, 0.85);
-  background: #fffdf6;
+  background: #f8fcff;
 }
 
 .ejc-entry-pill__spark {
@@ -1412,7 +1413,7 @@ html:not(.dark) .sidebar-bronze .sidebar-nav-item.is-active svg {
 }
 
 .ejc-entry-pill__clip:hover {
-  background: #f1f0ea;
+  background: #eef7fd;
   color: var(--ejc-dash-green);
 }
 
@@ -1434,7 +1435,7 @@ html:not(.dark)
   .ejc-modern-scope
   .ejc-dash__entry-body
   button[type="button"].ejc-entry-pill__clip:hover {
-  background: #f1f0ea !important;
+  background: #eef7fd !important;
   color: var(--ejc-dash-green) !important;
 }
 
@@ -1455,7 +1456,11 @@ html:not(.dark)
   height: 40px;
   flex: 0 0 auto;
   border-radius: 999px;
-  background: linear-gradient(135deg, var(--ejc-dash-gold) 0%, #e0c074 100%);
+  background: linear-gradient(
+    135deg,
+    var(--ejc-dash-gold-bright) 0%,
+    var(--ejc-dash-gold) 100%
+  );
   color: #07182e;
   box-shadow: 0 6px 14px rgba(0, 0, 0, 0.22);
   transition:
@@ -1552,14 +1557,14 @@ html:not(.dark)
   width: 32px;
   height: 32px;
   flex: 0 0 auto;
-  border-radius: 10px;
+  border-radius: 9px;
   background: linear-gradient(
     150deg,
     var(--ejc-dash-green) 0%,
     var(--ejc-dash-green-deep) 100%
   );
   color: var(--ejc-dash-gold-bright);
-  box-shadow: 0 4px 10px rgba(4, 41, 31, 0.18);
+  box-shadow: 0 4px 10px rgba(7, 24, 46, 0.18);
 }
 
 .ejc-dash__panel-ico svg {
@@ -1636,5 +1641,115 @@ html:not(.dark)
 
   html:not(.dark) .sidebar-bronze .ejc-sidebar-epigraph__figure {
     height: 100px;
+  }
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DARK MODE REFINADO — mesmas opções, hierarquia e componentes; apenas
+   superfícies, contraste, estados e profundidade adaptados ao navy escuro.
+   ══════════════════════════════════════════════════════════════════════════ */
+.dark {
+  --ejc-dash-ink: #dbeafe;
+  --ejc-dash-muted: #a9b8cc;
+  --ejc-dash-gold-deep: #7dd3fc;
+}
+
+.dark .ejc-dash__stat,
+.dark .ejc-dash__panel,
+.dark .ejc-dash__quick {
+  border-color: var(--ejc-border);
+  background: var(--ejc-surface);
+  box-shadow: var(--ejc-shadow-sm);
+}
+
+.dark .ejc-dash__stat:hover,
+.dark .ejc-dash__panel:hover {
+  border-color: rgba(125, 211, 252, 0.38);
+}
+
+.dark .ejc-dash__stat-icon {
+  background: rgba(56, 189, 248, 0.14);
+  color: var(--ejc-gold-bright);
+}
+
+.dark .ejc-dash__stat-chev {
+  border-color: var(--ejc-border-strong);
+}
+
+.dark .ejc-dash__tabs {
+  border-color: var(--ejc-border);
+  background: var(--ejc-surface-muted);
+}
+
+.dark .ejc-dash__tabs button.is-active {
+  background: var(--ejc-primary);
+  color: #ffffff;
+}
+
+.dark .ejc-dash__timeline button:hover,
+.dark .ejc-dash__cases button:hover,
+.dark .ejc-dash__quick-items a:hover {
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.dark .ejc-dash__case-chip.is-green {
+  background: rgba(23, 152, 90, 0.18);
+  color: #7ee2ae;
+}
+
+.dark .ejc-dash__case-chip.is-gold {
+  background: rgba(56, 189, 248, 0.14);
+  color: #7dd3fc;
+}
+
+.dark .ejc-dash__case-chip.is-gray {
+  background: rgba(169, 184, 204, 0.12);
+  color: #a9b8cc;
+}
+
+.dark .ejc-dash__side-panel,
+.dark .ejc-dash__quote {
+  border-color: rgba(125, 211, 252, 0.16);
+  box-shadow: var(--ejc-shadow-md);
+}
+
+.dark .ejc-dash__entry-body textarea,
+.dark .ejc-entry-pill {
+  border-color: var(--ejc-border-strong) !important;
+  background: var(--ejc-surface-raised) !important;
+  color: var(--ejc-text) !important;
+}
+
+.dark .ejc-entry-pill.is-drag {
+  background: #10243c !important;
+}
+
+.dark .ejc-entry-pill__input,
+.dark .ejc-dash__entry-body textarea {
+  color: var(--ejc-text) !important;
+}
+
+.dark .ejc-entry-pill__input::placeholder,
+.dark .ejc-dash__entry-body textarea::placeholder {
+  color: var(--ejc-text-subtle) !important;
+}
+
+.dark .ejc-entry-pill__clip:hover {
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--ejc-gold-bright);
+}
+
+.dark .ejc-dash__quick-items a span {
+  border-color: rgba(125, 211, 252, 0.42);
+  color: var(--ejc-gold-bright);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dark .ejc-dash__stat,
+  .dark .ejc-dash__panel,
+  .dark .ejc-dash__quick,
+  .dark .ejc-entry-pill {
+    transition: none !important;
   }
 }
