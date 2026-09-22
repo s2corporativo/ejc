@@ -1,5 +1,9 @@
 import { create } from "zustand";
-import api, { getAccessToken } from "../lib/api";
+import api, {
+  getAccessToken,
+  refreshAccessToken,
+  setAccessToken,
+} from "../lib/api";
 import { RASCUNHO_KEY } from "../lib/intakeRascunho";
 import { limparCadastroManual } from "./cadastroManual";
 import type { User } from "../types";
@@ -59,22 +63,19 @@ interface AuthState {
 }
 
 const storedUser = readStoredUser();
-const initialStatus: AuthStatus = getAccessToken()
-  ? "initializing"
-  : "unauthenticated";
+const initialStatus: AuthStatus = "initializing";
 
 export const useAuth = create<AuthState>((set, get) => ({
   user: storedUser,
   status: initialStatus,
   bootstrap: async () => {
-    if (!getAccessToken()) {
-      persistUser(null);
-      set({ user: null, status: "unauthenticated" });
-      return;
-    }
-
     set({ status: "initializing" });
     try {
+      // Em reload o access token em memória foi perdido. O cookie httpOnly
+      // restaura a sessão emitindo um novo bearer antes de /users/me.
+      if (!getAccessToken()) {
+        await refreshAccessToken();
+      }
       const profileResponse = await api.get<User>("/users/me");
       const securityResponse = await api
         .get<SecurityState>("/users/me/security")
@@ -121,7 +122,7 @@ export const useAuth = create<AuthState>((set, get) => ({
       }
 
       if (responseStatus === 401 || responseStatus === 403) {
-        localStorage.removeItem("ejc_access");
+        setAccessToken(null);
         localStorage.removeItem(RASCUNHO_KEY);
         limparRascunhosEntrada();
         limparCadastroManual();
@@ -144,7 +145,7 @@ export const useAuth = create<AuthState>((set, get) => ({
     set({ user, status: "authenticated" });
   },
   clearSession: () => {
-    localStorage.removeItem("ejc_access");
+    setAccessToken(null);
     // O rascunho de intake carrega dados pessoais extraídos de documentos —
     // não pode sobreviver ao fim da sessão em estação compartilhada (LGPD).
     localStorage.removeItem(RASCUNHO_KEY);
@@ -154,10 +155,8 @@ export const useAuth = create<AuthState>((set, get) => ({
   },
   loadUser: () => {
     const user = readStoredUser();
-    set({
-      user,
-      status: user && getAccessToken() ? "authenticated" : "unauthenticated",
-    });
+    set({ user, status: "initializing" });
+    void get().bootstrap();
   },
   updateUser: (patch) => {
     const current = get().user;
