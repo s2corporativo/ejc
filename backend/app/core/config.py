@@ -134,6 +134,16 @@ class Settings(BaseSettings):
     AUDIO_TRANSCRIPTION_DPA_APPROVED: bool = False
     GROQ_TRANSCRIPTION_MODEL: str = "whisper-large-v3"
     AI_ENABLED: bool = True
+    # ── Manus API — tarefas assíncronas externas ─────────────────────────
+    # Nasce desligada: só habilitar após decisão de transferência de dados,
+    # configuração da chave e publicação de webhook HTTPS assinado.
+    MANUS_API_ENABLED: bool = False
+    MANUS_API_BASE_URL: str = "https://api.manus.ai"
+    MANUS_API_KEY: str = ""
+    MANUS_WEBHOOK_PUBLIC_KEY: str = ""
+    MANUS_CONNECT_TIMEOUT: float = 10.0
+    MANUS_READ_TIMEOUT: float = 30.0
+    MANUS_WRITE_TIMEOUT: float = 30.0
     # Perfil de IA (S3 da análise E2E 03/09/2026): UMA variável que deriva os
     # kill-switches e a prioridade, para código, .env.example e compose nunca
     # divergirem. Valores: "externo" | "local" | "hibrido" | "desligado" | ""

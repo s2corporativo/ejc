@@ -93,6 +93,7 @@ from app.routers import ia_defensiva
 from app.routers import ia_especializada
 from app.routers import ia_governanca
 from app.routers import ia_saude
+from app.routers import manus
 from app.routers import indice_risco
 from app.routers import indices
 from app.routers import infosimples_receita
@@ -407,6 +408,7 @@ API = "/api"
 app.include_router(agenda_eventos.router, prefix=API)
 app.include_router(ai.router, prefix=API)
 app.include_router(ai_core.router, prefix=API)
+app.include_router(manus.router, prefix=API)
 app.include_router(anexos.router, prefix=API)
 app.include_router(ai_skills.router, prefix=API)
 app.include_router(ai_tools.router, prefix=API)

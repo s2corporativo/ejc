@@ -95,6 +95,7 @@ from app.models.nfse import NotaFiscalServico, NFSeStatus  # noqa
 from app.models.route_usage_metric import RouteUsageMetric  # noqa
 from app.models.scheduler_heartbeat import SchedulerHeartbeat  # noqa
 from app.models.integration_credential import IntegrationCredential  # noqa  (Cofre de Credenciais — migração 108)
+from app.models.manus_task import ManusTask  # noqa  (tarefas assíncronas Manus API)
 from app.models.processo_eletronico import (  # noqa  (MNI 2.2.2 leitura — migração 132)
     Tribunal, CredencialProcessoEletronico, SincronizacaoProcessoEletronico,
     DocumentoProcessoEletronicoDedup,
