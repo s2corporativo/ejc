@@ -29,6 +29,30 @@ export interface DuplicadoCliente {
   rotulo: string;
 }
 
+export interface InteligenciaJuridicaProposta {
+  versaoContrato: string;
+  status: "rascunho" | "degradado";
+  informacoesFaltantes: Array<{
+    pergunta: string;
+    motivo: string;
+    impacto?: string;
+  }>;
+  honorarios: {
+    disponivel: boolean;
+    seccional?: string | null;
+    candidatos: Array<{
+      item_codigo?: string | null;
+      descricao?: string | null;
+      valor_minimo?: number | null;
+      percentual?: number | null;
+      fonte?: string | null;
+    }>;
+    aviso?: string;
+  };
+  alertas: string[];
+  revisaoObrigatoria: boolean;
+}
+
 export type PrioridadeTriagem = "baixa" | "media" | "alta" | "critica";
 
 export interface Proposta {
@@ -67,6 +91,7 @@ export interface Proposta {
   conflictConfirmed: boolean;
   duplicateConfirmed: boolean;
   confirmoRevisao: boolean;
+  inteligenciaJuridica: InteligenciaJuridicaProposta | null;
 }
 
 export interface EntradaMeta {
@@ -290,6 +315,39 @@ export function normalizarAnalise(
     conflictConfirmed: false,
     duplicateConfirmed: false,
     confirmoRevisao: false,
+    inteligenciaJuridica: (() => {
+      const inteligencia = obj(r.inteligencia_juridica);
+      const honorarios = obj(inteligencia.honorarios);
+      return {
+        versaoContrato: str(inteligencia.versao_contrato) || "case_intelligence.v1",
+        status: inteligencia.status === "degradado" ? "degradado" : "rascunho",
+        informacoesFaltantes: lista(inteligencia.informacoes_faltantes)
+          .map((item) => obj(item))
+          .filter((item) => Boolean(item.pergunta))
+          .map((item) => ({
+            pergunta: str(item.pergunta),
+            motivo: str(item.motivo),
+            impacto: strOuNull(item.impacto) ?? undefined,
+          })),
+        honorarios: {
+          disponivel: honorarios.disponivel === true,
+          seccional: strOuNull(honorarios.seccional),
+          candidatos: lista(honorarios.candidatos).map((item) => {
+            const candidato = obj(item);
+            return {
+              item_codigo: strOuNull(candidato.item_codigo),
+              descricao: strOuNull(candidato.descricao),
+              valor_minimo: typeof candidato.valor_minimo === "number" ? candidato.valor_minimo : null,
+              percentual: typeof candidato.percentual === "number" ? candidato.percentual : null,
+              fonte: strOuNull(candidato.fonte),
+            };
+          }),
+          aviso: str(honorarios.aviso),
+        },
+        alertas: lista(inteligencia.alertas).map(textoDeAchado).filter(Boolean),
+        revisaoObrigatoria: inteligencia.revisao_obrigatoria !== false,
+      };
+    })(),
   };
 }
 
