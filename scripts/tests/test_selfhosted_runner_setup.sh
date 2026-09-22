@@ -20,6 +20,19 @@ bash -n "$SCRIPT"
 grep -Eq 'git rsync|rsync.*postgresql-client' "$SCRIPT" || \
   fail "rsync não é instalado pelo bootstrap"
 
+# O runner não pode receber root indireto. Docker group e NOPASSWD:ALL são
+# equivalentes a privilégio de host e não pertencem ao runner legado.
+if grep -q 'NOPASSWD:ALL' "$SCRIPT"; then
+  fail "bootstrap voltou a conceder NOPASSWD:ALL"
+fi
+if grep -Eq 'usermod[[:space:]]+-aG[[:space:]]+docker' "$SCRIPT"; then
+  fail "bootstrap voltou a adicionar runner ao grupo docker"
+fi
+grep -q 'rm -f /etc/sudoers.d/99-ghrunner' "$SCRIPT" || \
+  fail "bootstrap não remove sudoers legado"
+grep -q 'gpasswd -d.*RUNNER_USER.*docker' "$SCRIPT" || \
+  fail "bootstrap não remove grupo docker legado"
+
 # A reconfiguração não pode ocorrer enquanto o serviço antigo está ativo.
 grep -q './svc.sh stop' "$SCRIPT" || fail "serviço existente não é parado"
 grep -q './svc.sh uninstall' "$SCRIPT" || fail "serviço existente não é desinstalado"

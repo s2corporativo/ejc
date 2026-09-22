@@ -109,12 +109,13 @@ if ! id "$RUNNER_USER" >/dev/null 2>&1; then
   log "Criando usuário $RUNNER_USER…"
   useradd -m -s /bin/bash "$RUNNER_USER"
 fi
-usermod -aG docker "$RUNNER_USER" 2>/dev/null || true
-
-# Compatibilidade com os workflows atuais. A redução desta permissão deve ser
-# tratada em mudança separada, após eliminar os `sudo` genéricos dos workflows.
-echo "$RUNNER_USER ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/99-ghrunner
-chmod 440 /etc/sudoers.d/99-ghrunner
+# O runner GitHub é deliberadamente NÃO privilegiado. O CI/deploy canônico do
+# EJC é Woodpecker; um runner legado jamais recebe root por sudo ou Docker.
+# Remove resíduos de instalações antigas de forma idempotente.
+rm -f /etc/sudoers.d/99-ghrunner
+if id -nG "$RUNNER_USER" | tr " " "\n" | grep -qx docker; then
+  gpasswd -d "$RUNNER_USER" docker >/dev/null 2>&1 || true
+fi
 
 # ── 3. Binário do runner ──────────────────────────────────────────────────────
 if [ -z "$RUNNER_VERSION" ]; then
