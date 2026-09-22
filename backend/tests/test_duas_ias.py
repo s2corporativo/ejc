@@ -187,6 +187,7 @@ class TestCriticarPeca:
         from app.services.ai import adversarial
         # Só Anthropic elegível e a peça veio do Anthropic.
         monkeypatch.setattr(s, "GROQ_API_KEY", "")
+        monkeypatch.setattr(s, "MARITACA_API_KEY", "")
         box: dict = {}
         monkeypatch.setattr(ai_gateway, "chat", _fake_chat(box, provedor="anthropic"))
         c = await adversarial.criticar_peca(
