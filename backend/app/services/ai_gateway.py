@@ -1635,11 +1635,12 @@ async def chat_agentico(
     messages = legal_base.aplicar_base(messages, task_type)
 
     # Cadeia agêntica: nesta fase o tool-use é suportado somente pelo
-    # Anthropic. O agente exige seleção operacional EXPLÍCITA do provider;
-    # AI_PROVIDER=auto não pode religar Claude por uma rota lateral.
-    if (settings.AI_PROVIDER or "").strip().lower() != "anthropic":
+    # Anthropic. A seleção do agente é ISOLADA do AI_PROVIDER global para não
+    # forçar Claude nas chamadas comuns (que devem seguir Groq/Maritaca).
+    agent_provider = (getattr(settings, "AI_AGENT_PROVIDER", "") or "").strip().lower()
+    if agent_provider != "anthropic":
         raise SafeAIError(
-            "Módulo agêntico requer AI_PROVIDER=anthropic explicitamente configurado.",
+            "Módulo agêntico requer AI_AGENT_PROVIDER=anthropic explicitamente configurado.",
             code="agent_provider_not_explicit",
             technical_type="ProviderPolicy",
             public_message=(
