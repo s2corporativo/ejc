@@ -100,7 +100,6 @@ async def test_cache_hit_zera_tokens_e_custo(monkeypatch):
     # Simula tarefa MASCARAMENTO (cacheável) e uma cadeia ELEGÍVEL (A6: o cache
     # só é consultado depois de confirmada a cadeia) para exercitar o hit.
     from app.services import ai_gateway
-    from types import SimpleNamespace
     from app.services import ai_cache as _c
     from app.services.ai.sanitization_policy import ModoSanitizacao
 
