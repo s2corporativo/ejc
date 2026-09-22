@@ -18,9 +18,10 @@ import {
 import { MemoryRouter } from "react-router";
 
 const postMock = vi.fn();
+const getMock = vi.fn();
 
 vi.mock("../lib/api", () => ({
-  default: { post: (...a: unknown[]) => postMock(...a) },
+  default: { post: (...a: unknown[]) => postMock(...a), get: (...a: unknown[]) => getMock(...a) },
   getAccessToken: () => null,
   logout: vi.fn(),
   refreshAccessToken: vi.fn(),
@@ -69,6 +70,7 @@ function trocarPara(rotulo: string) {
 afterEach(() => {
   cleanup();
   postMock.mockReset();
+  getMock.mockReset();
 });
 
 describe("AssistenteIA — portas canônicas", () => {
@@ -98,6 +100,30 @@ describe("AssistenteIA — portas canônicas", () => {
     fireEvent.click(screen.getByRole("button", { name: /Executar/ }));
     await waitFor(() => expect(postMock).toHaveBeenCalled());
     expect((postMock.mock.calls[0][1] as any).provider).toBe("anthropic");
+  });
+
+  it("Manus só é acionado pela ferramenta explícita de raciocínio profundo", async () => {
+    postMock.mockResolvedValue({
+      data: {
+        status: "running",
+        handle: "handle-test",
+        provider: "manus",
+        modelo: "agent-profile:max",
+        conteudo: "",
+        alertas: [],
+      },
+    });
+    montar();
+    trocarPara("Raciocínio profundo");
+    expect(screen.queryByRole("button", { name: "Claude" })).toBeNull();
+    fireEvent.change(
+      screen.getByPlaceholderText("Descreva o caso ou questão para raciocínio profundo…"),
+      { target: { value: "Analise criticamente esta situação jurídica e indique riscos, provas e teses possíveis." } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Executar/ }));
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][0]).toBe("/manus/deep-reasoning");
+    expect(screen.getByTestId("manus-status").textContent).toMatch(/raciocínio profundo/i);
   });
 
   it("resumir chama /ia/resumir", async () => {

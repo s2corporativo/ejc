@@ -378,6 +378,13 @@ ADICOES_INTENCIONAIS |= {
 }
 
 
+# PR #1814 — Manus Raciocínio Profundo explícito. Rotas autenticadas,
+# feature flag off por padrão e sem participação no auto-routing.
+ADICOES_INTENCIONAIS |= {
+    ("/api/manus/deep-reasoning", "POST"),
+    ("/api/manus/deep-reasoning/{handle}", "GET"),
+}
+
 def test_paridade_openapi_com_snapshot_anterior():
     from app.main import app
 

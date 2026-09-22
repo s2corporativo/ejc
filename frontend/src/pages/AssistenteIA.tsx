@@ -8,7 +8,7 @@
 // Os limites de caracteres abaixo são os MESMOS do backend
 // (`schemas/ai.py::LIMITES_CAPACIDADE`): limite que só existe no servidor vira
 // 422 depois de a pessoa escrever a peça inteira (achado E6).
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "react-router";
 import Markdown from "../components/Markdown";
 import api from "../lib/api";
@@ -16,7 +16,7 @@ import { PageHeader, Spinner } from "../components/UI";
 import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
 import { MENSAGEM_IA_NAO_ATIVADA, useIaStatus } from "../lib/iaStatus";
 
-type Tool = "pesquisa" | "resumir" | "traduzir" | "minuta" | "especialista";
+type Tool = "pesquisa" | "resumir" | "traduzir" | "minuta" | "manus" | "especialista";
 type ProviderIA = "auto" | "groq" | "maritaca" | "anthropic" | "ollama";
 
 const PROVIDERS: Array<{ value: ProviderIA; label: string; desc: string }> = [
@@ -44,6 +44,7 @@ const LIMITES: Record<Tool, { min: number; max: number; capacidade: string }> = 
     capacidade: "conversar",
   },
   minuta: { min: 5, max: 12000, capacidade: "redigir" },
+  manus: { min: 30, max: 16000, capacidade: "manus" },
   especialista: { min: 30, max: 200000, capacidade: "analisar" },
 };
 
@@ -74,6 +75,12 @@ const TOOLS: { key: Tool; label: string; icon: string; desc: string }[] = [
     label: "Minuta",
     icon: "✍️",
     desc: "Gere um rascunho de peça (usa a jurisprudência interna quando disponível).",
+  },
+  {
+    key: "manus",
+    label: "Raciocínio profundo",
+    icon: "🧭",
+    desc: "Manus em modo explícito para análise jurídica profunda e crítica. O conteúdo sai pseudonimizado e o resultado é sempre rascunho.",
   },
   {
     key: "especialista",
@@ -110,6 +117,7 @@ export default function AssistenteIA() {
   const [loading, setLoading] = useState(false);
   const [res, setRes] = useState<any>(null);
   const [erro, setErro] = useState("");
+  const [manusHandle, setManusHandle] = useState<string | null>(null);
 
   const limite = LIMITES[tool];
 
@@ -117,6 +125,7 @@ export default function AssistenteIA() {
     setTool(t);
     setRes(null);
     setErro("");
+    setManusHandle(null);
   };
 
   const mensagemMinuta = () =>
@@ -132,6 +141,15 @@ export default function AssistenteIA() {
     setErro("");
     try {
       let data;
+      if (tool === "manus") {
+        ({ data } = await api.post("/manus/deep-reasoning", {
+          texto,
+          area: area || undefined,
+        }));
+        setRes(data);
+        setManusHandle(data?.handle || null);
+        return;
+      }
       if (tool === "pesquisa")
         ({ data } = await api.post("/ia/conversar", {
           texto,
@@ -161,6 +179,37 @@ export default function AssistenteIA() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!manusHandle) return;
+    let cancelado = false;
+    let timer: number | undefined;
+
+    const consultar = async () => {
+      try {
+        const { data } = await api.get(
+          `/manus/deep-reasoning/${encodeURIComponent(manusHandle)}`,
+        );
+        if (cancelado) return;
+        setRes(data);
+        if (["completed", "error", "waiting"].includes(data?.status)) {
+          setManusHandle(null);
+          return;
+        }
+        timer = window.setTimeout(consultar, 4000);
+      } catch (e: any) {
+        if (cancelado) return;
+        setErro(mensagemErroIA(e));
+        setManusHandle(null);
+      }
+    };
+
+    timer = window.setTimeout(consultar, 3000);
+    return () => {
+      cancelado = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [manusHandle]);
 
   const podeEnviar =
     tool === "minuta"
@@ -215,6 +264,7 @@ export default function AssistenteIA() {
           </button>
         ))}
       </div>
+      {tool !== "manus" && (
       <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
         <label className="label">Motor de IA</label>
         <div className="mt-2 flex flex-wrap gap-2">
@@ -238,6 +288,14 @@ export default function AssistenteIA() {
           {PROVIDERS.find((p) => p.value === provider)?.desc}
         </p>
       </div>
+      )}
+
+      {tool === "manus" && (
+        <div className="mb-4 rounded-lg border border-ai-200 bg-ai-50/40 p-3 text-sm text-slate-700">
+          <span className="font-semibold">Motor: Manus — Raciocínio Profundo.</span>{" "}
+          Uso somente por seleção explícita; sem fallback automático. Conteúdo enviado ao provider externo passa por pseudonimização LGPD.
+        </div>
+      )}
 
       {tool === "especialista" && (
         <div className="mb-3 flex items-center gap-2">
@@ -304,6 +362,18 @@ export default function AssistenteIA() {
             </div>
           ) : (
             <>
+              {tool === "manus" && (
+                <div className="mb-3">
+                  <label className="label">Área jurídica (opcional)</label>
+                  <input
+                    value={area}
+                    onChange={(e) => setArea(e.target.value)}
+                    maxLength={100}
+                    placeholder="Ex.: cível, empresarial, ambiental…"
+                    className="input w-full"
+                  />
+                </div>
+              )}
               <textarea
                 rows={10}
                 value={texto}
@@ -312,7 +382,9 @@ export default function AssistenteIA() {
                 placeholder={
                   tool === "pesquisa"
                     ? "Sua pergunta jurídica…"
-                    : "Cole o texto aqui…"
+                    : tool === "manus"
+                      ? "Descreva o caso ou questão para raciocínio profundo…"
+                      : "Cole o texto aqui…"
                 }
                 className="input w-full"
               />
@@ -346,6 +418,11 @@ export default function AssistenteIA() {
           )}
           {res && (
             <div className="space-y-3">
+              {res.provider === "manus" && res.status === "running" && (
+                <p className="text-sm text-ai-700" data-testid="manus-status">
+                  Manus está executando o raciocínio profundo. O resultado aparecerá aqui quando concluir.
+                </p>
+              )}
               {(res.provider || res.modelo) && (
                 <div
                   data-testid="motor-ia-usado"
