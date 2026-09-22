@@ -1,6 +1,6 @@
 """Política operacional de provedores — decisão 20/09/2026.
 
-Contrato:
+Contrato de regressão canônico usado também pela esteira de CI:
 - automático corriqueiro -> Groq;
 - automático de leitura/análise/pesquisa -> Maritaca;
 - Claude não entra automaticamente;
