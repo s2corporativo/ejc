@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, AsyncSessionLocal
 from app.core.rate_limit import rate_limit
+from app.core.safe_outbound_url import buscar_url_publica
 from app.core.security import get_current_user, require_roles, requer_equipe_juridica
 from app.models.user import User
 from app.models.rag import KnowledgeDoc, KnowledgeChunk, FonteIngestao
@@ -239,36 +240,20 @@ async def ingerir_url(
     cu: User = Depends(require_roles(["superadmin", "admin", "socio", "advogado"])),
 ):
     """Busca uma URL pública, extrai o texto (remove HTML) e ingere na base RAG."""
-    import httpx
-    # SSRF: reutiliza o mesmo validador anti-SSRF do callback público (rag_public):
-    # bloqueia IP privado/loopback/link-local/reservado. follow_redirects é
-    # DESABILITADO e cada salto é revalidado manualmente para impedir que um
-    # redirect leve a um destino interno.
-    from app.routers.rag_public import validar_callback_url
-    if not url.startswith(("http://", "https://")):
-        raise HTTPException(422, "URL inválida")
     try:
-        validar_callback_url(url, exigir_https=False)
-    except ValueError as e:
-        raise HTTPException(422, f"URL rejeitada: {e}")
-    try:
-        async with httpx.AsyncClient(timeout=20, follow_redirects=False) as cli:
-            resp = await cli.get(url, headers={"User-Agent": "Mozilla/5.0 EJC-RAG"})
-            saltos = 0
-            while resp.is_redirect and saltos < 5:
-                destino = (str(resp.next_request.url)
-                           if resp.next_request else resp.headers.get("location", ""))
-                if not destino.startswith(("http://", "https://")):
-                    raise HTTPException(422, "Redirect para destino inválido")
-                validar_callback_url(destino, exigir_https=False)  # revalida cada salto
-                resp = await cli.get(destino, headers={"User-Agent": "Mozilla/5.0 EJC-RAG"})
-                saltos += 1
-            resp.raise_for_status()
-            html = resp.text
+        resp = await buscar_url_publica(
+            url,
+            timeout=20,
+            max_redirects=5,
+            exigir_https=False,
+            headers={"User-Agent": "Mozilla/5.0 EJC-RAG"},
+        )
+        resp.raise_for_status()
+        html = resp.text
     except HTTPException:
         raise
     except ValueError as e:
-        raise HTTPException(422, f"Redirect rejeitado: {e}")
+        raise HTTPException(422, f"URL rejeitada: {e}")
     except Exception as e:
         raise HTTPException(422, f"Falha ao buscar a URL: {str(e)[:120]}")
     # remove scripts/styles e tags
