@@ -53,7 +53,7 @@ function BrandIntro({ className }: { className?: string }) {
 
 type LoginLocationState = { from?: string } | null;
 
-export default function LoginModern() {
+export default function Login() {
   const { setSession, bootstrap } = useAuth();
   const nav = useNavigate();
   const location = useLocation();
