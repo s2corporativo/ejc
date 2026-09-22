@@ -4,7 +4,14 @@
 // há dependências (caso em representação ativa); ?forcar=true prossegue com
 // decisão registrada. A UI espelha o gate e nunca força sem clique explícito.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 
 const getMock = vi.fn();
@@ -88,10 +95,9 @@ describe("Clientes — exclusão de cliente", () => {
     await waitFor(() =>
       expect(deleteMock).toHaveBeenCalledWith("/clients/cli-1", undefined),
     );
-    expect(deleteMock).not.toHaveBeenCalledWith(
-      "/clients/cli-1",
-      { params: { forcar: true } },
-    );
+    expect(deleteMock).not.toHaveBeenCalledWith("/clients/cli-1", {
+      params: { forcar: true },
+    });
     expect(deleteMock.mock.calls[0][1]).toBeUndefined();
     await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
     // load() reexecutado após a exclusão
@@ -126,12 +132,14 @@ describe("Clientes — exclusão de cliente", () => {
     await waitFor(() => expect(toastError).toHaveBeenCalled());
 
     // Sem marcar "forçar", o botão permanece desabilitado
-    expect((within(modal).getByText("Excluir") as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      (within(modal).getByText("Excluir") as HTMLButtonElement).disabled,
+    ).toBe(true);
 
-    fireEvent.click(
-      within(modal).getByText(/Confirmar mesmo assim/i),
-    );
-    expect((within(modal).getByText("Excluir") as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(within(modal).getByText(/Confirmar mesmo assim/i));
+    expect(
+      (within(modal).getByText("Excluir") as HTMLButtonElement).disabled,
+    ).toBe(false);
     fireEvent.click(within(modal).getByText("Excluir"));
 
     await waitFor(() =>

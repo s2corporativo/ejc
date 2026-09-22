@@ -41,33 +41,33 @@ function contrast(foreground: string, background: string) {
 
 describe("EJC Identidade Tech Blue DPT — contrato visual canônico", () => {
   it("mantém a marca institucional grande na sidebar sem alterar a navegação canônica", () => {
-    expect(layout).toContain('md:w-[17rem]');
-    expect(layout).toContain('md:left-[17rem]');
-    expect(layout).toContain('z-[60]');
-    expect(layout).toContain('md:z-40');
-    expect(layout).toContain('ejc-sidebar-brand__logo');
-    expect(layout).toContain('selectMainNavigation');
-    expect(layout).toContain('officeName');
-    expect(layout).toContain('ejc-sidebar-epigraph');
-    expect(layout).not.toContain('md:w-[15.5rem]');
-    expect(layout).not.toContain('SidebarWeekCalendar');
+    expect(layout).toContain("md:w-[17rem]");
+    expect(layout).toContain("md:left-[17rem]");
+    expect(layout).toContain("z-[60]");
+    expect(layout).toContain("md:z-40");
+    expect(layout).toContain("ejc-sidebar-brand__logo");
+    expect(layout).toContain("selectMainNavigation");
+    expect(layout).toContain("officeName");
+    expect(layout).toContain("ejc-sidebar-epigraph");
+    expect(layout).not.toContain("md:w-[15.5rem]");
+    expect(layout).not.toContain("SidebarWeekCalendar");
   });
 
   it("reproduz a composição da referência premium no início", () => {
-    expect(dashboard).toContain('ejc-dash__greeting');
-    expect(dashboard).toContain('ejc-dash__entry');
-    expect(dashboard).toContain('Entrada Única');
-    expect(dashboard).toContain('<EntradaInteligente embedded />');
-    expect(dashboard).toContain('ejc-dash__stats');
-    expect(dashboard).toContain('Prazos hoje');
-    expect(dashboard).toContain('Clientes ativos');
-    expect(dashboard).toContain('Casos em andamento');
-    expect(dashboard).toContain('Documentos recentes');
-    expect(dashboard).toContain('Agenda e Prazos');
-    expect(dashboard).toContain('Casos em destaque');
-    expect(dashboard).toContain('Acesso rápido');
-    expect(dashboard).toContain('Minha rotina hoje');
-    expect(dashboard).toContain('/brand/dashboard-themis.jpg');
+    expect(dashboard).toContain("ejc-dash__greeting");
+    expect(dashboard).toContain("ejc-dash__entry");
+    expect(dashboard).toContain("Entrada Única");
+    expect(dashboard).toContain("<EntradaInteligente embedded />");
+    expect(dashboard).toContain("ejc-dash__stats");
+    expect(dashboard).toContain("Prazos hoje");
+    expect(dashboard).toContain("Clientes ativos");
+    expect(dashboard).toContain("Casos em andamento");
+    expect(dashboard).toContain("Documentos recentes");
+    expect(dashboard).toContain("Agenda e Prazos");
+    expect(dashboard).toContain("Casos em destaque");
+    expect(dashboard).toContain("Acesso rápido");
+    expect(dashboard).toContain("Minha rotina hoje");
+    expect(dashboard).toContain("/brand/dashboard-themis.jpg");
   });
 
   it("fixa a paleta navy e azul/ciano da referência no tema final", () => {
@@ -109,7 +109,7 @@ describe("EJC Identidade Tech Blue DPT — contrato visual canônico", () => {
     expect(dashboard).toContain('"/cases/"');
     expect(dashboard).toContain('"/documents/"');
     expect(dashboard).toContain('"/tasks/"');
-    expect(dashboard).toContain('valorOuTraco');
+    expect(dashboard).toContain("valorOuTraco");
     expect(dashboard).toContain("Promise.allSettled");
   });
 });

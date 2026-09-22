@@ -215,21 +215,26 @@ describe("EntradaUnica — confirmação (tela B)", () => {
       (screen.getByLabelText("Natureza da demanda") as HTMLSelectElement).value,
     ).toBe("judicial");
     expect(
-      (screen.getByLabelText("Possível ação ou procedimento") as HTMLInputElement)
-        .value,
+      (
+        screen.getByLabelText(
+          "Possível ação ou procedimento",
+        ) as HTMLInputElement
+      ).value,
     ).toBe("Ação declaratória de inexistência de débito");
     expect(
       (screen.getByLabelText("Prioridade do caso") as HTMLSelectElement).value,
     ).toBe("alta");
     expect(
-      (screen.getByLabelText("Motivo da urgência") as HTMLTextAreaElement).value,
+      (screen.getByLabelText("Motivo da urgência") as HTMLTextAreaElement)
+        .value,
     ).toBe("Restrição de crédito ativa.");
     expect(
       (screen.getByLabelText("Documentos faltantes") as HTMLTextAreaElement)
         .value,
     ).toContain("Consulta atualizada");
     expect(
-      (screen.getByLabelText("Provas necessárias") as HTMLTextAreaElement).value,
+      (screen.getByLabelText("Provas necessárias") as HTMLTextAreaElement)
+        .value,
     ).toContain("Confirmar data");
     expect(
       (screen.getByLabelText("Próximos passos") as HTMLTextAreaElement).value,

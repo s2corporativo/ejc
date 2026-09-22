@@ -34,13 +34,13 @@ describe("PecaGeneratorModal — contrato da auditoria E2E", () => {
     expect(fonte).toContain("data.tipos.length === 0");
     expect(fonte).toContain("data.areas.length === 0");
     expect(fonte).toContain("data.niveis_complexidade.length === 0");
-    expect(fonte).toContain('setTipos([])');
-    expect(fonte).toContain('setAreas([])');
-    expect(fonte).toContain('setNiveis([])');
+    expect(fonte).toContain("setTipos([])");
+    expect(fonte).toContain("setAreas([])");
+    expect(fonte).toContain("setNiveis([])");
   });
 
   it("exibe individualmente citação identificada mas ainda não confirmada", () => {
     expect(fonte).toContain('citacao.status === "identificada" ||');
-    expect(fonte).toContain("citacao.citacao || citacao.trecho || \"citação\"");
+    expect(fonte).toContain('citacao.citacao || citacao.trecho || "citação"');
   });
 });

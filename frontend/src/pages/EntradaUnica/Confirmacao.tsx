@@ -419,7 +419,9 @@ export function Confirmacao({
               aria-label="Natureza da demanda"
             >
               <option value="">A confirmar…</option>
-              {!NATUREZAS.some(([valor]) => valor === proposta.naturezaDemanda) &&
+              {!NATUREZAS.some(
+                ([valor]) => valor === proposta.naturezaDemanda,
+              ) &&
                 proposta.naturezaDemanda && (
                   <option value={proposta.naturezaDemanda}>
                     {proposta.naturezaDemanda}
@@ -455,10 +457,7 @@ export function Confirmacao({
               onChange={(e) =>
                 onChange({
                   prioridade: e.target.value as
-                    | "baixa"
-                    | "media"
-                    | "alta"
-                    | "critica",
+                    "baixa" | "media" | "alta" | "critica",
                 })
               }
               aria-label="Prioridade do caso"
@@ -607,7 +606,9 @@ export function Confirmacao({
             <Textarea
               value={listaParaTexto(proposta.documentosFaltantes)}
               onChange={(e) =>
-                onChange({ documentosFaltantes: textoParaLista(e.target.value) })
+                onChange({
+                  documentosFaltantes: textoParaLista(e.target.value),
+                })
               }
               rows={4}
               placeholder={"Um item por linha\nEx.: comprovante da negativação"}

@@ -57,39 +57,42 @@ export default function DashboardIA() {
         />
       ) : (
         <>
-      <KpiGrid cols={4} className="mb-5">
-        <Kpi label="Chamadas" value={d?.total_chamadas ?? 0} />
-        <Kpi label="Custo (R$)" value={fmtMoney(d?.custo_total_brl)} />
-        <Kpi
-          label="Aproveitamento"
-          value={
-            d?.taxa_aproveitamento_pct != null
-              ? `${d.taxa_aproveitamento_pct}%`
-              : "—"
-          }
-        />
-        <Kpi label="PII removida" value={d?.chamadas_com_pii_removida ?? 0} />
-      </KpiGrid>
+          <KpiGrid cols={4} className="mb-5">
+            <Kpi label="Chamadas" value={d?.total_chamadas ?? 0} />
+            <Kpi label="Custo (R$)" value={fmtMoney(d?.custo_total_brl)} />
+            <Kpi
+              label="Aproveitamento"
+              value={
+                d?.taxa_aproveitamento_pct != null
+                  ? `${d.taxa_aproveitamento_pct}%`
+                  : "—"
+              }
+            />
+            <Kpi
+              label="PII removida"
+              value={d?.chamadas_com_pii_removida ?? 0}
+            />
+          </KpiGrid>
 
-      <div className="grid md:grid-cols-3 gap-4">
-        {blocos.map(([titulo, obj], i) => (
-          <div key={i} className="card p-4">
-            <h3 className="font-semibold text-ink mb-2">{titulo}</h3>
-            {Object.entries(obj || {}).length === 0 && (
-              <p className="text-sm text-slate-400">Sem dados</p>
-            )}
-            {Object.entries(obj || {}).map(([k, v]) => (
-              <div
-                key={k}
-                className="flex justify-between text-sm py-1 border-b border-bronze-50 last:border-0"
-              >
-                <span className="text-slate-600">{k}</span>
-                <span className="font-semibold text-navy">{v as any}</span>
+          <div className="grid md:grid-cols-3 gap-4">
+            {blocos.map(([titulo, obj], i) => (
+              <div key={i} className="card p-4">
+                <h3 className="font-semibold text-ink mb-2">{titulo}</h3>
+                {Object.entries(obj || {}).length === 0 && (
+                  <p className="text-sm text-slate-400">Sem dados</p>
+                )}
+                {Object.entries(obj || {}).map(([k, v]) => (
+                  <div
+                    key={k}
+                    className="flex justify-between text-sm py-1 border-b border-bronze-50 last:border-0"
+                  >
+                    <span className="text-slate-600">{k}</span>
+                    <span className="font-semibold text-navy">{v as any}</span>
+                  </div>
+                ))}
               </div>
             ))}
           </div>
-        ))}
-      </div>
         </>
       )}
     </div>

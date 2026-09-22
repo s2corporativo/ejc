@@ -191,7 +191,9 @@ export function KpiGrid({
         ? "lg:grid-cols-3"
         : "lg:grid-cols-4";
   return (
-    <div className={`grid grid-cols-2 ${g} gap-4${className ? ` ${className}` : ""}`}>
+    <div
+      className={`grid grid-cols-2 ${g} gap-4${className ? ` ${className}` : ""}`}
+    >
       {children}
     </div>
   );
@@ -533,14 +535,17 @@ export function DocumentosStats() {
           const response = await api.get("/documents/", {
             params: { page, page_size: pageSize },
           });
-          const lote = Array.isArray(response.data?.data) ? response.data.data : [];
+          const lote = Array.isArray(response.data?.data)
+            ? response.data.data
+            : [];
           data.push(...lote);
           total = Number(response.data?.total ?? data.length);
           if (lote.length < pageSize) break;
           page += 1;
           if (page > 100) break;
         }
-        if (ativo) setD({ data, total: Number.isFinite(total) ? total : data.length });
+        if (ativo)
+          setD({ data, total: Number.isFinite(total) ? total : data.length });
       } catch {
         if (ativo) setErro(true);
       }

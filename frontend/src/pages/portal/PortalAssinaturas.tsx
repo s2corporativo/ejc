@@ -82,9 +82,13 @@ export default function PortalAssinaturas() {
   const [comprovante, setComprovante] = useState<Comprovante | null>(null);
   const [signing, setSigning] = useState<string | null>(null);
   const [viewing, setViewing] = useState<Set<string>>(() => new Set());
-  const [visualizados, setVisualizados] = useState<Set<string>>(() => new Set());
+  const [visualizados, setVisualizados] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [preview, setPreview] = useState<PreviewState | null>(null);
-  const [confirmandoPreview, setConfirmandoPreview] = useState<string | null>(null);
+  const [confirmandoPreview, setConfirmandoPreview] = useState<string | null>(
+    null,
+  );
 
   const load = () => {
     setLoading(true);
@@ -184,7 +188,8 @@ export default function PortalAssinaturas() {
       const { data } = await api.post(
         `/signatures/${sigId}/documento-visualizado`,
       );
-      const timestamp = data?.documento_visualizado_em ?? new Date().toISOString();
+      const timestamp =
+        data?.documento_visualizado_em ?? new Date().toISOString();
       setVisualizados((atuais) => {
         const proximo = new Set(atuais);
         proximo.add(sigId);
@@ -275,7 +280,9 @@ export default function PortalAssinaturas() {
       <Modal
         open={preview !== null}
         onClose={fecharPreview}
-        title={preview ? `Visualizar: ${preview.documento}` : "Visualizar documento"}
+        title={
+          preview ? `Visualizar: ${preview.documento}` : "Visualizar documento"
+        }
       >
         {preview && (
           <div className="space-y-3">
@@ -410,7 +417,11 @@ export default function PortalAssinaturas() {
                     <button
                       type="button"
                       onClick={() => visualizarDocumento(s)}
-                      disabled={abrindo || signing === s.id || s.preview_disponivel === false}
+                      disabled={
+                        abrindo ||
+                        signing === s.id ||
+                        s.preview_disponivel === false
+                      }
                       className="btn-secondary text-sm px-3 py-2 w-full sm:w-auto"
                     >
                       <FileText className="w-3.5 h-3.5" />
@@ -424,7 +435,11 @@ export default function PortalAssinaturas() {
                       type="button"
                       onClick={() => assinar(s)}
                       disabled={!foiVisualizado || signing === s.id || abrindo}
-                      title={!foiVisualizado ? "Abra o documento antes de assinar" : undefined}
+                      title={
+                        !foiVisualizado
+                          ? "Abra o documento antes de assinar"
+                          : undefined
+                      }
                       className="btn-primary text-sm px-4 py-2 w-full sm:w-auto"
                     >
                       <PenLine className="w-3.5 h-3.5" />

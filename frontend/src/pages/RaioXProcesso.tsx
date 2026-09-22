@@ -526,11 +526,9 @@ export default function RaioXProcesso() {
     acoesContextuais({
       surface: "processos",
       case_id: contextualCaseId || undefined,
-      area:
-        String(identification.area || selected?.area || "") || undefined,
+      area: String(identification.area || selected?.area || "") || undefined,
       phase:
-        String(identification.etapa_atual || selected?.fase || "") ||
-        undefined,
+        String(identification.etapa_atual || selected?.fase || "") || undefined,
       document_type: documentType,
       limit: 6,
     })

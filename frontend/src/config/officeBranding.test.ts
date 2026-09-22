@@ -28,7 +28,9 @@ describe("officeBranding", () => {
     expect(resolveOfficeName("EJC — Ecossistema Jurídico Clóvis")).toBe(
       "EJC DePaula Teixeira Adv",
     );
-    expect(resolveOfficeName("Minha Marca Jurídica")).toBe("Minha Marca Jurídica");
+    expect(resolveOfficeName("Minha Marca Jurídica")).toBe(
+      "Minha Marca Jurídica",
+    );
   });
 
   it("normaliza logos legados e preserva caminho customizado", () => {

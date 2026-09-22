@@ -24,9 +24,7 @@ import OnboardingTour from "./OnboardingTour";
 import SecurityMenu from "./SecurityMenu";
 import { toast } from "./Toast";
 import { Tooltip, cn } from "./UI";
-import {
-  selectMainNavigation,
-} from "../config/canonicalNavigation";
+import { selectMainNavigation } from "../config/canonicalNavigation";
 import {
   getMailtoUrl,
   getWhatsAppUrl,
@@ -394,7 +392,9 @@ export default function LayoutReference() {
           mobileOpen ? "flex w-[17rem] md:flex" : "hidden md:flex",
         )}
       >
-        <div className={cn("ejc-sidebar-brand", navCollapsed && "is-collapsed")}>
+        <div
+          className={cn("ejc-sidebar-brand", navCollapsed && "is-collapsed")}
+        >
           <Link
             to="/"
             onClick={() => setMobileOpen(false)}

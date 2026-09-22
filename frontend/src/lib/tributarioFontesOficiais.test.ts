@@ -8,7 +8,8 @@ import {
 describe("fontes tributárias oficiais", () => {
   it("não classifica portais autenticados como API pública", () => {
     const portais = FONTES_TRIBUTARIAS_OFICIAIS.filter(
-      (fonte) => fonte.tipo === "portal" || fonte.tipo === "servico_autenticado",
+      (fonte) =>
+        fonte.tipo === "portal" || fonte.tipo === "servico_autenticado",
     );
 
     expect(portais.length).toBeGreaterThan(0);
@@ -30,10 +31,18 @@ describe("fontes tributárias oficiais", () => {
   });
 
   it("cobre os municípios prioritários sem inventar endpoint de São Joaquim de Bicas", () => {
-    for (const municipio of ["Betim", "Contagem", "Belo Horizonte", "Igarapé"]) {
+    for (const municipio of [
+      "Betim",
+      "Contagem",
+      "Belo Horizonte",
+      "Igarapé",
+    ]) {
       const fontes = fontesMunicipais(municipio);
       expect(fontes.length, municipio).toBeGreaterThan(0);
-      expect(fontes.some((fonte) => fonte.status === "verificada"), municipio).toBe(true);
+      expect(
+        fontes.some((fonte) => fonte.status === "verificada"),
+        municipio,
+      ).toBe(true);
     }
 
     const sjb = fontesMunicipais("São Joaquim de Bicas");

@@ -71,7 +71,11 @@ export default function TabTarefas({ caseId }: { caseId: string }) {
           <p className="text-sm text-danger-700 dark:text-danger-300">
             {erro} — a lista vazia não significa ausência de tarefas.
           </p>
-          <Button variant="secondary" className="h-9" onClick={() => carregar()}>
+          <Button
+            variant="secondary"
+            className="h-9"
+            onClick={() => carregar()}
+          >
             <RefreshCw className="h-4 w-4" />
             Tentar novamente
           </Button>

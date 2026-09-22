@@ -9,11 +9,7 @@ import {
 
 import api from "../lib/api";
 import type { LegalDoc, Paged } from "../types";
-import {
-  Badge,
-  PageHeader,
-  fmtDate,
-} from "../components/UI";
+import { Badge, PageHeader, fmtDate } from "../components/UI";
 import { toast } from "../components/Toast";
 import Markdown from "../components/Markdown";
 import PecaGeneratorModal from "../components/PecaGeneratorModal";

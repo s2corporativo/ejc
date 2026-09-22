@@ -211,7 +211,9 @@ export default function FinanceiroDashboard({
       a.click();
       URL.revokeObjectURL(url);
     } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Não foi possível exportar o CSV");
+      toast.error(
+        e?.response?.data?.detail || "Não foi possível exportar o CSV",
+      );
     }
   };
 
@@ -267,7 +269,11 @@ export default function FinanceiroDashboard({
         <button onClick={exportarCSV} className="btn-secondary">
           <Download className="h-4 w-4" /> CSV
         </button>
-        <button onClick={load} className="btn-secondary p-2" aria-label="Atualizar">
+        <button
+          onClick={load}
+          className="btn-secondary p-2"
+          aria-label="Atualizar"
+        >
           <RefreshCw className="h-4 w-4" />
         </button>
       </div>
@@ -287,7 +293,9 @@ export default function FinanceiroDashboard({
           tone="yellow"
           sub={`Atrasado: ${fmtR$(rec.atrasado)}`}
           onClick={
-            onDrillDown ? () => onDrillDown("honorarios", "pendente") : undefined
+            onDrillDown
+              ? () => onDrillDown("honorarios", "pendente")
+              : undefined
           }
         />
         <StatCard
@@ -311,7 +319,9 @@ export default function FinanceiroDashboard({
       <section className="card overflow-hidden">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <div>
-            <h2 className="font-semibold text-slate-800">Precisa da sua atenção</h2>
+            <h2 className="font-semibold text-slate-800">
+              Precisa da sua atenção
+            </h2>
             <p className="mt-0.5 text-xs text-slate-400">
               Somente itens que exigem decisão ou conferência financeira.
             </p>
@@ -321,7 +331,8 @@ export default function FinanceiroDashboard({
         {atencao.length === 0 ? (
           <div className="p-5">
             <div className="flex items-center gap-2 text-sm text-success-700">
-              <CheckCircle className="h-4 w-4" /> Nenhuma pendência financeira prioritária.
+              <CheckCircle className="h-4 w-4" /> Nenhuma pendência financeira
+              prioritária.
             </div>
           </div>
         ) : (
@@ -344,7 +355,9 @@ export default function FinanceiroDashboard({
                     <AlertCircle className="h-4 w-4" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-slate-800">{item.titulo}</p>
+                    <p className="text-sm font-medium text-slate-800">
+                      {item.titulo}
+                    </p>
                     <p className="text-xs text-slate-400">
                       {item.qtd} item(ns)
                       {item.valor != null ? ` · ${fmtR$(item.valor)}` : ""}
@@ -366,9 +379,12 @@ export default function FinanceiroDashboard({
                 <ShieldCheck className="h-5 w-5 text-primary-600" />
               </div>
               <div>
-                <h2 className="font-semibold text-slate-800">Pré-fechamento inteligente</h2>
+                <h2 className="font-semibold text-slate-800">
+                  Pré-fechamento inteligente
+                </h2>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  Gate gerencial da competência {fechamento.competencia}. Não congela lançamentos.
+                  Gate gerencial da competência {fechamento.competencia}. Não
+                  congela lançamentos.
                 </p>
               </div>
             </div>
@@ -385,10 +401,13 @@ export default function FinanceiroDashboard({
           {fechamentoItens.length === 0 ? (
             <div className="px-5 py-4">
               <div className="flex items-center gap-2 text-sm font-medium text-success-700">
-                <CheckCircle className="h-4 w-4" /> Nenhum bloqueio ou item de revisão detectado.
+                <CheckCircle className="h-4 w-4" /> Nenhum bloqueio ou item de
+                revisão detectado.
               </div>
               <p className="mt-1 text-xs text-slate-500">
-                A competência está pronta para conferência humana final. O fechamento imutável será habilitado somente após a migration linear própria.
+                A competência está pronta para conferência humana final. O
+                fechamento imutável será habilitado somente após a migration
+                linear própria.
               </p>
             </div>
           ) : (
@@ -402,13 +421,19 @@ export default function FinanceiroDashboard({
                 >
                   <AlertCircle
                     className={`h-4 w-4 ${
-                      item.severidade === "bloqueio" ? "text-danger-600" : "text-warn-600"
+                      item.severidade === "bloqueio"
+                        ? "text-danger-600"
+                        : "text-warn-600"
                     }`}
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-slate-800">{item.titulo}</p>
+                    <p className="text-sm font-medium text-slate-800">
+                      {item.titulo}
+                    </p>
                     <p className="text-xs text-slate-500">
-                      {item.severidade === "bloqueio" ? "Impede fechamento" : "Exige conferência"}
+                      {item.severidade === "bloqueio"
+                        ? "Impede fechamento"
+                        : "Exige conferência"}
                       {` · ${item.qtd} item(ns)`}
                       {item.valor != null ? ` · ${fmtR$(item.valor)}` : ""}
                     </p>
@@ -446,7 +471,10 @@ export default function FinanceiroDashboard({
               ["Em atraso", rec.atrasado, "text-danger-600"],
               ["Previsto", rec.previsto?.total, "text-slate-700"],
             ].map(([label, value, cls]: any) => (
-              <div key={label} className="flex justify-between border-b border-slate-50 pb-2 last:border-0">
+              <div
+                key={label}
+                className="flex justify-between border-b border-slate-50 pb-2 last:border-0"
+              >
                 <span className="text-slate-500">{label}</span>
                 <span className={`font-semibold ${cls}`}>{fmtR$(value)}</span>
               </div>
@@ -454,7 +482,8 @@ export default function FinanceiroDashboard({
           </div>
           {Number(rec.percentuais_sem_valor ?? 0) > 0 && (
             <div className="mt-4 rounded-lg bg-warn-50 px-3 py-2 text-xs text-warn-700">
-              {rec.percentuais_sem_valor} honorário(s) percentual(is) ainda sem valor monetário apurado.
+              {rec.percentuais_sem_valor} honorário(s) percentual(is) ainda sem
+              valor monetário apurado.
             </div>
           )}
         </section>
@@ -479,7 +508,10 @@ export default function FinanceiroDashboard({
               ["Fixas", desp.fixo, "text-slate-700"],
               ["Variáveis / extras", desp.variavel, "text-slate-700"],
             ].map(([label, value, cls]: any) => (
-              <div key={label} className="flex justify-between border-b border-slate-50 pb-2 last:border-0">
+              <div
+                key={label}
+                className="flex justify-between border-b border-slate-50 pb-2 last:border-0"
+              >
                 <span className="text-slate-500">{label}</span>
                 <span className={`font-semibold ${cls}`}>{fmtR$(value)}</span>
               </div>
@@ -490,22 +522,31 @@ export default function FinanceiroDashboard({
 
       <section className="card p-5">
         <h2 className="mb-4 flex items-center gap-2 font-semibold text-slate-800">
-          <BarChart3 className="h-4 w-4 text-slate-400" /> Despesas por categoria
+          <BarChart3 className="h-4 w-4 text-slate-400" /> Despesas por
+          categoria
         </h2>
         {!desp.por_categoria?.length ? (
           <Empty message="Sem despesas no mês" />
         ) : (
           <div className="grid gap-x-8 gap-y-3 md:grid-cols-2">
             {desp.por_categoria.map(({ categoria, total }: any) => {
-              const pct = totalDespesas > 0 ? (Number(total) / totalDespesas) * 100 : 0;
+              const pct =
+                totalDespesas > 0 ? (Number(total) / totalDespesas) * 100 : 0;
               return (
                 <div key={categoria}>
                   <div className="mb-1 flex justify-between text-xs">
-                    <span className="text-slate-600">{CATEGORIA_LABEL[categoria] ?? categoria}</span>
-                    <span className="font-medium text-slate-700">{fmtR$(total)}</span>
+                    <span className="text-slate-600">
+                      {CATEGORIA_LABEL[categoria] ?? categoria}
+                    </span>
+                    <span className="font-medium text-slate-700">
+                      {fmtR$(total)}
+                    </span>
                   </div>
                   <div className="h-1.5 rounded-full bg-slate-100">
-                    <div className="h-1.5 rounded-full bg-slate-400" style={{ width: `${Math.min(pct, 100)}%` }} />
+                    <div
+                      className="h-1.5 rounded-full bg-slate-400"
+                      style={{ width: `${Math.min(pct, 100)}%` }}
+                    />
                   </div>
                 </div>
               );
@@ -522,7 +563,8 @@ export default function FinanceiroDashboard({
                 Relatório gerencial — {relatorio.mes_label}
               </h2>
               <p className="mt-0.5 text-xs text-slate-400">
-                Caixa por pagamentos efetivos e saldo residual. Não substitui a contabilidade.
+                Caixa por pagamentos efetivos e saldo residual. Não substitui a
+                contabilidade.
               </p>
             </div>
             <button
@@ -535,35 +577,57 @@ export default function FinanceiroDashboard({
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <div className="rounded-xl bg-success-50 p-3">
-              <p className="text-[11px] uppercase tracking-wide text-success-700">Recebido</p>
-              <p className="mt-1 font-bold text-success-800">{fmtR$(relatorio.financeiro?.recebido_mes)}</p>
+              <p className="text-[11px] uppercase tracking-wide text-success-700">
+                Recebido
+              </p>
+              <p className="mt-1 font-bold text-success-800">
+                {fmtR$(relatorio.financeiro?.recebido_mes)}
+              </p>
             </div>
             <div className="rounded-xl bg-danger-50 p-3">
-              <p className="text-[11px] uppercase tracking-wide text-danger-700">Despesas pagas</p>
-              <p className="mt-1 font-bold text-danger-800">{fmtR$(relatorio.financeiro?.despesas_pagas)}</p>
+              <p className="text-[11px] uppercase tracking-wide text-danger-700">
+                Despesas pagas
+              </p>
+              <p className="mt-1 font-bold text-danger-800">
+                {fmtR$(relatorio.financeiro?.despesas_pagas)}
+              </p>
             </div>
             <div className="rounded-xl bg-slate-100 p-3">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500">Resultado</p>
-              <p className="mt-1 font-bold text-slate-800">{fmtR$(relatorio.financeiro?.resultado_mes)}</p>
+              <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                Resultado
+              </p>
+              <p className="mt-1 font-bold text-slate-800">
+                {fmtR$(relatorio.financeiro?.resultado_mes)}
+              </p>
             </div>
             <div className="rounded-xl bg-warn-50 p-3">
-              <p className="text-[11px] uppercase tracking-wide text-warn-700">Em atraso</p>
-              <p className="mt-1 font-bold text-warn-800">{fmtR$(relatorio.financeiro?.atrasado)}</p>
+              <p className="text-[11px] uppercase tracking-wide text-warn-700">
+                Em atraso
+              </p>
+              <p className="mt-1 font-bold text-warn-800">
+                {fmtR$(relatorio.financeiro?.atrasado)}
+              </p>
             </div>
           </div>
 
           <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
             <div className="rounded-lg border border-slate-100 p-3">
               <span className="text-slate-500">Novos casos no mês</span>
-              <strong className="float-right text-slate-800">{relatorio.casos?.novos_mes ?? 0}</strong>
+              <strong className="float-right text-slate-800">
+                {relatorio.casos?.novos_mes ?? 0}
+              </strong>
             </div>
             <div className="rounded-lg border border-slate-100 p-3">
               <span className="text-slate-500">Casos encerrados</span>
-              <strong className="float-right text-slate-800">{relatorio.casos?.encerrados_mes ?? 0}</strong>
+              <strong className="float-right text-slate-800">
+                {relatorio.casos?.encerrados_mes ?? 0}
+              </strong>
             </div>
             <div className="rounded-lg border border-slate-100 p-3">
               <span className="text-slate-500">Prazos vencidos</span>
-              <strong className="float-right text-danger-600">{relatorio.prazos?.vencidos_abertos ?? 0}</strong>
+              <strong className="float-right text-danger-600">
+                {relatorio.prazos?.vencidos_abertos ?? 0}
+              </strong>
             </div>
           </div>
         </section>

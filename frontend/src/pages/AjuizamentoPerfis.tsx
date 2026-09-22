@@ -83,8 +83,13 @@ export default function AjuizamentoPerfis() {
       setForm({ ...VAZIO });
       await carregar();
     } catch (e) {
-      const detail = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
-      toast.error(typeof detail === "string" ? detail : "Não foi possível cadastrar o perfil.");
+      const detail = (e as { response?: { data?: { detail?: unknown } } })
+        ?.response?.data?.detail;
+      toast.error(
+        typeof detail === "string"
+          ? detail
+          : "Não foi possível cadastrar o perfil.",
+      );
     } finally {
       setSalvando(false);
     }
@@ -93,7 +98,8 @@ export default function AjuizamentoPerfis() {
   async function alternar(p: PerfilTribunal, campo: keyof PerfilTribunal) {
     try {
       const corpo: Record<string, unknown> = { [campo]: !p[campo] };
-      if (campo === "authorized" && !p.authorized) corpo.homologated_at = new Date().toISOString();
+      if (campo === "authorized" && !p.authorized)
+        corpo.homologated_at = new Date().toISOString();
       const r = await api.patch(`/ajuizamento/perfis/${p.id}`, corpo);
       setPerfis((lista) => lista.map((x) => (x.id === p.id ? r.data : x)));
     } catch {
@@ -115,9 +121,9 @@ export default function AjuizamentoPerfis() {
       />
 
       <Alert variant="info" title="Protocolo real exige os quatro selos">
-        Habilitação institucional, homologação com o tribunal, endpoint de produção verificado e
-        credencial validada. Sem os quatro, o conector responde REQUIRES_AUTHORIZATION e o
-        protocolo é registrado manualmente.
+        Habilitação institucional, homologação com o tribunal, endpoint de
+        produção verificado e credencial validada. Sem os quatro, o conector
+        responde REQUIRES_AUTHORIZATION e o protocolo é registrado manualmente.
       </Alert>
 
       {carregando && (
@@ -143,15 +149,21 @@ export default function AjuizamentoPerfis() {
             <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">
               <Badge>{ROTULO_CAPACIDADE[p.status]}</Badge>
               {!p.ativo && <span className="text-slate-500">inativo</span>}
-              {p.api_version && <span className="text-slate-500">MNI {p.api_version}</span>}
+              {p.api_version && (
+                <span className="text-slate-500">MNI {p.api_version}</span>
+              )}
             </div>
             <dl className="mb-3 grid gap-1 text-sm">
               <div>
                 <dt className="text-xs uppercase text-slate-500">Endpoint</dt>
-                <dd className="break-all text-slate-700">{p.base_url || "não informado"}</dd>
+                <dd className="break-all text-slate-700">
+                  {p.base_url || "não informado"}
+                </dd>
               </div>
               <div>
-                <dt className="text-xs uppercase text-slate-500">Credencial (referência)</dt>
+                <dt className="text-xs uppercase text-slate-500">
+                  Credencial (referência)
+                </dt>
                 <dd className="text-slate-700">{p.client_id_ref || "—"}</dd>
               </div>
             </dl>
@@ -163,12 +175,18 @@ export default function AjuizamentoPerfis() {
                   ) : (
                     <CircleOff className="h-4 w-4 text-slate-400" />
                   )}
-                  <span className={item.ok ? "text-slate-700" : "text-slate-500"}>{item.rotulo}</span>
+                  <span
+                    className={item.ok ? "text-slate-700" : "text-slate-500"}
+                  >
+                    {item.rotulo}
+                  </span>
                   {item.chave !== "homologated_at" && (
                     <button
                       type="button"
                       className="ml-auto text-xs text-primary-700 underline"
-                      onClick={() => alternar(p, item.chave as keyof PerfilTribunal)}
+                      onClick={() =>
+                        alternar(p, item.chave as keyof PerfilTribunal)
+                      }
                     >
                       alternar
                     </button>
@@ -180,13 +198,23 @@ export default function AjuizamentoPerfis() {
         ))}
       </div>
 
-      <Modal open={aberto} onClose={() => setAberto(false)} title="Novo perfil de tribunal" size="lg">
+      <Modal
+        open={aberto}
+        onClose={() => setAberto(false)}
+        title="Novo perfil de tribunal"
+        size="lg"
+      >
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <FieldLabel>Tribunal (sigla)</FieldLabel>
             <Input
               value={form.tribunal_code}
-              onChange={(e) => setForm({ ...form, tribunal_code: e.target.value.toUpperCase() })}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  tribunal_code: e.target.value.toUpperCase(),
+                })
+              }
               placeholder="TJMG"
             />
           </div>
@@ -194,12 +222,17 @@ export default function AjuizamentoPerfis() {
             <FieldLabel>Nome</FieldLabel>
             <Input
               value={form.tribunal_nome}
-              onChange={(e) => setForm({ ...form, tribunal_nome: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, tribunal_nome: e.target.value })
+              }
             />
           </div>
           <div>
             <FieldLabel>Sistema</FieldLabel>
-            <Select value={form.system} onChange={(e) => setForm({ ...form, system: e.target.value })}>
+            <Select
+              value={form.system}
+              onChange={(e) => setForm({ ...form, system: e.target.value })}
+            >
               <option value="pje_mni">PJe (MNI)</option>
               <option value="pdpj">PDPJ-Br</option>
               <option value="eproc">eproc</option>
@@ -209,8 +242,18 @@ export default function AjuizamentoPerfis() {
           </div>
           <div>
             <FieldLabel>Segmento</FieldLabel>
-            <Select value={form.segment} onChange={(e) => setForm({ ...form, segment: e.target.value })}>
-              {["estadual", "federal", "trabalhista", "eleitoral", "militar", "superior"].map((s) => (
+            <Select
+              value={form.segment}
+              onChange={(e) => setForm({ ...form, segment: e.target.value })}
+            >
+              {[
+                "estadual",
+                "federal",
+                "trabalhista",
+                "eleitoral",
+                "militar",
+                "superior",
+              ].map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>
@@ -219,7 +262,10 @@ export default function AjuizamentoPerfis() {
           </div>
           <div>
             <FieldLabel>Grau</FieldLabel>
-            <Select value={form.degree} onChange={(e) => setForm({ ...form, degree: e.target.value })}>
+            <Select
+              value={form.degree}
+              onChange={(e) => setForm({ ...form, degree: e.target.value })}
+            >
               <option value="1">1º grau</option>
               <option value="2">2º grau</option>
             </Select>
@@ -228,7 +274,9 @@ export default function AjuizamentoPerfis() {
             <FieldLabel>Ambiente</FieldLabel>
             <Select
               value={form.environment}
-              onChange={(e) => setForm({ ...form, environment: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, environment: e.target.value })
+              }
             >
               <option value="homologacao">Homologação</option>
               <option value="producao">Produção</option>
@@ -246,14 +294,25 @@ export default function AjuizamentoPerfis() {
             <FieldLabel>Versão da API</FieldLabel>
             <Input
               value={form.api_version}
-              onChange={(e) => setForm({ ...form, api_version: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, api_version: e.target.value })
+              }
               placeholder="2.2.2"
             />
           </div>
           <div>
             <FieldLabel>Autenticação</FieldLabel>
-            <Select value={form.auth_type} onChange={(e) => setForm({ ...form, auth_type: e.target.value })}>
-              {["none", "oidc_client_credentials", "mni_consultante", "certificado", "api_key"].map((a) => (
+            <Select
+              value={form.auth_type}
+              onChange={(e) => setForm({ ...form, auth_type: e.target.value })}
+            >
+              {[
+                "none",
+                "oidc_client_credentials",
+                "mni_consultante",
+                "certificado",
+                "api_key",
+              ].map((a) => (
                 <option key={a} value={a}>
                   {a}
                 </option>
@@ -264,18 +323,23 @@ export default function AjuizamentoPerfis() {
             <FieldLabel>Referência da credencial no Cofre</FieldLabel>
             <Input
               value={form.client_id_ref}
-              onChange={(e) => setForm({ ...form, client_id_ref: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, client_id_ref: e.target.value })
+              }
               placeholder="pdpj:PDPJ_CLIENT_ID"
             />
             <p className="mt-1 text-xs text-slate-500">
-              Formato <code>provider_key:field_key</code>. Nunca digite o valor da credencial.
+              Formato <code>provider_key:field_key</code>. Nunca digite o valor
+              da credencial.
             </p>
           </div>
           <div className="sm:col-span-2">
             <FieldLabel>Documentação oficial do tribunal</FieldLabel>
             <Input
               value={form.documentation_url}
-              onChange={(e) => setForm({ ...form, documentation_url: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, documentation_url: e.target.value })
+              }
             />
           </div>
         </div>

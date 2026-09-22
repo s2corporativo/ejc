@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 import { addDays, format } from "date-fns";
@@ -143,10 +149,10 @@ const tarefasOk = {
 function mockGetOk() {
   getMock.mockImplementation((url: string) => {
     if (url === "/dashboard/") return Promise.resolve({ data: kpisOk });
-    if (url === "/atividades")
-      return Promise.resolve({ data: atividadesOk });
+    if (url === "/atividades") return Promise.resolve({ data: atividadesOk });
     if (url === "/cases/") return Promise.resolve({ data: casosOk });
-    if (url === "/documents/") return Promise.resolve({ data: { data: [], total: 129 } });
+    if (url === "/documents/")
+      return Promise.resolve({ data: { data: [], total: 129 } });
     if (url === "/tasks/") return Promise.resolve({ data: tarefasOk });
     return Promise.reject(new Error(`GET inesperado: ${url}`));
   });
@@ -175,18 +181,18 @@ describe("DashboardUltra — identidade premium DPT", () => {
     mockGetOk();
     renderizar();
 
+    expect(await screen.findByText(/, Clovis!/)).toBeTruthy();
     expect(
-      await screen.findByText(/, Clovis!/),
+      screen.getByText("Disciplina hoje. Grandes conquistas sempre."),
     ).toBeTruthy();
-    expect(screen.getByText("Disciplina hoje. Grandes conquistas sempre.")).toBeTruthy();
     expect(screen.getByText("Entrada Única")).toBeTruthy();
     expect(screen.getByText("Agenda e Prazos")).toBeTruthy();
     expect(screen.getByText("Casos em destaque")).toBeTruthy();
     expect(screen.getByText("Acesso rápido")).toBeTruthy();
     expect(screen.getByText("Minha rotina hoje")).toBeTruthy();
-    expect(screen.getByTestId("entrada-unica").getAttribute("data-embedded")).toBe(
-      "true",
-    );
+    expect(
+      screen.getByTestId("entrada-unica").getAttribute("data-embedded"),
+    ).toBe("true");
   });
 
   it("exibe sinais operacionais com números reais dos endpoints", async () => {
@@ -199,9 +205,7 @@ describe("DashboardUltra — identidade premium DPT", () => {
     );
     expect(screen.getByLabelText("Clientes ativos: 48")).toBeTruthy();
     expect(screen.getByLabelText("Casos em andamento: 3")).toBeTruthy();
-    expect(
-      screen.getByLabelText("Documentos recentes: 129"),
-    ).toBeTruthy();
+    expect(screen.getByLabelText("Documentos recentes: 129")).toBeTruthy();
   });
 
   it("filtra a agenda por aba Hoje/Amanhã/Esta semana", async () => {
@@ -226,7 +230,9 @@ describe("DashboardUltra — identidade premium DPT", () => {
     const chips = screen.getAllByText("Em andamento");
     expect(chips.length).toBeGreaterThan(0);
     expect(screen.getByText("Concluso")).toBeTruthy();
-    expect(screen.getByText(/Proc. nº 1001234-56\.2023\.8\.26\.0100/)).toBeTruthy();
+    expect(
+      screen.getByText(/Proc. nº 1001234-56\.2023\.8\.26\.0100/),
+    ).toBeTruthy();
     expect(screen.getByText(/Próxima: Protocolar contestação/)).toBeTruthy();
   });
 
@@ -238,7 +244,9 @@ describe("DashboardUltra — identidade premium DPT", () => {
     const botaoDia = await screen.findByRole("button", { name: hojeLabel });
     fireEvent.click(botaoDia);
 
-    expect(screen.getByRole("button", { name: "Remover filtro de data" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Remover filtro de data" }),
+    ).toBeTruthy();
     expect(screen.getByText("Prazo final — Contestação")).toBeTruthy();
     expect(screen.queryByText("Intimação — audiência")).not.toBeTruthy();
   });
@@ -248,7 +256,9 @@ describe("DashboardUltra — identidade premium DPT", () => {
     renderizar();
 
     expect(await screen.findByText("Revisar petição inicial")).toBeTruthy();
-    expect(screen.getByText("Retorno para cliente — Grupo Santos")).toBeTruthy();
+    expect(
+      screen.getByText("Retorno para cliente — Grupo Santos"),
+    ).toBeTruthy();
     expect(screen.getByText("Estudo tema 1.234/STJ")).toBeTruthy();
     expect(
       screen.queryByText("Tarefa futura que não pertence à rotina de hoje"),
@@ -292,10 +302,8 @@ describe("DashboardUltra — identidade premium DPT", () => {
 
   it("degrada para traço quando a fonte falha (nunca zero falso)", async () => {
     getMock.mockImplementation((url: string) => {
-      if (url === "/atividades")
-        return Promise.reject(new Error("fora do ar"));
-      if (url === "/dashboard/")
-        return Promise.reject(new Error("fora do ar"));
+      if (url === "/atividades") return Promise.reject(new Error("fora do ar"));
+      if (url === "/dashboard/") return Promise.reject(new Error("fora do ar"));
       if (url === "/cases/") return Promise.resolve({ data: casosOk });
       if (url === "/documents/")
         return Promise.resolve({ data: { data: [], total: 129 } });

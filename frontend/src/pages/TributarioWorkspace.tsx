@@ -117,7 +117,10 @@ export default function TributarioWorkspace() {
         }
         actions={
           <div className="flex flex-wrap gap-2">
-            <Link to="/areas-de-atuacao/tributario" className="btn-gold text-sm">
+            <Link
+              to="/areas-de-atuacao/tributario"
+              className="btn-gold text-sm"
+            >
               Abrir núcleo técnico
             </Link>
             <Link to="/entrada" className="btn-secondary text-sm">
@@ -129,7 +132,10 @@ export default function TributarioWorkspace() {
 
       {truncado && (
         <section className="rounded-xl border border-warn-200 bg-warn-50 p-4 text-xs leading-5 text-warn-900">
-          <strong>Visão parcial:</strong> existem mais de 500 casos tributários acessíveis para este perfil. Os indicadores abaixo refletem apenas os registros carregados. Use o núcleo técnico/lista geral de Casos para consulta exaustiva.
+          <strong>Visão parcial:</strong> existem mais de 500 casos tributários
+          acessíveis para este perfil. Os indicadores abaixo refletem apenas os
+          registros carregados. Use o núcleo técnico/lista geral de Casos para
+          consulta exaustiva.
         </section>
       )}
 
@@ -233,10 +239,14 @@ export default function TributarioWorkspace() {
               Carteira tributária recente
             </h2>
             <p className="text-xs text-slate-500">
-              O painel apenas consolida casos já existentes; não cria registro tributário paralelo.
+              O painel apenas consolida casos já existentes; não cria registro
+              tributário paralelo.
             </p>
           </div>
-          <Link to="/areas-de-atuacao/tributario" className="btn-secondary text-xs">
+          <Link
+            to="/areas-de-atuacao/tributario"
+            className="btn-secondary text-xs"
+          >
             Ver núcleo completo
           </Link>
         </div>
@@ -256,21 +266,33 @@ export default function TributarioWorkspace() {
         ) : (
           <div className="divide-y divide-slate-100">
             {recentes.map((caso) => (
-              <div key={caso.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+              <div
+                key={caso.id}
+                className="flex flex-wrap items-center gap-3 px-4 py-3"
+              >
                 <Link to={`/casos/${caso.id}`} className="min-w-[220px] flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-medium text-navy">{caso.titulo}</p>
+                    <p className="text-sm font-medium text-navy">
+                      {caso.titulo}
+                    </p>
                     <StatusBadge value={caso.status} />
                   </div>
                   <p className="mt-1 text-xs text-slate-400">
-                    {caso.numero_interno || "Sem número interno"} · {rotulo(caso.fase)} · Prioridade {rotulo(caso.prioridade)}
+                    {caso.numero_interno || "Sem número interno"} ·{" "}
+                    {rotulo(caso.fase)} · Prioridade {rotulo(caso.prioridade)}
                   </p>
                 </Link>
                 <div className="flex gap-2">
-                  <Link to={`/clientes/${caso.client_id}?tab=casos`} className="btn-secondary text-xs">
+                  <Link
+                    to={`/clientes/${caso.client_id}?tab=casos`}
+                    className="btn-secondary text-xs"
+                  >
                     Cliente
                   </Link>
-                  <Link to={`/casos/${caso.id}`} className="btn-secondary text-xs">
+                  <Link
+                    to={`/casos/${caso.id}`}
+                    className="btn-secondary text-xs"
+                  >
                     Abrir caso
                   </Link>
                 </div>
@@ -281,7 +303,10 @@ export default function TributarioWorkspace() {
       </section>
 
       <section className="rounded-xl border border-warn-200 bg-warn-50 p-4 text-xs leading-5 text-warn-900">
-        <strong>Gate profissional:</strong> indicação de crédito, decadência, prescrição, prazo, regime ou impacto da reforma tributária é apoio técnico. Nenhum valor ou tese deve ser tratado como recuperável, devido ou definitivo sem conferência documental, normativa e revisão humana.
+        <strong>Gate profissional:</strong> indicação de crédito, decadência,
+        prescrição, prazo, regime ou impacto da reforma tributária é apoio
+        técnico. Nenhum valor ou tese deve ser tratado como recuperável, devido
+        ou definitivo sem conferência documental, normativa e revisão humana.
       </section>
     </div>
   );

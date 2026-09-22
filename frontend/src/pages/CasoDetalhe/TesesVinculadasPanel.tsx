@@ -83,12 +83,15 @@ export default function TesesVinculadasPanel({ caseId }: { caseId: string }) {
         <span>
           Antes de usar qualquer fundamento, confira vigência, inteiro teor e
           fonte oficial. A tela atual não possui o ciclo avançado de validação
-          das fases futuras do Banco de Teses; a decisão jurídica continua humana.
+          das fases futuras do Banco de Teses; a decisão jurídica continua
+          humana.
         </span>
       </div>
 
       {carregando ? (
-        <div className="mt-4 text-sm text-slate-500">Carregando teses do caso…</div>
+        <div className="mt-4 text-sm text-slate-500">
+          Carregando teses do caso…
+        </div>
       ) : erro ? (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-3">
           <span className="text-xs text-red-700">{String(erro)}</span>
@@ -102,9 +105,9 @@ export default function TesesVinculadasPanel({ caseId }: { caseId: string }) {
         </div>
       ) : teses.length === 0 ? (
         <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-          Nenhuma tese está vinculada a este caso. Consulte o Banco de Teses para
-          localizar conteúdo institucional. Esta tela não oferece ação de vínculo;
-          o EJC não cria vínculo automático.
+          Nenhuma tese está vinculada a este caso. Consulte o Banco de Teses
+          para localizar conteúdo institucional. Esta tela não oferece ação de
+          vínculo; o EJC não cria vínculo automático.
         </div>
       ) : (
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
@@ -123,8 +126,9 @@ export default function TesesVinculadasPanel({ caseId }: { caseId: string }) {
                       {tese.titulo}
                     </div>
                     <div className="mt-1 text-[11px] text-slate-500">
-                      {[tese.area_juridica, tese.tribunal].filter(Boolean).join(" · ") ||
-                        "Sem área/tribunal informado"}
+                      {[tese.area_juridica, tese.tribunal]
+                        .filter(Boolean)
+                        .join(" · ") || "Sem área/tribunal informado"}
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center justify-end gap-1.5">
@@ -147,8 +151,8 @@ export default function TesesVinculadasPanel({ caseId }: { caseId: string }) {
 
                 {!ativa && (
                   <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-4 text-amber-800">
-                    Tese não ativa. Não a trate como fundamento institucional aprovado
-                    sem revisão e mudança deliberada de status.
+                    Tese não ativa. Não a trate como fundamento institucional
+                    aprovado sem revisão e mudança deliberada de status.
                   </div>
                 )}
 

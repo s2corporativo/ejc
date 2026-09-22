@@ -9,7 +9,8 @@
 // deliberadamente genérico (campos tipados + endpoint) para que as ~44
 // restantes entrem só como novas entradas neste array, sem mudança de tipo
 // nem de componente — ver CalculadorasJuridicas.tsx.
-export type TipoCampo = "date" | "number" | "text" | "select" | "boolean" | "sim_nao";
+export type TipoCampo =
+  "date" | "number" | "text" | "select" | "boolean" | "sim_nao";
 
 export interface OpcaoCampo {
   value: string;
@@ -74,7 +75,10 @@ export const CALCULADORAS_JURIDICAS: FerramentaConfig[] = [
         tipo: "select",
         opcoes: [
           { value: "audiencia_conciliacao", label: "Audiência de conciliação" },
-          { value: "juntada_citacao", label: "Juntada do comprovante de citação" },
+          {
+            value: "juntada_citacao",
+            label: "Juntada do comprovante de citação",
+          },
         ],
         ajuda: "Obrigatório para rito comum e Fazenda Pública (CPC art. 335).",
         exibirSe: (v) => v.rito !== "jec",
@@ -183,7 +187,8 @@ export const CALCULADORAS_JURIDICAS: FerramentaConfig[] = [
         tipo: "number",
         min: 0,
         valorPadrao: 0,
-        ajuda: "Opcional — apenas contextualiza o pedido, não é sugestão da ferramenta.",
+        ajuda:
+          "Opcional — apenas contextualiza o pedido, não é sugestão da ferramenta.",
       },
     ],
   },
@@ -194,7 +199,12 @@ export const CALCULADORAS_JURIDICAS: FerramentaConfig[] = [
     area: "Penal",
     endpoint: "/penal/ferramentas/prazos-processuais",
     campos: [
-      { nome: "data_citacao", label: "Data da citação", tipo: "date", obrigatorio: true },
+      {
+        nome: "data_citacao",
+        label: "Data da citação",
+        tipo: "date",
+        obrigatorio: true,
+      },
     ],
   },
   {

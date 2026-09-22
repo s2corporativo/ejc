@@ -181,8 +181,8 @@ export function PrazoSugeridoModal({
               onChange={(e) => setDataPrazo(e.target.value)}
             />
             <p className="mt-1 text-[11px] text-slate-500">
-              Informe a data somente depois de conferir a publicação oficial,
-              o termo inicial, o regime aplicável, feriados e suspensões.
+              Informe a data somente depois de conferir a publicação oficial, o
+              termo inicial, o regime aplicável, feriados e suspensões.
             </p>
           </div>
 
@@ -447,9 +447,10 @@ export function SimularPrazoModal({
     <Modal open={open} onClose={onClose} title="Simular vencimento de prazo">
       <div className="space-y-3">
         <p className="text-xs text-slate-500">
-          Usa o motor canônico CPC/CLT/CPP e o calendário disponível no EJC.
-          É uma simulação de apoio: o resultado não cria prazo e deve sempre ser
-          conferido por profissional antes de qualquer cadastro ou uso processual.
+          Usa o motor canônico CPC/CLT/CPP e o calendário disponível no EJC. É
+          uma simulação de apoio: o resultado não cria prazo e deve sempre ser
+          conferido por profissional antes de qualquer cadastro ou uso
+          processual.
         </p>
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -512,14 +513,12 @@ export function SimularPrazoModal({
               type="checkbox"
               className="mt-0.5"
               checked={sim.dobro}
-              onChange={(e) =>
-                setSim({ ...sim, dobro: e.target.checked })
-              }
+              onChange={(e) => setSim({ ...sim, dobro: e.target.checked })}
             />
             <span>
               <strong>Aplicar contagem em dobro.</strong> Marque somente depois
-              de confirmar a hipótese legal aplicável ao caso. O motor não infere
-              automaticamente a incidência do benefício.
+              de confirmar a hipótese legal aplicável ao caso. O motor não
+              infere automaticamente a incidência do benefício.
             </span>
           </label>
         )}
@@ -568,7 +567,8 @@ export function SimularPrazoModal({
                 <p>
                   Referência normativa: {String(res.regra_auditavel.rotulo)} ·
                   snapshot do motor: {String(res.regra_auditavel.versaoMotor)} ·
-                  fonte oficial consultada em {String(res.regra_auditavel.fonteConsultadaEm)}.
+                  fonte oficial consultada em{" "}
+                  {String(res.regra_auditavel.fonteConsultadaEm)}.
                 </p>
                 <a
                   href={String(res.regra_auditavel.fonteOficial)}

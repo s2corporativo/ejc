@@ -109,7 +109,8 @@ export const REGRAS_CARF: RegraGuiaTributario[] = [
     tema: "Empate / voto de qualidade",
     regra:
       "O empate no CARF não é proclamado automaticamente em favor do contribuinte. A Lei 14.689/2023 restabeleceu a proclamação do resultado pelo voto de qualidade previsto no art. 25, § 9º, do Decreto 70.235/1972.",
-    fonte: "Lei 14.689/2023, arts. 1º, 2º e 17; Decreto 70.235/1972, art. 25, § 9º.",
+    fonte:
+      "Lei 14.689/2023, arts. 1º, 2º e 17; Decreto 70.235/1972, art. 25, § 9º.",
   },
   {
     tema: "Decisão favorável à Fazenda por voto de qualidade",
@@ -127,7 +128,8 @@ export const REGRAS_MG: RegraGuiaTributario[] = [
     tema: "Processo tributário administrativo de MG",
     regra:
       "O RPTA de Minas Gerais é disciplinado pelo Decreto 44.747/2008. A impugnação é dirigida ao Conselho de Contribuintes e, na regra do art. 117 vigente consultada, é apresentada em 30 dias contados da intimação do lançamento ou do indeferimento de restituição.",
-    fonte: "Decreto MG 44.747/2008 (RPTA), especialmente arts. 103, 117, 120 e 121 — SEF/MG.",
+    fonte:
+      "Decreto MG 44.747/2008 (RPTA), especialmente arts. 103, 117, 120 e 121 — SEF/MG.",
     alerta:
       "A LC 236/2026 impõe atualização mínima da legislação processual dos entes em prazo legal. Conferir alterações estaduais posteriores à data-base antes de reutilizar esta regra.",
   },
@@ -163,19 +165,22 @@ export const REGRAS_JUDICIAIS: RegraGuiaTributario[] = [
     tema: "Mandado de segurança",
     regra:
       "O prazo decadencial de 120 dias é contado da ciência do ato impugnado, observada a adequação do mandado de segurança e a identificação da autoridade coatora. O encerramento do processo administrativo não cria, por si só, um novo prazo universal de 120 dias.",
-    fonte: "Lei 12.016/2009, art. 23, e jurisprudência aplicável ao ato impugnado.",
+    fonte:
+      "Lei 12.016/2009, art. 23, e jurisprudência aplicável ao ato impugnado.",
   },
   {
     tema: "Ação anulatória / declaratória",
     regra:
       "Não usar no guia um prazo automático de 5 anos contado do encerramento administrativo. A pretensão, o termo inicial, a natureza do crédito e a jurisprudência precisam ser identificados no caso concreto.",
-    fonte: "CTN na redação vigente, legislação processual e jurisprudência aplicável à pretensão concreta.",
+    fonte:
+      "CTN na redação vigente, legislação processual e jurisprudência aplicável à pretensão concreta.",
   },
   {
     tema: "Repetição de indébito / habilitação",
     regra:
       "O CTN prevê prazo de 5 anos nas hipóteses do art. 168, com termo inicial definido pela hipótese legal. Após a LC 236/2026, conferir também os §§ 2º e 3º: a regra alcança habilitação e há termo inicial específico para habilitação decorrente de decisão judicial transitada em julgado. Modulações, compensação e regras específicas do tributo continuam relevantes.",
-    fonte: "CTN arts. 165 a 168, especialmente art. 168 §§ 2º-3º após LC 236/2026.",
+    fonte:
+      "CTN arts. 165 a 168, especialmente art. 168 §§ 2º-3º após LC 236/2026.",
   },
   {
     tema: "Embargos à execução fiscal",
@@ -187,7 +192,8 @@ export const REGRAS_JUDICIAIS: RegraGuiaTributario[] = [
     tema: "Prescrição intercorrente",
     regra:
       "Não reduzir a análise a uma soma cega de 1 ano + 5 anos. Identificar ciência da Fazenda sobre não localização do devedor/bens, suspensão, arquivamento, citação/constrição efetiva e eventos posteriores, aplicando LEF art. 40, Temas 566-571 do STJ e CTN art. 174 na redação vigente.",
-    fonte: "LEF art. 40; STJ REsp 1.340.553/RS, Temas 566-571; CTN art. 174 após LC 236/2026.",
+    fonte:
+      "LEF art. 40; STJ REsp 1.340.553/RS, Temas 566-571; CTN art. 174 após LC 236/2026.",
   },
 ];
 
@@ -203,7 +209,8 @@ export const REGRAS_CREDITOS: RegraGuiaTributario[] = [
     tema: "Janela temporal do XML não é prescrição",
     regra:
       "A data de emissão da NF-e não é termo inicial universal do prazo do art. 168. Um filtro de documentos por data pode servir à triagem, mas não deve chamar notas antigas de prescritas nem excluí-las juridicamente sem identificar pagamento/extinção, hipótese de restituição, decisão, habilitação e demais marcos aplicáveis.",
-    fonte: "CTN art. 168 na redação vigente, inclusive §§ 2º-3º após LC 236/2026.",
+    fonte:
+      "CTN art. 168 na redação vigente, inclusive §§ 2º-3º após LC 236/2026.",
   },
   {
     tema: "Validação mínima",

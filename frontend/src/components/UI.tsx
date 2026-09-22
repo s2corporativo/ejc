@@ -1647,7 +1647,12 @@ export function MetricCard({
   }
   if (onClick) {
     return (
-      <button type="button" onClick={onClick} className={base} aria-label={ariaLabel}>
+      <button
+        type="button"
+        onClick={onClick}
+        className={base}
+        aria-label={ariaLabel}
+      >
         {inner}
       </button>
     );
@@ -1768,10 +1773,7 @@ export function Pagination({
     if (total == null) return null;
     return (
       <div
-        className={cn(
-          "px-1 py-2 text-xs text-ejc-text-secondary",
-          className,
-        )}
+        className={cn("px-1 py-2 text-xs text-ejc-text-secondary", className)}
       >
         {total} {unitLabel}
       </div>
@@ -1851,7 +1853,10 @@ export function Breadcrumb({
         {items.map((item, i) => {
           const last = i === items.length - 1;
           return (
-            <li key={`${item.label}-${i}`} className="flex items-center gap-1.5">
+            <li
+              key={`${item.label}-${i}`}
+              className="flex items-center gap-1.5"
+            >
               {i > 0 && (
                 <ChevronRight
                   aria-hidden="true"
@@ -1936,7 +1941,9 @@ export function Stepper({
                 done && "bg-ejc-primary text-white",
                 active &&
                   "bg-ejc-gold-soft text-ejc-gold-ink ring-2 ring-ejc-gold",
-                !done && !active && "bg-ejc-surface-muted text-ejc-text-secondary",
+                !done &&
+                  !active &&
+                  "bg-ejc-surface-muted text-ejc-text-secondary",
               )}
             >
               {done ? (
@@ -1948,13 +1955,18 @@ export function Stepper({
             <span
               className={cn(
                 "text-sm",
-                active ? "font-semibold text-ejc-text" : "text-ejc-text-secondary",
+                active
+                  ? "font-semibold text-ejc-text"
+                  : "text-ejc-text-secondary",
               )}
             >
               {step}
             </span>
             {i < steps.length - 1 && (
-              <span aria-hidden="true" className="mx-1 h-px w-6 bg-ejc-border" />
+              <span
+                aria-hidden="true"
+                className="mx-1 h-px w-6 bg-ejc-border"
+              />
             )}
           </li>
         );
@@ -2101,7 +2113,10 @@ export function ActionMenu({
         {trigger}
         <ChevronDown
           aria-hidden="true"
-          className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")}
+          className={cn(
+            "h-3.5 w-3.5 transition-transform",
+            open && "rotate-180",
+          )}
         />
       </button>
       {open && (
@@ -2308,7 +2323,9 @@ export function Calendar({
             <button
               key={iso}
               type="button"
-              aria-label={format(dia, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+              aria-label={format(dia, "dd 'de' MMMM 'de' yyyy", {
+                locale: ptBR,
+              })}
               aria-current={isHoje ? "date" : undefined}
               onClick={() => onSelectDay?.(iso)}
               className={cn(

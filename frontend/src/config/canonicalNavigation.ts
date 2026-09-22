@@ -130,5 +130,8 @@ export function selectMainNavigation(
   options?: MainNavigationOptions,
 ): ModuleRoute[] {
   const menu9 = options?.menu9 ?? isMenu9Enabled();
-  return selectFromNav(menu9 ? CANONICAL_MENU_9_NAV : CANONICAL_MAIN_NAV, modules);
+  return selectFromNav(
+    menu9 ? CANONICAL_MENU_9_NAV : CANONICAL_MAIN_NAV,
+    modules,
+  );
 }

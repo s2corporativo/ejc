@@ -17,7 +17,8 @@ function normalizePhone(value: string): string {
 }
 
 export function resolveOfficeName(value: string): string {
-  if (!value || value === LEGACY_DEFAULT_OFFICE_NAME) return DEFAULT_OFFICE_NAME;
+  if (!value || value === LEGACY_DEFAULT_OFFICE_NAME)
+    return DEFAULT_OFFICE_NAME;
   return value;
 }
 

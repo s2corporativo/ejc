@@ -180,10 +180,7 @@ export default function IntegrationHealthPanel() {
 
   return (
     <div className="space-y-5">
-      <SectionCard
-        title="Status das integrações"
-        subtitle={statusSubtitle}
-      >
+      <SectionCard title="Status das integrações" subtitle={statusSubtitle}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-4">
             {[

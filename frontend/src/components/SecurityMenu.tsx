@@ -25,9 +25,33 @@ import UserAvatar from "./UserAvatar";
 // 26 estados + DF (IBGE). Antes o select oferecia só 10 UFs: advogado
 // inscrito fora dessa lista simplesmente não conseguia configurar a captura.
 const UFS_BRASIL = [
-  "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS",
-  "MT", "PA", "PB", "PE", "PI", "PR", "RJ", "RN", "RO", "RR", "RS", "SC",
-  "SE", "SP", "TO",
+  "AC",
+  "AL",
+  "AM",
+  "AP",
+  "BA",
+  "CE",
+  "DF",
+  "ES",
+  "GO",
+  "MA",
+  "MG",
+  "MS",
+  "MT",
+  "PA",
+  "PB",
+  "PE",
+  "PI",
+  "PR",
+  "RJ",
+  "RN",
+  "RO",
+  "RR",
+  "RS",
+  "SC",
+  "SE",
+  "SP",
+  "TO",
 ];
 
 const THEME_OPTIONS: Array<{

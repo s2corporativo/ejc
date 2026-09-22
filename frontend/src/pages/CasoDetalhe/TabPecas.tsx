@@ -53,9 +53,21 @@ export default function TabPecas({ caseId }: { caseId: string }) {
         </div>
 
         <div className="mt-4 grid gap-2 sm:grid-cols-3">
-          <Etapa icon={<FileText className="h-4 w-4" />} titulo="1. Preparar" texto="Tipo, fatos, pedidos e contexto" />
-          <Etapa icon={<Sparkles className="h-4 w-4" />} titulo="2. Redigir" texto="Minuta com controle de qualidade" />
-          <Etapa icon={<ShieldCheck className="h-4 w-4" />} titulo="3. Revisar" texto="HITL, aprovação e protocolo" />
+          <Etapa
+            icon={<FileText className="h-4 w-4" />}
+            titulo="1. Preparar"
+            texto="Tipo, fatos, pedidos e contexto"
+          />
+          <Etapa
+            icon={<Sparkles className="h-4 w-4" />}
+            titulo="2. Redigir"
+            texto="Minuta com controle de qualidade"
+          />
+          <Etapa
+            icon={<ShieldCheck className="h-4 w-4" />}
+            titulo="3. Revisar"
+            texto="HITL, aprovação e protocolo"
+          />
         </div>
       </section>
 
@@ -102,8 +114,12 @@ function Etapa({
     <div className="flex items-start gap-2 rounded-xl border border-slate-100 bg-white/80 p-3">
       <span className="mt-0.5 text-primary-700">{icon}</span>
       <span>
-        <span className="block text-xs font-semibold text-slate-800">{titulo}</span>
-        <span className="mt-0.5 block text-[11px] leading-4 text-slate-500">{texto}</span>
+        <span className="block text-xs font-semibold text-slate-800">
+          {titulo}
+        </span>
+        <span className="mt-0.5 block text-[11px] leading-4 text-slate-500">
+          {texto}
+        </span>
       </span>
     </div>
   );

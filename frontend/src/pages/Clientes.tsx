@@ -172,9 +172,7 @@ export default function Clientes() {
         toast.error(det.mensagem || "Exclusão bloqueada pelas dependências.");
       } else {
         toast.error(
-          typeof det === "string"
-            ? det
-            : "Não foi possível excluir o cliente",
+          typeof det === "string" ? det : "Não foi possível excluir o cliente",
         );
       }
     } finally {
@@ -1045,7 +1043,9 @@ export default function Clientes() {
               </Button>
               <Button
                 variant="danger"
-                disabled={excluindo || (excluirBloqueios.length > 0 && !excluirForcar)}
+                disabled={
+                  excluindo || (excluirBloqueios.length > 0 && !excluirForcar)
+                }
                 onClick={confirmarExclusao}
               >
                 {excluindo ? "Excluindo..." : "Excluir"}

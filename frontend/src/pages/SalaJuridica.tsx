@@ -297,17 +297,22 @@ function formatarItemEstado(item: Record<string, unknown>): string {
   }
   if (partes.length > 0) return partes.join(" · ");
 
-  return Object.entries(item)
-    .filter(
-      ([chave, valor]) =>
-        !["classificacao", "nivel", "tipo"].includes(chave) &&
-        valor != null &&
-        typeof valor !== "object" &&
-        String(valor).trim(),
-    )
-    .slice(0, 8)
-    .map(([chave, valor]) => `${chave.split("_").join(" ")}: ${String(valor)}`)
-    .join(" · ") || "Item estruturado sem valor textual; revise o dossiê antes de aplicar.";
+  return (
+    Object.entries(item)
+      .filter(
+        ([chave, valor]) =>
+          !["classificacao", "nivel", "tipo"].includes(chave) &&
+          valor != null &&
+          typeof valor !== "object" &&
+          String(valor).trim(),
+      )
+      .slice(0, 8)
+      .map(
+        ([chave, valor]) => `${chave.split("_").join(" ")}: ${String(valor)}`,
+      )
+      .join(" · ") ||
+    "Item estruturado sem valor textual; revise o dossiê antes de aplicar."
+  );
 }
 
 // E7: converter/vincular sessão a caso é ato privativo de advogado ou sócio

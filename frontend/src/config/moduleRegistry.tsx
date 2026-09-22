@@ -561,11 +561,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "ramos",
     usesAI: true,
     sensitive: true,
-    backendPrefixes: [
-      "/api/cases",
-      "/api/admin-esp",
-      "/api/tributario/fiscal",
-    ],
+    backendPrefixes: ["/api/cases", "/api/admin-esp", "/api/tributario/fiscal"],
   },
   {
     key: "atividades",

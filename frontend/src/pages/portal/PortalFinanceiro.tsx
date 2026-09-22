@@ -133,8 +133,8 @@ export default function PortalFinanceiro() {
               Pagamento em atraso
             </p>
             <p className="text-xs text-danger-600 mt-0.5">
-              Você possui {fmtMoney(atrasado)} de saldo vencido. Entre em contato
-              com o escritório para regularizar.
+              Você possui {fmtMoney(atrasado)} de saldo vencido. Entre em
+              contato com o escritório para regularizar.
             </p>
           </div>
         </div>
@@ -170,9 +170,7 @@ export default function PortalFinanceiro() {
                   ? (f.valor_contratado ?? f.total_pago)
                   : f.saldo;
               const parcial =
-                (f.total_pago ?? 0) > 0 &&
-                f.saldo != null &&
-                f.saldo > 0;
+                (f.total_pago ?? 0) > 0 && f.saldo != null && f.saldo > 0;
               return (
                 <div
                   key={i}
@@ -195,12 +193,13 @@ export default function PortalFinanceiro() {
                         {f.tipo.replace(/_/g, " ")}
                       </p>
                     )}
-                    {f.valor_contratado == null && f.percentual_exito != null && (
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        {Number(f.percentual_exito).toLocaleString("pt-BR")}% de
-                        êxito — base monetária ainda não apurada
-                      </p>
-                    )}
+                    {f.valor_contratado == null &&
+                      f.percentual_exito != null && (
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {Number(f.percentual_exito).toLocaleString("pt-BR")}%
+                          de êxito — base monetária ainda não apurada
+                        </p>
+                      )}
                     {parcial && (
                       <p className="text-xs text-success-600 mt-0.5">
                         Já registrado: {fmtMoney(f.total_pago)} de{" "}
@@ -210,7 +209,9 @@ export default function PortalFinanceiro() {
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="text-sm font-bold text-slate-800">
-                      {valorLinha == null ? "Valor a apurar" : fmtMoney(valorLinha)}
+                      {valorLinha == null
+                        ? "Valor a apurar"
+                        : fmtMoney(valorLinha)}
                     </p>
                     {f.status !== "pago" && f.saldo != null && (
                       <p className="text-[11px] text-slate-400">saldo atual</p>

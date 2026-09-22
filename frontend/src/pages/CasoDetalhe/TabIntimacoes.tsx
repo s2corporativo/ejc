@@ -75,7 +75,11 @@ export default function TabIntimacoes({ caseId }: { caseId: string }) {
         if (cancelado || caseIdRef.current !== alvo) return;
         setIntimacoes([]);
         setTotal(null);
-        setErro(e?.response?.status ? `Falha ao carregar (HTTP ${e.response.status})` : "Falha ao carregar intimações");
+        setErro(
+          e?.response?.status
+            ? `Falha ao carregar (HTTP ${e.response.status})`
+            : "Falha ao carregar intimações",
+        );
       });
     return () => {
       cancelado = true;
@@ -106,7 +110,11 @@ export default function TabIntimacoes({ caseId }: { caseId: string }) {
           <p className="text-sm text-danger-700 dark:text-danger-300">
             {erro} — a lista vazia não significa ausência de intimações.
           </p>
-          <Button variant="secondary" className="h-9" onClick={() => carregar()}>
+          <Button
+            variant="secondary"
+            className="h-9"
+            onClick={() => carregar()}
+          >
             <RefreshCw className="h-4 w-4" />
             Tentar novamente
           </Button>
@@ -138,10 +146,13 @@ export default function TabIntimacoes({ caseId }: { caseId: string }) {
               </span>
             </div>
             <div className="text-xs text-gray-500 mt-1">
-              Processo {x.numero_processo} · Disponibilizada em {fmtDate(x.data)}
+              Processo {x.numero_processo} · Disponibilizada em{" "}
+              {fmtDate(x.data)}
             </div>
             {x.texto && (
-              <p className="text-xs text-gray-600 mt-1 line-clamp-2">{x.texto}</p>
+              <p className="text-xs text-gray-600 mt-1 line-clamp-2">
+                {x.texto}
+              </p>
             )}
           </div>
         ))}

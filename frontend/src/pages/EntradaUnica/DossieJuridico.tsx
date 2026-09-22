@@ -21,8 +21,8 @@ type Props = {
 };
 
 function erroTexto(err: unknown, fallback: string): string {
-  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response
-    ?.data?.detail;
+  const detail = (err as { response?: { data?: { detail?: unknown } } })
+    ?.response?.data?.detail;
   if (typeof detail === "string" && detail.trim()) return detail;
   if (detail && typeof detail === "object") {
     const mensagem = (detail as { mensagem?: unknown }).mensagem;
@@ -37,7 +37,14 @@ function rotulo(value: unknown): string {
   if (typeof value === "boolean") return value ? "Sim" : "Não";
   if (typeof value === "object") {
     const item = value as AnyRecord;
-    for (const key of ["titulo", "nome", "descricao", "acao", "valor", "texto"]) {
+    for (const key of [
+      "titulo",
+      "nome",
+      "descricao",
+      "acao",
+      "valor",
+      "texto",
+    ]) {
       if (typeof item[key] === "string" && item[key]) return item[key];
     }
   }
@@ -141,7 +148,9 @@ export default function DossieJuridico({ caseId, onNovo }: Props) {
     try {
       await api.post(endpoint);
       setAprovado(true);
-      toast.success("Plano jurídico aprovado e congelado no histórico do caso.");
+      toast.success(
+        "Plano jurídico aprovado e congelado no histórico do caso.",
+      );
     } catch (err) {
       toast.error(erroTexto(err, "Não foi possível aprovar o plano jurídico."));
     } finally {
@@ -196,7 +205,10 @@ export default function DossieJuridico({ caseId, onNovo }: Props) {
       toast.success("Peça gerada como rascunho para revisão jurídica.");
     } catch (err) {
       setGatePeca(
-        erroTexto(err, "O Motor de Peça bloqueou a geração. Revise os requisitos."),
+        erroTexto(
+          err,
+          "O Motor de Peça bloqueou a geração. Revise os requisitos.",
+        ),
       );
     } finally {
       setGerando(false);
@@ -241,7 +253,9 @@ export default function DossieJuridico({ caseId, onNovo }: Props) {
             </h2>
             <Badge tone="purple">rascunho</Badge>
           </div>
-          <p className="mt-1 max-w-3xl text-sm text-slate-500">{dossie.aviso}</p>
+          <p className="mt-1 max-w-3xl text-sm text-slate-500">
+            {dossie.aviso}
+          </p>
         </div>
         <div className="flex gap-2">
           {onNovo && (
@@ -249,7 +263,10 @@ export default function DossieJuridico({ caseId, onNovo }: Props) {
               Nova entrada
             </Button>
           )}
-          <Button variant="secondary" onClick={() => navigate(`/casos/${caseId}`)}>
+          <Button
+            variant="secondary"
+            onClick={() => navigate(`/casos/${caseId}`)}
+          >
             Abrir caso
           </Button>
         </div>
@@ -257,31 +274,48 @@ export default function DossieJuridico({ caseId, onNovo }: Props) {
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <Card className="p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Conteúdo</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Conteúdo
+          </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {tipos.map((tipo) => (
-              <Badge key={tipo} tone="slate">{tipo.replace(/_/g, " ")}</Badge>
+              <Badge key={tipo} tone="slate">
+                {tipo.replace(/_/g, " ")}
+              </Badge>
             ))}
           </div>
         </Card>
         <Card className="p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Cliente e ramo</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Cliente e ramo
+          </p>
           <p className="mt-2 font-medium text-slate-900 dark:text-white">
             {dossie.identificacao?.cliente?.nome || "Cliente não identificado"}
           </p>
-          <p className="text-sm text-slate-500">{dossie.identificacao?.ramo || "Ramo a confirmar"}</p>
+          <p className="text-sm text-slate-500">
+            {dossie.identificacao?.ramo || "Ramo a confirmar"}
+          </p>
         </Card>
         <Card className="p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Honorário sugerido</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Honorário sugerido
+          </p>
           <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">
             {typeof honorario === "number"
-              ? honorario.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+              ? honorario.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                })
               : "Sem base OAB suficiente"}
           </p>
-          <p className="text-xs text-slate-500">Referência determinística; confirmação do advogado.</p>
+          <p className="text-xs text-slate-500">
+            Referência determinística; confirmação do advogado.
+          </p>
         </Card>
         <Card className="p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Estimativa de sucesso</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Estimativa de sucesso
+          </p>
           <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">
             {typeof estimativa?.percentual === "number"
               ? `${estimativa.percentual}%`
@@ -300,15 +334,34 @@ export default function DossieJuridico({ caseId, onNovo }: Props) {
       <Secao titulo="Cliente, partes e identificação" aberta>
         <div className="grid gap-3 md:grid-cols-2">
           <div>
-            <p className="mb-2 text-xs font-semibold uppercase text-slate-400">Partes</p>
-            <Lista itens={partes.map((p) => `${p.tipo || p.papel_processual || "parte"}: ${p.nome}`)} />
+            <p className="mb-2 text-xs font-semibold uppercase text-slate-400">
+              Partes
+            </p>
+            <Lista
+              itens={partes.map(
+                (p) => `${p.tipo || p.papel_processual || "parte"}: ${p.nome}`,
+              )}
+            />
           </div>
           <div className="space-y-1 text-sm text-slate-700 dark:text-slate-200">
-            <p><strong>Área:</strong> {rotulo(dossie.identificacao?.area_canonica)}</p>
-            <p><strong>Subramo:</strong> {rotulo(dossie.identificacao?.subramo)}</p>
-            <p><strong>Processo:</strong> {rotulo(dossie.identificacao?.numero_processo)}</p>
-            <p><strong>Tribunal:</strong> {rotulo(dossie.identificacao?.tribunal)}</p>
-            <p><strong>Fase:</strong> {rotulo(dossie.identificacao?.fase)}</p>
+            <p>
+              <strong>Área:</strong>{" "}
+              {rotulo(dossie.identificacao?.area_canonica)}
+            </p>
+            <p>
+              <strong>Subramo:</strong> {rotulo(dossie.identificacao?.subramo)}
+            </p>
+            <p>
+              <strong>Processo:</strong>{" "}
+              {rotulo(dossie.identificacao?.numero_processo)}
+            </p>
+            <p>
+              <strong>Tribunal:</strong>{" "}
+              {rotulo(dossie.identificacao?.tribunal)}
+            </p>
+            <p>
+              <strong>Fase:</strong> {rotulo(dossie.identificacao?.fase)}
+            </p>
           </div>
         </div>
       </Secao>
@@ -318,25 +371,49 @@ export default function DossieJuridico({ caseId, onNovo }: Props) {
           {dossie.fatos?.sumario || "Síntese ainda não disponível."}
         </p>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <div><p className="mb-2 text-xs font-semibold uppercase text-slate-400">Pontos fortes</p><Lista itens={dossie.fatos?.pontos_fortes} /></div>
-          <div><p className="mb-2 text-xs font-semibold uppercase text-slate-400">Pontos fracos</p><Lista itens={dossie.fatos?.pontos_fracos} /></div>
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase text-slate-400">
+              Pontos fortes
+            </p>
+            <Lista itens={dossie.fatos?.pontos_fortes} />
+          </div>
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase text-slate-400">
+              Pontos fracos
+            </p>
+            <Lista itens={dossie.fatos?.pontos_fracos} />
+          </div>
         </div>
       </Secao>
 
       <Secao titulo="Provas e matriz Fato × Prova × Tese" aberta>
         <div className="space-y-3">
           {matriz.length === 0 ? (
-            <p className="text-sm text-slate-500">A análise ainda não produziu correlações suficientes.</p>
+            <p className="text-sm text-slate-500">
+              A análise ainda não produziu correlações suficientes.
+            </p>
           ) : (
             matriz.map((linha, index) => (
               <Card key={index} className="p-3">
-                <p className="text-sm"><strong>Fato:</strong> {rotulo(linha.fato)}</p>
+                <p className="text-sm">
+                  <strong>Fato:</strong> {rotulo(linha.fato)}
+                </p>
                 <p className="mt-1 text-sm">
                   <strong>Prova:</strong> {rotulo(linha.prova)}{" "}
-                  {linha.prova_ja_disponivel ? <Badge tone="green">disponível</Badge> : <Badge tone="amber">a obter</Badge>}
+                  {linha.prova_ja_disponivel ? (
+                    <Badge tone="green">disponível</Badge>
+                  ) : (
+                    <Badge tone="amber">a obter</Badge>
+                  )}
                 </p>
-                <p className="mt-1 text-sm"><strong>Tese(s):</strong> {(linha.teses_relacionadas || []).join("; ") || "correlação a confirmar"}</p>
-                <p className="mt-2 text-xs text-slate-400">{linha.observacao}</p>
+                <p className="mt-1 text-sm">
+                  <strong>Tese(s):</strong>{" "}
+                  {(linha.teses_relacionadas || []).join("; ") ||
+                    "correlação a confirmar"}
+                </p>
+                <p className="mt-2 text-xs text-slate-400">
+                  {linha.observacao}
+                </p>
               </Card>
             ))
           )}
@@ -345,12 +422,16 @@ export default function DossieJuridico({ caseId, onNovo }: Props) {
 
       <Secao titulo="Lacunas e perguntas ao advogado">
         {perguntas.length === 0 ? (
-          <Alert variant="success">Nenhuma lacuna estruturada adicional foi identificada nesta rodada.</Alert>
+          <Alert variant="success">
+            Nenhuma lacuna estruturada adicional foi identificada nesta rodada.
+          </Alert>
         ) : (
           <div className="space-y-3">
             {perguntas.map((item, index) => (
               <Card key={index} className="p-3">
-                <p className="text-sm font-medium text-slate-900 dark:text-white">{item.pergunta}</p>
+                <p className="text-sm font-medium text-slate-900 dark:text-white">
+                  {item.pergunta}
+                </p>
                 <p className="mt-1 text-xs text-slate-500">{item.motivo}</p>
               </Card>
             ))}
@@ -359,11 +440,17 @@ export default function DossieJuridico({ caseId, onNovo }: Props) {
       </Secao>
 
       <Secao titulo="Teses, fundamentos e riscos">
-        <p className="mb-2 text-xs font-semibold uppercase text-slate-400">Teses analisadas</p>
+        <p className="mb-2 text-xs font-semibold uppercase text-slate-400">
+          Teses analisadas
+        </p>
         <Lista itens={dossie.analise_juridica?.teses_analisadas} />
-        <p className="mb-2 mt-4 text-xs font-semibold uppercase text-slate-400">Teses do banco</p>
+        <p className="mb-2 mt-4 text-xs font-semibold uppercase text-slate-400">
+          Teses do banco
+        </p>
         <Lista itens={dossie.analise_juridica?.teses_do_banco} />
-        <p className="mb-2 mt-4 text-xs font-semibold uppercase text-slate-400">Riscos</p>
+        <p className="mb-2 mt-4 text-xs font-semibold uppercase text-slate-400">
+          Riscos
+        </p>
         <Lista itens={dossie.analise_juridica?.riscos} />
       </Secao>
 
@@ -372,7 +459,9 @@ export default function DossieJuridico({ caseId, onNovo }: Props) {
           {dossie.contradicoes_e_adversarial?.observacao}
         </Alert>
         <div className="mt-3">
-          <Lista itens={dossie.contradicoes_e_adversarial?.falhas_da_parte_contraria} />
+          <Lista
+            itens={dossie.contradicoes_e_adversarial?.falhas_da_parte_contraria}
+          />
         </div>
         {dossie.contradicoes_e_adversarial?.critica_adversarial?.relatorio && (
           <pre className="mt-4 whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-sm text-slate-700 dark:bg-slate-950 dark:text-slate-200">
@@ -384,29 +473,58 @@ export default function DossieJuridico({ caseId, onNovo }: Props) {
       <Secao titulo="Honorários sugeridos">
         <Alert variant="info">{dossie.honorarios_sugeridos?.aviso}</Alert>
         <div className="mt-3 grid gap-3 md:grid-cols-3">
-          {(["minimo_etico", "recomendado", "estrategico"] as const).map((faixa) => {
-            const item = dossie.honorarios_sugeridos?.faixas?.[faixa];
-            return (
-              <Card key={faixa} className="p-3">
-                <p className="text-xs font-semibold uppercase text-slate-400">{faixa.replace(/_/g, " ")}</p>
-                <p className="mt-1 font-semibold">
-                  {typeof item?.valor === "number"
-                    ? item.valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
-                    : "—"}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">{item?.memoria_calculo}</p>
-              </Card>
-            );
-          })}
+          {(["minimo_etico", "recomendado", "estrategico"] as const).map(
+            (faixa) => {
+              const item = dossie.honorarios_sugeridos?.faixas?.[faixa];
+              return (
+                <Card key={faixa} className="p-3">
+                  <p className="text-xs font-semibold uppercase text-slate-400">
+                    {faixa.replace(/_/g, " ")}
+                  </p>
+                  <p className="mt-1 font-semibold">
+                    {typeof item?.valor === "number"
+                      ? item.valor.toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL",
+                        })
+                      : "—"}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {item?.memoria_calculo}
+                  </p>
+                </Card>
+              );
+            },
+          )}
         </div>
       </Secao>
 
       <Secao titulo="Plano jurídico" aberta>
         <div className="grid gap-4 md:grid-cols-2">
-          <div><p className="mb-2 text-xs font-semibold uppercase text-slate-400">Tese principal</p><p className="text-sm">{rotulo(plano.tese_principal)}</p></div>
-          <div><p className="mb-2 text-xs font-semibold uppercase text-slate-400">Pedidos possíveis</p><Lista itens={plano.pedidos_possiveis} /></div>
-          <div><p className="mb-2 text-xs font-semibold uppercase text-slate-400">Próximos passos</p><Lista itens={plano.proximos_passos} /></div>
-          <div><p className="mb-2 text-xs font-semibold uppercase text-slate-400">Argumentos adversos prováveis</p><Lista itens={plano.argumentos_adversos_provaveis} /></div>
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase text-slate-400">
+              Tese principal
+            </p>
+            <p className="text-sm">{rotulo(plano.tese_principal)}</p>
+          </div>
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase text-slate-400">
+              Pedidos possíveis
+            </p>
+            <Lista itens={plano.pedidos_possiveis} />
+          </div>
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase text-slate-400">
+              Próximos passos
+            </p>
+            <Lista itens={plano.proximos_passos} />
+          </div>
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase text-slate-400">
+              Argumentos adversos prováveis
+            </p>
+            <Lista itens={plano.argumentos_adversos_provaveis} />
+          </div>
         </div>
         <div className="mt-5 flex flex-wrap gap-2">
           {!aprovado ? (
@@ -440,11 +558,18 @@ export default function DossieJuridico({ caseId, onNovo }: Props) {
             <Scale className="h-5 w-5 text-ai-600" />
             <h3 className="font-semibold">Motor de Peça</h3>
           </div>
-          <p className="text-sm"><strong>Peça indicada:</strong> {rotulo(planoPeca.peca_principal)}</p>
-          <p className="text-sm"><strong>Rito:</strong> {rotulo(planoPeca.rito?.nome || planoPeca.rito?.codigo)}</p>
+          <p className="text-sm">
+            <strong>Peça indicada:</strong> {rotulo(planoPeca.peca_principal)}
+          </p>
+          <p className="text-sm">
+            <strong>Rito:</strong>{" "}
+            {rotulo(planoPeca.rito?.nome || planoPeca.rito?.codigo)}
+          </p>
           {!planoPeca.checklist?.pronto && (
             <Alert variant="warning" title="Checklist bloqueante pendente">
-              <Lista itens={checklist.filter((item) => !item.ok && !item.presente)} />
+              <Lista
+                itens={checklist.filter((item) => !item.ok && !item.presente)}
+              />
             </Alert>
           )}
           <div className="grid gap-3 md:grid-cols-[220px_1fr] md:items-end">

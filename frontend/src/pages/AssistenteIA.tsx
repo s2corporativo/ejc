@@ -26,17 +26,18 @@ const PREFIXO_TRADUZIR =
 
 // capacidade → limites do backend. `minuta` compõe tema + fatos em UMA
 // mensagem, então o contador vale para o texto composto.
-const LIMITES: Record<Tool, { min: number; max: number; capacidade: string }> = {
-  pesquisa: { min: 3, max: 12000, capacidade: "conversar" },
-  resumir: { min: 20, max: 200000, capacidade: "resumir" },
-  traduzir: {
-    min: 3,
-    max: 12000 - PREFIXO_TRADUZIR.length,
-    capacidade: "conversar",
-  },
-  minuta: { min: 5, max: 12000, capacidade: "redigir" },
-  especialista: { min: 30, max: 200000, capacidade: "analisar" },
-};
+const LIMITES: Record<Tool, { min: number; max: number; capacidade: string }> =
+  {
+    pesquisa: { min: 3, max: 12000, capacidade: "conversar" },
+    resumir: { min: 20, max: 200000, capacidade: "resumir" },
+    traduzir: {
+      min: 3,
+      max: 12000 - PREFIXO_TRADUZIR.length,
+      capacidade: "conversar",
+    },
+    minuta: { min: 5, max: 12000, capacidade: "redigir" },
+    especialista: { min: 30, max: 200000, capacidade: "analisar" },
+  };
 
 const MAX_TEMA = 2000;
 const MAX_FATOS = LIMITES.minuta.max - MAX_TEMA - 200; // folga do cabeçalho

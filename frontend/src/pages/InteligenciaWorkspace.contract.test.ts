@@ -15,10 +15,7 @@ const toolsPage = readFileSync(
   resolve(ROOT, "src/pages/FerramentasIA.tsx"),
   "utf8",
 );
-const aiService = readFileSync(
-  resolve(ROOT, "src/services/ai.ts"),
-  "utf8",
-);
+const aiService = readFileSync(resolve(ROOT, "src/services/ai.ts"), "utf8");
 const legalResearchPage = readFileSync(
   resolve(ROOT, "src/pages/PesquisaJuridica.tsx"),
   "utf8",
@@ -56,8 +53,12 @@ describe("Inteligência Jurídica — contrato canônico da auditoria 2026-09-18
 
   it("oferece validação determinística de citações na pesquisa jurídica", () => {
     expect(legalResearchService).toContain('"/ai/citacoes/verificar"');
-    expect(legalResearchService).toContain("consultar_datajud: consultarDatajud");
-    expect(legalResearchPage).toContain("Validação determinística anti-alucinação");
+    expect(legalResearchService).toContain(
+      "consultar_datajud: consultarDatajud",
+    );
+    expect(legalResearchPage).toContain(
+      "Validação determinística anti-alucinação",
+    );
     expect(legalResearchPage).toContain("confira");
     expect(legalResearchPage).toContain("fonte oficial");
   });

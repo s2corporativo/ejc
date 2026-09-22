@@ -180,8 +180,8 @@ function RecorteExterno({
       </div>
       {recorte.amostra_truncada && (
         <p className="text-[11px] text-amber-700 mt-2">
-          Limite de coleta atingido: taxas suprimidas. Restrinja período,
-          classe ou assunto.
+          Limite de coleta atingido: taxas suprimidas. Restrinja período, classe
+          ou assunto.
         </p>
       )}
       <p className="text-[11px] text-gray-400 mt-2">
@@ -360,7 +360,12 @@ export default function JurimetriaTribunais() {
                     >
                       <td className="py-1">{m.nome}</td>
                       <td className="py-1 text-right">{m.n}</td>
-                      <td className="py-1 text-right" title={m.amostra_pequena ? "amostra pequena" : undefined}>
+                      <td
+                        className="py-1 text-right"
+                        title={
+                          m.amostra_pequena ? "amostra pequena" : undefined
+                        }
+                      >
                         {pctGrupo(m)}
                       </td>
                       <td className="py-1 text-right">
@@ -391,7 +396,12 @@ export default function JurimetriaTribunais() {
                     >
                       <td className="py-1">{a.assunto}</td>
                       <td className="py-1 text-right">{a.n}</td>
-                      <td className="py-1 text-right" title={a.amostra_pequena ? "amostra pequena" : undefined}>
+                      <td
+                        className="py-1 text-right"
+                        title={
+                          a.amostra_pequena ? "amostra pequena" : undefined
+                        }
+                      >
                         {pctGrupo(a)}
                       </td>
                     </tr>
@@ -424,7 +434,12 @@ export default function JurimetriaTribunais() {
                       <td className="py-1">{r.municipio_nome}</td>
                       <td className="py-1">{r.assunto}</td>
                       <td className="py-1 text-right">{r.n}</td>
-                      <td className="py-1 text-right" title={r.amostra_pequena ? "amostra pequena" : undefined}>
+                      <td
+                        className="py-1 text-right"
+                        title={
+                          r.amostra_pequena ? "amostra pequena" : undefined
+                        }
+                      >
                         {pctGrupo(r)}
                       </td>
                     </tr>
@@ -435,8 +450,9 @@ export default function JurimetriaTribunais() {
           )}
 
           <p className="text-[11px] text-gray-400 mt-4">
-            Fonte principal: {dados.fonte}. Amostra TJMG: {dados.coleta.n_documentos}{" "}
-            registros{dados.coleta.truncado ? " (limite atingido)" : ""}
+            Fonte principal: {dados.fonte}. Amostra TJMG:{" "}
+            {dados.coleta.n_documentos} registros
+            {dados.coleta.truncado ? " (limite atingido)" : ""}
             {dados.coleta.coletado_em
               ? ` · coleta ${dados.coleta.coletado_em}`
               : ""}{" "}

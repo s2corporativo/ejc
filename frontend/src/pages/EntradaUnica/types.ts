@@ -268,8 +268,7 @@ export function normalizarAnalise(
     naturezaDemanda: str(natureza.tipo),
     naturezaProvavel: str(natureza.acao),
     naturezaConfianca: confiancaPct(natureza.confianca),
-    urgencia:
-      typeof urgencia.valor === "boolean" ? urgencia.valor : null,
+    urgencia: typeof urgencia.valor === "boolean" ? urgencia.valor : null,
     urgenciaMotivo: str(urgencia.justificativa),
     urgenciaConfianca: confiancaPct(urgencia.confianca),
     prioridade: prioridadeTriagem(urgencia.prioridade_sugerida),

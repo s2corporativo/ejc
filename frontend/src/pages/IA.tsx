@@ -159,7 +159,9 @@ export default function IA() {
       .get("/ai/logs", { params: { page_size: 30 } })
       .then((r) => setLogs(asList(r.data)))
       .catch((e) =>
-        toast.error(mensagemErroHttp(e, "Não foi possível atualizar o histórico.")),
+        toast.error(
+          mensagemErroHttp(e, "Não foi possível atualizar o histórico."),
+        ),
       );
   const marcarHitl = async (id: string, status: string) => {
     try {

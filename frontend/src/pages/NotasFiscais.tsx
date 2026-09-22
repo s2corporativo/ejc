@@ -132,7 +132,10 @@ export default function NotasFiscais() {
       .catch((err) => {
         setClientes([]);
         toast.error(
-          mensagemErroHttp(err, "Não foi possível carregar a lista de clientes."),
+          mensagemErroHttp(
+            err,
+            "Não foi possível carregar a lista de clientes.",
+          ),
         );
       });
     api

@@ -84,7 +84,11 @@ export default function EntradaUnica() {
 }
 
 /** Reutilizada no Dashboard para que / e /entrada usem a MESMA Entrada Única. */
-export function EntradaInteligente({ embedded = false }: { embedded?: boolean }) {
+export function EntradaInteligente({
+  embedded = false,
+}: {
+  embedded?: boolean;
+}) {
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const meuId = user?.id ?? "";

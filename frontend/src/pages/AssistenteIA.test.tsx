@@ -149,8 +149,7 @@ describe("AssistenteIA — portas canônicas", () => {
     expect(rotas.every((r: string) => r.startsWith("/ia/"))).toBe(true);
     expect(
       rotas.some(
-        (r: string) =>
-          r.includes("/ai/") || r.includes("/ia-especializada"),
+        (r: string) => r.includes("/ai/") || r.includes("/ia-especializada"),
       ),
     ).toBe(false);
   });

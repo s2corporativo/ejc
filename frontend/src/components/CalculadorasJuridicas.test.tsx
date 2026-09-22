@@ -5,7 +5,13 @@
 // comportamento do runner (form dinâmico, params, erro, campo condicional),
 // não o resultado específico de cada endpoint.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 
 const getMock = vi.fn();
 
@@ -35,7 +41,9 @@ describe("CalculadorasJuridicas — lista e seleção", () => {
     expect(screen.getByText("Penal")).toBeTruthy();
     // "Prazo de contestação" está selecionada por padrão (aparece no chip E
     // no título do formulário) — as demais só no chip, getByText basta.
-    expect(screen.getAllByText("Prazo de contestação").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Prazo de contestação").length).toBeGreaterThan(
+      0,
+    );
     expect(screen.getByText("Cálculo de alimentos")).toBeTruthy();
     expect(screen.getByText("Verificação de usucapião")).toBeTruthy();
     expect(screen.getByText("Estruturação de dano moral")).toBeTruthy();
@@ -47,14 +55,18 @@ describe("CalculadorasJuridicas — lista e seleção", () => {
     render(<CalculadorasJuridicas />);
     fireEvent.click(screen.getByText("Elegibilidade ao ANPP"));
     expect(screen.getByText("Pena mínima cominada (anos)")).toBeTruthy();
-    expect(screen.getByText("Infração sem violência ou grave ameaça")).toBeTruthy();
+    expect(
+      screen.getByText("Infração sem violência ou grave ameaça"),
+    ).toBeTruthy();
     expect(screen.getByText("Confissão formal e circunstanciada")).toBeTruthy();
     expect(screen.getByText("É reincidente")).toBeTruthy();
     expect(
       screen.getByText("Conduta criminal habitual/reiterada/profissional"),
     ).toBeTruthy();
     expect(
-      screen.getByText("Já beneficiado com ANPP/transação/sursis nos últimos 5 anos"),
+      screen.getByText(
+        "Já beneficiado com ANPP/transação/sursis nos últimos 5 anos",
+      ),
     ).toBeTruthy();
     expect(
       screen.getByText("Violência doméstica/familiar ou razão de gênero"),
@@ -65,7 +77,9 @@ describe("CalculadorasJuridicas — lista e seleção", () => {
     render(<CalculadorasJuridicas />);
     // "Prazo de contestação" já vem selecionada por padrão (primeira da lista).
     expect(screen.getByText("Marco inicial")).toBeTruthy();
-    const selectRito = screen.getByText("Rito").parentElement!.querySelector("select")!;
+    const selectRito = screen
+      .getByText("Rito")
+      .parentElement!.querySelector("select")!;
     fireEvent.change(selectRito, { target: { value: "jec" } });
     expect(screen.queryByText("Marco inicial")).toBeNull();
     expect(screen.queryByText("Data do marco")).toBeNull();
@@ -76,7 +90,9 @@ describe("CalculadorasJuridicas — cálculo", () => {
   it("botão Calcular fica desabilitado até os campos obrigatórios serem preenchidos", () => {
     render(<CalculadorasJuridicas />);
     fireEvent.click(screen.getByText("Cálculo de alimentos"));
-    const botao = screen.getByRole("button", { name: /calcular/i }) as HTMLButtonElement;
+    const botao = screen.getByRole("button", {
+      name: /calcular/i,
+    }) as HTMLButtonElement;
     expect(botao.disabled).toBe(true);
   });
 
@@ -96,16 +112,23 @@ describe("CalculadorasJuridicas — cálculo", () => {
     fireEvent.change(inputPorLabel("Salário do devedor (R$)"), {
       target: { value: "5000" },
     });
-    fireEvent.change(inputPorLabel("Percentual (%)"), { target: { value: "30" } });
+    fireEvent.change(inputPorLabel("Percentual (%)"), {
+      target: { value: "30" },
+    });
 
-    const botao = screen.getByRole("button", { name: /calcular/i }) as HTMLButtonElement;
+    const botao = screen.getByRole("button", {
+      name: /calcular/i,
+    }) as HTMLButtonElement;
     expect(botao.disabled).toBe(false);
     fireEvent.click(botao);
 
     await waitFor(() => expect(getMock).toHaveBeenCalledTimes(1));
-    expect(getMock).toHaveBeenCalledWith("/civel/ferramentas/alimentos-calcular", {
-      params: { salario_devedor: 5000, percentual: 30, filhos: 1 },
-    });
+    expect(getMock).toHaveBeenCalledWith(
+      "/civel/ferramentas/alimentos-calcular",
+      {
+        params: { salario_devedor: 5000, percentual: 30, filhos: 1 },
+      },
+    );
   });
 
   it("renderiza aviso e fontes no resultado", async () => {
@@ -123,7 +146,9 @@ describe("CalculadorasJuridicas — cálculo", () => {
     fireEvent.change(inputPorLabel("Salário do devedor (R$)"), {
       target: { value: "5000" },
     });
-    fireEvent.change(inputPorLabel("Percentual (%)"), { target: { value: "30" } });
+    fireEvent.change(inputPorLabel("Percentual (%)"), {
+      target: { value: "30" },
+    });
     fireEvent.click(screen.getByRole("button", { name: /calcular/i }));
 
     await waitFor(() =>
@@ -134,7 +159,9 @@ describe("CalculadorasJuridicas — cálculo", () => {
 
   it("trata erro 422 com detail em string", async () => {
     getMock.mockRejectedValueOnce({
-      response: { data: { detail: "Rito inválido. Use: comum | jec | fazenda_publica" } },
+      response: {
+        data: { detail: "Rito inválido. Use: comum | jec | fazenda_publica" },
+      },
     });
     render(<CalculadorasJuridicas />);
     fireEvent.click(screen.getByText("Prazos do processo penal"));
@@ -153,7 +180,9 @@ describe("CalculadorasJuridicas — cálculo", () => {
 
   it("trata erro 422 com detail em array (validação Pydantic)", async () => {
     getMock.mockRejectedValueOnce({
-      response: { data: { detail: [{ msg: "ensure this value is greater than 0" }] } },
+      response: {
+        data: { detail: [{ msg: "ensure this value is greater than 0" }] },
+      },
     });
     render(<CalculadorasJuridicas />);
     fireEvent.click(screen.getByText("Prazos do processo penal"));

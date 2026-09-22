@@ -143,8 +143,8 @@ export default function ClienteIaPanel({
 
       {!resultado && !erro && !loading && (
         <div className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-sm text-slate-400">
-          A análise só é executada quando você solicitar. Nenhum dado é enviado à
-          IA apenas por abrir esta tela.
+          A análise só é executada quando você solicitar. Nenhum dado é enviado
+          à IA apenas por abrir esta tela.
         </div>
       )}
 
@@ -161,7 +161,8 @@ export default function ClienteIaPanel({
               {resultado.resposta || "A IA concluiu sem retornar texto."}
             </p>
           </div>
-          {(resultado.revisao_obrigatoria || resultado.sem_base_verificavel) && (
+          {(resultado.revisao_obrigatoria ||
+            resultado.sem_base_verificavel) && (
             <div className="rounded-lg border border-warn-200 bg-warn-50 p-3 text-xs text-warn-800">
               {resultado.sem_base_verificavel
                 ? "A resposta foi marcada sem base verificável suficiente. Revise os autos e fontes antes de qualquer uso."
