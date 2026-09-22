@@ -11,7 +11,7 @@ from typing import Any, Optional
 from uuid import uuid4
 
 import aiofiles
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +37,7 @@ from app.services.entrada_universal_service import (
     avaliar_prontidao, classificar_documento, comparar_documentos, expandir_arquivo,
     extrair_paginas, manifesto_pacote, montar_dossie, resumo_documentos, sha256_bytes,
 )
+from app.services.contract_migration import mark_contract_response
 
 logger = logging.getLogger("ejc.entrada_universal.router")
 settings = get_settings()
@@ -386,6 +387,7 @@ async def processar(
     case_id: Optional[str] = Form(None), client_id: Optional[str] = Form(None),
     texto: Optional[str] = Form(None), confidencialidade: str = Form("normal"),
     db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user),
+    response: Response = None,
 ):
     requer_equipe_juridica(cu, "Acesso restrito à equipe jurídica")
     if modalidade and modalidade not in CATALOGO_DOCUMENTAL:
@@ -457,6 +459,21 @@ async def processar(
             "alertas_ia": list(analise_ia.get("alertas") or []) + list(analise_ia.get("alertas_nucleo") or []),
             "aviso": "Originais preservados no GED. OCR, classificação, prazos e estratégia exigem revisão humana.",
         }
+        try:
+            from app.services.document_intelligence import build_document_intelligence
+
+            resultado["inteligencia_juridica"] = build_document_intelligence(resultado).model_dump(
+                mode="json"
+            )
+        except Exception as exc:
+            logger.warning("Contrato universal documental indisponível: %s", type(exc).__name__)
+            resultado["inteligencia_juridica"] = {
+                "versao_contrato": "case_intelligence.v1",
+                "status": "degradado",
+                "revisao_obrigatoria": True,
+                "alertas": ["Normalização universal indisponível; revise o resultado documental."],
+            }
+        mark_contract_response(response, route="/entrada-universal/processar")
         batch.status, batch.nivel_prontidao = "concluido", prontidao["nivel"]
         batch.document_count, batch.total_bytes, batch.resultado = len(processados), total_bytes, resultado
         await db.commit()

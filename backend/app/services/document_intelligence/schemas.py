@@ -253,3 +253,61 @@ def build_case_intelligence(proposta: dict[str, Any]) -> CaseIntelligence:
         alertas=list(dict.fromkeys(alertas)),
         revisao_obrigatoria=True,
     )
+
+
+def build_document_intelligence(resultado: dict[str, Any]) -> CaseIntelligence:
+    """Converte o resultado de ``/entrada-universal/processar`` sem duplicar IA."""
+    resultado = resultado if isinstance(resultado, dict) else {}
+    classificacao = resultado.get("classificacao") or {}
+    resumo = resultado.get("resumo_executivo") or {}
+    fatos_texto = resumo.get("sumario") if isinstance(resumo, dict) else resumo
+    fatos = []
+    if fatos_texto:
+        fatos.append(EvidenceItem(
+            id="fato-documental-1", conteudo=str(fatos_texto)[:5_000], tipo="fato",
+            estado="extraido", fontes=[_source("documento")],
+            confianca=ConfidenceMetadata(valor=0.55, justificativa="Extração documental pendente de conferência."),
+        ))
+    partes_raw = resultado.get("partes") or {}
+    if isinstance(partes_raw, dict):
+        partes_raw = partes_raw.get("partes") or partes_raw.get("candidatos") or []
+    partes = []
+    for index, item in enumerate(partes_raw if isinstance(partes_raw, list) else []):
+        item = item if isinstance(item, dict) else {"nome": str(item)}
+        nome = str(item.get("nome") or item.get("parte") or "").strip()
+        if nome:
+            partes.append(PartyCandidate(
+                nome=nome, papel=item.get("papel") or item.get("tipo"),
+                estado="extraido", evidencias=["fato-documental-1"] if fatos else [],
+                confianca=ConfidenceMetadata(valor=_confidence(item.get("confianca")),
+                                              justificativa="Extração documental; confirme qualificação."),
+            ))
+    cronologia = []
+    for item in resultado.get("datas_eventos") or []:
+        item = item if isinstance(item, dict) else {"evento": str(item)}
+        cronologia.append(TimelineEvent(
+            evento=str(item.get("evento") or item.get("descricao") or "Evento extraído"),
+            data_literal=item.get("data_texto") or item.get("data"),
+            data_iso=item.get("data_iso"),
+            estado="confirmada" if item.get("confirmada") else "aproximada",
+            evidencias=["fato-documental-1"] if fatos else [],
+        ))
+    return CaseIntelligence(
+        status="degradado" if not (resultado.get("ia") or {}).get("estrutura_valida", False) else "rascunho",
+        classificacao={
+            "ramo_principal": classificacao.get("area"),
+            "fase": classificacao.get("fase"),
+            "tipo_documento": classificacao.get("tipo_documento"),
+            "requer_desambiguacao": True,
+        },
+        partes=partes, fatos=fatos, cronologia=cronologia,
+        informacoes_faltantes=[MissingInformation(
+            pergunta=f"Confirmar: {item}", motivo="Pendência indicada pela prontidão documental.",
+            impacto="medio", altera=["prova", "estrategia"],
+        ) for item in (resultado.get("documentos_faltantes") or [])[:30]],
+        fontes=[_source("documento")],
+        alertas=list(resultado.get("alertas_ia") or []) + [
+            "Resultado documental é preliminar e exige revisão humana."
+        ],
+        revisao_obrigatoria=True,
+    )
