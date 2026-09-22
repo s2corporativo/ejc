@@ -115,7 +115,7 @@ def test_nega_comando_proibido(
         'grep -rn "/opt/ejc" docs/',
         'grep -rn ".env" docs/',
         'echo "nunca use git push --force" >> docs/regras.md',
-        "rg 'docker compose down -v' RUNBOOK_DEPLOY_FASES_1-3.md",
+        "rg 'docker compose down -v' RUNBOOK_DEPLOY_MANUAL.md",
     ],
 )
 def test_permite_comando_legitimo(

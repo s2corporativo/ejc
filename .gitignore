@@ -1,5 +1,8 @@
 # Dependencies
 node_modules/
+# O frontend é instalado pelo npm (`package-lock.json`) no Docker e no CI;
+# não reintroduzir um segundo lockfile pnpm com resolução divergente.
+frontend/pnpm-lock.yaml
 
 # Python
 __pycache__/

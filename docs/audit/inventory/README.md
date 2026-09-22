@@ -1,31 +1,31 @@
 # Inventário Arquitetural EJC — Fase 0
 
-Gerado em: 2026-09-20T13:13:37.395397+00:00
-Fingerprint das fontes: `39582ab0c8103c118532b5c4e694f68ca71131c3469b02b9961e5609315614a2`
+Gerado em: 2026-09-22T01:32:17.739368+00:00
+Fingerprint das fontes: `6ce231721bae2ec719163a1ce41b03383c4b77fb10e303981a3692ad8e9ed2dd`
 
 > Este inventário é descritivo e conservador. Nenhuma exclusão deve ocorrer apenas por heurística. 
 > Itens marcados para exclusão exigem migração, telemetria, busca de consumidores e plano de rollback.
 
 ## Cobertura
 
-- Itens totais: **8077**
-- Páginas: **189**
+- Itens totais: **8046**
+- Páginas: **187**
 - Rotas frontend: **59**
 - Endpoints backend: **896**
-- Serviços backend: **354**
+- Serviços backend: **351**
 - Tabelas ORM detectadas: **133**
 - Routers não montados: **9**
-- Itens que ainda exigem revisão humana: **7500**
+- Itens que ainda exigem revisão humana: **7468**
 
 ## Classificação
 
 | Classificação | Quantidade |
 |---|---:|
-| manter | 7685 |
+| manter | 7653 |
 | consolidar | 192 |
 | renomear | 24 |
 | redirecionar | 0 |
-| corrigir | 79 |
+| corrigir | 80 |
 | desativar | 92 |
 | excluir após migração | 5 |
 
@@ -33,29 +33,29 @@ Fingerprint das fontes: `39582ab0c8103c118532b5c4e694f68ca71131c3469b02b9961e560
 
 | Tipo | Quantidade |
 |---|---:|
-| class | 760 |
-| component | 111 |
+| class | 758 |
+| component | 104 |
 | endpoint | 896 |
-| frontend_function | 1675 |
+| frontend_function | 1660 |
 | frontend_route | 59 |
-| function | 3540 |
+| function | 3539 |
 | model_file | 72 |
-| page | 189 |
+| page | 187 |
 | python_module | 128 |
-| router | 160 |
-| service | 354 |
+| router | 159 |
+| service | 351 |
 | table | 133 |
 
 ## Origem das classificações
 
 | Origem | Quantidade |
 |---|---:|
-| conservative-default | 7251 |
+| conservative-default | 7220 |
 | mount-analysis | 92 |
 | naming-heuristic | 5 |
-| override | 137 |
+| override | 138 |
 | parent-override | 409 |
-| refined-default | 150 |
+| refined-default | 149 |
 | refined-duplicate-family | 2 |
 | refined-mount-analysis | 31 |
 
@@ -96,6 +96,7 @@ Fingerprint das fontes: `39582ab0c8103c118532b5c4e694f68ca71131c3469b02b9961e560
 | page | `TabDocumentos` | `frontend/src/pages/CasoDetalhe/TabDocumentos.tsx` | **manter** | conservative-default | sim |
 | page | `TabFerramentas` | `frontend/src/pages/CasoDetalhe/TabFerramentas.tsx` | **manter** | conservative-default | sim |
 | page | `TabIndicadoresJuridicos` | `frontend/src/pages/CasoDetalhe/TabIndicadoresJuridicos.tsx` | **manter** | conservative-default | sim |
+| page | `TabIntimacoes` | `frontend/src/pages/CasoDetalhe/TabIntimacoes.tsx` | **manter** | conservative-default | sim |
 | page | `TabMemoria` | `frontend/src/pages/CasoDetalhe/TabMemoria.tsx` | **manter** | conservative-default | sim |
 | page | `TabPartes.test` | `frontend/src/pages/CasoDetalhe/TabPartes.test.tsx` | **manter** | conservative-default | sim |
 | page | `TabPartes` | `frontend/src/pages/CasoDetalhe/TabPartes.tsx` | **manter** | conservative-default | sim |
@@ -106,6 +107,7 @@ Fingerprint das fontes: `39582ab0c8103c118532b5c4e694f68ca71131c3469b02b9961e560
 | page | `TabResumo` | `frontend/src/pages/CasoDetalhe/TabResumo.tsx` | **manter** | conservative-default | sim |
 | page | `TabRisco` | `frontend/src/pages/CasoDetalhe/TabRisco.tsx` | **manter** | conservative-default | sim |
 | page | `TabScore` | `frontend/src/pages/CasoDetalhe/TabScore.tsx` | **manter** | conservative-default | sim |
+| page | `TabTarefas` | `frontend/src/pages/CasoDetalhe/TabTarefas.tsx` | **manter** | conservative-default | sim |
 | page | `TabTeses` | `frontend/src/pages/CasoDetalhe/TabTeses.tsx` | **manter** | conservative-default | sim |
 | page | `TabTimeline.test` | `frontend/src/pages/CasoDetalhe/TabTimeline.test.tsx` | **manter** | conservative-default | sim |
 | page | `TabTimeline` | `frontend/src/pages/CasoDetalhe/TabTimeline.tsx` | **manter** | conservative-default | sim |
@@ -126,17 +128,13 @@ Fingerprint das fontes: `39582ab0c8103c118532b5c4e694f68ca71131c3469b02b9961e560
 | page | `Configuracoes` | `frontend/src/pages/Configuracoes.tsx` | **manter** | conservative-default | sim |
 | page | `Configurar2FA` | `frontend/src/pages/Configurar2FA.tsx` | **manter** | conservative-default | sim |
 | page | `Conhecimento` | `frontend/src/pages/Conhecimento.tsx` | **manter** | conservative-default | sim |
-| page | `ConhecimentoGovernado` | `frontend/src/pages/ConhecimentoGovernado.tsx` | **manter** | conservative-default | sim |
-| page | `ConteudoJuridico.test` | `frontend/src/pages/ConteudoJuridico.test.tsx` | **manter** | conservative-default | sim |
-| page | `ConteudoJuridico` | `frontend/src/pages/ConteudoJuridico.tsx` | **manter** | conservative-default | sim |
-| page | `Dashboard.test` | `frontend/src/pages/Dashboard.test.tsx` | **manter** | conservative-default | sim |
-| page | `Dashboard` | `frontend/src/pages/Dashboard.tsx` | **manter** | refined-default | sim |
 | page | `DashboardIA.test` | `frontend/src/pages/DashboardIA.test.tsx` | **manter** | conservative-default | sim |
 | page | `DashboardIA` | `frontend/src/pages/DashboardIA.tsx` | **manter** | conservative-default | sim |
 | page | `DashboardUltra.test` | `frontend/src/pages/DashboardUltra.test.tsx` | **manter** | conservative-default | sim |
 | page | `DashboardUltra` | `frontend/src/pages/DashboardUltra.tsx` | **manter** | conservative-default | sim |
 | page | `DataJudBusca.contexto.test` | `frontend/src/pages/DataJudBusca.contexto.test.tsx` | **manter** | conservative-default | sim |
 | page | `DataJudBusca` | `frontend/src/pages/DataJudBusca.tsx` | **manter** | conservative-default | sim |
+| page | `DataRoom.caso.test` | `frontend/src/pages/DataRoom.caso.test.tsx` | **manter** | conservative-default | sim |
 | page | `DataRoom` | `frontend/src/pages/DataRoom.tsx` | **manter** | conservative-default | sim |
 | page | `Despesas` | `frontend/src/pages/Despesas.tsx` | **manter** | refined-default | sim |
 | page | `DespesasRecorrentes` | `frontend/src/pages/DespesasRecorrentes.tsx` | **manter** | conservative-default | sim |
@@ -275,54 +273,54 @@ Fingerprint das fontes: `39582ab0c8103c118532b5c4e694f68ca71131c3469b02b9961e560
 | frontend_route | `/casos/:caseId/sala-de-guerra` | `/casos/:caseId/sala-de-guerra:205` | **manter** | conservative-default | sim |
 | frontend_route | `/ramos/:slug` | `/ramos/:slug:209` | **manter** | conservative-default | sim |
 | frontend_route | `*` | `*:215` | **manter** | conservative-default | sim |
-| frontend_route | `dashboard` | `/:239` | **manter** | conservative-default | sim |
-| frontend_route | `dpt360` | `/dpt360:255` | **manter** | conservative-default | sim |
-| frontend_route | `entrada` | `/entrada:278` | **manter** | conservative-default | sim |
-| frontend_route | `caso-novo` | `/casos/novo:301` | **manter** | conservative-default | sim |
-| frontend_route | `crm` | `/crm-leads:318` | **manter** | conservative-default | sim |
-| frontend_route | `cadastro-manual` | `/cadastro-manual:347` | **manter** | conservative-default | sim |
-| frontend_route | `cliente-detalhe` | `/clientes/:clientId:365` | **manter** | conservative-default | sim |
-| frontend_route | `sala-juridica` | `/sala-juridica:379` | **manter** | conservative-default | sim |
-| frontend_route | `raio-x-processo` | `/raio-x:397` | **manter** | conservative-default | sim |
-| frontend_route | `casos` | `/casos:415` | **manter** | conservative-default | sim |
-| frontend_route | `caso-detalhe` | `/casos/:id:431` | **manter** | conservative-default | sim |
-| frontend_route | `caso-jornada` | `/casos/:id/jornada:443` | **consolidar** | override | não |
-| frontend_route | `ajuizamento` | `/ajuizamento:455` | **manter** | conservative-default | sim |
-| frontend_route | `ajuizamento-perfis` | `/ajuizamento/perfis:471` | **manter** | conservative-default | sim |
-| frontend_route | `caso-entrevista` | `/casos/:id/entrevista:487` | **manter** | conservative-default | sim |
-| frontend_route | `ramos` | `/areas-de-atuacao:503` | **manter** | conservative-default | sim |
-| frontend_route | `ramo-detalhe` | `/areas-de-atuacao/:slug:518` | **manter** | conservative-default | sim |
-| frontend_route | `atividades` | `/atividades:556` | **manter** | conservative-default | sim |
-| frontend_route | `atividades-dia` | `/atividades/dia/:date:580` | **manter** | conservative-default | sim |
-| frontend_route | `documentos` | `/documentos:594` | **manter** | conservative-default | sim |
-| frontend_route | `pecas` | `/pecas:610` | **manter** | conservative-default | sim |
-| frontend_route | `assinaturas` | `/assinaturas:627` | **manter** | conservative-default | sim |
-| frontend_route | `workflow` | `/workflow:640` | **manter** | conservative-default | sim |
-| frontend_route | `checklists` | `/checklists:653` | **manter** | conservative-default | sim |
-| frontend_route | `inteligencia` | `/inteligencia:667` | **manter** | conservative-default | sim |
-| frontend_route | `banco-teses` | `/teses:697` | **manter** | conservative-default | sim |
-| frontend_route | `prompts` | `/prompts:713` | **manter** | conservative-default | sim |
-| frontend_route | `datajud` | `/datajud:727` | **manter** | conservative-default | sim |
-| frontend_route | `diario-oficial` | `/diario-oficial:740` | **manter** | conservative-default | sim |
-| frontend_route | `radar` | `/radar:754` | **manter** | conservative-default | sim |
-| frontend_route | `financeiro` | `/financeiro:773` | **manter** | conservative-default | sim |
-| frontend_route | `sociedade` | `/gestao-escritorio/sociedade:795` | **manter** | conservative-default | sim |
-| frontend_route | `produtividade` | `/produtividade:816` | **manter** | conservative-default | sim |
-| frontend_route | `configuracoes` | `/configuracoes:831` | **manter** | conservative-default | sim |
-| frontend_route | `governanca-ia` | `/ia-governanca:845` | **manter** | conservative-default | sim |
-| frontend_route | `central-diagnostico` | `/diagnostico:860` | **manter** | conservative-default | sim |
-| frontend_route | `auditoria` | `/auditoria:878` | **manter** | conservative-default | sim |
-| frontend_route | `mapa-modulos` | `/mapa-modulos:892` | **manter** | conservative-default | sim |
-| frontend_route | `usuarios` | `/usuarios:906` | **manter** | conservative-default | sim |
-| frontend_route | `lixeira` | `/lixeira:923` | **manter** | conservative-default | sim |
-| frontend_route | `ajuda` | `/ajuda:937` | **manter** | conservative-default | sim |
-| frontend_route | `ferramentas` | `/ferramentas:949` | **manter** | conservative-default | sim |
-| frontend_route | `portal-casos` | `casos:1352` | **manter** | conservative-default | sim |
-| frontend_route | `portal-caso-detalhe` | `casos/:id:1362` | **manter** | conservative-default | sim |
-| frontend_route | `portal-financeiro` | `financeiro:1371` | **manter** | conservative-default | sim |
-| frontend_route | `portal-assinaturas` | `assinaturas:1381` | **manter** | conservative-default | sim |
-| frontend_route | `portal-mensagens` | `mensagens:1391` | **manter** | conservative-default | sim |
-| frontend_route | `portal-documentos` | `documentos:1401` | **manter** | conservative-default | sim |
+| frontend_route | `dashboard` | `/:253` | **manter** | conservative-default | sim |
+| frontend_route | `dpt360` | `/dpt360:269` | **manter** | conservative-default | sim |
+| frontend_route | `entrada` | `/entrada:292` | **manter** | conservative-default | sim |
+| frontend_route | `caso-novo` | `/casos/novo:315` | **manter** | conservative-default | sim |
+| frontend_route | `crm` | `/crm-leads:332` | **manter** | conservative-default | sim |
+| frontend_route | `cadastro-manual` | `/cadastro-manual:361` | **manter** | conservative-default | sim |
+| frontend_route | `cliente-detalhe` | `/clientes/:clientId:379` | **manter** | conservative-default | sim |
+| frontend_route | `sala-juridica` | `/sala-juridica:393` | **manter** | conservative-default | sim |
+| frontend_route | `raio-x-processo` | `/raio-x:411` | **manter** | conservative-default | sim |
+| frontend_route | `casos` | `/casos:429` | **manter** | conservative-default | sim |
+| frontend_route | `caso-detalhe` | `/casos/:id:445` | **manter** | conservative-default | sim |
+| frontend_route | `caso-jornada` | `/casos/:id/jornada:457` | **consolidar** | override | não |
+| frontend_route | `ajuizamento` | `/ajuizamento:469` | **manter** | conservative-default | sim |
+| frontend_route | `ajuizamento-perfis` | `/ajuizamento/perfis:485` | **manter** | conservative-default | sim |
+| frontend_route | `caso-entrevista` | `/casos/:id/entrevista:501` | **manter** | conservative-default | sim |
+| frontend_route | `ramos` | `/areas-de-atuacao:517` | **manter** | conservative-default | sim |
+| frontend_route | `ramo-detalhe` | `/areas-de-atuacao/:slug:532` | **manter** | conservative-default | sim |
+| frontend_route | `atividades` | `/atividades:570` | **manter** | conservative-default | sim |
+| frontend_route | `atividades-dia` | `/atividades/dia/:date:594` | **manter** | conservative-default | sim |
+| frontend_route | `documentos` | `/documentos:608` | **manter** | conservative-default | sim |
+| frontend_route | `pecas` | `/pecas:624` | **manter** | conservative-default | sim |
+| frontend_route | `assinaturas` | `/assinaturas:641` | **manter** | conservative-default | sim |
+| frontend_route | `workflow` | `/workflow:654` | **manter** | conservative-default | sim |
+| frontend_route | `checklists` | `/checklists:667` | **manter** | conservative-default | sim |
+| frontend_route | `inteligencia` | `/inteligencia:681` | **manter** | conservative-default | sim |
+| frontend_route | `banco-teses` | `/teses:711` | **manter** | conservative-default | sim |
+| frontend_route | `prompts` | `/prompts:727` | **manter** | conservative-default | sim |
+| frontend_route | `datajud` | `/datajud:741` | **manter** | conservative-default | sim |
+| frontend_route | `diario-oficial` | `/diario-oficial:754` | **manter** | conservative-default | sim |
+| frontend_route | `radar` | `/radar:768` | **manter** | conservative-default | sim |
+| frontend_route | `financeiro` | `/financeiro:787` | **manter** | conservative-default | sim |
+| frontend_route | `sociedade` | `/gestao-escritorio/sociedade:809` | **manter** | conservative-default | sim |
+| frontend_route | `produtividade` | `/produtividade:830` | **manter** | conservative-default | sim |
+| frontend_route | `configuracoes` | `/configuracoes:845` | **manter** | conservative-default | sim |
+| frontend_route | `governanca-ia` | `/ia-governanca:859` | **manter** | conservative-default | sim |
+| frontend_route | `central-diagnostico` | `/diagnostico:874` | **manter** | conservative-default | sim |
+| frontend_route | `auditoria` | `/auditoria:892` | **manter** | conservative-default | sim |
+| frontend_route | `mapa-modulos` | `/mapa-modulos:906` | **manter** | conservative-default | sim |
+| frontend_route | `usuarios` | `/usuarios:920` | **manter** | conservative-default | sim |
+| frontend_route | `lixeira` | `/lixeira:937` | **manter** | conservative-default | sim |
+| frontend_route | `ajuda` | `/ajuda:951` | **manter** | conservative-default | sim |
+| frontend_route | `ferramentas` | `/ferramentas:963` | **manter** | conservative-default | sim |
+| frontend_route | `portal-casos` | `casos:1366` | **manter** | conservative-default | sim |
+| frontend_route | `portal-caso-detalhe` | `casos/:id:1376` | **manter** | conservative-default | sim |
+| frontend_route | `portal-financeiro` | `financeiro:1385` | **manter** | conservative-default | sim |
+| frontend_route | `portal-assinaturas` | `assinaturas:1395` | **manter** | conservative-default | sim |
+| frontend_route | `portal-mensagens` | `mensagens:1405` | **manter** | conservative-default | sim |
+| frontend_route | `portal-documentos` | `documentos:1415` | **manter** | conservative-default | sim |
 
 ## Endpoints backend
 
@@ -343,8 +341,8 @@ Fingerprint das fontes: `39582ab0c8103c118532b5c4e694f68ca71131c3469b02b9961e560
 | endpoint | `buscar_querido_diario` | `/api/integracoes/querido-diario/{codigo_ibge}:387` | **manter** | conservative-default | sim |
 | endpoint | `listar_camadas_sisema` | `/api/integracoes/ide-sisema/camadas:412` | **manter** | conservative-default | sim |
 | endpoint | `consultar_sisema` | `/api/integracoes/ide-sisema/feicoes:433` | **manter** | conservative-default | sim |
-| endpoint | `health` | `/api/api/health:597` | **corrigir** | parent-override | não |
-| endpoint | `readiness` | `/api/api/health/ready:620` | **corrigir** | parent-override | não |
+| endpoint | `health` | `/api/api/health:595` | **corrigir** | parent-override | não |
+| endpoint | `readiness` | `/api/api/health/ready:618` | **corrigir** | parent-override | não |
 | endpoint | `dashboard` | `/api/dpt360/dashboard:43` | **manter** | refined-mount-analysis | não |
 | endpoint | `company_profile` | `/api/dpt360/companies/{client_id}:76` | **manter** | refined-mount-analysis | não |
 | endpoint | `diagnostic_readiness` | `/api/dpt360/diagnostics/readiness/{client_id}:90` | **manter** | refined-mount-analysis | não |
@@ -361,29 +359,29 @@ Fingerprint das fontes: `39582ab0c8103c118532b5c4e694f68ca71131c3469b02b9961e560
 | endpoint | `remover` | `/api/agenda-eventos/{evento_id}:248` | **manter** | conservative-default | sim |
 | endpoint | `verificar_citacoes_juris` | `/api/ai/citacoes/verificar:58` | **consolidar** | parent-override | não |
 | endpoint | `analisar` | `/api/ai/analisar-caso:83` | **consolidar** | parent-override | não |
-| endpoint | `dossie_caso` | `/api/ai/dossie/{case_id}:122` | **consolidar** | parent-override | não |
-| endpoint | `resumir` | `/api/ai/resumir-documento:148` | **consolidar** | parent-override | não |
-| endpoint | `listar_logs` | `/api/ai/logs:173` | **consolidar** | parent-override | não |
-| endpoint | `atualizar_hitl` | `/api/ai/logs/{log_id}/hitl:248` | **consolidar** | parent-override | não |
-| endpoint | `citacoes_do_log` | `/api/ai/logs/{log_id}/citacoes:327` | **consolidar** | parent-override | não |
-| endpoint | `feedback_resposta_ia` | `/api/ai/logs/{log_id}/feedback:390` | **consolidar** | parent-override | não |
-| endpoint | `resumo_feedback_ia` | `/api/ai/logs/feedback/resumo:428` | **consolidar** | parent-override | não |
-| endpoint | `teses_ocultas` | `/api/ai/teses-ocultas:498` | **consolidar** | parent-override | não |
-| endpoint | `auditar` | `/api/ai/auditar-peca:524` | **consolidar** | parent-override | não |
-| endpoint | `audiencia` | `/api/ai/preparar-audiencia:574` | **consolidar** | parent-override | não |
-| endpoint | `gateway_health` | `/api/ai/gateway/health:596` | **consolidar** | parent-override | não |
-| endpoint | `roteamento_preview` | `/api/ai/roteamento/preview:606` | **consolidar** | parent-override | não |
-| endpoint | `assistente_estrategico` | `/api/ai/casos/{case_id}/assistente:679` | **consolidar** | parent-override | não |
-| endpoint | `dual_ia` | `/api/ai/casos/{case_id}/dual:827` | **consolidar** | parent-override | não |
-| endpoint | `visual_law` | `/api/ai/caso/{case_id}/visual-law:975` | **consolidar** | parent-override | não |
-| endpoint | `motor_estrategia` | `/api/ai/caso/{case_id}/estrategia:1017` | **consolidar** | parent-override | não |
-| endpoint | `analisar_contrato_endpoint` | `/api/ai/analisar-contrato:1144` | **consolidar** | parent-override | não |
-| endpoint | `detectar_prazos` | `/api/ai/detectar-prazos:1175` | **consolidar** | parent-override | não |
-| endpoint | `traduzir_andamento` | `/api/ai/traduzir-andamento:1279` | **consolidar** | parent-override | não |
-| endpoint | `resumir_texto` | `/api/ai/resumir-texto:1311` | **consolidar** | parent-override | não |
-| endpoint | `gerar_minuta` | `/api/ai/gerar-minuta:1358` | **consolidar** | parent-override | não |
-| endpoint | `pesquisar` | `/api/ai/pesquisar:1446` | **consolidar** | parent-override | não |
-| endpoint | `sugestao_honorarios` | `/api/ai/sugestao-honorarios:1521` | **consolidar** | parent-override | não |
+| endpoint | `dossie_caso` | `/api/ai/dossie/{case_id}:146` | **consolidar** | parent-override | não |
+| endpoint | `resumir` | `/api/ai/resumir-documento:172` | **consolidar** | parent-override | não |
+| endpoint | `listar_logs` | `/api/ai/logs:213` | **consolidar** | parent-override | não |
+| endpoint | `atualizar_hitl` | `/api/ai/logs/{log_id}/hitl:288` | **consolidar** | parent-override | não |
+| endpoint | `citacoes_do_log` | `/api/ai/logs/{log_id}/citacoes:367` | **consolidar** | parent-override | não |
+| endpoint | `feedback_resposta_ia` | `/api/ai/logs/{log_id}/feedback:430` | **consolidar** | parent-override | não |
+| endpoint | `resumo_feedback_ia` | `/api/ai/logs/feedback/resumo:468` | **consolidar** | parent-override | não |
+| endpoint | `teses_ocultas` | `/api/ai/teses-ocultas:538` | **consolidar** | parent-override | não |
+| endpoint | `auditar` | `/api/ai/auditar-peca:564` | **consolidar** | parent-override | não |
+| endpoint | `audiencia` | `/api/ai/preparar-audiencia:614` | **consolidar** | parent-override | não |
+| endpoint | `gateway_health` | `/api/ai/gateway/health:636` | **consolidar** | parent-override | não |
+| endpoint | `roteamento_preview` | `/api/ai/roteamento/preview:646` | **consolidar** | parent-override | não |
+| endpoint | `assistente_estrategico` | `/api/ai/casos/{case_id}/assistente:719` | **consolidar** | parent-override | não |
+| endpoint | `dual_ia` | `/api/ai/casos/{case_id}/dual:867` | **consolidar** | parent-override | não |
+| endpoint | `visual_law` | `/api/ai/caso/{case_id}/visual-law:1015` | **consolidar** | parent-override | não |
+| endpoint | `motor_estrategia` | `/api/ai/caso/{case_id}/estrategia:1057` | **consolidar** | parent-override | não |
+| endpoint | `analisar_contrato_endpoint` | `/api/ai/analisar-contrato:1184` | **consolidar** | parent-override | não |
+| endpoint | `detectar_prazos` | `/api/ai/detectar-prazos:1215` | **consolidar** | parent-override | não |
+| endpoint | `traduzir_andamento` | `/api/ai/traduzir-andamento:1319` | **consolidar** | parent-override | não |
+| endpoint | `resumir_texto` | `/api/ai/resumir-texto:1351` | **consolidar** | parent-override | não |
+| endpoint | `gerar_minuta` | `/api/ai/gerar-minuta:1398` | **consolidar** | parent-override | não |
+| endpoint | `pesquisar` | `/api/ai/pesquisar:1486` | **consolidar** | parent-override | não |
+| endpoint | `sugestao_honorarios` | `/api/ai/sugestao-honorarios:1561` | **consolidar** | parent-override | não |
 | endpoint | `core_chat` | `/api/ai/core/chat:118` | **manter** | parent-override | não |
 | endpoint | `core_task` | `/api/ai/core/task:136` | **manter** | parent-override | não |
 | endpoint | `core_analyze` | `/api/ai/core/analyze:156` | **manter** | parent-override | não |
@@ -422,7 +420,7 @@ Fingerprint das fontes: `39582ab0c8103c118532b5c4e694f68ca71131c3469b02b9961e560
 | endpoint | `protocolos` | `/api/ajuizamento/protocolos:363` | **manter** | conservative-default | sim |
 | endpoint | `simular` | `/api/ambiental/estrategia/simular:92` | **manter** | conservative-default | sim |
 | endpoint | `peca_conversao` | `/api/ambiental/estrategia/peca-conversao:215` | **manter** | conservative-default | sim |
-| endpoint | `download_peca` | `/api/ambiental/estrategia/peca/{arquivo_id}/download:239` | **manter** | conservative-default | sim |
+| endpoint | `download_peca` | `/api/ambiental/estrategia/peca/{arquivo_id}/download:241` | **manter** | conservative-default | sim |
 | endpoint | `analisar_documento` | `/api/analise-bancaria/contrato:132` | **manter** | conservative-default | sim |
 | endpoint | `modalidades` | `/api/analise-bancaria/modalidades:169` | **manter** | conservative-default | sim |
 | endpoint | `taxa_media` | `/api/analise-bancaria/taxa-media:196` | **manter** | conservative-default | sim |
@@ -613,14 +611,14 @@ Fingerprint das fontes: `39582ab0c8103c118532b5c4e694f68ca71131c3469b02b9961e560
 | endpoint | `cancelar` | `/api/deadlines/{deadline_id}:601` | **manter** | conservative-default | sim |
 | endpoint | `meta` | `/api/defesas-revisoes/meta:243` | **manter** | conservative-default | sim |
 | endpoint | `analisar` | `/api/defesas-revisoes/analisar:260` | **manter** | conservative-default | sim |
-| endpoint | `comparar_documentos` | `/api/defesas-revisoes/avancado/comparar-documentos:191` | **manter** | conservative-default | sim |
-| endpoint | `critica_adversarial` | `/api/defesas-revisoes/avancado/adversarial:222` | **manter** | conservative-default | sim |
-| endpoint | `calcular_viabilidade` | `/api/defesas-revisoes/avancado/viabilidade:257` | **manter** | conservative-default | sim |
-| endpoint | `calcular_especialidade` | `/api/defesas-revisoes/avancado/calcular-especialidade:288` | **manter** | conservative-default | sim |
-| endpoint | `persistir_resultado` | `/api/defesas-revisoes/avancado/persistir:350` | **manter** | conservative-default | sim |
-| endpoint | `analisar_decisao` | `/api/defesas-revisoes/avancado/analisar-decisao:451` | **manter** | conservative-default | sim |
-| endpoint | `memoria_institucional` | `/api/defesas-revisoes/avancado/memoria/{modalidade}:486` | **manter** | conservative-default | sim |
-| endpoint | `gerar_pacote_seguro` | `/api/defesas-revisoes/avancado/pacote:176` | **manter** | conservative-default | sim |
+| endpoint | `comparar_documentos` | `/api/defesas-revisoes/avancado/comparar-documentos:207` | **manter** | conservative-default | sim |
+| endpoint | `critica_adversarial` | `/api/defesas-revisoes/avancado/adversarial:243` | **manter** | conservative-default | sim |
+| endpoint | `calcular_viabilidade` | `/api/defesas-revisoes/avancado/viabilidade:285` | **manter** | conservative-default | sim |
+| endpoint | `calcular_especialidade` | `/api/defesas-revisoes/avancado/calcular-especialidade:316` | **manter** | conservative-default | sim |
+| endpoint | `persistir_resultado` | `/api/defesas-revisoes/avancado/persistir:380` | **manter** | conservative-default | sim |
+| endpoint | `analisar_decisao` | `/api/defesas-revisoes/avancado/analisar-decisao:515` | **manter** | conservative-default | sim |
+| endpoint | `memoria_institucional` | `/api/defesas-revisoes/avancado/memoria/{modalidade}:557` | **manter** | conservative-default | sim |
+| endpoint | `gerar_pacote_seguro` | `/api/defesas-revisoes/avancado/pacote:754` | **manter** | conservative-default | sim |
 | endpoint | `get_resumo` | `/api/despesas/resumo:120` | **manter** | conservative-default | sim |
 | endpoint | `list_despesas` | `/api/despesas:184` | **manter** | conservative-default | sim |
 | endpoint | `export_despesas_csv` | `/api/despesas/export/csv:232` | **manter** | conservative-default | sim |
@@ -774,14 +772,14 @@ Fingerprint das fontes: `39582ab0c8103c118532b5c4e694f68ca71131c3469b02b9961e560
 | endpoint | `analise_completa` | `/api/intake/casos/{case_id}/analise-completa:365` | **manter** | conservative-default | sim |
 | endpoint | `radar_legislativo` | `/api/intelligence/radar/legislativo:22` | **manter** | conservative-default | sim |
 | endpoint | `analise_impacto` | `/api/intelligence/analise-impacto:40` | **manter** | conservative-default | sim |
-| endpoint | `listar` | `/api/intimacoes/:94` | **manter** | conservative-default | sim |
-| endpoint | `status_captura` | `/api/intimacoes/status-captura:137` | **manter** | conservative-default | sim |
-| endpoint | `processar` | `/api/intimacoes/{com_id}/processar:230` | **manter** | conservative-default | sim |
-| endpoint | `sugerir_prazo` | `/api/intimacoes/{com_id}/sugerir-prazo:274` | **manter** | conservative-default | sim |
-| endpoint | `prazo_sugerido` | `/api/intimacoes/{com_id}/prazo-sugerido:284` | **manter** | conservative-default | sim |
-| endpoint | `aceitar_prazo` | `/api/intimacoes/{com_id}/aceitar-prazo:299` | **manter** | conservative-default | sim |
-| endpoint | `recusar_prazo` | `/api/intimacoes/{com_id}/recusar-prazo:429` | **manter** | conservative-default | sim |
-| endpoint | `capturar_agora` | `/api/intimacoes/capturar-agora:467` | **manter** | conservative-default | sim |
+| endpoint | `listar` | `/api/intimacoes/:88` | **manter** | conservative-default | sim |
+| endpoint | `status_captura` | `/api/intimacoes/status-captura:135` | **manter** | conservative-default | sim |
+| endpoint | `processar` | `/api/intimacoes/{com_id}/processar:212` | **manter** | conservative-default | sim |
+| endpoint | `sugerir_prazo` | `/api/intimacoes/{com_id}/sugerir-prazo:256` | **manter** | conservative-default | sim |
+| endpoint | `prazo_sugerido` | `/api/intimacoes/{com_id}/prazo-sugerido:266` | **manter** | conservative-default | sim |
+| endpoint | `aceitar_prazo` | `/api/intimacoes/{com_id}/aceitar-prazo:279` | **manter** | conservative-default | sim |
+| endpoint | `recusar_prazo` | `/api/intimacoes/{com_id}/recusar-prazo:397` | **manter** | conservative-default | sim |
+| endpoint | `capturar_agora` | `/api/intimacoes/capturar-agora:435` | **manter** | conservative-default | sim |
 | endpoint | `overview` | `/api/jurimetria/overview:70` | **manter** | conservative-default | sim |
 | endpoint | `por_area` | `/api/jurimetria/por-area:135` | **manter** | conservative-default | sim |
 | endpoint | `por_magistrado` | `/api/jurimetria/por-magistrado:189` | **manter** | conservative-default | sim |
@@ -947,7 +945,7 @@ Fingerprint das fontes: `39582ab0c8103c118532b5c4e694f68ca71131c3469b02b9961e560
 | endpoint | `buscar_precedentes_endpoint` | `/api/precedentes/buscar:37` | **manter** | refined-mount-analysis | não |
 | endpoint | `regras_transicao` | `/api/previdenciario/ferramentas/regras-transicao:82` | **manter** | conservative-default | sim |
 | endpoint | `parecer_pdf` | `/api/previdenciario/ferramentas/parecer-pdf:206` | **manter** | conservative-default | sim |
-| endpoint | `download_parecer` | `/api/previdenciario/ferramentas/parecer/{arquivo_id}/download:232` | **manter** | conservative-default | sim |
+| endpoint | `download_parecer` | `/api/previdenciario/ferramentas/parecer/{arquivo_id}/download:234` | **manter** | conservative-default | sim |
 | endpoint | `listar_processos` | `/api/cases/{case_id}/processes:39` | **corrigir** | parent-override | não |
 | endpoint | `criar_processo` | `/api/cases/{case_id}/processes:51` | **corrigir** | parent-override | não |
 | endpoint | `atualizar_processo` | `/api/processes/{pid}:80` | **corrigir** | parent-override | não |
@@ -1146,8 +1144,8 @@ Fingerprint das fontes: `39582ab0c8103c118532b5c4e694f68ca71131c3469b02b9961e560
 | endpoint | `criar` | `/api/suspensoes/:90` | **manter** | conservative-default | sim |
 | endpoint | `remover` | `/api/suspensoes/{suspensao_id}:117` | **manter** | conservative-default | sim |
 | endpoint | `simular` | `/api/suspensoes/simular:142` | **manter** | conservative-default | sim |
-| endpoint | `mapa_modulos` | `/api/system-modules/mapa:46` | **manter** | conservative-default | sim |
-| endpoint | `status_integracoes` | `/api/system-modules/integrations:58` | **manter** | conservative-default | sim |
+| endpoint | `mapa_modulos` | `/api/system-modules/mapa:49` | **manter** | conservative-default | sim |
+| endpoint | `status_integracoes` | `/api/system-modules/integrations:87` | **manter** | conservative-default | sim |
 | endpoint | `listar` | `/api/tasks/:103` | **manter** | conservative-default | sim |
 | endpoint | `criar` | `/api/tasks/:144` | **manter** | conservative-default | sim |
 | endpoint | `atualizar` | `/api/tasks/{task_id}:180` | **manter** | conservative-default | sim |
@@ -1178,7 +1176,7 @@ Fingerprint das fontes: `39582ab0c8103c118532b5c4e694f68ca71131c3469b02b9961e560
 | endpoint | `remover` | `/api/timesheet/{entry_id}:143` | **manter** | conservative-default | sim |
 | endpoint | `calcular` | `/api/trabalhista/liquidacao/calcular:141` | **manter** | conservative-default | sim |
 | endpoint | `planilha_pdf` | `/api/trabalhista/liquidacao/planilha-pdf:313` | **manter** | conservative-default | sim |
-| endpoint | `download_planilha` | `/api/trabalhista/liquidacao/planilha/{arquivo_id}/download:337` | **manter** | conservative-default | sim |
+| endpoint | `download_planilha` | `/api/trabalhista/liquidacao/planilha/{arquivo_id}/download:339` | **manter** | conservative-default | sim |
 | endpoint | `status_transparencia` | `/api/transparencia/status:47` | **manter** | conservative-default | sim |
 | endpoint | `consultar_sancoes` | `/api/transparencia/sancoes:59` | **manter** | conservative-default | sim |
 | endpoint | `listar` | `/api/trash/:113` | **manter** | conservative-default | sim |
@@ -1187,7 +1185,7 @@ Fingerprint das fontes: `39582ab0c8103c118532b5c4e694f68ca71131c3469b02b9961e560
 | endpoint | `entrevista_inteligente` | `/api/triagem/entrevista:54` | **manter** | conservative-default | sim |
 | endpoint | `analisar_xml` | `/api/tributario/fiscal/analisar-xml:96` | **manter** | conservative-default | sim |
 | endpoint | `relatorio_pdf` | `/api/tributario/fiscal/relatorio-pdf:339` | **manter** | conservative-default | sim |
-| endpoint | `download_relatorio` | `/api/tributario/fiscal/relatorio/{arquivo_id}/download:368` | **manter** | conservative-default | sim |
+| endpoint | `download_relatorio` | `/api/tributario/fiscal/relatorio/{arquivo_id}/download:370` | **manter** | conservative-default | sim |
 | endpoint | `meu_perfil` | `/api/users/me:153` | **manter** | conservative-default | sim |
 | endpoint | `minha_seguranca` | `/api/users/me/security:159` | **manter** | conservative-default | sim |
 | endpoint | `minhas_sessoes` | `/api/users/me/sessions:183` | **manter** | conservative-default | sim |
@@ -1376,8 +1374,6 @@ Fingerprint das fontes: `39582ab0c8103c118532b5c4e694f68ca71131c3469b02b9961e560
 | service | `document_rescan_service` | `backend/app/services/document_rescan_service.py` | **manter** | refined-default | sim |
 | service | `document_storage_uow` | `backend/app/services/document_storage_uow.py` | **manter** | conservative-default | sim |
 | service | `document_upload_stream` | `backend/app/services/document_upload_stream.py` | **manter** | conservative-default | sim |
-| service | `document_version_audit_service` | `backend/app/services/document_version_audit_service.py` | **manter** | conservative-default | sim |
-| service | `document_version_chain_readiness_service` | `backend/app/services/document_version_chain_readiness_service.py` | **manter** | conservative-default | sim |
 | service | `document_version_service` | `backend/app/services/document_version_service.py` | **manter** | conservative-default | sim |
 | service | `documental` | `backend/app/services/documental.py` | **manter** | conservative-default | sim |
 | service | `documento_service` | `backend/app/services/documento_service.py` | **manter** | conservative-default | sim |
@@ -1581,7 +1577,6 @@ Fingerprint das fontes: `39582ab0c8103c118532b5c4e694f68ca71131c3469b02b9961e560
 | service | `visual_law` | `backend/app/services/visual_law.py` | **manter** | refined-default | sim |
 | service | `visual_law_core` | `backend/app/services/visual_law_core.py` | **manter** | conservative-default | sim |
 | service | `visual_law_files` | `backend/app/services/visual_law_files.py` | **manter** | conservative-default | sim |
-| service | `visual_law_pdf` | `backend/app/services/visual_law_pdf.py` | **manter** | conservative-default | sim |
 | service | `visual_law_theme` | `backend/app/services/visual_law_theme.py` | **manter** | conservative-default | sim |
 
 ## Tabelas

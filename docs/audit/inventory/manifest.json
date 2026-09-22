@@ -1,35 +1,35 @@
 {
   "by_classification": {
     "consolidar": 192,
-    "corrigir": 79,
+    "corrigir": 80,
     "desativar": 92,
     "excluir após migração": 5,
-    "manter": 7685,
+    "manter": 7653,
     "renomear": 24
   },
   "by_kind": {
-    "class": 760,
-    "component": 111,
+    "class": 758,
+    "component": 104,
     "endpoint": 896,
-    "frontend_function": 1675,
+    "frontend_function": 1660,
     "frontend_route": 59,
-    "function": 3540,
+    "function": 3539,
     "model_file": 72,
-    "page": 189,
+    "page": 187,
     "python_module": 128,
-    "router": 160,
-    "service": 354,
+    "router": 159,
+    "service": 351,
     "table": 133
   },
   "gate": {
     "all_items_classified": true,
     "invalid_item_ids": []
   },
-  "indirect_mount_edges": 152,
-  "mounted_routers": 151,
-  "needs_review": 7500,
+  "indirect_mount_edges": 151,
+  "mounted_routers": 150,
+  "needs_review": 7468,
   "refined": true,
-  "source_fingerprint": "39582ab0c8103c118532b5c4e694f68ca71131c3469b02b9961e5609315614a2",
-  "total": 8077,
+  "source_fingerprint": "6ce231721bae2ec719163a1ce41b03383c4b77fb10e303981a3692ad8e9ed2dd",
+  "total": 8046,
   "unmounted_routers": 9
 }
