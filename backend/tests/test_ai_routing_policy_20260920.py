@@ -195,3 +195,30 @@ def test_canonizacao_preserva_metadados_de_fallback():
     )
     assert out["fallback_ativado"] is True
     assert out["fallback_motivo"] == "maritaca: RuntimeError"
+
+
+def test_orchestrator_declara_sanitizacao_interna_como_nao_externa():
+    import inspect
+    from app.services.ai.core import orchestrator as orchestrator_mod
+
+    src = inspect.getsource(orchestrator_mod.SingleAICoreOrchestrator.run)
+    assert "ja_sanitizado=False" in src
+
+
+def test_policy_sanitiza_estrutural_antes_de_decidir_provider_externo(monkeypatch):
+    s = _settings()
+    s.AI_REQUIRE_SANITIZATION_FOR_EXTERNAL = True
+    monkeypatch.setattr(pp, "get_settings", lambda: s)
+    monkeypatch.setattr(
+        pp.AIProviderPolicy,
+        "_elegivel",
+        staticmethod(lambda provider: provider == "maritaca"),
+    )
+    identificador = ".".join(("123", "456", "789")) + "-" + "09"
+    decisao = pp.AIProviderPolicy().avaliar(
+        f"Cliente identificado por {identificador} requer análise.",
+        "analise_juridica",
+        ja_sanitizado=False,
+    )
+    assert decisao.permitido is True
+    assert decisao.provider_chain == [("maritaca", None)]
