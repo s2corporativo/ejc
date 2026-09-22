@@ -143,3 +143,28 @@ async def test_status_converte_structured_output_em_conteudo(monkeypatch):
     assert out["status"] == "completed"
     assert "## Teses possíveis" in out["conteudo"]
     assert out["fontes"][0]["categoria"] == "manus_nao_verificada"
+
+
+@pytest.mark.asyncio
+async def test_client_nao_herda_connectors_ou_skills_da_conta(monkeypatch):
+    from app.services.manus_client import ManusClient
+
+    monkeypatch.setattr("app.services.manus_client.get_settings", _settings)
+    captured = {}
+
+    async def fake_request(self, method, path, **kwargs):
+        captured.update({"method": method, "path": path, **kwargs})
+        return {"ok": True, "task_id": "task-safe"}
+
+    monkeypatch.setattr(ManusClient, "_request", fake_request)
+    await ManusClient().create_task(
+        content="Analise uma questão jurídica abstrata.",
+        structured_output_schema=service.MANUS_DEEP_SCHEMA,
+        title="Teste",
+        agent_profile="max",
+    )
+    message = captured["json"]["message"]
+    assert message["connectors"] == []
+    assert message["enable_skills"] == []
+    assert message["force_skills"] == []
+    assert message["task_references"] == []

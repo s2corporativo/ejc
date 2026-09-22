@@ -55,7 +55,15 @@ class ManusClient:
         agent_profile: str,
     ) -> dict[str, Any]:
         payload = {
-            "message": {"content": content},
+            "message": {
+                "content": content,
+                # Não herdar conectores/skills default da conta Manus.
+                # Esta integração é somente raciocínio, sem ações externas.
+                "connectors": [],
+                "enable_skills": [],
+                "force_skills": [],
+                "task_references": [],
+            },
             "locale": "pt-BR",
             "interactive_mode": False,
             "hide_in_task_list": True,
