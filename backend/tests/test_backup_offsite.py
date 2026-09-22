@@ -96,12 +96,6 @@ async def test_destino_rclone_chama_subprocess_com_args_corretos(monkeypatch, tm
                 stderr = ""
                 stdout = '{"bytes": %d}' % getattr(_fake_run, "remote_size", 0)
             return _Size()
-        if cmd[1] == "lsjson":
-            class _Listing:
-                returncode = 0
-                stderr = ""
-                stdout = "[]"
-            return _Listing()
         raise AssertionError(cmd)
 
     monkeypatch.setattr(backup_service.shutil, "which", lambda nome: f"/usr/bin/{nome}")
@@ -112,7 +106,7 @@ async def test_destino_rclone_chama_subprocess_com_args_corretos(monkeypatch, tm
     assert resultado["ok"] is True and resultado["status"] == "sucesso"
     assert resultado["local_ok"] is True and resultado["offsite_ok"] is True
     assert resultado["destino"] == "rclone"
-    assert len(chamadas) == 3  # banco + uploads + manifesto cifrado
+    assert len(chamadas) == 2  # db.dump.enc + uploads.tar.gz.enc
     for chamada in chamadas:
         cmd = chamada["cmd"]
         assert cmd[0] == "rclone" and cmd[1] == "copyto"
@@ -214,7 +208,7 @@ async def test_destino_gdrive_preserva_fluxo(monkeypatch, tmp_path):
     assert resultado["destino"] == "gdrive"
     assert resultado["local_ok"] is True and resultado["offsite_ok"] is True
     assert resultado["rotacao_removidos"] == 3
-    assert len(enviados) == 3 and all(pasta == "pasta123" for _, pasta in enviados)
+    assert len(enviados) == 2 and all(pasta == "pasta123" for _, pasta in enviados)
 
 
 async def test_gdrive_sem_pasta_default_gera_parcial(monkeypatch, tmp_path):
@@ -294,12 +288,6 @@ async def test_rclone_sucesso_remove_local_quando_politica_ativa(monkeypatch, tm
                 stderr = ""
                 stdout = '{"bytes": %d}' % remote_sizes[cmd[3]]
             return _Size()
-        if cmd[1] == "lsjson":
-            class _Listing:
-                returncode = 0
-                stderr = ""
-                stdout = "[]"
-            return _Listing()
         raise AssertionError(cmd)
 
     monkeypatch.setattr(backup_service.shutil, "which", lambda nome: f"/usr/bin/{nome}")

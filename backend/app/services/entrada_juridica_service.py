@@ -255,6 +255,8 @@ def _texto_base_visivel(documentos: list[Document], case) -> str:
 async def gerar_dossie_juridico(db, user, case_id: str) -> dict[str, Any]:
     """Gera o dossiê completo, versiona o plano e devolve ações seguras."""
     case = await verificar_acesso_caso(db, user, case_id)
+    from app.services.case_intelligence_service import ultimo_snapshot
+    snapshot_anterior = await ultimo_snapshot(db, case.id)
     area = _enum_value(case.area) or ""
 
     cliente = await db.get(Client, case.client_id)
@@ -455,6 +457,61 @@ async def gerar_dossie_juridico(db, user, case_id: str) -> dict[str, Any]:
         "revisao_obrigatoria": True,
     }
 
+    # Memória incremental: a comparação é determinística e apenas sinaliza
+    # mudanças observáveis. Nunca promove impacto em tese/risco sem HITL.
+    try:
+        from app.services.document_intelligence import comparar_inteligencia
+
+        estado_atual = {
+            "classificacao": resposta["identificacao"],
+            "fatos": resposta["fatos"],
+            "cronologia": cronologia,
+            "questoes_juridicas": resposta["analise_juridica"].get("brechas_preliminares"),
+            "informacoes_faltantes": perguntas,
+            "provas_necessarias": resposta["provas"].get("necessarias"),
+            "riscos": resposta["analise_juridica"].get("riscos"),
+            "estrategias": plano,
+            "honorarios": honorarios,
+        }
+        resposta["mudancas_desde_ultima_versao"] = comparar_inteligencia(
+            snapshot_anterior.payload if snapshot_anterior else None,
+            estado_atual,
+        )
+    except Exception as exc:
+        resposta["mudancas_desde_ultima_versao"] = {
+            "houve_alteracao": False,
+            "alteracoes": [],
+            "requer_revisao_humana": True,
+            "aviso": f"Comparação incremental indisponível: {str(exc)[:160]}",
+        }
+
+    try:
+        from app.services.document_intelligence import build_case_intelligence
+
+        resposta["inteligencia_juridica"] = build_case_intelligence({
+            "fatos": resposta["fatos"].get("sumario") or "",
+            "cliente": resposta["identificacao"].get("cliente") or {},
+            "parte_contraria": case.parte_contraria,
+            "area": {"valor": area, "confianca": 1.0},
+            "provas_necessarias": [
+                item.get("titulo") for item in provas if isinstance(item, dict) and item.get("titulo")
+            ],
+            "honorarios_sugeridos": {
+                "disponivel": bool(honorarios.get("origem_tabela")),
+                "seccional": "OAB/MG",
+                "servico_identificado": area,
+                "candidatos": [honorarios.get("origem_tabela")] if honorarios.get("origem_tabela") else [],
+                "aviso": honorarios.get("aviso") or "Confirme a referência de honorários.",
+            },
+        }).model_dump(mode="json")
+    except Exception as exc:
+        resposta["inteligencia_juridica"] = {
+            "versao_contrato": "case_intelligence.v1",
+            "status": "degradado",
+            "revisao_obrigatoria": True,
+            "alertas": [f"Contrato universal indisponível: {str(exc)[:160]}"],
+        }
+
     nomes = [x for x in [nome_cliente, case.parte_contraria, *[p["nome"] for p in partes]] if x]
     snapshot_payload = _sanitizar_arvore(
         {
@@ -469,6 +526,7 @@ async def gerar_dossie_juridico(db, user, case_id: str) -> dict[str, Any]:
             "honorarios": honorarios,
             "estimativa_sucesso": estimativa,
             "plano_juridico": plano,
+            "inteligencia_juridica": resposta.get("inteligencia_juridica"),
             "fontes": ["entrada_unica", "analise_estrategica", "banco_teses", "tabela_oab"],
         },
         nomes,

@@ -16,7 +16,7 @@ import logging
 from typing import Annotated, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -26,6 +26,7 @@ from app.models.document_intake import DocumentIntakeBatch
 from app.models.user import User
 from app.schemas.entrada import CriarCasoEntradaRequest
 from app.services import entrada_juridica_service, entrada_service
+from app.services.contract_migration import mark_contract_response
 
 logger = logging.getLogger("ejc.entrada_unica.router")
 router = APIRouter(prefix="/entrada", tags=["Entrada Única"])
@@ -50,6 +51,7 @@ async def analisar(
     case_id: Annotated[Optional[str], Query(max_length=36)] = None,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(exigir_advogado),
+    response: Response = None,
 ):
     """Porta única de análise jurídica.
 
@@ -58,7 +60,9 @@ async def analisar(
     em RASCUNHO. Em ambos os modos, RBAC/HITL/auditoria continuam obrigatórios.
     """
     if case_id:
-        return await entrada_juridica_service.gerar_dossie_juridico(db, cu, case_id)
+        resultado = await entrada_juridica_service.gerar_dossie_juridico(db, cu, case_id)
+        mark_contract_response(response, route="/entrada/analisar")
+        return resultado
 
     texto_limpo = (texto or "").strip() or None
     if not files and len(texto_limpo or "") < 40:
@@ -91,6 +95,7 @@ async def analisar(
         batch.total_bytes = int(proposta.pop("total_bytes", 0) or 0)
         batch.resultado = {"entrada_unica": proposta}
         await db.commit()
+        mark_contract_response(response, route="/entrada/analisar")
         return proposta
     except HTTPException:
         await db.rollback()

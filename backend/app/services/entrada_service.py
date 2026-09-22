@@ -459,7 +459,27 @@ async def analisar_entrada(
         for p in processados
     ]
 
-    return {
+    # Honorários entram como referência preliminar, sem criar proposta nem
+    # escolher automaticamente um item. O cálculo completo depende do Case,
+    # complexidade e confirmação do advogado.
+    honorarios_referencia: dict[str, Any]
+    try:
+        from app.services.fee_proposal_service import referencia_honorarios_entrada
+
+        honorarios_referencia = await referencia_honorarios_entrada(
+            db,
+            area.get("valor") if isinstance(area, dict) else None,
+            acao or assunto.get("valor"),
+        )
+    except Exception as exc:
+        logger.warning("Referência de honorários indisponível na entrada: %s", exc)
+        honorarios_referencia = {
+            "disponivel": False,
+            "candidatos": [],
+            "aviso": "Tabela de honorários indisponível; consultar fonte oficial vigente.",
+        }
+
+    proposta = {
         "rascunho_id": batch.id,
         "cliente": cliente,
         "area": {**area, "requer_confirmacao_humana": True},
@@ -476,6 +496,7 @@ async def analisar_entrada(
         "proxima_acao": proxima_acao,
         "proximos_passos": proximos_passos,
         "conflito": {"alertas": conflito_alertas},
+        "honorarios_sugeridos": honorarios_referencia,
         "duplicados": {"clientes": duplicados_clientes},
         "degradado": degradado,
         "avisos": avisos,
@@ -489,6 +510,27 @@ async def analisar_entrada(
         "revisao_obrigatoria": True,
         "aviso": AVISO_HITL,
     }
+    # Contrato canônico aditivo: consumidores novos usam a inteligência
+    # estruturada; telas legadas continuam recebendo os campos históricos.
+    # A normalização é pura e fail-safe: ausência de evidência vira pendência,
+    # nunca fato inventado ou promoção automática para o caso.
+    try:
+        from app.services.document_intelligence import build_case_intelligence
+
+        proposta["inteligencia_juridica"] = build_case_intelligence(proposta).model_dump(
+            mode="json"
+        )
+    except Exception as exc:
+        logger.warning("Contrato universal indisponível na Entrada Única: %s", exc)
+        proposta["inteligencia_juridica"] = {
+            "versao_contrato": "case_intelligence.v1",
+            "status": "degradado",
+            "revisao_obrigatoria": True,
+            "alertas": [
+                "Contrato universal indisponível; revise os campos legados manualmente."
+            ],
+        }
+    return proposta
 
 
 # ── POST /entrada/{rascunho_id}/criar-caso — UMA transação ───────────────────

@@ -54,7 +54,7 @@ when:
 
 services:
   db:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
     environment:
       POSTGRES_USER: ejc_user
       POSTGRES_DB: ejc_db
@@ -78,7 +78,7 @@ steps:
       - bash scripts/tests/test_backup_wrapper.sh
       - bash scripts/tests/test_ci_secret_gate.sh
       - bash scripts/tests/test_rag_activation.sh
-      - python -m unittest discover -s scripts/tests -p 'test_ai_architecture.py' -v
+      - python -m unittest discover -s scripts/tests -p 'test_ci_evidence_contract.py' -v
       - bash -n scripts/legacy_script_guard.sh
       - bash scripts/tests/test_legacy_script_guards.sh
     # Contratos leves rodam sempre: seus insumos cruzam código, exemplos e scanners.
@@ -208,29 +208,73 @@ steps:
       # Fast gate: falhas estruturais baratas interrompem antes da suíte total.
       # Não substitui testes de módulo nem o pytest completo.
       - python -m compileall app -q
-      - python -m alembic heads
+      - |
+        alembic_heads="$(python -m alembic heads)"
+        printf '[alembic-heads]\n%s\n' "$alembic_heads"
+        head_count="$(printf '%s\n' "$alembic_heads" | sed '/^[[:space:]]*$/d' | wc -l)"
+        if [ "$head_count" -ne 1 ]; then
+          echo "[classification] test_failure: Alembic possui $head_count heads; esperado 1" >&2
+          exit 1
+        fi
       # Fail-closed: não deixar o pipeline pendurado indefinidamente se o
       # serviço PostgreSQL não iniciar ou se o alias db não resolver.
-      - timeout 120s bash -c 'until pg_isready -h db -U ejc_user -d ejc_db -q; do sleep 2; done'
-      - python -m alembic upgrade head
+      - |
+        if ! timeout 120s bash -c 'until pg_isready -h db -U ejc_user -d ejc_db -q; do sleep 2; done'; then
+          echo "[classification] infra_error: PostgreSQL não ficou pronto em 120s" >&2
+          exit 1
+        fi
+      - |
+        if ! python -m alembic upgrade head; then
+          echo "[classification] test_failure: alembic upgrade head falhou" >&2
+          exit 1
+        fi
       - python -m unittest discover -s ../scripts/tests -p test_woodpecker_scopes.py -v
       - pytest tests/test_alembic_single_head.py tests/test_rotas_registro_explicito.py -q
+      # Prova explícita do runtime DB após a reconstrução: PostgreSQL 16 + pgvector.
+      - |
+        db_evidence="$(psql "$DATABASE_URL_SYNC" -v ON_ERROR_STOP=1 -Atc "SELECT current_setting('server_version_num') || '|' || extversion FROM pg_extension WHERE extname='vector';")"
+        printf '[db-evidence] %s\n' "$db_evidence"
+        if ! printf '%s\n' "$db_evidence" | grep -Eq '^16[0-9]{4}\|[0-9]+\.[0-9]+'; then
+          echo "[classification] infra_error: runtime não comprovou PostgreSQL 16 + pgvector" >&2
+          exit 1
+        fi
       # Smoke contra o processo uvicorn real, não somente TestClient.
       - |
         set -e
-        uvicorn app.main:app --host 0.0.0.0 --port 8000 >/tmp/ejc-uvicorn-live.log 2>&1 &
+        mkdir -p ../.ci-evidence
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 >../.ci-evidence/uvicorn-live.log 2>&1 &
         api_pid=$!
         trap 'kill "$api_pid" 2>/dev/null || true' EXIT
-        BASE_URL=http://127.0.0.1:8000 bash ../scripts/tests/test_live_api.sh
+        set +e
+        BASE_URL=http://127.0.0.1:8000 bash ../scripts/tests/test_live_api.sh >../.ci-evidence/live-api.log 2>&1
+        smoke_rc=$?
+        set -e
+        cat ../.ci-evidence/live-api.log
+        if [ "$smoke_rc" -ne 0 ]; then
+          echo "[classification] endpoint_failure: smoke HTTP contra uvicorn real falhou" >&2
+          echo "[live-api] uvicorn log:"
+          cat ../.ci-evidence/uvicorn-live.log
+          exit "$smoke_rc"
+        fi
         kill "$api_pid" 2>/dev/null || true
         wait "$api_pid" 2>/dev/null || true
         trap - EXIT
       # Gate completo obrigatório quando backend/configuração compartilhada muda.
       - |
+        mkdir -p ../.ci-evidence
         set +e
-        pytest tests -q --junitxml=/tmp/ejc-backend-tests.xml
+        pytest tests -q --junitxml=../.ci-evidence/backend-tests.xml
         pytest_rc=$?
-        python ../scripts/tests/classify_pytest_results.py /tmp/ejc-backend-tests.xml | tee /tmp/ejc-backend-tests-classification.json
+        python ../scripts/tests/classify_pytest_results.py --fail-on-db-skip ../.ci-evidence/backend-tests.xml >../.ci-evidence/backend-tests-classification.json
+        classifier_rc=$?
+        set -e
+        cat ../.ci-evidence/backend-tests-classification.json
+        (cd ../.ci-evidence && sha256sum backend-tests.xml backend-tests-classification.json live-api.log uvicorn-live.log) | tee ../.ci-evidence/SHA256SUMS
+        cat ../.ci-evidence/SHA256SUMS
+        if [ "$classifier_rc" -ne 0 ]; then
+          echo "[classification] infra_error: classificação JUnit reprovou o gate (rc=$classifier_rc)" >&2
+          exit "$classifier_rc"
+        fi
         exit "$pytest_rc"
     when:
       - event: push
