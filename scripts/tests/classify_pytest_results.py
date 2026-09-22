@@ -10,7 +10,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 INFRA_RE = re.compile(
-    r"socket\\.gaierror|name or service not known|temporary failure in name resolution|"
+    r"socket\.gaierror|name or service not known|temporary failure in name resolution|"
     r"connection refused|could not connect|connection is closed|cannot connect|"
     r"no such host|server closed the connection unexpectedly|"
     r"operationalerror.*(postgres|asyncpg|database|connection)",
@@ -18,13 +18,13 @@ INFRA_RE = re.compile(
 )
 ENDPOINT_RE = re.compile(
     r"(^|[_./-])(api|endpoint|route|router|health|smoke|http)([_./-]|$)|"
-    r"status[_ ]?code|http[s]?\\s*\\d{3}",
+    r"status[_ ]?code|http[s]?\s*\d{3}",
     re.IGNORECASE,
 )
 DB_SKIP_RE = re.compile(
-    r"RUN_DB_TESTS|SCHEMA_CHECK_DATABASE_URL|requer\\s+Postgres|"
-    r"Postgres(?:SQL)?[^\\n]{0,80}(?:migration|pgvector|banco|database)|"
-    r"banco\\s+(?:real|inacess[ií]vel)|pgvector",
+    r"RUN_DB_TESTS|SCHEMA_CHECK_DATABASE_URL|requer\s+Postgres|"
+    r"Postgres(?:SQL)?[^\n]{0,80}(?:migration|pgvector|banco|database)|"
+    r"banco\s+(?:real|inacess[ií]vel)|pgvector",
     re.IGNORECASE,
 )
 

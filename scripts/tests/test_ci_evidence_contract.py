@@ -26,19 +26,25 @@ class CIEvidenceContract(unittest.TestCase):
           <testcase classname="tests.test_schema_sync" name="test_metadata_bate_com_banco_real">
             <skipped message="SCHEMA_CHECK_DATABASE_URL não definida — checagem pulada"/>
           </testcase>
+          <testcase classname="tests.test_rag" name="test_rag_rowlevel">
+            <skipped message="requer Postgres+pgvector com migrations"/>
+          </testcase>
+          <testcase classname="tests.test_schema" name="test_colunas">
+            <skipped message="Banco inacessível para checagem de coluna"/>
+          </testcase>
         </testsuite>"""
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "junit.xml"
             path.write_text(xml, encoding="utf-8")
             report = module.classify(path)
-        self.assertEqual(report["counts"]["skip"], 1)
-        self.assertEqual(report["blocking_db_skip_count"], 1)
+        self.assertEqual(report["counts"]["skip"], 3)
+        self.assertEqual(report["blocking_db_skip_count"], 3)
 
     def test_classificacao_separa_infra_endpoint_e_teste(self):
         module = _classifier_module()
         xml = """<testsuite>
           <testcase classname="tests.test_conn" name="test_pg">
-            <error message="connection refused">asyncpg connection refused</error>
+            <error message="socket.gaierror">temporary failure in name resolution</error>
           </testcase>
           <testcase classname="tests.test_api" name="test_health">
             <failure message="status_code 500">HTTP 500</failure>
