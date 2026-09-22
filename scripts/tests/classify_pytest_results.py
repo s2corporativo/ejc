@@ -6,7 +6,7 @@ import argparse
 import json
 import re
 import sys
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from pathlib import Path
 
 INFRA_RE = re.compile(
