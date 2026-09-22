@@ -124,6 +124,7 @@ services:
       AI_PROVIDER_PRIORITY: "groq,maritaca,ollama,anthropic"
       MARITACA_ENABLED: "${MARITACA_ENABLED:-true}"
       ANTHROPIC_AUTO_ROUTING_ENABLED: "${ANTHROPIC_AUTO_ROUTING_ENABLED:-false}"
+      AI_AGENT_PROVIDER: "${AI_AGENT_PROVIDER:-}"
       # Perfil de IA (opcional): externo | local | hibrido | desligado — deriva
       # os *_ENABLED e a prioridade; vazio = flags manuais (config.py).
       AI_PROFILE: "${AI_PROFILE:-}"
@@ -197,6 +198,7 @@ services:
       AI_PROVIDER_PRIORITY: "groq,maritaca,ollama,anthropic"
       MARITACA_ENABLED: "${MARITACA_ENABLED:-true}"
       ANTHROPIC_AUTO_ROUTING_ENABLED: "${ANTHROPIC_AUTO_ROUTING_ENABLED:-false}"
+      AI_AGENT_PROVIDER: "${AI_AGENT_PROVIDER:-}"
       AI_PROFILE: "${AI_PROFILE:-}"
     volumes:
       - uploads_data:/app/uploads
