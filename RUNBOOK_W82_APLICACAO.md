@@ -19,8 +19,11 @@ ou alteração do backend/frontend.
 1. A PR #1781 precisa estar mesclada na `main`.
 2. O SHA a aplicar precisa ser exatamente o `origin/main` atual.
 3. Esse SHA precisa possuir Woodpecker `push/main` verde.
-4. O site ativo deve resolver para `/etc/nginx/sites-available/ejc.conf`.
-5. O backup do arquivo ativo deve ser criado antes de qualquer substituição.
+4. O arquivo realmente incluído por `sites-enabled` deve ser identificado antes da alteração.
+   Na VPS auditada em 2026-09-22, `/etc/nginx/sites-enabled/ejc.conf` é um
+   **arquivo regular**, não um symlink; portanto ele também precisa ser atualizado.
+5. Backup de `sites-enabled/ejc.conf` e `sites-available/ejc.conf` deve existir
+   antes de qualquer substituição.
 
 Não usar `git pull` como mecanismo para obter o arquivo do hotfix. Extraia
 somente `nginx/ejc.conf` do SHA aprovado com `git show`.
@@ -32,9 +35,12 @@ set -euo pipefail
 
 APP_DIR=/opt/ejc
 SHA="<SHA_MAIN_APROVADO>"
-LIVE=/etc/nginx/sites-available/ejc.conf
+AVAILABLE=/etc/nginx/sites-available/ejc.conf
+ENABLED=/etc/nginx/sites-enabled/ejc.conf
 CANDIDATE="/tmp/ejc.conf.$SHA"
-BACKUP="${LIVE}.bak.$(date +%Y%m%d-%H%M%S)"
+STAMP="$(date +%Y%m%d-%H%M%S)"
+BACKUP_AVAILABLE="${AVAILABLE}.bak.${STAMP}"
+BACKUP_ENABLED="${ENABLED}.bak.${STAMP}"
 
 cd "$APP_DIR"
 git fetch --prune origin main
@@ -44,14 +50,23 @@ test "$(git rev-parse origin/main)" = "$SHA"
 
 git show "$SHA:nginx/ejc.conf" > "$CANDIDATE"
 
-ACTIVE="$(readlink -f /etc/nginx/sites-enabled/ejc.conf)"
-test "$ACTIVE" = "$LIVE"
+# O host atual usa sites-enabled/ejc.conf como arquivo regular. O teste abaixo
+# deixa o runbook válido também se, no futuro, ele virar symlink.
+sudo cp -a "$AVAILABLE" "$BACKUP_AVAILABLE"
+sudo cp -a "$ENABLED" "$BACKUP_ENABLED"
 
-sudo cp -a "$LIVE" "$BACKUP"
-sudo install -o root -g root -m 0644 "$CANDIDATE" "$LIVE"
+sudo install -o root -g root -m 0644 "$CANDIDATE" "$AVAILABLE"
+
+if [ -L "$ENABLED" ]; then
+  test "$(readlink -f "$ENABLED")" = "$AVAILABLE"
+else
+  sudo install -o root -g root -m 0644 "$CANDIDATE" "$ENABLED"
+fi
 
 if ! sudo nginx -t; then
-  sudo cp -a "$BACKUP" "$LIVE"
+  sudo cp -a "$BACKUP_AVAILABLE" "$AVAILABLE"
+  sudo rm -f "$ENABLED"
+  sudo cp -a "$BACKUP_ENABLED" "$ENABLED"
   sudo nginx -t
   exit 1
 fi
@@ -93,12 +108,21 @@ Somente após esses cinco pontos o item W8.2 pode mudar de `PREPARADO` para
 Se `nginx -t`, reload, health ou homologação falharem:
 
 ```bash
-sudo cp -a "$BACKUP" "$LIVE"
+sudo cp -a "$BACKUP_AVAILABLE" "$AVAILABLE"
+sudo rm -f "$ENABLED"
+sudo cp -a "$BACKUP_ENABLED" "$ENABLED"
 sudo nginx -t
 sudo systemctl reload nginx
 sudo systemctl is-active --quiet nginx
 curl -fsS --max-time 15 https://ejc.depaulateixeira.adv.br/api/health >/dev/null
 ```
 
-O rollback restaura apenas a configuração do host; não altera containers,
-banco, código da aplicação ou dados.
+O rollback restaura as duas cópias de configuração do host; não altera
+containers, banco, código da aplicação ou dados.
+
+## Dívida operacional observada
+
+Em 2026-09-22, `sites-enabled/ejc.conf` e `sites-available/ejc.conf` eram
+arquivos regulares independentes. Isso permite drift. Após a homologação W8.2,
+a normalização para symlink pode ser feita em mudança separada e reversível;
+não é pré-condição para este hotfix e não deve ser misturada ao reload inicial.
