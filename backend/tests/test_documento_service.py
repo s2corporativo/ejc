@@ -145,8 +145,8 @@ def _settings():
 
 async def test_gateway_real_provider_externo_recebe_texto_sanitizado(monkeypatch):
     """(e) Integração com o gateway REAL (sem mock do chat), Ollama
-    desabilitado → cadeia cai no Anthropic; mockamos APENAS
-    anthropic_provider.chat. Com a sanitização reativada, o conteúdo chega
+    desabilitado → mérito cai na Maritaca; mockamos APENAS
+    maritaca_provider.chat. Com a sanitização reativada, o conteúdo chega
     MASCARADO ao provider externo (sanitizar_pii no intake +
     _sanitizar_messages_externo como segunda barreira, LGPD art. 33/46)."""
     _mock_ocr(monkeypatch)
@@ -155,6 +155,10 @@ async def test_gateway_real_provider_externo_recebe_texto_sanitizado(monkeypatch
     monkeypatch.setattr(s, "OLLAMA_ENABLED", False)
     monkeypatch.setattr(s, "ANTHROPIC_ENABLED", True)
     monkeypatch.setattr(s, "ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setattr(s, "MARITACA_ENABLED", True)
+    monkeypatch.setattr(s, "MARITACA_API_KEY", "mk-test")
+    monkeypatch.setattr(s, "MARITACA_MODEL", "sabia-4")
+    monkeypatch.setattr(s, "ANTHROPIC_AUTO_ROUTING_ENABLED", False)
     monkeypatch.setattr(s, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
     monkeypatch.setattr(s, "AI_REQUIRE_SANITIZATION_FOR_EXTERNAL", True)
     monkeypatch.setattr(s, "GROQ_API_KEY", "")
@@ -164,19 +168,19 @@ async def test_gateway_real_provider_externo_recebe_texto_sanitizado(monkeypatch
 
     # `timeout_s` (orçamento restante da cadeia) é kwarg novo do provider —
     # `**kw` mantém o fake compatível com futuras extensões da assinatura.
-    async def fake_anthropic_chat(messages, model, temperature, max_tokens, **kw):
+    async def fake_maritaca_chat(messages, model, temperature, max_tokens, **kw):
         captured["messages"] = messages
         return ('{"classificacao": {"area": "civil"}}',
-                {"model": "claude-opus-4-8", "input_tokens": 11, "output_tokens": 7})
+                {"model": "sabia-4", "input_tokens": 11, "output_tokens": 7})
 
-    from app.services.providers import anthropic_provider
-    monkeypatch.setattr(anthropic_provider, "chat", fake_anthropic_chat)
+    from app.services.providers import maritaca_provider
+    monkeypatch.setattr(maritaca_provider, "chat", fake_maritaca_chat)
 
     from app.services.documento_service import extrair_e_analisar
     r = await extrair_e_analisar("/fake.pdf", "application/pdf", db=None, enriquecer_rag=False)
 
     assert r["ok"] is True
-    assert r["_modelo"] == "anthropic/claude-opus-4-8"
+    assert r["_modelo"] == "maritaca/sabia-4"
     # O que o provider EXTERNO recebeu (pós-cadeia + barreira real):
     todo = "\n".join((m.get("content") or "") for m in captured["messages"])
     assert "987.654.321-00" not in todo

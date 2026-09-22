@@ -133,11 +133,14 @@ def s(monkeypatch):
     st = get_settings()
     monkeypatch.setattr(st, "ANTHROPIC_ENABLED", True)
     monkeypatch.setattr(st, "ANTHROPIC_API_KEY", "sk-ant-fake-para-testes")
+    monkeypatch.setattr(st, "MARITACA_ENABLED", True)
+    monkeypatch.setattr(st, "MARITACA_API_KEY", "mk-fake-para-testes")
     monkeypatch.setattr(st, "GROQ_API_KEY", "gsk-fake-para-testes")
     monkeypatch.setattr(st, "OLLAMA_ENABLED", False)
     monkeypatch.setattr(st, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
     monkeypatch.setattr(st, "AI_REQUIRE_SANITIZATION_FOR_EXTERNAL", True)
-    monkeypatch.setattr(st, "AI_PROVIDER_PRIORITY", "ollama,anthropic,groq")
+    monkeypatch.setattr(st, "AI_PROVIDER_PRIORITY", "groq,maritaca,ollama,anthropic")
+    monkeypatch.setattr(st, "ANTHROPIC_AUTO_ROUTING_ENABLED", False)
     monkeypatch.setattr(st, "AI_PROVIDER", "auto")
     monkeypatch.setattr(st, "ROTEAMENTO_INTELIGENTE_ENABLED", False)
     return st
@@ -162,7 +165,7 @@ async def test_gateway_nome_testemunha_livre_vira_marcador_ao_externo(s, monkeyp
         [{"role": "user", "content": "Resuma: a testemunha Roberto Carlos Mendes viu o fato."}],
         task_type="analise_caso",
     )
-    assert capturado["provider"] in ("anthropic", "groq")
+    assert capturado["provider"] == "maritaca"
     assert "Roberto Carlos Mendes" not in capturado["conteudo"]  # não vazou
     assert "[PESSOA_1]" in capturado["conteudo"]
     assert "Roberto Carlos Mendes" in resp.texto                 # reidratado
@@ -186,6 +189,6 @@ async def test_gateway_texto_institucional_nao_bloqueia_nem_marca(s, monkeypatch
         [{"role": "user", "content": TEXTO_INSTITUCIONAL}],
         task_type="analise_caso",
     )
-    assert capturado["provider"] in ("anthropic", "groq")  # não bloqueou
+    assert capturado["provider"] == "maritaca"  # não bloqueou
     assert "[PESSOA_1]" not in capturado["conteudo"]        # nada marcado como pessoa
     assert resp.texto == "Analisado."

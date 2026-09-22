@@ -362,7 +362,8 @@ class TestA7PromptCaching:
                             "output_tokens": 100, "cache_creation_input_tokens": 400,
                             "cache_read_input_tokens": 100}))
         r = await ai_gateway.chat([{"role": "user", "content": "texto limpo"}],
-                                  task_type="analise_juridica")
+                                  task_type="analise_juridica",
+                                  provider_override="anthropic")
         assert r.provedor == "anthropic"
         assert (r.cache_creation_input_tokens, r.cache_read_input_tokens) == (400, 100)
         esperado = float(estimar_custo_brl("anthropic", 1000, 100, "claude-haiku-4-5",

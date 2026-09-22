@@ -23,13 +23,10 @@ from app.services import ai_gateway as g
 
 # ── Defaults de configuração ─────────────────────────────────────────────────
 
-def test_prioridade_default_comeca_pelo_modelo_forte():
+def test_prioridade_default_reflete_politica_operacional():
     ordem = [p.strip() for p in Settings().AI_PROVIDER_PRIORITY.split(",")]
-    assert ordem[0] == "anthropic"
-    # A IA local fica por último: é rede de segurança, não caminho padrão.
-    assert ordem[-1] == "ollama"
-    # Sabiá (PT-BR jurídico) antes do generalista.
-    assert ordem.index("maritaca") < ordem.index("groq")
+    # Ordem-base; a afinidade estrita por task_type é aplicada depois pelo gateway.
+    assert ordem == ["groq", "maritaca", "ollama", "anthropic"]
 
 
 def test_ollama_nasce_desligado():

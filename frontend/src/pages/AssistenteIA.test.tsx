@@ -83,6 +83,23 @@ describe("AssistenteIA — portas canônicas", () => {
     expect(postMock.mock.calls[0][0]).toBe("/ia/conversar");
   });
 
+  it("envia provider auto por padrão e permite solicitar Claude explicitamente", async () => {
+    postMock.mockResolvedValue({ data: RESPOSTA_CANONICA });
+    montar();
+    fireEvent.change(screen.getByPlaceholderText("Sua pergunta jurídica…"), {
+      target: { value: "Analise esta questão jurídica." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Executar/ }));
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect((postMock.mock.calls[0][1] as any).provider).toBe("auto");
+
+    postMock.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Claude" }));
+    fireEvent.click(screen.getByRole("button", { name: /Executar/ }));
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect((postMock.mock.calls[0][1] as any).provider).toBe("anthropic");
+  });
+
   it("resumir chama /ia/resumir", async () => {
     postMock.mockResolvedValue({ data: RESPOSTA_CANONICA });
     montar();
@@ -170,6 +187,8 @@ describe("AssistenteIA — HITL e fontes visíveis", () => {
 
     const fontes = screen.getByTestId("fontes-rag");
     expect(fontes.textContent).toMatch(/Precedente interno 123/);
+
+    expect(screen.getByTestId("motor-ia-usado").textContent).toMatch(/anthropic/i);
 
     const alertas = screen.getByTestId("alertas-ia");
     expect(alertas.textContent).toMatch(/Citação não confirmada/);

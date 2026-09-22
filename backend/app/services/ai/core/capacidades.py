@@ -128,6 +128,8 @@ def canonizar(capacidade: str, bruto: dict, *, tarefa: str | None = None) -> dic
         "tarefa": bruto.get("tarefa") or tarefa,
         "modelo": bruto.get("modelo"),
         "provider": bruto.get("provider") or bruto.get("provedor"),
+        "fallback_ativado": bool(bruto.get("fallback_ativado", False)),
+        "fallback_motivo": bruto.get("fallback_motivo"),
         "log_id": bruto.get("log_id") or bruto.get("ai_log_id"),
         "fontes_rag": list(bruto.get("fontes") or bruto.get("fontes_rag") or []),
         "citacoes": list(bruto.get("citacoes") or []),

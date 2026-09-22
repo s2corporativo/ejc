@@ -181,6 +181,12 @@ def escolher_provider_diverso(
         if p.strip()
     ]
     candidatos = prioridade + [p for p in _PROVIDERS_CONHECIDOS if p not in prioridade]
+    # Crítica adversarial é tarefa de MÉRITO: o provider_override diverso nunca
+    # pode furar a afinidade do gateway e empurrar a revisão para Groq/Claude.
+    # No automático, somente Maritaca (externo jurídico) e Ollama (local) podem
+    # ser escolhidos. Sem provider diverso elegível, retorna None e o gateway
+    # resolve sua cadeia normal de mérito.
+    candidatos = [p for p in candidatos if p in {"maritaca", "ollama"}]
     if somente_local:
         candidatos = [p for p in candidatos if p not in ai_gateway._PROVIDERS_EXTERNOS]
     for p in candidatos:

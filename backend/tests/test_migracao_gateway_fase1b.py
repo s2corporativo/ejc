@@ -1,3 +1,4 @@
+# CI: este arquivo fixa contratos de roteamento usados pela política Groq/Maritaca/Claude.
 # ── tests/test_migracao_gateway_fase1b.py ────────────────────────────────────
 # FASE 1b — Orquestrador Jurídico (docs/arquivo/planos/MAPA_PROMPTS_IA03.md §5
 # Passo 2): a camada
@@ -351,7 +352,7 @@ async def test_pesquisar_task_de_prosa_coberto(ia_extra_consolidado, monkeypatch
 
 
 async def test_sugestao_honorarios_json_prepende_base_estruturada(ia_extra_consolidado, monkeypatch):
-    # Fluxo de saída JSON: mantém "analise_juridica" (fora da base por design)
+    # Fluxo de saída JSON usa o task canônico "honorarios" (Groq automático)
     # e PREPENDE BASE_ESTRUTURADA no system — padrão do peca_service.
     calls: list = []
     monkeypatch.setattr(ia_extra_consolidado, "_gw_chat_consolidacao", _gw_recorder(calls))
@@ -360,7 +361,7 @@ async def test_sugestao_honorarios_json_prepende_base_estruturada(ia_extra_conso
         ia_extra_consolidado.HonorariosIn(area="civel", descricao="elaboração de contestação"),
         db=db, cu=_cu(),
     )
-    assert calls[0]["task_type"] == "analise_juridica"
+    assert calls[0]["task_type"] == "honorarios"
     sys = calls[0]["messages"][0]
     assert sys["role"] == "system"
     assert BASE_ESTRUTURADA in sys["content"]
