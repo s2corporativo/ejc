@@ -122,15 +122,17 @@ def test_habilitado_com_chave_fica_elegivel(habilitado):
 
 # ── Reorganização IA jurídica (2026-07-19): Maritaca no caminho jurídico ─────
 
-def test_habilitada_entra_nas_cadeias_juridicas_antes_do_groq(monkeypatch, habilitado):
-    monkeypatch.setattr(habilitado, "AI_PROVIDER_PRIORITY", "ollama,anthropic,maritaca,groq")
+def test_habilitada_domina_cadeias_juridicas_sem_degradar_para_groq(monkeypatch, habilitado):
+    monkeypatch.setattr(habilitado, "AI_PROVIDER_PRIORITY", "groq,maritaca,ollama,anthropic")
     monkeypatch.setattr(habilitado, "GROQ_API_KEY", "groq-key", raising=False)
+    monkeypatch.setattr(habilitado, "ANTHROPIC_AUTO_ROUTING_ENABLED", False, raising=False)
     for task in ("analise_juridica", "estrategia", "analise_contrato",
                  "auditoria_peca", "jurimetria", "critica_adversarial",
                  "elaboracao_peca"):
         provedores = [p for p, _ in ai_gateway._resolver_cadeia(task, None, None)]
-        assert "maritaca" in provedores, task
-        assert provedores.index("maritaca") < provedores.index("groq"), task
+        assert provedores and provedores[0] == "maritaca", task
+        assert "groq" not in provedores, task
+        assert "anthropic" not in provedores, task
 
 
 def test_provider_force_maritaca_honrado(habilitado):
