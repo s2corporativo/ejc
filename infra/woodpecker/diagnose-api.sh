@@ -158,18 +158,51 @@ fix_schedule() {
 restart_pipeline() {
   local repo_id="$1"
   local pipeline_number="$2"
-  api_post_empty "/repos/${repo_id}/pipelines/${pipeline_number}" | jq '{
-    repo_id,
-    number,
-    status,
-    event,
-    branch,
-    commit,
-    created,
-    started,
-    finished,
-    rerun_count
-  }'
+  local rerun new_number
+  rerun="$(api_post_empty "/repos/${repo_id}/pipelines/${pipeline_number}")"
+  new_number="$(jq -r '.number // empty' <<<"$rerun")"
+  [[ "$new_number" =~ ^[0-9]+$ ]] || fail "Woodpecker não retornou o número da reexecução"
+  printf 'Pipeline reexecutado: %s/%s; aguardando estado terminal (não cancele enquanto estiver running)...\n' "$repo_id" "$new_number"
+  wait_pipeline "$repo_id" "$new_number" "${WOODPECKER_WAIT_TIMEOUT:-1800}" "${WOODPECKER_WAIT_INTERVAL:-15}"
+}
+
+wait_pipeline() {
+  local repo_id="$1"
+  local pipeline_number="$2"
+  local timeout_seconds="${3:-1800}"
+  local interval_seconds="${4:-15}"
+  local deadline now payload status
+
+  [[ "$repo_id" =~ ^[0-9]+$ ]] || fail "repo_id inválido"
+  [[ "$pipeline_number" =~ ^[0-9]+$ ]] || fail "pipeline_number inválido"
+  [[ "$timeout_seconds" =~ ^[0-9]+$ && "$timeout_seconds" -gt 0 ]] || fail "timeout inválido"
+  [[ "$interval_seconds" =~ ^[0-9]+$ && "$interval_seconds" -gt 0 ]] || fail "intervalo inválido"
+
+  now="$(date +%s)"
+  deadline=$((now + timeout_seconds))
+  while :; do
+    payload="$(api_get "/repos/${repo_id}/pipelines/${pipeline_number}")"
+    status="$(jq -r '.status // empty' <<<"$payload")"
+    case "$status" in
+      success)
+        printf '%s\n' "$payload" | jq '{repo_id,number,status,event,branch,commit,created,started,finished}'
+        return 0
+        ;;
+      failure|killed|canceled|blocked)
+        printf '%s\n' "$payload" | jq '{repo_id,number,status,event,branch,commit,created,started,finished,errors}' >&2
+        fail "pipeline ${repo_id}/${pipeline_number} terminou com status ${status}"
+        ;;
+      pending|running)
+        printf 'pipeline %s/%s: %s\n' "$repo_id" "$pipeline_number" "$status" >&2
+        ;;
+      *)
+        fail "status inesperado para pipeline ${repo_id}/${pipeline_number}: ${status:-<vazio>}"
+        ;;
+    esac
+    now="$(date +%s)"
+    [ "$now" -lt "$deadline" ] || fail "timeout aguardando pipeline ${repo_id}/${pipeline_number}; não foi cancelado"
+    sleep "$interval_seconds"
+  done
 }
 
 usage() {
@@ -178,6 +211,7 @@ Uso:
   diagnose-api.sh check [repo_id] [pipeline_number]
   diagnose-api.sh fix-schedule <agent_id>
   diagnose-api.sh restart-pipeline <repo_id> <pipeline_number>
+  diagnose-api.sh wait-pipeline <repo_id> <pipeline_number> [timeout] [interval]
 
 Variáveis obrigatórias/aceitas:
   WOODPECKER_API_TOKEN   PAT administrativo local. Nunca é impresso.
@@ -188,8 +222,9 @@ das chamadas curl, evitando exposição do Bearer em argv/ps. O arquivo é apaga
 automaticamente ao sair.
 
 O comando check é read-only. fix-schedule altera somente name/no_schedule preservando
-explicitamente o nome atual. restart-pipeline reexecuta um pipeline existente e deve
-ser usado somente depois de existir agente apto/alocável.
+explicitamente o nome atual. restart-pipeline reexecuta e aguarda um estado terminal;
+wait-pipeline observa uma execução existente sem reiniciá-la. Não cancele uma execução
+apenas porque ela está demorando: o cancelamento publica erro no check do GitHub.
 EOF
 }
 
@@ -215,6 +250,10 @@ case "${1:-check}" in
   restart-pipeline)
     [ -n "${2:-}" ] && [ -n "${3:-}" ] || fail "informe repo_id e pipeline_number"
     restart_pipeline "$2" "$3"
+    ;;
+  wait-pipeline)
+    [ -n "${2:-}" ] && [ -n "${3:-}" ] || fail "informe repo_id e pipeline_number"
+    wait_pipeline "$2" "$3" "${4:-1800}" "${5:-15}"
     ;;
   -h|--help|help)
     usage

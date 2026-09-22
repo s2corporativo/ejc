@@ -260,3 +260,27 @@ repositório.
 
 A restauração sobrescreve estado e exige decisão humana específica. O backup
 não autoriza restauração automática.
+
+
+## Reexecução segura de pipelines
+
+A ação **Restart** do Woodpecker cria uma nova execução para o mesmo commit, mas o status obrigatório do GitHub só é resolvido quando essa nova execução chega a um estado terminal. Enquanto o pipeline estiver `pending` ou `running`, o check anterior pode continuar aparecendo como `error` ou `pending` no Pull Request. **Não cancele uma reexecução apenas porque ela está demorando**: o cancelamento publica `Pipeline was canceled` como erro no mesmo contexto do GitHub.
+
+Use o utilitário administrativo com um PAT mantido somente na sessão autorizada da VPS:
+
+```bash
+export WOODPECKER_API_TOKEN='(PAT temporário, não registrar em arquivo ou chat)'
+./infra/woodpecker/diagnose-api.sh restart-pipeline 2 <pipeline_id>
+```
+
+O comando reexecuta o pipeline, acompanha a nova execução até `success`, `failure`, `killed`, `canceled` ou `blocked` e encerra com código coerente. Para observar uma execução já criada sem reiniciá-la:
+
+```bash
+./infra/woodpecker/diagnose-api.sh wait-pipeline 2 <pipeline_id> 1800 15
+```
+
+Em caso de `failure`, `killed` ou `canceled`, corrija a causa e crie uma nova execução/commit conforme o procedimento operacional; não remova permanentemente o check obrigatório da proteção da `main`. O gate host-level deve continuar exigindo um pipeline `push/main` com `success` para o SHA exato que será promovido.
+
+## Diagnóstico de status
+
+Compare o status do commit no GitHub com o pipeline Woodpecker pelo SHA, evento e branch. Um pipeline `push/main` verde para o SHA de produção é independente do check `pull_request` de um commit anterior. A promoção só pode ocorrer quando `infra/host-automation/woodpecker-approved-sha.sh` encontrar o SHA exato com `status=success`.
