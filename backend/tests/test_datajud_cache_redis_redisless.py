@@ -17,7 +17,6 @@ importada) sem invalidar o singleton global.
 
 from types import SimpleNamespace
 
-import pytest
 
 from app.services import datajud_service
 

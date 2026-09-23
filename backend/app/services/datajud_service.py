@@ -462,7 +462,6 @@ async def buscar_processo_bruto(
 # uvicorn, cada um tem o próprio e o mesmo nº CNJ é buscado N vezes no mesmo
 # ciclo. Esta camada L2 memoiza em Redis (compartilhado entre workers) por
 # (dominio, alias, payload), TTL configurável. Default OFF — opt-in.
-import hashlib
 import json as _json
 
 
