@@ -457,6 +457,103 @@ async def buscar_processo_bruto(
     return await _datajud_search(tribunal_alias, payload, headers)
 
 
+# ── OPS-04 — cache Redis compartilhado (L2) para ``_datajud_search`` ─────────
+# O cache em memória (``_CACHE_CONSULTA``) é por processo: com N workers do
+# uvicorn, cada um tem o próprio e o mesmo nº CNJ é buscado N vezes no mesmo
+# ciclo. Esta camada L2 memoiza em Redis (compartilhado entre workers) por
+# (dominio, alias, payload), TTL configurável. Default OFF — opt-in.
+import hashlib
+import json as _json
+
+
+def _redis_habilitado() -> bool:
+    try:
+        return bool(get_settings().DATAJUD_CACHE_REDIS_ENABLED)
+    except Exception:
+        return False
+
+
+def _redis_ttl() -> int:
+    try:
+        return max(0, int(get_settings().DATAJUD_CACHE_REDIS_TTL or 0))
+    except Exception:
+        return 0
+
+
+def _cache_redis_chave(dominio: str, alias: str, payload: dict) -> str:
+    bruto = _json.dumps(
+        {"d": dominio, "a": alias, "p": payload},
+        sort_keys=True, ensure_ascii=False, separators=(",", ":"),
+    )
+    return "dj:" + hashlib.sha256(bruto.encode("utf-8")).hexdigest()
+
+
+def _redis_cliente():
+    """Cria (ou não) cliente Redis async. Retorna None se Redis indisponível.
+
+    Não é async — só parseia URL e instancia o client. ``aclose`` no uso.
+    """
+    try:
+        import redis.asyncio as aioredis
+        return aioredis.from_url(
+            get_settings().REDIS_URL,
+            socket_connect_timeout=1.0,
+            socket_timeout=1.0,
+            decode_responses=True,
+        )
+    except Exception:
+        return None
+
+
+async def _consultar_ou_cachear(
+    alias: str,
+    payload: dict,
+    headers: dict,
+    *,
+    chave_dominio: str,
+) -> dict:
+    """Envelopa ``_datajud_search`` com L2 Redis (opt-in).
+
+    Falha silenciosa em qualquer ponto do Redis (offline, timeout, erro) — a
+    chamada HTTP acontece normalmente. Erros do CNJ propagam do mesmo jeito.
+    """
+    if not _redis_habilitado() or _redis_ttl() <= 0:
+        return await _datajud_search(alias, payload, headers)
+    chave = _cache_redis_chave(chave_dominio, alias, payload)
+    cli = _redis_cliente()
+    if cli is None:
+        return await _datajud_search(alias, payload, headers)
+    try:
+        bruto = await cli.get(chave)
+        if bruto:
+            try:
+                return _json.loads(bruto)
+            except _json.JSONDecodeError:
+                pass  # resposta corrompida → refetch
+    except Exception:
+        pass
+    finally:
+        try:
+            await cli.aclose()
+        except Exception:
+            pass
+
+    data = await _datajud_search(alias, payload, headers)
+
+    cli = _redis_cliente()
+    if cli is not None:
+        try:
+            await cli.set(chave, _json.dumps(data, ensure_ascii=False, default=str), ex=_redis_ttl())
+        except Exception:
+            pass
+        finally:
+            try:
+                await cli.aclose()
+            except Exception:
+                pass
+    return data
+
+
 # ── Etapa 13 — consulta normalizada de andamentos (router /andamentos) ───────
 async def consultar_movimentos(
     numero_cnj: str, tribunal_alias: str | None = None,
@@ -492,7 +589,15 @@ async def consultar_movimentos(
         "Authorization": f"APIKey {s.DATAJUD_API_KEY}",
         "Content-Type": "application/json",
     }
-    data = await _datajud_search(alias, payload, headers)
+    # OPS-04 (Auditoria 2026-09-20): cache compartilhado entre os N workers do
+    # uvicorn (o cache em memória é por processo — 3 workers = 3 fetches por
+    # mesmo nº CNJ). Opt-in via DATAJUD_CACHE_REDIS_ENABLED; default OFF porque
+    # respostas DataJud carregam metadado processual (partes, movimentos) que
+    # só sai do escopo RAG/curadoria quando vira ``case_movimentos``. Mantemos
+    # o cache em memória ativo como L1 e Redis como L2 (somente SUCESSO).
+    data = await _consultar_ou_cachear(
+        alias, payload, headers, chave_dominio=f"mov:{n}",
+    )
     hits = (data.get("hits") or {}).get("hits") or []
     if not hits:
         return []
