@@ -202,6 +202,12 @@ ADICOES_INTENCIONAIS = {
     # fiduciários (_req_financeiro_mutacao); leitura segue o escopo canônico.
     ("/api/fees/{fee_id}/pagamentos/{payment_id}/estorno", "POST"),
     ("/api/fees/{fee_id}/estornos", "GET"),
+    # W8.2 — porta experimental assíncrona para análises longas (PR #1822).
+    # Flag-gated por IA_ANALISE_ASYNC_ENABLED (default OFF): 404 controlado
+    # quando desligada. Auth, RBAC, rate limit e ownership seguem os mesmos
+    # gates de /ai/analisar-caso — só a forma de entrega muda (202 + polling).
+    ("/api/ai/analisar-caso/async", "POST"),
+    ("/api/ai/analisar-caso/async/{task_id}", "GET"),
 }
 
 REMOCOES_INTENCIONAIS = {

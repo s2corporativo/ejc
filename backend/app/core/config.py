@@ -1114,6 +1114,12 @@ class Settings(BaseSettings):
     # do motor nos dois modos (tests/test_ai_idor_case_id_gates.py).
     IA_MOTOR_CANONICO: bool = True
 
+    # W8.2 — porta assíncrona experimental para análises longas. Desligada por
+    # padrão até homologar polling, idempotência, auditoria e UX de progresso.
+    # Rollback operacional: IA_ANALISE_ASYNC_ENABLED=false, sem deploy.
+    IA_ANALISE_ASYNC_ENABLED: bool = False
+    IA_ANALISE_ASYNC_TTL_SEGUNDOS: int = 900
+
     # Rate limit distribuído (multi-worker): False (default) usa contador
     # fixed-window em memória — correto só com uvicorn --workers 1. True passa
     # a contar no Redis (compartilhado entre processos), habilitando >1 worker.
