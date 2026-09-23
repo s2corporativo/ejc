@@ -524,34 +524,29 @@ async def _consultar_ou_cachear(
     if cli is None:
         return await _datajud_search(alias, payload, headers)
     try:
-        bruto = await cli.get(chave)
-        if bruto:
-            try:
-                return _json.loads(bruto)
-            except _json.JSONDecodeError:
-                pass  # resposta corrompida → refetch
-    except Exception:
-        pass
+        try:
+            bruto = await cli.get(chave)
+            if bruto:
+                try:
+                    return _json.loads(bruto)
+                except _json.JSONDecodeError:
+                    pass  # resposta corrompida → refetch
+        except Exception:
+            pass
+        data = await _datajud_search(alias, payload, headers)
+        try:
+            await cli.set(
+                chave, _json.dumps(data, ensure_ascii=False, default=str),
+                ex=_redis_ttl(),
+            )
+        except Exception:
+            pass
+        return data
     finally:
         try:
             await cli.aclose()
         except Exception:
             pass
-
-    data = await _datajud_search(alias, payload, headers)
-
-    cli = _redis_cliente()
-    if cli is not None:
-        try:
-            await cli.set(chave, _json.dumps(data, ensure_ascii=False, default=str), ex=_redis_ttl())
-        except Exception:
-            pass
-        finally:
-            try:
-                await cli.aclose()
-            except Exception:
-                pass
-    return data
 
 
 # ── Etapa 13 — consulta normalizada de andamentos (router /andamentos) ───────
