@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from sqlalchemy import select, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -145,6 +145,73 @@ async def analisar(
     resposta = {**resultado, **capacidades.canonizar("analisar", resultado)}
     mark_contract_response(response, route="/ai/analisar-caso", legacy_adapter=True)
     return resposta
+
+
+async def _executar_analise_async(task_id: str, req: AnalisarCasoRequest,
+                                  db: AsyncSession, cu: User) -> None:
+    from app.services.ai_async_jobs import get_store
+
+    store = get_store()
+    store.update(task_id, status="running")
+    try:
+        resultado = await analisar(req, db, cu)
+        store.update(task_id, status="completed", result=resultado)
+    except HTTPException as exc:
+        store.update(task_id, status="failed", error=str(exc.detail))
+    except Exception:
+        _logger.exception("Falha na análise assíncrona task=%s", task_id)
+        store.update(task_id, status="failed", error="Falha ao executar análise")
+
+
+@router.post("/analisar-caso/async", status_code=202,
+             dependencies=[Depends(rate_limit("ia-analisar-caso-async", 10))])
+async def analisar_async(
+    req: AnalisarCasoRequest,
+    background: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Porta experimental W8.2 para análises longas.
+
+    Permanece desligada por padrão. Com a flag ligada, a validação de entrada e
+    ownership ocorre antes da criação do job; o cliente recebe 202 e consulta
+    o resultado por polling. O armazenamento atual é temporário em memória e
+    será substituído por Redis/Celery antes da ativação em múltiplos workers.
+    """
+    from app.core.config import get_settings
+    from app.services.ai_async_jobs import get_store
+
+    settings = get_settings()
+    if not settings.IA_ANALISE_ASYNC_ENABLED:
+        raise HTTPException(404, "Análise assíncrona não habilitada")
+    if len(req.descricao_fatos.strip()) < 30:
+        raise HTTPException(422, "Descreva os fatos com mais detalhes (mín. 30 caracteres)")
+    if req.case_id:
+        from app.core.ownership import verificar_acesso_caso
+        await verificar_acesso_caso(db, cu, req.case_id)
+    request_id = req.request_id or __import__("secrets").token_urlsafe(18)
+    store = get_store(settings.IA_ANALISE_ASYNC_TTL_SEGUNDOS)
+    job, created = store.create_or_get(
+        user_id=cu.id, request_id=request_id, case_id=req.case_id
+    )
+    if created:
+        background.add_task(_executar_analise_async, job.task_id, req, db, cu)
+    return store.public(job)
+
+
+@router.get("/analisar-caso/async/{task_id}")
+async def analisar_async_status(
+    task_id: str,
+    cu: User = Depends(get_current_user),
+):
+    """Consulta o estado de uma análise assíncrona somente pelo seu criador."""
+    from app.core.config import get_settings
+    from app.services.ai_async_jobs import get_store
+
+    if not get_settings().IA_ANALISE_ASYNC_ENABLED:
+        raise HTTPException(404, "Análise assíncrona não habilitada")
+    store = get_store(get_settings().IA_ANALISE_ASYNC_TTL_SEGUNDOS)
+    return store.public(store.get_for_user(task_id, cu.id))
 
 
 @router.get("/dossie/{case_id}")
