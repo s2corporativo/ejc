@@ -57,6 +57,7 @@ RUN pip install --upgrade pip \
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
+COPY ruff.toml ./ruff.toml
 COPY seeds ./seeds
 # scripts/ precisa entrar na imagem: o deploy roda `python scripts/seed_biblia_ejc.py`
 # (seed idempotente do corpus RAG da Bíblia). Sem esta linha o container não tem o
