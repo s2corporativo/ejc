@@ -1340,6 +1340,8 @@ def start_scheduler():
               id="telemetria_rotas_expurgo", replace_existing=True, max_instances=1, coalesce=True)
 
     # Jobs v3.x — integrações oficiais (guardas internas pulam se não configurado)
+    # DJEN: captura + RAG no mesmo ciclo; a etapa RAG respeita
+    # DJEN_INGEST_ENABLED (default True — desligue com false no .env).
     s.add_job(job_djen_intimacoes,  CronTrigger(hour=6,  minute=30), id="djen",        replace_existing=True)
 
     # DataJud: um único motor, duas janelas úteis. Quando a notificação ao
