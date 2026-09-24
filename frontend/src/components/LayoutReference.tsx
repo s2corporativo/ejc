@@ -9,9 +9,7 @@ import {
   Mail,
   Menu,
   MessageCircle,
-  Moon,
   Search,
-  Sun,
   X,
 } from "lucide-react";
 import CaseContextBar from "./CaseContextBar";
@@ -22,11 +20,10 @@ import IaStatusBanner from "./IaStatusBanner";
 import ModuleLifecycleGate from "./ModuleLifecycleGate";
 import OnboardingTour from "./OnboardingTour";
 import SecurityMenu from "./SecurityMenu";
+import SidebarWeekCalendar from "./SidebarWeekCalendar";
 import { toast } from "./Toast";
 import { Tooltip, cn } from "./UI";
-import {
-  selectMainNavigation,
-} from "../config/canonicalNavigation";
+import { selectCanonicalMainNavigation } from "../config/canonicalNavigation";
 import {
   getMailtoUrl,
   getWhatsAppUrl,
@@ -45,7 +42,6 @@ import { isSidebarNavigationCollapsed } from "../lib/sidebarNavigation";
 import { useAuth } from "../stores/auth";
 import { useModuleLifecycleStore } from "../stores/moduleLifecycle";
 import { usePreferencesStore } from "../stores/preferences";
-import { useThemeStore } from "../stores/theme";
 
 function formatClock(date: Date) {
   const dateText = new Intl.DateTimeFormat("pt-BR", {
@@ -72,16 +68,15 @@ function formatClock(date: Date) {
 /**
  * AppShell canônico do EJC.
  *
- * A barra lateral segue a referência visual premium DPT aprovada pelo
- * Titular (18/09/2026): marca institucional, domínios canônicos e rodapé
- * institucional (citação + cidade). Rotas, RBAC, lifecycle e funcionalidade
- * continuam vindo do moduleRegistry e dos gates existentes.
+ * A barra lateral expõe somente os oito domínios definidos em
+ * canonicalNavigation. Rotas, componentes, RBAC e lifecycle continuam vindo
+ * do moduleRegistry e dos gates existentes; a simplificação é apenas de
+ * arquitetura de informação, sem remoção funcional.
  */
 /** Shell canônico do EJC com navegação, marca institucional e controles globais. */
 export default function LayoutReference() {
   const user = useAuth((state) => state.user);
   const { disponivel: iaDisponivel } = useIaStatus();
-  const { isDark, setTheme } = useThemeStore();
   const lifecycleSettings = useModuleLifecycleStore((state) => state.settings);
   const { sidebarCollapsed: collapsed, setSidebarCollapsed } =
     usePreferencesStore();
@@ -114,35 +109,23 @@ export default function LayoutReference() {
   }, [privacyMode]);
 
   useEffect(() => {
-    const loadNotifications = () => {
-      // G3 (Auditoria 2026-09-20): polling pausa com a aba em segundo plano —
-      // 0 chamadas enquanto o usuário não está vendo, sem trocar SSE/proxy.
-      if (typeof document !== "undefined" && document.hidden) return;
-      return api
+    const loadNotifications = () =>
+      api
         .get("/notifications/?apenas_nao_lidas=false&limit=15")
         .then((response) => {
           setNotifications(response.data.data ?? []);
           setNotifCount(response.data.nao_lidas ?? 0);
         })
         .catch(() => {});
-    };
 
     loadNotifications();
     const timer = window.setInterval(loadNotifications, 60_000);
-    // Ao voltar para a aba, atualiza imediatamente (não espera o próximo tick).
-    const onVisibilidade = () => {
-      if (!document.hidden) loadNotifications();
-    };
-    document.addEventListener("visibilitychange", onVisibilidade);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisibilidade);
-    };
+    return () => window.clearInterval(timer);
   }, []);
 
   const visible = useMemo(
     () =>
-      selectMainNavigation(
+      selectCanonicalMainNavigation(
         filterModulesByLifecycle(
           getNavigationModules(user?.role),
           lifecycleSettings,
@@ -235,7 +218,7 @@ export default function LayoutReference() {
             >
               <Search className="h-4 w-4 shrink-0" />
               <span className="hidden truncate sm:inline">
-                Buscar por clientes, processos, documentos…
+                Buscar clientes, casos, documentos, peças…
               </span>
               <span className="truncate sm:hidden">Buscar…</span>
               <kbd className="ml-auto hidden px-1.5 py-0.5 text-[10px] font-medium sm:block">
@@ -256,21 +239,6 @@ export default function LayoutReference() {
           </div>
 
           <HelpButton moduleKey={moduleKey} />
-
-          <button
-            type="button"
-            onClick={() => setTheme(isDark ? "light" : "dark")}
-            className="icon-btn hidden sm:flex"
-            title={isDark ? "Ativar modo claro" : "Ativar modo escuro"}
-            aria-label={isDark ? "Ativar modo claro" : "Ativar modo escuro"}
-            aria-pressed={isDark}
-          >
-            {isDark ? (
-              <Sun className="h-4 w-4" aria-hidden="true" />
-            ) : (
-              <Moon className="h-4 w-4" aria-hidden="true" />
-            )}
-          </button>
 
           <button
             type="button"
@@ -409,7 +377,6 @@ export default function LayoutReference() {
             {!navCollapsed && (
               <span className="ejc-sidebar-brand__copy">
                 <strong>{officeBranding.officeName}</strong>
-                <small>Ecossistema Jurídico Clóvis</small>
               </span>
             )}
           </Link>
@@ -430,23 +397,7 @@ export default function LayoutReference() {
           <div className="space-y-1">{visible.map(renderNavItem)}</div>
         </nav>
 
-        {!navCollapsed && (
-          <div className="ejc-sidebar-epigraph" aria-hidden="true">
-            <p className="ejc-sidebar-epigraph__quote">
-              “Estratégia jurídica para um amanhã mais seguro.”
-            </p>
-            <div className="ejc-sidebar-epigraph__figure">
-              {/* Panorama real de Betim/MG (sede do escritório). Fonte:
-                  anúncio "Suíte Vista Panorâmica Betim". O overlay navy do
-                  CSS integra a foto ao plano de fundo da sidebar. */}
-              <img src="/brand/sidebar-betim.jpg" alt="" loading="lazy" />
-              <div className="ejc-sidebar-epigraph__city">
-                <strong>BETIM | MINAS GERAIS</strong>
-                <small>EXCELÊNCIA EM CADA DETALHE</small>
-              </div>
-            </div>
-          </div>
-        )}
+        {!navCollapsed && <SidebarWeekCalendar />}
 
         <div className="border-t border-slate-200 bg-white">
           <div
@@ -522,7 +473,7 @@ export default function LayoutReference() {
       {iaDisponivel ? (
         <Link
           to="/inteligencia?tab=assistente"
-          className="fixed bottom-5 right-5 z-30 hidden h-11 w-11 items-center justify-center rounded-xl bg-ejc-primary text-white shadow-float transition hover:-translate-y-0.5 hover:bg-ejc-primary-hover md:flex"
+          className="fixed bottom-5 right-5 z-30 hidden h-11 w-11 items-center justify-center rounded-xl bg-[#073C35] text-white shadow-float transition hover:-translate-y-0.5 hover:bg-[#052F2A] md:flex"
           aria-label="Assistente IA"
         >
           <Bot className="h-5 w-5" />

@@ -1,28 +1,29 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
-import { addDays, format } from "date-fns";
 
 const getMock = vi.fn();
-const patchMock = vi.fn();
 let papelAtual = "advogado";
 
 vi.mock("../lib/api", () => ({
   default: {
     get: (...args: unknown[]) => getMock(...args),
-    patch: (...args: unknown[]) => patchMock(...args),
   },
-}));
-
-vi.mock("../components/Toast", () => ({
-  toast: { error: vi.fn(), success: vi.fn() },
 }));
 
 vi.mock("../stores/auth", () => ({
   useAuth: (
     selector: (state: { user: { role: string; full_name: string } }) => unknown,
   ) => selector({ user: { role: papelAtual, full_name: "Clovis Teste" } }),
+}));
+
+vi.mock("../config/officeBranding", () => ({
+  officeBranding: {
+    officeName: "Marca Jurídica Configurada",
+  },
+  getWhatsAppUrl: () => "",
+  getMailtoUrl: () => "",
 }));
 
 vi.mock("./EntradaUnica", () => ({
@@ -33,121 +34,26 @@ vi.mock("./EntradaUnica", () => ({
   ),
 }));
 
+vi.mock("../components/JurisprudentialAlertsStrip", () => ({
+  default: () => <div aria-label="Radar Jurídico">Radar Jurídico</div>,
+}));
+
 import DashboardUltra from "./DashboardUltra";
 
-const dataBase = new Date();
-const hoje = format(dataBase, "yyyy-MM-dd");
-const amanha = format(addDays(dataBase, 1), "yyyy-MM-dd");
-const futuro = format(addDays(dataBase, 5), "yyyy-MM-dd");
-
-const kpisOk = {
-  casos: { ativos: 3, total: 9 },
-  clientes_ativos: 48,
-  prazos: { vencidos: 0, criticos_3d: 2, proximos_7d: 5 },
-};
-
-const atividadesOk = {
-  data: [
-    {
-      id: "a1",
-      tipo: "prazo",
-      titulo: "Prazo final — Contestação",
-      date: `${hoje}T11:30:00`,
-      dias_restantes: 0,
-      urgencia: "critico",
-      case_id: "c1",
-      caso_titulo: "Empresa X vs. Banco Y",
-    },
-    {
-      id: "a2",
-      tipo: "tarefa",
-      titulo: "Revisão de teses",
-      date: `${hoje}T17:30:00`,
-      dias_restantes: 0,
-      urgencia: "normal",
-      caso_titulo: null,
-    },
-    {
-      id: "a3",
-      tipo: "intimacao",
-      titulo: "Intimação — audiência",
-      date: `${amanha}T09:00:00`,
-      dias_restantes: 1,
-      urgencia: "atencao",
-      case_id: "c2",
-      caso_titulo: "João Silva vs. Plano de Saúde",
-    },
-  ],
-};
-
-const casosOk = {
-  data: [
-    {
-      id: "c1",
-      titulo: "Empresa X vs. Banco Y",
-      status: "aberto",
-      area: "civel",
-      prioridade: "alta",
-      risco: "alto",
-      proxima_acao: "Protocolar contestação",
-      proxima_acao_prazo: `${hoje}T18:00:00`,
-      numero_processo: "1001234-56.2023.8.26.0100",
-    },
-    {
-      id: "c2",
-      titulo: "João Silva vs. Plano de Saúde",
-      status: "encerrado",
-      area: "saude",
-      prioridade: "baixa",
-      proxima_acao: "Arquivar comprovantes",
-      numero_processo: null,
-      numero_interno: "DPT-2026-0042",
-    },
-  ],
-  total: 10,
-  page: 1,
-  page_size: 4,
-};
-
-const tarefasOk = {
-  data: [
-    {
-      id: "t1",
-      titulo: "Revisar petição inicial",
-      status: "a_fazer",
-      prioridade: "alta",
-      data_limite: hoje,
-    },
-    {
-      id: "t2",
-      titulo: "Retorno para cliente — Grupo Santos",
-      status: "a_fazer",
-      data_limite: null,
-    },
-    {
-      id: "t3",
-      titulo: "Estudo tema 1.234/STJ",
-      status: "concluida",
-      data_limite: hoje,
-      concluida_em: `${hoje}T08:00:00`,
-    },
-    {
-      id: "t4",
-      titulo: "Tarefa futura que não pertence à rotina de hoje",
-      status: "a_fazer",
-      data_limite: futuro,
-    },
-  ],
+const alertasOk = {
+  resumo: {
+    prazo: { ativos: 2, novos: 1, criticos: 1, altos: 1 },
+    tarefa: { ativos: 1, novos: 1, criticos: 0, altos: 1 },
+    intimacao: { ativos: 1, novos: 1, criticos: 0, altos: 1 },
+    movimentacao: { ativos: 1, novos: 1, criticos: 0, altos: 1 },
+  },
 };
 
 function mockGetOk() {
   getMock.mockImplementation((url: string) => {
-    if (url === "/dashboard/") return Promise.resolve({ data: kpisOk });
-    if (url === "/atividades")
-      return Promise.resolve({ data: atividadesOk });
-    if (url === "/cases/") return Promise.resolve({ data: casosOk });
-    if (url === "/documents/") return Promise.resolve({ data: { data: [], total: 129 } });
-    if (url === "/tasks/") return Promise.resolve({ data: tarefasOk });
+    if (url === "/atividades/alertas-inteligentes") {
+      return Promise.resolve({ data: alertasOk });
+    }
     return Promise.reject(new Error(`GET inesperado: ${url}`));
   });
 }
@@ -161,166 +67,104 @@ function renderizar() {
 }
 
 beforeEach(() => {
-  getMock.mockReset();
-  patchMock.mockReset();
   papelAtual = "advogado";
+  getMock.mockReset();
+  mockGetOk();
 });
 
-afterEach(() => {
-  cleanup();
-});
+afterEach(() => cleanup());
 
-describe("DashboardUltra — identidade premium DPT", () => {
-  it("sauda o usuário pelo primeiro nome e compõe a referência", async () => {
-    mockGetOk();
+describe("DashboardUltra — Início canônico", () => {
+  it("mantém marca, três sinais operacionais, Entrada Única e Radar Jurídico", async () => {
     renderizar();
 
     expect(
-      await screen.findByText(/, Clovis!/),
+      await screen.findByRole("link", { name: "Abrir Ajuizamento" }),
     ).toBeTruthy();
-    expect(screen.getByText("Disciplina hoje. Grandes conquistas sempre.")).toBeTruthy();
-    expect(screen.getByText("Entrada Única")).toBeTruthy();
-    expect(screen.getByText("Agenda e Prazos")).toBeTruthy();
-    expect(screen.getByText("Casos em destaque")).toBeTruthy();
-    expect(screen.getByText("Acesso rápido")).toBeTruthy();
-    expect(screen.getByText("Minha rotina hoje")).toBeTruthy();
-    expect(screen.getByTestId("entrada-unica").getAttribute("data-embedded")).toBe(
-      "true",
-    );
-  });
-
-  it("exibe sinais operacionais com números reais dos endpoints", async () => {
-    mockGetOk();
-    renderizar();
-
-    // Prazos hoje = atividades tipo prazo com dias_restantes 0 → 1
-    await waitFor(() =>
-      expect(screen.getByLabelText("Prazos hoje: 1")).toBeTruthy(),
-    );
-    expect(screen.getByLabelText("Clientes ativos: 48")).toBeTruthy();
-    expect(screen.getByLabelText("Casos em andamento: 3")).toBeTruthy();
     expect(
-      screen.getByLabelText("Documentos recentes: 129"),
+      await screen.findByRole("link", { name: "Riscos de prazos: 2" }),
     ).toBeTruthy();
-  });
-
-  it("filtra a agenda por aba Hoje/Amanhã/Esta semana", async () => {
-    mockGetOk();
-    renderizar();
-
-    expect(await screen.findByText("Prazo final — Contestação")).toBeTruthy();
-    expect(screen.queryByText("Intimação — audiência")).not.toBeTruthy();
-
-    fireEvent.click(screen.getByRole("tab", { name: "Amanhã" }));
-    expect(screen.getByText("Intimação — audiência")).toBeTruthy();
-    expect(screen.queryByText("Prazo final — Contestação")).not.toBeTruthy();
-  });
-
-  it("prioriza casos em destaque por risco, prazo e próxima ação", async () => {
-    mockGetOk();
-    renderizar();
-
     expect(
-      (await screen.findAllByText("Empresa X vs. Banco Y")).length,
-    ).toBeGreaterThan(0);
-    const chips = screen.getAllByText("Em andamento");
-    expect(chips.length).toBeGreaterThan(0);
-    expect(screen.getByText("Concluso")).toBeTruthy();
-    expect(screen.getByText(/Proc. nº 1001234-56\.2023\.8\.26\.0100/)).toBeTruthy();
-    expect(screen.getByText(/Próxima: Protocolar contestação/)).toBeTruthy();
-  });
-
-  it("filtra a agenda pelo dia selecionado no calendário", async () => {
-    mockGetOk();
-    renderizar();
-
-    const hojeLabel = format(dataBase, "dd/MM/yyyy");
-    const botaoDia = await screen.findByRole("button", { name: hojeLabel });
-    fireEvent.click(botaoDia);
-
-    expect(screen.getByRole("button", { name: "Remover filtro de data" })).toBeTruthy();
-    expect(screen.getByText("Prazo final — Contestação")).toBeTruthy();
-    expect(screen.queryByText("Intimação — audiência")).not.toBeTruthy();
-  });
-
-  it("mostra na rotina apenas tarefas acionáveis hoje e conclusões do dia", async () => {
-    mockGetOk();
-    renderizar();
-
-    expect(await screen.findByText("Revisar petição inicial")).toBeTruthy();
-    expect(screen.getByText("Retorno para cliente — Grupo Santos")).toBeTruthy();
-    expect(screen.getByText("Estudo tema 1.234/STJ")).toBeTruthy();
+      screen.getByRole("link", { name: "Comunicações processuais: 2" }),
+    ).toBeTruthy();
+    expect(screen.getByText("Olá, Clovis.")).toBeTruthy();
+    expect(screen.getByText("Marca Jurídica Configurada")).toBeTruthy();
+    expect(screen.getByTestId("entrada-unica").dataset.embedded).toBe("true");
     expect(
-      screen.queryByText("Tarefa futura que não pertence à rotina de hoje"),
-    ).not.toBeTruthy();
-    expect(screen.getByText("1 de 3 concluídas")).toBeTruthy();
+      screen.getByRole("region", { name: "Radar Jurídico" }),
+    ).toBeTruthy();
+
+    expect(screen.queryByText("Tarefas")).toBeNull();
+    expect(screen.queryByText("Movimentações")).toBeNull();
   });
 
-  it("conclui tarefa da rotina via PATCH e reage ao clique", async () => {
-    mockGetOk();
-    patchMock.mockResolvedValue({ data: {} });
+  it("consulta somente o endpoint canônico de alertas com payload mínimo", async () => {
     renderizar();
 
-    const botao = await screen.findByRole("button", {
-      name: /Revisar petição inicial/,
+    await screen.findByRole("link", { name: "Riscos de prazos: 2" });
+    expect(getMock).toHaveBeenCalledWith("/atividades/alertas-inteligentes", {
+      params: { limit_per_type: 1 },
     });
-    fireEvent.click(botao);
-
-    await waitFor(() =>
-      expect(patchMock).toHaveBeenCalledWith("/tasks/t1", {
-        status: "concluida",
-      }),
-    );
+    expect(getMock).toHaveBeenCalledTimes(1);
   });
 
-  it("reabre tarefa concluída com status canônico a_fazer", async () => {
-    mockGetOk();
-    patchMock.mockResolvedValue({ data: {} });
+  it("combina intimações e movimentações na métrica de comunicações", async () => {
     renderizar();
 
-    const botao = await screen.findByRole("button", {
-      name: /Estudo tema 1\.234\/STJ/,
+    const comunicacoes = await screen.findByRole("link", {
+      name: "Comunicações processuais: 2",
     });
-    fireEvent.click(botao);
-
-    await waitFor(() =>
-      expect(patchMock).toHaveBeenCalledWith("/tasks/t3", {
-        status: "a_fazer",
-      }),
-    );
+    expect(comunicacoes.className).toContain("is-alerting");
+    expect(screen.getByText(/2 novas · intimações e movimentações/i)).toBeTruthy();
   });
 
-  it("degrada para traço quando a fonte falha (nunca zero falso)", async () => {
-    getMock.mockImplementation((url: string) => {
-      if (url === "/atividades")
-        return Promise.reject(new Error("fora do ar"));
-      if (url === "/dashboard/")
-        return Promise.reject(new Error("fora do ar"));
-      if (url === "/cases/") return Promise.resolve({ data: casosOk });
-      if (url === "/documents/")
-        return Promise.resolve({ data: { data: [], total: 129 } });
-      if (url === "/tasks/") return Promise.resolve({ data: tarefasOk });
-      return Promise.reject(new Error(`GET inesperado: ${url}`));
-    });
+  it("destaca risco de prazo crítico e aponta para a agenda filtrada", async () => {
     renderizar();
 
-    await waitFor(() =>
-      expect(screen.getByLabelText("Prazos hoje: —")).toBeTruthy(),
-    );
-    expect(screen.getByLabelText("Clientes ativos: —")).toBeTruthy();
-    expect(screen.getByText("Agenda indisponível agora.")).toBeTruthy();
+    const prazo = await screen.findByRole("link", { name: "Riscos de prazos: 2" });
+    expect(prazo.className).toContain("is-deadline");
+    expect(prazo.className).toContain("is-alerting");
+    expect(prazo.getAttribute("href")).toBe("/atividades?tipo=prazo");
   });
 
-  it("restringe a Entrada Única por papel (perfis autorizados)", async () => {
-    mockGetOk();
+  it("mantém a Entrada Única assistida apenas para advogado+", async () => {
+    papelAtual = "secretaria";
+    renderizar();
+
+    await screen.findByRole("link", { name: "Riscos de prazos: 2" });
+    expect(screen.queryByTestId("entrada-unica")).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "Abrir Entrada Única" }).getAttribute("href"),
+    ).toBe("/entrada");
+  });
+
+  it("preserva sinais operacionais e bloqueia a entrada para perfil sem acesso", async () => {
     papelAtual = "cliente_externo";
     renderizar();
 
     expect(
-      await screen.findByText(
+      await screen.findByRole("link", { name: "Riscos de prazos: 2" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
         "A Entrada Única está disponível apenas aos perfis autorizados.",
       ),
     ).toBeTruthy();
-    expect(screen.queryByTestId("entrada-unica")).not.toBeTruthy();
+    expect(screen.queryByTestId("entrada-unica")).toBeNull();
+  });
+
+  it("degrada métricas sem inventar contagens quando alertas estão indisponíveis", async () => {
+    getMock.mockRejectedValue(new Error("offline"));
+    renderizar();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("link", { name: "Riscos de prazos: indisponível" }),
+      ).toBeTruthy();
+    });
+    expect(screen.getByText("consultar agenda")).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Comunicações processuais: indisponível" }),
+    ).toBeTruthy();
   });
 });

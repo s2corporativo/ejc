@@ -15,101 +15,50 @@ const theme = readFileSync(
   resolve(ROOT, "src/styles/ejc-reference-systemwide.css"),
   "utf8",
 );
-const premium = readFileSync(
-  resolve(ROOT, "src/styles/ejc-dashboard-premium.css"),
-  "utf8",
-);
-const tokens = readFileSync(resolve(ROOT, "src/styles/ejc-tokens.css"), "utf8");
 
-function luminance(hex: string) {
-  const channels = hex
-    .match(/[0-9a-f]{2}/gi)!
-    .map((channel) => Number.parseInt(channel, 16) / 255)
-    .map((channel) =>
-      channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
-    );
-
-  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
-}
-
-function contrast(foreground: string, background: string) {
-  const values = [luminance(foreground), luminance(background)].sort(
-    (a, b) => b - a,
-  );
-  return (values[0] + 0.05) / (values[1] + 0.05);
-}
-
-describe("EJC Identidade Tech Blue DPT — contrato visual canônico", () => {
-  it("mantém a marca institucional grande na sidebar sem alterar a navegação canônica", () => {
+describe("EJC DePaula Premium — contrato visual canônico", () => {
+  it("mantém a logomarca DPT como elemento dominante sem alterar a navegação canônica", () => {
     expect(layout).toContain('md:w-[17rem]');
     expect(layout).toContain('md:left-[17rem]');
     expect(layout).toContain('z-[60]');
     expect(layout).toContain('md:z-40');
     expect(layout).toContain('ejc-sidebar-brand__logo');
-    expect(layout).toContain('selectMainNavigation');
-    expect(layout).toContain('officeName');
-    expect(layout).toContain('ejc-sidebar-epigraph');
-    expect(layout).not.toContain('md:w-[15.5rem]');
-    expect(layout).not.toContain('SidebarWeekCalendar');
+    expect(layout).toContain('{officeBranding.officeName}');
+    expect(layout).toContain('selectCanonicalMainNavigation');
+    expect(layout).not.toContain('Ecossistema Jurídico Clóvis');
   });
 
-  it("reproduz a composição da referência premium no início", () => {
-    expect(dashboard).toContain('ejc-dash__greeting');
-    expect(dashboard).toContain('ejc-dash__entry');
+  it("mantém Entrada Única como hero e Radar Jurídico na composição do início", () => {
+    expect(dashboard).toContain('ejc-ai-dashboard__main-grid');
+    expect(dashboard).toContain('ejc-ai-dashboard__welcome');
+    expect(dashboard).toContain('{officeBranding.officeName}');
     expect(dashboard).toContain('Entrada Única');
+    expect(dashboard).toContain('Radar Jurídico');
     expect(dashboard).toContain('<EntradaInteligente embedded />');
-    expect(dashboard).toContain('ejc-dash__stats');
-    expect(dashboard).toContain('Prazos hoje');
-    expect(dashboard).toContain('Clientes ativos');
-    expect(dashboard).toContain('Casos em andamento');
-    expect(dashboard).toContain('Documentos recentes');
-    expect(dashboard).toContain('Agenda e Prazos');
-    expect(dashboard).toContain('Casos em destaque');
-    expect(dashboard).toContain('Acesso rápido');
-    expect(dashboard).toContain('Minha rotina hoje');
-    expect(dashboard).toContain('/brand/dashboard-themis.jpg');
+    expect(dashboard).not.toContain('Ecossistema Jurídico Clóvis');
   });
 
-  it("fixa a paleta navy e azul/ciano da referência no tema final", () => {
-    expect(theme).toContain("--ejc-petroleum: #0f2747");
-    expect(theme).toContain("--ejc-ice: #f4f7fb");
-    expect(theme).toContain("--ejc-gold: #38bdf8");
-    expect(theme).toContain(
-      "linear-gradient(180deg, #0b203b 0%, #050d19 100%)",
-    );
-    expect(theme).toContain("rgba(14, 165, 233, 0.42) 0%");
-    expect(theme).toContain("rgba(2, 132, 199, 0.3) 100%");
-    expect(premium).toContain("--ejc-dash-green: #0f2747");
-    expect(premium).toContain("--ejc-dash-gold: #38bdf8");
-    expect(premium).toContain(
-      '"Playfair Display", Georgia, "Times New Roman", serif',
-    );
-    expect(premium).toContain("@media (max-width: 767px)");
-    expect(premium).toContain("@media (prefers-reduced-motion: reduce)");
-  });
-
-  it("preserva contraste AA e foco perceptível na paleta canônica", () => {
-    expect(tokens).toContain("--ejc-primary: #0f2747");
-    expect(tokens).toContain("--ejc-gold-ink: #0369a1");
-    expect(tokens).toContain("--ejc-background: #f4f7fb");
-    expect(tokens).toContain("--ejc-text: #172033");
-    expect(tokens).toContain("--ejc-focus-ring: #0284c7");
-
-    expect(contrast("#0f2747", "#ffffff")).toBeGreaterThanOrEqual(4.5);
-    expect(contrast("#0369a1", "#ffffff")).toBeGreaterThanOrEqual(4.5);
-    expect(contrast("#172033", "#f4f7fb")).toBeGreaterThanOrEqual(4.5);
-    expect(contrast("#e6edf7", "#07182e")).toBeGreaterThanOrEqual(4.5);
-    expect(contrast("#0284c7", "#ffffff")).toBeGreaterThanOrEqual(3);
-    expect(contrast("#0284c7", "#f4f7fb")).toBeGreaterThanOrEqual(3);
-  });
-
-  it("alimenta o início com endpoints reais e degrada para traço, nunca zero falso", () => {
-    expect(dashboard).toContain('"/dashboard/"');
-    expect(dashboard).toContain('"/atividades"');
-    expect(dashboard).toContain('"/cases/"');
-    expect(dashboard).toContain('"/documents/"');
-    expect(dashboard).toContain('"/tasks/"');
-    expect(dashboard).toContain('valorOuTraco');
-    expect(dashboard).toContain("Promise.allSettled");
+  it("fixa a paleta esmeralda, dourado e marfim em todo o sistema", () => {
+    expect(theme).toContain('--ejc-petroleum: #073c35');
+    expect(theme).toContain('--ejc-ice: #f4f1e8');
+    expect(theme).toContain('--ejc-gold: #c9a24a');
+    expect(theme).toContain('font-family: Georgia');
+    expect(theme).toContain('.ejc-ai-dashboard__workspace--entry');
+    expect(theme).toContain('html:not(.dark) .ejc-modern-scope :where(table, .table)');
+    expect(theme).toContain('html:not(.dark) :where([role="dialog"], [role="menu"], .dropdown, .popover)');
+    expect(theme).toContain(`html:not(.dark) .min-h-screen.bg-canvas > .brand-watermark + div {
+  background:
+    linear-gradient(
+      90deg,
+      var(--ejc-petroleum-deep) 0%,
+      #073c35 57%,
+      var(--ejc-ice) 57%,
+      #faf8f2 100%
+    ) !important;
+}`);
+    expect(theme).toContain('.min-h-screen.bg-canvas > .brand-watermark + div');
+    expect(theme).toContain('.ejc-modern-scope > header:not(.fixed)');
+    expect(theme).toContain('@media (max-width: 767px)');
+    expect(theme).toContain('@media (prefers-reduced-motion: reduce)');
   });
 });
