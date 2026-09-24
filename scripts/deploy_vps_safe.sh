@@ -76,16 +76,33 @@ restore_env() {
   [ "$ENV_MUTATED" = "1" ] || return 0
   [ -n "$ENV_ROLLBACK_FILE" ] && [ -s "$ENV_ROLLBACK_FILE" ] \
     || { log "ERRO CRÍTICO: snapshot transacional do .env ausente."; return 1; }
+
+  # Se o arquivo era originalmente imutável, o caminho normal de deploy já
+  # reaplicou +i antes de build/cutover. Qualquer rollback posterior precisa
+  # remover +i novamente ANTES de restaurar o snapshot e reaplicá-lo ao final.
+  unlock_env_if_needed || return 1
+
+  local rc=0
   if cmp -s -- "$ENV_ROLLBACK_FILE" .env; then
     if [ "$(stat -c '%a' .env 2>/dev/null || true)" != "600" ]; then
-      chmod 600 .env || return 1
+      chmod 600 .env || rc=1
     fi
-    log ".env permaneceu idêntico ao snapshot; conteúdo não foi reescrito e permissões seguras foram preservadas."
-    return 0
+    if [ "$rc" -eq 0 ]; then
+      log ".env permaneceu idêntico ao snapshot; conteúdo não foi reescrito e permissões seguras foram preservadas."
+    fi
+  else
+    cp -- "$ENV_ROLLBACK_FILE" .env || rc=1
+    if [ "$rc" -eq 0 ]; then
+      chmod 600 .env || rc=1
+    fi
+    if [ "$rc" -eq 0 ]; then
+      log ".env anterior restaurado a partir do snapshot transacional protegido."
+    fi
   fi
-  cp -- "$ENV_ROLLBACK_FILE" .env || return 1
-  chmod 600 .env || return 1
-  log ".env anterior restaurado a partir do snapshot transacional protegido."
+
+  # Preserva a política original mesmo quando a restauração do conteúdo falha.
+  relock_env_if_needed || rc=1
+  return "$rc"
 }
 
 _restore_image() {

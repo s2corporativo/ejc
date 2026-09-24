@@ -108,6 +108,7 @@ steps:
     when:
       - event: push
         branch: main
+      - event: pull_request
       - event: manual
       - &critical_change
         path:
@@ -207,6 +208,7 @@ steps:
     when:
       - event: push
         branch: main
+      - event: pull_request
       - event: manual
       - *critical_change
       - path:
@@ -233,6 +235,7 @@ steps:
     when:
       - event: push
         branch: main
+      - event: pull_request
       - event: manual
       - *critical_change
       - path:
@@ -257,6 +260,7 @@ steps:
     when:
       - event: push
         branch: main
+      - event: pull_request
       - event: manual
       - *critical_change
       - path:
@@ -279,6 +283,7 @@ steps:
     when:
       - event: push
         branch: main
+      - event: pull_request
       - event: manual
       - *critical_change
       - path:
@@ -303,6 +308,7 @@ steps:
     when:
       - event: push
         branch: main
+      - event: pull_request
       - event: manual
       - *critical_change
       - path:
@@ -327,6 +333,7 @@ steps:
     when:
       - event: push
         branch: main
+      - event: pull_request
       - event: manual
       - *critical_change
       - path:
@@ -352,6 +359,7 @@ steps:
     when:
       - event: push
         branch: main
+      - event: pull_request
       - event: manual
       - *critical_change
       - path:
