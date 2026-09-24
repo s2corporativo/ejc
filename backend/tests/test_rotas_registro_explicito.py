@@ -391,12 +391,9 @@ ADICOES_INTENCIONAIS |= {
     ("/api/manus/deep-reasoning/{handle}", "GET"),
 }
 
-# PR #1818 — Assistente IA de casos (#37) + Detector de prazos (#67).
-# Rotas autenticadas, PII sanitizado antes do envio ao LLM, resposta
-# marcada como rascunho (HITL/OAB Provimento 205/2021).
+# PR #1820/#1825 — Auditoria preliminar de propostas de licitação.
+# Superfície restrita à equipe jurídica, com rate limit e revisão humana.
 ADICOES_INTENCIONAIS |= {
-    ("/api/assistente/cases/{case_id}/chat", "POST"),
-    ("/api/assistente/detectar-prazos", "POST"),
     ("/api/licitacao-auditoria/analyze-competitor-proposal", "POST"),
     ("/api/licitacao-auditoria/audit-report-template", "GET"),
 }
