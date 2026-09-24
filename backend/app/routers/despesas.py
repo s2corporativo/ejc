@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.csv_safe import sanitize_csv_row
 from app.core.security import get_current_user
+from app.core.sql_safe import construir_update
 from app.models.audit_log import criar_audit_log
 from app.models.user import User
 
@@ -122,50 +123,65 @@ async def get_resumo(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    comp_filter = "AND competencia = :competencia" if competencia else ""
-    params = {"competencia": competencia} if competencia else {}
-    result = await db.execute(
-        # SQL literal com bind params; a regra marca todo text(), sem olhar
-        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
-        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-        text(
-            f"""
+    if competencia:
+        params = {"competencia": competencia}
+        resumo_stmt = text("""
             SELECT
                 COALESCE(SUM(valor) FILTER (
-                    WHERE tipo='fixo' AND status!='cancelado' {comp_filter}
+                    WHERE tipo='fixo' AND status!='cancelado'
+                      AND competencia = :competencia
                 ), 0) AS total_fixo,
                 COALESCE(SUM(valor) FILTER (
-                    WHERE tipo='variavel' AND status!='cancelado' {comp_filter}
+                    WHERE tipo='variavel' AND status!='cancelado'
+                      AND competencia = :competencia
                 ), 0) AS total_variavel,
                 COALESCE(SUM(valor) FILTER (
-                    WHERE status='pago' {comp_filter}
+                    WHERE status='pago' AND competencia = :competencia
                 ), 0) AS total_pago_mes,
                 COALESCE(SUM(valor) FILTER (
-                    WHERE status='pendente' {comp_filter}
+                    WHERE status='pendente' AND competencia = :competencia
                 ), 0) AS total_pendente_mes
             FROM office_expenses
             WHERE deleted_at IS NULL
-            """
-        ),
-        params,
-    )
-    row = result.mappings().first()
-
-    por_cat = await db.execute(
-        # SQL literal com bind params; a regra marca todo text(), sem olhar
-        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
-        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-        text(
-            f"""
+        """)
+        categoria_stmt = text("""
             SELECT categoria, SUM(valor) AS total, COUNT(*) AS qtd
             FROM office_expenses
-            WHERE deleted_at IS NULL AND status!='cancelado' {comp_filter}
+            WHERE deleted_at IS NULL AND status!='cancelado'
+              AND competencia = :competencia
             GROUP BY categoria
             ORDER BY total DESC
-            """
-        ),
-        params,
-    )
+        """)
+    else:
+        params = {}
+        resumo_stmt = text("""
+            SELECT
+                COALESCE(SUM(valor) FILTER (
+                    WHERE tipo='fixo' AND status!='cancelado'
+                ), 0) AS total_fixo,
+                COALESCE(SUM(valor) FILTER (
+                    WHERE tipo='variavel' AND status!='cancelado'
+                ), 0) AS total_variavel,
+                COALESCE(SUM(valor) FILTER (
+                    WHERE status='pago'
+                ), 0) AS total_pago_mes,
+                COALESCE(SUM(valor) FILTER (
+                    WHERE status='pendente'
+                ), 0) AS total_pendente_mes
+            FROM office_expenses
+            WHERE deleted_at IS NULL
+        """)
+        categoria_stmt = text("""
+            SELECT categoria, SUM(valor) AS total, COUNT(*) AS qtd
+            FROM office_expenses
+            WHERE deleted_at IS NULL AND status!='cancelado'
+            GROUP BY categoria
+            ORDER BY total DESC
+        """)
+
+    result = await db.execute(resumo_stmt, params)
+    row = result.mappings().first()
+    por_cat = await db.execute(categoria_stmt, params)
     categorias = [dict(r) for r in por_cat.mappings().all()]
 
     def _dec(v):
@@ -190,39 +206,27 @@ async def list_despesas(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    conditions = ["deleted_at IS NULL"]
-    params = {}
-    if categoria:
-        conditions.append("categoria = :categoria")
-        params["categoria"] = categoria
-    if tipo:
-        conditions.append("tipo = :tipo")
-        params["tipo"] = tipo
-    if status:
-        conditions.append("status = :status")
-        params["status"] = status
-    if competencia:
-        conditions.append("competencia = :competencia")
-        params["competencia"] = competencia
-    if recorrente is not None:
-        conditions.append("recorrente = :recorrente")
-        params["recorrente"] = recorrente
-
-    where = " AND ".join(conditions)
+    params = {
+        "categoria": categoria,
+        "tipo": tipo,
+        "status": status,
+        "competencia": competencia,
+        "recorrente": recorrente,
+    }
     result = await db.execute(
-        # SQL literal com bind params; a regra marca todo text(), sem olhar
-        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
-        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-        text(
-            f"""
+        text("""
             SELECT id, categoria, subcategoria, tipo, descricao, valor,
                    vencimento, pago_em, recorrente, recorrencia, status,
                    competencia, created_by, created_at, updated_at
             FROM office_expenses
-            WHERE {where}
+            WHERE deleted_at IS NULL
+              AND (CAST(:categoria AS text) IS NULL OR categoria = :categoria)
+              AND (CAST(:tipo AS text) IS NULL OR tipo = :tipo)
+              AND (CAST(:status AS text) IS NULL OR status = :status)
+              AND (CAST(:competencia AS text) IS NULL OR competencia = :competencia)
+              AND (CAST(:recorrente AS boolean) IS NULL OR recorrente = :recorrente)
             ORDER BY categoria, descricao
-            """
-        ),
+        """),
         params,
     )
     return [dict(r) for r in result.mappings().all()]
@@ -237,34 +241,24 @@ async def export_despesas_csv(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    conditions = ["deleted_at IS NULL"]
-    params: dict = {}
-    if competencia:
-        conditions.append("competencia = :competencia")
-        params["competencia"] = competencia
-    if categoria:
-        conditions.append("categoria = :categoria")
-        params["categoria"] = categoria
-    if tipo:
-        conditions.append("tipo = :tipo")
-        params["tipo"] = tipo
-    if status:
-        conditions.append("status = :status")
-        params["status"] = status
-    where = " AND ".join(conditions)
+    params: dict = {
+        "competencia": competencia,
+        "categoria": categoria,
+        "tipo": tipo,
+        "status": status,
+    }
     result = await db.execute(
-        # SQL literal com bind params; a regra marca todo text(), sem olhar
-        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
-        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-        text(
-            f"""
+        text("""
             SELECT competencia, categoria, subcategoria, tipo, descricao, valor,
                    vencimento, pago_em, recorrente, recorrencia, status
             FROM office_expenses
-            WHERE {where}
+            WHERE deleted_at IS NULL
+              AND (CAST(:competencia AS text) IS NULL OR competencia = :competencia)
+              AND (CAST(:categoria AS text) IS NULL OR categoria = :categoria)
+              AND (CAST(:tipo AS text) IS NULL OR tipo = :tipo)
+              AND (CAST(:status AS text) IS NULL OR status = :status)
             ORDER BY competencia DESC, categoria, descricao
-            """
-        ),
+        """),
         params,
     )
     rows = result.mappings().all()
@@ -360,24 +354,32 @@ async def update_despesa(
         raise HTTPException(status_code=422, detail="Nenhum campo informado para atualizar")
     updates = _normalizar_baixa(updates, status_atual=antes["status"])
 
-    set_clause = ", ".join(f"{k}=:{k}" for k in updates)
-    result = await db.execute(
-        # SQL literal com bind params; a regra marca todo text(), sem olhar
-        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
-        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+    stmt, params = construir_update(
+        updates,
+        tabela="office_expenses",
+        exigir_nao_excluido=True,
+    )
+    params["where_id"] = despesa_id
+    result = await db.execute(stmt, params)
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Despesa não encontrada")
+
+    atualizado = await db.execute(
         text(
-            f"""
-            UPDATE office_expenses
-            SET {set_clause}, updated_at=NOW()
+            """
+            SELECT id, categoria, subcategoria, tipo, descricao, valor,
+                   vencimento, pago_em, recorrente, recorrencia, status,
+                   competencia, created_at, updated_at
+            FROM office_expenses
             WHERE id=:id AND deleted_at IS NULL
-            RETURNING id, categoria, subcategoria, tipo, descricao, valor,
-                      vencimento, pago_em, recorrente, recorrencia, status,
-                      competencia, created_at, updated_at
             """
         ),
-        {**updates, "id": despesa_id},
+        {"id": despesa_id},
     )
-    depois = dict(result.mappings().first())
+    depois_row = atualizado.mappings().first()
+    if not depois_row:
+        raise HTTPException(status_code=404, detail="Despesa não encontrada")
+    depois = dict(depois_row)
     await criar_audit_log(
         db,
         current_user.id,
