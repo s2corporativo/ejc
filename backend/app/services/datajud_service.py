@@ -525,9 +525,14 @@ async def _consultar_ou_cachear(
             bruto = await cli.get(chave)
             if bruto:
                 try:
-                    return json.loads(bruto)
+                    cached = json.loads(bruto)
+                    if isinstance(cached, dict):
+                        return cached
                 except json.JSONDecodeError:
-                    pass  # resposta corrompida → refetch
+                    pass
+                # JSON válido mas com tipo inesperado também é tratado como
+                # cache inválido; o contrato DataJud esperado aqui é objeto.
+                # Em ambos os casos fazemos refetch transparente.
         except Exception:
             pass
         data = await _datajud_search(alias, payload, headers)
