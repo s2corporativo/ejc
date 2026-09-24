@@ -262,7 +262,9 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                 num_proc = (doc.get("extra") or {}).get("numero_processo")
                 case = await buscar_caso_ativo_por_processo(db, num_proc)
                 if case is None:
-                    logger.info(
+                    # [AUD27-P3-12] número CNJ é PII de terceiro; rebaixado
+                    # para DEBUG. Volume dobra com a 2ª OAB; security-auditor B5.
+                    logger.debug(
                         "DJEN OAB %s/%s: comunicação do processo %s sem caso "
                         "ativo cadastrado — ingestão RAG pulada (evita PII de terceiros)",
                         numero, uf, num_proc or "?",

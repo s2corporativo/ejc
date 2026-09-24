@@ -26,6 +26,7 @@ from app.routers.ramos_comum import (  # noqa: F401 (reexport p/ compat)
     _ultimo_dia_do_mes, _add_meses_data,
     _parse_fracoes, _meses_para_anos_meses,
     _prescricao_penal_consolidada, _prazo_util_com_recesso,
+    _LIMIARES_TAXA_MEDIA, _classificar_taxa_vs_media,  # [VARR-1] deduplicado
 )
 from app.services.homologacao_ferramentas import (  # noqa: F401 (reexport p/ compat)
     FERRAMENTAS_BLOQUEADAS,
@@ -1136,47 +1137,6 @@ async def tributario_multa_mora(
         "fontes": ["Lei 9.430/96 art. 61 §§1º-2º"],
         "vigencia_regra": "Lei 9.430/96 art. 61 — tributos federais, vigente",
         **comuns,
-    }
-
-
-# ── Bancário: taxa contratada × média BACEN (classificação INDICATIVA) ────────
-# Sem booleano "abusivo sim/não": o STJ afere abusividade caso a caso, tendo a
-# taxa média de mercado como parâmetro (REsp 1.061.530/RS) e 1,5× como
-# REFERENCIAL jurisprudencial, não vinculante.
-_LIMIARES_TAXA_MEDIA = {
-    "abaixo_da_media": "razão < 0,95 (mais de 5% abaixo da média)",
-    "na_media": "razão entre 0,95 e 1,10 (até 10% acima da média)",
-    "acima_da_media": "razão entre 1,10 e 1,50",
-    "substancialmente_acima": "razão > 1,50 — REFERENCIAL jurisprudencial (REsp 1.061.530/RS), não vinculante",
-}
-_COMPARABILIDADE_REQUISITOS = [
-    "mesma MODALIDADE de crédito (série BCB específica)",
-    "mesma DATA/mês de contratação",
-    "perfil do tomador (PF/PJ, risco de crédito)",
-    "garantias oferecidas (consignação, alienação fiduciária etc.)",
-    "prazo da operação",
-    "CET — custo efetivo total (Res. CMN 3.517/2007), não apenas a taxa nominal",
-]
-
-
-def _classificar_taxa_vs_media(contratada: float, media: float) -> dict:
-    if media <= 0 or contratada < 0:
-        raise HTTPException(422, "Taxas inválidas: a média deve ser > 0 e a contratada ≥ 0.")
-    razao = contratada / media
-    if razao < 0.95:
-        classificacao = "abaixo_da_media"
-    elif razao <= 1.10:
-        classificacao = "na_media"
-    elif razao <= 1.50:
-        classificacao = "acima_da_media"
-    else:
-        classificacao = "substancialmente_acima"
-    return {
-        "razao_sobre_media": round(razao, 4),
-        "distancia_percentual": round((razao - 1) * 100, 2),
-        "classificacao_indicativa": classificacao,
-        "limiares_classificacao": _LIMIARES_TAXA_MEDIA,
-        "comparabilidade_requisitos": _COMPARABILIDADE_REQUISITOS,
     }
 
 
