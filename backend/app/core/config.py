@@ -481,6 +481,11 @@ class Settings(BaseSettings):
     # no CNJ a cada request repetida. Em memória (premissa de worker único).
     # 0 desliga o cache. Erro do CNJ nunca entra no cache.
     DATAJUD_CACHE_TTL_SEGUNDOS: int = 900
+    # Cache L2 compartilhado entre workers (Redis). Opt-in porque a resposta do
+    # DataJud pode conter metadados processuais. Chaves são SHA-256 e o valor
+    # expira por TTL; falha do Redis degrada para a consulta normal ao CNJ.
+    DATAJUD_CACHE_REDIS_ENABLED: bool = False
+    DATAJUD_CACHE_REDIS_TTL: int = 900
     # Limitador de requisições ao DataJud (req/s), aplicado em `_datajud_search`.
     # A VERIFICAR: nenhuma fonte oficial do CNJ declara rate limit da API
     # Pública. Valor conservador até confirmação; ajustável sem deploy de
