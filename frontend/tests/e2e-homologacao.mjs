@@ -1,26 +1,40 @@
 /**
- * E2E Playwright - Homologação EJC De Paula Teixeira
- * Testa fluxos críticos com credenciais reais.
+ * E2E Playwright - Homologação EJC De Paula Teixeira (dados FICTÍCIOS, marcador E2E-FICTICIO)
+ * Default: localhost — produção é BLOQUEADA por padrão (guarda explícita abaixo).
  *
- * Uso:
- *   EJC_BASE_URL=https://ejc.depaulateixeira.adv.br \
- *   EJC_USER_EMAIL=admin@depaulateixeira.adv.br \
- *   EJC_USER_PASSWORD=sua_senha \
+ * Uso (staging/homologação/localhost):
+ *   EJC_BASE_URL=http://localhost:8080 \
+ *   EJC_USER_EMAIL=e2e-ficticio@exemplo.local \
+ *   EJC_USER_PASSWORD=senha_ficticia \
  *   node tests/e2e-homologacao.mjs
+ *
+ * Produção (exceção explícita, exige todas as condições abaixo):
+ *   EJC_ALLOW_PRODUCTION_E2E=true EJC_BASE_URL=https://ejc.depaulateixeira.adv.br ...
+ *   - apenas leitura/verificação de rotas; não cria dados reais;
+ *   - credenciais NUNCA versionadas (fornecidas via ambiente/cofre local).
  */
 
 import { chromium } from "playwright";
 
-const BASE_URL = process.env.EJC_BASE_URL || "https://ejc.depaulateixeira.adv.br";
+const BASE_URL = process.env.EJC_BASE_URL || "http://localhost:8080";
 const USER_EMAIL = process.env.EJC_USER_EMAIL;
 const USER_PASSWORD = process.env.EJC_USER_PASSWORD;
 
+// ── Guarda de produção: bloqueada por padrão (fail-closed) ──────────────
+const isProduction = /depaulateixeira\.adv\.br/.test(BASE_URL);
+if (isProduction && process.env.EJC_ALLOW_PRODUCTION_E2E !== "true") {
+  console.error("❌ BLOQUEADO: EJC_BASE_URL aponta para produção.");
+  console.error("   Execução em produção exige EJC_ALLOW_PRODUCTION_E2E=true explicitamente.");
+  console.error("   Prefira localhost/staging: EJC_BASE_URL=http://localhost:8080");
+  process.exit(2);
+}
+
 if (!USER_EMAIL || !USER_PASSWORD) {
   console.error("❌ Necessário definir EJC_USER_EMAIL e EJC_USER_PASSWORD");
-  console.error("   Exemplo:");
-  console.error("   EJC_BASE_URL=https://ejc.depaulateixeira.adv.br \\");
-  console.error("   EJC_USER_EMAIL=admin@depaulateixeira.adv.br \\");
-  console.error("   EJC_USER_PASSWORD=sua_senha \\");
+  console.error("   Exemplo (homologação local, dados fictícios E2E-FICTICIO):");
+  console.error("   EJC_BASE_URL=http://localhost:8080 \\");
+  console.error("   EJC_USER_EMAIL=e2e-ficticio@exemplo.local \\");
+  console.error("   EJC_USER_PASSWORD=senha_ficticia \\");
   console.error("   node tests/e2e-homologacao.mjs");
   process.exit(1);
 }
@@ -33,7 +47,7 @@ const ROUTES_TO_TEST = [
   { name: "Financeiro", path: "/financeiro", verify: ["Financeiro", "Honorários"] },
 ];
 
-console.log(`\n🔍 E2E EJC - Base: ${BASE_URL}`);
+console.log(`\n🔍 E2E EJC - Base: ${BASE_URL}${isProduction ? " [PRODUÇÃO — autorizada explicitamente]" : ""}`);
 console.log(`👤 Usuário: ${USER_EMAIL}\n`);
 
 const browser = await chromium.launch({ headless: true });

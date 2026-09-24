@@ -41,6 +41,7 @@ from app.routers import analytics
 from app.routers import advogado_estilo
 from app.routers import andamentos
 from app.routers import areas
+from app.routers import assistente
 from app.routers import atendimentos
 from app.routers import atividades
 from app.routers import audit
@@ -416,6 +417,7 @@ app.include_router(analise_bancaria.router, prefix=API)
 app.include_router(analytics.router, prefix=API)
 app.include_router(andamentos.router, prefix=API)
 app.include_router(areas.router, prefix=API)
+app.include_router(assistente.router, prefix=API)
 app.include_router(atendimentos.router, prefix=API)
 app.include_router(atividades.router, prefix=API)
 app.include_router(audit.router, prefix=API)
