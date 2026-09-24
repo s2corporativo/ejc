@@ -185,6 +185,18 @@ def test_hardening_scheduler_substitui_apenas_callbacks_financeiros():
         scheduler._alertar_honorarios = original_honorarios
 
 
+def test_scheduler_legado_nao_duplica_regra_financeira():
+    import inspect
+    from app.services import scheduler
+
+    brief = inspect.getsource(scheduler._morning_brief)
+    honorarios = inspect.getsource(scheduler._alertar_honorarios)
+    assert "_morning_brief_financeiro" in brief
+    assert "_marcar_honorarios_atrasados" in honorarios
+    assert "SELECT COUNT(*) FROM deadlines" not in brief
+    assert "UPDATE fees SET status='atrasado'" not in honorarios
+
+
 class _ResultadoFake:
     def __init__(self, *, mapping=None, scalar_value=None):
         self.mapping = mapping
