@@ -101,7 +101,7 @@ def test_hora_sync_default_e_valores_invalidos(monkeypatch):
     assert hora_sync_clientes_utc() == (9, 30)
 
 
-def test_sync_canonico_permanece_unico_no_scheduler():
+def test_sync_canonico_substitui_job_cliente_duplicado():
     import inspect
     from app.services import scheduler as sch
     from app.services.datajud_sync_service import executar_sync_clientes
@@ -111,7 +111,10 @@ def test_sync_canonico_permanece_unico_no_scheduler():
 
     src = inspect.getsource(sch.start_scheduler)
     assert 'id="datajud"' in src
+    assert 'id="datajud_tarde"' in src
     assert 'id="datajud_sync_clientes"' not in src
+    assert 'kwargs={"notificar_clientes": False}' in src
+    assert "hora_sync_clientes_utc" in src
 
 
 def test_job_datajud_delega_ao_motor_canonico():
