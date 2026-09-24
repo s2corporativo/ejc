@@ -1341,7 +1341,31 @@ def start_scheduler():
 
     # Jobs v3.x — integrações oficiais (guardas internas pulam se não configurado)
     s.add_job(job_djen_intimacoes,  CronTrigger(hour=6,  minute=30), id="djen",        replace_existing=True)
-    s.add_job(job_datajud_sync,     CronTrigger(hour="8,16", minute=45), id="datajud",  replace_existing=True)
+
+    # DataJud: um único motor, duas janelas úteis. Quando a notificação ao
+    # cliente está habilitada, o primeiro ciclo preserva DATAJUD_SYNC_HORA_UTC
+    # (09:30 UTC = 06:30 BRT por default). Sem notificação, preserva 08:45.
+    if settings.DATAJUD_SYNC_ENABLED:
+        from app.services.datajud_sync_service import hora_sync_clientes_utc
+        _dj_hora, _dj_min = hora_sync_clientes_utc()
+        _dj_primeiro = CronTrigger(
+            hour=_dj_hora, minute=_dj_min, timezone="UTC"
+        )
+    else:
+        _dj_primeiro = CronTrigger(hour=8, minute=45)
+    s.add_job(
+        job_datajud_sync,
+        _dj_primeiro,
+        id="datajud",
+        replace_existing=True,
+    )
+    s.add_job(
+        job_datajud_sync,
+        CronTrigger(hour=16, minute=45),
+        id="datajud_tarde",
+        replace_existing=True,
+        kwargs={"notificar_clientes": False},
+    )
     s.add_job(job_relatorio_mensal, CronTrigger(day=1,  hour=7, minute=30), id="relatorio_mensal", replace_existing=True)
 
     # Jobs de ingestão no RAG (Bloco B)
@@ -1422,9 +1446,8 @@ def start_scheduler():
         id="backup_drive", replace_existing=True,
     )
 
-    # DataJud possui um único ciclo automático (id="datajud", 08h45/16h45).
-    # DATAJUD_SYNC_ENABLED controla somente notificações ao cliente dentro
-    # desse ciclo; não cria um segundo job nem uma segunda consulta.
+    # Não há terceiro job DataJud: o ciclo voltado ao cliente foi absorvido
+    # pelo primeiro ciclo do motor canônico acima.
     # Radar Legislativo (Câmara + Senado + ALMG) — diário 07h00 UTC. Gate
     # interno RADAR_LEGISLATIVO_ENABLED (default True — APIs públicas sem
     # custo). Falha de uma fonte (ALMG instável) nunca derruba o job.
@@ -1824,11 +1847,15 @@ async def job_djen_intimacoes():
         logger.error("[DJEN] falha na captura consolidada; tipo=%s", type(e).__name__)
     await _bater_ponto(JOB_DJEN, _hb_status, _hb_detail)
 
-async def job_datajud_sync():
-    """08h45/16h45 — rotina canônica única de sincronização DataJud.
+async def job_datajud_sync(
+    *,
+    notificar_clientes: bool | None = None,
+):
+    """Rotina canônica de sincronização DataJud.
 
-    A timeline continua sincronizando sempre que DataJud estiver habilitado.
-    Notificações ao cliente permanecem opt-in via DATAJUD_SYNC_ENABLED.
+    A timeline sincroniza em ambos os ciclos. O ciclo matinal pode notificar
+    clientes quando DATAJUD_SYNC_ENABLED estiver ativo; o vespertino é
+    explicitamente silencioso para preservar a cadência anterior.
     """
     from app.services.datajud_sync_service import executar_sync_clientes
     from app.services.heartbeat_service import JOB_DATAJUD
@@ -1844,9 +1871,14 @@ async def job_datajud_sync():
     _hb_status, _hb_detail = "ok", None
     try:
         async with AsyncSessionLocal() as db:
+            enviar_notificacao = (
+                bool(settings.DATAJUD_SYNC_ENABLED)
+                if notificar_clientes is None
+                else bool(notificar_clientes)
+            )
             resumo = await executar_sync_clientes(
                 db,
-                notificar_clientes=bool(settings.DATAJUD_SYNC_ENABLED),
+                notificar_clientes=enviar_notificacao,
             )
         if resumo.get("erros"):
             _hb_status = "erro"
@@ -1859,7 +1891,7 @@ async def job_datajud_sync():
             resumo.get("casos", 0),
             resumo.get("movimentos_novos", 0),
             resumo.get("erros", 0),
-            bool(settings.DATAJUD_SYNC_ENABLED),
+            enviar_notificacao,
         )
     except Exception as e:
         _hb_status, _hb_detail = "erro", type(e).__name__
