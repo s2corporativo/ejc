@@ -113,92 +113,10 @@ async def _bater_ponto(job_name: str, status: str, detail: str | None = None) ->
 # ── Jobs ──────────────────────────────────────────────────────────────────────
 
 async def _morning_brief():
-    """Briefing diário 07h00 — WhatsApp para o admin."""
-    from app.core.database import AsyncSessionLocal
+    """Compatibilidade: delega o briefing ao módulo financeiro canônico."""
+    from app.services.scheduler_financeiro import _morning_brief_financeiro
 
-    try:
-        async with AsyncSessionLocal() as db:
-            hoje = hoje_operacional()
-            d3 = hoje + timedelta(days=3)
-            d7 = hoje + timedelta(days=7)
-
-            # Prazos fatais 3 dias
-            r1 = await db.execute(text("""
-                SELECT COUNT(*) FROM deadlines
-                WHERE status='pendente' AND deleted_at IS NULL
-                  AND data_prazo BETWEEN :hoje AND :d3
-            """), {"hoje": hoje, "d3": d3})
-            prazos_3d = r1.scalar() or 0
-
-            # Prazos 7 dias
-            r2 = await db.execute(text("""
-                SELECT COUNT(*) FROM deadlines
-                WHERE status='pendente' AND deleted_at IS NULL
-                  AND data_prazo BETWEEN :hoje AND :d7
-            """), {"hoje": hoje, "d7": d7})
-            prazos_7d = r2.scalar() or 0
-
-            # Honorários vencidos
-            r3 = await db.execute(text("""
-                SELECT COUNT(*), COALESCE(SUM(valor),0) FROM fees
-                WHERE status IN ('pendente','atrasado') AND deleted_at IS NULL
-                  AND data_vencimento < :hoje
-            """), {"hoje": hoje})
-            hon_qtd, hon_valor = r3.one()
-
-            # Defesas ambientais críticas (≤5 dias)
-            r4 = await db.execute(text("""
-                SELECT COUNT(*) FROM environmental_cases
-                WHERE status_defesa IN ('prazo_correndo','elaborando')
-                  AND deleted_at IS NULL
-                  AND data_prazo_defesa <= :d5
-            """), {"d5": hoje + timedelta(days=5)})
-            amb_criticas = r4.scalar() or 0
-
-            # _morning_brief_email: busca admin para e-mail + push
-            r5 = await db.execute(text("""
-                SELECT id, email FROM users
-                WHERE role IN ('superadmin','admin') AND is_active=true
-                  AND email IS NOT NULL LIMIT 1
-            """))
-            admin_row = r5.first()
-
-        msg_txt = (
-            f"Morning Brief {hoje.strftime('%d/%m/%Y')}\n"
-            f"Prazos fatais (3d): {prazos_3d} | "
-            f"Prazos 7d: {prazos_7d} | "
-            f"Honor. vencidos: {hon_qtd} (R$ {hon_valor:,.2f}) | "
-            f"IBAMA <=5d: {amb_criticas}"
-        )
-        msg_html = (
-            f"<h3>EJC — Morning Brief {hoje.strftime('%d/%m/%Y')}</h3>"
-            f"<ul>"
-            f"<li><b>Prazos fatais (3 dias):</b> {prazos_3d}</li>"
-            f"<li><b>Prazos 7 dias:</b> {prazos_7d}</li>"
-            f"<li><b>Honorários vencidos:</b> {hon_qtd} (R$ {hon_valor:,.2f})</li>"
-            f"<li><b>Defesas IBAMA ≤5 dias:</b> {amb_criticas}</li>"
-            f"</ul><p><a href='https://ejc.depaulateixeira.adv.br'>Acessar EJC</a></p>"
-        )
-        async with AsyncSessionLocal() as db2:
-            from app.services.notification_service import notificar
-            if admin_row:
-                # Dispatch unificado: sino (sistema, mandatório) + e-mail,
-                # respeitando preferências/quiet hours do admin.
-                try:
-                    await notificar(
-                        db2, admin_row.id,
-                        f"Morning Brief {hoje.strftime('%d/%m/%Y')}",
-                        msg_txt, tipo="sistema", link="/",
-                        email=admin_row.email or None,
-                        email_assunto=f"[EJC] Morning Brief {hoje.strftime('%d/%m')}",
-                        email_corpo=msg_html,
-                    )
-                except Exception as _e:
-                    logger.warning(f"[Brief] notif falhou: {_e}")
-        logger.info(f"[Brief] {prazos_3d} prazos 3d, {amb_criticas} amb críticas")
-    except Exception as e:
-        logger.error(f"[Scheduler] morning_brief: {e}")
-
+    await _morning_brief_financeiro()
 
 async def _marcar_prazos_vencidos():
     """Marca prazos PENDENTES já vencidos (data_prazo < hoje) como
@@ -849,19 +767,10 @@ async def _alertar_solicitacoes_clientes():
 
 
 async def _alertar_honorarios():
-    """Marca como 'atrasado' honorários vencidos."""
-    from app.core.database import AsyncSessionLocal
-    try:
-        async with AsyncSessionLocal() as db:
-            await db.execute(text("""
-                UPDATE fees SET status='atrasado'
-                WHERE status='pendente' AND deleted_at IS NULL
-                AND data_vencimento < :hoje
-            """), {"hoje": hoje_operacional()})
-            await db.commit()
-    except Exception as e:
-        logger.error(f"[Scheduler] honorarios: {e}")
+    """Compatibilidade: delega a transição ao módulo financeiro canônico."""
+    from app.services.scheduler_financeiro import _marcar_honorarios_atrasados
 
+    await _marcar_honorarios_atrasados()
 
 async def _regua_cobranca():
     """08h15 — Régua de cobrança escalonada de honorários vencidos (#3).
@@ -1447,9 +1356,8 @@ def start_scheduler():
     s.add_job(_purgar_dados_lgpd, CronTrigger(day_of_week="sun", hour=2, minute=30), id="purga_lgpd", replace_existing=True)
     s.add_job(job_ingestao_camara,   CronTrigger(hour=4, minute=0),          id="ing_camara",   replace_existing=True)
     s.add_job(job_ingestao_senado,   CronTrigger(hour=4, minute=20),         id="ing_senado",   replace_existing=True)
-    # DJEN → RAG: gate interno DJEN_INGEST_ENABLED (default True — LIGADO por
-    # decisão do titular; desligue com DJEN_INGEST_ENABLED=false).
-    s.add_job(job_ingestao_djen,     CronTrigger(hour=5, minute=0),          id="ing_djen",     replace_existing=True)
+    # DJEN/RAG é consolidado no job "djen" (06h30), sem segunda consulta
+    # automática à mesma OAB na mesma janela.
     # TJMG → RAG: gate interno TJMG_INGEST_ENABLED (default True — LIGADO por
     # decisão do titular; desligue com TJMG_INGEST_ENABLED=false). Semanal
     # (sáb 04h30) — crawler de jurisprudência estadual MG por temas curados.
@@ -1514,19 +1422,9 @@ def start_scheduler():
         id="backup_drive", replace_existing=True,
     )
 
-    # ── Automações voltadas ao CLIENTE (migration 084) — gates internos
-    # default False (opt-in no .env); canais: e-mail + sino APENAS. ──────────
-    # Sync diário DataJud + notificação de andamentos ao cliente
-    # (DATAJUD_SYNC_ENABLED; horário UTC — mesmo padrão do backup_drive).
-    from app.services.datajud_sync_service import (
-        hora_sync_clientes_utc, job_datajud_sync_clientes,
-    )
-    _dj_hora, _dj_min = hora_sync_clientes_utc()
-    s.add_job(
-        job_datajud_sync_clientes,
-        CronTrigger(hour=_dj_hora, minute=_dj_min, timezone="UTC"),
-        id="datajud_sync_clientes", replace_existing=True,
-    )
+    # DataJud possui um único ciclo automático (id="datajud", 08h45/16h45).
+    # DATAJUD_SYNC_ENABLED controla somente notificações ao cliente dentro
+    # desse ciclo; não cria um segundo job nem uma segunda consulta.
     # Radar Legislativo (Câmara + Senado + ALMG) — diário 07h00 UTC. Gate
     # interno RADAR_LEGISLATIVO_ENABLED (default True — APIs públicas sem
     # custo). Falha de uma fonte (ALMG instável) nunca derruba o job.
@@ -1880,26 +1778,20 @@ def djen_entra_no_job(advogado) -> bool:
 
 
 async def job_djen_intimacoes():
-    """06h30 — captura intimações DJEN para cada advogado com OAB configurada."""
+    """06h30 — captura DJEN e completa o RAG sem consultar a mesma OAB duas vezes.
+
+    OABs associadas a usuários são capturadas por djen_service (tela,
+    vínculo ao caso, notificações e RAG por caso). Depois, o ingestor RAG roda
+    somente para OABs adicionais presentes em DJEN_OABS_MONITORADAS.
+    """
     from app.models.user import User as _U
-    from app.services.djen_service import capturar_para_advogado
+    from app.services.djen_service import capturar_para_advogado, oab_para_captura
     from app.services.heartbeat_service import JOB_DJEN
+
     _hb_status, _hb_detail = "ok", None
+    oabs_capturadas: set[tuple[str, str]] = set()
     try:
         async with AsyncSessionLocal() as db:
-            # AUD27-P3-9 (2ª metade): `capturar_para_advogado` passou a resolver
-            # a OAB do perfil quando `djen_oab_numero` está vazio, mas a seleção
-            # daqui filtrava só por `djen_oab_numero`, então quem tinha apenas o
-            # campo do perfil nunca chegava a ela — o fallback existia e não
-            # alcançava o job diário. Trazemos os dois casos do banco e deixamos
-            # `oab_para_captura` (a MESMA função que a captura usa) decidir.
-            #
-            # Quem tem OAB registrada mas SEM UF determinável continua de fora:
-            # `oab_para_captura` devolve vazio, e incluí-lo aqui só produziria
-            # `oab_nao_configurada` em massa, pintando o heartbeat de vermelho
-            # sem que nada tivesse mudado. Esse caso é reportado pelo
-            # `scripts/configurar_oab_djen.py --verificar`, que é onde se
-            # conserta cadastro.
             candidatos = (await db.execute(select(_U).where(
                 _U.is_active == True, _U.deleted_at.is_(None),
                 or_(
@@ -1910,45 +1802,72 @@ async def job_djen_intimacoes():
             advs = [a for a in candidatos if djen_entra_no_job(a)]
             total = 0
             for a in advs:
+                numero, uf = oab_para_captura(a)
+                if numero and uf:
+                    oabs_capturadas.add((numero, uf))
                 try:
                     total += await capturar_para_advogado(db, a)
                 except Exception as e:
-                    logger.warning(f"DJEN {a.email}: {e}")
+                    _hb_status = "erro"
+                    logger.warning(
+                        "DJEN: captura por advogado falhou; tipo=%s",
+                        type(e).__name__,
+                    )
             await db.commit()
-            logger.info(f"[DJEN] {total} intimação(ões) nova(s)")
+            logger.info("[DJEN] %s intimação(ões) nova(s)", total)
+
+        # Uma única janela operacional: o RAG consulta somente OABs de ambiente
+        # que não acabaram de ser consultadas acima.
+        await job_ingestao_djen(excluir_oabs=oabs_capturadas)
     except Exception as e:
-        _hb_status, _hb_detail = "erro", str(e)
-        logger.error(f"[DJEN] falha na captura: {e}")
+        _hb_status, _hb_detail = "erro", type(e).__name__
+        logger.error("[DJEN] falha na captura consolidada; tipo=%s", type(e).__name__)
     await _bater_ponto(JOB_DJEN, _hb_status, _hb_detail)
 
-
 async def job_datajud_sync():
-    """08h45/16h45 — sincroniza movimentos oficiais dos casos ativos com nº CNJ."""
-    from app.core.status_caso import STATUS_ABERTOS as _STATUS_ABERTOS_CASO
-    from app.models.case import Case as _C
-    from app.services.datajud_service import sincronizar_caso
+    """08h45/16h45 — rotina canônica única de sincronização DataJud.
+
+    A timeline continua sincronizando sempre que DataJud estiver habilitado.
+    Notificações ao cliente permanecem opt-in via DATAJUD_SYNC_ENABLED.
+    """
+    from app.services.datajud_sync_service import executar_sync_clientes
     from app.services.heartbeat_service import JOB_DATAJUD
+
+    if not settings.DATAJUD_ENABLED or not settings.DATAJUD_API_KEY:
+        await _bater_ponto(
+            JOB_DATAJUD,
+            "erro",
+            "DataJud não configurado — sync automático não executado",
+        )
+        return
+
     _hb_status, _hb_detail = "ok", None
     try:
         async with AsyncSessionLocal() as db:
-            casos = (await db.execute(select(_C).where(
-                _C.deleted_at.is_(None),
-                _C.numero_processo.isnot(None),
-                _C.status.in_(_STATUS_ABERTOS_CASO),
-            ))).scalars().all()
-            total = 0
-            for c in casos[:80]:   # teto por execução (rate limit amigável)
-                try:
-                    total += await sincronizar_caso(db, c)
-                except Exception as e:
-                    logger.warning(f"DataJud {c.numero_interno}: {e}")
-            await db.commit()
-            logger.info(f"[DataJud] {total} movimento(s) novo(s)")
+            resumo = await executar_sync_clientes(
+                db,
+                notificar_clientes=bool(settings.DATAJUD_SYNC_ENABLED),
+            )
+        if resumo.get("erros"):
+            _hb_status = "erro"
+            _hb_detail = (
+                f"casos={resumo.get('casos', 0)} "
+                f"erros={resumo.get('erros', 0)}"
+            )
+        logger.info(
+            "[DataJud] rotina canônica: casos=%s novos=%s erros=%s notify=%s",
+            resumo.get("casos", 0),
+            resumo.get("movimentos_novos", 0),
+            resumo.get("erros", 0),
+            bool(settings.DATAJUD_SYNC_ENABLED),
+        )
     except Exception as e:
-        _hb_status, _hb_detail = "erro", str(e)
-        logger.error(f"[DataJud] falha na sincronização: {e}")
+        _hb_status, _hb_detail = "erro", type(e).__name__
+        logger.error(
+            "[DataJud] falha na sincronização canônica; tipo=%s",
+            type(e).__name__,
+        )
     await _bater_ponto(JOB_DATAJUD, _hb_status, _hb_detail)
-
 
 async def job_relatorio_mensal():
     """Dia 1, 07h30 — gera PDF do mês ANTERIOR e notifica sócios."""
@@ -2037,14 +1956,14 @@ async def job_ingestao_senado():
     )
 
 
-async def job_ingestao_djen():
-    """Diário 05h00 — comunicações processuais do DJEN (API Comunica/CNJ)
-    das OABs monitoradas → RAG (arquivo histórico; a retenção da API é curta).
+async def job_ingestao_djen(
+    *,
+    excluir_oabs: set[tuple[str, str]] | None = None,
+):
+    """Persiste no RAG apenas OABs DJEN que não foram capturadas no mesmo ciclo.
 
-    Gate: DJEN_INGEST_ENABLED (default True — LIGADO por decisão do titular;
-    desligue com DJEN_INGEST_ENABLED=false no .env). Não confundir
-    com job_djen_intimacoes (06h30), que alimenta a tela Intimações por
-    advogado cadastrado; este job persiste as comunicações no RAG.
+    Mantido para execução manual/diagnóstico, mas sem agendamento próprio:
+    o scheduler chama este passo dentro de job_djen_intimacoes.
     """
     from app.core.config import get_settings as _gs
     if not _gs().DJEN_INGEST_ENABLED:
@@ -2052,11 +1971,14 @@ async def job_ingestao_djen():
         return
     from app.services.ingestion_service import executar_ingestao
     from app.services.ingestors import djen
+
+    async def _ingerir_extras(db):
+        return await djen.ingerir(db, excluir_oabs=excluir_oabs)
+
     await executar_ingestao(
         "djen", "Comunicações processuais (DJEN — API Comunica/CNJ)",
-        "comunicacao_processual", djen.ingerir,
+        "comunicacao_processual", _ingerir_extras,
     )
-
 
 async def job_ingestao_tjmg():
     """Sábado 04h30 — crawler da jurisprudência do TJMG (base de acórdãos) →
