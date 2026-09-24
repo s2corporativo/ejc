@@ -158,7 +158,7 @@ async def test_patch_agenda_aceita_responsavel_id():
     val_sql, val_params = db.executed[1]
     assert "FROM users" in val_sql and val_params["rid"] == "u7"
     upd_sql, upd_params = db.executed[2]
-    assert "responsavel_id = :responsavel_id" in upd_sql
+    assert "responsavel_id" in upd_sql and ":responsavel_id" in upd_sql
     assert upd_params["responsavel_id"] == "u7"
     # B1: transferência auditada (AuditLog adicionado na mesma transação).
     assert len(db.added) == 1
@@ -175,7 +175,7 @@ async def test_patch_agenda_responsavel_id_e_opcional_exclude_unset():
 
     assert out == {"ok": True, "conflito_agenda": []}
     upd_sql, upd_params = db.executed[1]
-    assert "titulo = :titulo" in upd_sql
+    assert "titulo" in upd_sql and ":titulo" in upd_sql
     # Campo não enviado NÃO entra no UPDATE (exclude_unset)
     assert "responsavel_id" not in upd_sql
 

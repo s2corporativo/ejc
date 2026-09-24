@@ -34,6 +34,47 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 _scheduler: AsyncIOScheduler | None = None
 
+# SQL fechado por flag: nenhum identificador é derivado de entrada externa.
+# Manter select+update juntos evita que uma nova flag seja interpolada em SQL.
+_PRAZO_ALERTA_SQL = {
+    "alerta_7d_enviado": (
+        text("""
+            SELECT d.id, d.titulo, d.data_prazo, d.responsavel_id, u.email, u.phone
+            FROM deadlines d
+            LEFT JOIN users u ON u.id = d.responsavel_id
+            WHERE d.status='pendente' AND d.deleted_at IS NULL
+              AND d.data_prazo <= :alvo AND d.data_prazo >= :piso
+              AND d.alerta_7d_enviado = false
+              AND d.responsavel_id IS NOT NULL
+        """),
+        text("UPDATE deadlines SET alerta_7d_enviado=true WHERE id=:id"),
+    ),
+    "alerta_3d_enviado": (
+        text("""
+            SELECT d.id, d.titulo, d.data_prazo, d.responsavel_id, u.email, u.phone
+            FROM deadlines d
+            LEFT JOIN users u ON u.id = d.responsavel_id
+            WHERE d.status='pendente' AND d.deleted_at IS NULL
+              AND d.data_prazo <= :alvo AND d.data_prazo >= :piso
+              AND d.alerta_3d_enviado = false
+              AND d.responsavel_id IS NOT NULL
+        """),
+        text("UPDATE deadlines SET alerta_3d_enviado=true WHERE id=:id"),
+    ),
+    "alerta_1d_enviado": (
+        text("""
+            SELECT d.id, d.titulo, d.data_prazo, d.responsavel_id, u.email, u.phone
+            FROM deadlines d
+            LEFT JOIN users u ON u.id = d.responsavel_id
+            WHERE d.status='pendente' AND d.deleted_at IS NULL
+              AND d.data_prazo <= :alvo AND d.data_prazo >= :piso
+              AND d.alerta_1d_enviado = false
+              AND d.responsavel_id IS NOT NULL
+        """),
+        text("UPDATE deadlines SET alerta_1d_enviado=true WHERE id=:id"),
+    ),
+}
+
 
 def get_scheduler() -> AsyncIOScheduler:
     global _scheduler
@@ -261,17 +302,11 @@ async def _alertar_prazos():
                                      (1, 0, "alerta_1d_enviado")]:
                 alvo = hoje + timedelta(days=dias)
                 piso_data = hoje + timedelta(days=piso)
-                # SQL literal com bind params; a regra marca todo text(), sem olhar
-                # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
-                # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-                rows = await db.execute(text(f"""
-                    SELECT d.id, d.titulo, d.data_prazo, d.responsavel_id, u.email, u.phone
-                    FROM deadlines d
-                    LEFT JOIN users u ON u.id = d.responsavel_id
-                    WHERE d.status='pendente' AND d.deleted_at IS NULL
-                      AND d.data_prazo <= :alvo AND d.data_prazo >= :piso AND d.{flag} = false
-                      AND d.responsavel_id IS NOT NULL
-                """), {"alvo": alvo, "piso": piso_data})
+                select_stmt, mark_stmt = _PRAZO_ALERTA_SQL[flag]
+                rows = await db.execute(
+                    select_stmt,
+                    {"alvo": alvo, "piso": piso_data},
+                )
                 # G4 (Auditoria 2026-09-20): COMMIT em LOTE de 20 — a janela de
                 # re-notificação em caso de crash continua limitada (≤20 itens,
                 # commit do resíduo no fim), mas o número de round-trips de
@@ -300,12 +335,7 @@ async def _alertar_prazos():
                                 f"<p>Acesse o EJC para os detalhes do caso.</p>"
                             ),
                         )
-                        # SQL literal com bind params; a regra marca todo text(), sem olhar
-                        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
-                        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-                        await db.execute(text(
-                            f"UPDATE deadlines SET {flag}=true WHERE id=:id"
-                        ), {"id": r.id})
+                        await db.execute(mark_stmt, {"id": r.id})
                         _lote += 1
                         if _lote % 20 == 0:
                             await db.commit()

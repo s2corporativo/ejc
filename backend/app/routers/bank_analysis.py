@@ -123,26 +123,38 @@ async def listar(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user),
 ):
-    escopo = "" if is_gestao(cu) else " AND created_by = :uid"
     params = {"l": page_size, "o": (page - 1) * page_size}
-    if not is_gestao(cu):
+    if is_gestao(cu):
+        total_query = text(
+            "SELECT count(*) FROM bank_analyses WHERE deleted_at IS NULL"
+        )
+        list_query = text("""
+            SELECT id, banco, formato, arquivo_nome, periodo_inicio, periodo_fim,
+                   total_transacoes, total_abusivo, qtd_abusivas, status, created_at
+            FROM bank_analyses
+            WHERE deleted_at IS NULL
+            ORDER BY created_at DESC
+            LIMIT :l OFFSET :o
+        """)
+        total_params = {}
+    else:
         params["uid"] = cu.id
-    total = (await db.execute(
-        # SQL literal com bind params; a regra marca todo text(), sem olhar
-        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
-        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-        text(f"SELECT count(*) FROM bank_analyses WHERE deleted_at IS NULL{escopo}"),
-        ({"uid": cu.id} if not is_gestao(cu) else {}),
-    )).scalar()
-    # SQL literal com bind params; a regra marca todo text(), sem olhar
-    # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
-    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-    rows = (await db.execute(text(f"""
-        SELECT id, banco, formato, arquivo_nome, periodo_inicio, periodo_fim,
-               total_transacoes, total_abusivo, qtd_abusivas, status, created_at
-        FROM bank_analyses WHERE deleted_at IS NULL{escopo}
-        ORDER BY created_at DESC LIMIT :l OFFSET :o
-    """), params)).mappings().all()
+        total_query = text("""
+            SELECT count(*) FROM bank_analyses
+            WHERE deleted_at IS NULL AND created_by = :uid
+        """)
+        list_query = text("""
+            SELECT id, banco, formato, arquivo_nome, periodo_inicio, periodo_fim,
+                   total_transacoes, total_abusivo, qtd_abusivas, status, created_at
+            FROM bank_analyses
+            WHERE deleted_at IS NULL AND created_by = :uid
+            ORDER BY created_at DESC
+            LIMIT :l OFFSET :o
+        """)
+        total_params = {"uid": cu.id}
+
+    total = (await db.execute(total_query, total_params)).scalar()
+    rows = (await db.execute(list_query, params)).mappings().all()
     return {"total": total, "page": page, "data": [dict(r) for r in rows]}
 
 

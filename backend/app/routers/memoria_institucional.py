@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_current_user, requer_equipe_juridica
 from app.core.ownership import is_gestao, verificar_acesso_caso
+from app.core.sql_safe import construir_update
 from app.models.user import User
 from app.models.audit_log import criar_audit_log
 
@@ -70,11 +71,12 @@ async def _obter_memoria_autorizada(
     acervo do escritório.
     """
     result = await db.execute(
-        # SQL literal com bind params; a regra marca todo text(), sem olhar
-        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
-        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-        text(f"SELECT {_COLS} FROM memoria_institucional "
-             f"WHERE id = :id AND deleted_at IS NULL"),
+        text("""
+            SELECT id, case_id, advogado_id, tipo, titulo, conteudo, resultado,
+                   area_direito, tags, metadados, created_by, created_at, updated_at
+            FROM memoria_institucional
+            WHERE id = :id AND deleted_at IS NULL
+        """),
         {"id": mem_id},
     )
     row = result.mappings().first()
@@ -96,41 +98,64 @@ async def listar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    cond = ["deleted_at IS NULL"]
-    params: dict = {"limit": limit}
+    params: dict = {
+        "limit": limit,
+        "tipo": tipo,
+        "area": f"%{area}%" if area else None,
+        "q": f"%{q}%" if q else None,
+    }
     if case_id:
         await verificar_acesso_caso(db, cu, case_id)  # ownership do caso filtrado
-        cond.append("case_id = :case_id")
         params["case_id"] = case_id
-    elif not is_gestao(cu):
-        # A listagem global também respeita o ownership antes da paginação:
-        # memórias sem caso permanecem transversais; registros case-scoped só
-        # aparecem para responsável/auxiliar do próprio caso.
-        cond.append(
-            "(case_id IS NULL OR case_id IN ("
-            "SELECT id FROM cases "
-            "WHERE deleted_at IS NULL "
-            "AND (advogado_responsavel_id = :cu_id "
-            "OR advogado_auxiliar_id = :cu_id)))"
-        )
+        consulta = text("""
+            SELECT id, case_id, advogado_id, tipo, titulo, conteudo, resultado,
+                   area_direito, tags, metadados, created_by, created_at, updated_at
+            FROM memoria_institucional
+            WHERE deleted_at IS NULL
+              AND case_id = :case_id
+              AND (CAST(:tipo AS text) IS NULL OR tipo = :tipo)
+              AND (CAST(:area AS text) IS NULL OR area_direito ILIKE :area)
+              AND (CAST(:q AS text) IS NULL OR titulo ILIKE :q OR conteudo ILIKE :q)
+            ORDER BY created_at DESC
+            LIMIT :limit
+        """)
+    elif is_gestao(cu):
+        consulta = text("""
+            SELECT id, case_id, advogado_id, tipo, titulo, conteudo, resultado,
+                   area_direito, tags, metadados, created_by, created_at, updated_at
+            FROM memoria_institucional
+            WHERE deleted_at IS NULL
+              AND (CAST(:tipo AS text) IS NULL OR tipo = :tipo)
+              AND (CAST(:area AS text) IS NULL OR area_direito ILIKE :area)
+              AND (CAST(:q AS text) IS NULL OR titulo ILIKE :q OR conteudo ILIKE :q)
+            ORDER BY created_at DESC
+            LIMIT :limit
+        """)
+    else:
+        # A listagem global também respeita ownership antes da paginação.
         params["cu_id"] = cu.id
-    if tipo:
-        cond.append("tipo = :tipo")
-        params["tipo"] = tipo
-    if area:
-        cond.append("area_direito ILIKE :area")
-        params["area"] = f"%{area}%"
-    if q:
-        cond.append("(titulo ILIKE :q OR conteudo ILIKE :q)")
-        params["q"] = f"%{q}%"
-    result = await db.execute(
-        # SQL literal com bind params; a regra marca todo text(), sem olhar
-        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
-        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-        text(f"SELECT {_COLS} FROM memoria_institucional "
-             f"WHERE {' AND '.join(cond)} ORDER BY created_at DESC LIMIT :limit"),
-        params,
-    )
+        consulta = text("""
+            SELECT id, case_id, advogado_id, tipo, titulo, conteudo, resultado,
+                   area_direito, tags, metadados, created_by, created_at, updated_at
+            FROM memoria_institucional
+            WHERE deleted_at IS NULL
+              AND (
+                case_id IS NULL OR case_id IN (
+                    SELECT id FROM cases
+                    WHERE deleted_at IS NULL
+                      AND (
+                        advogado_responsavel_id = :cu_id
+                        OR advogado_auxiliar_id = :cu_id
+                      )
+                )
+              )
+              AND (CAST(:tipo AS text) IS NULL OR tipo = :tipo)
+              AND (CAST(:area AS text) IS NULL OR area_direito ILIKE :area)
+              AND (CAST(:q AS text) IS NULL OR titulo ILIKE :q OR conteudo ILIKE :q)
+            ORDER BY created_at DESC
+            LIMIT :limit
+        """)
+    result = await db.execute(consulta, params)
     return [dict(r) for r in result.mappings().all()]
 
 
@@ -193,28 +218,38 @@ async def atualizar(
     if body.resultado is not None and body.resultado not in RESULTADOS:
         raise HTTPException(422, f"resultado inválido; use um de {sorted(RESULTADOS)}")
 
-    sets: list[str] = []
-    params: dict = {"id": mem_id}
-    for field in ("tipo", "titulo", "conteudo", "resultado", "area_direito"):
-        val = getattr(body, field)
-        if val is not None:
-            sets.append(f"{field} = :{field}")
-            params[field] = val
-    if body.tags is not None:
-        sets.append("tags = CAST(:tags AS jsonb)")
-        params["tags"] = json.dumps(body.tags)
-    if not sets:
+    campos = {
+        field: getattr(body, field)
+        for field in ("tipo", "titulo", "conteudo", "resultado", "area_direito")
+        if getattr(body, field) is not None
+    }
+    if not campos and body.tags is None:
         raise HTTPException(422, "Nada para atualizar")
-    sets.append("updated_at = now()")
-    result = await db.execute(
-        # SQL literal com bind params; a regra marca todo text(), sem olhar
-        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
-        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-        text(f"UPDATE memoria_institucional SET {', '.join(sets)} "
-             f"WHERE id = :id AND deleted_at IS NULL RETURNING id"),
-        params,
-    )
-    if not result.mappings().first():
+
+    afetadas = 0
+    if campos:
+        stmt, params = construir_update(
+            campos,
+            tabela="memoria_institucional",
+            exigir_nao_excluido=True,
+        )
+        params["where_id"] = mem_id
+        result = await db.execute(stmt, params)
+        afetadas = max(afetadas, result.rowcount or 0)
+
+    if body.tags is not None:
+        # tags requer CAST jsonb, mas o SQL é totalmente estático.
+        result = await db.execute(
+            text(
+                "UPDATE memoria_institucional "
+                "SET tags=CAST(:tags AS jsonb), updated_at=NOW() "
+                "WHERE id=:id AND deleted_at IS NULL"
+            ),
+            {"id": mem_id, "tags": json.dumps(body.tags)},
+        )
+        afetadas = max(afetadas, result.rowcount or 0)
+
+    if afetadas == 0:
         raise HTTPException(404, "Registro não encontrado")
     await criar_audit_log(db, cu.id, cu.role.value, "UPDATE", "memoria_institucional", mem_id)
     await db.commit()

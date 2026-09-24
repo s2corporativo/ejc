@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.sql_safe import construir_update
 from app.models.audit_log import criar_audit_log
 from app.models.user import User
 
@@ -82,18 +83,42 @@ async def list_contracts(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    q = "SELECT * FROM office_contracts WHERE deleted_at IS NULL"
-    params = {}
+    params = {
+        "limit": page_size,
+        "offset": (page - 1) * page_size,
+    }
     if status:
-        q += " AND status=:status"
         params["status"] = status
-    count_result = await db.execute(text(q.replace("SELECT *", "SELECT COUNT(*)")), params)
+        count_result = await db.execute(
+            text("""
+                SELECT COUNT(*) FROM office_contracts
+                WHERE deleted_at IS NULL AND status=:status
+            """),
+            {"status": status},
+        )
+        result = await db.execute(
+            text("""
+                SELECT * FROM office_contracts
+                WHERE deleted_at IS NULL AND status=:status
+                ORDER BY created_at DESC
+                LIMIT :limit OFFSET :offset
+            """),
+            params,
+        )
+    else:
+        count_result = await db.execute(
+            text("SELECT COUNT(*) FROM office_contracts WHERE deleted_at IS NULL")
+        )
+        result = await db.execute(
+            text("""
+                SELECT * FROM office_contracts
+                WHERE deleted_at IS NULL
+                ORDER BY created_at DESC
+                LIMIT :limit OFFSET :offset
+            """),
+            params,
+        )
     total = count_result.scalar() or 0
-
-    q += " ORDER BY created_at DESC LIMIT :limit OFFSET :offset"
-    params["limit"] = page_size
-    params["offset"] = (page - 1) * page_size
-    result = await db.execute(text(q), params)
     return {
         "data": [dict(r) for r in result.mappings().all()],
         "total": total,
@@ -115,32 +140,36 @@ async def list_expiring(
     a chamada padrão da UI não o envia e, portanto, respeita integralmente a
     configuração individual.
     """
-    cond_teto = (
-        "AND end_date <= CURRENT_DATE + make_interval(days => :days)"
-        if days is not None
-        else ""
-    )
-    params = {"days": days} if days is not None else {}
-    result = await db.execute(
-        # SQL literal com bind params; a regra marca todo text(), sem olhar
-        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
-        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-        text(
-            f"""
-            SELECT *
-            FROM office_contracts
-            WHERE deleted_at IS NULL
-              AND status='vigente'
-              AND end_date IS NOT NULL
-              AND end_date >= CURRENT_DATE
-              AND end_date <= CURRENT_DATE
-                    + make_interval(days => COALESCE(alert_days_before, 30))
-              {cond_teto}
-            ORDER BY end_date
-            """
-        ),
-        params,
-    )
+    if days is None:
+        result = await db.execute(
+            text("""
+                SELECT *
+                FROM office_contracts
+                WHERE deleted_at IS NULL
+                  AND status='vigente'
+                  AND end_date IS NOT NULL
+                  AND end_date >= CURRENT_DATE
+                  AND end_date <= CURRENT_DATE
+                        + make_interval(days => COALESCE(alert_days_before, 30))
+                ORDER BY end_date
+            """)
+        )
+    else:
+        result = await db.execute(
+            text("""
+                SELECT *
+                FROM office_contracts
+                WHERE deleted_at IS NULL
+                  AND status='vigente'
+                  AND end_date IS NOT NULL
+                  AND end_date >= CURRENT_DATE
+                  AND end_date <= CURRENT_DATE
+                        + make_interval(days => COALESCE(alert_days_before, 30))
+                  AND end_date <= CURRENT_DATE + make_interval(days => :days)
+                ORDER BY end_date
+            """),
+            {"days": days},
+        )
     return [dict(r) for r in result.mappings().all()]
 
 
@@ -213,22 +242,20 @@ async def update_contract(
     if start and end and end < start:
         raise HTTPException(422, "end_date não pode ser anterior a start_date")
 
-    sets = ", ".join(f"{field}=:{field}" for field in updates)
-    result = await db.execute(
-        # SQL literal com bind params; a regra marca todo text(), sem olhar
-        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
-        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-        text(
-            f"""
-            UPDATE office_contracts
-            SET {sets}, updated_at=NOW()
-            WHERE id=:id AND deleted_at IS NULL
-            RETURNING *
-            """
-        ),
-        {**updates, "id": contract_id},
+    stmt, params = construir_update(
+        updates,
+        tabela="office_contracts",
+        exigir_nao_excluido=True,
     )
-    depois = dict(result.mappings().first())
+    params["where_id"] = contract_id
+    result = await db.execute(stmt, params)
+    if result.rowcount == 0:
+        raise HTTPException(404, "Contract not found")
+
+    depois_row = await _buscar(db, contract_id)
+    if not depois_row:
+        raise HTTPException(404, "Contract not found")
+    depois = dict(depois_row)
     await criar_audit_log(
         db,
         current_user.id,

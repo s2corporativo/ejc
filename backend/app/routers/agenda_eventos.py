@@ -11,6 +11,7 @@ from sqlalchemy import text
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.ownership import is_gestao, role_str, verificar_acesso_caso
+from app.core.sql_safe import construir_update
 from app.models.audit_log import criar_audit_log
 from app.models.user import User
 
@@ -111,30 +112,39 @@ async def listar(
     # do caso OU gestão. Antes, todo evento com case_id vazava titulo/descricao/
     # local/caso_titulo p/ qualquer interno, contradizendo a Central de
     # Atividades, que esconde a mesma atividade.
-    filtro_pessoal = ""
     params: dict = {"ps": page_size}
-    if not is_gestao(cu):
-        filtro_pessoal = """ AND (
-            (e.case_id IS NULL AND (e.created_by = :uid OR e.responsavel_id = :uid))
-            OR (e.case_id IS NOT NULL AND (e.responsavel_id = :uid OR EXISTS (
-                SELECT 1 FROM cases cc WHERE cc.id = e.case_id
-                  AND (cc.advogado_responsavel_id = :uid OR cc.advogado_auxiliar_id = :uid)
-            )))
-        )"""
+    if is_gestao(cu):
+        consulta = text("""
+            SELECT e.id, e.titulo, e.tipo, e.data_evento, e.hora, e.local, e.descricao,
+                   e.case_id, e.responsavel_id, e.concluido,
+                   c.titulo AS caso_titulo
+            FROM agenda_eventos e
+            LEFT JOIN cases c ON c.id = e.case_id
+            WHERE e.deleted_at IS NULL
+            ORDER BY e.data_evento ASC, e.hora ASC NULLS LAST
+            LIMIT :ps
+        """)
+    else:
         params["uid"] = cu.id
-    # SQL literal com bind params; a regra marca todo text(), sem olhar
-    # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
-    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-    rows = (await db.execute(text(f"""
-        SELECT e.id, e.titulo, e.tipo, e.data_evento, e.hora, e.local, e.descricao,
-               e.case_id, e.responsavel_id, e.concluido,
-               c.titulo AS caso_titulo
-        FROM agenda_eventos e
-        LEFT JOIN cases c ON c.id = e.case_id
-        WHERE e.deleted_at IS NULL{filtro_pessoal}
-        ORDER BY e.data_evento ASC, e.hora ASC NULLS LAST
-        LIMIT :ps
-    """), params)).mappings().all()
+        consulta = text("""
+            SELECT e.id, e.titulo, e.tipo, e.data_evento, e.hora, e.local, e.descricao,
+                   e.case_id, e.responsavel_id, e.concluido,
+                   c.titulo AS caso_titulo
+            FROM agenda_eventos e
+            LEFT JOIN cases c ON c.id = e.case_id
+            WHERE e.deleted_at IS NULL
+              AND (
+                (e.case_id IS NULL AND (e.created_by = :uid OR e.responsavel_id = :uid))
+                OR (e.case_id IS NOT NULL AND (e.responsavel_id = :uid OR EXISTS (
+                    SELECT 1 FROM cases cc WHERE cc.id = e.case_id
+                      AND (cc.advogado_responsavel_id = :uid
+                           OR cc.advogado_auxiliar_id = :uid)
+                )))
+              )
+            ORDER BY e.data_evento ASC, e.hora ASC NULLS LAST
+            LIMIT :ps
+        """)
+    rows = (await db.execute(consulta, params)).mappings().all()
     return {"data": [dict(r) for r in rows]}
 
 
@@ -210,12 +220,13 @@ async def atualizar(
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
     if not updates:
         return {"ok": True}
-    set_clause = ", ".join(f"{k} = :{k}" for k in updates)
-    updates["eid"] = evento_id
-    # SQL literal com bind params; a regra marca todo text(), sem olhar
-    # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
-    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-    await db.execute(text(f"UPDATE agenda_eventos SET {set_clause}, updated_at = now() WHERE id = :eid"), updates)
+    stmt, params = construir_update(
+        updates,
+        tabela="agenda_eventos",
+        id_param="eid",
+    )
+    params["eid"] = evento_id
+    await db.execute(stmt, params)
     # B1: transferência de responsável é operação sensível — trilha de auditoria
     # (mesmo padrão de legal_docs: criar_audit_log + commit na mesma transação).
     if (body.responsavel_id is not None

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.client_ownership import cliente_id_visivel
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.sql_safe import construir_update
 from app.models.audit_log import criar_audit_log
 from app.models.user import User
 
@@ -177,13 +178,24 @@ async def list_pending_items(
             422,
             f"status inválido; use um de: {sorted(_STATUS_VALIDOS)}",
         )
-    q = "SELECT * FROM client_pending_items WHERE client_id=:cid AND deleted_at IS NULL"
-    params = {"cid": client_id}
     if status:
-        q += " AND status=:status"
-        params["status"] = status
-    q += " ORDER BY created_at DESC"
-    result = await db.execute(text(q), params)
+        result = await db.execute(
+            text("""
+                SELECT * FROM client_pending_items
+                WHERE client_id=:cid AND deleted_at IS NULL AND status=:status
+                ORDER BY created_at DESC
+            """),
+            {"cid": client_id, "status": status},
+        )
+    else:
+        result = await db.execute(
+            text("""
+                SELECT * FROM client_pending_items
+                WHERE client_id=:cid AND deleted_at IS NULL
+                ORDER BY created_at DESC
+            """),
+            {"cid": client_id},
+        )
     return [dict(r) for r in result.mappings().all()]
 
 
@@ -250,24 +262,25 @@ async def update_pending_item(
     if "case_id" in mudancas and mudancas["case_id"] is not None:
         await _validar_case_do_cliente(db, client_id, mudancas["case_id"])
 
-    sets = []
-    params = {"id": item_id}
-    for field, value in mudancas.items():
-        sets.append(f"{field}=:{field}")
-        params[field] = value
+    stmt, params = construir_update(
+        mudancas,
+        tabela="client_pending_items",
+    )
+    params["where_id"] = item_id
+    await db.execute(stmt, params)
+
     if "status" in mudancas:
         if mudancas["status"] == "concluido":
-            sets.append("completed_at=NOW()")
+            completed_stmt = text(
+                "UPDATE client_pending_items SET completed_at=NOW() WHERE id=:id"
+            )
         else:
             # Reabertura precisa remover o marco de conclusão anterior. Sem
             # isso, a mesma linha ficava simultaneamente pendente e concluída.
-            sets.append("completed_at=NULL")
-    sets.append("updated_at=NOW()")
-
-    # SQL literal com bind params; a regra marca todo text(), sem olhar
-    # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
-    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-    await db.execute(text(f"UPDATE client_pending_items SET {','.join(sets)} WHERE id=:id"), params)
+            completed_stmt = text(
+                "UPDATE client_pending_items SET completed_at=NULL WHERE id=:id"
+            )
+        await db.execute(completed_stmt, {"id": item_id})
     await criar_audit_log(db, current_user.id, current_user.role.value,
                           "UPDATE", "client_pending_items", item_id,
                           detalhes=f"cliente {client_id}: {', '.join(mudancas)}")
