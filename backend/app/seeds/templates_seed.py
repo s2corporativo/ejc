@@ -21,8 +21,8 @@ _RODAPE = (
     "{{comarca}}, {{data_hoje}}.\n\n"
     "{{advogado_nome}}\nOAB {{advogado_oab}}\n\n"
     "____________________________________________________________\n"
-    "MINUTA gerada de modelo — revisão humana obrigatória antes do protocolo "
-    "(EOAB; OAB Prov. 205/2021). Conferir fatos, fundamentos, jurisprudência e prazos."
+    "MINUTA gerada de modelo — revisão humana obrigatória antes do protocolo. "
+    "Conferir fatos, fundamentos, jurisprudência, documentos e prazos."
 )
 
 TEMPLATES = [
