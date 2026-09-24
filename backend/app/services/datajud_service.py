@@ -19,6 +19,7 @@
 from __future__ import annotations
 import asyncio
 import hashlib
+import json
 import logging
 import re
 import time
@@ -462,9 +463,6 @@ async def buscar_processo_bruto(
 # uvicorn, cada um tem o próprio e o mesmo nº CNJ é buscado N vezes no mesmo
 # ciclo. Esta camada L2 memoiza em Redis (compartilhado entre workers) por
 # (dominio, alias, payload), TTL configurável. Default OFF — opt-in.
-import json as _json
-
-
 def _redis_habilitado() -> bool:
     try:
         return bool(get_settings().DATAJUD_CACHE_REDIS_ENABLED)
@@ -480,7 +478,7 @@ def _redis_ttl() -> int:
 
 
 def _cache_redis_chave(dominio: str, alias: str, payload: dict) -> str:
-    bruto = _json.dumps(
+    bruto = json.dumps(
         {"d": dominio, "a": alias, "p": payload},
         sort_keys=True, ensure_ascii=False, separators=(",", ":"),
     )
@@ -527,15 +525,15 @@ async def _consultar_ou_cachear(
             bruto = await cli.get(chave)
             if bruto:
                 try:
-                    return _json.loads(bruto)
-                except _json.JSONDecodeError:
+                    return json.loads(bruto)
+                except json.JSONDecodeError:
                     pass  # resposta corrompida → refetch
         except Exception:
             pass
         data = await _datajud_search(alias, payload, headers)
         try:
             await cli.set(
-                chave, _json.dumps(data, ensure_ascii=False, default=str),
+                chave, json.dumps(data, ensure_ascii=False, default=str),
                 ex=_redis_ttl(),
             )
         except Exception:
