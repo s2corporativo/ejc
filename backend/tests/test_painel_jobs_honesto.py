@@ -285,7 +285,7 @@ def _comentario_acima(fonte: str, marcador: str) -> str:
 @pytest.mark.parametrize(
     "marcador,flag",
     [
-        ('id="ing_djen"', "DJEN_INGEST_ENABLED"),
+        ('id="djen"', "DJEN_INGEST_ENABLED"),
         ('id="ing_tjmg"', "TJMG_INGEST_ENABLED"),
     ],
 )
