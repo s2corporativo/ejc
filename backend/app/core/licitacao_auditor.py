@@ -58,7 +58,9 @@ class LicitacaoAuditor:
                     text += page.get_text() or ""
             return text
         except Exception as e:
-            logger.warning(f"Falha ao extrair texto do PDF: {e}")
+            # Não registrar mensagem bruta da exceção: PDFs podem carregar
+            # nomes/caminhos/metadados sensíveis em erros de parser.
+            logger.warning("Falha ao extrair texto do PDF (%s)", type(e).__name__)
             return ""
 
     async def get_audit_report_template(self) -> str:
