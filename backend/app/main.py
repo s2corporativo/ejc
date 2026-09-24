@@ -105,10 +105,12 @@ from app.routers import transparencia  # CGU Portal da Transparência (sanções
 from app.routers import nfse
 from app.routers import intimacoes
 from app.routers import jurimetria
+from app.routers import licitacao_auditoria
 from app.routers import juris_import
 from app.routers import datajud_intelligence
 from app.routers import honorarios_oab
 from app.routers import intake
+from app.routers import assistente
 from app.routers import entrada
 from app.routers import triagem_entrevista
 from app.routers import ficha_triagem
@@ -484,6 +486,7 @@ app.include_router(transparencia.router, prefix=API)  # CGU sanções CEIS/CNEP/
 app.include_router(nfse.router, prefix=API)  # NFS-e (emissão fiscal GATED, homologação) — migração 085
 app.include_router(intimacoes.router, prefix=API)
 app.include_router(jurimetria.router, prefix=API)
+app.include_router(licitacao_auditoria.router, prefix=API)  # auditoria preliminar de propostas (PDF)
 app.include_router(juris_import.router, prefix=API)
 app.include_router(jurisprudencia_interna.router, prefix=API)
 app.include_router(kanban.router, prefix=API)  # P3: prefixo /kanban no router
