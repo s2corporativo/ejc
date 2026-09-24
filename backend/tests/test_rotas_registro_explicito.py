@@ -391,6 +391,13 @@ ADICOES_INTENCIONAIS |= {
     ("/api/manus/deep-reasoning/{handle}", "GET"),
 }
 
+# PR #1820/#1825 — Auditoria preliminar de propostas de licitação.
+# Superfície restrita à equipe jurídica, com rate limit e revisão humana.
+ADICOES_INTENCIONAIS |= {
+    ("/api/licitacao-auditoria/analyze-competitor-proposal", "POST"),
+    ("/api/licitacao-auditoria/audit-report-template", "GET"),
+}
+
 def test_paridade_openapi_com_snapshot_anterior():
     from app.main import app
 

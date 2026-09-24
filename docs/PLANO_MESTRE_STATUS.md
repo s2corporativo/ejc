@@ -83,13 +83,13 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | V3-B6 | Bloco 6 — Preparar os dados da operação (10 cadastros pré-operação) | F4 | — | pendente | — | — |
 | V3-B7 | Bloco 7 — O teste do primeiro caso real (critério de lançamento) | F4 | — | pendente | — | — |
 | CL-A1 | Classe A passo 1 — write-path único (`vincular_tese_ao_caso`, usado por `/vincular-caso` e `aprovar_tese`) | F2 | #1272 | em-andamento | #1259 | 2026-08-24 |
-| CL-A2 | Classe A passo 2 — coluna `tese_banco_id` (migration 149); SEM backfill retroativo (mapeamento só existia em memória, não é reconstruível com confiança) | F2 | #1272 | em-andamento | #1259 | 2026-08-24 |
+| CL-A2 | Classe A passo 2 — coluna `tese_banco_id` (migration 152); SEM backfill retroativo (mapeamento só existia em memória, não é reconstruível com confiança) | F2 | #1272 | em-andamento | #1259 | 2026-08-24 |
 | CL-A3 | Classe A passo 3 — ponte na aprovação materializa `tese_caso_links`; os dois leitores concordam no caminho comum (tese do Banco) — testado | F2 | #1272 | em-andamento | #1259 | 2026-08-24 |
 | CL-A4 | Classe A passo 4 — já é campo exibicional de fato (só a triagem escreve; nenhum novo writer adicionado) — nenhuma ação necessária | F2 | #1272 | verificado | #1259 | 2026-08-24 |
 | CL-A5 | Classe A passo 5 — remover `teses_juridicas_v4` / `teses_vitoriosas` | F5 | — | pendente | — | — |
 | CL-B1 | Classe B — correção do plano: `STATUS_REGISTRY` é multiuso (peças, honorários, clientes, prazos) — chaves não são "fantasma", servem outros domínios; nenhuma ação | F2 | #1272 | verificado | #1259 | 2026-08-24 |
 | CL-B2 | Classe B — guard-rail de paridade já existe (`test_status_caso_paridade_frontend.py`) | F2 | #1272 | verificado | #1259 | 2026-08-24 |
-| CL-B3 | Classe B — preservar estado real ao desarquivar/reabrir (`status_anterior`, migration 148, endpoint `/reabrir`) | F2 | #1272 | em-andamento | #1259 | 2026-08-24 |
+| CL-B3 | Classe B — preservar estado real ao desarquivar/reabrir (`status_anterior`, migration 151, endpoint `/reabrir`) | F2 | #1272 | em-andamento | #1259 | 2026-08-24 |
 | CL-C1 | Classe C — deprecar/remover campo `saudavel` do contrato de `case_health.py`. **Já feito**: o campo saiu do contrato e o próprio código registra o porquê (`case_health.py:44-48` — *"Era lido em 0 lugares do frontend; removido do contrato em vez de consertado"*). O que resta com esse nome é o VALOR de `classificacao`, que é correto | F2 | — | mesclado | #1272 | 2026-09-01 |
 | CL-C2 | Classe C — unificar limiares. **Resolvido por DECISÃO, no sentido inverso do enunciado**: `case_health.py:31-36` documenta que os limiares de saúde do caso (4 faixas) e os de probabilidade de êxito (`visual_law_core.py`, 3 faixas) respondem PERGUNTAS diferentes sobre o mesmo score — unificá-los seria a abstração errada. O único ponto único é a FONTE do score, que já é única. O `health_thresholds.py` do enunciado nunca existiu | F2 | — | mesclado | #1272 | 2026-09-01 |
 | CL-D1 | Classe D — rótulo corrigido para "Base fática registrada" (a checagem aceitar descrição digitada é deliberada, não bug) | F2 | #1272 | em-andamento | #1259 | 2026-08-24 |
