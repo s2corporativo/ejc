@@ -828,8 +828,8 @@ async def capturar_para_advogado(
 
     O savepoint impede que a falha de um advogado reverta comunicações já
     processadas para advogados anteriores na mesma sessão do scheduler.
-    Gate: DJEN_INGEST_ENABLED — o mesmo que protege o job diário
-    (job_ingestao_djen). Sem o gate aqui, a captura manual (``capturar-agora``)
+    Gate: DJEN_INGEST_ENABLED — o mesmo que protege a etapa RAG do ciclo
+    diário consolidado. Sem o gate aqui, a captura manual (``capturar-agora``)
     tentaria consulta HTTP real contra a API externa mesmo com a feature
     desativada no ``.env``, mascarando a causa raiz do erro.
     """
