@@ -7,7 +7,8 @@
    variáveis legadas passam a APONTAR para os tokens canônicos — nenhuma
    geração antiga define mais cor própria.
 
-   Paleta Tech Blue aprovada pelo Titular em 20/09/2026 (#1738):
+   Paleta extraída da referência visual aprovada pelo Titular (mockup
+   "EJC DePaula Teixeira Adv" 18/09/2026) e homologada em produção (#1708):
    • VERDE PRINCIPAL  esmeralda profundo  #0a4132 (superfície institucional)
    • VERDE PROFUNDO                       #04291f (fim de gradiente/hover down)
    • VERDE DE SUPERFÍCIO                  #14503f (realce translúcido)
@@ -25,30 +26,30 @@
 
 :root {
   /* ── 1. Tokens canônicos semânticos ──────────────────────────────────── */
-  --ejc-primary: #0f2747;
-  --ejc-primary-dark: #07182e;
-  --ejc-primary-hover: #17365f;
-  --ejc-primary-soft: #234a78;
+  --ejc-primary: #0a4132;
+  --ejc-primary-dark: #04291f;
+  --ejc-primary-hover: #0d4f3d;
+  --ejc-primary-soft: #14503f;
 
-  --ejc-gold: #38bdf8;
-  --ejc-gold-bright: #7dd3fc;
-  --ejc-gold-deep: #0284c7;
-  --ejc-gold-soft: #e0f2fe;
-  --ejc-gold-ink: #0369a1; /* azul com contraste AA para texto/ação */
+  --ejc-gold: #cfa961;
+  --ejc-gold-bright: #eaca7f;
+  --ejc-gold-deep: #a8873c;
+  --ejc-gold-soft: #f6eed9;
+  --ejc-gold-ink: #8f7117; /* ouro com contraste AA para texto/ação */
 
-  --ejc-background: #f4f7fb;
+  --ejc-background: #f5f4ef;
   --ejc-surface: #ffffff;
-  --ejc-surface-muted: #f8fafc;
+  --ejc-surface-muted: #faf9f5;
   --ejc-surface-raised: #ffffff;
 
-  --ejc-border: #dbe4f0;
-  --ejc-border-strong: #bdcadb;
-  --ejc-hairline: rgba(15, 39, 71, 0.13);
+  --ejc-border: #e2ded2;
+  --ejc-border-strong: #cfc9ba;
+  --ejc-hairline: rgba(12, 58, 45, 0.13);
 
-  --ejc-text: #172033;
-  --ejc-text-secondary: #526176;
-  --ejc-text-subtle: #8492a6;
-  --ejc-text-display: #132a4a;
+  --ejc-text: #1d2b26;
+  --ejc-text-secondary: #66766f;
+  --ejc-text-subtle: #93a29b;
+  --ejc-text-display: #10382c; /* tinta esmeralda dos títulos serifados */
 
   --ejc-success: #17985a;
   --ejc-success-soft: #eaf8f0;
@@ -59,25 +60,25 @@
   --ejc-info: #2f7dd1;
   --ejc-info-soft: #edf5ff;
 
-  --ejc-focus-ring: #0284c7;
+  --ejc-focus-ring: rgba(143, 113, 23, 0.65);
 
-  --ejc-shadow-sm:
-    0 1px 2px rgba(15, 35, 60, 0.025), 0 8px 24px -22px rgba(15, 35, 60, 0.32);
-  --ejc-shadow-md: 0 14px 36px rgba(15, 39, 71, 0.085);
-  --ejc-shadow-lg: 0 24px 58px rgba(7, 24, 46, 0.14);
+  --ejc-shadow-sm: 0 1px 2px rgba(15, 35, 60, 0.025),
+    0 8px 24px -22px rgba(15, 35, 60, 0.32);
+  --ejc-shadow-md: 0 14px 36px rgba(23, 48, 39, 0.075);
+  --ejc-shadow-lg: 0 24px 58px rgba(18, 42, 34, 0.12);
 
   --ejc-radius-sm: 10px;
   --ejc-radius-md: 14px;
   --ejc-radius-lg: 18px;
   --ejc-radius-xl: 22px;
 
-  /* Paleta de gráficos — família navy + azul/ciano */
-  --ejc-chart-1: #0f2747;
-  --ejc-chart-2: #0284c7;
-  --ejc-chart-3: #38bdf8;
-  --ejc-chart-4: #6366f1;
-  --ejc-chart-5: #14b8a6;
-  --ejc-chart-6: #a5b4fc;
+  /* Paleta de gráficos — família esmeralda + ouro */
+  --ejc-chart-1: #0a4132;
+  --ejc-chart-2: #cfa961;
+  --ejc-chart-3: #eaca7f;
+  --ejc-chart-4: #a8873c;
+  --ejc-chart-5: #14503f;
+  --ejc-chart-6: #f6eed9;
 
   /* ── 2. Tokens tipográficos (seção 6 do PROMPT MESTRE) ───────────────── */
   --ejc-font-serif:
@@ -85,8 +86,8 @@
   --ejc-font-sans:
     "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     sans-serif;
-  --ejc-font-mono:
-    ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  --ejc-font-mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas,
+    monospace;
 
   /* Shorthands compostos: uso `font: var(--ejc-text-h1)` etc.
      (o shorthand `font` normaliza style/variant; itálico é aplicado à parte) */
@@ -117,18 +118,18 @@
   --ejc-legal: var(--ejc-primary);
   --ejc-action: var(--ejc-gold-ink);
   --ejc-bronze: var(--ejc-gold-ink);
-  --ejc-sidebar-top: #07182e;
-  --ejc-sidebar-bottom: #0f2747;
+  --ejc-sidebar-top: #052b22;
+  --ejc-sidebar-bottom: #0a4132;
   --ejc-shadow-soft: var(--ejc-shadow-sm);
 
   /* Geração ejc-reference-2026 (navy azul — geração morta, repintada) */
   --ejc-ref-navy-950: var(--ejc-primary-dark);
-  --ejc-ref-navy-900: #0b203b;
+  --ejc-ref-navy-900: #062e24;
   --ejc-ref-navy-800: var(--ejc-primary);
   --ejc-ref-navy-700: var(--ejc-primary-soft);
   --ejc-ref-blue-600: var(--ejc-primary);
-  --ejc-ref-blue-100: #dbeafe;
-  --ejc-ref-blue-50: #eff6ff;
+  --ejc-ref-blue-100: #dfeae5;
+  --ejc-ref-blue-50: #eef4f1;
   --ejc-ref-canvas: var(--ejc-background);
   --ejc-ref-card: var(--ejc-surface);
   --ejc-ref-line: var(--ejc-border);
@@ -219,33 +220,34 @@
 /* ── 4. Tema escuro — apenas os literais canônicos mudam; os aliases
       var() das gerações legadas resolvem sozinhos para estes valores. ── */
 .dark {
-  --ejc-background: #07111f;
-  --ejc-surface: #0b1728;
-  --ejc-surface-muted: #0e1c30;
-  --ejc-surface-raised: #12233a;
+  --ejc-background: #14110a;
+  --ejc-surface: #1c180e;
+  --ejc-surface-muted: #1f1a10;
+  --ejc-surface-raised: #241e10;
 
-  --ejc-border: rgba(191, 219, 254, 0.1);
-  --ejc-border-strong: rgba(191, 219, 254, 0.2);
-  --ejc-hairline: rgba(56, 189, 248, 0.18);
+  --ejc-border: rgba(255, 245, 230, 0.08);
+  --ejc-border-strong: rgba(255, 245, 230, 0.16);
+  --ejc-hairline: rgba(234, 202, 127, 0.16);
 
-  --ejc-text: #e6edf7;
-  --ejc-text-secondary: #a9b8cc;
-  --ejc-text-subtle: #71839b;
-  --ejc-text-display: #dbeafe;
+  --ejc-text: #ede6da;
+  --ejc-text-secondary: #a89e8f;
+  --ejc-text-subtle: #7d7466;
+  --ejc-text-display: #eaca7f;
 
-  --ejc-gold-soft: rgba(56, 189, 248, 0.12);
-  --ejc-gold-bright: #7dd3fc;
+  --ejc-gold-soft: rgba(212, 175, 55, 0.12);
+  --ejc-gold-bright: #e5ce7f;
 
-  --ejc-focus-ring: rgba(56, 189, 248, 0.62);
+  --ejc-focus-ring: rgba(229, 206, 127, 0.6);
 
-  --ejc-shadow-sm:
-    0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 22px -6px rgba(0, 0, 0, 0.42);
+  --ejc-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3),
+    0 8px 22px -6px rgba(0, 0, 0, 0.42);
   --ejc-shadow-md: 0 14px 36px rgba(0, 0, 0, 0.35);
   --ejc-shadow-lg: 0 24px 58px rgba(0, 0, 0, 0.45);
 
-  --ejc-sidebar-top: #050d19;
-  --ejc-sidebar-bottom: #0f2747;
+  --ejc-sidebar-top: #042319;
+  --ejc-sidebar-bottom: #0a4132;
 
-  --ejc-chart-1: #7dd3fc;
-  --ejc-chart-4: #818cf8;
+  /* No escuro o verde profundo some sobre o card — troca com o ouro claro */
+  --ejc-chart-1: #eaca7f;
+  --ejc-chart-4: #14503f;
 }

@@ -58,29 +58,30 @@ export default {
          * apenas os VALORES foram repintados (marrom → ouro).
          */
 
-        // Sidebar clara: branco + neutros frios + realce azul suave.
+        // Sidebar clara: branco com hover neutro quente e realce ouro palha.
         sidebar: {
           DEFAULT: "#FFFFFF",
-          light: "#F8FAFC",
-          hover: "#F1F5F9",
-          active: "#E0F2FE",
+          light: "#FAF9F6",
+          hover: "#F8F6F0",
+          active: "#F7F1DC",
         },
-        // Primária — família azul/ciano canônica. Mantém os nomes históricos
-        // primary-* para evitar regressão nas telas legadas que ainda usam
-        // utilities Tailwind, mas elimina o ouro decorativo dessas superfícies.
+        // Primária — OURO institucional "De Paula Teixeira" (escala oficial
+        // dos PDFs Visual Law). 600 #8F7117 = ação (texto branco 4,6:1 AA);
+        // 700 #6F5711 = hover/texto-acento forte (6,9:1); 900 #3B2F0B =
+        // near-black de títulos (13,2:1 AAA); 50/100 = palha (fundos suaves).
         primary: {
-          DEFAULT: "#0369A1",
-          50: "#F0F9FF",
-          100: "#E0F2FE",
-          200: "#BAE6FD",
-          300: "#7DD3FC",
-          400: "#38BDF8",
-          500: "#0EA5E9",
-          600: "#0284C7",
-          700: "#0369A1",
-          800: "#075985",
-          900: "#0C4A6E",
-          950: "#082F49",
+          DEFAULT: "#8F7117",
+          50: "#FAF6E7",
+          100: "#F7F1DC",
+          200: "#EFE3B4",
+          300: "#E5CE7F",
+          400: "#C9A227",
+          500: "#A6842A",
+          600: "#8F7117",
+          700: "#6F5711",
+          800: "#55420D",
+          900: "#3B2F0B",
+          950: "#2A2108",
         },
         // IA — violeta reservado a superfícies e ações de inteligência.
         ai: {
