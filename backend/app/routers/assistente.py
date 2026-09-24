@@ -13,13 +13,18 @@ from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.rate_limit import rate_limit
+from app.core.security import EQUIPE_JURIDICA, get_current_user, ROLE_LEVEL, require_roles_exact
 from app.models.user import User
 from app.models.case import Case
 from app.services import ai_gateway
 from app.services.sanitizer import sanitizar_pii
 
-router = APIRouter(prefix="/assistente", tags=["Assistente IA"])
+router = APIRouter(
+    prefix="/assistente",
+    tags=["Assistente IA"],
+    dependencies=[Depends(require_roles_exact(EQUIPE_JURIDICA))],
+)
 
 _AVISO = "Rascunho gerado por IA — revisão do advogado responsável (OAB)."
 
@@ -41,7 +46,10 @@ class ChatReq(BaseModel):
     mensagens: list[ChatMsg] = Field(..., min_length=1, max_length=20)
 
 
-@router.post("/cases/{case_id}/chat")
+@router.post(
+    "/cases/{case_id}/chat",
+    dependencies=[Depends(rate_limit("assistente-caso-chat", 12))],
+)
 async def chat_caso(case_id: str, req: ChatReq, db: AsyncSession = Depends(get_db),
                     cu: User = Depends(get_current_user)):
     """Conversa multi-turno sobre o caso, com contexto real injetado (sanitizado)."""
@@ -85,7 +93,10 @@ _SYS_PRAZOS = (
 )
 
 
-@router.post("/detectar-prazos")
+@router.post(
+    "/detectar-prazos",
+    dependencies=[Depends(rate_limit("assistente-detectar-prazos", 10))],
+)
 async def detectar_prazos(req: PrazosReq, db: AsyncSession = Depends(get_db),
                           cu: User = Depends(get_current_user)):
     """Sugere prazos encontrados num documento — o advogado confirma e cria."""
