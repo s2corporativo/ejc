@@ -240,6 +240,23 @@ async def test_ingerir_sem_oabs_configuradas_e_noop(monkeypatch):
     assert chamadas == [] and ups == []
 
 
+async def test_ingerir_exclui_oab_ja_coletada_no_mesmo_ciclo(monkeypatch):
+    ups: list[dict] = []
+    chamadas = _prepara(
+        monkeypatch,
+        oabs="12345/MG,67890/MG",
+        respostas=[{"items": [ITEM_COMPLETO]}],
+        upserts=ups,
+    )
+    novos, total = await djen.ingerir(
+        _FakeDB(),
+        excluir_oabs={("12345", "mg")},
+    )
+    assert (novos, total) == (1, 1)
+    assert len(chamadas) == 1
+    assert chamadas[0]["numeroOab"] == "67890"
+
+
 async def test_ingerir_tolerante_a_erro_http_por_oab(monkeypatch):
     """Erro na 1ª OAB não impede a coleta da 2ª."""
     ups: list[dict] = []
@@ -298,9 +315,12 @@ async def test_job_djen_gate_off_e_on(monkeypatch):
     assert execucoes == ["djen"]
 
 
-def test_job_djen_registrado_no_scheduler():
-    """O add_job do ingestor DJEN está no start_scheduler (1x/dia)."""
+def test_job_djen_consolidado_no_scheduler():
+    """Há um único job DJEN; a ingestão RAG roda dentro da captura canônica."""
     import inspect
     from app.services import scheduler as sch
+
     src = inspect.getsource(sch.start_scheduler)
-    assert "job_ingestao_djen" in src and "ing_djen" in src
+    assert 'id="djen"' in src
+    assert 'id="ing_djen"' not in src
+    assert "job_ingestao_djen" not in src
