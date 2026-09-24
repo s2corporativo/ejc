@@ -201,3 +201,31 @@ async def test_consultar_ou_cachear_grava_apos_sucesso(monkeypatch):
     assert len(gravados) == 1
     _, ttl = gravados[0]
     assert ttl == 123
+
+async def test_consultar_ou_cachear_json_valido_tipo_incorreto_refaz_http(monkeypatch):
+    """JSON válido que não seja objeto DataJud não pode virar resposta do serviço."""
+    s = SimpleNamespace(
+        DATAJUD_CACHE_REDIS_ENABLED=True,
+        DATAJUD_CACHE_REDIS_TTL=60,
+    )
+    monkeypatch.setattr(datajud_service, "get_settings", lambda: s)
+
+    class FakeCli:
+        async def get(self, key): return "[]"
+        async def set(self, key, val, ex=None): pass
+        async def aclose(self): pass
+
+    monkeypatch.setattr(datajud_service, "_redis_cliente", lambda: FakeCli())
+    chamadas = []
+
+    async def fake_search(alias, payload, headers):
+        chamadas.append("http")
+        return {"hits": {"hits": []}}
+
+    monkeypatch.setattr(datajud_service, "_datajud_search", fake_search)
+    out = await datajud_service._consultar_ou_cachear(
+        "tjmg", {"x": 1}, {}, chave_dominio="mov:1",
+    )
+    assert chamadas == ["http"]
+    assert out == {"hits": {"hits": []}}
+
