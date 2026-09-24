@@ -23,6 +23,19 @@ logger = logging.getLogger("ejc.licitacao_auditor")
 class LicitacaoAuditor:
     async def analyze_competitor_proposal(self, pdf_content: bytes) -> Dict[str, Any]:
         texto = self._extract_text_from_pdf(pdf_content)
+        if not texto.strip():
+            return {
+                "status": "requires_manual_review",
+                "aviso": (
+                    "Não foi possível extrair texto suficiente do PDF. "
+                    "A análise automática não foi realizada; revisão manual obrigatória."
+                ),
+                "summary": "Documento sem texto extraível suficiente para auditoria preliminar.",
+                "potential_flaws": [],
+                "equivalence_issues": [],
+                "extracted_text_sample": "",
+            }
+
         low = texto.lower()
         falhas = []
         equivalencia = []
@@ -58,7 +71,9 @@ class LicitacaoAuditor:
                     text += page.get_text() or ""
             return text
         except Exception as e:
-            logger.warning(f"Falha ao extrair texto do PDF: {e}")
+            # Não registrar mensagem bruta da exceção: PDFs podem carregar
+            # nomes/caminhos/metadados sensíveis em erros de parser.
+            logger.warning("Falha ao extrair texto do PDF (%s)", type(e).__name__)
             return ""
 
     async def get_audit_report_template(self) -> str:

@@ -391,12 +391,11 @@ ADICOES_INTENCIONAIS |= {
     ("/api/manus/deep-reasoning/{handle}", "GET"),
 }
 
-# PR #1818 — Assistente IA de casos (#37) + Detector de prazos (#67).
-# Rotas autenticadas, PII sanitizado antes do envio ao LLM, resposta
-# marcada como rascunho (HITL/OAB Provimento 205/2021).
+# PR #1820/#1825 — Auditoria preliminar de propostas de licitação.
+# Superfície restrita à equipe jurídica, com rate limit e revisão humana.
 ADICOES_INTENCIONAIS |= {
-    ("/api/assistente/cases/{case_id}/chat", "POST"),
-    ("/api/assistente/detectar-prazos", "POST"),
+    ("/api/licitacao-auditoria/analyze-competitor-proposal", "POST"),
+    ("/api/licitacao-auditoria/audit-report-template", "GET"),
 }
 
 def test_paridade_openapi_com_snapshot_anterior():
@@ -591,7 +590,7 @@ def test_paridade_openapi_com_snapshot_anterior():
     ]
     assert not divergentes, f"dependências de auth alteradas: {divergentes[:5]}"
     assert len(base) == 826
-    assert len(atual) == 828  # 826 + 2 (PR #1818 assistente)
+    assert len(atual) == len(base) + len(ADICOES_INTENCIONAIS) - len(REMOCOES_INTENCIONAIS)
 
 
 @pytest.mark.parametrize(
