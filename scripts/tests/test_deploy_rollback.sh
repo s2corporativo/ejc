@@ -255,6 +255,8 @@ env "${COMMON_ENV[@]}" FAIL_BACKUP=1 REQUIRE_PREDEPLOY_BACKUP=0 \
 grep -q '^compose build frontend$' "$LOG" || fail "contingência não prosseguiu para o build"
 grep -q 'REQUIRE_PREDEPLOY_BACKUP=0 foi definido explicitamente' "$TMP/backup-contingency.out" || fail "contingência não ficou destacada"
 [ "$(cat "$APP/.deployed_sha")" = "$TEST_SHA" ] || fail ".deployed_sha não foi registrado dentro do deploy"
+grep -qx "GIT_SHA=$TEST_SHA" "$APP/.env" || fail "GIT_SHA aprovado não foi persistido no .env"
+[ "$(grep -c '^GIT_SHA=' "$APP/.env")" -eq 1 ] || fail "GIT_SHA ficou duplicado no .env"
 
 # 5) Sem Git e sem TARGET_SHA, release é bloqueada antes de Docker.
 : > "$LOG"
