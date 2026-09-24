@@ -255,8 +255,6 @@ env "${COMMON_ENV[@]}" FAIL_BACKUP=1 REQUIRE_PREDEPLOY_BACKUP=0 \
 grep -q '^compose build frontend$' "$LOG" || fail "contingência não prosseguiu para o build"
 grep -q 'REQUIRE_PREDEPLOY_BACKUP=0 foi definido explicitamente' "$TMP/backup-contingency.out" || fail "contingência não ficou destacada"
 [ "$(cat "$APP/.deployed_sha")" = "$TEST_SHA" ] || fail ".deployed_sha não foi registrado dentro do deploy"
-grep -qx "GIT_SHA=$TEST_SHA" "$APP/.env" || fail "GIT_SHA aprovado não foi persistido no .env"
-[ "$(grep -c '^GIT_SHA=' "$APP/.env")" -eq 1 ] || fail "GIT_SHA ficou duplicado no .env"
 
 # 5) Sem Git e sem TARGET_SHA, release é bloqueada antes de Docker.
 : > "$LOG"
@@ -303,10 +301,9 @@ grep -Eq '^tag ejc-frontend:rollback-.* project-frontend:latest$' "$LOG" || fail
 [ ! -s "$POST_LOG" ] || fail "post-check de rollback rodou sem cutover"
 
 # 7.1) Image ID do container pode ter sido podado; rollback preserva o runtime via docker commit.
-# O SHA já correto não deve duplicar GIT_SHA; rollback restaura o snapshot e modo 0600.
-printf '%s\n' 'UNCHANGED_TEST=1' "GIT_SHA=$TEST_SHA" > "$APP/.env"
+# Chave neutra não exige migração: rollback deve manter conteúdo e normalizar modo.
+printf '%s\n' 'UNCHANGED_TEST=1' > "$APP/.env"
 chmod 644 "$APP/.env"
-ENV_ANTES_71="$(cat "$APP/.env")"
 : > "$LOG"
 set +e
 env "${COMMON_ENV[@]}" MISSING_FRONTEND_IMAGE=1 FAIL_FRONTEND_BUILD=1 TARGET_SHA="$TEST_SHA" \
@@ -318,9 +315,8 @@ set -e
 grep -Eq '^commit ejc_frontend ejc-frontend:rollback-' "$LOG" || fail "container frontend não foi preservado via docker commit"
 grep -Eq '^tag ejc-frontend:rollback-.* project-frontend:latest$' "$LOG" || fail "rollback do frontend preservado não restaurou a referência"
 grep -q 'image ID anterior de frontend não está mais no catálogo local' "$TMP/missing-image.out" || fail "fallback de image ID podado não foi registrado"
-[ "$(cat "$APP/.env")" = "$ENV_ANTES_71" ] || fail ".env não voltou ao snapshot após falha com image ID podado"
-[ "$(stat -c '%a' "$APP/.env")" = "600" ] || fail ".env restaurado não teve modo normalizado para 600"
-[ "$(grep -c '^GIT_SHA=' "$APP/.env")" -eq 1 ] || fail "GIT_SHA duplicado após rollback com image ID podado"
+[ "$(stat -c '%a' "$APP/.env")" = "600" ] || fail ".env idêntico não teve modo normalizado para 600"
+grep -q 'conteúdo não foi reescrito e permissões seguras foram preservadas' "$TMP/missing-image.out" || fail "caminho seguro de .env idêntico não foi registrado"
 
 # 7.2) Se docker commit também falhar por camada ausente, frontend usa export/import seguro.
 : > "$LOG"

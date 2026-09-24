@@ -55,7 +55,6 @@ ENV_ROLLBACK_FILE=""
 DEPLOYED_SHA_TMP="$APP_DIR/.deployed_sha.new.$$"
 ROLLBACK_ARMED=0
 ENV_MUTATED=0
-ENV_WAS_IMMUTABLE=0
 IMAGES_MUTATED=0
 DEPLOY_MUTATED=0
 
@@ -69,52 +68,6 @@ cleanup_rollback_tags() {
 cleanup_temp_files() {
   [ -z "$ENV_ROLLBACK_FILE" ] || rm -f -- "$ENV_ROLLBACK_FILE" >/dev/null 2>&1 || true
   rm -f -- "$DEPLOYED_SHA_TMP" >/dev/null 2>&1 || true
-}
-
-detect_env_immutable() {
-  ENV_WAS_IMMUTABLE=0
-  command -v lsattr >/dev/null 2>&1 || return 0
-  local attrs
-  attrs="$(lsattr -d .env 2>/dev/null | awk '{print $1}' || true)"
-  case "$attrs" in
-    *i*)
-      command -v chattr >/dev/null 2>&1         || die_policy ".env está imutável, mas chattr não está disponível"
-      ENV_WAS_IMMUTABLE=1
-      ;;
-  esac
-}
-
-unlock_env_if_needed() {
-  [ "$ENV_WAS_IMMUTABLE" = "1" ] || return 0
-  chattr -i .env
-}
-
-relock_env_if_needed() {
-  [ "$ENV_WAS_IMMUTABLE" = "1" ] || return 0
-  chattr +i .env
-}
-
-persist_git_sha_env() {
-  python3 - "$GIT_SHA" <<'PY'
-from pathlib import Path
-import sys
-
-path = Path(".env")
-sha = sys.argv[1]
-lines = path.read_text(encoding="utf-8").splitlines()
-out = []
-seen = False
-for line in lines:
-    if line.startswith("GIT_SHA="):
-        if not seen:
-            out.append(f"GIT_SHA={sha}")
-            seen = True
-        continue
-    out.append(line)
-if not seen:
-    out.append(f"GIT_SHA={sha}")
-path.write_text("\n".join(out) + "\n", encoding="utf-8")
-PY
 }
 
 # Restaura o snapshot transacional do .env somente quando o conteúdo mudou;
@@ -280,23 +233,13 @@ cp -- .env "$ENV_ROLLBACK_FILE"
 chmod 600 "$ENV_ROLLBACK_FILE"
 ROLLBACK_ARMED=1
 
-detect_env_immutable
-ENV_MUTATED=1
-unlock_env_if_needed
-
 if [ -f scripts/migrar_env_obsoletos.sh ]; then
+  ENV_MUTATED=1
   bash scripts/migrar_env_obsoletos.sh .env --backup-path "$ENV_ROLLBACK_FILE" | while IFS= read -r linha; do
     log "$linha"
   done
+  docker compose config --quiet
 fi
-
-# Persistir o SHA aprovado evita que um docker compose up/restart posterior
-# recarregue um GIT_SHA antigo do .env e faça /api/health anunciar artefato
-# incorreto. O snapshot transacional acima garante rollback do valor anterior.
-persist_git_sha_env
-chmod 600 .env
-relock_env_if_needed
-docker compose config --quiet
 
 OLD_BACKEND_IMAGE="$(docker inspect -f '{{.Image}}' ejc_backend 2>/dev/null || true)"
 OLD_WORKER_IMAGE="$(docker inspect -f '{{.Image}}' ejc_worker 2>/dev/null || true)"
