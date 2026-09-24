@@ -498,6 +498,7 @@ app.include_router(orquestrador.router, prefix=API)  # FASE 5 Orquestrador — m
 app.include_router(memoria_institucional.router, prefix=API)
 app.include_router(honorarios_oab.router, prefix=API)  # frontend: /api/honorarios-oab/estimar (EstimadorHonorarios)
 app.include_router(intake.router, prefix=API)  # frontend: /api/intake/casos/{id}/analise-completa (IntakeAnalise)
+app.include_router(assistente.router, prefix=API)  # chat do caso + detector de prazos (HITL/RBAC)
 app.include_router(triagem_entrevista.router, prefix=API)  # frontend: /api/triagem/entrevista (EntrevistaInteligente — Jornada etapa 2)
 app.include_router(entrada.router, prefix=API)  # Entrada Única (Bloco 3): /api/entrada/analisar + /api/entrada/{id}/criar-caso
 app.include_router(ficha_triagem.router, prefix=API)  # frontend: /api/triagem/ficha (Ficha de Triagem pré-peça — gate de geração)
