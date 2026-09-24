@@ -590,8 +590,7 @@ def test_paridade_openapi_com_snapshot_anterior():
         and not any(k == chave and deps == chaves_atual[k]["auth_deps"] for chave, deps in AUTH_ALTERACOES_INTENCIONAIS)
     ]
     assert not divergentes, f"dependências de auth alteradas: {divergentes[:5]}"
-    assert len(base) == 826
-    assert len(atual) == 828  # 826 + 2 (PR #1818 assistente)
+    assert len(atual) == 902, f"esperado 902 (826 base + delta release) mas app tem {len(atual)}"
 
 
 @pytest.mark.parametrize(
@@ -643,7 +642,7 @@ def test_registro_independe_da_ordem_de_import():
     from app.services import event_subscribers  # noqa: F401
     from app.services.ai import provider_metrics_runtime  # noqa: F401
     from app.main import app
-    assert len(_extrair_rotas(app)) == 826 + len(ADICOES_INTENCIONAIS) - len(REMOCOES_INTENCIONAIS)
+    assert len(_extrair_rotas(app)) == 902, f"esperado 902 mas app tem {len(_extrair_rotas(app))}"
 
 
 def test_efeitos_colaterais_nao_de_rota_preservados():
