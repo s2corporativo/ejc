@@ -63,3 +63,44 @@ def test_consumidor_e_jec_ficam_integralmente_com_escritorio():
     assert consumidor["valor_escritorio"] == Decimal("800.00")
     assert jec["valor_advogado"] == Decimal("0.00")
     assert jec["valor_escritorio"] == Decimal("800.00")
+
+
+@pytest.mark.asyncio
+async def test_recebimento_flusha_pagamento_antes_do_rateio(monkeypatch):
+    from types import SimpleNamespace
+    from app.models.fee import CaseReceiptAllocation, Fee, FeePayment
+    from app.services import case_finance_service as svc
+
+    eventos = []
+
+    class FakeDb:
+        def add(self, obj):
+            eventos.append(("add", type(obj).__name__))
+
+        async def flush(self):
+            eventos.append(("flush", None))
+
+    async def audit_noop(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(svc, "criar_audit_log", audit_noop)
+    db = FakeDb()
+    case = SimpleNamespace(
+        id="case-1",
+        area="civil",
+        vara=None,
+        advogado_responsavel_id=None,
+        client_id="client-1",
+        numero_interno="DPT-2026-TESTE",
+    )
+    user = SimpleNamespace(id="user-1", role=SimpleNamespace(value="admin"))
+
+    result = await svc.registrar_recebimento_caso(db, case, Decimal("100.00"), user)
+
+    assert result["valor_escritorio"] == Decimal("100.00")
+    assert eventos[:4] == [
+        ("add", Fee.__name__),
+        ("add", FeePayment.__name__),
+        ("flush", None),
+        ("add", CaseReceiptAllocation.__name__),
+    ]

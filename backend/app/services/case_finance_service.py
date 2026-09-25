@@ -110,6 +110,10 @@ async def registrar_recebimento_caso(db, case: Case, valor, user) -> dict:
     )
     db.add(fee)
     db.add(payment)
+    # O rateio referencia fee_payments por FK. Sem flush explícito, o UoW
+    # pode tentar inserir CaseReceiptAllocation antes do FeePayment porque não
+    # há relacionamento ORM entre os objetos — falha observada em produção.
+    await db.flush()
 
     pct_adv = rateio["percentual_advogado"]
     valor_adv = rateio["valor_advogado"]
