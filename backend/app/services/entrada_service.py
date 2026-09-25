@@ -104,8 +104,15 @@ def _normalizar_texto_match(valor: str | None) -> str:
 def _extrair_cnjs_texto(texto: str | None) -> list[str]:
     if not texto:
         return []
+    # Exportações de tribunais podem concatenar o CNJ mascarado com a
+    # data seguinte (ex.: ...002714/08/2026). Para o formato mascarado,
+    # aceitamos especificamente início de data DD/MM/AAAA como delimitador.
+    # O formato de 20 dígitos continua exigindo fronteira numérica estrita.
     padrao = re.compile(
-        r"(?<!\\d)(\\d{7}-\\d{2}\\.\\d{4}\\.\\d\\.\\d{2}\\.\\d{4}|\\d{20})(?!\\d)"
+        r"(?<!\\d)(?:"
+        r"\\d{7}-\\d{2}\\.\\d{4}\\.\\d\\.\\d{2}\\.\\d{4}(?=$|\\D|\\d{2}/\\d{2}/\\d{4})"
+        r"|\\d{20}(?!\\d)"
+        r")"
     )
     unicos: list[str] = []
     for bruto in padrao.findall(texto):
