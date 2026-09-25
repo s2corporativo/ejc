@@ -123,3 +123,36 @@ async def test_lock_cnj_usa_chave_normalizada_e_transacional():
     sql, params = db.calls[0]
     assert "pg_advisory_xact_lock" in sql
     assert params == {"chave": "entrada-cnj:10182841320268130027"}
+
+
+@pytest.mark.anyio
+async def test_multiplos_cnjs_sao_classificados_e_bloqueiam_caso_unico(monkeypatch):
+    async def _buscar(_db, _user, numero):
+        if numero == "1018284-13.2026.8.13.0027":
+            return [{"case_id": "existente", "numero_interno": "DPT-2026-0099"}]
+        return []
+
+    monkeypatch.setattr(pr, "buscar_casos_por_cnj", _buscar)
+
+    resultado = await pr.reconciliar_entrada(
+        object(),
+        SimpleNamespace(),
+        texto=(
+            "1018284-13.2026.8.13.0027 "
+            "1015352-52.2026.8.13.0027 "
+            "0709938-44.2026.8.07.0018"
+        ),
+        cliente_id=None,
+        cliente_nome=None,
+        parte_contraria=None,
+        assunto=None,
+    )
+
+    assert resultado["status"] == "informacoes_insuficientes"
+    assert resultado["bloquear_criacao"] is True
+    assert resultado["acao_sugerida"] == "separar_entradas"
+    assert [item["status"] for item in resultado["resultados_por_cnj"]] == [
+        "ja_cadastrado",
+        "novo_processo",
+        "novo_processo",
+    ]
