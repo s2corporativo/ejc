@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Search, X } from "lucide-react";
 import api from "../../lib/api";
+import { toast } from "../../components/Toast";
 import {
   Alert,
   Badge,
@@ -194,6 +195,7 @@ export function Confirmacao({
       );
       window.location.assign(`/casos/${caseId}`);
     } catch {
+      toast.error("Não foi possível vincular o processo ao caso existente.");
       setVinculandoCaseId(null);
     }
   };
