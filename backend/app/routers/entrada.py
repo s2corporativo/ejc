@@ -24,7 +24,7 @@ from app.core.rate_limit import rate_limit
 from app.core.security import ROLE_LEVEL, get_current_user
 from app.models.document_intake import DocumentIntakeBatch
 from app.models.user import User
-from app.schemas.entrada import CriarCasoEntradaRequest
+from app.schemas.entrada import (CriarCasoEntradaRequest, VincularCasoExistenteEntradaRequest)
 from app.services import entrada_juridica_service, entrada_service
 from app.services.contract_migration import mark_contract_response
 
@@ -130,3 +130,29 @@ async def criar_caso(
     )
     await db.commit()
     return resultado
+
+
+@router.post(
+    "/{rascunho_id}/vincular-caso-existente",
+    dependencies=[Depends(rate_limit("entrada-vincular-caso", 10))],
+)
+async def vincular_caso_existente(
+    rascunho_id: str,
+    payload: VincularCasoExistenteEntradaRequest,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(exigir_advogado),
+):
+    """Confirma que o CNJ detectado corresponde a caso pré-processual existente.
+
+    A transição preserva o histórico e cria o Processo pelo serviço canônico.
+    Nenhuma correspondência é promovida automaticamente.
+    """
+    try:
+        resultado = await entrada_service.vincular_rascunho_a_caso_existente(
+            db, cu, rascunho_id, payload,
+        )
+        await db.commit()
+        return resultado
+    except HTTPException:
+        await db.rollback()
+        raise
