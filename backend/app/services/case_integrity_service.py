@@ -20,6 +20,7 @@ from sqlalchemy import func as sqlfunc, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.case import Case
+from app.repositories.process_repository import process_repository
 from app.models.user import User
 from app.schemas.process import ProcessCreate, ProcessUpdate
 from app.services.processo_service import (
@@ -112,33 +113,41 @@ async def garantir_numero_processo_unico(
     numero_processo: str | None,
     excluir_case_id: str | None = None,
 ) -> None:
-    """Impede dois casos vivos do mesmo cliente com o mesmo número processual.
+    """Impede duplicidade processual preservando numeração administrativa.
 
-    O advisory lock serializa create/update concorrentes com a mesma chave.
-    Números CNJ são comparados pelos 20 dígitos; numeração administrativa é
-    comparada por texto normalizado, preservando o comportamento histórico.
+    CNJ é identidade do processo e não pode apontar para dois Casos distintos,
+    independentemente do cliente. O mesmo CNJ pode ter múltiplos registros de
+    grau/recurso dentro do MESMO Caso. Numeração não-CNJ mantém a regra legada
+    por cliente, pois processos administrativos podem reutilizar formatos entre
+    órgãos diferentes.
     """
     numero = (numero_processo or "").strip()
     if not numero:
         return
 
     digitos_cnj = normalizar_cnj(numero)
-    numero_chave = digitos_cnj if len(digitos_cnj) == 20 else numero.casefold()
+    if len(digitos_cnj) == 20:
+        await process_repository.lock_cnj(db, digitos_cnj)
+        ids = await process_repository.case_ids_for_cnj(db, digitos_cnj)
+        outros = [cid for cid in ids if cid != excluir_case_id]
+        if outros:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Este CNJ já está vinculado a outro caso do EJC. "
+                    "Restaure ou reconcilie o registro existente."
+                ),
+            )
+        return
+
+    numero_chave = numero.casefold()
     await db.execute(
         text("SELECT pg_advisory_xact_lock(hashtext(:chave))"),
         {"chave": f"case_duplicate:{client_id}:{numero_chave}"},
     )
-
-    if len(digitos_cnj) == 20:
-        numero_igual = (
-            sqlfunc.regexp_replace(Case.numero_processo, r"\D", "", "g")
-            == digitos_cnj
-        )
-    else:
-        numero_igual = (
-            sqlfunc.lower(sqlfunc.trim(Case.numero_processo)) == numero.casefold()
-        )
-
+    numero_igual = (
+        sqlfunc.lower(sqlfunc.trim(Case.numero_processo)) == numero.casefold()
+    )
     stmt = select(Case.id).where(
         Case.client_id == client_id,
         Case.deleted_at.is_(None),
