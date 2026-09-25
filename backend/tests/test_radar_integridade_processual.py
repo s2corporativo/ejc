@@ -95,3 +95,29 @@ async def test_radar_integridade_respeita_filtro_desde():
     )
 
     assert itens == []
+
+
+@pytest.mark.anyio
+async def test_radar_integridade_cobre_espelho_legado_sem_process_principal():
+    agora = datetime(2026, 9, 25, 12, 0, tzinfo=timezone.utc)
+    case = SimpleNamespace(
+        id="case-legado",
+        numero_interno="DPT-2026-0001",
+        titulo="Caso legado",
+        numero_processo="0709938-44.2026.8.07.0018",
+        updated_at=agora,
+        advogado_responsavel_id=None,
+        advogado_auxiliar_id=None,
+    )
+    socio = SimpleNamespace(id="socio-1", role=UserRole.socio)
+
+    itens = await compliance._itens_integridade_processual(
+        _Db([(case, None)]),
+        socio,
+        desde=None,
+        hoje=date(2026, 9, 25),
+        limit=10,
+    )
+
+    assert len(itens) == 1
+    assert "0709938-44.2026.8.07.0018" in itens[0]["resumo"]
