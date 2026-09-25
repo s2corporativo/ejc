@@ -95,13 +95,26 @@ def _texto_match(valor: str | None) -> str:
 
 
 def _tokens_relevantes(valor: str | None) -> set[str]:
-    return {
+    brutos = _texto_match(valor).split()
+    tokens = {
         token
-        for token in _texto_match(valor).split()
-        if len(token) >= 3
+        for token in brutos
+        if (
+            len(token) >= 3
+            or token in {"df", "sp", "mg", "rj"}
+        )
         and token not in _RECONCILIACAO_STOPWORDS
         and not token.isdigit()
     }
+    # Siglas institucionais comuns em listas judiciais podem aparecer por
+    # extenso de um lado e abreviadas no caso já cadastrado. São aliases
+    # determinísticos, não inferência de IA.
+    conjunto = set(brutos)
+    if {"departamento", "estrada", "rodagem"}.issubset(conjunto):
+        tokens.add("der")
+    if {"distrito", "federal"}.issubset(conjunto):
+        tokens.add("df")
+    return tokens
 
 
 def _extrair_segmentos_cnj(texto: str | None) -> list[dict[str, Any]]:
