@@ -39,7 +39,10 @@ ALLOWED_IMPORTERS: dict[str, set[str]] = {
     "especializado_model": {
         "models/__init__.py",
     },
-    "ramos_router": {"main.py"},
+    "ramos_router": {
+        "main.py",
+        "routers/peca_geracao.py",
+    },
     "environmental_router": {"main.py"},
     "tributario_router": {
         "main.py",
