@@ -19,10 +19,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.client import Client, ClientTipo
 from app.models.case import Case, CaseStatus
 from app.models.case_parte import CaseParte
-from app.models.especializado import TrabalhistaCase
 from app.models.user import User
 from app.models.legal_doc import LegalDoc, PecaStatus
 from app.models.audit_log import criar_audit_log
+from app.modules.legacy_verticals.lgpd_adapter import anonymize_legacy_health_data
 
 _MARCADOR = "[ANONIMIZADO — LGPD ART. 17]"
 
@@ -211,30 +211,14 @@ async def anonimizar_cliente(
         parte.observacoes = None
         partes_anonimizadas += 1
 
-    # CID é dado relacionado à saúde. No satélite trabalhista, só o removemos
-    # automaticamente quando o cliente é PF e figura como reclamante — cenário
-    # em que o dado de saúde pertence, em regra, ao próprio cliente. Para cliente
-    # reclamado/empresa, o CID pode ser de terceiro (empregado/adversário) e não
-    # deve ser apagado por este pedido; permanece cifrado em repouso.
-    cids_anonimizados = 0
-    if cliente.tipo == ClientTipo.PF:
-        # Inclui casos soft-deleted: a lixeira permite restauração e o satélite
-        # trabalhista permanece no banco. Excluir esses casos deixaria CID
-        # decryptável reaparecer após uma anonimização já declarada concluída.
-        case_ids = select(Case.id).where(Case.client_id == client_id)
-        trab_rows = (
-            await db.execute(
-                select(TrabalhistaCase).where(
-                    TrabalhistaCase.case_id.in_(case_ids),
-                    TrabalhistaCase.deleted_at.is_(None),
-                    TrabalhistaCase.polo == "reclamante",
-                )
-            )
-        ).scalars().all()
-        for trab in trab_rows:
-            if trab.cid is not None:
-                trab.cid = None
-                cids_anonimizados += 1
+    # Dados sensíveis de verticais legadas são tratados por adapter isolado.
+    # A regra permanece idêntica: CID só é limpo quando o cliente é PF e figura
+    # como reclamante; casos soft-deleted também entram para evitar reaparecimento.
+    cids_anonimizados = await anonymize_legacy_health_data(
+        db,
+        client_id,
+        is_natural_person=cliente.tipo == ClientTipo.PF,
+    )
 
     # Portal do cliente: desativa qualquer login vinculado — a identidade que
     # existia (nome/e-mail) não corresponde mais aos dados reais.
