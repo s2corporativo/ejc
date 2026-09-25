@@ -5,7 +5,7 @@
 //   C) dossiê jurídico profundo → aprovação HITL → Motor de Peça.
 // A complexidade fica no EJC; a superfície inicial continua simples.
 import { useCallback, useEffect, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import api from "../lib/api";
 import { toast } from "../components/Toast";
 import { PageHeader } from "../components/UI";
@@ -86,6 +86,7 @@ export default function EntradaUnica() {
 /** Reutilizada no Dashboard para que / e /entrada usem a MESMA Entrada Única. */
 export function EntradaInteligente({ embedded = false }: { embedded?: boolean }) {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const meuId = user?.id ?? "";
   const clientIdContexto = searchParams.get("client_id")?.trim() || null;
@@ -362,6 +363,51 @@ export function EntradaInteligente({ embedded = false }: { embedded?: boolean })
     }
   }, [proposta]);
 
+  const vincularCasoExistente = useCallback(
+    async (caseId: string) => {
+      if (!proposta || !caseId || !proposta.numeroCnj) return;
+      setCriando(true);
+      setErro409(null);
+      try {
+        const { data } = await api.post(
+          `/entrada/${proposta.rascunhoId}/vincular-caso-existente`,
+          {
+            case_id: caseId,
+            numero_cnj: proposta.numeroCnj,
+            confirmo_correspondencia: true,
+          },
+        );
+        const destino =
+          typeof data?.case_id === "string" && data.case_id
+            ? data.case_id
+            : caseId;
+        limparRascunho();
+        setProposta(null);
+        toast.success(
+          data?.ja_vinculado
+            ? "O processo já estava vinculado a este caso."
+            : "Processo vinculado ao caso existente com histórico preservado.",
+        );
+        navigate(`/casos/${destino}`);
+      } catch (err) {
+        const status = (err as { response?: { status?: number } } | undefined)
+          ?.response?.status;
+        const mensagem = mensagemDeErro(
+          err,
+          "Não foi possível vincular o processo ao caso existente.",
+        );
+        if (status === 409) {
+          setErro409(mensagem);
+        } else {
+          toast.error(mensagem);
+        }
+      } finally {
+        setCriando(false);
+      }
+    },
+    [navigate, proposta],
+  );
+
   const descartar = useCallback(() => {
     limparRascunho();
     setProposta(null);
@@ -413,6 +459,7 @@ export function EntradaInteligente({ embedded = false }: { embedded?: boolean })
           criando={criando}
           erro409={erro409}
           onCriar={criarCaso}
+          onVincularCasoExistente={vincularCasoExistente}
           onDescartar={descartar}
         />
       )}
