@@ -1074,6 +1074,10 @@ async def vincular_rascunho_a_caso_existente(
         case.id,
         ProcessCreate(
             numero_cnj=payload.numero_cnj,
+            tribunal=case.tribunal,
+            comarca=case.comarca,
+            vara=case.vara,
+            valor_causa=case.valor_causa,
             fase="conhecimento",
             tipo="judicial",
             status="ativo",
