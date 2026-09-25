@@ -99,3 +99,25 @@ def test_hora_sync_default_e_valores_invalidos(monkeypatch):
     assert hora_sync_clientes_utc() == (9, 30)  # fallback seguro
     monkeypatch.setattr(svc.settings, "DATAJUD_SYNC_HORA_UTC", "banana")
     assert hora_sync_clientes_utc() == (9, 30)
+
+
+def test_sync_canonico_permanece_unico_no_scheduler():
+    import inspect
+    from app.services import scheduler as sch
+    from app.services.datajud_sync_service import executar_sync_clientes
+
+    sig = inspect.signature(executar_sync_clientes)
+    assert "notificar_clientes" in sig.parameters
+
+    src = inspect.getsource(sch.start_scheduler)
+    assert 'id="datajud"' in src
+    assert 'id="datajud_sync_clientes"' not in src
+
+
+def test_job_datajud_delega_ao_motor_canonico():
+    import inspect
+    from app.services import scheduler as sch
+
+    src = inspect.getsource(sch.job_datajud_sync)
+    assert "executar_sync_clientes" in src
+    assert "sincronizar_caso" not in src

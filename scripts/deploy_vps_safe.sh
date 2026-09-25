@@ -55,6 +55,7 @@ ENV_ROLLBACK_FILE=""
 DEPLOYED_SHA_TMP="$APP_DIR/.deployed_sha.new.$$"
 ROLLBACK_ARMED=0
 ENV_MUTATED=0
+ENV_WAS_IMMUTABLE=0
 IMAGES_MUTATED=0
 DEPLOY_MUTATED=0
 
@@ -70,22 +71,91 @@ cleanup_temp_files() {
   rm -f -- "$DEPLOYED_SHA_TMP" >/dev/null 2>&1 || true
 }
 
+# Bloqueio/registro da imutabilidade do .env (chattr +i): sem detecção, o
+# deploy falha no meio com produção já tocada e o rollback não consegue
+# restaurar o snapshot. As funções abaixo centralizam unlock/relock.
+detect_env_immutable() {
+  ENV_WAS_IMMUTABLE=0
+  command -v lsattr >/dev/null 2>&1 || return 0
+  local attrs
+  attrs="$(lsattr -d .env 2>/dev/null | awk '{print $1}' || true)"
+  case "$attrs" in
+    *i*)
+      command -v chattr >/dev/null 2>&1         || die_policy ".env está imutável, mas chattr não está disponível"
+      ENV_WAS_IMMUTABLE=1
+      ;;
+  esac
+}
+
+unlock_env_if_needed() {
+  [ "$ENV_WAS_IMMUTABLE" = "1" ] || return 0
+  chattr -i .env
+}
+
+relock_env_if_needed() {
+  [ "$ENV_WAS_IMMUTABLE" = "1" ] || return 0
+  chattr +i .env
+}
+
+# Persistir o SHA aprovado evita que um docker compose up/restart posterior
+# recarregue um GIT_SHA antigo do .env e faça /api/health anunciar artefato
+# incorreto. Garante exatamente UM GIT_SHA= no .env (dedup de entradas legadas).
+persist_git_sha_env() {
+  python3 - "$GIT_SHA" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(".env")
+sha = sys.argv[1]
+lines = path.read_text(encoding="utf-8").splitlines()
+out = []
+seen = False
+for line in lines:
+    if line.startswith("GIT_SHA="):
+        if not seen:
+            out.append(f"GIT_SHA={sha}")
+            seen = True
+        continue
+    out.append(line)
+if not seen:
+    out.append(f"GIT_SHA={sha}")
+path.write_text("\n".join(out) + "\n", encoding="utf-8")
+PY
+}
+
 # Restaura o snapshot transacional do .env somente quando o conteúdo mudou;
 # se estiver idêntico, limita-se a garantir modo 0600 sem reescrever o arquivo.
 restore_env() {
   [ "$ENV_MUTATED" = "1" ] || return 0
   [ -n "$ENV_ROLLBACK_FILE" ] && [ -s "$ENV_ROLLBACK_FILE" ] \
     || { log "ERRO CRÍTICO: snapshot transacional do .env ausente."; return 1; }
+
+  # Se o arquivo era originalmente imutável, o caminho normal de deploy já
+  # reaplicou +i antes de build/cutover. Qualquer rollback posterior precisa
+  # remover +i novamente ANTES de restaurar o snapshot e reaplicá-lo ao final.
+  unlock_env_if_needed || return 1
+
+  local rc=0
   if cmp -s -- "$ENV_ROLLBACK_FILE" .env; then
     if [ "$(stat -c '%a' .env 2>/dev/null || true)" != "600" ]; then
-      chmod 600 .env || return 1
+      chmod 600 .env || rc=1
     fi
-    log ".env permaneceu idêntico ao snapshot; conteúdo não foi reescrito e permissões seguras foram preservadas."
-    return 0
+    if [ "$rc" -eq 0 ]; then
+      log ".env permaneceu idêntico ao snapshot; conteúdo não foi reescrito e permissões seguras foram preservadas."
+    fi
+  else
+    cp -- "$ENV_ROLLBACK_FILE" .env || rc=1
+    if [ "$rc" -eq 0 ]; then
+      chmod 600 .env || rc=1
+    fi
+    if [ "$rc" -eq 0 ]; then
+      log ".env anterior restaurado a partir do snapshot transacional protegido."
+    fi
   fi
-  cp -- "$ENV_ROLLBACK_FILE" .env || return 1
-  chmod 600 .env || return 1
-  log ".env anterior restaurado a partir do snapshot transacional protegido."
+
+  # Preserva a política original mesmo quando a restauração do conteúdo falha.
+  relock_env_if_needed || rc=1
+  return "$rc"
 }
 
 _restore_image() {
@@ -233,13 +303,20 @@ cp -- .env "$ENV_ROLLBACK_FILE"
 chmod 600 "$ENV_ROLLBACK_FILE"
 ROLLBACK_ARMED=1
 
+detect_env_immutable
+ENV_MUTATED=1
+unlock_env_if_needed
+
 if [ -f scripts/migrar_env_obsoletos.sh ]; then
-  ENV_MUTATED=1
   bash scripts/migrar_env_obsoletos.sh .env --backup-path "$ENV_ROLLBACK_FILE" | while IFS= read -r linha; do
     log "$linha"
   done
-  docker compose config --quiet
 fi
+
+persist_git_sha_env
+chmod 600 .env
+relock_env_if_needed
+docker compose config --quiet
 
 OLD_BACKEND_IMAGE="$(docker inspect -f '{{.Image}}' ejc_backend 2>/dev/null || true)"
 OLD_WORKER_IMAGE="$(docker inspect -f '{{.Image}}' ejc_worker 2>/dev/null || true)"

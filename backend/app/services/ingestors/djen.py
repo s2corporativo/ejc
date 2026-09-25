@@ -235,13 +235,29 @@ async def _coletar_oab(numero: str, uf: str, ini: str, fim: str) -> list[dict]:
     return itens
 
 
-async def ingerir(db: AsyncSession) -> tuple[int, int]:
-    """Ingere comunicações no RAG e falha alto quando nenhuma OAB foi coletada."""
+async def ingerir(
+    db: AsyncSession,
+    *,
+    excluir_oabs: set[tuple[str, str]] | None = None,
+) -> tuple[int, int]:
+    """Ingere comunicações no RAG sem repetir OABs já coletadas no mesmo ciclo."""
     from datetime import date, timedelta
+
     s = get_settings()
-    oabs = parse_oabs(s.DJEN_OABS_MONITORADAS)
+    excluir = {
+        (re.sub(r"\D", "", numero or ""), (uf or "").strip().upper())
+        for numero, uf in (excluir_oabs or set())
+        if numero and uf
+    }
+    oabs = [
+        (numero, uf)
+        for numero, uf in parse_oabs(s.DJEN_OABS_MONITORADAS)
+        if (numero, uf) not in excluir
+    ]
     if not oabs:
-        logger.info("DJEN: nenhuma OAB monitorada configurada — nada a fazer")
+        logger.info(
+            "DJEN: nenhuma OAB adicional para o RAG após deduplicação do ciclo"
+        )
         return 0, 0
 
     fim = date.today()

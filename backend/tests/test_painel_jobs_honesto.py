@@ -285,7 +285,10 @@ def _comentario_acima(fonte: str, marcador: str) -> str:
 @pytest.mark.parametrize(
     "marcador,flag",
     [
-        ('id="ing_djen"', "DJEN_INGEST_ENABLED"),
+        # DJEN→RAG foi consolidado no job "djen" (06h30), sem agendamento
+        # próprio (ver test_ingestor_djen: 'id="ing_djen"' não deve existir);
+        # o gate DJEN_INGEST_ENABLED é documentado acima de job_ingestao_djen.
+        ("async def job_ingestao_djen(", "DJEN_INGEST_ENABLED"),
         ('id="ing_tjmg"', "TJMG_INGEST_ENABLED"),
     ],
 )

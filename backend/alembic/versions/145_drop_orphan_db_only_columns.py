@@ -83,10 +83,14 @@ _colunas_protegidas = (
     ("knowledge_chunks", "embedding_legacy_768"),
 )
 for _tabela_guarda, _coluna_guarda in _colunas_protegidas:
-    assert not _codigo_refere(_coluna_guarda), (
-        f"Guarda ativa: a coluna '{_tabela_guarda}.{_coluna_guarda}' ainda "
-        f"é referenciada pelo código — drop abortado sem alterações."
-    )
+    # Nunca usar `assert` como barreira de integridade: python -O o remove e
+    # a migration destrutiva rodaria sem guarda. RuntimeError interrompe a
+    # transação no import do módulo, com ou sem otimizações.
+    if _codigo_refere(_coluna_guarda):
+        raise RuntimeError(
+            f"Guarda ativa: a coluna '{_tabela_guarda}.{_coluna_guarda}' ainda "
+            f"é referenciada pelo código — drop abortado sem alterações."
+        )
 
 
 def upgrade() -> None:

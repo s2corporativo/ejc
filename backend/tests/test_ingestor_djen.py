@@ -240,6 +240,23 @@ async def test_ingerir_sem_oabs_configuradas_e_noop(monkeypatch):
     assert chamadas == [] and ups == []
 
 
+async def test_ingerir_exclui_oab_ja_coletada_no_mesmo_ciclo(monkeypatch):
+    ups: list[dict] = []
+    chamadas = _prepara(
+        monkeypatch,
+        oabs="12345/MG,67890/MG",
+        respostas=[{"items": [ITEM_COMPLETO]}],
+        upserts=ups,
+    )
+    novos, total = await djen.ingerir(
+        _FakeDB(),
+        excluir_oabs={("12345", "mg")},
+    )
+    assert (novos, total) == (1, 1)
+    assert len(chamadas) == 1
+    assert chamadas[0]["numeroOab"] == "67890"
+
+
 async def test_ingerir_tolerante_a_erro_http_por_oab(monkeypatch):
     """Erro na 1ª OAB não impede a coleta da 2ª."""
     ups: list[dict] = []
@@ -298,9 +315,75 @@ async def test_job_djen_gate_off_e_on(monkeypatch):
     assert execucoes == ["djen"]
 
 
-def test_job_djen_registrado_no_scheduler():
-    """O add_job do ingestor DJEN está no start_scheduler (1x/dia)."""
+async def test_job_djen_nao_exclui_oab_quando_fonte_indisponivel(monkeypatch):
+    """OAB só é excluída do ingestor RAG quando fonte_ok=True.
+
+    Bug: OAB era adicionada a oabs_capturadas ANTES de verificar o resultado de
+    capturar_para_advogado. Quando fonte_ok=False (API indisponível, OAB sem
+    configuração, feature desabilitada), a OAB ficava excluída do ingestor RAG
+    sem ter sido realmente capturada.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+    from app.services import scheduler as sch
+    from app.services.djen_service import DjenCapturaResultado
+
+    excluir_oabs_chamados: list = []
+
+    async def fake_capturar(db, adv):
+        return DjenCapturaResultado(
+            configurada=True,
+            fonte_ok=False,
+            recebidas=0, novas=0, duplicadas=0, ignoradas=0,
+            erro="api_indisponivel",
+            paginas=0, janela_dias=0,
+        )
+
+    import app.services.djen_service as djen_svc
+
+    async def fake_job_ingestao_stub(*, excluir_oabs=None):
+        """Stub job_ingestao_djen to avoid local get_settings import bypass."""
+        excluir_oabs_chamados.append(excluir_oabs if excluir_oabs is not None else set())
+
+    monkeypatch.setattr(djen_svc, "capturar_para_advogado", fake_capturar)
+    monkeypatch.setattr(sch, "job_ingestao_djen", fake_job_ingestao_stub)
+
+    fake_db = MagicMock()
+    fake_adv = MagicMock()
+    fake_adv.id = 1
+    fake_adv.is_active = True
+    fake_adv.deleted_at = None
+    fake_adv.djen_oab_numero = "12345"
+    fake_adv.djen_oab_uf = "MG"
+    fake_adv.oab_number = None
+    fake_adv.oab_uf = None
+
+    fake_db.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(
+        return_value=MagicMock(all=MagicMock(return_value=[fake_adv])),
+    )))
+    fake_db.commit = AsyncMock()
+
+    class _FakeSessionCM:
+        """Fake AsyncSessionLocal that works with `async with`."""
+        async def __aenter__(self):
+            return fake_db
+        async def __aexit__(self, *args):
+            pass
+
+    monkeypatch.setattr(sch, "AsyncSessionLocal", lambda: _FakeSessionCM())
+
+    await sch.job_djen_intimacoes()
+
+    # OAB NÃO deve ser excluída do ingestor RAG (fonte_ok=False)
+    assert excluir_oabs_chamados == [set()], \
+        "OAB com fonte_ok=False não deve ser excluída do RAG"
+
+
+def test_job_djen_consolidado_no_scheduler():
+    """Há um único job DJEN; a ingestão RAG roda dentro da captura canônica."""
     import inspect
     from app.services import scheduler as sch
+
     src = inspect.getsource(sch.start_scheduler)
-    assert "job_ingestao_djen" in src and "ing_djen" in src
+    assert 'id="djen"' in src
+    assert 'id="ing_djen"' not in src
+    assert "job_ingestao_djen" not in src

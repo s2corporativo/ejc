@@ -227,10 +227,16 @@ async def _notificar_andamentos(
 
 # ── Execução ──────────────────────────────────────────────────────────────────
 
-async def executar_sync_clientes(db: AsyncSession) -> dict:
-    """Percorre os casos ativos com número CNJ válido, importa movimentos do
-    DataJud (commit POR CASO) e notifica advogado + cliente quando há
-    andamento NOVO. Retorna resumo {casos, com_novos, movimentos_novos, erros}.
+async def executar_sync_clientes(
+    db: AsyncSession,
+    *,
+    notificar_clientes: bool = True,
+) -> dict:
+    """Percorre casos ativos e executa o sync DataJud canônico.
+
+    A importação da timeline ocorre sempre. Notificações de andamento novo
+    só são emitidas quando notificar_clientes=True.
+    Retorna resumo {casos, com_novos, movimentos_novos, erros}.
     """
     casos = (await db.execute(select(Case).where(
         Case.deleted_at.is_(None),
@@ -274,7 +280,8 @@ async def executar_sync_clientes(db: AsyncSession) -> dict:
                 case.datajud_ultimo_andamento_em = datetime.now(timezone.utc)
                 resumo["com_novos"] += 1
                 resumo["movimentos_novos"] += len(novos)
-                await _notificar_andamentos(db, case, novos)
+                if notificar_clientes:
+                    await _notificar_andamentos(db, case, novos)
 
             # Commit POR CASO — falha adiante não perde o progresso já feito.
             await db.commit()
