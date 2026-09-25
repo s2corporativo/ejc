@@ -599,8 +599,12 @@ async def criar_caso_do_rascunho(
         entrada_snapshot.get("reconciliacao_processual") or {}
     )
     if payload.numero_cnj:
-        from app.services.process_reconciliation import buscar_casos_por_cnj
+        from app.services.process_reconciliation import (
+            buscar_casos_por_cnj,
+            serializar_escrita_cnj,
+        )
 
+        await serializar_escrita_cnj(db, payload.numero_cnj)
         existentes_cnj = await buscar_casos_por_cnj(db, user, payload.numero_cnj)
         if existentes_cnj:
             raise HTTPException(
@@ -1050,8 +1054,12 @@ async def vincular_rascunho_a_caso_existente(
     if case.deleted_at is not None:
         raise HTTPException(409, "O caso candidato está excluído; restaure-o antes de vincular o processo")
 
-    from app.services.process_reconciliation import buscar_casos_por_cnj
+    from app.services.process_reconciliation import (
+        buscar_casos_por_cnj,
+        serializar_escrita_cnj,
+    )
 
+    await serializar_escrita_cnj(db, payload.numero_cnj)
     existentes = await buscar_casos_por_cnj(db, user, payload.numero_cnj)
     if existentes:
         # Idempotência defensiva: se outro fluxo já vinculou exatamente este CNJ
