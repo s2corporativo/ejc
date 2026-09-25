@@ -170,6 +170,11 @@ async def painel_integridade_processual(
             func.length(func.trim(func.coalesce(Process.numero_cnj, ""))) > 0,
         ),
     )
+    tem_principal = exists().where(
+        Process.case_id == Case.id,
+        Process.deleted_at.is_(None),
+        Process.is_principal.is_(True),
+    )
 
     filtros = {
         "sem_responsavel": and_(
@@ -185,6 +190,10 @@ async def painel_integridade_processual(
             ~tem_processo,
             func.length(func.trim(func.coalesce(Case.numero_processo, ""))) == 0,
         ),
+        "processo_sem_principal": and_(
+            tem_processo,
+            ~tem_principal,
+        ),
     }
 
     contagens: dict[str, int | None] = {}
@@ -193,6 +202,7 @@ async def painel_integridade_processual(
         "sem_responsavel": "Caso ativo sem advogado responsável.",
         "pre_processual_com_cnj": "Caso ainda pré-processual apesar de já possuir número processual.",
         "protocolado_sem_processo": "Caso protocolado sem entidade Processo vinculada.",
+        "processo_sem_principal": "Caso possui Processo ativo, mas nenhum está marcado como principal.",
     }
     for tipo, filtro in filtros.items():
         count_stmt = _escopo_cases_integridade(
@@ -278,6 +288,7 @@ async def painel_integridade_processual(
                 "sem_responsavel",
                 "pre_processual_com_cnj",
                 "protocolado_sem_processo",
+                "processo_sem_principal",
                 "recebimentos_sem_rateio",
             )
         ),
