@@ -55,13 +55,13 @@ def _legacy_text(value: str | None, max_length: int) -> str | None:
 async def _garantir_cnj_no_mesmo_caso(
     db: AsyncSession, case_id: str, numero_cnj: str | None
 ) -> None:
-    \"\"\"Um CNJ pode ter vários registros/graus, mas pertence a um só Caso.
+    """Um CNJ pode ter vários registros/graus, mas pertence a um só Caso.
 
     O lock consultivo por CNJ fecha a corrida entre duas criações em casos
     diferentes. Registros soft-deleted também bloqueiam criação silenciosa:
     devem ser restaurados/reconciliados para preservar a trilha de auditoria.
-    \"\"\"
-    numero_norm = normalizar_cnj(numero_cnj or \"\")
+    """
+    numero_norm = normalizar_cnj(numero_cnj or "")
     if len(numero_norm) != 20:
         return
     await process_repository.lock_cnj(db, numero_norm)
@@ -69,8 +69,8 @@ async def _garantir_cnj_no_mesmo_caso(
     outros = [cid for cid in case_ids if cid != case_id]
     if outros:
         raise ProcessConflict(
-            \"CNJ já vinculado a outro caso do EJC. Restaure ou reconcilie o \"
-            \"registro existente em vez de criar duplicidade.\"
+            "CNJ já vinculado a outro caso do EJC. Restaure ou reconcilie o "
+            "registro existente em vez de criar duplicidade."
         )
 
 
