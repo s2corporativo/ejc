@@ -148,6 +148,7 @@ export function Confirmacao({
   onDescartar: () => void;
 }) {
   const [buscandoCliente, setBuscandoCliente] = useState(false);
+  const [vinculandoCaseId, setVinculandoCaseId] = useState<string | null>(null);
 
   const areaDesconhecida =
     Boolean(proposta.area) &&
@@ -158,12 +159,22 @@ export function Confirmacao({
   // ativos do cliente e exige reconhecimento explícito — restringir a
   // !clienteId deixava o caminho do cliente recorrente num loop de 409.
   const precisaConfirmarDuplicado = proposta.duplicados.length > 0;
+  const reconciliacao = proposta.processoReconciliacao;
+  const cnjJaCadastrado =
+    reconciliacao?.status === "ja_cadastrado" &&
+    reconciliacao.candidatos.length > 0;
+  const cnjProvavel =
+    reconciliacao?.status === "provavel_correspondencia" &&
+    reconciliacao.candidatos.length > 0;
 
   const podeCriar =
     proposta.confirmoRevisao &&
     (!precisaConfirmarConflito || proposta.conflictConfirmed) &&
     (!precisaConfirmarDuplicado || proposta.duplicateConfirmed) &&
-    !criando;
+    !cnjJaCadastrado &&
+    (!cnjProvavel || proposta.processMatchConfirmedNew) &&
+    !criando &&
+    !vinculandoCaseId;
 
   const responsaveis = useMemo(() => {
     const advogados = usuarios.filter(
@@ -173,6 +184,19 @@ export function Confirmacao({
     );
     return advogados.length > 0 ? advogados : usuarios;
   }, [usuarios]);
+
+  const vincularProcesso = async (caseId: string) => {
+    setVinculandoCaseId(caseId);
+    try {
+      await api.post(
+        `/entrada/${proposta.rascunhoId}/vincular-processo`,
+        { case_id: caseId, confirmo_vinculo: true },
+      );
+      window.location.assign(`/casos/${caseId}`);
+    } catch {
+      setVinculandoCaseId(null);
+    }
+  };
 
   const atualizarPrazo = (patch: Partial<NonNullable<Proposta["prazo"]>>) => {
     if (!proposta.prazo) return;
@@ -201,6 +225,91 @@ export function Confirmacao({
           {aviso}
         </Alert>
       ))}
+
+      {reconciliacao && (
+        <Card className="border-slate-200 p-4 dark:border-slate-700">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Integridade processual
+              </p>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                {reconciliacao.mensagem}
+              </p>
+              {reconciliacao.numeroCnj && (
+                <p className="mt-1 font-mono text-xs text-slate-500">
+                  CNJ {reconciliacao.numeroCnj}
+                </p>
+              )}
+            </div>
+            <Badge
+              tone={
+                reconciliacao.status === "ja_cadastrado"
+                  ? "amber"
+                  : reconciliacao.status === "provavel_correspondencia"
+                    ? "amber"
+                    : reconciliacao.status === "novo_processo"
+                      ? "green"
+                      : "slate"
+              }
+            >
+              {reconciliacao.status.replaceAll("_", " ")}
+            </Badge>
+          </div>
+
+          {reconciliacao.candidatos.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {reconciliacao.candidatos.map((candidato, index) => (
+                <div
+                  key={candidato.caseId ?? `protegido-${index}`}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
+                      {candidato.numeroInterno
+                        ? `${candidato.numeroInterno} · ${candidato.titulo}`
+                        : candidato.titulo}
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {candidato.motivo}
+                      {candidato.excluido ? " · caso excluído" : ""}
+                    </p>
+                  </div>
+                  {candidato.caseId && !candidato.excluido && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={Boolean(vinculandoCaseId)}
+                      onClick={() => void vincularProcesso(candidato.caseId!)}
+                    >
+                      {vinculandoCaseId === candidato.caseId
+                        ? "Vinculando…"
+                        : "Vincular a este caso"}
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {cnjProvavel && (
+            <label className="mt-3 flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={proposta.processMatchConfirmedNew}
+                onChange={(e) =>
+                  onChange({ processMatchConfirmedNew: e.target.checked })
+                }
+              />
+              <span>
+                Revisei os casos sugeridos e confirmo que este CNJ pertence a
+                um processo novo, sem vínculo com eles.
+              </span>
+            </label>
+          )}
+        </Card>
+      )}
 
       {proposta.inteligenciaJuridica && (
         <Card className="border-ai-200 bg-ai-50/40 p-4 dark:border-ai-800 dark:bg-ai-900/20">
