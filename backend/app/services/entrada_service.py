@@ -750,13 +750,23 @@ async def criar_caso_do_rascunho(
         titulo=payload.titulo,
         area=CaseArea(payload.area),
         status=CaseStatus.protocolado if payload.numero_cnj else CaseStatus.aberto,
+        fase=CaseFase.conhecimento if payload.numero_cnj else CaseFase.pre_processual,
         prioridade=CasePrioridade(payload.prioridade),
         descricao_fatos=payload.fatos,
         parte_contraria=payload.parte_contraria,
         client_id=client.id,
         advogado_responsavel_id=payload.advogado_responsavel_id,
         has_judicial_process=bool(payload.numero_cnj),
-        case_type="judicial",
+        case_type=(
+            "judicial"
+            if payload.numero_cnj
+            else (
+                payload.natureza_demanda
+                if payload.natureza_demanda
+                in {"judicial", "extrajudicial", "administrativo"}
+                else None
+            )
+        ),
         # G1: caso nunca nasce sem "o que fazer agora".
         proxima_acao=payload.proxima_acao or PROXIMA_ACAO_DEFAULT,
     )
