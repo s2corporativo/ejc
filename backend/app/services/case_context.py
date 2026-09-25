@@ -26,7 +26,10 @@ from app.models.legal_doc import LegalDoc
 from app.modules.legacy_verticals.case_context_adapter import (
     load_specialized_case_context,
 )
-from app.services.legal_case_context import format_context_value
+from app.services.legal_case_context import (
+    format_context_value,
+    legal_area_context_label,
+)
 from app.services.sanitizer import sanitizar_pii
 
 
@@ -65,7 +68,7 @@ async def montar_dossie(
     # ── Contexto especializado legado ─────────────────────────────────────────
     # O Core não conhece mais models/tabelas por ramo. Durante a migração #1843,
     # um adapter isolado converte eventual satélite legado para contrato neutro.
-    area_base = caso.area.value if hasattr(caso.area, "value") else str(caso.area)
+    area_base = legal_area_context_label(caso.area)
     specialized_context = await load_specialized_case_context(db, case_id, caso.area)
     ramo_label = specialized_context.label if specialized_context else area_base
 
