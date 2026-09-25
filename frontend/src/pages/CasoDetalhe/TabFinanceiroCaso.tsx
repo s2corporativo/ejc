@@ -89,7 +89,7 @@ export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
       );
       setValorRecebido("");
       toast.success(
-        data?.rateio?.regra === "civil_integral_escritorio"
+        data?.rateio?.regra === "institucional_integral_escritorio"
           ? "Recebimento lançado: 100% para o escritório."
           : "Recebimento lançado: 50% responsável / 50% escritório.",
       );
@@ -182,7 +182,7 @@ export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
         <h3 className="font-semibold">Registrar valor recebido</h3>
         <p className="mt-1 text-xs text-slate-500">
           Registre aqui receita de honorários efetivamente recebida pelo escritório,
-          não valores pertencentes ao cliente. {resumo?.regra_rateio}
+          não valores pertencentes ao cliente. {resumo?.regra_rateio === "institucional_integral_escritorio" ? "Carteira institucional: 100% escritório." : "Rateio: 50% responsável / 50% escritório."}
         </p>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <input

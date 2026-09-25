@@ -24,7 +24,7 @@ def test_valor_pleiteado_nao_aceita_negativo():
 
 
 def test_rateio_padrao_50_50():
-    r = calcular_rateio_recebimento("consumidor", Decimal("1000.01"))
+    r = calcular_rateio_recebimento("trabalhista", Decimal("1000.01"))
     assert r["percentual_advogado"] == Decimal("50.00")
     assert r["valor_advogado"] == Decimal("500.01")
     assert r["valor_escritorio"] == Decimal("500.00")
@@ -36,7 +36,7 @@ def test_area_civil_fica_integralmente_com_escritorio():
     assert r["percentual_advogado"] == Decimal("0.00")
     assert r["valor_advogado"] == Decimal("0.00")
     assert r["valor_escritorio"] == Decimal("1000.01")
-    assert r["regra"] == "civil_integral_escritorio"
+    assert r["regra"] == "institucional_integral_escritorio"
 
 
 def test_encerramento_simples_exige_so_nome_e_valor():
@@ -54,3 +54,12 @@ def test_encerramento_simples_exige_so_nome_e_valor():
 def test_recebimento_deve_ser_positivo():
     with pytest.raises(ValidationError):
         RegistrarRecebimentoCasoReq(valor="0")
+
+
+def test_consumidor_e_jec_ficam_integralmente_com_escritorio():
+    consumidor = calcular_rateio_recebimento("consumidor", Decimal("800.00"))
+    jec = calcular_rateio_recebimento("trabalhista", Decimal("800.00"), "Juizado Especial Cível de Betim")
+    assert consumidor["valor_advogado"] == Decimal("0.00")
+    assert consumidor["valor_escritorio"] == Decimal("800.00")
+    assert jec["valor_advogado"] == Decimal("0.00")
+    assert jec["valor_escritorio"] == Decimal("800.00")

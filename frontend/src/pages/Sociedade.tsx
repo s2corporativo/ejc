@@ -36,6 +36,7 @@ interface Socio {
   id: string;
   user_id: string;
   participacao_percentual: number;
+  resultado_percentual?: number | null;
   regime: string;
   pro_labore?: number;
   ativo: boolean;
@@ -469,9 +470,12 @@ export default function Sociedade() {
                     </div>
                   )}
                   <div className="text-right w-20">
-                    <p className="text-xs text-slate-400">Participação</p>
+                    <p className="text-xs text-slate-400">Capital</p>
                     <p className="text-lg font-bold text-primary-600">
                       {fmtPct(s.participacao_percentual)}
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      Resultado {fmtPct(s.resultado_percentual ?? s.participacao_percentual)}
                     </p>
                   </div>
                   <span
@@ -566,8 +570,8 @@ export default function Sociedade() {
                   .filter((s) => s.ativo)
                   .map((s) => ({
                     nome: nomeUser(s.user_id),
-                    valor: d.valor_total * s.participacao_percentual,
-                    pct: s.participacao_percentual,
+                    valor: d.valor_total * (s.resultado_percentual ?? s.participacao_percentual),
+                    pct: s.resultado_percentual ?? s.participacao_percentual,
                   }));
                 return (
                   <div

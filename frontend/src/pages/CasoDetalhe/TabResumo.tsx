@@ -447,7 +447,7 @@ export default function TabResumo({
       setEncSimplesModal(false);
       const regra = data?.rateio?.regra;
       toast.success(
-        regra === "civil_integral_escritorio"
+        regra === "institucional_integral_escritorio"
           ? "Caso encerrado. Valor lançado integralmente para o escritório."
           : regra === "rateio_50_50"
             ? "Caso encerrado. Valor lançado com rateio 50% responsável / 50% escritório."

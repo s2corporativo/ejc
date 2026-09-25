@@ -17,6 +17,7 @@ def upgrade() -> None:
     op.add_column("cases", sa.Column("valor_pleiteado", sa.Numeric(14, 2), nullable=True))
     op.add_column("cases", sa.Column("pendente_sucumbencia", sa.Boolean(), nullable=False, server_default=sa.false()))
     op.add_column("cases", sa.Column("pendente_exito", sa.Boolean(), nullable=False, server_default=sa.false()))
+    op.add_column("socios", sa.Column("resultado_percentual", sa.Numeric(5, 4), nullable=True))
     op.create_check_constraint(
         "ck_cases_classificacao_financeira", "cases",
         "classificacao_financeira IN ('normal','pro_bono','causa_propria')",
@@ -43,6 +44,7 @@ def downgrade() -> None:
     op.drop_index("ix_case_receipt_alloc_payment", table_name="case_receipt_allocations")
     op.drop_index("ix_case_receipt_alloc_case", table_name="case_receipt_allocations")
     op.drop_table("case_receipt_allocations")
+    op.drop_column("socios", "resultado_percentual")
     op.drop_constraint("ck_cases_classificacao_financeira", "cases", type_="check")
     op.drop_column("cases", "pendente_exito")
     op.drop_column("cases", "pendente_sucumbencia")

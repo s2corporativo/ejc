@@ -22,7 +22,8 @@ class Socio(Base):
     id                       = Column(String(36), primary_key=True)
     user_id                  = Column(String(36), ForeignKey("users.id", ondelete="RESTRICT"),
                                       unique=True, nullable=False)
-    participacao_percentual  = Column(Numeric(5, 4), nullable=False)   # ex: 0.3333 = 33,33%
+    participacao_percentual  = Column(Numeric(5, 4), nullable=False)   # capital social; ex: 0.6000 = 60%
+    resultado_percentual     = Column(Numeric(5, 4), nullable=True)    # distribuição institucional; ex: 0.3333
     regime                   = Column(SAEnum(RegimeSocio, name="regimesocio"),
                                       nullable=False, server_default="misto")
     pro_labore               = Column(Numeric(12, 2))   # mensal, se regime=mensalista|misto
