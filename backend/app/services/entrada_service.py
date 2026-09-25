@@ -677,6 +677,53 @@ async def criar_caso_do_rascunho(
     else:
         nome_cliente = payload.cliente.novo_nome
 
+    # Se o CNJ foi digitado/trocado na tela depois da análise, a fotografia do
+    # rascunho ficou obsoleta. Reexecuta a reconciliação determinística com os
+    # dados revisados antes de permitir a criação.
+    if payload.numero_cnj and payload.numero_cnj != cnj_snapshot:
+        from app.services.process_reconciliation import reconciliar_entrada
+
+        reconciliacao_atual = await reconciliar_entrada(
+            db,
+            user,
+            texto=payload.numero_cnj,
+            cliente_id=client.id if client is not None else None,
+            cliente_nome=nome_cliente,
+            parte_contraria=payload.parte_contraria,
+            assunto=payload.assunto,
+        )
+        if reconciliacao_atual.get("status") == "ja_cadastrado":
+            raise HTTPException(
+                409,
+                {
+                    "mensagem": (
+                        "O CNJ revisado já está cadastrado no EJC. "
+                        "Abra ou restaure o caso existente."
+                    ),
+                    "processos_correspondentes": reconciliacao_atual.get(
+                        "correspondencias", []
+                    ),
+                    "codigo": "CNJ_JA_CADASTRADO",
+                },
+            )
+        if (
+            reconciliacao_atual.get("status") == "provavel_correspondencia"
+            and not payload.duplicate_confirmed
+        ):
+            raise HTTPException(
+                409,
+                {
+                    "mensagem": (
+                        "O CNJ revisado tem forte correspondência com caso "
+                        "existente. Revise o vínculo antes de criar outro caso."
+                    ),
+                    "processos_correspondentes": reconciliacao_atual.get(
+                        "correspondencias", []
+                    ),
+                    "codigo": "PROVAVEL_CORRESPONDENCIA_PROCESSUAL",
+                },
+            )
+
     # Gate de conflito de interesses (EOAB): achado sem reconhecimento → 409.
     alertas = await analisar_conflito(
         db, user, nome_cliente=nome_cliente,
