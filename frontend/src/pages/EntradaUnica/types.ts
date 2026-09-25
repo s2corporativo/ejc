@@ -29,6 +29,28 @@ export interface DuplicadoCliente {
   rotulo: string;
 }
 
+export type ProcessoReconciliacaoStatus =
+  | "ja_cadastrado"
+  | "provavel_correspondencia"
+  | "novo_processo"
+  | "informacoes_insuficientes";
+
+export interface ProcessoReconciliacao {
+  status: ProcessoReconciliacaoStatus;
+  confianca: string | null;
+  mensagem: string;
+  numeroCnj: string | null;
+  candidatos: Array<{
+    caseId: string | null;
+    numeroInterno: string | null;
+    titulo: string;
+    status: string | null;
+    fase: string | null;
+    excluido: boolean;
+    motivo: string;
+  }>;
+}
+
 export interface InteligenciaJuridicaProposta {
   versaoContrato: string;
   status: "rascunho" | "degradado";
@@ -90,6 +112,8 @@ export interface Proposta {
   avisos: string[];
   conflictConfirmed: boolean;
   duplicateConfirmed: boolean;
+  processMatchConfirmedNew: boolean;
+  processoReconciliacao: ProcessoReconciliacao | null;
   confirmoRevisao: boolean;
   inteligenciaJuridica: InteligenciaJuridicaProposta | null;
 }
@@ -240,6 +264,8 @@ export function normalizarAnalise(
   const urgencia = obj(r.urgencia);
   const conflito = obj(r.conflito);
   const duplicados = obj(r.duplicados);
+  const reconciliacao = obj(r.processo_reconciliacao);
+  const dadosProcessuais = obj(reconciliacao.dados_processuais);
 
   const documentos: DocumentoProposto[] = lista(r.documentos).map((d) => {
     const o = obj(d);
@@ -314,6 +340,38 @@ export function normalizarAnalise(
     avisos: lista(r.avisos).map(textoDeAchado).filter(Boolean),
     conflictConfirmed: false,
     duplicateConfirmed: false,
+    processMatchConfirmedNew: false,
+    processoReconciliacao: (() => {
+      const status = str(reconciliacao.status);
+      if (
+        ![
+          "ja_cadastrado",
+          "provavel_correspondencia",
+          "novo_processo",
+          "informacoes_insuficientes",
+        ].includes(status)
+      ) {
+        return null;
+      }
+      return {
+        status: status as ProcessoReconciliacaoStatus,
+        confianca: strOuNull(reconciliacao.confianca),
+        mensagem: str(reconciliacao.mensagem),
+        numeroCnj: strOuNull(dadosProcessuais.numero_cnj),
+        candidatos: lista(reconciliacao.candidatos).map((item) => {
+          const candidato = obj(item);
+          return {
+            caseId: strOuNull(candidato.case_id),
+            numeroInterno: strOuNull(candidato.numero_interno),
+            titulo: str(candidato.titulo) || "Caso existente",
+            status: strOuNull(candidato.status),
+            fase: strOuNull(candidato.fase),
+            excluido: candidato.excluido === true,
+            motivo: str(candidato.motivo),
+          };
+        }),
+      };
+    })(),
     confirmoRevisao: false,
     inteligenciaJuridica: (() => {
       const inteligencia = obj(r.inteligencia_juridica);
@@ -376,6 +434,7 @@ export function montarPayloadCriacao(p: Proposta): Record<string, unknown> {
     proxima_acao: p.proximaAcao.trim() || undefined,
     advogado_responsavel_id: p.advogadoResponsavelId || undefined,
     confirmo_dados_revisados: true,
+    processo_novo_confirmado: p.processMatchConfirmedNew,
   };
   // O backend exige `data` ISO no PrazoEntrada — prazo detectado sem data
   // interpretável não vira Deadline (o advogado cria depois, na aba Prazos
