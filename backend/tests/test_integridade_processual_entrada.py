@@ -110,3 +110,24 @@ def test_extracao_cnj_colado_na_data_de_lista_exportada():
         "10153525220268130027",
         "07099384420268070018",
     ]
+
+
+def test_radar_integridade_respeita_escopo_de_carteira(monkeypatch):
+    from sqlalchemy import select
+
+    from app.models.case import Case
+    from app.routers import saneamento
+
+    monkeypatch.setattr(saneamento, "pode_ver_todos", lambda _user: False)
+    stmt = saneamento._escopo_cases_integridade(
+        select(Case.id),
+        SimpleNamespace(id="adv-1"),
+    )
+    sql = str(stmt)
+
+    # Usuário sem visão global só pode ver casos em que é responsável ou
+    # auxiliar. Não pode existir exceção que exponha casos sem responsável.
+    assert "cases.advogado_responsavel_id IS NULL" not in sql
+    assert "cases.advogado_auxiliar_id IS NULL" not in sql
+    assert "cases.advogado_responsavel_id =" in sql
+    assert "cases.advogado_auxiliar_id =" in sql
