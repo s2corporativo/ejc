@@ -29,6 +29,35 @@ export interface DuplicadoCliente {
   rotulo: string;
 }
 
+export type ReconciliacaoProcessualStatus =
+  | "ja_cadastrado"
+  | "provavel_correspondencia"
+  | "novo_processo"
+  | "informacoes_insuficientes";
+
+export interface CorrespondenciaProcessual {
+  caseId: string | null;
+  numeroInterno: string | null;
+  titulo: string;
+  status: string | null;
+  fase: string | null;
+  protegido: boolean;
+  excluido: boolean | null;
+  score: number | null;
+  motivos: string[];
+  podeConverterPreProcessual: boolean;
+}
+
+export interface ReconciliacaoProcessual {
+  status: ReconciliacaoProcessualStatus;
+  cnjsDetectados: string[];
+  numeroCnjPrincipal: string | null;
+  correspondencias: CorrespondenciaProcessual[];
+  bloquearCriacao: boolean;
+  acaoSugerida: string;
+  mensagem: string;
+}
+
 export interface InteligenciaJuridicaProposta {
   versaoContrato: string;
   status: "rascunho" | "degradado";
@@ -77,6 +106,8 @@ export interface Proposta {
   titulo: string;
   fatos: string;
   parteContraria: string;
+  numeroCnj: string;
+  reconciliacaoProcessual: ReconciliacaoProcessual;
   documentos: DocumentoProposto[];
   documentosFaltantes: string[];
   provasNecessarias: string[];
@@ -109,6 +140,7 @@ export const META_PADRAO: EntradaMeta = {
 
 /** Data ISO estrita (yyyy-mm-dd) — única forma aceita pelo PrazoEntrada. */
 export const EH_DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+export const EH_CNJ = /^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$/;
 
 function str(v: unknown): string {
   return typeof v === "string" ? v : "";
@@ -139,6 +171,49 @@ function prioridadeTriagem(v: unknown): PrioridadeTriagem {
   return ["baixa", "media", "alta", "critica"].includes(str(v))
     ? (str(v) as PrioridadeTriagem)
     : "media";
+}
+
+
+function statusReconciliacao(v: unknown): ReconciliacaoProcessualStatus {
+  const valor = str(v);
+  return [
+    "ja_cadastrado",
+    "provavel_correspondencia",
+    "novo_processo",
+    "informacoes_insuficientes",
+  ].includes(valor)
+    ? (valor as ReconciliacaoProcessualStatus)
+    : "informacoes_insuficientes";
+}
+
+function normalizarReconciliacao(v: unknown): ReconciliacaoProcessual {
+  const r = obj(v);
+  const correspondencias = lista(r.correspondencias).map((item) => {
+    const c = obj(item);
+    return {
+      caseId: strOuNull(c.case_id),
+      numeroInterno: strOuNull(c.numero_interno),
+      titulo: str(c.titulo),
+      status: strOuNull(c.status),
+      fase: strOuNull(c.fase),
+      protegido: c.protegido === true,
+      excluido: typeof c.excluido === "boolean" ? c.excluido : null,
+      score: typeof c.score === "number" ? c.score : null,
+      motivos: listaTexto(c.motivos),
+      podeConverterPreProcessual: c.pode_converter_pre_processual === true,
+    };
+  });
+  return {
+    status: statusReconciliacao(r.status),
+    cnjsDetectados: listaTexto(r.cnjs_detectados),
+    numeroCnjPrincipal: strOuNull(r.numero_cnj_principal),
+    correspondencias,
+    bloquearCriacao: r.bloquear_criacao === true,
+    acaoSugerida: str(r.acao_sugerida),
+    mensagem:
+      str(r.mensagem) ||
+      "Não há informação processual suficiente para reconciliar automaticamente.",
+  };
 }
 
 /** Normaliza confiança para 0-100 (aceita fração 0-1, percentual, ou os
@@ -240,6 +315,9 @@ export function normalizarAnalise(
   const urgencia = obj(r.urgencia);
   const conflito = obj(r.conflito);
   const duplicados = obj(r.duplicados);
+  const reconciliacaoProcessual = normalizarReconciliacao(
+    r.reconciliacao_processual,
+  );
 
   const documentos: DocumentoProposto[] = lista(r.documentos).map((d) => {
     const o = obj(d);
@@ -301,6 +379,9 @@ export function normalizarAnalise(
     titulo: str(r.titulo),
     fatos: str(r.fatos),
     parteContraria: str(r.parte_contraria),
+    numeroCnj:
+      str(r.numero_cnj) || reconciliacaoProcessual.numeroCnjPrincipal || "",
+    reconciliacaoProcessual,
     documentos,
     documentosFaltantes: listaTexto(r.documentos_faltantes),
     provasNecessarias: listaTexto(r.provas_necessarias),
@@ -364,6 +445,7 @@ export function montarPayloadCriacao(p: Proposta): Record<string, unknown> {
     titulo: p.titulo.trim() || undefined,
     fatos: p.fatos.trim() || undefined,
     parte_contraria: p.parteContraria.trim() || undefined,
+    numero_cnj: p.numeroCnj.trim() || undefined,
     documentos_ids: documentosIds,
     assunto: p.assunto.trim() || undefined,
     natureza_demanda: p.naturezaDemanda.trim() || undefined,
@@ -396,7 +478,11 @@ export function montarPayloadCriacao(p: Proposta): Record<string, unknown> {
   // escolhido: o gate de "cliente com caso ativo" é do servidor — sem o
   // reconhecimento explícito, o 409 volta com os achados e a tela os
   // exibe com o checkbox (mesma semântica da conversão da Sala Jurídica).
-  if (p.duplicados.length > 0 || p.duplicateConfirmed) {
+  if (
+    p.duplicados.length > 0 ||
+    p.reconciliacaoProcessual.status === "provavel_correspondencia" ||
+    p.duplicateConfirmed
+  ) {
     payload.duplicate_confirmed = p.duplicateConfirmed;
   }
   return payload;
