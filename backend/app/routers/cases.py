@@ -1090,10 +1090,22 @@ async def encerrar_caso_simples(
             "O nome informado não confere com o cliente vinculado ao caso.",
         )
 
+    from app.services.case_finance_service import (
+        registrar_recebimento_caso,
+        resumo_financeiro_caso,
+    )
+    resumo_atual = await resumo_financeiro_caso(db, case)
+    recebido_atual = Decimal(str(resumo_atual["valor_recebido"]))
+    valor_total = Decimal(str(payload.valor_recebido))
+    if valor_total < recebido_atual:
+        raise HTTPException(
+            422,
+            "O valor total informado é menor que o já recebido. Use o estorno no Financeiro para corrigir.",
+        )
     rateio = None
-    if payload.valor_recebido > 0:
-        from app.services.case_finance_service import registrar_recebimento_caso
-        rateio = await registrar_recebimento_caso(db, case, payload.valor_recebido, cu)
+    diferenca = valor_total - recebido_atual
+    if diferenca > 0:
+        rateio = await registrar_recebimento_caso(db, case, diferenca, cu)
 
     case.status_anterior = case.status.value if hasattr(case.status, "value") else str(case.status)
     case.status = CaseStatus.encerrado
@@ -1119,7 +1131,7 @@ async def encerrar_caso_simples(
         detalhes="Encerramento simplificado pela ficha do caso.",
         dados_depois={
             "status": "encerrado",
-            "valor_recebido": str(payload.valor_recebido),
+            "valor_recebido_total": str(payload.valor_recebido),
             "rateio_regra": rateio["regra"] if rateio else None,
         },
     )

@@ -1080,7 +1080,7 @@ export default function TabResumo({
               />
             </div>
             <div>
-              <label className="label">Valor recebido pelo escritório (R$)</label>
+              <label className="label">Valor total recebido pelo escritório (R$)</label>
               <input
                 type="number"
                 min="0"
@@ -1093,8 +1093,7 @@ export default function TabResumo({
                 placeholder="0,00"
               />
               <p className="mt-1 text-xs text-slate-500">
-                Informe honorários efetivamente recebidos pelo escritório. Não inclua
-                valores do principal pertencentes ao cliente.
+                Informe o total de honorários efetivamente recebidos pelo escritório neste caso. O EJC lançará apenas a diferença ainda não registrada. Não inclua valores do principal pertencentes ao cliente.
               </p>
             </div>
             <button
