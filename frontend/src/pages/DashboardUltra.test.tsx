@@ -109,6 +109,17 @@ const casosOk = {
   page_size: 4,
 };
 
+const integridadeOk = {
+  contagens: {
+    sem_responsavel: 1,
+    judicial_sem_valor_causa: 2,
+    sem_atualizacao_60d: 1,
+  },
+  total_casos_pendentes: 4,
+  itens: [],
+  somente_sinalizacao: true,
+};
+
 const tarefasOk = {
   data: [
     {
@@ -148,6 +159,8 @@ function mockGetOk() {
     if (url === "/cases/") return Promise.resolve({ data: casosOk });
     if (url === "/documents/") return Promise.resolve({ data: { data: [], total: 129 } });
     if (url === "/tasks/") return Promise.resolve({ data: tarefasOk });
+    if (url === "/saneamento/integridade")
+      return Promise.resolve({ data: integridadeOk });
     return Promise.reject(new Error(`GET inesperado: ${url}`));
   });
 }
@@ -200,7 +213,7 @@ describe("DashboardUltra — identidade premium DPT", () => {
     expect(screen.getByLabelText("Clientes ativos: 48")).toBeTruthy();
     expect(screen.getByLabelText("Casos em andamento: 3")).toBeTruthy();
     expect(
-      screen.getByLabelText("Documentos recentes: 129"),
+      screen.getByLabelText("Pendências de integridade: 4"),
     ).toBeTruthy();
   });
 

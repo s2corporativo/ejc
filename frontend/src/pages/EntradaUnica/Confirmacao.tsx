@@ -255,7 +255,7 @@ export function Confirmacao({
                       : "slate"
               }
             >
-              {reconciliacao.status.replaceAll("_", " ")}
+              {reconciliacao.status.replace(/_/g, " ")}
             </Badge>
           </div>
 

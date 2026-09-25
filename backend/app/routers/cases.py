@@ -30,6 +30,8 @@ from app.services.case_integrity_service import (
     sincronizar_processo_principal_do_caso,
 )
 from app.services.case_numeracao import proximo_numero_interno as _proximo_numero_interno
+from app.services.party_identity_service import resolver_entidade_parte
+from app.services.process_provenance_service import registrar_proveniencia
 from app.services.deadline_calculator import calcular_prescricao
 from app.services.case_intel import triagem_caso, aprendizado_encerramento
 from app.services.case_automacao import automacao_caso, gerar_documentos_iniciais_auto
@@ -317,6 +319,21 @@ async def criar(
             tipo=tipo_processo,
         )
         if processo:
+            await registrar_proveniencia(
+                db,
+                process_id=processo["id"],
+                campos={
+                    "numero_cnj": payload.numero_processo,
+                    "tribunal": payload.tribunal,
+                    "comarca": payload.comarca,
+                    "vara": payload.vara,
+                    "valor_causa": payload.valor_causa,
+                    "tipo": tipo_processo,
+                },
+                source_type="usuario",
+                source_ref="cases.create",
+                confirmed_by=cu.id,
+            )
             await criar_audit_log(
                 db, cu.id, cu.role.value, "SYNC", "processes", processo["id"],
                 dados_depois={
@@ -1031,6 +1048,11 @@ class RegistrarRecebimentoCasoReq(BaseModel):
     valor: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
 
 
+class ReconciliarRateiosCasoReq(BaseModel):
+    model_config = {"extra": "forbid"}
+    confirmar: bool
+
+
 class EncerrarCasoSimplesReq(BaseModel):
     model_config = {"extra": "forbid"}
 
@@ -1082,6 +1104,52 @@ async def registrar_recebimento_do_caso(
     await db.commit()
     resumo = await resumo_financeiro_caso(db, case)
     return {"ok": True, "rateio": rateio, "resumo": resumo}
+
+
+@router.post(
+    "/{case_id}/financeiro/reconciliar-rateios",
+    dependencies=[Depends(rate_limit("cases-financeiro-reconciliar-rateios", 10))],
+)
+async def reconciliar_rateios_do_caso(
+    case_id: str,
+    payload: ReconciliarRateiosCasoReq,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if not payload.confirmar:
+        raise HTTPException(
+            422,
+            "Confirmação explícita exigida para reconciliar rateios.",
+        )
+    papel = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
+    if papel not in ("superadmin", "admin", "socio", "advogado"):
+        raise HTTPException(
+            403,
+            "Reconciliação de rateio exige advogado, sócio ou administração.",
+        )
+
+    q = _filtro_visibilidade(
+        select(Case)
+        .where(Case.id == case_id, Case.deleted_at.is_(None))
+        .with_for_update(),
+        cu,
+    )
+    case = (await db.execute(q)).scalar_one_or_none()
+    if not case:
+        raise HTTPException(404, "Caso não encontrado")
+
+    from app.services.case_finance_service import (
+        reconciliar_rateios_pendentes,
+        resumo_financeiro_caso,
+    )
+
+    resultado = await reconciliar_rateios_pendentes(db, case, cu)
+    await db.commit()
+    return {
+        "ok": True,
+        "reconciliacao": resultado,
+        "resumo": await resumo_financeiro_caso(db, case),
+    }
 
 
 def _nome_confirmacao(valor: str | None) -> str:
@@ -1610,24 +1678,27 @@ async def aplicar_extracao(
     partes = payload.partes or {}
     n_partes = 0
 
-    def _materializar(tipo: str, valor) -> None:
+    async def _materializar(tipo: str, valor) -> None:
         nonlocal n_partes
         nome = valor.strip() if isinstance(valor, str) else ""
         if not nome or (tipo, nome.lower()) in existentes:
             return
-        db.add(CaseParte(id=str(uuid4()), case_id=case_id, tipo=tipo,
-                         nome=nome[:255], created_by=cu.id))
+        entidade = await resolver_entidade_parte(db, nome=nome[:255])
+        db.add(CaseParte(
+            id=str(uuid4()), case_id=case_id, tipo=tipo,
+            nome=nome[:255], party_entity_id=entidade.id, created_by=cu.id,
+        ))
         existentes.add((tipo, nome.lower()))
         n_partes += 1
 
-    _materializar("autor", partes.get("autor"))
-    _materializar("reu", partes.get("reu"))
+    await _materializar("autor", partes.get("autor"))
+    await _materializar("reu", partes.get("reu"))
     for t in (partes.get("terceiros") or []):
-        _materializar("terceiro", t)
+        await _materializar("terceiro", t)
     for adv in (partes.get("advogados") or []):
-        _materializar("advogado", adv)
+        await _materializar("advogado", adv)
     for proc in (partes.get("procuradores") or []):
-        _materializar("procurador", proc)
+        await _materializar("procurador", proc)
 
     # 3) Área principal (UNIQUE case_id+area no banco evita duplicar)
     n_areas = 0

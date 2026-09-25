@@ -169,3 +169,75 @@ def test_consumidor_e_jec_seguem_rateio_50_50():
     assert civil["percentual_advogado"] == Decimal("0.00")
     assert civil["valor_advogado"] == Decimal("0.00")
     assert civil["valor_escritorio"] == Decimal("100.00")
+
+
+@pytest.mark.asyncio
+async def test_recebimento_sem_responsavel_fica_pendente_sem_alocacao():
+    from app.services.case_finance_service import registrar_recebimento_caso
+
+    class CaseSemResponsavel(_CaseFake):
+        advogado_responsavel_id = None
+
+        class _Area:
+            value = "trabalhista"
+
+        area = _Area()
+
+    db = _FakeDB()
+    result = await registrar_recebimento_caso(
+        db, CaseSemResponsavel(), Decimal("2500.00"), _UserFake()
+    )
+
+    assert result["rateio_pendente"] is True
+    assert result["allocation_id"] is None
+    assert result["valor_advogado"] is None
+    assert result["valor_escritorio"] is None
+    assert ("add", "CaseReceiptAllocation") not in db.events
+    assert db.events[:4] == [
+        ("add", "Fee"),
+        ("flush", None),
+        ("add", "FeePayment"),
+        ("flush", None),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_civil_sem_responsavel_aloca_integralmente_ao_escritorio():
+    from app.services.case_finance_service import registrar_recebimento_caso
+
+    class CaseCivilSemResponsavel(_CaseFake):
+        advogado_responsavel_id = None
+
+    db = _FakeDB()
+    result = await registrar_recebimento_caso(
+        db, CaseCivilSemResponsavel(), Decimal("100.00"), _UserFake()
+    )
+
+    assert result["rateio_pendente"] is False
+    assert result["valor_advogado"] == Decimal("0.00")
+    assert result["valor_escritorio"] == Decimal("100.00")
+    assert ("add", "CaseReceiptAllocation") in db.events
+
+
+@pytest.mark.asyncio
+async def test_reconciliacao_rateio_50_50_exige_responsavel_definido():
+    from fastapi import HTTPException
+    from app.services.case_finance_service import reconciliar_rateios_pendentes
+
+    class CaseSemResponsavel(_CaseFake):
+        advogado_responsavel_id = None
+
+        class _Area:
+            value = "trabalhista"
+
+        area = _Area()
+
+    with pytest.raises(HTTPException) as exc:
+        await reconciliar_rateios_pendentes(
+            _FakeDB(),
+            CaseSemResponsavel(),
+            _UserFake(),
+        )
+
+    assert exc.value.status_code == 422
+    assert "responsável" in str(exc.value.detail)

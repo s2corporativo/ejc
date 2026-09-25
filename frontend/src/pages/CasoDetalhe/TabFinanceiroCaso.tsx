@@ -3,6 +3,7 @@ import api from "../../lib/api";
 import type { Case, Fee } from "../../types";
 import { toast } from "../../components/Toast";
 import { Empty, Spinner, fmtMoney } from "../../components/UI";
+import { useAuth } from "../../stores/auth";
 
 interface ResumoFinanceiro {
   classificacao_financeira: "normal" | "pro_bono" | "causa_propria";
@@ -13,14 +14,24 @@ interface ResumoFinanceiro {
   pendente_sucumbencia: boolean;
   pendente_exito: boolean;
   regra_rateio: string;
+  advogado_responsavel_id?: string | null;
+  advogado_responsavel_nome?: string | null;
+  rateio_pendente_quantidade?: number;
+  rateio_pendente_valor?: number;
+  rateio_pendente_sem_responsavel?: boolean;
 }
 
 export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
+  const user = useAuth((state) => state.user);
+  const podeReconciliar = new Set(["superadmin", "admin", "socio", "advogado"]).has(
+    user?.role || "",
+  );
   const [resumo, setResumo] = useState<ResumoFinanceiro | null>(null);
   const [fees, setFees] = useState<Fee[]>([]);
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [recebendo, setRecebendo] = useState(false);
+  const [reconciliando, setReconciliando] = useState(false);
   const [valorRecebido, setValorRecebido] = useState("");
   const [form, setForm] = useState({
     classificacao_financeira: caso.classificacao_financeira ?? "normal",
@@ -89,15 +100,40 @@ export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
       );
       setValorRecebido("");
       toast.success(
-        data?.rateio?.regra === "institucional_integral_escritorio"
-          ? "Recebimento lançado: 100% para o escritório."
-          : "Recebimento lançado: 50% responsável / 50% escritório.",
+        data?.rateio?.rateio_pendente
+          ? "Recebimento registrado; rateio pendente até definir o responsável."
+          : data?.rateio?.regra === "institucional_integral_escritorio"
+            ? "Recebimento lançado: 100% para o escritório."
+            : "Recebimento lançado: 50% responsável / 50% escritório.",
       );
       await carregar();
     } catch (e: any) {
       toast.error(e.response?.data?.detail || "Falha ao registrar recebimento");
     } finally {
       setRecebendo(false);
+    }
+  };
+
+
+  const reconciliarRateios = async () => {
+    if (!podeReconciliar || (resumo?.rateio_pendente_quantidade ?? 0) === 0) return;
+    setReconciliando(true);
+    try {
+      const { data } = await api.post(
+        `/cases/${caso.id}/financeiro/reconciliar-rateios`,
+        { confirmar: true },
+      );
+      const total = Number(data?.reconciliacao?.valor_total || 0);
+      toast.success(
+        `${data?.reconciliacao?.reconciliados || 0} rateio(s) reconciliado(s) · ${fmtMoney(total)}.`,
+      );
+      await carregar();
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Falha ao reconciliar os rateios pendentes",
+      );
+    } finally {
+      setReconciliando(false);
     }
   };
 
@@ -178,6 +214,36 @@ export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
         </div>
       </div>
 
+      {(resumo?.rateio_pendente_sem_responsavel ||
+        (resumo?.rateio_pendente_quantidade ?? 0) > 0) && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-semibold">Reconciliação financeira pendente</p>
+          <p className="mt-1">
+            Responsável jurídico: {resumo?.advogado_responsavel_nome || "não definido"}.
+            {(resumo?.rateio_pendente_quantidade ?? 0) > 0
+              ? ` ${resumo?.rateio_pendente_quantidade} recebimento(s), total de ${fmtMoney(resumo?.rateio_pendente_valor)}, ainda aguardam rateio.`
+              : ""}
+          </p>
+          {resumo?.rateio_pendente_sem_responsavel && (
+            <p className="mt-1 font-medium">
+              O recebimento pode ser registrado, mas o rateio 50/50 ficará pendente até a definição do advogado responsável.
+            </p>
+          )}
+          {podeReconciliar &&
+            (resumo?.rateio_pendente_quantidade ?? 0) > 0 &&
+            !resumo?.rateio_pendente_sem_responsavel && (
+              <button
+                type="button"
+                className="btn-secondary mt-3"
+                disabled={reconciliando}
+                onClick={reconciliarRateios}
+              >
+                {reconciliando ? "Reconciliando..." : "Reconciliar rateios pendentes"}
+              </button>
+            )}
+        </div>
+      )}
+
       <div className="card p-5">
         <h3 className="font-semibold">Registrar valor recebido</h3>
         <p className="mt-1 text-xs text-slate-500">
@@ -194,7 +260,11 @@ export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
             value={valorRecebido}
             onChange={(e) => setValorRecebido(e.target.value)}
           />
-          <button className="btn-primary" disabled={recebendo} onClick={registrar}>
+          <button
+            className="btn-primary"
+            disabled={recebendo}
+            onClick={registrar}
+          >
             {recebendo ? "Lançando..." : "Lançar no financeiro"}
           </button>
         </div>

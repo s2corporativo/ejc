@@ -138,6 +138,9 @@ async def montar_eventos_caso(db: AsyncSession, case_id: str) -> list[dict]:
     from app.models.deadline import Deadline
     from app.models.document import Document
     from app.models.fee import Fee
+    from app.models.legal_doc import LegalDoc
+    from app.models.process import Process
+    from app.models.process_integrity import ProcessDataProvenance
 
     def _val(x):
         return x.value if hasattr(x, "value") else x
@@ -147,28 +150,96 @@ async def montar_eventos_caso(db: AsyncSession, case_id: str) -> list[dict]:
         select(CaseMovimento).where(CaseMovimento.case_id == case_id)
         .order_by(CaseMovimento.data_evento.desc()).limit(300)
     )).scalars().all():
-        eventos.append({"data": m.data_evento, "categoria": "movimento",
-                        "tipo": m.tipo, "descricao": (m.descricao or "")[:240]})
+        eventos.append({
+            "data": m.data_evento,
+            "categoria": "movimento",
+            "tipo": m.tipo,
+            "descricao": (m.descricao or "")[:240],
+            "fonte": "interno",
+            "confirmado": True,
+        })
     for p in (await db.execute(
         select(Deadline).where(Deadline.case_id == case_id, Deadline.deleted_at.is_(None))
         .limit(300)
     )).scalars().all():
-        eventos.append({"data": p.data_prazo, "categoria": "prazo", "tipo": _val(p.tipo),
-                        "descricao": f"{p.titulo} [{_val(p.status)}]"})
+        eventos.append({
+            "data": p.data_prazo,
+            "categoria": "prazo",
+            "tipo": _val(p.tipo),
+            "descricao": f"{p.titulo} [{_val(p.status)}]",
+            "fonte": p.origem or "manual",
+            "confirmado": bool(p.confirmado),
+        })
     for d in (await db.execute(
         select(Document).where(Document.case_id == case_id, Document.deleted_at.is_(None))
         .limit(300)
     )).scalars().all():
-        eventos.append({"data": d.created_at, "categoria": "documento",
-                        "tipo": d.tipo or "doc", "descricao": d.titulo})
+        eventos.append({
+            "data": d.created_at,
+            "categoria": "documento",
+            "tipo": d.tipo or "doc",
+            "descricao": d.titulo,
+            "fonte": "ged",
+            "confirmado": True,
+        })
     for f in (await db.execute(
         select(Fee).where(Fee.case_id == case_id, Fee.deleted_at.is_(None))
         .limit(300)
     )).scalars().all():
         dt = f.data_pagamento or f.data_vencimento
         if dt:
-            eventos.append({"data": dt, "categoria": "honorario", "tipo": _val(f.tipo),
-                            "descricao": f"{f.descricao} [{_val(f.status)}]"})
+            eventos.append({
+                "data": dt,
+                "categoria": "honorario",
+                "tipo": _val(f.tipo),
+                "descricao": f"{f.descricao} [{_val(f.status)}]",
+                "fonte": "financeiro",
+                "confirmado": True,
+            })
+
+    processos = (
+        await db.execute(
+            select(Process)
+            .where(Process.case_id == case_id, Process.deleted_at.is_(None))
+            .limit(100)
+        )
+    ).scalars().all()
+    process_ids = [proc.id for proc in processos]
+    fontes_processo: dict[str, str] = {}
+    if process_ids:
+        for prov in (
+            await db.execute(
+                select(ProcessDataProvenance)
+                .where(ProcessDataProvenance.process_id.in_(process_ids))
+                .order_by(ProcessDataProvenance.captured_at.desc())
+            )
+        ).scalars().all():
+            fontes_processo.setdefault(prov.process_id, prov.source_type)
+    for proc in processos:
+        eventos.append({
+            "data": proc.created_at,
+            "categoria": "movimento",
+            "tipo": "processo",
+            "descricao": f"Processo {proc.numero_cnj or 'sem número CNJ'} [{proc.status}]",
+            "fonte": fontes_processo.get(proc.id, "cadastro"),
+            "confirmado": True,
+        })
+
+    for peca in (
+        await db.execute(
+            select(LegalDoc)
+            .where(LegalDoc.case_id == case_id, LegalDoc.deleted_at.is_(None))
+            .limit(300)
+        )
+    ).scalars().all():
+        eventos.append({
+            "data": peca.protocolado_em or peca.revisado_em or peca.created_at,
+            "categoria": "documento",
+            "tipo": f"peca_{_val(peca.status)}",
+            "descricao": peca.titulo,
+            "fonte": "pecas",
+            "confirmado": bool(peca.human_reviewed),
+        })
 
     eventos.sort(key=lambda e: (e["data"].isoformat() if hasattr(e["data"], "isoformat")
                                 else str(e["data"])), reverse=True)

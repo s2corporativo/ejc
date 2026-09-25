@@ -44,6 +44,7 @@ class CaseParte(Base):
     # index=True declara o ix_case_partes_client_id criado na migration 076 (#11)
     client_id = Column(String, ForeignKey("clients.id", ondelete="SET NULL"),
                        nullable=True, index=True)
+    party_entity_id = Column(String(36), ForeignKey("party_entities.id", ondelete="SET NULL"), nullable=True, index=True)
     ativo   = Column(Boolean, default=True)
     observacoes = Column(Text, nullable=True)
     created_at  = Column(DateTime(timezone=True), server_default=func.now())

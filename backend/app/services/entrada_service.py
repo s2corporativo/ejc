@@ -55,6 +55,8 @@ from app.models.user import User
 from app.repositories.process_repository import process_repository
 from app.services.case_integrity_service import sincronizar_processo_principal_do_caso
 from app.services.case_numeracao import proximo_numero_interno
+from app.services.party_identity_service import resolver_entidade_parte
+from app.services.process_provenance_service import registrar_proveniencia
 from app.services.conflito_service import (
     _casos_por_parte_contraria,
     _clientes_por_documentos,
@@ -109,9 +111,9 @@ def _extrair_cnjs_texto(texto: str | None) -> list[str]:
     # aceitamos especificamente início de data DD/MM/AAAA como delimitador.
     # O formato de 20 dígitos continua exigindo fronteira numérica estrita.
     padrao = re.compile(
-        r"(?<!\\d)(?:"
-        r"\\d{7}-\\d{2}\\.\\d{4}\\.\\d\\.\\d{2}\\.\\d{4}(?=$|\\D|\\d{2}/\\d{2}/\\d{4})"
-        r"|\\d{20}(?!\\d)"
+        r"(?<!\d)(?:"
+        r"\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}(?=$|\D|\d{2}/\d{2}/\d{4})"
+        r"|\d{20}(?!\d)"
         r")"
     )
     unicos: list[str] = []
@@ -808,6 +810,21 @@ async def vincular_processo_do_rascunho(
         vara=dados.get("vara"),
         tipo="judicial",
     )
+    if processo:
+        await registrar_proveniencia(
+            db,
+            process_id=processo["id"],
+            campos={
+                "numero_cnj": str(numero_cnj),
+                "tribunal": dados.get("tribunal"),
+                "comarca": dados.get("comarca"),
+                "vara": dados.get("vara"),
+            },
+            source_type="entrada_unica",
+            source_ref=rascunho_id,
+            confidence=str(reconciliacao.get("confianca") or "confirmado"),
+            confirmed_by=user.id,
+        )
     if caso.status not in {CaseStatus.encerrado, CaseStatus.arquivado}:
         caso.status = CaseStatus.protocolado
     if caso.fase == CaseFase.pre_processual:
@@ -1043,6 +1060,20 @@ async def criar_caso_do_rascunho(
         case.case_type = "judicial"
         case.has_judicial_process = True
         if processo_criado:
+            await registrar_proveniencia(
+                db,
+                process_id=processo_criado["id"],
+                campos={
+                    "numero_cnj": numero_cnj,
+                    "tribunal": dados_processuais.get("tribunal"),
+                    "comarca": dados_processuais.get("comarca"),
+                    "vara": dados_processuais.get("vara"),
+                },
+                source_type="entrada_unica",
+                source_ref=rascunho_id,
+                confidence=str(processo_reconciliacao.get("confianca") or "confirmado"),
+                confirmed_by=user.id,
+            )
             await criar_audit_log(
                 db, user.id, _role(user), "CREATE", "processes",
                 processo_criado["id"],
@@ -1071,22 +1102,30 @@ async def criar_caso_do_rascunho(
     # (parte contrária em texto livre) e, quando há cliente, o "autor"
     # vinculado ao client_id (paridade com o cadastro manual de caso).
     if payload.parte_contraria and payload.parte_contraria.strip():
+        nome_reu = payload.parte_contraria.strip()
+        entidade_reu = await resolver_entidade_parte(db, nome=nome_reu)
         db.add(CaseParte(
             id=str(uuid4()),
             case_id=case.id,
             tipo="reu",
-            nome=payload.parte_contraria.strip(),
+            nome=nome_reu,
+            party_entity_id=entidade_reu.id,
             ativo=True,
             created_by=user.id,
             observacoes="Cadastrada automaticamente pela Entrada Única.",
         ))
     if client is not None:
+        nome_autor = client.nome_exibicao or ""
+        entidade_autor = await resolver_entidade_parte(
+            db, nome=nome_autor, client_id=client.id
+        )
         db.add(CaseParte(
             id=str(uuid4()),
             case_id=case.id,
             tipo="autor",
-            nome=client.nome_exibicao or "",
+            nome=nome_autor,
             client_id=client.id,
+            party_entity_id=entidade_autor.id,
             ativo=True,
             created_by=user.id,
             observacoes="Vinculado automaticamente pela Entrada Única.",

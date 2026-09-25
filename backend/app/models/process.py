@@ -14,7 +14,7 @@
 # silencioso. Uma futura migração dos routers para ORM é trabalho separado.
 from __future__ import annotations
 from sqlalchemy import (
-    Column, String, DateTime, func, Text, Numeric, ForeignKey, Boolean,
+    Column, String, DateTime, Date, func, Text, Numeric, ForeignKey, Boolean,
 )
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -41,6 +41,7 @@ class Process(Base):
     vara = Column(String(160), nullable=True)
     classe = Column(String(160), nullable=True)
     fase = Column(String(40), nullable=True)
+    data_ajuizamento = Column(Date, nullable=True)
     tipo = Column(String(30), nullable=False, server_default="judicial")
 
     # Auto-relacionamento: processo principal × acessórios (recurso, cautelar…).
@@ -69,6 +70,12 @@ class Process(Base):
     case = relationship("Case", backref="processes")
     processo_principal = relationship(
         "Process", remote_side=[id], backref="acessorios"
+    )
+    provenance = relationship(
+        "ProcessDataProvenance",
+        back_populates="process",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     def __repr__(self):

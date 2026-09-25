@@ -23,6 +23,7 @@ import {
   FilePlus2,
   Plus,
   Scale,
+  ShieldCheck,
   Sparkles,
   Upload,
   Users,
@@ -87,7 +88,20 @@ type Kpis = {
   clientes_ativos?: number;
 };
 
+type IntegridadeResumo = {
+  total_casos_pendentes?: number;
+  contagens?: Record<string, number | null>;
+};
+
 type AbaAgenda = "hoje" | "amanha" | "semana";
+
+const PAPEIS_INTEGRIDADE = new Set([
+  "superadmin",
+  "admin",
+  "socio",
+  "advogado",
+  "advogado_auxiliar",
+]);
 
 const ROTULO_TIPO: Record<string, string> = {
   prazo: "Prazo",
@@ -205,9 +219,11 @@ function scoreTarefaHoje(tarefa: Tarefa, hoje: string): number {
 export default function DashboardUltra() {
   const user = useAuth((state) => state.user);
   const navigate = useNavigate();
+  const canUseIntegridade = PAPEIS_INTEGRIDADE.has(user?.role || "");
 
   const [carregado, setCarregado] = useState(false);
   const [kpis, setKpis] = useState<Kpis | null>(null);
+  const [integridade, setIntegridade] = useState<IntegridadeResumo | null>(null);
   const [atividades, setAtividades] = useState<Atividade[] | null>(null);
   const [casos, setCasos] = useState<CasoResumo[] | null>(null);
   const [documentosRecentes, setDocumentosRecentes] = useState<number | null>(
@@ -223,15 +239,19 @@ export default function DashboardUltra() {
       new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
       "yyyy-MM-dd",
     );
-    const [rKpis, rAtiv, rCasos, rDocs, rTarefas] = await Promise.allSettled([
-      api.get("/dashboard/"),
-      api.get("/atividades", { params: { apenas_pendentes: true } }),
-      api.get("/cases/", { params: { page: 1, page_size: 20 } }),
-      api.get("/documents/", {
-        params: { page: 1, page_size: 1, data_inicio: inicioDocs },
-      }),
-      api.get("/tasks/", { params: { minhas: true } }),
-    ]);
+    const [rKpis, rAtiv, rCasos, rDocs, rTarefas, rIntegridade] =
+      await Promise.allSettled([
+        api.get("/dashboard/"),
+        api.get("/atividades", { params: { apenas_pendentes: true } }),
+        api.get("/cases/", { params: { page: 1, page_size: 20 } }),
+        api.get("/documents/", {
+          params: { page: 1, page_size: 1, data_inicio: inicioDocs },
+        }),
+        api.get("/tasks/", { params: { minhas: true } }),
+        canUseIntegridade
+          ? api.get("/saneamento/integridade")
+          : Promise.resolve({ data: null }),
+      ]);
     setKpis(rKpis.status === "fulfilled" ? (rKpis.value.data as Kpis) : null);
     setAtividades(
       rAtiv.status === "fulfilled" ? asList<Atividade>(rAtiv.value.data) : null,
@@ -251,8 +271,13 @@ export default function DashboardUltra() {
         ? asList<Tarefa>(rTarefas.value.data)
         : null,
     );
+    setIntegridade(
+      rIntegridade.status === "fulfilled" && rIntegridade.value.data
+        ? (rIntegridade.value.data as IntegridadeResumo)
+        : null,
+    );
     setCarregado(true);
-  }, []);
+  }, [canUseIntegridade]);
 
   useEffect(() => {
     void carregar();
@@ -295,6 +320,27 @@ export default function DashboardUltra() {
       (a) => a.tipo === "prazo" && a.dias_restantes === 0,
     ).length;
   }, [atividades]);
+
+  const integridadeTotal = useMemo(() => {
+    if (!integridade) return null;
+    const chaves = [
+      "sem_responsavel",
+      "pre_processual_com_cnj",
+      "protocolado_sem_processo",
+      "processo_sem_principal",
+      "judicial_sem_valor_causa",
+      "sem_atualizacao_60d",
+      "recebimentos_sem_rateio",
+      "recebimentos_sem_caso",
+      "divergencias_datajud",
+      "duplicatas_cnj",
+      "numeros_invalidos",
+    ];
+    return chaves.reduce((total, chave) => {
+      const valor = integridade.contagens?.[chave];
+      return total + (typeof valor === "number" ? valor : 0);
+    }, 0);
+  }, [integridade]);
 
   const agendaFiltrada = useMemo(() => {
     if (!atividades) return null;
@@ -500,18 +546,33 @@ export default function DashboardUltra() {
           <small>Casos em andamento</small>
           <ChevronRight className="ejc-dash__stat-chev" aria-hidden="true" />
         </Link>
-        <Link
-          to="/documentos"
-          className="ejc-dash__stat"
-          aria-label={`Documentos recentes: ${valorOuTraco(documentosRecentes)}`}
-        >
-          <span className="ejc-dash__stat-icon" aria-hidden="true">
-            <FileText />
-          </span>
-          <strong>{valorOuTraco(documentosRecentes)}</strong>
-          <small>Documentos recentes</small>
-          <ChevronRight className="ejc-dash__stat-chev" aria-hidden="true" />
-        </Link>
+        {canUseIntegridade ? (
+          <Link
+            to="/radar?modo=integridade"
+            className="ejc-dash__stat"
+            aria-label={`Pendências de integridade: ${valorOuTraco(integridadeTotal)}`}
+          >
+            <span className="ejc-dash__stat-icon" aria-hidden="true">
+              <ShieldCheck />
+            </span>
+            <strong>{valorOuTraco(integridadeTotal)}</strong>
+            <small>Integridade da carteira</small>
+            <ChevronRight className="ejc-dash__stat-chev" aria-hidden="true" />
+          </Link>
+        ) : (
+          <Link
+            to="/documentos"
+            className="ejc-dash__stat"
+            aria-label={`Documentos recentes: ${valorOuTraco(documentosRecentes)}`}
+          >
+            <span className="ejc-dash__stat-icon" aria-hidden="true">
+              <FileText />
+            </span>
+            <strong>{valorOuTraco(documentosRecentes)}</strong>
+            <small>Documentos recentes</small>
+            <ChevronRight className="ejc-dash__stat-chev" aria-hidden="true" />
+          </Link>
+        )}
       </section>
 
       <div className="ejc-dash__panels">

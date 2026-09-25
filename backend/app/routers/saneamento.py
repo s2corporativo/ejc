@@ -21,7 +21,7 @@
 # app/core/ownership.py, usada por rentabilidade.py/case_health.py).
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, exists, func, or_, select, update
@@ -32,7 +32,7 @@ from app.core.database import get_db
 from app.core.ownership import is_gestao, pode_ver_todos
 from app.core.security import require_roles
 from app.models.audit_log import criar_audit_log
-from app.models.case import Case, CaseFase, CaseStatus
+from app.models.case import Case, CaseFase, CaseMovimento, CaseStatus
 from app.models.process import Process
 from app.models.fee import CaseReceiptAllocation, Fee, FeePayment
 from app.models.saneamento import (
@@ -42,7 +42,8 @@ from app.models.saneamento import (
     PlanoDedup,
 )
 from app.models.user import User
-from app.schemas.saneamento import AplicarDedupIn, DecidirIndicativoIn, VarreduraIn
+from app.schemas.saneamento import AplicarDedupIn, AplicarDivergenciaIn, DecidirIndicativoIn, VarreduraIn
+from app.services.saneamento.aplicacao import aplicar_divergencia
 from app.services.saneamento.fusao import fundir_casos
 from app.services.saneamento.produtor import executar_varredura_datajud, executar_varredura_dedup
 from app.services.saneamento.reconciliacao import TipoDivergencia
@@ -177,6 +178,11 @@ async def painel_integridade_processual(
         Process.deleted_at.is_(None),
         Process.is_principal.is_(True),
     )
+    limite_atualizacao = datetime.now(timezone.utc) - timedelta(days=60)
+    tem_movimento_recente = exists().where(
+        CaseMovimento.case_id == Case.id,
+        CaseMovimento.data_evento >= limite_atualizacao,
+    )
 
     filtros = {
         "sem_responsavel": and_(
@@ -196,6 +202,16 @@ async def painel_integridade_processual(
             tem_processo,
             ~tem_principal,
         ),
+        "judicial_sem_valor_causa": and_(
+            Case.status.notin_([CaseStatus.encerrado, CaseStatus.arquivado]),
+            Case.has_judicial_process.is_(True),
+            Case.valor_causa.is_(None),
+        ),
+        "sem_atualizacao_60d": and_(
+            Case.status.notin_([CaseStatus.encerrado, CaseStatus.arquivado]),
+            Case.created_at < limite_atualizacao,
+            ~tem_movimento_recente,
+        ),
     }
 
     contagens: dict[str, int | None] = {}
@@ -205,6 +221,8 @@ async def painel_integridade_processual(
         "pre_processual_com_cnj": "Caso ainda pré-processual apesar de já possuir número processual.",
         "protocolado_sem_processo": "Caso protocolado sem entidade Processo vinculada.",
         "processo_sem_principal": "Caso possui Processo ativo, mas nenhum está marcado como principal.",
+        "judicial_sem_valor_causa": "Caso judicial ativo sem valor da causa cadastrado.",
+        "sem_atualizacao_60d": "Caso ativo sem movimentação registrada nos últimos 60 dias.",
     }
     for tipo, filtro in filtros.items():
         count_stmt = _escopo_cases_integridade(
@@ -223,6 +241,24 @@ async def painel_integridade_processual(
                 "titulo": caso.titulo,
                 "mensagem": mensagens[tipo],
             })
+
+    sinais_carteira = {
+        "aguardando_despacho": Case.proxima_acao.ilike("%despacho%"),
+        "aguardando_julgamento": or_(
+            Case.proxima_acao.ilike("%julgamento%"),
+            Case.proxima_acao.ilike("%sentença%"),
+            Case.proxima_acao.ilike("%sentenca%"),
+        ),
+    }
+    for tipo, filtro in sinais_carteira.items():
+        stmt = _escopo_cases_integridade(
+            select(func.count()).select_from(Case).where(
+                Case.status.notin_([CaseStatus.encerrado, CaseStatus.arquivado]),
+                filtro,
+            ),
+            cu,
+        )
+        contagens[tipo] = int((await db.execute(stmt)).scalar_one())
 
     q_div = _filtro_escopo_caso(
         select(func.count()).select_from(Divergencia).where(Divergencia.tratada.is_(False)),
@@ -286,6 +322,43 @@ async def painel_integridade_processual(
             "mensagem": "Honorários recebidos vinculados ao caso ainda sem rateio econômico.",
         })
     contagens["duplicatas_cnj"] = int((await db.execute(q_dup)).scalar_one())
+
+    # Honorário recebido sem caso não pode ser rateado por inferência. Como não
+    # existe case_id para aplicar ownership, essa fila fica restrita à gestão.
+    contagens["recebimentos_sem_caso"] = None
+    if is_gestao(cu):
+        q_sem_caso = select(func.count()).select_from(Fee).where(
+            Fee.deleted_at.is_(None),
+            Fee.case_id.is_(None),
+            Fee.descricao.ilike("Honorários recebidos%"),
+        )
+        contagens["recebimentos_sem_caso"] = int(
+            (await db.execute(q_sem_caso)).scalar_one()
+        )
+        fees_sem_caso = (
+            await db.execute(
+                select(Fee)
+                .where(
+                    Fee.deleted_at.is_(None),
+                    Fee.case_id.is_(None),
+                    Fee.descricao.ilike("Honorários recebidos%"),
+                )
+                .order_by(Fee.created_at.desc())
+                .limit(10)
+            )
+        ).scalars().all()
+        for fee in fees_sem_caso:
+            itens.append({
+                "tipo": "recebimentos_sem_caso",
+                "case_id": None,
+                "numero_interno": None,
+                "titulo": fee.descricao,
+                "mensagem": (
+                    "Honorários recebidos sem caso vinculado. Vincule o caso e "
+                    "defina o advogado responsável antes de qualquer rateio."
+                ),
+            })
+
     contagens["numeros_invalidos"] = None
     if is_gestao(cu):
         contagens["numeros_invalidos"] = int(
@@ -307,10 +380,13 @@ async def painel_integridade_processual(
                 "pre_processual_com_cnj",
                 "protocolado_sem_processo",
                 "processo_sem_principal",
+                "judicial_sem_valor_causa",
+                "sem_atualizacao_60d",
                 "recebimentos_sem_rateio",
+                "recebimentos_sem_caso",
             )
         ),
-        "itens": itens[:20],
+        "itens": itens[:30],
         "somente_sinalizacao": True,
     }
 
@@ -609,6 +685,76 @@ async def listar_divergencias(
         }
         for r in rows
     ]
+
+
+@router.post("/divergencias/{divergencia_id}/aplicar")
+async def aplicar_divergencia_datajud(
+    divergencia_id: int,
+    body: AplicarDivergenciaIn,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_DECISAO),
+):
+    """Aplica metadado oficial divergente somente após decisão humana."""
+    if not body.confirmar:
+        raise HTTPException(
+            status_code=422,
+            detail="Confirmação explícita exigida (confirmar=true).",
+        )
+
+    divergencia = (
+        await db.execute(
+            select(Divergencia)
+            .where(Divergencia.id == divergencia_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if divergencia is None:
+        raise HTTPException(status_code=404, detail="Divergência não encontrada.")
+    if divergencia.tratada:
+        raise HTTPException(status_code=409, detail="Divergência já tratada.")
+
+    casos = await _resolver_casos_do_numero(db, divergencia.numero_cnj)
+    if not _pode_agir_no_numero(cu, casos):
+        raise HTTPException(
+            status_code=403,
+            detail="Sem acesso aos casos deste número CNJ.",
+        )
+
+    resultado = await aplicar_divergencia(
+        db,
+        divergencia=divergencia,
+        user_id=cu.id,
+    )
+    await criar_audit_log(
+        db,
+        cu.id,
+        cu.role.value,
+        "APLICAR_DIVERGENCIA",
+        "saneamento.divergencia",
+        str(divergencia_id),
+        dados_antes={
+            chave: str(valor) if valor is not None else None
+            for chave, valor in resultado["antes"].items()
+        },
+        dados_depois={
+            "numero_cnj": divergencia.numero_cnj,
+            "process_id": resultado["process_id"],
+            "campos": {
+                chave: str(valor)
+                for chave, valor in resultado["campos"].items()
+            },
+            "fonte": "datajud",
+        },
+    )
+    await db.commit()
+    return {
+        "id": divergencia_id,
+        "tratada": True,
+        "process_id": resultado["process_id"],
+        "campos_aplicados": resultado["campos"],
+        "fonte": "datajud",
+        "revisao_humana": True,
+    }
 
 
 @router.get("/tpu/cobertura")

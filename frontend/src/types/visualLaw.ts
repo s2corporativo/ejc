@@ -17,6 +17,8 @@ export interface TimelineEvento {
   categoria: CategoriaEvento;
   tipo: string;
   descricao: string;
+  fonte?: string | null;
+  confirmado?: boolean | null;
 }
 
 export type OrigemPasso = "prazo" | "estimativa";
