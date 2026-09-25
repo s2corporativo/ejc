@@ -29,6 +29,23 @@ export interface DuplicadoCliente {
   rotulo: string;
 }
 
+export type StatusReconciliacaoProcessual =
+  | "ja_cadastrado"
+  | "provavel_correspondencia"
+  | "novo_processo"
+  | "informacoes_insuficientes";
+
+export interface ReconciliacaoProcessual {
+  numeroCnj: string | null;
+  status: StatusReconciliacaoProcessual;
+  caseId: string | null;
+  numeroInterno: string | null;
+  titulo: string | null;
+  confianca: number | null;
+  protegido: boolean;
+  mensagem: string;
+}
+
 export interface InteligenciaJuridicaProposta {
   versaoContrato: string;
   status: "rascunho" | "degradado";
@@ -77,6 +94,9 @@ export interface Proposta {
   titulo: string;
   fatos: string;
   parteContraria: string;
+  numeroProcesso: string;
+  reconciliarCaseId: string | null;
+  reconciliacoes: ReconciliacaoProcessual[];
   documentos: DocumentoProposto[];
   documentosFaltantes: string[];
   provasNecessarias: string[];
@@ -273,6 +293,38 @@ export function normalizarAnalise(
     };
   }
 
+  const reconciliacoes: ReconciliacaoProcessual[] = lista(
+    r.reconciliacao_processual,
+  ).map((item) => {
+    const o = obj(item);
+    const statusRaw = str(o.status);
+    const status: StatusReconciliacaoProcessual = [
+      "ja_cadastrado",
+      "provavel_correspondencia",
+      "novo_processo",
+      "informacoes_insuficientes",
+    ].includes(statusRaw)
+      ? (statusRaw as StatusReconciliacaoProcessual)
+      : "informacoes_insuficientes";
+    return {
+      numeroCnj: strOuNull(o.numero_cnj),
+      status,
+      caseId: strOuNull(o.case_id),
+      numeroInterno: strOuNull(o.numero_interno),
+      titulo: strOuNull(o.titulo),
+      confianca: confiancaPct(o.confianca),
+      protegido: o.protegido === true,
+      mensagem: str(o.mensagem),
+    };
+  });
+  const cnjsValidos = Array.from(
+    new Set(
+      reconciliacoes
+        .filter((item) => item.numeroCnj && item.status !== "informacoes_insuficientes")
+        .map((item) => item.numeroCnj as string),
+    ),
+  );
+
   return {
     rascunhoId,
     clienteId: strOuNull(cliente.client_id),
@@ -301,6 +353,9 @@ export function normalizarAnalise(
     titulo: str(r.titulo),
     fatos: str(r.fatos),
     parteContraria: str(r.parte_contraria),
+    numeroProcesso: cnjsValidos.length === 1 ? cnjsValidos[0] : "",
+    reconciliarCaseId: null,
+    reconciliacoes,
     documentos,
     documentosFaltantes: listaTexto(r.documentos_faltantes),
     provasNecessarias: listaTexto(r.provas_necessarias),
@@ -364,6 +419,8 @@ export function montarPayloadCriacao(p: Proposta): Record<string, unknown> {
     titulo: p.titulo.trim() || undefined,
     fatos: p.fatos.trim() || undefined,
     parte_contraria: p.parteContraria.trim() || undefined,
+    numero_processo: p.numeroProcesso.trim() || undefined,
+    reconciliar_case_id: p.reconciliarCaseId || undefined,
     documentos_ids: documentosIds,
     assunto: p.assunto.trim() || undefined,
     natureza_demanda: p.naturezaDemanda.trim() || undefined,
