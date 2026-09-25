@@ -37,7 +37,10 @@ ALLOWED_IMPORTERS: dict[str, set[str]] = {
         "services/case_context.py",
         "services/client_anonimizacao.py",
     },
-    "ramos_router": {"main.py"},
+    "ramos_router": {
+        "main.py",
+        "routers/peca_geracao.py",
+    },
     "environmental_router": {"main.py"},
     "tributario_router": {
         "main.py",
