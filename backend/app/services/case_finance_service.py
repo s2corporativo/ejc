@@ -23,15 +23,14 @@ def calcular_rateio_recebimento(area: str, valor, vara: str | None = None) -> di
     """Destinação de honorários efetivamente recebidos.
 
     Regra geral de produção: 50% responsável / 50% escritório.
-    Carteira institucional cível/consumidor/JEC: 100% escritório.
+    Exceção definida pelo escritório: área civil = 100% escritório.
     """
     bruto = _money(valor)
     area_norm = str(area or "").strip().casefold()
-    vara_norm = str(vara or "").strip().casefold()
-    integral_escritorio = (
-        area_norm in {"civil", "consumidor"}
-        or "juizado especial" in vara_norm
-    )
+    # A regra é por área jurídica, não por rito/órgão julgador.
+    # JEC e Consumidor só serão 100% escritório quando o caso estiver
+    # efetivamente classificado na área canônica civil.
+    integral_escritorio = area_norm == "civil"
     pct_adv = Decimal("0.00") if integral_escritorio else Decimal("50.00")
     valor_adv = _money(bruto * pct_adv / Decimal("100"))
     return {

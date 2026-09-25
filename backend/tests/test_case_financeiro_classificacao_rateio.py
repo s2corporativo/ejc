@@ -56,13 +56,13 @@ def test_recebimento_deve_ser_positivo():
         RegistrarRecebimentoCasoReq(valor="0")
 
 
-def test_consumidor_e_jec_ficam_integralmente_com_escritorio():
+def test_consumidor_e_jec_seguem_regra_geral_50_50():
     consumidor = calcular_rateio_recebimento("consumidor", Decimal("800.00"))
     jec = calcular_rateio_recebimento("trabalhista", Decimal("800.00"), "Juizado Especial Cível de Betim")
-    assert consumidor["valor_advogado"] == Decimal("0.00")
-    assert consumidor["valor_escritorio"] == Decimal("800.00")
-    assert jec["valor_advogado"] == Decimal("0.00")
-    assert jec["valor_escritorio"] == Decimal("800.00")
+    assert consumidor["valor_advogado"] == Decimal("400.00")
+    assert consumidor["valor_escritorio"] == Decimal("400.00")
+    assert jec["valor_advogado"] == Decimal("400.00")
+    assert jec["valor_escritorio"] == Decimal("400.00")
 
 
 class _RoleFake:
@@ -151,3 +151,21 @@ async def test_rateio_nao_lanca_valor_bruto_como_retirada_do_advogado():
     assert db.withdrawal_params["gross"] == Decimal("50.00")
     assert db.withdrawal_params["net"] == Decimal("50.00")
     assert db.withdrawal_params["share"] == Decimal("50.00")
+
+
+def test_consumidor_e_jec_seguem_rateio_50_50():
+    from app.services.case_finance_service import calcular_rateio_recebimento
+
+    consumidor = calcular_rateio_recebimento(
+        "consumidor", Decimal("100.00"), "Juizado Especial Cível de Betim"
+    )
+    assert consumidor["percentual_advogado"] == Decimal("50.00")
+    assert consumidor["valor_advogado"] == Decimal("50.00")
+    assert consumidor["valor_escritorio"] == Decimal("50.00")
+
+    civil = calcular_rateio_recebimento(
+        "civil", Decimal("100.00"), "Juizado Especial Cível de Betim"
+    )
+    assert civil["percentual_advogado"] == Decimal("0.00")
+    assert civil["valor_advogado"] == Decimal("0.00")
+    assert civil["valor_escritorio"] == Decimal("100.00")
