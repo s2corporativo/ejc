@@ -100,17 +100,22 @@ def test_reconciliacao_schema_exige_cnj_valido():
             numero_processo="1018284-99.2026.8.13.0027",
         )
 
+    # Reconciliar um caso existente não deve obrigar o operador a preencher
+    # campos de um NOVO caso que não serão gravados.
     payload = CriarCasoEntradaRequest(
-        cliente={"novo_nome": "Fulano de Tal"},
-        area="civil",
-        titulo="Caso X",
-        advogado_responsavel_id="u1",
         confirmo_dados_revisados=True,
         numero_processo="1018284-13.2026.8.13.0027",
         reconciliar_case_id="case-1",
     )
     assert payload.numero_processo == "1018284-13.2026.8.13.0027"
     assert payload.reconciliar_case_id == "case-1"
+    assert payload.cliente is None
+    assert payload.area is None
+    assert payload.titulo is None
+
+    # O caminho de criação continua exigindo os campos históricos.
+    with pytest.raises(ValidationError):
+        CriarCasoEntradaRequest(confirmo_dados_revisados=True)
 
 
 def test_extrai_lista_processual_mesmo_com_cnj_colado_na_data():
