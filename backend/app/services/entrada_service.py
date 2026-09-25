@@ -621,15 +621,16 @@ async def criar_caso_do_rascunho(
 
     status_reconciliacao = str(reconciliacao_snapshot.get("status") or "")
     cnj_snapshot = reconciliacao_snapshot.get("numero_cnj_principal")
-    if status_reconciliacao == "ja_cadastrado" and (
-        not payload.numero_cnj or not cnj_snapshot or payload.numero_cnj == cnj_snapshot
-    ):
+    # O CNJ detectado não pode ser apagado para contornar um achado da análise.
+    # Se houver CNJ revisado no payload, a reconciliação é refeita mais abaixo
+    # com os dados atuais da tela.
+    if not payload.numero_cnj and status_reconciliacao == "ja_cadastrado":
         raise HTTPException(
             409,
             {
                 "mensagem": (
-                    "A Entrada Única encontrou este processo no EJC. "
-                    "Revise o caso existente antes de prosseguir."
+                    "A análise encontrou um CNJ já cadastrado. "
+                    "Mantenha o número e abra/restaure o caso existente."
                 ),
                 "processos_correspondentes": reconciliacao_snapshot.get(
                     "correspondencias", []
@@ -638,21 +639,16 @@ async def criar_caso_do_rascunho(
             },
         )
     if (
-        status_reconciliacao == "provavel_correspondencia"
-        and not payload.duplicate_confirmed
-        and (
-            not cnj_snapshot
-            or not payload.numero_cnj
-            or payload.numero_cnj == cnj_snapshot
-        )
+        not payload.numero_cnj
+        and status_reconciliacao == "provavel_correspondencia"
+        and not payload.process_match_confirmed
     ):
         raise HTTPException(
             409,
             {
                 "mensagem": (
-                    "Há forte correspondência com caso existente, inclusive "
-                    "possível pré-processual ajuizado. Revise, vincule ao caso "
-                    "existente ou confirme que se trata de processo diferente."
+                    "A análise encontrou provável correspondência processual. "
+                    "Revise o vínculo antes de remover o CNJ ou criar outro caso."
                 ),
                 "processos_correspondentes": reconciliacao_snapshot.get(
                     "correspondencias", []
@@ -681,10 +677,10 @@ async def criar_caso_do_rascunho(
     else:
         nome_cliente = payload.cliente.novo_nome
 
-    # Se o CNJ foi digitado/trocado na tela depois da análise, a fotografia do
-    # rascunho ficou obsoleta. Reexecuta a reconciliação determinística com os
-    # dados revisados antes de permitir a criação.
-    if payload.numero_cnj and payload.numero_cnj != cnj_snapshot:
+    # Revalidação autoritativa no clique de criação: usa os dados REVISTOS da
+    # tela, não apenas a fotografia da análise. Isso evita que edição de cliente,
+    # parte contrária, assunto ou CNJ torne a reconciliação anterior obsoleta.
+    if payload.numero_cnj:
         from app.services.process_reconciliation import reconciliar_entrada
 
         reconciliacao_atual = await reconciliar_entrada(
@@ -712,14 +708,15 @@ async def criar_caso_do_rascunho(
             )
         if (
             reconciliacao_atual.get("status") == "provavel_correspondencia"
-            and not payload.duplicate_confirmed
+            and not payload.process_match_confirmed
         ):
             raise HTTPException(
                 409,
                 {
                     "mensagem": (
-                        "O CNJ revisado tem forte correspondência com caso "
-                        "existente. Revise o vínculo antes de criar outro caso."
+                        "O processo tem forte correspondência com caso existente. "
+                        "Revise o vínculo ou confirme explicitamente que se trata "
+                        "de processo diferente."
                     ),
                     "processos_correspondentes": reconciliacao_atual.get(
                         "correspondencias", []
