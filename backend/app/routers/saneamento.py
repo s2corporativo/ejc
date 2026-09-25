@@ -241,6 +241,27 @@ async def painel_integridade_processual(
     # vinculados a caso entram nesta checagem. Pagamentos legados genéricos não
     # são tratados como erro, evitando falso positivo em dados anteriores ao
     # ledger de rateio por caso.
+    filtros_recebimento = (
+        Fee.deleted_at.is_(None),
+        Fee.case_id.is_not(None),
+        Fee.descricao.ilike("Honorários recebidos%"),
+        CaseReceiptAllocation.id.is_(None),
+    )
+    q_recebimentos_count = (
+        select(func.count())
+        .select_from(FeePayment)
+        .join(Fee, Fee.id == FeePayment.fee_id)
+        .join(Case, Case.id == Fee.case_id)
+        .outerjoin(
+            CaseReceiptAllocation,
+            CaseReceiptAllocation.fee_payment_id == FeePayment.id,
+        )
+        .where(*filtros_recebimento)
+    )
+    q_recebimentos_count = _escopo_cases_integridade(q_recebimentos_count, cu)
+    contagens["recebimentos_sem_rateio"] = int(
+        (await db.execute(q_recebimentos_count)).scalar_one()
+    )
     q_recebimentos = (
         select(FeePayment, Fee, Case)
         .join(Fee, Fee.id == FeePayment.fee_id)
@@ -249,16 +270,11 @@ async def painel_integridade_processual(
             CaseReceiptAllocation,
             CaseReceiptAllocation.fee_payment_id == FeePayment.id,
         )
-        .where(
-            Fee.deleted_at.is_(None),
-            Fee.case_id.is_not(None),
-            Fee.descricao.ilike("Honorários recebidos%"),
-            CaseReceiptAllocation.id.is_(None),
-        )
+        .where(*filtros_recebimento)
+        .order_by(FeePayment.created_at.desc())
     )
     q_recebimentos = _escopo_cases_integridade(q_recebimentos, cu)
     recebimentos = (await db.execute(q_recebimentos.limit(20))).all()
-    contagens["recebimentos_sem_rateio"] = len(recebimentos)
     for _pagamento, _fee, caso in recebimentos:
         itens.append({
             "tipo": "recebimentos_sem_rateio",
