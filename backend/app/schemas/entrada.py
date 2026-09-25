@@ -7,6 +7,16 @@ from datetime import date
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+def _validar_cnj_entrada(v: str | None) -> str | None:
+    if v is None:
+        return None
+    from app.services.validators_service import validar_cnj
+
+    if not validar_cnj(v):
+        raise ValueError("número CNJ inválido: dígito verificador não confere")
+    return v
+
+
 class ClienteEntrada(BaseModel):
     """Exatamente UM: cliente existente (client_id) OU cliente novo (novo_nome)."""
 
@@ -46,6 +56,11 @@ class CriarCasoEntradaRequest(BaseModel):
     )
     documentos_ids: list[str] = Field(default_factory=list, max_length=40)
     prazo: PrazoEntrada | None = None
+
+    @field_validator("numero_cnj")
+    @classmethod
+    def _numero_cnj_valido(cls, v: str | None) -> str | None:
+        return _validar_cnj_entrada(v)
 
     # Triagem jurídica revisada. Estes campos são aditivos e não exigem nova
     # tabela: prioridade alimenta Case.prioridade; os demais permanecem no
@@ -102,6 +117,11 @@ class VincularCasoExistenteEntradaRequest(BaseModel):
         pattern=r"^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$",
     )
     confirmo_correspondencia: bool
+
+    @field_validator("numero_cnj")
+    @classmethod
+    def _numero_cnj_valido(cls, v: str) -> str:
+        return _validar_cnj_entrada(v) or v
 
     @field_validator("confirmo_correspondencia")
     @classmethod
