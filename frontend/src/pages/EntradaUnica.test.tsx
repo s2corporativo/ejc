@@ -322,6 +322,7 @@ describe("EntradaUnica — confirmação (tela B)", () => {
 
 // ── Regressão do contrato (code review do Bloco 3) — funções puras ───────────
 import {
+  EH_CNJ,
   EH_DATA_ISO,
   confiancaPct,
   montarPayloadCriacao,
@@ -452,5 +453,94 @@ describe("contrato criar-caso (regressões do review)", () => {
     expect(p?.prazo?.data).toBe("");
     expect(p?.prazo?.descricao).toContain("15/09/2026");
     expect(EH_DATA_ISO.test("2026-01-02")).toBe(true);
+  });
+});
+
+
+describe("reconciliação processual na Entrada Única", () => {
+  it("normaliza CNJ e correspondência provável sem auto-confirmar duplicidade", () => {
+    const p = normalizarAnalise(
+      {
+        rascunho_id: "proc-1",
+        numero_cnj: "0709938-44.2026.8.07.0018",
+        reconciliacao_processual: {
+          status: "provavel_correspondencia",
+          numero_cnj_principal: "0709938-44.2026.8.07.0018",
+          cnjs_detectados: ["0709938-44.2026.8.07.0018"],
+          bloquear_criacao: false,
+          acao_sugerida: "revisar_e_vincular_pre_processual",
+          mensagem: "Há caso existente com forte correspondência.",
+          correspondencias: [
+            {
+              case_id: "case-64",
+              numero_interno: "DPT-2026-0064",
+              titulo: "Betim Baterias x DER/DF",
+              score: 95,
+              motivos: ["mesmo cliente", "caso pré-processual pode ter sido ajuizado"],
+              pode_converter_pre_processual: true,
+              protegido: false,
+            },
+          ],
+        },
+      },
+      "eu-1",
+    );
+    expect(p?.numeroCnj).toBe("0709938-44.2026.8.07.0018");
+    expect(p?.reconciliacaoProcessual.status).toBe("provavel_correspondencia");
+    expect(
+      p?.reconciliacaoProcessual.correspondencias[0]
+        ?.podeConverterPreProcessual,
+    ).toBe(true);
+    expect(p?.duplicateConfirmed).toBe(false);
+    expect(EH_CNJ.test(p?.numeroCnj ?? "")).toBe(true);
+
+    const payload = montarPayloadCriacao(p as Proposta);
+    expect(payload.numero_cnj).toBe("0709938-44.2026.8.07.0018");
+    expect(payload.duplicate_confirmed).toBe(false);
+  });
+
+  it("CNJ já cadastrado é exibido como bloqueio processual", async () => {
+    postMock.mockResolvedValueOnce({
+      data: {
+        rascunho_id: "proc-2",
+        numero_cnj: "1018284-13.2026.8.13.0027",
+        reconciliacao_processual: {
+          status: "ja_cadastrado",
+          numero_cnj_principal: "1018284-13.2026.8.13.0027",
+          cnjs_detectados: ["1018284-13.2026.8.13.0027"],
+          bloquear_criacao: true,
+          acao_sugerida: "abrir_caso_existente",
+          mensagem: "O CNJ informado já está vinculado a um registro do EJC.",
+          correspondencias: [
+            {
+              case_id: "case-1",
+              numero_interno: "DPT-2026-0001",
+              titulo: "Caso existente",
+              score: 100,
+              motivos: ["CNJ idêntico já cadastrado"],
+              pode_converter_pre_processual: false,
+              protegido: false,
+            },
+          ],
+        },
+      },
+    });
+    montar();
+    preencherRelato(60);
+    fireEvent.click(screen.getByRole("button", { name: "Analisar" }));
+
+    await screen.findByText("Reconciliação processual");
+    expect(screen.getByText("já cadastrado")).toBeTruthy();
+    expect(
+      screen.getByText(/Outro caso não será criado/),
+    ).toBeTruthy();
+
+    fireEvent.click(
+      screen.getByLabelText("Confirmo que revisei os dados acima"),
+    );
+    expect(
+      (screen.getByRole("button", { name: "Criar caso" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
   });
 });
