@@ -826,6 +826,7 @@ async def criar_caso_do_rascunho(
             case.id,
             ProcessCreate(
                 numero_cnj=payload.numero_cnj,
+                fase="conhecimento",
                 tipo="judicial",
                 status="ativo",
                 is_principal=True,
