@@ -158,11 +158,37 @@ export function Confirmacao({
   // ativos do cliente e exige reconhecimento explícito — restringir a
   // !clienteId deixava o caminho do cliente recorrente num loop de 409.
   const precisaConfirmarDuplicado = proposta.duplicados.length > 0;
+  const reconciliacoesComCnj = proposta.reconciliacoes.filter(
+    (item) => item.numeroCnj && item.status !== "informacoes_insuficientes",
+  );
+  const reconciliacaoSelecionada =
+    reconciliacoesComCnj.find(
+      (item) => item.numeroCnj === proposta.numeroProcesso,
+    ) ?? null;
+  const precisaEscolherProcesso =
+    reconciliacoesComCnj.length > 0 && !proposta.numeroProcesso;
+  const bloqueioCasoProtegido =
+    reconciliacaoSelecionada?.status === "ja_cadastrado" &&
+    reconciliacaoSelecionada.protegido;
+  const exigeVinculoExistente =
+    reconciliacaoSelecionada?.status === "ja_cadastrado" &&
+    !reconciliacaoSelecionada.protegido &&
+    Boolean(reconciliacaoSelecionada.caseId) &&
+    proposta.reconciliarCaseId !== reconciliacaoSelecionada.caseId;
+  const exigeDecisaoCorrespondencia =
+    reconciliacaoSelecionada?.status === "provavel_correspondencia" &&
+    Boolean(reconciliacaoSelecionada.caseId) &&
+    proposta.reconciliarCaseId !== reconciliacaoSelecionada.caseId &&
+    !proposta.duplicateConfirmed;
 
   const podeCriar =
     proposta.confirmoRevisao &&
     (!precisaConfirmarConflito || proposta.conflictConfirmed) &&
     (!precisaConfirmarDuplicado || proposta.duplicateConfirmed) &&
+    !precisaEscolherProcesso &&
+    !bloqueioCasoProtegido &&
+    !exigeVinculoExistente &&
+    !exigeDecisaoCorrespondencia &&
     !criando;
 
   const responsaveis = useMemo(() => {
@@ -232,6 +258,171 @@ export function Confirmacao({
           {proposta.inteligenciaJuridica.honorarios.aviso && (
             <p className="mt-3 text-xs text-slate-500">
               {proposta.inteligenciaJuridica.honorarios.aviso}
+            </p>
+          )}
+        </Card>
+      )}
+
+      {proposta.reconciliacoes.length > 0 && (
+        <Card className="border-slate-200 p-4 dark:border-slate-700">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Reconciliação processual
+              </p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">
+                O EJC conferiu os números CNJ antes de criar um caso. Nenhum
+                vínculo provável é aplicado sem sua confirmação.
+              </p>
+            </div>
+            <Badge tone="slate">anti-duplicidade</Badge>
+          </div>
+
+          <div className="mt-3 space-y-2">
+            {proposta.reconciliacoes.map((item, index) => {
+              const selecionado =
+                Boolean(item.numeroCnj) &&
+                proposta.numeroProcesso === item.numeroCnj;
+              const vinculado =
+                Boolean(item.caseId) &&
+                proposta.reconciliarCaseId === item.caseId &&
+                selecionado;
+              const rotulo =
+                item.status === "ja_cadastrado"
+                  ? "já cadastrado"
+                  : item.status === "provavel_correspondencia"
+                    ? "provável correspondência"
+                    : item.status === "novo_processo"
+                      ? "novo processo"
+                      : "informações insuficientes";
+              return (
+                <div
+                  key={`${item.numeroCnj ?? "sem-cnj"}-${index}`}
+                  className={cn(
+                    "rounded-lg border p-3",
+                    selecionado
+                      ? "border-primary-300 bg-primary-50/50 dark:border-primary-700 dark:bg-primary-900/10"
+                      : "border-slate-200 dark:border-slate-700",
+                  )}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-sm font-medium text-slate-900 dark:text-slate-100">
+                          {item.numeroCnj ?? "CNJ não identificado"}
+                        </span>
+                        <Badge
+                          tone={
+                            item.status === "ja_cadastrado"
+                              ? "slate"
+                              : item.status === "provavel_correspondencia"
+                                ? "amber"
+                                : item.status === "novo_processo"
+                                  ? "green"
+                                  : "amber"
+                          }
+                        >
+                          {rotulo}
+                        </Badge>
+                      </div>
+                      {item.numeroInterno && (
+                        <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
+                          {item.numeroInterno}
+                          {item.titulo ? ` — ${item.titulo}` : ""}
+                        </p>
+                      )}
+                      <p className="mt-1 text-xs text-slate-500">
+                        {item.mensagem}
+                      </p>
+                    </div>
+
+                    {item.numeroCnj &&
+                      item.status === "novo_processo" && (
+                        <Button
+                          variant={selecionado ? "primary" : "secondary"}
+                          size="sm"
+                          onClick={() =>
+                            onChange({
+                              numeroProcesso: item.numeroCnj ?? "",
+                              reconciliarCaseId: null,
+                              duplicateConfirmed: false,
+                            })
+                          }
+                        >
+                          {selecionado ? "CNJ selecionado" : "Usar no novo caso"}
+                        </Button>
+                      )}
+
+                    {item.numeroCnj &&
+                      item.caseId &&
+                      !item.protegido &&
+                      item.status === "ja_cadastrado" && (
+                        <Button
+                          variant={vinculado ? "primary" : "secondary"}
+                          size="sm"
+                          onClick={() =>
+                            onChange({
+                              numeroProcesso: item.numeroCnj ?? "",
+                              reconciliarCaseId: item.caseId,
+                              duplicateConfirmed: true,
+                            })
+                          }
+                        >
+                          {vinculado ? "Caso selecionado" : "Usar caso existente"}
+                        </Button>
+                      )}
+
+                    {item.numeroCnj &&
+                      item.caseId &&
+                      !item.protegido &&
+                      item.status === "provavel_correspondencia" && (
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            variant={vinculado ? "primary" : "secondary"}
+                            size="sm"
+                            onClick={() =>
+                              onChange({
+                                numeroProcesso: item.numeroCnj ?? "",
+                                reconciliarCaseId: item.caseId,
+                                duplicateConfirmed: true,
+                              })
+                            }
+                          >
+                            {vinculado ? "Vínculo selecionado" : "Vincular a este caso"}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              onChange({
+                                numeroProcesso: item.numeroCnj ?? "",
+                                reconciliarCaseId: null,
+                                duplicateConfirmed: true,
+                              })
+                            }
+                          >
+                            Não corresponde — criar novo
+                          </Button>
+                        </div>
+                      )}
+                  </div>
+
+                  {item.protegido && item.status === "ja_cadastrado" && (
+                    <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">
+                      O caso está protegido. A criação fica bloqueada para este
+                      CNJ até revisão da gestão.
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {reconciliacoesComCnj.length > 1 && (
+            <p className="mt-3 text-xs text-slate-500">
+              Foram encontrados vários processos no mesmo texto. Selecione o
+              CNJ que esta criação deve tratar; os demais permanecem apenas como
+              achados deste rascunho.
             </p>
           )}
         </Card>
@@ -793,7 +984,11 @@ export function Confirmacao({
           descartar
         </Button>
         <Button size="lg" disabled={!podeCriar} onClick={onCriar}>
-          {criando ? "Criando…" : "Criar caso"}
+          {criando
+            ? "Processando…"
+            : proposta.reconciliarCaseId
+              ? "Vincular processo"
+              : "Criar caso"}
         </Button>
       </div>
     </div>
