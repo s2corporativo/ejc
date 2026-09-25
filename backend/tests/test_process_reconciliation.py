@@ -103,3 +103,23 @@ async def test_pre_processual_correspondente_sugere_vinculo(monkeypatch):
 def test_detecta_tribunal_sem_inferir_comarca_ou_vara():
     assert pr._tribunal_norm("TJDFT - 2ª Vara da Fazenda Pública do DF") == "TJDFT"
     assert pr._tribunal_norm("TJMG - Unidade Jurisdicional Única") == "TJMG"
+
+
+
+class _LockDb:
+    def __init__(self):
+        self.calls = []
+
+    async def execute(self, stmt, params=None):
+        self.calls.append((str(stmt), params))
+
+
+@pytest.mark.anyio
+async def test_lock_cnj_usa_chave_normalizada_e_transacional():
+    db = _LockDb()
+    await pr.serializar_escrita_cnj(db, "1018284-13.2026.8.13.0027")
+
+    assert len(db.calls) == 1
+    sql, params = db.calls[0]
+    assert "pg_advisory_xact_lock" in sql
+    assert params == {"chave": "entrada-cnj:10182841320268130027"}
