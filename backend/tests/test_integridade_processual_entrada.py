@@ -90,3 +90,23 @@ async def test_cnj_valido_sem_correspondencia_vira_novo_processo(monkeypatch):
     )
     assert resultado["status"] == "novo_processo"
     assert resultado["dados_processuais"]["numero_cnj"] == "10182841320268130027"
+
+
+def test_extracao_cnj_colado_na_data_de_lista_exportada():
+    texto = (
+        "1018284-13.2026.8.13.002714/08/202615/09/2026"
+        "Procedimento do Juizado Especial Cível "
+        "BETIM BATERIAS AUTOMOTIVAS LTDA X FACEBOOK SERVICOS ONLINE DO BRASIL LTDA."
+        "1015352-52.2026.8.13.002718/07/202610/09/2026"
+        "Procedimento Comum Cível "
+        "EDNALDO CLEMENTE DA SILVA JUNIOR X AFFARE AUTO LTDA"
+        "0709938-44.2026.8.07.001803/08/202601/09/2026"
+        "Procedimento Comum Cível "
+        "BETIM BATERIAS AUTOMOTIVAS LTDA X "
+        "DEPARTAMENTO DE ESTRADA DE RODAGEM DO DISTRITO FEDERAL - DER"
+    )
+    assert entrada_service._extrair_cnjs_texto(texto) == [
+        "10182841320268130027",
+        "10153525220268130027",
+        "07099384420268070018",
+    ]
