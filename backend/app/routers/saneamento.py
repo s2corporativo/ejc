@@ -142,12 +142,14 @@ def _escopo_cases_integridade(stmt, cu: User):
     stmt = stmt.where(Case.deleted_at.is_(None))
     if pode_ver_todos(cu):
         return stmt
+    # Espelha o gate canônico pode_ver_caso_resumido: usuário sem
+    # visão global só enxerga casos em que é responsável ou auxiliar.
+    # Casos sem responsável permanecem visíveis apenas à gestão; expô-los
+    # a qualquer advogado quebraria a segregação de carteira.
     return stmt.where(
         or_(
             Case.advogado_responsavel_id == cu.id,
             Case.advogado_auxiliar_id == cu.id,
-            (Case.advogado_responsavel_id.is_(None))
-            & (Case.advogado_auxiliar_id.is_(None)),
         )
     )
 
