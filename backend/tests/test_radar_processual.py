@@ -34,7 +34,7 @@ async def test_radar_processual_sinaliza_cnj_com_estado_incompativel(monkeypatch
         id="case-1",
         numero_interno="DPT-2026-0001",
         titulo="Caso de teste",
-        numero_processo="1234567-89.2026.8.13.0027",
+        numero_processo="1018284-13.2026.8.13.0027",
         has_judicial_process=False,
         case_type="extrajudicial",
         status=CaseStatus.aberto,
@@ -54,5 +54,5 @@ async def test_radar_processual_sinaliza_cnj_com_estado_incompativel(monkeypatch
     assert itens[0]["fonte"] == "processual"
     assert itens[0]["nivel_risco"] == "alto"
     assert itens[0]["case_id"] == "case-1"
-    assert "1234567-89.2026.8.13.0027" in itens[0]["resumo"]
+    assert "1018284-13.2026.8.13.0027" in itens[0]["resumo"]
     assert "fase ainda pré-processual" in itens[0]["resumo"]
