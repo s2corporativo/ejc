@@ -20,7 +20,7 @@ from app.models.case import Case
 from app.models.tese import Tese, TeseCasoLink, TeseTipo, TeseStatus
 from app.core.rate_limit import rate_limit
 from app.models.diario_oficial import DiarioOficialAlerta
-from app.modules.dpt360.access_scope import visible_alerts_query
+from app.services.diario_oficial_scope import visible_alerts_query
 from app.services.impacto_regulatorio import (
     MAX_PUBLICACOES_VARRIDAS, MAX_TESES_VARRIDAS, ranquear_teses_afetadas,
 )
