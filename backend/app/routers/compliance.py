@@ -9,7 +9,7 @@ from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -278,24 +278,47 @@ async def _itens_integridade_processual(
     """
     q = (
         select(Case, Process)
-        .join(Process, Process.case_id == Case.id)
+        .join(
+            Process,
+            and_(
+                Process.case_id == Case.id,
+                Process.deleted_at.is_(None),
+                Process.is_principal.is_(True),
+            ),
+            isouter=True,
+        )
         .where(
             Case.deleted_at.is_(None),
             Case.fase == CaseFase.pre_processual,
-            Process.deleted_at.is_(None),
-            Process.is_principal.is_(True),
-            Process.numero_cnj.is_not(None),
+            or_(
+                Process.numero_cnj.is_not(None),
+                and_(
+                    Case.numero_processo.is_not(None),
+                    Case.numero_processo != "",
+                ),
+            ),
         )
         .order_by(Case.updated_at.desc())
         .limit(limit * 3)
     )
     rows = (await db.execute(q)).all()
     itens: list[dict] = []
+    vistos: set[str] = set()
     for case, process in rows:
-        if not _acessa_caso(cu, case):
+        if case.id in vistos or not _acessa_caso(cu, case):
             continue
+        vistos.add(case.id)
 
-        atualizado = process.updated_at or case.updated_at
+        cnj = (
+            process.numero_cnj
+            if process is not None and process.numero_cnj
+            else case.numero_processo
+        )
+        atualizado = (
+            process.updated_at
+            if process is not None and process.updated_at is not None
+            else case.updated_at
+        )
         dt = atualizado.date() if atualizado is not None else hoje
         if desde and dt < desde:
             continue
@@ -306,7 +329,7 @@ async def _itens_integridade_processual(
             "id": f"integridade:{case.id}",
             "titulo": f"Inconsistência processual: {referencia}",
             "resumo": (
-                f"O caso possui o CNJ {process.numero_cnj}, mas permanece na fase "
+                f"O caso possui o CNJ {cnj}, mas permanece na fase "
                 "pré-processual. Revise fase e status antes de continuar."
             ),
             "data": dt.isoformat(),
