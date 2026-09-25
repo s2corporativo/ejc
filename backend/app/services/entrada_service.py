@@ -842,6 +842,33 @@ async def criar_caso_do_rascunho(
                 "O número CNJ já está vinculado a outro caso; revise antes de prosseguir",
             )
 
+        # CNJ exato já cadastrado: a ação apenas reaproveita o caso existente.
+        # Não grava "vinculado" de novo nem altera fase/status.
+        if autorizado.get("status") == "ja_cadastrado":
+            await criar_audit_log(
+                db,
+                user.id,
+                _role(user),
+                "ENTRADA_UNICA_USAR_CASO_EXISTENTE",
+                "cases",
+                case.id,
+                detalhes=f"rascunho {batch.id}; cnj {payload.numero_processo}",
+            )
+            batch.case_id = case.id
+            batch.client_id = case.client_id
+            return {
+                "case_id": case.id,
+                "numero_interno": case.numero_interno,
+                "client_id": case.client_id,
+                "status": (
+                    case.status.value
+                    if isinstance(case.status, CaseStatus)
+                    else str(case.status)
+                ),
+                "ja_convertido": True,
+                "reconciliado": False,
+            }
+
         await sincronizar_processo_principal_do_caso(
             db,
             case_id=case.id,
