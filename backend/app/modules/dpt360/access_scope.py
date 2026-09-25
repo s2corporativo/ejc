@@ -4,8 +4,6 @@ from sqlalchemy import func, or_, select
 
 from app.core.ownership import is_gestao
 from app.core.security import ROLE_LEVEL
-from app.models.case import Case
-from app.models.diario_oficial import DiarioOficialAlerta
 from app.models.document import Document
 from app.models.user import User
 
@@ -16,30 +14,7 @@ def role_value(user: User) -> str:
     return str(getattr(role, "value", role) or "")
 
 
-def visible_alerts_query(user: User):
-    """Replica o contrato canônico do Diário Oficial para leituras DPT.
-
-    Gestão vê todos os alertas. Advogado vê alertas office-wide (sem case_id) e
-    alertas ligados a casos em que é responsável/auxiliar. Nenhuma rota DPT
-    pode ampliar essa superfície.
-    """
-    query = select(DiarioOficialAlerta)
-    if is_gestao(user):
-        return query
-
-    visible_cases = select(Case.id).where(
-        Case.deleted_at.is_(None),
-        or_(
-            Case.advogado_responsavel_id == user.id,
-            Case.advogado_auxiliar_id == user.id,
-        ),
-    )
-    return query.where(
-        or_(
-            DiarioOficialAlerta.case_id.is_(None),
-            DiarioOficialAlerta.case_id.in_(visible_cases),
-        )
-    )
+from app.services.diario_oficial_scope import visible_alerts_query as visible_alerts_query
 
 
 def visible_document_count_query(
