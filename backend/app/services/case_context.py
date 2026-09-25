@@ -1,7 +1,7 @@
 # ── app/services/case_context.py ─────────────────────────────────────────────
 # AGREGADOR DE CONTEXTO DO CASO — interliga todos os dados para a IA "entender"
 # o sistema inteiro. Dado um case_id, monta um dossiê consolidado lendo:
-#   Caso base → Cliente → Ramo especializado (1 dos 6 + ambiental) →
+#   Caso base → Cliente → contexto especializado compatível (quando houver) →
 #   Dossiê documental canônico → Prazos → Honorários → Peças → Movimentações.
 #
 # REGRAS:
