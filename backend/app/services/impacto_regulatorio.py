@@ -24,7 +24,7 @@
 #     publicação continua sendo trabalho do advogado.
 from __future__ import annotations
 
-from app.modules.dpt360.radar_service import AREA_CASE_ALIASES, classify_area
+from app.services.regulatory_area_classifier import AREA_CASE_ALIASES, classify_area
 from app.services.tese_caso_matcher import (
     PISO_RELEVANCIA_PADRAO,
     normalizar,
