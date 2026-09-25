@@ -59,8 +59,7 @@ extração só pode ocorrer após preservar essa obrigação por contrato explí
 
 Importadores Core conhecidos de `app.models.especializado`:
 
-- `backend/app/models/__init__.py`;
-- `backend/app/services/client_anonimizacao.py`.
+- `backend/app/models/__init__.py`.
 
 **Redução executada na Onda 4:** `services/case_context.py` não conhece mais
 `EmpresarialCase`, `CivelCase`, `PenalCase`, `TrabalhistaCase`,
@@ -108,3 +107,22 @@ O adapter implementa o contrato neutro de
 `services/legal_case_context.py::SpecializedCaseContext`. Essa aresta é
 temporária e substitui dependências diretas do Core em sete families de models.
 Novas regras de negócio não devem ser adicionadas ao adapter.
+
+
+## LGPD e dados sensíveis de verticais
+
+A Onda 5 remove a dependência direta
+`services/client_anonimizacao.py -> models.especializado.TrabalhistaCase`.
+
+A limpeza de CID permanece obrigatória e com a mesma semântica, mas passa por:
+
+- `modules/legacy_verticals/lgpd_adapter.py`.
+
+O adapter mantém as salvaguardas existentes:
+- somente cliente PF;
+- somente polo reclamante;
+- inclui casos soft-deleted;
+- não toca CID que possa pertencer a terceiro;
+- retorna contagem para AuditLog e resposta.
+
+Os testes DB-level já existentes continuam sendo o gate funcional dessa regra.
