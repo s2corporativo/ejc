@@ -95,5 +95,9 @@ describe("Entrada Única — reconciliação processual", () => {
     expect(payload.numero_processo).toBe("0709938-44.2026.8.07.0018");
     expect(payload.reconciliar_case_id).toBe("case-64");
     expect(payload.duplicate_confirmed).toBe(true);
+    expect(payload.cliente).toBeUndefined();
+    expect(payload.area).toBeUndefined();
+    expect(payload.titulo).toBeUndefined();
+    expect(payload.advogado_responsavel_id).toBeUndefined();
   });
 });
