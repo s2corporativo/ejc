@@ -306,7 +306,7 @@ async def criar(
             if c.fase == CaseFase.administrativo or c.case_type == "administrativo"
             else "judicial"
         )
-        await sincronizar_processo_principal_do_caso(
+        processo = await sincronizar_processo_principal_do_caso(
             db,
             case_id=c.id,
             numero_processo=payload.numero_processo,
@@ -316,6 +316,15 @@ async def criar(
             valor_causa=payload.valor_causa,
             tipo=tipo_processo,
         )
+        if processo:
+            await criar_audit_log(
+                db, cu.id, cu.role.value, "SYNC", "processes", processo["id"],
+                dados_depois={
+                    "case_id": c.id,
+                    "numero_cnj": payload.numero_processo,
+                    "origem": "cases_criar",
+                },
+            )
     db.add(CaseMovimento(
         id=str(uuid4()), case_id=c.id, tipo="nota",
         descricao=f"Caso aberto por {cu.full_name}", created_by=cu.id,
@@ -506,9 +515,18 @@ async def atualizar(
                 if c.fase == CaseFase.administrativo or c.case_type == "administrativo"
                 else "judicial"
             )
-        await sincronizar_processo_principal_do_caso(
+        processo = await sincronizar_processo_principal_do_caso(
             db, case_id=case_id, **kwargs_processo
         )
+        if processo:
+            await criar_audit_log(
+                db, cu.id, cu.role.value, "SYNC", "processes", processo["id"],
+                dados_depois={
+                    "case_id": case_id,
+                    "campos": sorted(kwargs_processo.keys()),
+                    "origem": "cases_atualizar",
+                },
+            )
     await db.commit()
     await db.refresh(c)
     # Event bus: notifica módulos interessados que o caso mudou (fail-safe).
