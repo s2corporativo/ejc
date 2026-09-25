@@ -14,16 +14,16 @@ from app.models.diario_oficial import DiarioOficialAlerta
 from app.models.user import User
 from app.modules.dpt360.access_scope import visible_alerts_query
 from app.modules.dpt360.dashboard_service import BUSINESS_AREAS, _value
-
-RADAR_CLASSIFICATION_LIMIT = 300
-RADAR_ITEM_LIMIT = 100
-
 from app.services.regulatory_area_classifier import (
     AREA_CASE_ALIASES as AREA_CASE_ALIASES,
     AREA_TERMS as AREA_TERMS,
     classify_area as classify_area,
     impact_level as impact_level,
 )
+
+
+RADAR_CLASSIFICATION_LIMIT = 300
+RADAR_ITEM_LIMIT = 100
 
 def _areas_by_company_from_rows(rows: list) -> tuple[dict[str, set[str]], dict[str, str]]:
     """DER-01: compõe o índice empresa-areas e nomes a partir do resultado bruto
