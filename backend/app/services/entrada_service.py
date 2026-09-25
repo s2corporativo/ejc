@@ -76,7 +76,10 @@ AVISO_HITL = (
 )
 
 _CNJ_RE = re.compile(
-    r"(?<!\\d)(?:\\d{7}-\\d{2}\\.\\d{4}\\.\\d\\.\\d{2}\\.\\d{4}|\\d{20})(?!\\d)"
+    # O formato mascarado é auto-delimitado pela pontuação e pode vir colado
+    # à data seguinte em exportações (ex.: ...002714/08/2026). Para 20
+    # dígitos crus, mantemos a borda final para não cortar sequências maiores.
+    r"(?<!\\d)(?:\\d{7}-\\d{2}\\.\\d{4}\\.\\d\\.\\d{2}\\.\\d{4}|\\d{20}(?!\\d))"
 )
 _RECONCILIACAO_STOPWORDS = {
     "acao", "autor", "autos", "civil", "comum", "comarca", "dano", "direito",
