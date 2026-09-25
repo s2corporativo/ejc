@@ -492,11 +492,13 @@ describe("reconciliação processual na Entrada Única", () => {
         ?.podeConverterPreProcessual,
     ).toBe(true);
     expect(p?.duplicateConfirmed).toBe(false);
+    expect(p?.processMatchConfirmed).toBe(false);
     expect(EH_CNJ.test(p?.numeroCnj ?? "")).toBe(true);
 
     const payload = montarPayloadCriacao(p as Proposta);
     expect(payload.numero_cnj).toBe("0709938-44.2026.8.07.0018");
-    expect(payload.duplicate_confirmed).toBe(false);
+    expect(payload.duplicate_confirmed).toBeUndefined();
+    expect(payload.process_match_confirmed).toBe(false);
   });
 
   it("CNJ já cadastrado é exibido como bloqueio processual", async () => {
