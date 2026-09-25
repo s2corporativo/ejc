@@ -79,6 +79,78 @@ def test_gates_default_off():
     assert p.prioridade == "media"
 
 
+def test_reconciliacao_schema_exige_cnj_valido():
+    with pytest.raises(ValidationError):
+        CriarCasoEntradaRequest(
+            cliente={"novo_nome": "Fulano de Tal"},
+            area="civil",
+            titulo="Caso X",
+            advogado_responsavel_id="u1",
+            confirmo_dados_revisados=True,
+            reconciliar_case_id="case-1",
+        )
+
+    with pytest.raises(ValidationError):
+        CriarCasoEntradaRequest(
+            cliente={"novo_nome": "Fulano de Tal"},
+            area="civil",
+            titulo="Caso X",
+            advogado_responsavel_id="u1",
+            confirmo_dados_revisados=True,
+            numero_processo="1018284-99.2026.8.13.0027",
+        )
+
+    payload = CriarCasoEntradaRequest(
+        cliente={"novo_nome": "Fulano de Tal"},
+        area="civil",
+        titulo="Caso X",
+        advogado_responsavel_id="u1",
+        confirmo_dados_revisados=True,
+        numero_processo="1018284-13.2026.8.13.0027",
+        reconciliar_case_id="case-1",
+    )
+    assert payload.numero_processo == "1018284-13.2026.8.13.0027"
+    assert payload.reconciliar_case_id == "case-1"
+
+
+def test_extrai_lista_processual_mesmo_com_cnj_colado_na_data():
+    texto = (
+        "1018284-13.2026.8.13.002714/08/202615/09/2026"
+        "Procedimento do Juizado Especial Cível BETIM BATERIAS AUTOMOTIVAS LTDA "
+        "X FACEBOOK SERVICOS ONLINE DO BRASIL LTDA."
+        "1015352-52.2026.8.13.002718/07/202610/09/2026"
+        "Procedimento Comum Cível EDNALDO CLEMENTE DA SILVA JUNIOR X AFFARE AUTO LTDA"
+        "0709938-44.2026.8.07.001803/08/202601/09/2026"
+        "Procedimento Comum Cível BETIM BATERIAS AUTOMOTIVAS LTDA X "
+        "DEPARTAMENTO DE ESTRADA DE RODAGEM DO DISTRITO FEDERAL - DER"
+    )
+    itens = entrada_service._extrair_segmentos_cnj(texto)
+    assert [item["numero_cnj"] for item in itens] == [
+        "1018284-13.2026.8.13.0027",
+        "1015352-52.2026.8.13.0027",
+        "0709938-44.2026.8.07.0018",
+    ]
+    assert all(item["valido"] for item in itens)
+
+
+def test_score_reconciliacao_distingue_der_de_outro_caso_betim_baterias():
+    trecho = (
+        "0709938-44.2026.8.07.0018 BETIM BATERIAS AUTOMOTIVAS LTDA e OUTROS "
+        "X DEPARTAMENTO DE ESTRADA DE RODAGEM DO DISTRITO FEDERAL - DER "
+        "TJDFT - 2ª VARA DA FAZENDA PÚBLICA DO DF"
+    )
+    caso_der = SimpleNamespace(
+        titulo="Betim Baterias/TA Transportes x DER/DF — Hilux avariada sob viaduto",
+        parte_contraria="Departamento de Estrada de Rodagem do Distrito Federal",
+    )
+    caso_inpi = SimpleNamespace(
+        titulo="Betim Baterias — registro de marca perante o INPI",
+        parte_contraria="INPI",
+    )
+    assert entrada_service._score_correspondencia(caso_der, trecho) >= 0.65
+    assert entrada_service._score_correspondencia(caso_inpi, trecho) < 0.65
+
+
 def test_triagem_normaliza_campos_sem_inventar_ausentes():
     from app.services.triagem_entrevista_service import normalizar_painel
 
