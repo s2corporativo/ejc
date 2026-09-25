@@ -42,7 +42,7 @@ class CriarCasoEntradaRequest(BaseModel):
     numero_cnj: str | None = Field(
         default=None,
         max_length=30,
-        pattern=r"^\\d{7}-\\d{2}\\.\\d{4}\\.\\d\\.\\d{2}\\.\\d{4}$",
+        pattern=r"^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$",
     )
     documentos_ids: list[str] = Field(default_factory=list, max_length=40)
     prazo: PrazoEntrada | None = None
@@ -99,7 +99,7 @@ class VincularCasoExistenteEntradaRequest(BaseModel):
     numero_cnj: str = Field(
         min_length=20,
         max_length=30,
-        pattern=r"^\\d{7}-\\d{2}\\.\\d{4}\\.\\d\\.\\d{2}\\.\\d{4}$",
+        pattern=r"^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$",
     )
     confirmo_correspondencia: bool
 
