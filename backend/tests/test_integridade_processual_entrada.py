@@ -162,3 +162,17 @@ async def test_update_cnj_mantem_ordem_global_de_locks(monkeypatch):
     )
 
     assert eventos == ["case", "cnj"]
+
+
+@pytest.mark.parametrize(
+    "relpath",
+    [
+        "app/routers/conversao_caso.py",
+        "app/services/case_automacao.py",
+    ],
+)
+def test_caminhos_producao_nao_inserem_processos_por_sql_direto(relpath):
+    from pathlib import Path
+
+    source = (Path(__file__).parents[1] / relpath).read_text(encoding="utf-8")
+    assert "INSERT INTO processes" not in source
