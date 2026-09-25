@@ -277,9 +277,17 @@ export function EntradaInteligente({ embedded = false }: { embedded?: boolean })
       setCaseCriadoId(caseId);
       setProposta(null);
       toast.success(
-        data?.numero_interno
-          ? `Caso ${data.numero_interno} criado. Iniciando leitura jurídica completa.`
-          : "Caso criado. Iniciando leitura jurídica completa.",
+        data?.reconciliado
+          ? data?.numero_interno
+            ? `Processo vinculado ao caso ${data.numero_interno}.`
+            : "Processo vinculado ao caso existente."
+          : data?.ja_convertido
+            ? data?.numero_interno
+              ? `Caso ${data.numero_interno} existente selecionado.`
+              : "Caso existente selecionado."
+            : data?.numero_interno
+              ? `Caso ${data.numero_interno} criado. Iniciando leitura jurídica completa.`
+              : "Caso criado. Iniciando leitura jurídica completa.",
       );
       setFase("dossie");
     } catch (err) {
