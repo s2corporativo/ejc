@@ -21,7 +21,11 @@ import {
 
 // ── Tipagem confirmada contra backend: app/routers/compliance.py::radar_compliance
 type NivelRisco = "critico" | "alto" | "medio" | "baixo";
-type FonteRadar = "diario_oficial" | "regulatorio" | "ambiental";
+type FonteRadar =
+  | "diario_oficial"
+  | "regulatorio"
+  | "ambiental"
+  | "processual";
 
 interface RadarItem {
   fonte: FonteRadar;
@@ -70,6 +74,7 @@ const FONTE_META: Record<FonteRadar, { label: string; icon: typeof Radar }> = {
   diario_oficial: { label: "Diario Oficial", icon: ScrollText },
   regulatorio: { label: "Regulatorio", icon: Radar },
   ambiental: { label: "Ambiental", icon: Leaf },
+  processual: { label: "Processual", icon: AlertTriangle },
 };
 
 const FONTES: { value: "" | FonteRadar; label: string }[] = [
@@ -77,6 +82,7 @@ const FONTES: { value: "" | FonteRadar; label: string }[] = [
   { value: "diario_oficial", label: "Diario Oficial" },
   { value: "regulatorio", label: "Regulatorio" },
   { value: "ambiental", label: "Ambiental" },
+  { value: "processual", label: "Processual" },
 ];
 
 function formatData(iso: string | null): string {
@@ -124,7 +130,7 @@ export default function RadarCompliance({
         <PageHeader
           eyebrow="Inteligencia"
           title="Radar de Compliance"
-          subtitle="Feed consolidado de Diario Oficial, monitoramento regulatorio e autos ambientais, priorizado por risco (critico -> baixo)."
+          subtitle="Feed consolidado de Diario Oficial, monitoramento regulatorio, autos ambientais e inconsistencias processuais, priorizado por risco."
         />
       )}
 
