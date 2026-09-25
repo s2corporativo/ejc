@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case
 from app.models.fee import CaseReceiptAllocation, Fee, FeeEstorno, FeePayment, FeeStatus, FeeTipo
+from app.services.fee_ledger_compat import total_pago_efetivo
 
 _Q2 = Decimal("0.01")
 
@@ -37,17 +38,22 @@ def calcular_rateio_recebimento(area: str, valor) -> dict:
     }
 
 async def resumo_financeiro_caso(db, case: Case) -> dict:
-    pagamentos = (await db.execute(
-        select(func.coalesce(func.sum(FeePayment.valor), 0))
-        .join(Fee, Fee.id == FeePayment.fee_id)
-        .where(Fee.case_id == case.id, Fee.deleted_at.is_(None))
-    )).scalar()
-    estornos = (await db.execute(
-        select(func.coalesce(func.sum(FeeEstorno.valor), 0))
-        .join(Fee, Fee.id == FeeEstorno.fee_id)
-        .where(Fee.case_id == case.id, Fee.deleted_at.is_(None))
-    )).scalar()
-    recebido = max(_money(pagamentos) - _money(estornos), Decimal("0.00"))
+    # Mesma fonte de verdade do Financeiro: pagamentos reais menos estornos,
+    # com fallback explícito para quitações legadas. Reembolso de
+    # custas/despesas não é honorário e não entra no "valor recebido" usado
+    # pelo encerramento/rateio.
+    honorarios = (await db.execute(
+        select(Fee).where(
+            Fee.case_id == case.id,
+            Fee.deleted_at.is_(None),
+            Fee.tipo != FeeTipo.custas_despesas,
+        )
+    )).scalars().all()
+    recebido = Decimal("0.00")
+    for fee in honorarios:
+        total, _legado = await total_pago_efetivo(db, fee)
+        recebido += _money(total)
+    recebido = _money(recebido)
 
     rows = (await db.execute(
         select(
