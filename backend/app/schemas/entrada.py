@@ -29,6 +29,20 @@ class PrazoEntrada(BaseModel):
     responsavel_id: str | None = Field(default=None, max_length=36)
 
 
+class VincularProcessoEntradaRequest(BaseModel):
+    """Confirma que um CNJ detectado pertence a um caso já existente."""
+
+    case_id: str = Field(min_length=1, max_length=36)
+    confirmo_vinculo: bool
+
+    @field_validator("confirmo_vinculo")
+    @classmethod
+    def _confirmacao_vinculo_obrigatoria(cls, v: bool) -> bool:
+        if v is not True:
+            raise ValueError("o vínculo processual exige confirmação explícita")
+        return v
+
+
 class CriarCasoEntradaRequest(BaseModel):
     """Payload de POST /entrada/{rascunho_id}/criar-caso."""
 
@@ -61,6 +75,9 @@ class CriarCasoEntradaRequest(BaseModel):
     # conflito/duplicado exige reconhecimento explícito (409 sem estes flags).
     conflict_confirmed: bool = False
     duplicate_confirmed: bool = False
+    # Correspondência processual provável exige escolha humana explícita.
+    # CNJ exato já cadastrado nunca é liberado para duplicação por este flag.
+    processo_novo_confirmado: bool = False
 
     @field_validator(
         "documentos_faltantes", "provas_necessarias", "proximos_passos"
