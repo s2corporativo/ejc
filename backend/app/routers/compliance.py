@@ -243,6 +243,7 @@ async def _itens_processual(
             Case.numero_processo != "",
             or_(
                 Case.has_judicial_process.is_(False),
+                Case.case_type.is_(None),
                 Case.case_type != "judicial",
                 Case.status == CaseStatus.aberto,
                 Case.fase == CaseFase.pre_processual,
