@@ -1070,6 +1070,13 @@ async def vincular_rascunho_a_caso_existente(
             },
         )
 
+    antes = {
+        "status": getattr(case.status, "value", str(case.status)),
+        "fase": getattr(case.fase, "value", str(case.fase)),
+        "case_type": case.case_type,
+        "has_judicial_process": bool(case.has_judicial_process),
+    }
+
     processo = await processo_service.criar_processo(
         case.id,
         ProcessCreate(
@@ -1085,13 +1092,6 @@ async def vincular_rascunho_a_caso_existente(
         ),
         db,
     )
-
-    antes = {
-        "status": getattr(case.status, "value", str(case.status)),
-        "fase": getattr(case.fase, "value", str(case.fase)),
-        "case_type": case.case_type,
-        "has_judicial_process": bool(case.has_judicial_process),
-    }
     case.case_type = "judicial"
     case.has_judicial_process = True
     case.status = CaseStatus.protocolado
