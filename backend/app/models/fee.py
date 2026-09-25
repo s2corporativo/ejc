@@ -122,3 +122,25 @@ class FeeCobrancaEnvio(Base):
     fee_id = Column(String(36), ForeignKey("fees.id"), nullable=False, index=True)
     degrau = Column(String(20), nullable=False)
     enviado_em = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CaseReceiptAllocation(Base):
+    """Rateio econômico de um recebimento lançado pelo fluxo do caso.
+
+    Não substitui FeePayment: a entrada de caixa continua no subledger
+    canônico. Esta tabela registra apenas a destinação econômica do pagamento.
+    """
+    __tablename__ = "case_receipt_allocations"
+    __table_args__ = (
+        UniqueConstraint("fee_payment_id", name="uq_case_receipt_alloc_payment"),
+    )
+
+    id = Column(String(36), primary_key=True)
+    case_id = Column(String(36), ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True)
+    fee_payment_id = Column(String(36), ForeignKey("fee_payments.id", ondelete="RESTRICT"), nullable=False, index=True)
+    advogado_responsavel_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    percentual_advogado = Column(Numeric(5, 2), nullable=False)
+    valor_advogado = Column(Numeric(14, 2), nullable=False)
+    valor_escritorio = Column(Numeric(14, 2), nullable=False)
+    regra = Column(String(50), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

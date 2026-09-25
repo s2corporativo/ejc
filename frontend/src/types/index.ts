@@ -65,6 +65,13 @@ export interface Case {
   vara?: string;
   parte_contraria?: string;
   valor_causa?: number;
+  classificacao_financeira?: "normal" | "pro_bono" | "causa_propria";
+  valor_pleiteado?: number | null;
+  valor_recebido?: number;
+  credito_advogado?: number;
+  parcela_escritorio?: number;
+  pendente_sucumbencia?: boolean;
+  pendente_exito?: boolean;
   client_id: string;
   advogado_responsavel_id?: string;
   descricao_fatos?: string;

@@ -10,6 +10,7 @@ from decimal import Decimal
 # limite maior aqui passaria na validação e estouraria no INSERT (500).
 _NUMERO_PROCESSO_MAX = 30
 _CASE_TYPES = {"judicial", "extrajudicial", "consultoria"}
+_CLASSIFICACOES_FINANCEIRAS = {"normal", "pro_bono", "causa_propria"}
 
 
 def _validar_numero_processo_cnj(v: Optional[str]) -> Optional[str]:
@@ -105,6 +106,10 @@ class CaseCreate(BaseModel):
     vara: Optional[str] = Field(default=None, max_length=100)
     parte_contraria: Optional[str] = Field(default=None, max_length=255)
     valor_causa: Optional[Decimal] = None
+    classificacao_financeira: str = "normal"
+    valor_pleiteado: Optional[Decimal] = None
+    pendente_sucumbencia: bool = False
+    pendente_exito: bool = False
     descricao_fatos: Optional[str] = None
     advogado_responsavel_id: Optional[str] = Field(default=None, max_length=36)
     tipo_acao_prescricao: Optional[str] = Field(default=None, max_length=100)
@@ -133,6 +138,22 @@ class CaseCreate(BaseModel):
             )
         return v
 
+    @field_validator("classificacao_financeira")
+    @classmethod
+    def _classificacao_financeira_valida(cls, v: str) -> str:
+        if v not in _CLASSIFICACOES_FINANCEIRAS:
+            raise ValueError(
+                f"classificação financeira inválida: use um de {sorted(_CLASSIFICACOES_FINANCEIRAS)}"
+            )
+        return v
+
+    @field_validator("valor_pleiteado")
+    @classmethod
+    def _valor_pleiteado_valido(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        if v is not None and v < 0:
+            raise ValueError("valor_pleiteado não pode ser negativo")
+        return v
+
     @field_validator("numero_processo")
     @classmethod
     def _numero_processo_valido(cls, v: Optional[str]) -> Optional[str]:
@@ -158,6 +179,10 @@ class CaseUpdate(BaseModel):
     vara: Optional[str] = Field(default=None, max_length=100)
     parte_contraria: Optional[str] = Field(default=None, max_length=255)
     valor_causa: Optional[Decimal] = None
+    classificacao_financeira: Optional[str] = None
+    valor_pleiteado: Optional[Decimal] = None
+    pendente_sucumbencia: Optional[bool] = None
+    pendente_exito: Optional[bool] = None
     descricao_fatos: Optional[str] = None
     tese_principal: Optional[str] = None
     pontos_fortes: Optional[str] = None
@@ -170,6 +195,24 @@ class CaseUpdate(BaseModel):
     kanban_column: Optional[str] = Field(default=None, max_length=100)
     kanban_position: Optional[int] = None
     sigilo_reforcado: Optional[bool] = None
+
+    @field_validator("classificacao_financeira")
+    @classmethod
+    def _classificacao_financeira_valida(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        if v not in _CLASSIFICACOES_FINANCEIRAS:
+            raise ValueError(
+                f"classificação financeira inválida: use um de {sorted(_CLASSIFICACOES_FINANCEIRAS)}"
+            )
+        return v
+
+    @field_validator("valor_pleiteado")
+    @classmethod
+    def _valor_pleiteado_valido(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        if v is not None and v < 0:
+            raise ValueError("valor_pleiteado não pode ser negativo")
+        return v
 
     @field_validator("numero_processo")
     @classmethod
@@ -252,6 +295,10 @@ class CaseResponse(BaseModel):
     tribunal: Optional[str] = None
     parte_contraria: Optional[str] = None
     valor_causa: Optional[Decimal] = None
+    classificacao_financeira: str = "normal"
+    valor_pleiteado: Optional[Decimal] = None
+    pendente_sucumbencia: bool = False
+    pendente_exito: bool = False
     client_id: str
     advogado_responsavel_id: Optional[str] = None
     case_type: Optional[str] = None
@@ -275,6 +322,9 @@ class CaseResponse(BaseModel):
 
 
 class CaseDetail(CaseResponse):
+    valor_recebido: Decimal = Decimal("0.00")
+    credito_advogado: Decimal = Decimal("0.00")
+    parcela_escritorio: Decimal = Decimal("0.00")
     comarca: Optional[str] = None
     vara: Optional[str] = None
     descricao_fatos: Optional[str] = None
