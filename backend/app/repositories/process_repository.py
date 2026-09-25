@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from sqlalchemy import select, update
+from sqlalchemy import exists, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.case import Case
@@ -78,6 +78,44 @@ class ProcessRepository:
             .where(Case.id == case_id, Case.deleted_at.is_(None))
             .with_for_update()
         )
+
+    async def lock_cnj(self, db: AsyncSession, numero_cnj_normalizado: str) -> None:
+        \"\"\"Serializa vínculos concorrentes do mesmo CNJ entre casos distintos.\"\"\"
+        await db.execute(
+            text(\"SELECT pg_advisory_xact_lock(hashtext(:chave))\"),
+            {\"chave\": f\"process_cnj:{numero_cnj_normalizado}\"},
+        )
+
+    async def case_ids_for_cnj(
+        self, db: AsyncSession, numero_cnj_normalizado: str
+    ) -> list[str]:
+        \"\"\"Resolve todos os casos que já referenciam o CNJ, inclusive excluídos.
+
+        Process é a fonte canônica; Case.numero_processo entra como fallback
+        legado. Não filtrar soft-delete aqui é deliberado: recriar um caso
+        apagado sem perceber reintroduziria duplicidade e quebraria a trilha.
+        \"\"\"
+        cnj_process = (
+            func.regexp_replace(func.coalesce(Process.numero_cnj, \"\"), r\"\\D\", \"\", \"g\")
+            == numero_cnj_normalizado
+        )
+        cnj_case = (
+            func.regexp_replace(func.coalesce(Case.numero_processo, \"\"), r\"\\D\", \"\", \"g\")
+            == numero_cnj_normalizado
+        )
+        rows = (
+            await db.execute(
+                select(Case.id)
+                .distinct()
+                .where(
+                    or_(
+                        cnj_case,
+                        exists().where(Process.case_id == Case.id, cnj_process),
+                    )
+                )
+            )
+        ).scalars().all()
+        return list(rows)
 
     async def clear_principal(self, db: AsyncSession, case_id: str) -> None:
         await db.execute(
