@@ -90,3 +90,18 @@ Ele não:
 
 Esses pontos permanecem no inventário da #1843 e serão tratados nas ondas
 seguintes.
+
+
+## Dependência legada descoberta pelo próprio gate
+
+A execução inicial do gate revelou uma aresta pré-existente omitida do primeiro
+inventário:
+
+- `routers/peca_geracao.py` → `routers/ramos.py`.
+
+Peças usa dois contratos de proveniência das calculadoras:
+`CAMINHOS_FERRAMENTAS_VALIDOS` e `VERSAO_REGRA_ATUAL`.
+
+A aresta integra a baseline histórica, mas não autoriza novos imports Core →
+Ramos. O destino é mover esses contratos para uma camada neutra preservando os
+gates de homologação e proveniência dos demonstrativos.
