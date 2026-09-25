@@ -17,10 +17,11 @@ from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.models.user import User
-from app.models.case import Case
+from app.models.case import Case, CaseFase
 from app.models.client import Client
 from app.models.diario_oficial import DiarioOficialAlerta
 from app.models.environmental import EnvironmentalCase, StatusDefesa
+from app.models.process import Process
 
 log = logging.getLogger(__name__)
 
@@ -262,9 +263,69 @@ async def _itens_ambiental(db: AsyncSession, cu: User, desde: Optional[date],
     return itens
 
 
+async def _itens_integridade_processual(
+    db: AsyncSession,
+    cu: User,
+    desde: Optional[date],
+    hoje: date,
+    limit: int,
+) -> list[dict]:
+    """Sinaliza uma inconsistência estrutural sem inferência jurídica.
+
+    Um caso não pode permanecer em pre_processual depois de possuir um
+    processo principal com CNJ. O alerta deriva apenas de campos estruturados
+    e respeita o mesmo ownership do restante do Radar.
+    """
+    q = (
+        select(Case, Process)
+        .join(Process, Process.case_id == Case.id)
+        .where(
+            Case.deleted_at.is_(None),
+            Case.fase == CaseFase.pre_processual,
+            Process.deleted_at.is_(None),
+            Process.is_principal.is_(True),
+            Process.numero_cnj.is_not(None),
+        )
+        .order_by(Case.updated_at.desc())
+        .limit(limit * 3)
+    )
+    rows = (await db.execute(q)).all()
+    itens: list[dict] = []
+    for case, process in rows:
+        if not _acessa_caso(cu, case):
+            continue
+
+        atualizado = process.updated_at or case.updated_at
+        dt = atualizado.date() if atualizado is not None else hoje
+        if desde and dt < desde:
+            continue
+
+        referencia = case.numero_interno or case.titulo or "caso sem referência"
+        itens.append({
+            "fonte": "integridade_processual",
+            "id": f"integridade:{case.id}",
+            "titulo": f"Inconsistência processual: {referencia}",
+            "resumo": (
+                f"O caso possui o CNJ {process.numero_cnj}, mas permanece na fase "
+                "pré-processual. Revise fase e status antes de continuar."
+            ),
+            "data": dt.isoformat(),
+            "nivel_risco": "alto",
+            "link": None,
+            "case_id": case.id,
+            "_dt": dt,
+        })
+        if len(itens) >= limit:
+            break
+    return itens
+
+
 @router.get("/radar", dependencies=[Depends(rate_limit("compliance-radar", 15))])
 async def radar_compliance(
-    fonte: Optional[str] = Query(None, description="diario_oficial|regulatorio|ambiental"),
+    fonte: Optional[str] = Query(
+        None,
+        description="diario_oficial|regulatorio|ambiental|integridade_processual",
+    ),
     desde: Optional[date] = Query(None, description="Só itens a partir desta data (YYYY-MM-DD)"),
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -272,9 +333,9 @@ async def radar_compliance(
 ):
     """Radar de compliance consolidado priorizado por risco.
 
-    Agrega Diário Oficial + regulatório + ambiental num feed unificado, ordenado
-    por risco (crítico→baixo) e recência. Fail-safe: se uma fonte falhar, as
-    demais ainda são retornadas.
+    Agrega Diário Oficial + regulatório + ambiental + integridade processual
+    num feed unificado, ordenado por risco (crítico→baixo) e recência.
+    Fail-safe: se uma fonte falhar, as demais ainda são retornadas.
     """
     if not _pode_ver_radar(cu):
         raise HTTPException(403, "Sem permissão para o radar de compliance")
@@ -305,6 +366,15 @@ async def radar_compliance(
         except Exception as e:  # noqa: BLE001
             log.warning("radar: fonte ambiental falhou: %s", e)
             erros.append("ambiental")
+
+    if fonte in (None, "integridade_processual"):
+        try:
+            itens += await _itens_integridade_processual(
+                db, cu, desde, hoje, fetch
+            )
+        except Exception as e:  # noqa: BLE001
+            log.warning("radar: fonte integridade_processual falhou: %s", e)
+            erros.append("integridade_processual")
 
     # Ordena por risco (crítico→baixo) e depois recência (mais novo primeiro).
     itens.sort(key=lambda it: (
