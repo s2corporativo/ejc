@@ -6,15 +6,13 @@ from app.core.ownership import is_gestao
 from app.core.security import ROLE_LEVEL
 from app.models.document import Document
 from app.models.user import User
+from app.services.diario_oficial_scope import visible_alerts_query as visible_alerts_query
 
 
 def role_value(user: User) -> str:
     """Normaliza role SQLAlchemy Enum/str sem depender de str(Enum)."""
     role = getattr(user, "role", None)
     return str(getattr(role, "value", role) or "")
-
-
-from app.services.diario_oficial_scope import visible_alerts_query as visible_alerts_query
 
 
 def visible_document_count_query(
