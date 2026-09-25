@@ -25,6 +25,7 @@ import {
   montarPayloadCriacao,
   normalizarAnalise,
   normalizarMeta,
+  normalizarReconciliacao,
   textoDeAchado,
   type EntradaMeta,
   type Proposta,
@@ -339,6 +340,31 @@ export function EntradaInteligente({ embedded = false }: { embedded?: boolean })
             };
           }),
         ];
+        const processos = Array.isArray(d.processos_correspondentes)
+          ? d.processos_correspondentes
+          : [];
+        const codigo = typeof d.codigo === "string" ? d.codigo : "";
+        const reconciliacao409 =
+          processos.length > 0
+            ? normalizarReconciliacao({
+                status: codigo.includes("JA_CADASTRADO")
+                  ? "ja_cadastrado"
+                  : "provavel_correspondencia",
+                numero_cnj_principal: proposta.numeroCnj || null,
+                cnjs_detectados: proposta.numeroCnj
+                  ? [proposta.numeroCnj]
+                  : [],
+                correspondencias: processos,
+                bloquear_criacao: codigo.includes("JA_CADASTRADO"),
+                acao_sugerida: codigo.includes("JA_CADASTRADO")
+                  ? "abrir_caso_existente"
+                  : "revisar_correspondencia",
+                mensagem: mensagemDeErro(
+                  err,
+                  "Há correspondência processual que exige revisão.",
+                ),
+              })
+            : null;
         setProposta((atual) =>
           atual
             ? {
@@ -347,8 +373,11 @@ export function EntradaInteligente({ embedded = false }: { embedded?: boolean })
                   ? alertas
                   : atual.conflitoAlertas,
                 duplicados: dupes.length ? dupes : atual.duplicados,
+                reconciliacaoProcessual:
+                  reconciliacao409 ?? atual.reconciliacaoProcessual,
                 conflictConfirmed: false,
                 duplicateConfirmed: false,
+                processMatchConfirmed: false,
               }
             : atual,
         );
