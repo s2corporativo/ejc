@@ -23,15 +23,14 @@ def calcular_rateio_recebimento(area: str, valor, vara: str | None = None) -> di
     """Destinação de honorários efetivamente recebidos.
 
     Regra geral de produção: 50% responsável / 50% escritório.
-    Carteira institucional cível/consumidor/JEC: 100% escritório.
+    Exceção definida pelo escritório: área civil = 100% escritório.
     """
     bruto = _money(valor)
     area_norm = str(area or "").strip().casefold()
-    vara_norm = str(vara or "").strip().casefold()
-    integral_escritorio = (
-        area_norm in {"civil", "consumidor"}
-        or "juizado especial" in vara_norm
-    )
+    # A regra é por área jurídica, não por rito/órgão julgador.
+    # JEC e Consumidor só serão 100% escritório quando o caso estiver
+    # efetivamente classificado na área canônica civil.
+    integral_escritorio = area_norm == "civil"
     pct_adv = Decimal("0.00") if integral_escritorio else Decimal("50.00")
     valor_adv = _money(bruto * pct_adv / Decimal("100"))
     return {
@@ -108,8 +107,12 @@ async def registrar_recebimento_caso(db, case: Case, valor, user) -> dict:
     payment = FeePayment(
         id=pid, fee_id=fid, valor=valor, data_pagamento=date.today(), forma="outro"
     )
+    # Persistir explicitamente em ordem de dependência evita que o UoW tente
+    # inserir a alocação antes do FeePayment em bancos PostgreSQL com FK ativa.
     db.add(fee)
+    await db.flush()
     db.add(payment)
+    await db.flush()
 
     pct_adv = rateio["percentual_advogado"]
     valor_adv = rateio["valor_advogado"]
@@ -144,8 +147,8 @@ async def registrar_recebimento_caso(db, case: Case, valor, user) -> dict:
             """), {
                 "id": withdrawal_id,
                 "partner_id": case.advogado_responsavel_id,
-                "gross": valor,
-                "net": valor,
+                "gross": valor_adv,
+                "net": valor_adv,
                 "share": valor_adv,
                 "description": f"Rateio automático — {case.numero_interno or case.id}",
                 "ref": f"case:{pid[:30]}",
