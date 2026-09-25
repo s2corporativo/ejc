@@ -127,6 +127,12 @@ async def garantir_numero_processo_unico(
 
     digitos_cnj = normalizar_cnj(numero)
     if len(digitos_cnj) == 20:
+        # Ordem global de locks para mutações de processo: Caso -> CNJ.
+        # O serviço canônico de Processo usa a mesma sequência. Em UPDATE,
+        # inverter essa ordem (CNJ -> Caso) poderia deadlockar com uma criação
+        # concorrente de Process para o mesmo caso/CNJ.
+        if excluir_case_id:
+            await process_repository.lock_case(db, excluir_case_id)
         await process_repository.lock_cnj(db, digitos_cnj)
         ids = await process_repository.case_ids_for_cnj(db, digitos_cnj)
         outros = [cid for cid in ids if cid != excluir_case_id]
