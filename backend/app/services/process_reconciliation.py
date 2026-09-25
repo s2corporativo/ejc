@@ -361,6 +361,7 @@ async def reconciliar_entrada(
         "numero_cnj_principal": principal,
         "tribunal_detectado": tribunal_detectado,
         "correspondencias": [],
+        "resultados_por_cnj": [],
         "bloquear_criacao": False,
         "requer_confirmacao_humana": True,
         "acao_sugerida": "revisar_dados",
@@ -369,13 +370,47 @@ async def reconciliar_entrada(
     if db is None:
         return base
 
-    correspondencias_exatas: list[dict[str, Any]] = []
+    resultados_por_cnj: list[dict[str, Any]] = []
     for cnj in cnjs:
-        correspondencias_exatas.extend(await buscar_casos_por_cnj(db, user, cnj))
+        encontrados = await buscar_casos_por_cnj(db, user, cnj)
+        resultados_por_cnj.append(
+            {
+                "numero_cnj": cnj,
+                "status": "ja_cadastrado" if encontrados else "novo_processo",
+                "correspondencias": encontrados,
+            }
+        )
+
+    # Uma Entrada Única representa UM caso. Lista com vários CNJs é tratada
+    # como lote a separar, nunca como um caso único. Ainda devolvemos o estado
+    # individual de cada número para orientar a revisão.
+    if len(cnjs) > 1:
+        correspondencias = [
+            item
+            for resultado in resultados_por_cnj
+            for item in resultado["correspondencias"]
+        ]
+        return {
+            **base,
+            "status": "informacoes_insuficientes",
+            "resultados_por_cnj": resultados_por_cnj,
+            "correspondencias": correspondencias,
+            "bloquear_criacao": True,
+            "acao_sugerida": "separar_entradas",
+            "mensagem": (
+                f"Foram detectados {len(cnjs)} números CNJ. Separe um processo "
+                "por entrada antes de criar ou vincular casos."
+            ),
+        }
+
+    correspondencias_exatas = (
+        resultados_por_cnj[0]["correspondencias"] if resultados_por_cnj else []
+    )
     if correspondencias_exatas:
         return {
             **base,
             "status": "ja_cadastrado",
+            "resultados_por_cnj": resultados_por_cnj,
             "correspondencias": correspondencias_exatas,
             "bloquear_criacao": True,
             "acao_sugerida": "abrir_caso_existente",
