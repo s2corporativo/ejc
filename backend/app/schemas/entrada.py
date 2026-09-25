@@ -34,9 +34,13 @@ class PrazoEntrada(BaseModel):
 class CriarCasoEntradaRequest(BaseModel):
     """Payload de POST /entrada/{rascunho_id}/criar-caso."""
 
-    cliente: ClienteEntrada
-    area: str = Field(min_length=1, max_length=50)
-    titulo: str = Field(min_length=3, max_length=255)
+    # Na reconciliação de um processo com caso já existente, estes campos não
+    # são necessários: o caso é a fonte de verdade e não deve ser sobrescrito
+    # com inferências da Entrada Única. Para criação NOVA, o model_validator
+    # abaixo preserva a obrigatoriedade histórica.
+    cliente: ClienteEntrada | None = None
+    area: str | None = Field(default=None, min_length=1, max_length=50)
+    titulo: str | None = Field(default=None, min_length=3, max_length=255)
     fatos: str | None = Field(default=None, max_length=50_000)
     parte_contraria: str | None = Field(default=None, max_length=255)
     numero_processo: str | None = Field(default=None, max_length=30)
@@ -62,7 +66,7 @@ class CriarCasoEntradaRequest(BaseModel):
     # G1: omitido → default preenchido na criação (caso sempre nasce com
     # "o que fazer agora").
     proxima_acao: str | None = Field(default=None, max_length=2_000)
-    advogado_responsavel_id: str = Field(min_length=1, max_length=36)
+    advogado_responsavel_id: str | None = Field(default=None, min_length=1, max_length=36)
     confirmo_dados_revisados: bool
     # Gates de SERVIDOR (paridade com a conversão da Sala Jurídica): achado de
     # conflito/duplicado exige reconhecimento explícito (409 sem estes flags).
@@ -82,9 +86,25 @@ class CriarCasoEntradaRequest(BaseModel):
         return numero
 
     @model_validator(mode="after")
-    def _reconciliacao_exige_cnj(self) -> "CriarCasoEntradaRequest":
-        if self.reconciliar_case_id and not self.numero_processo:
-            raise ValueError("reconciliar_case_id exige numero_processo")
+    def _campos_conforme_operacao(self) -> "CriarCasoEntradaRequest":
+        if self.reconciliar_case_id:
+            if not self.numero_processo:
+                raise ValueError("reconciliar_case_id exige numero_processo")
+            return self
+
+        faltantes: list[str] = []
+        if self.cliente is None:
+            faltantes.append("cliente")
+        if not self.area:
+            faltantes.append("area")
+        if not self.titulo:
+            faltantes.append("titulo")
+        if not self.advogado_responsavel_id:
+            faltantes.append("advogado_responsavel_id")
+        if faltantes:
+            raise ValueError(
+                "criação de caso exige: " + ", ".join(faltantes)
+            )
         return self
 
     @field_validator(
