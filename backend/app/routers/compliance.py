@@ -254,7 +254,12 @@ async def _itens_processual(
     )
     casos = (await db.execute(q)).scalars().all()
     itens: list[dict] = []
+    from app.services.validators_service import normalizar_cnj, validar_cnj
+
     for caso in casos:
+        numero = (caso.numero_processo or "").strip()
+        if len(normalizar_cnj(numero)) != 20 or not validar_cnj(numero):
+            continue
         if not _acessa_caso(cu, caso):
             continue
         dt = caso.updated_at.date() if caso.updated_at else None
