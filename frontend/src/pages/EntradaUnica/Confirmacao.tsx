@@ -265,7 +265,8 @@ export function Confirmacao({
       )}
 
       {(reconciliacao.status !== "informacoes_insuficientes" ||
-        proposta.numeroCnj) && (
+        proposta.numeroCnj ||
+        reconciliacao.cnjsDetectados.length > 0) && (
         <Card
           className={cn(
             "p-4",
@@ -317,6 +318,27 @@ export function Confirmacao({
                     ? "O CNJ foi alterado após a análise. O servidor fará nova conferência antes de qualquer gravação."
                     : reconciliacao.mensagem}
                 </p>
+                {reconciliacao.resultadosPorCnj.length > 1 && (
+                  <ul className="mt-2 space-y-1 text-xs text-slate-700 dark:text-slate-200">
+                    {reconciliacao.resultadosPorCnj.map((item) => (
+                      <li
+                        key={item.numeroCnj}
+                        className="flex flex-wrap items-center gap-2"
+                      >
+                        <code>{item.numeroCnj}</code>
+                        <Badge
+                          tone={
+                            item.status === "ja_cadastrado" ? "red" : "green"
+                          }
+                        >
+                          {item.status === "ja_cadastrado"
+                            ? "já cadastrado"
+                            : "novo processo"}
+                        </Badge>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
 
               <div>
