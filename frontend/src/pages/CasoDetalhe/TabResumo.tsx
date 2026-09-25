@@ -325,6 +325,12 @@ export default function TabResumo({
   const [novoMov, setNovoMov] = useState("");
   const [encModal, setEncModal] = useState(false);
   const [encLoading, setEncLoading] = useState(false);
+  const [encSimplesModal, setEncSimplesModal] = useState(false);
+  const [encSimplesLoading, setEncSimplesLoading] = useState(false);
+  const [encSimples, setEncSimples] = useState({
+    cliente_nome: "",
+    valor_recebido: "",
+  });
   const [sigiloSalvando, setSigiloSalvando] = useState(false);
   const [enc, setEnc] = useState({
     // Vocabulário CANÔNICO do backend (EncerrarCasoReq) — é o mesmo que a
@@ -421,6 +427,39 @@ export default function TabResumo({
       .then((r) => setMovs(asList(r.data)))
       .catch(() => {});
   }, [caso.id]);
+
+  const encerrarSimples = async () => {
+    const valor = Number(encSimples.valor_recebido || 0);
+    if (!encSimples.cliente_nome.trim()) {
+      toast.error("Informe o nome do cliente.");
+      return;
+    }
+    if (!Number.isFinite(valor) || valor < 0) {
+      toast.error("Informe um valor válido.");
+      return;
+    }
+    setEncSimplesLoading(true);
+    try {
+      const { data } = await api.post(`/cases/${caso.id}/encerrar-simples`, {
+        cliente_nome: encSimples.cliente_nome.trim(),
+        valor_recebido: valor,
+      });
+      setEncSimplesModal(false);
+      const regra = data?.rateio?.regra;
+      toast.success(
+        regra === "civil_integral_escritorio"
+          ? "Caso encerrado. Valor lançado integralmente para o escritório."
+          : regra === "rateio_50_50"
+            ? "Caso encerrado. Valor lançado com rateio 50% responsável / 50% escritório."
+            : "Caso encerrado.",
+      );
+      window.location.reload();
+    } catch (e: any) {
+      toast.error(detalheErro(e, "Falha ao encerrar o caso"));
+    } finally {
+      setEncSimplesLoading(false);
+    }
+  };
 
   // Diagnóstico ao abrir o modal: o operador vê prazos/tarefas/financeiro/
   // processo ativo ANTES de confirmar, e "sincronizar antes de encerrar" já
@@ -747,12 +786,24 @@ export default function TabResumo({
           </div>
           <div className="flex flex-wrap gap-2">
             {caso.status !== "encerrado" && caso.status !== "arquivado" && (
-              <button
-                onClick={abrirEncerrar}
-                className="btn-secondary flex items-center gap-1"
-              >
-                ✓ Encerrar caso
-              </button>
+              <>
+                <button
+                  onClick={() => {
+                    setEncSimples({ cliente_nome: "", valor_recebido: "" });
+                    setEncSimplesModal(true);
+                  }}
+                  className="btn-primary flex items-center gap-1"
+                >
+                  ✓ Encerrar caso
+                </button>
+                <button
+                  onClick={abrirEncerrar}
+                  className="btn-secondary flex items-center gap-1"
+                  title="Encerramento com resultado, provas, lições e diagnóstico de pendências"
+                >
+                  Pós-mortem detalhado
+                </button>
+              </>
             )}
             {caso.status !== "arquivado" ? (
               <button
@@ -1002,6 +1053,58 @@ export default function TabResumo({
               </p>
             </div>
           )}
+        </Modal>
+      )}
+
+      {encSimplesModal && (
+        <Modal
+          open={encSimplesModal}
+          onClose={() => setEncSimplesModal(false)}
+          title="Encerrar caso"
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Encerramento direto. O EJC preservará documentos, prazos, histórico e
+              pendências existentes; nenhuma etapa será apagada.
+            </p>
+            <div>
+              <label className="label">Nome do cliente</label>
+              <input
+                className="input w-full"
+                autoComplete="off"
+                value={encSimples.cliente_nome}
+                onChange={(e) =>
+                  setEncSimples({ ...encSimples, cliente_nome: e.target.value })
+                }
+                placeholder="Digite o nome do cliente para confirmar"
+              />
+            </div>
+            <div>
+              <label className="label">Valor recebido pelo escritório (R$)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="input w-full"
+                value={encSimples.valor_recebido}
+                onChange={(e) =>
+                  setEncSimples({ ...encSimples, valor_recebido: e.target.value })
+                }
+                placeholder="0,00"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Informe honorários efetivamente recebidos pelo escritório. Não inclua
+                valores do principal pertencentes ao cliente.
+              </p>
+            </div>
+            <button
+              onClick={encerrarSimples}
+              disabled={encSimplesLoading}
+              className="btn-primary w-full"
+            >
+              {encSimplesLoading ? "Encerrando..." : "Confirmar encerramento"}
+            </button>
+          </div>
         </Modal>
       )}
 
