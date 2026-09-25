@@ -187,14 +187,43 @@ def test_hardening_scheduler_substitui_apenas_callbacks_financeiros():
 
 def test_scheduler_legado_nao_duplica_regra_financeira():
     import inspect
-    from app.services import scheduler
 
-    brief = inspect.getsource(scheduler._morning_brief)
-    honorarios = inspect.getsource(scheduler._alertar_honorarios)
+    from app.services import scheduler, scheduler_financeiro
+
+    def bloco_def(fonte: str, marcador: str) -> str:
+        """Fonte da def `marcador` no código do módulo scheduler.
+
+        Inspeciona o texto do MÓDULO (e não `inspect.getsource` do atributo)
+        porque `scheduler_financeiro.instalar()` troca os atributos
+        `_morning_brief`/`_alertar_honorarios` pelos callbacks canônicos —
+        o contrato do scheduler legado é a própria def dele delegar.
+        """
+        linhas = fonte.splitlines()
+        inicio = next(
+            i for i, linha in enumerate(linhas) if linha.startswith(marcador)
+        )
+        fim = next(
+            (
+                j
+                for j in range(inicio + 1, len(linhas))
+                if linhas[j].startswith(("async def", "def", "@"))
+            ),
+            len(linhas),
+        )
+        return "\n".join(linhas[inicio:fim])
+
+    fonte_sched = inspect.getsource(scheduler)
+    brief = bloco_def(fonte_sched, "async def _morning_brief(")
+    honorarios = bloco_def(fonte_sched, "async def _alertar_honorarios(")
     assert "_morning_brief_financeiro" in brief
     assert "_marcar_honorarios_atrasados" in honorarios
     assert "SELECT COUNT(*) FROM deadlines" not in brief
     assert "UPDATE fees SET status='atrasado'" not in honorarios
+    # A regra financeira vive em UM único lugar (scheduler_financeiro); o
+    # scheduler legado delega e nunca reimplanta o SQL por conta própria.
+    assert "SELECT COUNT(*) FROM deadlines" in inspect.getsource(
+        scheduler_financeiro._morning_brief_financeiro
+    )
 
 
 class _ResultadoFake:

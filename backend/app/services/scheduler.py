@@ -1993,6 +1993,10 @@ async def job_ingestao_senado():
     )
 
 
+# Gate: DJEN_INGEST_ENABLED (default True — LIGADO por decisão do titular;
+# desligue com DJEN_INGEST_ENABLED=false no .env). Sem agendamento próprio:
+# consolidado no job "djen" (06h30) — este passo roda DENTRO dele, após a
+# captura das OABs, sem segunda consulta ao DJEN.
 async def job_ingestao_djen(
     *,
     excluir_oabs: set[tuple[str, str]] | None = None,
