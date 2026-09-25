@@ -121,6 +121,7 @@ export interface Proposta {
   avisos: string[];
   conflictConfirmed: boolean;
   duplicateConfirmed: boolean;
+  processMatchConfirmed: boolean;
   confirmoRevisao: boolean;
   inteligenciaJuridica: InteligenciaJuridicaProposta | null;
 }
@@ -186,7 +187,7 @@ function statusReconciliacao(v: unknown): ReconciliacaoProcessualStatus {
     : "informacoes_insuficientes";
 }
 
-function normalizarReconciliacao(v: unknown): ReconciliacaoProcessual {
+export function normalizarReconciliacao(v: unknown): ReconciliacaoProcessual {
   const r = obj(v);
   const correspondencias = lista(r.correspondencias).map((item) => {
     const c = obj(item);
@@ -395,6 +396,7 @@ export function normalizarAnalise(
     avisos: lista(r.avisos).map(textoDeAchado).filter(Boolean),
     conflictConfirmed: false,
     duplicateConfirmed: false,
+    processMatchConfirmed: false,
     confirmoRevisao: false,
     inteligenciaJuridica: (() => {
       const inteligencia = obj(r.inteligencia_juridica);
@@ -478,12 +480,14 @@ export function montarPayloadCriacao(p: Proposta): Record<string, unknown> {
   // escolhido: o gate de "cliente com caso ativo" é do servidor — sem o
   // reconhecimento explícito, o 409 volta com os achados e a tela os
   // exibe com o checkbox (mesma semântica da conversão da Sala Jurídica).
-  if (
-    p.duplicados.length > 0 ||
-    p.reconciliacaoProcessual.status === "provavel_correspondencia" ||
-    p.duplicateConfirmed
-  ) {
+  if (p.duplicados.length > 0 || p.duplicateConfirmed) {
     payload.duplicate_confirmed = p.duplicateConfirmed;
+  }
+  if (
+    p.reconciliacaoProcessual.status === "provavel_correspondencia" ||
+    p.processMatchConfirmed
+  ) {
+    payload.process_match_confirmed = p.processMatchConfirmed;
   }
   return payload;
 }
