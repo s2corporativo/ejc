@@ -27,11 +27,14 @@ A regra é monotônica:
 Importadores externos conhecidos:
 
 - `backend/app/main.py`;
-- `backend/app/routers/teses.py`;
-- `backend/app/services/impacto_regulatorio.py`.
+- `backend/app/routers/teses.py`.
 
-Próximo objetivo: retirar primeiro os consumidores de negócio (`teses.py` e
-`impacto_regulatorio.py`), deixando o bootstrap como último ponto de corte.
+**Redução já executada na Onda 3:** `impacto_regulatorio.py` deixou de importar
+o radar DPT360; a taxonomia determinística foi movida para
+`services/regulatory_area_classifier.py`, consumida por Core e DPT.
+
+Próximo objetivo: retirar o consumidor de negócio restante (`teses.py`),
+deixando o bootstrap como último ponto de corte.
 
 ## EnvironmentalCase
 
