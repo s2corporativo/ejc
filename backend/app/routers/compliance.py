@@ -9,7 +9,7 @@ from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -17,7 +17,7 @@ from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.models.user import User
-from app.models.case import Case
+from app.models.case import Case, CaseFase, CaseStatus
 from app.models.client import Client
 from app.models.diario_oficial import DiarioOficialAlerta
 from app.models.environmental import EnvironmentalCase, StatusDefesa
@@ -224,6 +224,83 @@ async def _itens_regulatorio(db: AsyncSession, desde: Optional[date], hoje: date
     return itens
 
 
+async def _itens_processual(
+    db: AsyncSession,
+    cu: User,
+    desde: Optional[date],
+    limit: int,
+) -> list[dict]:
+    """Casos com CNJ preenchido e estado operacional incompatível.
+
+    É um alerta determinístico de saneamento. Não consulta nem grava processo,
+    não infere andamento e respeita o mesmo ownership das demais fontes.
+    """
+    q = (
+        select(Case)
+        .where(
+            Case.deleted_at.is_(None),
+            Case.numero_processo.is_not(None),
+            Case.numero_processo != "",
+            or_(
+                Case.has_judicial_process.is_(False),
+                Case.case_type != "judicial",
+                Case.status == CaseStatus.aberto,
+                Case.fase == CaseFase.pre_processual,
+            ),
+        )
+        .order_by(Case.updated_at.desc())
+        .limit(limit * 3)
+    )
+    casos = (await db.execute(q)).scalars().all()
+    itens: list[dict] = []
+    for caso in casos:
+        if not _acessa_caso(cu, caso):
+            continue
+        dt = caso.updated_at.date() if caso.updated_at else None
+        if desde and dt and dt < desde:
+            continue
+        inconsistencias: list[str] = []
+        if not caso.has_judicial_process:
+            inconsistencias.append("marcado como sem processo judicial")
+        if caso.case_type != "judicial":
+            inconsistencias.append(f"tipo atual: {caso.case_type or 'não informado'}")
+        if caso.status == CaseStatus.aberto:
+            inconsistencias.append("status ainda aberto")
+        if caso.fase == CaseFase.pre_processual:
+            inconsistencias.append("fase ainda pré-processual")
+        itens.append(
+            {
+                "fonte": "processual",
+                "id": caso.id,
+                "titulo": (
+                    f"Inconsistência processual: "
+                    f"{caso.numero_interno or caso.titulo or caso.numero_processo}"
+                ),
+                "resumo": (
+                    f"CNJ {caso.numero_processo} já está registrado, porém "
+                    + "; ".join(inconsistencias)
+                    + ". Revise a reconciliação do caso."
+                ),
+                "data": dt.isoformat() if dt else None,
+                "nivel_risco": (
+                    "alto"
+                    if (
+                        not caso.has_judicial_process
+                        or caso.case_type != "judicial"
+                        or caso.fase == CaseFase.pre_processual
+                    )
+                    else "medio"
+                ),
+                "link": None,
+                "case_id": caso.id,
+                "_dt": dt or date.min,
+            }
+        )
+        if len(itens) >= limit:
+            break
+    return itens
+
+
 async def _itens_ambiental(db: AsyncSession, cu: User, desde: Optional[date],
                            hoje: date, limit: int) -> list[dict]:
     """Fonte 'ambiental' — reusa o mesmo select de environmental.listar
@@ -264,7 +341,9 @@ async def _itens_ambiental(db: AsyncSession, cu: User, desde: Optional[date],
 
 @router.get("/radar", dependencies=[Depends(rate_limit("compliance-radar", 15))])
 async def radar_compliance(
-    fonte: Optional[str] = Query(None, description="diario_oficial|regulatorio|ambiental"),
+    fonte: Optional[str] = Query(
+        None, description="diario_oficial|regulatorio|ambiental|processual"
+    ),
     desde: Optional[date] = Query(None, description="Só itens a partir desta data (YYYY-MM-DD)"),
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -272,7 +351,8 @@ async def radar_compliance(
 ):
     """Radar de compliance consolidado priorizado por risco.
 
-    Agrega Diário Oficial + regulatório + ambiental num feed unificado, ordenado
+    Agrega Diário Oficial + regulatório + ambiental + saneamento processual num
+    feed unificado, ordenado
     por risco (crítico→baixo) e recência. Fail-safe: se uma fonte falhar, as
     demais ainda são retornadas.
     """
@@ -305,6 +385,13 @@ async def radar_compliance(
         except Exception as e:  # noqa: BLE001
             log.warning("radar: fonte ambiental falhou: %s", e)
             erros.append("ambiental")
+
+    if fonte in (None, "processual"):
+        try:
+            itens += await _itens_processual(db, cu, desde, fetch)
+        except Exception as e:  # noqa: BLE001
+            log.warning("radar: fonte processual falhou: %s", e)
+            erros.append("processual")
 
     # Ordena por risco (crítico→baixo) e depois recência (mais novo primeiro).
     itens.sort(key=lambda it: (
