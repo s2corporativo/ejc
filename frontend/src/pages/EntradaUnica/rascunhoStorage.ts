@@ -37,10 +37,39 @@ export function carregarRascunho(): Proposta | null {
       reconciliacaoProcessual:
         p.reconciliacaoProcessual &&
         typeof p.reconciliacaoProcessual === "object"
-          ? p.reconciliacaoProcessual
+          ? {
+              status:
+                p.reconciliacaoProcessual.status ??
+                "informacoes_insuficientes",
+              cnjsDetectados: Array.isArray(
+                p.reconciliacaoProcessual.cnjsDetectados,
+              )
+                ? p.reconciliacaoProcessual.cnjsDetectados
+                : [],
+              resultadosPorCnj: Array.isArray(
+                p.reconciliacaoProcessual.resultadosPorCnj,
+              )
+                ? p.reconciliacaoProcessual.resultadosPorCnj
+                : [],
+              numeroCnjPrincipal:
+                p.reconciliacaoProcessual.numeroCnjPrincipal ?? null,
+              correspondencias: Array.isArray(
+                p.reconciliacaoProcessual.correspondencias,
+              )
+                ? p.reconciliacaoProcessual.correspondencias
+                : [],
+              bloquearCriacao:
+                p.reconciliacaoProcessual.bloquearCriacao === true,
+              acaoSugerida:
+                p.reconciliacaoProcessual.acaoSugerida ?? "revisar_dados",
+              mensagem:
+                p.reconciliacaoProcessual.mensagem ??
+                "Rascunho anterior à reconciliação processual; revise o CNJ antes de criar o caso.",
+            }
           : {
               status: "informacoes_insuficientes",
               cnjsDetectados: [],
+              resultadosPorCnj: [],
               numeroCnjPrincipal: null,
               correspondencias: [],
               bloquearCriacao: false,
