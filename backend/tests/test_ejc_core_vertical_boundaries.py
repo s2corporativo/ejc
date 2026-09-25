@@ -28,7 +28,6 @@ ALLOWED_IMPORTERS: dict[str, set[str]] = {
     "dpt360": {
         "main.py",
         "routers/teses.py",
-        "services/impacto_regulatorio.py",
     },
     "environmental_model": {
         "models/__init__.py",
