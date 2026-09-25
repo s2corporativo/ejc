@@ -35,7 +35,9 @@ from app.models.procuracao import Procuracao
 from app.models.tese import TeseCasoLink
 from app.models.user import User
 from app.schemas.redesign import ConversaoChecklistResponse
+from app.schemas.process import ProcessCreate
 from app.services.conflito_service import detectar_conflito
+from app.services.processo_service import ProcessConflict, criar_processo
 
 logger = logging.getLogger(__name__)
 
@@ -294,18 +296,26 @@ async def converter_judicial(
             "pendentes": pendentes,
         })
 
-    # Cria o PROCESSO no próprio caso (1 Caso : N Processos) — sem clonar o caso.
-    pid = str(uuid4())
-    await db.execute(text("""
-        INSERT INTO processes
-            (id, case_id, numero_cnj, tribunal, comarca, vara, tipo, valor_causa, status, created_at, updated_at)
-        VALUES
-            (:id, :cid, NULLIF(:cnj, ''), :trib, :com, :vara, 'judicial', :vc, 'ativo', now(), now())
-    """), {
-        "id": pid, "cid": case_id, "cnj": orig.numero_processo or "",
-        "trib": orig.tribunal, "com": orig.comarca, "vara": orig.vara,
-        "vc": orig.valor_causa,
-    })
+    # Cria o Processo pelo serviço canônico: preserva lock Caso -> CNJ,
+    # valida DV e impede que o mesmo CNJ seja associado a outro Caso.
+    try:
+        processo = await criar_processo(
+            case_id,
+            ProcessCreate(
+                numero_cnj=orig.numero_processo or None,
+                tribunal=orig.tribunal,
+                comarca=orig.comarca,
+                vara=orig.vara,
+                tipo="judicial",
+                valor_causa=orig.valor_causa,
+                status="ativo",
+                is_principal=True,
+            ),
+            db,
+        )
+    except ProcessConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    pid = processo["id"]
 
     # Marca o caso como judicial (mantém continuidade e satélites no mesmo case_id).
     await db.execute(text("""
