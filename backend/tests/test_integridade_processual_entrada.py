@@ -131,3 +131,34 @@ def test_radar_integridade_respeita_escopo_de_carteira(monkeypatch):
     assert "cases.advogado_auxiliar_id IS NULL" not in sql
     assert "cases.advogado_responsavel_id =" in sql
     assert "cases.advogado_auxiliar_id =" in sql
+
+
+@pytest.mark.anyio
+async def test_update_cnj_mantem_ordem_global_de_locks(monkeypatch):
+    from app.services import case_integrity_service
+
+    eventos: list[str] = []
+
+    async def _lock_case(_db, case_id):
+        assert case_id == "case-1"
+        eventos.append("case")
+
+    async def _lock_cnj(_db, numero):
+        assert numero == "10182841320268130027"
+        eventos.append("cnj")
+
+    async def _ids(_db, _numero):
+        return ["case-1"]
+
+    monkeypatch.setattr(process_repository, "lock_case", _lock_case)
+    monkeypatch.setattr(process_repository, "lock_cnj", _lock_cnj)
+    monkeypatch.setattr(process_repository, "case_ids_for_cnj", _ids)
+
+    await case_integrity_service.garantir_numero_processo_unico(
+        SimpleNamespace(),
+        client_id="client-1",
+        numero_processo="1018284-13.2026.8.13.0027",
+        excluir_case_id="case-1",
+    )
+
+    assert eventos == ["case", "cnj"]
