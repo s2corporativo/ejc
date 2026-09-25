@@ -12,6 +12,8 @@ from app.models.user import User
 from app.models.checklist import (
     ChecklistTemplate, ChecklistTemplateItem, CaseChecklist, CaseChecklistItem,
 )
+from app.services.case_integrity_service import sincronizar_processo_principal_do_caso
+from app.services.processo_service import ProcessConflict
 
 logger = logging.getLogger("ejc")
 
@@ -92,15 +94,26 @@ async def automacao_caso(case_id: str) -> None:
                     "SELECT 1 FROM processes WHERE case_id = :cid AND deleted_at IS NULL LIMIT 1"
                 ), {"cid": case_id})).scalar()
                 if not ja_proc:
-                    await db.execute(text(
-                        "INSERT INTO processes (id, case_id, numero_cnj, instancia, tribunal, "
-                        "comarca, vara, valor_causa, status, created_at, updated_at) "
-                        "VALUES (:id, :cid, :ncnj, '1', :trib, :com, :vara, :vc, 'ativo', now(), now())"
-                    ), {"id": str(uuid4()), "cid": case_id, "ncnj": numproc[:30],
-                        "trib": getattr(case, "tribunal", None),
-                        "com": getattr(case, "comarca", None),
-                        "vara": getattr(case, "vara", None),
-                        "vc": getattr(case, "valor_causa", None)})
+                    try:
+                        await sincronizar_processo_principal_do_caso(
+                            db,
+                            case_id=case_id,
+                            numero_processo=numproc,
+                            tribunal=getattr(case, "tribunal", None),
+                            comarca=getattr(case, "comarca", None),
+                            vara=getattr(case, "vara", None),
+                            valor_causa=getattr(case, "valor_causa", None),
+                            tipo="judicial",
+                        )
+                    except ProcessConflict as exc:
+                        # Background é fail-soft: um conflito de CNJ não pode
+                        # desfazer Kanban/checklist. A inconsistência ficará
+                        # visível no Radar para reconciliação humana.
+                        logger.warning(
+                            "[automacao_caso] sincronização processual recusada "
+                            "(tipo=%s)",
+                            type(exc).__name__,
+                        )
 
             await db.commit()
             logger.info(f"[automacao_caso] caso {case_id} automatizado (kanban + checklist)")
