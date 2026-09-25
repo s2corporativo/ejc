@@ -30,6 +30,10 @@ export function carregarRascunho(): Proposta | null {
     return {
       ...p,
       numeroCnj: typeof p.numeroCnj === "string" ? p.numeroCnj : "",
+      processMatchConfirmed:
+        typeof p.processMatchConfirmed === "boolean"
+          ? p.processMatchConfirmed
+          : false,
       reconciliacaoProcessual:
         p.reconciliacaoProcessual &&
         typeof p.reconciliacaoProcessual === "object"
