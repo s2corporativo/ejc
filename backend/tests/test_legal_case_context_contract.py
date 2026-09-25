@@ -34,3 +34,7 @@ def test_label_de_area_conhecida_independe_de_satelite() -> None:
 
 def test_label_de_area_desconhecida_preserva_valor_original() -> None:
     assert legal_area_context_label("area_experimental") == "area_experimental"
+
+
+def test_label_de_area_enum_like_preserva_contrato() -> None:
+    assert legal_area_context_label(SimpleNamespace(value="consumidor")) == "Cível/Consumidor"
