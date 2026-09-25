@@ -24,7 +24,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import exists, func, or_, select, update
+from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import ColumnElement
 
@@ -32,7 +32,7 @@ from app.core.database import get_db
 from app.core.ownership import is_gestao, pode_ver_todos
 from app.core.security import require_roles
 from app.models.audit_log import criar_audit_log
-from app.models.case import Case
+from app.models.case import Case, CaseFase, CaseStatus
 from app.models.process import Process
 from app.models.saneamento import (
     Divergencia,
@@ -135,6 +135,122 @@ def _pode_agir_no_numero(cu: User, casos: list[Case]) -> bool:
         c.advogado_responsavel_id == cu.id or c.advogado_auxiliar_id == cu.id
         for c in casos
     )
+
+
+def _escopo_cases_integridade(stmt, cu: User):
+    stmt = stmt.where(Case.deleted_at.is_(None))
+    if pode_ver_todos(cu):
+        return stmt
+    return stmt.where(
+        or_(
+            Case.advogado_responsavel_id == cu.id,
+            Case.advogado_auxiliar_id == cu.id,
+            (Case.advogado_responsavel_id.is_(None))
+            & (Case.advogado_auxiliar_id.is_(None)),
+        )
+    )
+
+
+@router.get("/integridade")
+async def painel_integridade_processual(
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_LEITURA),
+):
+    """Fila operacional de inconsistências sem corrigir nada automaticamente."""
+    tem_processo = exists().where(
+        Process.case_id == Case.id,
+        Process.deleted_at.is_(None),
+    )
+    tem_cnj = or_(
+        func.length(func.trim(func.coalesce(Case.numero_processo, ""))) > 0,
+        exists().where(
+            Process.case_id == Case.id,
+            Process.deleted_at.is_(None),
+            func.length(func.trim(func.coalesce(Process.numero_cnj, ""))) > 0,
+        ),
+    )
+
+    filtros = {
+        "sem_responsavel": and_(
+            Case.status.notin_([CaseStatus.encerrado, CaseStatus.arquivado]),
+            Case.advogado_responsavel_id.is_(None),
+        ),
+        "pre_processual_com_cnj": and_(
+            Case.fase == CaseFase.pre_processual,
+            tem_cnj,
+        ),
+        "protocolado_sem_processo": and_(
+            Case.status == CaseStatus.protocolado,
+            ~tem_processo,
+            func.length(func.trim(func.coalesce(Case.numero_processo, ""))) == 0,
+        ),
+    }
+
+    contagens: dict[str, int | None] = {}
+    itens: list[dict] = []
+    mensagens = {
+        "sem_responsavel": "Caso ativo sem advogado responsável.",
+        "pre_processual_com_cnj": "Caso ainda pré-processual apesar de já possuir número processual.",
+        "protocolado_sem_processo": "Caso protocolado sem entidade Processo vinculada.",
+    }
+    for tipo, filtro in filtros.items():
+        count_stmt = _escopo_cases_integridade(
+            select(func.count()).select_from(Case).where(filtro), cu
+        )
+        contagens[tipo] = int((await db.execute(count_stmt)).scalar_one())
+        rows_stmt = _escopo_cases_integridade(
+            select(Case).where(filtro).order_by(Case.updated_at.desc()).limit(8), cu
+        )
+        rows = (await db.execute(rows_stmt)).scalars().all()
+        for caso in rows:
+            itens.append({
+                "tipo": tipo,
+                "case_id": caso.id,
+                "numero_interno": caso.numero_interno,
+                "titulo": caso.titulo,
+                "mensagem": mensagens[tipo],
+            })
+
+    q_div = _filtro_escopo_caso(
+        select(func.count()).select_from(Divergencia).where(Divergencia.tratada.is_(False)),
+        Divergencia.numero_cnj,
+        cu,
+    )
+    q_dup = _filtro_escopo_caso(
+        select(func.count()).select_from(PlanoDedup).where(
+            PlanoDedup.aplicado.is_(False),
+            PlanoDedup.tipo == "duplicata",
+        ),
+        PlanoDedup.numero_cnj,
+        cu,
+    )
+    contagens["divergencias_datajud"] = int((await db.execute(q_div)).scalar_one())
+    contagens["duplicatas_cnj"] = int((await db.execute(q_dup)).scalar_one())
+    contagens["numeros_invalidos"] = None
+    if is_gestao(cu):
+        contagens["numeros_invalidos"] = int(
+            (
+                await db.execute(
+                    select(func.count()).select_from(ExcecaoNumero).where(
+                        ExcecaoNumero.resolvido.is_(False)
+                    )
+                )
+            ).scalar_one()
+        )
+
+    return {
+        "contagens": contagens,
+        "total_casos_pendentes": sum(
+            int(contagens[chave] or 0)
+            for chave in (
+                "sem_responsavel",
+                "pre_processual_com_cnj",
+                "protocolado_sem_processo",
+            )
+        ),
+        "itens": itens[:20],
+        "somente_sinalizacao": True,
+    }
 
 
 @router.get("/excecoes")
