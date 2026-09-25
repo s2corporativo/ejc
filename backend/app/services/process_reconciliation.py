@@ -27,7 +27,7 @@ _CNJ_RE = re.compile(
     r"(?<!\d)(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})(?!\d)"
 )
 _TRIBUNAL_RE = re.compile(
-    r"\b(STF|STJ|TST|TSE|STM|TJ[A-Z]{2}|TRF\s*[- ]?\d|TRT\s*[- ]?\d{1,2}|TRE\s*[- ]?[A-Z]{2})\b",
+    r"\b(STF|STJ|TST|TSE|STM|TJ(?:DFT|[A-Z]{2})|TRF\s*[- ]?\d|TRT\s*[- ]?\d{1,2}|TRE\s*[- ]?[A-Z]{2})\b",
     re.IGNORECASE,
 )
 
