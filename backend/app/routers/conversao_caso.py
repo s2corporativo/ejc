@@ -18,6 +18,7 @@ import logging
 from datetime import date
 from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, select, func, or_
 from app.core.database import get_db
@@ -313,6 +314,14 @@ async def converter_judicial(
             ),
             db,
         )
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "O número processual armazenado no caso é inválido para um CNJ. "
+                "Revise o cadastro antes da conversão judicial."
+            ),
+        ) from exc
     except ProcessConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     pid = processo["id"]
