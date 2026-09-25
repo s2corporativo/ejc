@@ -25,11 +25,7 @@ BOUNDARIES: dict[str, tuple[str, ...]] = {
 # Dívida conhecida na main de 25/09/2026. O teste é monotônico: remover um
 # importador é permitido; adicionar outro exige decisão arquitetural explícita.
 ALLOWED_IMPORTERS: dict[str, set[str]] = {
-    "dpt360": {
-        "main.py",
-        "routers/teses.py",
-        "services/impacto_regulatorio.py",
-    },
+    "dpt360": {"main.py"},
     "environmental_model": {
         "models/__init__.py",
         "routers/compliance.py",

@@ -3,13 +3,13 @@
 # (frente 1 de docs/estrategia/EVOLUCAO_ESTRATEGICA_EJC.md).
 #
 # O radar do EJC já responde "publicação nova → quais EMPRESAS ela atinge":
-# `modules/dpt360/radar_service.py` classifica cada alerta de
+# `services/regulatory_area_classifier.py` classifica cada alerta de
 # `diario_oficial_alertas` numa área e cruza com a carteira de clientes. O que
 # faltava era o alvo jurídico — "esta publicação nova mexe com a TESE X" —, que
 # é o que a frente 1 pede.
 #
 # Por isso este módulo NÃO reimplementa nada: reusa `classify_area` e
-# `AREA_CASE_ALIASES` do radar (uma taxonomia só, não duas que divergem com o
+# `AREA_CASE_ALIASES` do serviço compartilhado (uma taxonomia só, não duas que divergem com o
 # tempo) e a composição de score do `tese_caso_matcher` (um peso só). O que é
 # novo aqui é apenas a REGRA DE ALINHAMENTO entre a área da publicação e a área
 # jurídica da tese, que é por equivalência, não por igualdade.
@@ -24,7 +24,7 @@
 #     publicação continua sendo trabalho do advogado.
 from __future__ import annotations
 
-from app.modules.dpt360.radar_service import AREA_CASE_ALIASES, classify_area
+from app.services.regulatory_area_classifier import AREA_CASE_ALIASES, classify_area
 from app.services.tese_caso_matcher import (
     PISO_RELEVANCIA_PADRAO,
     normalizar,

@@ -24,14 +24,19 @@ A regra é monotônica:
 
 ## DPT360
 
-Importadores externos conhecidos:
+Importador externo conhecido:
 
-- `backend/app/main.py`;
-- `backend/app/routers/teses.py`;
-- `backend/app/services/impacto_regulatorio.py`.
+- `backend/app/main.py`.
 
-Próximo objetivo: retirar primeiro os consumidores de negócio (`teses.py` e
-`impacto_regulatorio.py`), deixando o bootstrap como último ponto de corte.
+**Reduções já executadas na Onda 3:**
+
+- `impacto_regulatorio.py` deixou de importar o radar DPT360; a taxonomia
+  determinística foi movida para `services/regulatory_area_classifier.py`;
+- `routers/teses.py` deixou de importar `dpt360.access_scope`; o ownership de
+  alertas foi movido para `services/diario_oficial_scope.py`, com reexport no
+  DPT para compatibilidade interna.
+
+O bootstrap passa a ser a única aresta Core → DPT conhecida nesta baseline.
 
 ## EnvironmentalCase
 
@@ -89,17 +94,14 @@ seguintes.
 
 ## Dependência legada descoberta pelo próprio gate
 
-A primeira execução do gate revelou uma aresta pré-existente que não havia
-aparecido no inventário inicial:
+A execução inicial do gate revelou uma aresta pré-existente omitida do primeiro
+inventário:
 
 - `routers/peca_geracao.py` → `routers/ramos.py`.
 
-Peças usa hoje dois contratos de proveniência das calculadoras:
+Peças usa dois contratos de proveniência das calculadoras:
 `CAMINHOS_FERRAMENTAS_VALIDOS` e `VERSAO_REGRA_ATUAL`.
 
-Essa aresta existia antes da criação do gate e, por isso, integra a baseline
-histórica. Ela **não** autoriza novos imports Core → Ramos.
-
-Destino arquitetural: mover o registro/versão de ferramentas para contrato
-neutro compartilhado e retirar esse import router→router em onda específica,
-preservando os gates de homologação e proveniência da geração de demonstrativos.
+A aresta integra a baseline histórica, mas não autoriza novos imports Core →
+Ramos. O destino é mover esses contratos para uma camada neutra preservando os
+gates de homologação e proveniência dos demonstrativos.
