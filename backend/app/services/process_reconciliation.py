@@ -15,7 +15,7 @@ import re
 import unicodedata
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.client_ownership import pode_ver_caso_resumido
@@ -100,6 +100,22 @@ def _cnj_digits_sql(col):
     for char in (".", "-", "/", " "):
         expr = func.replace(expr, char, "")
     return expr
+
+
+async def serializar_escrita_cnj(db: AsyncSession, numero_cnj: str) -> None:
+    """Serializa escritas concorrentes da Entrada para o mesmo CNJ.
+
+    O índice de processes.numero_cnj é deliberadamente não-único por
+    compatibilidade histórica. Este lock transacional fecha a janela
+    recheck→insert entre rascunhos distintos sem migration e é liberado
+    automaticamente no commit/rollback.
+    """
+    norm = normalizar_cnj(numero_cnj)
+    chave = norm or _texto_norm(numero_cnj)
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:chave))"),
+        {"chave": f"entrada-cnj:{chave}"},
+    )
 
 
 async def buscar_casos_por_cnj(
