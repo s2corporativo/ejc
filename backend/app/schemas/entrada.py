@@ -37,6 +37,13 @@ class CriarCasoEntradaRequest(BaseModel):
     titulo: str = Field(min_length=3, max_length=255)
     fatos: str | None = Field(default=None, max_length=50_000)
     parte_contraria: str | None = Field(default=None, max_length=255)
+    # CNJ detectado/revisado na Entrada Única. Ausência permanece válida e
+    # nunca é preenchida por inferência.
+    numero_cnj: str | None = Field(
+        default=None,
+        max_length=30,
+        pattern=r"^\\d{7}-\\d{2}\\.\\d{4}\\.\\d\\.\\d{2}\\.\\d{4}$",
+    )
     documentos_ids: list[str] = Field(default_factory=list, max_length=40)
     prazo: PrazoEntrada | None = None
 
@@ -82,4 +89,23 @@ class CriarCasoEntradaRequest(BaseModel):
     def _confirmacao_obrigatoria(cls, v: bool) -> bool:
         if v is not True:
             raise ValueError("a criação do caso exige confirmação explícita do advogado")
+        return v
+
+
+class VincularCasoExistenteEntradaRequest(BaseModel):
+    """Confirma a transição de um caso existente para processo judicial."""
+
+    case_id: str = Field(min_length=1, max_length=36)
+    numero_cnj: str = Field(
+        min_length=20,
+        max_length=30,
+        pattern=r"^\\d{7}-\\d{2}\\.\\d{4}\\.\\d\\.\\d{2}\\.\\d{4}$",
+    )
+    confirmo_correspondencia: bool
+
+    @field_validator("confirmo_correspondencia")
+    @classmethod
+    def _confirmacao_correspondencia_obrigatoria(cls, v: bool) -> bool:
+        if v is not True:
+            raise ValueError("a vinculação exige confirmação explícita do advogado")
         return v
