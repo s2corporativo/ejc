@@ -40,20 +40,27 @@ describe("moduleRegistry", () => {
     }
   });
 
-  it("expõe o módulo jurídico como Áreas de Atuação", () => {
+  it("preserva Áreas de Atuação por deep-link, mas fora da navegação do EJC Core", () => {
     const areas = STAFF_ROUTES.find((route) => route.key === "ramos");
     expect(areas?.label).toBe("Áreas de Atuação");
     expect(areas?.path).toBe("/areas-de-atuacao");
+    expect(areas?.showInNav).toBe(false);
+    expect(canRoleAccessPath("advogado", "/areas-de-atuacao")).toBe(true);
+    expect(
+      getProductionNavigation("advogado").some(
+        (module) => module.path === "/areas-de-atuacao",
+      ),
+    ).toBe(false);
   });
 
-  it("registra o DPT Empresarial 360 como workspace essencial sem alargar RBAC", () => {
+  it("preserva DPT Empresarial 360 por deep-link sem expô-lo na navegação do EJC Core", () => {
     // Consolidação do "DPT360 triplo" (auditoria §2.6 #7): um módulo só,
     // com as sub-rotas internas declaradas em subPaths (o splat cobre tanto
     // a navegação interna quanto o detalhe /dpt360/empresas/:clientId).
     const dpt = STAFF_ROUTES.find((route) => route.key === "dpt360");
     expect(dpt?.path).toBe("/dpt360");
-    expect(dpt?.showInNav).toBe(true);
-    expect(dpt?.essential).toBe(true);
+    expect(dpt?.showInNav).toBe(false);
+    expect(dpt?.essential).toBe(false);
     expect(dpt?.subPaths).toEqual(["/dpt360/*"]);
     expect(
       STAFF_ROUTES.filter((route) => route.path.startsWith("/dpt360")),
@@ -246,7 +253,6 @@ describe("moduleRegistry", () => {
       "/clientes",
       "/documentos",
       "/pecas",
-      "/dpt360",
       "/inteligencia",
     ]);
     expect(advogado).not.toContain("/casos/novo");
@@ -334,7 +340,6 @@ describe("navegação canônica do shell (Fase 4)", () => {
           "/clientes",
           "/documentos",
           "/pecas",
-          "/dpt360",
           "/inteligencia",
         ],
       ],
@@ -348,7 +353,6 @@ describe("navegação canônica do shell (Fase 4)", () => {
           "/clientes",
           "/documentos",
           "/pecas",
-          "/dpt360",
           "/inteligencia",
           "/financeiro",
         ],
