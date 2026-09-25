@@ -83,6 +83,7 @@ class CriarCasoEntradaRequest(BaseModel):
     # conflito/duplicado exige reconhecimento explícito (409 sem estes flags).
     conflict_confirmed: bool = False
     duplicate_confirmed: bool = False
+    process_match_confirmed: bool = False
 
     @field_validator(
         "documentos_faltantes", "provas_necessarias", "proximos_passos"
