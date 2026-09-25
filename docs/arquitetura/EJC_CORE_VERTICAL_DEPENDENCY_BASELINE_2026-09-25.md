@@ -24,17 +24,19 @@ A regra é monotônica:
 
 ## DPT360
 
-Importadores externos conhecidos:
+Importador externo conhecido:
 
-- `backend/app/main.py`;
-- `backend/app/routers/teses.py`.
+- `backend/app/main.py`.
 
-**Redução já executada na Onda 3:** `impacto_regulatorio.py` deixou de importar
-o radar DPT360; a taxonomia determinística foi movida para
-`services/regulatory_area_classifier.py`, consumida por Core e DPT.
+**Reduções já executadas na Onda 3:**
 
-Próximo objetivo: retirar o consumidor de negócio restante (`teses.py`),
-deixando o bootstrap como último ponto de corte.
+- `impacto_regulatorio.py` deixou de importar o radar DPT360; a taxonomia
+  determinística foi movida para `services/regulatory_area_classifier.py`;
+- `routers/teses.py` deixou de importar `dpt360.access_scope`; o ownership de
+  alertas foi movido para `services/diario_oficial_scope.py`, com reexport no
+  DPT para compatibilidade interna.
+
+O bootstrap passa a ser a única aresta Core → DPT conhecida nesta baseline.
 
 ## EnvironmentalCase
 
