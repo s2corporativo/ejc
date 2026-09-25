@@ -11,7 +11,7 @@
 #   • Saída em texto estruturado [DOSSIÊ] pronto para injeção no prompt da IA.
 #   • Nenhum dado inventado: campos vazios são omitidos, não preenchidos.
 from __future__ import annotations
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 from typing import Optional
 
@@ -23,66 +23,11 @@ from app.models.client import Client
 from app.models.deadline import Deadline, DeadlineStatus
 from app.models.fee import Fee
 from app.models.legal_doc import LegalDoc
-from app.models.environmental import EnvironmentalCase
-from app.models.especializado import (
-    EmpresarialCase, CivelCase, PenalCase,
-    TrabalhistaCase, AdminCase, BancarioCase,
+from app.modules.legacy_verticals.case_context_adapter import (
+    load_specialized_case_context,
 )
+from app.services.legal_case_context import format_context_value
 from app.services.sanitizer import sanitizar_pii
-
-
-# Mapa: área do caso → (modelo satélite, rótulo legível, label do ramo)
-_RAMO_MAP = {
-    "ambiental":   (EnvironmentalCase, "Ambiental"),
-    "empresarial": (EmpresarialCase,   "Empresarial"),
-    "civil":       (CivelCase,         "Cível"),
-    "consumidor":  (CivelCase,         "Cível/Consumidor"),
-    "familia":     (CivelCase,         "Cível/Família"),
-    "criminal":    (PenalCase,         "Penal"),
-    "trabalhista": (TrabalhistaCase,   "Trabalhista"),
-    "tributario":  (AdminCase,         "Administrativo/Tributário"),
-    # Áreas próprias desde a migration 083 (antes: satélite aproximada ou
-    # detecção indireta — o comentário antigo sobre "bancário sem área" caiu):
-    "administrativo": (AdminCase,      "Administrativo"),
-    "bancario":       (BancarioCase,   "Bancário"),
-    "imobiliario":    (CivelCase,      "Cível/Imobiliário"),
-    "sucessoes":      (CivelCase,      "Cível/Sucessões"),
-    "constitucional": (AdminCase,      "Administrativo/Constitucional"),
-    "digital_lgpd":   (CivelCase,      "Cível/Digital-LGPD"),
-    "transito":       (AdminCase,      "Administrativo/Trânsito"),
-}
-
-
-def _fmt_val(v) -> str:
-    """Formata valores para leitura — datas, decimais, enums, None."""
-    if v is None:
-        return "—"
-    # Enums → valor legível (ex: BancarioTipo.busca_apreensao → "busca apreensao")
-    if hasattr(v, "value") and not isinstance(v, (int, float, bool)):
-        return str(v.value).replace("_", " ")
-    if isinstance(v, Decimal):
-        from app.utils.format import formatar_brl  # #41: formatador BRL único
-        return formatar_brl(v)
-    if isinstance(v, (date, datetime)):
-        return v.strftime("%d/%m/%Y")
-    if isinstance(v, bool):
-        return "Sim" if v else "Não"
-    return str(v)
-
-
-def _campos_relevantes(obj, omitir: set[str]) -> list[tuple[str, str]]:
-    """Extrai campos preenchidos de um modelo satélite (omite vazios e meta)."""
-    linhas = []
-    base_omit = {"id", "case_id", "created_at", "updated_at", "deleted_at"} | omitir
-    for col in obj.__table__.columns:
-        if col.key in base_omit:
-            continue
-        val = getattr(obj, col.key, None)
-        if val is None or val == "" or val is False:
-            continue
-        rotulo = col.key.replace("_", " ").capitalize()
-        linhas.append((rotulo, _fmt_val(val)))
-    return linhas
 
 
 async def montar_dossie(
@@ -117,23 +62,12 @@ async def montar_dossie(
     if caso.parte_contraria:
         nomes_proteger.append(caso.parte_contraria)
 
-    # ── Ramo especializado ────────────────────────────────────────────────────
-    ramo_obj = None
-    ramo_label = caso.area.value if hasattr(caso.area, "value") else str(caso.area)
-    modelo_info = _RAMO_MAP.get(ramo_label)
-    if modelo_info:
-        Modelo, label = modelo_info
-        ramo_obj = (await db.execute(
-            select(Modelo).where(Modelo.case_id == case_id, Modelo.deleted_at.is_(None))
-        )).scalar_one_or_none()
-        ramo_label = label
-    # Bancário: detectar mesmo sem área própria
-    if ramo_obj is None:
-        ban = (await db.execute(
-            select(BancarioCase).where(BancarioCase.case_id == case_id, BancarioCase.deleted_at.is_(None))
-        )).scalar_one_or_none()
-        if ban:
-            ramo_obj, ramo_label = ban, "Bancário/Financeiro"
+    # ── Contexto especializado legado ─────────────────────────────────────────
+    # O Core não conhece mais models/tabelas por ramo. Durante a migração #1843,
+    # um adapter isolado converte eventual satélite legado para contrato neutro.
+    area_base = caso.area.value if hasattr(caso.area, "value") else str(caso.area)
+    specialized_context = await load_specialized_case_context(db, case_id, caso.area)
+    ramo_label = specialized_context.label if specialized_context else area_base
 
     # ── Dossiê documental canônico ───────────────────────────────────────────
     # Fonte distinta do campo editável de fatos e de qualquer interpretação de IA.
@@ -176,11 +110,11 @@ async def montar_dossie(
     L.append(f"Número interno: {caso.numero_interno or '—'}")
     L.append(f"Título: {caso.titulo}")
     L.append(f"Área: {ramo_label}")
-    L.append(f"Status: {_fmt_val(caso.status)} | Fase: {_fmt_val(caso.fase)} | Prioridade: {_fmt_val(caso.prioridade)}")
+    L.append(f"Status: {format_context_value(caso.status)} | Fase: {format_context_value(caso.fase)} | Prioridade: {format_context_value(caso.prioridade)}")
     if caso.risco:
         L.append(f"Risco avaliado: {caso.risco}")
     if caso.valor_causa:
-        L.append(f"Valor da causa: {_fmt_val(caso.valor_causa)}")
+        L.append(f"Valor da causa: {format_context_value(caso.valor_causa)}")
     # Fase 2: fonte canônica (processes) com fallback para campo legado
     from app.services.processo_service import processo_principal as _get_proc
     _proc = await _get_proc(case_id, db)
@@ -224,17 +158,15 @@ async def montar_dossie(
 
     # Prescrição
     if caso.data_prescricao:
-        L.append(f"[PRESCRIÇÃO] {caso.tipo_acao_prescricao or 'prazo'} → {_fmt_val(caso.data_prescricao)}"
+        L.append(f"[PRESCRIÇÃO] {caso.tipo_acao_prescricao or 'prazo'} → {format_context_value(caso.data_prescricao)}"
                  + (f" (causa interruptiva: {caso.causa_interruptiva})" if caso.causa_interruptiva else ""))
 
-    # Ramo especializado
-    if ramo_obj is not None:
-        campos = _campos_relevantes(ramo_obj, omitir=set())
-        if campos:
-            L.append("")
-            L.append(f"[DADOS ESPECIALIZADOS — {ramo_label}]")
-            for rotulo, valor in campos:
-                L.append(f"  • {rotulo}: {valor}")
+    # Contexto especializado legado — já convertido para contrato neutro.
+    if specialized_context is not None and specialized_context.fields:
+        L.append("")
+        L.append(f"[DADOS ESPECIALIZADOS — {ramo_label}]")
+        for rotulo, valor in specialized_context.fields:
+            L.append(f"  • {rotulo}: {valor}")
 
     # Prazos
     if prazos:
@@ -244,16 +176,16 @@ async def montar_dossie(
         for p in prazos:
             dias = (p.data_prazo - hoje).days
             urg = "VENCIDO" if dias < 0 else (f"{dias}d restantes")
-            L.append(f"  • {p.titulo} → {_fmt_val(p.data_prazo)} ({urg})"
+            L.append(f"  • {p.titulo} → {format_context_value(p.data_prazo)} ({urg})"
                      + (f" — {p.base_legal}" if p.base_legal else ""))
 
     # Honorários (resumo financeiro — sem expor valores nominais sensíveis em detalhe)
     if honorarios:
         total = sum((h.valor or Decimal(0)) for h in honorarios)
-        pendentes = [h for h in honorarios if _fmt_val(h.status) not in ("pago", "cancelado")]
+        pendentes = [h for h in honorarios if format_context_value(h.status) not in ("pago", "cancelado")]
         L.append("")
         L.append(f"[HONORÁRIOS] {len(honorarios)} lançamento(s), "
-                 f"{len(pendentes)} pendente(s). Total contratado: {_fmt_val(total)}")
+                 f"{len(pendentes)} pendente(s). Total contratado: {format_context_value(total)}")
 
     # Peças produzidas
     if pecas:
@@ -261,14 +193,14 @@ async def montar_dossie(
         L.append("[PEÇAS PRODUZIDAS]")
         for pc in pecas:
             flag = " [IA — requer revisão]" if (pc.ai_generated and not pc.human_reviewed) else ""
-            L.append(f"  • {pc.titulo} ({_fmt_val(pc.tipo_peca)}, {_fmt_val(pc.status)}){flag}")
+            L.append(f"  • {pc.titulo} ({format_context_value(pc.tipo_peca)}, {format_context_value(pc.status)}){flag}")
 
     # Movimentações
     if movimentos:
         L.append("")
         L.append("[HISTÓRICO RECENTE]")
         for m in movimentos:
-            L.append(f"  • {_fmt_val(m.data_evento)} [{m.tipo}] {m.descricao[:120]}")
+            L.append(f"  • {format_context_value(m.data_evento)} [{m.tipo}] {m.descricao[:120]}")
 
     texto_bruto = "\n".join(L)
 
@@ -285,7 +217,7 @@ async def montar_dossie(
             "case_id": case_id,
             "numero_interno": caso.numero_interno,
             "area": ramo_label,
-            "tem_ramo_especializado": ramo_obj is not None,
+            "tem_ramo_especializado": specialized_context is not None,
             "qtd_prazos_ativos": len(prazos),
             "qtd_pecas": len(pecas),
             "qtd_honorarios": len(honorarios),
