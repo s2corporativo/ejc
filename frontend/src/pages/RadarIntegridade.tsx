@@ -21,6 +21,7 @@ const ROTULOS: Record<string, string> = {
   sem_responsavel: "Sem responsável",
   pre_processual_com_cnj: "Pré-processual com CNJ",
   protocolado_sem_processo: "Protocolado sem Processo",
+  processo_sem_principal: "Processo sem principal",
   divergencias_datajud: "Divergências DataJud",
   duplicatas_cnj: "Duplicatas de CNJ",
   recebimentos_sem_rateio: "Recebimentos sem rateio",
