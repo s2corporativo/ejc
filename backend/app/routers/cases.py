@@ -17,7 +17,7 @@ from app.core.rate_limit import consumir, rate_limit
 from app.core.security import (get_current_user, require_roles, ROLE_LEVEL,
                                  require_roles_exact, requer_equipe_juridica)
 from app.models.user import User
-from app.models.case import Case, CaseMovimento, CaseStatus
+from app.models.case import Case, CaseFase, CaseMovimento, CaseStatus
 from app.models.client import Client
 from app.models.audit_log import criar_audit_log
 
@@ -25,6 +25,10 @@ logger = logging.getLogger(__name__)
 # Alocador canônico de numero_interno extraído para service compartilhado
 # (fonte única com a conversão da Sala Jurídica). Alias fino preserva os
 # chamadores internos deste router.
+from app.services.case_integrity_service import (
+    garantir_numero_processo_unico,
+    sincronizar_processo_principal_do_caso,
+)
 from app.services.case_numeracao import proximo_numero_interno as _proximo_numero_interno
 from app.services.deadline_calculator import calcular_prescricao
 from app.services.case_intel import triagem_caso, aprendizado_encerramento
@@ -267,43 +271,13 @@ async def criar(
     from app.core.client_ownership import obter_cliente_autorizado
     await obter_cliente_autorizado(db, cu, payload.client_id)
 
-    # Idempotência concorrente: o mesmo cliente e número processual não
-    # podem criar dois casos ativos. O advisory lock serializa requisições
-    # simultâneas; a comparação normaliza CNJ mascarado e texto administrativo.
-    if payload.numero_processo:
-        from app.services.validators_service import normalizar_cnj
-
-        numero = payload.numero_processo.strip()
-        digitos_cnj = normalizar_cnj(numero)
-        numero_chave = digitos_cnj if len(digitos_cnj) == 20 else numero.casefold()
-        await db.execute(
-            text("SELECT pg_advisory_xact_lock(hashtext(:chave))"),
-            {"chave": f"case_duplicate:{payload.client_id}:{numero_chave}"},
-        )
-        if len(digitos_cnj) == 20:
-            numero_igual = (
-                sqlfunc.regexp_replace(Case.numero_processo, r"\D", "", "g")
-                == digitos_cnj
-            )
-        else:
-            numero_igual = (
-                sqlfunc.lower(sqlfunc.trim(Case.numero_processo))
-                == numero.casefold()
-            )
-        caso_existente = (
-            await db.execute(
-                select(Case.id).where(
-                    Case.client_id == payload.client_id,
-                    Case.deleted_at.is_(None),
-                    numero_igual,
-                ).limit(1)
-            )
-        ).scalar_one_or_none()
-        if caso_existente:
-            raise HTTPException(
-                status_code=409,
-                detail="Já existe caso ativo para este cliente e número processual",
-            )
+    # Integridade canônica: CNJ pertence a um único Caso em todo o EJC;
+    # numeração administrativa mantém unicidade por cliente.
+    await garantir_numero_processo_unico(
+        db,
+        client_id=payload.client_id,
+        numero_processo=payload.numero_processo,
+    )
 
     # `honorarios` (FASE 2) NÃO é coluna de Case — vira proposta vigente abaixo.
     data = payload.model_dump(exclude={"data_fato_prescricao", "honorarios"})
@@ -325,6 +299,23 @@ async def criar(
             )
 
     db.add(c)
+    await db.flush()
+    if payload.numero_processo:
+        tipo_processo = (
+            "administrativo"
+            if c.fase == CaseFase.administrativo or c.case_type == "administrativo"
+            else "judicial"
+        )
+        await sincronizar_processo_principal_do_caso(
+            db,
+            case_id=c.id,
+            numero_processo=payload.numero_processo,
+            tribunal=payload.tribunal,
+            comarca=payload.comarca,
+            vara=payload.vara,
+            valor_causa=payload.valor_causa,
+            tipo=tipo_processo,
+        )
     db.add(CaseMovimento(
         id=str(uuid4()), case_id=c.id, tipo="nota",
         descricao=f"Caso aberto por {cu.full_name}", created_by=cu.id,
@@ -458,6 +449,14 @@ async def atualizar(
             detail="Alterar o sigilo reforçado de IA exige papel de advogado, sócio ou administrador.",
         )
 
+    if "numero_processo" in mudancas and mudancas["numero_processo"]:
+        await garantir_numero_processo_unico(
+            db,
+            client_id=c.client_id,
+            numero_processo=mudancas["numero_processo"],
+            excluir_case_id=case_id,
+        )
+
     for k, v in mudancas.items():
         setattr(c, k, v)
     # Só sobra a saída de "arquivado" por aqui (entrada é bloqueada acima) —
@@ -487,19 +486,29 @@ async def atualizar(
         db, cu.id, cu.role.value, "UPDATE", "cases", case_id,
         dados_depois={k: str(v) for k, v in mudancas.items()},
     )
-    # Fase 3 write-through: sincroniza processes quando numero_processo muda
-    if "numero_processo" in mudancas and mudancas["numero_processo"]:
-        novo_cnj = (mudancas["numero_processo"] or "").strip()[:30]
-        from uuid import uuid4
-        await db.execute(text("""
-            INSERT INTO processes (id, case_id, numero_cnj, instancia, is_principal, status, created_at, updated_at)
-            VALUES (:id, :cid, :ncnj, '1', TRUE, 'ativo', now(), now())
-            ON CONFLICT DO NOTHING
-        """), {"id": str(uuid4()), "cid": case_id, "ncnj": novo_cnj})
-        await db.execute(text("""
-            UPDATE processes SET numero_cnj=:ncnj, updated_at=now()
-            WHERE case_id=:cid AND is_principal=TRUE AND deleted_at IS NULL
-        """), {"ncnj": novo_cnj, "cid": case_id})
+    # Write-through canônico: nenhuma escrita SQL paralela em processes.
+    campos_processo = {"numero_processo", "tribunal", "comarca", "vara", "valor_causa"}
+    if campos_processo.intersection(mudancas):
+        kwargs_processo = {}
+        mapa = {
+            "numero_processo": "numero_processo",
+            "tribunal": "tribunal",
+            "comarca": "comarca",
+            "vara": "vara",
+            "valor_causa": "valor_causa",
+        }
+        for campo_case, campo_service in mapa.items():
+            if campo_case in mudancas:
+                kwargs_processo[campo_service] = mudancas[campo_case]
+        if "numero_processo" in mudancas and mudancas["numero_processo"]:
+            kwargs_processo["tipo"] = (
+                "administrativo"
+                if c.fase == CaseFase.administrativo or c.case_type == "administrativo"
+                else "judicial"
+            )
+        await sincronizar_processo_principal_do_caso(
+            db, case_id=case_id, **kwargs_processo
+        )
     await db.commit()
     await db.refresh(c)
     # Event bus: notifica módulos interessados que o caso mudou (fail-safe).
