@@ -45,10 +45,12 @@ Importadores Core conhecidos:
 - `backend/app/models/__init__.py`;
 - `backend/app/routers/compliance.py`;
 - `backend/app/routers/trash.py`;
-- `backend/app/services/case_context.py`.
-
 A própria vertical (`routers/environmental.py`, schema/model ambiental e
 DPT360) fica fora da contagem do contrato.
+
+**Redução executada na Onda 4:** `services/case_context.py` deixou de importar
+`EnvironmentalCase` diretamente. A leitura de satélites passa pelo adapter
+`modules/legacy_verticals/case_context_adapter.py`.
 
 Risco funcional relevante: o fluxo ambiental cria `Deadline` de defesa. A
 extração só pode ocorrer após preservar essa obrigação por contrato explícito.
@@ -58,8 +60,12 @@ extração só pode ocorrer após preservar essa obrigação por contrato explí
 Importadores Core conhecidos de `app.models.especializado`:
 
 - `backend/app/models/__init__.py`;
-- `backend/app/services/case_context.py`;
 - `backend/app/services/client_anonimizacao.py`.
+
+**Redução executada na Onda 4:** `services/case_context.py` não conhece mais
+`EmpresarialCase`, `CivelCase`, `PenalCase`, `TrabalhistaCase`,
+`AdminCase` ou `BancarioCase`. Esses models ficam confinados no adapter de
+compatibilidade.
 
 Os routers `ramos_*.py` e `schemas/areas_atuacao.py` são tratados como
 parte da vertical durante a migração.
@@ -90,6 +96,18 @@ Ele não:
 
 Esses pontos permanecem no inventário da #1843 e serão tratados nas ondas
 seguintes.
+
+
+## Adapter de contexto legado
+
+A Onda 4 introduz uma única aresta explícita:
+
+- `services/case_context.py` → `modules/legacy_verticals/case_context_adapter.py`.
+
+O adapter implementa o contrato neutro de
+`services/legal_case_context.py::SpecializedCaseContext`. Essa aresta é
+temporária e substitui dependências diretas do Core em sete families de models.
+Novas regras de negócio não devem ser adicionadas ao adapter.
 
 
 ## Dependência legada descoberta pelo próprio gate

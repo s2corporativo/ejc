@@ -14,6 +14,7 @@ APP_DIR = Path(__file__).resolve().parents[1] / "app"
 # Prefixos de módulos considerados verticais durante a refatoração #1843.
 BOUNDARIES: dict[str, tuple[str, ...]] = {
     "dpt360": ("app.modules.dpt360",),
+    "legacy_vertical_context": ("app.modules.legacy_verticals",),
     "environmental_model": ("app.models.environmental",),
     "especializado_model": ("app.models.especializado",),
     "ramos_router": ("app.routers.ramos",),
@@ -26,15 +27,14 @@ BOUNDARIES: dict[str, tuple[str, ...]] = {
 # importador é permitido; adicionar outro exige decisão arquitetural explícita.
 ALLOWED_IMPORTERS: dict[str, set[str]] = {
     "dpt360": {"main.py"},
+    "legacy_vertical_context": {"services/case_context.py"},
     "environmental_model": {
         "models/__init__.py",
         "routers/compliance.py",
         "routers/trash.py",
-        "services/case_context.py",
     },
     "especializado_model": {
         "models/__init__.py",
-        "services/case_context.py",
         "services/client_anonimizacao.py",
     },
     "ramos_router": {
@@ -57,6 +57,7 @@ def _is_vertical_file(relative: str) -> bool:
     """Arquivos internos da própria vertical não contam como Core -> vertical."""
     return (
         relative.startswith("modules/dpt360/")
+        or relative.startswith("modules/legacy_verticals/")
         or relative.startswith("routers/ramos")
         or relative in {
             "routers/environmental.py",
