@@ -23,6 +23,7 @@ const ROTULOS: Record<string, string> = {
   protocolado_sem_processo: "Protocolado sem Processo",
   divergencias_datajud: "Divergências DataJud",
   duplicatas_cnj: "Duplicatas de CNJ",
+  recebimentos_sem_rateio: "Recebimentos sem rateio",
   numeros_invalidos: "Números inválidos",
 };
 
