@@ -281,8 +281,11 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: BriefcaseBusiness,
     component: Dpt360Workspace,
     roles: ROLES.compliance,
-    showInNav: true,
-    essential: true,
+    // EJC Core Wave 1 (#1843): vertical preservada somente por compatibilidade
+    // durante o desacoplamento. A rota e o RBAC continuam válidos, mas DPT360
+    // deixa de competir com os fluxos jurídicos gerais na navegação/⌘K.
+    showInNav: false,
+    essential: false,
     order: 1,
     helpKey: "dpt360",
     sensitive: true,
@@ -523,7 +526,9 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: Scale,
     component: RamosHub,
     roles: ROLES.juridico,
-    showInNav: true,
+    // EJC Core Wave 1 (#1843): ramo jurídico passa a ser contexto/metadado,
+    // não um workspace concorrente no menu. Deep-links ficam vivos nesta onda.
+    showInNav: false,
     order: 30,
     helpKey: "ramos",
     usesAI: true,
