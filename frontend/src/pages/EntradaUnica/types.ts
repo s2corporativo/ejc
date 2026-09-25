@@ -408,6 +408,15 @@ export function normalizarAnalise(
 
 /** Corpo de POST /entrada/{rascunho_id}/criar-caso a partir da proposta. */
 export function montarPayloadCriacao(p: Proposta): Record<string, unknown> {
+  if (p.reconciliarCaseId) {
+    return {
+      numero_processo: p.numeroProcesso.trim() || undefined,
+      reconciliar_case_id: p.reconciliarCaseId,
+      confirmo_dados_revisados: true,
+      duplicate_confirmed: true,
+    };
+  }
+
   const documentosIds = p.documentos
     .filter((d) => d.selecionado && d.documentId)
     .map((d) => d.documentId);
