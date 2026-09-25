@@ -48,9 +48,16 @@ export interface CorrespondenciaProcessual {
   podeConverterPreProcessual: boolean;
 }
 
+export interface ResultadoCnjProcessual {
+  numeroCnj: string;
+  status: "ja_cadastrado" | "novo_processo";
+  correspondencias: CorrespondenciaProcessual[];
+}
+
 export interface ReconciliacaoProcessual {
   status: ReconciliacaoProcessualStatus;
   cnjsDetectados: string[];
+  resultadosPorCnj: ResultadoCnjProcessual[];
   numeroCnjPrincipal: string | null;
   correspondencias: CorrespondenciaProcessual[];
   bloquearCriacao: boolean;
@@ -187,26 +194,46 @@ function statusReconciliacao(v: unknown): ReconciliacaoProcessualStatus {
     : "informacoes_insuficientes";
 }
 
+export function normalizarCorrespondenciaProcessual(
+  item: unknown,
+): CorrespondenciaProcessual {
+  const c = obj(item);
+  return {
+    caseId: strOuNull(c.case_id),
+    numeroInterno: strOuNull(c.numero_interno),
+    titulo: str(c.titulo),
+    status: strOuNull(c.status),
+    fase: strOuNull(c.fase),
+    protegido: c.protegido === true,
+    excluido: typeof c.excluido === "boolean" ? c.excluido : null,
+    score: typeof c.score === "number" ? c.score : null,
+    motivos: listaTexto(c.motivos),
+    podeConverterPreProcessual: c.pode_converter_pre_processual === true,
+  };
+}
+
 export function normalizarReconciliacao(v: unknown): ReconciliacaoProcessual {
   const r = obj(v);
-  const correspondencias = lista(r.correspondencias).map((item) => {
-    const c = obj(item);
+  const correspondencias = lista(r.correspondencias).map(
+    normalizarCorrespondenciaProcessual,
+  );
+  const resultadosPorCnj = lista(r.resultados_por_cnj).map((item) => {
+    const resultado = obj(item);
     return {
-      caseId: strOuNull(c.case_id),
-      numeroInterno: strOuNull(c.numero_interno),
-      titulo: str(c.titulo),
-      status: strOuNull(c.status),
-      fase: strOuNull(c.fase),
-      protegido: c.protegido === true,
-      excluido: typeof c.excluido === "boolean" ? c.excluido : null,
-      score: typeof c.score === "number" ? c.score : null,
-      motivos: listaTexto(c.motivos),
-      podeConverterPreProcessual: c.pode_converter_pre_processual === true,
+      numeroCnj: str(resultado.numero_cnj),
+      status:
+        resultado.status === "ja_cadastrado"
+          ? ("ja_cadastrado" as const)
+          : ("novo_processo" as const),
+      correspondencias: lista(resultado.correspondencias).map(
+        normalizarCorrespondenciaProcessual,
+      ),
     };
   });
   return {
     status: statusReconciliacao(r.status),
     cnjsDetectados: listaTexto(r.cnjs_detectados),
+    resultadosPorCnj,
     numeroCnjPrincipal: strOuNull(r.numero_cnj_principal),
     correspondencias,
     bloquearCriacao: r.bloquear_criacao === true,
