@@ -34,6 +34,7 @@ from app.core.security import require_roles
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case, CaseFase, CaseStatus
 from app.models.process import Process
+from app.models.fee import CaseReceiptAllocation, Fee, FeePayment
 from app.models.saneamento import (
     Divergencia,
     ExcecaoNumero,
@@ -225,6 +226,37 @@ async def painel_integridade_processual(
         cu,
     )
     contagens["divergencias_datajud"] = int((await db.execute(q_div)).scalar_one())
+
+    # Somente pagamentos identificados como "Honorários recebidos" e já
+    # vinculados a caso entram nesta checagem. Pagamentos legados genéricos não
+    # são tratados como erro, evitando falso positivo em dados anteriores ao
+    # ledger de rateio por caso.
+    q_recebimentos = (
+        select(FeePayment, Fee, Case)
+        .join(Fee, Fee.id == FeePayment.fee_id)
+        .join(Case, Case.id == Fee.case_id)
+        .outerjoin(
+            CaseReceiptAllocation,
+            CaseReceiptAllocation.fee_payment_id == FeePayment.id,
+        )
+        .where(
+            Fee.deleted_at.is_(None),
+            Fee.case_id.is_not(None),
+            Fee.descricao.ilike("Honorários recebidos%"),
+            CaseReceiptAllocation.id.is_(None),
+        )
+    )
+    q_recebimentos = _escopo_cases_integridade(q_recebimentos, cu)
+    recebimentos = (await db.execute(q_recebimentos.limit(20))).all()
+    contagens["recebimentos_sem_rateio"] = len(recebimentos)
+    for _pagamento, _fee, caso in recebimentos:
+        itens.append({
+            "tipo": "recebimentos_sem_rateio",
+            "case_id": caso.id,
+            "numero_interno": caso.numero_interno,
+            "titulo": caso.titulo,
+            "mensagem": "Honorários recebidos vinculados ao caso ainda sem rateio econômico.",
+        })
     contagens["duplicatas_cnj"] = int((await db.execute(q_dup)).scalar_one())
     contagens["numeros_invalidos"] = None
     if is_gestao(cu):
@@ -246,6 +278,7 @@ async def painel_integridade_processual(
                 "sem_responsavel",
                 "pre_processual_com_cnj",
                 "protocolado_sem_processo",
+                "recebimentos_sem_rateio",
             )
         ),
         "itens": itens[:20],
