@@ -21,11 +21,24 @@ export function carregarRascunho(): Proposta | null {
     if (!id) return null;
     const raw = sessionStorage.getItem(PREFIXO + id);
     if (!raw) return null;
-    const p = JSON.parse(raw) as Proposta;
+    const p = JSON.parse(raw) as Proposta & {
+      numeroProcesso?: unknown;
+      reconciliarCaseId?: unknown;
+      reconciliacoes?: unknown;
+    };
     if (!p || typeof p !== "object" || typeof p.rascunhoId !== "string") {
       return null;
     }
-    return p;
+    // Migração defensiva de rascunhos salvos antes da reconciliação
+    // processual. O storage continua restrito à sessão (LGPD).
+    return {
+      ...p,
+      numeroProcesso:
+        typeof p.numeroProcesso === "string" ? p.numeroProcesso : "",
+      reconciliarCaseId:
+        typeof p.reconciliarCaseId === "string" ? p.reconciliarCaseId : null,
+      reconciliacoes: Array.isArray(p.reconciliacoes) ? p.reconciliacoes : [],
+    } as Proposta;
   } catch {
     return null;
   }
