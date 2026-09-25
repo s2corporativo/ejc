@@ -21,11 +21,30 @@ export function carregarRascunho(): Proposta | null {
     if (!id) return null;
     const raw = sessionStorage.getItem(PREFIXO + id);
     if (!raw) return null;
-    const p = JSON.parse(raw) as Proposta;
+    const p = JSON.parse(raw) as Partial<Proposta>;
     if (!p || typeof p !== "object" || typeof p.rascunhoId !== "string") {
       return null;
     }
-    return p;
+    // Compatibilidade com rascunhos salvos antes da reconciliação processual.
+    // Ausência desses campos nunca deve quebrar a tela nem virar dado jurídico.
+    return {
+      ...p,
+      numeroCnj: typeof p.numeroCnj === "string" ? p.numeroCnj : "",
+      reconciliacaoProcessual:
+        p.reconciliacaoProcessual &&
+        typeof p.reconciliacaoProcessual === "object"
+          ? p.reconciliacaoProcessual
+          : {
+              status: "informacoes_insuficientes",
+              cnjsDetectados: [],
+              numeroCnjPrincipal: null,
+              correspondencias: [],
+              bloquearCriacao: false,
+              acaoSugerida: "revisar_dados",
+              mensagem:
+                "Rascunho anterior à reconciliação processual; revise o CNJ antes de criar o caso.",
+            },
+    } as Proposta;
   } catch {
     return null;
   }
