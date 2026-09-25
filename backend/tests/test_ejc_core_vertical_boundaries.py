@@ -27,7 +27,10 @@ BOUNDARIES: dict[str, tuple[str, ...]] = {
 # importador é permitido; adicionar outro exige decisão arquitetural explícita.
 ALLOWED_IMPORTERS: dict[str, set[str]] = {
     "dpt360": {"main.py"},
-    "legacy_vertical_context": {"services/case_context.py"},
+    "legacy_vertical_context": {
+        "services/case_context.py",
+        "services/client_anonimizacao.py",
+    },
     "environmental_model": {
         "models/__init__.py",
         "routers/compliance.py",
@@ -35,7 +38,6 @@ ALLOWED_IMPORTERS: dict[str, set[str]] = {
     },
     "especializado_model": {
         "models/__init__.py",
-        "services/client_anonimizacao.py",
     },
     "ramos_router": {
         "main.py",
