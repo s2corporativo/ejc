@@ -291,13 +291,17 @@ async def calcular_distribuicao(
     soma_cotas = Decimal("0")
     for s in socios:
         part = Decimal(str(s.resultado_percentual if s.resultado_percentual is not None else s.participacao_percentual))
-        valor = (valor_total_dec * part).quantize(centavo, rounding=ROUND_HALF_UP)
+        # 1/3 não é representável exatamente em NUMERIC(5,4). Normalizar
+        # pelo total evita que três quotas iguais de 0,3333 deixem 0,01% do
+        # resultado sem distribuir (ou concentrem o drift sempre no mesmo sócio).
+        peso = part / total_participacao
+        valor = (valor_total_dec * peso).quantize(centavo, rounding=ROUND_HALF_UP)
         soma_cotas += valor
         socios_lista.append(
             {
                 "socio_id": s.id,
                 "user_id": s.user_id,
-                "participacao": float(part),
+                "participacao": float(peso),
                 "valor": valor,
             }
         )

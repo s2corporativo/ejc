@@ -566,13 +566,20 @@ export default function Sociedade() {
               <Empty message="Nenhuma distribuição registrada." />
             ) : (
               distrib.map((d) => {
-                const quota = socios
-                  .filter((s) => s.ativo)
-                  .map((s) => ({
+                const ativos = socios.filter((s) => s.ativo);
+                const totalResultado = ativos.reduce(
+                  (acc, s) => acc + (s.resultado_percentual ?? s.participacao_percentual),
+                  0,
+                );
+                const quota = ativos.map((s) => {
+                  const bruto = s.resultado_percentual ?? s.participacao_percentual;
+                  const pct = totalResultado > 0 ? bruto / totalResultado : 0;
+                  return {
                     nome: nomeUser(s.user_id),
-                    valor: d.valor_total * (s.resultado_percentual ?? s.participacao_percentual),
-                    pct: s.resultado_percentual ?? s.participacao_percentual,
-                  }));
+                    valor: d.valor_total * pct,
+                    pct,
+                  };
+                });
                 return (
                   <div
                     key={d.id}
