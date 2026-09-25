@@ -32,8 +32,8 @@ ENTIDADES = {
     "legal_docs": (LegalDoc, lambda x: x.titulo),
     "fees": (Fee, lambda x: x.descricao),
     "procuracoes": (Procuracao, lambda x: f"Procuração {x.id[:8]}"),
-    "tasks": (Task, lambda x: x.titulo),
     **LEGACY_TRASH_ENTITIES,
+    "tasks": (Task, lambda x: x.titulo),
 }
 
 router = APIRouter(prefix="/trash", tags=["Lixeira"])
