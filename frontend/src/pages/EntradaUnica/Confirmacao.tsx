@@ -182,8 +182,8 @@ export function Confirmacao({
     cnjValido &&
     !bloqueioProcessual &&
     (!precisaConfirmarConflito || proposta.conflictConfirmed) &&
-    (!(precisaConfirmarDuplicado || precisaConfirmarCorrespondencia) ||
-      proposta.duplicateConfirmed) &&
+    (!precisaConfirmarDuplicado || proposta.duplicateConfirmed) &&
+    (!precisaConfirmarCorrespondencia || proposta.processMatchConfirmed) &&
     !criando;
 
   const responsaveis = useMemo(() => {
@@ -326,7 +326,7 @@ export function Confirmacao({
                   onChange={(e) =>
                     onChange({
                       numeroCnj: e.target.value.trim(),
-                      duplicateConfirmed: false,
+                      processMatchConfirmed: false,
                     })
                   }
                   placeholder="0000000-00.0000.0.00.0000"
@@ -398,9 +398,9 @@ export function Confirmacao({
                 <label className="flex items-start gap-2 text-sm font-medium text-amber-900 dark:text-amber-100">
                   <input
                     type="checkbox"
-                    checked={proposta.duplicateConfirmed}
+                    checked={proposta.processMatchConfirmed}
                     onChange={(e) =>
-                      onChange({ duplicateConfirmed: e.target.checked })
+                      onChange({ processMatchConfirmed: e.target.checked })
                     }
                   />
                   Revisei os casos sugeridos e confirmo que esta entrada é um
