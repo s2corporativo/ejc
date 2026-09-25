@@ -163,9 +163,15 @@ export function Confirmacao({
   const precisaConfirmarDuplicado = proposta.duplicados.length > 0;
   const reconciliacao = proposta.reconciliacaoProcessual;
   const cnjOriginal = reconciliacao.numeroCnjPrincipal;
+  const cnjSelecionadoDeLista =
+    !cnjOriginal &&
+    reconciliacao.cnjsDetectados.length > 1 &&
+    Boolean(proposta.numeroCnj) &&
+    reconciliacao.cnjsDetectados.includes(proposta.numeroCnj);
   const cnjAlterado =
-    Boolean(cnjOriginal && proposta.numeroCnj) &&
-    proposta.numeroCnj !== cnjOriginal;
+    (Boolean(cnjOriginal && proposta.numeroCnj) &&
+      proposta.numeroCnj !== cnjOriginal) ||
+    cnjSelecionadoDeLista;
   const reconciliacaoAplicavel = !cnjAlterado;
   const bloqueioProcessual =
     reconciliacaoAplicavel &&
@@ -335,6 +341,19 @@ export function Confirmacao({
                             ? "já cadastrado"
                             : "novo processo"}
                         </Badge>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            onChange({
+                              numeroCnj: item.numeroCnj,
+                              processMatchConfirmed: false,
+                            })
+                          }
+                        >
+                          Usar este CNJ
+                        </Button>
                       </li>
                     ))}
                   </ul>
