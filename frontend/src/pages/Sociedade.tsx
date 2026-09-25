@@ -36,6 +36,7 @@ interface Socio {
   id: string;
   user_id: string;
   participacao_percentual: number;
+  resultado_percentual?: number | null;
   regime: string;
   pro_labore?: number;
   ativo: boolean;
@@ -469,9 +470,12 @@ export default function Sociedade() {
                     </div>
                   )}
                   <div className="text-right w-20">
-                    <p className="text-xs text-slate-400">Participação</p>
+                    <p className="text-xs text-slate-400">Capital</p>
                     <p className="text-lg font-bold text-primary-600">
                       {fmtPct(s.participacao_percentual)}
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      Resultado {fmtPct(s.resultado_percentual ?? s.participacao_percentual)}
                     </p>
                   </div>
                   <span
@@ -562,13 +566,20 @@ export default function Sociedade() {
               <Empty message="Nenhuma distribuição registrada." />
             ) : (
               distrib.map((d) => {
-                const quota = socios
-                  .filter((s) => s.ativo)
-                  .map((s) => ({
+                const ativos = socios.filter((s) => s.ativo);
+                const totalResultado = ativos.reduce(
+                  (acc, s) => acc + (s.resultado_percentual ?? s.participacao_percentual),
+                  0,
+                );
+                const quota = ativos.map((s) => {
+                  const bruto = s.resultado_percentual ?? s.participacao_percentual;
+                  const pct = totalResultado > 0 ? bruto / totalResultado : 0;
+                  return {
                     nome: nomeUser(s.user_id),
-                    valor: d.valor_total * s.participacao_percentual,
-                    pct: s.participacao_percentual,
-                  }));
+                    valor: d.valor_total * pct,
+                    pct,
+                  };
+                });
                 return (
                   <div
                     key={d.id}

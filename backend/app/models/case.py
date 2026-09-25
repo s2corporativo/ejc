@@ -113,6 +113,15 @@ class Case(Base):
     parte_contraria = Column(String(255), nullable=True)
     valor_causa = Column(Numeric(14, 2), nullable=True)
 
+    # Gestão econômica do caso (migration 162). A classificação é do CASO —
+    # inclusive pré-processual — e não do Process, porque pode existir antes
+    # de qualquer protocolo/CNJ. O valor recebido NÃO é duplicado aqui: vem
+    # do ledger Fee/FeePayment e é exposto de forma calculada.
+    classificacao_financeira = Column(String(20), nullable=False, default="normal")
+    valor_pleiteado = Column(Numeric(14, 2), nullable=True)
+    pendente_sucumbencia = Column(Boolean, nullable=False, default=False)
+    pendente_exito = Column(Boolean, nullable=False, default=False)
+
     # Auditoria e Sincronização (DataJud/PJe)
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
     sync_pending   = Column(Boolean, default=False)

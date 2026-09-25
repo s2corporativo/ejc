@@ -4,6 +4,7 @@
 from __future__ import annotations
 import logging
 from datetime import datetime, timezone
+from decimal import Decimal
 from uuid import uuid4
 from typing import Optional
 
@@ -17,6 +18,7 @@ from app.core.security import (get_current_user, require_roles, ROLE_LEVEL,
                                  require_roles_exact, requer_equipe_juridica)
 from app.models.user import User
 from app.models.case import Case, CaseMovimento, CaseStatus
+from app.models.client import Client
 from app.models.audit_log import criar_audit_log
 
 logger = logging.getLogger(__name__)
@@ -372,6 +374,11 @@ async def detalhe(
     proc = await _get_proc(case_id, db)
     if proc:
         result.processo_principal = ProcessoPrincipalSchema(**proc)
+    from app.services.case_finance_service import resumo_financeiro_caso
+    fin = await resumo_financeiro_caso(db, c)
+    result.valor_recebido = fin["valor_recebido"]
+    result.credito_advogado = fin["credito_advogado"]
+    result.parcela_escritorio = fin["parcela_escritorio"]
     return result
 
 
@@ -391,6 +398,18 @@ async def atualizar(
 
     mudancas = payload.model_dump(exclude_unset=True)
     status_anterior = c.status.value if c.status else None
+
+    campos_economicos = {
+        "classificacao_financeira", "valor_pleiteado",
+        "pendente_sucumbencia", "pendente_exito",
+    }
+    if campos_economicos.intersection(mudancas):
+        papel = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
+        if papel not in ("superadmin", "admin", "socio", "advogado"):
+            raise HTTPException(
+                status_code=403,
+                detail="Alterar dados econômicos do caso exige advogado, sócio ou administração.",
+            )
 
     # G1: valida proxima_acao — se o caso é/será ativo, exige campo
     status_novo = mudancas.get("status", status_anterior)
@@ -977,6 +996,153 @@ async def sincronizar_processo(
     return {"movimentos_novos": novos,
             "detail": f"{novos} movimento(s) oficial(is) importado(s)"
                       if novos else "Nenhum movimento novo"}
+
+
+# ═══ Gestão econômica simplificada do caso ═══
+class RegistrarRecebimentoCasoReq(BaseModel):
+    model_config = {"extra": "forbid"}
+    valor: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+
+
+class EncerrarCasoSimplesReq(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    """Encerramento direto da ficha: somente confirmação do cliente e valor.
+
+    Não infere resultado jurídico e não apaga pendências; apenas encerra o caso,
+    registra a trilha e lança eventual honorário recebido no financeiro.
+    """
+    cliente_nome: str = Field(min_length=2, max_length=255)
+    valor_recebido: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
+
+
+@router.get("/{case_id}/financeiro/resumo",
+            dependencies=[Depends(rate_limit("cases-financeiro-resumo", 60))])
+async def resumo_financeiro_do_caso(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    q = _filtro_visibilidade(
+        select(Case).where(Case.id == case_id, Case.deleted_at.is_(None)), cu
+    )
+    case = (await db.execute(q)).scalar_one_or_none()
+    if not case:
+        raise HTTPException(404, "Caso não encontrado")
+    from app.services.case_finance_service import resumo_financeiro_caso
+    return await resumo_financeiro_caso(db, case)
+
+
+@router.post("/{case_id}/financeiro/recebimentos", status_code=201,
+             dependencies=[Depends(rate_limit("cases-financeiro-recebimento", 30))])
+async def registrar_recebimento_do_caso(
+    case_id: str,
+    payload: RegistrarRecebimentoCasoReq,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    papel = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
+    if papel not in ("superadmin", "admin", "socio", "advogado"):
+        raise HTTPException(403, "Lançamento de recebimento exige advogado, sócio ou administração")
+    q = _filtro_visibilidade(
+        select(Case).where(Case.id == case_id, Case.deleted_at.is_(None)), cu
+    )
+    case = (await db.execute(q)).scalar_one_or_none()
+    if not case:
+        raise HTTPException(404, "Caso não encontrado")
+    from app.services.case_finance_service import registrar_recebimento_caso, resumo_financeiro_caso
+    rateio = await registrar_recebimento_caso(db, case, payload.valor, cu)
+    await db.commit()
+    resumo = await resumo_financeiro_caso(db, case)
+    return {"ok": True, "rateio": rateio, "resumo": resumo}
+
+
+def _nome_confirmacao(valor: str | None) -> str:
+    import re
+    import unicodedata
+    txt = unicodedata.normalize("NFKD", str(valor or ""))
+    txt = "".join(c for c in txt if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", txt).strip().casefold()
+
+
+@router.post("/{case_id}/encerrar-simples",
+             dependencies=[Depends(rate_limit("cases-encerrar-simples", 10))])
+async def encerrar_caso_simples(
+    case_id: str,
+    payload: EncerrarCasoSimplesReq,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    case = await _caso_para_encerrar(db, cu, case_id)
+    cliente = (await db.execute(
+        select(Client).where(Client.id == case.client_id, Client.deleted_at.is_(None))
+    )).scalar_one_or_none()
+    if not cliente:
+        raise HTTPException(409, "Cliente vinculado ao caso não está disponível")
+
+    nomes_validos = {
+        _nome_confirmacao(getattr(cliente, "nome", None)),
+        _nome_confirmacao(getattr(cliente, "razao_social", None)),
+    } - {""}
+    if _nome_confirmacao(payload.cliente_nome) not in nomes_validos:
+        raise HTTPException(
+            422,
+            "O nome informado não confere com o cliente vinculado ao caso.",
+        )
+
+    from app.services.case_finance_service import (
+        registrar_recebimento_caso,
+        resumo_financeiro_caso,
+    )
+    resumo_atual = await resumo_financeiro_caso(db, case)
+    recebido_atual = Decimal(str(resumo_atual["valor_recebido"]))
+    valor_total = Decimal(str(payload.valor_recebido))
+    if valor_total < recebido_atual:
+        raise HTTPException(
+            422,
+            "O valor total informado é menor que o já recebido. Use o estorno no Financeiro para corrigir.",
+        )
+    rateio = None
+    diferenca = valor_total - recebido_atual
+    if diferenca > 0:
+        rateio = await registrar_recebimento_caso(db, case, diferenca, cu)
+
+    case.status_anterior = case.status.value if hasattr(case.status, "value") else str(case.status)
+    case.status = CaseStatus.encerrado
+    case.data_encerramento = datetime.now(timezone.utc)
+    # Encerramento simples não adivinha o desfecho jurídico.
+    case.resultado = None
+    case.motivo_resultado = "Encerramento simplificado pela ficha do caso; desfecho jurídico não classificado."
+    case.provas_determinantes = None
+    case.licoes_aprendidas = None
+
+    db.add(CaseMovimento(
+        id=str(uuid4()),
+        case_id=case.id,
+        tipo="nota",
+        descricao=(
+            "Caso encerrado pelo fluxo simplificado. Pendências existentes foram preservadas; "
+            "nenhuma etapa, prazo ou documento foi apagado."
+        ),
+        created_by=cu.id,
+    ))
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "CLOSE_SIMPLE", "cases", case.id,
+        detalhes="Encerramento simplificado pela ficha do caso.",
+        dados_depois={
+            "status": "encerrado",
+            "valor_recebido_total": str(payload.valor_recebido),
+            "rateio_regra": rateio["regra"] if rateio else None,
+        },
+    )
+    await db.commit()
+    from app.services.case_finance_service import resumo_financeiro_caso
+    return {
+        "ok": True,
+        "detail": "Caso encerrado.",
+        "rateio": rateio,
+        "financeiro": await resumo_financeiro_caso(db, case),
+    }
 
 
 # ═══ Pós-Mortem Jurídico (ECJ): encerrar caso com aprendizado ═══

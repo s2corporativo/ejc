@@ -208,6 +208,12 @@ ADICOES_INTENCIONAIS = {
     # gates de /ai/analisar-caso — só a forma de entrega muda (202 + polling).
     ("/api/ai/analisar-caso/async", "POST"),
     ("/api/ai/analisar-caso/async/{task_id}", "GET"),
+    # Gestão econômica do caso (PR #1841): superfícies novas autenticadas
+    # para resumo/recebimento e encerramento simplificado. Não removem nem
+    # afrouxam rotas existentes; o fechamento detalhado continua disponível.
+    ("/api/cases/{case_id}/financeiro/resumo", "GET"),
+    ("/api/cases/{case_id}/financeiro/recebimentos", "POST"),
+    ("/api/cases/{case_id}/encerrar-simples", "POST"),
 }
 
 REMOCOES_INTENCIONAIS = {

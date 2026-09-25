@@ -71,6 +71,7 @@ import TabPecas from "./CasoDetalhe/TabPecas";
 import { DataRoomPanel } from "./DataRoom";
 import { filtrarTabsW3 } from "../config/w3Tabs";
 import TabTimeline from "./CasoDetalhe/TabTimeline";
+import TabFinanceiroCaso from "./CasoDetalhe/TabFinanceiroCaso";
 
 export const TABS = [
   // Fase 1 (plano de simplificação): a antiga aba "orquestrador" deixou de
@@ -818,30 +819,7 @@ export default function CasoDetalhe() {
         // na Central (processar, aceitar/recusar prazo).
         return <TabIntimacoes caseId={id} />;
       case "financeiro":
-        return (
-          <TabLista
-            titulo="Honorários e Pagamentos"
-            endpoint={`/fees/?case_id=${id}`}
-            valorCausa={
-              caso.valor_causa ?? caso.processo_principal?.valor_causa ?? null
-            }
-            empty="Nenhum lançamento financeiro"
-            renderItem={(f) => (
-              <div className="card p-3 flex justify-between items-center text-sm">
-                <span className="text-gray-800">{f.descricao}</span>
-                <span
-                  className={
-                    f.status === "pago"
-                      ? "text-green-600 font-medium"
-                      : "text-orange-600"
-                  }
-                >
-                  {fmtMoney(f.valor)}
-                </span>
-              </div>
-            )}
-          />
-        );
+        return <TabFinanceiroCaso caso={caso} />;
       case "custos":
         return (
           <TabLista

@@ -3,8 +3,8 @@
 Este arquivo é o ledger canônico de **reservas futuras** e do trecho recente da cadeia Alembic. O histórico detalhado de reservas antigas permanece preservado no Git.
 
 **Head canônico atual da `main`:** `161_fee_estornos`
-**Head esperado nesta árvore após as migrations do branch:** `161_fee_estornos`
-**Próximo prefixo livre nesta árvore:** `162`
+**Head esperado nesta árvore após as migrations do branch:** `162_case_financial_classification`
+**Próximo prefixo livre nesta árvore:** `163`
 
 > Estado da `main` após integração de `158_case_partes_trabalhista_pii_expand` e `159_user_cpf_secure`. A migration 159 parte diretamente de 158 e integra a cadeia canônica.
 
@@ -56,6 +56,7 @@ gh pr list --state open
 | `159_user_cpf_secure` | `158_case_partes_trabalhista_pii_expand` | **Mesclada** | DB-03 perfis profissionais integrada na `main` pelo PR #1613; CPF somente cifrado + HMAC, índice único parcial para ativos e resposta apenas mascarada. |
 | `160_activity_alert_states` | `159_user_cpf_secure` | **Mesclada** | Estado pessoal dos alertas inteligentes do Dashboard; release #1657 integrada à `main` (verificado em 18/09/2026 — saneamento pós-auditoria). |
 | `161_fee_estornos` | `160_activity_alert_states` | **Em avaliação (PR #1709)** | Estorno auditável de pagamentos de honorário (`fee_estornos`); fecha o achado P2 da homologação 18/09/2026. Tabela aditiva, sem alteração em dados existentes. |
+| `162_case_financial_classification` | `161_fee_estornos` | **Em PR** | Classificação normal/pro bono/causa própria; valor pleiteado; pendências de sucumbência/êxito; rateio auditável de recebimentos do caso. |
 
 ### Estado atual a partir do head 159 integrado
 

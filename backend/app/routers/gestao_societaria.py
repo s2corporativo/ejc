@@ -29,6 +29,7 @@ class SocioIn(BaseModel):
 
     user_id: str
     participacao_percentual: float = Field(gt=0, le=1)
+    resultado_percentual: Optional[float] = Field(None, gt=0, le=1)
     regime: RegimeSocio = RegimeSocio.misto
     pro_labore: Optional[float] = Field(None, ge=0)
     oab_numero: Optional[str] = Field(None, max_length=20)
@@ -41,6 +42,7 @@ class SocioPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     participacao_percentual: Optional[float] = Field(None, gt=0, le=1)
+    resultado_percentual: Optional[float] = Field(None, gt=0, le=1)
     regime: Optional[RegimeSocio] = None
     pro_labore: Optional[float] = Field(None, ge=0)
     ativo: Optional[bool] = None
@@ -50,6 +52,7 @@ class SocioPatch(BaseModel):
 
 _SOCIO_PATCH_CAMPOS = {
     "participacao_percentual",
+    "resultado_percentual",
     "regime",
     "pro_labore",
     "ativo",
@@ -85,6 +88,7 @@ def _out_socio(s: Socio) -> dict:
         "id": s.id,
         "user_id": s.user_id,
         "participacao_percentual": float(s.participacao_percentual),
+        "resultado_percentual": float(s.resultado_percentual) if s.resultado_percentual is not None else None,
         "regime": s.regime.value if hasattr(s.regime, "value") else s.regime,
         "pro_labore": float(s.pro_labore) if s.pro_labore is not None else None,
         "oab_numero": s.oab_numero,
@@ -171,7 +175,10 @@ async def cadastrar_socio(
         raise HTTPException(409, "Usuário já é sócio")
     await _validar_cap_table(db, Decimal(str(req.participacao_percentual)))
 
-    s = Socio(id=str(uuid4()), **req.model_dump())
+    dados_socio = req.model_dump()
+    if dados_socio.get("resultado_percentual") is None:
+        dados_socio["resultado_percentual"] = dados_socio["participacao_percentual"]
+    s = Socio(id=str(uuid4()), **dados_socio)
     db.add(s)
     await criar_audit_log(
         db,
@@ -265,7 +272,7 @@ async def calcular_distribuicao(
     if not socios:
         raise HTTPException(422, "Nenhum sócio ativo cadastrado")
 
-    total_participacao = sum(Decimal(str(s.participacao_percentual)) for s in socios)
+    total_participacao = sum(Decimal(str(s.resultado_percentual if s.resultado_percentual is not None else s.participacao_percentual)) for s in socios)
     if total_participacao > Decimal("1.0001"):
         raise HTTPException(
             422,
@@ -283,14 +290,18 @@ async def calcular_distribuicao(
     socios_lista = []
     soma_cotas = Decimal("0")
     for s in socios:
-        part = Decimal(str(s.participacao_percentual))
-        valor = (valor_total_dec * part).quantize(centavo, rounding=ROUND_HALF_UP)
+        part = Decimal(str(s.resultado_percentual if s.resultado_percentual is not None else s.participacao_percentual))
+        # 1/3 não é representável exatamente em NUMERIC(5,4). Normalizar
+        # pelo total evita que três quotas iguais de 0,3333 deixem 0,01% do
+        # resultado sem distribuir (ou concentrem o drift sempre no mesmo sócio).
+        peso = part / total_participacao
+        valor = (valor_total_dec * peso).quantize(centavo, rounding=ROUND_HALF_UP)
         soma_cotas += valor
         socios_lista.append(
             {
                 "socio_id": s.id,
                 "user_id": s.user_id,
-                "participacao": float(part),
+                "participacao": float(peso),
                 "valor": valor,
             }
         )
