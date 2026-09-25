@@ -3,6 +3,7 @@
 // duplicado e responsável aparecem POR EXCEÇÃO (wireframe da seção 3 de
 // docs/DESENHO_BLOCO3_TELAS.md).
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
 import { AlertTriangle, CheckCircle2, Search, X } from "lucide-react";
 import api from "../../lib/api";
 import {
@@ -19,7 +20,7 @@ import {
 } from "../../components/UI";
 import { AREAS_FALLBACK } from "../../lib/areaCatalog";
 import type { Client, User } from "../../types";
-import type { Proposta } from "./types";
+import { EH_CNJ, type Proposta } from "./types";
 
 function Origem({ valor }: { valor?: string | null }) {
   if (!valor) return null;
@@ -137,6 +138,7 @@ export function Confirmacao({
   criando,
   erro409,
   onCriar,
+  onVincularCasoExistente,
   onDescartar,
 }: {
   proposta: Proposta;
@@ -145,6 +147,7 @@ export function Confirmacao({
   criando: boolean;
   erro409: string | null;
   onCriar: () => void;
+  onVincularCasoExistente: (caseId: string) => void;
   onDescartar: () => void;
 }) {
   const [buscandoCliente, setBuscandoCliente] = useState(false);
@@ -158,11 +161,29 @@ export function Confirmacao({
   // ativos do cliente e exige reconhecimento explícito — restringir a
   // !clienteId deixava o caminho do cliente recorrente num loop de 409.
   const precisaConfirmarDuplicado = proposta.duplicados.length > 0;
+  const reconciliacao = proposta.reconciliacaoProcessual;
+  const cnjOriginal = reconciliacao.numeroCnjPrincipal;
+  const cnjAlterado =
+    Boolean(cnjOriginal && proposta.numeroCnj) &&
+    proposta.numeroCnj !== cnjOriginal;
+  const reconciliacaoAplicavel = !cnjAlterado;
+  const bloqueioProcessual =
+    reconciliacaoAplicavel &&
+    (reconciliacao.status === "ja_cadastrado" ||
+      reconciliacao.bloquearCriacao);
+  const precisaConfirmarCorrespondencia =
+    reconciliacaoAplicavel &&
+    reconciliacao.status === "provavel_correspondencia";
+  const cnjValido =
+    !proposta.numeroCnj || EH_CNJ.test(proposta.numeroCnj.trim());
 
   const podeCriar =
     proposta.confirmoRevisao &&
+    cnjValido &&
+    !bloqueioProcessual &&
     (!precisaConfirmarConflito || proposta.conflictConfirmed) &&
-    (!precisaConfirmarDuplicado || proposta.duplicateConfirmed) &&
+    (!(precisaConfirmarDuplicado || precisaConfirmarCorrespondencia) ||
+      proposta.duplicateConfirmed) &&
     !criando;
 
   const responsaveis = useMemo(() => {
@@ -241,6 +262,160 @@ export function Confirmacao({
         <Alert variant="danger" title="O servidor recusou a criação">
           {erro409} Revise os achados abaixo e confirme os itens exigidos.
         </Alert>
+      )}
+
+      {(reconciliacao.status !== "informacoes_insuficientes" ||
+        proposta.numeroCnj) && (
+        <Card
+          className={cn(
+            "p-4",
+            bloqueioProcessual
+              ? "border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-900/20"
+              : precisaConfirmarCorrespondencia
+                ? "border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20"
+                : "border-emerald-200 bg-emerald-50/60 dark:border-emerald-800 dark:bg-emerald-900/10",
+          )}
+        >
+          <div className="flex items-start gap-3">
+            <AlertTriangle
+              className={cn(
+                "mt-0.5 h-5 w-5 shrink-0",
+                bloqueioProcessual
+                  ? "text-red-600"
+                  : precisaConfirmarCorrespondencia
+                    ? "text-amber-600"
+                    : "text-emerald-600",
+              )}
+              aria-hidden="true"
+            />
+            <div className="min-w-0 flex-1 space-y-3">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    Reconciliação processual
+                  </p>
+                  <Badge
+                    tone={
+                      bloqueioProcessual
+                        ? "red"
+                        : precisaConfirmarCorrespondencia
+                          ? "amber"
+                          : "green"
+                    }
+                  >
+                    {reconciliacao.status === "ja_cadastrado"
+                      ? "já cadastrado"
+                      : reconciliacao.status === "provavel_correspondencia"
+                        ? "possível correspondência"
+                        : reconciliacao.status === "novo_processo"
+                          ? "novo processo"
+                          : "a revisar"}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
+                  {cnjAlterado
+                    ? "O CNJ foi alterado após a análise. O servidor fará nova conferência antes de qualquer gravação."
+                    : reconciliacao.mensagem}
+                </p>
+              </div>
+
+              <div>
+                <FieldLabel>Número CNJ</FieldLabel>
+                <Input
+                  value={proposta.numeroCnj}
+                  onChange={(e) =>
+                    onChange({
+                      numeroCnj: e.target.value.trim(),
+                      duplicateConfirmed: false,
+                    })
+                  }
+                  placeholder="0000000-00.0000.0.00.0000"
+                  aria-label="Número CNJ"
+                />
+                {!cnjValido && (
+                  <p className="mt-1 text-xs font-medium text-red-600">
+                    Informe o CNJ no formato 0000000-00.0000.0.00.0000.
+                  </p>
+                )}
+              </div>
+
+              {reconciliacao.correspondencias.length > 0 && !cnjAlterado && (
+                <ul className="space-y-2">
+                  {reconciliacao.correspondencias.map((item, i) => (
+                    <li
+                      key={item.caseId ? item.caseId + "-" + i : "protegido-" + i}
+                      className="rounded-md border border-current/10 bg-white/60 px-3 py-2 text-sm dark:bg-slate-950/20"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span>
+                          <strong>
+                            {item.numeroInterno ??
+                              (item.protegido
+                                ? "Registro protegido"
+                                : "Caso localizado")}
+                          </strong>
+                          {item.titulo ? " — " + item.titulo : ""}
+                          {item.excluido ? " — excluído" : ""}
+                        </span>
+                        <div className="flex flex-wrap gap-2">
+                          {item.caseId && !item.excluido && (
+                            <Link
+                              to={"/casos/" + item.caseId}
+                              className="text-xs font-semibold text-primary-700 underline-offset-2 hover:underline dark:text-primary-300"
+                            >
+                              Abrir caso
+                            </Link>
+                          )}
+                          {item.caseId &&
+                            item.podeConverterPreProcessual &&
+                            !item.excluido &&
+                            EH_CNJ.test(proposta.numeroCnj) && (
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                disabled={criando}
+                                onClick={() =>
+                                  onVincularCasoExistente(item.caseId as string)
+                                }
+                              >
+                                Vincular CNJ a este caso
+                              </Button>
+                            )}
+                        </div>
+                      </div>
+                      {item.motivos.length > 0 && (
+                        <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                          {item.motivos.join(" · ")}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {precisaConfirmarCorrespondencia && (
+                <label className="flex items-start gap-2 text-sm font-medium text-amber-900 dark:text-amber-100">
+                  <input
+                    type="checkbox"
+                    checked={proposta.duplicateConfirmed}
+                    onChange={(e) =>
+                      onChange({ duplicateConfirmed: e.target.checked })
+                    }
+                  />
+                  Revisei os casos sugeridos e confirmo que esta entrada é um
+                  processo diferente.
+                </label>
+              )}
+              {bloqueioProcessual && (
+                <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+                  Outro caso não será criado. Abra ou restaure o registro
+                  existente.
+                </p>
+              )}
+            </div>
+          </div>
+        </Card>
       )}
 
       {/* Bloco por exceção: conflito de interesses (dever do EOAB) */}
