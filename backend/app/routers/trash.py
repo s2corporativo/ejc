@@ -17,12 +17,12 @@ from app.models.case import Case
 from app.models.client import Client
 from app.models.deadline import Deadline
 from app.models.document import Document
-from app.models.environmental import EnvironmentalCase
 from app.models.fee import Fee
 from app.models.legal_doc import LegalDoc
 from app.models.procuracao import Procuracao
 from app.models.task import Task
 from app.models.user import User
+from app.modules.legacy_verticals.trash_entities import LEGACY_TRASH_ENTITIES
 
 ENTIDADES = {
     "clients": (Client, lambda x: x.nome or x.razao_social),
@@ -32,8 +32,8 @@ ENTIDADES = {
     "legal_docs": (LegalDoc, lambda x: x.titulo),
     "fees": (Fee, lambda x: x.descricao),
     "procuracoes": (Procuracao, lambda x: f"Procuração {x.id[:8]}"),
-    "environmental_cases": (EnvironmentalCase, lambda x: f"Auto {x.numero_auto}"),
     "tasks": (Task, lambda x: x.titulo),
+    **LEGACY_TRASH_ENTITIES,
 }
 
 router = APIRouter(prefix="/trash", tags=["Lixeira"])
