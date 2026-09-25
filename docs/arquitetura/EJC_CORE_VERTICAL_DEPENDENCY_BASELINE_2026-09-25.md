@@ -126,3 +126,16 @@ O adapter mantém as salvaguardas existentes:
 - retorna contagem para AuditLog e resposta.
 
 Os testes DB-level já existentes continuam sendo o gate funcional dessa regra.
+
+
+## Lixeira e entidades verticais
+
+A Onda 6 remove a dependência direta
+`routers/trash.py -> models.environmental.EnvironmentalCase`.
+
+O Core passa a carregar entidades legadas de lixeira pelo registro:
+
+- `modules/legacy_verticals/trash_entities.py`.
+
+Listagem, restauração, purga, RBAC e AuditLog da lixeira permanecem no Core;
+apenas o conhecimento do model ambiental fica atrás do adapter de compatibilidade.
