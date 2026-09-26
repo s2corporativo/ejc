@@ -552,10 +552,27 @@ def _document_followups(client: httpx.Client, state: SuiteState) -> None:
 _POST_COBERTO_POR_FLUXO = {"/api/clients/", "/api/cases/", "/api/documents/upload"}
 
 
-def _matrix_smoke(client: httpx.Client, state: SuiteState, matrix: dict[str, Any]) -> None:
+def _matrix_smoke(
+    client: httpx.Client,
+    state: SuiteState,
+    matrix: dict[str, Any],
+    *,
+    covered_posts: set[str] | None = None,
+    skipped_posts: dict[str, str] | None = None,
+) -> None:
+    covered = _POST_COBERTO_POR_FLUXO if covered_posts is None else covered_posts
+    skipped = skipped_posts or {}
     for module in matrix["modules"]:
         for check in module.get("api_checks", []):
-            if check["method"] == "POST" and check["path"] in _POST_COBERTO_POR_FLUXO:
+            if check["method"] == "POST" and check["path"] in skipped:
+                state.nao_coberto.append({
+                    "module_key": module["module_key"],
+                    "method": check["method"],
+                    "path": check["path"],
+                    "motivo": skipped[check["path"]],
+                })
+                continue
+            if check["method"] == "POST" and check["path"] in covered:
                 # AI-005: em vez de sumir num `continue`, o pulo é DECLARADO no
                 # relatório — cobertura omitida nunca se parece com cobertura.
                 state.nao_coberto.append({
