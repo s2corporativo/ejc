@@ -376,16 +376,11 @@ SYS_CLASSIFICAR = (
 async def indexar_peca_rag(legal_doc_id: str) -> None:
     try:
         async with AsyncSessionLocal() as db:
-            d = (
-                await db.execute(
-                    select(LegalDoc)
-                    .where(LegalDoc.id == legal_doc_id)
-                    .with_for_update()
-                )
-            ).scalar_one_or_none()
+            d = await db.get(LegalDoc, legal_doc_id)
             if not d or d.deleted_at is not None:
                 return
-            conteudo = (d.conteudo or "").strip()
+            conteudo_original = d.conteudo or ""
+            conteudo = conteudo_original.strip()
             if len(conteudo) < 50:
                 return
 
@@ -457,6 +452,29 @@ async def indexar_peca_rag(legal_doc_id: str) -> None:
                         meta.update({k: cls.get(k) for k in ("area", "assunto", "tese", "palavras_chave")})
                 except Exception as e:
                     logger.warning(f"[case_intel] Classificação da peça falhou: {str(e)[:120]}")
+
+            # Revalida imediatamente antes de escrever no RAG e só então
+            # adquire lock: não seguramos lock durante a chamada externa de IA,
+            # mas exclusão/edição concorrente não pode atravessar o upsert.
+            d_atual = (
+                await db.execute(
+                    select(LegalDoc)
+                    .where(LegalDoc.id == legal_doc_id)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+            ).scalar_one_or_none()
+            if (
+                d_atual is None
+                or d_atual.deleted_at is not None
+                or (d_atual.conteudo or "") != conteudo_original
+            ):
+                logger.info(
+                    "[case_intel] Indexação descartada por exclusão/edição concorrente: %s",
+                    legal_doc_id,
+                )
+                return
+            d = d_atual
 
             res = await upsert_documento(
                 db, titulo=(d.titulo or f"Peça {legal_doc_id[:8]}"),
