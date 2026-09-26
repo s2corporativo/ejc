@@ -516,7 +516,7 @@ export default function DashboardUltra() {
 
         </main>
       ) : (
-        <div id="ejc-dashboard-controles" className="contents" role="tabpanel">
+        <div id="ejc-dashboard-controles" className="ejc-dash__controls-stage" role="tabpanel">
       <header className="ejc-dash__greeting" aria-label="Saudação do dia">
         <div>
           <h1>
