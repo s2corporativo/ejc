@@ -160,6 +160,10 @@ function renderizar() {
   );
 }
 
+function abrirControles() {
+  fireEvent.click(screen.getByRole("button", { name: "Controles" }));
+}
+
 beforeEach(() => {
   getMock.mockReset();
   patchMock.mockReset();
@@ -171,27 +175,35 @@ afterEach(() => {
 });
 
 describe("DashboardUltra — identidade premium DPT", () => {
-  it("sauda o usuário pelo primeiro nome e compõe a referência", async () => {
+  it("abre na IA, sem carregar controles nem exibir ruído operacional", () => {
     mockGetOk();
     renderizar();
 
-    expect(
-      await screen.findByText(/, Clovis!/),
-    ).toBeTruthy();
-    expect(screen.getByText("Disciplina hoje. Grandes conquistas sempre.")).toBeTruthy();
-    expect(screen.getByText("Entrada Única")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "IA" }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByText("Como posso trabalhar neste caso?")).toBeTruthy();
+    expect(screen.getByTestId("entrada-unica").getAttribute("data-embedded")).toBe("true");
+    expect(screen.queryByText("Agenda e Prazos")).not.toBeTruthy();
+    expect(screen.queryByText("Casos em destaque")).not.toBeTruthy();
+    expect(getMock).not.toHaveBeenCalled();
+  });
+
+  it("abre os controles sob demanda e só então carrega dados operacionais", async () => {
+    mockGetOk();
+    renderizar();
+    abrirControles();
+
+    expect(await screen.findByText(/, Clovis!/)).toBeTruthy();
     expect(screen.getByText("Agenda e Prazos")).toBeTruthy();
     expect(screen.getByText("Casos em destaque")).toBeTruthy();
     expect(screen.getByText("Acesso rápido")).toBeTruthy();
     expect(screen.getByText("Minha rotina hoje")).toBeTruthy();
-    expect(screen.getByTestId("entrada-unica").getAttribute("data-embedded")).toBe(
-      "true",
-    );
+    await waitFor(() => expect(getMock).toHaveBeenCalled());
   });
 
   it("exibe sinais operacionais com números reais dos endpoints", async () => {
     mockGetOk();
     renderizar();
+    abrirControles();
 
     // Prazos hoje = atividades tipo prazo com dias_restantes 0 → 1
     await waitFor(() =>
@@ -207,6 +219,7 @@ describe("DashboardUltra — identidade premium DPT", () => {
   it("filtra a agenda por aba Hoje/Amanhã/Esta semana", async () => {
     mockGetOk();
     renderizar();
+    abrirControles();
 
     expect(await screen.findByText("Prazo final — Contestação")).toBeTruthy();
     expect(screen.queryByText("Intimação — audiência")).not.toBeTruthy();
@@ -219,6 +232,7 @@ describe("DashboardUltra — identidade premium DPT", () => {
   it("prioriza casos em destaque por risco, prazo e próxima ação", async () => {
     mockGetOk();
     renderizar();
+    abrirControles();
 
     expect(
       (await screen.findAllByText("Empresa X vs. Banco Y")).length,
@@ -233,6 +247,7 @@ describe("DashboardUltra — identidade premium DPT", () => {
   it("filtra a agenda pelo dia selecionado no calendário", async () => {
     mockGetOk();
     renderizar();
+    abrirControles();
 
     const hojeLabel = format(dataBase, "dd/MM/yyyy");
     const botaoDia = await screen.findByRole("button", { name: hojeLabel });
@@ -246,6 +261,7 @@ describe("DashboardUltra — identidade premium DPT", () => {
   it("mostra na rotina apenas tarefas acionáveis hoje e conclusões do dia", async () => {
     mockGetOk();
     renderizar();
+    abrirControles();
 
     expect(await screen.findByText("Revisar petição inicial")).toBeTruthy();
     expect(screen.getByText("Retorno para cliente — Grupo Santos")).toBeTruthy();
@@ -260,6 +276,7 @@ describe("DashboardUltra — identidade premium DPT", () => {
     mockGetOk();
     patchMock.mockResolvedValue({ data: {} });
     renderizar();
+    abrirControles();
 
     const botao = await screen.findByRole("button", {
       name: /Revisar petição inicial/,
@@ -277,6 +294,7 @@ describe("DashboardUltra — identidade premium DPT", () => {
     mockGetOk();
     patchMock.mockResolvedValue({ data: {} });
     renderizar();
+    abrirControles();
 
     const botao = await screen.findByRole("button", {
       name: /Estudo tema 1\.234\/STJ/,
@@ -303,6 +321,7 @@ describe("DashboardUltra — identidade premium DPT", () => {
       return Promise.reject(new Error(`GET inesperado: ${url}`));
     });
     renderizar();
+    abrirControles();
 
     await waitFor(() =>
       expect(screen.getByLabelText("Prazos hoje: —")).toBeTruthy(),
