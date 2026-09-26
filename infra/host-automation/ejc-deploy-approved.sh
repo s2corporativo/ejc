@@ -44,6 +44,7 @@ log "exigindo pipeline Woodpecker push/main verde para $TARGET_SHA"
 [ -f "$SOURCE_DIR/scripts/check_migration_compatibility.py" ] || fail "checker de migration ausente no SHA aprovado"
 [ -f "$SOURCE_DIR/scripts/deploy_lock.sh" ] || fail "deploy_lock.sh ausente no SHA aprovado"
 [ -f "$SOURCE_DIR/scripts/deploy_vps_safe.sh" ] || fail "deploy_vps_safe.sh ausente no SHA aprovado"
+[ -f "$SOURCE_DIR/scripts/classify_deploy_scope.py" ] || fail "classificador de escopo ausente no SHA aprovado"
 
 # A partir daqui, decisao de migration, sincronizacao e cutover compartilham o
 # mesmo mutex. Isso impede que outro deploy altere schema/runtime entre a leitura
@@ -103,6 +104,16 @@ if [ "$pending_count" -gt 0 ]; then
 fi
 log "migration gate aprovado sob mutex: atual=$current_revision pendentes=$pending_count"
 
+DEPLOY_SCOPE="full"
+if [ "$RUN_MIGRATIONS" = "0" ] && [[ "$DEPLOYED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  DEPLOY_SCOPE="$(python3 "$SOURCE_DIR/scripts/classify_deploy_scope.py"     --repo "$SOURCE_DIR" --previous "$DEPLOYED_SHA" --target "$TARGET_SHA"     2>/dev/null || printf 'full')"
+fi
+case "$DEPLOY_SCOPE" in
+  frontend|full) ;;
+  *) DEPLOY_SCOPE="full" ;;
+esac
+log "escopo de deploy selecionado: $DEPLOY_SCOPE"
+
 log "sincronizando somente o SHA aprovado sob mutex"
 rsync -a --delete \
   --exclude '.git/' \
@@ -124,6 +135,7 @@ LATEST_SHA="$(git -C "$SOURCE_DIR" rev-parse origin/main)"
 log "executando deploy transacional existente"
 cd "$APP_DIR"
 TARGET_SHA="$TARGET_SHA" \
+DEPLOY_SCOPE="$DEPLOY_SCOPE" \
 RUN_MIGRATIONS="$RUN_MIGRATIONS" \
 MIGRATIONS_BACKWARD_COMPATIBLE="$MIGRATIONS_BACKWARD_COMPATIBLE" \
 RUN_SEEDS="${RUN_SEEDS:-0}" \
