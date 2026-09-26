@@ -104,7 +104,11 @@ export function textoBuscaModulo(item: {
     .toLocaleLowerCase("pt-BR");
 }
 
-export default function CommandPalette() {
+export default function CommandPalette({
+  privacyMode = false,
+}: {
+  privacyMode?: boolean;
+}) {
   const nav = useNavigate();
   const user = useAuth((state) => state.user);
   const [open, setOpen] = useState(false);
@@ -296,6 +300,11 @@ export default function CommandPalette() {
 
   useEffect(() => {
     if (!open) return;
+    if (privacyMode) {
+      setRes([]);
+      setLoading(false);
+      return;
+    }
     if (q.trim().length < 2) {
       setRes([]);
       setLoading(false);
@@ -325,7 +334,7 @@ export default function CommandPalette() {
       stale = true;
       clearTimeout(timer);
     };
-  }, [q, tipo, open]);
+  }, [q, tipo, open, privacyMode]);
 
   if (!open) return null;
 
@@ -374,7 +383,9 @@ export default function CommandPalette() {
             ref={inputRef}
             value={q}
             onChange={(event) => setQ(event.target.value)}
-            placeholder={PLACEHOLDER[tipo]}
+            placeholder={
+              privacyMode ? "Buscar módulos e ferramentas…" : PLACEHOLDER[tipo]
+            }
             role="combobox"
             aria-expanded={hasNav}
             aria-controls="cmdk-listbox"
@@ -386,7 +397,8 @@ export default function CommandPalette() {
             ESC
           </kbd>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5 px-4 py-2 border-b border-slate-100">
+        {!privacyMode && (
+          <div className="flex flex-wrap items-center gap-1.5 px-4 py-2 border-b border-slate-100">
           {TIPOS.map((item) => {
             const active = item.value === tipo;
             return (
@@ -408,7 +420,8 @@ export default function CommandPalette() {
               </button>
             );
           })}
-        </div>
+          </div>
+        )}
         <div
           ref={listRef}
           id="cmdk-listbox"
@@ -511,7 +524,7 @@ export default function CommandPalette() {
               </div>
             </div>
           )}
-          {res.map((result, index) => {
+          {!privacyMode && res.map((result, index) => {
             const Icon = ICON[result.tipo] || FileText;
             const itemIndex =
               displayedQuickActions.length + matchingModules.length + index;
