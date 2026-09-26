@@ -28,7 +28,7 @@ import {
   Users,
   Zap,
 } from "lucide-react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { toast } from "../components/Toast";
 import { officeBranding } from "../config/officeBranding";
 import api from "../lib/api";
@@ -39,12 +39,14 @@ import { EntradaInteligente } from "./EntradaUnica";
 /**
  * Início canônico do EJC — referência visual premium DPT (18/09/2026).
  *
- * Composição idêntica ao mockup aprovado pelo Titular: saudação, hero da
- * Entrada Única, quatro sinais operacionais, Agenda e Prazos, Casos em
- * destaque, Acesso rápido e coluna lateral (manifesto, calendário, rotina e
- * citação institucional). Todos os números vêm de endpoints reais; fonte
- * indisponível degrada para "—" (nunca zero falso), espelhando o contrato do
- * GET /dashboard (campo `degradado`).
+ * Início em duas superfícies canônicas:
+ * - IA (padrão): somente Entrada Única, sem ruído operacional;
+ * - Controles: sinais do escritório, agenda, casos, atalhos e painel lateral.
+ *
+ * A Entrada Única continua usando o fluxo canônico e o RBAC existente. Os
+ * endpoints operacionais do painel só são carregados quando "Controles" é
+ * aberto, reduzindo latência e trabalho desnecessário na superfície de IA.
+ * Fontes indisponíveis degradam para "—" (nunca zero falso).
  */
 
 type Atividade = {
@@ -88,6 +90,7 @@ type Kpis = {
 };
 
 type AbaAgenda = "hoje" | "amanha" | "semana";
+type ModoDashboard = "ia" | "controles";
 
 const ROTULO_TIPO: Record<string, string> = {
   prazo: "Prazo",
@@ -205,6 +208,9 @@ function scoreTarefaHoje(tarefa: Tarefa, hoje: string): number {
 export default function DashboardUltra() {
   const user = useAuth((state) => state.user);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const modo: ModoDashboard =
+    searchParams.get("modo") === "controles" ? "controles" : "ia";
 
   const [carregado, setCarregado] = useState(false);
   const [kpis, setKpis] = useState<Kpis | null>(null);
@@ -255,8 +261,23 @@ export default function DashboardUltra() {
   }, []);
 
   useEffect(() => {
-    void carregar();
-  }, [carregar]);
+    if (modo === "controles" && !carregado) {
+      void carregar();
+    }
+  }, [carregado, carregar, modo]);
+
+  const selecionarModo = useCallback(
+    (proximoModo: ModoDashboard) => {
+      const proximosParametros = new URLSearchParams(searchParams);
+      if (proximoModo === "ia") {
+        proximosParametros.delete("modo");
+      } else {
+        proximosParametros.set("modo", "controles");
+      }
+      setSearchParams(proximosParametros, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
 
   const alternarTarefa = useCallback(async (tarefa: Tarefa) => {
     const novoStatus = tarefa.status === "concluida" ? "a_fazer" : "concluida";
@@ -388,490 +409,537 @@ export default function DashboardUltra() {
     v === null || v === undefined ? "—" : String(v);
 
   return (
-    <div className="ejc-dash">
-      <header className="ejc-dash__greeting" aria-label="Saudação do dia">
-        <div>
-          <h1>
-            {saudacaoPorHora()}, {primeiroNome}!
-          </h1>
-          <p>Disciplina hoje. Grandes conquistas sempre.</p>
-        </div>
-        <div className="ejc-dash__greeting-tag" aria-hidden="true">
-          <span>Conhecimento</span>
-          <span>Estratégia</span>
-          <span>Resultados reais</span>
-        </div>
-      </header>
-
-      <section className="ejc-dash__entry" aria-label="Entrada Única">
-        <div className="ejc-dash__entry-head">
-          <span className="ejc-dash__entry-icon" aria-hidden="true">
-            <FilePlus2 />
-          </span>
-          <div className="ejc-dash__entry-copy">
-            <h2>Entrada Única</h2>
-            <p>Descreva o caso, envie documentos ou inicie um atendimento.</p>
-          </div>
-          <span className="ejc-dash__entry-tag" aria-hidden="true">
-            Uma solução.
-            <br />
-            Todas as possibilidades.
-          </span>
-        </div>
-
-        {canUseLegal ? (
-          <div className="ejc-dash__entry-body">
-            <EntradaInteligente embedded />
-          </div>
-        ) : canUseEntry ? (
-          <div className="ejc-dash__entry-body ejc-dash__entry-body--plain">
-            <p>
-              Use a Entrada Única para cadastro manual de cliente e caso, sem
-              depender de IA.
-            </p>
-            <Link to="/entrada" className="ejc-dash__entry-cta">
-              Abrir Entrada Única
-            </Link>
-          </div>
-        ) : (
-          <div className="ejc-dash__entry-body ejc-dash__entry-body--plain">
-            <p>
-              A Entrada Única está disponível apenas aos perfis autorizados.
-            </p>
-          </div>
-        )}
-
-        {canUseEntry && (
-          <div className="ejc-dash__entry-chips">
-            {canUseLegal && (
-              <Link to="/casos/novo" className="ejc-dash__chip">
-                <Plus aria-hidden="true" /> Novo caso
-              </Link>
-            )}
-            <Link to="/cadastro-manual" className="ejc-dash__chip">
-              <Users aria-hidden="true" /> Novo cliente
-            </Link>
-            <Link to="/documentos" className="ejc-dash__chip">
-              <Upload aria-hidden="true" /> Enviar documentos
-            </Link>
-            {canUseLegal && (
-              <Link to="/entrada" className="ejc-dash__chip">
-                <Sparkles aria-hidden="true" /> Analisar
-              </Link>
-            )}
-          </div>
-        )}
-      </section>
-
-      <section className="ejc-dash__stats" aria-label="Sinais do escritório">
-        <Link
-          to="/atividades?tipo=prazo"
-          className="ejc-dash__stat is-dark"
-          aria-label={`Prazos hoje: ${valorOuTraco(prazosHoje)}`}
+    <div className={`ejc-dash ejc-dash--${modo}`}>
+      <nav
+        className="ejc-dash__mode-switch"
+        aria-label="Modo do início"
+        role="tablist"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={modo === "ia"}
+          aria-controls="ejc-dashboard-ia"
+          className={modo === "ia" ? "is-active" : ""}
+          onClick={() => selecionarModo("ia")}
         >
-          <span className="ejc-dash__stat-icon" aria-hidden="true">
-            <CalendarClock />
-          </span>
-          <strong>{valorOuTraco(prazosHoje)}</strong>
-          <small>Prazos hoje</small>
-          <ChevronRight className="ejc-dash__stat-chev" aria-hidden="true" />
-        </Link>
-        <Link
-          to="/clientes"
-          className="ejc-dash__stat"
-          aria-label={`Clientes ativos: ${valorOuTraco(kpis?.clientes_ativos)}`}
+          <Sparkles aria-hidden="true" />
+          <span>IA</span>
+          <small>Entrada de casos</small>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={modo === "controles"}
+          aria-controls="ejc-dashboard-controles"
+          className={modo === "controles" ? "is-active" : ""}
+          onClick={() => selecionarModo("controles")}
         >
-          <span className="ejc-dash__stat-icon" aria-hidden="true">
-            <Users />
-          </span>
-          <strong>{valorOuTraco(kpis?.clientes_ativos)}</strong>
-          <small>Clientes ativos</small>
-          <ChevronRight className="ejc-dash__stat-chev" aria-hidden="true" />
-        </Link>
-        <Link
-          to="/casos"
-          className="ejc-dash__stat"
-          aria-label={`Casos em andamento: ${valorOuTraco(kpis?.casos?.ativos)}`}
-        >
-          <span className="ejc-dash__stat-icon" aria-hidden="true">
-            <FolderKanban />
-          </span>
-          <strong>{valorOuTraco(kpis?.casos?.ativos)}</strong>
-          <small>Casos em andamento</small>
-          <ChevronRight className="ejc-dash__stat-chev" aria-hidden="true" />
-        </Link>
-        <Link
-          to="/documentos"
-          className="ejc-dash__stat"
-          aria-label={`Documentos recentes: ${valorOuTraco(documentosRecentes)}`}
-        >
-          <span className="ejc-dash__stat-icon" aria-hidden="true">
-            <FileText />
-          </span>
-          <strong>{valorOuTraco(documentosRecentes)}</strong>
-          <small>Documentos recentes</small>
-          <ChevronRight className="ejc-dash__stat-chev" aria-hidden="true" />
-        </Link>
-      </section>
+          <BarChart3 aria-hidden="true" />
+          <span>Controles</span>
+          <small>Gestão do escritório</small>
+        </button>
+      </nav>
 
-      <div className="ejc-dash__panels">
-        <section className="ejc-dash__panel" aria-label="Agenda e Prazos">
-          <div className="ejc-dash__panel-head">
-            <div className="ejc-dash__panel-title">
-              <span className="ejc-dash__panel-ico" aria-hidden="true">
-                <CalendarDays />
-              </span>
-              <h3>Agenda e Prazos</h3>
+      {modo === "ia" ? (
+        <main
+          id="ejc-dashboard-ia"
+          className="ejc-dash__ai-stage"
+          role="tabpanel"
+          aria-label="Entrada de casos por IA"
+        >
+  <section className="ejc-dash__entry ejc-dash__entry--solo" aria-label="Entrada Única">
+          <div className="ejc-dash__entry-head">
+            <span className="ejc-dash__entry-icon" aria-hidden="true">
+              <FilePlus2 />
+            </span>
+            <div className="ejc-dash__entry-copy">
+              <h2>Entrada Única</h2>
+              <p>Descreva o caso, envie documentos ou inicie um atendimento.</p>
             </div>
-            <Link to="/atividades" className="ejc-dash__panel-more">
-              Ver todos <ChevronRight aria-hidden="true" />
-            </Link>
+            <span className="ejc-dash__entry-tag" aria-hidden="true">
+              Uma solução.
+              <br />
+              Todas as possibilidades.
+            </span>
           </div>
-          <div className="ejc-dash__panel-tools">
-            <div className="ejc-dash__tabs" role="tablist" aria-label="Período">
-              {(
-                [
-                  ["hoje", "Hoje"],
-                  ["amanha", "Amanhã"],
-                  ["semana", "Esta semana"],
-                ] as const
-              ).map(([valor, rotulo]) => (
-                <button
-                  key={valor}
-                  type="button"
-                  role="tab"
-                  aria-selected={aba === valor}
-                  className={aba === valor ? "is-active" : ""}
-                  onClick={() => {
-                    setDiaSelecionado(null);
-                    setAba(valor);
-                  }}
-                >
-                  {rotulo}
-                </button>
-              ))}
+
+          {canUseLegal ? (
+            <div className="ejc-dash__entry-body">
+              <EntradaInteligente embedded />
             </div>
-            {diaSelecionado ? (
-              <button
-                type="button"
-                className="ejc-dash__date-filter"
-                onClick={() => setDiaSelecionado(null)}
-                aria-label="Remover filtro de data"
-              >
-                {format(new Date(`${diaSelecionado}T12:00:00`), "dd/MM/yyyy")}
-                <span aria-hidden="true">×</span>
-              </button>
-            ) : (
-              <p className="ejc-dash__panel-date" aria-hidden="true">
-                {aba === "semana" ? (
-                  <strong>{semanaDaAba(aba)}</strong>
-                ) : (
-                  <>
-                    <strong>{dataDaAba(aba)}</strong>
-                    <span>
-                      {format(
-                        aba === "amanha"
-                          ? new Date(Date.now() + 86_400_000)
-                          : new Date(),
-                        "EEEE",
-                        { locale: ptBR },
-                      )}
-                    </span>
-                  </>
-                )}
+          ) : canUseEntry ? (
+            <div className="ejc-dash__entry-body ejc-dash__entry-body--plain">
+              <p>
+                Use a Entrada Única para cadastro manual de cliente e caso, sem
+                depender de IA.
               </p>
-            )}
+              <Link to="/entrada" className="ejc-dash__entry-cta">
+                Abrir Entrada Única
+              </Link>
+            </div>
+          ) : (
+            <div className="ejc-dash__entry-body ejc-dash__entry-body--plain">
+              <p>
+                A Entrada Única está disponível apenas aos perfis autorizados.
+              </p>
+            </div>
+          )}
+
+          {canUseEntry && (
+            <div className="ejc-dash__entry-chips">
+              {canUseLegal && (
+                <Link to="/casos/novo" className="ejc-dash__chip">
+                  <Plus aria-hidden="true" /> Novo caso
+                </Link>
+              )}
+              <Link to="/cadastro-manual" className="ejc-dash__chip">
+                <Users aria-hidden="true" /> Novo cliente
+              </Link>
+              <Link to="/documentos" className="ejc-dash__chip">
+                <Upload aria-hidden="true" /> Enviar documentos
+              </Link>
+              {canUseLegal && (
+                <Link to="/entrada" className="ejc-dash__chip">
+                  <Sparkles aria-hidden="true" /> Analisar
+                </Link>
+              )}
+            </div>
+          )}
+        </section>
+        </main>
+      ) : (
+        <div
+          id="ejc-dashboard-controles"
+          className="ejc-dash__controls-stage"
+          role="tabpanel"
+          aria-label="Controles do escritório"
+        >
+  <header className="ejc-dash__greeting" aria-label="Saudação do dia">
+          <div>
+            <h1>
+              {saudacaoPorHora()}, {primeiroNome}!
+            </h1>
+            <p>Disciplina hoje. Grandes conquistas sempre.</p>
           </div>
-          <ol className="ejc-dash__timeline">
-            {agendaFiltrada === null ? (
-              <li className="ejc-dash__empty">Agenda indisponível agora.</li>
-            ) : agendaFiltrada.length === 0 ? (
-              <li className="ejc-dash__empty">
-                Nada na agenda para o período.
-              </li>
-            ) : (
-              agendaFiltrada.map((a) => (
-                <li key={a.id ?? `${a.tipo}-${a.titulo}`}>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      a.case_id
-                        ? navigate(`/casos/${a.case_id}`)
-                        : navigate("/atividades")
-                    }
-                  >
-                    <time>{horaDe(a.date)}</time>
-                    <span className={`ejc-dash__dot ${pontoClasse(a)}`} />
-                    <span className="ejc-dash__item">
-                      <strong>{a.titulo || "Atividade"}</strong>
-                      <small>
-                        {a.caso_titulo
-                          ? a.caso_titulo
-                          : (ROTULO_TIPO[a.tipo ?? ""] ?? "Atividade")}
-                      </small>
-                    </span>
-                    <ChevronRight aria-hidden="true" />
-                  </button>
-                </li>
-              ))
-            )}
-          </ol>
+          <div className="ejc-dash__greeting-tag" aria-hidden="true">
+            <span>Conhecimento</span>
+            <span>Estratégia</span>
+            <span>Resultados reais</span>
+          </div>
+        </header>
+
+        <section className="ejc-dash__stats" aria-label="Sinais do escritório">
+          <Link
+            to="/atividades?tipo=prazo"
+            className="ejc-dash__stat is-dark"
+            aria-label={`Prazos hoje: ${valorOuTraco(prazosHoje)}`}
+          >
+            <span className="ejc-dash__stat-icon" aria-hidden="true">
+              <CalendarClock />
+            </span>
+            <strong>{valorOuTraco(prazosHoje)}</strong>
+            <small>Prazos hoje</small>
+            <ChevronRight className="ejc-dash__stat-chev" aria-hidden="true" />
+          </Link>
+          <Link
+            to="/clientes"
+            className="ejc-dash__stat"
+            aria-label={`Clientes ativos: ${valorOuTraco(kpis?.clientes_ativos)}`}
+          >
+            <span className="ejc-dash__stat-icon" aria-hidden="true">
+              <Users />
+            </span>
+            <strong>{valorOuTraco(kpis?.clientes_ativos)}</strong>
+            <small>Clientes ativos</small>
+            <ChevronRight className="ejc-dash__stat-chev" aria-hidden="true" />
+          </Link>
+          <Link
+            to="/casos"
+            className="ejc-dash__stat"
+            aria-label={`Casos em andamento: ${valorOuTraco(kpis?.casos?.ativos)}`}
+          >
+            <span className="ejc-dash__stat-icon" aria-hidden="true">
+              <FolderKanban />
+            </span>
+            <strong>{valorOuTraco(kpis?.casos?.ativos)}</strong>
+            <small>Casos em andamento</small>
+            <ChevronRight className="ejc-dash__stat-chev" aria-hidden="true" />
+          </Link>
+          <Link
+            to="/documentos"
+            className="ejc-dash__stat"
+            aria-label={`Documentos recentes: ${valorOuTraco(documentosRecentes)}`}
+          >
+            <span className="ejc-dash__stat-icon" aria-hidden="true">
+              <FileText />
+            </span>
+            <strong>{valorOuTraco(documentosRecentes)}</strong>
+            <small>Documentos recentes</small>
+            <ChevronRight className="ejc-dash__stat-chev" aria-hidden="true" />
+          </Link>
         </section>
 
-        <section className="ejc-dash__panel" aria-label="Casos em destaque">
-          <div className="ejc-dash__panel-head">
-            <div className="ejc-dash__panel-title">
-              <span className="ejc-dash__panel-ico" aria-hidden="true">
-                <Briefcase />
-              </span>
-              <h3>Casos em destaque</h3>
+        <div className="ejc-dash__panels">
+          <section className="ejc-dash__panel" aria-label="Agenda e Prazos">
+            <div className="ejc-dash__panel-head">
+              <div className="ejc-dash__panel-title">
+                <span className="ejc-dash__panel-ico" aria-hidden="true">
+                  <CalendarDays />
+                </span>
+                <h3>Agenda e Prazos</h3>
+              </div>
+              <Link to="/atividades" className="ejc-dash__panel-more">
+                Ver todos <ChevronRight aria-hidden="true" />
+              </Link>
             </div>
-            <Link to="/casos" className="ejc-dash__panel-more">
-              Ver todos <ChevronRight aria-hidden="true" />
-            </Link>
-          </div>
-          <ul className="ejc-dash__cases">
-            {casosEmDestaque === null ? (
-              <li className="ejc-dash__empty">Casos indisponíveis agora.</li>
-            ) : casosEmDestaque.length === 0 ? (
-              <li className="ejc-dash__empty">Nenhum caso cadastrado ainda.</li>
-            ) : (
-              casosEmDestaque.map((c) => {
-                const chip = chipDeCaso(c.status);
-                const meta = c.numero_processo
-                  ? `Proc. nº ${c.numero_processo}`
-                  : c.numero_interno
-                    ? `Caso ${c.numero_interno}`
-                    : "";
-                return (
-                  <li key={c.id ?? c.titulo}>
+            <div className="ejc-dash__panel-tools">
+              <div className="ejc-dash__tabs" role="tablist" aria-label="Período">
+                {(
+                  [
+                    ["hoje", "Hoje"],
+                    ["amanha", "Amanhã"],
+                    ["semana", "Esta semana"],
+                  ] as const
+                ).map(([valor, rotulo]) => (
+                  <button
+                    key={valor}
+                    type="button"
+                    role="tab"
+                    aria-selected={aba === valor}
+                    className={aba === valor ? "is-active" : ""}
+                    onClick={() => {
+                      setDiaSelecionado(null);
+                      setAba(valor);
+                    }}
+                  >
+                    {rotulo}
+                  </button>
+                ))}
+              </div>
+              {diaSelecionado ? (
+                <button
+                  type="button"
+                  className="ejc-dash__date-filter"
+                  onClick={() => setDiaSelecionado(null)}
+                  aria-label="Remover filtro de data"
+                >
+                  {format(new Date(`${diaSelecionado}T12:00:00`), "dd/MM/yyyy")}
+                  <span aria-hidden="true">×</span>
+                </button>
+              ) : (
+                <p className="ejc-dash__panel-date" aria-hidden="true">
+                  {aba === "semana" ? (
+                    <strong>{semanaDaAba(aba)}</strong>
+                  ) : (
+                    <>
+                      <strong>{dataDaAba(aba)}</strong>
+                      <span>
+                        {format(
+                          aba === "amanha"
+                            ? new Date(Date.now() + 86_400_000)
+                            : new Date(),
+                          "EEEE",
+                          { locale: ptBR },
+                        )}
+                      </span>
+                    </>
+                  )}
+                </p>
+              )}
+            </div>
+            <ol className="ejc-dash__timeline">
+              {agendaFiltrada === null ? (
+                <li className="ejc-dash__empty">Agenda indisponível agora.</li>
+              ) : agendaFiltrada.length === 0 ? (
+                <li className="ejc-dash__empty">
+                  Nada na agenda para o período.
+                </li>
+              ) : (
+                agendaFiltrada.map((a) => (
+                  <li key={a.id ?? `${a.tipo}-${a.titulo}`}>
                     <button
                       type="button"
-                      onClick={() => c.id && navigate(`/casos/${c.id}`)}
+                      onClick={() =>
+                        a.case_id
+                          ? navigate(`/casos/${a.case_id}`)
+                          : navigate("/atividades")
+                      }
                     >
-                      <span className={`ejc-dash__case-chip ${chip.classe}`}>
-                        {chip.rotulo}
+                      <time>{horaDe(a.date)}</time>
+                      <span className={`ejc-dash__dot ${pontoClasse(a)}`} />
+                      <span className="ejc-dash__item">
+                        <strong>{a.titulo || "Atividade"}</strong>
+                        <small>
+                          {a.caso_titulo
+                            ? a.caso_titulo
+                            : (ROTULO_TIPO[a.tipo ?? ""] ?? "Atividade")}
+                        </small>
                       </span>
-                      <strong>{c.titulo || "Caso sem título"}</strong>
-                      <small>
-                        {[
-                          meta,
-                          c.area
-                            ? c.area.charAt(0).toUpperCase() + c.area.slice(1)
-                            : "",
-                          c.proxima_acao ? `Próxima: ${c.proxima_acao}` : "",
-                        ]
-                          .filter(Boolean)
-                          .join("  ·  ")}
-                      </small>
                       <ChevronRight aria-hidden="true" />
                     </button>
                   </li>
-                );
-              })
-            )}
-          </ul>
-        </section>
-      </div>
+                ))
+              )}
+            </ol>
+          </section>
 
-      <section className="ejc-dash__quick" aria-label="Acesso rápido">
-        <div className="ejc-dash__quick-head">
-          <Zap aria-hidden="true" />
-          <strong>Acesso rápido</strong>
-        </div>
-        <div className="ejc-dash__quick-items">
-          <Link to="/casos/novo">
-            <span aria-hidden="true">
-              <Plus />
-            </span>
-            Novo caso
-          </Link>
-          <Link to="/cadastro-manual">
-            <span aria-hidden="true">
-              <Users />
-            </span>
-            Novo cliente
-          </Link>
-          <Link to="/pecas">
-            <span aria-hidden="true">
-              <FileText />
-            </span>
-            Gerar documento
-          </Link>
-          <Link to="/inteligencia?tab=pesquisa">
-            <span aria-hidden="true">
-              <Scale />
-            </span>
-            Consultar jurisprudência
-          </Link>
-          <Link to="/teses">
-            <span aria-hidden="true">
-              <BookOpen />
-            </span>
-            Buscar no banco de teses
-          </Link>
-          <Link to="/financeiro">
-            <span aria-hidden="true">
-              <BarChart3 />
-            </span>
-            Relatório financeiro
-          </Link>
-        </div>
-      </section>
-
-      <aside className="ejc-dash__side" aria-label="Painel lateral">
-        {/* Painel único da referência: manifesto + calendário + rotina
-            compartilham a mesma superfície esmeralda (sem costuras). */}
-        <div className="ejc-dash__side-panel">
-          <div className="ejc-dash__manifesto">
-            <img
-              src="/brand/dashboard-themis.jpg"
-              alt=""
-              aria-hidden="true"
-              loading="lazy"
-            />
-            <p>
-              Direito
-              <br />
-              que constrói
-              <br />
-              possibilidades.
-            </p>
-          </div>
-
-          <div className="ejc-dash__calendar">
-            <div className="ejc-dash__calendar-head">
-              <strong>
-                {(() => {
-                  const mes = format(mesVisivel, "MMMM 'de' yyyy", {
-                    locale: ptBR,
-                  });
-                  return mes.charAt(0).toUpperCase() + mes.slice(1);
-                })()}
-              </strong>
-              <span>
-                <button
-                  type="button"
-                  aria-label="Mês anterior"
-                  onClick={() => setMesOffset((v) => v - 1)}
-                >
-                  <ChevronLeft aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Mês seguinte"
-                  onClick={() => setMesOffset((v) => v + 1)}
-                >
-                  <ChevronRight aria-hidden="true" />
-                </button>
-              </span>
-            </div>
-            <div className="ejc-dash__calendar-grid" role="grid">
-              {DIAS_CURTOS.map((d, i) => (
-                <span key={`${d}-${i}`} className="ejc-dash__calendar-dow">
-                  {d}
+          <section className="ejc-dash__panel" aria-label="Casos em destaque">
+            <div className="ejc-dash__panel-head">
+              <div className="ejc-dash__panel-title">
+                <span className="ejc-dash__panel-ico" aria-hidden="true">
+                  <Briefcase />
                 </span>
-              ))}
-              {diasDoMes.map((dia) => {
-                const chave = format(dia, "yyyy-MM-dd");
-                const temAtividade = diasComAtividade.has(chave);
-                const classes = ["ejc-dash__calendar-day"];
-                if (!isSameMonth(dia, mesVisivel)) classes.push("is-out");
-                if (temAtividade) classes.push("has-event");
-                if (diaSelecionado === chave) classes.push("is-selected");
-                return (
-                  <button
-                    key={chave}
-                    type="button"
-                    className={classes.join(" ")}
-                    aria-label={format(dia, "dd/MM/yyyy")}
-                    aria-pressed={diaSelecionado === chave}
-                    aria-current={
-                      chave === format(new Date(), "yyyy-MM-dd")
-                        ? "date"
-                        : undefined
-                    }
-                    onClick={() =>
-                      setDiaSelecionado((atual) =>
-                        atual === chave ? null : chave,
-                      )
-                    }
-                  >
-                    {format(dia, "d")}
-                    {temAtividade && <i aria-hidden="true" />}
-                  </button>
-                );
-              })}
+                <h3>Casos em destaque</h3>
+              </div>
+              <Link to="/casos" className="ejc-dash__panel-more">
+                Ver todos <ChevronRight aria-hidden="true" />
+              </Link>
             </div>
-          </div>
-
-          <div className="ejc-dash__routine">
-            <div className="ejc-dash__routine-head">
-              <strong>Minha rotina hoje</strong>
-              <small>
-                {carregado && tarefas
-                  ? `${rotinaFeitas} de ${rotinaTotal} concluídas`
-                  : "carregando…"}
-              </small>
-            </div>
-            <div className="ejc-dash__routine-bar" aria-hidden="true">
-              <i
-                style={{
-                  width:
-                    rotinaTotal > 0
-                      ? `${Math.round((rotinaFeitas / rotinaTotal) * 100)}%`
-                      : "0%",
-                }}
-              />
-            </div>
-            <ul>
-              {rotinaPendentes.map((t) => (
-                <li key={t.id}>
-                  <button type="button" onClick={() => void alternarTarefa(t)}>
-                    <span className="ejc-dash__check" aria-hidden="true" />
-                    {t.titulo || "Tarefa"}
-                  </button>
-                </li>
-              ))}
-              {rotinaConcluidas.map((t) => (
-                <li key={t.id}>
-                  <button
-                    type="button"
-                    className="is-done"
-                    onClick={() => void alternarTarefa(t)}
-                  >
-                    <span className="ejc-dash__check" aria-hidden="true" />
-                    {t.titulo || "Tarefa"}
-                  </button>
-                </li>
-              ))}
-              {carregado && tarefas && rotinaTotal === 0 && (
-                <li className="ejc-dash__empty">
-                  Nenhuma tarefa sua por agora.
-                </li>
+            <ul className="ejc-dash__cases">
+              {casosEmDestaque === null ? (
+                <li className="ejc-dash__empty">Casos indisponíveis agora.</li>
+              ) : casosEmDestaque.length === 0 ? (
+                <li className="ejc-dash__empty">Nenhum caso cadastrado ainda.</li>
+              ) : (
+                casosEmDestaque.map((c) => {
+                  const chip = chipDeCaso(c.status);
+                  const meta = c.numero_processo
+                    ? `Proc. nº ${c.numero_processo}`
+                    : c.numero_interno
+                      ? `Caso ${c.numero_interno}`
+                      : "";
+                  return (
+                    <li key={c.id ?? c.titulo}>
+                      <button
+                        type="button"
+                        onClick={() => c.id && navigate(`/casos/${c.id}`)}
+                      >
+                        <span className={`ejc-dash__case-chip ${chip.classe}`}>
+                          {chip.rotulo}
+                        </span>
+                        <strong>{c.titulo || "Caso sem título"}</strong>
+                        <small>
+                          {[
+                            meta,
+                            c.area
+                              ? c.area.charAt(0).toUpperCase() + c.area.slice(1)
+                              : "",
+                            c.proxima_acao ? `Próxima: ${c.proxima_acao}` : "",
+                          ]
+                            .filter(Boolean)
+                            .join("  ·  ")}
+                        </small>
+                        <ChevronRight aria-hidden="true" />
+                      </button>
+                    </li>
+                  );
+                })
               )}
             </ul>
-          </div>
+          </section>
         </div>
 
-        <div className="ejc-dash__quote">
-          <span aria-hidden="true">“</span>
-          <p>Segurança jurídica é base para grandes conquistas.</p>
-          <div className="ejc-dash__quote-brand">
-            <img src={officeBranding.logoPath} alt="" aria-hidden="true" />
-            <small>{officeBranding.officeName}</small>
+        <section className="ejc-dash__quick" aria-label="Acesso rápido">
+          <div className="ejc-dash__quick-head">
+            <Zap aria-hidden="true" />
+            <strong>Acesso rápido</strong>
           </div>
-        </div>
-      </aside>
+          <div className="ejc-dash__quick-items">
+            <Link to="/casos/novo">
+              <span aria-hidden="true">
+                <Plus />
+              </span>
+              Novo caso
+            </Link>
+            <Link to="/cadastro-manual">
+              <span aria-hidden="true">
+                <Users />
+              </span>
+              Novo cliente
+            </Link>
+            <Link to="/pecas">
+              <span aria-hidden="true">
+                <FileText />
+              </span>
+              Gerar documento
+            </Link>
+            <Link to="/inteligencia?tab=pesquisa">
+              <span aria-hidden="true">
+                <Scale />
+              </span>
+              Consultar jurisprudência
+            </Link>
+            <Link to="/teses">
+              <span aria-hidden="true">
+                <BookOpen />
+              </span>
+              Buscar no banco de teses
+            </Link>
+            <Link to="/financeiro">
+              <span aria-hidden="true">
+                <BarChart3 />
+              </span>
+              Relatório financeiro
+            </Link>
+          </div>
+        </section>
 
-      <footer className="ejc-dash__footer">
-        <span>
-          {officeBranding.officeName} <i aria-hidden="true">|</i> São Paulo - SP
-        </span>
-        <span className="ejc-dash__footer-tag">
-          <i aria-hidden="true" /> Mais que soluções. Parcerias duradouras.
-        </span>
-      </footer>
+        <aside className="ejc-dash__side" aria-label="Painel lateral">
+          {/* Painel único da referência: manifesto + calendário + rotina
+              compartilham a mesma superfície esmeralda (sem costuras). */}
+          <div className="ejc-dash__side-panel">
+            <div className="ejc-dash__manifesto">
+              <img
+                src="/brand/dashboard-themis.jpg"
+                alt=""
+                aria-hidden="true"
+                loading="lazy"
+              />
+              <p>
+                Direito
+                <br />
+                que constrói
+                <br />
+                possibilidades.
+              </p>
+            </div>
+
+            <div className="ejc-dash__calendar">
+              <div className="ejc-dash__calendar-head">
+                <strong>
+                  {(() => {
+                    const mes = format(mesVisivel, "MMMM 'de' yyyy", {
+                      locale: ptBR,
+                    });
+                    return mes.charAt(0).toUpperCase() + mes.slice(1);
+                  })()}
+                </strong>
+                <span>
+                  <button
+                    type="button"
+                    aria-label="Mês anterior"
+                    onClick={() => setMesOffset((v) => v - 1)}
+                  >
+                    <ChevronLeft aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Mês seguinte"
+                    onClick={() => setMesOffset((v) => v + 1)}
+                  >
+                    <ChevronRight aria-hidden="true" />
+                  </button>
+                </span>
+              </div>
+              <div className="ejc-dash__calendar-grid" role="grid">
+                {DIAS_CURTOS.map((d, i) => (
+                  <span key={`${d}-${i}`} className="ejc-dash__calendar-dow">
+                    {d}
+                  </span>
+                ))}
+                {diasDoMes.map((dia) => {
+                  const chave = format(dia, "yyyy-MM-dd");
+                  const temAtividade = diasComAtividade.has(chave);
+                  const classes = ["ejc-dash__calendar-day"];
+                  if (!isSameMonth(dia, mesVisivel)) classes.push("is-out");
+                  if (temAtividade) classes.push("has-event");
+                  if (diaSelecionado === chave) classes.push("is-selected");
+                  return (
+                    <button
+                      key={chave}
+                      type="button"
+                      className={classes.join(" ")}
+                      aria-label={format(dia, "dd/MM/yyyy")}
+                      aria-pressed={diaSelecionado === chave}
+                      aria-current={
+                        chave === format(new Date(), "yyyy-MM-dd")
+                          ? "date"
+                          : undefined
+                      }
+                      onClick={() =>
+                        setDiaSelecionado((atual) =>
+                          atual === chave ? null : chave,
+                        )
+                      }
+                    >
+                      {format(dia, "d")}
+                      {temAtividade && <i aria-hidden="true" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="ejc-dash__routine">
+              <div className="ejc-dash__routine-head">
+                <strong>Minha rotina hoje</strong>
+                <small>
+                  {carregado && tarefas
+                    ? `${rotinaFeitas} de ${rotinaTotal} concluídas`
+                    : "carregando…"}
+                </small>
+              </div>
+              <div className="ejc-dash__routine-bar" aria-hidden="true">
+                <i
+                  style={{
+                    width:
+                      rotinaTotal > 0
+                        ? `${Math.round((rotinaFeitas / rotinaTotal) * 100)}%`
+                        : "0%",
+                  }}
+                />
+              </div>
+              <ul>
+                {rotinaPendentes.map((t) => (
+                  <li key={t.id}>
+                    <button type="button" onClick={() => void alternarTarefa(t)}>
+                      <span className="ejc-dash__check" aria-hidden="true" />
+                      {t.titulo || "Tarefa"}
+                    </button>
+                  </li>
+                ))}
+                {rotinaConcluidas.map((t) => (
+                  <li key={t.id}>
+                    <button
+                      type="button"
+                      className="is-done"
+                      onClick={() => void alternarTarefa(t)}
+                    >
+                      <span className="ejc-dash__check" aria-hidden="true" />
+                      {t.titulo || "Tarefa"}
+                    </button>
+                  </li>
+                ))}
+                {carregado && tarefas && rotinaTotal === 0 && (
+                  <li className="ejc-dash__empty">
+                    Nenhuma tarefa sua por agora.
+                  </li>
+                )}
+              </ul>
+            </div>
+          </div>
+
+          <div className="ejc-dash__quote">
+            <span aria-hidden="true">“</span>
+            <p>Segurança jurídica é base para grandes conquistas.</p>
+            <div className="ejc-dash__quote-brand">
+              <img src={officeBranding.logoPath} alt="" aria-hidden="true" />
+              <small>{officeBranding.officeName}</small>
+            </div>
+          </div>
+        </aside>
+
+        <footer className="ejc-dash__footer">
+          <span>
+            {officeBranding.officeName} <i aria-hidden="true">|</i> São Paulo - SP
+          </span>
+          <span className="ejc-dash__footer-tag">
+            <i aria-hidden="true" /> Mais que soluções. Parcerias duradouras.
+          </span>
+        </footer>
+        </div>
+      )}
     </div>
   );
 }
