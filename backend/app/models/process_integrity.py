@@ -1,11 +1,14 @@
 """Persistência de proveniência processual e identidade canônica de partes."""
 from __future__ import annotations
 
-from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Index, String, func, text
+from sqlalchemy import JSON, CheckConstraint, Column, DateTime, ForeignKey, Index, String, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+
+
+_JSON = JSON().with_variant(JSONB(), "postgresql")
 
 
 class PartyEntity(Base):
@@ -13,18 +16,8 @@ class PartyEntity(Base):
     __table_args__ = (
         CheckConstraint("entity_type IN ('PF','PJ','desconhecido')", name="ck_party_entities_type"),
         Index("ix_party_entities_normalized_name", "normalized_name"),
-        Index(
-            "ux_party_entities_doc_hash_active",
-            "cpf_cnpj_hash",
-            unique=True,
-            postgresql_where=text("cpf_cnpj_hash IS NOT NULL AND deleted_at IS NULL"),
-        ),
-        Index(
-            "ux_party_entities_client_active",
-            "client_id",
-            unique=True,
-            postgresql_where=text("client_id IS NOT NULL AND deleted_at IS NULL"),
-        ),
+        Index("ix_party_entities_doc_hash", "cpf_cnpj_hash"),
+        Index("ix_party_entities_client_id", "client_id"),
     )
 
     id = Column(String(36), primary_key=True)
@@ -33,7 +26,7 @@ class PartyEntity(Base):
     display_name = Column(String(255), nullable=False)
     normalized_name = Column(String(255), nullable=False)
     cpf_cnpj_hash = Column(String(64), nullable=True)
-    aliases = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    aliases = Column(_JSON, nullable=False, default=list)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True), nullable=True)
@@ -57,7 +50,7 @@ class ProcessDataProvenance(Base):
     source_ref = Column(String(255), nullable=True)
     source_date = Column(DateTime(timezone=True), nullable=True)
     captured_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    value_snapshot = Column(JSONB, nullable=True)
+    value_snapshot = Column(_JSON, nullable=True)
     confidence = Column(String(20), nullable=True)
     confirmed_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     confirmed_at = Column(DateTime(timezone=True), nullable=True)

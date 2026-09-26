@@ -2,12 +2,26 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+import re
 
 from sqlalchemy import exists, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.case import Case
 from app.models.process import Process
+
+
+def _dialect_name(db: AsyncSession) -> str | None:
+    """Retorna o dialeto real sem assumir PostgreSQL em doubles de teste."""
+    try:
+        bind = db.get_bind()
+        return getattr(getattr(bind, "dialect", None), "name", None)
+    except Exception:
+        return None
+
+
+def _somente_digitos(valor: str | None) -> str:
+    return re.sub(r"\D", "", str(valor or ""))
 
 
 class ProcessRepository:
@@ -80,7 +94,14 @@ class ProcessRepository:
         )
 
     async def lock_cnj(self, db: AsyncSession, numero_cnj_normalizado: str) -> None:
-        """Serializa vínculos concorrentes do mesmo CNJ entre casos distintos."""
+        """Serializa vínculos concorrentes do mesmo CNJ em PostgreSQL.
+
+        SQLite é usado apenas em testes locais e não possui advisory locks nem
+        ``hashtext``. Nesses testes a serialização é desnecessária; a produção
+        continua obrigatoriamente protegida pelo lock transacional PostgreSQL.
+        """
+        if _dialect_name(db) != "postgresql":
+            return
         await db.execute(
             text("SELECT pg_advisory_xact_lock(hashtext(:chave))"),
             {"chave": f"process_cnj:{numero_cnj_normalizado}"},
@@ -91,10 +112,26 @@ class ProcessRepository:
     ) -> list[str]:
         """Resolve todos os casos que já referenciam o CNJ, inclusive excluídos.
 
-        Process é a fonte canônica; Case.numero_processo entra como fallback
-        legado. Não filtrar soft-delete aqui é deliberado: recriar um caso
-        apagado sem perceber reintroduziria duplicidade e quebraria a trilha.
+        Em PostgreSQL a comparação normalizada fica no banco. Em SQLite de
+        teste, onde ``regexp_replace`` não existe, a mesma normalização ocorre
+        em Python sobre um conjunto pequeno e determinístico.
         """
+        if _dialect_name(db) != "postgresql":
+            rows = (
+                await db.execute(
+                    select(Case.id, Case.numero_processo, Process.numero_cnj)
+                    .outerjoin(Process, Process.case_id == Case.id)
+                )
+            ).all()
+            ids: set[str] = set()
+            for case_id, numero_case, numero_process in rows:
+                if (
+                    _somente_digitos(numero_case) == numero_cnj_normalizado
+                    or _somente_digitos(numero_process) == numero_cnj_normalizado
+                ):
+                    ids.add(str(case_id))
+            return sorted(ids)
+
         cnj_process = (
             func.regexp_replace(func.coalesce(Process.numero_cnj, ""), r"\D", "", "g")
             == numero_cnj_normalizado

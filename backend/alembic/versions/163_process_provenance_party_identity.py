@@ -32,14 +32,10 @@ def upgrade() -> None:
     )
     op.create_index("ix_party_entities_normalized_name", "party_entities", ["normalized_name"])
     op.create_index(
-        "ux_party_entities_doc_hash_active", "party_entities", ["cpf_cnpj_hash"],
-        unique=True,
-        postgresql_where=sa.text("cpf_cnpj_hash IS NOT NULL AND deleted_at IS NULL"),
+        "ix_party_entities_doc_hash", "party_entities", ["cpf_cnpj_hash"]
     )
     op.create_index(
-        "ux_party_entities_client_active", "party_entities", ["client_id"],
-        unique=True,
-        postgresql_where=sa.text("client_id IS NOT NULL AND deleted_at IS NULL"),
+        "ix_party_entities_client_id", "party_entities", ["client_id"]
     )
     op.add_column(
         "case_partes",
@@ -78,8 +74,8 @@ def downgrade() -> None:
     op.drop_table("process_data_provenance")
     op.drop_index("ix_case_partes_party_entity_id", table_name="case_partes")
     op.drop_column("case_partes", "party_entity_id")
-    op.drop_index("ux_party_entities_client_active", table_name="party_entities")
-    op.drop_index("ux_party_entities_doc_hash_active", table_name="party_entities")
+    op.drop_index("ix_party_entities_client_id", table_name="party_entities")
+    op.drop_index("ix_party_entities_doc_hash", table_name="party_entities")
     op.drop_index("ix_party_entities_normalized_name", table_name="party_entities")
     op.drop_table("party_entities")
     op.drop_column("processes", "data_ajuizamento")

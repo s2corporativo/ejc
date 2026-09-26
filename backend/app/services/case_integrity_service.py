@@ -147,10 +147,15 @@ async def garantir_numero_processo_unico(
         return
 
     numero_chave = numero.casefold()
-    await db.execute(
-        text("SELECT pg_advisory_xact_lock(hashtext(:chave))"),
-        {"chave": f"case_duplicate:{client_id}:{numero_chave}"},
-    )
+    try:
+        dialect_name = db.get_bind().dialect.name
+    except Exception:
+        dialect_name = None
+    if dialect_name == "postgresql":
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:chave))"),
+            {"chave": f"case_duplicate:{client_id}:{numero_chave}"},
+        )
     numero_igual = (
         sqlfunc.lower(sqlfunc.trim(Case.numero_processo)) == numero.casefold()
     )

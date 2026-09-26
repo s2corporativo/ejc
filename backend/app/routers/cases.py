@@ -301,8 +301,10 @@ async def criar(
             )
 
     db.add(c)
-    await db.flush()
     if payload.numero_processo:
+        # O processo canônico consulta/locka o Caso; somente esse caminho exige
+        # materializar a linha antes do restante da transação.
+        await db.flush()
         tipo_processo = (
             "administrativo"
             if c.fase == CaseFase.administrativo or c.case_type == "administrativo"

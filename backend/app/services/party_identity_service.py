@@ -11,7 +11,7 @@ import re
 import unicodedata
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.client import Client
@@ -43,6 +43,20 @@ def inferir_tipo_entidade(nome: str | None, documento: str | None = None) -> str
     return "desconhecido"
 
 
+async def _lock_identity_key(db: AsyncSession, chave: str) -> None:
+    """Serializa criação concorrente só no PostgreSQL de produção."""
+    try:
+        dialect_name = db.get_bind().dialect.name
+    except Exception:
+        dialect_name = None
+    if dialect_name != "postgresql":
+        return
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:chave))"),
+        {"chave": f"party_identity:{chave}"},
+    )
+
+
 async def resolver_entidade_parte(
     db: AsyncSession,
     *,
@@ -56,6 +70,7 @@ async def resolver_entidade_parte(
         raise ValueError("Nome da parte é obrigatório")
 
     if client_id:
+        await _lock_identity_key(db, f"client:{client_id}")
         existente = (
             await db.execute(
                 select(PartyEntity).where(
@@ -86,6 +101,7 @@ async def resolver_entidade_parte(
     doc = normalizar_documento(cpf_cnpj)
     if doc:
         blind = hash_documento(doc)
+        await _lock_identity_key(db, f"doc:{blind}")
         existente = (
             await db.execute(
                 select(PartyEntity).where(
@@ -104,6 +120,7 @@ async def resolver_entidade_parte(
 
     # Só nome empresarial exato pode ser reutilizado automaticamente.
     if tipo == "PJ" and nome_norm:
+        await _lock_identity_key(db, f"pj:{nome_norm}")
         candidatos = (
             await db.execute(
                 select(PartyEntity).where(
