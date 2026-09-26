@@ -334,7 +334,15 @@ function CasosDoRamo({
   );
 }
 
-function FerramentasDoRamo({ cfg, casos }: { cfg: RamoConfig; casos: Case[] }) {
+function FerramentasDoRamo({
+  cfg,
+  casos,
+  caseContext,
+}: {
+  cfg: RamoConfig;
+  casos: Case[];
+  caseContext?: Case | null;
+}) {
   const ferramentas = cfg.ferramentas;
   const grupos = new Map<string, typeof ferramentas>();
   for (const ferramenta of ferramentas) {
@@ -364,7 +372,15 @@ function FerramentasDoRamo({ cfg, casos }: { cfg: RamoConfig; casos: Case[] }) {
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             {itens.map((f) => (
-              <RamoFerramenta key={`${f.endpoint}:${f.id}`} f={f} />
+              <RamoFerramenta
+                key={`${f.endpoint}:${f.id}`}
+                f={f}
+                caseContext={
+                  caseContext
+                    ? { id: caseContext.id, titulo: caseContext.titulo }
+                    : caseContext
+                }
+              />
             ))}
           </div>
         </section>
@@ -809,7 +825,13 @@ export default function RamoBase() {
           className={aba === "ferramentas" ? "" : "hidden"}
           aria-hidden={aba !== "ferramentas"}
         >
-          <FerramentasDoRamo cfg={cfg} casos={casos} />
+          <FerramentasDoRamo
+            cfg={cfg}
+            casos={casos}
+            caseContext={
+              caseIdContexto ? (casoContexto ?? null) : undefined
+            }
+          />
         </div>
       )}
 
