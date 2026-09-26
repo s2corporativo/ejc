@@ -19,6 +19,32 @@ class SpecializedCaseContext:
     source: str = "legacy_vertical"
 
 
+LEGAL_AREA_CONTEXT_LABELS: dict[str, str] = {
+    "ambiental": "Ambiental",
+    "empresarial": "Empresarial",
+    "civil": "Cível",
+    "consumidor": "Cível/Consumidor",
+    "familia": "Cível/Família",
+    "criminal": "Penal",
+    "trabalhista": "Trabalhista",
+    "tributario": "Administrativo/Tributário",
+    "administrativo": "Administrativo",
+    "bancario": "Bancário",
+    "imobiliario": "Cível/Imobiliário",
+    "sucessoes": "Cível/Sucessões",
+    "constitucional": "Administrativo/Constitucional",
+    "digital_lgpd": "Cível/Digital-LGPD",
+    "transito": "Administrativo/Trânsito",
+}
+
+
+def legal_area_context_label(area: object) -> str:
+    """Resolve o rótulo legível da área sem depender de models verticais."""
+    value = getattr(area, "value", area)
+    key = str(value)
+    return LEGAL_AREA_CONTEXT_LABELS.get(key, key)
+
+
 def format_context_value(value) -> str:
     """Formatação estável usada no dossiê de contexto jurídico."""
     if value is None:
