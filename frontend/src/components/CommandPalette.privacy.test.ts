@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const palette = readFileSync(new URL("./CommandPalette.tsx", import.meta.url), "utf8");
-const layout = readFileSync(new URL("./LayoutReference.tsx", import.meta.url), "utf8");
+const palette = readFileSync(resolve(process.cwd(), "src/components/CommandPalette.tsx"), "utf8");
+const layout = readFileSync(resolve(process.cwd(), "src/components/LayoutReference.tsx"), "utf8");
 
 describe("CommandPalette — modo privacidade", () => {
   it("permanece montado no shell com a flag explícita", () => {
