@@ -182,8 +182,8 @@ describe("DashboardUltra — identidade premium DPT", () => {
     expect(screen.getByRole("button", { name: "IA" }).getAttribute("aria-current")).toBe("page");
     expect(screen.getByText("Como posso trabalhar neste caso?")).toBeTruthy();
     expect(screen.getByTestId("entrada-unica").getAttribute("data-embedded")).toBe("true");
-    expect(screen.queryByText("Agenda e Prazos")).not.toBeTruthy();
-    expect(screen.queryByText("Casos em destaque")).not.toBeTruthy();
+    const controles = screen.getByLabelText("Controles do escritório");
+    expect(controles.hasAttribute("hidden")).toBe(true);
     expect(getMock).not.toHaveBeenCalled();
   });
 
@@ -198,6 +198,17 @@ describe("DashboardUltra — identidade premium DPT", () => {
     expect(screen.getByText("Acesso rápido")).toBeTruthy();
     expect(screen.getByText("Minha rotina hoje")).toBeTruthy();
     await waitFor(() => expect(getMock).toHaveBeenCalled());
+  });
+
+  it("mantém a Entrada Única montada ao alternar IA e Controles", () => {
+    mockGetOk();
+    renderizar();
+
+    const entradaAntes = screen.getByTestId("entrada-unica");
+    abrirControles();
+    fireEvent.click(screen.getByRole("button", { name: "IA" }));
+
+    expect(screen.getByTestId("entrada-unica")).toBe(entradaAntes);
   });
 
   it("exibe sinais operacionais com números reais dos endpoints", async () => {
