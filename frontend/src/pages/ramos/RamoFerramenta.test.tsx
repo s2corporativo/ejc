@@ -124,6 +124,34 @@ describe("RamoFerramenta — exportação do demonstrativo", () => {
     expect((botao as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it("usa o caso contextual validado ao gerar demonstrativo", async () => {
+    mockarGet("liberada");
+    postMock.mockResolvedValueOnce({ data: { id: "peca-contextual" } } as never);
+
+    render(
+      <MemoryRouter>
+        <RamoFerramenta
+          f={ferramenta}
+          caseContext={{ id: "case-contexto", titulo: "Caso Contextual" }}
+        />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Calcular" }));
+    const botao = await screen.findByRole("button", {
+      name: /Gerar demonstrativo/,
+    });
+    fireEvent.click(botao);
+
+    expect(postMock).toHaveBeenCalledWith(
+      "/pecas/demonstrativo",
+      expect.objectContaining({ case_id: "case-contexto" }),
+    );
+    expect(
+      await screen.findByText(/vinculado ao caso "Caso Contextual"/),
+    ).toBeTruthy();
+  });
+
   it("confirma o salvamento quando a exportação está liberada", async () => {
     postMock.mockResolvedValueOnce({ data: { id: "peca-1" } } as never);
 

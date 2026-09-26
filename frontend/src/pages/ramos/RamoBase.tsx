@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router";
 import {
   Banknote,
   BookOpen,
@@ -334,7 +334,15 @@ function CasosDoRamo({
   );
 }
 
-function FerramentasDoRamo({ cfg, casos }: { cfg: RamoConfig; casos: Case[] }) {
+function FerramentasDoRamo({
+  cfg,
+  casos,
+  caseContext,
+}: {
+  cfg: RamoConfig;
+  casos: Case[];
+  caseContext?: Case | null;
+}) {
   const ferramentas = cfg.ferramentas;
   const grupos = new Map<string, typeof ferramentas>();
   for (const ferramenta of ferramentas) {
@@ -364,7 +372,15 @@ function FerramentasDoRamo({ cfg, casos }: { cfg: RamoConfig; casos: Case[] }) {
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             {itens.map((f) => (
-              <RamoFerramenta key={`${f.endpoint}:${f.id}`} f={f} />
+              <RamoFerramenta
+                key={`${f.endpoint}:${f.id}`}
+                f={f}
+                caseContext={
+                  caseContext
+                    ? { id: caseContext.id, titulo: caseContext.titulo }
+                    : caseContext
+                }
+              />
             ))}
           </div>
         </section>
@@ -485,6 +501,9 @@ function ReferenciasDoRamo({ cfg }: { cfg: RamoConfig }) {
 
 export default function RamoBase() {
   const { slug } = useParams<{ slug: string }>();
+  const [searchParams] = useSearchParams();
+  const caseIdContexto = searchParams.get("case_id")?.trim() || null;
+  const abaSolicitada = searchParams.get("tab")?.trim() || null;
   const cfg: RamoConfig | undefined = useMemo(
     () => (slug ? configWorkspaceDaArea(slug) : undefined),
     [slug],
@@ -513,21 +532,35 @@ export default function RamoBase() {
     return ICONES[cfg.icone] || Folder;
   }, [cfg]);
   const abas = useMemo(() => (cfg ? abasDoWorkspace(cfg) : []), [cfg]);
+  const abaInicial = useMemo<WorkspaceTabId>(() => {
+    const solicitada = abas.find((item) => item.id === abaSolicitada)?.id;
+    return solicitada ?? "visao";
+  }, [abaSolicitada, abas]);
+
+  const filtrarRegistrosDoContexto = useCallback(
+    (itens: any[]) =>
+      caseIdContexto
+        ? itens.filter((item) => String(item?.case_id || "") === caseIdContexto)
+        : itens,
+    [caseIdContexto],
+  );
 
   const recarregarRegistros = () => {
     if (!cfg || !podeAcessarArea || !possuiRegistroEspecializado(cfg)) return;
     setRegistros(null);
     api
       .get(cfg.endpoint)
-      .then((resposta) => setRegistros(carregarListaResposta(resposta.data)))
+      .then((resposta) =>
+        setRegistros(filtrarRegistrosDoContexto(carregarListaResposta(resposta.data))),
+      )
       .catch(() => setRegistros([]));
   };
 
   useEffect(() => {
     if (!cfg || !podeAcessarArea) return;
     let ativo = true;
-    setAba("visao");
-    setAbasVisitadas(new Set(["visao"]));
+    setAba(abaInicial);
+    setAbasVisitadas(new Set([abaInicial]));
     setCasos([]);
     setCasosLoading(true);
     setCasosErro(false);
@@ -535,51 +568,93 @@ export default function RamoBase() {
     setRegistros(possuiRegistroEspecializado(cfg) ? null : []);
 
     const areas = areasDoWorkspace(cfg);
-    Promise.all(
-      areas.map(async (area) => {
-        try {
-          const resposta = await api.get("/cases/", {
-            params: { area, page_size: 100 },
-          });
-          const casosCarregados = carregarListaResposta(
-            resposta.data,
-          ) as Case[];
-          return {
-            ok: true,
-            casos: casosCarregados,
-            truncado: respostaListaFoiTruncada(
+    if (caseIdContexto) {
+      // Contexto vindo do caso: consulta diretamente o registro autorizado e
+      // suas áreas vinculadas. Assim o atalho não depende do recorte de 100
+      // casos da listagem por área e continua sem ampliar a carteira do usuário.
+      Promise.all([
+        api.get(`/cases/${encodeURIComponent(caseIdContexto)}`),
+        api.get(`/cases/${encodeURIComponent(caseIdContexto)}/areas`),
+      ])
+        .then(([casoResp, areasResp]) => {
+          if (!ativo) return;
+          const caso = casoResp.data as Case;
+          const vinculadas = Array.isArray(areasResp.data?.areas)
+            ? areasResp.data.areas
+                .map((item: { area?: unknown }) =>
+                  typeof item?.area === "string" ? item.area : "",
+                )
+                .filter(Boolean)
+            : [];
+          const areasDoCaso = new Set([
+            String(caso.area || ""),
+            ...vinculadas,
+          ]);
+          const pertenceAoWorkspace = areas.some((area) =>
+            areasDoCaso.has(area),
+          );
+          setCasos(pertenceAoWorkspace ? [caso] : []);
+          setCasosErro(!pertenceAoWorkspace);
+          setCasosTruncados(false);
+          setCasosLoading(false);
+        })
+        .catch(() => {
+          if (!ativo) return;
+          setCasos([]);
+          setCasosErro(true);
+          setCasosTruncados(false);
+          setCasosLoading(false);
+        });
+    } else {
+      Promise.all(
+        areas.map(async (area) => {
+          try {
+            const resposta = await api.get("/cases/", {
+              params: { area, page_size: 100 },
+            });
+            const casosCarregados = carregarListaResposta(
               resposta.data,
-              casosCarregados.length,
-            ),
-          };
-        } catch {
-          return { ok: false, casos: [] as Case[], truncado: false };
-        }
-      }),
-    ).then((resultados) => {
-      if (!ativo) return;
-      const porId = new Map<string, Case>();
-      resultados
-        .flatMap((item) => item.casos)
-        .forEach((caso) => porId.set(caso.id, caso));
-      setCasos(
-        [...porId.values()].sort(
+            ) as Case[];
+            return {
+              ok: true,
+              casos: casosCarregados,
+              truncado: respostaListaFoiTruncada(
+                resposta.data,
+                casosCarregados.length,
+              ),
+            };
+          } catch {
+            return { ok: false, casos: [] as Case[], truncado: false };
+          }
+        }),
+      ).then((resultados) => {
+        if (!ativo) return;
+        const porId = new Map<string, Case>();
+        resultados
+          .flatMap((item) => item.casos)
+          .forEach((caso) => porId.set(caso.id, caso));
+        const ordenados = [...porId.values()].sort(
           (a, b) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-        ),
-      );
-      setCasosErro(
-        resultados.length > 0 && resultados.every((item) => !item.ok),
-      );
-      setCasosTruncados(resultados.some((item) => item.truncado));
-      setCasosLoading(false);
-    });
+        );
+        setCasos(ordenados);
+        setCasosErro(
+          resultados.length > 0 && resultados.every((item) => !item.ok),
+        );
+        setCasosTruncados(resultados.some((item) => item.truncado));
+        setCasosLoading(false);
+      });
+    }
 
     if (possuiRegistroEspecializado(cfg)) {
       api
         .get(cfg.endpoint)
         .then((resposta) => {
-          if (ativo) setRegistros(carregarListaResposta(resposta.data));
+          if (ativo) {
+            setRegistros(
+              filtrarRegistrosDoContexto(carregarListaResposta(resposta.data)),
+            );
+          }
         })
         .catch(() => {
           if (ativo) setRegistros([]);
@@ -589,7 +664,14 @@ export default function RamoBase() {
     return () => {
       ativo = false;
     };
-  }, [slug, podeAcessarArea, cfg]);
+  }, [
+    slug,
+    podeAcessarArea,
+    cfg,
+    caseIdContexto,
+    abaInicial,
+    filtrarRegistrosDoContexto,
+  ]);
 
   if (!cfg) return <Empty message="Área de atuação não encontrada" />;
   if (!podeAcessarArea) {
@@ -597,6 +679,9 @@ export default function RamoBase() {
   }
 
   const relacoes = relacoesDoWorkspace(cfg);
+  const casoContexto = caseIdContexto
+    ? casos.find((caso) => String(caso.id) === caseIdContexto)
+    : null;
   const ativarAba = (id: WorkspaceTabId) => {
     setAbasVisitadas((atuais) => {
       if (atuais.has(id)) return atuais;
@@ -615,6 +700,14 @@ export default function RamoBase() {
         subtitle={subtituloDoWorkspace(cfg)}
         actions={
           <div className="flex flex-wrap gap-2">
+            {casoContexto && (
+              <Link
+                to={`/casos/${encodeURIComponent(casoContexto.id)}`}
+                className="btn-secondary text-sm"
+              >
+                Voltar ao caso
+              </Link>
+            )}
             <Link to="/areas-de-atuacao" className="btn-secondary text-sm">
               Todas as áreas
             </Link>
@@ -732,7 +825,13 @@ export default function RamoBase() {
           className={aba === "ferramentas" ? "" : "hidden"}
           aria-hidden={aba !== "ferramentas"}
         >
-          <FerramentasDoRamo cfg={cfg} casos={casos} />
+          <FerramentasDoRamo
+            cfg={cfg}
+            casos={casos}
+            caseContext={
+              caseIdContexto ? (casoContexto ?? null) : undefined
+            }
+          />
         </div>
       )}
 

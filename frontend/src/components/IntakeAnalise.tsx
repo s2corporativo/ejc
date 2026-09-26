@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router";
 import {
   Sparkles,
   AlertTriangle,
@@ -12,6 +13,8 @@ import {
   Wrench,
 } from "lucide-react";
 import api from "../lib/api";
+import { caminhoAbaCaso } from "../lib/caseContext";
+import { configWorkspaceDaArea } from "../pages/ramos/areasWorkspace";
 import { toast } from "./Toast";
 import Markdown from "./Markdown";
 import ErrorBoundary from "./ErrorBoundary";
@@ -112,6 +115,46 @@ function rotuloFerramenta(f: FerramentaSugerida): string {
   if (typeof f === "string") return f;
   if (f && typeof f === "object" && typeof f.nome === "string") return f.nome;
   return "";
+}
+
+const ABA_POR_MODULO_CORE: Record<string, string> = {
+  casos: "resumo",
+  prazos: "prazos",
+  documentos: "documentos",
+  pecas: "pecas",
+  checklists: "checklists",
+};
+
+/**
+ * Resolve apenas destinos confirmados no frontend atual.
+ * - módulos Core abrem a aba canônica do MESMO caso;
+ * - ramos/<slug> abre o workspace especializado com o case_id preservado;
+ * - chaves sem destino canônico comprovado (ex.: workflow) ficam informativas.
+ */
+export function rotaModuloSugerido(
+  moduleKey: string,
+  caseId: string,
+): string | null {
+  const key = moduleKey.trim().replace(/^\/+/, "");
+  const aba = ABA_POR_MODULO_CORE[key];
+  if (aba) return caminhoAbaCaso(caseId, aba);
+
+  if (key.startsWith("ramos/")) {
+    const slug = key.slice("ramos/".length).trim();
+    if (
+      !slug ||
+      !/^[a-z0-9_-]+$/.test(slug) ||
+      !configWorkspaceDaArea(slug)
+    ) {
+      return null;
+    }
+    const params = new URLSearchParams({
+      case_id: caseId,
+      tab: "ferramentas",
+    });
+    return `/areas-de-atuacao/${encodeURIComponent(slug)}?${params.toString()}`;
+  }
+  return null;
 }
 
 const ORIGEM_AREA_LABEL: Record<string, string> = {
@@ -449,26 +492,47 @@ function IntakeAnaliseInner({ caseId }: { caseId: string }) {
               </p>
             ) : (
               <div className="space-y-2">
-                {(dados.modulos_sugeridos ?? []).map((m) => (
-                  <div
-                    key={m.module_key}
-                    className="flex flex-wrap items-center gap-2 rounded-lg border border-ai-200 bg-ai-50 px-3 py-2"
-                  >
-                    <Badge tone="purple">{m.module_key}</Badge>
-                    {(m.ferramentas || [])
-                      .map(rotuloFerramenta)
-                      .filter(Boolean)
-                      .map((nome, i) => (
-                        <span
-                          key={`${nome}-${i}`}
-                          className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-caption text-ai-800 ring-1 ring-inset ring-ai-200"
-                        >
-                          <Wrench className="h-3 w-3" />
-                          {nome}
+                {(dados.modulos_sugeridos ?? []).map((m) => {
+                  const destino = rotaModuloSugerido(m.module_key, caseId);
+                  const conteudo = (
+                    <>
+                      <Badge tone="purple">{m.module_key}</Badge>
+                      {(m.ferramentas || [])
+                        .map(rotuloFerramenta)
+                        .filter(Boolean)
+                        .map((nome, i) => (
+                          <span
+                            key={`${nome}-${i}`}
+                            className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-caption text-ai-800 ring-1 ring-inset ring-ai-200"
+                          >
+                            <Wrench className="h-3 w-3" />
+                            {nome}
+                          </span>
+                        ))}
+                      {destino && (
+                        <span className="ml-auto text-xs font-semibold text-ai-700">
+                          Abrir →
                         </span>
-                      ))}
-                  </div>
-                ))}
+                      )}
+                    </>
+                  );
+                  return destino ? (
+                    <Link
+                      key={m.module_key}
+                      to={destino}
+                      className="flex flex-wrap items-center gap-2 rounded-lg border border-ai-200 bg-ai-50 px-3 py-2 transition hover:border-ai-300 hover:bg-ai-100/70"
+                    >
+                      {conteudo}
+                    </Link>
+                  ) : (
+                    <div
+                      key={m.module_key}
+                      className="flex flex-wrap items-center gap-2 rounded-lg border border-ai-200 bg-ai-50 px-3 py-2"
+                    >
+                      {conteudo}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
