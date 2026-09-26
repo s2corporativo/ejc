@@ -44,7 +44,6 @@ Importadores Core conhecidos:
 
 - `backend/app/models/__init__.py`;
 - `backend/app/routers/compliance.py`;
-- `backend/app/routers/trash.py`;
 A própria vertical (`routers/environmental.py`, schema/model ambiental e
 DPT360) fica fora da contagem do contrato.
 
@@ -128,6 +127,7 @@ O adapter mantém as salvaguardas existentes:
 Os testes DB-level já existentes continuam sendo o gate funcional dessa regra.
 
 
+
 ## Lixeira e entidades verticais
 
 A Onda 6 remove a dependência direta
@@ -139,7 +139,6 @@ O Core passa a carregar entidades legadas de lixeira pelo registro:
 
 Listagem, restauração, purga, RBAC e AuditLog da lixeira permanecem no Core;
 apenas o conhecimento do model ambiental fica atrás do adapter de compatibilidade.
-
 
 ## Dependência legada descoberta pelo próprio gate
 
