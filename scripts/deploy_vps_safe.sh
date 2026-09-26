@@ -7,6 +7,7 @@ DOMAIN="${EJC_DOMAIN:-ejc.depaulateixeira.adv.br}"
 RUN_MIGRATIONS="${RUN_MIGRATIONS:-0}"
 MIGRATIONS_BACKWARD_COMPATIBLE="${MIGRATIONS_BACKWARD_COMPATIBLE:-0}"
 RUN_SEEDS="${RUN_SEEDS:-0}"
+DEPLOY_SCOPE="${DEPLOY_SCOPE:-full}"
 ENSURE_DAILY_BACKUP="${ENSURE_DAILY_BACKUP:-1}"
 REQUIRE_PREDEPLOY_BACKUP="${REQUIRE_PREDEPLOY_BACKUP:-1}"
 MIN_FREE_GB="${MIN_FREE_GB:-20}"
@@ -18,6 +19,7 @@ die_policy() { printf 'ERRO DE POLÍTICA: %s\n' "$*" >&2; exit 2; }
 
 case "$REQUIRE_PREDEPLOY_BACKUP" in 0|1) ;; *) die_policy "REQUIRE_PREDEPLOY_BACKUP deve ser 0 ou 1";; esac
 case "$ENSURE_DAILY_BACKUP" in 0|1) ;; *) die_policy "ENSURE_DAILY_BACKUP deve ser 0 ou 1";; esac
+case "$DEPLOY_SCOPE" in frontend|full) ;; *) die_policy "DEPLOY_SCOPE deve ser frontend ou full";; esac
 [[ "$MIN_FREE_GB" =~ ^[1-9][0-9]*$ ]] || die_policy "MIN_FREE_GB deve ser inteiro >= 1"
 if [ "$REQUIRE_PREDEPLOY_BACKUP" = "1" ] && [ "$ENSURE_DAILY_BACKUP" != "1" ]; then
   die_policy "ENSURE_DAILY_BACKUP=0 é incompatível com REQUIRE_PREDEPLOY_BACKUP=1"
@@ -257,6 +259,10 @@ GIT_SHA="${TARGET_SHA:-$(git rev-parse HEAD 2>/dev/null || true)}"
   || die_policy "TARGET_SHA/HEAD deve ser SHA-1 completo de 40 caracteres hexadecimais; release sem identidade verificável foi bloqueada"
 export GIT_SHA
 log "Versão a publicar: ${GIT_SHA}"
+log "Escopo autorizado: ${DEPLOY_SCOPE}"
+if [ "$DEPLOY_SCOPE" = "frontend" ] && [ "$RUN_MIGRATIONS" = "1" ]; then
+  die_policy "frontend-only é incompatível com migration pendente"
+fi
 docker compose config --quiet
 
 AVAIL_KB="$(df -Pk "${APP_DIR}" | awk 'NR==2 {print $4}')"
@@ -293,6 +299,69 @@ else
     exit 1
   fi
   log "AVISO: backup pré-deploy não executou; contingência permissiva explícita seguirá sem prova nova."
+fi
+
+# Escopo frontend-only: mantém exatamente os mesmos gates anteriores
+# (Woodpecker no wrapper, migration check, mutex, capacidade e backup cifrado),
+# mas não toca .env, backend, worker, seeds, RAG ou prova pós-recreate do backup.
+# Qualquer escopo ambíguo é classificado como "full" antes de chegar aqui.
+deploy_frontend_only() {
+  local old_image old_ref rollback_tag
+  old_image="$(docker inspect -f '{{.Image}}' ejc_frontend 2>/dev/null || true)"
+  old_ref="$(docker inspect -f '{{.Config.Image}}' ejc_frontend 2>/dev/null || true)"
+  [ -n "$old_image" ] && [ -n "$old_ref" ] \
+    || die_policy "frontend atual sem imagem/referência verificável; use deploy full"
+
+  rollback_tag="ejc-frontend:rollback-${ROLLBACK_SUFFIX}"
+  docker image inspect "$old_image" >/dev/null 2>&1 \
+    || die_policy "imagem atual do frontend não está disponível para rollback"
+  docker tag "$old_image" "$rollback_tag"
+
+  rollback_frontend_only() {
+    local rc=0
+    log "Restaurando somente o frontend anterior."
+    docker tag "$rollback_tag" "$old_ref" || rc=1
+    docker rm -f ejc_frontend >/dev/null 2>&1 || true
+    RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate frontend || rc=1
+    sleep 5
+    curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8080/ >/dev/null 2>&1 || rc=1
+    return "$rc"
+  }
+
+  log "Build frontend-only; backend, worker e RAG permanecem intocados"
+  if ! docker compose build frontend; then
+    docker image rm "$rollback_tag" >/dev/null 2>&1 || true
+    return 1
+  fi
+
+  if ! docker rm -f ejc_frontend >/dev/null 2>&1; then
+    rollback_frontend_only || true
+    return 1
+  fi
+  if ! RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate frontend; then
+    rollback_frontend_only || true
+    return 1
+  fi
+
+  sleep 5
+  if ! curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8080/ >/dev/null 2>&1 \
+    || ! curl -fsS --connect-timeout 5 --max-time 15 "https://${DOMAIN}/" >/dev/null 2>&1 \
+    || ! EJC_DOMAIN="$DOMAIN" bash scripts/post_deploy_check.sh; then
+    log "Frontend novo reprovou health/post-check; rollback frontend-only acionado."
+    rollback_frontend_only || log "ERRO CRÍTICO: rollback frontend-only ficou incompleto."
+    return 1
+  fi
+
+  printf '%s\n' "$GIT_SHA" > "$DEPLOYED_SHA_TMP"
+  chmod 644 "$DEPLOYED_SHA_TMP"
+  mv -f -- "$DEPLOYED_SHA_TMP" "$APP_DIR/.deployed_sha"
+  docker image rm "$rollback_tag" >/dev/null 2>&1 || true
+  log "Deploy frontend-only concluído; backend/worker não foram recriados."
+}
+
+if [ "$DEPLOY_SCOPE" = "frontend" ]; then
+  deploy_frontend_only
+  exit 0
 fi
 
 # Snapshot secreto efêmero, 0600, fora da árvore da aplicação e do diretório do
