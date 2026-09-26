@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import {
   Banknote,
@@ -521,10 +521,13 @@ export default function RamoBase() {
     return solicitada ?? "visao";
   }, [abaSolicitada, abas]);
 
-  const filtrarRegistrosDoContexto = (itens: any[]) =>
-    caseIdContexto
-      ? itens.filter((item) => String(item?.case_id || "") === caseIdContexto)
-      : itens;
+  const filtrarRegistrosDoContexto = useCallback(
+    (itens: any[]) =>
+      caseIdContexto
+        ? itens.filter((item) => String(item?.case_id || "") === caseIdContexto)
+        : itens,
+    [caseIdContexto],
+  );
 
   const recarregarRegistros = () => {
     if (!cfg || !podeAcessarArea || !possuiRegistroEspecializado(cfg)) return;
@@ -610,7 +613,14 @@ export default function RamoBase() {
     return () => {
       ativo = false;
     };
-  }, [slug, podeAcessarArea, cfg, caseIdContexto, abaInicial]);
+  }, [
+    slug,
+    podeAcessarArea,
+    cfg,
+    caseIdContexto,
+    abaInicial,
+    filtrarRegistrosDoContexto,
+  ]);
 
   if (!cfg) return <Empty message="Área de atuação não encontrada" />;
   if (!podeAcessarArea) {
