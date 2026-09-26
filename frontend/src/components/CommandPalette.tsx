@@ -14,7 +14,11 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { useAuth } from "../stores/auth";
-import { getNavigationModules, ROLES } from "../config/moduleRegistry";
+import {
+  getNavigationModules,
+  ROLES,
+  STAFF_ROUTES,
+} from "../config/moduleRegistry";
 import {
   NOVO_CASO_DOCUMENTO_PATH,
   NOVO_CASO_MANUAL_PATH,
@@ -63,6 +67,17 @@ const PLACEHOLDER: Record<TipoBusca, string> = {
 };
 
 const OPTION_ID = (index: number) => `cmdk-option-${index}`;
+
+const SEARCHABLE_MODULE_KEYS = new Set([
+  "atividades",
+  "pecas",
+  "inteligencia",
+  "documentos",
+  "banco-teses",
+  "radar",
+  "produtividade",
+  "tributario",
+]);
 
 export default function CommandPalette() {
   const nav = useNavigate();
@@ -152,6 +167,26 @@ export default function CommandPalette() {
     );
   }, [q, quickActions]);
 
+  const searchableModules = useMemo(
+    () =>
+      STAFF_ROUTES.filter((item) => {
+        if (!SEARCHABLE_MODULE_KEYS.has(item.key)) return false;
+        if (item.status === "legacy") return false;
+        if (!item.roles) return true;
+        return Boolean(role && item.roles.includes(role));
+      }),
+    [role],
+  );
+  const matchingModules = useMemo(() => {
+    const query = q.trim().toLocaleLowerCase("pt-BR");
+    if (query.length < 2) return [];
+    return searchableModules.filter((item) =>
+      `${item.label} ${item.description} ${item.key}`
+        .toLocaleLowerCase("pt-BR")
+        .includes(query),
+    );
+  }, [q, searchableModules]);
+
   // Lista plana navegável por teclado: ações seguras para o perfil aparecem
   // antes dos resultados e dos sete destinos essenciais.
   const navItems = useMemo<{ key: string; link: string }[]>(() => {
@@ -160,6 +195,10 @@ export default function CommandPalette() {
         ...matchingQuickActions.map((action) => ({
           key: `action-${action.path}`,
           link: action.path,
+        })),
+        ...matchingModules.map((item) => ({
+          key: `module-${item.key}`,
+          link: item.path,
         })),
         ...res.map((result, index) => ({
           key: `${result.tipo}-${result.id}-${index}`,
@@ -174,7 +213,14 @@ export default function CommandPalette() {
       })),
       ...shortcuts.map((item) => ({ key: item.path, link: item.path })),
     ];
-  }, [matchingQuickActions, q, quickActions, res, shortcuts]);
+  }, [
+    matchingModules,
+    matchingQuickActions,
+    q,
+    quickActions,
+    res,
+    shortcuts,
+  ]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -345,7 +391,8 @@ export default function CommandPalette() {
           {!loading &&
             q.trim().length >= 2 &&
             res.length === 0 &&
-            displayedQuickActions.length === 0 && (
+            displayedQuickActions.length === 0 &&
+            matchingModules.length === 0 && (
               <div className="p-6 text-center text-sm text-slate-400">
                 Nenhum resultado para “{q}”.
               </div>
@@ -391,9 +438,50 @@ export default function CommandPalette() {
               </div>
             </div>
           )}
+          {q.trim().length >= 2 && matchingModules.length > 0 && (
+            <div className="p-3 pb-1">
+              <div className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                Módulos
+              </div>
+              <div className="grid gap-1 sm:grid-cols-2">
+                {matchingModules.map(({ key, path, label, description, icon: Icon }, index) => {
+                  const itemIndex = displayedQuickActions.length + index;
+                  const isActive = itemIndex === activeIndex;
+                  return (
+                    <button
+                      key={key}
+                      id={OPTION_ID(itemIndex)}
+                      data-index={itemIndex}
+                      role="option"
+                      aria-selected={isActive}
+                      type="button"
+                      onMouseEnter={() => setActiveIndex(itemIndex)}
+                      onClick={() => go(path)}
+                      className={`flex items-start gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
+                        isActive
+                          ? "bg-primary-50 text-slate-900"
+                          : "text-slate-600 hover:bg-primary-50/60 hover:text-slate-900"
+                      }`}
+                    >
+                      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-primary-600" />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium">
+                          {label}
+                        </span>
+                        <span className="block line-clamp-2 text-xs text-slate-400">
+                          {description}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {res.map((result, index) => {
             const Icon = ICON[result.tipo] || FileText;
-            const itemIndex = displayedQuickActions.length + index;
+            const itemIndex =
+              displayedQuickActions.length + matchingModules.length + index;
             const isActive = itemIndex === activeIndex;
             return (
               <button
