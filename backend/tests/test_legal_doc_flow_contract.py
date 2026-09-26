@@ -244,3 +244,21 @@ def test_restaurar_peca_reativa_somente_versao_rag_mais_recente():
     assert "rag_doc.deleted_at = None" in bloco
     assert "rag_doc.vigente = True" in bloco
     assert '"rag_docs_restaurados": rag_docs_restaurados' in bloco
+
+
+def test_indexacao_rag_revalida_peca_sob_lock_antes_do_upsert():
+    src = _source("app/services/case_intel.py")
+    bloco = _function_source(src, "indexar_peca_rag")
+    assert "conteudo_original = d.conteudo or" in bloco
+    assert ".with_for_update()" in bloco
+    assert ".execution_options(populate_existing=True)" in bloco
+    assert "d_atual.deleted_at is not None" in bloco
+    assert "(d_atual.conteudo or \"\") != conteudo_original" in bloco
+    assert bloco.index(".with_for_update()") < bloco.index("await upsert_documento(")
+
+
+def test_excluir_e_restaurar_peca_serializam_a_linha():
+    legal = _function_source(_source("app/routers/legal_docs.py"), "remover")
+    trash = _function_source(_source("app/routers/trash.py"), "restaurar")
+    assert ".with_for_update()" in legal
+    assert ".with_for_update()" in trash
