@@ -32,9 +32,18 @@ TARGET_SHA="$(git -C "$SOURCE_DIR" rev-parse HEAD)"
 [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "SHA alvo invalido"
 
 DEPLOYED_SHA=""
+FRONTEND_DEPLOYED_SHA=""
 [ -f "$APP_DIR/.deployed_sha" ] && DEPLOYED_SHA="$(cat "$APP_DIR/.deployed_sha" 2>/dev/null || true)"
-if [ "$DEPLOYED_SHA" = "$TARGET_SHA" ] && curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
-  log "producao ja esta saudavel no SHA $TARGET_SHA; nada a fazer"
+[ -f "$APP_DIR/.frontend_deployed_sha" ] && FRONTEND_DEPLOYED_SHA="$(cat "$APP_DIR/.frontend_deployed_sha" 2>/dev/null || true)"
+if [ "$DEPLOYED_SHA" = "$TARGET_SHA" ] \
+   && curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+  log "runtime completo ja esta saudavel no SHA $TARGET_SHA; nada a fazer"
+  exit 0
+fi
+if [ "$FRONTEND_DEPLOYED_SHA" = "$TARGET_SHA" ] \
+   && curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health >/dev/null 2>&1 \
+   && curl -fsS --connect-timeout 5 --max-time 15 https://ejc.depaulateixeira.adv.br/ >/dev/null 2>&1; then
+  log "frontend ja esta publicado no SHA $TARGET_SHA; backend permanece na identidade própria"
   exit 0
 fi
 
@@ -105,7 +114,9 @@ fi
 log "migration gate aprovado sob mutex: atual=$current_revision pendentes=$pending_count"
 
 DEPLOY_SCOPE="full"
-if [ "$RUN_MIGRATIONS" = "0" ] && [[ "$DEPLOYED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+if [ "$RUN_MIGRATIONS" = "0" ] \
+   && [ "${RUN_SEEDS:-0}" != "1" ] \
+   && [[ "$DEPLOYED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   DEPLOY_SCOPE="$(python3 "$SOURCE_DIR/scripts/classify_deploy_scope.py"     --repo "$SOURCE_DIR" --previous "$DEPLOYED_SHA" --target "$TARGET_SHA"     2>/dev/null || printf 'full')"
 fi
 case "$DEPLOY_SCOPE" in
@@ -119,6 +130,7 @@ rsync -a --delete \
   --exclude '.git/' \
   --exclude '.env' --exclude '.env.*' \
   --exclude '.deployed_sha' --exclude '.deploy_last_sha' \
+  --exclude '.frontend_deployed_sha' \
   --exclude 'uploads/' --exclude 'backups/' \
   --exclude 'logs/' --exclude 'data/' --exclude 'storage/' \
   --exclude 'secrets/' --exclude 'certs/' --exclude 'tmp/' \
@@ -145,6 +157,14 @@ bash scripts/deploy_vps_safe.sh
 
 curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health >/dev/null
 curl -fsS --connect-timeout 5 --max-time 15 https://ejc.depaulateixeira.adv.br/api/health >/dev/null
-printf '%s\n' "$TARGET_SHA" > "$APP_DIR/.deploy_last_sha"
-chmod 600 "$APP_DIR/.deploy_last_sha"
-log "deploy concluido e health local/publico confirmados: $TARGET_SHA"
+if [ "$DEPLOY_SCOPE" = "full" ]; then
+  printf '%s\n' "$TARGET_SHA" > "$APP_DIR/.deploy_last_sha"
+  chmod 600 "$APP_DIR/.deploy_last_sha"
+  rm -f -- "$APP_DIR/.frontend_deployed_sha"
+  log "deploy full concluido e identidade completa confirmada: $TARGET_SHA"
+else
+  [ -f "$APP_DIR/.frontend_deployed_sha" ] \
+    && [ "$(cat "$APP_DIR/.frontend_deployed_sha")" = "$TARGET_SHA" ] \
+    || fail "frontend-only terminou sem marcador de identidade correspondente"
+  log "deploy frontend-only concluido e health local/publico confirmados: $TARGET_SHA"
+fi
