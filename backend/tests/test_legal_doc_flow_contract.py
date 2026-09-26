@@ -232,7 +232,10 @@ def test_excluir_peca_aposenta_documento_rag_vinculado():
     assert "KnowledgeDoc.vigente.is_(True)" in bloco
     assert "rag_doc.vigente = False" in bloco
     assert "rag_doc.deleted_at = removida_em" in bloco
-    assert '"rag_docs_aposentados": len(rag_docs)' in bloco
+    assert ".order_by(KnowledgeDoc.versao.desc())" in bloco
+    assert ".limit(1)" in bloco
+    assert '"rag_docs_aposentados": int(rag_doc is not None)' in bloco
+    assert '"rag_doc_id_aposentado": rag_doc_id_aposentado' in bloco
 
 
 def test_restaurar_peca_reativa_somente_versao_rag_mais_recente():
