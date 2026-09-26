@@ -151,6 +151,19 @@ def _criar_caso_via_entrada(
     if not state.case_id:
         return
 
+    # O lote convertido é parte da trilha auditável da Entrada Única. Hoje não
+    # existe rota segura para apagá-lo e o expurgo LGPD só remove lotes sem
+    # case_id. Declaramos o resíduo explicitamente em vez de fingir cleanup.
+    state.nao_coberto.append({
+        "module_key": "entrada_unica.audit_trail",
+        "method": "DELETE",
+        "path": f"document_intake_batches/{rascunho_id}",
+        "motivo": (
+            "lote convertido é trilha auditável vinculada ao caso; não há "
+            "endpoint de cleanup seguro e o expurgo canônico não remove case_id preenchido"
+        ),
+    })
+
     relido = core._request(
         client,
         state,
@@ -200,12 +213,17 @@ def _criar_caso_via_entrada(
                 (item for item in itens if str(item.get("id")) == str(process_id)),
                 None,
             )
+            cnj_esperado = "".join(
+                ch for ch in str(caso["numero_processo"]) if ch.isdigit()
+            )
             core._afirmar(
                 state,
                 "jornada.entrada.metadados_processuais_confirmados",
                 bool(processo)
-                and str(processo.get("numero_cnj") or "")
-                == str(caso["numero_processo"])
+                and "".join(
+                    ch for ch in str(processo.get("numero_cnj") or "") if ch.isdigit()
+                )
+                == cnj_esperado
                 and str(processo.get("tribunal") or "") == str(caso["tribunal"])
                 and str(processo.get("comarca") or "") == str(caso["comarca"])
                 and str(processo.get("vara") or "") == str(caso["vara"]),
