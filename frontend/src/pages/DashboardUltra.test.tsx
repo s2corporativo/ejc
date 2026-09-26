@@ -175,27 +175,57 @@ describe("DashboardUltra — identidade premium DPT", () => {
     mockGetOk();
     renderizar();
 
-    expect(screen.getByRole("tab", { name: /IA/ }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
+    const abaIa = screen.getByRole("tab", { name: /IA/ });
+    const painelIa = document.getElementById("ejc-dashboard-ia");
+    const painelControles = document.getElementById("ejc-dashboard-controles");
+
+    expect(abaIa.getAttribute("aria-selected")).toBe("true");
+    expect(abaIa.tabIndex).toBe(0);
+    expect(painelIa?.hasAttribute("hidden")).toBe(false);
+    expect(painelControles?.hasAttribute("hidden")).toBe(true);
     expect(screen.getByTestId("entrada-unica").getAttribute("data-embedded")).toBe(
       "true",
     );
-    expect(screen.queryByText("Agenda e Prazos")).not.toBeTruthy();
-    expect(screen.queryByText("Casos em destaque")).not.toBeTruthy();
-    expect(screen.queryByText("Acesso rápido")).not.toBeTruthy();
     expect(getMock).not.toHaveBeenCalled();
   });
 
-  it("carrega os controles somente quando a segunda aba é aberta", async () => {
+  it("carrega os controles sem desmontar a Entrada Única", async () => {
     mockGetOk();
     renderizar();
+    const entradaAntes = screen.getByTestId("entrada-unica");
 
     fireEvent.click(screen.getByRole("tab", { name: /Controles/ }));
 
     expect(await screen.findByText("Agenda e Prazos")).toBeTruthy();
     await waitFor(() => expect(getMock).toHaveBeenCalledTimes(5));
-    expect(screen.queryByTestId("entrada-unica")).not.toBeTruthy();
+    expect(document.getElementById("ejc-dashboard-ia")?.hasAttribute("hidden")).toBe(
+      true,
+    );
+    expect(
+      document.getElementById("ejc-dashboard-controles")?.hasAttribute("hidden"),
+    ).toBe(false);
+    expect(screen.getByTestId("entrada-unica")).toBe(entradaAntes);
+
+    fireEvent.click(screen.getByRole("tab", { name: /IA/ }));
+    expect(screen.getByTestId("entrada-unica")).toBe(entradaAntes);
+  });
+
+  it("permite navegar entre IA e Controles pelo teclado", () => {
+    mockGetOk();
+    renderizar();
+
+    const abaIa = screen.getByRole("tab", { name: /IA/ });
+    const abaControles = screen.getByRole("tab", { name: /Controles/ });
+    abaIa.focus();
+
+    fireEvent.keyDown(abaIa, { key: "ArrowRight" });
+    expect(abaControles.getAttribute("aria-selected")).toBe("true");
+    expect(abaControles.tabIndex).toBe(0);
+    expect(document.activeElement).toBe(abaControles);
+
+    fireEvent.keyDown(abaControles, { key: "Home" });
+    expect(abaIa.getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(abaIa);
   });
 
   it("sauda o usuário pelo primeiro nome e compõe a referência", async () => {
@@ -206,7 +236,9 @@ describe("DashboardUltra — identidade premium DPT", () => {
       await screen.findByText(/, Clovis!/),
     ).toBeTruthy();
     expect(screen.getByText("Disciplina hoje. Grandes conquistas sempre.")).toBeTruthy();
-    expect(screen.queryByText("Entrada Única")).not.toBeTruthy();
+    expect(document.getElementById("ejc-dashboard-ia")?.hasAttribute("hidden")).toBe(
+      true,
+    );
     expect(screen.getByText("Agenda e Prazos")).toBeTruthy();
     expect(screen.getByText("Casos em destaque")).toBeTruthy();
     expect(screen.getByText("Acesso rápido")).toBeTruthy();
