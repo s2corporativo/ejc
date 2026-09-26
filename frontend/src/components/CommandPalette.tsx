@@ -13,8 +13,14 @@ import {
   Wrench,
 } from "lucide-react";
 import api from "../lib/api";
+import { filterModulesByLifecycle } from "../lib/moduleLifecycle";
 import { useAuth } from "../stores/auth";
-import { getNavigationModules, ROLES } from "../config/moduleRegistry";
+import { useModuleLifecycleStore } from "../stores/moduleLifecycle";
+import {
+  getNavigationModules,
+  ROLES,
+  STAFF_ROUTES,
+} from "../config/moduleRegistry";
 import {
   NOVO_CASO_DOCUMENTO_PATH,
   NOVO_CASO_MANUAL_PATH,
@@ -64,7 +70,45 @@ const PLACEHOLDER: Record<TipoBusca, string> = {
 
 const OPTION_ID = (index: number) => `cmdk-option-${index}`;
 
-export default function CommandPalette() {
+const SEARCHABLE_MODULE_KEYS = new Set([
+  "atividades",
+  "pecas",
+  "inteligencia",
+  "documentos",
+  "banco-teses",
+  "radar",
+  "produtividade",
+  "tributario",
+]);
+
+/** Nomes históricos retirados da lateral continuam sendo termos de descoberta. */
+export const MODULE_SEARCH_ALIASES: Record<string, readonly string[]> = {
+  atividades: ["Agenda e Prazos"],
+  inteligencia: ["Inteligência Jurídica", "Conhecimento Jurídico"],
+  radar: ["Radar Operacional"],
+  produtividade: ["Relatórios"],
+};
+
+export function textoBuscaModulo(item: {
+  key: string;
+  label: string;
+  description: string;
+}): string {
+  return [
+    item.label,
+    item.description,
+    item.key,
+    ...(MODULE_SEARCH_ALIASES[item.key] ?? []),
+  ]
+    .join(" ")
+    .toLocaleLowerCase("pt-BR");
+}
+
+export default function CommandPalette({
+  privacyMode = false,
+}: {
+  privacyMode?: boolean;
+}) {
   const nav = useNavigate();
   const user = useAuth((state) => state.user);
   const [open, setOpen] = useState(false);
@@ -76,6 +120,7 @@ export default function CommandPalette() {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const role = user?.role ?? "";
+  const lifecycleSettings = useModuleLifecycleStore((state) => state.settings);
   const canCreateCase = (ROLES.clientes as readonly string[]).includes(role);
   const canUseLegalAI = (ROLES.juridico as readonly string[]).includes(role);
   const quickActions = useMemo<QuickAction[]>(
@@ -152,6 +197,33 @@ export default function CommandPalette() {
     );
   }, [q, quickActions]);
 
+  const searchableModules = useMemo(
+    () =>
+      filterModulesByLifecycle(
+        STAFF_ROUTES.filter((item) => {
+          if (!SEARCHABLE_MODULE_KEYS.has(item.key)) return false;
+          if (item.status === "legacy") return false;
+          if (!item.roles) return true;
+          return Boolean(role && item.roles.includes(role));
+        }),
+        lifecycleSettings,
+        "catalogo",
+      ),
+    [lifecycleSettings, role],
+  );
+  const matchingModules = useMemo(() => {
+    const query = q.trim().toLocaleLowerCase("pt-BR");
+    if (query.length < 2) return [];
+    const quickActionPaths = new Set(
+      matchingQuickActions.map((action) => action.path),
+    );
+    return searchableModules.filter(
+      (item) =>
+        !quickActionPaths.has(item.path) &&
+        textoBuscaModulo(item).includes(query),
+    );
+  }, [matchingQuickActions, q, searchableModules]);
+
   // Lista plana navegável por teclado: ações seguras para o perfil aparecem
   // antes dos resultados e dos sete destinos essenciais.
   const navItems = useMemo<{ key: string; link: string }[]>(() => {
@@ -161,10 +233,16 @@ export default function CommandPalette() {
           key: `action-${action.path}`,
           link: action.path,
         })),
-        ...res.map((result, index) => ({
-          key: `${result.tipo}-${result.id}-${index}`,
-          link: result.link,
+        ...matchingModules.map((item) => ({
+          key: `module-${item.key}`,
+          link: item.path,
         })),
+        ...(privacyMode
+          ? []
+          : res.map((result, index) => ({
+              key: `${result.tipo}-${result.id}-${index}`,
+              link: result.link,
+            }))),
       ];
     }
     return [
@@ -174,7 +252,15 @@ export default function CommandPalette() {
       })),
       ...shortcuts.map((item) => ({ key: item.path, link: item.path })),
     ];
-  }, [matchingQuickActions, q, quickActions, res, shortcuts]);
+  }, [
+    matchingModules,
+    matchingQuickActions,
+    privacyMode,
+    q,
+    quickActions,
+    res,
+    shortcuts,
+  ]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -217,6 +303,11 @@ export default function CommandPalette() {
 
   useEffect(() => {
     if (!open) return;
+    if (privacyMode) {
+      setRes([]);
+      setLoading(false);
+      return;
+    }
     if (q.trim().length < 2) {
       setRes([]);
       setLoading(false);
@@ -246,7 +337,7 @@ export default function CommandPalette() {
       stale = true;
       clearTimeout(timer);
     };
-  }, [q, tipo, open]);
+  }, [q, tipo, open, privacyMode]);
 
   if (!open) return null;
 
@@ -295,7 +386,9 @@ export default function CommandPalette() {
             ref={inputRef}
             value={q}
             onChange={(event) => setQ(event.target.value)}
-            placeholder={PLACEHOLDER[tipo]}
+            placeholder={
+              privacyMode ? "Buscar módulos e ferramentas…" : PLACEHOLDER[tipo]
+            }
             role="combobox"
             aria-expanded={hasNav}
             aria-controls="cmdk-listbox"
@@ -307,7 +400,8 @@ export default function CommandPalette() {
             ESC
           </kbd>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5 px-4 py-2 border-b border-slate-100">
+        {!privacyMode && (
+          <div className="flex flex-wrap items-center gap-1.5 px-4 py-2 border-b border-slate-100">
           {TIPOS.map((item) => {
             const active = item.value === tipo;
             return (
@@ -329,7 +423,8 @@ export default function CommandPalette() {
               </button>
             );
           })}
-        </div>
+          </div>
+        )}
         <div
           ref={listRef}
           id="cmdk-listbox"
@@ -345,7 +440,8 @@ export default function CommandPalette() {
           {!loading &&
             q.trim().length >= 2 &&
             res.length === 0 &&
-            displayedQuickActions.length === 0 && (
+            displayedQuickActions.length === 0 &&
+            matchingModules.length === 0 && (
               <div className="p-6 text-center text-sm text-slate-400">
                 Nenhum resultado para “{q}”.
               </div>
@@ -391,9 +487,50 @@ export default function CommandPalette() {
               </div>
             </div>
           )}
-          {res.map((result, index) => {
+          {q.trim().length >= 2 && matchingModules.length > 0 && (
+            <div className="p-3 pb-1">
+              <div className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                Módulos
+              </div>
+              <div className="grid gap-1 sm:grid-cols-2">
+                {matchingModules.map(({ key, path, label, description, icon: Icon }, index) => {
+                  const itemIndex = displayedQuickActions.length + index;
+                  const isActive = itemIndex === activeIndex;
+                  return (
+                    <button
+                      key={key}
+                      id={OPTION_ID(itemIndex)}
+                      data-index={itemIndex}
+                      role="option"
+                      aria-selected={isActive}
+                      type="button"
+                      onMouseEnter={() => setActiveIndex(itemIndex)}
+                      onClick={() => go(path)}
+                      className={`flex items-start gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
+                        isActive
+                          ? "bg-primary-50 text-slate-900"
+                          : "text-slate-600 hover:bg-primary-50/60 hover:text-slate-900"
+                      }`}
+                    >
+                      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-primary-600" />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium">
+                          {label}
+                        </span>
+                        <span className="block line-clamp-2 text-xs text-slate-400">
+                          {description}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {!privacyMode && res.map((result, index) => {
             const Icon = ICON[result.tipo] || FileText;
-            const itemIndex = displayedQuickActions.length + index;
+            const itemIndex =
+              displayedQuickActions.length + matchingModules.length + index;
             const isActive = itemIndex === activeIndex;
             return (
               <button
