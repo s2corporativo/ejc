@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import api from "../../lib/api";
@@ -46,3 +46,51 @@ describe("RamoBase — fallback estável", () => {
     });
   });
 });
+
+
+  it("preserva case_id e abre a aba solicitada sem exibir outros casos", async () => {
+    getMock.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: "case-ctx",
+            titulo: "Caso contextual",
+            status: "aberto",
+            area: "societario",
+            prioridade: "media",
+            created_at: "2026-09-26T12:00:00Z",
+          },
+          {
+            id: "case-outro",
+            titulo: "Caso fora do contexto",
+            status: "aberto",
+            area: "societario",
+            prioridade: "media",
+            created_at: "2026-09-25T12:00:00Z",
+          },
+        ],
+        total: 2,
+      },
+    } as any);
+
+    await act(async () => {
+      render(
+        <MemoryRouter
+          initialEntries={[
+            "/areas-de-atuacao/societario?case_id=case-ctx&tab=casos",
+          ]}
+        >
+          <Routes>
+            <Route path="/areas-de-atuacao/:slug" element={<RamoBase />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+
+    await waitFor(() => expect(screen.getByText("Caso contextual")).toBeTruthy());
+    expect(screen.queryByText("Caso fora do contexto")).toBeNull();
+    expect(screen.getByRole("link", { name: "Voltar ao caso" })).toHaveAttribute(
+      "href",
+      "/casos/case-ctx",
+    );
+  });
