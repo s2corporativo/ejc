@@ -48,6 +48,8 @@ from app.models.deadline import Deadline
 from app.models.document import DocConfidencialidade, Document
 from app.models.document_intake import DocumentIntakeBatch, DocumentIntakeItem
 from app.models.user import User
+from app.schemas.process import ProcessCreate
+from app.services import processo_service
 from app.services.case_numeracao import proximo_numero_interno
 from app.services.conflito_service import (
     _casos_por_parte_contraria,
@@ -479,6 +481,46 @@ async def analisar_entrada(
             "aviso": "Tabela de honorários indisponível; consultar fonte oficial vigente.",
         }
 
+    # Reconciliação processual é determinística e read-only: impede que um CNJ
+    # já cadastrado vire um segundo caso e sinaliza pré-processuais que podem
+    # corresponder ao ajuizamento informado. Falha aqui é fail-soft; jamais
+    # descarta o relato/documentos nem cria fato jurídico.
+    try:
+        from app.services.process_reconciliation import reconciliar_entrada
+
+        texto_reconciliacao = "\n".join(
+            item
+            for item in (
+                texto,
+                fatos,
+                _s(analise_docs.get("numero_cnj"), 100),
+                _s(analise_docs.get("numero_processo"), 100),
+                _s(resumo_exec.get("numero_processo"), 100),
+            )
+            if item
+        )
+        reconciliacao_processual = await reconciliar_entrada(
+            db,
+            cu,
+            texto=texto_reconciliacao,
+            cliente_id=cliente.get("client_id"),
+            cliente_nome=nome_cliente,
+            parte_contraria=parte_contraria,
+            assunto=assunto.get("valor"),
+        )
+    except Exception as exc:
+        logger.warning("Reconciliação processual indisponível na entrada: %s", exc)
+        reconciliacao_processual = {
+            "status": "informacoes_insuficientes",
+            "cnjs_detectados": [],
+            "numero_cnj_principal": None,
+            "correspondencias": [],
+            "bloquear_criacao": False,
+            "requer_confirmacao_humana": True,
+            "acao_sugerida": "revisar_dados",
+            "mensagem": "Reconciliação processual indisponível; revise o CNJ manualmente.",
+        }
+
     proposta = {
         "rascunho_id": batch.id,
         "cliente": cliente,
@@ -498,6 +540,7 @@ async def analisar_entrada(
         "conflito": {"alertas": conflito_alertas},
         "honorarios_sugeridos": honorarios_referencia,
         "duplicados": {"clientes": duplicados_clientes},
+        "reconciliacao_processual": reconciliacao_processual,
         "degradado": degradado,
         "avisos": avisos,
         "total_bytes": total_bytes,
@@ -568,6 +611,55 @@ async def criar_caso_do_rascunho(
 
     if payload.area not in {a.value for a in CaseArea}:
         raise HTTPException(422, "Área do caso inválida")
+
+    # Gate processual: a análise é apenas um preview; no clique de criação o
+    # servidor REFAZ a reconciliação com os dados revisados. Isso fecha tanto a
+    # janela concorrente quanto a hipótese de o usuário ter corrigido o CNJ
+    # depois da análise inicial.
+    from app.services.process_reconciliation import reconciliar_entrada
+
+    reconciliacao_snapshot = await reconciliar_entrada(
+        db,
+        user,
+        texto=payload.numero_cnj or "",
+        cliente_id=payload.cliente.client_id,
+        cliente_nome=payload.cliente.novo_nome,
+        parte_contraria=payload.parte_contraria,
+        assunto=payload.assunto,
+    )
+    status_reconciliacao = str(reconciliacao_snapshot.get("status") or "")
+    if status_reconciliacao == "ja_cadastrado":
+        raise HTTPException(
+            409,
+            {
+                "mensagem": (
+                    "O número CNJ informado já está cadastrado no EJC. "
+                    "Abra o caso existente em vez de criar uma duplicidade."
+                ),
+                "processos_correspondentes": reconciliacao_snapshot.get(
+                    "correspondencias", []
+                ),
+                "codigo": "CNJ_JA_CADASTRADO",
+            },
+        )
+    if (
+        status_reconciliacao == "provavel_correspondencia"
+        and not payload.duplicate_confirmed
+    ):
+        raise HTTPException(
+            409,
+            {
+                "mensagem": (
+                    "Há forte correspondência com caso existente, inclusive "
+                    "possível pré-processual ajuizado. Revise e confirme que "
+                    "se trata de processo diferente antes de criar novo caso."
+                ),
+                "processos_correspondentes": reconciliacao_snapshot.get(
+                    "correspondencias", []
+                ),
+                "codigo": "PROVAVEL_CORRESPONDENCIA_PROCESSUAL",
+            },
+        )
 
     # Responsável: usuário ativo com piso de advogado (422 — nunca
     # IntegrityError/atribuição a terceiro arbitrário).
@@ -673,6 +765,41 @@ async def criar_caso_do_rascunho(
     db.add(case)
     await db.flush()
 
+    processo_entrada_id: str | None = None
+    if payload.numero_cnj:
+        try:
+            processo_entrada = await processo_service.criar_processo(
+                case.id,
+                ProcessCreate(
+                    numero_cnj=payload.numero_cnj,
+                    tipo="judicial",
+                    status="ativo",
+                    is_principal=True,
+                ),
+                db,
+            )
+        except processo_service.ProcessConflict as exc:
+            raise HTTPException(
+                409,
+                {
+                    "mensagem": "O número CNJ foi vinculado por outra operação concorrente.",
+                    "codigo": "CNJ_JA_CADASTRADO",
+                },
+            ) from exc
+        processo_entrada_id = processo_entrada["id"]
+        await criar_audit_log(
+            db,
+            user.id,
+            _role(user),
+            "ENTRADA_UNICA_VINCULAR_PROCESSO",
+            "processes",
+            processo_entrada_id,
+            detalhes=(
+                f"case {case.id}; numero {numero}; CNJ confirmado na revisão "
+                "humana da Entrada Única; origem=entrada_unica"
+            ),
+        )
+
     # F-08 (auditoria funcional 16/08/2026): a parte contrária informada na
     # confirmação da Entrada Única ficava APENAS como texto livre do caso
     # (Case.parte_contraria), sem registro estruturado em case_partes — peças,
@@ -770,6 +897,11 @@ async def criar_caso_do_rascunho(
         descricao=(
             f"Caso criado pela Entrada Única (rascunho {batch.id}) — proposta "
             "da análise revisada e confirmada pelo advogado."
+            + (
+                f" Processo principal CNJ {payload.numero_cnj} vinculado na criação."
+                if payload.numero_cnj
+                else ""
+            )
         ),
         created_by=user.id,
     ))
@@ -786,7 +918,8 @@ async def criar_caso_do_rascunho(
         db, user.id, _role(user), "ENTRADA_UNICA_CRIAR_CASO", "cases", case.id,
         detalhes=(
             f"rascunho {batch.id}; documentos {documentos_vinculados}; "
-            f"prazo {deadline_id or '-'}; numero {numero}"
+            f"prazo {deadline_id or '-'}; numero {numero}; "
+            f"processo {processo_entrada_id or '-'}"
         ),
     )
 
@@ -804,6 +937,8 @@ async def criar_caso_do_rascunho(
         "documentos_faltantes": payload.documentos_faltantes,
         "provas_necessarias": payload.provas_necessarias,
         "proximos_passos": payload.proximos_passos,
+        "numero_cnj": payload.numero_cnj,
+        "reconciliacao_processual": reconciliacao_snapshot,
         "confirmada_por": user.id,
     }
     resultado_atual["entrada_unica"] = entrada_atual
@@ -819,6 +954,8 @@ async def criar_caso_do_rascunho(
         "client_id": client.id,
         "documentos_vinculados": documentos_vinculados,
         "deadline_id": deadline_id,
+        "process_id": processo_entrada_id,
+        "numero_cnj": payload.numero_cnj,
         "status": case.status.value if isinstance(case.status, CaseStatus) else str(case.status),
         "ja_convertido": False,
     }

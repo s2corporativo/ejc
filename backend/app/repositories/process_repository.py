@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.case import Case
@@ -24,6 +24,29 @@ class ProcessRepository:
             query = query.where(Process.status == "arquivado")
         query = query.order_by(Process.is_principal.desc(), Process.created_at.asc())
         return (await db.execute(query)).scalars().all()
+
+    async def find_active_by_cnj_normalized(
+        self,
+        db: AsyncSession,
+        cnj_digits: str,
+        *,
+        exclude_process_id: str | None = None,
+    ) -> Process | None:
+        """Localiza CNJ ativo independentemente da máscara.
+
+        Usado como gate de domínio; a trava transacional do serviço é a barreira contra concorrência; o índice
+        normalizado apenas acelera a busca.
+        """
+        normalizado = Process.numero_cnj
+        for char in (".", "-", "/", " "):
+            normalizado = func.replace(normalizado, char, "")
+        query = select(Process).where(
+            Process.deleted_at.is_(None),
+            normalizado == cnj_digits,
+        )
+        if exclude_process_id:
+            query = query.where(Process.id != exclude_process_id)
+        return (await db.execute(query.limit(1))).scalar_one_or_none()
 
     async def get(self, db: AsyncSession, process_id: str) -> Process | None:
         return (

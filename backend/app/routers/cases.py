@@ -18,6 +18,7 @@ from app.core.security import (get_current_user, require_roles, ROLE_LEVEL,
                                  require_roles_exact, requer_equipe_juridica)
 from app.models.user import User
 from app.models.case import Case, CaseMovimento, CaseStatus
+from app.models.process import Process
 from app.models.client import Client
 from app.models.audit_log import criar_audit_log
 
@@ -267,45 +268,79 @@ async def criar(
     from app.core.client_ownership import obter_cliente_autorizado
     await obter_cliente_autorizado(db, cu, payload.client_id)
 
-    # Idempotência concorrente: o mesmo cliente e número processual não
-    # podem criar dois casos ativos. O advisory lock serializa requisições
-    # simultâneas; a comparação normaliza CNJ mascarado e texto administrativo.
+    cnj_confirmado: str | None = None
+
+    # Idempotência concorrente. Para CNJ (20 dígitos), a unicidade é GLOBAL:
+    # o mesmo processo não pode nascer em dois casos/clientes distintos.
+    # Números administrativos continuam restritos ao mesmo cliente.
     if payload.numero_processo:
         from app.services.validators_service import normalizar_cnj
 
         numero = payload.numero_processo.strip()
         digitos_cnj = normalizar_cnj(numero)
-        numero_chave = digitos_cnj if len(digitos_cnj) == 20 else numero.casefold()
+        eh_cnj = len(digitos_cnj) == 20
+        cnj_confirmado = numero if eh_cnj else None
+        numero_chave = digitos_cnj if eh_cnj else numero.casefold()
         await db.execute(
             text("SELECT pg_advisory_xact_lock(hashtext(:chave))"),
-            {"chave": f"case_duplicate:{payload.client_id}:{numero_chave}"},
+            {
+                "chave": (
+                    f"cnj_unique:{numero_chave}"
+                    if eh_cnj
+                    else f"case_duplicate:{payload.client_id}:{numero_chave}"
+                )
+            },
         )
-        if len(digitos_cnj) == 20:
-            numero_igual = (
-                sqlfunc.regexp_replace(Case.numero_processo, r"\D", "", "g")
-                == digitos_cnj
-            )
+
+        if eh_cnj:
+            numero_case_norm = Case.numero_processo
+            numero_proc_norm = Process.numero_cnj
+            for char in (".", "-", "/", " "):
+                numero_case_norm = sqlfunc.replace(numero_case_norm, char, "")
+                numero_proc_norm = sqlfunc.replace(numero_proc_norm, char, "")
+            numero_igual = numero_case_norm == digitos_cnj
+            caso_existente = (
+                await db.execute(
+                    select(Case.id).where(
+                        Case.deleted_at.is_(None),
+                        numero_igual,
+                    ).limit(1)
+                )
+            ).scalar_one_or_none()
+            processo_existente = (
+                await db.execute(
+                    select(Process.id).where(
+                        Process.deleted_at.is_(None),
+                        numero_proc_norm == digitos_cnj,
+                    ).limit(1)
+                )
+            ).scalar_one_or_none()
+            if caso_existente or processo_existente:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Número CNJ já cadastrado em processo ativo do EJC",
+                )
         else:
             numero_igual = (
                 sqlfunc.lower(sqlfunc.trim(Case.numero_processo))
                 == numero.casefold()
             )
-        caso_existente = (
-            await db.execute(
-                select(Case.id).where(
-                    Case.client_id == payload.client_id,
-                    Case.deleted_at.is_(None),
-                    numero_igual,
-                ).limit(1)
-            )
-        ).scalar_one_or_none()
-        if caso_existente:
-            raise HTTPException(
-                status_code=409,
-                detail="Já existe caso ativo para este cliente e número processual",
-            )
+            caso_existente = (
+                await db.execute(
+                    select(Case.id).where(
+                        Case.client_id == payload.client_id,
+                        Case.deleted_at.is_(None),
+                        numero_igual,
+                    ).limit(1)
+                )
+            ).scalar_one_or_none()
+            if caso_existente:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Já existe caso ativo para este cliente e número processual",
+                )
 
-    # `honorarios` (FASE 2) NÃO é coluna de Case — vira proposta vigente abaixo.
+    # honorarios (FASE 2) NÃO é coluna de Case — vira proposta vigente abaixo.
     data = payload.model_dump(exclude={"data_fato_prescricao", "honorarios"})
     c = Case(
         id=str(uuid4()),
@@ -329,6 +364,54 @@ async def criar(
         id=str(uuid4()), case_id=c.id, tipo="nota",
         descricao=f"Caso aberto por {cu.full_name}", created_by=cu.id,
     ))
+    await db.flush()
+
+    if cnj_confirmado:
+        from app.schemas.process import ProcessCreate
+        from app.services import processo_service
+
+        try:
+            processo = await processo_service.criar_processo(
+                c.id,
+                ProcessCreate(
+                    numero_cnj=cnj_confirmado,
+                    tribunal=payload.tribunal,
+                    comarca=payload.comarca,
+                    vara=payload.vara,
+                    valor_causa=payload.valor_causa,
+                    tipo="judicial",
+                    status="ativo",
+                    is_principal=True,
+                ),
+                db,
+            )
+        except processo_service.ProcessConflict as exc:
+            await db.rollback()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        db.add(CaseMovimento(
+            id=str(uuid4()),
+            case_id=c.id,
+            tipo="nota",
+            descricao=(
+                f"Processo {cnj_confirmado} vinculado na abertura do caso. "
+                "Origem: cadastro manual confirmado pelo usuário."
+            ),
+            created_by=cu.id,
+        ))
+        await criar_audit_log(
+            db,
+            cu.id,
+            cu.role.value,
+            "CREATE",
+            "processes",
+            processo["id"],
+            dados_depois={
+                "case_id": c.id,
+                "numero_cnj": cnj_confirmado,
+                "origem": "cadastro_manual_caso",
+            },
+        )
+
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "cases", c.id)
     # FASE 2: honorários do cadastro → proposta de honorários já vigente, na
     # MESMA transação do caso (atômico) e ANTES do background do kit. Assim o
@@ -487,19 +570,105 @@ async def atualizar(
         db, cu.id, cu.role.value, "UPDATE", "cases", case_id,
         dados_depois={k: str(v) for k, v in mudancas.items()},
     )
-    # Fase 3 write-through: sincroniza processes quando numero_processo muda
-    if "numero_processo" in mudancas and mudancas["numero_processo"]:
-        novo_cnj = (mudancas["numero_processo"] or "").strip()[:30]
-        from uuid import uuid4
-        await db.execute(text("""
-            INSERT INTO processes (id, case_id, numero_cnj, instancia, is_principal, status, created_at, updated_at)
-            VALUES (:id, :cid, :ncnj, '1', TRUE, 'ativo', now(), now())
-            ON CONFLICT DO NOTHING
-        """), {"id": str(uuid4()), "cid": case_id, "ncnj": novo_cnj})
-        await db.execute(text("""
-            UPDATE processes SET numero_cnj=:ncnj, updated_at=now()
-            WHERE case_id=:cid AND is_principal=TRUE AND deleted_at IS NULL
-        """), {"ncnj": novo_cnj, "cid": case_id})
+    # Write-through canônico: qualquer alteração da identificação do processo
+    # principal passa por processo_service (unicidade, lock e espelho legado).
+    campos_processo = {"numero_processo", "tribunal", "comarca", "vara", "valor_causa"}
+    if campos_processo.intersection(mudancas):
+        from app.schemas.process import ProcessCreate, ProcessUpdate
+        from app.services import processo_service
+
+        principal = await processo_service.processo_principal(case_id, db)
+        numero_novo = (
+            (mudancas.get("numero_processo") or "").strip()
+            if "numero_processo" in mudancas
+            else (c.numero_processo or "").strip()
+        )
+        process_values = {
+            "numero_cnj": numero_novo or None,
+            "tribunal": c.tribunal,
+            "comarca": c.comarca,
+            "vara": c.vara,
+            "valor_causa": c.valor_causa,
+        }
+        if principal:
+            try:
+                await processo_service.atualizar_processo(
+                    principal["id"],
+                    ProcessUpdate(**process_values),
+                    db,
+                )
+            except processo_service.ProcessConflict as exc:
+                await db.rollback()
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            await criar_audit_log(
+                db,
+                cu.id,
+                cu.role.value,
+                "UPDATE",
+                "processes",
+                principal["id"],
+                dados_depois={
+                    **{k: str(v) for k, v in process_values.items()},
+                    "origem": "atualizacao_manual_caso",
+                },
+            )
+            if "numero_processo" in mudancas:
+                db.add(CaseMovimento(
+                    id=str(uuid4()),
+                    case_id=case_id,
+                    tipo="nota",
+                    descricao=(
+                        f"Identificação processual atualizada para "
+                        f"{numero_novo or 'sem número'}. "
+                        "Origem: atualização manual confirmada pelo usuário."
+                    ),
+                    created_by=cu.id,
+                ))
+        elif numero_novo:
+            tipo_processo = (
+                "judicial"
+                if c.case_type == "judicial"
+                else "extrajudicial"
+                if c.case_type == "extrajudicial"
+                else "outro"
+            )
+            try:
+                processo = await processo_service.criar_processo(
+                    case_id,
+                    ProcessCreate(
+                        **process_values,
+                        tipo=tipo_processo,
+                        status="ativo",
+                        is_principal=True,
+                    ),
+                    db,
+                )
+            except processo_service.ProcessConflict as exc:
+                await db.rollback()
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            db.add(CaseMovimento(
+                id=str(uuid4()),
+                case_id=case_id,
+                tipo="nota",
+                descricao=(
+                    f"Processo {numero_novo} vinculado ao caso. "
+                    "Origem: atualização manual confirmada pelo usuário."
+                ),
+                created_by=cu.id,
+            ))
+            await criar_audit_log(
+                db,
+                cu.id,
+                cu.role.value,
+                "CREATE",
+                "processes",
+                processo["id"],
+                dados_depois={
+                    "case_id": case_id,
+                    "numero_cnj": numero_novo,
+                    "origem": "atualizacao_manual_caso",
+                },
+            )
     await db.commit()
     await db.refresh(c)
     # Event bus: notifica módulos interessados que o caso mudou (fail-safe).

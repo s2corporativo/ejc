@@ -9,13 +9,14 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.case import Case
+from app.models.case import Case, CaseFase, CaseStatus
 from app.models.process import Process
 from app.repositories.process_repository import process_repository
 from app.schemas.process import ProcessCreate, ProcessResponse, ProcessUpdate
+from app.services.validators_service import normalizar_cnj
 
 _JUDICIAL_TYPES = {"judicial", "recurso", "cautelar", "execucao"}
 
@@ -49,6 +50,55 @@ def _legacy_text(value: str | None, max_length: int) -> str | None:
     if value is None:
         return None
     return value[:max_length]
+
+
+async def _garantir_cnj_unico(
+    db: AsyncSession,
+    numero_cnj: str | None,
+    *,
+    case_id: str,
+    process_id: str | None = None,
+) -> None:
+    """Bloqueia o mesmo CNJ em casos/processos ativos distintos.
+
+    O advisory lock fecha a janela concorrente no serviço; a migration 163 mantém índices normalizados de apoio à checagem cruzada.
+    """
+    if not numero_cnj:
+        return
+    digitos = normalizar_cnj(numero_cnj)
+    if len(digitos) != 20:
+        return
+
+    bind = db.get_bind()
+    if bind is not None and bind.dialect.name == "postgresql":
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:chave))"),
+            {"chave": f"cnj_unique:{digitos}"},
+        )
+    existente = await process_repository.find_active_by_cnj_normalized(
+        db,
+        digitos,
+        exclude_process_id=process_id,
+    )
+    if existente is not None:
+        raise ProcessConflict("Número CNJ já vinculado a processo ativo do EJC")
+
+    numero_caso_normalizado = Case.numero_processo
+    for char in (".", "-", "/", " "):
+        numero_caso_normalizado = func.replace(numero_caso_normalizado, char, "")
+    outro_caso = (
+        await db.execute(
+            select(Case.id)
+            .where(
+                Case.deleted_at.is_(None),
+                Case.id != case_id,
+                numero_caso_normalizado == digitos,
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if outro_caso is not None:
+        raise ProcessConflict("Número CNJ já vinculado a processo ativo do EJC")
 
 
 async def obter_processo(db: AsyncSession, process_id: str) -> Process:
@@ -95,6 +145,12 @@ async def _sync_case_legacy(db: AsyncSession, process: Process) -> None:
     """
     if not process.is_principal:
         return
+    judicial = process.tipo in _JUDICIAL_TYPES
+    cnj_confirmado = (
+        judicial
+        and bool(process.numero_cnj)
+        and len(normalizar_cnj(process.numero_cnj)) == 20
+    )
     await db.execute(
         update(Case)
         .where(Case.id == process.case_id, Case.deleted_at.is_(None))
@@ -104,9 +160,36 @@ async def _sync_case_legacy(db: AsyncSession, process: Process) -> None:
             comarca=_legacy_text(process.comarca, 100),
             vara=_legacy_text(process.vara, 100),
             valor_causa=process.valor_causa,
-            has_judicial_process=(process.tipo in _JUDICIAL_TYPES),
+            has_judicial_process=judicial,
+            **({"case_type": "judicial"} if judicial else {}),
         )
     )
+    if cnj_confirmado:
+        # Um CNJ confirmado é o marco objetivo de ajuizamento. Só avançamos estados incompatíveis; terminais não mudam.
+        await db.execute(
+            update(Case)
+            .where(
+                Case.id == process.case_id,
+                Case.deleted_at.is_(None),
+                Case.status.in_(
+                    [CaseStatus.aberto, CaseStatus.em_instrucao, CaseStatus.em_producao]
+                ),
+            )
+            .values(status=CaseStatus.protocolado)
+        )
+        fase_ajuizada = {
+            "recurso": CaseFase.recursal,
+            "execucao": CaseFase.execucao,
+        }.get(process.tipo, CaseFase.conhecimento)
+        await db.execute(
+            update(Case)
+            .where(
+                Case.id == process.case_id,
+                Case.deleted_at.is_(None),
+                Case.fase == CaseFase.pre_processual,
+            )
+            .values(fase=fase_ajuizada)
+        )
 
 
 async def _clear_case_legacy(db: AsyncSession, case_id: str) -> None:
@@ -140,6 +223,7 @@ async def criar_processo(
     db: AsyncSession,
 ) -> dict[str, Any]:
     await process_repository.lock_case(db, case_id)
+    await _garantir_cnj_unico(db, payload.numero_cnj, case_id=case_id)
     parent = await _validate_parent(db, case_id, payload.processo_principal_id)
     if payload.status == "arquivado" and payload.is_principal:
         raise ProcessConflict("Processo criado como arquivado não pode ser principal")
@@ -183,6 +267,14 @@ async def atualizar_processo(
     await process_repository.lock_case(db, process.case_id)
     changes = payload.model_dump(exclude_unset=True)
     requested_principal = changes.pop("is_principal", None)
+
+    if "numero_cnj" in changes:
+        await _garantir_cnj_unico(
+            db,
+            changes.get("numero_cnj"),
+            case_id=process.case_id,
+            process_id=process.id,
+        )
 
     requested_status = changes.get("status")
     if requested_status == "arquivado" and process.status != "arquivado":

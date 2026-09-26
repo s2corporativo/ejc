@@ -25,6 +25,20 @@ export function carregarRascunho(): Proposta | null {
     if (!p || typeof p !== "object" || typeof p.rascunhoId !== "string") {
       return null;
     }
+    // Migração defensiva de rascunhos abertos antes da reconciliação
+    // processual: não perde a edição do usuário nem presume CNJ.
+    if (typeof p.numeroCnj !== "string") p.numeroCnj = "";
+    if (!p.reconciliacaoProcessual) {
+      p.reconciliacaoProcessual = {
+        status: "informacoes_insuficientes",
+        cnjsDetectados: [],
+        numeroCnjPrincipal: null,
+        correspondencias: [],
+        bloquearCriacao: false,
+        acaoSugerida: "revisar_dados",
+        mensagem: "Reconciliação processual pendente de nova análise.",
+      };
+    }
     return p;
   } catch {
     return null;

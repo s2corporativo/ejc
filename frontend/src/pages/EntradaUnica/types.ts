@@ -29,6 +29,34 @@ export interface DuplicadoCliente {
   rotulo: string;
 }
 
+export type ReconciliacaoProcessualStatus =
+  | "ja_cadastrado"
+  | "provavel_correspondencia"
+  | "novo_processo"
+  | "informacoes_insuficientes";
+
+export interface CorrespondenciaProcessual {
+  caseId: string | null;
+  numeroInterno: string | null;
+  titulo: string;
+  status: string | null;
+  fase: string | null;
+  protegido: boolean;
+  score: number | null;
+  motivos: string[];
+  podeConverterPreProcessual: boolean;
+}
+
+export interface ReconciliacaoProcessual {
+  status: ReconciliacaoProcessualStatus;
+  cnjsDetectados: string[];
+  numeroCnjPrincipal: string | null;
+  correspondencias: CorrespondenciaProcessual[];
+  bloquearCriacao: boolean;
+  acaoSugerida: string;
+  mensagem: string;
+}
+
 export interface InteligenciaJuridicaProposta {
   versaoContrato: string;
   status: "rascunho" | "degradado";
@@ -77,6 +105,8 @@ export interface Proposta {
   titulo: string;
   fatos: string;
   parteContraria: string;
+  numeroCnj: string;
+  reconciliacaoProcessual: ReconciliacaoProcessual;
   documentos: DocumentoProposto[];
   documentosFaltantes: string[];
   provasNecessarias: string[];
@@ -109,6 +139,7 @@ export const META_PADRAO: EntradaMeta = {
 
 /** Data ISO estrita (yyyy-mm-dd) — única forma aceita pelo PrazoEntrada. */
 export const EH_DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+export const EH_CNJ = /^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$/;
 
 function str(v: unknown): string {
   return typeof v === "string" ? v : "";
@@ -200,6 +231,47 @@ function normalizarDuplicado(v: unknown): DuplicadoCliente {
   };
 }
 
+function normalizarReconciliacao(v: unknown): ReconciliacaoProcessual {
+  const o = obj(v);
+  const statusRaw = str(o.status);
+  const status: ReconciliacaoProcessualStatus = [
+    "ja_cadastrado",
+    "provavel_correspondencia",
+    "novo_processo",
+    "informacoes_insuficientes",
+  ].includes(statusRaw)
+    ? (statusRaw as ReconciliacaoProcessualStatus)
+    : "informacoes_insuficientes";
+  return {
+    status,
+    cnjsDetectados: listaTexto(o.cnjs_detectados),
+    numeroCnjPrincipal: strOuNull(o.numero_cnj_principal),
+    correspondencias: lista(o.correspondencias).map((item) => {
+      const c = obj(item);
+      return {
+        caseId: strOuNull(c.case_id),
+        numeroInterno: strOuNull(c.numero_interno),
+        titulo: str(c.titulo) || "Correspondência processual",
+        status: strOuNull(c.status),
+        fase: strOuNull(c.fase),
+        protegido: c.protegido === true,
+        score:
+          typeof c.score === "number" && Number.isFinite(c.score)
+            ? c.score
+            : null,
+        motivos: listaTexto(c.motivos),
+        podeConverterPreProcessual:
+          c.pode_converter_pre_processual === true,
+      };
+    }),
+    bloquearCriacao: o.bloquear_criacao === true,
+    acaoSugerida: str(o.acao_sugerida) || "revisar_dados",
+    mensagem:
+      str(o.mensagem) ||
+      "Reconciliação processual pendente de revisão humana.",
+  };
+}
+
 export function normalizarMeta(raw: unknown): EntradaMeta {
   const o = obj(raw);
   const formatos = lista(o.formatos).filter(
@@ -240,6 +312,9 @@ export function normalizarAnalise(
   const urgencia = obj(r.urgencia);
   const conflito = obj(r.conflito);
   const duplicados = obj(r.duplicados);
+  const reconciliacaoProcessual = normalizarReconciliacao(
+    r.reconciliacao_processual,
+  );
 
   const documentos: DocumentoProposto[] = lista(r.documentos).map((d) => {
     const o = obj(d);
@@ -301,6 +376,8 @@ export function normalizarAnalise(
     titulo: str(r.titulo),
     fatos: str(r.fatos),
     parteContraria: str(r.parte_contraria),
+    numeroCnj: reconciliacaoProcessual.numeroCnjPrincipal ?? "",
+    reconciliacaoProcessual,
     documentos,
     documentosFaltantes: listaTexto(r.documentos_faltantes),
     provasNecessarias: listaTexto(r.provas_necessarias),
@@ -364,6 +441,7 @@ export function montarPayloadCriacao(p: Proposta): Record<string, unknown> {
     titulo: p.titulo.trim() || undefined,
     fatos: p.fatos.trim() || undefined,
     parte_contraria: p.parteContraria.trim() || undefined,
+    numero_cnj: p.numeroCnj.trim() || undefined,
     documentos_ids: documentosIds,
     assunto: p.assunto.trim() || undefined,
     natureza_demanda: p.naturezaDemanda.trim() || undefined,

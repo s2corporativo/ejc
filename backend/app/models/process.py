@@ -14,7 +14,7 @@
 # silencioso. Uma futura migração dos routers para ORM é trabalho separado.
 from __future__ import annotations
 from sqlalchemy import (
-    Column, String, DateTime, func, Text, Numeric, ForeignKey, Boolean,
+    Column, String, DateTime, func, Text, Numeric, ForeignKey, Boolean, Index, text,
 )
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -22,10 +22,18 @@ from app.core.database import Base
 
 class Process(Base):
     __tablename__ = "processes"
-    # `updated_at` usa expressão SQL em `onupdate`. Sem eager_defaults, o
-    # SQLAlchemy expira o atributo após o UPDATE e a serialização Pydantic tenta
-    # fazer IO implícito fora de `greenlet_spawn`, causando MissingGreenlet no
-    # AsyncSession. PostgreSQL devolve os defaults no próprio flush/RETURNING.
+    __table_args__ = (
+        Index(
+            "ix_processes_cnj_normalized_active",
+            text("regexp_replace(numero_cnj, '[^0-9]', '', 'g')"),
+            postgresql_where=text(
+                "deleted_at IS NULL AND numero_cnj IS NOT NULL "
+                "AND length(regexp_replace(numero_cnj, '[^0-9]', '', 'g')) = 20"
+            ),
+        ).ddl_if(dialect="postgresql"),
+    )
+    # Índice funcional é emitido apenas em PostgreSQL; testes SQLite não
+    # conhecem regexp_replace. Alembic continua responsável pelo DDL de produção.
     __mapper_args__ = {"eager_defaults": True}
 
     id = Column(String(36), primary_key=True)

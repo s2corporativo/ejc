@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.core.database import Base
 from app.models.case import (
     Case,
+    CaseArea,
     CaseMovimento,
     CaseParte,
     CasePrioridade,
@@ -33,6 +34,7 @@ from app.models.client import Client
 from app.models.deadline import Deadline
 from app.models.document import DocConfidencialidade, Document
 from app.models.document_intake import DocumentIntakeBatch, DocumentIntakeItem
+from app.models.process import Process
 from app.models.user import User, UserRole
 from app.schemas.entrada import ClienteEntrada, CriarCasoEntradaRequest
 from app.services import entrada_service
@@ -239,7 +241,7 @@ _TABELAS = [
     User.__table__, Client.__table__, Case.__table__, CaseMovimento.__table__,
     Document.__table__, DocumentIntakeBatch.__table__,
     DocumentIntakeItem.__table__, Deadline.__table__,
-    CaseParte.__table__,
+    CaseParte.__table__, Process.__table__,
 ]
 
 
@@ -400,6 +402,68 @@ async def test_criar_caso_feliz_e_idempotente(sessao_db, numeracao_fake, auditor
     assert r2 == {"case_id": r1["case_id"], "ja_convertido": True}
     assert len((await sessao_db.execute(select(Case))).scalars().all()) == 1
     assert len((await sessao_db.execute(select(Client))).scalars().all()) == 1
+
+
+@pytest.mark.anyio
+async def test_criar_caso_com_cnj_cria_processo_principal(
+    sessao_db, numeracao_fake, auditoria_fake,
+):
+    user = await _semear(sessao_db)
+    numero_cnj = "1018284-13.2026.8.13.0027"
+
+    resultado = await entrada_service.criar_caso_do_rascunho(
+        sessao_db,
+        user,
+        "b1",
+        _payload(numero_cnj=numero_cnj),
+    )
+    await sessao_db.commit()
+
+    caso = await sessao_db.get(Case, resultado["case_id"])
+    assert caso.numero_processo == numero_cnj
+    assert caso.has_judicial_process is True
+    assert caso.status == CaseStatus.protocolado
+
+    processos = (
+        await sessao_db.execute(
+            select(Process).where(Process.case_id == caso.id)
+        )
+    ).scalars().all()
+    assert len(processos) == 1
+    assert processos[0].numero_cnj == numero_cnj
+    assert processos[0].is_principal is True
+    assert resultado["process_id"] == processos[0].id
+
+
+@pytest.mark.anyio
+async def test_criar_caso_bloqueia_cnj_ja_existente(
+    sessao_db, numeracao_fake, auditoria_fake,
+):
+    user = await _semear(sessao_db)
+    numero_cnj = "1015352-52.2026.8.13.0027"
+    cliente = Client(id="c-existente", nome="Cliente Existente", responsavel_id="u1")
+    caso = Case(
+        id="case-existente",
+        numero_interno="DPT-2026-0999",
+        titulo="Caso existente",
+        area=CaseArea.civil,
+        status=CaseStatus.protocolado,
+        client_id=cliente.id,
+        numero_processo=numero_cnj,
+        has_judicial_process=True,
+    )
+    sessao_db.add_all([cliente, caso])
+    await sessao_db.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        await entrada_service.criar_caso_do_rascunho(
+            sessao_db,
+            user,
+            "b1",
+            _payload(numero_cnj=numero_cnj, duplicate_confirmed=True),
+        )
+    assert exc.value.status_code == 409
+    assert exc.value.detail["codigo"] == "CNJ_JA_CADASTRADO"
 
 
 # ── (d) gates de servidor ────────────────────────────────────────────────────

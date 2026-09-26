@@ -5,6 +5,8 @@ regras de principal, acessórios e arquivamento vivem em `processo_service`.
 """
 from __future__ import annotations
 
+from uuid import uuid4
+
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +14,7 @@ from app.core.database import get_db
 from app.core.ownership import verificar_acesso_caso
 from app.core.security import get_current_user, require_roles
 from app.models.audit_log import criar_audit_log
+from app.models.case import CaseMovimento
 from app.models.user import User
 from app.schemas.process import ArchiveProcessRequest, ProcessCreate, ProcessUpdate
 from app.services import processo_service
@@ -70,8 +73,20 @@ async def criar_processo(
         dados_depois={
             "case_id": case_id,
             "is_principal": result["is_principal"],
+            "numero_cnj": result.get("numero_cnj"),
+            "origem": "cadastro_processual",
         },
     )
+    db.add(CaseMovimento(
+        id=str(uuid4()),
+        case_id=case_id,
+        tipo="nota",
+        descricao=(
+            f"Processo {result.get('numero_cnj') or result['id']} vinculado ao caso. "
+            "Origem: cadastro processual confirmado pelo usuário."
+        ),
+        created_by=cu.id,
+    ))
     await db.commit()
     return result
 

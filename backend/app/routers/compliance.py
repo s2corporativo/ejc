@@ -9,7 +9,7 @@ from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -17,10 +17,12 @@ from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.models.user import User
-from app.models.case import Case
+from app.models.case import Case, CaseFase, CaseStatus
 from app.models.client import Client
+from app.models.process import Process
 from app.models.diario_oficial import DiarioOficialAlerta
 from app.models.environmental import EnvironmentalCase, StatusDefesa
+from app.models.fee import CaseReceiptAllocation, Fee, FeePayment
 
 log = logging.getLogger(__name__)
 
@@ -224,6 +226,166 @@ async def _itens_regulatorio(db: AsyncSession, desde: Optional[date], hoje: date
     return itens
 
 
+async def _itens_processual(
+    db: AsyncSession,
+    cu: User,
+    desde: Optional[date],
+    limit: int,
+) -> list[dict]:
+    """Inconsistências operacionais objetivas da carteira processual.
+
+    Não corrige automaticamente: apenas sinaliza casos que exigem revisão.
+    """
+    principal_existe = (
+        select(Process.id)
+        .where(
+            Process.case_id == Case.id,
+            Process.deleted_at.is_(None),
+            Process.is_principal.is_(True),
+        )
+        .exists()
+    )
+    tem_cnj = and_(
+        Case.numero_processo.is_not(None),
+        Case.numero_processo != "",
+    )
+    q = (
+        select(Case, principal_existe.label("principal_existe"))
+        .where(
+            Case.deleted_at.is_(None),
+            or_(
+                and_(
+                    tem_cnj,
+                    or_(
+                        Case.has_judicial_process.is_(False),
+                        Case.case_type != "judicial",
+                        Case.status == CaseStatus.aberto,
+                        Case.fase == CaseFase.pre_processual,
+                        ~principal_existe,
+                    ),
+                ),
+                and_(
+                    Case.advogado_responsavel_id.is_(None),
+                    Case.status.notin_([CaseStatus.encerrado, CaseStatus.arquivado]),
+                ),
+            ),
+        )
+        .order_by(Case.updated_at.desc())
+        .limit(limit * 3)
+    )
+    rows = (await db.execute(q)).all()
+    itens: list[dict] = []
+    for caso, tem_principal in rows:
+        if not _acessa_caso(cu, caso):
+            continue
+        dt = caso.updated_at.date() if caso.updated_at else None
+        if desde and dt and dt < desde:
+            continue
+
+        inconsistencias: list[str] = []
+        alto = False
+        if not caso.advogado_responsavel_id:
+            inconsistencias.append("sem advogado responsável")
+            alto = True
+
+        if caso.numero_processo:
+            if not caso.has_judicial_process:
+                inconsistencias.append("CNJ presente, mas marcado como sem processo judicial")
+                alto = True
+            if caso.case_type != "judicial":
+                inconsistencias.append(f"CNJ presente com tipo atual {caso.case_type or 'não informado'}")
+                alto = True
+            if caso.status == CaseStatus.aberto:
+                inconsistencias.append("CNJ presente, mas status ainda aberto")
+            if caso.fase == CaseFase.pre_processual:
+                inconsistencias.append("CNJ presente, mas fase ainda pré-processual")
+            if not tem_principal:
+                inconsistencias.append("CNJ legado sem processo principal canônico")
+                alto = True
+
+        if not inconsistencias:
+            continue
+        itens.append({
+            "fonte": "processual",
+            "id": caso.id,
+            "titulo": f"Integridade processual: {caso.numero_interno or caso.titulo}",
+            "resumo": "; ".join(inconsistencias) + ".",
+            "data": dt.isoformat() if dt else None,
+            "nivel_risco": "alto" if alto else "medio",
+            "link": None,
+            "case_id": caso.id,
+            "_dt": dt or date.min,
+        })
+        if len(itens) >= limit:
+            break
+    return itens
+
+
+async def _itens_financeiro_integridade(
+    db: AsyncSession,
+    cu: User,
+    desde: Optional[date],
+    limit: int,
+) -> list[dict]:
+    """Recebimentos sem conciliação econômica.
+
+    Dados financeiros ficam restritos à gestão; demais perfis não recebem nem
+    a existência do lançamento, preservando segregação e LGPD.
+    """
+    if not is_gestao(cu):
+        return []
+
+    q = (
+        select(FeePayment, Fee, Case)
+        .join(Fee, Fee.id == FeePayment.fee_id)
+        .join(CaseReceiptAllocation, CaseReceiptAllocation.fee_payment_id == FeePayment.id, isouter=True)
+        .join(Case, Case.id == Fee.case_id, isouter=True)
+        .where(
+            Fee.deleted_at.is_(None),
+            CaseReceiptAllocation.id.is_(None),
+        )
+        .order_by(FeePayment.created_at.desc())
+        .limit(limit * 3)
+    )
+    rows = (await db.execute(q)).all()
+    itens: list[dict] = []
+    for pagamento, fee, caso in rows:
+        dt = pagamento.data_pagamento
+        if desde and dt and dt < desde:
+            continue
+
+        if caso is None:
+            titulo = "Recebimento sem caso vinculado"
+            resumo = "Há pagamento no financeiro sem caso associado; concilie antes do rateio."
+            case_id = None
+            nivel = "alto"
+        else:
+            if not _acessa_caso(cu, caso):
+                continue
+            pendencias = ["recebimento sem rateio econômico"]
+            if not caso.advogado_responsavel_id:
+                pendencias.append("caso sem advogado responsável")
+            titulo = f"Conciliação financeira: {caso.numero_interno or caso.titulo}"
+            resumo = "; ".join(pendencias) + "."
+            case_id = caso.id
+            nivel = "alto" if not caso.advogado_responsavel_id else "medio"
+
+        itens.append({
+            "fonte": "financeiro",
+            "id": pagamento.id,
+            "titulo": titulo,
+            "resumo": resumo,
+            "data": dt.isoformat() if dt else None,
+            "nivel_risco": nivel,
+            "link": None,
+            "case_id": case_id,
+            "_dt": dt or date.min,
+        })
+        if len(itens) >= limit:
+            break
+    return itens
+
+
 async def _itens_ambiental(db: AsyncSession, cu: User, desde: Optional[date],
                            hoje: date, limit: int) -> list[dict]:
     """Fonte 'ambiental' — reusa o mesmo select de environmental.listar
@@ -264,7 +426,9 @@ async def _itens_ambiental(db: AsyncSession, cu: User, desde: Optional[date],
 
 @router.get("/radar", dependencies=[Depends(rate_limit("compliance-radar", 15))])
 async def radar_compliance(
-    fonte: Optional[str] = Query(None, description="diario_oficial|regulatorio|ambiental"),
+    fonte: Optional[str] = Query(
+        None, description="diario_oficial|regulatorio|ambiental|processual|financeiro"
+    ),
     desde: Optional[date] = Query(None, description="Só itens a partir desta data (YYYY-MM-DD)"),
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -305,6 +469,20 @@ async def radar_compliance(
         except Exception as e:  # noqa: BLE001
             log.warning("radar: fonte ambiental falhou: %s", e)
             erros.append("ambiental")
+
+    if fonte in (None, "processual"):
+        try:
+            itens += await _itens_processual(db, cu, desde, fetch)
+        except Exception as e:  # noqa: BLE001
+            log.warning("radar: fonte processual falhou: %s", e)
+            erros.append("processual")
+
+    if fonte in (None, "financeiro"):
+        try:
+            itens += await _itens_financeiro_integridade(db, cu, desde, fetch)
+        except Exception as e:  # noqa: BLE001
+            log.warning("radar: fonte financeiro falhou: %s", e)
+            erros.append("financeiro")
 
     # Ordena por risco (crítico→baixo) e depois recência (mais novo primeiro).
     itens.sort(key=lambda it: (

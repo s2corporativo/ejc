@@ -202,3 +202,59 @@ async def test_criacao_arquivada_registra_timestamp_sem_virar_principal():
             assert process.is_principal is False
         finally:
             await _cleanup(db, client_id, case_id)
+
+
+async def test_vincular_processo_judicial_promove_caso_pre_processual():
+    from app.core.database import AsyncSessionLocal
+    from app.models.case import Case, CaseFase, CaseStatus
+    from app.schemas.process import ProcessCreate
+    from app.services import processo_service
+
+    async with AsyncSessionLocal() as db:
+        client_id, case_id = await _fixture_case(db)
+        try:
+            await processo_service.criar_processo(
+                case_id,
+                ProcessCreate(numero_cnj="1018284-13.2026.8.13.0027", tipo="judicial"),
+                db,
+            )
+            await db.commit()
+
+            case = (await db.execute(select(Case).where(Case.id == case_id))).scalar_one()
+            assert case.has_judicial_process is True
+            assert case.case_type == "judicial"
+            assert case.status == CaseStatus.protocolado
+            assert case.fase == CaseFase.conhecimento
+        finally:
+            await _cleanup(db, client_id, case_id)
+
+
+async def test_cnj_nao_pode_ser_vinculado_a_dois_casos():
+    from app.core.database import AsyncSessionLocal
+    from app.schemas.process import ProcessCreate
+    from app.services import processo_service
+
+    async with AsyncSessionLocal() as db:
+        client_a, case_a = await _fixture_case(db)
+        client_b, case_b = await _fixture_case(db)
+        try:
+            await processo_service.criar_processo(
+                case_a,
+                ProcessCreate(numero_cnj="1018284-13.2026.8.13.0027"),
+                db,
+            )
+            await db.commit()
+
+            with pytest.raises(
+                processo_service.ProcessConflict,
+                match="Número CNJ já vinculado",
+            ):
+                await processo_service.criar_processo(
+                    case_b,
+                    ProcessCreate(numero_cnj="1018284-13.2026.8.13.0027"),
+                    db,
+                )
+            await db.rollback()
+        finally:
+            await _cleanup(db, client_a, case_a)
+            await _cleanup(db, client_b, case_b)
