@@ -28,13 +28,13 @@ BOUNDARIES: dict[str, tuple[str, ...]] = {
 ALLOWED_IMPORTERS: dict[str, set[str]] = {
     "dpt360": {"main.py"},
     "legacy_vertical_context": {
+        "routers/trash.py",
         "services/case_context.py",
         "services/client_anonimizacao.py",
     },
     "environmental_model": {
         "models/__init__.py",
         "routers/compliance.py",
-        "routers/trash.py",
     },
     "especializado_model": {
         "models/__init__.py",
