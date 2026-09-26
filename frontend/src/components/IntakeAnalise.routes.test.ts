@@ -28,6 +28,7 @@ describe("rotaModuloSugerido", () => {
   it("não inventa destino para módulo sem rota contextual confirmada", () => {
     expect(rotaModuloSugerido("workflow", caseId)).toBeNull();
     expect(rotaModuloSugerido("ramos/../../admin", caseId)).toBeNull();
+    expect(rotaModuloSugerido("ramos/tributarioo", caseId)).toBeNull();
     expect(rotaModuloSugerido("", caseId)).toBeNull();
   });
 });
