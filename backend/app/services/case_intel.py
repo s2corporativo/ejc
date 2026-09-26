@@ -15,7 +15,7 @@ import json
 import logging
 from uuid import uuid4
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
@@ -376,7 +376,13 @@ SYS_CLASSIFICAR = (
 async def indexar_peca_rag(legal_doc_id: str) -> None:
     try:
         async with AsyncSessionLocal() as db:
-            d = await db.get(LegalDoc, legal_doc_id)
+            d = (
+                await db.execute(
+                    select(LegalDoc)
+                    .where(LegalDoc.id == legal_doc_id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
             if not d or d.deleted_at is not None:
                 return
             conteudo = (d.conteudo or "").strip()
