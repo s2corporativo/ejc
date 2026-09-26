@@ -1659,7 +1659,13 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body .ejc-entry-pillzone__fil
 
 
 /* #1857 — Início em duas experiências: IA primeiro, controles sob demanda. */
+.ejc-dash--ia,
+.ejc-dash--controles {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .ejc-dash__mode {
+  grid-column: 1 / -1;
   position: sticky;
   top: 0.75rem;
   z-index: 20;
@@ -1710,6 +1716,7 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body .ejc-entry-pillzone__fil
 }
 
 .ejc-dash__ai-home {
+  grid-column: 1 / -1;
   display: grid;
   place-items: center;
   min-height: min(72dvh, 760px);
@@ -1735,7 +1742,7 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body .ejc-entry-pillzone__fil
 
 .ejc-dash__entry-head--ai-home .ejc-dash__entry-copy h1 {
   margin: 0.3rem 0 0.55rem;
-  color: inherit;
+  color: #ffffff;
   font-family: var(--ejc-font-serif, Georgia, serif);
   font-size: clamp(1.9rem, 4vw, 3.2rem);
   font-weight: 500;
@@ -1769,7 +1776,37 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body .ejc-entry-pillzone__fil
 }
 
 .ejc-dash__controls {
-  display: contents;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 328px;
+  gap: 16px;
+  align-items: start;
+}
+
+.ejc-dash__controls[hidden],
+.ejc-dash__ai-home[hidden] {
+  display: none !important;
+}
+
+html:not(.dark) .ejc-modern-scope
+  .ejc-dash__entry-head--ai-home
+  .ejc-dash__entry-copy
+  h1 {
+  color: #ffffff !important;
+  font-size: clamp(1.9rem, 4vw, 3.2rem) !important;
+  font-weight: 500 !important;
+  line-height: 1.05 !important;
+}
+
+@media (max-width: 1180px) {
+  .ejc-dash__controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ejc-dash__controls .ejc-dash__side {
+    grid-column: 1;
+    grid-row: auto;
+  }
 }
 
 @media (max-width: 720px) {
