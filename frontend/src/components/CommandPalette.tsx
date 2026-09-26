@@ -81,6 +81,29 @@ const SEARCHABLE_MODULE_KEYS = new Set([
   "tributario",
 ]);
 
+/** Nomes históricos retirados da lateral continuam sendo termos de descoberta. */
+export const MODULE_SEARCH_ALIASES: Record<string, readonly string[]> = {
+  atividades: ["Agenda e Prazos"],
+  inteligencia: ["Inteligência Jurídica", "Conhecimento Jurídico"],
+  radar: ["Radar Operacional"],
+  produtividade: ["Relatórios"],
+};
+
+export function textoBuscaModulo(item: {
+  key: string;
+  label: string;
+  description: string;
+}): string {
+  return [
+    item.label,
+    item.description,
+    item.key,
+    ...(MODULE_SEARCH_ALIASES[item.key] ?? []),
+  ]
+    .join(" ")
+    .toLocaleLowerCase("pt-BR");
+}
+
 export default function CommandPalette() {
   const nav = useNavigate();
   const user = useAuth((state) => state.user);
@@ -193,9 +216,7 @@ export default function CommandPalette() {
     return searchableModules.filter(
       (item) =>
         !quickActionPaths.has(item.path) &&
-        `${item.label} ${item.description} ${item.key}`
-          .toLocaleLowerCase("pt-BR")
-          .includes(query),
+        textoBuscaModulo(item).includes(query),
     );
   }, [matchingQuickActions, q, searchableModules]);
 
