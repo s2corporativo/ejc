@@ -1758,6 +1758,7 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body .ejc-entry-pillzone__fil
 
 .ejc-dash__entry-kicker {
   display: block;
+  color: #f4df9a;
   font-size: 0.7rem;
   font-weight: 800;
   letter-spacing: 0.16em;
