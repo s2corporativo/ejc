@@ -237,10 +237,12 @@ export default function CommandPalette({
           key: `module-${item.key}`,
           link: item.path,
         })),
-        ...res.map((result, index) => ({
-          key: `${result.tipo}-${result.id}-${index}`,
-          link: result.link,
-        })),
+        ...(privacyMode
+          ? []
+          : res.map((result, index) => ({
+              key: `${result.tipo}-${result.id}-${index}`,
+              link: result.link,
+            }))),
       ];
     }
     return [
@@ -253,6 +255,7 @@ export default function CommandPalette({
   }, [
     matchingModules,
     matchingQuickActions,
+    privacyMode,
     q,
     quickActions,
     res,
