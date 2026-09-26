@@ -27,5 +27,8 @@ describe("CommandPalette — stacking no modo privacidade", () => {
       name: "Busca global do sistema",
     });
     expect(dialog.parentElement).toHaveClass("z-[90]");
+    expect(
+      screen.getByPlaceholderText("Buscar módulos e ferramentas…"),
+    ).toBeInTheDocument();
   });
 });
