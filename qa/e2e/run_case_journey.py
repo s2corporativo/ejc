@@ -57,6 +57,8 @@ def _criar_caso_via_entrada(
     caso = matrix["fictional_data"]["caso_consumidor"]
     relato = (
         f"{core.MARKER_RUN}. {caso['descricao_fatos']} "
+        f"Processo {caso['numero_processo']}, tribunal {caso['tribunal']}, "
+        f"comarca {caso['comarca']}, vara {caso['vara']}. "
         "Analise este atendimento apenas para criar um rascunho de homologação; "
         "os dados oficiais serão confirmados explicitamente pelo usuário."
     )
@@ -107,7 +109,7 @@ def _criar_caso_via_entrada(
         "confirmo_dados_revisados": True,
         "conflict_confirmed": False,
         "duplicate_confirmed": False,
-        "processo_novo_confirmado": False,
+        "processo_novo_confirmado": True,
     }
     criado = core._request(
         client,
@@ -124,6 +126,13 @@ def _criar_caso_via_entrada(
 
     corpo = criado.json()
     state.case_id = corpo.get("case_id")
+    process_id = corpo.get("process_id")
+    core._afirmar(
+        state,
+        "jornada.entrada.processo_canonico",
+        bool(process_id),
+        "Entrada Única recebeu CNJ válido, mas não criou/vinculou Process canônico",
+    )
     if state.case_id:
         state.criados_nesta_execucao.add(str(state.case_id))
 
@@ -616,7 +625,19 @@ def main() -> None:
             )
             core._login(client, state)
             core._negativas_de_autorizacao(client, state)
-            core._matrix_smoke(client, state, matrix)
+            core._matrix_smoke(
+                client,
+                state,
+                matrix,
+                covered_posts=core._POST_COBERTO_POR_FLUXO - {"/api/cases/"},
+                skipped_posts={
+                    "/api/cases/": (
+                        "não coberto nesta jornada: a origem canônica do caso é "
+                        "POST /api/entrada/{rascunho_id}/criar-caso; o endpoint "
+                        "direto permanece coberto por run_fictitious_smoke.py"
+                    )
+                },
+            )
             core._create_client(client, state, matrix)
 
             # DIFERENÇA CENTRAL desta jornada: o caso não é criado diretamente
