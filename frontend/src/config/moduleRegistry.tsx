@@ -254,7 +254,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     key: "dashboard",
     path: "/",
     label: "Início",
-    description: "Prioridades, agenda e casos recentes do seu dia.",
+    description: "Entrada de casos por IA e controles do escritório.",
     group: "Trabalhar um caso",
     icon: LayoutDashboard,
     component: Dashboard,

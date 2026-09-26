@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import {
   addMonths,
   eachDayOfInterval,
@@ -28,7 +35,7 @@ import {
   Users,
   Zap,
 } from "lucide-react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { toast } from "../components/Toast";
 import { officeBranding } from "../config/officeBranding";
 import api from "../lib/api";
@@ -39,12 +46,14 @@ import { EntradaInteligente } from "./EntradaUnica";
 /**
  * Início canônico do EJC — referência visual premium DPT (18/09/2026).
  *
- * Composição idêntica ao mockup aprovado pelo Titular: saudação, hero da
- * Entrada Única, quatro sinais operacionais, Agenda e Prazos, Casos em
- * destaque, Acesso rápido e coluna lateral (manifesto, calendário, rotina e
- * citação institucional). Todos os números vêm de endpoints reais; fonte
- * indisponível degrada para "—" (nunca zero falso), espelhando o contrato do
- * GET /dashboard (campo `degradado`).
+ * Início em duas superfícies canônicas:
+ * - IA (padrão): somente Entrada Única, sem ruído operacional;
+ * - Controles: sinais do escritório, agenda, casos, atalhos e painel lateral.
+ *
+ * A Entrada Única continua usando o fluxo canônico e o RBAC existente. Os
+ * endpoints operacionais do painel só são carregados quando "Controles" é
+ * aberto, reduzindo latência e trabalho desnecessário na superfície de IA.
+ * Fontes indisponíveis degradam para "—" (nunca zero falso).
  */
 
 type Atividade = {
@@ -88,6 +97,7 @@ type Kpis = {
 };
 
 type AbaAgenda = "hoje" | "amanha" | "semana";
+type ModoDashboard = "ia" | "controles";
 
 const ROTULO_TIPO: Record<string, string> = {
   prazo: "Prazo",
@@ -205,8 +215,14 @@ function scoreTarefaHoje(tarefa: Tarefa, hoje: string): number {
 export default function DashboardUltra() {
   const user = useAuth((state) => state.user);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const modo: ModoDashboard =
+    searchParams.get("modo") === "controles" ? "controles" : "ia";
 
   const [carregado, setCarregado] = useState(false);
+  const carregamentoIniciado = useRef(false);
+  const abaIaRef = useRef<HTMLButtonElement>(null);
+  const abaControlesRef = useRef<HTMLButtonElement>(null);
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [atividades, setAtividades] = useState<Atividade[] | null>(null);
   const [casos, setCasos] = useState<CasoResumo[] | null>(null);
@@ -255,8 +271,51 @@ export default function DashboardUltra() {
   }, []);
 
   useEffect(() => {
-    void carregar();
-  }, [carregar]);
+    if (
+      modo === "controles" &&
+      !carregado &&
+      !carregamentoIniciado.current
+    ) {
+      carregamentoIniciado.current = true;
+      void carregar();
+    }
+  }, [carregado, carregar, modo]);
+
+  const selecionarModo = useCallback(
+    (proximoModo: ModoDashboard) => {
+      const proximosParametros = new URLSearchParams(searchParams);
+      if (proximoModo === "ia") {
+        proximosParametros.delete("modo");
+      } else {
+        proximosParametros.set("modo", "controles");
+      }
+      setSearchParams(proximosParametros, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
+
+  const navegarModosPorTeclado = useCallback(
+    (event: KeyboardEvent<HTMLButtonElement>) => {
+      let proximoModo: ModoDashboard | null = null;
+      if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+        proximoModo = modo === "ia" ? "controles" : "ia";
+      } else if (event.key === "Home") {
+        proximoModo = "ia";
+      } else if (event.key === "End") {
+        proximoModo = "controles";
+      }
+      if (!proximoModo) return;
+
+      event.preventDefault();
+      selecionarModo(proximoModo);
+      if (proximoModo === "ia") {
+        abaIaRef.current?.focus();
+      } else {
+        abaControlesRef.current?.focus();
+      }
+    },
+    [modo, selecionarModo],
+  );
 
   const alternarTarefa = useCallback(async (tarefa: Tarefa) => {
     const novoStatus = tarefa.status === "concluida" ? "a_fazer" : "concluida";
@@ -388,22 +447,54 @@ export default function DashboardUltra() {
     v === null || v === undefined ? "—" : String(v);
 
   return (
-    <div className="ejc-dash">
-      <header className="ejc-dash__greeting" aria-label="Saudação do dia">
-        <div>
-          <h1>
-            {saudacaoPorHora()}, {primeiroNome}!
-          </h1>
-          <p>Disciplina hoje. Grandes conquistas sempre.</p>
-        </div>
-        <div className="ejc-dash__greeting-tag" aria-hidden="true">
-          <span>Conhecimento</span>
-          <span>Estratégia</span>
-          <span>Resultados reais</span>
-        </div>
-      </header>
+    <div className={`ejc-dash ejc-dash--${modo}`}>
+      <nav
+        className="ejc-dash__mode-switch"
+        aria-label="Modo do início"
+        role="tablist"
+      >
+        <button
+          ref={abaIaRef}
+          id="ejc-dashboard-tab-ia"
+          type="button"
+          role="tab"
+          aria-selected={modo === "ia"}
+          aria-controls="ejc-dashboard-ia"
+          tabIndex={modo === "ia" ? 0 : -1}
+          className={modo === "ia" ? "is-active" : ""}
+          onClick={() => selecionarModo("ia")}
+          onKeyDown={navegarModosPorTeclado}
+        >
+          <Sparkles aria-hidden="true" />
+          <span>IA</span>
+          <small>Entrada de casos</small>
+        </button>
+        <button
+          ref={abaControlesRef}
+          id="ejc-dashboard-tab-controles"
+          type="button"
+          role="tab"
+          aria-selected={modo === "controles"}
+          aria-controls="ejc-dashboard-controles"
+          tabIndex={modo === "controles" ? 0 : -1}
+          className={modo === "controles" ? "is-active" : ""}
+          onClick={() => selecionarModo("controles")}
+          onKeyDown={navegarModosPorTeclado}
+        >
+          <BarChart3 aria-hidden="true" />
+          <span>Controles</span>
+          <small>Gestão do escritório</small>
+        </button>
+      </nav>
 
-      <section className="ejc-dash__entry" aria-label="Entrada Única">
+      <section
+        id="ejc-dashboard-ia"
+        className="ejc-dash__ai-stage"
+        role="tabpanel"
+        aria-labelledby="ejc-dashboard-tab-ia"
+        hidden={modo !== "ia"}
+      >
+      <section className="ejc-dash__entry ejc-dash__entry--solo" aria-label="Entrada Única">
         <div className="ejc-dash__entry-head">
           <span className="ejc-dash__entry-icon" aria-hidden="true">
             <FilePlus2 />
@@ -462,6 +553,29 @@ export default function DashboardUltra() {
           </div>
         )}
       </section>
+
+      </section>
+
+      <div
+        id="ejc-dashboard-controles"
+        className="ejc-dash__controls-stage"
+        role="tabpanel"
+        aria-labelledby="ejc-dashboard-tab-controles"
+        hidden={modo !== "controles"}
+      >
+      <header className="ejc-dash__greeting" aria-label="Saudação do dia">
+        <div>
+          <h1>
+            {saudacaoPorHora()}, {primeiroNome}!
+          </h1>
+          <p>Disciplina hoje. Grandes conquistas sempre.</p>
+        </div>
+        <div className="ejc-dash__greeting-tag" aria-hidden="true">
+          <span>Conhecimento</span>
+          <span>Estratégia</span>
+          <span>Resultados reais</span>
+        </div>
+      </header>
 
       <section className="ejc-dash__stats" aria-label="Sinais do escritório">
         <Link
@@ -872,6 +986,7 @@ export default function DashboardUltra() {
           <i aria-hidden="true" /> Mais que soluções. Parcerias duradouras.
         </span>
       </footer>
+      </div>
     </div>
   );
 }

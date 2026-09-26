@@ -332,11 +332,10 @@ async function inspectDashboard(page, viewport, failures) {
     }
   }
 
-  // Composição canônica da referência (seção 9 do prompt mestre) com os
-  // números das fixtures — provando que os indicadores vêm de dados reais.
+  // Composição canônica da aba Controles com os números das fixtures —
+  // provando que os indicadores vêm de dados reais.
   for (const expected of [
     "carlos",
-    "entrada única",
     "prazos hoje",
     "clientes ativos",
     "casos em andamento",
@@ -354,7 +353,6 @@ async function inspectDashboard(page, viewport, failures) {
     "acesso rápido",
     "novo caso",
     "novo cliente",
-    "enviar documentos",
   ]) {
     if (!normalizedMainText.includes(expected.toLocaleLowerCase("pt-BR"))) {
       failures.push(`${viewport.name}: conteúdo canônico ausente: ${expected}`);
@@ -441,7 +439,37 @@ async function main() {
       });
       page.on("pageerror", (error) => consoleErrors.push(String(error)));
       await installApiFixtures(page);
+
+      // A rota padrão é a superfície IA: valida o intake limpo primeiro.
       await page.goto(base, { waitUntil: "networkidle" });
+      await page.waitForSelector("#ejc-dashboard-ia:not([hidden])", {
+        timeout: 15000,
+      });
+      const textoIa = (
+        await page.locator("#ejc-dashboard-ia").innerText()
+      ).toLocaleLowerCase("pt-BR");
+      if (!textoIa.includes("entrada única")) {
+        failures.push(`${viewport.name}: Entrada Única ausente na aba IA`);
+      }
+      if (
+        textoIa.includes("agenda e prazos") ||
+        textoIa.includes("casos em destaque") ||
+        textoIa.includes("clientes ativos")
+      ) {
+        failures.push(`${viewport.name}: controles operacionais vazaram para a aba IA`);
+      }
+      await page.screenshot({
+        path: path.join(OUT, `dashboard-ia-${viewport.name}.png`),
+        fullPage: true,
+      });
+
+      // As asserções históricas do dashboard operacional pertencem a Controles.
+      // Troca pela própria interface para exercitar a navegação real do usuário
+      // e preservar o estado local da Entrada Única durante a alternância.
+      await page.getByRole("tab", { name: /Controles/ }).click();
+      await page.waitForSelector("#ejc-dashboard-controles:not([hidden])", {
+        timeout: 15000,
+      });
       await inspectDashboard(page, viewport, failures);
 
       if (consoleErrors.length) {
