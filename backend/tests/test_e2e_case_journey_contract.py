@@ -27,4 +27,5 @@ def test_jornada_normaliza_cnj_e_declara_lote_convertido_residual():
     assert 'cnj_esperado = "".join(' in src
     assert '"entrada_unica.audit_trail"' in src
     assert '"document_intake_batches/{rascunho_id}"' in src
-    assert "não há endpoint de cleanup seguro" in src
+    assert "lote convertido é trilha auditável vinculada ao caso" in src
+    assert "endpoint de cleanup seguro" in src
