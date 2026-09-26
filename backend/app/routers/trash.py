@@ -185,7 +185,8 @@ async def restaurar(
                 select(KnowledgeDoc)
                 .where(
                     KnowledgeDoc.chave_origem == f"legaldoc:{registro_id}",
-                    KnowledgeDoc.deleted_at.isnot(None),
+                    KnowledgeDoc.vigente.is_(False),
+                    KnowledgeDoc.deleted_at == excluido_em,
                 )
                 .order_by(KnowledgeDoc.versao.desc())
                 .limit(1)
