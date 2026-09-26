@@ -464,7 +464,12 @@ async function main() {
       });
 
       // As asserções históricas do dashboard operacional pertencem a Controles.
-      await page.goto(`${base}?modo=controles`, { waitUntil: "networkidle" });
+      // Troca pela própria interface para exercitar a navegação real do usuário
+      // e preservar o estado local da Entrada Única durante a alternância.
+      await page.getByRole("tab", { name: /Controles/ }).click();
+      await page.waitForSelector("#ejc-dashboard-controles:not([hidden])", {
+        timeout: 15000,
+      });
       await inspectDashboard(page, viewport, failures);
 
       if (consoleErrors.length) {
