@@ -210,7 +210,7 @@ describe("DashboardUltra — identidade premium DPT", () => {
     expect(screen.getByTestId("entrada-unica")).toBe(entradaAntes);
   });
 
-  it("permite navegar entre IA e Controles pelo teclado", () => {
+  it("permite navegar entre IA e Controles pelo teclado", async () => {
     mockGetOk();
     renderizar();
 
@@ -222,6 +222,7 @@ describe("DashboardUltra — identidade premium DPT", () => {
     expect(abaControles.getAttribute("aria-selected")).toBe("true");
     expect(abaControles.tabIndex).toBe(0);
     expect(document.activeElement).toBe(abaControles);
+    await waitFor(() => expect(getMock).toHaveBeenCalledTimes(5));
 
     fireEvent.keyDown(abaControles, { key: "Home" });
     expect(abaIa.getAttribute("aria-selected")).toBe("true");
