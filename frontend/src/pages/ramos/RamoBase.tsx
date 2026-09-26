@@ -552,48 +552,83 @@ export default function RamoBase() {
     setRegistros(possuiRegistroEspecializado(cfg) ? null : []);
 
     const areas = areasDoWorkspace(cfg);
-    Promise.all(
-      areas.map(async (area) => {
-        try {
-          const resposta = await api.get("/cases/", {
-            params: { area, page_size: 100 },
-          });
-          const casosCarregados = carregarListaResposta(
-            resposta.data,
-          ) as Case[];
-          return {
-            ok: true,
-            casos: casosCarregados,
-            truncado: respostaListaFoiTruncada(
+    if (caseIdContexto) {
+      // Contexto vindo do caso: consulta diretamente o registro autorizado e
+      // suas áreas vinculadas. Assim o atalho não depende do recorte de 100
+      // casos da listagem por área e continua sem ampliar a carteira do usuário.
+      Promise.all([
+        api.get(`/cases/${encodeURIComponent(caseIdContexto)}`),
+        api.get(`/cases/${encodeURIComponent(caseIdContexto)}/areas`),
+      ])
+        .then(([casoResp, areasResp]) => {
+          if (!ativo) return;
+          const caso = casoResp.data as Case;
+          const vinculadas = Array.isArray(areasResp.data?.areas)
+            ? areasResp.data.areas
+                .map((item: { area?: unknown }) =>
+                  typeof item?.area === "string" ? item.area : "",
+                )
+                .filter(Boolean)
+            : [];
+          const areasDoCaso = new Set([
+            String(caso.area || ""),
+            ...vinculadas,
+          ]);
+          const pertenceAoWorkspace = areas.some((area) =>
+            areasDoCaso.has(area),
+          );
+          setCasos(pertenceAoWorkspace ? [caso] : []);
+          setCasosErro(!pertenceAoWorkspace);
+          setCasosTruncados(false);
+          setCasosLoading(false);
+        })
+        .catch(() => {
+          if (!ativo) return;
+          setCasos([]);
+          setCasosErro(true);
+          setCasosTruncados(false);
+          setCasosLoading(false);
+        });
+    } else {
+      Promise.all(
+        areas.map(async (area) => {
+          try {
+            const resposta = await api.get("/cases/", {
+              params: { area, page_size: 100 },
+            });
+            const casosCarregados = carregarListaResposta(
               resposta.data,
-              casosCarregados.length,
-            ),
-          };
-        } catch {
-          return { ok: false, casos: [] as Case[], truncado: false };
-        }
-      }),
-    ).then((resultados) => {
-      if (!ativo) return;
-      const porId = new Map<string, Case>();
-      resultados
-        .flatMap((item) => item.casos)
-        .forEach((caso) => porId.set(caso.id, caso));
-      const ordenados = [...porId.values()].sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-      );
-      setCasos(
-        caseIdContexto
-          ? ordenados.filter((caso) => String(caso.id) === caseIdContexto)
-          : ordenados,
-      );
-      setCasosErro(
-        resultados.length > 0 && resultados.every((item) => !item.ok),
-      );
-      setCasosTruncados(resultados.some((item) => item.truncado));
-      setCasosLoading(false);
-    });
+            ) as Case[];
+            return {
+              ok: true,
+              casos: casosCarregados,
+              truncado: respostaListaFoiTruncada(
+                resposta.data,
+                casosCarregados.length,
+              ),
+            };
+          } catch {
+            return { ok: false, casos: [] as Case[], truncado: false };
+          }
+        }),
+      ).then((resultados) => {
+        if (!ativo) return;
+        const porId = new Map<string, Case>();
+        resultados
+          .flatMap((item) => item.casos)
+          .forEach((caso) => porId.set(caso.id, caso));
+        const ordenados = [...porId.values()].sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        );
+        setCasos(ordenados);
+        setCasosErro(
+          resultados.length > 0 && resultados.every((item) => !item.ok),
+        );
+        setCasosTruncados(resultados.some((item) => item.truncado));
+        setCasosLoading(false);
+      });
+    }
 
     if (possuiRegistroEspecializado(cfg)) {
       api
