@@ -1144,13 +1144,14 @@ async def remover(
 
     # A peça alimenta o RAG por chave_origem=legaldoc:{id}. Excluir apenas
     # LegalDoc deixaria conhecimento sintético/obsoleto recuperável na base.
-    # Aposenta as versões vinculadas na MESMA transação; chunks permanecem
-    # apenas como histórico referencial e deixam de entrar no retrieval porque
-    # o KnowledgeDoc fica não vigente + soft-deleted.
+    # Aposenta somente a versão vigente na MESMA transação. Versões históricas
+    # já não vigentes permanecem intactas para auditoria/citações anteriores;
+    # a versão corrente deixa o retrieval por vigente=False + soft-delete.
     rag_docs = (
         await db.execute(
             select(KnowledgeDoc).where(
                 KnowledgeDoc.chave_origem == f"legaldoc:{doc_id}",
+                KnowledgeDoc.vigente.is_(True),
                 KnowledgeDoc.deleted_at.is_(None),
             )
         )
