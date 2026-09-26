@@ -1,10 +1,8 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const ROOT = resolve(__dirname, "..", "..");
-const palette = readFileSync(resolve(__dirname, "CommandPalette.tsx"), "utf8");
-const layout = readFileSync(resolve(__dirname, "LayoutReference.tsx"), "utf8");
+const palette = readFileSync(new URL("./CommandPalette.tsx", import.meta.url), "utf8");
+const layout = readFileSync(new URL("./LayoutReference.tsx", import.meta.url), "utf8");
 
 describe("CommandPalette — modo privacidade", () => {
   it("permanece montado no shell com a flag explícita", () => {
@@ -18,8 +16,8 @@ describe("CommandPalette — modo privacidade", () => {
       palette.indexOf("if (!open) return null;"),
     );
     expect(effect).toContain("setRes([])");
-    expect(effect).toContain("return;");
-    expect(effect.indexOf("return;")).toBeLessThan(effect.indexOf('api\n        .get("/search"'));
+    expect(effect.indexOf("return;")).toBeGreaterThanOrEqual(0);
+    expect(effect.indexOf("return;")).toBeLessThan(effect.indexOf('.get("/search"'));
   });
 
   it("não inclui resultados de entidades na navegação por teclado em privacidade", () => {
