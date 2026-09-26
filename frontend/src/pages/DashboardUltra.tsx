@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import {
   addMonths,
   eachDayOfInterval,
@@ -214,6 +221,8 @@ export default function DashboardUltra() {
 
   const [carregado, setCarregado] = useState(false);
   const carregamentoIniciado = useRef(false);
+  const abaIaRef = useRef<HTMLButtonElement>(null);
+  const abaControlesRef = useRef<HTMLButtonElement>(null);
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [atividades, setAtividades] = useState<Atividade[] | null>(null);
   const [casos, setCasos] = useState<CasoResumo[] | null>(null);
@@ -283,6 +292,29 @@ export default function DashboardUltra() {
       setSearchParams(proximosParametros, { replace: true });
     },
     [searchParams, setSearchParams],
+  );
+
+  const navegarModosPorTeclado = useCallback(
+    (event: KeyboardEvent<HTMLButtonElement>) => {
+      let proximoModo: ModoDashboard | null = null;
+      if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+        proximoModo = modo === "ia" ? "controles" : "ia";
+      } else if (event.key === "Home") {
+        proximoModo = "ia";
+      } else if (event.key === "End") {
+        proximoModo = "controles";
+      }
+      if (!proximoModo) return;
+
+      event.preventDefault();
+      selecionarModo(proximoModo);
+      if (proximoModo === "ia") {
+        abaIaRef.current?.focus();
+      } else {
+        abaControlesRef.current?.focus();
+      }
+    },
+    [modo, selecionarModo],
   );
 
   const alternarTarefa = useCallback(async (tarefa: Tarefa) => {
@@ -422,24 +454,32 @@ export default function DashboardUltra() {
         role="tablist"
       >
         <button
+          ref={abaIaRef}
+          id="ejc-dashboard-tab-ia"
           type="button"
           role="tab"
           aria-selected={modo === "ia"}
           aria-controls="ejc-dashboard-ia"
+          tabIndex={modo === "ia" ? 0 : -1}
           className={modo === "ia" ? "is-active" : ""}
           onClick={() => selecionarModo("ia")}
+          onKeyDown={navegarModosPorTeclado}
         >
           <Sparkles aria-hidden="true" />
           <span>IA</span>
           <small>Entrada de casos</small>
         </button>
         <button
+          ref={abaControlesRef}
+          id="ejc-dashboard-tab-controles"
           type="button"
           role="tab"
           aria-selected={modo === "controles"}
           aria-controls="ejc-dashboard-controles"
+          tabIndex={modo === "controles" ? 0 : -1}
           className={modo === "controles" ? "is-active" : ""}
           onClick={() => selecionarModo("controles")}
+          onKeyDown={navegarModosPorTeclado}
         >
           <BarChart3 aria-hidden="true" />
           <span>Controles</span>
@@ -447,13 +487,13 @@ export default function DashboardUltra() {
         </button>
       </nav>
 
-      {modo === "ia" ? (
-        <main
-          id="ejc-dashboard-ia"
-          className="ejc-dash__ai-stage"
-          role="tabpanel"
-          aria-label="Entrada de casos por IA"
-        >
+      <section
+        id="ejc-dashboard-ia"
+        className="ejc-dash__ai-stage"
+        role="tabpanel"
+        aria-labelledby="ejc-dashboard-tab-ia"
+        hidden={modo !== "ia"}
+      >
       <section className="ejc-dash__entry ejc-dash__entry--solo" aria-label="Entrada Única">
         <div className="ejc-dash__entry-head">
           <span className="ejc-dash__entry-icon" aria-hidden="true">
@@ -514,9 +554,15 @@ export default function DashboardUltra() {
         )}
       </section>
 
-        </main>
-      ) : (
-        <div id="ejc-dashboard-controles" className="ejc-dash__controls-stage" role="tabpanel">
+      </section>
+
+      <div
+        id="ejc-dashboard-controles"
+        className="ejc-dash__controls-stage"
+        role="tabpanel"
+        aria-labelledby="ejc-dashboard-tab-controles"
+        hidden={modo !== "controles"}
+      >
       <header className="ejc-dash__greeting" aria-label="Saudação do dia">
         <div>
           <h1>
@@ -940,8 +986,7 @@ export default function DashboardUltra() {
           <i aria-hidden="true" /> Mais que soluções. Parcerias duradouras.
         </span>
       </footer>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
