@@ -15,11 +15,12 @@
 // (sem o cabeçalho próprio). Nada de reescrever 429 linhas já testadas só para
 // unificar a porta de entrada — o risco não pagaria o ganho.
 import { useSearchParams } from "react-router";
-import { Bell, ShieldAlert } from "lucide-react";
+import { Bell, ListChecks, ShieldAlert } from "lucide-react";
 
 import { PageHeader } from "../components/UI";
 import RadarCompliance from "./RadarCompliance";
 import RadarRegulatorio from "./RadarRegulatorio";
+import RadarIntegridade from "./RadarIntegridade";
 
 const MODOS = [
   {
@@ -35,6 +36,13 @@ const MODOS = [
     icon: Bell,
     descricao:
       "O mesmo material agregado por fonte e palavra-chave na janela escolhida.",
+  },
+  {
+    id: "integridade",
+    label: "Integridade processual",
+    icon: ListChecks,
+    descricao:
+      "Pendências de cadastro e reconciliação que exigem revisão humana, sem correção automática.",
   },
 ] as const;
 
@@ -102,8 +110,10 @@ export default function Radar() {
 
       {modo === "feed" ? (
         <RadarCompliance embutido />
-      ) : (
+      ) : modo === "digest" ? (
         <RadarRegulatorio embutido />
+      ) : (
+        <RadarIntegridade />
       )}
     </div>
   );

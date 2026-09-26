@@ -40,6 +40,15 @@ class DecidirIndicativoIn(BaseModel):
         return limpo
 
 
+class AplicarDivergenciaIn(BaseModel):
+    """Confirma aplicação humana de metadado oficial divergente."""
+
+    confirmar: bool = Field(
+        ...,
+        description="Deve ser true; divergência DataJud nunca é aplicada silenciosamente.",
+    )
+
+
 class VarreduraIn(BaseModel):
     """Aciona o produtor do módulo (Issue #1319) — sem isso as tabelas de
     saneamento ficam vazias para sempre."""

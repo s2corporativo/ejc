@@ -14,6 +14,17 @@ import {
 } from "../../components/UI";
 import { ConsultaProfundaTJMG } from "../../components/Infosimples";
 
+type ProvenienciaProcesso = {
+  id: string;
+  field_name: string;
+  source_type: string;
+  source_ref?: string | null;
+  captured_at?: string | null;
+  confidence?: string | null;
+  confirmed_by?: string | null;
+  confirmed_at?: string | null;
+};
+
 export default function TabProcessos({ caseId }: { caseId: string }) {
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -23,6 +34,9 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
   const [arqPid, setArqPid] = useState<string | null>(null);
   const [arqMotivo, setArqMotivo] = useState("");
   const [arqSaving, setArqSaving] = useState(false);
+  const [provenienciaPid, setProvenienciaPid] = useState<string | null>(null);
+  const [provenienciaLoading, setProvenienciaLoading] = useState(false);
+  const [proveniencia, setProveniencia] = useState<Record<string, ProvenienciaProcesso[]>>({});
   const vazio = {
     tipo: "judicial",
     numero_cnj: "",
@@ -31,6 +45,7 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
     comarca: "",
     vara: "",
     fase: "",
+    data_ajuizamento: "",
     valor_causa: "",
   };
   const [form, setForm] = useState<any>(vazio);
@@ -115,6 +130,28 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
       carregar();
     } catch (err) {
       toast.error(mensagemErroHttp(err, "Falha ao desarquivar"));
+    }
+  };
+
+  const alternarProveniencia = async (pid: string) => {
+    if (provenienciaPid === pid) {
+      setProvenienciaPid(null);
+      return;
+    }
+    setProvenienciaPid(pid);
+    if (proveniencia[pid]) return;
+    setProvenienciaLoading(true);
+    try {
+      const { data } = await api.get(`/processes/${pid}/proveniencia`);
+      setProveniencia((atual) => ({
+        ...atual,
+        [pid]: Array.isArray(data?.data) ? data.data : [],
+      }));
+    } catch (err) {
+      toast.error(mensagemErroHttp(err, "Falha ao carregar a origem dos dados"));
+      setProvenienciaPid(null);
+    } finally {
+      setProvenienciaLoading(false);
     }
   };
 
@@ -212,6 +249,17 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
               />
             </div>
             <div>
+              <label className="label">Data de ajuizamento</label>
+              <input
+                type="date"
+                value={form.data_ajuizamento}
+                onChange={(e) =>
+                  setForm((f: any) => ({ ...f, data_ajuizamento: e.target.value }))
+                }
+                className="input w-full"
+              />
+            </div>
+            <div>
               <label className="label">Tribunal</label>
               <input
                 value={form.tribunal}
@@ -299,19 +347,57 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
                     .filter(Boolean)
                     .join(" · ") || "—"}
                   {p.fase ? ` · fase: ${p.fase}` : ""}
+                  {p.data_ajuizamento ? ` · ajuizado em: ${p.data_ajuizamento}` : ""}
                 </p>
                 {p.valor_causa != null && (
                   <p className="text-xs text-gray-400 mt-0.5">
                     Valor da causa: {fmtMoney(p.valor_causa)}
                   </p>
                 )}
-                {p.numero_cnj && (
-                  <Link
-                    to={dataJudHref(p.numero_cnj)}
-                    className="mt-2 inline-flex text-xs font-medium text-primary-700 hover:underline"
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
+                  {p.numero_cnj && (
+                    <Link
+                      to={dataJudHref(p.numero_cnj)}
+                      className="inline-flex text-xs font-medium text-primary-700 hover:underline"
+                    >
+                      Consultar no DataJud e sincronizar com este caso
+                    </Link>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void alternarProveniencia(p.id)}
+                    className="text-xs font-medium text-slate-600 hover:text-primary-700 hover:underline"
                   >
-                    Consultar no DataJud e sincronizar com este caso
-                  </Link>
+                    {provenienciaPid === p.id ? "Ocultar origem dos dados" : "Ver origem dos dados"}
+                  </button>
+                </div>
+                {provenienciaPid === p.id && (
+                  <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    {provenienciaLoading && !proveniencia[p.id] ? (
+                      <p className="text-xs text-slate-500">Carregando proveniência…</p>
+                    ) : (proveniencia[p.id] ?? []).length === 0 ? (
+                      <p className="text-xs text-slate-500">
+                        Sem registros de proveniência para este processo.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {(proveniencia[p.id] ?? []).map((item) => (
+                          <div key={item.id} className="text-xs text-slate-600">
+                            <strong className="text-slate-800">
+                              {item.field_name.replace(/_/g, " ")}
+                            </strong>
+                            {" · "}
+                            {item.source_type.replace(/_/g, " ")}
+                            {item.confidence ? ` · ${item.confidence}` : ""}
+                            {item.confirmed_at ? " · confirmado" : ""}
+                            {item.captured_at
+                              ? ` · ${new Date(item.captured_at).toLocaleString("pt-BR")}`
+                              : ""}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1">

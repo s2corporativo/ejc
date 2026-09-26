@@ -1,7 +1,7 @@
 """Contratos de entrada e saída da entidade Processo."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
@@ -44,6 +44,7 @@ class ProcessCreate(BaseModel):
     vara: Optional[str] = Field(default=None, max_length=160)
     classe: Optional[str] = Field(default=None, max_length=160)
     fase: Optional[str] = Field(default=None, max_length=40)
+    data_ajuizamento: Optional[date] = None
     tipo: str = "judicial"
     processo_principal_id: Optional[str] = None
     valor_causa: Optional[Decimal] = None
@@ -78,6 +79,7 @@ class ProcessUpdate(BaseModel):
     vara: Optional[str] = Field(default=None, max_length=160)
     classe: Optional[str] = Field(default=None, max_length=160)
     fase: Optional[str] = Field(default=None, max_length=40)
+    data_ajuizamento: Optional[date] = None
     tipo: Optional[str] = None
     processo_principal_id: Optional[str] = None
     valor_causa: Optional[Decimal] = None
@@ -116,6 +118,7 @@ class ProcessResponse(BaseModel):
     vara: Optional[str] = None
     classe: Optional[str] = None
     fase: Optional[str] = None
+    data_ajuizamento: Optional[date] = None
     tipo: str
     processo_principal_id: Optional[str] = None
     valor_causa: Optional[Decimal] = None

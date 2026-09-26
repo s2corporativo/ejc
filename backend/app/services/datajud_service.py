@@ -894,6 +894,7 @@ async def sincronizar_prazos_datajud(
                 responsavel_id=responsavel_id,
                 origem="datajud",
                 referencia_datajud=ref,
+                confirmado=False,
             ))
             refs_existentes.add(ref)
             criados += 1

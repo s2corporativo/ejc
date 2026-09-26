@@ -18,6 +18,7 @@ from app.models.case_parte import CaseParte
 from app.models.user import User
 from app.services.pii_crypto import hash_documento, normalizar_documento
 from app.services.validators_service import validar_cnpj, validar_cpf
+from app.services.party_identity_service import resolver_entidade_parte
 
 TIPOS_PARTE = {"autor", "reu", "terceiro", "advogado", "procurador"}
 
@@ -129,6 +130,7 @@ def _serializar(parte: CaseParte) -> dict:
         "representante_legal": parte.representante_legal,
         "oab": parte.oab,
         "client_id": parte.client_id,
+        "party_entity_id": parte.party_entity_id,
         "ativo": parte.ativo,
         "observacoes": parte.observacoes,
         "created_at": parte.created_at,
@@ -185,6 +187,12 @@ async def criar_parte(
                 detail="Já existe parte ativa neste caso com este CPF/CNPJ",
             )
 
+    entidade = await resolver_entidade_parte(
+        db,
+        nome=body.nome,
+        client_id=body.client_id,
+        cpf_cnpj=body.cpf_cnpj,
+    )
     parte = CaseParte(
         id=str(uuid4()),
         case_id=case_id,
@@ -195,6 +203,7 @@ async def criar_parte(
         representante_legal=body.representante_legal,
         oab=body.oab,
         client_id=body.client_id,
+        party_entity_id=entidade.id,
         observacoes=body.observacoes,
         created_by=cu.id,
     )
@@ -304,6 +313,14 @@ async def atualizar_parte(
     try:
         for campo, valor in campos.items():
             setattr(parte, campo, valor)
+        if {"nome", "cpf_cnpj", "client_id"}.intersection(campos):
+            entidade = await resolver_entidade_parte(
+                db,
+                nome=campos.get("nome", parte.nome),
+                client_id=campos.get("client_id", parte.client_id),
+                cpf_cnpj=campos.get("cpf_cnpj", parte.cpf_cnpj),
+            )
+            parte.party_entity_id = entidade.id
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail="Criptografia de PII indisponível") from exc
 

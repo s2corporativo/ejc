@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -80,17 +80,29 @@ async def _registros_internos(db: AsyncSession) -> list[RegistroProcesso]:
 
     processos = (
         await db.execute(
-            select(Process.case_id, Process.numero_cnj, Process.instancia)
+            select(
+                Process.case_id,
+                Process.numero_cnj,
+                Process.instancia,
+                Process.classe,
+                Process.vara,
+                Process.data_ajuizamento,
+            )
             .where(Process.numero_cnj.is_not(None))
         )
     ).all()
     casos_com_process: set[str] = set()
-    for case_id, numero_cnj, instancia in processos:
+    for case_id, numero_cnj, instancia, classe, vara, data_ajuizamento in processos:
         casos_com_process.add(case_id)
         registros.append(
             RegistroProcesso(
                 id_interno=case_id, numero=numero_cnj, grau=instancia,
-                dados={"origem": "process"},
+                dados={
+                    "origem": "process",
+                    "classe": classe,
+                    "vara": vara,
+                    "data_ajuizamento": data_ajuizamento,
+                },
             )
         )
 
@@ -271,7 +283,7 @@ async def executar_varredura_datajud(db: AsyncSession, *, limite: int = 50) -> E
             interno_por_numero[numero_cnj] = {
                 "classe": reg.dados.get("classe"),
                 "orgao_julgador": reg.dados.get("vara"),
-                "data_ajuizamento": None,
+                "data_ajuizamento": reg.dados.get("data_ajuizamento"),
             }
             try:
                 doc = await buscar_documento_saneamento(numero_cnj)
@@ -292,6 +304,13 @@ async def executar_varredura_datajud(db: AsyncSession, *, limite: int = 50) -> E
             classe_codigo = (doc.get("classe") or {}).get("codigo") if isinstance(doc.get("classe"), dict) else None
             orgao_codigo = (doc.get("orgaoJulgador") or {}).get("codigo") if isinstance(doc.get("orgaoJulgador"), dict) else None
             nivel_sigilo = int(doc.get("nivelSigilo") or 0)
+            data_ajuizamento = None
+            data_ajuizamento_raw = str(doc.get("dataAjuizamento") or "")[:10]
+            if data_ajuizamento_raw:
+                try:
+                    data_ajuizamento = date.fromisoformat(data_ajuizamento_raw)
+                except ValueError:
+                    data_ajuizamento = None
             # UNIQUE(numero_cnj, grau) — upsert, não INSERT cego: a segunda
             # varredura do mesmo processo violaria a constraint (achado ao
             # rodar o teste de idempotência duas vezes seguidas).
@@ -308,12 +327,14 @@ async def executar_varredura_datajud(db: AsyncSession, *, limite: int = 50) -> E
                 snapshot_existente.classe_codigo = classe_codigo
                 snapshot_existente.orgao_codigo = orgao_codigo
                 snapshot_existente.nivel_sigilo = nivel_sigilo
+                snapshot_existente.data_ajuizamento = data_ajuizamento
                 snapshot_existente.payload = doc
                 snapshot_existente.coletado_em = datetime.now(timezone.utc)
             else:
                 db.add(DatajudSnapshot(
                     numero_cnj=numero_cnj, grau=grau_doc, tribunal=doc.get("tribunal"),
                     classe_codigo=classe_codigo, orgao_codigo=orgao_codigo,
+                    data_ajuizamento=data_ajuizamento,
                     nivel_sigilo=nivel_sigilo, payload=doc,
                 ))
             documentos_por_numero[numero_cnj].append(doc)

@@ -20,11 +20,12 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Respon
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.ownership import verificar_acesso_caso
 from app.core.rate_limit import rate_limit
 from app.core.security import ROLE_LEVEL, get_current_user
 from app.models.document_intake import DocumentIntakeBatch
 from app.models.user import User
-from app.schemas.entrada import CriarCasoEntradaRequest
+from app.schemas.entrada import CriarCasoEntradaRequest, VincularProcessoEntradaRequest
 from app.services import entrada_juridica_service, entrada_service
 from app.services.contract_migration import mark_contract_response
 
@@ -111,6 +112,25 @@ async def analisar(
             500, "Falha ao analisar a entrada. Os originais enviados foram "
                  "preservados; tente novamente ou contate a gestão.",
         ) from exc
+
+
+@router.post(
+    "/{rascunho_id}/vincular-processo",
+    dependencies=[Depends(rate_limit("entrada-vincular-processo", 10))],
+)
+async def vincular_processo(
+    rascunho_id: str,
+    payload: VincularProcessoEntradaRequest,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(exigir_advogado),
+):
+    """Converte caso pré-processual existente em judicial após confirmação HITL."""
+    await verificar_acesso_caso(db, cu, payload.case_id)
+    resultado = await entrada_service.vincular_processo_do_rascunho(
+        db, cu, rascunho_id, payload.case_id,
+    )
+    await db.commit()
+    return resultado
 
 
 @router.post("/{rascunho_id}/criar-caso",

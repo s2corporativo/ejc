@@ -16,6 +16,7 @@ from app.models.case import Case
 from app.models.process import Process
 from app.repositories.process_repository import process_repository
 from app.schemas.process import ProcessCreate, ProcessResponse, ProcessUpdate
+from app.services.validators_service import normalizar_cnj
 
 _JUDICIAL_TYPES = {"judicial", "recurso", "cautelar", "execucao"}
 
@@ -49,6 +50,28 @@ def _legacy_text(value: str | None, max_length: int) -> str | None:
     if value is None:
         return None
     return value[:max_length]
+
+
+async def _garantir_cnj_no_mesmo_caso(
+    db: AsyncSession, case_id: str, numero_cnj: str | None
+) -> None:
+    """Um CNJ pode ter vários registros/graus, mas pertence a um só Caso.
+
+    O lock consultivo por CNJ fecha a corrida entre duas criações em casos
+    diferentes. Registros soft-deleted também bloqueiam criação silenciosa:
+    devem ser restaurados/reconciliados para preservar a trilha de auditoria.
+    """
+    numero_norm = normalizar_cnj(numero_cnj or "")
+    if len(numero_norm) != 20:
+        return
+    await process_repository.lock_cnj(db, numero_norm)
+    case_ids = await process_repository.case_ids_for_cnj(db, numero_norm)
+    outros = [cid for cid in case_ids if cid != case_id]
+    if outros:
+        raise ProcessConflict(
+            "CNJ já vinculado a outro caso do EJC. Restaure ou reconcilie o "
+            "registro existente em vez de criar duplicidade."
+        )
 
 
 async def obter_processo(db: AsyncSession, process_id: str) -> Process:
@@ -140,6 +163,7 @@ async def criar_processo(
     db: AsyncSession,
 ) -> dict[str, Any]:
     await process_repository.lock_case(db, case_id)
+    await _garantir_cnj_no_mesmo_caso(db, case_id, payload.numero_cnj)
     parent = await _validate_parent(db, case_id, payload.processo_principal_id)
     if payload.status == "arquivado" and payload.is_principal:
         raise ProcessConflict("Processo criado como arquivado não pode ser principal")
@@ -182,6 +206,8 @@ async def atualizar_processo(
     process = await obter_processo(db, process_id)
     await process_repository.lock_case(db, process.case_id)
     changes = payload.model_dump(exclude_unset=True)
+    if "numero_cnj" in changes:
+        await _garantir_cnj_no_mesmo_caso(db, process.case_id, changes.get("numero_cnj"))
     requested_principal = changes.pop("is_principal", None)
 
     requested_status = changes.get("status")

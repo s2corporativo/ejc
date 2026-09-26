@@ -213,7 +213,15 @@ ADICOES_INTENCIONAIS = {
     # afrouxam rotas existentes; o fechamento detalhado continua disponível.
     ("/api/cases/{case_id}/financeiro/resumo", "GET"),
     ("/api/cases/{case_id}/financeiro/recebimentos", "POST"),
+    ("/api/cases/{case_id}/financeiro/reconciliar-rateios", "POST"),
     ("/api/cases/{case_id}/encerrar-simples", "POST"),
+    # Integridade processual (PR #1854): reconciliação assistida, proveniência
+    # e Radar. Todas autenticadas; aplicação DataJud exige papel decisório e
+    # confirmação humana explícita; nenhuma superfície pública nova.
+    ("/api/entrada/{rascunho_id}/vincular-processo", "POST"),
+    ("/api/processes/{pid}/proveniencia", "GET"),
+    ("/api/saneamento/divergencias/{divergencia_id}/aplicar", "POST"),
+    ("/api/saneamento/integridade", "GET"),
 }
 
 REMOCOES_INTENCIONAIS = {

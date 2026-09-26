@@ -121,6 +121,8 @@ function eventoTimesheet(entry: TimesheetEntry): TimelineEvento {
     categoria: "atividade",
     tipo: "timesheet",
     descricao: `${entry.descricao} · ${horas.toFixed(1)}h · ${situacao}`,
+    fonte: "timesheet",
+    confirmado: true,
   };
 }
 
@@ -148,6 +150,8 @@ function EventoItem({ evento }: { evento: TimelineEvento }) {
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
             {cat.singular}
             {evento.tipo ? ` · ${evento.tipo.replace(/_/g, " ")}` : ""}
+            {evento.fonte ? ` · ${evento.fonte.replace(/_/g, " ")}` : ""}
+            {evento.confirmado === false ? " · a confirmar" : ""}
           </span>
           <span className="shrink-0 text-xs text-slate-400">
             {fmtDate(evento.data)}

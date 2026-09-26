@@ -18,7 +18,10 @@
 from __future__ import annotations
 
 import logging
+import re
+import unicodedata
 from datetime import datetime
+from difflib import SequenceMatcher
 from typing import Any
 from uuid import uuid4
 
@@ -38,6 +41,7 @@ from app.models.audit_log import criar_audit_log
 from app.models.case import (
     Case,
     CaseArea,
+    CaseFase,
     CaseMovimento,
     CasePrioridade,
     CaseStatus,
@@ -48,13 +52,18 @@ from app.models.deadline import Deadline
 from app.models.document import DocConfidencialidade, Document
 from app.models.document_intake import DocumentIntakeBatch, DocumentIntakeItem
 from app.models.user import User
+from app.repositories.process_repository import process_repository
+from app.services.case_integrity_service import sincronizar_processo_principal_do_caso
 from app.services.case_numeracao import proximo_numero_interno
+from app.services.party_identity_service import resolver_entidade_parte
+from app.services.process_provenance_service import registrar_proveniencia
 from app.services.conflito_service import (
     _casos_por_parte_contraria,
     _clientes_por_documentos,
     _clientes_por_nome,
 )
 from app.services.status_transicao import avancar_status_por_evento
+from app.services.validators_service import normalizar_cnj, validar_cnj
 
 logger = logging.getLogger("ejc.entrada_unica")
 
@@ -86,6 +95,202 @@ def _data_iso(valor: str | None) -> str | None:
 
 def _role(user: User) -> str:
     return getattr(user.role, "value", str(user.role))
+
+
+def _normalizar_texto_match(valor: str | None) -> str:
+    bruto = unicodedata.normalize("NFKD", valor or "")
+    sem_acentos = "".join(ch for ch in bruto if not unicodedata.combining(ch))
+    return re.sub(r"[^a-z0-9]+", " ", sem_acentos.casefold()).strip()
+
+
+def _extrair_cnjs_texto(texto: str | None) -> list[str]:
+    if not texto:
+        return []
+    # Exportações de tribunais podem concatenar o CNJ mascarado com a
+    # data seguinte (ex.: ...002714/08/2026). Para o formato mascarado,
+    # aceitamos especificamente início de data DD/MM/AAAA como delimitador.
+    # O formato de 20 dígitos continua exigindo fronteira numérica estrita.
+    padrao = re.compile(
+        r"(?<!\d)(?:"
+        r"\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}(?=$|\D|\d{2}/\d{2}/\d{4})"
+        r"|\d{20}(?!\d)"
+        r")"
+    )
+    unicos: list[str] = []
+    for bruto in padrao.findall(texto):
+        normalizado = normalizar_cnj(bruto)
+        if normalizado not in unicos:
+            unicos.append(normalizado)
+    return unicos
+
+
+async def reconciliar_processo_entrada(
+    db: AsyncSession,
+    user: User,
+    *,
+    numeros_detectados: list[str],
+    client_id: str | None,
+    parte_contraria: str | None,
+    tribunal: str | None,
+    comarca: str | None,
+    vara: str | None,
+) -> dict[str, Any]:
+    """Classifica a entrada sem fundir nem criar nada automaticamente.
+
+    Estados canônicos: já cadastrado, provável correspondência, novo processo
+    ou informações insuficientes. Correspondência provável nunca escreve no
+    banco: o advogado precisa confirmar o vínculo em rota específica.
+    """
+    numeros = list(dict.fromkeys(normalizar_cnj(n) for n in numeros_detectados if n))
+    numeros = [n for n in numeros if n]
+    dados = {
+        "numero_cnj": numeros[0] if len(numeros) == 1 else None,
+        "tribunal": tribunal,
+        "comarca": comarca,
+        "vara": vara,
+        "fonte": "Entrada Única — texto/documentos recebidos",
+    }
+    if len(numeros) > 1:
+        return {
+            "status": "informacoes_insuficientes",
+            "confianca": None,
+            "mensagem": (
+                f"Foram detectados {len(numeros)} números CNJ. "
+                "Separe os processos antes de criar ou vincular um caso."
+            ),
+            "numeros_detectados": numeros,
+            "candidatos": [],
+            "dados_processuais": dados,
+        }
+    if not numeros:
+        return {
+            "status": "informacoes_insuficientes",
+            "confianca": None,
+            "mensagem": "Nenhum número CNJ válido foi identificado na entrada.",
+            "numeros_detectados": [],
+            "candidatos": [],
+            "dados_processuais": dados,
+        }
+
+    numero = numeros[0]
+    if not validar_cnj(numero):
+        return {
+            "status": "informacoes_insuficientes",
+            "confianca": None,
+            "mensagem": "Número com 20 dígitos encontrado, mas o dígito verificador CNJ não confere.",
+            "numeros_detectados": numeros,
+            "candidatos": [],
+            "dados_processuais": dados,
+        }
+
+    ids_exatos = await process_repository.case_ids_for_cnj(db, numero)
+    if ids_exatos:
+        casos = (
+            await db.execute(select(Case).where(Case.id.in_(ids_exatos)))
+        ).scalars().all()
+        candidatos: list[dict[str, Any]] = []
+        protegido = False
+        for caso in casos:
+            if pode_ver_caso_resumido(user, caso):
+                candidatos.append({
+                    "case_id": caso.id,
+                    "numero_interno": caso.numero_interno,
+                    "titulo": caso.titulo,
+                    "status": getattr(caso.status, "value", caso.status),
+                    "fase": getattr(caso.fase, "value", caso.fase),
+                    "excluido": caso.deleted_at is not None,
+                    "motivo": "CNJ idêntico",
+                })
+            else:
+                protegido = True
+        if protegido and not candidatos:
+            candidatos.append({
+                "case_id": None,
+                "numero_interno": None,
+                "titulo": "Caso protegido na base do escritório",
+                "status": None,
+                "fase": None,
+                "excluido": False,
+                "motivo": "CNJ idêntico em carteira protegida",
+            })
+        return {
+            "status": "ja_cadastrado",
+            "confianca": "exata",
+            "mensagem": "O CNJ já está vinculado a um caso do EJC.",
+            "numeros_detectados": numeros,
+            "candidatos": candidatos,
+            "dados_processuais": dados,
+        }
+
+    candidatos_provaveis: list[dict[str, Any]] = []
+    if client_id:
+        casos_cliente = (
+            await db.execute(
+                select(Case)
+                .where(
+                    Case.client_id == client_id,
+                    Case.deleted_at.is_(None),
+                    Case.status.notin_([CaseStatus.encerrado, CaseStatus.arquivado]),
+                )
+                .order_by(Case.updated_at.desc())
+                .limit(30)
+            )
+        ).scalars().all()
+        parte_nova = _normalizar_texto_match(parte_contraria)
+        tribunal_novo = _normalizar_texto_match(tribunal)
+        for caso in casos_cliente:
+            # Caso já numerado com OUTRO processo não é candidato seguro para
+            # reconciliação automática/sugerida.
+            if (caso.numero_processo or "").strip():
+                continue
+            score = 0.55  # cliente identificado de forma canônica
+            parte_existente = _normalizar_texto_match(caso.parte_contraria)
+            if parte_nova and parte_existente:
+                similaridade = SequenceMatcher(None, parte_nova, parte_existente).ratio()
+                if similaridade >= 0.60:
+                    score += 0.25
+            tribunal_existente = _normalizar_texto_match(caso.tribunal)
+            if tribunal_novo and tribunal_existente and tribunal_novo == tribunal_existente:
+                score += 0.15
+            if caso.fase == CaseFase.pre_processual:
+                score += 0.05
+            if score < 0.75:
+                continue
+            if not pode_ver_caso_resumido(user, caso):
+                continue
+            candidatos_provaveis.append({
+                "case_id": caso.id,
+                "numero_interno": caso.numero_interno,
+                "titulo": caso.titulo,
+                "status": getattr(caso.status, "value", caso.status),
+                "fase": getattr(caso.fase, "value", caso.fase),
+                "excluido": False,
+                "motivo": "mesmo cliente + contexto processual compatível",
+                "confianca": round(score, 2),
+            })
+
+    candidatos_provaveis.sort(key=lambda item: item.get("confianca", 0), reverse=True)
+    if candidatos_provaveis:
+        return {
+            "status": "provavel_correspondencia",
+            "confianca": "alta" if candidatos_provaveis[0]["confianca"] >= 0.90 else "media",
+            "mensagem": (
+                "Há caso pré-existente compatível. Confirme o vínculo antes de "
+                "criar outro caso."
+            ),
+            "numeros_detectados": numeros,
+            "candidatos": candidatos_provaveis[:5],
+            "dados_processuais": dados,
+        }
+
+    return {
+        "status": "novo_processo",
+        "confianca": "alta",
+        "mensagem": "CNJ válido e sem correspondência encontrada no EJC.",
+        "numeros_detectados": numeros,
+        "candidatos": [],
+        "dados_processuais": dados,
+    }
 
 
 # ── Identificação de cliente (índice cego → certeza; nome → candidato) ───────
@@ -367,6 +572,24 @@ async def analisar_entrada(
 
     parte_contraria = _s(partes.get("reu"), 255)
 
+    identificacao_processual = analise_docs.get("identificacao_processual") or {}
+    numeros_detectados = _extrair_cnjs_texto(texto)
+    numero_docs = _s(identificacao_processual.get("numero_processo"), 30)
+    if numero_docs:
+        numero_docs_norm = normalizar_cnj(numero_docs)
+        if numero_docs_norm and numero_docs_norm not in numeros_detectados:
+            numeros_detectados.append(numero_docs_norm)
+    processo_reconciliacao = await reconciliar_processo_entrada(
+        db,
+        cu,
+        numeros_detectados=numeros_detectados,
+        client_id=cliente.get("client_id"),
+        parte_contraria=parte_contraria,
+        tribunal=_s(identificacao_processual.get("tribunal"), 160),
+        comarca=_s(identificacao_processual.get("comarca"), 160),
+        vara=_s(identificacao_processual.get("vara"), 160),
+    )
+
     area_txt = painel.get("area_direito") or {}
     if _s(area_txt.get("valor"), 50):
         area = {"valor": _s(area_txt.get("valor"), 50),
@@ -498,6 +721,7 @@ async def analisar_entrada(
         "conflito": {"alertas": conflito_alertas},
         "honorarios_sugeridos": honorarios_referencia,
         "duplicados": {"clientes": duplicados_clientes},
+        "processo_reconciliacao": processo_reconciliacao,
         "degradado": degradado,
         "avisos": avisos,
         "total_bytes": total_bytes,
@@ -533,6 +757,123 @@ async def analisar_entrada(
     return proposta
 
 
+async def vincular_processo_do_rascunho(
+    db: AsyncSession, user: User, rascunho_id: str, case_id: str,
+) -> dict[str, Any]:
+    """Confirma a reconciliação Entrada Única → caso existente, sem duplicar."""
+    res = await db.execute(
+        select(DocumentIntakeBatch)
+        .where(DocumentIntakeBatch.id == rascunho_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    batch = res.scalar_one_or_none()
+    if batch is None:
+        raise HTTPException(404, "Rascunho de entrada não encontrado")
+    if not is_gestao(user) and batch.created_by != user.id:
+        raise HTTPException(403, "Sem permissão para este rascunho")
+    if batch.case_id:
+        if batch.case_id == case_id:
+            return {"case_id": case_id, "ja_vinculado": True}
+        raise HTTPException(409, "Rascunho já vinculado a outro caso")
+
+    entrada = dict((batch.resultado or {}).get("entrada_unica") or {})
+    reconciliacao = dict(entrada.get("processo_reconciliacao") or {})
+    candidatos = [
+        item for item in (reconciliacao.get("candidatos") or [])
+        if isinstance(item, dict) and item.get("case_id")
+    ]
+    candidato = next((item for item in candidatos if item.get("case_id") == case_id), None)
+    if candidato is None:
+        raise HTTPException(409, "O caso informado não é candidato da reconciliação atual")
+    if candidato.get("excluido"):
+        raise HTTPException(
+            409,
+            "O caso correspondente está excluído. Restaure-o antes de vincular o processo.",
+        )
+
+    caso = await db.get(Case, case_id)
+    if caso is None or caso.deleted_at is not None:
+        raise HTTPException(404, "Caso não encontrado")
+
+    dados = dict(reconciliacao.get("dados_processuais") or {})
+    numero_cnj = dados.get("numero_cnj")
+    if not numero_cnj or not validar_cnj(str(numero_cnj)):
+        raise HTTPException(422, "A reconciliação não contém CNJ válido")
+
+    processo = await sincronizar_processo_principal_do_caso(
+        db,
+        case_id=case_id,
+        numero_processo=str(numero_cnj),
+        tribunal=dados.get("tribunal"),
+        comarca=dados.get("comarca"),
+        vara=dados.get("vara"),
+        tipo="judicial",
+    )
+    if processo:
+        await registrar_proveniencia(
+            db,
+            process_id=processo["id"],
+            campos={
+                "numero_cnj": str(numero_cnj),
+                "tribunal": dados.get("tribunal"),
+                "comarca": dados.get("comarca"),
+                "vara": dados.get("vara"),
+            },
+            source_type="entrada_unica",
+            source_ref=rascunho_id,
+            confidence=str(reconciliacao.get("confianca") or "confirmado"),
+            confirmed_by=user.id,
+        )
+    if caso.status not in {CaseStatus.encerrado, CaseStatus.arquivado}:
+        caso.status = CaseStatus.protocolado
+    if caso.fase == CaseFase.pre_processual:
+        caso.fase = CaseFase.conhecimento
+    caso.case_type = "judicial"
+    caso.has_judicial_process = True
+    if not (caso.proxima_acao or "").strip():
+        caso.proxima_acao = "Acompanhar andamento processual."
+
+    db.add(CaseMovimento(
+        id=str(uuid4()),
+        case_id=case_id,
+        tipo="nota",
+        descricao=(
+            f"Reconciliação Entrada Única: CNJ {numero_cnj} vinculado ao caso "
+            "existente após confirmação humana."
+        ),
+        created_by=user.id,
+    ))
+    await criar_audit_log(
+        db, user.id, _role(user), "RECONCILIAR_PROCESSO", "cases", case_id,
+        dados_depois={
+            "numero_cnj": str(numero_cnj),
+            "process_id": processo["id"] if processo else None,
+            "origem": "entrada_unica",
+        },
+    )
+
+    entrada["processo_reconciliacao"] = {
+        **reconciliacao,
+        "status": "ja_cadastrado",
+        "vinculado_case_id": case_id,
+        "vinculado_por": user.id,
+    }
+    resultado = dict(batch.resultado or {})
+    resultado["entrada_unica"] = entrada
+    batch.resultado = resultado
+    batch.case_id = case_id
+    batch.client_id = caso.client_id
+
+    return {
+        "case_id": case_id,
+        "numero_interno": caso.numero_interno,
+        "process_id": processo["id"] if processo else None,
+        "numero_cnj": str(numero_cnj),
+        "ja_vinculado": False,
+    }
+
+
 # ── POST /entrada/{rascunho_id}/criar-caso — UMA transação ───────────────────
 
 async def criar_caso_do_rascunho(
@@ -565,6 +906,34 @@ async def criar_caso_do_rascunho(
         raise HTTPException(409, "O lote informado não é um rascunho da Entrada Única")
     if batch.case_id:
         return {"case_id": batch.case_id, "ja_convertido": True}
+
+    entrada_snapshot = dict((batch.resultado or {}).get("entrada_unica") or {})
+    processo_reconciliacao = dict(entrada_snapshot.get("processo_reconciliacao") or {})
+    status_reconciliacao = processo_reconciliacao.get("status")
+    candidatos_processo = [
+        item for item in (processo_reconciliacao.get("candidatos") or [])
+        if isinstance(item, dict)
+    ]
+    if status_reconciliacao == "ja_cadastrado" and candidatos_processo:
+        raise HTTPException(409, {
+            "mensagem": (
+                "Este CNJ já pertence a um caso do EJC. Abra/vincule o caso "
+                "existente; não é permitida a criação de duplicata."
+            ),
+            "processos_correspondentes": candidatos_processo,
+        })
+    if (
+        status_reconciliacao == "provavel_correspondencia"
+        and candidatos_processo
+        and not payload.processo_novo_confirmado
+    ):
+        raise HTTPException(409, {
+            "mensagem": (
+                "Há caso pré-processual compatível com o CNJ informado. "
+                "Confirme o vínculo ou declare explicitamente que é processo novo."
+            ),
+            "processos_correspondentes": candidatos_processo,
+        })
 
     if payload.area not in {a.value for a in CaseArea}:
         raise HTTPException(422, "Área do caso inválida")
@@ -673,6 +1042,58 @@ async def criar_caso_do_rascunho(
     db.add(case)
     await db.flush()
 
+    processo_criado: dict[str, Any] | None = None
+    dados_processuais = dict(processo_reconciliacao.get("dados_processuais") or {})
+    numero_cnj = dados_processuais.get("numero_cnj")
+    if status_reconciliacao == "novo_processo" and numero_cnj:
+        processo_criado = await sincronizar_processo_principal_do_caso(
+            db,
+            case_id=case.id,
+            numero_processo=numero_cnj,
+            tribunal=dados_processuais.get("tribunal"),
+            comarca=dados_processuais.get("comarca"),
+            vara=dados_processuais.get("vara"),
+            tipo="judicial",
+        )
+        case.status = CaseStatus.protocolado
+        case.fase = CaseFase.conhecimento
+        case.case_type = "judicial"
+        case.has_judicial_process = True
+        if processo_criado:
+            await registrar_proveniencia(
+                db,
+                process_id=processo_criado["id"],
+                campos={
+                    "numero_cnj": numero_cnj,
+                    "tribunal": dados_processuais.get("tribunal"),
+                    "comarca": dados_processuais.get("comarca"),
+                    "vara": dados_processuais.get("vara"),
+                },
+                source_type="entrada_unica",
+                source_ref=rascunho_id,
+                confidence=str(processo_reconciliacao.get("confianca") or "confirmado"),
+                confirmed_by=user.id,
+            )
+            await criar_audit_log(
+                db, user.id, _role(user), "CREATE", "processes",
+                processo_criado["id"],
+                dados_depois={
+                    "case_id": case.id,
+                    "numero_cnj": numero_cnj,
+                    "origem": "entrada_unica_confirmada",
+                },
+            )
+            db.add(CaseMovimento(
+                id=str(uuid4()),
+                case_id=case.id,
+                tipo="nota",
+                descricao=(
+                    f"Processo judicial {numero_cnj} identificado na Entrada Única "
+                    "e vinculado após revisão humana."
+                ),
+                created_by=user.id,
+            ))
+
     # F-08 (auditoria funcional 16/08/2026): a parte contrária informada na
     # confirmação da Entrada Única ficava APENAS como texto livre do caso
     # (Case.parte_contraria), sem registro estruturado em case_partes — peças,
@@ -681,22 +1102,30 @@ async def criar_caso_do_rascunho(
     # (parte contrária em texto livre) e, quando há cliente, o "autor"
     # vinculado ao client_id (paridade com o cadastro manual de caso).
     if payload.parte_contraria and payload.parte_contraria.strip():
+        nome_reu = payload.parte_contraria.strip()
+        entidade_reu = await resolver_entidade_parte(db, nome=nome_reu)
         db.add(CaseParte(
             id=str(uuid4()),
             case_id=case.id,
             tipo="reu",
-            nome=payload.parte_contraria.strip(),
+            nome=nome_reu,
+            party_entity_id=entidade_reu.id,
             ativo=True,
             created_by=user.id,
             observacoes="Cadastrada automaticamente pela Entrada Única.",
         ))
     if client is not None:
+        nome_autor = client.nome_exibicao or ""
+        entidade_autor = await resolver_entidade_parte(
+            db, nome=nome_autor, client_id=client.id
+        )
         db.add(CaseParte(
             id=str(uuid4()),
             case_id=case.id,
             tipo="autor",
-            nome=client.nome_exibicao or "",
+            nome=nome_autor,
             client_id=client.id,
+            party_entity_id=entidade_autor.id,
             ativo=True,
             created_by=user.id,
             observacoes="Vinculado automaticamente pela Entrada Única.",
@@ -819,6 +1248,7 @@ async def criar_caso_do_rascunho(
         "client_id": client.id,
         "documentos_vinculados": documentos_vinculados,
         "deadline_id": deadline_id,
+        "process_id": processo_criado["id"] if processo_criado else None,
         "status": case.status.value if isinstance(case.status, CaseStatus) else str(case.status),
         "ja_convertido": False,
     }

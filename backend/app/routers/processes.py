@@ -15,6 +15,7 @@ from app.models.audit_log import criar_audit_log
 from app.models.user import User
 from app.schemas.process import ArchiveProcessRequest, ProcessCreate, ProcessUpdate
 from app.services import processo_service
+from app.services.process_provenance_service import listar_proveniencia, registrar_proveniencia
 
 router = APIRouter(prefix="/processes", tags=["Processos"])
 casos_router = APIRouter(prefix="", tags=["Processos — Casos"])
@@ -60,6 +61,14 @@ async def criar_processo(
     except processo_service.ProcessServiceError as exc:
         await db.rollback()
         raise _http_error(exc) from exc
+    await registrar_proveniencia(
+        db,
+        process_id=result["id"],
+        campos=body.model_dump(exclude_none=True),
+        source_type="usuario",
+        source_ref="processes.create",
+        confirmed_by=cu.id,
+    )
     await criar_audit_log(
         db,
         cu.id,
@@ -90,6 +99,14 @@ async def atualizar_processo(
     except processo_service.ProcessServiceError as exc:
         await db.rollback()
         raise _http_error(exc) from exc
+    await registrar_proveniencia(
+        db,
+        process_id=pid,
+        campos=body.model_dump(exclude_unset=True),
+        source_type="usuario",
+        source_ref="processes.update",
+        confirmed_by=cu.id,
+    )
     await criar_audit_log(
         db,
         cu.id,
@@ -104,6 +121,17 @@ async def atualizar_processo(
     )
     await db.commit()
     return result
+
+
+@router.get("/{pid}/proveniencia")
+async def proveniencia_processo(
+    pid: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    case_id = await _case_id_do_processo(db, pid)
+    await verificar_acesso_caso(db, cu, case_id)
+    return {"data": await listar_proveniencia(db, pid)}
 
 
 @router.post("/{pid}/principal")
