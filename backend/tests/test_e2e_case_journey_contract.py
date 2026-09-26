@@ -20,3 +20,11 @@ def test_jornada_confirma_e_rele_metadados_do_process():
     assert '"numero_cnj": caso["numero_processo"]' in src
     assert 'path=f"/api/cases/{state.case_id}/processes"' in src
     assert '"jornada.entrada.metadados_processuais_confirmados"' in src
+
+
+def test_jornada_normaliza_cnj_e_declara_lote_convertido_residual():
+    src = JOURNEY.read_text(encoding="utf-8")
+    assert 'cnj_esperado = "".join(' in src
+    assert '"entrada_unica.audit_trail"' in src
+    assert '"document_intake_batches/{rascunho_id}"' in src
+    assert "não há endpoint de cleanup seguro" in src
