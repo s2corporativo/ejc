@@ -110,6 +110,12 @@ def _criar_caso_via_entrada(
         "conflict_confirmed": False,
         "duplicate_confirmed": False,
         "processo_novo_confirmado": True,
+        "processo_confirmado": {
+            "numero_cnj": caso["numero_processo"],
+            "tribunal": caso["tribunal"],
+            "comarca": caso["comarca"],
+            "vara": caso["vara"],
+        },
     }
     criado = core._request(
         client,
@@ -170,6 +176,41 @@ def _criar_caso_via_entrada(
             str(oficial.get("titulo") or "") == str(caso["titulo"]),
             "o caso oficial não preservou o título confirmado no HITL",
         )
+
+    processos = core._request(
+        client,
+        state,
+        name="jornada.entrada.reler_processo",
+        method="GET",
+        path=f"/api/cases/{state.case_id}/processes",
+        expected=[200],
+    )
+    if processos is not None and processos.status_code == 200 and process_id:
+        try:
+            itens = processos.json().get("data") or []
+        except Exception as exc:
+            core._afirmar(
+                state,
+                "jornada.entrada.processo_contrato",
+                False,
+                f"resposta de processos não é JSON objeto válido: {exc}",
+            )
+        else:
+            processo = next(
+                (item for item in itens if str(item.get("id")) == str(process_id)),
+                None,
+            )
+            core._afirmar(
+                state,
+                "jornada.entrada.metadados_processuais_confirmados",
+                bool(processo)
+                and str(processo.get("numero_cnj") or "")
+                == str(caso["numero_processo"])
+                and str(processo.get("tribunal") or "") == str(caso["tribunal"])
+                and str(processo.get("comarca") or "") == str(caso["comarca"])
+                and str(processo.get("vara") or "") == str(caso["vara"]),
+                "Process canônico não preservou CNJ/tribunal/comarca/vara confirmados",
+            )
 
 
 def _criar_e_validar_peca(
@@ -593,6 +634,24 @@ def _cancelar_prazo(
     )
 
 
+def _cleanup_seguro(
+    state: core.SuiteState,
+    nome: str,
+    func,
+    *args,
+) -> None:
+    """Cleanup nunca interrompe os próximos alvos nem a gravação do relatório."""
+    try:
+        func(*args)
+    except Exception as exc:
+        core._afirmar(
+            state,
+            f"jornada.cleanup.{nome}.execucao",
+            False,
+            f"cleanup levantou exceção e foi isolado: {type(exc).__name__}: {exc}",
+        )
+
+
 def main() -> None:
     base_url = core._env("EJC_BASE_URL").rstrip("/")
     if (
@@ -659,11 +718,21 @@ def main() -> None:
             # Dependências FK: satélites primeiro, depois documento/caso/cliente
             # no cleanup canônico. Cada remoção usa apenas IDs desta execução.
             if os.getenv("EJC_E2E_CLEANUP", "true").strip().lower() != "false":
-                _cleanup_honorario(client, state, fee_id)
-                _cleanup_tarefa(client, state, task_id)
-                _cancelar_prazo(client, state, deadline_id)
-                _cleanup_peca(client, state, peca_id)
-                core._cleanup(client, state)
+                _cleanup_seguro(
+                    state, "financeiro", _cleanup_honorario, client, state, fee_id
+                )
+                _cleanup_seguro(
+                    state, "tarefa", _cleanup_tarefa, client, state, task_id
+                )
+                _cleanup_seguro(
+                    state, "prazo", _cancelar_prazo, client, state, deadline_id
+                )
+                _cleanup_seguro(
+                    state, "peca", _cleanup_peca, client, state, peca_id
+                )
+                _cleanup_seguro(
+                    state, "core", core._cleanup, client, state
+                )
             core._write_report(state, matrix)
 
 
