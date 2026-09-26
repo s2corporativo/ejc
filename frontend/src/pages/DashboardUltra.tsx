@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addMonths,
   eachDayOfInterval,
@@ -213,6 +213,7 @@ export default function DashboardUltra() {
     searchParams.get("modo") === "controles" ? "controles" : "ia";
 
   const [carregado, setCarregado] = useState(false);
+  const carregamentoIniciado = useRef(false);
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [atividades, setAtividades] = useState<Atividade[] | null>(null);
   const [casos, setCasos] = useState<CasoResumo[] | null>(null);
@@ -261,7 +262,12 @@ export default function DashboardUltra() {
   }, []);
 
   useEffect(() => {
-    if (modo === "controles" && !carregado) {
+    if (
+      modo === "controles" &&
+      !carregado &&
+      !carregamentoIniciado.current
+    ) {
+      carregamentoIniciado.current = true;
       void carregar();
     }
   }, [carregado, carregar, modo]);
