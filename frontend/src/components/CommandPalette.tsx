@@ -13,7 +13,9 @@ import {
   Wrench,
 } from "lucide-react";
 import api from "../lib/api";
+import { filterModulesByLifecycle } from "../lib/moduleLifecycle";
 import { useAuth } from "../stores/auth";
+import { useModuleLifecycleStore } from "../stores/moduleLifecycle";
 import {
   getNavigationModules,
   ROLES,
@@ -91,6 +93,7 @@ export default function CommandPalette() {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const role = user?.role ?? "";
+  const lifecycleSettings = useModuleLifecycleStore((state) => state.settings);
   const canCreateCase = (ROLES.clientes as readonly string[]).includes(role);
   const canUseLegalAI = (ROLES.juridico as readonly string[]).includes(role);
   const quickActions = useMemo<QuickAction[]>(
@@ -169,23 +172,32 @@ export default function CommandPalette() {
 
   const searchableModules = useMemo(
     () =>
-      STAFF_ROUTES.filter((item) => {
-        if (!SEARCHABLE_MODULE_KEYS.has(item.key)) return false;
-        if (item.status === "legacy") return false;
-        if (!item.roles) return true;
-        return Boolean(role && item.roles.includes(role));
-      }),
-    [role],
+      filterModulesByLifecycle(
+        STAFF_ROUTES.filter((item) => {
+          if (!SEARCHABLE_MODULE_KEYS.has(item.key)) return false;
+          if (item.status === "legacy") return false;
+          if (!item.roles) return true;
+          return Boolean(role && item.roles.includes(role));
+        }),
+        lifecycleSettings,
+        "catalogo",
+      ),
+    [lifecycleSettings, role],
   );
   const matchingModules = useMemo(() => {
     const query = q.trim().toLocaleLowerCase("pt-BR");
     if (query.length < 2) return [];
-    return searchableModules.filter((item) =>
-      `${item.label} ${item.description} ${item.key}`
-        .toLocaleLowerCase("pt-BR")
-        .includes(query),
+    const quickActionPaths = new Set(
+      matchingQuickActions.map((action) => action.path),
     );
-  }, [q, searchableModules]);
+    return searchableModules.filter(
+      (item) =>
+        !quickActionPaths.has(item.path) &&
+        `${item.label} ${item.description} ${item.key}`
+          .toLocaleLowerCase("pt-BR")
+          .includes(query),
+    );
+  }, [matchingQuickActions, q, searchableModules]);
 
   // Lista plana navegável por teclado: ações seguras para o perfil aparecem
   // antes dos resultados e dos sete destinos essenciais.
