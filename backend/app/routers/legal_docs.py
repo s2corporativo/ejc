@@ -1138,8 +1138,36 @@ async def remover(
         raise HTTPException(status_code=404, detail="Peça não encontrada")
     if d.case_id:
         await verificar_acesso_caso(db, cu, d.case_id)
-    d.deleted_at = datetime.now(timezone.utc)
-    await criar_audit_log(db, cu.id, cu.role.value, "DELETE", "legal_docs", doc_id)
+
+    removida_em = datetime.now(timezone.utc)
+    d.deleted_at = removida_em
+
+    # A peça alimenta o RAG por chave_origem=legaldoc:{id}. Excluir apenas
+    # LegalDoc deixaria conhecimento sintético/obsoleto recuperável na base.
+    # Aposenta as versões vinculadas na MESMA transação; chunks permanecem
+    # apenas como histórico referencial e deixam de entrar no retrieval porque
+    # o KnowledgeDoc fica não vigente + soft-deleted.
+    rag_docs = (
+        await db.execute(
+            select(KnowledgeDoc).where(
+                KnowledgeDoc.chave_origem == f"legaldoc:{doc_id}",
+                KnowledgeDoc.deleted_at.is_(None),
+            )
+        )
+    ).scalars().all()
+    for rag_doc in rag_docs:
+        rag_doc.vigente = False
+        rag_doc.deleted_at = removida_em
+
+    await criar_audit_log(
+        db,
+        cu.id,
+        cu.role.value,
+        "DELETE",
+        "legal_docs",
+        doc_id,
+        dados_depois={"rag_docs_aposentados": len(rag_docs)},
+    )
     await db.commit()
     return MsgResponse(detail="Peça removida")
 
