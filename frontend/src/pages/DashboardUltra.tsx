@@ -20,11 +20,9 @@ import {
   ChevronRight,
   FileText,
   FolderKanban,
-  FilePlus2,
   Plus,
   Scale,
   Sparkles,
-  Upload,
   Users,
   Zap,
 } from "lucide-react";
