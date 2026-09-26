@@ -30,3 +30,11 @@ def test_demais_entidades_mantem_fluxo_existente():
         "tasks",
     ):
         _validar_purga_irreversivel_disponivel(entidade)
+
+
+def test_registro_lixeira_preserva_entidade_ambiental_e_ordem():
+    from app.routers.trash import ENTIDADES
+
+    chaves = list(ENTIDADES)
+    assert "environmental_cases" in ENTIDADES
+    assert chaves.index("environmental_cases") < chaves.index("tasks")
