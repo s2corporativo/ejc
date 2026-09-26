@@ -3,7 +3,7 @@
 // duplicado e responsável aparecem POR EXCEÇÃO (wireframe da seção 3 de
 // docs/DESENHO_BLOCO3_TELAS.md).
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { AlertTriangle, CheckCircle2, Search, X } from "lucide-react";
 import api from "../../lib/api";
 import {
@@ -149,6 +149,9 @@ export function Confirmacao({
   onDescartar: () => void;
 }) {
   const [buscandoCliente, setBuscandoCliente] = useState(false);
+  const [vinculandoCaseId, setVinculandoCaseId] = useState<string | null>(null);
+  const [erroVinculo, setErroVinculo] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   const areaDesconhecida =
     Boolean(proposta.area) &&
@@ -196,6 +199,40 @@ export function Confirmacao({
   const atualizarPrazo = (patch: Partial<NonNullable<Proposta["prazo"]>>) => {
     if (!proposta.prazo) return;
     onChange({ prazo: { ...proposta.prazo, ...patch } });
+  };
+
+  const vincularAoCasoExistente = async (caseId: string) => {
+    if (!proposta.numeroCnj || !EH_CNJ.test(proposta.numeroCnj.trim())) return;
+    if (!proposta.confirmoRevisao) {
+      setErroVinculo("Confirme a revisão dos dados antes de vincular o processo.");
+      return;
+    }
+    setVinculandoCaseId(caseId);
+    setErroVinculo(null);
+    try {
+      await api.post(
+        "/entrada/" + proposta.rascunhoId + "/vincular-caso/" + caseId,
+        {
+          numero_cnj: proposta.numeroCnj.trim(),
+          documentos_ids: proposta.documentos
+            .filter((doc) => doc.selecionado && doc.documentId)
+            .map((doc) => doc.documentId),
+          confirmo_dados_revisados: true,
+        },
+      );
+      navigate("/casos/" + caseId);
+    } catch (err: unknown) {
+      const detail = (
+        err as { response?: { data?: { detail?: unknown } } }
+      )?.response?.data?.detail;
+      setErroVinculo(
+        typeof detail === "string"
+          ? detail
+          : "Não foi possível vincular o processo ao caso existente.",
+      );
+    } finally {
+      setVinculandoCaseId(null);
+    }
   };
 
   return (
@@ -324,12 +361,33 @@ export function Confirmacao({
                           {item.titulo ? " — " + item.titulo : ""}
                         </span>
                         {item.caseId && (
-                          <Link
-                            to={"/casos/" + item.caseId}
-                            className="font-semibold text-primary-700 underline-offset-2 hover:underline dark:text-primary-300"
-                          >
-                            Abrir caso
-                          </Link>
+                          <div className="flex items-center gap-2">
+                            {item.podeConverterPreProcessual &&
+                              proposta.numeroCnj &&
+                              cnjValido && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  onClick={() =>
+                                    void vincularAoCasoExistente(item.caseId!)
+                                  }
+                                  disabled={
+                                    vinculandoCaseId === item.caseId ||
+                                    !proposta.confirmoRevisao
+                                  }
+                                >
+                                  {vinculandoCaseId === item.caseId
+                                    ? "Vinculando…"
+                                    : "Vincular CNJ ao caso"}
+                                </Button>
+                              )}
+                            <Link
+                              to={"/casos/" + item.caseId}
+                              className="font-semibold text-primary-700 underline-offset-2 hover:underline dark:text-primary-300"
+                            >
+                              Abrir caso
+                            </Link>
+                          </div>
                         )}
                       </div>
                       {item.motivos.length > 0 && (
@@ -340,6 +398,11 @@ export function Confirmacao({
                     </li>
                   ))}
                 </ul>
+              )}
+              {erroVinculo && (
+                <Alert variant="danger" className="mt-3">
+                  {erroVinculo}
+                </Alert>
               )}
               {precisaConfirmarCorrespondencia && (
                 <label className="mt-3 flex items-start gap-2 text-sm font-medium text-amber-900 dark:text-amber-100">

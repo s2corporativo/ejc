@@ -24,7 +24,10 @@ from app.core.rate_limit import rate_limit
 from app.core.security import ROLE_LEVEL, get_current_user
 from app.models.document_intake import DocumentIntakeBatch
 from app.models.user import User
-from app.schemas.entrada import CriarCasoEntradaRequest
+from app.schemas.entrada import (
+    CriarCasoEntradaRequest,
+    VincularCasoExistenteEntradaRequest,
+)
 from app.services import entrada_juridica_service, entrada_service
 from app.services.contract_migration import mark_contract_response
 
@@ -127,6 +130,25 @@ async def criar_caso(
     dois cliques não criam dois casos."""
     resultado = await entrada_service.criar_caso_do_rascunho(
         db, cu, rascunho_id, payload,
+    )
+    await db.commit()
+    return resultado
+
+
+@router.post(
+    "/{rascunho_id}/vincular-caso/{case_id}",
+    dependencies=[Depends(rate_limit("entrada-vincular-caso", 10))],
+)
+async def vincular_caso_existente(
+    rascunho_id: str,
+    case_id: str,
+    payload: VincularCasoExistenteEntradaRequest,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(exigir_advogado),
+):
+    """Vincula um CNJ confirmado a caso existente sem criar caso duplicado."""
+    resultado = await entrada_service.vincular_rascunho_ao_caso_existente(
+        db, cu, rascunho_id, case_id, payload,
     )
     await db.commit()
     return resultado

@@ -25,6 +25,7 @@ from app.core.database import Base
 from app.models.case import (
     Case,
     CaseArea,
+    CaseFase,
     CaseMovimento,
     CaseParte,
     CasePrioridade,
@@ -36,7 +37,11 @@ from app.models.document import DocConfidencialidade, Document
 from app.models.document_intake import DocumentIntakeBatch, DocumentIntakeItem
 from app.models.process import Process
 from app.models.user import User, UserRole
-from app.schemas.entrada import ClienteEntrada, CriarCasoEntradaRequest
+from app.schemas.entrada import (
+    ClienteEntrada,
+    CriarCasoEntradaRequest,
+    VincularCasoExistenteEntradaRequest,
+)
 from app.services import entrada_service
 
 
@@ -609,3 +614,76 @@ async def test_ingerir_arquivos_lote_mantem_limite_de_bytes(monkeypatch):
             conf=DocConfidencialidade.normal,
         )
     assert ei.value.status_code == 413
+
+
+@pytest.mark.anyio
+async def test_vincular_entrada_a_pre_processual_promove_sem_duplicar(
+    sessao_db, auditoria_fake,
+):
+    user = await _semear(sessao_db)
+    cliente = Client(
+        id="c-pre",
+        nome="Cliente Pré-processual",
+        responsavel_id="u1",
+    )
+    caso = Case(
+        id="case-pre",
+        numero_interno="DPT-2026-0998",
+        titulo="Caso pré-processual existente",
+        area=CaseArea.civil,
+        status=CaseStatus.aberto,
+        fase=CaseFase.pre_processual,
+        client_id=cliente.id,
+        advogado_responsavel_id="u1",
+        has_judicial_process=False,
+    )
+    sessao_db.add_all([cliente, caso])
+    await sessao_db.commit()
+
+    numero_cnj = "1018284-13.2026.8.13.0027"
+    payload = VincularCasoExistenteEntradaRequest(
+        numero_cnj=numero_cnj,
+        documentos_ids=["d1"],
+        confirmo_dados_revisados=True,
+    )
+
+    resultado = await entrada_service.vincular_rascunho_ao_caso_existente(
+        sessao_db, user, "b1", caso.id, payload,
+    )
+    await sessao_db.commit()
+
+    await sessao_db.refresh(caso)
+    assert caso.numero_processo == numero_cnj
+    assert caso.has_judicial_process is True
+    assert caso.case_type == "judicial"
+    assert caso.status == CaseStatus.protocolado
+    assert caso.fase == CaseFase.conhecimento
+
+    processos = (
+        await sessao_db.execute(
+            select(Process).where(Process.case_id == caso.id)
+        )
+    ).scalars().all()
+    assert len(processos) == 1
+    assert processos[0].numero_cnj == numero_cnj
+    assert processos[0].is_principal is True
+
+    doc = await sessao_db.get(Document, "d1")
+    assert doc.case_id == caso.id
+    assert doc.client_id == cliente.id
+    batch = await sessao_db.get(DocumentIntakeBatch, "b1")
+    assert batch.case_id == caso.id
+    assert resultado["documentos_vinculados"] == 1
+    assert any(r[0] == "ENTRADA_UNICA_RECONCILIAR_CASO" for r in auditoria_fake)
+
+    repetido = await entrada_service.vincular_rascunho_ao_caso_existente(
+        sessao_db, user, "b1", caso.id, payload,
+    )
+    assert repetido["operacao_idempotente"] is True
+    assert len(
+        (
+            await sessao_db.execute(
+                select(Process).where(Process.case_id == caso.id)
+            )
+        ).scalars().all()
+    ) == 1

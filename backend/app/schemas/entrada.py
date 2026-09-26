@@ -101,3 +101,30 @@ class CriarCasoEntradaRequest(BaseModel):
         if v is not True:
             raise ValueError("a criação do caso exige confirmação explícita do advogado")
         return v
+
+
+class VincularCasoExistenteEntradaRequest(BaseModel):
+    """Confirma a promoção de um caso existente a partir da Entrada Única."""
+
+    numero_cnj: str = Field(
+        max_length=30,
+        pattern=r"^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$",
+    )
+    documentos_ids: list[str] = Field(default_factory=list, max_length=40)
+    confirmo_dados_revisados: bool
+
+    @field_validator("numero_cnj")
+    @classmethod
+    def _cnj_valido(cls, valor: str) -> str:
+        from app.services.validators_service import validar_cnj
+
+        if not validar_cnj(valor):
+            raise ValueError("Número CNJ inválido: formato ou dígito verificador incorreto")
+        return valor
+
+    @field_validator("confirmo_dados_revisados")
+    @classmethod
+    def _confirmacao_obrigatoria(cls, v: bool) -> bool:
+        if v is not True:
+            raise ValueError("o vínculo exige confirmação explícita do advogado")
+        return v

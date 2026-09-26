@@ -32,7 +32,7 @@ from app.core.client_ownership import (
     pode_ver_cliente,
 )
 from app.core.config import get_settings
-from app.core.ownership import is_gestao
+from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.core.security import EQUIPE_JURIDICA, ROLE_LEVEL
 from app.models.audit_log import criar_audit_log
 from app.models.case import (
@@ -48,7 +48,7 @@ from app.models.deadline import Deadline
 from app.models.document import DocConfidencialidade, Document
 from app.models.document_intake import DocumentIntakeBatch, DocumentIntakeItem
 from app.models.user import User
-from app.schemas.process import ProcessCreate
+from app.schemas.process import ProcessCreate, ProcessUpdate
 from app.services import processo_service
 from app.services.case_numeracao import proximo_numero_interno
 from app.services.conflito_service import (
@@ -958,4 +958,206 @@ async def criar_caso_do_rascunho(
         "numero_cnj": payload.numero_cnj,
         "status": case.status.value if isinstance(case.status, CaseStatus) else str(case.status),
         "ja_convertido": False,
+    }
+
+
+async def vincular_rascunho_ao_caso_existente(
+    db: AsyncSession,
+    user: User,
+    rascunho_id: str,
+    case_id: str,
+    payload,
+) -> dict[str, Any]:
+    """Reconcilia um rascunho com caso existente sem criar caso/cliente duplicado."""
+    res = await db.execute(
+        select(DocumentIntakeBatch)
+        .where(DocumentIntakeBatch.id == rascunho_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    batch = res.scalar_one_or_none()
+    if batch is None:
+        raise HTTPException(404, "Rascunho de entrada não encontrado")
+    if not is_gestao(user) and batch.created_by != user.id:
+        raise HTTPException(403, "Sem permissão para este rascunho")
+    if not (batch.resultado or {}).get("entrada_unica"):
+        raise HTTPException(409, "O lote informado não é um rascunho da Entrada Única")
+    if batch.case_id and batch.case_id != case_id:
+        raise HTTPException(409, "Este rascunho já está vinculado a outro caso")
+
+    lote_ja_vinculado = batch.case_id == case_id
+    caso = await verificar_acesso_caso(db, user, case_id)
+
+    documentos_ids = list(dict.fromkeys(payload.documentos_ids or []))
+    if documentos_ids:
+        permitidos = set(
+            (
+                await db.execute(
+                    select(DocumentIntakeItem.document_id).where(
+                        DocumentIntakeItem.batch_id == batch.id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if any(doc_id not in permitidos for doc_id in documentos_ids):
+            raise HTTPException(
+                422,
+                "documentos_ids contém documento que não pertence a este rascunho",
+            )
+
+    from app.services.validators_service import normalizar_cnj
+
+    novo_norm = normalizar_cnj(payload.numero_cnj)
+    principal = await processo_service.processo_principal(case_id, db)
+    processo_alterado = False
+    if principal:
+        atual_norm = normalizar_cnj(principal.get("numero_cnj") or "")
+        if atual_norm and atual_norm != novo_norm:
+            raise HTTPException(
+                409,
+                "O caso já possui processo principal com outro número; revise antes de substituir.",
+            )
+        fase_atual = getattr(caso.fase, "value", str(caso.fase))
+        status_atual = getattr(caso.status, "value", str(caso.status))
+        ja_consistente = (
+            atual_norm == novo_norm
+            and principal.get("tipo") == "judicial"
+            and bool(caso.has_judicial_process)
+            and caso.case_type == "judicial"
+            and fase_atual != "pre_processual"
+            and status_atual not in {"aberto", "em_instrucao", "em_producao"}
+        )
+        if ja_consistente:
+            process_id = principal["id"]
+        else:
+            try:
+                atualizado = await processo_service.atualizar_processo(
+                    principal["id"],
+                    ProcessUpdate(
+                        numero_cnj=payload.numero_cnj,
+                        tipo="judicial",
+                        status="ativo",
+                        is_principal=True,
+                    ),
+                    db,
+                )
+            except processo_service.ProcessConflict as exc:
+                raise HTTPException(409, str(exc)) from exc
+            process_id = atualizado["id"]
+            processo_alterado = True
+    else:
+        try:
+            criado = await processo_service.criar_processo(
+                case_id,
+                ProcessCreate(
+                    numero_cnj=payload.numero_cnj,
+                    tipo="judicial",
+                    status="ativo",
+                    is_principal=True,
+                ),
+                db,
+            )
+        except processo_service.ProcessConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
+        process_id = criado["id"]
+        processo_alterado = True
+
+    documentos_vinculados = 0
+    if documentos_ids:
+        docs = (
+            (
+                await db.execute(
+                    select(Document)
+                    .where(
+                        Document.id.in_(documentos_ids),
+                        Document.deleted_at.is_(None),
+                    )
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if len(docs) != len(documentos_ids):
+            raise HTTPException(
+                422,
+                "documentos_ids contém documento inexistente ou excluído",
+            )
+        for doc in docs:
+            if doc.case_id and doc.case_id != case_id:
+                raise HTTPException(
+                    422,
+                    "documentos_ids contém documento já vinculado a outro caso",
+                )
+            if doc.client_id and doc.client_id != caso.client_id:
+                raise HTTPException(
+                    422,
+                    "documentos_ids contém documento pertencente a outro cliente",
+                )
+            if doc.case_id != case_id:
+                documentos_vinculados += 1
+            doc.case_id = case_id
+            doc.client_id = caso.client_id
+
+    batch.case_id = case_id
+    batch.client_id = caso.client_id
+
+    resultado_atual = dict(batch.resultado or {})
+    entrada_atual = dict(resultado_atual.get("entrada_unica") or {})
+    entrada_atual["reconciliacao_vinculada"] = {
+        "case_id": case_id,
+        "numero_cnj": payload.numero_cnj,
+        "process_id": process_id,
+        "documentos_vinculados": documentos_vinculados,
+        "confirmada_por": user.id,
+        "origem": "entrada_unica",
+    }
+    resultado_atual["entrada_unica"] = entrada_atual
+    batch.resultado = resultado_atual
+
+    operacao_idempotente = (
+        lote_ja_vinculado
+        and not processo_alterado
+        and documentos_vinculados == 0
+    )
+    if not operacao_idempotente:
+        db.add(
+            CaseMovimento(
+                id=str(uuid4()),
+                case_id=case_id,
+                tipo="nota",
+                descricao=(
+                    f"Entrada Única reconciliada com caso existente; CNJ "
+                    f"{payload.numero_cnj} vinculado e {documentos_vinculados} "
+                    "documento(s) selecionado(s) associado(s). "
+                    "Origem: revisão humana da reconciliação processual."
+                ),
+                created_by=user.id,
+            )
+        )
+        await criar_audit_log(
+            db,
+            user.id,
+            _role(user),
+            "ENTRADA_UNICA_RECONCILIAR_CASO",
+            "cases",
+            case_id,
+            dados_depois={
+                "numero_cnj": payload.numero_cnj,
+                "process_id": process_id,
+                "documentos_vinculados": documentos_vinculados,
+                "origem": "entrada_unica",
+            },
+        )
+
+    return {
+        "case_id": case_id,
+        "numero_interno": caso.numero_interno,
+        "process_id": process_id,
+        "numero_cnj": payload.numero_cnj,
+        "documentos_vinculados": documentos_vinculados,
+        "operacao_idempotente": operacao_idempotente,
     }
