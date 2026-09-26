@@ -69,3 +69,15 @@ def test_full_continua_com_backend_worker_backup_e_rag():
     assert 'python -m scripts.reparar_conhecimento_rag' in src
     assert 'force-recreate backend' in src
     assert 'force-recreate worker' in src
+
+
+def test_wrapper_deriva_escopo_efetivo_dos_marcadores_pos_deploy():
+    src = WRAPPER.read_text(encoding="utf-8")
+    assert 'EFFECTIVE_SCOPE=""' in src
+    assert 'DEPLOYED_AFTER=' in src
+    assert 'FRONTEND_AFTER=' in src
+    assert 'if [ "$DEPLOYED_AFTER" = "$TARGET_SHA" ]; then' in src
+    assert 'EFFECTIVE_SCOPE="full"' in src
+    assert 'elif [ "$FRONTEND_AFTER" = "$TARGET_SHA" ]; then' in src
+    assert 'EFFECTIVE_SCOPE="frontend"' in src
+    assert 'if [ "$EFFECTIVE_SCOPE" = "full" ]; then' in src
