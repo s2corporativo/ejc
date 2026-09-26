@@ -157,14 +157,30 @@ bash scripts/deploy_vps_safe.sh
 
 curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health >/dev/null
 curl -fsS --connect-timeout 5 --max-time 15 https://ejc.depaulateixeira.adv.br/api/health >/dev/null
-if [ "$DEPLOY_SCOPE" = "full" ]; then
+
+# O executor pode promover frontend -> full (ex.: imagem de rollback ausente).
+# A conclusão é derivada dos marcadores REALMENTE gravados, não da intenção
+# calculada antes do cutover.
+EFFECTIVE_SCOPE=""
+DEPLOYED_AFTER=""
+FRONTEND_AFTER=""
+[ -f "$APP_DIR/.deployed_sha" ] \
+  && DEPLOYED_AFTER="$(cat "$APP_DIR/.deployed_sha" 2>/dev/null || true)"
+[ -f "$APP_DIR/.frontend_deployed_sha" ] \
+  && FRONTEND_AFTER="$(cat "$APP_DIR/.frontend_deployed_sha" 2>/dev/null || true)"
+if [ "$DEPLOYED_AFTER" = "$TARGET_SHA" ]; then
+  EFFECTIVE_SCOPE="full"
+elif [ "$FRONTEND_AFTER" = "$TARGET_SHA" ]; then
+  EFFECTIVE_SCOPE="frontend"
+else
+  fail "deploy terminou sem marcador de identidade correspondente ao SHA alvo"
+fi
+
+if [ "$EFFECTIVE_SCOPE" = "full" ]; then
   printf '%s\n' "$TARGET_SHA" > "$APP_DIR/.deploy_last_sha"
   chmod 600 "$APP_DIR/.deploy_last_sha"
   rm -f -- "$APP_DIR/.frontend_deployed_sha"
   log "deploy full concluido e identidade completa confirmada: $TARGET_SHA"
 else
-  [ -f "$APP_DIR/.frontend_deployed_sha" ] \
-    && [ "$(cat "$APP_DIR/.frontend_deployed_sha")" = "$TARGET_SHA" ] \
-    || fail "frontend-only terminou sem marcador de identidade correspondente"
   log "deploy frontend-only concluido e health local/publico confirmados: $TARGET_SHA"
 fi
