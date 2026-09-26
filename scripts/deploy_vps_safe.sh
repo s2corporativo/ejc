@@ -7,6 +7,7 @@ DOMAIN="${EJC_DOMAIN:-ejc.depaulateixeira.adv.br}"
 RUN_MIGRATIONS="${RUN_MIGRATIONS:-0}"
 MIGRATIONS_BACKWARD_COMPATIBLE="${MIGRATIONS_BACKWARD_COMPATIBLE:-0}"
 RUN_SEEDS="${RUN_SEEDS:-0}"
+DEPLOY_SCOPE="${DEPLOY_SCOPE:-full}"
 ENSURE_DAILY_BACKUP="${ENSURE_DAILY_BACKUP:-1}"
 REQUIRE_PREDEPLOY_BACKUP="${REQUIRE_PREDEPLOY_BACKUP:-1}"
 MIN_FREE_GB="${MIN_FREE_GB:-20}"
@@ -18,6 +19,7 @@ die_policy() { printf 'ERRO DE POLÍTICA: %s\n' "$*" >&2; exit 2; }
 
 case "$REQUIRE_PREDEPLOY_BACKUP" in 0|1) ;; *) die_policy "REQUIRE_PREDEPLOY_BACKUP deve ser 0 ou 1";; esac
 case "$ENSURE_DAILY_BACKUP" in 0|1) ;; *) die_policy "ENSURE_DAILY_BACKUP deve ser 0 ou 1";; esac
+case "$DEPLOY_SCOPE" in frontend|full) ;; *) die_policy "DEPLOY_SCOPE deve ser frontend ou full";; esac
 [[ "$MIN_FREE_GB" =~ ^[1-9][0-9]*$ ]] || die_policy "MIN_FREE_GB deve ser inteiro >= 1"
 if [ "$REQUIRE_PREDEPLOY_BACKUP" = "1" ] && [ "$ENSURE_DAILY_BACKUP" != "1" ]; then
   die_policy "ENSURE_DAILY_BACKUP=0 é incompatível com REQUIRE_PREDEPLOY_BACKUP=1"
@@ -52,8 +54,12 @@ OLD_WORKER_TAG=""
 OLD_FRONTEND_TAG=""
 OLD_GIT_SHA=""
 ENV_ROLLBACK_FILE=""
-DEPLOYED_SHA_TMP="$APP_DIR/.deployed_sha.new.$$"
+DEPLOYED_SHA_TMP="$APP_DIR/.deployed_sha.new.$"
+FRONTEND_DEPLOYED_SHA_TMP="$APP_DIR/.frontend_deployed_sha.new.$"
 ROLLBACK_ARMED=0
+FRONTEND_ONLY_ROLLBACK_ARMED=0
+FRONTEND_ROLLBACK_TAG=""
+FRONTEND_OLD_REF=""
 ENV_MUTATED=0
 ENV_WAS_IMMUTABLE=0
 IMAGES_MUTATED=0
@@ -68,7 +74,7 @@ cleanup_rollback_tags() {
 
 cleanup_temp_files() {
   [ -z "$ENV_ROLLBACK_FILE" ] || rm -f -- "$ENV_ROLLBACK_FILE" >/dev/null 2>&1 || true
-  rm -f -- "$DEPLOYED_SHA_TMP" >/dev/null 2>&1 || true
+  rm -f -- "$DEPLOYED_SHA_TMP" "$FRONTEND_DEPLOYED_SHA_TMP" >/dev/null 2>&1 || true
 }
 
 # Bloqueio/registro da imutabilidade do .env (chattr +i): sem detecção, o
@@ -178,6 +184,18 @@ restore_previous_image_refs() {
   return "$rc"
 }
 
+rollback_frontend_only() {
+  local rc=0
+  [ -n "$FRONTEND_ROLLBACK_TAG" ] && [ -n "$FRONTEND_OLD_REF" ] || return 1
+  log "Restaurando somente o frontend anterior."
+  docker tag "$FRONTEND_ROLLBACK_TAG" "$FRONTEND_OLD_REF" || rc=1
+  docker rm -f ejc_frontend >/dev/null 2>&1 || true
+  RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate frontend || rc=1
+  sleep 5
+  curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8080/ >/dev/null 2>&1 || rc=1
+  return "$rc"
+}
+
 rollback_transaction() {
   local original_rc="$1"
   set +e
@@ -213,7 +231,10 @@ rollback_transaction() {
 on_exit() {
   local rc=$?
   trap - EXIT INT TERM HUP
-  if [ "$rc" -ne 0 ] && [ "$ROLLBACK_ARMED" = "1" ]; then
+  if [ "$rc" -ne 0 ] && [ "$FRONTEND_ONLY_ROLLBACK_ARMED" = "1" ]; then
+    rollback_frontend_only || log "ERRO CRÍTICO: rollback frontend-only ficou incompleto."
+    cleanup_temp_files
+  elif [ "$rc" -ne 0 ] && [ "$ROLLBACK_ARMED" = "1" ]; then
     rollback_transaction "$rc"
   else
     cleanup_temp_files
@@ -257,6 +278,21 @@ GIT_SHA="${TARGET_SHA:-$(git rev-parse HEAD 2>/dev/null || true)}"
   || die_policy "TARGET_SHA/HEAD deve ser SHA-1 completo de 40 caracteres hexadecimais; release sem identidade verificável foi bloqueada"
 export GIT_SHA
 log "Versão a publicar: ${GIT_SHA}"
+log "Escopo autorizado: ${DEPLOY_SCOPE}"
+if [ "$DEPLOY_SCOPE" = "frontend" ] && [ "$RUN_MIGRATIONS" = "1" ]; then
+  die_policy "frontend-only é incompatível com migration pendente"
+fi
+if [ "$DEPLOY_SCOPE" = "frontend" ] && [ "$RUN_SEEDS" = "1" ]; then
+  log "RUN_SEEDS=1 exige fluxo full; promovendo escopo antes de qualquer cutover."
+  DEPLOY_SCOPE="full"
+fi
+if [ "$DEPLOY_SCOPE" = "frontend" ]; then
+  frontend_image="$(docker inspect -f '{{.Image}}' ejc_frontend 2>/dev/null || true)"
+  if [ -z "$frontend_image" ] || ! docker image inspect "$frontend_image" >/dev/null 2>&1; then
+    log "Imagem atual do frontend não está disponível para rollback; usando fluxo full."
+    DEPLOY_SCOPE="full"
+  fi
+fi
 docker compose config --quiet
 
 AVAIL_KB="$(df -Pk "${APP_DIR}" | awk 'NR==2 {print $4}')"
@@ -293,6 +329,51 @@ else
     exit 1
   fi
   log "AVISO: backup pré-deploy não executou; contingência permissiva explícita seguirá sem prova nova."
+fi
+
+# Escopo frontend-only: mantém exatamente os mesmos gates anteriores
+# (Woodpecker no wrapper, migration check, mutex, capacidade e backup cifrado),
+# mas não toca .env, backend, worker, seeds, RAG ou prova pós-recreate do backup.
+# Qualquer escopo ambíguo é classificado como "full" antes de chegar aqui.
+deploy_frontend_only() {
+  local old_image
+  old_image="$(docker inspect -f '{{.Image}}' ejc_frontend 2>/dev/null || true)"
+  FRONTEND_OLD_REF="$(docker inspect -f '{{.Config.Image}}' ejc_frontend 2>/dev/null || true)"
+  [ -n "$old_image" ] && [ -n "$FRONTEND_OLD_REF" ] \
+    || die_policy "frontend atual sem imagem/referência verificável; use deploy full"
+
+  FRONTEND_ROLLBACK_TAG="ejc-frontend:rollback-${ROLLBACK_SUFFIX}"
+  docker tag "$old_image" "$FRONTEND_ROLLBACK_TAG"
+
+  log "Build frontend-only; backend, worker e RAG permanecem intocados"
+  docker compose build frontend
+
+  # A partir daqui o runtime é mutado. O trap precisa estar armado ANTES de
+  # remover o container vivo para cobrir SIGINT/SIGTERM/SIGHUP e falha de compose.
+  FRONTEND_ONLY_ROLLBACK_ARMED=1
+  docker rm -f ejc_frontend >/dev/null 2>&1
+  RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate frontend
+
+  sleep 5
+  curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8080/ >/dev/null
+  curl -fsS --connect-timeout 5 --max-time 15 "https://${DOMAIN}/" >/dev/null
+  EJC_DOMAIN="$DOMAIN" bash scripts/post_deploy_check.sh
+
+  # Identidade própria: o backend não foi recriado, portanto /api/health.commit
+  # continua apontando corretamente para o SHA do backend. Não avançamos
+  # .deployed_sha; registramos somente o artefato frontend publicado.
+  printf '%s\n' "$GIT_SHA" > "$FRONTEND_DEPLOYED_SHA_TMP"
+  chmod 600 "$FRONTEND_DEPLOYED_SHA_TMP"
+  mv -f -- "$FRONTEND_DEPLOYED_SHA_TMP" "$APP_DIR/.frontend_deployed_sha"
+
+  FRONTEND_ONLY_ROLLBACK_ARMED=0
+  docker image rm "$FRONTEND_ROLLBACK_TAG" >/dev/null 2>&1 || true
+  FRONTEND_ROLLBACK_TAG=""
+  log "Deploy frontend-only concluído; backend/worker e identidade do backend permaneceram intactos."
+}
+if [ "$DEPLOY_SCOPE" = "frontend" ]; then
+  deploy_frontend_only
+  exit 0
 fi
 
 # Snapshot secreto efêmero, 0600, fora da árvore da aplicação e do diretório do
@@ -472,7 +553,8 @@ EJC_DOMAIN="$DOMAIN" bash scripts/post_deploy_check.sh
 printf '%s\n' "$GIT_SHA" > "$DEPLOYED_SHA_TMP"
 chmod 644 "$DEPLOYED_SHA_TMP"
 mv -f -- "$DEPLOYED_SHA_TMP" "$APP_DIR/.deployed_sha"
-log "Versão implantada registrada atomicamente em .deployed_sha."
+rm -f -- "$APP_DIR/.frontend_deployed_sha"
+log "Versão implantada registrada atomicamente em .deployed_sha; marcador frontend parcial limpo."
 
 ROLLBACK_ARMED=0
 cleanup_temp_files

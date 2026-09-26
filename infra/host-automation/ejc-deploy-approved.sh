@@ -32,9 +32,18 @@ TARGET_SHA="$(git -C "$SOURCE_DIR" rev-parse HEAD)"
 [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "SHA alvo invalido"
 
 DEPLOYED_SHA=""
+FRONTEND_DEPLOYED_SHA=""
 [ -f "$APP_DIR/.deployed_sha" ] && DEPLOYED_SHA="$(cat "$APP_DIR/.deployed_sha" 2>/dev/null || true)"
-if [ "$DEPLOYED_SHA" = "$TARGET_SHA" ] && curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
-  log "producao ja esta saudavel no SHA $TARGET_SHA; nada a fazer"
+[ -f "$APP_DIR/.frontend_deployed_sha" ] && FRONTEND_DEPLOYED_SHA="$(cat "$APP_DIR/.frontend_deployed_sha" 2>/dev/null || true)"
+if [ "$DEPLOYED_SHA" = "$TARGET_SHA" ] \
+   && curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+  log "runtime completo ja esta saudavel no SHA $TARGET_SHA; nada a fazer"
+  exit 0
+fi
+if [ "$FRONTEND_DEPLOYED_SHA" = "$TARGET_SHA" ] \
+   && curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health >/dev/null 2>&1 \
+   && curl -fsS --connect-timeout 5 --max-time 15 https://ejc.depaulateixeira.adv.br/ >/dev/null 2>&1; then
+  log "frontend ja esta publicado no SHA $TARGET_SHA; backend permanece na identidade própria"
   exit 0
 fi
 
@@ -44,6 +53,7 @@ log "exigindo pipeline Woodpecker push/main verde para $TARGET_SHA"
 [ -f "$SOURCE_DIR/scripts/check_migration_compatibility.py" ] || fail "checker de migration ausente no SHA aprovado"
 [ -f "$SOURCE_DIR/scripts/deploy_lock.sh" ] || fail "deploy_lock.sh ausente no SHA aprovado"
 [ -f "$SOURCE_DIR/scripts/deploy_vps_safe.sh" ] || fail "deploy_vps_safe.sh ausente no SHA aprovado"
+[ -f "$SOURCE_DIR/scripts/classify_deploy_scope.py" ] || fail "classificador de escopo ausente no SHA aprovado"
 
 # A partir daqui, decisao de migration, sincronizacao e cutover compartilham o
 # mesmo mutex. Isso impede que outro deploy altere schema/runtime entre a leitura
@@ -103,11 +113,24 @@ if [ "$pending_count" -gt 0 ]; then
 fi
 log "migration gate aprovado sob mutex: atual=$current_revision pendentes=$pending_count"
 
+DEPLOY_SCOPE="full"
+if [ "$RUN_MIGRATIONS" = "0" ] \
+   && [ "${RUN_SEEDS:-0}" != "1" ] \
+   && [[ "$DEPLOYED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  DEPLOY_SCOPE="$(python3 "$SOURCE_DIR/scripts/classify_deploy_scope.py"     --repo "$SOURCE_DIR" --previous "$DEPLOYED_SHA" --target "$TARGET_SHA"     2>/dev/null || printf 'full')"
+fi
+case "$DEPLOY_SCOPE" in
+  frontend|full) ;;
+  *) DEPLOY_SCOPE="full" ;;
+esac
+log "escopo de deploy selecionado: $DEPLOY_SCOPE"
+
 log "sincronizando somente o SHA aprovado sob mutex"
 rsync -a --delete \
   --exclude '.git/' \
   --exclude '.env' --exclude '.env.*' \
   --exclude '.deployed_sha' --exclude '.deploy_last_sha' \
+  --exclude '.frontend_deployed_sha' \
   --exclude 'uploads/' --exclude 'backups/' \
   --exclude 'logs/' --exclude 'data/' --exclude 'storage/' \
   --exclude 'secrets/' --exclude 'certs/' --exclude 'tmp/' \
@@ -124,6 +147,7 @@ LATEST_SHA="$(git -C "$SOURCE_DIR" rev-parse origin/main)"
 log "executando deploy transacional existente"
 cd "$APP_DIR"
 TARGET_SHA="$TARGET_SHA" \
+DEPLOY_SCOPE="$DEPLOY_SCOPE" \
 RUN_MIGRATIONS="$RUN_MIGRATIONS" \
 MIGRATIONS_BACKWARD_COMPATIBLE="$MIGRATIONS_BACKWARD_COMPATIBLE" \
 RUN_SEEDS="${RUN_SEEDS:-0}" \
@@ -133,6 +157,30 @@ bash scripts/deploy_vps_safe.sh
 
 curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health >/dev/null
 curl -fsS --connect-timeout 5 --max-time 15 https://ejc.depaulateixeira.adv.br/api/health >/dev/null
-printf '%s\n' "$TARGET_SHA" > "$APP_DIR/.deploy_last_sha"
-chmod 600 "$APP_DIR/.deploy_last_sha"
-log "deploy concluido e health local/publico confirmados: $TARGET_SHA"
+
+# O executor pode promover frontend -> full (ex.: imagem de rollback ausente).
+# A conclusão é derivada dos marcadores REALMENTE gravados, não da intenção
+# calculada antes do cutover.
+EFFECTIVE_SCOPE=""
+DEPLOYED_AFTER=""
+FRONTEND_AFTER=""
+[ -f "$APP_DIR/.deployed_sha" ] \
+  && DEPLOYED_AFTER="$(cat "$APP_DIR/.deployed_sha" 2>/dev/null || true)"
+[ -f "$APP_DIR/.frontend_deployed_sha" ] \
+  && FRONTEND_AFTER="$(cat "$APP_DIR/.frontend_deployed_sha" 2>/dev/null || true)"
+if [ "$DEPLOYED_AFTER" = "$TARGET_SHA" ]; then
+  EFFECTIVE_SCOPE="full"
+elif [ "$FRONTEND_AFTER" = "$TARGET_SHA" ]; then
+  EFFECTIVE_SCOPE="frontend"
+else
+  fail "deploy terminou sem marcador de identidade correspondente ao SHA alvo"
+fi
+
+if [ "$EFFECTIVE_SCOPE" = "full" ]; then
+  printf '%s\n' "$TARGET_SHA" > "$APP_DIR/.deploy_last_sha"
+  chmod 600 "$APP_DIR/.deploy_last_sha"
+  rm -f -- "$APP_DIR/.frontend_deployed_sha"
+  log "deploy full concluido e identidade completa confirmada: $TARGET_SHA"
+else
+  log "deploy frontend-only concluido e health local/publico confirmados: $TARGET_SHA"
+fi
