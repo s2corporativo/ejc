@@ -89,8 +89,7 @@ describe("RamoBase — fallback estável", () => {
 
     await waitFor(() => expect(screen.getByText("Caso contextual")).toBeTruthy());
     expect(screen.queryByText("Caso fora do contexto")).toBeNull();
-    expect(screen.getByRole("link", { name: "Voltar ao caso" })).toHaveAttribute(
-      "href",
-      "/casos/case-ctx",
-    );
+    expect(
+      screen.getByRole("link", { name: "Voltar ao caso" }).getAttribute("href"),
+    ).toBe("/casos/case-ctx");
   });
