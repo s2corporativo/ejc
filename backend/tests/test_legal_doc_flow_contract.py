@@ -224,3 +224,11 @@ def test_schema_de_aprovacao_tem_os_campos_do_override():
     # Default seguro: quem não pede override não recebe override.
     vazio = LegalDocAprovacao()
     assert vazio.override_citacoes is False
+
+def test_excluir_peca_aposenta_documento_rag_vinculado():
+    src = _source("app/routers/legal_docs.py")
+    bloco = _function_source(src, "remover")
+    assert 'KnowledgeDoc.chave_origem == f"legaldoc:{doc_id}"' in bloco
+    assert "rag_doc.vigente = False" in bloco
+    assert "rag_doc.deleted_at = removida_em" in bloco
+    assert '"rag_docs_aposentados": len(rag_docs)' in bloco
