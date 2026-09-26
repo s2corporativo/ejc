@@ -553,7 +553,8 @@ EJC_DOMAIN="$DOMAIN" bash scripts/post_deploy_check.sh
 printf '%s\n' "$GIT_SHA" > "$DEPLOYED_SHA_TMP"
 chmod 644 "$DEPLOYED_SHA_TMP"
 mv -f -- "$DEPLOYED_SHA_TMP" "$APP_DIR/.deployed_sha"
-log "Versão implantada registrada atomicamente em .deployed_sha."
+rm -f -- "$APP_DIR/.frontend_deployed_sha"
+log "Versão implantada registrada atomicamente em .deployed_sha; marcador frontend parcial limpo."
 
 ROLLBACK_ARMED=0
 cleanup_temp_files
