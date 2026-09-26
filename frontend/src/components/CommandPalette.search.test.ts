@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { MODULE_SEARCH_ALIASES, textoBuscaModulo } from "./CommandPalette";
+import {
+  MODULE_SEARCH_ALIASES,
+  normalizarBusca,
+  textoBuscaModulo,
+} from "./CommandPalette";
 
 describe("CommandPalette — aliases de navegação removida", () => {
   const modulo = (key: string, label: string, description = "") => ({
@@ -26,7 +30,21 @@ describe("CommandPalette — aliases de navegação removida", () => {
       "radar operacional",
     );
     expect(textoBuscaModulo(modulo("produtividade", "Produtividade"))).toContain(
-      "relatórios",
+      "relatorios",
     );
+  });
+
+  it("encontra rótulos acentuados quando a consulta vem sem acento", () => {
+    expect(normalizarBusca("Relatórios")).toBe("relatorios");
+    expect(
+      textoBuscaModulo(modulo("produtividade", "Produtividade")).includes(
+        normalizarBusca("relatorios"),
+      ),
+    ).toBe(true);
+    expect(
+      textoBuscaModulo(modulo("inteligencia", "Inteligência Jurídica")).includes(
+        normalizarBusca("inteligencia juridica"),
+      ),
+    ).toBe(true);
   });
 });
