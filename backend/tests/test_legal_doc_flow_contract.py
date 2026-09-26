@@ -262,3 +262,17 @@ def test_excluir_e_restaurar_peca_serializam_a_linha():
     trash = _function_source(_source("app/routers/trash.py"), "restaurar")
     assert ".with_for_update()" in legal
     assert ".with_for_update()" in trash
+
+
+def test_excluir_peca_exige_piso_juridico_e_ownership():
+    bloco = _function_source(_source("app/routers/legal_docs.py"), "remover")
+    assert 'requer_advogado(cu, detail="Excluir peça é restrito à equipe jurídica")' in bloco
+    assert "await verificar_acesso_caso(db, cu, d.case_id)" in bloco
+    assert "await cliente_id_visivel(db, cu, d.client_id)" in bloco
+    assert "not is_gestao(cu) and d.created_by != cu.id" in bloco
+
+
+def test_restauracao_rag_exige_mesmo_timestamp_da_exclusao_da_peca():
+    bloco = _function_source(_source("app/routers/trash.py"), "restaurar")
+    assert "KnowledgeDoc.deleted_at == excluido_em" in bloco
+    assert "KnowledgeDoc.vigente.is_(False)" in bloco
