@@ -96,18 +96,14 @@ def _pode_ver_radar(u: User) -> bool:
 
 
 def _acessa_caso(cu: User, case: Optional[Case]) -> bool:
-    """Regra de ownership espelhada de core.ownership.verificar_acesso_caso,
-    porém sem lançar (para FILTRAR o feed). Gestão vê tudo; equipe vê os próprios;
-    caso órfão (sem responsável nem auxiliar) liberado (legado/triagem)."""
+    """Espelha o ownership de escrita sem lançar: gestão vê tudo;
+    equipe vê apenas casos em que é responsável/auxiliar. Casos órfãos são
+    exclusivos da gestão, evitando exposição lateral de dados no Radar."""
     if is_gestao(cu):
         return True
     if case is None:
         return True  # item sem caso vinculado não é per-caso → não filtra
-    if cu.id in (case.advogado_responsavel_id, case.advogado_auxiliar_id):
-        return True
-    if case.advogado_responsavel_id is None and case.advogado_auxiliar_id is None:
-        return True
-    return False
+    return cu.id in (case.advogado_responsavel_id, case.advogado_auxiliar_id)
 
 _TERMO = """TERMO DE CONSENTIMENTO PARA USO DE INTELIGÊNCIA ARTIFICIAL
 
@@ -257,8 +253,8 @@ async def _itens_processual(
                 and_(
                     tem_cnj,
                     or_(
-                        Case.has_judicial_process.is_(False),
-                        Case.case_type != "judicial",
+                        Case.has_judicial_process.is_not(True),
+                        Case.case_type.is_distinct_from("judicial"),
                         Case.status == CaseStatus.aberto,
                         Case.fase == CaseFase.pre_processual,
                         ~principal_existe,

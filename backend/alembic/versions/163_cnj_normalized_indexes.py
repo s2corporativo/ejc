@@ -24,19 +24,19 @@ def upgrade() -> None:
     op.execute(
         f"""
         CREATE INDEX IF NOT EXISTS {_CASE_INDEX}
-        ON cases ((regexp_replace(numero_processo, '[^0-9]', '', 'g')))
+        ON cases ((replace(replace(replace(replace(numero_processo, '.', ''), '-', ''), '/', ''), ' ', '')))
         WHERE deleted_at IS NULL
           AND numero_processo IS NOT NULL
-          AND length(regexp_replace(numero_processo, '[^0-9]', '', 'g')) = 20
+          AND length(replace(replace(replace(replace(numero_processo, '.', ''), '-', ''), '/', ''), ' ', '')) = 20
         """
     )
     op.execute(
         f"""
         CREATE INDEX IF NOT EXISTS {_PROCESS_INDEX}
-        ON processes ((regexp_replace(numero_cnj, '[^0-9]', '', 'g')))
+        ON processes ((replace(replace(replace(replace(numero_cnj, '.', ''), '-', ''), '/', ''), ' ', '')))
         WHERE deleted_at IS NULL
           AND numero_cnj IS NOT NULL
-          AND length(regexp_replace(numero_cnj, '[^0-9]', '', 'g')) = 20
+          AND length(replace(replace(replace(replace(numero_cnj, '.', ''), '-', ''), '/', ''), ' ', '')) = 20
         """
     )
 

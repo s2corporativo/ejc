@@ -130,10 +130,10 @@ async def garantir_numero_processo_unico(
     )
 
     if len(digitos_cnj) == 20:
-        numero_igual = (
-            sqlfunc.regexp_replace(Case.numero_processo, r"\D", "", "g")
-            == digitos_cnj
-        )
+        numero_normalizado = Case.numero_processo
+        for char in (".", "-", "/", " "):
+            numero_normalizado = sqlfunc.replace(numero_normalizado, char, "")
+        numero_igual = numero_normalizado == digitos_cnj
     else:
         numero_igual = (
             sqlfunc.lower(sqlfunc.trim(Case.numero_processo)) == numero.casefold()

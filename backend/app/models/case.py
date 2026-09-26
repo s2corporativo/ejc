@@ -84,10 +84,10 @@ class Case(Base):
         ),
         Index(
             "ix_cases_cnj_normalized_active",
-            text("regexp_replace(numero_processo, '[^0-9]', '', 'g')"),
+            text("replace(replace(replace(replace(numero_processo, '.', ''), '-', ''), '/', ''), ' ', '')"),
             postgresql_where=text(
                 "deleted_at IS NULL AND numero_processo IS NOT NULL "
-                "AND length(regexp_replace(numero_processo, '[^0-9]', '', 'g')) = 20"
+                "AND length(replace(replace(replace(replace(numero_processo, '.', ''), '-', ''), '/', ''), ' ', '')) = 20"
             ),
         ).ddl_if(dialect="postgresql"),
         Index(

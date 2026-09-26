@@ -110,3 +110,21 @@ async def test_radar_financeiro_sinaliza_recebimento_sem_rateio(monkeypatch):
     assert itens[0]["fonte"] == "financeiro"
     assert "sem rateio econômico" in itens[0]["resumo"]
     assert "sem advogado responsável" in itens[0]["resumo"]
+
+
+def test_radar_nao_expoe_caso_orfao_para_advogado():
+    caso = SimpleNamespace(
+        advogado_responsavel_id=None,
+        advogado_auxiliar_id=None,
+    )
+    advogado = SimpleNamespace(
+        id="adv-sem-vinculo",
+        role=SimpleNamespace(value="advogado"),
+    )
+    socio = SimpleNamespace(
+        id="socio-1",
+        role=SimpleNamespace(value="socio"),
+    )
+
+    assert compliance._acessa_caso(advogado, caso) is False
+    assert compliance._acessa_caso(socio, caso) is True

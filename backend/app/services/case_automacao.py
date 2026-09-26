@@ -12,6 +12,8 @@ from app.models.user import User
 from app.models.checklist import (
     ChecklistTemplate, ChecklistTemplateItem, CaseChecklist, CaseChecklistItem,
 )
+from app.services import processo_service
+from app.services.case_integrity_service import sincronizar_processo_principal_do_caso
 
 logger = logging.getLogger("ejc")
 
@@ -88,19 +90,24 @@ async def automacao_caso(case_id: str) -> None:
             #    permanece como cache legado ate o repoint completo dos leitores.
             numproc = (getattr(case, "numero_processo", None) or "").strip()
             if numproc:
-                ja_proc = (await db.execute(text(
-                    "SELECT 1 FROM processes WHERE case_id = :cid AND deleted_at IS NULL LIMIT 1"
-                ), {"cid": case_id})).scalar()
-                if not ja_proc:
-                    await db.execute(text(
-                        "INSERT INTO processes (id, case_id, numero_cnj, instancia, tribunal, "
-                        "comarca, vara, valor_causa, status, created_at, updated_at) "
-                        "VALUES (:id, :cid, :ncnj, '1', :trib, :com, :vara, :vc, 'ativo', now(), now())"
-                    ), {"id": str(uuid4()), "cid": case_id, "ncnj": numproc[:30],
-                        "trib": getattr(case, "tribunal", None),
-                        "com": getattr(case, "comarca", None),
-                        "vara": getattr(case, "vara", None),
-                        "vc": getattr(case, "valor_causa", None)})
+                try:
+                    await sincronizar_processo_principal_do_caso(
+                        db,
+                        case_id=case_id,
+                        numero_processo=numproc[:30],
+                        tribunal=getattr(case, "tribunal", None),
+                        comarca=getattr(case, "comarca", None),
+                        vara=getattr(case, "vara", None),
+                        valor_causa=getattr(case, "valor_causa", None),
+                        tipo="judicial",
+                    )
+                except processo_service.ProcessConflict:
+                    # Não fabrica duplicidade para "consertar" dado legado.
+                    # O Radar de integridade sinaliza o caso para revisão humana.
+                    logger.warning(
+                        "[automacao_caso] vínculo processual recusado por conflito de CNJ; case_id=%s",
+                        case_id,
+                    )
 
             await db.commit()
             logger.info(f"[automacao_caso] caso {case_id} automatizado (kanban + checklist)")

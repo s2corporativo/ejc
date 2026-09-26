@@ -34,7 +34,9 @@ from app.models.fee import Fee, FeeStatus
 from app.models.procuracao import Procuracao
 from app.models.tese import TeseCasoLink
 from app.models.user import User
+from app.schemas.process import ProcessCreate
 from app.schemas.redesign import ConversaoChecklistResponse
+from app.services import processo_service
 from app.services.conflito_service import detectar_conflito
 
 logger = logging.getLogger(__name__)
@@ -294,24 +296,27 @@ async def converter_judicial(
             "pendentes": pendentes,
         })
 
-    # Cria o PROCESSO no próprio caso (1 Caso : N Processos) — sem clonar o caso.
-    pid = str(uuid4())
-    await db.execute(text("""
-        INSERT INTO processes
-            (id, case_id, numero_cnj, tribunal, comarca, vara, tipo, valor_causa, status, created_at, updated_at)
-        VALUES
-            (:id, :cid, NULLIF(:cnj, ''), :trib, :com, :vara, 'judicial', :vc, 'ativo', now(), now())
-    """), {
-        "id": pid, "cid": case_id, "cnj": orig.numero_processo or "",
-        "trib": orig.tribunal, "com": orig.comarca, "vara": orig.vara,
-        "vc": orig.valor_causa,
-    })
-
-    # Marca o caso como judicial (mantém continuidade e satélites no mesmo case_id).
-    await db.execute(text("""
-        UPDATE cases SET case_type = 'judicial', has_judicial_process = true, updated_at = now()
-        WHERE id = :cid
-    """), {"cid": case_id})
+    # Cria o processo pelo serviço canônico: valida CNJ, serializa concorrência,
+    # impede duplicidade global e sincroniza o espelho legado do caso.
+    try:
+        processo = await processo_service.criar_processo(
+            case_id,
+            ProcessCreate(
+                numero_cnj=orig.numero_processo or None,
+                instancia="1",
+                tribunal=orig.tribunal,
+                comarca=orig.comarca,
+                vara=orig.vara,
+                tipo="judicial",
+                valor_causa=orig.valor_causa,
+                status="ativo",
+                is_principal=True,
+            ),
+            db,
+        )
+    except processo_service.ProcessConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    pid = processo["id"]
 
     await db.execute(text("""
         INSERT INTO case_movimentos (id, case_id, tipo, descricao, created_by, created_at)

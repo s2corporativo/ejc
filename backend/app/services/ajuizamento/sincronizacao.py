@@ -16,7 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 from app.models.ajuizamento import JudicialFiling, JudicialSyncEvent
 from app.models.case import Case
-from app.services import datajud_service
+from app.services import datajud_service, processo_service
+from app.services.case_integrity_service import sincronizar_processo_principal_do_caso
 from app.services.ajuizamento.conectores.datajud import DataJudConnector
 from app.services.tribunal_registry import resolver_tribunal
 
@@ -49,7 +50,27 @@ class JudicialSyncService:
         if case is None:
             return saida
         if not case.numero_processo:
-            case.numero_processo = filing.numero_cnj
+            try:
+                await sincronizar_processo_principal_do_caso(
+                    self.db,
+                    case_id=case.id,
+                    numero_processo=filing.numero_cnj,
+                    tribunal=filing.tribunal_code,
+                    comarca=filing.jurisdicao,
+                    tipo="judicial",
+                )
+            except processo_service.ProcessConflict:
+                self._evento(
+                    filing,
+                    "integridade",
+                    "conflito",
+                    0,
+                    "CNJ já vinculado a outro caso; sincronização automática interrompida",
+                )
+                saida["fontes"].append(
+                    {"fonte": "integridade", "estado": "conflito"}
+                )
+                return saida
 
         # 1) Fonte autenticada (MNI) — só sinaliza: a leitura real é task Celery.
         tribunal = await resolver_tribunal(self.db, filing.numero_cnj, grau=filing.degree or "1")

@@ -35,7 +35,9 @@ from app.models.raio_x import RaioXAnalise, RaioXDocumento
 from app.models.task import Task, TaskStatus
 from app.models.user import User
 from app.schemas.raio_x import RaioXConverterRequest
+from app.services import processo_service
 from app.services.case_intelligence_service import compactar_payload
+from app.services.case_integrity_service import sincronizar_processo_principal_do_caso
 from app.services.conflito_service import _padrao_like
 from app.services.case_numeracao import proximo_numero_interno as _proximo_numero_interno
 from app.services.raio_x_enrichment import (
@@ -725,14 +727,15 @@ async def converter_em_caso(
         fase=_fase_case(report, has_process),
         prioridade=CasePrioridade(priority),
         risco=_risco_case(report.get("risco_nivel")),
-        numero_processo=payload.caso.numero_processo,
+        # O número só é gravado via serviço canônico após o INSERT do caso.
+        numero_processo=None,
         tribunal=payload.caso.tribunal,
         comarca=payload.caso.comarca,
         vara=payload.caso.vara,
         parte_contraria=payload.caso.parte_contraria,
         descricao_fatos=payload.caso.descricao_fatos or report.get("sintese_executiva"),
         case_type=payload.caso.case_type,
-        has_judicial_process=has_process,
+        has_judicial_process=False,
         client_id=client.id,
         advogado_responsavel_id=user.id,
         observacoes=f"Originado do Raio-X preliminar {analise.id}. Relatório preservado na origem.",
@@ -745,6 +748,20 @@ async def converter_em_caso(
     )
     db.add(case)
     await db.flush()  # Garante INSERT INTO cases antes do snapshot (FK case_intelligence_snapshots_case_id_fkey)
+
+    if has_process:
+        try:
+            await sincronizar_processo_principal_do_caso(
+                db,
+                case_id=case.id,
+                numero_processo=payload.caso.numero_processo,
+                tribunal=payload.caso.tribunal,
+                comarca=payload.caso.comarca,
+                vara=payload.caso.vara,
+                tipo="judicial",
+            )
+        except processo_service.ProcessConflict as exc:
+            raise ValueError(str(exc)) from exc
 
     snapshot = CaseIntelligenceSnapshot(
         id=str(uuid4()),

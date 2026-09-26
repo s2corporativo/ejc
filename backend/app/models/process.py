@@ -25,10 +25,10 @@ class Process(Base):
     __table_args__ = (
         Index(
             "ix_processes_cnj_normalized_active",
-            text("regexp_replace(numero_cnj, '[^0-9]', '', 'g')"),
+            text("replace(replace(replace(replace(numero_cnj, '.', ''), '-', ''), '/', ''), ' ', '')"),
             postgresql_where=text(
                 "deleted_at IS NULL AND numero_cnj IS NOT NULL "
-                "AND length(regexp_replace(numero_cnj, '[^0-9]', '', 'g')) = 20"
+                "AND length(replace(replace(replace(replace(numero_cnj, '.', ''), '-', ''), '/', ''), ' ', '')) = 20"
             ),
         ).ddl_if(dialect="postgresql"),
     )

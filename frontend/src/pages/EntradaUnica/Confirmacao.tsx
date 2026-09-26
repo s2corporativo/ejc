@@ -164,10 +164,11 @@ export function Confirmacao({
   const precisaConfirmarDuplicado = proposta.duplicados.length > 0;
   const reconciliacao = proposta.reconciliacaoProcessual;
   const cnjOriginal = reconciliacao.numeroCnjPrincipal;
-  const cnjAlterado =
-    Boolean(cnjOriginal && proposta.numeroCnj) &&
-    proposta.numeroCnj !== cnjOriginal;
-  const reconciliacaoAplicavel = !cnjAlterado;
+  const cnjAtual = proposta.numeroCnj.trim();
+  const reconciliacaoAplicavel = cnjOriginal
+    ? cnjAtual === cnjOriginal
+    : reconciliacao.cnjsDetectados.length === 0 && !cnjAtual;
+  const cnjAlterado = !reconciliacaoAplicavel;
   const bloqueioProcessual =
     reconciliacaoAplicavel &&
     (reconciliacao.status === "ja_cadastrado" ||

@@ -499,17 +499,21 @@ async def analisar_entrada(
             )
             if item
         )
-        reconciliacao_processual = await reconciliar_entrada(
-            db,
-            cu,
-            texto=texto_reconciliacao,
-            cliente_id=cliente.get("client_id"),
-            cliente_nome=nome_cliente,
-            parte_contraria=parte_contraria,
-            assunto=assunto.get("valor"),
-        )
+        async with db.begin_nested():
+            reconciliacao_processual = await reconciliar_entrada(
+                db,
+                cu,
+                texto=texto_reconciliacao,
+                cliente_id=cliente.get("client_id"),
+                cliente_nome=nome_cliente,
+                parte_contraria=parte_contraria,
+                assunto=assunto.get("valor"),
+            )
     except Exception as exc:
-        logger.warning("Reconciliação processual indisponível na entrada: %s", exc)
+        logger.warning(
+            "Reconciliação processual indisponível na entrada; tipo=%s",
+            type(exc).__name__,
+        )
         reconciliacao_processual = {
             "status": "informacoes_insuficientes",
             "cnjs_detectados": [],
