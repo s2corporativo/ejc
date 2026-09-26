@@ -163,9 +163,9 @@ async def restaurar(
     modelo, _ = ENTIDADES[entidade]
     registro = (
         await db.execute(
-            select(modelo).where(
-                modelo.id == registro_id, modelo.deleted_at.isnot(None)
-            )
+            select(modelo)
+            .where(modelo.id == registro_id, modelo.deleted_at.isnot(None))
+            .with_for_update()
         )
     ).scalar_one_or_none()
     if not registro:
