@@ -1733,6 +1733,11 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body .ejc-entry-pillzone__fil
   outline-offset: 2px;
 }
 
+.ejc-dash__ai-stage[hidden],
+.ejc-dash__controls-stage[hidden] {
+  display: none !important;
+}
+
 .ejc-dash__ai-stage {
   grid-column: 1 / -1;
   width: min(100%, 1080px);
