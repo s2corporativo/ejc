@@ -1129,34 +1129,53 @@ async def remover(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    d = (await db.execute(
-        select(LegalDoc).where(
-            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
+    # Excluir peça altera também o conhecimento institucional derivado dela.
+    # Piso jurídico explícito: não basta possuir sessão autenticada.
+    requer_advogado(cu, detail="Excluir peça é restrito à equipe jurídica")
+
+    d = (
+        await db.execute(
+            select(LegalDoc)
+            .where(LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None))
+            .with_for_update()
         )
-    )).scalar_one_or_none()
+    ).scalar_one_or_none()
     if not d:
         raise HTTPException(status_code=404, detail="Peça não encontrada")
+
     if d.case_id:
         await verificar_acesso_caso(db, cu, d.case_id)
+    elif d.client_id:
+        if not await cliente_id_visivel(db, cu, d.client_id):
+            raise HTTPException(status_code=404, detail="Peça não encontrada")
+    elif not is_gestao(cu) and d.created_by != cu.id:
+        # Peça órfã (sem caso/cliente) só pode ser removida por quem a criou ou
+        # pela gestão. Evita ampliar um IDOR pré-existente para o RAG.
+        raise HTTPException(status_code=404, detail="Peça não encontrada")
 
     removida_em = datetime.now(timezone.utc)
     d.deleted_at = removida_em
 
-    # A peça alimenta o RAG por chave_origem=legaldoc:{id}. Excluir apenas
-    # LegalDoc deixaria conhecimento sintético/obsoleto recuperável na base.
-    # Aposenta somente a versão vigente na MESMA transação. Versões históricas
-    # já não vigentes permanecem intactas para auditoria/citações anteriores;
-    # a versão corrente deixa o retrieval por vigente=False + soft-delete.
-    rag_docs = (
+    # A peça alimenta o RAG por chave_origem=legaldoc:{id}. Aposentamos no
+    # máximo a versão vigente mais recente e carimbamos EXATAMENTE o mesmo
+    # deleted_at da peça. A restauração usa esse timestamp como identidade da
+    # aposentadoria, portanto nunca ressuscita um KnowledgeDoc removido antes
+    # por governança RAG independente.
+    rag_doc = (
         await db.execute(
-            select(KnowledgeDoc).where(
+            select(KnowledgeDoc)
+            .where(
                 KnowledgeDoc.chave_origem == f"legaldoc:{doc_id}",
                 KnowledgeDoc.vigente.is_(True),
                 KnowledgeDoc.deleted_at.is_(None),
             )
+            .order_by(KnowledgeDoc.versao.desc())
+            .limit(1)
         )
-    ).scalars().all()
-    for rag_doc in rag_docs:
+    ).scalar_one_or_none()
+    rag_doc_id_aposentado = None
+    if rag_doc is not None:
+        rag_doc_id_aposentado = rag_doc.id
         rag_doc.vigente = False
         rag_doc.deleted_at = removida_em
 
@@ -1167,7 +1186,10 @@ async def remover(
         "DELETE",
         "legal_docs",
         doc_id,
-        dados_depois={"rag_docs_aposentados": len(rag_docs)},
+        dados_depois={
+            "rag_docs_aposentados": int(rag_doc is not None),
+            "rag_doc_id_aposentado": rag_doc_id_aposentado,
+        },
     )
     await db.commit()
     return MsgResponse(detail="Peça removida")
