@@ -191,7 +191,7 @@ export default function LayoutReference() {
 
   return (
     <div className="ejc-petroleum-shell min-h-screen bg-canvas text-slate-900">
-      {!privacyMode && <CommandPalette />}
+      <CommandPalette privacyMode={privacyMode} />
 
       <header
         className={cn(
