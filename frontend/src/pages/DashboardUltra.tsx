@@ -20,11 +20,9 @@ import {
   ChevronRight,
   FileText,
   FolderKanban,
-  FilePlus2,
   Plus,
   Scale,
   Sparkles,
-  Upload,
   Users,
   Zap,
 } from "lucide-react";
@@ -88,6 +86,7 @@ type Kpis = {
 };
 
 type AbaAgenda = "hoje" | "amanha" | "semana";
+type ExperienciaDashboard = "ia" | "controles";
 
 const ROTULO_TIPO: Record<string, string> = {
   prazo: "Prazo",
@@ -206,6 +205,7 @@ export default function DashboardUltra() {
   const user = useAuth((state) => state.user);
   const navigate = useNavigate();
 
+  const [experiencia, setExperiencia] = useState<ExperienciaDashboard>("ia");
   const [carregado, setCarregado] = useState(false);
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [atividades, setAtividades] = useState<Atividade[] | null>(null);
@@ -255,8 +255,9 @@ export default function DashboardUltra() {
   }, []);
 
   useEffect(() => {
+    if (experiencia !== "controles" || carregado) return;
     void carregar();
-  }, [carregar]);
+  }, [carregar, carregado, experiencia]);
 
   const alternarTarefa = useCallback(async (tarefa: Tarefa) => {
     const novoStatus = tarefa.status === "concluida" ? "a_fazer" : "concluida";
@@ -388,35 +389,30 @@ export default function DashboardUltra() {
     v === null || v === undefined ? "—" : String(v);
 
   return (
-    <div className="ejc-dash">
-      <header className="ejc-dash__greeting" aria-label="Saudação do dia">
-        <div>
-          <h1>
-            {saudacaoPorHora()}, {primeiroNome}!
-          </h1>
-          <p>Disciplina hoje. Grandes conquistas sempre.</p>
-        </div>
-        <div className="ejc-dash__greeting-tag" aria-hidden="true">
-          <span>Conhecimento</span>
-          <span>Estratégia</span>
-          <span>Resultados reais</span>
-        </div>
-      </header>
-
-      <section className="ejc-dash__entry" aria-label="Entrada Única">
-        <div className="ejc-dash__entry-head">
+    <div className={`ejc-dash ejc-dash--${experiencia}`}>
+      <nav className="ejc-dash__mode" aria-label="Experiência do Início">
+        <button type="button" className={experiencia === "ia" ? "is-active" : ""} aria-current={experiencia === "ia" ? "page" : undefined} onClick={() => setExperiencia("ia")}>
+          <Sparkles aria-hidden="true" /> IA
+        </button>
+        <button type="button" className={experiencia === "controles" ? "is-active" : ""} aria-current={experiencia === "controles" ? "page" : undefined} onClick={() => setExperiencia("controles")}>
+          <BarChart3 aria-hidden="true" /> Controles
+        </button>
+      </nav>
+      <section
+        className="ejc-dash__ai-home"
+        aria-label="Entrada Única com inteligência jurídica"
+        hidden={experiencia !== "ia"}
+      >
+      <section className="ejc-dash__entry ejc-dash__entry--ai-home" aria-label="Entrada Única">
+        <div className="ejc-dash__entry-head ejc-dash__entry-head--ai-home">
           <span className="ejc-dash__entry-icon" aria-hidden="true">
-            <FilePlus2 />
+            <Sparkles />
           </span>
           <div className="ejc-dash__entry-copy">
-            <h2>Entrada Única</h2>
-            <p>Descreva o caso, envie documentos ou inicie um atendimento.</p>
+            <span className="ejc-dash__entry-kicker">EJC · Inteligência Jurídica</span>
+            <h1>Como posso trabalhar neste caso?</h1>
+            <p>Relate a situação ou anexe os documentos. A Entrada Única identifica o contexto jurídico e conduz o fluxo do caso para sua confirmação.</p>
           </div>
-          <span className="ejc-dash__entry-tag" aria-hidden="true">
-            Uma solução.
-            <br />
-            Todas as possibilidades.
-          </span>
         </div>
 
         {canUseLegal ? (
@@ -441,27 +437,28 @@ export default function DashboardUltra() {
           </div>
         )}
 
-        {canUseEntry && (
-          <div className="ejc-dash__entry-chips">
-            {canUseLegal && (
-              <Link to="/casos/novo" className="ejc-dash__chip">
-                <Plus aria-hidden="true" /> Novo caso
-              </Link>
-            )}
-            <Link to="/cadastro-manual" className="ejc-dash__chip">
-              <Users aria-hidden="true" /> Novo cliente
-            </Link>
-            <Link to="/documentos" className="ejc-dash__chip">
-              <Upload aria-hidden="true" /> Enviar documentos
-            </Link>
-            {canUseLegal && (
-              <Link to="/entrada" className="ejc-dash__chip">
-                <Sparkles aria-hidden="true" /> Analisar
-              </Link>
-            )}
-          </div>
-        )}
       </section>
+
+      </section>
+      <div
+        className="ejc-dash__controls"
+        aria-label="Controles do escritório"
+        hidden={experiencia !== "controles"}
+      >
+      <header className="ejc-dash__greeting" aria-label="Saudação do dia">
+        <div>
+          <h1>
+            {saudacaoPorHora()}, {primeiroNome}!
+          </h1>
+          <p>Disciplina hoje. Grandes conquistas sempre.</p>
+        </div>
+        <div className="ejc-dash__greeting-tag" aria-hidden="true">
+          <span>Conhecimento</span>
+          <span>Estratégia</span>
+          <span>Resultados reais</span>
+        </div>
+      </header>
+
 
       <section className="ejc-dash__stats" aria-label="Sinais do escritório">
         <Link
@@ -872,6 +869,8 @@ export default function DashboardUltra() {
           <i aria-hidden="true" /> Mais que soluções. Parcerias duradouras.
         </span>
       </footer>
+
+      </div>
     </div>
   );
 }

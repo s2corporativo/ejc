@@ -1656,3 +1656,188 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body .ejc-entry-pillzone__fil
     transition: none !important;
   }
 }
+
+
+/* #1857 — Início em duas experiências: IA primeiro, controles sob demanda. */
+.ejc-dash--ia,
+.ejc-dash--controles {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ejc-dash__mode {
+  grid-column: 1 / -1;
+  position: sticky;
+  top: 0.75rem;
+  z-index: 20;
+  display: flex;
+  width: fit-content;
+  gap: 0.25rem;
+  margin: 0 auto 1.5rem;
+  padding: 0.3rem;
+  border: 1px solid color-mix(in srgb, var(--ejc-primary) 12%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ejc-surface, #fff) 92%, transparent);
+  box-shadow: 0 12px 32px rgba(4, 41, 31, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.ejc-dash__mode button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-width: 7.5rem;
+  min-height: 2.5rem;
+  padding: 0.55rem 1rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ejc-text-muted, #64748b);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.ejc-dash__mode button svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.ejc-dash__mode button.is-active {
+  background: var(--ejc-primary);
+  color: #fff;
+  box-shadow: 0 7px 18px color-mix(in srgb, var(--ejc-primary) 24%, transparent);
+}
+
+.ejc-dash--ia {
+  min-height: calc(100dvh - 8rem);
+}
+
+.ejc-dash__ai-home {
+  grid-column: 1 / -1;
+  display: grid;
+  place-items: center;
+  min-height: min(72dvh, 760px);
+  padding: clamp(1rem, 3vw, 3rem) 0 clamp(3rem, 7vw, 6rem);
+}
+
+.ejc-dash__entry--ai-home {
+  width: min(100%, 980px);
+  margin: 0 auto;
+  padding: clamp(1.4rem, 3vw, 2.6rem);
+  border-radius: 2rem;
+  box-shadow: 0 24px 70px rgba(4, 41, 31, 0.13);
+}
+
+.ejc-dash__entry-head--ai-home {
+  align-items: flex-start;
+  margin-bottom: clamp(1.4rem, 3vw, 2.4rem);
+}
+
+.ejc-dash__entry-head--ai-home .ejc-dash__entry-copy {
+  max-width: 760px;
+}
+
+.ejc-dash__entry-head--ai-home .ejc-dash__entry-copy h1 {
+  margin: 0.3rem 0 0.55rem;
+  color: #ffffff;
+  font-family: var(--ejc-font-serif, Georgia, serif);
+  font-size: clamp(1.9rem, 4vw, 3.2rem);
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+}
+
+.ejc-dash__entry-head--ai-home .ejc-dash__entry-copy p {
+  max-width: 680px;
+  font-size: clamp(0.92rem, 1.4vw, 1.05rem);
+  line-height: 1.65;
+}
+
+.ejc-dash__entry-kicker {
+  display: block;
+  color: #f4df9a;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+
+.ejc-dash--ia .ejc-entry-pill {
+  min-height: 4.5rem;
+  border-radius: 1.35rem;
+}
+
+.ejc-dash--ia .ejc-entry-pill__input {
+  min-height: 2.7rem;
+  font-size: 1rem;
+}
+
+.ejc-dash__controls {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 328px;
+  gap: 16px;
+  align-items: start;
+}
+
+.ejc-dash__controls[hidden],
+.ejc-dash__ai-home[hidden] {
+  display: none !important;
+}
+
+html:not(.dark) .ejc-modern-scope
+  .ejc-dash__entry-head--ai-home
+  .ejc-dash__entry-copy
+  h1 {
+  color: #ffffff !important;
+  font-size: clamp(1.9rem, 4vw, 3.2rem) !important;
+  font-weight: 500 !important;
+  line-height: 1.05 !important;
+}
+
+@media (max-width: 1180px) {
+  .ejc-dash__controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ejc-dash__controls .ejc-dash__side {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .ejc-dash__mode {
+    width: 100%;
+    position: static;
+  }
+
+  .ejc-dash__mode button {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ejc-dash__ai-home {
+    min-height: auto;
+    place-items: start stretch;
+    padding-top: 0.25rem;
+  }
+
+  .ejc-dash__entry--ai-home {
+    border-radius: 1.35rem;
+  }
+
+  .ejc-dash__entry-head--ai-home .ejc-dash__entry-icon {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ejc-dash__mode button {
+    transition: none;
+  }
+}
