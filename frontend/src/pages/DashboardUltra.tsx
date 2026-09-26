@@ -398,8 +398,11 @@ export default function DashboardUltra() {
           <BarChart3 aria-hidden="true" /> Controles
         </button>
       </nav>
-      {experiencia === "ia" ? (
-        <main className="ejc-dash__ai-home" aria-label="Entrada Única com inteligência jurídica">
+      <section
+        className="ejc-dash__ai-home"
+        aria-label="Entrada Única com inteligência jurídica"
+        hidden={experiencia !== "ia"}
+      >
       <section className="ejc-dash__entry ejc-dash__entry--ai-home" aria-label="Entrada Única">
         <div className="ejc-dash__entry-head ejc-dash__entry-head--ai-home">
           <span className="ejc-dash__entry-icon" aria-hidden="true">
@@ -436,9 +439,12 @@ export default function DashboardUltra() {
 
       </section>
 
-        </main>
-      ) : (
-        <div className="ejc-dash__controls" aria-label="Controles do escritório">
+      </section>
+      <div
+        className="ejc-dash__controls"
+        aria-label="Controles do escritório"
+        hidden={experiencia !== "controles"}
+      >
       <header className="ejc-dash__greeting" aria-label="Saudação do dia">
         <div>
           <h1>
@@ -864,8 +870,7 @@ export default function DashboardUltra() {
         </span>
       </footer>
 
-        </div>
-      )}
+      </div>
     </div>
   );
 }
