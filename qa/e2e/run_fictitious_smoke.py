@@ -267,6 +267,7 @@ def _request(
     data: dict[str, Any] | None = None,
     autenticado: bool = True,
     degradado_ok: bool = False,
+    timeout: float = 60,
 ) -> httpx.Response | None:
     headers = {}
     if autenticado and state.access_token:
@@ -279,7 +280,7 @@ def _request(
             json=json_body,
             files=files,
             data=data,
-            timeout=60,
+            timeout=timeout,
         )
         esperado = resp.status_code in expected
         # AI-005: bater num código de módulo ausente NÃO é sucesso, mesmo que a
