@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { caminhoAbaCaso } from "../lib/caseContext";
+import { configWorkspaceDaArea } from "../pages/ramos/areasWorkspace";
 import { toast } from "./Toast";
 import Markdown from "./Markdown";
 import ErrorBoundary from "./ErrorBoundary";
@@ -140,7 +141,13 @@ export function rotaModuloSugerido(
 
   if (key.startsWith("ramos/")) {
     const slug = key.slice("ramos/".length).trim();
-    if (!slug || !/^[a-z0-9_-]+$/.test(slug)) return null;
+    if (
+      !slug ||
+      !/^[a-z0-9_-]+$/.test(slug) ||
+      !configWorkspaceDaArea(slug)
+    ) {
+      return null;
+    }
     const params = new URLSearchParams({
       case_id: caseId,
       tab: "ferramentas",
