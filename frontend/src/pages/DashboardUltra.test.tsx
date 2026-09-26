@@ -152,9 +152,9 @@ function mockGetOk() {
   });
 }
 
-function renderizar() {
+function renderizar(rota = "/") {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[rota]}>
       <DashboardUltra />
     </MemoryRouter>,
   );
@@ -171,27 +171,51 @@ afterEach(() => {
 });
 
 describe("DashboardUltra — identidade premium DPT", () => {
-  it("sauda o usuário pelo primeiro nome e compõe a referência", async () => {
+  it("abre na IA como padrão e não carrega o painel operacional", () => {
     mockGetOk();
     renderizar();
+
+    expect(screen.getByRole("tab", { name: /IA/ }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByTestId("entrada-unica").getAttribute("data-embedded")).toBe(
+      "true",
+    );
+    expect(screen.queryByText("Agenda e Prazos")).not.toBeTruthy();
+    expect(screen.queryByText("Casos em destaque")).not.toBeTruthy();
+    expect(screen.queryByText("Acesso rápido")).not.toBeTruthy();
+    expect(getMock).not.toHaveBeenCalled();
+  });
+
+  it("carrega os controles somente quando a segunda aba é aberta", async () => {
+    mockGetOk();
+    renderizar();
+
+    fireEvent.click(screen.getByRole("tab", { name: /Controles/ }));
+
+    expect(await screen.findByText("Agenda e Prazos")).toBeTruthy();
+    await waitFor(() => expect(getMock).toHaveBeenCalledTimes(5));
+    expect(screen.queryByTestId("entrada-unica")).not.toBeTruthy();
+  });
+
+  it("sauda o usuário pelo primeiro nome e compõe a referência", async () => {
+    mockGetOk();
+    renderizar("/?modo=controles");
 
     expect(
       await screen.findByText(/, Clovis!/),
     ).toBeTruthy();
     expect(screen.getByText("Disciplina hoje. Grandes conquistas sempre.")).toBeTruthy();
-    expect(screen.getByText("Entrada Única")).toBeTruthy();
+    expect(screen.queryByText("Entrada Única")).not.toBeTruthy();
     expect(screen.getByText("Agenda e Prazos")).toBeTruthy();
     expect(screen.getByText("Casos em destaque")).toBeTruthy();
     expect(screen.getByText("Acesso rápido")).toBeTruthy();
     expect(screen.getByText("Minha rotina hoje")).toBeTruthy();
-    expect(screen.getByTestId("entrada-unica").getAttribute("data-embedded")).toBe(
-      "true",
-    );
   });
 
   it("exibe sinais operacionais com números reais dos endpoints", async () => {
     mockGetOk();
-    renderizar();
+    renderizar("/?modo=controles");
 
     // Prazos hoje = atividades tipo prazo com dias_restantes 0 → 1
     await waitFor(() =>
@@ -206,7 +230,7 @@ describe("DashboardUltra — identidade premium DPT", () => {
 
   it("filtra a agenda por aba Hoje/Amanhã/Esta semana", async () => {
     mockGetOk();
-    renderizar();
+    renderizar("/?modo=controles");
 
     expect(await screen.findByText("Prazo final — Contestação")).toBeTruthy();
     expect(screen.queryByText("Intimação — audiência")).not.toBeTruthy();
@@ -218,7 +242,7 @@ describe("DashboardUltra — identidade premium DPT", () => {
 
   it("prioriza casos em destaque por risco, prazo e próxima ação", async () => {
     mockGetOk();
-    renderizar();
+    renderizar("/?modo=controles");
 
     expect(
       (await screen.findAllByText("Empresa X vs. Banco Y")).length,
@@ -232,7 +256,7 @@ describe("DashboardUltra — identidade premium DPT", () => {
 
   it("filtra a agenda pelo dia selecionado no calendário", async () => {
     mockGetOk();
-    renderizar();
+    renderizar("/?modo=controles");
 
     const hojeLabel = format(dataBase, "dd/MM/yyyy");
     const botaoDia = await screen.findByRole("button", { name: hojeLabel });
@@ -245,7 +269,7 @@ describe("DashboardUltra — identidade premium DPT", () => {
 
   it("mostra na rotina apenas tarefas acionáveis hoje e conclusões do dia", async () => {
     mockGetOk();
-    renderizar();
+    renderizar("/?modo=controles");
 
     expect(await screen.findByText("Revisar petição inicial")).toBeTruthy();
     expect(screen.getByText("Retorno para cliente — Grupo Santos")).toBeTruthy();
@@ -259,7 +283,7 @@ describe("DashboardUltra — identidade premium DPT", () => {
   it("conclui tarefa da rotina via PATCH e reage ao clique", async () => {
     mockGetOk();
     patchMock.mockResolvedValue({ data: {} });
-    renderizar();
+    renderizar("/?modo=controles");
 
     const botao = await screen.findByRole("button", {
       name: /Revisar petição inicial/,
@@ -276,7 +300,7 @@ describe("DashboardUltra — identidade premium DPT", () => {
   it("reabre tarefa concluída com status canônico a_fazer", async () => {
     mockGetOk();
     patchMock.mockResolvedValue({ data: {} });
-    renderizar();
+    renderizar("/?modo=controles");
 
     const botao = await screen.findByRole("button", {
       name: /Estudo tema 1\.234\/STJ/,
@@ -302,7 +326,7 @@ describe("DashboardUltra — identidade premium DPT", () => {
       if (url === "/tasks/") return Promise.resolve({ data: tarefasOk });
       return Promise.reject(new Error(`GET inesperado: ${url}`));
     });
-    renderizar();
+    renderizar("/?modo=controles");
 
     await waitFor(() =>
       expect(screen.getByLabelText("Prazos hoje: —")).toBeTruthy(),
@@ -322,5 +346,6 @@ describe("DashboardUltra — identidade premium DPT", () => {
       ),
     ).toBeTruthy();
     expect(screen.queryByTestId("entrada-unica")).not.toBeTruthy();
+    expect(getMock).not.toHaveBeenCalled();
   });
 });
