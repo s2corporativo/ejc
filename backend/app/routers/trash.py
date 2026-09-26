@@ -19,6 +19,7 @@ from app.models.deadline import Deadline
 from app.models.document import Document
 from app.models.fee import Fee
 from app.models.legal_doc import LegalDoc
+from app.models.rag import KnowledgeDoc
 from app.models.procuracao import Procuracao
 from app.models.task import Task
 from app.models.user import User
@@ -162,9 +163,9 @@ async def restaurar(
     modelo, _ = ENTIDADES[entidade]
     registro = (
         await db.execute(
-            select(modelo).where(
-                modelo.id == registro_id, modelo.deleted_at.isnot(None)
-            )
+            select(modelo)
+            .where(modelo.id == registro_id, modelo.deleted_at.isnot(None))
+            .with_for_update()
         )
     ).scalar_one_or_none()
     if not registro:
@@ -173,6 +174,29 @@ async def restaurar(
     await _validar_dependencias_restauração(db, entidade, registro)
     excluido_em = registro.deleted_at
     registro.deleted_at = None
+
+    rag_docs_restaurados = 0
+    if entidade == "legal_docs":
+        # O soft-delete da peça aposenta somente a versão RAG vigente. A
+        # restauração reativa a versão mais recente aposentada pela própria
+        # peça, sem promover versões históricas antigas a vigente.
+        rag_doc = (
+            await db.execute(
+                select(KnowledgeDoc)
+                .where(
+                    KnowledgeDoc.chave_origem == f"legaldoc:{registro_id}",
+                    KnowledgeDoc.vigente.is_(False),
+                    KnowledgeDoc.deleted_at == excluido_em,
+                )
+                .order_by(KnowledgeDoc.versao.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if rag_doc is not None:
+            rag_doc.deleted_at = None
+            rag_doc.vigente = True
+            rag_docs_restaurados = 1
+
     await criar_audit_log(
         db,
         cu.id,
@@ -181,7 +205,10 @@ async def restaurar(
         entidade,
         registro_id,
         dados_antes={"deleted_at": excluido_em.isoformat() if excluido_em else None},
-        dados_depois={"deleted_at": None},
+        dados_depois={
+            "deleted_at": None,
+            "rag_docs_restaurados": rag_docs_restaurados,
+        },
     )
     await db.commit()
     return {"detail": "Registro restaurado"}

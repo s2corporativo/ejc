@@ -224,3 +224,55 @@ def test_schema_de_aprovacao_tem_os_campos_do_override():
     # Default seguro: quem não pede override não recebe override.
     vazio = LegalDocAprovacao()
     assert vazio.override_citacoes is False
+
+def test_excluir_peca_aposenta_documento_rag_vinculado():
+    src = _source("app/routers/legal_docs.py")
+    bloco = _function_source(src, "remover")
+    assert 'KnowledgeDoc.chave_origem == f"legaldoc:{doc_id}"' in bloco
+    assert "KnowledgeDoc.vigente.is_(True)" in bloco
+    assert "rag_doc.vigente = False" in bloco
+    assert "rag_doc.deleted_at = removida_em" in bloco
+    assert '"rag_docs_aposentados": len(rag_docs)' in bloco
+
+
+def test_restaurar_peca_reativa_somente_versao_rag_mais_recente():
+    src = _source("app/routers/trash.py")
+    bloco = _function_source(src, "restaurar")
+    assert 'KnowledgeDoc.chave_origem == f"legaldoc:{registro_id}"' in bloco
+    assert ".order_by(KnowledgeDoc.versao.desc())" in bloco
+    assert ".limit(1)" in bloco
+    assert "rag_doc.deleted_at = None" in bloco
+    assert "rag_doc.vigente = True" in bloco
+    assert '"rag_docs_restaurados": rag_docs_restaurados' in bloco
+
+
+def test_indexacao_rag_revalida_peca_sob_lock_antes_do_upsert():
+    src = _source("app/services/case_intel.py")
+    bloco = _function_source(src, "indexar_peca_rag")
+    assert "conteudo_original = d.conteudo or" in bloco
+    assert ".with_for_update()" in bloco
+    assert ".execution_options(populate_existing=True)" in bloco
+    assert "d_atual.deleted_at is not None" in bloco
+    assert "(d_atual.conteudo or \"\") != conteudo_original" in bloco
+    assert bloco.index(".with_for_update()") < bloco.index("await upsert_documento(")
+
+
+def test_excluir_e_restaurar_peca_serializam_a_linha():
+    legal = _function_source(_source("app/routers/legal_docs.py"), "remover")
+    trash = _function_source(_source("app/routers/trash.py"), "restaurar")
+    assert ".with_for_update()" in legal
+    assert ".with_for_update()" in trash
+
+
+def test_excluir_peca_exige_piso_juridico_e_ownership():
+    bloco = _function_source(_source("app/routers/legal_docs.py"), "remover")
+    assert 'requer_advogado(cu, detail="Excluir peça é restrito à equipe jurídica")' in bloco
+    assert "await verificar_acesso_caso(db, cu, d.case_id)" in bloco
+    assert "await cliente_id_visivel(db, cu, d.client_id)" in bloco
+    assert "not is_gestao(cu) and d.created_by != cu.id" in bloco
+
+
+def test_restauracao_rag_exige_mesmo_timestamp_da_exclusao_da_peca():
+    bloco = _function_source(_source("app/routers/trash.py"), "restaurar")
+    assert "KnowledgeDoc.deleted_at == excluido_em" in bloco
+    assert "KnowledgeDoc.vigente.is_(False)" in bloco
