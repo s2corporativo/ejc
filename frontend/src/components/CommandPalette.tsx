@@ -89,19 +89,26 @@ export const MODULE_SEARCH_ALIASES: Record<string, readonly string[]> = {
   produtividade: ["Relatórios"],
 };
 
+export function normalizarBusca(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR");
+}
+
 export function textoBuscaModulo(item: {
   key: string;
   label: string;
   description: string;
 }): string {
-  return [
-    item.label,
-    item.description,
-    item.key,
-    ...(MODULE_SEARCH_ALIASES[item.key] ?? []),
-  ]
-    .join(" ")
-    .toLocaleLowerCase("pt-BR");
+  return normalizarBusca(
+    [
+      item.label,
+      item.description,
+      item.key,
+      ...(MODULE_SEARCH_ALIASES[item.key] ?? []),
+    ].join(" "),
+  );
 }
 
 export default function CommandPalette({
@@ -188,12 +195,10 @@ export default function CommandPalette({
     [user?.role],
   );
   const matchingQuickActions = useMemo(() => {
-    const query = q.trim().toLocaleLowerCase("pt-BR");
+    const query = normalizarBusca(q.trim());
     if (query.length < 2) return quickActions;
     return quickActions.filter((action) =>
-      `${action.label} ${action.description}`
-        .toLocaleLowerCase("pt-BR")
-        .includes(query),
+      normalizarBusca(`${action.label} ${action.description}`).includes(query),
     );
   }, [q, quickActions]);
 
@@ -212,7 +217,7 @@ export default function CommandPalette({
     [lifecycleSettings, role],
   );
   const matchingModules = useMemo(() => {
-    const query = q.trim().toLocaleLowerCase("pt-BR");
+    const query = normalizarBusca(q.trim());
     if (query.length < 2) return [];
     const quickActionPaths = new Set(
       matchingQuickActions.map((action) => action.path),
@@ -369,7 +374,7 @@ export default function CommandPalette({
 
   return (
     <div
-      className="fixed inset-0 z-[70] bg-slate-950/45 flex items-start justify-center pt-[12vh] px-4 animate-fade-in"
+      className="fixed inset-0 z-[90] bg-slate-950/45 flex items-start justify-center pt-[12vh] px-4 animate-fade-in"
       onClick={() => setOpen(false)}
     >
       <div
