@@ -508,6 +508,50 @@ async def test_diagnostico_detecta_peca_de_caso_excluido():
             await _limpar(db, client_id, [case_id], uid)
 
 
+async def test_documento_de_caso_excluido_e_informativo():
+    """Documento preservado de caso soft-deletado não torna a base inconsistente."""
+    from app.core.database import AsyncSessionLocal
+    from app.services.integridade_service import diagnosticar_integridade
+
+    client_id, case_id, doc_id = str(uuid4()), str(uuid4()), str(uuid4())
+    async with AsyncSessionLocal() as db:
+        uid = await _criar_admin(db)
+        await _criar_cliente(db, client_id)
+        await _criar_caso(db, case_id, client_id, status="aberto", deleted=True)
+        await db.commit()
+        try:
+            antes = await diagnosticar_integridade(db)
+
+            await db.execute(
+                text(
+                    "INSERT INTO documents (id, titulo, filename, filepath, "
+                    "confidencialidade, case_id, uploaded_by) "
+                    "VALUES (:id, 'Documento preservado', 'doc.pdf', '/tmp/doc.pdf', "
+                    "'normal', :cid, :uid)"
+                ),
+                {"id": doc_id, "cid": case_id, "uid": uid},
+            )
+            await db.commit()
+
+            depois = await diagnosticar_integridade(db)
+            achados = {a["tipo"]: a for a in depois["achados"]}
+            alvo = achados["documento_de_caso_excluido"]
+
+            assert doc_id in alvo["ids"]
+            assert alvo["impacta_integridade"] is False
+            assert (
+                depois["resumo"]["total_registros_afetados"]
+                == antes["resumo"]["total_registros_afetados"]
+            )
+            assert (
+                depois["resumo"]["total_registros_informativos"]
+                == antes["resumo"].get("total_registros_informativos", 0) + 1
+            )
+            assert "documento_de_caso_excluido" in depois["resumo"]["tipos_informativos"]
+        finally:
+            await _limpar(db, client_id, [case_id], uid)
+
+
 async def test_diagnostico_nao_marca_documento_em_triagem_como_orfao():
     """Documento sem `case_id` é estado LEGÍTIMO (caixa de entrada/GED)."""
     from app.core.database import AsyncSessionLocal
