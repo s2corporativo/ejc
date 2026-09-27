@@ -83,8 +83,8 @@ export default function TesesVinculadasPanel({ caseId }: { caseId: string }) {
         <span>
           Antes de usar qualquer fundamento, confira vigência, inteiro teor e
           fonte oficial. A tela atual não possui o ciclo avançado de validação
-          das fases futuras do Banco de Teses; a decisão jurídica continua
-          humana.
+          das fases futuras do Banco de Teses;{" "}
+          {"a decisão jurídica continua humana."}
         </span>
       </div>
 
@@ -106,8 +106,10 @@ export default function TesesVinculadasPanel({ caseId }: { caseId: string }) {
       ) : teses.length === 0 ? (
         <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
           Nenhuma tese está vinculada a este caso. Consulte o Banco de Teses
-          para localizar conteúdo institucional. Esta tela não oferece ação de
-          vínculo; o EJC não cria vínculo automático.
+          para localizar conteúdo institucional.{" "}
+          {
+            "Esta tela não oferece ação de vínculo; o EJC não cria vínculo automático."
+          }
         </div>
       ) : (
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
