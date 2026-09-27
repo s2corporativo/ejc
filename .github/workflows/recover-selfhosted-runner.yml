@@ -1,0 +1,208 @@
+name: Recover self-hosted runner
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/recover-selfhosted-runner.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    name: Recuperar runner ejc-vps via SSH
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
+      VPS_PORT: ${{ secrets.VPS_PORT }}
+    steps:
+      - name: Validar configuração sem expor segredos
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "$VPS_HOST" ] || { echo "::error::Secret VPS_HOST ausente."; exit 2; }
+          [ -n "$VPS_USER" ] || { echo "::error::Secret VPS_USER ausente."; exit 2; }
+          if [ -z "$VPS_SSH_KEY" ] && [ -z "$VPS_PASSWORD" ]; then
+            echo "::error::Nenhum método de autenticação SSH configurado (VPS_SSH_KEY ou VPS_PASSWORD)."
+            exit 2
+          fi
+          case "${VPS_PORT:-22}" in
+            ''|*[!0-9]*) echo "::error::VPS_PORT inválida."; exit 2 ;;
+          esac
+
+      - name: Instalar cliente auxiliar para autenticação por senha
+        if: ${{ env.VPS_SSH_KEY == '' && env.VPS_PASSWORD != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update >/dev/null
+          sudo apt-get install -y --no-install-recommends sshpass >/dev/null
+
+      - name: Preparar SSH efêmero
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$HOME/.ssh"
+          if [ -n "$VPS_SSH_KEY" ]; then
+            printf '%s\n' "$VPS_SSH_KEY" > "$HOME/.ssh/ejc_runner_recovery"
+          fi
+          port="${VPS_PORT:-22}"
+          ssh-keyscan -p "$port" -H "$VPS_HOST" > "$HOME/.ssh/known_hosts" 2>/dev/null
+          [ -s "$HOME/.ssh/known_hosts" ] || { echo "::error::Não foi possível obter a host key da VPS."; exit 3; }
+
+      - name: Reiniciar somente o serviço do GitHub Actions runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${VPS_PORT:-22}"
+          if [ -n "$VPS_SSH_KEY" ]; then
+            ssh \
+              -i "$HOME/.ssh/ejc_runner_recovery" \
+              -p "$port" \
+              -o BatchMode=yes \
+              -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=yes \
+              -o ConnectTimeout=15 \
+              "$VPS_USER@$VPS_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          # `set -f`: o `for` abaixo roda sem aspas de propósito (ver comentário
+          # lá), e sem isto um nome de unit contendo *, ? ou [ sofreria expansão
+          # de caminho. Só root cria unit de sistema, então é robustez, não vetor.
+          set -f
+          # Não executamos script vindo do diretório do runner. Esse diretório é
+          # gravável pelo dono, e um dono não-root poderia trocar o svc.sh e obter
+          # root via sudo — provar quem criou o diretório não prova quem controla o
+          # conteúdo agora. A unit systemd vive em /etc/systemd/system, controlada
+          # por root, e é a única fonte usada aqui. Isso também resolve o problema
+          # original (#1250): o caminho do runner deixa de importar.
+          # `|| true`: list-unit-files sai 1 quando nada casa, e com pipefail+set -e
+          # a atribuição abortaria o script antes de tentar o fallback e antes do
+          # diagnóstico do exit 4 — justamente no caso que o fallback trata.
+          # Padrão restrito ao runner DESTE repositório. `actions.runner.*.service`
+          # casaria também o runner de outro repositório instalado na mesma VPS, e
+          # os laços abaixo parariam um job alheio em pleno voo. O systemd nomeia a
+          # unit de runner de repositório como actions.runner.<owner>-<repo>.<nome>.
+          PADRAO='actions.runner.s2corporativo-ejc.*.service'
+          units="$(systemctl list-unit-files --no-legend --plain "$PADRAO" 2>/dev/null | awk '{print $1}' || true)"
+          if [ -z "$units" ]; then
+            units="$(systemctl list-units --all --no-legend --plain "$PADRAO" 2>/dev/null | awk '{print $1}' || true)"
+          fi
+          if [ -z "$units" ]; then
+            # Falha fechada: não alarga o padrão sozinho. O diagnóstico lista todas
+            # as units de runner da máquina, então um registro em nível de
+            # organização (actions.runner.<org>.<nome>) aparece aqui para o operador.
+            echo "ERRO: nenhuma unit '$PADRAO' registrada no systemd." >&2
+            systemctl list-unit-files --no-legend --plain 'actions.runner*' 2>/dev/null || true
+            exit 4
+          fi
+          total="$(printf '%s\n' "$units" | wc -l)"
+          [ "$total" -eq 1 ] || echo "AVISO: $total units do runner deste repositório encontradas; todas serão reiniciadas." >&2
+          # `for` sobre $units sem aspas: nome de unit não contém espaço, e evita o
+          # subshell de `printf | while`, onde um exit não abortaria o passo.
+          falhou=0
+          for unit in $units; do
+            echo "Runner: $unit"
+            # `restart`, não `stop || true` seguido de `start`: com o stop engolido,
+            # um runner travado mas ainda `active` sobrevivia — o `start` seguinte
+            # virava no-op bem-sucedido e o `is-active` final declarava recuperação
+            # sem que o processo tivesse sido ciclado. `restart` falha se não
+            # conseguir derrubar, e a falha é registrada.
+            if ! sudo systemctl restart "$unit"; then
+              echo "ERRO: falha ao reiniciar $unit." >&2
+              falhou=1
+            fi
+          done
+          sleep 3
+          for unit in $units; do
+            if systemctl is-active --quiet "$unit"; then
+              echo "OK: $unit ativo"
+            else
+              echo "ERRO: $unit não ficou ativo." >&2
+              systemctl status "$unit" --no-pager --lines=20 2>&1 | tail -20 >&2 || true
+              falhou=1
+            fi
+          done
+          [ "$falhou" -eq 0 ] || exit 6
+          REMOTE
+          else
+            SSHPASS="$VPS_PASSWORD" sshpass -e ssh \
+              -p "$port" \
+              -o PubkeyAuthentication=no \
+              -o PreferredAuthentications=password \
+              -o StrictHostKeyChecking=yes \
+              -o ConnectTimeout=15 \
+              "$VPS_USER@$VPS_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          # `set -f`: o `for` abaixo roda sem aspas de propósito (ver comentário
+          # lá), e sem isto um nome de unit contendo *, ? ou [ sofreria expansão
+          # de caminho. Só root cria unit de sistema, então é robustez, não vetor.
+          set -f
+          # Não executamos script vindo do diretório do runner. Esse diretório é
+          # gravável pelo dono, e um dono não-root poderia trocar o svc.sh e obter
+          # root via sudo — provar quem criou o diretório não prova quem controla o
+          # conteúdo agora. A unit systemd vive em /etc/systemd/system, controlada
+          # por root, e é a única fonte usada aqui. Isso também resolve o problema
+          # original (#1250): o caminho do runner deixa de importar.
+          # `|| true`: list-unit-files sai 1 quando nada casa, e com pipefail+set -e
+          # a atribuição abortaria o script antes de tentar o fallback e antes do
+          # diagnóstico do exit 4 — justamente no caso que o fallback trata.
+          # Padrão restrito ao runner DESTE repositório. `actions.runner.*.service`
+          # casaria também o runner de outro repositório instalado na mesma VPS, e
+          # os laços abaixo parariam um job alheio em pleno voo. O systemd nomeia a
+          # unit de runner de repositório como actions.runner.<owner>-<repo>.<nome>.
+          PADRAO='actions.runner.s2corporativo-ejc.*.service'
+          units="$(systemctl list-unit-files --no-legend --plain "$PADRAO" 2>/dev/null | awk '{print $1}' || true)"
+          if [ -z "$units" ]; then
+            units="$(systemctl list-units --all --no-legend --plain "$PADRAO" 2>/dev/null | awk '{print $1}' || true)"
+          fi
+          if [ -z "$units" ]; then
+            # Falha fechada: não alarga o padrão sozinho. O diagnóstico lista todas
+            # as units de runner da máquina, então um registro em nível de
+            # organização (actions.runner.<org>.<nome>) aparece aqui para o operador.
+            echo "ERRO: nenhuma unit '$PADRAO' registrada no systemd." >&2
+            systemctl list-unit-files --no-legend --plain 'actions.runner*' 2>/dev/null || true
+            exit 4
+          fi
+          total="$(printf '%s\n' "$units" | wc -l)"
+          [ "$total" -eq 1 ] || echo "AVISO: $total units do runner deste repositório encontradas; todas serão reiniciadas." >&2
+          # `for` sobre $units sem aspas: nome de unit não contém espaço, e evita o
+          # subshell de `printf | while`, onde um exit não abortaria o passo.
+          falhou=0
+          for unit in $units; do
+            echo "Runner: $unit"
+            # `restart`, não `stop || true` seguido de `start`: com o stop engolido,
+            # um runner travado mas ainda `active` sobrevivia — o `start` seguinte
+            # virava no-op bem-sucedido e o `is-active` final declarava recuperação
+            # sem que o processo tivesse sido ciclado. `restart` falha se não
+            # conseguir derrubar, e a falha é registrada.
+            if ! sudo systemctl restart "$unit"; then
+              echo "ERRO: falha ao reiniciar $unit." >&2
+              falhou=1
+            fi
+          done
+          sleep 3
+          for unit in $units; do
+            if systemctl is-active --quiet "$unit"; then
+              echo "OK: $unit ativo"
+            else
+              echo "ERRO: $unit não ficou ativo." >&2
+              systemctl status "$unit" --no-pager --lines=20 2>&1 | tail -20 >&2 || true
+              falhou=1
+            fi
+          done
+          [ "$falhou" -eq 0 ] || exit 6
+          REMOTE
+          fi
+
+      - name: Limpar material SSH efêmero
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$HOME/.ssh/ejc_runner_recovery" "$HOME/.ssh/known_hosts"
