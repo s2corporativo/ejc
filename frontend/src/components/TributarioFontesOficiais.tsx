@@ -45,7 +45,9 @@ function FonteCard({ fonte }: { fonte: FonteTributariaOficial }) {
           {STATUS_LABEL[fonte.status]}
         </span>
         <span className="rounded-full border border-slate-200 px-2 py-0.5 text-[10px] text-slate-500">
-          {fonte.apiPublica ? "API/dados públicos verificados" : "Não classificada como API pública"}
+          {fonte.apiPublica
+            ? "API/dados públicos verificados"
+            : "Não classificada como API pública"}
         </span>
       </div>
     </>
@@ -59,7 +61,10 @@ function FonteCard({ fonte }: { fonte: FonteTributariaOficial }) {
 
   if (!fonte.url) {
     return (
-      <div className={classe} title="Acesso externo não habilitado até nova verificação">
+      <div
+        className={classe}
+        title="Acesso externo não habilitado até nova verificação"
+      >
         {conteudo}
       </div>
     );
@@ -90,9 +95,14 @@ export default function TributarioFontesOficiais() {
       <div className="flex items-start gap-3">
         <Landmark size={18} className="mt-0.5 shrink-0 text-gold-600" />
         <div>
-          <h2 className="font-serif font-semibold text-navy">Fontes oficiais</h2>
+          <h2 className="font-serif font-semibold text-navy">
+            Fontes oficiais
+          </h2>
           <p className="mt-1 text-xs leading-5 text-slate-500">
-            Catálogo verificado em 06/09/2026. Portal, DTE, NFS-e ou sistema autenticado não é tratado como API pública. Integração automática só é indicada quando existe contrato técnico verificável e governança própria no EJC.
+            Catálogo verificado em 06/09/2026. Portal, DTE, NFS-e ou sistema
+            autenticado não é tratado como API pública. Integração automática só
+            é indicada quando existe contrato técnico verificável e governança
+            própria no EJC.
           </p>
         </div>
       </div>
@@ -116,7 +126,10 @@ export default function TributarioFontesOficiais() {
       </div>
 
       <p className="mt-3 text-[11px] leading-4 text-slate-500">
-        São Joaquim de Bicas permanece sem atalho operacional porque a fonte municipal atual não foi localizada com segurança. O EJC registra a existência oficial da área do contribuinte, mas mantém automação e link desabilitados até nova validação.
+        São Joaquim de Bicas permanece sem atalho operacional porque a fonte
+        municipal atual não foi localizada com segurança. O EJC registra a
+        existência oficial da área do contribuinte, mas mantém automação e link
+        desabilitados até nova validação.
       </p>
     </section>
   );

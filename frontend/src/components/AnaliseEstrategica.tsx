@@ -531,7 +531,8 @@ export default function AnaliseEstrategica({
                     Probabilidade de êxito
                   </div>
                   <div className="text-xs text-slate-400 mt-1">
-                    Consulte a jurimetria histórica quando houver amostra suficiente.
+                    Consulte a jurimetria histórica quando houver amostra
+                    suficiente.
                   </div>
                 </div>
                 <div className="bg-ai-50 rounded-xl p-4 border border-ai-100 text-center">

@@ -981,8 +981,12 @@ export default function DossieCliente() {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
   const role = user?.role || "";
-  const podeIaCliente = ["superadmin", "admin", "socio", "advogado"].includes(role);
-  const podeCriarAcesso = ["superadmin", "admin", "socio", "advogado"].includes(role);
+  const podeIaCliente = ["superadmin", "admin", "socio", "advogado"].includes(
+    role,
+  );
+  const podeCriarAcesso = ["superadmin", "admin", "socio", "advogado"].includes(
+    role,
+  );
   const validTabs = useMemo(
     () => [
       "resumo",
@@ -1156,7 +1160,9 @@ export default function DossieCliente() {
 
   const criarAcessoPortal = async () => {
     if (!podeCriarAcesso) {
-      toast.error("Seu perfil não possui permissão para criar acesso ao Portal");
+      toast.error(
+        "Seu perfil não possui permissão para criar acesso ao Portal",
+      );
       return;
     }
     if (!acessoForm.email.trim() || acessoForm.senha_inicial.length < 10) {
@@ -1680,7 +1686,9 @@ export default function DossieCliente() {
             />
           </div>
           <div>
-            <label className="label">Senha inicial (mín. 10, letra, número e símbolo) *</label>
+            <label className="label">
+              Senha inicial (mín. 10, letra, número e símbolo) *
+            </label>
             <input
               type="password"
               className="input"

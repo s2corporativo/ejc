@@ -42,7 +42,9 @@ describe("moduleRegistry", () => {
 
   it("retira Áreas de Atuação do registry e preserva o núcleo de inteligência", () => {
     expect(STAFF_ROUTES.some((route) => route.key === "ramos")).toBe(false);
-    expect(STAFF_ROUTES.some((route) => route.key === "ramo-detalhe")).toBe(false);
+    expect(STAFF_ROUTES.some((route) => route.key === "ramo-detalhe")).toBe(
+      false,
+    );
     expect(canRoleAccessPath("advogado", "/areas-de-atuacao")).toBe(false);
   });
 

@@ -3,7 +3,7 @@ import { sanitizeCsvCell } from "./exportCsv";
 
 describe("sanitizeCsvCell", () => {
   it.each([
-    "=HYPERLINK(\"https://exemplo.invalid\")",
+    '=HYPERLINK("https://exemplo.invalid")',
     "+SUM(1,2)",
     "-1+2",
     "@SUM(A1:A2)",
@@ -12,9 +12,10 @@ describe("sanitizeCsvCell", () => {
     "  @SUM(A1:A2)",
   ])("neutraliza fórmula textual: %s", (payload) => {
     const cell = sanitizeCsvCell(payload);
-    const decoded = cell.startsWith('"') && cell.endsWith('"')
-      ? cell.slice(1, -1).replace(/""/g, '"')
-      : cell;
+    const decoded =
+      cell.startsWith('"') && cell.endsWith('"')
+        ? cell.slice(1, -1).replace(/""/g, '"')
+        : cell;
     expect(decoded).toBe(`'${payload}`);
   });
 

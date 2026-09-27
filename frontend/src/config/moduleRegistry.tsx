@@ -96,7 +96,8 @@ export const LEGACY_CANONICAL_REDIRECTS: LegacyCanonicalRedirect[] = [
   {
     from: "/areas-de-atuacao",
     to: "/inteligencia?tab=conhecimento",
-    reason: "O hub de ramos foi desativado; conhecimento e contexto seguem em Inteligência.",
+    reason:
+      "O hub de ramos foi desativado; conhecimento e contexto seguem em Inteligência.",
   },
 ];
 
@@ -538,11 +539,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "ramos",
     usesAI: true,
     sensitive: true,
-    backendPrefixes: [
-      "/api/cases",
-      "/api/admin-esp",
-      "/api/tributario/fiscal",
-    ],
+    backendPrefixes: ["/api/cases", "/api/admin-esp", "/api/tributario/fiscal"],
   },
   {
     key: "atividades",

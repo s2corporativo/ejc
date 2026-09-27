@@ -38,7 +38,9 @@ describe("Peças — Banco de Teses canônico no contexto do caso", () => {
   });
 
   it("formata histórico pelas duas convenções canônicas", () => {
-    expect(fonte).toContain('import { fmtTaxaSucesso } from "../../utils/formato"');
+    expect(fonte).toContain(
+      'import { fmtTaxaSucesso } from "../../utils/formato"',
+    );
     expect(fonte).toContain("fmtTaxaSucesso(tese.taxa_sucesso)");
     expect(fonte).not.toContain("tese.taxa_sucesso * 100");
   });
