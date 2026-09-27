@@ -1264,6 +1264,17 @@ html:not(.dark) .legal-surface {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto !important;
+  }
+
+  .sidebar-bronze,
+  .sidebar-bronze *,
+  .card,
+  .card * {
+    transition: none !important;
+  }
+
   .ejc-skip-link {
     transition: none;
   }

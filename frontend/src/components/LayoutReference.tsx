@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import {
   Bell,
@@ -91,6 +91,9 @@ export default function LayoutReference() {
   );
 
   const [mobileOpen, setMobileOpen] = useState(false);
+  const mobileMenuRef = useRef<HTMLElement>(null);
+  const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const mobileWasOpenRef = useRef(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifCount, setNotifCount] = useState(0);
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -110,6 +113,54 @@ export default function LayoutReference() {
     if (privacyMode) setNotifOpen(false);
     return () => document.documentElement.classList.remove("ejc-privacy-mode");
   }, [privacyMode]);
+
+  useEffect(() => {
+    if (!mobileOpen) {
+      if (mobileWasOpenRef.current) {
+        mobileWasOpenRef.current = false;
+        mobileMenuTriggerRef.current?.focus();
+      }
+      return;
+    }
+
+    mobileWasOpenRef.current = true;
+
+    const menu = mobileMenuRef.current;
+    if (!menu) return;
+
+    const focusable = () =>
+      Array.from(
+        menu.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element) => element.offsetParent !== null);
+
+    focusable()[0]?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMobileOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const items = focusable();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [mobileOpen]);
 
   useEffect(() => {
     const loadNotifications = () => {
@@ -204,6 +255,7 @@ export default function LayoutReference() {
           <button
             type="button"
             className="icon-btn"
+            ref={mobileMenuTriggerRef}
             onClick={() => {
               if (window.matchMedia("(min-width: 768px)").matches) {
                 setSidebarCollapsed(!collapsed);
@@ -212,6 +264,8 @@ export default function LayoutReference() {
               }
             }}
             aria-label={collapsed ? "Expandir menu" : "Abrir ou recolher menu"}
+            aria-expanded={mobileOpen}
+            aria-controls="ejc-mobile-menu"
           >
             <Menu className="h-5 w-5" />
           </button>
@@ -380,15 +434,17 @@ export default function LayoutReference() {
       </header>
 
       {mobileOpen && (
-        <button
-          type="button"
+        <div
           className="fixed inset-0 z-30 bg-slate-950/30 md:hidden"
-          aria-label="Fechar menu"
-          onClick={() => setMobileOpen(false)}
+          aria-hidden="true"
+          onMouseDown={() => setMobileOpen(false)}
         />
       )}
 
       <aside
+        id="ejc-mobile-menu"
+        ref={mobileMenuRef}
+        aria-label="Menu principal"
         className={cn(
           "sidebar-bronze fixed bottom-0 left-0 top-0 z-[60] flex-col transition-all md:z-40",
           sidebarWidth,
