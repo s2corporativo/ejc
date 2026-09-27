@@ -122,10 +122,12 @@ print(v if v is not None else f"__ERRO__ {d}", end="")
 autenticar() {
   log "Autenticando em $BASE_URL"
   local corpo resposta
-  # A senha entra via stdin do python3 para não passar por linha de comando.
-  corpo="$(EJC_EMAIL="$EJC_EMAIL" EJC_SENHA="$EJC_SENHA" python3 -c '
-import json,os
-print(json.dumps({"email": os.environ["EJC_EMAIL"], "password": os.environ["EJC_SENHA"]}))')"
+  # As credenciais entram via stdin do python3, sem linha de comando ou
+  # atribuição inline de variáveis sensíveis.
+  corpo="$(printf '%s\0%s\0' "$EJC_EMAIL" "$EJC_SENHA" | python3 -c '
+import json,sys
+email,senha = sys.stdin.buffer.read().split(b"\0")[:2]
+print(json.dumps({"email": email.decode(), "password": senha.decode()}))')"
   resposta="$(curl -sS -X POST "$BASE_URL/api/auth/login" \
     -H "Content-Type: application/json" --data-binary "$corpo")"
   TOKEN="$(printf '%s' "$resposta" | json_campo access_token)"
@@ -226,10 +228,10 @@ except Exception:
   [ -n "$DATAJUD_KEY" ] || erro "chave vazia"
 
   local corpo resposta overlay
-  corpo="$(DATAJUD_KEY="$DATAJUD_KEY" EJC_SENHA="$EJC_SENHA" python3 -c '
-import json,os
-print(json.dumps({"valor": os.environ["DATAJUD_KEY"],
-                  "senha_atual": os.environ["EJC_SENHA"]}))')"
+  corpo="$(printf '%s\0%s\0' "$DATAJUD_KEY" "$EJC_SENHA" | python3 -c '
+import json,sys
+chave,senha = sys.stdin.buffer.read().split(b"\0")[:2]
+print(json.dumps({"valor": chave.decode(), "senha_atual": senha.decode()}))')"
   resposta="$(curl -sS -X POST \
     "$BASE_URL/api/cofre-credenciais/datajud/DATAJUD_API_KEY" \
     -H "Authorization: Bearer $TOKEN" \

@@ -1,6 +1,6 @@
 # Remoção lógica das rotas de ramos e preservação do núcleo de inteligência
 
-**Data:** 27/09/2026  
+**Data:** 27/09/2026
 **Escopo:** EJC — simplificação da superfície de Áreas de Atuação
 
 ## Resultado

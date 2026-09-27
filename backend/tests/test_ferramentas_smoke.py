@@ -26,6 +26,7 @@ vizinhos test_liquidacao_trabalhista.py e test_cet_abusividade.py (sem rede).
 """
 from __future__ import annotations
 
+import os
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -165,6 +166,11 @@ CASOS_GET = [
     ("/calculadoras/irrf", {"rendimento": 5_000, "inss": 550, "dependentes": 1}),
     ("/calculadoras/prescricao/tipos", {}),
 ]
+
+if os.getenv("EJC_ENABLE_RAMOS_ROUTES", "false").lower() not in {
+    "1", "true", "yes", "on"
+}:
+    CASOS_GET = [caso for caso in CASOS_GET if caso[0].startswith("/calculadoras/")]
 
 
 @pytest.mark.parametrize("path,params", CASOS_GET, ids=[c[0] for c in CASOS_GET])

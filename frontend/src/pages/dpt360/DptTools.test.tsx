@@ -50,8 +50,10 @@ describe("DptTools", () => {
       name: /Abrir workspace canônico/i,
     });
     const hrefs = links.map((link) => link.getAttribute("href"));
-    expect(hrefs).toContain("/areas-de-atuacao/tributario");
-    expect(hrefs).toContain("/areas-de-atuacao/ambiental");
-    expect(hrefs).toContain("/areas-de-atuacao/digital_lgpd");
+    expect(hrefs).toContain("/inteligencia?tab=conhecimento");
+    expect(hrefs).toContain("/ia-governanca");
+    expect(hrefs.some((href) => href?.startsWith("/areas-de-atuacao"))).toBe(
+      false,
+    );
   });
 });

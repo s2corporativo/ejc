@@ -74,7 +74,7 @@ BACKEND_SEM_KEY_NO_FRONTEND: set[str] = {
 FRONTEND_SEM_MODULO_NO_BACKEND: set[str] = {
     # Detalhe/edição de registros (sub-rotas do módulo pai já catalogado)
     "caso-novo", "caso-detalhe", "caso-jornada", "caso-entrevista",
-    "cliente-detalhe", "cadastro-manual", "ramo-detalhe",
+    "cliente-detalhe", "cadastro-manual",
     # Workspaces/casca cujo conteúdo já está catalogado por módulo
     # (a consolidação do "DPT360 triplo" aposentou dpt360-subroutes/
     #  dpt360-company-detail: as sub-rotas ficaram em ModuleRoute.subPaths

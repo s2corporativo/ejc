@@ -1,5 +1,6 @@
 """Regressões da regra federal do PAF reconstruída sobre a main atual."""
 from datetime import date
+import os
 
 import pytest
 from fastapi import HTTPException
@@ -11,6 +12,12 @@ from app.services.tributario_paf import (
     VERSAO_REGRA_PAF,
     calcular_prazo_impugnacao_paf,
     suspenso_paf_federal,
+)
+
+requires_ramos_surface = pytest.mark.skipif(
+    os.getenv("EJC_ENABLE_RAMOS_ROUTES", "false").lower()
+    not in {"1", "true", "yes", "on"},
+    reason="contrato de montagem depende da superfície de ramos desativada",
 )
 
 
@@ -52,6 +59,7 @@ def test_paf_permanece_no_gate_de_homologacao() -> None:
     assert "não promover" in motivo
 
 
+@requires_ramos_surface
 def test_agregador_monta_uma_unica_rota_paf_canonica() -> None:
     rotas = [
         rota

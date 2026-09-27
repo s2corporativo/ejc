@@ -37,6 +37,7 @@ CPF = "123.456.789-09"
 def s(monkeypatch):
     """Baseline: Anthropic elegível, sanitização externa exigida, Ollama OFF."""
     st = get_settings()
+    monkeypatch.setattr(st, "AI_ENABLED", True)
     monkeypatch.setattr(st, "ANTHROPIC_ENABLED", True)
     monkeypatch.setattr(st, "ANTHROPIC_API_KEY", "sk-ant-fake-para-testes")
     monkeypatch.setattr(st, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)

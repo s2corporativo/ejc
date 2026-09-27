@@ -117,12 +117,6 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         help_key="atividades",
     ),
     _mod(
-        "ramos", "Áreas de Atuação", "Jurídico", "/areas-de-atuacao",
-        ["/api/empresarial", "/api/civel", "/api/penal", "/api/areas", "/api/ambiental/estrategia", "/api/trabalhista/liquidacao", "/api/tributario/fiscal"],
-        perfis=PERFIS_JURIDICO, dependencias=["cases", "ai_gateway"], usa_ia=True,
-        responsavel_operacional="juridico",
-    ),
-    _mod(
         "documentos", "Documentos e GED", "Produção", "/documentos",
         ["/api/documents", "/api/anexos", "/api/data-room"],
         perfis=PERFIS_JURIDICO + ["secretaria"],

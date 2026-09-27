@@ -12,6 +12,7 @@ Cobre, no padrão dos vizinhos (chamada direta às funções, sem harness de ban
       vigente) rejeitam bypass por omissão e demonstrativo forjado.
 """
 from datetime import date
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -23,6 +24,14 @@ from app.routers.ramos import FERRAMENTAS_BLOQUEADAS, FERRAMENTAS_NAO_HOMOLOGADA
 from app.schemas.areas_atuacao import (
     AdminUpdate, BancarioUpdate, CivelUpdate,
     EmpresarialUpdate, PenalUpdate, TrabalhistaUpdate,
+)
+
+RAMOS_SURFACE_ENABLED = os.getenv("EJC_ENABLE_RAMOS_ROUTES", "false").lower() in {
+    "1", "true", "yes", "on"
+}
+requires_ramos_surface = pytest.mark.skipif(
+    not RAMOS_SURFACE_ENABLED,
+    reason="superfície pública de ramos consolidada no núcleo de inteligência",
 )
 
 
@@ -261,6 +270,7 @@ def _prova_provenencia(**overrides) -> dict:
     return base
 
 
+@requires_ramos_surface
 @pytest.mark.parametrize("ferramenta", [
     "/penal/ferramentas/dosimetria",                     # selo (simulador assistido)
     "/api/penal/ferramentas/dosimetria",                 # com prefixo /api
@@ -365,6 +375,7 @@ async def test_demonstrativo_ferramenta_caminho_inexistente_422():
     assert e.value.detail["codigo"] == "ferramenta_desconhecida"
 
 
+@requires_ramos_surface
 async def test_demonstrativo_ferramenta_prefixo_v1_canonico_passa_gate_1(_demonstrativo_liberado):
     """Achado do review Codex (Issue #702): `/api/v1` é o prefixo CANÔNICO
     (`app/core/api_version_middleware.py`), não apenas um sinônimo legado de
@@ -382,6 +393,7 @@ async def test_demonstrativo_ferramenta_prefixo_v1_canonico_passa_gate_1(_demons
         await gerar_demonstrativo(req, db=None, cu=_cu_advogado())
 
 
+@requires_ramos_surface
 async def test_demonstrativo_grava_o_caminho_normalizado_nao_o_valor_cru(_demonstrativo_liberado):
     """Achado do review CodeRabbit (Issue #702, Integridade de Dados): o Gate 1
     valida o caminho NORMALIZADO (`normalizar_caminho_ferramenta` descarta
@@ -413,6 +425,7 @@ async def test_demonstrativo_grava_o_caminho_normalizado_nao_o_valor_cru(_demons
     assert "?" not in linha
 
 
+@requires_ramos_surface
 async def test_demonstrativo_versao_regra_divergente_reprova_forjado():
     """Mecanismo de proveniência (piso, opção (c) da Issue #702): `versao_regra`
     é o mesmo valor que a PRÓPRIA ferramenta carimba em toda resposta
@@ -434,6 +447,7 @@ async def test_demonstrativo_versao_regra_divergente_reprova_forjado():
     assert e.value.detail["codigo"] == "versao_regra_divergente"
 
 
+@requires_ramos_surface
 async def test_demonstrativo_ferramenta_homologada_passa_do_gate(_demonstrativo_liberado):
     from app.routers.peca_geracao import DemonstrativoRequest, gerar_demonstrativo
     req = DemonstrativoRequest(titulo="Cálculo de teste",
@@ -443,6 +457,7 @@ async def test_demonstrativo_ferramenta_homologada_passa_do_gate(_demonstrativo_
         await gerar_demonstrativo(req, db=None, cu=_cu_advogado())
 
 
+@requires_ramos_surface
 async def test_trava_geral_bloqueia_mesmo_ferramenta_homologada():
     """Não-regressão (AC #702): com a flag geral desligada (default), o
     comportamento segue sendo 403 mesmo com ferramenta homologada, caminho
@@ -457,6 +472,7 @@ async def test_trava_geral_bloqueia_mesmo_ferramenta_homologada():
     assert e.value.status_code == 403
 
 
+@requires_ramos_surface
 async def test_ferramenta_nao_homologada_responde_422_mesmo_com_trava_fechada():
     """Ordem dos gates: o motivo ESPECÍFICO da não homologação precisa chegar ao
     advogado. Com a trava geral na frente, tudo virava um 403 genérico e o 422
