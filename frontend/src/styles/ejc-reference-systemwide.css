@@ -1267,4 +1267,10 @@ html:not(.dark) .legal-surface {
   .ejc-skip-link {
     transition: none;
   }
+
+  .ejc-app-header,
+  #conteudo-principal > div.animate-rise {
+    animation: none !important;
+    transition: none !important;
+  }
 }
