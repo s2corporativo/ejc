@@ -476,11 +476,12 @@ export default function Despesas({
                   value={form.valor}
                   onChange={(e) => setForm({ ...form, valor: e.target.value })}
                 />
-                {form.valor.trim() !== "" && (parseFloat(form.valor) || 0) <= 0 && (
-                  <p className="mt-1 text-xs text-amber-600">
-                    Informe um valor maior que R$ 0,00.
-                  </p>
-                )}
+                {form.valor.trim() !== "" &&
+                  (parseFloat(form.valor) || 0) <= 0 && (
+                    <p className="mt-1 text-xs text-amber-600">
+                      Informe um valor maior que R$ 0,00.
+                    </p>
+                  )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">
@@ -564,7 +565,11 @@ export default function Despesas({
             </button>
             <button
               onClick={save}
-              disabled={!form.descricao || !form.valor || (parseFloat(form.valor) || 0) <= 0}
+              disabled={
+                !form.descricao ||
+                !form.valor ||
+                (parseFloat(form.valor) || 0) <= 0
+              }
               className="btn-primary"
             >
               {editId ? "Salvar alterações" : "Criar despesa"}

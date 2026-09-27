@@ -40,7 +40,12 @@ const EstimadorHonorarios = lazy(
 );
 
 const GESTORES: readonly string[] = ["superadmin", "admin", "socio"];
-const ADVOGADOS: readonly string[] = ["superadmin", "admin", "socio", "advogado"];
+const ADVOGADOS: readonly string[] = [
+  "superadmin",
+  "admin",
+  "socio",
+  "advogado",
+];
 const EQUIPE_JURIDICA_UI: readonly string[] = [
   "superadmin",
   "admin",
@@ -261,9 +266,7 @@ export default function InteligenciaWorkspace() {
             {tab === "conhecimento" && sub === "pesquisa" && (
               <PesquisaJuridica />
             )}
-            {tab === "conhecimento" && sub === "curadoria" && (
-              <Conhecimento />
-            )}
+            {tab === "conhecimento" && sub === "curadoria" && <Conhecimento />}
             {tab === "saude" && sub === "saude" && <DashboardIA />}
             {tab === "saude" && sub === "governanca" && <GovernancaIA />}
           </Suspense>

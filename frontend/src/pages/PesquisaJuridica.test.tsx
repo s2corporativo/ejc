@@ -82,7 +82,9 @@ describe("PesquisaJuridica — P0 Inteligência Jurídica", () => {
     render(<PesquisaJuridica />);
 
     fireEvent.change(
-      screen.getByPlaceholderText(/Cole aqui o trecho com números de processos/i),
+      screen.getByPlaceholderText(
+        /Cole aqui o trecho com números de processos/i,
+      ),
       { target: { value: "Processo 0000000-00.2026.8.13.0000" } },
     );
     fireEvent.click(
@@ -100,6 +102,8 @@ describe("PesquisaJuridica — P0 Inteligência Jurídica", () => {
     );
     expect(await screen.findByText("Verificada")).toBeTruthy();
     expect(screen.getByText("100%")).toBeTruthy();
-    expect(screen.getByText(/Fonte de verificação:/).closest("p")?.textContent).toContain("DataJud");
+    expect(
+      screen.getByText(/Fonte de verificação:/).closest("p")?.textContent,
+    ).toContain("DataJud");
   });
 });

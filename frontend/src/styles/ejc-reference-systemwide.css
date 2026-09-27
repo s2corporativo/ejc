@@ -550,7 +550,6 @@ html:not(.dark)
   }
 }
 
-
 /* ========================================================================== */
 /* EJC Institutional Petroleum & Gold — referência visual 17/09/2026         */
 /* ========================================================================== */
@@ -602,7 +601,7 @@ html:not(.dark) .ejc-header-search:hover,
 html:not(.dark) .ejc-header-search:focus-visible {
   border-color: rgba(193, 159, 75, 0.56) !important;
   background: #fff !important;
-  box-shadow: 0 0 0 3px rgba(193, 159, 75, 0.10) !important;
+  box-shadow: 0 0 0 3px rgba(193, 159, 75, 0.1) !important;
 }
 
 html:not(.dark) .ejc-header-search kbd {
@@ -637,8 +636,7 @@ html:not(.dark) .sidebar-bronze {
   overflow: hidden;
   border: 0 !important;
   border-radius: 0 28px 28px 0;
-  background:
-    linear-gradient(180deg, #0b3d30 0%, #01201b 100%) !important;
+  background: linear-gradient(180deg, #0b3d30 0%, #01201b 100%) !important;
   color: #f4f8f7 !important;
   box-shadow: 8px 0 30px rgba(2, 32, 26, 0.24) !important;
 }
@@ -763,7 +761,10 @@ html:not(.dark) .sidebar-bronze .ejc-sidebar-month__grid button:hover {
   background: rgba(255, 255, 255, 0.08);
 }
 
-html:not(.dark) .sidebar-bronze .ejc-sidebar-month__grid button[aria-current="date"] {
+html:not(.dark)
+  .sidebar-bronze
+  .ejc-sidebar-month__grid
+  button[aria-current="date"] {
   background: var(--ejc-gold) !important;
   color: #26302f !important;
 }
@@ -794,14 +795,22 @@ html:not(.dark) main.ejc-modern-scope {
   min-height: calc(100vh - 72px);
   padding-top: 18px !important;
   background:
-    radial-gradient(circle at 72% 0%, rgba(255, 255, 255, 0.48), transparent 34%),
+    radial-gradient(
+      circle at 72% 0%,
+      rgba(255, 255, 255, 0.48),
+      transparent 34%
+    ),
     var(--ejc-ice) !important;
 }
 
 html:not(.dark) .ejc-modern-scope :where(.card, .section-card),
-html:not(.dark) .ejc-modern-scope [class*="rounded-xl"][class*="border"][class*="bg-white"],
-html:not(.dark) .ejc-modern-scope [class*="rounded-2xl"][class*="border"][class*="bg-white"] {
-  border-color: rgba(72, 91, 90, 0.10) !important;
+html:not(.dark)
+  .ejc-modern-scope
+  [class*="rounded-xl"][class*="border"][class*="bg-white"],
+html:not(.dark)
+  .ejc-modern-scope
+  [class*="rounded-2xl"][class*="border"][class*="bg-white"] {
+  border-color: rgba(72, 91, 90, 0.1) !important;
   border-radius: 20px !important;
   background: var(--ejc-paper) !important;
   box-shadow: var(--ejc-soft-shadow) !important;
@@ -811,7 +820,9 @@ html:not(.dark) .ejc-modern-scope :where(.card, .section-card):hover {
   border-color: rgba(193, 159, 75, 0.25) !important;
 }
 
-html:not(.dark) .ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]),
+html:not(.dark)
+  .ejc-modern-scope
+  input:not([type="checkbox"]):not([type="radio"]),
 html:not(.dark) .ejc-modern-scope select,
 html:not(.dark) .ejc-modern-scope textarea,
 html:not(.dark) .ejc-modern-scope .input {
@@ -820,7 +831,9 @@ html:not(.dark) .ejc-modern-scope .input {
   background: #fff !important;
 }
 
-html:not(.dark) .ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]):focus,
+html:not(.dark)
+  .ejc-modern-scope
+  input:not([type="checkbox"]):not([type="radio"]):focus,
 html:not(.dark) .ejc-modern-scope select:focus,
 html:not(.dark) .ejc-modern-scope textarea:focus,
 html:not(.dark) .ejc-modern-scope .input:focus {
@@ -869,7 +882,11 @@ html:not(.dark) .ejc-ai-dashboard__brandbar {
   border: 0;
   border-radius: 26px;
   background:
-    radial-gradient(circle at 88% 18%, rgba(193, 159, 75, 0.22), transparent 31%),
+    radial-gradient(
+      circle at 88% 18%,
+      rgba(193, 159, 75, 0.22),
+      transparent 31%
+    ),
     linear-gradient(130deg, #fdfefe 0%, #f3f7f6 56%, #eaf0ef 100%);
   box-shadow: var(--ejc-soft-shadow);
 }
@@ -884,7 +901,7 @@ html:not(.dark) .ejc-ai-dashboard__brandbar {
   max-width: 46vw;
   object-fit: contain;
   flex: 0 0 auto;
-  filter: drop-shadow(0 12px 25px rgba(40, 48, 43, 0.10));
+  filter: drop-shadow(0 12px 25px rgba(40, 48, 43, 0.1));
 }
 
 html:not(.dark) .ejc-ai-dashboard__brand span {
@@ -926,7 +943,7 @@ html:not(.dark) .ejc-ai-signal {
 
 html:not(.dark) .ejc-ai-signal:hover {
   transform: translateY(-1px);
-  border-color: rgba(193, 159, 75, 0.30);
+  border-color: rgba(193, 159, 75, 0.3);
 }
 
 html:not(.dark) .ejc-ai-signal.is-task,
@@ -966,7 +983,7 @@ html:not(.dark) .ejc-ai-dashboard__workspace {
 }
 
 html:not(.dark) .ejc-ai-dashboard__workspace-header {
-  border-bottom-color: rgba(72, 91, 90, 0.10);
+  border-bottom-color: rgba(72, 91, 90, 0.1);
 }
 
 html:not(.dark) .ejc-ai-dashboard__workspace-header span {
@@ -990,7 +1007,11 @@ html:not(.dark) .ejc-ai-dashboard__legal-radar {
   padding: 18px;
   border-radius: 24px;
   background:
-    radial-gradient(circle at 82% 10%, rgba(234, 202, 127, 0.18), transparent 30%),
+    radial-gradient(
+      circle at 82% 10%,
+      rgba(234, 202, 127, 0.18),
+      transparent 30%
+    ),
     linear-gradient(165deg, #0b4535 0%, #04291f 100%);
   color: #eef5f2;
   box-shadow: var(--ejc-float-shadow);
@@ -999,7 +1020,7 @@ html:not(.dark) .ejc-ai-dashboard__legal-radar {
 html:not(.dark) .ejc-ai-dashboard__legal-radar-head {
   margin: 0 0 12px;
   padding-bottom: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 html:not(.dark) .ejc-ai-dashboard__legal-radar-head strong {
@@ -1027,7 +1048,7 @@ html:not(.dark) .ejc-ai-dashboard__legal-radar .ejc-legal-ticker__item {
   min-width: 0;
   width: 100%;
   max-width: none;
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 15px;
   background: rgba(255, 255, 255, 0.07);
   color: #f7fbfa;

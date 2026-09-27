@@ -1,10 +1,6 @@
 import axios from "axios";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import api, {
-  getAccessToken,
-  refreshAccessToken,
-  setAccessToken,
-} from "./api";
+import api, { getAccessToken, refreshAccessToken, setAccessToken } from "./api";
 
 describe("sessão com access token somente em memória", () => {
   afterEach(() => {

@@ -3,7 +3,13 @@
 // MESMA superfície canônica do módulo (sem segundo CRUD): com `caseId`, o
 // painel filtra as salas do caso e a criação já nasce vinculada (case_id).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 
 vi.mock("../components/Toast", () => ({
   toast: { info: vi.fn(), error: vi.fn(), success: vi.fn() },
@@ -17,8 +23,18 @@ vi.mock("../lib/api", () => ({
 }));
 
 const SALAS = [
-  { id: "sala-caso", nome: "Sala do caso", case_id: "c1", created_at: "2026-09-01" },
-  { id: "sala-outro", nome: "Sala de outro caso", case_id: "c2", created_at: "2026-09-02" },
+  {
+    id: "sala-caso",
+    nome: "Sala do caso",
+    case_id: "c1",
+    created_at: "2026-09-01",
+  },
+  {
+    id: "sala-outro",
+    nome: "Sala de outro caso",
+    case_id: "c2",
+    created_at: "2026-09-02",
+  },
   { id: "sala-global", nome: "Sala sem caso", created_at: "2026-09-03" },
 ];
 
@@ -52,7 +68,9 @@ describe("DataRoomPanel — contexto de caso (Onda 3)", () => {
   it("com caseId: estado vazio honesto quando o caso não tem sala", async () => {
     render(<DataRoomPanel caseId="c-inexistente" />);
     await waitFor(() =>
-      expect(screen.getByText("Nenhuma sala vinculada a este caso")).toBeTruthy(),
+      expect(
+        screen.getByText("Nenhuma sala vinculada a este caso"),
+      ).toBeTruthy(),
     );
   });
 
@@ -66,9 +84,7 @@ describe("DataRoomPanel — contexto de caso (Onda 3)", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Criar" }));
 
-    await waitFor(() =>
-      expect(vi.mocked(api.post)).toHaveBeenCalled(),
-    );
+    await waitFor(() => expect(vi.mocked(api.post)).toHaveBeenCalled());
     const [rota, corpo] = vi.mocked(api.post).mock.calls[0];
     expect(rota).toBe("/data-rooms");
     expect((corpo as any).case_id).toBe("c1");

@@ -303,7 +303,9 @@ start_pg() {
     log "Subindo cluster PostgreSQL local efêmero em 127.0.0.1:$PG_PORT…"
     safe_remove_tree "$PGDATA"; mkdir -p "$PGDATA"
     "$PGBIN/initdb" -D "$PGDATA" -U "$DBU" --auth-local=trust --auth-host=scram-sha-256 --pwfile=<(printf '%s\n' "$DBP") >/dev/null
-    "$PGBIN/pg_ctl" -D "$PGDATA" -o "-p $PG_PORT -c listen_addresses=127.0.0.1" -l "$PGDATA/pg.log" start >/dev/null
+    # O sandbox não concede escrita em /var/run/postgresql; manter o socket
+    # Unix no próprio diretório efêmero evita falha ambiental do pg_ctl.
+    "$PGBIN/pg_ctl" -D "$PGDATA" -o "-p $PG_PORT -c listen_addresses=127.0.0.1 -c unix_socket_directories=$PGDATA" -l "$PGDATA/pg.log" start >/dev/null
     for _ in $(seq 1 45); do PGPASSWORD="$DBP" "$PGBIN/pg_isready" -h 127.0.0.1 -p "$PG_PORT" -U "$DBU" >/dev/null 2>&1 && break; sleep 1; done
     PGPASSWORD="$DBP" "$PGBIN/createdb" -h 127.0.0.1 -p "$PG_PORT" -U "$DBU" "$DBN" >/dev/null 2>&1 || true
   fi
@@ -312,6 +314,7 @@ start_pg() {
   export APP_ENV=development
   export DATABASE_URL="postgresql+asyncpg://$DBU:$DBP@127.0.0.1:$PG_PORT/$DBN"
   export DATABASE_URL_SYNC="postgresql://$DBU:$DBP@127.0.0.1:$PG_PORT/$DBN"
+  export MIGRATION_DATABASE_URL="$DATABASE_URL_SYNC"
   export SCHEMA_CHECK_DATABASE_URL="$DATABASE_URL_SYNC"
   export RUN_DB_TESTS=1
   ok "PostgreSQL efêmero pronto em 127.0.0.1:$PG_PORT"

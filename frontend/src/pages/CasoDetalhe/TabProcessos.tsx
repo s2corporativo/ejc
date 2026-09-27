@@ -36,7 +36,9 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
   const [arqSaving, setArqSaving] = useState(false);
   const [provenienciaPid, setProvenienciaPid] = useState<string | null>(null);
   const [provenienciaLoading, setProvenienciaLoading] = useState(false);
-  const [proveniencia, setProveniencia] = useState<Record<string, ProvenienciaProcesso[]>>({});
+  const [proveniencia, setProveniencia] = useState<
+    Record<string, ProvenienciaProcesso[]>
+  >({});
   const vazio = {
     tipo: "judicial",
     numero_cnj: "",
@@ -148,7 +150,9 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
         [pid]: Array.isArray(data?.data) ? data.data : [],
       }));
     } catch (err) {
-      toast.error(mensagemErroHttp(err, "Falha ao carregar a origem dos dados"));
+      toast.error(
+        mensagemErroHttp(err, "Falha ao carregar a origem dos dados"),
+      );
       setProvenienciaPid(null);
     } finally {
       setProvenienciaLoading(false);
@@ -254,7 +258,10 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
                 type="date"
                 value={form.data_ajuizamento}
                 onChange={(e) =>
-                  setForm((f: any) => ({ ...f, data_ajuizamento: e.target.value }))
+                  setForm((f: any) => ({
+                    ...f,
+                    data_ajuizamento: e.target.value,
+                  }))
                 }
                 className="input w-full"
               />
@@ -347,7 +354,9 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
                     .filter(Boolean)
                     .join(" · ") || "—"}
                   {p.fase ? ` · fase: ${p.fase}` : ""}
-                  {p.data_ajuizamento ? ` · ajuizado em: ${p.data_ajuizamento}` : ""}
+                  {p.data_ajuizamento
+                    ? ` · ajuizado em: ${p.data_ajuizamento}`
+                    : ""}
                 </p>
                 {p.valor_causa != null && (
                   <p className="text-xs text-gray-400 mt-0.5">
@@ -368,13 +377,17 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
                     onClick={() => void alternarProveniencia(p.id)}
                     className="text-xs font-medium text-slate-600 hover:text-primary-700 hover:underline"
                   >
-                    {provenienciaPid === p.id ? "Ocultar origem dos dados" : "Ver origem dos dados"}
+                    {provenienciaPid === p.id
+                      ? "Ocultar origem dos dados"
+                      : "Ver origem dos dados"}
                   </button>
                 </div>
                 {provenienciaPid === p.id && (
                   <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
                     {provenienciaLoading && !proveniencia[p.id] ? (
-                      <p className="text-xs text-slate-500">Carregando proveniência…</p>
+                      <p className="text-xs text-slate-500">
+                        Carregando proveniência…
+                      </p>
                     ) : (proveniencia[p.id] ?? []).length === 0 ? (
                       <p className="text-xs text-slate-500">
                         Sem registros de proveniência para este processo.

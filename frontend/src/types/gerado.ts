@@ -65,10 +65,7 @@ export const ROTULO_AREA: Record<CaseArea, string> = {
 };
 
 /** Áreas em destaque no menu de ramos (casos reais do escritório). */
-export const AREAS_DESTAQUE: readonly CaseArea[] = [
-  "consumidor",
-  "civil",
-];
+export const AREAS_DESTAQUE: readonly CaseArea[] = ["consumidor", "civil"];
 
 /** Status do caso (enum CaseStatus). */
 export const CASE_STATUS = [
@@ -92,12 +89,7 @@ export const CASE_FASE = [
 export type CaseFase = (typeof CASE_FASE)[number];
 
 /** Prioridade do caso (enum CasePrioridade). */
-export const CASE_PRIORIDADE = [
-  "baixa",
-  "media",
-  "alta",
-  "critica",
-] as const;
+export const CASE_PRIORIDADE = ["baixa", "media", "alta", "critica"] as const;
 export type CasePrioridade = (typeof CASE_PRIORIDADE)[number];
 
 /** Tipo de prazo (enum DeadlineTipo). */
