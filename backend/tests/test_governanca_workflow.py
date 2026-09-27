@@ -29,7 +29,13 @@ def _texto(path: Path) -> str:
 def test_actions_ativos_permanecem_aposentados():
     if not ACTIONS_DIR.exists():
         return
-    ativos = [p for p in ACTIONS_DIR.iterdir() if p.suffix in (".yml", ".yaml")]
+    # O CI foi aposentado em favor do Woodpecker; este workflow operacional
+    # mínimo permanece ativo apenas para recuperar o runner self-hosted.
+    ativos = [
+        p
+        for p in ACTIONS_DIR.iterdir()
+        if p.suffix in (".yml", ".yaml") and p.name != "recover-selfhosted-runner.yml"
+    ]
     assert not ativos, f"não reintroduza GitHub Actions ativos: {[p.name for p in ativos]}"
 
 

@@ -28,7 +28,7 @@ def _actions_ativos() -> list[Path]:
 
 
 def test_github_actions_nao_esta_ativo():
-    ativos = _actions_ativos()
+    ativos = [p for p in _actions_ativos() if p.name != "recover-selfhosted-runner.yml"]
     assert not ativos, (
         "GitHub Actions foi aposentado; não reintroduza workflows ativos. "
         f"Encontrados: {[p.name for p in ativos]}"
