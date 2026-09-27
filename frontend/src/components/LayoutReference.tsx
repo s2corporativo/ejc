@@ -189,6 +189,9 @@ export default function LayoutReference() {
 
   return (
     <div className="ejc-petroleum-shell min-h-screen bg-canvas text-slate-900">
+      <a className="ejc-skip-link" href="#conteudo-principal">
+        Pular para o conteúdo principal
+      </a>
       {!privacyMode && <CommandPalette />}
 
       <header
@@ -507,7 +510,11 @@ export default function LayoutReference() {
       >
         <IaStatusBanner />
         <CaseContextBar />
-        <main className="ejc-modern-scope flex-1 px-3 py-4 md:px-5 md:py-5">
+        <main
+          id="conteudo-principal"
+          tabIndex={-1}
+          className="ejc-modern-scope flex-1 px-3 py-4 md:px-5 md:py-5"
+        >
           <div className="mx-auto w-full animate-rise">
             <ErrorBoundary key={location.pathname}>
               <ModuleLifecycleGate>
