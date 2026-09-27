@@ -25,7 +25,6 @@ import {
   Vote,
 } from "lucide-react";
 import api from "../lib/api";
-import { CANONICAL_ROUTES } from "../config/canonicalRoutes";
 import { ROLES } from "../config/moduleRegistry";
 import { Badge, Button, Card, PageHeader } from "../components/UI";
 import { useAuth } from "../stores/auth";
@@ -35,7 +34,6 @@ import {
   areaCombinaBusca,
   casosGeraisPath,
   grupoDaArea,
-  hubSlugDaArea,
   novoCasoPath,
   type AreaResumo,
 } from "./ramos/areasWorkspace";
@@ -43,8 +41,8 @@ import {
 const FAVORITOS_KEY = "ejc:areas-favoritas:v1";
 
 export function hubDoRamo(areaSlug: string): string | null {
-  const slug = hubSlugDaArea(areaSlug);
-  return slug ? `${CANONICAL_ROUTES.areasAtuacao}/${slug}` : null;
+  void areaSlug;
+  return null;
 }
 
 export function podeCriarCasoNoHub(role?: string | null): boolean {

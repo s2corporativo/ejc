@@ -2,25 +2,20 @@ import { describe, expect, it } from "vitest";
 import { hubDoRamo, podeCriarCasoNoHub } from "./RamosHub";
 
 describe("hubDoRamo", () => {
-  it("gera rota contextual para workspaces especializados e aliases técnicos", () => {
-    expect(hubDoRamo("empresarial")).toBe("/areas-de-atuacao/empresarial");
-    expect(hubDoRamo("civil")).toBe("/areas-de-atuacao/civel");
-    expect(hubDoRamo("criminal")).toBe("/areas-de-atuacao/penal");
+  it("não gera rota para workspaces especializados desativados", () => {
+    expect(hubDoRamo("empresarial")).toBeNull();
+    expect(hubDoRamo("civil")).toBeNull();
+    expect(hubDoRamo("criminal")).toBeNull();
   });
 
-  it("preserva especialidades canônicas em workspaces próprios, sem achatamento", () => {
-    expect(hubDoRamo("societario")).toBe("/areas-de-atuacao/societario");
-    expect(hubDoRamo("sucessoes")).toBe("/areas-de-atuacao/sucessoes");
-    expect(hubDoRamo("licitacoes")).toBe("/areas-de-atuacao/licitacoes");
-    expect(hubDoRamo("societario")).not.toBe("/areas-de-atuacao/empresarial");
-    expect(hubDoRamo("sucessoes")).not.toBe("/areas-de-atuacao/familia");
-    expect(hubDoRamo("licitacoes")).not.toBe(
-      "/areas-de-atuacao/administrativo",
-    );
+  it("não preserva links para especialidades antigas", () => {
+    expect(hubDoRamo("societario")).toBeNull();
+    expect(hubDoRamo("sucessoes")).toBeNull();
+    expect(hubDoRamo("licitacoes")).toBeNull();
   });
 
-  it("oferece workspace geral para área canônica e rejeita slug inexistente", () => {
-    expect(hubDoRamo("internacional")).toBe("/areas-de-atuacao/internacional");
+  it("rejeita qualquer slug após a retirada do hub", () => {
+    expect(hubDoRamo("internacional")).toBeNull();
     expect(hubDoRamo("area-inexistente")).toBeNull();
   });
 });

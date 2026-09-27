@@ -622,11 +622,11 @@ async def test_horas_extras_entradas_invalidas_422(kwargs):
     assert e.value.status_code == 422
 
 
-def test_horas_extras_registrada_nas_duas_rotas():
+def test_horas_extras_nao_e_montada_apos_remocao_dos_ramos():
     from app.main import app
     rotas = {(getattr(r, "path", "") or "") for r in app.routes}
-    assert "/api/trabalhista-esp/ferramentas/horas-extras" in rotas   # canônica
-    assert "/api/trabalhista/ferramentas/horas-extras" in rotas       # alias legado
+    assert "/api/trabalhista-esp/ferramentas/horas-extras" not in rotas
+    assert "/api/trabalhista/ferramentas/horas-extras" not in rotas
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -1430,21 +1430,16 @@ async def test_fase_d_ferramentas_carimbam_metadados(chamada):
 # ══════════════════════════════════════════════════════════════════════════
 # ONDA 3 §4.5 — duplicatas anunciam depreciação (sem mudar o resultado)
 # ══════════════════════════════════════════════════════════════════════════
-def test_duplicatas_marcadas_deprecated_no_openapi():
+def test_duplicatas_de_ramos_nao_sao_expostas_no_openapi():
     from app.main import app
 
-    esperado = {
+    removidas = {
         "/api/penal/ferramentas/prescricao-punitiva",
         "/api/admin-esp/ferramentas/recurso-multa-transito",
         "/api/trabalhista/ferramentas/horas-extras",
     }
-    depreciadas = {getattr(r, "path", "") for r in app.routes if getattr(r, "deprecated", False)}
-    assert esperado <= depreciadas, f"faltam marcadas: {esperado - depreciadas}"
-    # As canônicas NÃO podem estar depreciadas.
-    for canonica in ("/api/penal/ferramentas/prescricao-penal",
-                     "/api/transito/ferramentas/prazos-recurso",
-                     "/api/trabalhista-esp/ferramentas/horas-extras"):
-        assert canonica not in depreciadas
+    montadas = {getattr(r, "path", "") for r in app.routes}
+    assert not (removidas & montadas)
 
 
 async def test_duplicata_penal_carimba_cabecalhos_e_campos():

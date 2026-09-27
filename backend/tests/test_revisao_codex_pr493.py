@@ -107,13 +107,12 @@ async def test_p2e_canonica_nao_e_depreciada_e_calculo_identico():
     assert alias["total_mes_estimado"] == canonica["total_mes_estimado"]
 
 
-def test_p2e_apenas_o_alias_marcado_no_openapi():
+def test_p2e_rotas_de_horas_extras_nao_sao_publicadas():
     from app.main import app
 
-    marcadas = {getattr(r, "path", ""): getattr(r, "deprecated", False)
-                for r in app.routes if "horas-extras" in getattr(r, "path", "")}
-    assert marcadas["/api/trabalhista/ferramentas/horas-extras"] is True
-    assert not marcadas["/api/trabalhista-esp/ferramentas/horas-extras"]
+    publicadas = {getattr(r, "path", "") for r in app.routes}
+    assert "/api/trabalhista/ferramentas/horas-extras" not in publicadas
+    assert "/api/trabalhista-esp/ferramentas/horas-extras" not in publicadas
 
 
 # ══════════════════════════════════════════════════════════════════════════

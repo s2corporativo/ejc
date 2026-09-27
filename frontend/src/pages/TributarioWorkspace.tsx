@@ -117,7 +117,7 @@ export default function TributarioWorkspace() {
         }
         actions={
           <div className="flex flex-wrap gap-2">
-            <Link to="/areas-de-atuacao/tributario" className="btn-gold text-sm">
+            <Link to="/inteligencia?tab=conhecimento" className="btn-gold text-sm">
               Abrir núcleo técnico
             </Link>
             <Link to="/entrada" className="btn-secondary text-sm">
@@ -186,14 +186,14 @@ export default function TributarioWorkspace() {
             descricao:
               "Autos, prescrição/decadência, parcelamento, Simples e demais ferramentas homologadas.",
             icon: Calculator,
-            to: "/areas-de-atuacao/tributario",
+            to: "/inteligencia?tab=conhecimento",
           },
           {
             title: "Créditos potenciais",
             descricao:
               "Análise fiscal por XML/NF-e como pré-auditoria, sempre sujeita a validação profissional.",
             icon: FileSearch,
-            to: "/areas-de-atuacao/tributario",
+            to: "/inteligencia?tab=conhecimento",
           },
           {
             title: "Pesquisa e jurisprudência",
@@ -236,7 +236,7 @@ export default function TributarioWorkspace() {
               O painel apenas consolida casos já existentes; não cria registro tributário paralelo.
             </p>
           </div>
-          <Link to="/areas-de-atuacao/tributario" className="btn-secondary text-xs">
+          <Link to="/inteligencia?tab=conhecimento" className="btn-secondary text-xs">
             Ver núcleo completo
           </Link>
         </div>

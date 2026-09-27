@@ -20,12 +20,12 @@ def _limpa_contadores():
 
 
 def test_registra_apenas_rotas_monitoradas():
-    route_usage.registrar("/api/penal/ferramentas/prescricao-punitiva", "GET", "advogado")
+    route_usage.registrar("/api/deadlines/calcular", "POST", "advogado")
     route_usage.registrar("/api/cases/{case_id}", "GET", "advogado")   # fora da lista
     linhas = route_usage.snapshot()
     assert len(linhas) == 1
-    assert linhas[0]["rota"] == "/penal/ferramentas/prescricao-punitiva"
-    assert linhas[0]["motivo"] == "duplicata"
+    assert linhas[0]["rota"] == "/deadlines/calcular"
+    assert linhas[0]["motivo"] == "legado:prazos:calculo"
 
 
 def test_monitora_endpoints_reais_e_nao_rotas_de_frontend():
@@ -83,9 +83,8 @@ def test_lista_rotas_sem_uso_para_decisao_da_onda5():
     agregado = route_usage.agregado()
     assert "/deadlines/calcular" not in agregado["sem_uso_no_periodo"]
     assert "/tasks/{task_id}" in agregado["sem_uso_no_periodo"]
-    assert "/trabalhista/ferramentas/horas-extras" in agregado["sem_uso_no_periodo"]
-    # Todas as 8 rotas candidatas + o alias estão sob monitoramento.
-    assert len(agregado["rotas"]) == len(route_usage.ROTAS_MONITORADAS) == 16
+    # As 13 rotas restantes são exclusivamente das telas legadas.
+    assert len(agregado["rotas"]) == len(route_usage.ROTAS_MONITORADAS) == 13
 
 
 def test_filtro_por_periodo():
