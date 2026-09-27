@@ -106,10 +106,16 @@ def _valores(e: type[enum.Enum]) -> list[str]:
 
 
 def _uniao(nome_const: str, nome_tipo: str, valores: list[str], doc: str) -> str:
-    itens = "\n".join(f'  "{v}",' for v in valores)
+    inline = ", ".join(f'"{v}"' for v in valores)
+    declaracao = f"export const {nome_const} = [{inline}] as const;"
+    if len(declaracao) <= 80:
+        array = declaracao + "\n"
+    else:
+        itens = "\n".join(f'  "{v}",' for v in valores)
+        array = f"export const {nome_const} = [\n{itens}\n] as const;\n"
     return (
         f"/** {doc} */\n"
-        f"export const {nome_const} = [\n{itens}\n] as const;\n"
+        f"{array}"
         f"export type {nome_tipo} = (typeof {nome_const})[number];\n"
     )
 
@@ -148,10 +154,16 @@ def gerar() -> str:
         "/** Rótulo pt-BR de cada área canônica. */\n"
         f"export const ROTULO_AREA: Record<CaseArea, string> = {{\n{rotulos}\n}};\n"
     )
-    destaque = "\n".join(f'  "{a}",' for a in AREAS_DESTAQUE)
+    destaque_inline = ", ".join(f'"{a}"' for a in AREAS_DESTAQUE)
+    destaque_declaracao = f"export const AREAS_DESTAQUE: readonly CaseArea[] = [{destaque_inline}];"
+    if len(destaque_declaracao) <= 80:
+        destaque = destaque_declaracao + "\n"
+    else:
+        destaque_itens = "\n".join(f'  "{a}",' for a in AREAS_DESTAQUE)
+        destaque = f"export const AREAS_DESTAQUE: readonly CaseArea[] = [\n{destaque_itens}\n];\n"
     partes.append(
         "/** Áreas em destaque no menu de ramos (casos reais do escritório). */\n"
-        f"export const AREAS_DESTAQUE: readonly CaseArea[] = [\n{destaque}\n];\n"
+        f"{destaque}"
     )
 
     partes.append(

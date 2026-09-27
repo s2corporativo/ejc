@@ -29,9 +29,9 @@ describe("CommandPalette — aliases de navegação removida", () => {
     expect(textoBuscaModulo(modulo("radar", "Radar"))).toContain(
       "radar operacional",
     );
-    expect(textoBuscaModulo(modulo("produtividade", "Produtividade"))).toContain(
-      "relatorios",
-    );
+    expect(
+      textoBuscaModulo(modulo("produtividade", "Produtividade")),
+    ).toContain("relatorios");
   });
 
   it("encontra rótulos acentuados quando a consulta vem sem acento", () => {
@@ -42,9 +42,9 @@ describe("CommandPalette — aliases de navegação removida", () => {
       ),
     ).toBe(true);
     expect(
-      textoBuscaModulo(modulo("inteligencia", "Inteligência Jurídica")).includes(
-        normalizarBusca("inteligencia juridica"),
-      ),
+      textoBuscaModulo(
+        modulo("inteligencia", "Inteligência Jurídica"),
+      ).includes(normalizarBusca("inteligencia juridica")),
     ).toBe(true);
   });
 });

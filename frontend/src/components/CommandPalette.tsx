@@ -407,27 +407,27 @@ export default function CommandPalette({
         </div>
         {!privacyMode && (
           <div className="flex flex-wrap items-center gap-1.5 px-4 py-2 border-b border-slate-100">
-          {TIPOS.map((item) => {
-            const active = item.value === tipo;
-            return (
-              <button
-                key={item.value}
-                type="button"
-                aria-pressed={active}
-                onClick={() => {
-                  setTipo(item.value);
-                  inputRef.current?.focus();
-                }}
-                className={
-                  active
-                    ? "rounded-full border border-primary-300 bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 transition-colors"
-                    : "rounded-full border border-slate-200 bg-transparent px-2.5 py-1 text-xs text-slate-500 transition-colors hover:bg-primary-50 hover:text-slate-900"
-                }
-              >
-                {item.label}
-              </button>
-            );
-          })}
+            {TIPOS.map((item) => {
+              const active = item.value === tipo;
+              return (
+                <button
+                  key={item.value}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => {
+                    setTipo(item.value);
+                    inputRef.current?.focus();
+                  }}
+                  className={
+                    active
+                      ? "rounded-full border border-primary-300 bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 transition-colors"
+                      : "rounded-full border border-slate-200 bg-transparent px-2.5 py-1 text-xs text-slate-500 transition-colors hover:bg-primary-50 hover:text-slate-900"
+                  }
+                >
+                  {item.label}
+                </button>
+              );
+            })}
           </div>
         )}
         <div
@@ -498,73 +498,76 @@ export default function CommandPalette({
                 Módulos
               </div>
               <div className="grid gap-1 sm:grid-cols-2">
-                {matchingModules.map(({ key, path, label, description, icon: Icon }, index) => {
-                  const itemIndex = displayedQuickActions.length + index;
-                  const isActive = itemIndex === activeIndex;
-                  return (
-                    <button
-                      key={key}
-                      id={OPTION_ID(itemIndex)}
-                      data-index={itemIndex}
-                      role="option"
-                      aria-selected={isActive}
-                      type="button"
-                      onMouseEnter={() => setActiveIndex(itemIndex)}
-                      onClick={() => go(path)}
-                      className={`flex items-start gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
-                        isActive
-                          ? "bg-primary-50 text-slate-900"
-                          : "text-slate-600 hover:bg-primary-50/60 hover:text-slate-900"
-                      }`}
-                    >
-                      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-primary-600" />
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-medium">
-                          {label}
+                {matchingModules.map(
+                  ({ key, path, label, description, icon: Icon }, index) => {
+                    const itemIndex = displayedQuickActions.length + index;
+                    const isActive = itemIndex === activeIndex;
+                    return (
+                      <button
+                        key={key}
+                        id={OPTION_ID(itemIndex)}
+                        data-index={itemIndex}
+                        role="option"
+                        aria-selected={isActive}
+                        type="button"
+                        onMouseEnter={() => setActiveIndex(itemIndex)}
+                        onClick={() => go(path)}
+                        className={`flex items-start gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
+                          isActive
+                            ? "bg-primary-50 text-slate-900"
+                            : "text-slate-600 hover:bg-primary-50/60 hover:text-slate-900"
+                        }`}
+                      >
+                        <Icon className="mt-0.5 h-4 w-4 shrink-0 text-primary-600" />
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium">
+                            {label}
+                          </span>
+                          <span className="block line-clamp-2 text-xs text-slate-400">
+                            {description}
+                          </span>
                         </span>
-                        <span className="block line-clamp-2 text-xs text-slate-400">
-                          {description}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
+                      </button>
+                    );
+                  },
+                )}
               </div>
             </div>
           )}
-          {!privacyMode && res.map((result, index) => {
-            const Icon = ICON[result.tipo] || FileText;
-            const itemIndex =
-              displayedQuickActions.length + matchingModules.length + index;
-            const isActive = itemIndex === activeIndex;
-            return (
-              <button
-                key={`${result.tipo}-${result.id}-${index}`}
-                id={OPTION_ID(itemIndex)}
-                data-index={itemIndex}
-                role="option"
-                aria-selected={isActive}
-                onMouseEnter={() => setActiveIndex(itemIndex)}
-                onClick={() => go(result.link)}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
-                  isActive ? "bg-primary-50" : "hover:bg-primary-50/60"
-                }`}
-              >
-                <span className="w-7 h-7 rounded-lg bg-primary-50 grid place-items-center text-primary-600 shrink-0">
-                  <Icon size={15} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium text-slate-900 truncate">
-                    {result.titulo}
+          {!privacyMode &&
+            res.map((result, index) => {
+              const Icon = ICON[result.tipo] || FileText;
+              const itemIndex =
+                displayedQuickActions.length + matchingModules.length + index;
+              const isActive = itemIndex === activeIndex;
+              return (
+                <button
+                  key={`${result.tipo}-${result.id}-${index}`}
+                  id={OPTION_ID(itemIndex)}
+                  data-index={itemIndex}
+                  role="option"
+                  aria-selected={isActive}
+                  onMouseEnter={() => setActiveIndex(itemIndex)}
+                  onClick={() => go(result.link)}
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
+                    isActive ? "bg-primary-50" : "hover:bg-primary-50/60"
+                  }`}
+                >
+                  <span className="w-7 h-7 rounded-lg bg-primary-50 grid place-items-center text-primary-600 shrink-0">
+                    <Icon size={15} />
                   </span>
-                  <span className="block text-xs text-slate-400 truncate">
-                    {LABEL[result.tipo] || result.tipo}
-                    {result.subtitulo ? ` · ${result.subtitulo}` : ""}
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium text-slate-900 truncate">
+                      {result.titulo}
+                    </span>
+                    <span className="block text-xs text-slate-400 truncate">
+                      {LABEL[result.tipo] || result.tipo}
+                      {result.subtitulo ? ` · ${result.subtitulo}` : ""}
+                    </span>
                   </span>
-                </span>
-              </button>
-            );
-          })}
+                </button>
+              );
+            })}
           {q.trim().length < 2 && (
             <div className="p-3">
               <div className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">

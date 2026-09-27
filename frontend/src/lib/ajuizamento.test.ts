@@ -25,7 +25,9 @@ const matriz = (
   tribunal: "TJMG",
   ambiente: "producao",
   operacoes: { file_new_case: { estado, motivo: "perfil não homologado" } },
-  requisitos_autorizacao: liberado ? [] : ["homologação com o tribunal não concluída"],
+  requisitos_autorizacao: liberado
+    ? []
+    : ["homologação com o tribunal não concluída"],
   protocolo_real_liberado: liberado,
 });
 
@@ -80,22 +82,57 @@ describe("ajuizamento — etapas e estados", () => {
   });
 
   it("só aprova com preflight pronto (revisão humana)", () => {
-    expect(podeAprovar({ estado: "READY_FOR_REVIEW", preflight: { ready: true } } as Filing)).toBe(true);
-    expect(podeAprovar({ estado: "READY_FOR_REVIEW", preflight: { ready: false } } as Filing)).toBe(false);
-    expect(podeAprovar({ estado: "DRAFT", preflight: { ready: true } } as Filing)).toBe(false);
+    expect(
+      podeAprovar({
+        estado: "READY_FOR_REVIEW",
+        preflight: { ready: true },
+      } as Filing),
+    ).toBe(true);
+    expect(
+      podeAprovar({
+        estado: "READY_FOR_REVIEW",
+        preflight: { ready: false },
+      } as Filing),
+    ).toBe(false);
+    expect(
+      podeAprovar({ estado: "DRAFT", preflight: { ready: true } } as Filing),
+    ).toBe(false);
     expect(CONFIRMACAO_REVISAO).toBe("REVISAR E PROTOCOLAR");
   });
 
   it("só assina depois de aprovado e só protocola depois de assinado", () => {
     expect(podeAssinar("APPROVED")).toBe(true);
     expect(podeAssinar("READY_FOR_REVIEW")).toBe(false);
-    expect(podeProtocolar({ estado: "READY_TO_SUBMIT", assinatura: { a: 1 } } as unknown as Filing)).toBe(true);
-    expect(podeProtocolar({ estado: "READY_TO_SUBMIT", assinatura: null } as unknown as Filing)).toBe(false);
-    expect(podeProtocolar({ estado: "APPROVED", assinatura: { a: 1 } } as unknown as Filing)).toBe(false);
-    // Depois de falha ou pendência de autorização, reenviar continua possível.
-    expect(podeProtocolar({ estado: "FAILED", assinatura: { a: 1 } } as unknown as Filing)).toBe(true);
     expect(
-      podeProtocolar({ estado: "REQUIRES_AUTHORIZATION", assinatura: { a: 1 } } as unknown as Filing),
+      podeProtocolar({
+        estado: "READY_TO_SUBMIT",
+        assinatura: { a: 1 },
+      } as unknown as Filing),
+    ).toBe(true);
+    expect(
+      podeProtocolar({
+        estado: "READY_TO_SUBMIT",
+        assinatura: null,
+      } as unknown as Filing),
+    ).toBe(false);
+    expect(
+      podeProtocolar({
+        estado: "APPROVED",
+        assinatura: { a: 1 },
+      } as unknown as Filing),
+    ).toBe(false);
+    // Depois de falha ou pendência de autorização, reenviar continua possível.
+    expect(
+      podeProtocolar({
+        estado: "FAILED",
+        assinatura: { a: 1 },
+      } as unknown as Filing),
+    ).toBe(true);
+    expect(
+      podeProtocolar({
+        estado: "REQUIRES_AUTHORIZATION",
+        assinatura: { a: 1 },
+      } as unknown as Filing),
     ).toBe(true);
   });
 });
@@ -103,7 +140,9 @@ describe("ajuizamento — etapas e estados", () => {
 describe("ajuizamento — capacidades", () => {
   it("resume o estado do conector para o operador", () => {
     expect(resumoCapacidade(matriz("SUPPORTED", true))).toContain("liberado");
-    expect(resumoCapacidade(matriz("REQUIRES_AUTHORIZATION", false))).toContain("Requer autorização");
+    expect(resumoCapacidade(matriz("REQUIRES_AUTHORIZATION", false))).toContain(
+      "Requer autorização",
+    );
     expect(resumoCapacidade(null)).toContain("Nenhum conector");
   });
 
@@ -115,7 +154,9 @@ describe("ajuizamento — capacidades", () => {
 
   it("checklist de homologação reflete os quatro selos", () => {
     expect(checklistHomologacao(perfil()).every((i) => i.ok)).toBe(true);
-    const parcial = checklistHomologacao(perfil({ credentials_valid: false, homologated_at: null }));
+    const parcial = checklistHomologacao(
+      perfil({ credentials_valid: false, homologated_at: null }),
+    );
     expect(parcial.filter((i) => !i.ok).map((i) => i.chave)).toEqual([
       "homologated_at",
       "credentials_valid",
@@ -140,7 +181,9 @@ describe("ajuizamento — payload", () => {
     expect(payload.case_id).toBe("caso-1");
     expect(payload.tribunal_code).toBe("TJMG");
     expect(payload).not.toHaveProperty("jurisdicao");
-    expect(payload.assuntos).toEqual([{ codigo: "10375", nome: "Dano moral", principal: true }]);
+    expect(payload.assuntos).toEqual([
+      { codigo: "10375", nome: "Dano moral", principal: true },
+    ]);
     // Booleanos e zero são valores legítimos — não podem sumir do payload.
     expect(payload.gratuidade).toBe(false);
     expect(payload.nivel_sigilo).toBe(0);

@@ -96,9 +96,7 @@ describe("Peças — gate de citações na aprovação", () => {
     fireEvent.click(aprovar);
 
     await waitFor(() =>
-      expect(
-        screen.getByText(/Citações não confirmadas/i),
-      ).toBeTruthy(),
+      expect(screen.getByText(/Citações não confirmadas/i)).toBeTruthy(),
     );
     expect(screen.getByText(/Súmula 999 STJ/)).toBeTruthy();
     // O caminho de saída aparece: justificar e assumir.
@@ -116,9 +114,7 @@ describe("Peças — gate de citações na aprovação", () => {
     // O fluxo não tem mais um botão separado de override: o MESMO "Aprovar e
     // assinar" é reusado, e só manda o override quando há justificativa.
     const chamadasAntes = vi.mocked(api.post).mock.calls.length;
-    fireEvent.click(
-      screen.getByRole("button", { name: /Aprovar e assinar/i }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /Aprovar e assinar/i }));
     await waitFor(() =>
       expect(
         screen.getByText(/registre uma justificativa por escrito/i),
@@ -141,9 +137,7 @@ describe("Peças — gate de citações na aprovação", () => {
     });
     // Mesmo botão do fluxo normal: com justificativa preenchida, ele reenvia
     // a aprovação já com o override.
-    fireEvent.click(
-      screen.getByRole("button", { name: /Aprovar e assinar/i }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /Aprovar e assinar/i }));
 
     await waitFor(() => expect(vi.mocked(api.post).mock.calls.length).toBe(2));
     const [rota, corpo] = vi.mocked(api.post).mock.calls[1];

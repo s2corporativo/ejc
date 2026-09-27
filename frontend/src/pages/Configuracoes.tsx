@@ -348,7 +348,8 @@ export default function Configuracoes() {
               // do menu lateral e passa a ser alcançada por aqui — é tarefa de
               // administração, não estação de trabalho do advogado.
               title: "Central de diagnóstico",
-              description: "Banco, migrations, IA, integrações e jobs num lugar só.",
+              description:
+                "Banco, migrations, IA, integrações e jobs num lugar só.",
               to: "/diagnostico",
               icon: Activity,
             },

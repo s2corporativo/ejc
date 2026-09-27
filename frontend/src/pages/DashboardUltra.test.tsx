@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 import { addDays, format } from "date-fns";
@@ -154,10 +160,10 @@ const tarefasOk = {
 function mockGetOk() {
   getMock.mockImplementation((url: string) => {
     if (url === "/dashboard/") return Promise.resolve({ data: kpisOk });
-    if (url === "/atividades")
-      return Promise.resolve({ data: atividadesOk });
+    if (url === "/atividades") return Promise.resolve({ data: atividadesOk });
     if (url === "/cases/") return Promise.resolve({ data: casosOk });
-    if (url === "/documents/") return Promise.resolve({ data: { data: [], total: 129 } });
+    if (url === "/documents/")
+      return Promise.resolve({ data: { data: [], total: 129 } });
     if (url === "/tasks/") return Promise.resolve({ data: tarefasOk });
     if (url === "/saneamento/integridade")
       return Promise.resolve({ data: integridadeOk });
@@ -192,9 +198,13 @@ describe("DashboardUltra — identidade premium DPT", () => {
     mockGetOk();
     renderizar();
 
-    expect(screen.getByRole("button", { name: "IA" }).getAttribute("aria-current")).toBe("page");
+    expect(
+      screen.getByRole("button", { name: "IA" }).getAttribute("aria-current"),
+    ).toBe("page");
     expect(screen.getByText("Como posso trabalhar neste caso?")).toBeTruthy();
-    expect(screen.getByTestId("entrada-unica").getAttribute("data-embedded")).toBe("true");
+    expect(
+      screen.getByTestId("entrada-unica").getAttribute("data-embedded"),
+    ).toBe("true");
     const controles = screen.getByLabelText("Controles do escritório");
     expect(controles.hasAttribute("hidden")).toBe(true);
     expect(getMock).not.toHaveBeenCalled();
@@ -235,9 +245,7 @@ describe("DashboardUltra — identidade premium DPT", () => {
     );
     expect(screen.getByLabelText("Clientes ativos: 48")).toBeTruthy();
     expect(screen.getByLabelText("Casos em andamento: 3")).toBeTruthy();
-    expect(
-      screen.getByLabelText("Pendências de integridade: 4"),
-    ).toBeTruthy();
+    expect(screen.getByLabelText("Pendências de integridade: 4")).toBeTruthy();
   });
 
   it("filtra a agenda por aba Hoje/Amanhã/Esta semana", async () => {
@@ -264,7 +272,9 @@ describe("DashboardUltra — identidade premium DPT", () => {
     const chips = screen.getAllByText("Em andamento");
     expect(chips.length).toBeGreaterThan(0);
     expect(screen.getByText("Concluso")).toBeTruthy();
-    expect(screen.getByText(/Proc. nº 1001234-56\.2023\.8\.26\.0100/)).toBeTruthy();
+    expect(
+      screen.getByText(/Proc. nº 1001234-56\.2023\.8\.26\.0100/),
+    ).toBeTruthy();
     expect(screen.getByText(/Próxima: Protocolar contestação/)).toBeTruthy();
   });
 
@@ -277,7 +287,9 @@ describe("DashboardUltra — identidade premium DPT", () => {
     const botaoDia = await screen.findByRole("button", { name: hojeLabel });
     fireEvent.click(botaoDia);
 
-    expect(screen.getByRole("button", { name: "Remover filtro de data" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Remover filtro de data" }),
+    ).toBeTruthy();
     expect(screen.getByText("Prazo final — Contestação")).toBeTruthy();
     expect(screen.queryByText("Intimação — audiência")).not.toBeTruthy();
   });
@@ -288,7 +300,9 @@ describe("DashboardUltra — identidade premium DPT", () => {
     abrirControles();
 
     expect(await screen.findByText("Revisar petição inicial")).toBeTruthy();
-    expect(screen.getByText("Retorno para cliente — Grupo Santos")).toBeTruthy();
+    expect(
+      screen.getByText("Retorno para cliente — Grupo Santos"),
+    ).toBeTruthy();
     expect(screen.getByText("Estudo tema 1.234/STJ")).toBeTruthy();
     expect(
       screen.queryByText("Tarefa futura que não pertence à rotina de hoje"),
@@ -334,10 +348,8 @@ describe("DashboardUltra — identidade premium DPT", () => {
 
   it("degrada para traço quando a fonte falha (nunca zero falso)", async () => {
     getMock.mockImplementation((url: string) => {
-      if (url === "/atividades")
-        return Promise.reject(new Error("fora do ar"));
-      if (url === "/dashboard/")
-        return Promise.reject(new Error("fora do ar"));
+      if (url === "/atividades") return Promise.reject(new Error("fora do ar"));
+      if (url === "/dashboard/") return Promise.reject(new Error("fora do ar"));
       if (url === "/cases/") return Promise.resolve({ data: casosOk });
       if (url === "/documents/")
         return Promise.resolve({ data: { data: [], total: 129 } });

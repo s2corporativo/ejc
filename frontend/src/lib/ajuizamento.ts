@@ -20,10 +20,7 @@ export type EstadoAjuizamento =
   | "CANCELLED";
 
 export type EstadoCapacidade =
-  | "SUPPORTED"
-  | "UNSUPPORTED"
-  | "CONDITIONAL"
-  | "REQUIRES_AUTHORIZATION";
+  "SUPPORTED" | "UNSUPPORTED" | "CONDITIONAL" | "REQUIRES_AUTHORIZATION";
 
 export interface AssuntoAjuizamento {
   codigo: string;
@@ -236,9 +233,13 @@ export function etapaDoEstado(estado: EstadoAjuizamento): number {
 
 /** Um ajuizamento em estado protocolado não volta a ser editável. */
 export function podeEditar(estado: EstadoAjuizamento): boolean {
-  return ["DRAFT", "INVALID", "READY_FOR_REVIEW", "REQUIRES_AUTHORIZATION", "FAILED"].includes(
-    estado,
-  );
+  return [
+    "DRAFT",
+    "INVALID",
+    "READY_FOR_REVIEW",
+    "REQUIRES_AUTHORIZATION",
+    "FAILED",
+  ].includes(estado);
 }
 
 export function podeAprovar(f: Pick<Filing, "estado" | "preflight">): boolean {
@@ -249,7 +250,9 @@ export function podeAssinar(estado: EstadoAjuizamento): boolean {
   return estado === "APPROVED" || estado === "SIGNING";
 }
 
-export function podeProtocolar(f: Pick<Filing, "estado" | "assinatura">): boolean {
+export function podeProtocolar(
+  f: Pick<Filing, "estado" | "assinatura">,
+): boolean {
   return (
     !!f.assinatura &&
     ["READY_TO_SUBMIT", "FAILED", "REQUIRES_AUTHORIZATION"].includes(f.estado)
@@ -263,7 +266,8 @@ export function montarPayloadFiling(
   const payload: Record<string, unknown> = {};
   const copiar = <K extends keyof Filing>(campo: K) => {
     const valor = form[campo];
-    if (valor !== undefined && valor !== null && valor !== "") payload[campo] = valor;
+    if (valor !== undefined && valor !== null && valor !== "")
+      payload[campo] = valor;
   };
   if (form.case_id) payload.case_id = form.case_id;
   (
@@ -296,8 +300,10 @@ export function montarPayloadFiling(
   if (form.documentos) payload.documentos = form.documentos;
   if (form.advogados) payload.advogados = form.advogados;
   if (form.caracteristicas) payload.caracteristicas = form.caracteristicas;
-  if (typeof form.nivel_sigilo === "number") payload.nivel_sigilo = form.nivel_sigilo;
-  if (typeof form.gratuidade === "boolean") payload.gratuidade = form.gratuidade;
+  if (typeof form.nivel_sigilo === "number")
+    payload.nivel_sigilo = form.nivel_sigilo;
+  if (typeof form.gratuidade === "boolean")
+    payload.gratuidade = form.gratuidade;
   if (typeof form.tutela === "boolean") payload.tutela = form.tutela;
   return payload;
 }
@@ -314,19 +320,33 @@ export function resumoCapacidade(matriz?: MatrizCapacidades | null): string {
 }
 
 /** Só há protocolo eletrônico real com autorização + homologação + credencial. */
-export function protocoloEletronicoLiberado(matriz?: MatrizCapacidades | null): boolean {
+export function protocoloEletronicoLiberado(
+  matriz?: MatrizCapacidades | null,
+): boolean {
   return !!matriz?.protocolo_real_liberado;
 }
 
 export function checklistHomologacao(p: PerfilTribunal) {
   return [
-    { chave: "authorized", rotulo: "Habilitação institucional registrada", ok: p.authorized },
-    { chave: "homologated_at", rotulo: "Homologação concluída com o tribunal", ok: !!p.homologated_at },
+    {
+      chave: "authorized",
+      rotulo: "Habilitação institucional registrada",
+      ok: p.authorized,
+    },
+    {
+      chave: "homologated_at",
+      rotulo: "Homologação concluída com o tribunal",
+      ok: !!p.homologated_at,
+    },
     {
       chave: "production_endpoint_verified",
       rotulo: "Endpoint de produção verificado",
       ok: p.production_endpoint_verified,
     },
-    { chave: "credentials_valid", rotulo: "Credencial validada", ok: p.credentials_valid },
+    {
+      chave: "credentials_valid",
+      rotulo: "Credencial validada",
+      ok: p.credentials_valid,
+    },
   ];
 }

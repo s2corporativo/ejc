@@ -186,7 +186,11 @@ export default function TabTimeline({ caseId }: { caseId: string }) {
   const addDespesa = async (e: React.FormEvent) => {
     e.preventDefault();
     const valor = Number(despesaForm.valor.replace(",", "."));
-    if (!despesaForm.descricao.trim() || !Number.isFinite(valor) || valor <= 0) {
+    if (
+      !despesaForm.descricao.trim() ||
+      !Number.isFinite(valor) ||
+      valor <= 0
+    ) {
       toast.error("Informe descrição e valor válido para a despesa.");
       return;
     }
@@ -219,7 +223,10 @@ export default function TabTimeline({ caseId }: { caseId: string }) {
     if (!podeFaturar || despesasPendentes <= 0) return;
     setFaturandoDespesas(true);
     try {
-      const r = await api.post(`/despesas-processuais/caso/${caseId}/faturar`, {});
+      const r = await api.post(
+        `/despesas-processuais/caso/${caseId}/faturar`,
+        {},
+      );
       toast.success(
         `Reembolso gerado: ${moeda(r.data?.valor)} em ${r.data?.lancamentos || 0} lançamento(s).`,
       );

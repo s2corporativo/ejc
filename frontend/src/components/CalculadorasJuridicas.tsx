@@ -25,18 +25,23 @@ const ICONE_AREA: Record<string, typeof Scale> = {
 function valoresIniciais(config: FerramentaConfig): ValoresFormulario {
   const valores: ValoresFormulario = {};
   for (const campo of config.campos) {
-    if (campo.valorPadrao !== undefined) valores[campo.nome] = campo.valorPadrao;
+    if (campo.valorPadrao !== undefined)
+      valores[campo.nome] = campo.valorPadrao;
   }
   return valores;
 }
 
 function mensagemErro(erro: unknown): string {
-  const detail = (erro as { response?: { data?: { detail?: unknown } } })?.response?.data
-    ?.detail;
+  const detail = (erro as { response?: { data?: { detail?: unknown } } })
+    ?.response?.data?.detail;
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail)) {
     return detail
-      .map((item) => (item && typeof item === "object" && "msg" in item ? String(item.msg) : String(item)))
+      .map((item) =>
+        item && typeof item === "object" && "msg" in item
+          ? String(item.msg)
+          : String(item),
+      )
       .join("; ");
   }
   return "Não foi possível calcular. Tente novamente.";
@@ -75,20 +80,22 @@ export default function CalculadorasJuridicas() {
               {area}
             </p>
             <div className="flex flex-wrap gap-2">
-              {CALCULADORAS_JURIDICAS.filter((f) => f.area === area).map((ferramenta) => (
-                <button
-                  key={ferramenta.chave}
-                  type="button"
-                  onClick={() => setSelecionada(ferramenta)}
-                  className={
-                    ferramenta.chave === selecionada.chave
-                      ? "rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white"
-                      : "rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-primary-200 dark:border-white/10 dark:bg-white/[0.02] dark:text-slate-200"
-                  }
-                >
-                  {ferramenta.titulo}
-                </button>
-              ))}
+              {CALCULADORAS_JURIDICAS.filter((f) => f.area === area).map(
+                (ferramenta) => (
+                  <button
+                    key={ferramenta.chave}
+                    type="button"
+                    onClick={() => setSelecionada(ferramenta)}
+                    className={
+                      ferramenta.chave === selecionada.chave
+                        ? "rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white"
+                        : "rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-primary-200 dark:border-white/10 dark:bg-white/[0.02] dark:text-slate-200"
+                    }
+                  >
+                    {ferramenta.titulo}
+                  </button>
+                ),
+              )}
             </div>
           </div>
         );
@@ -100,19 +107,28 @@ export default function CalculadorasJuridicas() {
 }
 
 function FormularioCalculadora({ config }: { config: FerramentaConfig }) {
-  const [valores, setValores] = useState<ValoresFormulario>(() => valoresIniciais(config));
-  const [resultado, setResultado] = useState<Record<string, unknown> | null>(null);
+  const [valores, setValores] = useState<ValoresFormulario>(() =>
+    valoresIniciais(config),
+  );
+  const [resultado, setResultado] = useState<Record<string, unknown> | null>(
+    null,
+  );
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  const camposVisiveis = config.campos.filter((c) => !c.exibirSe || c.exibirSe(valores));
+  const camposVisiveis = config.campos.filter(
+    (c) => !c.exibirSe || c.exibirSe(valores),
+  );
   const valido = camposVisiveis.every((c) => {
     if (!c.obrigatorio) return true;
     const v = valores[c.nome];
     return v !== undefined && v !== "";
   });
 
-  const alterarCampo = (nome: string, valor: string | number | boolean | undefined) => {
+  const alterarCampo = (
+    nome: string,
+    valor: string | number | boolean | undefined,
+  ) => {
     setValores((atual) => ({ ...atual, [nome]: valor }));
   };
 
@@ -157,7 +173,13 @@ function FormularioCalculadora({ config }: { config: FerramentaConfig }) {
         <Button
           onClick={calcular}
           disabled={!valido || carregando}
-          icon={carregando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calculator className="h-4 w-4" />}
+          icon={
+            carregando ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Calculator className="h-4 w-4" />
+            )
+          }
         >
           {carregando ? "Calculando…" : "Calcular"}
         </Button>
@@ -193,9 +215,13 @@ function CampoFormulario({
   }
 
   if (campo.tipo === "select" || campo.tipo === "sim_nao") {
-    const opcoes = campo.tipo === "sim_nao"
-      ? [{ value: "sim", label: "Sim" }, { value: "nao", label: "Não" }]
-      : campo.opcoes ?? [];
+    const opcoes =
+      campo.tipo === "sim_nao"
+        ? [
+            { value: "sim", label: "Sim" },
+            { value: "nao", label: "Não" },
+          ]
+        : (campo.opcoes ?? []);
     return (
       <div>
         <FieldLabel required={campo.obrigatorio}>{campo.label}</FieldLabel>
@@ -210,7 +236,9 @@ function CampoFormulario({
             </option>
           ))}
         </Select>
-        {campo.ajuda && <p className="mt-1 text-xs text-slate-400">{campo.ajuda}</p>}
+        {campo.ajuda && (
+          <p className="mt-1 text-xs text-slate-400">{campo.ajuda}</p>
+        )}
       </div>
     );
   }
@@ -219,7 +247,13 @@ function CampoFormulario({
     <div>
       <FieldLabel required={campo.obrigatorio}>{campo.label}</FieldLabel>
       <Input
-        type={campo.tipo === "number" ? "number" : campo.tipo === "date" ? "date" : "text"}
+        type={
+          campo.tipo === "number"
+            ? "number"
+            : campo.tipo === "date"
+              ? "date"
+              : "text"
+        }
         min={campo.min}
         max={campo.max}
         value={valor === undefined ? "" : String(valor)}
@@ -232,7 +266,9 @@ function CampoFormulario({
           }
         }}
       />
-      {campo.ajuda && <p className="mt-1 text-xs text-slate-400">{campo.ajuda}</p>}
+      {campo.ajuda && (
+        <p className="mt-1 text-xs text-slate-400">{campo.ajuda}</p>
+      )}
     </div>
   );
 }
@@ -251,7 +287,9 @@ function prettificar(chave: string): string {
 function ResultadoCalculadora({ data }: { data: Record<string, unknown> }) {
   const aviso = typeof data.aviso === "string" ? data.aviso : null;
   const fontes = Array.isArray(data.fontes) ? (data.fontes as unknown[]) : null;
-  const booleans = Object.entries(data).filter(([, v]) => typeof v === "boolean");
+  const booleans = Object.entries(data).filter(
+    ([, v]) => typeof v === "boolean",
+  );
   const rodape = Object.entries(data).filter(([k]) => CHAVES_RODAPE.has(k));
   const resto = Object.entries(data).filter(
     ([k, v]) => !CHAVES_JA_TRATADAS.has(k) && typeof v !== "boolean",
@@ -303,7 +341,9 @@ function ValorResultado({ rotulo, valor }: { rotulo: string; valor: unknown }) {
   if (typeof valor === "string" || typeof valor === "number") {
     return (
       <p className="text-sm text-slate-700 dark:text-slate-200">
-        <span className="font-semibold text-slate-950 dark:text-slate-50">{rotulo}:</span>{" "}
+        <span className="font-semibold text-slate-950 dark:text-slate-50">
+          {rotulo}:
+        </span>{" "}
         {String(valor)}
       </p>
     );
@@ -311,11 +351,15 @@ function ValorResultado({ rotulo, valor }: { rotulo: string; valor: unknown }) {
 
   if (Array.isArray(valor)) {
     if (valor.length === 0) return null;
-    const todosPrimitivos = valor.every((v) => typeof v === "string" || typeof v === "number");
+    const todosPrimitivos = valor.every(
+      (v) => typeof v === "string" || typeof v === "number",
+    );
     if (todosPrimitivos) {
       return (
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{rotulo}</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            {rotulo}
+          </p>
           <ul className="mt-1 list-disc space-y-0.5 pl-4 text-sm text-slate-700 dark:text-slate-200">
             {valor.map((v, i) => (
               <li key={i}>{String(v)}</li>
@@ -327,7 +371,9 @@ function ValorResultado({ rotulo, valor }: { rotulo: string; valor: unknown }) {
     // Array de objetos (ex.: `prazos`, `requisitos[]`): cada item vira um card.
     return (
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{rotulo}</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          {rotulo}
+        </p>
         <div className="mt-1 space-y-1.5">
           {valor.map((item, i) => (
             <ItemLista key={i} item={item} />
@@ -344,7 +390,9 @@ function ValorResultado({ rotulo, valor }: { rotulo: string; valor: unknown }) {
     if (entradas.length === 0) return null;
     return (
       <div className="rounded-lg bg-slate-50 p-3 dark:bg-white/[0.04]">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{rotulo}</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          {rotulo}
+        </p>
         <div className="mt-1 space-y-0.5 text-sm text-slate-700 dark:text-slate-200">
           {entradas.map(([k, v]) => (
             <p key={k}>
@@ -362,14 +410,26 @@ function ValorResultado({ rotulo, valor }: { rotulo: string; valor: unknown }) {
 
 function ItemLista({ item }: { item: unknown }) {
   if (typeof item === "string") {
-    return <p className="rounded-lg bg-slate-50 p-2 text-sm dark:bg-white/[0.04]">{item}</p>;
+    return (
+      <p className="rounded-lg bg-slate-50 p-2 text-sm dark:bg-white/[0.04]">
+        {item}
+      </p>
+    );
   }
   if (!item || typeof item !== "object") {
-    return <p className="rounded-lg bg-slate-50 p-2 text-sm dark:bg-white/[0.04]">{String(item)}</p>;
+    return (
+      <p className="rounded-lg bg-slate-50 p-2 text-sm dark:bg-white/[0.04]">
+        {String(item)}
+      </p>
+    );
   }
   const obj = item as Record<string, unknown>;
   const titulo =
-    obj.titulo ?? obj.evento ?? obj.requisito ?? obj.parcela ?? Object.values(obj)[0];
+    obj.titulo ??
+    obj.evento ??
+    obj.requisito ??
+    obj.parcela ??
+    Object.values(obj)[0];
   const status = typeof obj.atendido === "boolean" ? obj.atendido : undefined;
   const demais = Object.entries(obj).filter(
     ([k, v]) =>
@@ -382,9 +442,13 @@ function ItemLista({ item }: { item: unknown }) {
   return (
     <div className="rounded-lg bg-slate-50 p-2.5 dark:bg-white/[0.04]">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-medium text-slate-900 dark:text-slate-50">{String(titulo)}</p>
+        <p className="text-sm font-medium text-slate-900 dark:text-slate-50">
+          {String(titulo)}
+        </p>
         {status !== undefined && (
-          <Badge tone={status ? "green" : "red"}>{status ? "Atendido" : "Pendente"}</Badge>
+          <Badge tone={status ? "green" : "red"}>
+            {status ? "Atendido" : "Pendente"}
+          </Badge>
         )}
       </div>
       {demais.length > 0 && (

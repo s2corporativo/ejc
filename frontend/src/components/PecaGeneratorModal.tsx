@@ -135,7 +135,9 @@ export default function PecaGeneratorModal({
   const [modo, setModo] = useState<ModoVisivel>("guiado");
   const [mostrarAvancado, setMostrarAvancado] = useState(false);
 
-  const [respostasGuiadas, setRespostasGuiadas] = useState<Record<string, string>>({});
+  const [respostasGuiadas, setRespostasGuiadas] = useState<
+    Record<string, string>
+  >({});
   const [fatos, setFatos] = useState("");
   const [pedidos, setPedidos] = useState("");
   const [instrucoes, setInstrucoes] = useState("");
@@ -149,7 +151,9 @@ export default function PecaGeneratorModal({
   const [metaErro, setMetaErro] = useState<string | null>(null);
   const metaLoadedRef = useRef(false);
 
-  const [verificacao, setVerificacao] = useState<VerificacaoCitacoes | null>(null);
+  const [verificacao, setVerificacao] = useState<VerificacaoCitacoes | null>(
+    null,
+  );
   const [alertasIa, setAlertasIa] = useState<string[]>([]);
   const [residuos, setResiduos] = useState<ResiduoAchado[]>([]);
 
@@ -277,7 +281,9 @@ export default function PecaGeneratorModal({
 
   const gerar = useCallback(async () => {
     if (catalogoIndisponivel) {
-      toast.error("Catálogo jurídico indisponível. Reabra o gerador e tente novamente.");
+      toast.error(
+        "Catálogo jurídico indisponível. Reabra o gerador e tente novamente.",
+      );
       return;
     }
 
@@ -347,7 +353,9 @@ export default function PecaGeneratorModal({
       });
 
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: "Erro desconhecido" }));
+        const err = await res
+          .json()
+          .catch(() => ({ detail: "Erro desconhecido" }));
         const detailObj =
           typeof err.detail === "object" && err.detail !== null
             ? (err.detail as Record<string, any>)
@@ -366,7 +374,9 @@ export default function PecaGeneratorModal({
         }
 
         const detail = detailObj
-          ? detailObj.mensagem ?? detailObj.detail ?? JSON.stringify(detailObj)
+          ? (detailObj.mensagem ??
+            detailObj.detail ??
+            JSON.stringify(detailObj))
           : err.detail;
         throw new Error(detail || "Falha na geração");
       }
@@ -465,7 +475,8 @@ export default function PecaGeneratorModal({
               <Sparkles size={16} /> Fluxo recomendado
             </div>
             <p className="mt-1 text-xs text-slate-500">
-              Informe o tipo e os dados do caso. O EJC organiza a estrutura, pesquisa fundamentos e gera a minuta para revisão humana.
+              Informe o tipo e os dados do caso. O EJC organiza a estrutura,
+              pesquisa fundamentos e gera a minuta para revisão humana.
             </p>
           </div>
 
@@ -530,7 +541,9 @@ export default function PecaGeneratorModal({
           <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
             <div>
               <div className="text-sm font-medium text-slate-700">
-                {modo === "guiado" ? "Preenchimento guiado" : "Preenchimento livre"}
+                {modo === "guiado"
+                  ? "Preenchimento guiado"
+                  : "Preenchimento livre"}
               </div>
               <div className="text-xs text-slate-400">
                 {modo === "guiado"
@@ -594,7 +607,9 @@ export default function PecaGeneratorModal({
                 />
               </div>
               <div>
-                <label className="label text-xs">Pedidos / resultado pretendido *</label>
+                <label className="label text-xs">
+                  Pedidos / resultado pretendido *
+                </label>
                 <textarea
                   className="input min-h-[90px]"
                   value={pedidos}
@@ -616,7 +631,10 @@ export default function PecaGeneratorModal({
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {FLAGS_TESES.map(([value, label]) => (
-                    <label key={value} className="flex items-center gap-2 text-xs text-slate-600">
+                    <label
+                      key={value}
+                      className="flex items-center gap-2 text-xs text-slate-600"
+                    >
                       <input
                         type="checkbox"
                         checked={flagsTeses.has(value)}
@@ -653,7 +671,8 @@ export default function PecaGeneratorModal({
           <div className="flex items-start gap-2 rounded-lg border border-warn-200 bg-warn-50 px-4 py-3 text-xs text-warn-800">
             <ShieldAlert size={15} className="mt-0.5 shrink-0" />
             <span>
-              A saída é uma minuta. Aprovação e assinatura permanecem obrigatoriamente humanas no fluxo de Peças.
+              A saída é uma minuta. Aprovação e assinatura permanecem
+              obrigatoriamente humanas no fluxo de Peças.
             </span>
           </div>
 
@@ -677,7 +696,9 @@ export default function PecaGeneratorModal({
         <div className="space-y-4">
           <div>
             <div className="text-sm font-semibold text-navy">
-              {fase === "gerando" ? "Preparando a minuta" : "Não foi possível gerar"}
+              {fase === "gerando"
+                ? "Preparando a minuta"
+                : "Não foi possível gerar"}
             </div>
             <div className="mt-1 text-xs text-slate-400">
               {tipoLabel(tipoPeca)} · {areaLabel(areaDireito)}
@@ -732,7 +753,11 @@ export default function PecaGeneratorModal({
                 <Button variant="ghost" onClick={resetForm}>
                   Voltar
                 </Button>
-                <Button variant="ai" onClick={gerar} icon={<Sparkles size={15} />}>
+                <Button
+                  variant="ai"
+                  onClick={gerar}
+                  icon={<Sparkles size={15} />}
+                >
                   Tentar novamente
                 </Button>
               </>
@@ -744,7 +769,10 @@ export default function PecaGeneratorModal({
       {fase === "concluido" && (
         <div className="space-y-4">
           <div className="flex items-start gap-3 rounded-xl border border-success-200 bg-success-50 p-4">
-            <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-success-600" />
+            <CheckCircle2
+              size={18}
+              className="mt-0.5 shrink-0 text-success-600"
+            />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm font-semibold text-success-800">
@@ -756,7 +784,9 @@ export default function PecaGeneratorModal({
                 A peça foi salva e seguirá para revisão humana no módulo Peças.
               </p>
               {aiLogId && (
-                <p className="mt-1 text-[11px] text-success-600">Log: {aiLogId}</p>
+                <p className="mt-1 text-[11px] text-success-600">
+                  Log: {aiLogId}
+                </p>
               )}
             </div>
           </div>
@@ -769,7 +799,9 @@ export default function PecaGeneratorModal({
 
           <div>
             <div className="mb-2 flex items-center justify-between">
-              <label className="text-xs font-medium text-slate-600">Minuta</label>
+              <label className="text-xs font-medium text-slate-600">
+                Minuta
+              </label>
               <div className="flex gap-3">
                 <button
                   type="button"
@@ -817,7 +849,9 @@ function PainelQualidade({
   alertas: string[];
   residuos: ResiduoAchado[];
 }) {
-  const citacoes = Array.isArray(verificacao?.citacoes) ? verificacao!.citacoes! : [];
+  const citacoes = Array.isArray(verificacao?.citacoes)
+    ? verificacao!.citacoes!
+    : [];
   const criticas = citacoes.filter(
     (citacao) =>
       citacao.status === "identificada" ||
@@ -830,12 +864,14 @@ function PainelQualidade({
     return (
       <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
         <ShieldAlert size={15} className="mt-0.5 shrink-0" />
-        Verificação automática indisponível ou sem achados. A revisão humana continua obrigatória.
+        Verificação automática indisponível ou sem achados. A revisão humana
+        continua obrigatória.
       </div>
     );
   }
 
-  const haAtencao = criticas.length > 0 || alertas.length > 0 || residuos.length > 0;
+  const haAtencao =
+    criticas.length > 0 || alertas.length > 0 || residuos.length > 0;
 
   return (
     <div
@@ -857,7 +893,8 @@ function PainelQualidade({
 
       {!haAtencao && (
         <p className="mt-2 text-xs text-success-700">
-          Nenhum alerta automático relevante foi encontrado. Isso não substitui a conferência do advogado.
+          Nenhum alerta automático relevante foi encontrado. Isso não substitui
+          a conferência do advogado.
         </p>
       )}
 

@@ -80,7 +80,10 @@ describe("avisoOverlayCofre", () => {
   });
 
   it("avisa também quando o estado do overlay é ilegível", () => {
-    const aviso = avisoOverlayCofre({ status: "indisponivel", aplicado: false });
+    const aviso = avisoOverlayCofre({
+      status: "indisponivel",
+      aplicado: false,
+    });
 
     expect(aviso).toBeTruthy();
     expect(aviso).toContain("Cofre de Credenciais");

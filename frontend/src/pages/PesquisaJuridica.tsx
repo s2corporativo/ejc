@@ -41,7 +41,10 @@ function statusCitacao(status: string) {
   if (status === "identificada")
     return { label: "Identificada", classe: "bg-primary-50 text-primary-700" };
   if (status === "possivelmente_desatualizada")
-    return { label: "Possivelmente desatualizada", classe: "bg-warn-50 text-warn-700" };
+    return {
+      label: "Possivelmente desatualizada",
+      classe: "bg-warn-50 text-warn-700",
+    };
   if (status === "generica")
     return { label: "Genérica", classe: "bg-warn-50 text-warn-700" };
   return { label: "Suspeita", classe: "bg-danger-50 text-danger-700" };
@@ -49,7 +52,9 @@ function statusCitacao(status: string) {
 
 export default function PesquisaJuridica() {
   const [query, setQuery] = useState("");
-  const [resultados, setResultados] = useState<FontePesquisaJuridica[] | null>(null);
+  const [resultados, setResultados] = useState<FontePesquisaJuridica[] | null>(
+    null,
+  );
   const [modo, setModo] = useState("");
   const [pipeline, setPipeline] = useState("");
   const [carregando, setCarregando] = useState(false);
@@ -57,7 +62,8 @@ export default function PesquisaJuridica() {
 
   const [textoCitacoes, setTextoCitacoes] = useState("");
   const [consultarDatajud, setConsultarDatajud] = useState(false);
-  const [verificacao, setVerificacao] = useState<VerificacaoCitacoesResponse | null>(null);
+  const [verificacao, setVerificacao] =
+    useState<VerificacaoCitacoesResponse | null>(null);
   const [validando, setValidando] = useState(false);
   const [erroCitacoes, setErroCitacoes] = useState<string | null>(null);
 
@@ -87,7 +93,9 @@ export default function PesquisaJuridica() {
   const validarCitacoes = async () => {
     const texto = textoCitacoes.trim();
     if (!texto) {
-      setErroCitacoes("Cole o trecho jurídico que contém as citações a conferir.");
+      setErroCitacoes(
+        "Cole o trecho jurídico que contém as citações a conferir.",
+      );
       return;
     }
     setValidando(true);
@@ -117,8 +125,8 @@ export default function PesquisaJuridica() {
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
             A busca respeita vigência, aprovação, quarentena e escopo do RAG.
-            Resultado recuperado não equivale a precedente aplicável: confira
-            a fonte oficial e a aderência ao caso concreto.
+            Resultado recuperado não equivale a precedente aplicável: confira a
+            fonte oficial e a aderência ao caso concreto.
           </p>
         </div>
       </div>
@@ -127,7 +135,9 @@ export default function PesquisaJuridica() {
         <div className="mb-4 flex items-center gap-2">
           <Database className="h-5 w-5 text-ai-600" />
           <div>
-            <h2 className="font-semibold text-navy">Pesquisar fontes governadas</h2>
+            <h2 className="font-semibold text-navy">
+              Pesquisar fontes governadas
+            </h2>
             <p className="text-xs text-slate-500">
               Legislação, jurisprudência, súmulas, doutrina e demais documentos
               aprovados para recuperação pela IA.
@@ -194,7 +204,9 @@ export default function PesquisaJuridica() {
                         <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-500">
                           {item.categoria && <span>{item.categoria}</span>}
                           {item.tribunal && <span>· {item.tribunal}</span>}
-                          {item.confianca && <span>· confiança: {item.confianca}</span>}
+                          {item.confianca && (
+                            <span>· confiança: {item.confianca}</span>
+                          )}
                           {item.autoridade?.label && (
                             <span>· autoridade: {item.autoridade.label}</span>
                           )}
@@ -288,22 +300,30 @@ export default function PesquisaJuridica() {
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               <div className="rounded-xl bg-slate-50 p-3">
                 <p className="text-[10px] uppercase text-slate-400">Citações</p>
-                <p className="text-xl font-bold text-navy">{verificacao.total}</p>
+                <p className="text-xl font-bold text-navy">
+                  {verificacao.total}
+                </p>
               </div>
               <div className="rounded-xl bg-success-50 p-3">
-                <p className="text-[10px] uppercase text-success-600">Verificadas</p>
+                <p className="text-[10px] uppercase text-success-600">
+                  Verificadas
+                </p>
                 <p className="text-xl font-bold text-success-700">
                   {verificacao.confirmadas}
                 </p>
               </div>
               <div className="rounded-xl bg-warn-50 p-3">
-                <p className="text-[10px] uppercase text-warn-600">Não confirmadas</p>
+                <p className="text-[10px] uppercase text-warn-600">
+                  Não confirmadas
+                </p>
                 <p className="text-xl font-bold text-warn-700">
                   {verificacao.nao_encontradas}
                 </p>
               </div>
               <div className="rounded-xl bg-ai-50 p-3">
-                <p className="text-[10px] uppercase text-ai-600">Confiabilidade</p>
+                <p className="text-[10px] uppercase text-ai-600">
+                  Confiabilidade
+                </p>
                 <p className="text-xl font-bold text-ai-800">
                   {verificacao.score == null ? "—" : verificacao.score + "%"}
                 </p>
@@ -331,7 +351,10 @@ export default function PesquisaJuridica() {
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         {citacao.status === "verificada" ? (
-                          <CheckCircle2 size={15} className="text-success-600" />
+                          <CheckCircle2
+                            size={15}
+                            className="text-success-600"
+                          />
                         ) : (
                           <AlertTriangle size={15} className="text-warn-600" />
                         )}
@@ -339,7 +362,12 @@ export default function PesquisaJuridica() {
                           {citacao.citacao}
                         </span>
                       </div>
-                      <span className={"rounded-full px-2 py-1 text-[10px] font-bold " + badge.classe}>
+                      <span
+                        className={
+                          "rounded-full px-2 py-1 text-[10px] font-bold " +
+                          badge.classe
+                        }
+                      >
                         {badge.label}
                       </span>
                     </div>
@@ -356,7 +384,9 @@ export default function PesquisaJuridica() {
                     )}
                     {citacao.fonte_verificacao && (
                       <p className="mt-2 text-xs text-slate-500">
-                        <span className="font-semibold">Fonte de verificação: </span>
+                        <span className="font-semibold">
+                          Fonte de verificação:{" "}
+                        </span>
                         {citacao.fonte_verificacao}
                       </p>
                     )}
