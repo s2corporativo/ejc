@@ -107,27 +107,20 @@ funciona normalmente). Recursos de IA em nuvem (Groq) exigem `GROQ_API_KEY` no `
 
 ## Atualizar para uma nova versão
 
-O fluxo normal é CI Woodpecker verde + promoção pelo gate host-level:
+A arquitetura-alvo é:
 
-```bash
-sudo /opt/s2-automation/host/ejc-deploy-approved.sh
-```
+`Pull Request → EJC Gate — Actions → merge na main → Coolify → healthcheck → produção`.
 
-Se o serviço de automação estiver indisponível e houver contingência manual
-formalmente autorizada, use o checkout operacional do SHA atual de `main`. O
-`deploy_manual.sh` também exige `origin/main == HEAD` e a prova Woodpecker antes
-de qualquer transação de produção:
+O GitHub Actions executa somente validação em runner GitHub-hosted. Ele não recebe
+segredos de produção e não faz SSH para a VPS. O Coolify acompanha exclusivamente
+a branch `main` e é o responsável pelo build/deploy após a integração.
 
-```bash
-git fetch origin main
-SHA="$(git rev-parse origin/main)"
-git checkout --detach "$SHA"
-bash scripts/deploy_manual.sh --sha "$SHA" --dry-run
-bash scripts/deploy_manual.sh --sha "$SHA"
-```
+Durante a janela de migração, enquanto Actions e o primeiro deploy/rollback do
+Coolify ainda não estiverem homologados, o mecanismo host-level anterior permanece
+somente como contingência fail-closed. Ele não deve receber novas funcionalidades.
 
-Não use `docker compose up --build`, `deploy_manual.sh` de branch arbitrária nem
-scripts legados como substituto do gate.
+Não use `docker compose up --build`, upload avulso, `deploy_manual.sh` de branch
+arbitrária ou scripts legados como substituto do fluxo canônico.
 
 ## Verificação rápida
 
