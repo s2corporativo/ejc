@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.knowledge_validity import verificacao_temporal_valida
+
 from .contracts import ResearchPlan
 from .research_loop import evaluate_research_coverage, next_research_gap
 
@@ -45,7 +47,7 @@ def _record_from_rag(item: dict[str, Any], *, purpose: str) -> dict[str, Any] | 
         authority_code == "oficial_normativa"
         and situacao.get("code") == "vigente"
         and str(extra.get("legal_status_origem") or "").strip()
-        and str(extra.get("legal_status_verificado_em") or "").strip()
+        and verificacao_temporal_valida(extra.get("legal_status_verificado_em"))
         and not str(extra.get("legal_status_inferido_em") or "").strip()
     )
 
