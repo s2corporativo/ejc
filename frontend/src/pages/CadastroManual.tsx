@@ -1089,71 +1089,12 @@ export default function CadastroManual() {
             )}
 
             <div>
-              <label className="label">Prioridade</label>
-              <select
-                className="input"
-                value={formCaso.prioridade}
-                onChange={(e) => mudarCaso({ prioridade: e.target.value })}
-              >
-                {PRIORIDADES.map((p) => (
-                  <option key={p.k} value={p.k}>
-                    {p.l}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">Tipo de caso</label>
-              <select
-                className="input"
-                value={formCaso.case_type}
-                onChange={(e) => mudarCaso({ case_type: e.target.value })}
-              >
-                {CASE_TYPES.map((t) => (
-                  <option key={t.k} value={t.k}>
-                    {t.l}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
               <label className="label">Nº do processo</label>
               <input
                 className="input"
+                placeholder="Opcional"
                 value={formCaso.numero_processo}
                 onChange={(e) => mudarCaso({ numero_processo: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="label">Tribunal</label>
-              <input
-                className="input"
-                value={formCaso.tribunal}
-                onChange={(e) => mudarCaso({ tribunal: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="label">Comarca</label>
-              <input
-                className="input"
-                value={formCaso.comarca}
-                onChange={(e) => mudarCaso({ comarca: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="label">Vara</label>
-              <input
-                className="input"
-                value={formCaso.vara}
-                onChange={(e) => mudarCaso({ vara: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="label">Parte contrária</label>
-              <input
-                className="input"
-                value={formCaso.parte_contraria}
-                onChange={(e) => mudarCaso({ parte_contraria: e.target.value })}
               />
             </div>
             <div>
@@ -1166,25 +1107,100 @@ export default function CadastroManual() {
                 onChange={(e) => mudarCaso({ valor_causa: e.target.value })}
               />
             </div>
-            <div className="sm:col-span-2 lg:col-span-3">
-              <label className="label">Descrição dos fatos</label>
-              <textarea
-                className="input min-h-24 resize-y"
-                value={formCaso.descricao_fatos}
-                onChange={(e) => mudarCaso({ descricao_fatos: e.target.value })}
-              />
-            </div>
-            <div className="sm:col-span-2 lg:col-span-3">
-              <label className="label">Próxima ação</label>
-              <input
-                className="input"
-                placeholder="Ex.: Protocolar contestação, Agendar reunião"
-                value={formCaso.proxima_acao}
-                onChange={(e) => mudarCaso({ proxima_acao: e.target.value })}
-              />
-              <p className="mt-1 text-xs text-slate-400">
-                Opcional. Pode ser preenchida depois, quando o caso for revisado.
-              </p>
+
+            <details className="sm:col-span-2 lg:col-span-3 rounded-xl border border-slate-200 bg-slate-50/60">
+              <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-700">
+                Mais detalhes <span className="font-normal text-slate-400">(opcional)</span>
+              </summary>
+              <div className="grid grid-cols-1 gap-3 border-t border-slate-200 p-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <label className="label">Prioridade</label>
+                  <select
+                    className="input"
+                    value={formCaso.prioridade}
+                    onChange={(e) => mudarCaso({ prioridade: e.target.value })}
+                  >
+                    {PRIORIDADES.map((p) => (
+                      <option key={p.k} value={p.k}>
+                        {p.l}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Tipo de caso</label>
+                  <select
+                    className="input"
+                    value={formCaso.case_type}
+                    onChange={(e) => mudarCaso({ case_type: e.target.value })}
+                  >
+                    {CASE_TYPES.map((t) => (
+                      <option key={t.k} value={t.k}>
+                        {t.l}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Tribunal</label>
+                  <input
+                    className="input"
+                    value={formCaso.tribunal}
+                    onChange={(e) => mudarCaso({ tribunal: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="label">Comarca</label>
+                  <input
+                    className="input"
+                    value={formCaso.comarca}
+                    onChange={(e) => mudarCaso({ comarca: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="label">Vara</label>
+                  <input
+                    className="input"
+                    value={formCaso.vara}
+                    onChange={(e) => mudarCaso({ vara: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="label">Parte contrária</label>
+                  <input
+                    className="input"
+                    value={formCaso.parte_contraria}
+                    onChange={(e) =>
+                      mudarCaso({ parte_contraria: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <label className="label">Descrição dos fatos</label>
+                  <textarea
+                    className="input min-h-24 resize-y"
+                    value={formCaso.descricao_fatos}
+                    onChange={(e) =>
+                      mudarCaso({ descricao_fatos: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <label className="label">Próxima ação</label>
+                  <input
+                    className="input"
+                    placeholder="Ex.: Protocolar contestação, agendar reunião"
+                    value={formCaso.proxima_acao}
+                    onChange={(e) =>
+                      mudarCaso({ proxima_acao: e.target.value })
+                    }
+                  />
+                  <p className="mt-1 text-xs text-slate-400">
+                    Pode ser preenchida depois, quando o caso for revisado.
+                  </p>
+                </div>
+              </div>
+            </details>
             </div>
           </div>
 
