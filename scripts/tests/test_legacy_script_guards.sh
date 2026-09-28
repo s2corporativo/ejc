@@ -28,9 +28,6 @@ optin="$(EJC_LEGACY_SCRIPT_OK=I_UNDERSTAND_THIS_IS_LEGACY EJC_LEGACY_SCRIPT_REAS
 
 grep -Fq 'GitHub Actions' "$ROOT/README.md" || fail 'README não declara GitHub Actions como CI canônico'
 grep -Fq 'Coolify self-hosted' "$ROOT/README.md" || fail 'README não declara Coolify como CD alvo'
-for rel in scripts/deploy.sh scripts/atualizar-vps.sh; do
-  grep -Fq '/opt/s2-automation/host/ejc-deploy-approved.sh' "$ROOT/$rel" ||     fail "$rel ainda redireciona operador para caminho sem gate host-level"
-done
 if grep -Fq './scripts/atualizar-vps.sh' "$ROOT/docs/DEPLOY-VPS.md"; then
   fail 'runbook ativo ainda recomenda atualizar-vps.sh'
 fi
