@@ -26,7 +26,8 @@ grep -Fq 'EJC_LEGACY_SCRIPT_REASON é obrigatório' <<<"$missing_reason" || fail
 optin="$(EJC_LEGACY_SCRIPT_OK=I_UNDERSTAND_THIS_IS_LEGACY EJC_LEGACY_SCRIPT_REASON=teste-controlado bash -c 'source "$1"; ejc_legacy_script_guard "fixture" "replacement"; printf OPTIN_OK' _ "$HELPER" 2>/dev/null)"
 [ "$optin" = 'OPTIN_OK' ] || fail 'helper não libera contingência explicitamente documentada'
 
-grep -Fq 'Woodpecker self-hosted' "$ROOT/README.md" || fail 'README ainda não declara o CI oficial'
+grep -Fq 'GitHub Actions' "$ROOT/README.md" || fail 'README não declara GitHub Actions como CI canônico'
+grep -Fq 'Coolify self-hosted' "$ROOT/README.md" || fail 'README não declara Coolify como CD alvo'
 for rel in scripts/deploy.sh scripts/atualizar-vps.sh; do
   grep -Fq '/opt/s2-automation/host/ejc-deploy-approved.sh' "$ROOT/$rel" ||     fail "$rel ainda redireciona operador para caminho sem gate host-level"
 done
