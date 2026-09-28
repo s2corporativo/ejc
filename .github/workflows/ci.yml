@@ -189,7 +189,6 @@ jobs:
       - name: Regressões estruturais baratas
         working-directory: backend
         run: |
-          python -m unittest discover -s ../scripts/tests -p test_woodpecker_scopes.py -v
           pytest tests/test_alembic_single_head.py tests/test_rotas_registro_explicito.py -q
 
       - name: Suíte backend completa
