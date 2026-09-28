@@ -458,12 +458,50 @@ export default function DashboardUltra() {
       </nav>
       <section
         className="ejc-dash__ai-home"
-        aria-label="Entrada Única com inteligência jurídica"
+        aria-label="Entrada de casos"
         hidden={experiencia !== "ia"}
       >
+        <div className="ejc-dash__entry-options" aria-label="Escolha como iniciar">
+          {canUseEntry && (
+            <Link
+              to="/cadastro-manual?aba=caso"
+              className="ejc-dash__entry-option is-manual"
+            >
+              <span className="ejc-dash__entry-option-icon" aria-hidden="true">
+                <Briefcase />
+              </span>
+              <span>
+                <strong>Cadastrar caso manualmente</strong>
+                <small>
+                  Cliente, título, área, processo e valor. Direto, sem IA.
+                </small>
+              </span>
+              <ChevronRight aria-hidden="true" />
+            </Link>
+          )}
+          {canUseLegal && (
+            <a
+              href="#ejc-ai-intake"
+              className="ejc-dash__entry-option is-ai"
+            >
+              <span className="ejc-dash__entry-option-icon" aria-hidden="true">
+                <Sparkles />
+              </span>
+              <span>
+                <strong>Ler e analisar caso com IA</strong>
+                <small>
+                  Relate a situação ou envie documentos para a análise jurídica.
+                </small>
+              </span>
+              <ChevronRight aria-hidden="true" />
+            </a>
+          )}
+        </div>
+
         <section
+          id="ejc-ai-intake"
           className="ejc-dash__entry ejc-dash__entry--ai-home"
-          aria-label="Entrada Única"
+          aria-label="Leitura e análise do caso com IA"
         >
           <div className="ejc-dash__entry-head ejc-dash__entry-head--ai-home">
             <span className="ejc-dash__entry-icon" aria-hidden="true">
@@ -473,11 +511,10 @@ export default function DashboardUltra() {
               <span className="ejc-dash__entry-kicker">
                 EJC · Inteligência Jurídica
               </span>
-              <h1>Como posso trabalhar neste caso?</h1>
+              <h1>Leitura e análise do caso com IA</h1>
               <p>
-                Relate a situação ou anexe os documentos. A Entrada Única
-                identifica o contexto jurídico e conduz o fluxo do caso para sua
-                confirmação.
+                Relate a situação ou anexe os documentos. A IA organiza o
+                contexto jurídico e propõe o fluxo para sua confirmação.
               </p>
             </div>
           </div>
@@ -489,11 +526,13 @@ export default function DashboardUltra() {
           ) : canUseEntry ? (
             <div className="ejc-dash__entry-body ejc-dash__entry-body--plain">
               <p>
-                Use a Entrada Única para cadastro manual de cliente e caso, sem
-                depender de IA.
+                Seu perfil pode cadastrar clientes e casos manualmente, sem IA.
               </p>
-              <Link to="/entrada" className="ejc-dash__entry-cta">
-                Abrir Entrada Única
+              <Link
+                to="/cadastro-manual?aba=caso"
+                className="ejc-dash__entry-cta"
+              >
+                Cadastrar caso manualmente
               </Link>
             </div>
           ) : (
