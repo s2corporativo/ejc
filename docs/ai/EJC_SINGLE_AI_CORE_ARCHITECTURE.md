@@ -1,81 +1,142 @@
 # EJC — Arquitetura do Núcleo Único de IA
 
-Data: 2026-07-04 · Complementa: `EJC_SINGLE_AI_CORE_AUDIT.md` (situação anterior).
+Decisão de convergência incremental do titular: 27/09/2026. Referência: #1651.
+Base inspecionada: `7cc95b097bbb1d47b71c4116b4b9e3977a2a223b`.
+Este documento distingue código existente de arquitetura-alvo; não certifica
+qualidade jurídica, configuração de provedores ou homologação de produção.
 
-Princípio: **existe UMA IA no EJC**. Nenhuma tela chama modelo; nenhum módulo tem pipeline próprio. Toda tarefa de IA passa pelo `SingleAICoreOrchestrator` (backend/app/services/ai/core/orchestrator.py:64) ou, nos wrappers legados, pelo mesmo `ai_gateway`.
+## 1. Decisão e fronteiras
 
-## 1. Fluxo ponta a ponta
+Evoluir o núcleo existente, sem big bang, segundo gateway, segundo RAG ou
+segunda memória de caso. Novas integrações e providers ficam congelados durante
+a consolidação. Correções e convergência dos existentes continuam permitidas.
+`EJCOrchestrator` designa a responsabilidade-alvo: preferir a evolução de
+`SingleAICoreOrchestrator`, sem criar classe/serviço paralelo apenas pelo nome.
 
-```
-frontend (superfícies existentes — Sala Jurídica, assistentes, workspaces —
-          enviam só intenção/IDs/pergunta via lib/api.ts)
-  │ POST /api/ai/core/{chat,task,analyze,generate,report}
-  ▼
-routers/ai_core.py  ── _staff_only (cliente_externo → 403, ai_core.py:28)
-  ▼
-SingleAICoreOrchestrator.run (orchestrator.py:67)
-  1. classify_intent (intent_classifier.py:119) → agente interno
-  2. RBAC/ABAC: role do agente + verificar_acesso_caso (orchestrator.py:88-96)
-  3. context_builder.montar_contexto (dossiê/documento/processo/RAG)
-  4. ai_guard.sanitizar_ou_abortar — LGPD, abort 422 (orchestrator.py:110-112)
-  5. AIProviderPolicy().avaliar → PolicyDecision (provider_policy.py:70)
-  6. ai_gateway.chat(task_type do gateway) → cadeia de providers
-       └─ barreira FINAL de PII p/ externo (ai_gateway.py:197-207)
-       └─ providers/{ollama,anthropic,groq}_provider.chat
-  7. response_validator.validar — citações/promessa/sem base (response_validator.py:38)
-  8. custo BRL (ai_gateway._custo_brl) quando provider=anthropic
-  9. audit_logger.registrar → AILog (erro PROPAGA — sem trilha, sem resposta)
- 10. hitl_policy.aplicar → is_rascunho/requer_revisao/status_hitl="gerado"
-  ▼
-resposta padronizada (dict) → frontend exibe rascunho para revisão humana
-```
+Manus será supervisor de planos, sujeito ao executor determinístico do EJC.
+Não concede permissões, não altera orçamento e não acessa diretamente banco ou
+internet por ferramentas do EJC. Sua ativação depende de contrato do fornecedor
+verificado e capacidade comprovada de restringir execução; prompt não é barreira.
 
-## 2. Responsabilidades dos módulos de `services/ai/`
+## 2. Mapa confirmado no código
 
-| Módulo | Responsabilidade | Referência |
+Caminhos abaixo são relativos a `backend/app/services/`, salvo indicação.
+
+| Componente | Implementação existente | Responsabilidade / limite |
 |---|---|---|
-| `core/orchestrator.py` | Único ponto de execução; encadeia todas as etapas | orchestrator.py:64-194 |
-| `core/intent_classifier.py` | Determinístico (tabelas+keywords, sem LLM): task_type/domain/mensagem → agente + TarefaIA | intent_classifier.py:119 |
-| `core/agent_registry.py` | 14 agentes internos como METADADO puro (domínios, tarefa padrão, roles, skills) | agent_registry.py:42 |
-| `core/skill_registry.py` | 28 skills com contrato documentado; handlers delegam a serviços existentes; skills de patch sem handler de propósito | skill_registry.py:103 |
-| `core/context_builder.py` | Monta contexto real no backend (dossiê ≤8k, doc ≤6k, processo, RAG ≤6 chunks); cofre nunca entra em prompt | context_builder.py:37 |
-| `core/response_validator.py` | Pós-modelo: citation_check, promessa de resultado (alerta, nunca reescreve), prefixo "SEM BASE VERIFICÁVEL" | response_validator.py:38 |
-| `core/hitl_policy.py` | Carimba toda resposta como rascunho HITL | hitl_policy.py:15 |
-| `core/audit_logger.py` | Ponte única para AILog via ai_guard.registrar_ai_log (erro propaga) | audit_logger.py:45 |
-| `provider_policy.py` | Decisão pura de elegibilidade/ordem de providers + barreira LGPD | provider_policy.py:43 |
+| Entrada canônica | `../routers/ai_core.py` | Receber intenção e IDs |
+| Orquestrador | `ai/core/orchestrator.py` | `SingleAICoreOrchestrator.run`: contexto, policy, gateway, validação, auditoria e HITL |
+| Contexto e sigilo | `ai/core/context_builder.py`, `ai/sanitization_policy.py` | Contexto autorizado e piso de sigilo |
+| Elegibilidade | `ai/provider_registry.py` | Flags, disponibilidade de credencial e kill-switches |
+| Política | `ai/provider_policy.py` | Afinidade por tarefa e cadeia permitida |
+| Seleção econômica | `ai/model_router.py` | Proposta determinística; não concede autorização |
+| Execução dos modelos | `ai_gateway.py` | Despacho, fallback e metadados de uso |
+| Custos | `ai_cost.py`, `ai/core/audit_logger.py` | Estimativa e AILog; medição não equivale a reserva prévia |
+| Validação | `ai/core/response_validator.py`, `citation_gate.py` | Citações e alertas; verificar também o gate de aprovação da peça |
+| Revisão humana | `ai/core/hitl_policy.py` | Estado de rascunho e necessidade de revisão |
+| Legal Brain | `legal_brain/brain.py` | Planejamento determinístico existente |
+| Diagnóstico opt-in | `legal_brain/shadow.py` | Chama o núcleo e anexa plano; não implementa comparação A/B isolada |
+| Limites do agente | `ai/agent/budget.py` | Passos, tokens e custo acumulados; não é reserva transacional universal |
+| Manus atual | `manus_deep_reasoning.py`, `manus_client.py` | Integração separada de raciocínio explícito; ainda não é supervisor via Tool Broker |
 
-Fora de `ai/`: `ai_gateway.py` (dispatch + fallback + barreira final), `sanitizer.py`/`ai_guard.py` (LGPD), `citation_check.py` (anti-alucinação), `system_prompts/` (prompts + router de modelo por tarefa), `case_context.py` (dossiê sanitizado).
+O Manus atual chama `ManusClient.create_task` diretamente, embora tenha guardas
+próprias e pseudonimização. `MANUS_AUTO_ROUTING_ENABLED=true` é rejeitado pelo
+serviço atual. Não remover essas guardas para implementar supervisão.
 
-## 3. Contratos
+## 3. Política-alvo de processamento
 
-`SingleAICoreOrchestrator.run` (orchestrator.py:67-81) — keyword-only:
+| Classe | Motor previsto | Restrição |
+|---|---|---|
+| Extração, classificação, resumo e estruturação | Groq | Não assumir mérito jurídico silenciosamente |
+| Sigilo reforçado | Ollama/local | Piso local vale para supervisão, busca, embeddings, crítica e telemetria |
+| Análise, tese, contrato, peça e pesquisa jurídica | Maritaca/Sabiá | Evidências e revisão humana preservadas |
+| Benchmark / contingência Claude | Seleção explícita | Sem escalonamento automático para Claude |
+| Supervisão Manus | Desligada até homologação | Plano e ferramentas autorizadas, sem autoridade própria |
 
-```python
-async def run(*, db=None, user=None, task_type: str, domain: str | None = None,
-              mensagem: str, case_id: str | None = None,
-              document_id: str | None = None, process_id: str | None = None,
-              params: dict | None = None, usar_rag: bool = True,
-              nivel_inteligencia: str = "alto") -> dict
-```
+A política de providers detalhada permanece em `EJC_AI_PROVIDER_POLICY.md`.
+Modelo indisponível gera estado explícito; preservar opções manuais existentes
+sem confundir seleção explícita com fallback. A flag histórica de Anthropic
+não autoriza reativação automática nesta convergência.
 
-Dict de resposta padronizado (orchestrator.py:172-193 + hitl_policy.aplicar):
+## 4. Evidências e produção jurídica
 
-| Campo | Conteúdo |
-|---|---|
-| `conteudo` | Texto validado (pode vir prefixado com "SEM BASE VERIFICÁVEL") |
-| `agente`, `skill_pipeline`, `task_type`, `domain`, `tarefa` | Roteamento resolvido |
-| `modelo` (`provider/modelo`), `provider` | O que realmente respondeu |
-| `fontes` (titulo/categoria/fonte), `citacoes` | Rastreabilidade RAG + citation_check |
-| `alertas`, `sem_base_verificavel`, `revisao_obrigatoria` | Saída do response_validator |
-| `custo_estimado_brl`, `tokens_input`, `tokens_output`, `log_id` | Custo/auditoria |
-| `is_rascunho` (sempre True), `requer_revisao`, `status_hitl`="gerado", `aviso_hitl` | Carimbo HITL |
+O RAG recupera evidências verificáveis; a análise demonstra sua aplicação.
+Separar legislação, jurisprudência, precedentes qualificados, material
+institucional e doutrina. Cada evidência deve ter fonte, URL, autoridade,
+data, versão, status temporal e data de verificação, com trecho reconstruível.
+Norma histórica pode ser relevante à data dos fatos: não excluir por não estar
+vigente hoje. Sem comprovação, não apresentá-la como direito vigente/aplicável.
 
-Endpoints (routers/ai_core.py, prefixo `/api/ai/core`): `POST /chat|/task|/analyze|/generate|/report` + introspecção `GET /agents|/skills|/status` (só metadados/booleans — nunca chaves, ai_core.py:179). Nota (pente fino 2026-07, onda 2): não existe client frontend dedicado — o antigo `frontend/src/lib/aiCore.ts` ficou sem consumidores e foi removido; o acesso ao núcleo se dá pelas superfícies existentes (Sala Jurídica, assistentes, workspaces), que chamam `/api/ai/...` diretamente via `lib/api.ts`.
+Conclusões relevantes devem apontar evidência, inferência, lacuna e risco.
+Falha externa/CAPTCHA não significa ausência de jurisprudência. Concluir #1726
+por evidência atual e tratar #1728 sem bypass. Manus depende desses gates.
 
-## 4. Como estender SEM criar IA paralela
+## 5. Orquestração e ferramentas — requisitos ainda a implementar/validar
 
-**Novo agente**: adicionar `AgenteInterno` em `agent_registry.py` (nome, domínios, `tarefa_padrao` de TarefaIA, `prompt_key`, `exige_fonte`, `roles_permitidos`, skills via `_skills(...)`); registrar o prompt em `system_prompts/__init__.py` (SYSTEM_PROMPTS); mapear task_type/keywords em `intent_classifier.py` (TASK_TYPE_PARA_AGENTE / _KEYWORDS_PARA_AGENTE); se precisar de perfil de gateway próprio, usar `_AGENTE_GATEWAY_OVERRIDE` (orchestrator.py:57). Nenhum código de execução novo — o agente só parametriza o `run()`.
+Evoluir estados persistentes: RECEBIDO, CLASSIFICANDO, PLANEJANDO,
+COLETANDO_FATOS, PESQUISANDO, ANALISANDO, VALIDANDO, REDIGINDO,
+AGUARDANDO_REVISAO e CONCLUIDO; saídas BLOQUEADO, ERRO, ORCAMENTO_EXCEDIDO,
+FONTE_INSUFICIENTE e CANCELADO. Permitir fluxo curto sem obrigar etapas inúteis.
+Persistir transições, versão do plano/política, evidências e motivos resumidos;
+não armazenar raciocínio interno do modelo nem texto sensível em telemetria.
 
-**Nova skill**: adicionar `Skill(...)` em `skill_registry.py` com contrato completo; handler deve delegar a um serviço existente (import tardio). Skill que aplica mudança/ação sensível fica com `handler=None` (execução exige processo humano).
+`EJCToolBroker` é contrato-alvo, não componente declarado pronto. Reutilizar o
+registro e os handlers existentes. Cada chamada valida schema, identidade,
+RBAC, ownership, sigilo, orçamento e timeout; resultado estruturado e auditado.
+Revalidar autorização ao retomar. Idempotência evita efeitos duplicados em retry.
+Conteúdo recuperado é dado não confiável, nunca instrução de ferramenta.
 
-**Proibido**: novo router que chame provider direto, httpx para modelo fora de `providers/`, novo INSERT manual em ai_logs, prompt montado no frontend. Endpoints legados são wrappers do núcleo/gateway (matriz em `EJC_AI_ENDPOINT_MIGRATION_MATRIX.md`).
+Ferramentas iniciais propostas: extrair_fatos, montar_cronologia,
+classificar_demanda, pesquisar_rag, buscar_legislacao, buscar_jurisprudencia,
+avaliar_cobertura, analisar_com_sabia, resumir_com_groq, criticar_tese,
+verificar_citacoes e gerar_minuta. Não criar endpoints para cada nome por padrão.
+
+Reservar orçamento antes de cada chamada, incluindo retries, pesquisa, crítica,
+embeddings e supervisão. Conciliar custo estimado/medido; preço desconhecido
+não equivale a zero. Definir limites por execução e agregados por usuário/dia.
+Referências iniciais: até 8 passos, 6 chamadas e 2 ciclos de pesquisa; valores
+monetários por classe exigem definição antes da ativação. Não expandir limites
+por decisão do LLM. Cache só quando autorização, sigilo e versão forem compatíveis.
+
+## 6. Entregas e critérios de saída
+
+| Fase | Entrega incremental | Gate |
+|---|---|---|
+| 1 | Mapa único, congelamento e conciliação de issues | Inventário dos caminhos, dependências e baseline; nenhuma exclusão por nome |
+| 2 | Roteamento econômico e observabilidade | Identidade real do modelo; limites prévios; testes negativos de fallback e sigilo |
+| 3 | RAG confiável e citações | Evidência temporal reconstruível e lacuna explícita; #1726/#1728 verificadas |
+| 4 | Orquestrador e broker | Estados, cancelamento, retomada, concorrência e idempotência testados |
+| 5 | Manus em shadow isolado | Controle de ferramentas comprovado; sem efeitos em casos, prazos ou peças |
+| 6 | Avaliação humana e promoção gradual | Critérios fixados antes da comparação; qualidade/custo/latência e rollback comprovados |
+
+Iniciar baseline na fase 1. Reutilizar #1201 como backlog humano de 75 casos:
+15 por área e cenários normal/fronteira/exceção. Pesquisa, análise e produção
+são dimensões adicionais, não substituem a estratificação por área. A existência
+de templates ou candidatos não comprova corpus homologado. Não inventar casos
+nem atestar revisão humana. Conciliar o requisito de revisor independente da
+issue com a opção de revisor no backlog/código antes de certificar.
+
+Comparar mesmos fatos, pergunta e snapshot RAG; fixar versões de prompts/modelos.
+Medir acerto, citações, alucinação, cobertura, omissões, custo, latência, tokens
+e correção humana. Preferência por modelo não é prova de superioridade.
+
+Shadow A/B futuro tem amostragem, orçamento separado e isolamento de efeitos.
+Não encaminhar dados locais ao supervisor externo. A resposta atual continua
+visível; resultados experimentais ficam restritos à avaliação autorizada.
+
+## 7. Integração, testes e rollback
+
+Uma frente estrutural por vez, conforme `docs/engineering/WIP_AND_RELEASE_POLICY.md`.
+Confirmar SHA, arquivos de PRs concorrentes e consumidores antes de cada lote.
+Não fechar issue inteira porque parte do comportamento foi implementada.
+Remover caminho legado apenas após migração dos consumidores e telemetria.
+
+Testes por lote: roteamento e sigilo negativos; fonte ausente/desatualizada;
+limites concorrentes; retomada e duplicação; autorização nas ferramentas;
+shadow sem efeitos; HITL. Não alterar schema sem necessidade comprovada;
+quando necessário, migration aditiva e compatível com rollback.
+
+Promoção pela esteira com checks do SHA exato, health/readiness e smoke.
+Rollback para fluxo anterior homologado, preservando auditoria e execuções
+pendentes; cancelar/drenar trabalhos antes de recuar componente incompatível.
+Este lote é documental: não muda runtime, flags, banco ou produção.
