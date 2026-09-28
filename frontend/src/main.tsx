@@ -27,6 +27,9 @@ import "./styles/ejc-dashboard-premium.css";
 // FONTE ÚNICA do design system canônico: tokens semânticos --ejc-* + aliases
 // de todas as gerações legadas. Importada por último — vence o cascade.
 import "./styles/ejc-tokens.css";
+// Tema claro canônico 28/09/2026: base neutra branca e acentos vibrantes.
+// Importado por último para unificar shell, dashboard e superfícies sem alterar lógica.
+import "./styles/ejc-neutral-vibrant.css";
 
 initTheme();
 
