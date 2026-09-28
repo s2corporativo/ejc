@@ -175,6 +175,90 @@ html:not(.dark) .ejc-sidebar-contacts {
 /* Dashboard / Entrada Única                                                  */
 /* -------------------------------------------------------------------------- */
 
+/* Dois caminhos explícitos de entrada: cadastro direto ou análise por IA. */
+html:not(.dark) .ejc-dash__entry-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+html:not(.dark) .ejc-dash__entry-option {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 12px;
+  min-height: 82px;
+  border: 1px solid var(--ejc-border);
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 14px 16px;
+  box-shadow: var(--ejc-shadow-sm);
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+html:not(.dark) .ejc-dash__entry-option:hover {
+  transform: translateY(-1px);
+  border-color: rgba(37, 99, 235, 0.28);
+  box-shadow: var(--ejc-shadow-md);
+}
+
+html:not(.dark) .ejc-dash__entry-option > svg {
+  width: 17px;
+  color: #94a3b8;
+}
+
+html:not(.dark) .ejc-dash__entry-option-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+}
+
+html:not(.dark) .ejc-dash__entry-option-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+html:not(.dark) .ejc-dash__entry-option strong,
+html:not(.dark) .ejc-dash__entry-option small {
+  display: block;
+}
+
+html:not(.dark) .ejc-dash__entry-option strong {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+html:not(.dark) .ejc-dash__entry-option small {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+html:not(.dark) .ejc-dash__entry-option.is-manual .ejc-dash__entry-option-icon {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+html:not(.dark) .ejc-dash__entry-option.is-ai {
+  border-color: rgba(37, 99, 235, 0.22);
+  background:
+    linear-gradient(#ffffff, #ffffff) padding-box,
+    var(--ejc-vibrant-gradient) border-box;
+}
+
+html:not(.dark) .ejc-dash__entry-option.is-ai .ejc-dash__entry-option-icon {
+  background: var(--ejc-vibrant-gradient);
+  color: #ffffff;
+}
+
 html:not(.dark) .ejc-dash {
   gap: 18px;
 }
@@ -443,6 +527,10 @@ html:not(.dark) :focus-visible {
 /* -------------------------------------------------------------------------- */
 
 @media (max-width: 900px) {
+  html:not(.dark) .ejc-dash__entry-options {
+    grid-template-columns: 1fr;
+  }
+
   html:not(.dark) .ejc-dash__entry {
     border-radius: 18px;
   }
