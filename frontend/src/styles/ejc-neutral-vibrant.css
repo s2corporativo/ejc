@@ -1,0 +1,466 @@
+/* ==========================================================================
+   EJC — tema canônico Light Neutral + Vibrant Accents
+   2026-09-28
+
+   Objetivo:
+   - superfícies majoritariamente brancas/neutras;
+   - contraste alto e leitura rápida;
+   - cor vibrante apenas em ações, estados, foco e IA;
+   - preservar modo escuro, rotas, RBAC e regras de negócio.
+   ========================================================================== */
+
+:root {
+  /* Base neutra */
+  --ejc-background: #f7f8fb;
+  --ejc-surface: #ffffff;
+  --ejc-surface-muted: #f8fafc;
+  --ejc-surface-raised: #ffffff;
+  --ejc-border: #e5e7eb;
+  --ejc-border-strong: #cbd5e1;
+  --ejc-hairline: rgba(15, 23, 42, 0.08);
+
+  --ejc-text: #111827;
+  --ejc-text-secondary: #64748b;
+  --ejc-text-subtle: #94a3b8;
+  --ejc-text-display: #0f172a;
+
+  /* Primário estrutural neutro */
+  --ejc-primary: #111827;
+  --ejc-primary-dark: #030712;
+  --ejc-primary-hover: #1f2937;
+  --ejc-primary-soft: #334155;
+
+  /* Acento vibrante principal — mantém aliases legados "gold" sem quebrar CSS */
+  --ejc-gold: #2563eb;
+  --ejc-gold-bright: #3b82f6;
+  --ejc-gold-deep: #1d4ed8;
+  --ejc-gold-soft: #eff6ff;
+  --ejc-gold-ink: #1d4ed8;
+
+  --ejc-success: #059669;
+  --ejc-success-soft: #ecfdf5;
+  --ejc-warning: #d97706;
+  --ejc-warning-soft: #fffbeb;
+  --ejc-danger: #dc2626;
+  --ejc-danger-soft: #fef2f2;
+  --ejc-info: #2563eb;
+  --ejc-info-soft: #eff6ff;
+
+  --ejc-vibrant-blue: #2563eb;
+  --ejc-vibrant-violet: #7c3aed;
+  --ejc-vibrant-cyan: #06b6d4;
+  --ejc-vibrant-gradient: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+  --ejc-vibrant-gradient-soft: linear-gradient(
+    135deg,
+    rgba(37, 99, 235, 0.1) 0%,
+    rgba(124, 58, 237, 0.08) 100%
+  );
+
+  --ejc-focus-ring: rgba(37, 99, 235, 0.35);
+  --ejc-sidebar-top: #ffffff;
+  --ejc-sidebar-bottom: #f8fafc;
+
+  --ejc-shadow-sm:
+    0 1px 2px rgba(15, 23, 42, 0.03),
+    0 10px 30px -24px rgba(15, 23, 42, 0.3);
+  --ejc-shadow-md: 0 16px 40px rgba(15, 23, 42, 0.08);
+  --ejc-shadow-lg: 0 28px 70px rgba(15, 23, 42, 0.13);
+
+  --ejc-chart-1: #2563eb;
+  --ejc-chart-2: #7c3aed;
+  --ejc-chart-3: #06b6d4;
+  --ejc-chart-4: #059669;
+  --ejc-chart-5: #f59e0b;
+  --ejc-chart-6: #e11d48;
+}
+
+/* -------------------------------------------------------------------------- */
+/* App shell — claro, neutro e leve                                           */
+/* -------------------------------------------------------------------------- */
+
+html:not(.dark) .ejc-petroleum-shell {
+  background: var(--ejc-background) !important;
+  color: var(--ejc-text) !important;
+}
+
+html:not(.dark) .ejc-app-header {
+  border-color: rgba(148, 163, 184, 0.24) !important;
+  background: rgba(255, 255, 255, 0.94) !important;
+  box-shadow: 0 8px 32px rgba(15, 23, 42, 0.04);
+  backdrop-filter: blur(16px);
+}
+
+html:not(.dark) .ejc-header-search {
+  border: 1px solid var(--ejc-border) !important;
+  border-radius: 14px !important;
+  background: #f8fafc !important;
+  color: #475569 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+html:not(.dark) .ejc-header-search:hover,
+html:not(.dark) .ejc-header-search:focus-visible {
+  border-color: rgba(37, 99, 235, 0.34) !important;
+  background: #ffffff !important;
+}
+
+html:not(.dark) .icon-btn {
+  border-color: transparent !important;
+  color: #475569 !important;
+}
+
+html:not(.dark) .icon-btn:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+html:not(.dark) .sidebar-bronze {
+  border-right: 1px solid var(--ejc-border) !important;
+  background: #ffffff !important;
+  background-image: none !important;
+  color: #475569 !important;
+  box-shadow: 12px 0 38px rgba(15, 23, 42, 0.035);
+}
+
+html:not(.dark) .ejc-sidebar-brand {
+  border-bottom: 1px solid #eef2f7 !important;
+  background: #ffffff !important;
+}
+
+html:not(.dark) .ejc-sidebar-brand__copy strong {
+  color: #111827 !important;
+}
+
+html:not(.dark) .ejc-sidebar-brand__copy small {
+  color: #94a3b8 !important;
+}
+
+html:not(.dark) .sidebar-nav-item {
+  min-height: 42px;
+  border-radius: 12px !important;
+  color: #64748b !important;
+  font-weight: 560;
+}
+
+html:not(.dark) .sidebar-nav-item:hover {
+  background: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+html:not(.dark) .sidebar-nav-item.is-active {
+  background: var(--ejc-vibrant-gradient-soft) !important;
+  color: #1d4ed8 !important;
+  box-shadow: inset 3px 0 0 #2563eb;
+}
+
+html:not(.dark) .sidebar-nav-item.is-active svg {
+  color: #2563eb !important;
+}
+
+html:not(.dark) .ejc-sidebar-epigraph {
+  border-top-color: #eef2f7 !important;
+  background: #fafbfc !important;
+}
+
+html:not(.dark) .ejc-sidebar-epigraph__quote {
+  color: #64748b !important;
+}
+
+html:not(.dark) .ejc-sidebar-contacts {
+  border-color: #eef2f7 !important;
+  background: #ffffff !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Dashboard / Entrada Única                                                  */
+/* -------------------------------------------------------------------------- */
+
+html:not(.dark) .ejc-dash {
+  gap: 18px;
+}
+
+html:not(.dark) .ejc-dash__mode {
+  display: inline-flex;
+  gap: 4px;
+  width: max-content;
+  border: 1px solid var(--ejc-border);
+  border-radius: 999px;
+  background: #ffffff;
+  padding: 4px;
+  box-shadow: var(--ejc-shadow-sm);
+}
+
+html:not(.dark) .ejc-dash__mode button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 999px;
+  color: #64748b;
+  padding: 8px 14px;
+  font-weight: 650;
+}
+
+html:not(.dark) .ejc-dash__mode button.is-active {
+  background: var(--ejc-vibrant-gradient) !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 22px rgba(37, 99, 235, 0.2);
+}
+
+html:not(.dark) .ejc-dash__entry {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #dbe7f6 !important;
+  border-radius: 22px;
+  background:
+    radial-gradient(
+      circle at 92% -10%,
+      rgba(124, 58, 237, 0.08),
+      transparent 36%
+    ),
+    linear-gradient(145deg, #ffffff 0%, #fbfdff 100%) !important;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08) !important;
+}
+
+html:not(.dark) .ejc-dash__entry::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--ejc-vibrant-gradient);
+}
+
+html:not(.dark) .ejc-dash__entry-icon {
+  border: 0 !important;
+  background: var(--ejc-vibrant-gradient) !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.2);
+}
+
+html:not(.dark) .ejc-dash__entry-kicker {
+  color: #2563eb !important;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+}
+
+html:not(.dark) .ejc-modern-scope .ejc-dash__entry-copy h1,
+html:not(.dark) .ejc-modern-scope .ejc-dash__entry-copy h2 {
+  color: #0f172a !important;
+}
+
+html:not(.dark) .ejc-modern-scope .ejc-dash__entry-copy p {
+  color: #64748b !important;
+}
+
+html:not(.dark) .ejc-dash__entry-body textarea {
+  border: 1px solid #dbe4f0 !important;
+  background: #f8fafc !important;
+  color: #0f172a !important;
+  box-shadow: none !important;
+}
+
+html:not(.dark) .ejc-dash__entry-body textarea:focus {
+  border-color: rgba(37, 99, 235, 0.55) !important;
+  background: #ffffff !important;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1) !important;
+}
+
+html:not(.dark)
+  .ejc-modern-scope
+  .ejc-dash__entry-body
+  button:not(.ejc-dash__chip),
+html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"],
+html:not(.dark) .ejc-dash__entry-body .btn,
+html:not(.dark) .ejc-dash__entry-body button[class*="bg-primary"] {
+  background: var(--ejc-vibrant-gradient) !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.18);
+}
+
+html:not(.dark) .ejc-dash__entry-body [role="button"][aria-label*="documentos"] {
+  border-color: #dbe4f0 !important;
+  background: #f8fafc !important;
+}
+
+html:not(.dark)
+  .ejc-dash__entry-body
+  [role="button"][aria-label*="documentos"]:hover {
+  border-color: rgba(37, 99, 235, 0.4) !important;
+  background: #f3f7ff !important;
+}
+
+html:not(.dark)
+  .ejc-dash__entry-body
+  [role="button"][aria-label*="documentos"]
+  p,
+html:not(.dark)
+  .ejc-dash__entry-body
+  [role="button"][aria-label*="documentos"]
+  svg {
+  color: #64748b !important;
+}
+
+html:not(.dark) .ejc-dash__entry-body--plain {
+  border-color: #e2e8f0 !important;
+  background: rgba(248, 250, 252, 0.78);
+}
+
+html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body--plain p {
+  color: #64748b !important;
+}
+
+html:not(.dark) .ejc-dash__entry-cta {
+  background: var(--ejc-vibrant-gradient) !important;
+  color: #ffffff !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Cards, sinais e painéis                                                    */
+/* -------------------------------------------------------------------------- */
+
+html:not(.dark) .ejc-dash__stat,
+html:not(.dark) .ejc-dash__panel,
+html:not(.dark) .ejc-dash__side > *,
+html:not(.dark) .ejc-modern-scope .card {
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  background: #ffffff !important;
+  box-shadow: var(--ejc-shadow-sm) !important;
+}
+
+html:not(.dark) .ejc-dash__stat:hover,
+html:not(.dark) .ejc-dash__panel:hover {
+  border-color: rgba(37, 99, 235, 0.22) !important;
+}
+
+html:not(.dark) .ejc-dash__stat-icon {
+  background: #eff6ff !important;
+  color: #2563eb !important;
+}
+
+html:not(.dark) .ejc-dash__stat.is-dark {
+  border: 1px solid rgba(37, 99, 235, 0.2) !important;
+  background:
+    linear-gradient(#ffffff, #ffffff) padding-box,
+    var(--ejc-vibrant-gradient) border-box !important;
+  box-shadow: 0 14px 36px rgba(37, 99, 235, 0.08) !important;
+}
+
+html:not(.dark) .ejc-dash__stat.is-dark strong {
+  color: #0f172a !important;
+}
+
+html:not(.dark) .ejc-dash__stat.is-dark small {
+  color: #64748b !important;
+}
+
+html:not(.dark) .ejc-dash__stat.is-dark .ejc-dash__stat-icon {
+  background: var(--ejc-vibrant-gradient) !important;
+  color: #ffffff !important;
+}
+
+html:not(.dark) .ejc-dash__stat.is-dark .ejc-dash__stat-chev {
+  border-color: #dbe4f0 !important;
+  color: #64748b !important;
+}
+
+html:not(.dark) .ejc-dash__tabs {
+  border-color: #e2e8f0 !important;
+  background: #f8fafc !important;
+}
+
+html:not(.dark) .ejc-dash__tabs button.is-active {
+  background: #111827 !important;
+  color: #ffffff !important;
+}
+
+html:not(.dark) .ejc-dash__panel-more,
+html:not(.dark) a[class*="text-primary"],
+html:not(.dark) button[class*="text-primary"] {
+  color: #2563eb !important;
+}
+
+html:not(.dark) .ejc-dash__date-filter {
+  border-color: #bfdbfe !important;
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+}
+
+html:not(.dark) .ejc-dash__timeline button:hover,
+html:not(.dark) .ejc-dash__cases button:hover {
+  background: #f8fafc !important;
+}
+
+html:not(.dark) .ejc-dash__case-chip.is-green {
+  background: #ecfdf5 !important;
+  color: #047857 !important;
+}
+
+html:not(.dark) .ejc-dash__case-chip.is-gold {
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+}
+
+html:not(.dark) .ejc-dash__case-chip.is-gray {
+  background: #f1f5f9 !important;
+  color: #64748b !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Controles genéricos                                                        */
+/* -------------------------------------------------------------------------- */
+
+html:not(.dark) .ejc-modern-scope input,
+html:not(.dark) .ejc-modern-scope select,
+html:not(.dark) .ejc-modern-scope textarea {
+  border-color: #dbe4f0;
+}
+
+html:not(.dark) .ejc-modern-scope input:focus,
+html:not(.dark) .ejc-modern-scope select:focus,
+html:not(.dark) .ejc-modern-scope textarea:focus {
+  border-color: rgba(37, 99, 235, 0.55);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+}
+
+html:not(.dark) .ejc-modern-scope .btn-primary,
+html:not(.dark) .ejc-modern-scope button[class*="bg-primary-"] {
+  border-color: transparent !important;
+  background: #111827 !important;
+  color: #ffffff !important;
+}
+
+html:not(.dark) .ejc-modern-scope .btn-primary:hover,
+html:not(.dark) .ejc-modern-scope button[class*="bg-primary-"]:hover {
+  background: #1f2937 !important;
+}
+
+/* Foco acessível e consistente */
+html:not(.dark) :focus-visible {
+  outline-color: #2563eb;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Responsividade                                                             */
+/* -------------------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  html:not(.dark) .ejc-dash__entry {
+    border-radius: 18px;
+  }
+
+  html:not(.dark) .ejc-dash__mode {
+    width: 100%;
+  }
+
+  html:not(.dark) .ejc-dash__mode button {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:not(.dark) .sidebar-nav-item,
+  html:not(.dark) .ejc-dash__stat,
+  html:not(.dark) .ejc-dash__panel {
+    transition: none !important;
+  }
+}
