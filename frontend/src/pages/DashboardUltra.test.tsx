@@ -201,7 +201,12 @@ describe("DashboardUltra — identidade premium DPT", () => {
     expect(
       screen.getByRole("button", { name: "IA" }).getAttribute("aria-current"),
     ).toBe("page");
-    expect(screen.getByText("Como posso trabalhar neste caso?")).toBeTruthy();
+    expect(
+      screen.getByText("Leitura e análise do caso com IA"),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: /Cadastrar caso manualmente/ }),
+    ).toBeTruthy();
     expect(
       screen.getByTestId("entrada-unica").getAttribute("data-embedded"),
     ).toBe("true");
