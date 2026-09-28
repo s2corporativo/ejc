@@ -6,7 +6,7 @@ ACTIVATE="$ROOT/scripts/rag/ativar_embeddings.sh"
 PROBE="$ROOT/scripts/rag/provar_ativacao.py"
 ACTIVE_WORKFLOW="$ROOT/.github/workflows/rag-production-activation.yml"
 WORKFLOW="$ROOT/docs/arquivo/ci/github-actions-legacy/2026-08-31/rag-production-activation.yml"
-WOODPECKER="$ROOT/.woodpecker.yml"
+CI="$ROOT/.github/workflows/ci.yml"
 COMPOSE="$ROOT/docker-compose.yml"
 REAL_PYTHON="$(command -v python3)"
 TMP="$(mktemp -d)"
@@ -36,7 +36,7 @@ bash -n "$ACTIVATE"
 python3 -m py_compile "$PROBE"
 [ ! -f "$ACTIVE_WORKFLOW" ] || fail "workflow GitHub Actions legado foi reativado; Woodpecker é o CI oficial"
 [ -f "$WORKFLOW" ] || fail "workflow histórico de ativação ausente"
-[ -f "$WOODPECKER" ] || fail "Woodpecker canônico ausente"
+[ -f "$CI" ] || fail "GitHub Actions canônico ausente"
 
 # Contratos estáticos de governança, isolamento e segurança.
 [ "$(grep -Ec '^set_env_enabled_true$' "$ACTIVATE")" -eq 1 ]
@@ -60,7 +60,7 @@ assert_file_contains "$WORKFLOW" 'ref: ${{ github.sha }}'
 assert_file_contains "$WORKFLOW" 'test "$target_sha" = "${{ github.sha }}"'
 assert_file_contains "$WORKFLOW" 'cmp -s scripts/rag/ativar_embeddings.sh /opt/ejc/scripts/rag/ativar_embeddings.sh'
 ! grep -Fq 'sudo install' "$WORKFLOW"
-assert_file_contains "$WOODPECKER" 'bash scripts/tests/test_rag_activation.sh'
+assert_file_contains "$CI" 'bash scripts/tests/test_rag_activation.sh'
 
 assert_file_contains "$PROBE" 'knowledge_chunks_governados_com_embedding'
 assert_file_contains "$PROBE" 'FOR UPDATE OF kd SKIP LOCKED'
