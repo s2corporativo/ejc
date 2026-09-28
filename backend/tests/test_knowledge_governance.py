@@ -50,6 +50,18 @@ def test_legislacao_nao_oficial_nao_e_promovida():
     assert result["official"] is False
 
 
+@pytest.mark.parametrize("value", [False, "false", "0", "true", 1, 0, None, [], {}])
+def test_source_official_exige_booleano_nativo(value):
+    result = inferir_autoridade("legislacao", "https://example.invalid/lei", {"source_official": value})
+    assert result["code"] == "referencial"
+    assert result["official"] is False
+
+
+def test_source_official_booleano_true_preservado():
+    result = inferir_autoridade("legislacao", None, {"source_official": True})
+    assert result["code"] == "oficial_normativa"
+
+
 def test_versao_atual_nao_presume_vigencia_juridica():
     result = inferir_situacao_juridica(_doc(extra={"rag_status": "aprovado"}))
     assert result["code"] == "vigencia_nao_verificada"

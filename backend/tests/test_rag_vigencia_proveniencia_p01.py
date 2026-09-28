@@ -144,6 +144,14 @@ async def _apagar_doc(db, doc_id: str) -> None:
 @pytest.mark.parametrize(
     ("rotulo", "extra"),
     [
+        *[(f"DATA_INVALIDA_{i}", {
+            "legal_status": "vigente",
+            "legal_status_origem": "curadoria",
+            "legal_status_verificado_em": value,
+        }) for i, value in enumerate([
+            "data-invalida", "2999-01-01T00:00:00Z", "2026-02-30",
+            "now", "infinity", "2026-08-01T24:00:00Z", True, 20260801,
+        ])],
         (
             "SEM_PROVENIENCIA",
             {"legal_status": "vigente"},
