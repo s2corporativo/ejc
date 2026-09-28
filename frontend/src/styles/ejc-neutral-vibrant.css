@@ -9,7 +9,7 @@
    - preservar modo escuro, rotas, RBAC e regras de negócio.
    ========================================================================== */
 
-:root {
+html:not(.dark) {
   /* Base neutra */
   --ejc-background: #f7f8fb;
   --ejc-surface: #ffffff;
@@ -22,7 +22,7 @@
   --ejc-text: #111827;
   --ejc-text-secondary: #64748b;
   --ejc-text-subtle: #94a3b8;
-  --ejc-text-display: #0f172a;
+  --ejc-dash-ink: #0f172a;
 
   /* Primário estrutural neutro */
   --ejc-primary: #111827;
