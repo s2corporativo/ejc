@@ -92,9 +92,6 @@ describe("CadastroManual — cliente fixado pela Ficha Mestra", () => {
     fireEvent.change(campoPorRotulo("Título do caso *", "input"), {
       target: { value: "Caso contextual" },
     });
-    fireEvent.change(campoPorRotulo("Próxima ação *", "input"), {
-      target: { value: "Revisar documentos" },
-    });
     fireEvent.click(screen.getByRole("button", { name: "Abrir caso" }));
 
     await waitFor(() => {
@@ -103,7 +100,6 @@ describe("CadastroManual — cliente fixado pela Ficha Mestra", () => {
         expect.objectContaining({
           titulo: "Caso contextual",
           client_id: "c1",
-          proxima_acao: "Revisar documentos",
         }),
       );
     });
