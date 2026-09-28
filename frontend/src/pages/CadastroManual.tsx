@@ -275,6 +275,7 @@ function nomeCliente(raw: unknown): string {
 export default function CadastroManual() {
   const [searchParams] = useSearchParams();
   const clientIdContexto = searchParams.get("client_id")?.trim() || null;
+  const abrirCasoDireto = searchParams.get("aba") === "caso";
   const {
     rascunhoCliente,
     rascunhoCaso,
@@ -304,7 +305,7 @@ export default function CadastroManual() {
   }, [usuarioId, vincularUsuario]);
 
   const [aba, setAba] = useState<"cliente" | "caso">(
-    clientIdContexto ? "caso" : "cliente",
+    clientIdContexto || abrirCasoDireto ? "caso" : "cliente",
   );
   const [online, setOnline] = useState<boolean>(navigator.onLine);
   const [formCliente, setFormCliente] = useState<ClienteForm>({
@@ -518,10 +519,6 @@ export default function CadastroManual() {
       setErroCaso("Selecione a área do caso.");
       return;
     }
-    if (!formCaso.proxima_acao.trim()) {
-      setErroCaso("Informe a próxima ação — é obrigatória para casos ativos.");
-      return;
-    }
     const clienteNovo = formCaso.criar_cliente
       ? {
           tipo: formCaso.novo_tipo,
@@ -636,11 +633,13 @@ export default function CadastroManual() {
   return (
     <div>
       <PageHeader
-        title="Cadastro Manual"
+        title={abrirCasoDireto ? "Cadastro rápido de caso" : "Cadastro Manual"}
         subtitle={
           clienteContextoValido && clienteContextoNome
             ? `Abra um novo caso para ${clienteContextoNome}, sem IA.`
-            : "Cadastre clientes e abra casos sem IA — com fila offline quando faltar conexão."
+            : abrirCasoDireto
+              ? "Cadastre um caso existente diretamente, sem análise de IA."
+              : "Cadastre clientes e abra casos sem IA — com fila offline quando faltar conexão."
         }
         actions={
           <span
@@ -1176,7 +1175,7 @@ export default function CadastroManual() {
               />
             </div>
             <div className="sm:col-span-2 lg:col-span-3">
-              <label className="label">Próxima ação *</label>
+              <label className="label">Próxima ação</label>
               <input
                 className="input"
                 placeholder="Ex.: Protocolar contestação, Agendar reunião"
@@ -1184,8 +1183,7 @@ export default function CadastroManual() {
                 onChange={(e) => mudarCaso({ proxima_acao: e.target.value })}
               />
               <p className="mt-1 text-xs text-slate-400">
-                O que precisa ser feito agora neste caso? Obrigatório para casos
-                ativos.
+                Opcional. Pode ser preenchida depois, quando o caso for revisado.
               </p>
             </div>
           </div>
