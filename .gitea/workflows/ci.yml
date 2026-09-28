@@ -1,0 +1,226 @@
+name: EJC Gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  code: read
+
+jobs:
+  guard:
+    name: Guard — contratos e migrations
+    runs-on: ubuntu-latest
+    container:
+      image: python:3.11-bookworm
+    steps:
+      - uses: builtin:checkout
+        with:
+          fetch-depth: 0
+
+      - name: Dependências mínimas
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends bash git curl ca-certificates
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Contratos operacionais
+        run: |
+          set -euo pipefail
+          bash -n             scripts/backup.sh             scripts/backup/ativar_backup.sh             scripts/tests/test_backup_wrapper.sh             scripts/tests/test_ci_secret_gate.sh             scripts/tests/test_rag_activation.sh             scripts/legacy_script_guard.sh             scripts/tests/test_legacy_script_guards.sh
+          bash scripts/tests/test_backup_wrapper.sh
+          bash scripts/tests/test_ci_secret_gate.sh
+          bash scripts/tests/test_rag_activation.sh
+          bash scripts/tests/test_legacy_script_guards.sh
+
+      - name: Contratos de deploy e rollback
+        run: |
+          set -euo pipefail
+          bash -n             scripts/deploy_vps_safe.sh             scripts/deploy_workflow_transaction.sh             scripts/deploy.sh             scripts/deploy-vps.sh             scripts/atualizar-vps.sh             scripts/vps_setup.sh
+          bash scripts/tests/test_deploy_rollback.sh
+          python scripts/tests/test_docker_log_rotation.py
+
+      - name: DAG Alembic e compatibilidade expand-only
+        run: |
+          set -euo pipefail
+          HEAD_REV="$(python scripts/alembic_dag_check.py --versions-dir backend/alembic/versions --print-head)"
+          python scripts/check_migration_compatibility.py             --versions-dir backend/alembic/versions             --current-revision "$HEAD_REV"
+
+  gitleaks:
+    name: Segurança — Gitleaks
+    runs-on: ubuntu-latest
+    container:
+      image: zricethezav/gitleaks:v8.30.1
+    steps:
+      - uses: builtin:checkout
+        with:
+          fetch-depth: 0
+      - name: Secret scanning
+        run: gitleaks dir . --redact --verbose --exit-code 1
+
+  backend:
+    name: Backend — lint + schema + suíte completa
+    runs-on: ubuntu-latest
+    container:
+      image: python:3.11-bookworm
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ejc_user
+          POSTGRES_PASSWORD: ejc_pass
+          POSTGRES_DB: ejc_db
+          POSTGRES_HOST_AUTH_METHOD: trust
+    env:
+      DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@postgres:5432/ejc_db
+      DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@postgres:5432/ejc_db
+      SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user:ejc_pass@postgres:5432/ejc_db
+      APP_ENV: development
+      RUN_DB_TESTS: "1"
+    steps:
+      - uses: builtin:checkout
+        with:
+          fetch-depth: 0
+
+      - name: Dependências nativas
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends             postgresql-client jq libmagic1 poppler-utils tesseract-ocr             libpango-1.0-0 libpangoft2-1.0-0 libpangocairo-1.0-0             libcairo2 libgdk-pixbuf-2.0-0
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Dependências Python
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Extensões e migrations
+        working-directory: backend
+        run: |
+          until pg_isready -h postgres -U ejc_user -q; do sleep 1; done
+          PGPASSWORD=ejc_pass psql -h postgres -U ejc_user -d ejc_db             -c "CREATE EXTENSION IF NOT EXISTS vector;"             -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"             -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+          python -m alembic heads
+          python -m alembic upgrade head
+
+      - name: Lint e compile
+        working-directory: backend
+        run: |
+          python -m ruff check app
+          python -m compileall app -q
+
+      - name: Suíte backend completa
+        working-directory: backend
+        run: pytest tests -q
+
+  eval:
+    name: IA/RAG — gold sets e trajetória offline
+    runs-on: ubuntu-latest
+    container:
+      image: python:3.11-bookworm
+    steps:
+      - uses: builtin:checkout
+        with:
+          fetch-depth: 0
+      - name: Dependências
+        working-directory: backend
+        run: python -m pip install -r requirements.txt
+      - name: Gold sets e trajetória
+        working-directory: backend
+        run: |
+          python -m app.eval.run_eval --smoke
+          python -m app.eval.agent_trajectory --min-tool 1.0 --max-violacoes-hitl 0
+
+  frontend:
+    name: Frontend — lint + testes + build
+    runs-on: ubuntu-latest
+    container:
+      image: node:22-bookworm
+    steps:
+      - uses: builtin:checkout
+        with:
+          fetch-depth: 0
+      - name: Dependências
+        working-directory: frontend
+        run: npm ci --prefer-offline
+      - name: Lint, CSS, testes e build
+        working-directory: frontend
+        run: |
+          npm run lint
+          npm run audit:css:verificar
+          npm test
+          npm run build
+
+  agents:
+    name: Agentes — contratos operacionais
+    runs-on: ubuntu-latest
+    container:
+      image: python:3.11-bookworm
+    steps:
+      - uses: builtin:checkout
+      - name: Contratos dos agentes
+        run: |
+          python -m pip install -r ops/agents/requirements.txt
+          python -m compileall ops/agents -q
+          python -m unittest discover -s ops/agents/tests -v
+
+  security-sast:
+    name: Segurança — Semgrep SAST
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:1.172.0
+    steps:
+      - uses: builtin:checkout
+      - name: Semgrep
+        run: semgrep scan --config=auto --error .
+
+  security-vulnerabilities:
+    name: Segurança — Trivy vulnerabilidades
+    runs-on: ubuntu-latest
+    container:
+      image: aquasec/trivy:0.74.0
+    steps:
+      - uses: builtin:checkout
+      - name: Vulnerabilidades HIGH/CRITICAL
+        run: trivy fs --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 .
+      - name: Misconfiguration — baseline não bloqueante
+        run: trivy fs --scanners misconfig --severity HIGH,CRITICAL --exit-code 0 .
+
+  gate:
+    name: EJC Gate — Gitea
+    needs:
+      - guard
+      - gitleaks
+      - backend
+      - eval
+      - frontend
+      - agents
+      - security-sast
+      - security-vulnerabilities
+    if: always()
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:3.22
+    steps:
+      - name: Consolidar resultado
+        shell: sh
+        run: |
+          set -eu
+          fail=0
+          check() {
+            name="$1"
+            result="$2"
+            printf '%-28s %s\n' "$name" "$result"
+            [ "$result" = "success" ] || fail=1
+          }
+          check guard "${{ needs.guard.result }}"
+          check gitleaks "${{ needs.gitleaks.result }}"
+          check backend "${{ needs.backend.result }}"
+          check eval "${{ needs.eval.result }}"
+          check frontend "${{ needs.frontend.result }}"
+          check agents "${{ needs.agents.result }}"
+          check security-sast "${{ needs.security-sast.result }}"
+          check security-vulnerabilities "${{ needs.security-vulnerabilities.result }}"
+          [ "$fail" -eq 0 ] || exit 1
+          echo "Todos os gates do EJC foram aprovados."
