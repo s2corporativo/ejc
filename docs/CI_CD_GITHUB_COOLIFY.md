@@ -37,3 +37,40 @@ Enquanto a migração não for homologada, não alterar o fluxo produtivo atual.
 ## Segurança
 
 A VPS não deve possuir runner de Pull Request. Coolify recebe apenas a branch `main` já integrada. Secrets de produção permanecem fora do Git e não são disponibilizados a workflows de PR.
+
+
+## Mapa definitivo de responsabilidades
+
+### GitHub Actions
+
+O workflow `.github/workflows/ci.yml` substitui funcionalmente os gates que antes dependiam do Woodpecker:
+
+- detecção de escopo por diff;
+- Gitleaks;
+- contratos de backup, RAG, deploy e rollback;
+- DAG/compatibilidade Alembic;
+- Ruff, migrations e pytest em PostgreSQL 16 + pgvector efêmero;
+- gold sets e trajetória de IA/RAG offline;
+- lint, testes e build do frontend;
+- contratos dos agentes;
+- Semgrep SAST;
+- Trivy HIGH/CRITICAL;
+- check agregador `EJC Gate — Actions`.
+
+Jobs pesados independentes executam em paralelo. Em PR, `cancel-in-progress` cancela execuções obsoletas do mesmo ref. Gates não afetados pelo diff ficam `skipped` e o agregador aceita somente `success` ou `skipped`; falha, cancelamento ou estado desconhecido reprova o SHA.
+
+### Coolify
+
+Responsável exclusivamente por CD após integração na `main`:
+
+`PR → EJC Gate — Actions → merge main → Coolify → Docker Compose → healthcheck → produção`.
+
+O Coolify não substitui CI e não deve receber branches de PR.
+
+### Woodpecker
+
+Estado de transição: fallback operacional somente até a homologação completa da nova cadeia. Não receberá novos gates, novas integrações nem novas dependências. Depois de Actions verde + deploy e rollback comprovados no Coolify, remover o check obrigatório `ci/woodpecker/pr/woodpecker`, desativar os agentes e revogar credenciais legadas.
+
+## Eficiência
+
+A nova esteira elimina a fila centralizada na VPS, usa runners efêmeros GitHub-hosted, executa jobs independentes em paralelo, reaproveita caches de Python/npm e cancela execuções antigas da mesma PR. Código de PR não recebe segredos de produção e nunca roda no host produtivo.
