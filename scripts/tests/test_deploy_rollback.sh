@@ -146,6 +146,10 @@ COMMON_ENV=(
   "FAKE_DOCKER_LOG=$LOG"
   "EXPECTED_HEALTH_SHA=$TEST_SHA"
   "OLD_SHA_FOR_TEST=$OLD_SHA"
+  # Fixtures vivem em TMP (mktemp -d), sem garantia de 20 GB livres; o default
+  # produtivo do gate de capacidade deixaria o deploy flaky por ENOSPC antes
+  # do gate de backup. O contrato do gate de capacidade é travado no caso 0.3.
+  "MIN_FREE_GB=1"
 )
 
 # 0) Lock ocupado bloqueia antes de APP_DIR/Docker/runtime.
@@ -190,6 +194,19 @@ printf '%s' "$LOCK_SRC" | grep -q 'inode mudou durante abertura' || fail "helper
 ! printf '%s' "$LOCK_SRC" | grep -q '\${HOME' || fail "lock voltou a depender de HOME"
 ! printf '%s' "$LOCK_SRC" | grep -q 'EJC_DEPLOY_LOCK_ROOT:-' || fail "lock produtivo voltou a aceitar override de raiz"
 ! printf '%s' "$LOCK_SRC" | grep -q 'app_canon' || fail "APP_DIR voltou a selecionar namespace de lock"
+
+# 0.3) Gate de capacidade: sem espaço livre, bloqueia antes de backup/build/tag.
+: > "$LOG"
+set +e
+env "${COMMON_ENV[@]}" MIN_FREE_GB=99999 TARGET_SHA="$TEST_SHA" \
+  ENSURE_DAILY_BACKUP=0 REQUIRE_PREDEPLOY_BACKUP=0 \
+  bash "$APP/scripts/deploy_vps_safe.sh" >"$TMP/capacity.out" 2>"$TMP/capacity.err"
+capacity_rc=$?
+set -e
+[ "$capacity_rc" -eq 1 ] || fail "gate de capacidade retornou rc=$capacity_rc, esperado 1"
+grep -q 'espaço livre insuficiente' "$TMP/capacity.out" || fail "gate de capacidade não foi registrado"
+! grep -q '^compose build ' "$LOG" || fail "build iniciou após bloqueio de capacidade"
+! grep -q '^tag ' "$LOG" || fail "docker tag ocorreu após bloqueio de capacidade"
 
 # 1) Migration incompatível falha antes de Docker.
 : > "$LOG"
