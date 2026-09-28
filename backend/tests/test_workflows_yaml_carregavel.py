@@ -95,8 +95,8 @@ def test_ci_yaml_carrega():
     }.issubset(jobs)
 
 
-def test_woodpecker_e_apenas_contingencia_durante_transicao():
-    assert WOODPECKER_PATH.is_file(), "fallback temporário não deve ser removido antes da homologação"
+def test_fallback_woodpecker_nao_e_requisito_do_ci_canonico():
     doc = (REPO_ROOT / "docs" / "CI_CD_GITHUB_COOLIFY.md").read_text(encoding="utf-8")
-    assert "fallback temporário" in doc
     assert "GitHub Actions" in doc and "Coolify" in doc
+    if WOODPECKER_PATH.exists():
+        assert "fallback temporário" in doc
