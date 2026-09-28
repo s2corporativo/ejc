@@ -32,13 +32,14 @@ Data: 2026-07-04 · Código: `backend/app/services/ai/provider_policy.py`.
 > - **Deadline agregado**: `AI_CHAIN_DEADLINE_SECONDS`.
 > - **Painel de verdade**: `GET /ia-governanca/provedores`.
 
-A `AIProviderPolicy` (provider_policy.py:43) decide, ANTES de qualquer chamada de modelo: quais providers são elegíveis, em que ordem tentar, se o conteúdo exige sanitização para destino externo e se a chamada é permitida. É **decisão pura** — não chama modelo; o despacho continua no `ai_gateway`.
+A `AIProviderPolicy` decide, ANTES de qualquer chamada de modelo pelo caminho que a utiliza: quais providers são elegíveis, em que ordem tentar, se o conteúdo exige sanitização para destino externo e se a chamada é permitida. É **decisão pura** — não chama modelo; o despacho continua no `ai_gateway`. Esta documentação do componente não prova, isoladamente, que todo caminho legado ou integração futura passe pela policy; essa cobertura deve ser demonstrada por inventário e testes.
 
 ## 1. Entrada e saída
 
 ```python
 AIProviderPolicy().avaliar(texto_completo, task_type, *,
-                           ja_sanitizado=False, exige_fonte=False) -> PolicyDecision
+                           ja_sanitizado=False, exige_fonte=False,
+                           provider_solicitado=None) -> PolicyDecision
 ```
 
 `PolicyDecision` (provider_policy.py:32-40):
@@ -69,8 +70,9 @@ Todos exigem `AI_ENABLED=true`. Além disso:
 
 Elegibilidade não autoriza fallback ou saída externa de conteúdo local.
 `AI_EXTERNAL_PROVIDERS_ALLOWED=false` bloqueia os externos.
-Manus possui integração separada; não integra este registro. A convergência,
-seus limites e gates estão em `EJC_SINGLE_AI_CORE_ARCHITECTURE.md`.
+Manus possui integração separada; não integra este registro. A existência do
+`ManusClient` não deve ser interpretada como provider governado por esta policy.
+A convergência, seus limites e gates estão em `EJC_SINGLE_AI_CORE_ARCHITECTURE.md`.
 
 ## 3. Ordem base — `AI_PROVIDER_PRIORITY`
 
@@ -105,3 +107,33 @@ A policy decide no núcleo, mas o `ai_gateway` **não confia** nessa decisão: a
 | PII residual e `OLLAMA_ENABLED=false` | (vazia) → HTTP 422 | Bloqueio com motivo seguro |
 | `AI_EXTERNAL_PROVIDERS_ALLOWED=false` | somente ollama | Modo soberania total |
 | `ANTHROPIC_AUTO_ROUTING_ENABLED=false` | Claude fora do automático | Continua disponível por seleção explícita, sujeito à elegibilidade |
+
+## 8. Fronteira de evidência
+
+As afirmações acima descrevem comportamento identificável no código do provider
+registry/policy/gateway. Elas não certificam configuração produtiva, disponibilidade
+de credencial, qualidade jurídica, cobertura de todos os consumidores ou
+homologação de autonomia.
+
+Para cada alteração futura na política, registrar no PR o estado:
+
+- **EXISTENTE**: caminho de código identificado e teste reproduzível;
+- **PARCIAL**: componente existe, mas falta cobertura/integração;
+- **ALVO**: requisito ainda não implementado;
+- **BLOQUEADO**: não promover até dependência explícita ser satisfeita.
+
+Critérios mínimos para afirmar política homologada no SHA:
+
+| ID | Critério | Evidência mínima |
+|---|---|---|
+| PROV-01 | rotina automática não seleciona Maritaca/Claude | teste parametrizado observando provider final |
+| PROV-02 | mérito não degrada silenciosamente para Groq | teste negativo da cadeia final |
+| PROV-03 | provider solicitado inelegível falha sem fallback silencioso | teste com flag/chave ausente |
+| SEC-01 | `AI_ENABLED=false` bloqueia provider local e externo | teste de registry + entrypoint |
+| SEC-02 | `AI_EXTERNAL_PROVIDERS_ALLOWED=false` impede despacho externo | teste com spies/mocks no gateway |
+| SEC-03 | PII residual não chega a provider externo | teste negativo na policy e barreira final |
+| CLAUDE-01 | Claude não entra no automático com rollback flag desligada | teste de tarefas econômica/complexa |
+| MANUS-01 | Manus não é tratado como provider deste registry | teste/inventário de integração separado |
+
+Um status/check verde de documentação não substitui esses testes quando o runtime
+for alterado.
