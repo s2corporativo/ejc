@@ -27,7 +27,7 @@ Não mantenha contagens manuais de routers, services, páginas ou tabelas neste 
 | Migrações | Alembic |
 | IA/RAG | provedores configuráveis, embeddings locais e reranking |
 | Armazenamento | filesystem controlado e integrações externas configuráveis |
-| Infraestrutura | Docker, Docker Compose, Nginx, Woodpecker self-hosted e automação host-level |
+| Infraestrutura | Docker, Docker Compose, Nginx, GitHub Actions e Coolify self-hosted |
 
 ## Estrutura principal
 
@@ -43,8 +43,9 @@ scripts/
   backup/               ativação, diagnóstico e restore drill
   deploy_vps_safe.sh    deploy rastreável com validações
 docs/                   arquitetura, operação, segurança e homologação
-infra/woodpecker/       CI oficial self-hosted
-infra/host-automation/  gate e promoção segura no host
+.github/workflows/      CI oficial em runners GitHub-hosted
+infra/woodpecker/       fallback temporário durante a migração
+infra/host-automation/  contingência legada até homologação do Coolify
 ```
 
 ## Fluxo obrigatório de mudança
@@ -53,17 +54,18 @@ infra/host-automation/  gate e promoção segura no host
 2. Implementar uma alteração pequena e coesa.
 3. Adicionar ou atualizar testes.
 4. Abrir Pull Request usando o checklist do repositório.
-5. Aguardar o pipeline Woodpecker e as revisões obrigatórias.
+5. Aguardar o `EJC Gate — Actions` e as revisões obrigatórias.
 6. Revisar diff, riscos e rollback.
 7. Integrar somente após os gates verdes.
-8. Executar deploy pelo procedimento seguro e registrar evidências.
+8. O Coolify publica exclusivamente a `main` homologada e registra o deploy.
 
 É proibido usar upload avulso de arquivos, edição direta na VPS ou reinício isolado de container como mecanismo normal de deploy. Essas ações quebram rastreabilidade e podem deixar código, migrations e frontend em versões incompatíveis.
 
 ## Gates automatizados
 
-O CI oficial é o **Woodpecker self-hosted** (`.woodpecker.yml` + `infra/woodpecker/`).
-O GitHub Actions legado não é o mecanismo de promoção do EJC.
+O CI canônico é o **GitHub Actions** (`.github/workflows/ci.yml`) em runners GitHub-hosted `ubuntu-latest`. O workflow consolida escopo por diff, contratos operacionais, backend, frontend, IA/RAG, agentes, Gitleaks, Semgrep e Trivy, finalizando no check estável `EJC Gate — Actions`.
+
+O **Coolify self-hosted** é a arquitetura-alvo de CD e recebe somente a `main` já integrada. O Woodpecker permanece apenas como fallback temporário até a primeira homologação verde de Actions + Coolify, sem novos requisitos ou funcionalidades sendo adicionados a ele.
 
 ### Backend
 
@@ -78,8 +80,7 @@ O GitHub Actions legado não é o mecanismo de promoção do EJC.
 - Vitest;
 - build Vite em Node 22.
 
-O ESLint permanece disponível em `npm run lint:eslint`/`ci-local ui-extra`, mas
-não é hoje um gate bloqueante do Woodpecker; não o trate como evidência de promoção.
+O workflow usa os comandos canônicos do projeto (`npm run lint`, auditoria de CSS, Vitest e build). Gates adicionais de navegador podem ser executados separadamente quando o escopo exigir.
 
 ### Contratos operacionais e segurança
 
@@ -88,9 +89,7 @@ não é hoje um gate bloqueante do Woodpecker; não o trate como evidência de p
 - Trivy para vulnerabilidades e auditoria de misconfiguration;
 - Gitleaks bloqueante sobre a árvore atual.
 
-A promoção no host exige evidência do pipeline `push/main` verde para o SHA exato.
-Os scripts históricos `deploy.sh`, `deploy-vps.sh`, `atualizar-vps.sh` e
-`vps_setup.sh` são bloqueados por padrão e não integram o caminho normal de deploy.
+A promoção normal não executa scripts de PR na VPS: o GitHub Actions valida o SHA e o Coolify publica somente a `main`. Os scripts históricos `deploy.sh`, `deploy-vps.sh`, `atualizar-vps.sh` e `vps_setup.sh` permanecem bloqueados por padrão e não integram o caminho normal de deploy.
 
 ## Desenvolvimento local
 
