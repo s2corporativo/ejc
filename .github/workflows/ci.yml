@@ -1,16 +1,8 @@
-name: CI
+name: EJC CI
 
-# Executa automaticamente em cada push para main e em cada Pull Request.
-# Todos os controles abaixo são bloqueantes: teste, build, lint, formatação ou
-# vulnerabilidade alta impedem homologação. Para eficácia jurídica/operacional,
-# os checks deste workflow e do "EJC Release Gate" devem ser obrigatórios na
-# proteção da branch main.
-
-# Validacoes de PR: executor nao produtivo `ubuntu-latest` dentro da cota
-# gratuita (spending limit $0) — codigo de PR nunca executa na VPS de
-# producao (`ejc-vps`). O PostgreSQL dos testes e um container Docker efemero
-# na porta 55432, isolado do ejc_db de producao (credenciais e porta
-# diferentes). Os jobs independentes executam em paralelo.
+# CI canônico do EJC em runners GitHub-hosted.
+# Pull Requests nunca executam código na VPS de produção. Deploy é responsabilidade
+# do Coolify após merge em main; este workflow apenas valida o SHA.
 on:
   pull_request:
   push:
@@ -21,23 +13,127 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ejc-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  db-validation:
-    name: Backend — suíte completa + schema/RAG (Postgres pgvector)
+  changes:
+    name: Escopo — detectar gates necessários
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      backend: ${{ steps.scope.outputs.backend }}
+      eval: ${{ steps.scope.outputs.eval }}
+      frontend: ${{ steps.scope.outputs.frontend }}
+      agents: ${{ steps.scope.outputs.agents }}
+      sast: ${{ steps.scope.outputs.sast }}
+      vuln: ${{ steps.scope.outputs.vuln }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - id: scope
+        name: Classificar diff
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          all_true() {
+            for key in backend eval frontend agents sast vuln; do
+              echo "$key=true" >> "$GITHUB_OUTPUT"
+            done
+          }
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            all_true
+            exit 0
+          fi
+
+          HEAD="${{ github.sha }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+
+          if [ -z "$BASE" ] || [[ "$BASE" =~ ^0+$ ]] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "Base indisponível; fail-closed: executar todos os gates."
+            all_true
+            exit 0
+          fi
+
+          git diff --name-only "$BASE" "$HEAD" > "$RUNNER_TEMP/changed.txt"
+          echo "--- arquivos alterados ---"
+          cat "$RUNNER_TEMP/changed.txt"
+
+          has() { grep -Eq "$1" "$RUNNER_TEMP/changed.txt"; }
+
+          critical='^(\.github/workflows/|\.woodpecker\.yml$|scripts/|infra/|ops/|config/|nginx/|vps-tools/|docker-compose.*\.yml$|.*Dockerfile.*$|\.env\.example$)'
+          backend='^(backend/|qa/|config/|\.env\.example$|docker-compose.*\.yml$)'
+          eval='^backend/app/(eval/|services/(ai|rag|rerank|citation|knowledge)|agent/|system_prompts/)'
+          frontend='^(frontend/|qa/)'
+          agents='^ops/agents/'
+          vuln='(^backend/requirements.*\.txt$|^frontend/package.*\.json$|^ops/.*/requirements.*\.txt$|Dockerfile|docker-compose.*\.yml$)'
+
+          if has "$critical|$backend"; then echo "backend=true" >> "$GITHUB_OUTPUT"; else echo "backend=false" >> "$GITHUB_OUTPUT"; fi
+          if has "$critical|$eval"; then echo "eval=true" >> "$GITHUB_OUTPUT"; else echo "eval=false" >> "$GITHUB_OUTPUT"; fi
+          if has "$critical|$frontend"; then echo "frontend=true" >> "$GITHUB_OUTPUT"; else echo "frontend=false" >> "$GITHUB_OUTPUT"; fi
+          if has "$critical|$agents"; then echo "agents=true" >> "$GITHUB_OUTPUT"; else echo "agents=false" >> "$GITHUB_OUTPUT"; fi
+          if has "$critical|^backend/|^frontend/|^scripts/|^infra/|^ops/|^config/"; then echo "sast=true" >> "$GITHUB_OUTPUT"; else echo "sast=false" >> "$GITHUB_OUTPUT"; fi
+          if has "$critical|$vuln"; then echo "vuln=true" >> "$GITHUB_OUTPUT"; else echo "vuln=false" >> "$GITHUB_OUTPUT"; fi
+
+  guard:
+    name: Guard — segredos, contratos, deploy e migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Secret scanning bloqueante
+        shell: bash
+        run: |
+          docker run --rm             -v "$PWD:/repo"             ghcr.io/gitleaks/gitleaks:v8.30.1             dir /repo --redact --verbose --exit-code 1
+
+      - name: Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Contratos operacionais leves
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n             scripts/backup.sh             scripts/backup/ativar_backup.sh             infra/selfhosted/bootstrap.sh             scripts/tests/test_backup_wrapper.sh             scripts/tests/test_ci_secret_gate.sh             scripts/tests/test_rag_activation.sh             scripts/legacy_script_guard.sh             scripts/tests/test_legacy_script_guards.sh
+          bash scripts/tests/test_backup_wrapper.sh
+          bash scripts/tests/test_ci_secret_gate.sh
+          bash scripts/tests/test_rag_activation.sh
+          bash scripts/tests/test_legacy_script_guards.sh
+
+      - name: Contratos de deploy e rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n             scripts/deploy_vps_safe.sh             scripts/deploy_workflow_transaction.sh             infra/host-automation/woodpecker-approved-sha.sh             infra/host-automation/ejc-deploy-approved.sh             infra/host-automation/install.sh             infra/host-automation/install-ejc-deploy.sh             scripts/deploy.sh             scripts/deploy-vps.sh             scripts/atualizar-vps.sh             scripts/vps_setup.sh
+          bash scripts/tests/test_deploy_rollback.sh
+          bash infra/host-automation/tests/test_gate.sh
+          python scripts/tests/test_docker_log_rotation.py
+
+      - name: DAG Alembic e compatibilidade expand-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          HEAD_REV="$(python scripts/alembic_dag_check.py --versions-dir backend/alembic/versions --print-head)"
+          python scripts/check_migration_compatibility.py             --versions-dir backend/alembic/versions             --current-revision "$HEAD_REV"
+
+  backend:
+    name: Backend — lint + schema + suíte completa
+    needs: [changes, guard]
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    defaults:
-      run:
-        working-directory: backend
-
-      # Nota de arquitetura: o PostgreSQL efêmero é criado via Docker no
-      # primeiro step do job e removido na limpeza, isolando o CI do ejc_db de
-      # produção (credenciais e porta diferentes da VPS). Não utiliza o runner
-      # self-hosted de produção: código de PR nunca executa no `ejc-vps`.
-
     env:
       CI_PG_CONTAINER: ejc-ci-pg
       CI_PG_PORT: "55432"
@@ -49,236 +145,206 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: PostgreSQL pgvector efêmero (porta dedicada do CI, sem tocar produção)
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Dependências nativas
         run: |
-          set -o pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends             postgresql-client jq libmagic1 poppler-utils tesseract-ocr             libpango-1.0-0 libpangoft2-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf-2.0-0
+
+      - name: Dependências Python
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: PostgreSQL pgvector efêmero
+        run: |
+          set -euo pipefail
           docker rm -f "$CI_PG_CONTAINER" >/dev/null 2>&1 || true
-          docker run -d \
-            --name "$CI_PG_CONTAINER" \
-            -p "${CI_PG_PORT}:5432" \
-            -e POSTGRES_USER=ejc_user \
-            -e POSTGRES_PASSWORD=ejc_pass \
-            -e POSTGRES_DB=ejc_db \
-            --health-cmd "pg_isready -U ejc_user -d ejc_db" \
-            --health-interval 5s \
-            --health-timeout 5s \
-            --health-retries 30 \
-            pgvector/pgvector:pg16
-          for i in $(seq 1 60); do
+          docker run -d             --name "$CI_PG_CONTAINER"             -p "${CI_PG_PORT}:5432"             -e POSTGRES_USER=ejc_user             -e POSTGRES_PASSWORD=ejc_pass             -e POSTGRES_DB=ejc_db             --health-cmd "pg_isready -U ejc_user -d ejc_db"             --health-interval 5s --health-timeout 5s --health-retries 30             pgvector/pgvector:pg16
+          for _ in $(seq 1 60); do
             [ "$(docker inspect --format='{{.State.Health.Status}}' "$CI_PG_CONTAINER")" = "healthy" ] && break
             sleep 2
           done
           [ "$(docker inspect --format='{{.State.Health.Status}}' "$CI_PG_CONTAINER")" = "healthy" ] || { docker logs "$CI_PG_CONTAINER"; exit 1; }
-          echo "PostgreSQL CI pronto na porta ${CI_PG_PORT}"
 
-      - name: Validar sintaxe dos scripts críticos de produção
-        working-directory: .
-        run: bash -n scripts/backup/ativar_backup.sh scripts/deploy_vps_safe.sh
-
-      - name: Instalar Python 3.11
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-          cache: pip
-          cache-dependency-path: backend/requirements.txt
-
-      - name: Dependências nativas e cliente PostgreSQL
+      - name: Extensões e migrations
+        working-directory: backend
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            postgresql-client \
-            libmagic1 \
-            poppler-utils \
-            tesseract-ocr \
-            libpango-1.0-0 \
-            libpangoft2-1.0-0 \
-            libcairo2 \
-            libgdk-pixbuf-2.0-0
+          PGPASSWORD=ejc_pass psql -h localhost -p "$CI_PG_PORT" -U ejc_user -d ejc_db             -c "CREATE EXTENSION IF NOT EXISTS vector;"             -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"             -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+          python -m alembic heads
+          python -m alembic upgrade head
 
-      - name: Instalar dependências Python
+      - name: Lint e compile
+        working-directory: backend
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          python -m ruff check app
+          python -m compileall app -q
 
-      - name: Gate de compatibilidade dos modelos RAG (sem download de pesos)
+      - name: Regressões estruturais baratas
+        working-directory: backend
         run: |
-          python -c "from app.services.embedding_service import validar_modelo_local; ok,msg=validar_modelo_local(); print(msg); raise SystemExit(0 if ok else 1)"
-          python -c "from app.core.config import get_settings; from fastembed.rerank.cross_encoder import TextCrossEncoder; s=get_settings(); nomes={m['model'] for m in TextCrossEncoder.list_supported_models()}; assert s.RAG_RERANK_MODEL in nomes, s.RAG_RERANK_MODEL; print(s.RAG_RERANK_MODEL)"
+          python -m unittest discover -s ../scripts/tests -p test_woodpecker_scopes.py -v
+          pytest tests/test_alembic_single_head.py tests/test_rotas_registro_explicito.py -q
 
-      - name: Criar extensões (vector, pg_trgm, pgcrypto)
-        run: |
-          # -p obrigatório porque o serviço efêmero foi publicado em 55432.
-          PGPASSWORD=ejc_pass psql -h localhost -p 55432 -U ejc_user -d ejc_db \
-            -c "CREATE EXTENSION IF NOT EXISTS vector;" \
-            -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" \
-            -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+      - name: Suíte backend completa
+        working-directory: backend
+        run: pytest tests -q
 
-      - name: Lint bloqueante (ruff)
-        run: |
-          set -o pipefail
-          python -m ruff check app --output-format=concise 2>&1 | tee ../ruff-report.txt
-
-      - name: Anexar diagnóstico Ruff
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: ruff-report
-          path: ruff-report.txt
-          if-no-files-found: warn
-          retention-days: 7
-
-      - name: Auditoria bloqueante de dependências Python (pip-audit)
-        run: |
-          set -o pipefail
-          python -m pip install pip-audit
-          pip-audit -r requirements.txt --desc 2>&1 | tee ../pip-audit-report.txt
-
-      - name: Anexar diagnóstico pip-audit
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: pip-audit-report
-          path: pip-audit-report.txt
-          if-no-files-found: warn
-          retention-days: 7
-
-      - name: Aplicar migrations (alembic upgrade head)
-        run: python -m alembic upgrade head
-
-      - name: Testes com banco real e cobertura mínima do backend
-        run: |
-          set -o pipefail
-          python -m pytest tests -q --tb=short --maxfail=25 \
-            --cov=app \
-            --cov-report=term-missing:skip-covered \
-            --cov-report=xml:../backend-coverage.xml \
-            --cov-fail-under=65 \
-            2>&1 | tee ../backend-test-summary.log
-
-      - name: Publicar resumo backend
-        if: always()
-        run: |
-          {
-            echo "## Backend — resumo dos testes e cobertura"
-            echo
-            echo '```text'
-            tail -n 250 ../backend-test-summary.log 2>/dev/null || true
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Anexar log e cobertura backend
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: backend-test-summary
-          path: |
-            backend-test-summary.log
-            backend-coverage.xml
-          if-no-files-found: warn
-          retention-days: 7
-      - name: Remover PostgreSQL efêmero do CI (liberar porta 55432)
+      - name: Limpar PostgreSQL efêmero
         if: always()
         run: docker rm -f "$CI_PG_CONTAINER" >/dev/null 2>&1 || true
-  eval-smoke:
-    name: Eval — smoke dos gold sets (offline, bloqueante)
+
+  eval:
+    name: IA/RAG — gold sets e trajetória offline
+    needs: [changes, guard]
+    if: needs.changes.outputs.eval == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: backend
     steps:
       - uses: actions/checkout@v7
 
-      - name: Instalar Python 3.11
-        uses: actions/setup-python@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: backend/requirements.txt
 
-      - name: Instalar dependências Python
+      - name: Dependências
+        working-directory: backend
+        run: python -m pip install -r requirements.txt
+
+      - name: Gold sets e trajetória
+        working-directory: backend
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          python -m app.eval.run_eval --smoke
+          python -m app.eval.agent_trajectory --min-tool 1.0 --max-violacoes-hitl 0
 
-      - name: Validar formato dos gold sets (smoke — sem banco/LLM)
-        run: python -m app.eval.run_eval --smoke
-
-      - name: Eval de trajetória do agente (offline, LLM mockado)
-        run: python -m app.eval.agent_trajectory --min-tool 1.0 --max-violacoes-hitl 0
-
-  frontend-build:
-    name: Frontend — testes + typecheck + build
+  frontend:
+    name: Frontend — lint + testes + build
+    needs: [changes, guard]
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 40
-    defaults:
-      run:
-        working-directory: frontend
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v7
 
-      - name: Instalar Node 22.22
-        uses: actions/setup-node@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: "22.22.2"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Instalar dependências
-        run: npm ci
+      - name: Dependências
+        working-directory: frontend
+        run: npm ci --prefer-offline
 
-      - name: Formatação bloqueante (prettier)
+      - name: Lint, CSS, testes e build
+        working-directory: frontend
         run: |
-          set -o pipefail
-          npm run format:check 2>&1 | tee ../prettier-report.txt
+          npm run lint
+          npm run audit:css:verificar
+          npm test
+          npm run build
 
-      - name: Anexar diagnóstico Prettier
-        if: always()
-        uses: actions/upload-artifact@v7
+  agents:
+    name: Agentes — contratos operacionais
+    needs: [changes, guard]
+    if: needs.changes.outputs.agents == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
         with:
-          name: prettier-report
-          path: prettier-report.txt
-          if-no-files-found: warn
-          retention-days: 7
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ops/agents/requirements.txt
 
-      - name: Testes (Vitest com resumo compacto)
+      - name: Contratos dos agentes
         run: |
-          set -o pipefail
-          npm run test -- --reporter=dot 2>&1 | tee ../frontend-test-summary.log
+          python -m pip install -r ops/agents/requirements.txt
+          python -m compileall ops/agents -q
+          python -m unittest discover -s ops/agents/tests -v
 
-      - name: Publicar resumo frontend
-        if: always()
+  security-sast:
+    name: Segurança — Semgrep SAST
+    needs: [changes, guard]
+    if: needs.changes.outputs.sast == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Semgrep
         run: |
-          {
-            echo "## Frontend — resumo dos testes"
-            echo
-            echo '```text'
-            tail -n 250 ../frontend-test-summary.log 2>/dev/null || true
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          docker run --rm             -v "$PWD:/src"             -w /src             semgrep/semgrep:1.172.0             semgrep scan --config=auto --error .
 
-      - name: Anexar log frontend
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: frontend-test-summary
-          path: frontend-test-summary.log
-          if-no-files-found: warn
-          retention-days: 7
+  security-vulnerabilities:
+    name: Segurança — Trivy vulnerabilidades
+    needs: [changes, guard]
+    if: needs.changes.outputs.vuln == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
 
-      - name: Auditoria bloqueante de dependências Node (alta e crítica)
-        run: npm audit --audit-level=high
-
-      - name: Typecheck + build
+      - name: Vulnerabilidades HIGH/CRITICAL
         run: |
-          set -o pipefail
-          npm run build 2>&1 | tee ../frontend-build-report.log
+          docker run --rm             -v "$PWD:/src"             -w /src             aquasec/trivy:0.74.0             fs --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 .
 
-      - name: Anexar diagnóstico TypeScript/Vite
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: frontend-build-report
-          path: frontend-build-report.log
-          if-no-files-found: warn
-          retention-days: 7
+      - name: Misconfiguration HIGH/CRITICAL — baseline não bloqueante
+        continue-on-error: true
+        run: |
+          docker run --rm             -v "$PWD:/src"             -w /src             aquasec/trivy:0.74.0             fs --scanners misconfig --severity HIGH,CRITICAL --exit-code 0 .
+
+  gate:
+    name: EJC Gate — Actions
+    needs:
+      - changes
+      - guard
+      - backend
+      - eval
+      - frontend
+      - agents
+      - security-sast
+      - security-vulnerabilities
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Consolidar resultado
+        shell: bash
+        run: |
+          set -euo pipefail
+          fail=0
+          check() {
+            local nome="$1" result="$2"
+            printf '%-30s %s\n' "$nome" "$result"
+            case "$result" in
+              success|skipped) ;;
+              *) fail=1 ;;
+            esac
+          }
+
+          check changes "${{ needs.changes.result }}"
+          check guard "${{ needs.guard.result }}"
+          check backend "${{ needs.backend.result }}"
+          check eval "${{ needs.eval.result }}"
+          check frontend "${{ needs.frontend.result }}"
+          check agents "${{ needs.agents.result }}"
+          check security-sast "${{ needs.security-sast.result }}"
+          check security-vulnerabilities "${{ needs.security-vulnerabilities.result }}"
+
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::Um ou mais gates obrigatórios falharam ou foram cancelados."
+            exit 1
+          fi
+
+          echo "Todos os gates aplicáveis ao SHA foram aprovados."
