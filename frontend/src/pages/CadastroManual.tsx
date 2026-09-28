@@ -1201,7 +1201,6 @@ export default function CadastroManual() {
                 </div>
               </div>
             </details>
-            </div>
           </div>
 
           {erroCaso && (
