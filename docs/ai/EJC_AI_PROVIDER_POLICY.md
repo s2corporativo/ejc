@@ -6,7 +6,7 @@
 > - **Maritaca/Sabiá** é o motor automático de leitura, análise, raciocínio jurídico, RAG/pesquisa e jurisprudência. Não é consumida automaticamente por tarefas de rotina.
 > - **Claude/Anthropic** permanece habilitável e elegível, porém **não participa do roteamento automático** com `ANTHROPIC_AUTO_ROUTING_ENABLED=false`; entra somente por seleção explícita `provider="anthropic"` no sistema. A flag `true` é rollback operacional.
 > - **Ollama** continua sendo a opção local e o único destino admitido quando a política de sigilo exigir `LOCAL_COMPLETO`.
-> - Todo provider externo continua sujeito a pseudonimização/sanitização, kill-switch, RBAC/ownership, AILog, gate de citações e HITL.
+> - No caminho canônico governado pelo núcleo, providers externos ficam sujeitos a pseudonimização/sanitização, kill-switch, controles de acesso/contexto, AILog, validação de citações quando aplicável e HITL. Esta frase não certifica consumidores legados ou integrações futuras; a cobertura transversal deve ser demonstrada por inventário e testes.
 > - A ausência de chave não é mascarada: Groq/Maritaca/Claude ficam inelegíveis individualmente sem suas credenciais; nenhuma credencial é versionada.
 
 Data: 2026-07-04 · Código: `backend/app/services/ai/provider_policy.py`.
@@ -14,8 +14,8 @@ Data: 2026-07-04 · Código: `backend/app/services/ai/provider_policy.py`.
 > **Estado operacional vigente (21/09/2026).**
 >
 > - **Quatro provedores**: `ollama`, `anthropic`, `maritaca`, `groq`.
-> - **Fonte única de elegibilidade**: `services/ai/provider_registry.py`;
->   `AIProviderPolicy`, gateway e painéis consultam essa mesma fonte.
+> - **Fonte canônica de elegibilidade**: `services/ai/provider_registry.py`;
+>   os componentes migrados (`AIProviderPolicy`, gateway e painéis correspondentes) devem consultar essa fonte. A documentação não substitui o inventário de consumidores para provar ausência de caminhos paralelos.
 > - **Prioridade-base**: `AI_PROVIDER_PRIORITY="groq,maritaca,ollama,anthropic"`.
 >   A afinidade por tarefa prevalece: rotina → Groq/Ollama; mérito →
 >   Maritaca/Ollama.
