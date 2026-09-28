@@ -55,16 +55,22 @@ AIProviderPolicy().avaliar(texto_completo, task_type, *,
 
 O orchestrator invoca a policy após a sanitização do input (`ja_sanitizado=True`) e converte `permitido=False` em HTTP 422 com `bloqueio_motivo` (orchestrator.py:115-122).
 
-## 2. Elegibilidade por provider (`_elegivel`, provider_policy.py:46-58)
+## 2. Elegibilidade por provider (`provider_registry.py`)
+
+Todos exigem `AI_ENABLED=true`. Além disso:
 
 | Provider | Condição |
 |---|---|
 | `ollama` | `OLLAMA_ENABLED` |
-| `anthropic` | `ANTHROPIC_ENABLED` + `ANTHROPIC_API_KEY` + `AI_EXTERNAL_PROVIDERS_ALLOWED` |
-| `groq` | `GROQ_API_KEY` + `AI_EXTERNAL_PROVIDERS_ALLOWED` |
-| outros | sempre False |
+| `anthropic` | `ANTHROPIC_ENABLED` + credencial configurada + `AI_EXTERNAL_PROVIDERS_ALLOWED` |
+| `groq` | `GROQ_ENABLED` + credencial configurada + `AI_EXTERNAL_PROVIDERS_ALLOWED` |
+| `maritaca` | `MARITACA_ENABLED` + credencial configurada + `AI_EXTERNAL_PROVIDERS_ALLOWED` |
+| outros | inelegíveis neste registro |
 
-`AI_EXTERNAL_PROVIDERS_ALLOWED=false` desliga TODOS os externos de uma vez (soberania de dados).
+Elegibilidade não autoriza fallback ou saída externa de conteúdo local.
+`AI_EXTERNAL_PROVIDERS_ALLOWED=false` bloqueia os externos.
+Manus possui integração separada; não integra este registro. A convergência,
+seus limites e gates estão em `EJC_SINGLE_AI_CORE_ARCHITECTURE.md`.
 
 ## 3. Ordem base — `AI_PROVIDER_PRIORITY`
 
