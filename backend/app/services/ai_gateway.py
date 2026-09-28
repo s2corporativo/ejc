@@ -963,14 +963,16 @@ def _resolver_cadeia(
     if provider_force in ("groq", "ollama", "anthropic", "maritaca"):
         if _provider_elegivel(provider_force):
             return [(provider_force, _resolver_modelo(provider_force, task_type, model_override))]
-        # Provider forçado inelegível (sem chave/desabilitado/policy): não
-        # falhar duro — loga e cai no roteamento automático, preservando o
-        # comportamento das EJC skills com engine fixo.
+        # Escolha explícita não autoriza trocar de destino. Além de contrariar
+        # a AIProviderPolicy, o fallback podia enviar uma chamada local-only
+        # (provider_force="ollama") a um externo quando Ollama era inelegível.
+        # A cadeia vazia segue o erro seguro já tratado pelos chamadores.
         logger.warning(
             "[Gateway] provider '%s' forçado mas inelegível "
-            "(chave/enable/policy); usando cadeia automática.",
+            "(chave/enable/policy); chamada bloqueada sem fallback.",
             provider_force,
         )
+        return []
 
     base = TASK_ROUTING.get(task_type, TASK_ROUTING["analise_juridica"])
     candidatos = _ordenar_por_prioridade([p for p, _ in base])
