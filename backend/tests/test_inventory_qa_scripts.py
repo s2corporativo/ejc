@@ -29,7 +29,11 @@ from pathlib import Path
 import pytest
 
 
+# Scripts ativos de homologação + os arquivados em docs/arquivo/inventory-homologacao/.
+# O guard valida estática (AST) qualquer script desta forma; manter os dois
+# caminhos é o que garante que nada é reintroduzido com placeholder de senha.
 INVENTORY = Path(__file__).resolve().parents[2] / "scripts" / "inventory"
+INVENTORY_ARQUIVADO = Path(__file__).resolve().parents[2] / "docs" / "arquivo" / "inventory-homologacao"
 
 # Placeholders já commitados no lugar da senha real. Um placeholder é tão
 # quebrado quanto um segredo versionado: o login falha e a bateria aborta.
@@ -39,7 +43,7 @@ ESCOPOS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
 
 
 def _scripts() -> list[Path]:
-    return sorted(p for p in INVENTORY.glob("*.py") if p.name != "__init__.py")
+    return sorted(p for p in (*INVENTORY.glob("*.py"), *INVENTORY_ARQUIVADO.glob("*.py")) if p.name != "__init__.py")
 
 
 def _arvore(caminho: Path) -> ast.Module:

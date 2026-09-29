@@ -77,7 +77,7 @@ disco, que outro processo pode trocar no intervalo. Agora valida e extrai na
 mesma abertura, só sobre a lista de membros aprovados, com `filter="data"`
 como segunda barreira.
 
-**`scripts/inventory/m22_retrieval_acl_tests.py` — SQL injection.**
+**`docs/arquivo/inventory-homologacao/m22_retrieval_acl_tests.py` — SQL injection.**
 `_d3_id` era interpolado por f-string no SQL. Virou parâmetro (`%s`).
 
 **`backend/app/routers/evolution_webhook.py` — typecast em caminho de auth.**
@@ -86,7 +86,7 @@ como segunda barreira.
 entrada não confiável. Coberto por `tests/test_evolution_webhook_secret.py`
 (6 casos, incluindo header vazio e secret não configurado).
 
-**`scripts/inventory/regressao_completa.py` — `shell=True` desnecessário.**
+**`docs/arquivo/inventory-homologacao/regressao_completa.py` — `shell=True` desnecessário.**
 Duas invocações eram `argv` puro sem nenhum recurso de shell. Viraram lista
 (também conserta caminho com espaço).
 
