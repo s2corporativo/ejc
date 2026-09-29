@@ -44,6 +44,10 @@ services:
     image: woodpeckerci/woodpecker-agent:v3.18.0
     restart: unless-stopped
     logging: *woodpecker-logging
+    # Keep exactly one generic agent on this VPS. Multiple replicas share the same
+    # agent config volume and caused SQLite write contention / killed pipelines.
+    deploy:
+      replicas: 1
     depends_on:
       - woodpecker-server
     volumes:
