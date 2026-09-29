@@ -281,7 +281,7 @@ steps:
       - ejc-ci-npm-cache:/root/.npm
     commands:
       - cd frontend
-      - npm ci --prefer-offline
+      - npm ci --include=dev --prefer-offline
       - npm run build
       - npm run preview -- --host 0.0.0.0 --port 4173 >/tmp/ejc-vite-preview.log 2>&1 &
       - |
