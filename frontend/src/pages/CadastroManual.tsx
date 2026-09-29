@@ -1200,8 +1200,8 @@ export default function CadastroManual() {
                     }
                   />
                   <p className="mt-1 text-xs text-slate-400">
-                    Se ficar em branco, o EJC registrará automaticamente:
-                    “${PROXIMA_ACAO_MANUAL_DEFAULT}”.
+                    Se ficar em branco, o EJC registrará automaticamente:{" "}
+                    “{PROXIMA_ACAO_MANUAL_DEFAULT}”.
                   </p>
                 </div>
               </div>
