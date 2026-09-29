@@ -276,6 +276,13 @@ class AILog(Base):
     def _normalizar_modelo(self, key, value):
         return normalizar_modelo_ia(value)
 
-    @validates("resposta", "critica_adversarial")
+    @validates("resposta", "critica_adversarial", "prompt_sanitizado")
     def _pseudonimizar_saida(self, key, value):
+        # `prompt_sanitizado` entra aqui pela MISMA barreira da resposta: o
+        # contrato da coluna é "sem PII", mas o valor é montado por ~25 call
+        # sites (dossiê, contexto RAG, precedentes internos, fatos) e a
+        # sanitização do chamador cobre só uma parte do prompt composto.
+        # Pseudonimizar no model é o que faz a garantia depender da barreira,
+        # não da disciplina de cada call site (defeito A do baseline 7034f2b:
+        # `ai_service.analisar_caso` gravava o prompt composto cru).
         return pseudonimizar_texto_auditoria(value)
