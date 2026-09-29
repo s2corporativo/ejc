@@ -1,0 +1,60 @@
+# P2 — separação Gitea/Woodpecker.
+# NÃO habilitar antes de:
+# 1) DNS de gitea.depaulateixeira.adv.br e woodpecker.depaulateixeira.adv.br;
+# 2) certificados válidos para ambos;
+# 3) WOODPECKER_HOST atualizado de forma controlada;
+# 4) callbacks/webhooks testados.
+#
+# O hostname legado ci.depaulateixeira.adv.br deve permanecer ativo durante a
+# transição e só ser convertido em redirect depois que webhook e login estiverem
+# comprovadamente usando os novos hosts.
+
+server {
+    listen 80;
+    server_name gitea.depaulateixeira.adv.br;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name gitea.depaulateixeira.adv.br;
+
+    ssl_certificate /etc/letsencrypt/live/gitea.depaulateixeira.adv.br/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/gitea.depaulateixeira.adv.br/privkey.pem;
+
+    client_max_body_size 512M;
+    location / {
+        proxy_pass http://127.0.0.1:8300;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+    }
+}
+
+server {
+    listen 80;
+    server_name woodpecker.depaulateixeira.adv.br;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name woodpecker.depaulateixeira.adv.br;
+
+    ssl_certificate /etc/letsencrypt/live/woodpecker.depaulateixeira.adv.br/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/woodpecker.depaulateixeira.adv.br/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8100;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 3600;
+    }
+}
