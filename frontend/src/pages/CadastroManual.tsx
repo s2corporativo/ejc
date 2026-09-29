@@ -73,6 +73,9 @@ const CASE_TYPES = [
   { k: "consultoria", l: "Consultoria" },
 ];
 
+const PROXIMA_ACAO_MANUAL_DEFAULT =
+  "Revisar o cadastro inicial e definir a próxima providência";
+
 // ── Validação local de CPF/CNPJ (dígito verificador) ─────────────────────────
 // Espelha validators_service do backend: evita enfileirar offline um cadastro
 // que será rejeitado com 422 quando a conexão voltar.
@@ -549,7 +552,8 @@ export default function CadastroManual() {
       client_id: clienteNovo ? "" : formCaso.client_id,
       prioridade: formCaso.prioridade,
       case_type: formCaso.case_type,
-      proxima_acao: formCaso.proxima_acao,
+      proxima_acao:
+        formCaso.proxima_acao.trim() || PROXIMA_ACAO_MANUAL_DEFAULT,
       numero_processo: formCaso.numero_processo,
       tribunal: formCaso.tribunal,
       comarca: formCaso.comarca,
@@ -1196,7 +1200,8 @@ export default function CadastroManual() {
                     }
                   />
                   <p className="mt-1 text-xs text-slate-400">
-                    Pode ser preenchida depois, quando o caso for revisado.
+                    Se ficar em branco, o EJC registrará automaticamente:
+                    “${PROXIMA_ACAO_MANUAL_DEFAULT}”.
                   </p>
                 </div>
               </div>
