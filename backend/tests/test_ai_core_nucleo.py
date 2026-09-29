@@ -25,7 +25,6 @@ def s(monkeypatch):
     """Settings cacheada com baseline determinística p/ os testes do núcleo:
     Anthropic habilitado c/ chave fake, Groq c/ chave fake, Ollama desligado."""
     st = get_settings()
-    monkeypatch.setattr(st, "AI_ENABLED", True)
     monkeypatch.setattr(st, "ANTHROPIC_ENABLED", True)
     monkeypatch.setattr(st, "ANTHROPIC_API_KEY", "sk-ant-fake-para-testes")
     monkeypatch.setattr(st, "GROQ_API_KEY", "gsk-fake-para-testes")

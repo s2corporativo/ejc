@@ -344,21 +344,6 @@ def _baseline() -> list[dict]:
         return json.load(fh)
 
 
-def _rotas_ramos_removidas() -> set[tuple[str, str]]:
-    caminho = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "snapshots",
-        "openapi_rotas_ramos_removidas.json",
-    )
-    with open(caminho, encoding="utf-8") as fh:
-        return {(item["path"], item["method"]) for item in json.load(fh)}
-
-
-# Snapshot separado: o baseline acima permanece histórico; este ledger registra
-# a decisão operacional de retirar a superfície de ramos sem apagar evidência.
-REMOCOES_INTENCIONAIS |= _rotas_ramos_removidas()
-
-
 _MOVIDAS_ONDA2 = tuple(
     (r["path"], r["method"])
     for r in _baseline()

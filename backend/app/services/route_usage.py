@@ -82,8 +82,10 @@ ROTAS_MONITORADAS: dict[str, str] = {
     "/suspensoes/": "legado:suspensoes:crud",
     "/suspensoes/{suspensao_id}": "legado:suspensoes:excluir",
     "/suspensoes/simular": "legado:suspensoes:simular",
-    # Os aliases de ramos foram retirados junto com a superfície de 82 rotas;
-    # a telemetria permanece restrita às telas legadas ainda montadas.
+    # ── Duplicatas depreciadas (Onda 3 §4.5) ─────────────────────────────────
+    "/penal/ferramentas/prescricao-punitiva": "duplicata",
+    "/admin-esp/ferramentas/recurso-multa-transito": "duplicata",
+    "/trabalhista/ferramentas/horas-extras": "duplicata",
 }
 
 _MAX_ENTRADAS = 4096          # teto de segurança do dict (espelha rate_limit)

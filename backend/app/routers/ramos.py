@@ -6,7 +6,6 @@
 
 from fastapi import APIRouter
 import logging
-import os
 from functools import wraps
 
 from app.services.homologacao_ferramentas import motivo_nao_homologada, selo_homologacao
@@ -14,13 +13,6 @@ from app.services.homologacao_ferramentas import motivo_nao_homologada, selo_hom
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Áreas de Atuação"])
-
-# O hub de ramos foi retirado da superfície pública do EJC. Os sub-routers
-# continuam importáveis para rollback e para testes unitários das regras, mas
-# nenhum endpoint é montado sem uma ativação operacional explícita.
-RAMOS_ROUTES_ENABLED = os.getenv("EJC_ENABLE_RAMOS_ROUTES", "false").lower() in {
-    "1", "true", "yes", "on"
-}
 
 from app.routers import ramos_empresarial as _ramos_empresarial
 for _r in _ramos_empresarial.router.routes:
@@ -164,11 +156,6 @@ from app.services.homologacao_ferramentas import (  # noqa: F401 (reexport p/ co
     FERRAMENTAS_BLOQUEADAS, FERRAMENTAS_NAO_HOMOLOGADAS,
     normalizar_caminho_ferramenta,
 )
-
-# O desligamento acontece depois dos registros para manter os símbolos de
-# compatibilidade acima e tornar a reversão apenas uma mudança de configuração.
-if not RAMOS_ROUTES_ENABLED:
-    router.routes.clear()
 
 
 CAMINHOS_FERRAMENTAS_VALIDOS: frozenset[str] = frozenset(

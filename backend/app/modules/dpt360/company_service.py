@@ -142,14 +142,14 @@ async def get_company_profile(
             label="Estrutura societária",
             status="com_dados" if societies else "sem_dados",
             registros=int(societies),
-            canonical_path="/inteligencia?tab=conhecimento",
+            canonical_path="/areas-de-atuacao/empresarial",
         ),
         DptTwinDimension(
             key="lgpd",
             label="Operações de tratamento LGPD",
             status="com_dados" if lgpd_total else "sem_dados",
             registros=int(lgpd_total or 0),
-            canonical_path="/inteligencia?tab=conhecimento",
+            canonical_path="/areas-de-atuacao/digital_lgpd",
             note=(
                 f"{int(lgpd_high or 0)} operação(ões) marcada(s) como alto risco no ROPA."
                 if lgpd_total
@@ -161,7 +161,7 @@ async def get_company_profile(
             label="Autos ambientais vinculados",
             status="com_dados" if environmental_total else "sem_dados",
             registros=int(environmental_total),
-            canonical_path="/inteligencia?tab=conhecimento",
+            canonical_path="/areas-de-atuacao/ambiental",
         ),
         DptTwinDimension(
             key="ia",

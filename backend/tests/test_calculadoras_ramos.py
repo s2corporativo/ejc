@@ -343,12 +343,6 @@ def _ramos_config_endpoints() -> list[str]:
     return sorted({e.split("?")[0].rstrip("/") for e in endpoints})
 
 
-@pytest.mark.skipif(
-    os.getenv("EJC_ENABLE_RAMOS_ROUTES", "false").lower() not in {
-        "1", "true", "yes", "on"
-    },
-    reason="vitrine de ramos consolidada e não montada na API pública",
-)
 def test_todos_endpoints_do_ramos_config_existem_no_app():
     endpoints = _ramos_config_endpoints()
     if not endpoints:

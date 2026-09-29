@@ -569,41 +569,41 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
   },
   {
     id: "ramos",
-    titulo: "Inteligência Jurídica — contexto por área",
+    titulo: "Áreas de Atuação",
     descricao:
-      "Contexto jurídico, análise e conhecimento organizados no núcleo de inteligência.",
+      "Ferramentas, calculadoras e guias organizados por área de atuação.",
     ferramentas: [
       {
         id: "ramos",
-        titulo: "Contexto jurídico por área",
-        rota: "/inteligencia?tab=conhecimento",
+        titulo: "Áreas de Atuação",
+        rota: "/areas-de-atuacao",
         oQueE:
-          "O núcleo de inteligência concentra conhecimento, análise e contexto jurídico sem workspaces paralelos por ramo.",
+          "O hub das áreas jurídicas, cada uma com suas subáreas, guias e ferramentas oficiais.",
         paraQueServe:
-          "Organiza o contexto jurídico por área dentro da Inteligência, preservando fontes, análise e revisão humana sem expor calculadoras legadas.",
+          "Organiza por área (trabalhista, bancário, ambiental, tributário, previdenciário...) as subáreas atendidas, os links oficiais e as calculadoras, para orientar o atendimento e agilizar cálculos.",
         comoUsar: [
-          "Abra Inteligência Jurídica e selecione a aba Conhecimento.",
-          "Use o caso e seus dados de contexto para orientar a análise jurídica.",
+          "Abra Áreas de Atuação no menu principal (grupo Pesquisar & IA).",
+          "Clique na área desejada para ver as subáreas de atuação.",
           "Use os links de ferramentas públicas oficiais (PJe-Calc, Registrato/BACEN, Meu INSS, e-CAC, Consumidor.gov...).",
-          "Use as análises de IA e as fontes oficiais disponíveis no núcleo de inteligência.",
+          "Aproveite as calculadoras embutidas de cada ramo (juros, prazos, liquidação...).",
         ],
-        dica: "As fontes oficiais continuam acessíveis pelos fluxos de pesquisa e inteligência, com revisão humana obrigatória.",
+        dica: "As ferramentas públicas e os índices do BCB e a consulta via Infosimples abrem por dentro dos ramos — são fontes oficiais de governo e tribunais.",
         perfil: "advogado",
         badge: "IA",
       },
       {
         id: "ramo-detalhe",
         titulo: "Núcleo Jurídico",
-        rota: "/inteligencia?tab=conhecimento",
+        rota: "/areas-de-atuacao/:slug",
         oQueE:
-          "O contexto específico de uma área é tratado dentro do núcleo de inteligência e do caso.",
+          "A página especializada de um ramo, com seus guias e ferramentas específicas.",
         paraQueServe:
-          "Concentra análise, fontes e contexto de uma área no fluxo central do caso, sem abrir workspace paralelo.",
+          "Concentra tudo de uma área — guia prático, calculadoras e integrações (como índices BCB e consultas Infosimples) — no contexto certo para quem atua naquele ramo.",
         comoUsar: [
-          "Abra Inteligência Jurídica e trabalhe no contexto do caso.",
-          "Leia as fontes e o resultado da análise com revisão humana.",
-          "Use as ferramentas do núcleo de inteligência quando disponíveis.",
-          "Use as integrações oficiais quando disponíveis.",
+          "Em Áreas de Atuação, clique na área desejada.",
+          "Leia o guia da área e as subáreas atendidas.",
+          "Preencha as calculadoras específicas e clique em calcular.",
+          "Use as integrações do ramo (consultas oficiais, índices) quando disponíveis.",
         ],
         perfil: "advogado",
       },

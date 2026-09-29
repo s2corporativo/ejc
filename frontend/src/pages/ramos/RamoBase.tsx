@@ -615,10 +615,7 @@ export default function RamoBase() {
         subtitle={subtituloDoWorkspace(cfg)}
         actions={
           <div className="flex flex-wrap gap-2">
-            <Link
-              to="/inteligencia?tab=conhecimento"
-              className="btn-secondary text-sm"
-            >
+            <Link to="/areas-de-atuacao" className="btn-secondary text-sm">
               Todas as áreas
             </Link>
             {podeCriarCaso && (
