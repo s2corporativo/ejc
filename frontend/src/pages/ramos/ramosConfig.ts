@@ -53,6 +53,11 @@ export interface RamoConfig {
   // "civil" antes da correção de taxonomia): sem isso, o hub apareceria vazio.
   // Só afeta leitura — nada aqui reclassifica registro existente.
   areasLegadas?: string[];
+  // Áreas de OUTROS hubs aceitas apenas no atalho case_id deste workspace
+  // (contexto vindo do caso), sem alterar a listagem por área. Uso: mapping
+  // deliberado de especialidades — o seed sugere ITCMD (sucessões) para a
+  // ferramenta de Família /familia/ferramentas/itcmd-inventario.
+  areasContexto?: string[];
   titulo: string;
   subtitulo: string;
   icone: string;
@@ -2054,6 +2059,10 @@ const familia: RamoConfig = {
   slug: "familia",
   endpoint: "/cases/?area=familia",
   areaCaso: "familia",
+  // ITCMD de sucessões é tratado neste hub (redesign_seed: mapeamento
+  // conservador para /familia/ferramentas/itcmd-inventario) — o atalho
+  // case_id do hub aceita caso de área sucessoes (revisão P2 #1863).
+  areasContexto: ["sucessoes"],
   titulo: "Direito de Família",
   subtitulo: "Divórcio · Guarda · Alimentos · Inventário · Sucessões",
   icone: "Scale",
