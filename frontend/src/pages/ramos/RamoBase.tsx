@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import {
   Banknote,
@@ -28,6 +28,7 @@ import type { RamoConfig } from "./ramosConfig";
 import { configWorkspaceDaArea } from "./areasWorkspace";
 import {
   abasDoWorkspace,
+  areasContextoCaso,
   areasDoWorkspace,
   possuiRegistroEspecializado,
   relacoesDoWorkspace,
@@ -501,7 +502,7 @@ function ReferenciasDoRamo({ cfg }: { cfg: RamoConfig }) {
 
 export default function RamoBase() {
   const { slug } = useParams<{ slug: string }>();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const caseIdContexto = searchParams.get("case_id")?.trim() || null;
   const abaSolicitada = searchParams.get("tab")?.trim() || null;
   const cfg: RamoConfig | undefined = useMemo(
@@ -537,6 +538,19 @@ export default function RamoBase() {
     return solicitada ?? "visao";
   }, [abaSolicitada, abas]);
 
+  // Aba inicial lida de ref: a sincronização da query `tab` no clique não
+  // pode re-disparar o carregamento do workspace (a URL muda, abaInicial
+  // muda, mas a carga só depende da navegação real entre workspaces).
+  const abaInicialRef = useRef(abaInicial);
+  const chaveAbaRef = useRef<string | null>(null);
+  useEffect(() => {
+    const chave = `${slug ?? ""}|${caseIdContexto ?? ""}`;
+    if (chaveAbaRef.current !== chave) {
+      chaveAbaRef.current = chave;
+      abaInicialRef.current = abaInicial;
+    }
+  }, [slug, caseIdContexto, abaInicial]);
+
   const filtrarRegistrosDoContexto = useCallback(
     (itens: any[]) =>
       caseIdContexto
@@ -559,15 +573,17 @@ export default function RamoBase() {
   useEffect(() => {
     if (!cfg || !podeAcessarArea) return;
     let ativo = true;
-    setAba(abaInicial);
-    setAbasVisitadas(new Set([abaInicial]));
+    setAba(abaInicialRef.current);
+    setAbasVisitadas(new Set([abaInicialRef.current]));
     setCasos([]);
     setCasosLoading(true);
     setCasosErro(false);
     setCasosTruncados(false);
     setRegistros(possuiRegistroEspecializado(cfg) ? null : []);
 
-    const areas = areasDoWorkspace(cfg);
+    // Contexto case_id aceita áreas cruzadas deliberadas (ex.: sucessoes no
+    // hub família para ITCMD); a listagem por área continua canônica.
+    const areas = areasContextoCaso(cfg);
     if (caseIdContexto) {
       // Contexto vindo do caso: consulta diretamente o registro autorizado e
       // suas áreas vinculadas. Assim o atalho não depende do recorte de 100
@@ -607,7 +623,7 @@ export default function RamoBase() {
         });
     } else {
       Promise.all(
-        areas.map(async (area) => {
+        areasDoWorkspace(cfg).map(async (area) => {
           try {
             const resposta = await api.get("/cases/", {
               params: { area, page_size: 100 },
@@ -669,7 +685,6 @@ export default function RamoBase() {
     podeAcessarArea,
     cfg,
     caseIdContexto,
-    abaInicial,
     filtrarRegistrosDoContexto,
   ]);
 
@@ -690,6 +705,16 @@ export default function RamoBase() {
       return proximas;
     });
     setAba(id);
+    // Sincroniza a query com a aba exibida, preservando case_id (revisão P2
+    // #1863): reload/compartilhamento reabre a aba visível, não "ferramentas".
+    setSearchParams(
+      (atuais) => {
+        const proximos = new URLSearchParams(atuais);
+        proximos.set("tab", id);
+        return proximos;
+      },
+      { replace: true },
+    );
   };
 
   return (

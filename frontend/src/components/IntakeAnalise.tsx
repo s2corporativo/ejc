@@ -200,7 +200,10 @@ export default function IntakeAnalise({ caseId }: { caseId: string }) {
         </div>
       }
     >
-      <IntakeAnaliseInner caseId={caseId} />
+      {/* key por caso: trocar /casos/:id sem desmontar a rota remonta o
+          componente e descarta análise do caso anterior, impedindo que
+          recomendações de A sejam executadas/salvas em B (revisão P1 #1863). */}
+      <IntakeAnaliseInner key={caseId} caseId={caseId} />
     </ErrorBoundary>
   );
 }
