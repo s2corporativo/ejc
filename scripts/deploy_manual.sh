@@ -128,7 +128,7 @@ log "Pré-voo aprovado — HEAD $TARGET_SHA, $APP_DIR e runtime presentes."
 
 # ── 2. Prova de origem + CI — manual NÃO é bypass de Woodpecker ────────────
 [ -x "$WOODPECKER_GATE" ] || fail "gate Woodpecker ausente: $WOODPECKER_GATE"
-git fetch --prune origin main >/dev/null 2>&1 || fail "não foi possível atualizar origin/main"
+git fetch --prune origin 'refs/heads/main:refs/remotes/origin/main' >/dev/null 2>&1 || fail "não foi possível atualizar origin/main"
 origin_main_sha="$(git rev-parse origin/main 2>/dev/null || true)"
 [[ "$origin_main_sha" =~ ^[0-9a-f]{40}$ ]] || fail "origin/main não resolveu para SHA completo"
 [ "$origin_main_sha" = "$TARGET_SHA" ] ||   fail "SHA manual precisa ser o origin/main atual ($origin_main_sha), recebido $TARGET_SHA"
