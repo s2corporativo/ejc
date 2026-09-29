@@ -1,0 +1,12 @@
+[Unit]
+Description=EJC observability evidence snapshot
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/ejc
+ExecStart=/usr/bin/python3 /opt/ejc/scripts/release_evidence.py --mode monitor
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=3min
