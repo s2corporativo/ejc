@@ -100,6 +100,8 @@ describe("CadastroManual — cliente fixado pela Ficha Mestra", () => {
         expect.objectContaining({
           titulo: "Caso contextual",
           client_id: "c1",
+          proxima_acao:
+            "Revisar o cadastro inicial e definir a próxima providência",
         }),
       );
     });
