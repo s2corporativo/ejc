@@ -809,6 +809,34 @@ async def aprovar(
     await _bloquear_sem_validacao(db, d, novo_status)
     await _bloquear_jurisprudencia_nao_validada(db, d, novo_status)
 
+    # Gate de citações: paridade com o PATCH. Peça gerada por IA não avança
+    # para 'aprovada' sem passar por aplicar_gate_hitl no log de validação
+    # corrente. Sem isto, esta rota permitia aprovação → PDF de protocolo sem
+    # a verificação de citações que o PATCH aplica.
+    if d.ai_generated:
+        validacao_ap = await _ultima_validacao_peca(db, d)
+        ai_log_id_ap = validacao_ap.get("ai_log_id")
+        if ai_log_id_ap:
+            log_ap = (await db.execute(
+                select(AILog).where(AILog.id == ai_log_id_ap).with_for_update()
+            )).scalar_one_or_none()
+            if log_ap is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Validação corrente da peça está inconsistente; gere nova validação antes de aprovar.",
+                )
+            if log_ap.user_id != cu.id and ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Sem permissão para revisar este log",
+                )
+            if _status_value(log_ap.status_hitl) not in ("revisado", "aplicado"):
+                from app.services.citation_gate import aplicar_gate_hitl
+                await aplicar_gate_hitl(db, log_ap, "revisado", False, None, cu)
+                log_ap.status_hitl = AIStatusHITL.revisado
+                log_ap.revisado_por = cu.id
+                log_ap.revisado_em = datetime.now(timezone.utc)
+
     status_antigo = _status_value(d.status)
     d.human_reviewed = True
     d.revisor_id = cu.id
