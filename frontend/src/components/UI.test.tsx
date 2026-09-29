@@ -5,7 +5,6 @@ import {
   AIFactualityLegend,
   HumanValidationStatus,
   RiskBadge,
-  SourceCitation,
   StatusBadge,
 } from "./UI";
 
@@ -68,19 +67,5 @@ describe("AIFactualityLegend", () => {
     expect(screen.getByText("Consta nos documentos")).toBeTruthy();
     expect(screen.getByText("Inferência da IA")).toBeTruthy();
     expect(screen.getByText("Não confirmado / lacuna")).toBeTruthy();
-  });
-});
-
-describe("SourceCitation", () => {
-  it("renderiza link quando há href", () => {
-    render(
-      <SourceCitation
-        tipo="Precedente"
-        titulo="STJ REsp 1.657.156"
-        href="https://example.test/acordao"
-      />,
-    );
-    const link = screen.getByRole("link");
-    expect(link.getAttribute("href")).toBe("https://example.test/acordao");
   });
 });

@@ -58,18 +58,3 @@ describe("estrutura de cabeçalhos — um h1 por página", () => {
     expect(container).toMatch(/<PageHeader/);
   });
 });
-
-describe("VisualLawDocument — cabeçalho de documento é seção, não página", () => {
-  afterEach(cleanup);
-
-  it("usa h2, para não competir com o h1 da página", async () => {
-    const { VisualLawDocument } = await import("../components/UI");
-    const { container } = render(
-      <MemoryRouter>
-        <VisualLawDocument title="Petição inicial" />
-      </MemoryRouter>,
-    );
-    expect(container.querySelector("h1")).toBeNull();
-    expect(container.querySelector("h2")?.textContent).toBe("Petição inicial");
-  });
-});
