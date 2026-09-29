@@ -40,6 +40,17 @@ _TERMO_REF = re.compile(
 # AILog.critica_adversarial. Protegemos o cabeçalho inteiro antes de pseudonimizar.
 _MARCADOR_ESTRUTURAL = re.compile(r"═{2,}[^\n]*?═{2,}")
 
+# O router legado emite `LEGAL_DOC_ID:<uuid>` como marcador de vínculo estrutural
+# (ver `_LEGAL_DOC_MARKER_QUERY` e `PromptSanitizadoText`). O UUID casa com o
+# padrão de chave Pix do sanitizador: sem proteção, `pseudonimizar()` troca o
+# identificador por `[CHAVE_PIX_1]` e o log perde QUAL documento foi validado —
+# quebrando o painel `pecas_sem_validacao` de `ia_governanca.py`. É rótulo do
+# sistema, nunca conteúdo do usuário, então segue o mesmo proteção dos cabeçalhos.
+_MARCADOR_LEGAL_DOC = re.compile(
+    r"LEGAL_DOC_ID:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
+
 # Adaptador temporário de compatibilidade com o router legado. As consultas
 # `prompt_sanitizado ILIKE '%LEGAL_DOC_ID:<uuid>%'` são traduzidas para a FK e
 # para o estado estrutural da validação. Outros ILIKE permanecem textuais.
@@ -116,7 +127,8 @@ def _proteger_cnj_jurisprudencial(texto: str) -> tuple[str, dict[str, str]]:
 
 
 def _proteger_marcadores_estruturais(texto: str) -> tuple[str, dict[str, str]]:
-    """Protege cabeçalhos estruturais "═══ … ═══" da pseudonimização de PII.
+    """Protege cabeçalhos estruturais "═══ … ═══" e o marcador `LEGAL_DOC_ID:<uuid>`
+    da pseudonimização de PII.
     Mesmo padrão de `_proteger_cnj_jurisprudencial` (protege → pseudonimiza →
     restaura): substitui só rótulos fixos do sistema (nunca conteúdo do usuário),
     evitando que o NER local confunda um termo do rótulo com nome de pessoa."""
@@ -127,12 +139,27 @@ def _proteger_marcadores_estruturais(texto: str) -> tuple[str, dict[str, str]]:
         refs[token] = match.group(0)
         return token
 
-    return _MARCADOR_ESTRUTURAL.sub(repl, texto), refs
+    protegido = _MARCADOR_ESTRUTURAL.sub(repl, texto)
+    return _MARCADOR_LEGAL_DOC.sub(repl, protegido), refs
 
 
-def pseudonimizar_texto_auditoria(valor: str | None) -> str | None:
+def pseudonimizar_texto_auditoria(
+    valor: str | None,
+    entidades: dict[str, list[str]] | None = None,
+) -> str | None:
     """Pseudonimiza PII persistida sem destruir citação jurídica verificável
-    nem os cabeçalhos estruturais do sistema (marcadores '═══ … ═══')."""
+    nem os cabeçalhos estruturais do sistema (marcadores '═══ … ═══').
+
+    `entidades` é OPCIONAL e é o que fecha a lacuna das entidades de uma
+    palavra (marca comercial, sobrenome isolado, nome de fantasia). Sem ela o
+    sanitizador só acerta nomes de duas ou mais palavras pelos padrões
+    estruturais e pelo NER de fallback: `pseudonimizar_texto_auditoria("Nutella")`
+    devolve "Nutella" em claro. O `@validates` do model NÃO tem como conhecer as
+    entidades do caso, então ele segue como rede estrutural de último recurso;
+    quem as conhece (o call site, que já tem `nomes_proteger` do dossiê) deve
+    passá-las aqui. Quem chama sem `entidades` continua correto, só que menos
+    abrangente — nunca mais amplo do que antes.
+    """
     if valor is None:
         return None
     texto = str(valor)
@@ -143,11 +170,14 @@ def pseudonimizar_texto_auditoria(valor: str | None) -> str | None:
     try:
         from app.services.ai.pseudonymizer import pseudonimizar
 
-        limpo, _ = pseudonimizar(protegido)
+        limpo, _ = pseudonimizar(protegido, entidades)
     except Exception:
         from app.services.sanitizer import sanitizar_pii
 
-        limpo, _ = sanitizar_pii(protegido)
+        limpo, _ = sanitizar_pii(
+            protegido,
+            [n for nomes in (entidades or {}).values() for n in nomes] or None,
+        )
     for token, cnj in refs.items():
         limpo = limpo.replace(token, cnj)
     for token, marc in marcs.items():

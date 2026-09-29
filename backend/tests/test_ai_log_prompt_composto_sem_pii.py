@@ -51,7 +51,6 @@ def test_prompt_composto_com_pii_e_pseudonimizado_na_persistencia():
         "ÁREA JURÍDICA: consumidor\n\n"
         f"[DOSSIÊ] Cliente: {NOME_CLIENTE}, CPF {CPF}\n"
         f"[PRECEDENTES INTERNOS] ContraParte: {PARTE}\n"
-        f"[FONTES] Proc. 1234567-89.2024.8.13.0100涉及 {NOME_CLIENTE}\n"
         f"FATOS DO CASO (sanitizados): contrato_failado.\n"
     )
     log = _log_objeto(prompt, "RASCUNHO: tese de revisão contratual.")
@@ -59,9 +58,100 @@ def test_prompt_composto_com_pii_e_pseudonimizado_na_persistencia():
     assert NOME_CLIENTE not in persistido
     assert PARTE not in persistido
     assert CPF not in persistido
-    # o identificador do processo (numeração CNJ) é preservado: é citação
-    # verificável, não PII, e a coluna precisa dele para rastrear a fonte.
-    assert "1234567-89.2024.8.13.0100" in persistido
+
+
+def test_referencia_jurisprudencial_completa_e_preservada():
+    """O número CNJ só sobrevive quando a janela traz tribunal + termo de
+    precedente + data (`_proteger_cnj_jurisprudencial`). O separador precisa ser
+    pontuação/espaço: um caractere de palavra Unicode colado ao dígito final faz
+    o `\\b` do padrão de processo falhar e o número passaria a vazar por motivo
+    errado — o teste pareceria verde sem exercitar a proteção."""
+    cnj = "1234567-89.2024.8.13.0100"
+    prompt = (
+        "Acórdão do TJMG, Apelação 1234567-89.2024.8.13.0100, de 14/03/2024: "
+        f"o inadimplemento de {NOME_CLIENTE} gera dever de indenizar.\n"
+    )
+    persistido = str(_log_objeto(prompt, "rascunho").prompt_sanitizado)
+    assert cnj in persistido, "referência jurisprudencial completa deve sobreviver"
+    # o nome próximo é PII e não é jurisprudência: tem de cair
+    assert NOME_CLIENTE not in persistido
+
+
+def test_numero_de_processo_do_proprio_cliente_nao_sobrevive():
+    """O outro lado da regra: CNJ SEM contexto jurisprudencial (só o processo do
+    cliente no dossiê) não é preservado."""
+    cnj = "9876543-21.2024.8.13.0100"
+    prompt = f"[DOSSIÊ] Processo do cliente: {cnj}\nFATOS: contrato_failado.\n"
+    persistido = str(_log_objeto(prompt, "rascunho").prompt_sanitizado)
+    assert cnj not in persistido
+
+
+def test_marcador_legal_doc_id_sobrevive_a_pseudonimizacao():
+    """Regressão: o UUID de `LEGAL_DOC_ID:` casa com o padrão de chave Pix e era
+    trocado por `[CHAVE_PIX_1]`. O log perdia qual documento foi validado e o
+    painel `pecas_sem_validacao` (`ia_governanca.py`) contava toda peça aprovada
+    como não validada."""
+    import uuid as _uuid
+
+    from app.models.ai_log import pseudonimizar_texto_auditoria
+
+    doc_id = str(_uuid.uuid4())
+    persistido = str(
+        _log_objeto(
+            f"LEGAL_DOC_ID:{doc_id}\nTITULO: peça revisada\n"
+            f"CLIENTE: {NOME_CLIENTE}, CPF {CPF}",
+            "rascunho",
+        ).prompt_sanitizado
+    )
+    assert f"LEGAL_DOC_ID:{doc_id}" in persistido
+    assert "[CHAVE_PIX" not in persistido
+    # e a barreira de PII continua valendo no mesmo texto
+    assert NOME_CLIENTE not in persistido
+    assert CPF not in persistido
+    # a proteção vive no pseudonimizador, não só no model
+    assert doc_id in str(pseudonimizar_texto_auditoria(f"LEGAL_DOC_ID:{doc_id}"))
+
+
+def test_entidade_de_uma_palavra_sobrevive_quando_o_call_site_informa():
+    """Lacuna real: `pseudonimizar_texto_auditoria("Nutella")` devolve "Nutella" em
+    claro — o sanitizador estrutural só acerta nomes de 2+ palavras. Quem conhece
+    as entidades do caso (o call site, via `nomes_proteger` do dossiê) precisa
+    passá-las; o `@validates` do model não tem como.
+
+    Atenção ao rótulo: `_Pseudonimizador` só reconhece as chaves de
+    `_ORDEM_ENTIDADES` e ignora qualquer outra EM SILÊNCIO."""
+    from app.models.ai_log import pseudonimizar_texto_auditoria
+
+    marca = "NutellaLtdaSintetica"
+    vizinho = "AlimentarLtdaDistribuidora"
+    texto = f"[RAG] a marca {marca} e a {vizinho} em 2024"
+    sem_contexto = str(pseudonimizar_texto_auditoria(texto))
+    com_contexto = str(
+        pseudonimizar_texto_auditoria(texto, {"cliente": [marca, vizinho]})
+    )
+    assert marca not in com_contexto, com_contexto
+    assert vizinho not in com_contexto, com_contexto
+    # as duas entidades do mesmo tipo recebem índices distintos e estáveis
+    assert "[CLIENTE_1]" in com_contexto and "[CLIENTE_2]" in com_contexto
+    # sem entidades o comportamento é o de sempre: a rede estrutural não inventa
+    # nome que ninguém lhe deu.
+    assert marca in sem_contexto
+
+
+def test_chave_de_entidade_desconhecida_nao_e_ignorada_em_silencio():
+    """Trava do rótulo acima: `{"pessoa": [...]}` não é uma chave reconhecida e
+    o valor passaria em claro sem erro nenhum. Esta trava impede a regressão de voltar
+    a `{"pessoa": ...}` em `ai_service.analisar_caso`."""
+    from app.services.ai.pseudonymizer import _ORDEM_ENTIDADES
+
+    marca = "NutellaLtdaSintetica"
+    texto = f"[RAG] a marca {marca} e o contrato, 2024"
+    from app.models.ai_log import pseudonimizar_texto_auditoria
+
+    for chave in ("pessoa", "parte", "nome"):
+        saida = str(pseudonimizar_texto_auditoria(texto, {chave: [marca]}))
+        assert marca in saida, f"{chave!r} foi aceita, mas não está em {_ORDEM_ENTIDADES}"
+    assert "cliente" in _ORDEM_ENTIDADES
 
 
 def test_resposta_reidratada_e_pseudonimizada_na_persistencia():
