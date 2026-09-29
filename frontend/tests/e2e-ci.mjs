@@ -14,10 +14,23 @@ await page.route("**/api/auth/refresh", (route) =>
   route.fulfill({ status: 401, contentType: "application/json", body: '{"detail":"CI unauthenticated"}' }),
 );
 
-const consoleErrors = [];
-let collectConsoleErrors = true;
+const browserErrors = [];
+page.on("pageerror", (error) => browserErrors.push(`pageerror: ${error.message}`));
+page.on("requestfailed", (request) => {
+  browserErrors.push(`requestfailed: ${request.url()} ${request.failure()?.errorText || ""}`);
+});
+page.on("response", (response) => {
+  const status = response.status();
+  const url = response.url();
+  if (status < 400) return;
+  if (status === 401 && url.includes("/api/auth/refresh")) return;
+  browserErrors.push(`http ${status}: ${url}`);
+});
 page.on("console", (msg) => {
-  if (collectConsoleErrors && msg.type() === "error") consoleErrors.push(msg.text());
+  if (msg.type() !== "error") return;
+  const text = msg.text();
+  if (text.includes("Failed to load resource") && text.includes("401")) return;
+  browserErrors.push(`console: ${text}`);
 });
 
 try {
@@ -29,19 +42,18 @@ try {
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload({ waitUntil: "networkidle" });
-  assert(await page.locator('input[type="email"]').isVisible(), "login não responsivo em viewport móvel");
-
-  assert(consoleErrors.length === 0, `erros de console no login: ${consoleErrors.join(" | ")}`);
-  collectConsoleErrors = false;
+  const mobileEmail = page.locator('input[type="email"]');
+  await mobileEmail.waitFor({ state: "visible", timeout: 5000 });
+  assert(await mobileEmail.isVisible(), "login não responsivo em viewport móvel");
 
   await page.goto(`${BASE_URL}/clientes`, { waitUntil: "networkidle", timeout: 30000 });
   await page.waitForURL("**/login", { timeout: 10000 });
   assert(page.url().endsWith("/login"), "rota protegida não redirecionou para /login");
-
+  assert(browserErrors.length === 0, `erros inesperados do browser: ${browserErrors.join(" | ")}`);
 
   console.log(JSON.stringify({
     status: "success",
-    checks: ["login-render", "mobile-viewport", "protected-route-redirect", "console-errors"],
+    checks: ["login-render", "mobile-viewport", "protected-route-redirect", "browser-errors"],
     base_url: BASE_URL,
   }));
 } finally {
