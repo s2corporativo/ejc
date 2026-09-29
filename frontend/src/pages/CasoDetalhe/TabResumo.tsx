@@ -512,8 +512,7 @@ export default function TabResumo({
       setEncModal(false);
       toast.success(data?.detail || "Caso encerrado.");
       const memoria = data?.memoria_institucional;
-      const falhaPrecedenteRag =
-        memoria?.precedente_rag === "falha_acessoria";
+      const falhaPrecedenteRag = memoria?.precedente_rag === "falha_acessoria";
       if (falhaPrecedenteRag) {
         toast.error(
           "Caso encerrado, mas o precedente não pôde ser registrado no RAG. O encerramento foi preservado.",
@@ -530,7 +529,9 @@ export default function TabResumo({
         setSincFalhou(
           sinc.detalhe || "Não foi possível sincronizar com o tribunal.",
         );
-        toast.error(sinc.detalhe || "Não foi possível sincronizar com o tribunal.");
+        toast.error(
+          sinc.detalhe || "Não foi possível sincronizar com o tribunal.",
+        );
         return;
       }
       if (sinc?.solicitada) {
@@ -547,7 +548,11 @@ export default function TabResumo({
     } catch (e: any) {
       // 422 do fechamento inteligente traz a lista atualizada de pendências.
       const detail = e.response?.data?.detail;
-      if (detail && typeof detail === "object" && Array.isArray(detail.alertas)) {
+      if (
+        detail &&
+        typeof detail === "object" &&
+        Array.isArray(detail.alertas)
+      ) {
         setEncDiag((prev) => ({
           pode_encerrar: !detail.bloqueios?.length,
           requer_confirmacao_alertas: detail.alertas.length > 0,
@@ -1064,8 +1069,8 @@ export default function TabResumo({
         >
           <div className="space-y-4">
             <p className="text-sm text-slate-600">
-              Encerramento direto. O EJC preservará documentos, prazos, histórico e
-              pendências existentes; nenhuma etapa será apagada.
+              Encerramento direto. O EJC preservará documentos, prazos,
+              histórico e pendências existentes; nenhuma etapa será apagada.
             </p>
             <div>
               <label className="label">Nome do cliente</label>
@@ -1080,7 +1085,9 @@ export default function TabResumo({
               />
             </div>
             <div>
-              <label className="label">Valor total recebido pelo escritório (R$)</label>
+              <label className="label">
+                Valor total recebido pelo escritório (R$)
+              </label>
               <input
                 type="number"
                 min="0"
@@ -1088,12 +1095,18 @@ export default function TabResumo({
                 className="input w-full"
                 value={encSimples.valor_recebido}
                 onChange={(e) =>
-                  setEncSimples({ ...encSimples, valor_recebido: e.target.value })
+                  setEncSimples({
+                    ...encSimples,
+                    valor_recebido: e.target.value,
+                  })
                 }
                 placeholder="0,00"
               />
               <p className="mt-1 text-xs text-slate-500">
-                Informe o total de honorários efetivamente recebidos pelo escritório neste caso. O EJC lançará apenas a diferença ainda não registrada. Não inclua valores do principal pertencentes ao cliente.
+                Informe o total de honorários efetivamente recebidos pelo
+                escritório neste caso. O EJC lançará apenas a diferença ainda
+                não registrada. Não inclua valores do principal pertencentes ao
+                cliente.
               </p>
             </div>
             <button
@@ -1151,24 +1164,30 @@ export default function TabResumo({
                 </ul>
               </Alert>
             )}
-            {encDiag && !encDiag.bloqueios.length && !encDiag.alertas.length && (
-              <Alert variant="success" title="Sem pendências">
-                Nenhum prazo, tarefa, honorário, peça ou processo em aberto.
-              </Alert>
-            )}
-            {encDiag && encDiag.bloqueios.length > 0 && podeJustificarBloqueio && (
-              <div>
-                <label className="label">Justificativa para encerrar com prazo aberto</label>
-                <textarea
-                  rows={2}
-                  className="input w-full"
-                  value={enc.justificativa_bloqueio}
-                  onChange={(e) =>
-                    setEnc({ ...enc, justificativa_bloqueio: e.target.value })
-                  }
-                />
-              </div>
-            )}
+            {encDiag &&
+              !encDiag.bloqueios.length &&
+              !encDiag.alertas.length && (
+                <Alert variant="success" title="Sem pendências">
+                  Nenhum prazo, tarefa, honorário, peça ou processo em aberto.
+                </Alert>
+              )}
+            {encDiag &&
+              encDiag.bloqueios.length > 0 &&
+              podeJustificarBloqueio && (
+                <div>
+                  <label className="label">
+                    Justificativa para encerrar com prazo aberto
+                  </label>
+                  <textarea
+                    rows={2}
+                    className="input w-full"
+                    value={enc.justificativa_bloqueio}
+                    onChange={(e) =>
+                      setEnc({ ...enc, justificativa_bloqueio: e.target.value })
+                    }
+                  />
+                </div>
+              )}
             <div>
               <label className="label">Resultado</label>
               <select
@@ -1268,7 +1287,12 @@ export default function TabResumo({
             </label>
             <button
               onClick={encerrar}
-              disabled={encLoading || encDiagLoading || encBloqueado || encPrecisaConfirmar}
+              disabled={
+                encLoading ||
+                encDiagLoading ||
+                encBloqueado ||
+                encPrecisaConfirmar
+              }
               className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
               {encLoading ? "Encerrando..." : "Confirmar encerramento"}

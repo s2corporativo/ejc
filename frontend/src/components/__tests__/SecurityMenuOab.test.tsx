@@ -66,7 +66,9 @@ describe("SecurityMenu — OAB do DJEN", () => {
     expect(
       (screen.getByPlaceholderText(/Número/i) as HTMLInputElement).value,
     ).toBe("252599");
-    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("MG");
+    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe(
+      "MG",
+    );
   });
 
   it("oferece as 27 unidades federativas", () => {
@@ -89,7 +91,9 @@ describe("SecurityMenu — OAB do DJEN", () => {
   });
 
   it("salva o par número+UF e atualiza o estado local", async () => {
-    render(<SecurityMenu user={{ ...USUARIO_COM_OAB, djen_oab_numero: null }} />);
+    render(
+      <SecurityMenu user={{ ...USUARIO_COM_OAB, djen_oab_numero: null }} />,
+    );
     abrirModalOab();
     fireEvent.change(screen.getByPlaceholderText(/Número/i), {
       target: { value: "251174" },

@@ -26,9 +26,7 @@ describe("useCarregar", () => {
   it("array vazio ou null viram estado vazio", async () => {
     const lista = renderHook(() => useCarregar(() => Promise.resolve([]), []));
     await waitFor(() => expect(lista.result.current.estado).toBe("vazio"));
-    const nulo = renderHook(() =>
-      useCarregar(() => Promise.resolve(null), []),
-    );
+    const nulo = renderHook(() => useCarregar(() => Promise.resolve(null), []));
     await waitFor(() => expect(nulo.result.current.estado).toBe("vazio"));
   });
 
@@ -60,7 +58,9 @@ describe("useCarregar", () => {
       useCarregar(
         () =>
           Promise.reject(
-            erroHttp(422, [{ loc: ["body", "area"], msg: "campo obrigatório" }]),
+            erroHttp(422, [
+              { loc: ["body", "area"], msg: "campo obrigatório" },
+            ]),
           ),
         [],
       ),

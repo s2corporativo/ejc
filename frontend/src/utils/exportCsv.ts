@@ -12,7 +12,10 @@ export function sanitizeCsvCell(v: unknown): string {
   if (typeof v === "string" && FORMULA_PREFIX.test(v)) {
     s = `'${s}`;
   }
-  return s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")
+  return s.includes(",") ||
+    s.includes('"') ||
+    s.includes("\n") ||
+    s.includes("\r")
     ? `"${s.replace(/"/g, '""')}"`
     : s;
 }

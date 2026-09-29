@@ -123,14 +123,20 @@ describe("JurimetriaTribunais — coexistência rotulada com a jurimetria do esc
     });
     render(<JurimetriaTribunais />);
 
-    expect((await screen.findAllByText("75.0%")).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/24 decididos no mérito/).length).toBeGreaterThanOrEqual(1);
+    expect((await screen.findAllByText("75.0%")).length).toBeGreaterThanOrEqual(
+      1,
+    );
+    expect(
+      screen.getAllByText(/24 decididos no mérito/).length,
+    ).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("412 dias")).toBeTruthy();
     expect(screen.getByText("41.7%")).toBeTruthy();
     expect(screen.getByText(/Não é o desempenho do escritório/)).toBeTruthy();
     expect(screen.getByText(/TPU 26\/05\/2026/)).toBeTruthy();
     expect(screen.getByText(/proxy, não leitura da sentença/)).toBeTruthy();
-    expect(screen.getByText(/Juizados Especiais \/ Turmas Recursais — TJMG/)).toBeTruthy();
+    expect(
+      screen.getByText(/Juizados Especiais \/ Turmas Recursais — TJMG/),
+    ).toBeTruthy();
     expect(screen.getByText(/Justiça do Trabalho — TRT3\/MG/)).toBeTruthy();
     expect(screen.getByText(/n=14/)).toBeTruthy();
     expect(screen.getByText(/n=80/)).toBeTruthy();

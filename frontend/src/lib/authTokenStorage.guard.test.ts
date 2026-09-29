@@ -12,10 +12,8 @@ function files(dir: string): string[] {
     const path = join(dir, name);
     if (name === "node_modules" || name === "dist") continue;
     if (statSync(path).isDirectory()) out.push(...files(path));
-    else if (
-      /\.tsx?$/.test(name) &&
-      !/\.(?:test|spec)\.tsx?$/.test(name)
-    ) out.push(path);
+    else if (/\.tsx?$/.test(name) && !/\.(?:test|spec)\.tsx?$/.test(name))
+      out.push(path);
   }
   return out;
 }

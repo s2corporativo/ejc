@@ -99,9 +99,7 @@ export default function FinanceiroWorkspace() {
   }
 
   const tab: FinanceTab =
-    tabSolicitada === "societaria" && !podeSociedade
-      ? "visao"
-      : tabSolicitada;
+    tabSolicitada === "societaria" && !podeSociedade ? "visao" : tabSolicitada;
   const rawComp = searchParams.get("comp");
   const competencia = isCompetencia(rawComp) ? rawComp : competenciaAtual();
   const mostraCompetencia = TABS_COM_COMPETENCIA.has(tab);
