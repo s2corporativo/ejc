@@ -1679,7 +1679,9 @@ html:not(.dark)
 }
 
 .dark .ejc-dash__tabs button.is-active {
-  background: var(--ejc-primary);
+  /* Controle cheio no escuro usa o sólido da família (4,8:1 com branco);
+     sobre o acento claro #5b8def o texto branco fica 3,2:1. */
+  background: var(--ejc-primary-surface);
   color: #ffffff;
 }
 
@@ -1801,7 +1803,9 @@ html:not(.dark)
 }
 
 .ejc-dash__mode button.is-active {
-  background: var(--ejc-primary);
+  /* No escuro, --ejc-primary-surface resolve para o sólido #3b6fd4 (4,8:1
+     com branco); no claro resolve para o próprio acento. */
+  background: var(--ejc-primary-surface);
   color: #fff;
   box-shadow: 0 7px 18px color-mix(in srgb, var(--ejc-primary) 24%, transparent);
 }
