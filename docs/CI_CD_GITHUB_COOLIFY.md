@@ -74,3 +74,21 @@ Estado de transição: fallback operacional somente até a homologação complet
 ## Eficiência
 
 A nova esteira elimina a fila centralizada na VPS, usa runners efêmeros GitHub-hosted, executa jobs independentes em paralelo, reaproveita caches de Python/npm e cancela execuções antigas da mesma PR. Código de PR não recebe segredos de produção e nunca roda no host produtivo.
+
+## Estado da migração (2026-09-29) — BLOQUEIO EXTERNO
+
+`BLOQUEIO EXTERNO — migração adiada; sistema continua operando com Woodpecker.`
+
+- A conta GitHub permanece bloqueada por billing: nenhum job do GitHub Actions
+  chega a executar (0 steps em todos os runs), afetando inclusive runners
+  self-hosted. Documentação de 22/08/2026 em infra/woodpecker e memorando
+  ALTERNATIVA_CI_SEM_BILLING registram a causa antes da alocação de runner.
+- O Woodpecker permanece o CI canônico de fato e de direito (ruleset da main:
+  `ci/woodpecker/pr/woodpecker` required, política STRICT). Nenhum bypass.
+- Os workflows deste PR (.github/.gitea ci.yml) permanecem DORMANTES e são
+  mantidos versionados para retomada imediata quando o billing for resolvido.
+  Os testes de governança (test_governanca_workflow.py,
+  test_workflows_yaml_carregavel.py, test_self_hosted_runner_isolation.py)
+  travam o contrato deles: 20/20 no head atual.
+- Critérios de substituição (gates equivalentes + comprovação de deploy +
+  rollback) continuam válidos e só serão aplicados na retomada.
