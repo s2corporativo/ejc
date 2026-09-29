@@ -68,11 +68,8 @@ function newlinesEscapados(css) {
     // Logo depois do fecho, sem quebra: seletor que começa com barra + n.
     const depois = css.slice(fim + 2);
     const branco = depois.match(/^\s*/)[0].length;
-    if (branco === 0) {
-      const token = depois.match(/^[^\s,{:;()[\]>+~*]+/);
-      if (token && token[0].length <= 2 && token[0].includes("\\")) {
-        achados.push({ index: m.index, trecho: css.slice(m.index, m.index + 60) });
-      }
+    if (branco === 0 && depois.startsWith("\\")) {
+      achados.push({ index: m.index, trecho: css.slice(m.index, m.index + 60) });
     }
     abertura.lastIndex = fim + 2;
   }
@@ -82,8 +79,10 @@ function newlinesEscapados(css) {
     achados.push({ index: i, trecho: css.slice(i, i + 60) });
   }
   // Sequência fora de comentário, no início de uma linha: quebra de linha
-  // escrita à mão no lugar do byte 0x0A.
-  for (const linha of css.matchAll(/^[^\S\n]*[\\][nr](?=[^\S\n]*$)/gm)) {
+  // escrita à mão no lugar do byte 0x0A. No regex, a barra invertida precisa
+  // de duas barras para casar o caractere de barra.
+  const linhaEscapada = /^[^\S\n]*\\[nr](?=[^\S\n]*$)/gm;
+  for (const linha of css.matchAll(linhaEscapada)) {
     achados.push({ index: linha.index, trecho: JSON.stringify(linha[0]) });
   }
   return achados;
