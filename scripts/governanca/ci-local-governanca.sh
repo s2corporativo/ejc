@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Reproduz as travas objetivas de .github/workflows/governanca.yml fora do Actions.
+# Reproduz as travas objetivas do stage `governanca` do .woodpecker.yml fora do CI.
 # O script executado é o root of trust do controlador; EJC_GOV_SOURCE_ROOT aponta
 # para o snapshot do PR que será apenas lido, nunca executado por este processo.
 # Complexidade: O(B) sobre bytes dos arquivos alterados.

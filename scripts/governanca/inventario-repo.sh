@@ -126,12 +126,12 @@ echo "Inventariando repositorio (commit $REV)..."
     echo '```'
     echo ""
     echo "Reserva de numeracao: \`backend/alembic/MIGRATION_RESERVATIONS.md\`."
-    echo "A trava automatica esta em \`.github/workflows/governanca.yml\`."
+    echo "A trava automatica esta no stage 'governanca' do \`.woodpecker.yml\`."
   else
     echo "_Diretorio de migrations nao localizado em \`backend/alembic/versions\`._"
     echo ""
     echo "**Atencao:** se o caminho real divergir, ajuste o passo \"Migration exige reserva"
-    echo "registrada\" em \`.github/workflows/governanca.yml\` e este script."
+    echo "registrada no stage 'governanca' do \`.woodpecker.yml\` e neste script."
   fi
   echo ""
 
