@@ -1045,6 +1045,31 @@ async def criar_caso_do_rascunho(
     processo_criado: dict[str, Any] | None = None
     dados_processuais = dict(processo_reconciliacao.get("dados_processuais") or {})
     numero_cnj = dados_processuais.get("numero_cnj")
+
+    if payload.processo_confirmado is not None:
+        numero_confirmado = normalizar_cnj(payload.processo_confirmado.numero_cnj)
+        numero_rascunho = normalizar_cnj(str(numero_cnj or ""))
+        if (
+            not numero_rascunho
+            or not validar_cnj(numero_rascunho)
+            or numero_confirmado != numero_rascunho
+        ):
+            raise HTTPException(
+                422,
+                "Os dados processuais confirmados devem corresponder ao CNJ "
+                "já identificado no rascunho da Entrada Única",
+            )
+        dados_processuais.update(
+            {
+                "numero_cnj": numero_rascunho,
+                "tribunal": payload.processo_confirmado.tribunal,
+                "comarca": payload.processo_confirmado.comarca,
+                "vara": payload.processo_confirmado.vara,
+                "fonte": "Entrada Única — metadados confirmados pelo advogado",
+            }
+        )
+        numero_cnj = numero_rascunho
+
     if status_reconciliacao == "novo_processo" and numero_cnj:
         processo_criado = await sincronizar_processo_principal_do_caso(
             db,
@@ -1233,6 +1258,11 @@ async def criar_caso_do_rascunho(
         "documentos_faltantes": payload.documentos_faltantes,
         "provas_necessarias": payload.provas_necessarias,
         "proximos_passos": payload.proximos_passos,
+        "processo_confirmado": (
+            payload.processo_confirmado.model_dump(mode="json")
+            if payload.processo_confirmado is not None
+            else None
+        ),
         "confirmada_por": user.id,
     }
     resultado_atual["entrada_unica"] = entrada_atual
