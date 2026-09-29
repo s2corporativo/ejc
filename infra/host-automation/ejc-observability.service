@@ -5,6 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+WorkingDirectory=/opt/ejc
 ExecStart=/opt/ejc/scripts/observe_production.sh
 Nice=10
 IOSchedulingClass=idle
