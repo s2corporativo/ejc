@@ -164,3 +164,16 @@ echo "upgrade de woodpecker.env legado: SQLite local configurado"
 
 
 echo "gate Woodpecker: API e SQLite local aprovam/bloqueiam conforme esperado"
+
+# Regressao: fetch explicito deve atualizar origin/main, nao apenas FETCH_HEAD.
+for rel in ejc-deploy-approved.sh install-ejc-deploy.sh ../../scripts/deploy_manual.sh; do
+  file="$ROOT/$rel"
+  grep -Fq "refs/heads/main:refs/remotes/origin/main" "$file" || {
+    echo "$rel nao atualiza origin/main explicitamente" >&2
+    exit 1
+  }
+  if grep -Fq "fetch --prune origin main" "$file"; then
+    echo "$rel voltou ao fetch ambiguo" >&2
+    exit 1
+  fi
+done
