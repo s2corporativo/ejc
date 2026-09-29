@@ -201,8 +201,12 @@ def score_structured_answer(
     else:
         issue_recall = _DIM_NA
 
-    # source_precision: aplicável só se scoring habilitado E há fontes esperadas.
-    if case.source_scoring_enabled and expected_sources:
+    # source_precision: scoring desabilitado => N/A. Com scoring habilitado,
+    # IDs inesperados continuam sendo falsos positivos (precisão 0), mesmo se
+    # o gold case não declarar fontes esperadas. Só ambos vazios => N/A.
+    if not case.source_scoring_enabled:
+        source_precision = _DIM_NA
+    elif expected_sources or source_ids:
         source_precision = _measured(
             _precision(expected_sources, source_ids), has_input=bool(source_ids)
         )

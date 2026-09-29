@@ -97,23 +97,37 @@ def _log():
 
 
 @pytest.fixture()
-def sem_bloqueios_anteriores(monkeypatch):
-    """Neutraliza os dois bloqueios pré-gate (fora do escopo deste teste)."""
+def ambiente_gate(monkeypatch):
+    """Mantém o quality gate real e isola apenas a jurisprudência."""
 
-    async def _nao_bloqueia(*a, **k):
-        del a, k
+    async def _sem_juris(*args, **kwargs):
+        del args, kwargs
         return None
 
-    monkeypatch.setattr(legal_docs_router, "_bloquear_sem_validacao", _nao_bloqueia)
-    monkeypatch.setattr(legal_docs_router, "_bloquear_jurisprudencia_nao_validada", _nao_bloqueia)
+    async def _validacao(db, doc):
+        del doc
+        log = db.validation_log
+        hitl = legal_docs_router._status_value(log.status_hitl)
+        revisada = hitl in ("revisado", "aplicado")
+        return {
+            "ai_log_id": log.id,
+            "apto_fluxo": revisada,
+            "status": "validada" if revisada else "pendente_revisao",
+            "motivo": "ok" if revisada else "aguarda HITL",
+        }
+
+    monkeypatch.setattr(legal_docs_router, "_ultima_validacao_peca", _validacao)
+    monkeypatch.setattr(
+        legal_docs_router, "_bloquear_jurisprudencia_nao_validada", _sem_juris
+    )
 
 
-def test_aprovar_invoke_gate_e_propaga_bloqueio_sem_promover(
-    sem_bloqueios_anteriores, monkeypatch
+def test_aprovar_invoke_gate_antes_do_quality_gate_e_propaga_bloqueio(
+    ambiente_gate, monkeypatch
 ):
     peca, log = _peca(), _log()
-    # Aprovar: SELECT doc; _ultima_validacao_peca (gate); SELECT AILog FOR UPDATE.
-    db = _FakeDB(results=[_Res(peca), _Res(log), _Res(log)])
+    db = _FakeDB(results=[_Res(peca), _Res(log)])
+    db.validation_log = log
     client = _app(db)
     chamada = {}
 
@@ -127,35 +141,72 @@ def test_aprovar_invoke_gate_e_propaga_bloqueio_sem_promover(
     monkeypatch.setattr(citation_gate_service, "aplicar_gate_hitl", _gate_bloqueia)
 
     r = client.patch(
-        "/legal-docs/peca-aprovar/aprovar", json={"observacoes": "revisão sintética"}
+        "/legal-docs/peca-aprovar/aprovar",
+        json={"observacoes": "revisão sintética"},
     )
 
     assert r.status_code == 409, r.text
-    # O gate foi de fato invocado nesta rota (não contornado).
-    assert chamada == {"status": "revisado", "log_id": "log-aprovar", "user_id": "usuario-teste"}
-    # Bloqueio impede promoção humana e commit.
+    assert chamada == {
+        "status": "revisado",
+        "log_id": "log-aprovar",
+        "user_id": "usuario-teste",
+    }
     assert peca.human_reviewed is False
     assert peca.revisor_id is None
     assert db.committed == 0
 
 
-def test_aprovar_promove_log_quando_gate_passa(sem_bloqueios_anteriores, monkeypatch):
-    """Quando o gate aprova, a rota marca o log como revisado."""
+def test_aprovar_transiciona_hitl_antes_de_reavaliar_quality_gate(
+    ambiente_gate, monkeypatch
+):
     peca, log = _peca(), _log()
-    db = _FakeDB(results=[_Res(peca), _Res(log), _Res(log)])
+    db = _FakeDB(results=[_Res(peca), _Res(log)])
+    db.validation_log = log
     client = _app(db)
 
-    async def _gate_ok(*a, **k):
-        del a, k
+    async def _gate_ok(*args, **kwargs):
+        del args, kwargs
         return None
 
     monkeypatch.setattr(citation_gate_service, "aplicar_gate_hitl", _gate_ok)
 
     r = client.patch(
-        "/legal-docs/peca-aprovar/aprovar", json={"observacoes": "revisão sintética"}
+        "/legal-docs/peca-aprovar/aprovar",
+        json={"observacoes": "revisão sintética"},
     )
 
     assert r.status_code == 200, r.text
     assert peca.human_reviewed is True
-    # log promovido pelo gate
     assert log.status_hitl == legal_docs_router.AIStatusHITL.revisado
+    assert db.committed == 1
+
+
+def test_aprovar_log_ja_revisado_por_outro_advogado_nao_exige_ownership(
+    ambiente_gate, monkeypatch
+):
+    peca, log = _peca(), _log()
+    log.user_id = "outro-advogado"
+    log.status_hitl = legal_docs_router.AIStatusHITL.revisado
+    db = _FakeDB(results=[_Res(peca), _Res(log)])
+    db.validation_log = log
+    client = _app(db)
+    chamadas = 0
+
+    async def _gate_nao_deve_rodar(*args, **kwargs):
+        nonlocal chamadas
+        chamadas += 1
+        del args, kwargs
+
+    monkeypatch.setattr(
+        citation_gate_service, "aplicar_gate_hitl", _gate_nao_deve_rodar
+    )
+
+    r = client.patch(
+        "/legal-docs/peca-aprovar/aprovar",
+        json={"observacoes": "segunda revisão autorizada"},
+    )
+
+    assert r.status_code == 200, r.text
+    assert chamadas == 0
+    assert peca.human_reviewed is True
+    assert db.committed == 1

@@ -127,3 +127,18 @@ def test_resumo_publica_denominadores_e_regua():
         assert 0 <= info["n_aplicavel"] <= info["n_total"], name
     # casos sem lacuna => uncertainty fora do denominador
     assert s["dimensoes"]["uncertainty_compliance"]["n_aplicavel"] < s["n"]
+
+
+def test_source_precision_pune_id_inesperado_sem_fonte_gold():
+    case = LegalBenchCase(
+        id="fonte-inesperada",
+        area="consumidor",
+        prompt="p",
+        expected_source_ids=(),
+        source_scoring_enabled=True,
+    )
+    sc = score_structured_answer(case, {"source_ids": ["fonte-inventada"]})
+    assert sc.source_precision == 0.0
+    dims = dict(sc.dims)
+    assert dims["source_precision"].status == "avaliado"
+    assert dims["source_precision"].value == 0.0
