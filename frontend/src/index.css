@@ -1230,6 +1230,52 @@
   color: #e5ce7f;
 }
 
+/* ── Navegação agrupada e calendário semanal (novo shell) ───────────── */
+.dark .sidebar-group-label {
+  color: var(--ejc-text-subtle) !important;
+}
+.dark .sidebar-group-label:hover {
+  color: var(--ejc-text-secondary) !important;
+}
+.dark .sidebar-tree {
+  border-color: var(--ejc-border) !important;
+}
+.dark .sidebar-count {
+  background: var(--ejc-primary-soft) !important;
+  color: var(--ejc-primary) !important;
+}
+.dark .sidebar-week {
+  background: var(--ejc-surface-muted) !important;
+  border-color: var(--ejc-border) !important;
+}
+.dark .sidebar-week__label {
+  color: var(--ejc-text-secondary) !important;
+}
+.dark .sidebar-week__range {
+  color: var(--ejc-text-subtle) !important;
+}
+.dark .sidebar-week__days button {
+  color: var(--ejc-text-subtle) !important;
+}
+.dark .sidebar-week__days button:hover {
+  background: var(--ejc-surface) !important;
+  color: var(--ejc-text) !important;
+}
+.dark .sidebar-week__days li.has-event .sidebar-week__day-dot {
+  background: var(--ejc-primary) !important;
+}
+.dark .sidebar-week__days li.is-today button {
+  background: var(--ejc-primary-solid) !important;
+  color: var(--ejc-primary-contrast) !important;
+}
+.dark .sidebar-week__days li.is-today .sidebar-week__day-dot {
+  background: var(--ejc-primary-contrast) !important;
+}
+.dark .sidebar-week__foot {
+  border-color: var(--ejc-border) !important;
+  color: var(--ejc-text-secondary) !important;
+}
+
 /* ── 2e-bis. Sidebar no ESCURO — grafite quente + ouro ──────────
    No claro a `.sidebar-bronze` (em @layer components) virou branca;
    estas regras SÃO deslayerizadas (vencem a camada, além da maior

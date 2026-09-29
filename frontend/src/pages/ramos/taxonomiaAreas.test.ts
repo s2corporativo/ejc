@@ -11,6 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { RAMOS } from "./ramosConfig";
+import { areasContextoCaso, areasDoWorkspace } from "./ramoWorkspace";
 import { AREAS_FALLBACK } from "../../lib/areaCatalog";
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -96,5 +97,12 @@ describe("taxonomia de áreas dos hubs", () => {
       .map((cfg) => cfg.areaCaso)
       .filter((area) => !doEnum.has(area));
     expect(ausentes).toEqual([]);
+  });
+
+  it("contexto case_id do hub família aceita sucessoes (mapping ITCMD) sem alterar a listagem", () => {
+    const familia = RAMOS["familia"];
+    expect(familia).toBeTruthy();
+    expect(areasContextoCaso(familia)).toContain("sucessoes");
+    expect(areasDoWorkspace(familia)).not.toContain("sucessoes");
   });
 });

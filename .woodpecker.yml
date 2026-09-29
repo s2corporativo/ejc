@@ -46,6 +46,12 @@
 # - Manutenção: `docker volume ls | grep ejc-ci-` e, se disco apertar,
 #   `docker volume rm ejc-ci-<nome>` (recriado no próximo pipeline).
 #
+# Filtro do WORKFLOW inteiro (não de step). No Woodpecker 3.x as condições
+# do `when` de nível superior são combinadas com E: `event` E `branch` tinham
+# que valer juntos, então todo evento pull_request era descartado e nenhuma
+# etapa era criada ("ignoring hook: 'when' filters filtered out all steps",
+# no log do servidor). A entrada `event: pull_request` abaixo é o que faz o
+# CI rodar em PR e publicar o status que a proteção da main exige.
 when:
   - event: push
     branch: main
