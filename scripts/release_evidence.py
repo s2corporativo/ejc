@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import urllib.request
+import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -37,6 +38,31 @@ def get_json(url: str) -> tuple[bool, dict]:
             return response.status == 200, data
     except Exception as exc:
         return False, {"error_type": type(exc).__name__}
+
+
+def get_status(url: str) -> tuple[bool, int | None]:
+    try:
+        request = urllib.request.Request(url, method="HEAD")
+        with urllib.request.urlopen(request, timeout=15) as response:
+            return response.status == 200, response.status
+    except Exception:
+        return False, None
+
+
+def run_input(args: list[str], data: str, timeout: int = 60) -> tuple[int, str]:
+    try:
+        p = subprocess.run(
+            args,
+            input=data,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+        )
+        return p.returncode, (p.stdout or p.stderr or "").strip()
+    except subprocess.TimeoutExpired:
+        return 124, "timeout"
+    except OSError as exc:
+        return 127, type(exc).__name__
 
 
 def latest_json_from_journal(unit: str) -> dict | None:
@@ -83,6 +109,37 @@ def main() -> int:
     health_ok, health = get_json("http://127.0.0.1:8000/api/health")
     ready_ok, ready = get_json("http://127.0.0.1:8000/api/health/ready")
     public_ok, public = get_json("https://ejc.depaulateixeira.adv.br/api/health")
+    frontend_ok, frontend_status = get_status("https://ejc.depaulateixeira.adv.br/")
+
+    rc_nginx, nginx_output = run(["nginx", "-t"])
+    rc_deploy_timer, deploy_timer = run(["systemctl", "is-active", "ejc-deploy-approved.timer"])
+    rc_restore_timer, restore_timer = run(["systemctl", "is-active", "ejc-restore-drill-offsite.timer"])
+
+    backup_probe: dict = {"ok": False, "problemas": ["sonda ausente"]}
+    backup_probe_path = APP_DIR / "scripts" / "backup" / "check_backup_health.py"
+    if backup_probe_path.is_file():
+        try:
+            probe_source = backup_probe_path.read_text(encoding="utf-8")
+            rc_backup, backup_raw = run_input(
+                ["docker", "exec", "-i", "ejc_backend", "python", "-"],
+                probe_source,
+                timeout=90,
+            )
+            parsed_backup = json.loads(backup_raw) if backup_raw else {}
+            if isinstance(parsed_backup, dict):
+                backup_probe = parsed_backup
+            if rc_backup != 0:
+                backup_probe["ok"] = False
+        except (OSError, json.JSONDecodeError) as exc:
+            backup_probe = {"ok": False, "problemas": [type(exc).__name__]}
+
+    disk = shutil.disk_usage(APP_DIR)
+    disk_used_percent = round((disk.used / disk.total) * 100, 2) if disk.total else 100.0
+    try:
+        disk_max_percent = float(os.getenv("EJC_DISK_MAX_PERCENT", "90"))
+    except ValueError:
+        disk_max_percent = 90.0
+    disk_ok = disk_used_percent < disk_max_percent
 
     rc_ps, ps_raw = run(["docker", "compose", "ps", "--format", "json"])
     containers = []
@@ -139,6 +196,12 @@ def main() -> int:
         "health_local": health_ok and health.get("status") == "ok",
         "readiness": ready_ok and ready.get("status") == "ready" and ready_blockers_ok,
         "health_public": public_ok and public.get("status") == "ok",
+        "frontend_public": frontend_ok and frontend_status == 200,
+        "nginx_config": rc_nginx == 0,
+        "backup_health": backup_probe.get("ok") is True,
+        "disk_space": disk_ok,
+        "deploy_timer": rc_deploy_timer == 0 and deploy_timer.strip() == "active",
+        "restore_timer": rc_restore_timer == 0 and restore_timer.strip() == "active",
         "containers": rc_ps == 0 and essential_ok,
         "alembic_head": rc_alembic == 0 and "(head)" in alembic,
         "restore_drill": (
@@ -158,6 +221,18 @@ def main() -> int:
         "checks": checks,
         "health": health,
         "readiness": ready,
+        "frontend_public": {"ok": frontend_ok, "status": frontend_status},
+        "nginx": {"ok": rc_nginx == 0, "result": nginx_output[-500:]},
+        "backup_health": backup_probe,
+        "disk": {
+            "used_percent": disk_used_percent,
+            "max_percent": disk_max_percent,
+            "ok": disk_ok,
+        },
+        "timers": {
+            "deploy": deploy_timer.strip(),
+            "restore": restore_timer.strip(),
+        },
         "containers": [
             {
                 "name": c.get("Name"),
