@@ -49,6 +49,7 @@ const preview = spawn(
   {
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env },
+    detached: process.platform !== "win32",
   },
 );
 
@@ -150,7 +151,21 @@ try {
   process.exitCode = 1;
 } finally {
   await browser?.close().catch(() => {});
-  preview.kill("SIGTERM");
-  await new Promise((resolve) => setTimeout(resolve, 300));
-  if (!preview.killed) preview.kill("SIGKILL");
+  if (preview.exitCode === null) {
+    try {
+      if (process.platform === "win32") preview.kill("SIGTERM");
+      else process.kill(-preview.pid, "SIGTERM");
+    } catch {
+      // processo já encerrado
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  if (preview.exitCode === null) {
+    try {
+      if (process.platform === "win32") preview.kill("SIGKILL");
+      else process.kill(-preview.pid, "SIGKILL");
+    } catch {
+      // processo já encerrado
+    }
+  }
 }
