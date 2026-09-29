@@ -1,0 +1,10 @@
+[Unit]
+Description=EJC read-only production observability probe
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/ejc/scripts/observe_production.sh
+Nice=10
+IOSchedulingClass=idle
