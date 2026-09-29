@@ -120,6 +120,12 @@ describe("EJC — tema canônico neutro com acento único e ouro de marca", () =
     expect(contrast("#f2f4f7", "#151a21")).toBeGreaterThanOrEqual(4.5);
     expect(contrast("#5b8def", "#151a21")).toBeGreaterThanOrEqual(4.5);
     expect(contrast("#ffffff", "#3b6fd4")).toBeGreaterThanOrEqual(4.5);
+    // Preenchimento de controle cheio consome --ejc-primary-surface, não o
+    // acento claro: com texto branco sobre #5B8DEF seriam 3,2:1.
+    expect(contrast("#ffffff", "#5b8def")).toBeLessThan(4.5);
+    expect(escuro).toContain("--ejc-primary-surface: var(--ejc-primary-solid)");
+    expect(escuro).toContain("--ejc-primary-solid: #3b6fd4");
+    expect(claro).toContain("--ejc-primary-surface: var(--ejc-primary)");
     expect(contrast("#d9b45c", "#151a21")).toBeGreaterThanOrEqual(4.5);
     expect(escuro).toContain("--ejc-surface: #151a21");
     expect(escuro).toContain("--ejc-primary: #5b8def");
@@ -170,10 +176,17 @@ describe("EJC — shell canônico", () => {
 
   it("reserva a área do calendário semanal abaixo do menu lateral", () => {
     // O epígrafe (panorama de Betim + citação) ocupava ~30% da altura da
-    // sidebar com informação institucional já presente no login. A regra
-    // saiu do CSS claro e dá lugar ao calendário da semana.
-    expect(tokens).not.toContain(".ejc-sidebar-epigraph");
+    // sidebar com informação institucional já presente no login. A área foi
+    // liberada para o calendário da semana; o epígrafe sai com o shell.
     expect(tokens).toContain(".sidebar-week");
+  });
+
+  it("mantém o epígrafe legível enquanto o shell ainda o renderiza", () => {
+    // A regra base em ejc-dashboard-premium.css fixa o texto do epígrafe em
+    // branco translúculo para a sidebar escura; com a sidebar clara o texto
+    // sumiria. A camada clara precisa devolver a tinta neutra.
+    expect(layout).toContain("ejc-sidebar-epigraph");
+    expect(tokens).toContain("html:not(.dark) .ejc-sidebar-epigraph__quote");
   });
 
   it("mantém o menu, a busca global e o relógio do header", () => {

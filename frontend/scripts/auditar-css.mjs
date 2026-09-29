@@ -40,21 +40,53 @@ function stripComments(css) {
 }
 
 /**
- * Cabeçalho de comentário escrito com barra invertida + "n" (dois bytes)
- * em vez de quebra de linha: o navegador lê o início de comentário e procura
- * o fim em qualquer byte posterior, o que engole TODO o arquivo seguinte.
- * Em 28/09/2026 isso desligou o tema claro inteiro de ejc-tokens.css sem
- * erro de build nem de lint. Detectar e reverter.
+ * Defeito de CSS observado em 28/09/2026: uma quebra de linha escrita como dois
+ * caracteres (barra invertida + n) no lugar do byte 0x0A. O navegador passa a
+ * ler o restante como parte do texto do comentário ou como parte do nome do
+ * seletor, e a regra desaparece sem erro de build, lint ou teste. O sintoma
+ * visto na produção foi um bloco inteiro de tema tratado como comentário.
  *
- * Nota: este próprio comentário descreve o defeito sem escrever a sequência,
- * porque o detector a encontraria aqui.
+ * A verificação cobre as duas posições: entre o início e o fim de um comentário
+ * (comentário que nunca fecha) e imediatamente depois do fim de um comentário
+ * normal (seletor contaminado). Este comentário descreve o defeito sem escrever
+ * a sequência, porque o detector a encontraria aqui.
  */
-function cabecalhosQuebrados(css) {
-  const padrao = /\/\*[^*]*\\n/g;
-  return [...css.matchAll(padrao)].map((match) => ({
-    index: match.index,
-    trecho: match[0].slice(0, 60),
-  }));
+function newlinesEscapados(css) {
+  const achados = [];
+  const abertura = /\/\*/g;
+  let m;
+  while ((m = abertura.exec(css)) !== null) {
+    const fim = css.indexOf("*/", m.index + 2);
+    if (fim === -1) {
+      achados.push({ index: m.index, trecho: css.slice(m.index, m.index + 60) });
+      break;
+    }
+    // Entre início e fecho: barra invertida + n (ou r) no corpo do comentário.
+    if (/[\\][nr]/.test(css.slice(m.index + 2, fim))) {
+      achados.push({ index: m.index, trecho: css.slice(m.index, m.index + 60) });
+    }
+    // Logo depois do fecho, sem quebra: seletor que começa com barra + n.
+    const depois = css.slice(fim + 2);
+    const branco = depois.match(/^\s*/)[0].length;
+    if (branco === 0) {
+      const token = depois.match(/^[^\s,{:;()[\]>+~*]+/);
+      if (token && token[0].length <= 2 && token[0].includes("\\")) {
+        achados.push({ index: m.index, trecho: css.slice(m.index, m.index + 60) });
+      }
+    }
+    abertura.lastIndex = fim + 2;
+  }
+  // Comentário sem fecho: o último início é maior que o último fim.
+  if (css.lastIndexOf("/*") > css.lastIndexOf("*/")) {
+    const i = css.lastIndexOf("/*");
+    achados.push({ index: i, trecho: css.slice(i, i + 60) });
+  }
+  // Sequência fora de comentário, no início de uma linha: quebra de linha
+  // escrita à mão no lugar do byte 0x0A.
+  for (const linha of css.matchAll(/^[^\S\n]*[\\][nr](?=[^\S\n]*$)/gm)) {
+    achados.push({ index: linha.index, trecho: JSON.stringify(linha[0]) });
+  }
+  return achados;
 }
 
 function collectVocabulary() {
@@ -152,7 +184,7 @@ function auditOrphans() {
       rules: rules.length,
       orphanRules: orphanRules.length,
       sample: orphanRules.slice(0, 5).map((rule) => rule.selector),
-      brokenComments: cabecalhosQuebrados(css),
+      brokenComments: newlinesEscapados(css),
     };
   });
 }
@@ -181,7 +213,7 @@ function verifyGovernance() {
     for (const item of broken) {
       for (const comment of item.brokenComments) {
         console.error(
-          `ERRO: ${item.file}: comentario com "\\n" literal na posicao ${comment.index} (${comment.trecho}) — engole o restante do arquivo.`,
+          `ERRO: ${item.file}: quebra de linha escrita como dois caracteres na posição ${comment.index} (${comment.trecho}) — o navegador descarta ou contamina a regra seguinte.`,
         );
       }
     }
