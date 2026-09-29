@@ -179,7 +179,20 @@ function ResultadoView({ data }: { data: any }) {
   return <span className="text-xs">{String(data)}</span>;
 }
 
-export default function RamoFerramenta({ f }: { f: FerramentaConfig }) {
+type CasoFerramenta = { id: string; titulo?: string | null };
+
+export default function RamoFerramenta({
+  f,
+  caseContext,
+}: {
+  f: FerramentaConfig;
+  /**
+   * undefined = fluxo global, pode usar o caso persistido;
+   * null = houve contexto explícito, mas ele não foi validado: não vincular;
+   * objeto = caso contextual já validado pelo backend em RamoBase.
+   */
+  caseContext?: CasoFerramenta | null;
+}) {
   const [vals, setVals] = useState<Record<string, any>>(() => {
     const init: Record<string, any> = {};
     f.campos.forEach((c) => {
@@ -203,7 +216,9 @@ export default function RamoFerramenta({ f }: { f: FerramentaConfig }) {
   // devolve `disponivel: true` e a tela degrada para o comportamento antigo
   // (botão habilitado + tratamento do 403).
   const { disponivel: exportacaoDisponivel } = useDemonstrativoDisponivel();
-  const casoAtivo = useCaseContext((state) => state.caso);
+  const casoPersistido = useCaseContext((state) => state.caso);
+  const casoAtivo =
+    caseContext === undefined ? casoPersistido : caseContext;
 
   const naoHomologada = f.homologada === false;
   const bloqueadaParaDocumento = naoHomologada || res?.homologada === false;
