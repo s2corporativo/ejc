@@ -1,84 +1,86 @@
 /* ══════════════════════════════════════════════════════════════════════════
-   EJC — TOKENS CANÔNICOS DO DESIGN SYSTEM "DE PAULA TEIXEIRA"
-   Fonte ÚNICA de identidade visual (PROMPT MESTRE — Reconstrução Visual
-   Canônica, seções 5 e 6). Importado por último em src/main.tsx: toda
-   definição aqui vence as gerações anteriores (index.css, ejc-reference-2026,
-   ejc-reference-systemwide, saas-ultra-v2, premium-shell) por cascade, e as
-   variáveis legadas passam a APONTAR para os tokens canônicos — nenhuma
-   geração antiga define mais cor própria.
+   EJC — TOKENS CANÔNICOS DO DESIGN SYSTEM
+   Fonte única da identidade visual: base neutra, tinta grafite, UMA cor de
+   ação (azul) e o ouro DPT reservado à marca (logo, filete de seção,
+   destaque editorial). Violeta é exclusivo de Inteligência Artificial;
+   verde/âmbar/vermelho/azul-claro são estado operacional.
 
-   Paleta extraída da referência visual aprovada pelo Titular (mockup
-   "EJC DePaula Teixeira Adv" 18/09/2026) e homologada em produção (#1708):
-   • VERDE PRINCIPAL  esmeralda profundo  #0a4132 (superfície institucional)
-   • VERDE PROFUNDO                       #04291f (fim de gradiente/hover down)
-   • VERDE DE SUPERFÍCIO                  #14503f (realce translúcido)
-   • OURO             #cfa961 · brilhante #eaca7f · profundo #a8873c
-   • OURO-TINTA       #8f7117 (única forma de ouro usável como TEXTO sobre
-                      branco — 4,6:1 AA; a8873c/cfa961 são só gráficos)
-   • FUNDO            ivory quente #f5f4ef · superfícies #ffffff/#faf9f5
-   • TEXTO            #1d2b26 (principal) · #66766f (secundário) · #93a29b
-   • BORDAS           #e2ded2 (quente) · forte #cfc9ba · hairline esmeralda
+   • PAPEL       #f6f7f9 · superfícies #ffffff / #f2f4f7 · borda #e4e7ec
+   • TINTA       #101828 (principal) · #475467 (secundária) · #667085 (sutil)
+   • AÇÃO        #1d4ed8 (7:1 com branco) · hover #1e40af · soft #eff4ff
+   • MARCA       #8f7117 (4,6:1, AA) · claro #c9a227 · profundo #6f5711
+   • IA          #7c3aed (violeta, só superfícies de inteligência)
+   • ESCURO      papel #0c0f14 · superfície #151a21 · ação #5b8def ·
+                marca #d9b45c
 
-   Exceções funcionais documentadas (não decorativas):
-   • --ejc-ai / violeta: reservado a superfícies de Inteligência Artificial.
-   • Cores de status (success/warning/danger/info): semântica operacional.
+   Estrutura do arquivo: literais em `:root` (fallback), alias das gerações
+   legadas, `.dark`, e o bloco `html:not(.dark)` com as regras de
+   apresentação do shell e do Início. Nenhuma regra de componente vive aqui.
    ══════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  /* ── 1. Tokens canônicos semânticos ──────────────────────────────────── */
-  --ejc-primary: #0a4132;
-  --ejc-primary-dark: #04291f;
-  --ejc-primary-hover: #0d4f3d;
-  --ejc-primary-soft: #14503f;
+  /* ── 1. Tokens canônicos semânticos ────────────────────────────────────
+     Base neutra + acento único (azul) + ouro DPT de marca. O bloco
+     `html:not(.dark)` no fim do arquivo repete estes mesmos valores para o
+     tema claro; o `.dark` troca só os literais de superfície, tinta e acento.
+     Este :root é o valor para telas sem JS e para o dark applied tarde. */
+  --ejc-primary: #1d4ed8;
+  --ejc-primary-dark: #1e40af;
+  --ejc-primary-hover: #1e40af;
+  --ejc-primary-soft: #eff4ff;
+  /* Texto sobre superfície de acento: branco (7:1 no claro, 4,8:1 no escuro) */
+  --ejc-primary-contrast: #ffffff;
 
-  --ejc-gold: #cfa961;
-  --ejc-gold-bright: #eaca7f;
-  --ejc-gold-deep: #a8873c;
-  --ejc-gold-soft: #f6eed9;
-  --ejc-gold-ink: #8f7117; /* ouro com contraste AA para texto/ação */
+  --ejc-gold: #8f7117;
+  --ejc-gold-bright: #c9a227;
+  --ejc-gold-deep: #6f5711;
+  --ejc-gold-soft: #f7f1dc;
+  --ejc-gold-ink: #8f7117; /* ouro com contraste AA para texto/destaque */
 
-  --ejc-background: #f5f4ef;
+  --ejc-background: #f6f7f9;
   --ejc-surface: #ffffff;
-  --ejc-surface-muted: #faf9f5;
+  --ejc-surface-muted: #f2f4f7;
   --ejc-surface-raised: #ffffff;
 
-  --ejc-border: #e2ded2;
-  --ejc-border-strong: #cfc9ba;
-  --ejc-hairline: rgba(12, 58, 45, 0.13);
+  --ejc-border: #e4e7ec;
+  --ejc-border-strong: #cdd3dc;
+  --ejc-hairline: rgba(16, 24, 40, 0.08);
 
-  --ejc-text: #1d2b26;
-  --ejc-text-secondary: #66766f;
-  --ejc-text-subtle: #93a29b;
-  --ejc-text-display: #10382c; /* tinta esmeralda dos títulos serifados */
+  --ejc-text: #101828;
+  --ejc-text-secondary: #475467;
+  --ejc-text-subtle: #667085;
+  --ejc-text-display: #101828; /* títulos serifados herdam a tinta principal */
 
-  --ejc-success: #17985a;
-  --ejc-success-soft: #eaf8f0;
-  --ejc-warning: #e89a1b;
-  --ejc-warning-soft: #fff7e8;
-  --ejc-danger: #df3f49;
-  --ejc-danger-soft: #fff0f1;
-  --ejc-info: #2f7dd1;
-  --ejc-info-soft: #edf5ff;
+  --ejc-success: #067647;
+  --ejc-success-soft: #ecfdf5;
+  --ejc-warning: #b54708;
+  --ejc-warning-soft: #fffaeb;
+  --ejc-danger: #b42318;
+  --ejc-danger-soft: #fef3f2;
+  --ejc-info: #175cd3;
+  --ejc-info-soft: #eff8ff;
+  --ejc-ai: #7c3aed;
+  --ejc-ai-soft: #f4f3ff;
 
-  --ejc-focus-ring: rgba(143, 113, 23, 0.65);
+  --ejc-focus-ring: rgba(29, 78, 216, 0.4);
 
   --ejc-shadow-sm:
-    0 1px 2px rgba(15, 35, 60, 0.025), 0 8px 24px -22px rgba(15, 35, 60, 0.32);
-  --ejc-shadow-md: 0 14px 36px rgba(23, 48, 39, 0.075);
-  --ejc-shadow-lg: 0 24px 58px rgba(18, 42, 34, 0.12);
+    0 1px 2px rgba(16, 24, 40, 0.03), 0 10px 30px -24px rgba(16, 24, 40, 0.3);
+  --ejc-shadow-md: 0 16px 40px rgba(16, 24, 40, 0.08);
+  --ejc-shadow-lg: 0 28px 70px rgba(16, 24, 40, 0.13);
 
   --ejc-radius-sm: 10px;
   --ejc-radius-md: 14px;
   --ejc-radius-lg: 18px;
   --ejc-radius-xl: 22px;
 
-  /* Paleta de gráficos — família esmeralda + ouro */
-  --ejc-chart-1: #0a4132;
-  --ejc-chart-2: #cfa961;
-  --ejc-chart-3: #eaca7f;
-  --ejc-chart-4: #a8873c;
-  --ejc-chart-5: #14503f;
-  --ejc-chart-6: #f6eed9;
+  /* Paleta de gráficos — acento, estados e neutros */
+  --ejc-chart-1: #1d4ed8;
+  --ejc-chart-2: #067647;
+  --ejc-chart-3: #b54708;
+  --ejc-chart-4: #7c3aed;
+  --ejc-chart-5: #0e9384;
+  --ejc-chart-6: #667085;
 
   /* ── 2. Tokens tipográficos (seção 6 do PROMPT MESTRE) ───────────────── */
   --ejc-font-serif:
@@ -118,8 +120,8 @@
   --ejc-legal: var(--ejc-primary);
   --ejc-action: var(--ejc-gold-ink);
   --ejc-bronze: var(--ejc-gold-ink);
-  --ejc-sidebar-top: #052b22;
-  --ejc-sidebar-bottom: #0a4132;
+  --ejc-sidebar-top: #ffffff;
+  --ejc-sidebar-bottom: #f8fafc;
   --ejc-shadow-soft: var(--ejc-shadow-sm);
 
   /* Geração ejc-reference-2026 (navy azul — geração morta, repintada) */
@@ -220,97 +222,116 @@
 /* ── 4. Tema escuro — apenas os literais canônicos mudam; os aliases
       var() das gerações legadas resolvem sozinhos para estes valores. ── */
 .dark {
-  --ejc-background: #14110a;
-  --ejc-surface: #1c180e;
-  --ejc-surface-muted: #1f1a10;
-  --ejc-surface-raised: #241e10;
+  --ejc-background: #0c0f14;
+  --ejc-surface: #151a21;
+  --ejc-surface-muted: #1c222b;
+  --ejc-surface-raised: #1f262f;
 
-  --ejc-border: rgba(255, 245, 230, 0.08);
-  --ejc-border-strong: rgba(255, 245, 230, 0.16);
-  --ejc-hairline: rgba(234, 202, 127, 0.16);
+  --ejc-border: rgba(255, 255, 255, 0.09);
+  --ejc-border-strong: rgba(255, 255, 255, 0.16);
+  --ejc-hairline: rgba(255, 255, 255, 0.12);
 
-  --ejc-text: #ede6da;
-  --ejc-text-secondary: #a89e8f;
-  --ejc-text-subtle: #7d7466;
-  --ejc-text-display: #eaca7f;
+  --ejc-text: #f2f4f7;
+  --ejc-text-secondary: #c3cad4;
+  --ejc-text-subtle: #98a2b3;
+  --ejc-text-display: #f2f4f7;
 
-  --ejc-gold-soft: rgba(212, 175, 55, 0.12);
-  --ejc-gold-bright: #e5ce7f;
+  --ejc-primary: #5b8def;   /* 5,4:1 sobre --ejc-surface: texto, links, ícones */
+  --ejc-primary-dark: #4a7ce0;
+  --ejc-primary-hover: #6f9bf5;
+  --ejc-primary-soft: rgba(91, 141, 239, 0.16);
+  /* O botão primário no escuro usa o tom mais escuro da família para manter
+     texto branco acima de 4,5:1; o acento claro fica para texto e ícones. */
+  --ejc-primary-contrast: #ffffff;
+  --ejc-primary-solid: #3b6fd4;  /* 4,8:1 com branco */
 
-  --ejc-focus-ring: rgba(229, 206, 127, 0.6);
+  --ejc-gold: #d9b45c;       /* 8,1:1 sobre --ejc-surface */
+  --ejc-gold-bright: #eaca7f;
+  --ejc-gold-deep: #c9a227;
+  --ejc-gold-soft: rgba(217, 180, 92, 0.14);
+  --ejc-gold-ink: #d9b45c;
+
+  --ejc-success: #47cd89;
+  --ejc-warning: #fdb022;
+  --ejc-danger: #f97066;
+  --ejc-info: #53b1fd;
+  --ejc-ai: #b692f6;
+  --ejc-ai-soft: rgba(182, 146, 246, 0.14);
+
+  --ejc-focus-ring: rgba(91, 141, 239, 0.55);
 
   --ejc-shadow-sm:
-    0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 22px -6px rgba(0, 0, 0, 0.42);
-  --ejc-shadow-md: 0 14px 36px rgba(0, 0, 0, 0.35);
-  --ejc-shadow-lg: 0 24px 58px rgba(0, 0, 0, 0.45);
+    0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 30px -24px rgba(0, 0, 0, 0.45);
+  --ejc-shadow-md: 0 16px 40px rgba(0, 0, 0, 0.5);
+  --ejc-shadow-lg: 0 28px 70px rgba(0, 0, 0, 0.6);
 
-  --ejc-sidebar-top: #042319;
-  --ejc-sidebar-bottom: #0a4132;
+  --ejc-sidebar-top: #0c0f14;
+  --ejc-sidebar-bottom: #151a21;
 
-  /* No escuro o verde profundo some sobre o card — troca com o ouro claro */
-  --ejc-chart-1: #eaca7f;
-  --ejc-chart-4: #14503f;
+  --ejc-chart-1: #5b8def;
+  --ejc-chart-4: #667085;
 }
 
-/* ==========================================================================\n   Tema claro canônico 28/09/2026 — base neutra + acentos vibrantes.\n   Integrado ao arquivo de tokens para respeitar o teto de camadas globais.\n   ========================================================================== */\n\n/* ==========================================================================
-   EJC — tema canônico Light Neutral + Vibrant Accents
-   2026-09-28
-
-   Objetivo:
-   - superfícies majoritariamente brancas/neutras;
-   - contraste alto e leitura rápida;
-   - cor vibrante apenas em ações, estados, foco e IA;
-   - preservar modo escuro, rotas, RBAC e regras de negócio.
+/* ==========================================================================
+   Tema claro canônico — base neutra + acento único (28/09/2026)
+   Base neutra, tinta grafite, UMA cor de ação (azul) e o ouro DPT reservado
+   à marca (logo, filete de seção, destaque editorial). Este bloco precisa
+   estar no topo do arquivo e FORA de comentário: o cabeçalho original trazia
+   uma barra invertida seguida de "n" no lugar da quebra de linha, o comentário
+   nunca fechou, e transformou tudo abaixo em comentário.
+   O teste LayoutReference.petroleum.contract.test.ts trava a estrutura.
    ========================================================================== */
 
 html:not(.dark) {
   /* Base neutra */
-  --ejc-background: #f7f8fb;
+  --ejc-background: #f6f7f9;
   --ejc-surface: #ffffff;
-  --ejc-surface-muted: #f8fafc;
+  --ejc-surface-muted: #f2f4f7;
   --ejc-surface-raised: #ffffff;
-  --ejc-border: #e5e7eb;
-  --ejc-border-strong: #cbd5e1;
+  --ejc-border: #e4e7ec;
+  --ejc-border-strong: #cdd3dc;
   --ejc-hairline: rgba(15, 23, 42, 0.08);
 
-  --ejc-text: #111827;
-  --ejc-text-secondary: #64748b;
-  --ejc-text-subtle: #94a3b8;
-  --ejc-dash-ink: #0f172a;
+  --ejc-text: #101828;
+  --ejc-text-secondary: #475467;
+  --ejc-text-subtle: #667085;
+  --ejc-dash-ink: var(--ejc-text);
 
   /* Primário estrutural neutro */
-  --ejc-primary: #111827;
-  --ejc-primary-dark: #030712;
-  --ejc-primary-hover: #1f2937;
-  --ejc-primary-soft: #334155;
+  --ejc-primary: #1d4ed8;
+  --ejc-primary-dark: #1e40af;
+  --ejc-primary-hover: #1e40af;
+  --ejc-primary-soft: #eff4ff;
+  --ejc-primary-contrast: #ffffff;
 
   /* Acento vibrante principal — mantém aliases legados "gold" sem quebrar CSS */
-  --ejc-gold: #2563eb;
-  --ejc-gold-bright: #3b82f6;
-  --ejc-gold-deep: #1d4ed8;
-  --ejc-gold-soft: #eff6ff;
-  --ejc-gold-ink: #1d4ed8;
+  --ejc-gold: #8f7117;
+  --ejc-gold-bright: #c9a227;
+  --ejc-gold-deep: #6f5711;
+  --ejc-gold-soft: #f7f1dc;
+  --ejc-gold-ink: #8f7117;
 
-  --ejc-success: #059669;
+  --ejc-success: #067647;
   --ejc-success-soft: #ecfdf5;
-  --ejc-warning: #d97706;
-  --ejc-warning-soft: #fffbeb;
-  --ejc-danger: #dc2626;
-  --ejc-danger-soft: #fef2f2;
-  --ejc-info: #2563eb;
-  --ejc-info-soft: #eff6ff;
+  --ejc-warning: #b54708;
+  --ejc-warning-soft: #fffaeb;
+  --ejc-danger: #b42318;
+  --ejc-danger-soft: #fef3f2;
+  --ejc-info: #175cd3;
+  --ejc-info-soft: #eff8ff;
 
-  --ejc-vibrant-blue: #2563eb;
+  /* IA: violeta, reservado a superficies de inteligencia. */
+  --ejc-ai: #7c3aed;
+  --ejc-ai-soft: #f5f3ff;
+  /* Acao e cor CHAPADA: sem gradiente no acento. Os nomes `gradient` e
+     `gradient-soft` seguem existindo porque as camadas legadas os usam
+     como plano de fundo; o valor passou a ser o acento solido. */
+  --ejc-vibrant-blue: #1d4ed8;
   --ejc-vibrant-violet: #7c3aed;
-  --ejc-vibrant-cyan: #06b6d4;
-  --ejc-vibrant-gradient: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
-  --ejc-vibrant-gradient-soft: linear-gradient(
-    135deg,
-    rgba(37, 99, 235, 0.1) 0%,
-    rgba(124, 58, 237, 0.08) 100%
-  );
+  --ejc-vibrant-gradient: #1d4ed8;
+  --ejc-vibrant-gradient-soft: #eff4ff;
 
-  --ejc-focus-ring: rgba(37, 99, 235, 0.35);
+  --ejc-focus-ring: rgba(29, 78, 216, 0.4);
   --ejc-sidebar-top: #ffffff;
   --ejc-sidebar-bottom: #f8fafc;
 
@@ -320,12 +341,12 @@ html:not(.dark) {
   --ejc-shadow-md: 0 16px 40px rgba(15, 23, 42, 0.08);
   --ejc-shadow-lg: 0 28px 70px rgba(15, 23, 42, 0.13);
 
-  --ejc-chart-1: #2563eb;
-  --ejc-chart-2: #7c3aed;
-  --ejc-chart-3: #06b6d4;
-  --ejc-chart-4: #059669;
-  --ejc-chart-5: #f59e0b;
-  --ejc-chart-6: #e11d48;
+  --ejc-chart-1: #1d4ed8;
+  --ejc-chart-2: #067647;
+  --ejc-chart-3: #b54708;
+  --ejc-chart-4: #7c3aed;
+  --ejc-chart-5: #0e9384;
+  --ejc-chart-6: #667085;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -338,7 +359,7 @@ html:not(.dark) .ejc-petroleum-shell {
 }
 
 html:not(.dark) .ejc-app-header {
-  border-color: rgba(148, 163, 184, 0.24) !important;
+  border-color: var(--ejc-border) !important;
   background: rgba(255, 255, 255, 0.94) !important;
   box-shadow: 0 8px 32px rgba(15, 23, 42, 0.04);
   backdrop-filter: blur(16px);
@@ -348,81 +369,130 @@ html:not(.dark) .ejc-header-search {
   border: 1px solid var(--ejc-border) !important;
   border-radius: 14px !important;
   background: #f8fafc !important;
-  color: #475569 !important;
+  color: var(--ejc-text-secondary) !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 html:not(.dark) .ejc-header-search:hover,
 html:not(.dark) .ejc-header-search:focus-visible {
-  border-color: rgba(37, 99, 235, 0.34) !important;
-  background: #ffffff !important;
+  border-color: var(--ejc-primary) !important;
+  background: var(--ejc-surface) !important;
 }
 
 html:not(.dark) .icon-btn {
   border-color: transparent !important;
-  color: #475569 !important;
+  color: var(--ejc-text-secondary) !important;
 }
 
 html:not(.dark) .icon-btn:hover {
-  background: #f1f5f9 !important;
-  color: #0f172a !important;
+  background: var(--ejc-surface-muted) !important;
+  color: var(--ejc-text) !important;
 }
 
 html:not(.dark) .sidebar-bronze {
   border-right: 1px solid var(--ejc-border) !important;
-  background: #ffffff !important;
+  background: var(--ejc-surface) !important;
   background-image: none !important;
-  color: #475569 !important;
+  color: var(--ejc-text) !important;
   box-shadow: 12px 0 38px rgba(15, 23, 42, 0.035);
 }
 
 html:not(.dark) .ejc-sidebar-brand {
-  border-bottom: 1px solid #eef2f7 !important;
-  background: #ffffff !important;
+  border-bottom: 1px solid var(--ejc-border) !important;
+  background: var(--ejc-surface) !important;
 }
 
 html:not(.dark) .ejc-sidebar-brand__copy strong {
-  color: #111827 !important;
+  color: var(--ejc-text) !important;
 }
 
 html:not(.dark) .ejc-sidebar-brand__copy small {
-  color: #94a3b8 !important;
+  color: var(--ejc-text-subtle) !important;
 }
 
 html:not(.dark) .sidebar-nav-item {
-  min-height: 42px;
-  border-radius: 12px !important;
-  color: #64748b !important;
-  font-weight: 560;
+  min-height: 40px;
+  border-radius: 10px !important;
+  color: var(--ejc-text-secondary) !important;
+  font-weight: 550;
 }
 
 html:not(.dark) .sidebar-nav-item:hover {
-  background: #f8fafc !important;
-  color: #0f172a !important;
+  background: var(--ejc-surface-muted) !important;
+  color: var(--ejc-text) !important;
 }
 
 html:not(.dark) .sidebar-nav-item.is-active {
-  background: var(--ejc-vibrant-gradient-soft) !important;
-  color: #1d4ed8 !important;
-  box-shadow: inset 3px 0 0 #2563eb;
+  background: var(--ejc-primary-soft) !important;
+  color: var(--ejc-primary) !important;
+  box-shadow: inset 3px 0 0 var(--ejc-primary);
 }
 
 html:not(.dark) .sidebar-nav-item.is-active svg {
-  color: #2563eb !important;
+  color: var(--ejc-primary) !important;
 }
 
-html:not(.dark) .ejc-sidebar-epigraph {
-  border-top-color: #eef2f7 !important;
-  background: #fafbfc !important;
+html:not(.dark) .sidebar-group-label {
+  padding: 0.25rem 0.75rem 0.375rem;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ejc-text-subtle) !important;
 }
 
-html:not(.dark) .ejc-sidebar-epigraph__quote {
-  color: #64748b !important;
+html:not(.dark) .sidebar-group-label:hover {
+  color: var(--ejc-text-secondary) !important;
+}
+
+html:not(.dark) .sidebar-tree {
+  border-color: transparent !important;
+}
+
+html:not(.dark) .sidebar-count {
+  background: var(--ejc-primary-soft) !important;
+  color: var(--ejc-primary) !important;
+}
+
+html:not(.dark) .sidebar-week {
+  border: 1px solid var(--ejc-border) !important;
+  background: var(--ejc-surface-muted) !important;
+}
+
+html:not(.dark) .sidebar-week__label {
+  color: var(--ejc-text-secondary) !important;
+}
+
+html:not(.dark) .sidebar-week__range {
+  color: var(--ejc-text-subtle) !important;
+}
+
+html:not(.dark) .sidebar-week__days button {
+  background: transparent !important;
+  color: var(--ejc-text-subtle) !important;
+}
+
+html:not(.dark) .sidebar-week__days button:hover {
+  background: var(--ejc-surface) !important;
+  color: var(--ejc-text) !important;
+}
+
+html:not(.dark) .sidebar-week__days li.has-event .sidebar-week__day-dot {
+  background: var(--ejc-primary) !important;
+}
+
+html:not(.dark) .sidebar-week__days li.is-today button {
+  background: var(--ejc-primary) !important;
+  color: var(--ejc-primary-contrast) !important;
+}
+
+html:not(.dark) .sidebar-week__days li.is-today .sidebar-week__day-dot {
+  background: var(--ejc-primary-contrast) !important;
 }
 
 html:not(.dark) .ejc-sidebar-contacts {
-  border-color: #eef2f7 !important;
-  background: #ffffff !important;
+  border-color: var(--ejc-border) !important;
+  background: var(--ejc-surface) !important;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -456,13 +526,13 @@ html:not(.dark) .ejc-dash__entry-option {
 
 html:not(.dark) .ejc-dash__entry-option:hover {
   transform: translateY(-1px);
-  border-color: rgba(37, 99, 235, 0.28);
+  border-color: var(--ejc-primary);
   box-shadow: var(--ejc-shadow-md);
 }
 
 html:not(.dark) .ejc-dash__entry-option > svg {
   width: 17px;
-  color: #94a3b8;
+  color: var(--ejc-text-subtle);
 }
 
 html:not(.dark) .ejc-dash__entry-option-icon {
@@ -484,21 +554,21 @@ html:not(.dark) .ejc-dash__entry-option small {
 }
 
 html:not(.dark) .ejc-dash__entry-option strong {
-  color: #0f172a;
+  color: var(--ejc-text);
   font-size: 14px;
   font-weight: 750;
 }
 
 html:not(.dark) .ejc-dash__entry-option small {
   margin-top: 3px;
-  color: #64748b;
+  color: var(--ejc-text-secondary);
   font-size: 12px;
   line-height: 1.45;
 }
 
 html:not(.dark) .ejc-dash__entry-option.is-manual .ejc-dash__entry-option-icon {
-  background: #f1f5f9;
-  color: #0f172a;
+  background: var(--ejc-surface-muted);
+  color: var(--ejc-text);
 }
 
 html:not(.dark) .ejc-dash__entry-option.is-ai {
@@ -523,7 +593,7 @@ html:not(.dark) .ejc-dash__mode {
   width: max-content;
   border: 1px solid var(--ejc-border);
   border-radius: 999px;
-  background: #ffffff;
+  background: var(--ejc-surface);
   padding: 4px;
   box-shadow: var(--ejc-shadow-sm);
 }
@@ -533,7 +603,7 @@ html:not(.dark) .ejc-dash__mode button {
   align-items: center;
   gap: 7px;
   border-radius: 999px;
-  color: #64748b;
+  color: var(--ejc-text-secondary);
   padding: 8px 14px;
   font-weight: 650;
 }
@@ -541,7 +611,7 @@ html:not(.dark) .ejc-dash__mode button {
 html:not(.dark) .ejc-dash__mode button.is-active {
   background: var(--ejc-vibrant-gradient) !important;
   color: #ffffff !important;
-  box-shadow: 0 8px 22px rgba(37, 99, 235, 0.2);
+  box-shadow: 0 8px 22px rgba(29, 78, 216, 0.2);
 }
 
 html:not(.dark) .ejc-dash__entry {
@@ -575,31 +645,31 @@ html:not(.dark) .ejc-dash__entry-icon {
 }
 
 html:not(.dark) .ejc-dash__entry-kicker {
-  color: #2563eb !important;
+  color: var(--ejc-primary) !important;
   font-weight: 750;
   letter-spacing: 0.08em;
 }
 
 html:not(.dark) .ejc-modern-scope .ejc-dash__entry-copy h1,
 html:not(.dark) .ejc-modern-scope .ejc-dash__entry-copy h2 {
-  color: #0f172a !important;
+  color: var(--ejc-text) !important;
 }
 
 html:not(.dark) .ejc-modern-scope .ejc-dash__entry-copy p {
-  color: #64748b !important;
+  color: var(--ejc-text-secondary) !important;
 }
 
 html:not(.dark) .ejc-dash__entry-body textarea {
-  border: 1px solid #dbe4f0 !important;
-  background: #f8fafc !important;
-  color: #0f172a !important;
+  border: 1px solid var(--ejc-border) !important;
+  background: var(--ejc-surface-muted) !important;
+  color: var(--ejc-text) !important;
   box-shadow: none !important;
 }
 
 html:not(.dark) .ejc-dash__entry-body textarea:focus {
-  border-color: rgba(37, 99, 235, 0.55) !important;
-  background: #ffffff !important;
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1) !important;
+  border-color: var(--ejc-primary) !important;
+  background: var(--ejc-surface) !important;
+  box-shadow: 0 0 0 4px var(--ejc-primary-soft) !important;
 }
 
 html:not(.dark)
@@ -611,19 +681,19 @@ html:not(.dark) .ejc-dash__entry-body .btn,
 html:not(.dark) .ejc-dash__entry-body button[class*="bg-primary"] {
   background: var(--ejc-vibrant-gradient) !important;
   color: #ffffff !important;
-  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.18);
+  box-shadow: 0 10px 24px rgba(29, 78, 216, 0.18);
 }
 
 html:not(.dark) .ejc-dash__entry-body [role="button"][aria-label*="documentos"] {
-  border-color: #dbe4f0 !important;
-  background: #f8fafc !important;
+  border-color: var(--ejc-border) !important;
+  background: var(--ejc-surface-muted) !important;
 }
 
 html:not(.dark)
   .ejc-dash__entry-body
   [role="button"][aria-label*="documentos"]:hover {
-  border-color: rgba(37, 99, 235, 0.4) !important;
-  background: #f3f7ff !important;
+  border-color: var(--ejc-primary) !important;
+  background: var(--ejc-primary-soft) !important;
 }
 
 html:not(.dark)
@@ -634,12 +704,12 @@ html:not(.dark)
   .ejc-dash__entry-body
   [role="button"][aria-label*="documentos"]
   svg {
-  color: #64748b !important;
+  color: var(--ejc-text-secondary) !important;
 }
 
 html:not(.dark) .ejc-dash__entry-body--plain {
-  border-color: #e2e8f0 !important;
-  background: rgba(248, 250, 252, 0.78);
+  border-color: var(--ejc-border) !important;
+  background: var(--ejc-surface-muted);
 }
 
 html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body--plain p {
@@ -660,13 +730,13 @@ html:not(.dark) .ejc-dash__panel,
 html:not(.dark) .ejc-dash__side > *,
 html:not(.dark) .ejc-modern-scope .card {
   border-color: rgba(148, 163, 184, 0.22) !important;
-  background: #ffffff !important;
+  background: var(--ejc-surface) !important;
   box-shadow: var(--ejc-shadow-sm) !important;
 }
 
 html:not(.dark) .ejc-dash__stat:hover,
 html:not(.dark) .ejc-dash__panel:hover {
-  border-color: rgba(37, 99, 235, 0.22) !important;
+  border-color: var(--ejc-primary) !important;
 }
 
 html:not(.dark) .ejc-dash__stat-icon {
@@ -675,19 +745,19 @@ html:not(.dark) .ejc-dash__stat-icon {
 }
 
 html:not(.dark) .ejc-dash__stat.is-dark {
-  border: 1px solid rgba(37, 99, 235, 0.2) !important;
+  border: 1px solid var(--ejc-primary) !important;
   background:
     linear-gradient(#ffffff, #ffffff) padding-box,
     var(--ejc-vibrant-gradient) border-box !important;
-  box-shadow: 0 14px 36px rgba(37, 99, 235, 0.08) !important;
+  box-shadow: 0 14px 36px rgba(29, 78, 216, 0.08) !important;
 }
 
 html:not(.dark) .ejc-dash__stat.is-dark strong {
-  color: #0f172a !important;
+  color: var(--ejc-text) !important;
 }
 
 html:not(.dark) .ejc-dash__stat.is-dark small {
-  color: #64748b !important;
+  color: var(--ejc-text-secondary) !important;
 }
 
 html:not(.dark) .ejc-dash__stat.is-dark .ejc-dash__stat-icon {
@@ -696,13 +766,13 @@ html:not(.dark) .ejc-dash__stat.is-dark .ejc-dash__stat-icon {
 }
 
 html:not(.dark) .ejc-dash__stat.is-dark .ejc-dash__stat-chev {
-  border-color: #dbe4f0 !important;
-  color: #64748b !important;
+  border-color: var(--ejc-border) !important;
+  color: var(--ejc-text-secondary) !important;
 }
 
 html:not(.dark) .ejc-dash__tabs {
   border-color: #e2e8f0 !important;
-  background: #f8fafc !important;
+  background: var(--ejc-surface-muted) !important;
 }
 
 html:not(.dark) .ejc-dash__tabs button.is-active {
@@ -713,18 +783,18 @@ html:not(.dark) .ejc-dash__tabs button.is-active {
 html:not(.dark) .ejc-dash__panel-more,
 html:not(.dark) a[class*="text-primary"],
 html:not(.dark) button[class*="text-primary"] {
-  color: #2563eb !important;
+  color: var(--ejc-primary) !important;
 }
 
 html:not(.dark) .ejc-dash__date-filter {
-  border-color: #bfdbfe !important;
-  background: #eff6ff !important;
-  color: #1d4ed8 !important;
+  border-color: var(--ejc-primary) !important;
+  background: var(--ejc-primary-soft) !important;
+  color: var(--ejc-primary) !important;
 }
 
 html:not(.dark) .ejc-dash__timeline button:hover,
 html:not(.dark) .ejc-dash__cases button:hover {
-  background: #f8fafc !important;
+  background: var(--ejc-surface-muted) !important;
 }
 
 html:not(.dark) .ejc-dash__case-chip.is-green {
@@ -733,13 +803,13 @@ html:not(.dark) .ejc-dash__case-chip.is-green {
 }
 
 html:not(.dark) .ejc-dash__case-chip.is-gold {
-  background: #eff6ff !important;
-  color: #1d4ed8 !important;
+  background: var(--ejc-primary-soft) !important;
+  color: var(--ejc-primary) !important;
 }
 
 html:not(.dark) .ejc-dash__case-chip.is-gray {
-  background: #f1f5f9 !important;
-  color: #64748b !important;
+  background: var(--ejc-surface-muted) !important;
+  color: var(--ejc-text-secondary) !important;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -749,31 +819,31 @@ html:not(.dark) .ejc-dash__case-chip.is-gray {
 html:not(.dark) .ejc-modern-scope input,
 html:not(.dark) .ejc-modern-scope select,
 html:not(.dark) .ejc-modern-scope textarea {
-  border-color: #dbe4f0;
+  border-color: var(--ejc-border);
 }
 
 html:not(.dark) .ejc-modern-scope input:focus,
 html:not(.dark) .ejc-modern-scope select:focus,
 html:not(.dark) .ejc-modern-scope textarea:focus {
-  border-color: rgba(37, 99, 235, 0.55);
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+  border-color: var(--ejc-primary);
+  box-shadow: 0 0 0 4px var(--ejc-primary-soft);
 }
 
 html:not(.dark) .ejc-modern-scope .btn-primary,
 html:not(.dark) .ejc-modern-scope button[class*="bg-primary-"] {
   border-color: transparent !important;
-  background: #111827 !important;
+  background: var(--ejc-primary) !important;
   color: #ffffff !important;
 }
 
 html:not(.dark) .ejc-modern-scope .btn-primary:hover,
 html:not(.dark) .ejc-modern-scope button[class*="bg-primary-"]:hover {
-  background: #1f2937 !important;
+  background: var(--ejc-primary-hover) !important;
 }
 
 /* Foco acessível e consistente */
 html:not(.dark) :focus-visible {
-  outline-color: #2563eb;
+  outline-color: var(--ejc-primary);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -796,6 +866,113 @@ html:not(.dark) :focus-visible {
   html:not(.dark) .ejc-dash__mode button {
     flex: 1 1 0;
     justify-content: center;
+  }
+}
+
+/* ── Calendário da semana na barra lateral ───────────────────────────────
+   Fica abaixo do menu, acima do rodapé: 7 dias em uma linha, hoje em
+   acento, ponto sob o dia com compromisso. Estrutura em qualquer tema;
+   cor só nos blocos `html:not(.dark)` acima e no `.dark` do index.css. */
+.sidebar-week {
+  margin: 0.5rem 0.75rem 0.75rem;
+  padding: 0.75rem 0.625rem 0.625rem;
+  border: 1px solid var(--ejc-border);
+  border-radius: var(--ejc-radius-md);
+  background: var(--ejc-surface-muted);
+}
+
+.sidebar-week__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 0.25rem 0.5rem;
+}
+
+.sidebar-week__label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.sidebar-week__range {
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-week__days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sidebar-week__days button {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 38px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  font-family: var(--ejc-font-sans);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.sidebar-week__day {
+  font-size: 11px;
+  font-weight: 700;
+  color: inherit;
+}
+
+.sidebar-week__day-dot {
+  width: 4px;
+  height: 4px;
+  margin-top: 3px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.sidebar-week__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.625rem;
+  padding: 0.5rem 0.25rem 0;
+  border-top: 1px solid var(--ejc-border);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ejc-text-secondary);
+}
+
+.sidebar-week__foot .dot {
+  width: 6px;
+  height: 6px;
+  margin-left: 0.4rem;
+  border-radius: 999px;
+}
+
+.sidebar-week__foot .dot:first-child {
+  margin-left: 0;
+}
+
+.dot-danger {
+  background: var(--ejc-danger);
+}
+.dot-info {
+  background: var(--ejc-info);
+}
+.dot-warn {
+  background: var(--ejc-warning);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-week__days button {
+    transition: none;
   }
 }
 

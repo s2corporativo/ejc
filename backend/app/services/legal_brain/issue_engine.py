@@ -21,6 +21,10 @@ class _IssueRule:
     risks: tuple[str, ...]
     transversal: bool = False
     stems: tuple[str, ...] = ()
+    # Expressões multi-termo (posse/ausência/qualidade de prova) casadas sobre o
+    # texto normalizado como sequência, para reconhecer linguagem probatória
+    # que não aparece como substantivo isolado (ex.: "não possui contrato").
+    phrases: tuple[str, ...] = ()
 
 
 def _norm(value: str | None) -> str:
@@ -48,6 +52,15 @@ def _matches_stem(text: str, stem: str) -> bool:
     if not token:
         return False
     return re.search(rf"(?<!\w){re.escape(token)}\w*", text) is not None
+
+
+def _matches_phrase(text: str, phrase: str) -> bool:
+    """Casa uma expressão multi-termo como sequência de palavras inteiras."""
+
+    token = _norm(phrase)
+    if not token:
+        return False
+    return re.search(rf"(?<!\w){re.escape(token)}(?!\w)", text) is not None
 
 
 _RULES: tuple[_IssueRule, ...] = (
@@ -194,6 +207,55 @@ _RULES: tuple[_IssueRule, ...] = (
             "mencionar documento inexistente",
             "não antecipar prova adversa",
         ),
+        # Expressões probatórias: posse, ausência e limitação de documento.
+        # Reconhecem a linguagem em que o caso descreve o que tem e o que não
+        # tem, que é exatamente a questão de ônus e lacunas. Substantivos
+        # isolados (prova, documento, laudo) já são cobertos por keywords.
+        phrases=(
+            "possui contrato",
+            "possui documento",
+            "possui documentos",
+            "possui extrato",
+            "possui extratos",
+            "possui protocolo",
+            "possui comprovante",
+            "possui comprovantes",
+            "possui apolice",
+            "possui memorial",
+            "nao possui contrato",
+            "nao possui documento",
+            "nao possui documentos",
+            "nao possui extrato",
+            "nao possui extratos",
+            "nao possui protocolo",
+            "nao possui comprovante",
+            "nao possui apolice",
+            "nao ha contrato",
+            "nao ha documento",
+            "nao ha documentos",
+            "nao ha extrato",
+            "nao ha protocolo",
+            "nao ha comprovante",
+            "sem contrato",
+            "sem documento",
+            "sem documentos",
+            "sem extrato",
+            "sem protocolo",
+            "sem comprovante",
+            "nao apresentou contrato",
+            "nao apresentou documento",
+            "nao apresentou documentos",
+            "nao apresentou prova",
+            "nao anexou",
+            "nao juntou",
+            "faltam documentos",
+            "faltam provas",
+            "memoria de amortizacao",
+            "documento que",
+            "documentos que",
+            "comprovante de",
+            "comprovantes de",
+        ),
     ),
 )
 
@@ -223,7 +285,10 @@ def identify_legal_issues(
         matched_stems = tuple(
             stem for stem in rule.stems if _matches_stem(normalized, stem)
         )
-        matched = matched_keywords + matched_stems
+        matched_phrases = tuple(
+            phrase for phrase in rule.phrases if _matches_phrase(normalized, phrase)
+        )
+        matched = matched_keywords + matched_stems + matched_phrases
         if not matched:
             continue
         found.append(
