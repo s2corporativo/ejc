@@ -10,7 +10,7 @@
  *
  * A detecção de órfãos é apenas informativa: classes montadas dinamicamente podem
  * gerar falso positivo. O gate bloqueante atua sobre a governança das camadas
- * globais, sobre a ordem do cascade e sobre comentários quebrados, que são
+ * globais, sobre a ordem do cascade e sobre quebras escapadas, que são
  * determinísticos.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -40,21 +40,118 @@ function stripComments(css) {
 }
 
 /**
- * Cabeçalho de comentário escrito com barra invertida + "n" (dois bytes)
- * em vez de quebra de linha: o navegador lê o início de comentário e procura
- * o fim em qualquer byte posterior, o que engole TODO o arquivo seguinte.
- * Em 28/09/2026 isso desligou o tema claro inteiro de ejc-tokens.css sem
- * erro de build nem de lint. Detectar e reverter.
+ * Localizador de quebras de linha escritas como dois caracteres.
  *
- * Nota: este próprio comentário descreve o defeito sem escrever a sequência,
- * porque o detector a encontraria aqui.
+ * Defeito observado em 28/09/2026: uma quebra de linha foi gravada como barra
+ * invertida + n no lugar do byte 0x0A. O navegador não a trata como quebra e
+ * o arquivo passa a ser lido de outra forma: no caso observado, o bloco inteiro
+ * de um tema virou texto de comentário e nenhuma regra dele foi aplicada, sem
+ * erro de build, lint ou teste. O sintoma no CI foi o log do Woodpecker
+ * "ignoring hook", não o build.
+ *
+ * A sequência é armadilhosa em CSS legítimo (escape de identificador, barra de
+ * continuação de string, delimitadores dentro de literais), então só é
+ * Reportada quando age como separador de linha:
+ *   (a) comentário que nunca fecha: o resto do arquivo é comentário;
+ *   (b) sequência imediatamente depois de um comentário que fecha na mesma
+ *       linha, sem nada entre eles: ela vira parte do seletor seguinte;
+ *   (c) sequência sozinha na linha;
+ *   (d) sequência no fim de um valor seguida de chave de fechamento: sobrou
+ *       uma declaração de dentro de um comentário engolido.
+ *
+ * `scripts/auditar-css.selftest.mjs` exercita os quatro casos, folhas
+ * limpas e o gate; qualquer divergência faz o autoteste sair com 1.
  */
-function cabecalhosQuebrados(css) {
-  const padrao = /\/\*[^*]*\\n/g;
-  return [...css.matchAll(padrao)].map((match) => ({
-    index: match.index,
-    trecho: match[0].slice(0, 60),
-  }));
+const NL = String.fromCharCode(10);
+const BARRA = String.fromCharCode(92);
+
+let stringsInicio = 0;
+
+/**
+ * Varre o CSS localizando comentários reais e strings, ignorando
+ * delimitadores dentro de literais (ex.: `content: "/*"`), que são texto
+ * válido e não sintaxe de comentário. Devolve intervalos [inicio, fim),
+ * com fim = -1 para comentário nunca fechado.
+ */
+function mapearComentariosEStrings(css) {
+  const comentarios = [];
+  const strings = [];
+  let emString = null; // '"' ou "'"
+  let aberto = -1;
+  for (let i = 0; i < css.length; i += 1) {
+    const c = css[i];
+    if (emString) {
+      if (c === "\\") i += 1; // consome escape (\" ou \\\\)
+      else if (c === emString) {
+        strings.push({ inicio: stringsInicio, fim: i + 1 });
+        emString = null;
+      }
+      continue;
+    }
+    if (aberto >= 0) {
+      if (c === "*" && css[i + 1] === "/") {
+        comentarios.push({ inicio: aberto, fim: i + 2 });
+        aberto = -1;
+        i += 1;
+      }
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      emString = c;
+      stringsInicio = i;
+    } else if (c === "/" && css[i + 1] === "*") {
+      aberto = i;
+      i += 1;
+    }
+  }
+  if (aberto >= 0) comentarios.push({ inicio: aberto, fim: -1 });
+  return { comentarios, strings };
+}
+
+/** `indice` está dentro de algum intervalo de `lista`? */
+function dentroDe(intervalos, indice) {
+  return intervalos.some(
+    (r) => indice > r.inicio && (r.fim === -1 || indice < r.fim),
+  );
+}
+
+function newlinesEscapados(css) {
+  const achados = [];
+  const add = (i) =>
+    achados.push({
+      index: i,
+      trecho: JSON.stringify(css.slice(Math.max(0, i - 20), i + 20)),
+    });
+
+  const { comentarios, strings } = mapearComentariosEStrings(css);
+
+  // (a) comentário que nunca fecha: o resto do arquivo é comentário.
+  const naoFechado = comentarios.find((r) => r.fim === -1);
+  if (naoFechado) {
+    achados.push({
+      index: naoFechado.inicio,
+      trecho: css.slice(naoFechado.inicio, naoFechado.inicio + 60),
+    });
+    return achados;
+  }
+
+  const sequencia = new RegExp(BARRA + BARRA + "[nr]", "g");
+  for (const m of css.matchAll(sequencia)) {
+    const i = m.index;
+    // Dentro de comentário é texto; dentro de string é escape válido (ex.:
+    // `content: "a\\nb"`). Nenhum dos dois é a quebra gravada como 2 bytes.
+    if (dentroDe(comentarios, i) || dentroDe(strings, i)) continue;
+    const inicioLinha = css.lastIndexOf(NL, i) + 1;
+    const fimLinha = css.indexOf(NL, i);
+    const linha = css.slice(inicioLinha, fimLinha === -1 ? css.length : fimLinha);
+    const antes = css.slice(0, i);
+    const depois = css.slice(i + 2);
+    if (antes.endsWith("*/") && antes.slice(antes.lastIndexOf("*/") + 2).trim() === "")
+      add(i); // (b)
+    else if (linha.trim() === BARRA + linha.trim().slice(1)) add(i); // (c)
+    else if (/^\s*\}/.test(depois)) add(i); // (d)
+  }
+  return achados;
 }
 
 function collectVocabulary() {
@@ -152,7 +249,7 @@ function auditOrphans() {
       rules: rules.length,
       orphanRules: orphanRules.length,
       sample: orphanRules.slice(0, 5).map((rule) => rule.selector),
-      brokenComments: cabecalhosQuebrados(css),
+      brokenComments: newlinesEscapados(css),
     };
   });
 }
@@ -181,7 +278,7 @@ function verifyGovernance() {
     for (const item of broken) {
       for (const comment of item.brokenComments) {
         console.error(
-          `ERRO: ${item.file}: comentario com "\\n" literal na posicao ${comment.index} (${comment.trecho}) — engole o restante do arquivo.`,
+          `ERRO: ${item.file}: quebra de linha escrita como dois caracteres na posição ${comment.index} (${comment.trecho}) — o navegador descarta ou contamina a regra seguinte.`,
         );
       }
     }
