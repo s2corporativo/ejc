@@ -69,7 +69,14 @@ export const CASE_NAV_SECTIONS: readonly CaseNavSection[] = [
     tab: "documentos",
     icon: FileStack,
     descricao: "Documentos, peças, provas, contratos e procurações do caso.",
-    tabs: ["documentos", "pecas", "provas", "contratos", "procuracoes", "dataroom"],
+    tabs: [
+      "documentos",
+      "pecas",
+      "provas",
+      "contratos",
+      "procuracoes",
+      "dataroom",
+    ],
   },
   {
     label: "Estratégia",

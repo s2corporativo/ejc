@@ -38,12 +38,15 @@ const DOC_SEM_TEXTO = { id: "d2", titulo: "PDF digitalizado sem OCR" };
 const DOC_SO_COM_PREVIA = {
   id: "d4",
   titulo: "Lei 8.078/1990 — CDC",
-  previa_texto: "Art. 42. Na cobrança de débitos, o consumidor inadimplente "
-    + "não será exposto a ridículo, nem submetido a constrangimento.",
+  previa_texto:
+    "Art. 42. Na cobrança de débitos, o consumidor inadimplente " +
+    "não será exposto a ridículo, nem submetido a constrangimento.",
   previa_truncada: true,
 };
 
-function abrir(props: Partial<Parameters<typeof RevisaoConhecimentoDialog>[0]> = {}) {
+function abrir(
+  props: Partial<Parameters<typeof RevisaoConhecimentoDialog>[0]> = {},
+) {
   return render(
     <RevisaoConhecimentoDialog
       docId="d1"
@@ -57,7 +60,8 @@ function abrir(props: Partial<Parameters<typeof RevisaoConhecimentoDialog>[0]> =
 
 const botao = (nome: RegExp) =>
   screen.getByRole("button", { name: nome }) as HTMLButtonElement;
-const notas = () => screen.getByLabelText("Notas da revisão") as HTMLTextAreaElement;
+const notas = () =>
+  screen.getByLabelText("Notas da revisão") as HTMLTextAreaElement;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -70,7 +74,9 @@ describe("aprovação sem texto visível", () => {
     abrir({ docId: "d2" });
     await screen.findByText("PDF digitalizado sem OCR");
 
-    fireEvent.change(notas(), { target: { value: "documento antigo do acervo" } });
+    fireEvent.change(notas(), {
+      target: { value: "documento antigo do acervo" },
+    });
     expect(botao(/Aprovar/).disabled).toBe(true);
 
     fireEvent.click(screen.getByRole("checkbox"));
@@ -153,11 +159,14 @@ describe("registrarRevisaoConhecimento", () => {
 
     expect(mockApi.patch).not.toHaveBeenCalled();
     expect(mockApi.post).toHaveBeenCalledTimes(1);
-    expect(mockApi.post).toHaveBeenCalledWith("/rag/governanca/docs/d1/revisar", {
-      aprovado: true,
-      notas: "ementa conferida na fonte oficial",
-      confidence_level: "alta",
-    });
+    expect(mockApi.post).toHaveBeenCalledWith(
+      "/rag/governanca/docs/d1/revisar",
+      {
+        aprovado: true,
+        notas: "ementa conferida na fonte oficial",
+        confidence_level: "alta",
+      },
+    );
   });
 
   it("omite confidence_level quando o chamador não o informa", async () => {
@@ -166,10 +175,13 @@ describe("registrarRevisaoConhecimento", () => {
       decisao: "rejeitar",
       notas: "superado por súmula posterior",
     });
-    expect(mockApi.post).toHaveBeenCalledWith("/rag/governanca/docs/d1/revisar", {
-      aprovado: false,
-      notas: "superado por súmula posterior",
-    });
+    expect(mockApi.post).toHaveBeenCalledWith(
+      "/rag/governanca/docs/d1/revisar",
+      {
+        aprovado: false,
+        notas: "superado por súmula posterior",
+      },
+    );
   });
 });
 

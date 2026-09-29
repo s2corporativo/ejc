@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 const DIR = dirname(fileURLToPath(import.meta.url));
 const fonte = readFileSync(join(DIR, "TesesVinculadasPanel.tsx"), "utf-8");
 const aba = readFileSync(join(DIR, "TabPecas.tsx"), "utf-8");
+const texto = fonte.replace(/\s+/g, " ");
 
 describe("Peças — Banco de Teses canônico no contexto do caso", () => {
   it("usa somente a rota canônica de teses já vinculadas ao caso", () => {
@@ -16,18 +17,18 @@ describe("Peças — Banco de Teses canônico no contexto do caso", () => {
   });
 
   it("não injeta automaticamente tese na peça nem cria vínculo", () => {
-    expect(fonte).toContain("não injeta automaticamente estas teses na peça");
-    expect(fonte).toContain("o EJC não cria vínculo automático");
-    expect(fonte).toContain("Esta tela não oferece ação de vínculo");
+    expect(texto).toContain("não injeta automaticamente estas teses na peça");
+    expect(texto).toContain("o EJC não cria vínculo automático");
+    expect(texto).toContain("Esta tela não oferece ação de vínculo");
     expect(fonte).not.toContain("api.post(");
     expect(fonte).not.toContain("api.patch(");
   });
 
   it("expõe contrargumento e exige conferência de vigência e fonte oficial", () => {
-    expect(fonte).toContain("Contrargumento previsível cadastrado");
-    expect(fonte).toContain("confira vigência, inteiro teor e");
-    expect(fonte).toContain("fonte oficial");
-    expect(fonte).toContain("a decisão jurídica continua humana");
+    expect(texto).toContain("Contrargumento previsível cadastrado");
+    expect(texto).toContain("confira vigência, inteiro teor e");
+    expect(texto).toContain("fonte oficial");
+    expect(texto).toContain("a decisão jurídica continua humana");
   });
 
   it("mantém inteiro teor visível e diferencia teses não ativas", () => {
@@ -38,7 +39,9 @@ describe("Peças — Banco de Teses canônico no contexto do caso", () => {
   });
 
   it("formata histórico pelas duas convenções canônicas", () => {
-    expect(fonte).toContain('import { fmtTaxaSucesso } from "../../utils/formato"');
+    expect(fonte).toContain(
+      'import { fmtTaxaSucesso } from "../../utils/formato"',
+    );
     expect(fonte).toContain("fmtTaxaSucesso(tese.taxa_sucesso)");
     expect(fonte).not.toContain("tese.taxa_sucesso * 100");
   });

@@ -122,14 +122,15 @@ function TeseCard({ tese }: { tese: TeseFiscal }) {
             </span>
           </div>
           <p className="text-[10px] text-slate-500">
-            Estimativa matemática preliminar; não equivale a crédito reconhecido,
-            elegível ou recuperável.
+            Estimativa matemática preliminar; não equivale a crédito
+            reconhecido, elegível ou recuperável.
           </p>
         </div>
       ) : (
         <p className="mt-3 text-xs text-slate-500">
           <b>Radar sem compatibilidade técnica:</b>{" "}
-          {tese.motivo_inaplicavel || "sem elementos suficientes nas notas enviadas."}
+          {tese.motivo_inaplicavel ||
+            "sem elementos suficientes nas notas enviadas."}
         </p>
       )}
 
@@ -261,10 +262,10 @@ export default function TributarioFiscal() {
         </h2>
       </div>
       <p className="text-xs text-slate-500 mb-3">
-        Envie os XMLs de NF-e para identificar sinais técnicos e estimar grandezas
-        matemáticas associadas a hipóteses tributárias. O resultado não reconhece
-        crédito, elegibilidade ou prescrição e exige validação jurídica, fiscal e
-        contábil antes de qualquer medida.
+        Envie os XMLs de NF-e para identificar sinais técnicos e estimar
+        grandezas matemáticas associadas a hipóteses tributárias. O resultado
+        não reconhece crédito, elegibilidade ou prescrição e exige validação
+        jurídica, fiscal e contábil antes de qualquer medida.
       </p>
 
       <div className="space-y-3">
@@ -352,8 +353,8 @@ export default function TributarioFiscal() {
               ))}
             </select>
             <p className="text-[10px] text-slate-400 mt-1">
-              Regime informado para o período; a conclusão depende da documentação
-              fiscal/contábil efetivamente validada.
+              Regime informado para o período; a conclusão depende da
+              documentação fiscal/contábil efetivamente validada.
             </p>
           </div>
           <button
@@ -379,7 +380,8 @@ export default function TributarioFiscal() {
         <div className="mt-5 space-y-3">
           <div className="rounded-xl border border-gold bg-gold-50 p-4">
             <div className="text-xs font-bold text-gold-700 uppercase tracking-wide">
-              Estimativa matemática preliminar — não equivale a crédito reconhecido
+              Estimativa matemática preliminar — não equivale a crédito
+              reconhecido
             </div>
             <div className="text-xl font-bold text-navy mt-1">
               {fmtBRL(res.total_estimado)}
@@ -462,7 +464,9 @@ export default function TributarioFiscal() {
                     <th className="py-1 pr-3 font-semibold">Nº</th>
                     <th className="py-1 pr-3 font-semibold">Emissão</th>
                     <th className="py-1 pr-3 font-semibold">Emitente</th>
-                    <th className="py-1 pr-3 font-semibold text-right">Total</th>
+                    <th className="py-1 pr-3 font-semibold text-right">
+                      Total
+                    </th>
                     <th className="py-1 pr-3 font-semibold text-right">
                       ICMS destacado
                     </th>

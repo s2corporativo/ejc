@@ -16,15 +16,32 @@ import { PageHeader, Spinner } from "../components/UI";
 import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
 import { MENSAGEM_IA_NAO_ATIVADA, useIaStatus } from "../lib/iaStatus";
 
-type Tool = "pesquisa" | "resumir" | "traduzir" | "minuta" | "manus" | "especialista";
+type Tool =
+  "pesquisa" | "resumir" | "traduzir" | "minuta" | "manus" | "especialista";
 type ProviderIA = "auto" | "groq" | "maritaca" | "anthropic" | "ollama";
 
 const PROVIDERS: Array<{ value: ProviderIA; label: string; desc: string }> = [
-  { value: "auto", label: "Automático", desc: "Groq no cotidiano; Maritaca em leitura, análise e pesquisa." },
+  {
+    value: "auto",
+    label: "Automático",
+    desc: "Groq no cotidiano; Maritaca em leitura, análise e pesquisa.",
+  },
   { value: "groq", label: "Groq", desc: "Tarefas corriqueiras e rápidas." },
-  { value: "maritaca", label: "Maritaca", desc: "Leitura, análise, raciocínio e pesquisa jurídica." },
-  { value: "anthropic", label: "Claude", desc: "Somente quando solicitado explicitamente." },
-  { value: "ollama", label: "Local", desc: "IA local quando habilitada; indicado para sigilo reforçado." },
+  {
+    value: "maritaca",
+    label: "Maritaca",
+    desc: "Leitura, análise, raciocínio e pesquisa jurídica.",
+  },
+  {
+    value: "anthropic",
+    label: "Claude",
+    desc: "Somente quando solicitado explicitamente.",
+  },
+  {
+    value: "ollama",
+    label: "Local",
+    desc: "IA local quando habilitada; indicado para sigilo reforçado.",
+  },
 ];
 
 // Instrução do próprio usuário (não é system prompt): a capacidade `conversar`
@@ -35,18 +52,19 @@ const PREFIXO_TRADUZIR =
 
 // capacidade → limites do backend. `minuta` compõe tema + fatos em UMA
 // mensagem, então o contador vale para o texto composto.
-const LIMITES: Record<Tool, { min: number; max: number; capacidade: string }> = {
-  pesquisa: { min: 3, max: 12000, capacidade: "conversar" },
-  resumir: { min: 20, max: 200000, capacidade: "resumir" },
-  traduzir: {
-    min: 3,
-    max: 12000 - PREFIXO_TRADUZIR.length,
-    capacidade: "conversar",
-  },
-  minuta: { min: 5, max: 12000, capacidade: "redigir" },
-  manus: { min: 30, max: 16000, capacidade: "manus" },
-  especialista: { min: 30, max: 200000, capacidade: "analisar" },
-};
+const LIMITES: Record<Tool, { min: number; max: number; capacidade: string }> =
+  {
+    pesquisa: { min: 3, max: 12000, capacidade: "conversar" },
+    resumir: { min: 20, max: 200000, capacidade: "resumir" },
+    traduzir: {
+      min: 3,
+      max: 12000 - PREFIXO_TRADUZIR.length,
+      capacidade: "conversar",
+    },
+    minuta: { min: 5, max: 12000, capacidade: "redigir" },
+    manus: { min: 30, max: 16000, capacidade: "manus" },
+    especialista: { min: 30, max: 200000, capacidade: "analisar" },
+  };
 
 const MAX_TEMA = 2000;
 const MAX_FATOS = LIMITES.minuta.max - MAX_TEMA - 200; // folga do cabeçalho
@@ -164,7 +182,11 @@ export default function AssistenteIA() {
           provider,
         }));
       else if (tool === "especialista")
-        ({ data } = await api.post("/ia/analisar", { texto, perfil, provider }));
+        ({ data } = await api.post("/ia/analisar", {
+          texto,
+          perfil,
+          provider,
+        }));
       else
         ({ data } = await api.post("/ia/redigir", {
           texto: mensagemMinuta(),
@@ -265,35 +287,38 @@ export default function AssistenteIA() {
         ))}
       </div>
       {tool !== "manus" && (
-      <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <label className="label">Motor de IA</label>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {PROVIDERS.map((p) => (
-            <button
-              key={p.value}
-              type="button"
-              onClick={() => setProvider(p.value)}
-              title={p.desc}
-              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                provider === p.value
-                  ? "border-ai-600 bg-ai-600 text-white"
-                  : "border-slate-200 bg-white text-slate-600 hover:border-ai-300"
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
+        <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <label className="label">Motor de IA</label>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {PROVIDERS.map((p) => (
+              <button
+                key={p.value}
+                type="button"
+                onClick={() => setProvider(p.value)}
+                title={p.desc}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  provider === p.value
+                    ? "border-ai-600 bg-ai-600 text-white"
+                    : "border-slate-200 bg-white text-slate-600 hover:border-ai-300"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            {PROVIDERS.find((p) => p.value === provider)?.desc}
+          </p>
         </div>
-        <p className="mt-2 text-xs text-slate-500">
-          {PROVIDERS.find((p) => p.value === provider)?.desc}
-        </p>
-      </div>
       )}
 
       {tool === "manus" && (
         <div className="mb-4 rounded-lg border border-ai-200 bg-ai-50/40 p-3 text-sm text-slate-700">
-          <span className="font-semibold">Motor: Manus — Raciocínio Profundo.</span>{" "}
-          Uso somente por seleção explícita; sem fallback automático. Conteúdo enviado ao provider externo passa por pseudonimização LGPD.
+          <span className="font-semibold">
+            Motor: Manus — Raciocínio Profundo.
+          </span>{" "}
+          Uso somente por seleção explícita; sem fallback automático. Conteúdo
+          enviado ao provider externo passa por pseudonimização LGPD.
         </div>
       )}
 
@@ -420,7 +445,8 @@ export default function AssistenteIA() {
             <div className="space-y-3">
               {res.provider === "manus" && res.status === "running" && (
                 <p className="text-sm text-ai-700" data-testid="manus-status">
-                  Manus está executando o raciocínio profundo. O resultado aparecerá aqui quando concluir.
+                  Manus está executando o raciocínio profundo. O resultado
+                  aparecerá aqui quando concluir.
                 </p>
               )}
               {(res.provider || res.modelo) && (
@@ -428,7 +454,9 @@ export default function AssistenteIA() {
                   data-testid="motor-ia-usado"
                   className="flex flex-wrap items-center gap-2 text-xs text-slate-500"
                 >
-                  <span className="font-semibold text-slate-600">Motor usado:</span>
+                  <span className="font-semibold text-slate-600">
+                    Motor usado:
+                  </span>
                   <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">
                     {res.provider || "provider não informado"}
                     {res.modelo ? ` · ${res.modelo}` : ""}

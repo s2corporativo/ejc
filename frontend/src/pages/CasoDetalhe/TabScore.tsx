@@ -8,7 +8,8 @@ import { useCarregar } from "../../lib/useCarregar";
 
 export default function TabScore({ caseId }: { caseId: string }) {
   const carga = useCarregar<any[]>(
-    () => api.get(`/cases/${caseId}/score-juridico`).then((r) => asList(r.data)),
+    () =>
+      api.get(`/cases/${caseId}/score-juridico`).then((r) => asList(r.data)),
     [caseId],
     { fallbackErro: "Não foi possível carregar o score jurídico." },
   );

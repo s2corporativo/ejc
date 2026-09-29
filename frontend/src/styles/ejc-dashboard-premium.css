@@ -100,8 +100,16 @@
   border-radius: 22px;
   padding: 22px 24px 20px;
   background:
-    radial-gradient(circle at 88% -20%, rgba(234, 202, 127, 0.16), transparent 42%),
-    linear-gradient(165deg, var(--ejc-dash-green) 0%, var(--ejc-dash-green-deep) 100%);
+    radial-gradient(
+      circle at 88% -20%,
+      rgba(234, 202, 127, 0.16),
+      transparent 42%
+    ),
+    linear-gradient(
+      165deg,
+      var(--ejc-dash-green) 0%,
+      var(--ejc-dash-green-deep) 100%
+    );
   box-shadow: 0 24px 58px rgba(4, 41, 31, 0.28);
 }
 
@@ -197,7 +205,9 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body--plain p {
   font-size: 12.5px;
   font-weight: 600;
   padding: 9px 16px;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .ejc-dash__chip svg {
@@ -228,17 +238,30 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body--plain p {
 
 /* Botão “Analisar” do fluxo embutido — ouro sobre esmeralda, como na
    referência (sobrepõe o estilo padrão do design system com segurança). */
-html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button:not(.ejc-dash__chip),
+html:not(.dark)
+  .ejc-modern-scope
+  .ejc-dash__entry-body
+  button:not(.ejc-dash__chip),
 html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"] {
   border-radius: 999px !important;
-  background: linear-gradient(135deg, var(--ejc-dash-gold-bright), var(--ejc-dash-gold)) !important;
+  background: linear-gradient(
+    135deg,
+    var(--ejc-dash-gold-bright),
+    var(--ejc-dash-gold)
+  ) !important;
   color: var(--ejc-dash-green-deep) !important;
   font-weight: 700 !important;
   border: 0 !important;
 }
 
-html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button:not(.ejc-dash__chip):disabled,
-html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:disabled {
+html:not(.dark)
+  .ejc-modern-scope
+  .ejc-dash__entry-body
+  button:not(.ejc-dash__chip):disabled,
+html:not(.dark)
+  .ejc-modern-scope
+  .ejc-dash__entry-body
+  button[type="button"]:disabled {
   opacity: 0.55 !important;
 }
 
@@ -260,7 +283,11 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
 .ejc-dash__entry-body .btn,
 .ejc-dash__entry-body button[class*="bg-primary"] {
   border-radius: 999px !important;
-  background: linear-gradient(135deg, var(--ejc-dash-gold-bright), var(--ejc-dash-gold)) !important;
+  background: linear-gradient(
+    135deg,
+    var(--ejc-dash-gold-bright),
+    var(--ejc-dash-gold)
+  ) !important;
   color: var(--ejc-dash-green-deep) !important;
   font-weight: 700 !important;
 }
@@ -285,7 +312,9 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
   background: #ffffff;
   box-shadow: 0 8px 24px rgba(23, 48, 39, 0.06);
   padding: 16px 18px;
-  transition: transform 0.15s ease, border-color 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .ejc-dash__stat:hover {
@@ -338,8 +367,16 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
 .ejc-dash__stat.is-dark {
   border: 0;
   background:
-    radial-gradient(circle at 90% -30%, rgba(234, 202, 127, 0.22), transparent 46%),
-    linear-gradient(160deg, var(--ejc-dash-green) 0%, var(--ejc-dash-green-deep) 100%);
+    radial-gradient(
+      circle at 90% -30%,
+      rgba(234, 202, 127, 0.22),
+      transparent 46%
+    ),
+    linear-gradient(
+      160deg,
+      var(--ejc-dash-green) 0%,
+      var(--ejc-dash-green-deep) 100%
+    );
   box-shadow: 0 18px 40px rgba(4, 41, 31, 0.3);
 }
 
@@ -435,7 +472,9 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
   font-size: 11.5px;
   font-weight: 650;
   padding: 6px 14px;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .ejc-dash__tabs button.is-active {
@@ -503,11 +542,21 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
   border-radius: 999px;
 }
 
-.ejc-dash__dot.is-red { background: #d84c4c; }
-.ejc-dash__dot.is-orange { background: #e8961e; }
-.ejc-dash__dot.is-green { background: #2c9a5f; }
-.ejc-dash__dot.is-blue { background: #4a7fd6; }
-.ejc-dash__dot.is-gold { background: var(--ejc-dash-gold); }
+.ejc-dash__dot.is-red {
+  background: #d84c4c;
+}
+.ejc-dash__dot.is-orange {
+  background: #e8961e;
+}
+.ejc-dash__dot.is-green {
+  background: #2c9a5f;
+}
+.ejc-dash__dot.is-blue {
+  background: #4a7fd6;
+}
+.ejc-dash__dot.is-gold {
+  background: var(--ejc-dash-gold);
+}
 
 .ejc-dash__item strong {
   display: block;
@@ -545,9 +594,18 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
   padding: 3px 10px;
 }
 
-.ejc-dash__case-chip.is-green { background: #e4f3ea; color: #1d7a45; }
-.ejc-dash__case-chip.is-gold { background: #f6eed9; color: #8f7117; }
-.ejc-dash__case-chip.is-gray { background: #edf0ee; color: #67716c; }
+.ejc-dash__case-chip.is-green {
+  background: #e4f3ea;
+  color: #1d7a45;
+}
+.ejc-dash__case-chip.is-gold {
+  background: #f6eed9;
+  color: #8f7117;
+}
+.ejc-dash__case-chip.is-gray {
+  background: #edf0ee;
+  color: #67716c;
+}
 
 .ejc-dash__cases button {
   grid-template-columns: minmax(0, 1fr) 16px;
@@ -558,7 +616,9 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
   row-gap: 3px;
 }
 
-.ejc-dash__cases .ejc-dash__case-chip { grid-area: chip; }
+.ejc-dash__cases .ejc-dash__case-chip {
+  grid-area: chip;
+}
 .ejc-dash__cases strong {
   grid-area: titulo;
   display: block;
@@ -579,7 +639,9 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
   white-space: nowrap;
 }
 
-.ejc-dash__cases button > svg { grid-area: chev; }
+.ejc-dash__cases button > svg {
+  grid-area: chev;
+}
 
 .ejc-dash__empty {
   color: var(--ejc-dash-muted);
@@ -688,7 +750,11 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
   border: 1px solid rgba(234, 202, 127, 0.16);
   border-radius: 18px;
   background:
-    radial-gradient(circle at 85% -10%, rgba(234, 202, 127, 0.14), transparent 46%),
+    radial-gradient(
+      circle at 85% -10%,
+      rgba(234, 202, 127, 0.14),
+      transparent 46%
+    ),
     linear-gradient(165deg, #0b4535 0%, var(--ejc-dash-green-deep) 100%);
   box-shadow: 0 18px 44px rgba(4, 41, 31, 0.26);
 }
@@ -703,7 +769,11 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"]:di
   overflow: hidden;
   border-radius: 20px;
   background:
-    radial-gradient(circle at 85% -10%, rgba(234, 202, 127, 0.14), transparent 46%),
+    radial-gradient(
+      circle at 85% -10%,
+      rgba(234, 202, 127, 0.14),
+      transparent 46%
+    ),
     linear-gradient(165deg, #0b4535 0%, var(--ejc-dash-green-deep) 100%);
   box-shadow: 0 18px 44px rgba(4, 41, 31, 0.26);
 }
@@ -888,7 +958,11 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__manifesto p {
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--ejc-dash-gold), var(--ejc-dash-gold-bright));
+  background: linear-gradient(
+    90deg,
+    var(--ejc-dash-gold),
+    var(--ejc-dash-gold-bright)
+  );
   transition: width 0.3s ease;
 }
 
@@ -1276,7 +1350,9 @@ html:not(.dark) .sidebar-bronze .sidebar-nav-item.is-active svg {
   background: #ffffff;
   padding: 9px 10px 9px 20px;
   box-shadow: 0 10px 26px rgba(4, 41, 31, 0.22);
-  transition: box-shadow 0.15s ease, outline-color 0.15s ease;
+  transition:
+    box-shadow 0.15s ease,
+    outline-color 0.15s ease;
   outline: 1px solid transparent;
 }
 
@@ -1326,7 +1402,9 @@ html:not(.dark) .sidebar-bronze .sidebar-nav-item.is-active svg {
   flex: 0 0 auto;
   border-radius: 999px;
   color: #5c6b63;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .ejc-entry-pill__clip svg {
@@ -1344,18 +1422,28 @@ html:not(.dark) .sidebar-bronze .sidebar-nav-item.is-active svg {
    botões de remover chip — controles NEUTROS na pílula branca. O override
    abaixo supera a especificidade da regra legada e restaura o visual
    distinto do mockup. */
-html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"].ejc-entry-pill__clip {
+html:not(.dark)
+  .ejc-modern-scope
+  .ejc-dash__entry-body
+  button[type="button"].ejc-entry-pill__clip {
   background: transparent !important;
   border: 0 !important;
   color: #5c6b63 !important;
 }
 
-html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body button[type="button"].ejc-entry-pill__clip:hover {
+html:not(.dark)
+  .ejc-modern-scope
+  .ejc-dash__entry-body
+  button[type="button"].ejc-entry-pill__clip:hover {
   background: #f1f0ea !important;
   color: var(--ejc-dash-green) !important;
 }
 
-html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body .ejc-entry-pillzone__files button[type="button"] {
+html:not(.dark)
+  .ejc-modern-scope
+  .ejc-dash__entry-body
+  .ejc-entry-pillzone__files
+  button[type="button"] {
   background: transparent !important;
   border: 0 !important;
   color: rgba(255, 255, 255, 0.78) !important;
@@ -1371,7 +1459,9 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body .ejc-entry-pillzone__fil
   background: linear-gradient(135deg, var(--ejc-dash-gold) 0%, #e0c074 100%);
   color: #05261d;
   box-shadow: 0 6px 14px rgba(0, 0, 0, 0.22);
-  transition: transform 0.15s ease, filter 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    filter 0.15s ease;
 }
 
 .ejc-entry-pill__send svg {
@@ -1464,7 +1554,11 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body .ejc-entry-pillzone__fil
   height: 32px;
   flex: 0 0 auto;
   border-radius: 10px;
-  background: linear-gradient(150deg, var(--ejc-dash-green) 0%, var(--ejc-dash-green-deep) 100%);
+  background: linear-gradient(
+    150deg,
+    var(--ejc-dash-green) 0%,
+    var(--ejc-dash-green-deep) 100%
+  );
   color: var(--ejc-dash-gold-bright);
   box-shadow: 0 4px 10px rgba(4, 41, 31, 0.18);
 }
@@ -1545,7 +1639,6 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body .ejc-entry-pillzone__fil
     height: 100px;
   }
 }
-
 
 /* ══════════════════════════════════════════════════════════════════════════
    DARK MODE REFINADO — mesmas opções, hierarquia e componentes; apenas
@@ -1657,7 +1750,6 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body .ejc-entry-pillzone__fil
   }
 }
 
-
 /* #1857 — Início em duas experiências: IA primeiro, controles sob demanda. */
 .ejc-dash--ia,
 .ejc-dash--controles {
@@ -1697,7 +1789,10 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body .ejc-entry-pillzone__fil
   font-size: 0.82rem;
   font-weight: 700;
   cursor: pointer;
-  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .ejc-dash__mode button svg {
@@ -1789,7 +1884,8 @@ html:not(.dark) .ejc-modern-scope .ejc-dash__entry-body .ejc-entry-pillzone__fil
   display: none !important;
 }
 
-html:not(.dark) .ejc-modern-scope
+html:not(.dark)
+  .ejc-modern-scope
   .ejc-dash__entry-head--ai-home
   .ejc-dash__entry-copy
   h1 {

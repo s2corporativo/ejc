@@ -182,6 +182,7 @@ def test_upgrade_139_e_downgrade_138_preservam_tabelas_legadas():
     def rodar_alembic(*args: str) -> None:
         env = {
             **os.environ,
+            "MIGRATION_DATABASE_URL": sync_url,
             "DATABASE_URL_SYNC": sync_url,
             "SCHEMA_CHECK_DATABASE_URL": sync_url,
         }

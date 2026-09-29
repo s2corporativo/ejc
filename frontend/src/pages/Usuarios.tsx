@@ -12,7 +12,6 @@ import {
   ErrorState,
 } from "../components/UI";
 
-
 type NovoUsuarioForm = {
   email?: string;
   password?: string;
@@ -144,7 +143,8 @@ export default function Usuarios() {
         payload.djen_oab_uf = djenUf || null;
       }
       if (removerCpf) payload.cpf = null;
-      else if (String(editForm.cpf || "").trim()) payload.cpf = String(editForm.cpf).trim();
+      else if (String(editForm.cpf || "").trim())
+        payload.cpf = String(editForm.cpf).trim();
       await api.patch(`/users/${editando.id}`, payload);
       toast.success("Perfil atualizado");
       setEditando(null);
@@ -213,7 +213,9 @@ export default function Usuarios() {
                     {u.role.replace(/_/g, " ")}
                   </td>
                   <td className="px-4 py-3 text-xs">{u.oab_number || "—"}</td>
-                  <td className="px-4 py-3 text-xs text-slate-500">{u.cpf_mascarado || "—"}</td>
+                  <td className="px-4 py-3 text-xs text-slate-500">
+                    {u.cpf_mascarado || "—"}
+                  </td>
                   <td className="px-4 py-3">{u.is_active ? "✅" : "—"}</td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     {podeGerenciar(u) && (
@@ -306,7 +308,9 @@ export default function Usuarios() {
               value={form.cpf || ""}
               onChange={(e) => setForm({ ...form, cpf: e.target.value })}
             />
-            <p className="mt-1 text-xs text-slate-400">Armazenado cifrado; a listagem exibe apenas máscara.</p>
+            <p className="mt-1 text-xs text-slate-400">
+              Armazenado cifrado; a listagem exibe apenas máscara.
+            </p>
           </div>
           <div>
             <label className="label">WhatsApp (p/ alertas)</label>
@@ -329,50 +333,118 @@ export default function Usuarios() {
 
       <Modal
         open={Boolean(editando)}
-        onClose={() => { setEditando(null); setEditForm({}); }}
+        onClose={() => {
+          setEditando(null);
+          setEditForm({});
+        }}
         title="Editar perfil"
       >
         <div className="space-y-4">
           <div>
             <label className="label">Nome completo *</label>
-            <input className="input" value={editForm.full_name || ""} onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })} />
+            <input
+              className="input"
+              value={editForm.full_name || ""}
+              onChange={(e) =>
+                setEditForm({ ...editForm, full_name: e.target.value })
+              }
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Perfil</label>
-              <select className="input" value={editForm.role || "advogado"} onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}>
-                {ROLES.map((r) => <option key={r} value={r}>{r.replace(/_/g, " ")}</option>)}
+              <select
+                className="input"
+                value={editForm.role || "advogado"}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, role: e.target.value })
+                }
+              >
+                {ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {r.replace(/_/g, " ")}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
               <label className="label">OAB</label>
-              <input className="input" value={editForm.oab_number || ""} onChange={(e) => setEditForm({ ...editForm, oab_number: e.target.value })} />
+              <input
+                className="input"
+                value={editForm.oab_number || ""}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, oab_number: e.target.value })
+                }
+              />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">OAB DJEN — número</label>
-              <input className="input" inputMode="numeric" value={editForm.djen_oab_numero || ""} onChange={(e) => setEditForm({ ...editForm, djen_oab_numero: e.target.value })} />
+              <input
+                className="input"
+                inputMode="numeric"
+                value={editForm.djen_oab_numero || ""}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, djen_oab_numero: e.target.value })
+                }
+              />
             </div>
             <div>
               <label className="label">OAB DJEN — UF</label>
-              <input className="input" maxLength={2} value={editForm.djen_oab_uf || ""} onChange={(e) => setEditForm({ ...editForm, djen_oab_uf: e.target.value.toUpperCase() })} />
+              <input
+                className="input"
+                maxLength={2}
+                value={editForm.djen_oab_uf || ""}
+                onChange={(e) =>
+                  setEditForm({
+                    ...editForm,
+                    djen_oab_uf: e.target.value.toUpperCase(),
+                  })
+                }
+              />
             </div>
           </div>
           <div>
             <label className="label">CPF</label>
-            <input className="input" disabled={removerCpf} placeholder={editando?.cpf_mascarado || "000.000.000-00"} inputMode="numeric" value={editForm.cpf || ""} onChange={(e) => setEditForm({ ...editForm, cpf: e.target.value })} />
+            <input
+              className="input"
+              disabled={removerCpf}
+              placeholder={editando?.cpf_mascarado || "000.000.000-00"}
+              inputMode="numeric"
+              value={editForm.cpf || ""}
+              onChange={(e) =>
+                setEditForm({ ...editForm, cpf: e.target.value })
+              }
+            />
             <label className="mt-2 flex items-center gap-2 text-xs text-slate-500">
-              <input type="checkbox" checked={removerCpf} onChange={(e) => setRemoverCpf(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={removerCpf}
+                onChange={(e) => setRemoverCpf(e.target.checked)}
+              />
               Remover CPF cadastrado
             </label>
-            <p className="mt-1 text-xs text-slate-400">Deixe em branco para manter o CPF atual. O valor completo nunca é devolvido pela API.</p>
+            <p className="mt-1 text-xs text-slate-400">
+              Deixe em branco para manter o CPF atual. O valor completo nunca é
+              devolvido pela API.
+            </p>
           </div>
           <div>
             <label className="label">WhatsApp / telefone</label>
-            <input className="input" value={editForm.phone || ""} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
+            <input
+              className="input"
+              value={editForm.phone || ""}
+              onChange={(e) =>
+                setEditForm({ ...editForm, phone: e.target.value })
+              }
+            />
           </div>
-          <button className="btn-primary w-full justify-center" disabled={salvandoEdicao} onClick={salvarEdicao}>
+          <button
+            className="btn-primary w-full justify-center"
+            disabled={salvandoEdicao}
+            onClick={salvarEdicao}
+          >
             {salvandoEdicao ? "Salvando..." : "Salvar perfil"}
           </button>
         </div>
