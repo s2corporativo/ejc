@@ -24,19 +24,12 @@ from __future__ import annotations
 
 import ast
 import asyncio
-import os
 import pathlib
 import re
 
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-
-requires_ramos_surface = pytest.mark.skipif(
-    os.getenv("EJC_ENABLE_RAMOS_ROUTES", "false").lower()
-    not in {"1", "true", "yes", "on"},
-    reason="contrato HTTP depende da superfície de ramos desativada",
-)
 
 from app.core.database import get_db
 from app.core.security import (
@@ -209,7 +202,6 @@ async def test_demonstrativo_financeiro_nao_descobre_estado_de_homologacao():
     assert exc.value.detail == "Acesso negado"
 
 
-@requires_ramos_surface
 async def test_demonstrativo_equipe_ainda_ve_motivo_da_nao_homologacao():
     # Contraprova: para quem PERTENCE à equipe, o 422 com o diagnóstico
     # específico continua chegando — mover a autorização para o topo não pode

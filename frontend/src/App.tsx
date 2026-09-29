@@ -53,8 +53,8 @@ function SalaDeGuerraLegacyRedirect() {
 }
 
 function AreaAtuacaoLegacyRedirect() {
-  useParams();
-  return <LegacyRedirect to="/inteligencia?tab=conhecimento" />;
+  const { slug } = useParams();
+  return <Navigate to={`/areas-de-atuacao/${slug}`} replace />;
 }
 
 function RouteFallback() {

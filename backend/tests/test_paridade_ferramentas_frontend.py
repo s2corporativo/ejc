@@ -106,22 +106,12 @@ def _parse_config() -> dict[str, list[dict]]:
 
 # ── Handlers do backend ──────────────────────────────────────────────────────
 def _rotas_ramos() -> dict[str, callable]:
-    """{path da ferramenta: handler} sem reativar o agregador público.
-
-    O agregador canônico fica vazio por padrão desde a consolidação do hub;
-    seus sub-routers continuam importáveis para validar os contratos dos
-    formulários sem recolocar endpoints na API.
-    """
-    rotas: dict[str, callable] = {}
-    for modulo in vars(ramos).values():
-        subrouter = getattr(modulo, "router", None)
-        if subrouter is None or subrouter is ramos.router:
-            continue
-        for rota in getattr(subrouter, "routes", []):
-            caminho = getattr(rota, "path", "")
-            if "/ferramentas/" in caminho:
-                rotas[caminho] = rota.endpoint
-    return rotas
+    """{path da ferramenta: handler} a partir das rotas registradas no router."""
+    return {
+        rota.path: rota.endpoint
+        for rota in ramos.router.routes
+        if "/ferramentas/" in getattr(rota, "path", "")
+    }
 
 
 def _params_do_handler(handler) -> dict[str, dict]:

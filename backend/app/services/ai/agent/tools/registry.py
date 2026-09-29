@@ -35,6 +35,48 @@ class ToolSpec:
         }
 
 
+class _ToolArgError(ValueError):
+    """Argumentos da tool inválidos contra o `input_schema` declarado."""
+
+
+def _validar_args(spec: ToolSpec, args: dict) -> None:
+    """Valida os argumentos do modelo contra o `input_schema` da tool.
+
+    O `input_schema` é enviado ao provedor, mas o LLM pode devolver argumentos
+    fora do contrato (campo faltando, tipo errado). Para tools de escrita isso é
+    um efeito colateral real. Esta validação é a fronteira: falha ANTES do
+    handler, sem tocar no banco. Cobre o subconjunto de JSON Schema usado pelas
+    tools (`type`, `required`, `enum`) — suficiente para a superfície atual.
+    """
+    schema = spec.input_schema or {}
+    props = schema.get("properties") or {}
+
+    for campo in schema.get("required") or ():
+        if campo not in args or args[campo] in (None, ""):
+            raise _ToolArgError(
+                f"Ferramenta '{spec.name}': campo obrigatório ausente: '{campo}'"
+            )
+
+    tipos = {"string": str, "integer": int, "number": (int, float),
+             "boolean": bool, "array": list, "object": dict}
+    for campo, valor in args.items():
+        if campo not in props or valor is None:
+            continue
+        esperado = props[campo].get("type")
+        py_tipo = tipos.get(esperado) if isinstance(esperado, str) else None
+        if py_tipo is not None and not isinstance(valor, py_tipo):
+            raise _ToolArgError(
+                f"Ferramenta '{spec.name}': campo '{campo}' deve ser "
+                f"{esperado}, recebido {type(valor).__name__}"
+            )
+        opcoes = props[campo].get("enum")
+        if opcoes and valor not in opcoes:
+            raise _ToolArgError(
+                f"Ferramenta '{spec.name}': campo '{campo}' fora das opções "
+                f"permitidas: {opcoes}"
+            )
+
+
 class _Registry:
     def __init__(self) -> None:
         self._tools: dict[str, ToolSpec] = {}
@@ -79,6 +121,7 @@ class _Registry:
         # a execução é barrada aqui (o schema já não é exposto por schemas()).
         if not self._pode_ver(spec, ctx.role):
             raise PermissionError(f"Papel '{ctx.role}' não pode usar a ferramenta '{name}'")
+        _validar_args(spec, args or {})
         return await spec.handler(args or {}, ctx)
 
 

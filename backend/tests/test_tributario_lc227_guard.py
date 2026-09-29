@@ -4,7 +4,6 @@ PAF, prescrição/decadência, parcelamento, comparativo de regimes e Reforma
 permanecem fora da cadeia de demonstrativo até revisão jurídica completa.
 """
 from datetime import date
-import os
 
 import pytest
 
@@ -20,12 +19,6 @@ ROTA_PRESCRICAO = "/tributario/ferramentas/prescricao-decadencia"
 ROTA_PARCELAMENTO = "/tributario/ferramentas/parcelamento"
 ROTA_REGIME = "/tributario/ferramentas/regime-tributario"
 ROTA_REFORMA = "/tributario/ferramentas/reforma-tributaria"
-
-requires_ramos_surface = pytest.mark.skipif(
-    os.getenv("EJC_ENABLE_RAMOS_ROUTES", "false").lower()
-    not in {"1", "true", "yes", "on"},
-    reason="contrato HTTP depende da superfície de ramos desativada",
-)
 
 
 def _endpoint_get(caminho: str):
@@ -161,7 +154,6 @@ def test_selo_impede_promocao_silenciosa_do_resultado() -> None:
         ),
     ],
 )
-@requires_ramos_surface
 async def test_resposta_real_da_api_carrega_selo_de_nao_homologacao(
     caminho: str,
     kwargs: dict,

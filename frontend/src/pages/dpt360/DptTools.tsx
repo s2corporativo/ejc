@@ -11,7 +11,7 @@ const TOOLS = [
       "Relatório fiscal em PDF",
     ],
     evidence: "Backend confirmado: /api/tributario/fiscal/*",
-    href: "/inteligencia?tab=conhecimento",
+    href: "/areas-de-atuacao/tributario",
   },
   {
     area: "Administrativo e Licitações",
@@ -23,7 +23,7 @@ const TOOLS = [
     ],
     evidence:
       "Ferramentas administrativas confirmadas no EJC; PNCP está desativado nesta base.",
-    href: "/inteligencia?tab=conhecimento",
+    href: "/areas-de-atuacao/administrativo",
   },
   {
     area: "Ambiental",
@@ -37,7 +37,7 @@ const TOOLS = [
     ],
     evidence:
       "Backend confirmado: /api/ambiental/estrategia/* + vertical ambiental existente.",
-    href: "/inteligencia?tab=conhecimento",
+    href: "/areas-de-atuacao/ambiental",
   },
   {
     area: "Trabalhista Empresarial",
@@ -48,7 +48,7 @@ const TOOLS = [
       "Radar de passivo via casos/documentos",
     ],
     evidence: "Backend confirmado: /api/trabalhista/liquidacao/*",
-    href: "/inteligencia?tab=conhecimento",
+    href: "/areas-de-atuacao/trabalhista",
   },
   {
     area: "LGPD",
@@ -56,7 +56,7 @@ const TOOLS = [
     items: ["ROPA por cliente", "Avaliação de risco", "RIPD em Visual Law"],
     evidence:
       "Backend confirmado: /api/lgpd/registros/*, com escopo por cliente e audit log.",
-    href: "/inteligencia?tab=conhecimento",
+    href: "/areas-de-atuacao/digital_lgpd",
   },
   {
     area: "Governança de IA",
@@ -77,7 +77,7 @@ const TOOLS = [
     items: ["Consulta/captura PNCP"],
     evidence:
       "A main atual registra PNCP como removido/desativado. O DPT não recria um conector paralelo.",
-    href: "/inteligencia?tab=conhecimento",
+    href: "/areas-de-atuacao/administrativo",
   },
 ] as const;
 

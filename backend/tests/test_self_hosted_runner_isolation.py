@@ -19,22 +19,9 @@ WF = ROOT / ".github" / "workflows"
 # arquivo reaparece e as travas voltam a valer sozinhas, sem depender de alguém
 # lembrar. Não aponto para a cópia arquivada de propósito: workflow arquivado não
 # roda, e guarda sobre arquivo que não roda é decorativo.
-_LEGACY_WORKFLOWS = (
-    "ci.yml",
-    "ejc-release-gate.yml",
-    "backup-gdrive-activation.yml",
-    "architecture-refactor-wave1.yml",
-    "architecture-refactor-wave2.yml",
-    "rag-production-activation.yml",
-    "producao-prova-continuidade.yml",
-    "production-backup-monitor.yml",
-    "deploy-staging.yml",
-    "deploy-vps.yml",
-)
-
 pytestmark = pytest.mark.skipif(
-    not any((WF / nome).is_file() for nome in _LEGACY_WORKFLOWS),
-    reason="GitHub Actions legado arquivado; apenas o workflow operacional de recuperação permanece ativo; Woodpecker é o CI oficial",
+    not WF.is_dir(),
+    reason="GitHub Actions arquivado em 31/08 (b77ff4c) — workflows movidos para docs/arquivo/ci/github-actions-legacy/; Woodpecker é o CI oficial",
 )
 
 

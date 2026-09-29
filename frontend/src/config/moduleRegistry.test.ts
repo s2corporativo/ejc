@@ -40,12 +40,17 @@ describe("moduleRegistry", () => {
     }
   });
 
-  it("retira Áreas de Atuação do registry e preserva o núcleo de inteligência", () => {
-    expect(STAFF_ROUTES.some((route) => route.key === "ramos")).toBe(false);
-    expect(STAFF_ROUTES.some((route) => route.key === "ramo-detalhe")).toBe(
-      false,
-    );
-    expect(canRoleAccessPath("advogado", "/areas-de-atuacao")).toBe(false);
+  it("preserva Áreas de Atuação por deep-link, mas fora da navegação do EJC Core", () => {
+    const areas = STAFF_ROUTES.find((route) => route.key === "ramos");
+    expect(areas?.label).toBe("Áreas de Atuação");
+    expect(areas?.path).toBe("/areas-de-atuacao");
+    expect(areas?.showInNav).toBe(false);
+    expect(canRoleAccessPath("advogado", "/areas-de-atuacao")).toBe(true);
+    expect(
+      getProductionNavigation("advogado").some(
+        (module) => module.path === "/areas-de-atuacao",
+      ),
+    ).toBe(false);
   });
 
   it("preserva DPT Empresarial 360 por deep-link sem expô-lo na navegação do EJC Core", () => {
@@ -221,8 +226,7 @@ describe("moduleRegistry", () => {
     expect(map.get("/legado/tarefas")).toBe("/atividades?tipo=tarefa");
     expect(map.get("/legado/intimacoes")).toBe("/atividades?tipo=intimacao");
     expect(map.get("/legado/suspensoes")).toBe("/atividades?tipo=suspensao");
-    expect(map.get("/ramos")).toBe("/inteligencia?tab=conhecimento");
-    expect(map.get("/areas-de-atuacao")).toBe("/inteligencia?tab=conhecimento");
+    expect(map.get("/ramos")).toBe("/areas-de-atuacao");
     expect(map.get("/central-relacionamento")).toBe(
       "/atividades?tab=relacionamento",
     );
