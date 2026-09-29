@@ -1373,6 +1373,59 @@ html:not(.dark) .sidebar-bronze .sidebar-nav-item.is-active svg {
   color: var(--ejc-dash-gold);
 }
 
+/* ── Logomarca do escritório nos pontos de apresentação ──────────────────── */
+/* O PNG de marca é transparente: sem object-fit o desenho é esticado dentro
+   do slot, porque o glifo que ele substituiu não precisava da propriedade. */
+.ejc-assistente {
+  display: block;
+  flex: 0 0 auto;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.ejc-assistente--fallback {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--ejc-dash-gold);
+  color: var(--ejc-dash-green);
+  font-family: var(--ejc-dash-serif);
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Herói do Dashboard: a marca ocupa o círculo dourado de 46px com folga
+   interna, sem invadir a borda. */
+.ejc-dash__entry-icon .ejc-assistente,
+.ejc-dash__entry-icon .ejc-assistente--fallback {
+  width: 46px;
+  height: 46px;
+  padding: 9px;
+  font-size: 15px;
+}
+
+/* Linha de identidade da variante "full" (/entrada). */
+.ejc-entry-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ejc-entry-identity__mark {
+  width: 40px;
+  height: 40px;
+  padding: 6px;
+  font-size: 13px;
+}
+
+.ejc-entry-identity__text {
+  font-family: var(--ejc-dash-serif);
+  font-size: 15px;
+  font-weight: 600;
+  color: #22332c;
+}
+
 .ejc-entry-pill__input {
   flex: 1 1 auto;
   min-width: 0;
@@ -1940,4 +1993,205 @@ html:not(.dark)
   .ejc-dash__mode button {
     transition: none;
   }
+}
+
+/* ───────────────────────────────────────────────────────────────────────── */
+/* Sidebar — agenda (mini-calendário do mês corrente)                       */
+/* A sidebar é navy nos dois temas: as cores vêm daqui, sem variante dark:.  */
+/* ───────────────────────────────────────────────────────────────────────── */
+
+.ejc-sidebar-agenda {
+  padding: 14px 16px 16px;
+  border-top: 1px solid rgba(234, 202, 127, 0.18);
+}
+
+.ejc-sidebar-agenda.is-collapsed {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0;
+}
+
+.ejc-sidebar-agenda__compact {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.6rem;
+  color: var(--ejc-dash-gold);
+  background: rgba(234, 202, 127, 0.1);
+}
+
+.ejc-sidebar-agenda__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.ejc-sidebar-agenda__title {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+
+.ejc-sidebar-agenda__month {
+  margin: 2px 0 0;
+  color: rgba(255, 255, 255, 0.92);
+  font-family: var(--ejc-dash-serif);
+  font-size: 14px;
+  text-transform: capitalize;
+}
+
+.ejc-sidebar-agenda__nav {
+  display: flex;
+  gap: 2px;
+}
+
+.ejc-sidebar-agenda__nav .icon-btn {
+  color: rgba(255, 255, 255, 0.62);
+  border-radius: 0.4rem;
+}
+
+.ejc-sidebar-agenda__nav .icon-btn:hover {
+  color: var(--ejc-dash-gold);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ejc-sidebar-agenda__weekdays,
+.ejc-sidebar-agenda__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.ejc-sidebar-agenda__weekdays {
+  margin-bottom: 4px;
+  color: rgba(255, 255, 255, 0.38);
+  font-size: 9px;
+  text-align: center;
+  text-transform: lowercase;
+}
+
+.ejc-sidebar-agenda__day {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  border-radius: 0.4rem;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 11.5px;
+}
+
+.ejc-sidebar-agenda__day:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.ejc-sidebar-agenda__day.is-vazia {
+  visibility: hidden;
+}
+
+.ejc-sidebar-agenda__day.is-outro-mes {
+  color: rgba(255, 255, 255, 0.26);
+}
+
+.ejc-sidebar-agenda__day.is-hoje {
+  box-shadow: inset 0 0 0 1px rgba(234, 202, 127, 0.55);
+  color: var(--ejc-dash-gold);
+}
+
+.ejc-sidebar-agenda__day.is-selecionado {
+  background: var(--ejc-dash-gold);
+  color: #10231f;
+  font-weight: 700;
+}
+
+.ejc-sidebar-agenda__dot {
+  position: absolute;
+  bottom: 3px;
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--ejc-dash-gold);
+}
+
+.ejc-sidebar-agenda__day.is-selecionado .ejc-sidebar-agenda__dot {
+  background: #10231f;
+}
+
+.ejc-sidebar-agenda__list {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.ejc-sidebar-agenda__list-head {
+  margin: 0 0 6px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: capitalize;
+}
+
+.ejc-sidebar-agenda__list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ejc-sidebar-agenda__item {
+  display: block;
+  padding: 5px 6px;
+  border-radius: 0.4rem;
+  text-decoration: none;
+}
+
+.ejc-sidebar-agenda__item:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.ejc-sidebar-agenda__item-title {
+  display: block;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.ejc-sidebar-agenda__item-case {
+  display: block;
+  margin-top: 1px;
+  color: rgba(234, 202, 127, 0.7);
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.ejc-sidebar-agenda__list-empty,
+.ejc-sidebar-agenda__error-text {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.ejc-sidebar-agenda__error {
+  padding: 4px 0 2px;
+}
+
+.ejc-sidebar-agenda__retry {
+  margin-top: 8px;
+  padding: 4px 10px;
+  border-radius: 0.4rem;
+  border: 1px solid rgba(234, 202, 127, 0.4);
+  color: var(--ejc-dash-gold);
+  font-size: 11px;
+}
+
+.ejc-sidebar-agenda__retry:hover {
+  background: rgba(234, 202, 127, 0.12);
 }

@@ -45,6 +45,98 @@ def _ve_todos(user: User) -> bool:
     return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["socio"]
 
 
+# ── Gate do export de cadastro de clientes (M04) ─────────────────────────────
+# Allowlist EXATA, no estilo EQUIPE_JURIDICA (core/security.py:57): sem
+# fallback hierárquico, nomeada e reutilizável para teste.
+#
+# ATENÇÃO (core/security.py:43-56): NÃO trocar isto por `require_roles`/piso
+# numérico. `estagiario` (3) e `secretaria` (2) ficariam de fora por nível,
+# mas o piso escolheria o menor nível da lista (financeiro = 4) e abriria a
+# exportação — o mesmo vazamento de função que a Issue #694 fechou na
+# superfície jurídica. A allowlist é deliberadamente não hierárquica.
+#
+# O conjunto é o de M04 (homologação 2026-08-15) e foi preservado exatamente,
+# `financeiro` incluso: reduzir esse papel é decisão do titular, não do
+# endurecimento técnico.
+EXPORT_CLIENTES_ROLES: frozenset[str] = frozenset({
+    "superadmin", "admin", "socio", "financeiro",
+})
+
+
+def requer_export_clientes(cu: "User", detalhe: str = "Exportação de clientes "
+                               "restrita a gestão e financeiro") -> None:
+    """Gate do `GET /export/clientes.csv` (PII de cadastro em claro).
+
+    Allowlist EXATA (EXPORT_CLIENTES_ROLES), sem fallback hierárquico — ver o
+    alerta em core/security.py:43-56. Chame no CORPO do handler, nunca como
+    `Depends` (o FastAPI trataria `cu`/`detalhe` como query params)."""
+    role = getattr(getattr(cu, "role", None), "value", None) or str(getattr(cu, "role", "") or "")
+    if role not in EXPORT_CLIENTES_ROLES:
+        raise HTTPException(status_code=403, detail=detalhe)
+
+
+def _escopo_clientes(q, cu: "User"):
+    """Restringe o export de clientes ao que o usuário pode ver.
+
+    DECISÃO DO TITULAR (2026-09-29): escopo RESTRITO, sem caminho alternativo e
+    sem escopo próprio do financeiro. A gestão (`_ve_todos`) vê a base inteira;
+    qualquer outro papel vê cliente PRÓPRIO (Client.responsavel_id == cu.id) OU
+    cliente com ao menos um caso visível a ele — o mesmo par responsável/
+    auxiliar de `export_casos`. Note que `financeiro` não está na gestão: ele
+    mantém o acesso ao endpoint (allowlist intacta, ver acima) e simplesmente
+    passa a ver menos linhas. Não reintroduza um "escopo do financeiro" sem
+    decisão nova do titular.
+
+    Por que os dois predicados (e não um só):
+      * só "cliente com caso visível" apagaria leads e cadastros de clientes
+        ainda sem caso — o `responsavel_id` existe justamente para ownership
+        de cliente que ainda não virou processo;
+      * só "cliente próprio" devolveria lista vazia para o advogado, cujo
+        trabalho é justamente o caso que alguém da equipe abriu.
+    A OR é a que preserva as duas coisas.
+    """
+    if _ve_todos(cu):
+        return q
+    visiveis = select(Case.client_id).where(
+        Case.deleted_at.is_(None),
+        or_(Case.advogado_responsavel_id == cu.id,
+            Case.advogado_auxiliar_id == cu.id),
+    )
+    return q.where(or_(Client.responsavel_id == cu.id, Client.id.in_(visiveis)))
+
+
+async def _registrar_exportacao(db, cu, *, acao: str, entidade: str,
+                                registro_id: str | None, detalhes: str) -> None:
+    """Trilha WORM única dos exports (fail-closed).
+
+    DECISÃO DO TITULAR (2026-09-29): falhar FECHADO. O padrão comum seria
+    engolir a exceção (log e seguir com a exportação) — aqui não: se o log ou
+    o commit falhar, sobe 503 e nada é exportado. Não degrade sem decisão nova
+    do titular.
+
+    Grava e COMMITA antes de o handler montar qualquer corpo de resposta: um
+    commit que falha estoura antes de qualquer byte de PII sair. O `detalhes`
+    é de contagem/escopo por construção — nunca nome, documento, e-mail,
+    telefone ou nome de parte.
+
+    Fonte única para os três exports de dado (clientes.csv, casos.csv,
+    caso.pdf) para que as trilhas não divirjam.
+    """
+    try:
+        from app.core.request_context import get_client_ip
+        await criar_audit_log(
+            db,
+            cu.id, cu.role.value, acao, entidade, registro_id,
+            detalhes=detalhes, ip=get_client_ip(),
+        )
+        await db.commit()
+    except Exception:
+        logger.exception("Falha ao registrar trilha de exportação %s", acao)
+        raise HTTPException(status_code=503,
+                            detail="Falha ao registrar a exportação; nenhuma "
+                                   "informação foi exportada")
+
+
 @router.get(
     "/clientes.csv",
     dependencies=[Depends(rate_limit("export-clientes", 5))],
@@ -53,30 +145,29 @@ async def export_clientes(db: AsyncSession = Depends(get_db),
                           cu: User = Depends(get_current_user)):
     # M04 (homologação 2026-08-15): exportação de cadastro de clientes (com
     # CPF/CNPJ em claro) restrita a gestão e financeiro — LGPD mínimo acesso.
-    if cu.role.value not in ("superadmin", "admin", "socio", "financeiro"):
-        raise HTTPException(status_code=403,
-                            detail="Exportação de clientes restrita a gestão "
-                                   "e financeiro")
+    # Gate nomeado e exato; ver EXPORT_CLIENTES_ROLES acima.
+    requer_export_clientes(cu)
+    q = select(Client).where(Client.deleted_at.is_(None))
+    integral = _ve_todos(cu)
+    q = _escopo_clientes(q, cu)
     rows = (await db.execute(
-        select(Client).where(Client.deleted_at.is_(None))
-        .order_by(Client.created_at.desc())
+        q.order_by(Client.created_at.desc())
     )).scalars().all()
     # Documento decifrado sob demanda (cutover C6/LGPD): não há mais texto puro
-    # no banco. Como esta é uma exportação integral deliberada, o ato recebe
-    # rate limit e trilha WORM sem registrar qualquer PII no próprio log.
+    # no banco. Como esta é uma exportação deliberada, o ato recebe rate limit
+    # e trilha WORM sem registrar qualquer PII no próprio log. A trilha é
+    # gravada (fail-closed) ANTES de o corpo ser montado.
     linhas = [[c.nome or c.razao_social or "", c.tipo.value,
                c.documento_plain or "", c.email or "", c.telefone or "",
                str(c.status.value)] for c in rows]
-    await criar_audit_log(
-        db,
-        cu.id,
-        cu.role.value,
-        "EXPORT_CLIENTES_CSV",
-        "clients",
-        None,
-        detalhes=f"exportação integral; registros={len(rows)}",
+    await _registrar_exportacao(
+        db, cu,
+        acao="EXPORT_CLIENTES_CSV",
+        entidade="clients",
+        registro_id=None,
+        detalhes=f"escopo={'integral' if integral else 'proprio'}; "
+                 f"registros={len(rows)}",
     )
-    await db.commit()
     return _csv("clientes.csv",
                 ["Nome", "Tipo", "Documento", "Email", "Telefone", "Status"], linhas)
 
@@ -87,13 +178,22 @@ async def export_casos(db: AsyncSession = Depends(get_db),
     if cu.role.value == "cliente_externo":
         raise HTTPException(403, "Não autorizado")
     q = select(Case).where(Case.deleted_at.is_(None))
-    if not _ve_todos(cu):
+    integral = _ve_todos(cu)
+    if not integral:
         q = q.where(or_(Case.advogado_responsavel_id == cu.id,
                         Case.advogado_auxiliar_id == cu.id))
     rows = (await db.execute(q.order_by(Case.created_at.desc()))).scalars().all()
     linhas = [[c.numero_interno or "", c.titulo, str(c.area.value),
                str(c.status.value), c.numero_processo or "",
                c.parte_contraria or ""] for c in rows]
+    await _registrar_exportacao(
+        db, cu,
+        acao="EXPORT_CASOS_CSV",
+        entidade="cases",
+        registro_id=None,
+        detalhes=f"escopo={'integral' if integral else 'proprio'}; "
+                 f"registros={len(rows)}",
+    )
     return _csv("casos.csv",
                 ["Nº interno", "Título", "Área", "Status",
                  "Nº processo", "Parte contrária"], linhas)
@@ -114,7 +214,8 @@ async def export_caso_pdf(
 
     # Verifica acesso ao caso
     q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
-    if not _ve_todos(cu):
+    integral = _ve_todos(cu)
+    if not integral:
         q = q.where(or_(
             Case.advogado_responsavel_id == cu.id,
             Case.advogado_auxiliar_id    == cu.id,
@@ -135,6 +236,13 @@ async def export_caso_pdf(
         raise HTTPException(500, "Erro ao gerar o PDF")
 
     filename = f"caso_{case.numero_interno or case_id}.pdf"
+    await _registrar_exportacao(
+        db, cu,
+        acao="EXPORT_CASO_PDF",
+        entidade="cases",
+        registro_id=case.id,
+        detalhes=f"escopo={'integral' if integral else 'proprio'}; registros=1",
+    )
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
