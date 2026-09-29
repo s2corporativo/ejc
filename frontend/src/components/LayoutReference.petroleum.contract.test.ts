@@ -13,6 +13,10 @@ const dashboard = readFileSync(
 );
 const tokens = readFileSync(resolve(ROOT, "src/styles/ejc-tokens.css"), "utf8");
 const css = tokens;
+const premium = readFileSync(
+  resolve(ROOT, "src/styles/ejc-dashboard-premium.css"),
+  "utf8",
+);
 const main = readFileSync(resolve(ROOT, "src/main.tsx"), "utf8");
 
 function luminance(hex: string) {
@@ -126,6 +130,23 @@ describe("EJC — tema canônico neutro com acento único e ouro de marca", () =
     expect(escuro).toContain("--ejc-primary-surface: var(--ejc-primary-solid)");
     expect(escuro).toContain("--ejc-primary-solid: #3b6fd4");
     expect(claro).toContain("--ejc-primary-surface: var(--ejc-primary)");
+    // Consumidor real: o preenchimento dos controles cheios no escuro deve
+    // consumir o token (não basta a declaração — sem consumidor o valor
+    // morto não corrige contraste nenhum).
+    expect(premium).toMatch(
+      /\.dark \.ejc-dash__tabs button\.is-active\s*\{[^}]*var\(--ejc-primary-surface\)/,
+    );
+    expect(premium).toMatch(
+      /\.ejc-dash__mode button\.is-active\s*\{[^}]*var\(--ejc-primary-surface\)/,
+    );
+    // Epígrafe: no claro, o rótulo da cidade segue com texto claro sobre o
+    // overlay escuro da foto (tinta escura ali ficaria ~1:1).
+    expect(css).not.toContain(
+      "html:not(.dark) .ejc-sidebar-epigraph__city strong",
+    );
+    expect(css).not.toContain(
+      "html:not(.dark) .ejc-sidebar-epigraph__city small",
+    );
     expect(contrast("#d9b45c", "#151a21")).toBeGreaterThanOrEqual(4.5);
     expect(escuro).toContain("--ejc-surface: #151a21");
     expect(escuro).toContain("--ejc-primary: #5b8def");

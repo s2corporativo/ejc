@@ -50,8 +50,8 @@ function stripComments(css) {
  * "ignoring hook", não o build.
  *
  * A sequência é armadilhosa em CSS legítimo (escape de identificador, barra de
- * continuação de string), então só é Reportada quando age como separador de
- * linha:
+ * continuação de string, delimitadores dentro de literais), então só é
+ * Reportada quando age como separador de linha:
  *   (a) comentário que nunca fecha: o resto do arquivo é comentário;
  *   (b) sequência imediatamente depois de um comentário que fecha na mesma
  *       linha, sem nada entre eles: ela vira parte do seletor seguinte;
@@ -65,11 +65,54 @@ function stripComments(css) {
 const NL = String.fromCharCode(10);
 const BARRA = String.fromCharCode(92);
 
-/** Início do comentário aberto que cobre `indice`, ou -1. */
-function dentroDeComentario(css, indice) {
-  const aberto = css.lastIndexOf("/*", indice);
-  if (aberto === -1) return -1;
-  return aberto > css.lastIndexOf("*/", indice) ? aberto : -1;
+let stringsInicio = 0;
+
+/**
+ * Varre o CSS localizando comentários reais e strings, ignorando
+ * delimitadores dentro de literais (ex.: `content: "/*"`), que são texto
+ * válido e não sintaxe de comentário. Devolve intervalos [inicio, fim),
+ * com fim = -1 para comentário nunca fechado.
+ */
+function mapearComentariosEStrings(css) {
+  const comentarios = [];
+  const strings = [];
+  let emString = null; // '"' ou "'"
+  let aberto = -1;
+  for (let i = 0; i < css.length; i += 1) {
+    const c = css[i];
+    if (emString) {
+      if (c === "\\") i += 1; // consome escape (\" ou \\\\)
+      else if (c === emString) {
+        strings.push({ inicio: stringsInicio, fim: i + 1 });
+        emString = null;
+      }
+      continue;
+    }
+    if (aberto >= 0) {
+      if (c === "*" && css[i + 1] === "/") {
+        comentarios.push({ inicio: aberto, fim: i + 2 });
+        aberto = -1;
+        i += 1;
+      }
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      emString = c;
+      stringsInicio = i;
+    } else if (c === "/" && css[i + 1] === "*") {
+      aberto = i;
+      i += 1;
+    }
+  }
+  if (aberto >= 0) comentarios.push({ inicio: aberto, fim: -1 });
+  return { comentarios, strings };
+}
+
+/** `indice` está dentro de algum intervalo de `lista`? */
+function dentroDe(intervalos, indice) {
+  return intervalos.some(
+    (r) => indice > r.inicio && (r.fim === -1 || indice < r.fim),
+  );
 }
 
 function newlinesEscapados(css) {
@@ -80,11 +123,14 @@ function newlinesEscapados(css) {
       trecho: JSON.stringify(css.slice(Math.max(0, i - 20), i + 20)),
     });
 
-  const abertoFinal = css.lastIndexOf("/*");
-  if (abertoFinal > css.lastIndexOf("*/")) {
+  const { comentarios, strings } = mapearComentariosEStrings(css);
+
+  // (a) comentário que nunca fecha: o resto do arquivo é comentário.
+  const naoFechado = comentarios.find((r) => r.fim === -1);
+  if (naoFechado) {
     achados.push({
-      index: abertoFinal,
-      trecho: css.slice(abertoFinal, abertoFinal + 60),
+      index: naoFechado.inicio,
+      trecho: css.slice(naoFechado.inicio, naoFechado.inicio + 60),
     });
     return achados;
   }
@@ -92,7 +138,9 @@ function newlinesEscapados(css) {
   const sequencia = new RegExp(BARRA + BARRA + "[nr]", "g");
   for (const m of css.matchAll(sequencia)) {
     const i = m.index;
-    if (dentroDeComentario(css, i) >= 0) continue;
+    // Dentro de comentário é texto; dentro de string é escape válido (ex.:
+    // `content: "a\\nb"`). Nenhum dos dois é a quebra gravada como 2 bytes.
+    if (dentroDe(comentarios, i) || dentroDe(strings, i)) continue;
     const inicioLinha = css.lastIndexOf(NL, i) + 1;
     const fimLinha = css.indexOf(NL, i);
     const linha = css.slice(inicioLinha, fimLinha === -1 ? css.length : fimLinha);

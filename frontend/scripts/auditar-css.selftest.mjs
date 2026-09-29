@@ -21,6 +21,11 @@ const casos = [
   ["escape-apos-comentario.css", `/* tema */${NL}html:not(.dark) { --a: 1 }\n`, true],
   // Dentro de comentário a sequência é só texto: NÃO é defeito.
   ["escape-dentro-comentario.css", `/* ver ${NL} aqui */ a { color: red }\n`, false],
+  // Delimitadores dentro de string são texto válido: NÃO abrem comentário.
+  ["string-com-delimitador.css", `a::after { content: "/*" }\nb::after { content: '//' }\n`, false],
+  ["string-com-aspas-escapadas.css", `a::after { content: "\\"${NL} mais texto }" }\nb { color: blue }\n`, false],
+  // Escape dentro de string é escape válido de CSS, não quebra gravada.
+  ["escape-dentro-string.css", `a::after { content: "linha1${NL}linha2" }\n`, false],
   ["sem-fecho.css", `a { color: red } /* aberto\n`, true],
   ["linha-isolada.css", `a { color: red }\n${NL} b { color: blue }\n`, true],
   ["limpo-comentario.css", `a { color: red } /* ok */\n.b { color: blue }\n`, false],

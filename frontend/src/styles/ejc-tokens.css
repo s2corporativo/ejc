@@ -246,9 +246,11 @@
   --ejc-primary-soft: rgba(91, 141, 239, 0.16);
   /* Botão primário no escuro usa o tom mais escuro da família para manter
      texto branco acima de 4,5:1; o acento claro fica para texto e ícones.
-     `--ejc-primary-surface` é o preenchimento de todo controlecheio que
+     `--ejc-primary-surface` é o preenchimento de todo controle cheio que
      consome `--ejc-primary` (stat icons, abas, botões); com texto branco
-     sobre o acento claro o contraste seria 3,2:1. */
+     sobre o acento claro o contraste seria 3,2:1. Consumidores:
+     `.dark .ejc-dash__tabs button.is-active` e `.ejc-dash__mode
+     button.is-active` (dashboard-premium), `.btn-primary` (tokens). */
   --ejc-primary-contrast: #ffffff;
   --ejc-primary-solid: #3b6fd4;  /* 4,8:1 com branco */
   --ejc-primary-surface: var(--ejc-primary-solid);
@@ -757,13 +759,9 @@ html:not(.dark) .ejc-sidebar-epigraph__quote {
   color: var(--ejc-text-secondary) !important;
 }
 
-html:not(.dark) .ejc-sidebar-epigraph__city strong {
-  color: var(--ejc-text) !important;
-}
-
-html:not(.dark) .ejc-sidebar-epigraph__city small {
-  color: var(--ejc-text-subtle) !important;
-}
+/* O rótulo da cidade permanece sobre a foto, cujo overlay ::after é escuro
+   (gradiente #01201b) também no modo claro: o texto claro da base (branco
+   0,9 e ouro 0,85) mantém contraste; tinta escura aqui ficaria ~1:1. */
 
 html:not(.dark) .ejc-dash__stat-icon {
   background: #eff6ff !important;
