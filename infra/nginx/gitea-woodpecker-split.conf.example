@@ -1,0 +1,26 @@
+# PREPARADO, NÃO ATIVAR antes de DNS + certificado válidos.
+# gitea.depaulateixeira.adv.br -> 127.0.0.1:8300
+# woodpecker.depaulateixeira.adv.br -> 127.0.0.1:8100
+# Manter ci.depaulateixeira.adv.br ativo durante a transição.
+
+server {
+    listen 80;
+    server_name gitea.depaulateixeira.adv.br;
+    location / {
+        proxy_pass http://127.0.0.1:8300;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+server {
+    listen 80;
+    server_name woodpecker.depaulateixeira.adv.br;
+    location / {
+        proxy_pass http://127.0.0.1:8100;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
