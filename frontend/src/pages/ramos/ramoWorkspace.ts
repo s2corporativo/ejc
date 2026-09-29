@@ -115,6 +115,15 @@ export function areasDoWorkspace(cfg: RamoConfig): string[] {
   return [...new Set([cfg.areaCaso, ...(cfg.areasLegadas ?? [])])];
 }
 
+/**
+ * Áreas aceitas na validação de contexto case_id: canônicas/legadas do hub
+ * + áreas de especialidade deliberadamente cruzadas (areasContexto). A
+ * listagem por área NÃO usa esta função — continua canônica.
+ */
+export function areasContextoCaso(cfg: RamoConfig): string[] {
+  return [...new Set([...areasDoWorkspace(cfg), ...(cfg.areasContexto ?? [])])];
+}
+
 export function tituloDoWorkspace(cfg: RamoConfig): string {
   return COPIA_WORKSPACE[cfg.slug]?.titulo ?? cfg.titulo;
 }
