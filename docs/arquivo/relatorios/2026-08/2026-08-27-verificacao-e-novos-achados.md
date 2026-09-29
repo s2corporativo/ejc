@@ -3,8 +3,8 @@
 ## 0. Antes de ler isto
 
 Este documento **não é** uma auditoria forense do zero. O EJC já tem uma: 13
-rodadas em `docs/auditoria/relatorios/parte-01..13`, consolidadas em
-`docs/auditoria/relatorios/2026-08-21-auditoria-forense.md`, com um backlog
+rodadas em `docs/arquivo/relatorios/2026-08/parte-01..13`, consolidadas em
+`docs/arquivo/relatorios/2026-08/2026-08-21-auditoria-forense.md`, com um backlog
 canônico e verificável em `docs/PLANO_MESTRE_STATUS.md` (65 itens). O
 `CLAUDE.md` do repositório proíbe re-auditar sem reproduzir. Este relatório
 obedece essa regra: verifica no código de hoje (commit `5c0c776`, 111 commits

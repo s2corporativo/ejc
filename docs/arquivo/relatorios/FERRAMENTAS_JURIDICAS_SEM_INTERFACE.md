@@ -1,7 +1,7 @@
 # Ferramentas jurídicas já implementadas e sem interface
 
 **O que este documento é:** o inventário pedido pelo Bloco 4 do
-`docs/auditoria/plano-lancamento-v3.md` — *"antes de construir a interface, teste
+`docs/arquivo/planos/plano-lancamento-v3.md` — *"antes de construir a interface, teste
 as 15 e me diga o que cada uma exige e retorna"*.
 
 **Primeira correção ao plano:** não são 15. `backend/app/routers/ramos.py`

@@ -444,7 +444,7 @@ CORS, backup, Redis), `backend/app/main.py` (middlewares, health,
 `backend/tests/test_deploy_manual_paridade.py`, `README.md`,
 `RUNBOOK_DEPLOY_MANUAL.md`, `RUNBOOK_BACKUP.md`, `RUNBOOK_MONITORAMENTO.md`,
 `RUNBOOK_ROTINA_BACKUP_DIARIA_GDRIVE.md` (§1-2), `docs/seguranca/SAST_BASELINE.md`,
-`docs/auditoria/relatorios/2026-08-27-verificacao-e-novos-achados.md`,
+`docs/arquivo/relatorios/2026-08/2026-08-27-verificacao-e-novos-achados.md`,
 `docs/PLANO_MESTRE_STATUS.md` (linhas AUD27-P1-3/4), Issues #1030, #1192, #1236.
 
 ## 8. Adendo — estado observado da esteira em 06/09/2026

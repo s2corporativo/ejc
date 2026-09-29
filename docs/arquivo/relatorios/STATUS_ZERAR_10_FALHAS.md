@@ -3,7 +3,7 @@
 **Branch:** `consolidation/consolidacao-ux-20260812` · **PR #1115** · Commit `9dd93ca4` (10 correções committed, NÃO pushado ainda).
 
 ## Resumo
-Corrigidos os 4 grupos (10 falhas): citation gate ×4 (testes realinhados ao P0.1 — artigo identificada bloqueia sempre; súmula só em modo estrito), prearm deploy ×3 (workflow deploy-vps.yml lia `.deployed_sha` obsoleto → corrigido para `.deploy_last_sha`; testes realinhados), OCR hook ×1 (hook centralizado em document_analysis_hook, OCR integral), lixeira ×1 (_FakeDB ganhou scalar/scalars). Commit 9dd93ca4 inclui requirements.txt (botocore==1.34.162, pin real: 1.34.165 nunca existiu no PyPI — necessário para pip install) e docs/consolidacao/DIAG_10_FALHAS_RESIDUAIS.md.
+Corrigidos os 4 grupos (10 falhas): citation gate ×4 (testes realinhados ao P0.1 — artigo identificada bloqueia sempre; súmula só em modo estrito), prearm deploy ×3 (workflow deploy-vps.yml lia `.deployed_sha` obsoleto → corrigido para `.deploy_last_sha`; testes realinhados), OCR hook ×1 (hook centralizado em document_analysis_hook, OCR integral), lixeira ×1 (_FakeDB ganhou scalar/scalars). Commit 9dd93ca4 inclui requirements.txt (botocore==1.34.162, pin real: 1.34.165 nunca existiu no PyPI — necessário para pip install) e docs/arquivo/relatorios/DIAG_10_FALHAS_RESIDUAIS.md.
 
 ## Pendência atual (após bateria completa com 2 novas falhas)
 

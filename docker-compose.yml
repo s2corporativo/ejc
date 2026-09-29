@@ -68,7 +68,7 @@ services:
     # OOM-killer GLOBAL, que reiniciou o `verdelimp-erp`: um trabalho do EJC
     # derrubou o sistema de OUTRA empresa. Com o teto, o estouro fica contido
     # neste container e os vizinhos seguem no ar.
-    # Ver docs/auditoria/relatorios/2026-08-27-verificacao-e-novos-achados.md §9.
+    # Ver docs/arquivo/relatorios/2026-08/2026-08-27-verificacao-e-novos-achados.md §9.
     mem_limit: ${EJC_BACKEND_MEM_LIMIT:-6g}
     ports:
       # Publica só no loopback do host; o Nginx do host faz proxy_pass para 127.0.0.1:8000.

@@ -136,7 +136,7 @@ VPS, fora do alcance deste executor.
 - **Onde:** mesma VPS da produção, como **projeto Docker Compose separado**
   (`docker compose -p ejc-homolog ...` ou arquivo `docker-compose.homolog.yml`
   dedicado), com portas, containers e volumes próprios — não uma segunda VPS.
-  Justificativa: `docs/auditoria/plano-lancamento-v3.md` e
+  Justificativa: `docs/arquivo/planos/plano-lancamento-v3.md` e
   `parecer-arquitetural.md` são explícitos — "ferramenta interna de um
   escritório com 3 advogados... não construa para escala" — pagar por uma
   segunda máquina não se justifica no estágio atual; o modelo de embeddings

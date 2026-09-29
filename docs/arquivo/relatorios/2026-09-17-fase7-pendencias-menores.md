@@ -1,6 +1,6 @@
 # Fase 7 — Pendências menores: decisões e encerramento (2026-09-17)
 
-Auditoria de referência: `docs/auditoria/relatorios/2026-09-15-fase0-auditoria-ecossistema.md`
+Auditoria de referência: `docs/arquivo/relatorios/2026-09/2026-09-15-fase0-auditoria-ecossistema.md`
 (pares de duplicação residuais). Este documento registra a decisão de engenharia
 sobre as três pendências menores da Fase 7 que ficaram fora dos clusters já
 encerrados (intake `/documentos-ia` — PR #1675; jurisprudência externa — PR

@@ -17,7 +17,7 @@ autonomia" na Issue. Nenhum agente de IA certifica sozinho que a captura DJEN es
 
 A reconciliação real só é possível depois que os advogados monitorados tiverem
 `users.djen_oab_numero` / `users.djen_oab_uf` cadastrados (Bloco 6 do
-`docs/auditoria/plano-lancamento-v3.md`). Sem OAB cadastrada, não há o que amostrar: o
+`docs/arquivo/planos/plano-lancamento-v3.md`). Sem OAB cadastrada, não há o que amostrar: o
 job de captura (`services/scheduler.py`, job `djen_intimacoes`) seleciona apenas
 advogado com `djen_oab_numero` preenchido.
 

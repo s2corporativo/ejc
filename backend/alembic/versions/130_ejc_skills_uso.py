@@ -1,6 +1,6 @@
 """Contador de uso das AI Skills (Bloco 4 — enxugar catálogo).
 
-`docs/auditoria/plano-lancamento-v3.md` (Bloco 4) pede: "AS 163 SKILLS DE IA:
+`docs/arquivo/planos/plano-lancamento-v3.md` (Bloco 4) pede: "AS 163 SKILLS DE IA:
 mantenha no catálogo apenas as que têm uso registrado nos logs. Arquive o
 resto." Hoje isso é impossível de cumprir: `ejc_skills` não tem nenhum
 contador de execução, e `AILog` (a tabela de log de uso de IA) não grava

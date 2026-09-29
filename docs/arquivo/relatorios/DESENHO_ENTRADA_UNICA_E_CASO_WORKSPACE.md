@@ -1,7 +1,7 @@
 # Bloco 3 — desenho antes do código
 
 **O que este documento é:** a proposta que o Bloco 3 do
-`docs/auditoria/plano-lancamento-v3.md` pede antes de qualquer implementação —
+`docs/arquivo/planos/plano-lancamento-v3.md` pede antes de qualquer implementação —
 *"proponha antes de implementar — quero revisar o desenho. Me mostre o desenho
 das telas antes de codificar."*
 

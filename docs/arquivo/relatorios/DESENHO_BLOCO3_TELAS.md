@@ -1,6 +1,6 @@
 # Bloco 3 — desenho das telas
 
-> Issue #641 · Bloco 3 de `docs/auditoria/plano-lancamento-v3.md`
+> Issue #641 · Bloco 3 de `docs/arquivo/planos/plano-lancamento-v3.md`
 
 **O que este documento é:** o desenho em nível de tela que o Bloco 3 pede antes
 de codificar — telas, estados, contratos de API e contagem de cliques.

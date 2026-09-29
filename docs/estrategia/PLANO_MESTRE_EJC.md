@@ -108,7 +108,7 @@ Pré-condições duras: gate F4 passado + lista de cortes assinada em T3.
 
 - **Cortes** (1 PR por módulo, reversível via git): jurimetria/predição de êxito ("jurimetria com 8 casos é anedota"), `diplomacia-v3` (remover código — risco disciplinar), Victory Vault (+ `teses_vitoriosas`/`teses_juridicas_v4` da Classe A passo 5), radar de notícias/ConJur, módulo sociedade, skills de IA sem uso registrado em log. Critério por corte: "nenhuma tela viva referencia" verificado por grep + teste de rotas.
 - **Rotas mortas**: das 453 rotas, 211 nunca são chamadas por tela — remoção em 2–3 PRs guiada por `test_rotas_registro_explicito.py`.
-- **Higiene frontend** (`docs/consolidacao/MAPA_VERDADE_V1.md`): desmontar `UI.tsx` (1437 linhas) em `components/ui/*` (4–6 PRs — é o hotspot que bloqueia qualquer frente paralela, por isso só agora); consolidar os 8 CSS globais; eliminar dashboards duplicados.
+- **Higiene frontend** (`docs/arquivo/relatorios/MAPA_VERDADE_V1.md`): desmontar `UI.tsx` (1437 linhas) em `components/ui/*` (4–6 PRs — é o hotspot que bloqueia qualquer frente paralela, por isso só agora); consolidar os 8 CSS globais; eliminar dashboards duplicados.
 - **Fronteira de agregado do Caso** (parecer §4.1): caso+peças+documentos+prazos+logs mudam juntos numa transação — fecha a classe recorrente "grava em 2 tabelas sem garantir as 2" (itens 3.3–3.6: exclusão sem cascata, conversão que perde fatos, vínculos ausentes).
 
 **Gate de saída:** contagem rotas/routers/páginas antes-depois registrada; `ci-local full` verde; 34 → 10–12 módulos confirmado no moduleRegistry.

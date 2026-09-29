@@ -701,7 +701,7 @@ class Settings(BaseSettings):
     EMBEDDINGS_MODEL: str = "intfloat/multilingual-e5-large"
     EMBEDDINGS_DIM: int = 1024
     # Tamanho do lote enviado ao modelo em UMA chamada de encode. Existe por
-    # causa do incidente de 2026-08-27 (ver docs/auditoria/relatorios/
+    # causa do incidente de 2026-08-27 (ver docs/arquivo/relatorios/2026-08/
     # 2026-08-27-verificacao-e-novos-achados.md, §9): `_embed_sync` mandava
     # TODOS os chunks órfãos de um documento numa chamada só. O arena allocator
     # do ONNX cresce com o maior lote já visto e não devolve a memória ao SO —
@@ -948,7 +948,7 @@ class Settings(BaseSettings):
     BACKUP_HORA_UTC: str = "05:00"
     # Retenção no Drive: mantém N dias de backups diários; mais antigos são
     # apagados na rotação (somente arquivos com o prefixo do EJC). 30 dias
-    # (decisão registrada em docs/auditoria/decisoes-bloco0-2026-08-08.md,
+    # (decisão registrada em docs/arquivo/relatorios/decisoes-bloco0-2026-08-08.md,
     # item 0.4): a LGPD não fixa prazo para backup de disaster recovery (é
     # distinto da retenção do próprio documento jurídico); 30 dias dá margem
     # para notar corrupção/erro silencioso sem acumular custo de storage

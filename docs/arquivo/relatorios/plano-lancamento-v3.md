@@ -54,7 +54,7 @@ GET /analytics/roi-por-area → 500 "A equipe foi notificada"   (ninguém é not
 **Prompt para colar:**
 
 ```
-Leia CLAUDE.md e docs/auditoria/plano-correcao-v2.md (apenas a Fase 1).
+Leia CLAUDE.md e docs/arquivo/planos/plano-correcao-v2.md (apenas a Fase 1).
 
 Corrija os contadores e filtros que hoje mentem sobre o estado do sistema:
 
@@ -85,7 +85,7 @@ Ao final: tabela com os números do dashboard ANTES e DEPOIS, lado a lado.
 **Prompt para colar:**
 
 ```
-Leia CLAUDE.md e docs/auditoria/plano-correcao-v2.md, itens 2.1 e 2.4.
+Leia CLAUDE.md e docs/arquivo/planos/plano-correcao-v2.md, itens 2.1 e 2.4.
 
 O bug central: POST /legal-docs/{id}/validar retorna sucesso com score 94, mas
 validacao_juridica.ai_log_id nunca é gravado no registro do documento. O endpoint
@@ -177,7 +177,7 @@ Me mostre o desenho das telas antes de codificar.
 **Prompt para colar:**
 
 ```
-Leia CLAUDE.md e docs/auditoria/plano-correcao-v2.md, item 6.5.
+Leia CLAUDE.md e docs/arquivo/planos/plano-correcao-v2.md, item 6.5.
 
 Reduza a navegação de 34 módulos para o conjunto que o escritório realmente usa.
 
@@ -211,7 +211,7 @@ Arquive o resto. Ninguém navega 163 opções.
 **Prompt para colar:**
 
 ```
-Leia CLAUDE.md e docs/auditoria/plano-correcao-v2.md, itens 0.2, 3.1 e 3.2.
+Leia CLAUDE.md e docs/arquivo/planos/plano-correcao-v2.md, itens 0.2, 3.1 e 3.2.
 
 A captura de intimações do DJEN nunca registrou um único documento em toda a sua
 história, e três painéis reportam "ok" o tempo todo, porque o monitoramento pergunta

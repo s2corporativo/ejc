@@ -1,7 +1,7 @@
 # Bateria de Auditoria E2E do EJC
 
 > **ARQUIVADO em 30/08/2026 — substituído por qa/e2e/ (ver
-> RELATORIO_PENTE_FINO_E2E_2026-08-30.md §7.7).** O conteúdo abaixo é
+> docs/arquivo/relatorios/RELATORIO_PENTE_FINO_E2E_2026-08-30.md §7.7).** O conteúdo abaixo é
 > histórico: o README cita `run_audit.sh` (inexistente), credenciais
 > placeholder e caminhos `/home/ubuntu` de sandbox antiga. A suíte E2E viva do
 > repositório é `qa/e2e/run_fictitious_smoke.py` (+ `rbac_matrix.py`).

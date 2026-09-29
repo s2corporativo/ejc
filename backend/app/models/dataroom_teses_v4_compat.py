@@ -2,7 +2,7 @@
 # Compatibilidade de schema pós-consolidação (PR #1115, 13/08/2026): os routers
 # `data_room_v4.py` e `teses_v4.py` foram arquivados em `app/routers/_dead_code/`
 # (varredura de chamadas de API comprovou zero consumidores em produção —
-# ver docs/consolidacao/MAPA_VERDADE_V1.md), mas as classes ORM `DataRoomSala`
+# ver docs/arquivo/relatorios/MAPA_VERDADE_V1.md), mas as classes ORM `DataRoomSala`
 # e `TeseJuridica` precisam permanecer registradas em `Base.metadata` para que
 # o autogenerate do Alembic não as trate como pendentes de drop (e para que o
 # gate test_schema_sync.py continue reconhecendo as tabelas

@@ -1,6 +1,6 @@
 /**
  * Flags de abas das ondas de absorção (§10 do plano de limpeza 2026-09-20:
- * docs/audit/AUDITORIA_REAL_2026-09-20.md).
+ * docs/arquivo/relatorios/AUDITORIA_REAL_2026-09-20.md).
  *
  * Padrão idêntico ao da flag do menu de 9 módulos (Onda 1): superfície NOVA
  * entra ATIVA por default, com rollback IMEDIATO por perfil

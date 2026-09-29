@@ -20,7 +20,7 @@ O pente fino achou e corrigiu **3 defeitos reais de produto** (um 500 permanente
 
 Container remoto (sem Docker daemon — verificação local conforme CLAUDE.md): Python 3.11.15, Node 22.22.2, PostgreSQL 16.13 + pgvector 0.6.0 instalados no host, cluster efêmero via `initdb` na porta 5433 (paridade com `scripts/ci-local.sh`), extensões `vector`/`pg_trgm`/`pgcrypto`. App real de pé: uvicorn :8000 + Vite :5173 (proxy). Dados exclusivamente fictícios com marcador `E2E-FICTICIO` (admin seedado, 4 contas por papel via `POST /users/`, cliente/caso de navegação), cleanup confirmado pós-DELETE.
 
-Respeitado o histórico de auditorias: nada do que `docs/PLANO_MESTRE_STATUS.md` marca como resolvido foi re-auditado sem reprodução; os 11 falsos positivos de `docs/auditoria/relatorios/parte-12-falsos-positivos.md` não foram repetidos (em especial: rotas "inexistentes" por prefixo `/v1/` e métricas de peças).
+Respeitado o histórico de auditorias: nada do que `docs/PLANO_MESTRE_STATUS.md` marca como resolvido foi re-auditado sem reprodução; os 11 falsos positivos de `docs/arquivo/relatorios/2026-08/parte-12-falsos-positivos.md` não foram repetidos (em especial: rotas "inexistentes" por prefixo `/v1/` e métricas de peças).
 
 ## 3. Matriz portão a portão (evidência — substitui o CI indisponível)
 

@@ -6,7 +6,7 @@ deste caso concreto, o que importa, o que falta, qual o risco e o que devo fazer
 agora?"*.
 
 **O que ele não é:** um plano de lançamento. O plano ativo continua sendo
-`docs/auditoria/plano-lancamento-v3.md`, cujo critério é um advogado levar um caso
+`docs/arquivo/planos/plano-lancamento-v3.md`, cujo critério é um advogado levar um caso
 real até o protocolo. **Nada deste documento entra antes do Bloco 7 daquele plano.**
 A seção final explica por quê e como as duas coisas se encaixam.
 
@@ -674,4 +674,4 @@ titular depois de A0, não antes.
 ---
 
 *Documento de avaliação estratégica. Não altera o plano de lançamento ativo nem
-substitui `docs/auditoria/plano-lancamento-v3.md`.*
+substitui `docs/arquivo/planos/plano-lancamento-v3.md`.*

@@ -2,7 +2,7 @@
 
 Esta tabela é a **única** fonte de status de todo o backlog de correção, consolidação e
 padronização do EJC. Nenhum outro documento é atualizado com status a partir de agora —
-`docs/auditoria/plano-correcao-v2.md`, `docs/auditoria/plano-lancamento-v3.md` e
+`docs/arquivo/planos/plano-correcao-v2.md`, `docs/arquivo/planos/plano-lancamento-v3.md` e
 `docs/estrategia/EVOLUCAO_ESTRATEGICA_EJC.md` continuam valendo como *descrição* dos
 achados, mas o campo "resolvido/pendente" vive só aqui.
 
@@ -27,7 +27,7 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
   `plano-correcao-v2.md`), `V3-B` (blocos de `plano-lancamento-v3.md`), `CL-` (classes de
   inconsistência estrutural, Eixo 2), `CORTE-` (remoção de módulo, Eixo 3), `INFRA-`
   (esteira/deploy/processo), `AUD27-` (achados novos de
-  `docs/auditoria/relatorios/2026-08-27-verificacao-e-novos-achados.md`), `VARR-`
+  `docs/arquivo/relatorios/2026-08/2026-08-27-verificacao-e-novos-achados.md`), `VARR-`
   (achado da varredura de conferência dos pendentes, 2026-09-01 — prefixo próprio
   porque não vem de nenhum dos relatórios acima, e sim de reler o código à procura
   de status envelhecido).

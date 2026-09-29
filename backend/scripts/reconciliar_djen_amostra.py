@@ -138,7 +138,7 @@ async def executar(oab_numero: str, oab_uf: str, dias: int, formato: str) -> Non
     if not localizado:
         logger.error(
             "Nenhum advogado com OAB %s/%s cadastrado em users.djen_oab_numero/uf. "
-            "Cadastro de OAB é pré-requisito (ver docs/auditoria/plano-lancamento-v3.md, "
+            "Cadastro de OAB é pré-requisito (ver docs/arquivo/planos/plano-lancamento-v3.md, "
             "Bloco 6) — script não pode reconciliar quem não está monitorado.",
             oab_numero,
             oab_uf.upper(),

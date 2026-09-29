@@ -12,7 +12,7 @@
 5. Jurimetria acumulava estatísticas **sistematicamente erradas** (vocabulário de `resultado` divergente entre router e serviço).
 6. **Todas as correções foram aplicadas nesta branch** (ver §6) — backend: 112 testes passando; frontend: tsc limpo.
 7. Cobertura de testes: **nenhum relatório existe no repo** (sem `.coverage`/`htmlcov`/`coverage/`) — o fator cobertura do índice de risco foi neutralizado (1.0) e está declarado como N/D em todos os nós.
-8. Entregáveis: este relatório, `auditoria-grafo/grafo-dados.json` (reuso/comparação futura) e `auditoria-grafo/grafo-interativo.html` (D3 force-directed, tema escuro, busca, filtros, export PNG/SVG — validado em Chromium headless).
+8. Entregáveis: este relatório, grafo navegável (regenerável por `scripts/generate_architecture_inventory.py`; não versionado) (D3 force-directed, tema escuro, busca, filtros, export PNG/SVG — validado em Chromium headless).
 
 ---
 
