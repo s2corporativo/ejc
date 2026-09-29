@@ -1,0 +1,322 @@
+# Pauta de Decisões do Titular — Plano-Mestre EJC
+
+Documento único para minimizar o tempo do titular: cinco decisões, cada uma com
+contexto, opção recomendada e o que destrava. Nenhuma delas exige ler código —
+o executor já fez a leitura. Desenho completo do plano em
+`docs/estrategia/PLANO_MESTRE_EJC.md`; status vivo em `docs/PLANO_MESTRE_STATUS.md`.
+
+Custo total estimado desta pauta: 1–2 horas numa sessão só (T3), fora as ações
+operacionais T1/T2 abaixo que não são decisão — são execução que só o titular
+pode fazer.
+
+---
+
+## Ações operacionais (não são decisão — são execução que só o titular faz)
+
+### T1 — Revisar e mesclar PR #1259; autorizar o 1º deploy manual
+
+O PR #1259 (`s2corporativo/ejc`, branch `claude/ejc-strategic-evolution-2qqasi`)
+constrói `scripts/deploy_manual.sh` e o `RUNBOOK_DEPLOY_MANUAL.md` — o caminho
+para levar as migrations 127–147 (mescladas, **não** em produção) para o ar
+enquanto a cota do Actions estiver esgotada. Está em draft de propósito: mexe
+no procedimento de deploy e não há CI do HEAD exato (a própria cota é o assunto
+do PR). Preservado no PR: backup obrigatório, mutex, bloqueio de migration
+destrutiva, rollback automático — nenhuma trava foi afrouxada.
+
+**Ação:** revisar o PR, mesclar, e autorizar a primeira execução real (o
+executor já rodou `--dry-run`; a primeira execução de verdade deve ter alguém
+acompanhando a saída). Isso destrava o gate de saída da F0.
+
+**Custo:** 30–60 min.
+
+### T2 — Regularizar a cota do GitHub Actions + reativar 3 workflows
+
+Nenhum workflow roda hoje, nem no runner self-hosted — o bloqueio é da conta,
+antes de alocar runner (verificado em 2026-08-23). Além disso, três workflows
+estão `disabled_manually` independente da cota: `auto-integracao.yml`
+(mesclava PRs automaticamente com gates verdes), `continuity-ui-gates.yml` e
+`architecture-inventory.yml`. Eles ficaram desligados por semanas sem que
+ninguém notasse (Issue #1235) — inclusive recebendo melhorias enquanto
+desligados.
+
+**Ação:** regularizar o faturamento do Actions; reativar os três workflows na
+UI do GitHub (Settings → Actions → o workflow → "Enable workflow"). Só o
+titular tem acesso administrativo para os dois.
+
+**Custo:** 15 min de clique + o tempo do faturamento (fora do controle técnico).
+
+**Destrava:** F6 (merge automático de volta); sem isso, o executor segue no
+deploy manual indefinidamente.
+
+### T3 — Executar a purga da conta `homolog.qa` e dos dados fictícios em produção
+
+Achado da auditoria (V2-4.1, `[CRÍTICO]`): conta `homolog.qa` com privilégio
+**superadmin** ativa em produção, criada pela própria rotina de homologação
+(`qa/e2e/run_fictitious_smoke.py`), junto com casos `HOMOLOG-FICTICIO-*`
+residuais.
+
+**O código já está pronto e testado** (2026-08-24, verificado nesta sessão):
+`run_fictitious_smoke.py` já recusa rodar contra produção por padrão (só
+aceita `staging`/`homolog`/`localhost` no `EJC_BASE_URL`, ou
+`EJC_ALLOW_PRODUCTION_E2E=true` explícito); `scripts/purga_dados_homologacao.py`
+já tem a rotina completa — seleção pelos marcadores, soft-delete nunca
+DELETE físico, e `montar_sql_desativar_conta_qa` especificamente para a
+conta `homolog.qa` — com exigência de confirmação explícita ("PURGAR") e
+12 testes cobrindo a montagem das queries.
+
+**O que falta é só executar** — e isso a governança §9 me veda
+("não acessar o banco de produção"). O próprio script exige backup prévio
+(`scripts/backup.sh`) antes de rodar.
+
+**Ação:** no VPS, com backup feito, rodar `scripts/purga_dados_homologacao.py`
+conforme o runbook do próprio script.
+
+**Custo:** 15–30 min, incluindo o backup prévio.
+
+### T4 — Ligar `EMBEDDINGS_ENABLED=true` em produção (V2-2.2, `[CRÍTICO]`)
+
+Achado da auditoria: 0 de 47.359 chunks da base de conhecimento têm embedding
+gerado — a busca semântica do RAG está 100% no fallback textual. Investigação
+desta sessão (2026-08-24) fecha a dúvida que o próprio plano-mestre registrava
+("pipeline pode estar quebrado, não só desligado"): **não está quebrado**.
+
+- No código, o default é ligado (`EMBEDDINGS_ENABLED: bool = True` em
+  `backend/app/core/config.py:562`) — é a produção que sobrescreve para
+  `false` no `.env` do VPS (confirmado pela própria auditoria, Parte 7).
+- `embedding_service.disponivel()` (linha 72) devolve `False` só por causa
+  dessa flag — é o único motivo, não há erro de provider nem de modelo.
+- O self-heal já existe e está correto: `scheduler.py::_reembedar_rag_orfaos`
+  roda de hora em hora, gated por `RAG_AUTO_REEMBED_ENABLED` (default true) e
+  por `disponivel()` — hoje é *no-op silencioso* (log de info, nunca erro)
+  porque a flag está off; a própria auditoria (Parte 11) já observou o job
+  agendado "sem efeito útil" e concluiu que a reindexação "provavelmente
+  ocorrerá sozinha" quando a flag for ligada.
+- `scripts/reembedar_chunks_orfaos.py` (o mesmo script chamado pelo job) é
+  idempotente, pagina por todos os documentos órfãos até esgotar (não é
+  "20 chunks por hora" — é até 20 *documentos* por lote, em loop até acabar),
+  e já tem os testes/garantias documentados no cabeçalho do arquivo.
+
+**O que falta é só ligar a flag** — ação de ambiente (`.env` do VPS), vedada
+a mim pela governança §9. O runbook `RUNBOOK_MIGRACAO_EMBEDDING_1024.md` já
+descreve o passo a passo (inclui o `validar_modelo_local()` de pré-checagem e
+a opção de rodar o script manualmente em vez de esperar o job horário).
+
+**Ação:** no VPS, definir `EMBEDDINGS_ENABLED=true` e reiniciar o backend;
+opcionalmente rodar `docker exec -it ejc_backend python -m scripts.reembedar_chunks_orfaos`
+para não esperar o job horário. Confirmar com
+`SELECT count(*) FROM knowledge_chunks WHERE embedding IS NULL;` → 0.
+
+**Custo:** 5 min de config + reinício; o reindex roda em segundo plano (tempo
+depende do volume — a 1ª carga do modelo ONNX local baixa ~1GB).
+
+---
+
+## Decisões de produto (T3)
+
+### D1 — Canônico do conceito "tese"
+
+**O problema:** hoje "tese" tem 6 representações no banco (`teses`,
+`tese_caso_links`, `thesis_candidates`, `teses_juridicas_v4`, `teses_vitoriosas`,
+`cases.tese_principal`). Duas rotas emitem a mesma chave `tese_aprovada` com
+fontes disjuntas — `conversao_caso.py` olha `tese_caso_links`,
+`legal_case_orchestrator.py` (a Jornada do caso) olha `thesis_candidates`. É
+por isso que a Jornada mostra "Teses pesquisadas: pendente" no mesmo caso em
+que o Dossiê Estratégico mostra "1 tese vinculada".
+
+**Opção recomendada:** `tese_caso_links` vira a única verdade do vínculo
+caso↔tese. `thesis_candidates` (a matriz de trabalho, com fluxo HITL de
+aprovação) passa a ser um **estágio**, não um destino: ao aprovar uma
+candidata, o sistema cria automaticamente o link — hoje essa ponte não existe.
+`cases.tese_principal` (texto livre, ~15 leitores) fica congelado como campo
+exibicional, sem forçar migração de leitores agora.
+
+**Pergunta ao titular:** a experiência que os advogados devem ver como
+"primária" é a matriz de trabalho (`thesis_candidates`, com aprovação
+explícita) ou o Banco de Teses institucional (`teses` + `tese_caso_links`,
+vínculo direto)? A resposta muda qual tabela vira a fonte visível na tela —
+a correção técnica da inconsistência (ponte automática) é a mesma nos dois
+casos.
+
+**Se não houver decisão:** o executor segue com a opção recomendada acima
+(link como verdade, candidate como estágio) — é a hipótese default do plano,
+não um bloqueio.
+
+### D2 — Destino do `CaseLifecycleStatus` (11 valores não persistidos)
+
+**O problema:** existe um enum de 11 valores (`triagem`, `em_analise`,
+`aguardando_documentos`, `proposta_apresentada`...) em
+`backend/app/core/domain_contracts.py` que não é gravado em lugar nenhum —
+convive com o enum real de 6 valores (`aberto`, `em_instrucao`,
+`em_producao`, `protocolado`, `encerrado`, `arquivado`) que É persistido e
+tem teste de paridade com o frontend.
+
+**Opção A (recomendada):** remover a declaração dos 11 valores com uma nota
+explicando por quê — é vocabulário de uma fase de desenho anterior que nunca
+foi implementada.
+
+**Opção B:** se os 11 estados fazem falta na prática (granularidade maior no
+funil pré-caso), vira trabalho de produto para depois da F5 — não um ajuste
+cosmético.
+
+**Pergunta ao titular:** algum desses 11 estados corresponde a algo que a
+equipe hoje rastreia manualmente (planilha, memória) e sente falta no
+sistema? Se não, Opção A.
+
+### D3 — Lista final de cortes de módulo (34 → 10–12)
+
+O parecer arquitetural recomenda cortar (você já aprovou incluir cortes no
+plano-mestre; esta decisão é confirmar a lista item a item):
+
+| Módulo | Motivo do corte | Reversível? |
+|---|---|---|
+| Jurimetria / predição de êxito | "Jurimetria com 8 casos é anedota" — precisa de ~300 casos encerrados para significar algo | Sim, git |
+| `diplomacia-v3` (`/analisar-magistrado`, `/dossie-pressao`) | Risco reputacional e disciplinar (código, não só tela) | Sim, git |
+| Victory Vault | Vazio (`/teses/ranking` → `[]`) | Sim, vira pasta de modelos até haver acervo |
+| Radar de notícias / `/noticias` (ConJur, JOTA) | "Não é ERP" — fora do escopo de gestão de casos | Sim, git |
+| Módulo sociedade / retiradas de sócio | `/sociedade/socios` vazio, sem uso | Sim, git |
+| Skills de IA sem uso registrado em log | Superfície morta, custo de manutenção sem benefício | Sim, git |
+
+**Pergunta ao titular:** confirma os 6 cortes acima, ou quer excluir algum da
+lista (fica para depois, sem impedir os demais)?
+
+**Se não houver resposta:** a F5 não começa sem essa confirmação — ela já
+está no fim do plano (atrás do gate do primeiro caso real), então não há
+pressa, mas a lista final precisa estar fechada antes do primeiro PR de
+corte.
+
+### D4 — Política da métrica "chance de êxito"
+
+**O problema:** o sistema calcula e exibe um percentual de "chance de êxito"
+por caso, com barra colorida na tela. Risco: Código de Ética da OAB, art. 6º,
+parágrafo único, e art. 34, XXIX (vedação a captação/mercantilização
+inadequada da expectativa do cliente). A auditoria marcou como `[CRÍTICO]`.
+
+**Opções:**
+1. **Remover** a métrica da interface do advogado e do cliente (mantém o
+   cálculo interno, se útil para priorização interna, mas nunca exibido).
+2. **Reformular**: trocar percentual por faixa qualitativa sem número
+   ("favorável" / "incerto" / "desfavorável"), com nota metodológica visível.
+3. **Manter como está**, com parecer jurídico formal registrado justificando
+   a conformidade.
+
+**Recomendação do executor:** Opção 1 ou 2 — a auditoria já achou o dado
+estatisticamente frágil (poucos casos para calibrar) *além* do risco
+regulatório; as duas razões apontam para o mesmo lado.
+
+**Urgente e não negociável, independente da decisão acima:** confirmar que a
+métrica **não é serializada em nenhuma rota `/portal/*`** — ela pode ser
+aceitável como ferramenta interna do advogado e inaceitável se o cliente a
+vê diretamente. Isso entra na F3 de qualquer forma.
+
+### D5 — Citação normativa incorreta usada como fundamento do HITL (V2-4.3)
+
+**O problema, confirmado nesta sessão (2026-08-24) e maior do que a auditoria
+registrou:** o sistema cita **"OAB Provimento 205/2021"** como fundamento
+jurídico da revisão humana obrigatória de conteúdo gerado por IA (HITL) —
+não em 1 lugar, em **~25 arquivos**: system prompts enviados à IA em
+produção (`system_prompts/*.py`, `skills_seed.py`, `skills_ferramentas_seed.py`),
+comentários/mensagens de erro em routers e services (`legal_docs.py`,
+`case_intelligence.py`, `triagem_entrevista.py`, `intake.py`,
+`ficha_triagem_service.py`, `motor_peca_service.py`, `ai_service.py`,
+`entrada_service.py`, `dossie_service.py`, `legal_case_orchestrator.py`,
+`case_intel.py`, `response_validator.py`), telas (`EntrevistaInteligente.tsx`,
+`Pecas.tsx`, `IntakeAnalise.tsx`) e **testes que travam a string literal**
+(`test_modo_executivo.py:105` — `assert "205/2021" in p`;
+`test_system_prompts_vigencia_legal.py:75` — `assert "Provimento CFOAB
+205/2021" in PROMPT_HONORARIOS`).
+
+**Verificação independente (WebSearch, 2026-08-24):** confirmo o achado da
+auditoria — a ementa oficial do Provimento 205/2021 é *"Dispõe sobre a
+publicidade e a informação da advocacia"* (revoga o Provimento 94/2000, trata
+de marketing jurídico/publicidade digital). Não trata de IA nem institui
+dever de revisão humana de peças.
+
+**A substituição que a própria auditoria sugeriu também não se sustenta sem
+revisão:** verifiquei a Resolução CNJ 615/2025, art. 19, § 3º — regula o uso
+de IA **no Poder Judiciário** (magistrados, atos judiciais), não a advocacia
+privada; citá-la como fundamento do HITL de um escritório é uma aplicação por
+analogia, não uma correspondência direta. `Lei 8.906/94, art. 32` (a outra
+sugestão) é a norma geral de responsabilidade civil do advogado — plausível
+como fundamento amplo, mas não específica de IA.
+
+**Por que não corrigi direto, com a autorização "decida sozinho" em vigor:**
+troca de citação legal é diferente de bug técnico — é conteúdo jurídico que
+vira **instrução enviada à própria IA em produção** e cláusula de defesa
+regulatória do escritório (risco disciplinar OAB se errada). Regra 5 do
+`CLAUDE.md` ("toda regra jurídica precisa de fonte oficial, vigência e
+teste") e a própria auditoria ("validar os dispositivos com o advogado
+responsável antes de aplicar") apontam para o mesmo limite: preciso de
+confirmação de um advogado real, não de outra citação que eu mesmo não posso
+verificar com certeza. Family de fix de ~25 arquivos + prompts de produção +
+testes travados por string literal também é grande demais para arriscar sem
+esse aval — é exatamente o cenário de "mudança que poderia contrariar decisão
+permanente do titular" da seção "Quando parar e perguntar".
+
+**Opções:**
+1. **Advogado confirma a citação correta** (ou confirma que nenhuma citação
+   específica se aplica) → executor aplica a troca nos ~25 arquivos, ajusta
+   os 2 testes que travam a string literal, mantendo o comportamento (HITL
+   continua obrigatório) e só corrigindo o texto/fundamento.
+2. **Fallback já sugerido pela própria auditoria, sem precisar de advogado:**
+   reescrever os textos sem citar nenhum provimento/artigo específico
+   ("revisão humana do advogado responsável é obrigatória", sem parênteses
+   normativos) — não faz afirmação jurídica nenhuma, logo não tem o risco de
+   citação errada. Reduz precisão retórica, zero risco de conteúdo.
+
+**Se não houver resposta:** aplico a Opção 2 (remover a citação específica,
+manter a exigência) na próxima janela de F3 — é a mesma lógica default já
+usada em D1/D2, e evita deixar uma citação sabidamente errada em produção.
+Ainda não apliquei porque o volume (~25 arquivos incluindo prompts de IA e
+testes) pede uma janela própria, não uma edição no meio de outro item.
+
+---
+
+## Autorização registrada (2026-08-24)
+
+O titular autorizou explicitamente: decidir sozinho quando for melhor para o sistema,
+seguir todas as fases do plano-mestre sem pausar para perguntar, e priorizar
+velocidade sem etapas desnecessárias. Registrado aqui porque D1–D4 mudam
+comportamento do sistema e precisam de rastro, mesmo decididas pelo executor.
+
+**Decisões tomadas com a opção recomendada, efetivas a partir daqui:**
+
+- **D1 (canônico da tese):** `tese_caso_links` é a verdade do vínculo; `thesis_candidates`
+  vira estágio de trabalho HITL que, ao aprovar, materializa o link automaticamente.
+- **D2 (`CaseLifecycleStatus`):** removida a declaração morta de 11 valores em
+  `domain_contracts.py`, sem substituto — nenhum uso real dependia dela.
+- **D3 (cortes de módulo):** os 6 cortes da tabela confirmados, executados no início
+  da F5, atrás do gate do primeiro caso real (F4) como o plano já previa.
+- **D4 (métrica "chance de êxito"):** removida da superfície visível ao advogado/cliente
+  (Opção 1) — o risco OAB art. 34 XXIX e a fragilidade estatística (poucos casos)
+  apontam para o mesmo lado. Tratado na F3.
+
+**D5 é a única exceção desta seção** — não decidida com a opção recomendada,
+porque a autorização de "decidir sozinho" cobre decisão de produto, não
+conteúdo jurídico que precisa de advogado real (mesmo limite da regra 5 do
+`CLAUDE.md`). Segue pendente de resposta ou do prazo-padrão do fallback (Opção
+2, remover citação) descrito na própria seção D5.
+
+**O que a autorização NÃO muda** — são fronteiras técnicas/de governança, não
+decisões de produto, e continuam em pé mesmo com "decida sozinho":
+
+- Merge do PR continua não sendo forçado pelo agente (`CLAUDE.md` regra 8: "o agente
+  não força integração de PR retido"; `auto-integracao.yml` decide, não eu).
+- Regularizar a cota do Actions e reativar workflows exige acesso administrativo ao
+  GitHub que este agente não tem.
+- F4 (Bloco 6 + Bloco 7 + A0 real) exige um advogado de verdade usando o sistema com
+  um caso real — não é uma decisão que se tome por mim, é um evento que só acontece
+  fora desta sessão. F5 continua atrás desse gate.
+
+## Resumo de para onde vai cada resposta
+
+| Decisão | Se não responder agora | Bloqueia |
+|---|---|---|
+| T1 | F0 não fecha o gate de deploy | F0 |
+| T2 | Deploy manual continua sendo o único caminho | F6 |
+| T3 | Conta `homolog.qa` (superadmin) segue ativa em produção | V2-4.1 (F3) |
+| T4 | Busca semântica do RAG segue 100% no fallback textual (0/47.359 chunks) | V2-2.2 (F3) |
+| D1 | Executor segue com a hipótese default (link=verdade) | 1º PR da Classe A (F2) |
+| D2 | Executor remove a declaração morta com nota | Nenhum — decisão de baixo custo |
+| D3 | F5 não começa até fechar | F5 (mas ela já está no fim do plano) |
+| D4 | F3 não fecha o item 4.2 | F3 |
+| D5 | Após prazo-padrão, executor aplica o fallback (remove citação, mantém exigência) | V2-4.3 (F3) |
