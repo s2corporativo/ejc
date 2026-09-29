@@ -189,10 +189,10 @@ export function Confirmacao({
   const vincularProcesso = async (caseId: string) => {
     setVinculandoCaseId(caseId);
     try {
-      await api.post(
-        `/entrada/${proposta.rascunhoId}/vincular-processo`,
-        { case_id: caseId, confirmo_vinculo: true },
-      );
+      await api.post(`/entrada/${proposta.rascunhoId}/vincular-processo`, {
+        case_id: caseId,
+        confirmo_vinculo: true,
+      });
       window.location.assign(`/casos/${caseId}`);
     } catch {
       toast.error("Não foi possível vincular o processo ao caso existente.");
@@ -305,8 +305,8 @@ export function Confirmacao({
                 }
               />
               <span>
-                Revisei os casos sugeridos e confirmo que este CNJ pertence a
-                um processo novo, sem vínculo com eles.
+                Revisei os casos sugeridos e confirmo que este CNJ pertence a um
+                processo novo, sem vínculo com eles.
               </span>
             </label>
           )}
@@ -321,10 +321,17 @@ export function Confirmacao({
                 Inteligência jurídica estruturada
               </p>
               <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                Contrato {proposta.inteligenciaJuridica.versaoContrato} · revisão humana obrigatória
+                Contrato {proposta.inteligenciaJuridica.versaoContrato} ·
+                revisão humana obrigatória
               </p>
             </div>
-            <Badge tone={proposta.inteligenciaJuridica.status === "degradado" ? "amber" : "purple"}>
+            <Badge
+              tone={
+                proposta.inteligenciaJuridica.status === "degradado"
+                  ? "amber"
+                  : "purple"
+              }
+            >
               {proposta.inteligenciaJuridica.status}
             </Badge>
           </div>
@@ -334,9 +341,13 @@ export function Confirmacao({
                 Pontos que podem mudar a análise
               </p>
               <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-slate-700 dark:text-slate-200">
-                {proposta.inteligenciaJuridica.informacoesFaltantes.slice(0, 5).map((item) => (
-                  <li key={`${item.pergunta}-${item.motivo}`}>{item.pergunta}</li>
-                ))}
+                {proposta.inteligenciaJuridica.informacoesFaltantes
+                  .slice(0, 5)
+                  .map((item) => (
+                    <li key={`${item.pergunta}-${item.motivo}`}>
+                      {item.pergunta}
+                    </li>
+                  ))}
               </ul>
             </div>
           )}
@@ -565,7 +576,9 @@ export function Confirmacao({
               aria-label="Natureza da demanda"
             >
               <option value="">A confirmar…</option>
-              {!NATUREZAS.some(([valor]) => valor === proposta.naturezaDemanda) &&
+              {!NATUREZAS.some(
+                ([valor]) => valor === proposta.naturezaDemanda,
+              ) &&
                 proposta.naturezaDemanda && (
                   <option value={proposta.naturezaDemanda}>
                     {proposta.naturezaDemanda}
@@ -601,10 +614,7 @@ export function Confirmacao({
               onChange={(e) =>
                 onChange({
                   prioridade: e.target.value as
-                    | "baixa"
-                    | "media"
-                    | "alta"
-                    | "critica",
+                    "baixa" | "media" | "alta" | "critica",
                 })
               }
               aria-label="Prioridade do caso"
@@ -753,7 +763,9 @@ export function Confirmacao({
             <Textarea
               value={listaParaTexto(proposta.documentosFaltantes)}
               onChange={(e) =>
-                onChange({ documentosFaltantes: textoParaLista(e.target.value) })
+                onChange({
+                  documentosFaltantes: textoParaLista(e.target.value),
+                })
               }
               rows={4}
               placeholder={"Um item por linha\nEx.: comprovante da negativação"}

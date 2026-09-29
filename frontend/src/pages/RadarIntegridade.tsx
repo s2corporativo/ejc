@@ -99,7 +99,9 @@ export default function RadarIntegridade() {
       await api.post(`/saneamento/divergencias/${item.id}/aplicar`, {
         confirmar: true,
       });
-      toast.success("Metadado confirmado e atualizado com trilha de auditoria.");
+      toast.success(
+        "Metadado confirmado e atualizado com trilha de auditoria.",
+      );
       await carregar();
     } catch (e: any) {
       toast.error(
@@ -124,7 +126,9 @@ export default function RadarIntegridade() {
     return <p className="text-sm text-slate-500">Carregando integridade…</p>;
   }
 
-  const contagens = Object.entries(data.contagens).filter(([, valor]) => valor != null);
+  const contagens = Object.entries(data.contagens).filter(
+    ([, valor]) => valor != null,
+  );
 
   return (
     <div className="space-y-4">
@@ -165,7 +169,10 @@ export default function RadarIntegridade() {
         ) : (
           <ul className="mt-4 divide-y divide-slate-100 dark:divide-slate-800">
             {data.itens.map((item) => (
-              <li key={`${item.tipo}-${item.case_id ?? item.titulo}`} className="py-3">
+              <li
+                key={`${item.tipo}-${item.case_id ?? item.titulo}`}
+                className="py-3"
+              >
                 <div className="flex items-start gap-3">
                   <AlertTriangle
                     className="mt-0.5 h-4 w-4 shrink-0 text-amber-600"
@@ -202,7 +209,8 @@ export default function RadarIntegridade() {
               Divergências DataJud
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              Dados oficiais são comparados automaticamente, mas só alteram o processo após confirmação humana.
+              Dados oficiais são comparados automaticamente, mas só alteram o
+              processo após confirmação humana.
             </p>
           </div>
           <Badge tone={divergencias.length > 0 ? "amber" : "green"}>
@@ -231,10 +239,13 @@ export default function RadarIntegridade() {
                         {item.numero_cnj} · {item.tipo.replace(/_/g, " ")}
                       </p>
                       <p className="mt-1 text-xs text-slate-500">
-                        Interno: {String(item.valor_interno ?? "—")} · DataJud: {String(item.valor_datajud ?? "—")}
+                        Interno: {String(item.valor_interno ?? "—")} · DataJud:{" "}
+                        {String(item.valor_datajud ?? "—")}
                       </p>
                       {item.observacao && (
-                        <p className="mt-1 text-xs text-slate-500">{item.observacao}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {item.observacao}
+                        </p>
                       )}
                     </div>
                     {aplicavel && podeAplicar ? (
@@ -244,7 +255,9 @@ export default function RadarIntegridade() {
                         disabled={aplicando === item.id}
                         onClick={() => void confirmarAplicacao(item)}
                       >
-                        {aplicando === item.id ? "Aplicando..." : "Revisar e aplicar"}
+                        {aplicando === item.id
+                          ? "Aplicando..."
+                          : "Revisar e aplicar"}
                       </button>
                     ) : (
                       <span className="text-xs font-medium text-slate-400">

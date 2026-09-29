@@ -23,9 +23,12 @@ interface ResumoFinanceiro {
 
 export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
   const user = useAuth((state) => state.user);
-  const podeReconciliar = new Set(["superadmin", "admin", "socio", "advogado"]).has(
-    user?.role || "",
-  );
+  const podeReconciliar = new Set([
+    "superadmin",
+    "admin",
+    "socio",
+    "advogado",
+  ]).has(user?.role || "");
   const [resumo, setResumo] = useState<ResumoFinanceiro | null>(null);
   const [fees, setFees] = useState<Fee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,7 +60,9 @@ export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
       });
       setFees(Array.isArray(f.data?.data) ? f.data.data : []);
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao carregar o financeiro do caso");
+      toast.error(
+        e.response?.data?.detail || "Falha ao carregar o financeiro do caso",
+      );
     } finally {
       setLoading(false);
     }
@@ -80,7 +85,9 @@ export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
       toast.success("Dados econômicos do caso atualizados.");
       await carregar();
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao salvar dados econômicos");
+      toast.error(
+        e.response?.data?.detail || "Falha ao salvar dados econômicos",
+      );
     } finally {
       setSalvando(false);
     }
@@ -114,9 +121,9 @@ export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
     }
   };
 
-
   const reconciliarRateios = async () => {
-    if (!podeReconciliar || (resumo?.rateio_pendente_quantidade ?? 0) === 0) return;
+    if (!podeReconciliar || (resumo?.rateio_pendente_quantidade ?? 0) === 0)
+      return;
     setReconciliando(true);
     try {
       const { data } = await api.post(
@@ -152,7 +159,10 @@ export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
               className="input w-full"
               value={form.classificacao_financeira}
               onChange={(e) =>
-                setForm({ ...form, classificacao_financeira: e.target.value as any })
+                setForm({
+                  ...form,
+                  classificacao_financeira: e.target.value as any,
+                })
               }
             >
               <option value="normal">Normal</option>
@@ -168,7 +178,9 @@ export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
               step="0.01"
               className="input w-full"
               value={form.valor_pleiteado}
-              onChange={(e) => setForm({ ...form, valor_pleiteado: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, valor_pleiteado: e.target.value })
+              }
             />
           </div>
           <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -185,7 +197,9 @@ export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
             <input
               type="checkbox"
               checked={form.pendente_exito}
-              onChange={(e) => setForm({ ...form, pendente_exito: e.target.checked })}
+              onChange={(e) =>
+                setForm({ ...form, pendente_exito: e.target.checked })
+              }
             />
             Ainda falta receber honorário de êxito
           </label>
@@ -202,15 +216,25 @@ export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
       <div className="grid gap-3 md:grid-cols-3">
         <div className="card p-4">
           <p className="text-xs uppercase text-slate-400">Recebido</p>
-          <p className="mt-1 text-xl font-semibold">{fmtMoney(resumo?.valor_recebido)}</p>
+          <p className="mt-1 text-xl font-semibold">
+            {fmtMoney(resumo?.valor_recebido)}
+          </p>
         </div>
         <div className="card p-4">
-          <p className="text-xs uppercase text-slate-400">Crédito do responsável</p>
-          <p className="mt-1 text-xl font-semibold">{fmtMoney(resumo?.credito_advogado)}</p>
+          <p className="text-xs uppercase text-slate-400">
+            Crédito do responsável
+          </p>
+          <p className="mt-1 text-xl font-semibold">
+            {fmtMoney(resumo?.credito_advogado)}
+          </p>
         </div>
         <div className="card p-4">
-          <p className="text-xs uppercase text-slate-400">Parcela do escritório</p>
-          <p className="mt-1 text-xl font-semibold">{fmtMoney(resumo?.parcela_escritorio)}</p>
+          <p className="text-xs uppercase text-slate-400">
+            Parcela do escritório
+          </p>
+          <p className="mt-1 text-xl font-semibold">
+            {fmtMoney(resumo?.parcela_escritorio)}
+          </p>
         </div>
       </div>
 
@@ -219,14 +243,16 @@ export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <p className="font-semibold">Reconciliação financeira pendente</p>
           <p className="mt-1">
-            Responsável jurídico: {resumo?.advogado_responsavel_nome || "não definido"}.
+            Responsável jurídico:{" "}
+            {resumo?.advogado_responsavel_nome || "não definido"}.
             {(resumo?.rateio_pendente_quantidade ?? 0) > 0
               ? ` ${resumo?.rateio_pendente_quantidade} recebimento(s), total de ${fmtMoney(resumo?.rateio_pendente_valor)}, ainda aguardam rateio.`
               : ""}
           </p>
           {resumo?.rateio_pendente_sem_responsavel && (
             <p className="mt-1 font-medium">
-              O recebimento pode ser registrado, mas o rateio 50/50 ficará pendente até a definição do advogado responsável.
+              O recebimento pode ser registrado, mas o rateio 50/50 ficará
+              pendente até a definição do advogado responsável.
             </p>
           )}
           {podeReconciliar &&
@@ -238,7 +264,9 @@ export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
                 disabled={reconciliando}
                 onClick={reconciliarRateios}
               >
-                {reconciliando ? "Reconciliando..." : "Reconciliar rateios pendentes"}
+                {reconciliando
+                  ? "Reconciliando..."
+                  : "Reconciliar rateios pendentes"}
               </button>
             )}
         </div>
@@ -247,8 +275,11 @@ export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
       <div className="card p-5">
         <h3 className="font-semibold">Registrar valor recebido</h3>
         <p className="mt-1 text-xs text-slate-500">
-          Registre aqui receita de honorários efetivamente recebida pelo escritório,
-          não valores pertencentes ao cliente. {resumo?.regra_rateio === "institucional_integral_escritorio" ? "Carteira institucional: 100% escritório." : "Rateio: 50% responsável / 50% escritório."}
+          Registre aqui receita de honorários efetivamente recebida pelo
+          escritório, não valores pertencentes ao cliente.{" "}
+          {resumo?.regra_rateio === "institucional_integral_escritorio"
+            ? "Carteira institucional: 100% escritório."
+            : "Rateio: 50% responsável / 50% escritório."}
         </p>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <input
@@ -275,11 +306,16 @@ export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
           <h3 className="font-semibold">Lançamentos financeiros do caso</h3>
         </div>
         {fees.length === 0 ? (
-          <div className="p-5"><Empty message="Nenhum lançamento financeiro" /></div>
+          <div className="p-5">
+            <Empty message="Nenhum lançamento financeiro" />
+          </div>
         ) : (
           <div className="divide-y divide-slate-100">
             {fees.map((f) => (
-              <div key={f.id} className="flex items-center justify-between px-4 py-3 text-sm">
+              <div
+                key={f.id}
+                className="flex items-center justify-between px-4 py-3 text-sm"
+              >
                 <div>
                   <p className="font-medium text-slate-800">{f.descricao}</p>
                   <p className="text-xs capitalize text-slate-400">

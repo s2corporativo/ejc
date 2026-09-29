@@ -16,7 +16,9 @@ describe("Data Room — token de link efêmero", () => {
   it("captura a URL somente da resposta de criação", () => {
     expect(source).toContain("data?.url_acesso");
     expect(source).toContain("setLinkRecemGerado({ url");
-    expect(source).toContain("Por segurança, o token não fica armazenado em claro");
+    expect(source).toContain(
+      "Por segurança, o token não fica armazenado em claro",
+    );
   });
 
   it("não persiste a capability URL em storage do navegador", () => {

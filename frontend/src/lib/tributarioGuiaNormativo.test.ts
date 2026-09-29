@@ -46,7 +46,9 @@ describe("guia tributário normativo", () => {
   it("não reintroduz empate automaticamente favorável ao contribuinte", () => {
     const carf = texto(REGRAS_CARF);
     expect(carf).toContain("voto de qualidade");
-    expect(carf).toContain("não é proclamado automaticamente em favor do contribuinte");
+    expect(carf).toContain(
+      "não é proclamado automaticamente em favor do contribuinte",
+    );
     expect(carf).not.toContain("empate → favorável ao contribuinte");
     expect(carf).not.toContain("voto de qualidade invertido");
   });
@@ -67,13 +69,17 @@ describe("guia tributário normativo", () => {
   it("não ancora MS e anulatória automaticamente no fim do PAF", () => {
     const judiciais = texto(REGRAS_JUDICIAIS);
     expect(judiciais).toContain("não cria, por si só");
-    expect(judiciais).toContain("não usar no guia um prazo automático de 5 anos");
+    expect(judiciais).toContain(
+      "não usar no guia um prazo automático de 5 anos",
+    );
     expect(judiciais).toContain("temas 566-571");
   });
 
   it("não trata emissão de NF-e como termo universal de prescrição", () => {
     const creditos = texto(REGRAS_CREDITOS);
-    expect(creditos).toContain("data de emissão da nf-e não é termo inicial universal");
+    expect(creditos).toContain(
+      "data de emissão da nf-e não é termo inicial universal",
+    );
     expect(creditos).toContain("não deve chamar notas antigas de prescritas");
   });
 });

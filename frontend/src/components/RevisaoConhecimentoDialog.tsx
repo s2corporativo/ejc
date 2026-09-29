@@ -93,9 +93,7 @@ export async function registrarRevisaoConhecimento(args: {
   await api.post(`/rag/governanca/docs/${args.docId}/revisar`, {
     aprovado: args.decisao === "aprovar",
     notas: args.notas,
-    ...(args.confidenceLevel
-      ? { confidence_level: args.confidenceLevel }
-      : {}),
+    ...(args.confidenceLevel ? { confidence_level: args.confidenceLevel } : {}),
   });
 }
 
@@ -352,9 +350,9 @@ export function RevisaoConhecimentoDialog({
             ) : (
               !previa && (
                 <p className="text-xs text-slate-500">
-                  Este documento não tem texto indexado nem trecho nos
-                  metadados — confira o original pela fonte indicada acima
-                  antes de decidir.
+                  Este documento não tem texto indexado nem trecho nos metadados
+                  — confira o original pela fonte indicada acima antes de
+                  decidir.
                 </p>
               )
             )}

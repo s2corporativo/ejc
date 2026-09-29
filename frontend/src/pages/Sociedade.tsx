@@ -475,7 +475,10 @@ export default function Sociedade() {
                       {fmtPct(s.participacao_percentual)}
                     </p>
                     <p className="text-[10px] text-slate-400">
-                      Resultado {fmtPct(s.resultado_percentual ?? s.participacao_percentual)}
+                      Resultado{" "}
+                      {fmtPct(
+                        s.resultado_percentual ?? s.participacao_percentual,
+                      )}
                     </p>
                   </div>
                   <span
@@ -568,11 +571,13 @@ export default function Sociedade() {
               distrib.map((d) => {
                 const ativos = socios.filter((s) => s.ativo);
                 const totalResultado = ativos.reduce(
-                  (acc, s) => acc + (s.resultado_percentual ?? s.participacao_percentual),
+                  (acc, s) =>
+                    acc + (s.resultado_percentual ?? s.participacao_percentual),
                   0,
                 );
                 const quota = ativos.map((s) => {
-                  const bruto = s.resultado_percentual ?? s.participacao_percentual;
+                  const bruto =
+                    s.resultado_percentual ?? s.participacao_percentual;
                   const pct = totalResultado > 0 ? bruto / totalResultado : 0;
                   return {
                     nome: nomeUser(s.user_id),

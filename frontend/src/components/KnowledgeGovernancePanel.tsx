@@ -307,9 +307,7 @@ export default function KnowledgeGovernancePanel() {
         });
       })
       .catch((error: any) =>
-        toast.error(
-          mensagemErroHttp(error, "Falha ao abrir o documento."),
-        ),
+        toast.error(mensagemErroHttp(error, "Falha ao abrir o documento.")),
       )
       .finally(() => setBusy(null));
   }, [selectedId]);
@@ -347,9 +345,7 @@ export default function KnowledgeGovernancePanel() {
       );
       await loadOverview();
     } catch (error: any) {
-      toast.error(
-        mensagemErroHttp(error, "Falha ao salvar a governança."),
-      );
+      toast.error(mensagemErroHttp(error, "Falha ao salvar a governança."));
     } finally {
       setBusy(null);
     }
@@ -372,9 +368,7 @@ export default function KnowledgeGovernancePanel() {
         toast.success("Documento recuperado pelo pipeline da IA.");
       else toast.error("Documento não recuperado; consulte o diagnóstico.");
     } catch (error: any) {
-      toast.error(
-        mensagemErroHttp(error, "Falha no teste de recuperação."),
-      );
+      toast.error(mensagemErroHttp(error, "Falha no teste de recuperação."));
     } finally {
       setBusy(null);
     }
@@ -396,9 +390,7 @@ export default function KnowledgeGovernancePanel() {
             : "Não existe versão anterior.",
         );
     } catch (error: any) {
-      toast.error(
-        mensagemErroHttp(error, "Falha ao comparar versões."),
-      );
+      toast.error(mensagemErroHttp(error, "Falha ao comparar versões."));
     } finally {
       setBusy(null);
     }
@@ -414,9 +406,7 @@ export default function KnowledgeGovernancePanel() {
         toast.success("Todos os testes jurídicos foram aprovados.");
       else toast.error(`${data.failed} teste(s) jurídico(s) exigem atenção.`);
     } catch (error: any) {
-      toast.error(
-        mensagemErroHttp(error, "Falha nos testes jurídicos."),
-      );
+      toast.error(mensagemErroHttp(error, "Falha nos testes jurídicos."));
     } finally {
       setBusy(null);
     }
@@ -700,7 +690,9 @@ export default function KnowledgeGovernancePanel() {
                               className="btn btn-ghost px-2 py-1 text-xs"
                               disabled={docsPage >= docsTotalPages || loading}
                               onClick={() =>
-                                setDocsPage((page) => Math.min(docsTotalPages, page + 1))
+                                setDocsPage((page) =>
+                                  Math.min(docsTotalPages, page + 1),
+                                )
                               }
                             >
                               Próxima

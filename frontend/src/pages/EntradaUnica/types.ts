@@ -319,8 +319,7 @@ export function normalizarAnalise(
     naturezaDemanda: str(natureza.tipo),
     naturezaProvavel: str(natureza.acao),
     naturezaConfianca: confiancaPct(natureza.confianca),
-    urgencia:
-      typeof urgencia.valor === "boolean" ? urgencia.valor : null,
+    urgencia: typeof urgencia.valor === "boolean" ? urgencia.valor : null,
     urgenciaMotivo: str(urgencia.justificativa),
     urgenciaConfianca: confiancaPct(urgencia.confianca),
     prioridade: prioridadeTriagem(urgencia.prioridade_sugerida),
@@ -377,7 +376,8 @@ export function normalizarAnalise(
       const inteligencia = obj(r.inteligencia_juridica);
       const honorarios = obj(inteligencia.honorarios);
       return {
-        versaoContrato: str(inteligencia.versao_contrato) || "case_intelligence.v1",
+        versaoContrato:
+          str(inteligencia.versao_contrato) || "case_intelligence.v1",
         status: inteligencia.status === "degradado" ? "degradado" : "rascunho",
         informacoesFaltantes: lista(inteligencia.informacoes_faltantes)
           .map((item) => obj(item))
@@ -395,8 +395,14 @@ export function normalizarAnalise(
             return {
               item_codigo: strOuNull(candidato.item_codigo),
               descricao: strOuNull(candidato.descricao),
-              valor_minimo: typeof candidato.valor_minimo === "number" ? candidato.valor_minimo : null,
-              percentual: typeof candidato.percentual === "number" ? candidato.percentual : null,
+              valor_minimo:
+                typeof candidato.valor_minimo === "number"
+                  ? candidato.valor_minimo
+                  : null,
+              percentual:
+                typeof candidato.percentual === "number"
+                  ? candidato.percentual
+                  : null,
               fonte: strOuNull(candidato.fonte),
             };
           }),

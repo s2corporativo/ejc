@@ -467,6 +467,7 @@ def test_upgrade_head_reconstroi_banco_vazio_real():
         env = {
             **os.environ,
             "DATABASE_URL": async_url,
+            "MIGRATION_DATABASE_URL": sync_url,
             "DATABASE_URL_SYNC": sync_url,
             "SCHEMA_CHECK_DATABASE_URL": sync_url,
         }

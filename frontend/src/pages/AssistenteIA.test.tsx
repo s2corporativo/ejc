@@ -21,7 +21,10 @@ const postMock = vi.fn();
 const getMock = vi.fn();
 
 vi.mock("../lib/api", () => ({
-  default: { post: (...a: unknown[]) => postMock(...a), get: (...a: unknown[]) => getMock(...a) },
+  default: {
+    post: (...a: unknown[]) => postMock(...a),
+    get: (...a: unknown[]) => getMock(...a),
+  },
   getAccessToken: () => null,
   logout: vi.fn(),
   refreshAccessToken: vi.fn(),
@@ -117,13 +120,22 @@ describe("AssistenteIA — portas canônicas", () => {
     trocarPara("Raciocínio profundo");
     expect(screen.queryByRole("button", { name: "Claude" })).toBeNull();
     fireEvent.change(
-      screen.getByPlaceholderText("Descreva o caso ou questão para raciocínio profundo…"),
-      { target: { value: "Analise criticamente esta situação jurídica e indique riscos, provas e teses possíveis." } },
+      screen.getByPlaceholderText(
+        "Descreva o caso ou questão para raciocínio profundo…",
+      ),
+      {
+        target: {
+          value:
+            "Analise criticamente esta situação jurídica e indique riscos, provas e teses possíveis.",
+        },
+      },
     );
     fireEvent.click(screen.getByRole("button", { name: /Executar/ }));
     await waitFor(() => expect(postMock).toHaveBeenCalled());
     expect(postMock.mock.calls[0][0]).toBe("/manus/deep-reasoning");
-    expect(screen.getByTestId("manus-status").textContent).toMatch(/raciocínio profundo/i);
+    expect(screen.getByTestId("manus-status").textContent).toMatch(
+      /raciocínio profundo/i,
+    );
   });
 
   it("resumir chama /ia/resumir", async () => {
@@ -192,8 +204,7 @@ describe("AssistenteIA — portas canônicas", () => {
     expect(rotas.every((r: string) => r.startsWith("/ia/"))).toBe(true);
     expect(
       rotas.some(
-        (r: string) =>
-          r.includes("/ai/") || r.includes("/ia-especializada"),
+        (r: string) => r.includes("/ai/") || r.includes("/ia-especializada"),
       ),
     ).toBe(false);
   });
@@ -214,7 +225,9 @@ describe("AssistenteIA — HITL e fontes visíveis", () => {
     const fontes = screen.getByTestId("fontes-rag");
     expect(fontes.textContent).toMatch(/Precedente interno 123/);
 
-    expect(screen.getByTestId("motor-ia-usado").textContent).toMatch(/anthropic/i);
+    expect(screen.getByTestId("motor-ia-usado").textContent).toMatch(
+      /anthropic/i,
+    );
 
     const alertas = screen.getByTestId("alertas-ia");
     expect(alertas.textContent).toMatch(/Citação não confirmada/);
