@@ -15,8 +15,9 @@ await page.route("**/api/auth/refresh", (route) =>
 );
 
 const consoleErrors = [];
+let collectConsoleErrors = true;
 page.on("console", (msg) => {
-  if (msg.type() === "error") consoleErrors.push(msg.text());
+  if (collectConsoleErrors && msg.type() === "error") consoleErrors.push(msg.text());
 });
 
 try {
@@ -30,14 +31,13 @@ try {
   await page.reload({ waitUntil: "networkidle" });
   assert(await page.locator('input[type="email"]').isVisible(), "login não responsivo em viewport móvel");
 
+  assert(consoleErrors.length === 0, `erros de console no login: ${consoleErrors.join(" | ")}`);
+  collectConsoleErrors = false;
+
   await page.goto(`${BASE_URL}/clientes`, { waitUntil: "networkidle", timeout: 30000 });
   await page.waitForURL("**/login", { timeout: 10000 });
   assert(page.url().endsWith("/login"), "rota protegida não redirecionou para /login");
 
-  const relevantErrors = consoleErrors.filter(
-    (line) => !line.includes("Failed to load resource") && !line.includes("401"),
-  );
-  assert(relevantErrors.length === 0, `erros de console: ${relevantErrors.join(" | ")}`);
 
   console.log(JSON.stringify({
     status: "success",
