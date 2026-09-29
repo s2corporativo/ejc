@@ -19,7 +19,8 @@ const NL = BS + "n";
 const casos = [
   ["defeito-original.css", `/* cabecalho${NL} *\n${NL}html:not(.dark) { --a: 1 }\n`, true],
   ["escape-apos-comentario.css", `/* tema */${NL}html:not(.dark) { --a: 1 }\n`, true],
-  ["escape-dentro-comentario.css", `/* ver ${NL} aqui */ a { color: red }\n`, true],
+  // Dentro de comentário a sequência é só texto: NÃO é defeito.
+  ["escape-dentro-comentario.css", `/* ver ${NL} aqui */ a { color: red }\n`, false],
   ["sem-fecho.css", `a { color: red } /* aberto\n`, true],
   ["linha-isolada.css", `a { color: red }\n${NL} b { color: blue }\n`, true],
   ["limpo-comentario.css", `a { color: red } /* ok */\n.b { color: blue }\n`, false],

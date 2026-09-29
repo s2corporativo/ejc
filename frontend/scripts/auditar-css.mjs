@@ -10,7 +10,7 @@
  *
  * A detecção de órfãos é apenas informativa: classes montadas dinamicamente podem
  * gerar falso positivo. O gate bloqueante atua sobre a governança das camadas
- * globais, sobre a ordem do cascade e sobre comentários quebrados, que são
+ * globais, sobre a ordem do cascade e sobre quebras escapadas, que são
  * determinísticos.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -40,50 +40,68 @@ function stripComments(css) {
 }
 
 /**
- * Defeito de CSS observado em 28/09/2026: uma quebra de linha escrita como dois
- * caracteres (barra invertida + n) no lugar do byte 0x0A. O navegador passa a
- * ler o restante como parte do texto do comentário ou como parte do nome do
- * seletor, e a regra desaparece sem erro de build, lint ou teste. O sintoma
- * visto na produção foi um bloco inteiro de tema tratado como comentário.
+ * Localizador de quebras de linha escritas como dois caracteres.
  *
- * A verificação cobre as duas posições: entre o início e o fim de um comentário
- * (comentário que nunca fecha) e imediatamente depois do fim de um comentário
- * normal (seletor contaminado). Este comentário descreve o defeito sem escrever
- * a sequência, porque o detector a encontraria aqui.
+ * Defeito observado em 28/09/2026: uma quebra de linha foi gravada como barra
+ * invertida + n no lugar do byte 0x0A. O navegador não a trata como quebra e
+ * o arquivo passa a ser lido de outra forma: no caso observado, o bloco inteiro
+ * de um tema virou texto de comentário e nenhuma regra dele foi aplicada, sem
+ * erro de build, lint ou teste. O sintoma no CI foi o log do Woodpecker
+ * "ignoring hook", não o build.
+ *
+ * A sequência é armadilhosa em CSS legítimo (escape de identificador, barra de
+ * continuação de string), então só é Reportada quando age como separador de
+ * linha:
+ *   (a) comentário que nunca fecha: o resto do arquivo é comentário;
+ *   (b) sequência imediatamente depois de um comentário que fecha na mesma
+ *       linha, sem nada entre eles: ela vira parte do seletor seguinte;
+ *   (c) sequência sozinha na linha;
+ *   (d) sequência no fim de um valor seguida de chave de fechamento: sobrou
+ *       uma declaração de dentro de um comentário engolido.
+ *
+ * `scripts/auditar-css.selftest.mjs` exercita os quatro casos, folhas
+ * limpas e o gate; qualquer divergência faz o autoteste sair com 1.
  */
+const NL = String.fromCharCode(10);
+const BARRA = String.fromCharCode(92);
+
+/** Início do comentário aberto que cobre `indice`, ou -1. */
+function dentroDeComentario(css, indice) {
+  const aberto = css.lastIndexOf("/*", indice);
+  if (aberto === -1) return -1;
+  return aberto > css.lastIndexOf("*/", indice) ? aberto : -1;
+}
+
 function newlinesEscapados(css) {
   const achados = [];
-  const abertura = /\/\*/g;
-  let m;
-  while ((m = abertura.exec(css)) !== null) {
-    const fim = css.indexOf("*/", m.index + 2);
-    if (fim === -1) {
-      achados.push({ index: m.index, trecho: css.slice(m.index, m.index + 60) });
-      break;
-    }
-    // Entre início e fecho: barra invertida + n (ou r) no corpo do comentário.
-    if (/[\\][nr]/.test(css.slice(m.index + 2, fim))) {
-      achados.push({ index: m.index, trecho: css.slice(m.index, m.index + 60) });
-    }
-    // Logo depois do fecho, sem quebra: seletor que começa com barra + n.
-    const depois = css.slice(fim + 2);
-    const branco = depois.match(/^\s*/)[0].length;
-    if (branco === 0 && depois.startsWith("\\")) {
-      achados.push({ index: m.index, trecho: css.slice(m.index, m.index + 60) });
-    }
-    abertura.lastIndex = fim + 2;
+  const add = (i) =>
+    achados.push({
+      index: i,
+      trecho: JSON.stringify(css.slice(Math.max(0, i - 20), i + 20)),
+    });
+
+  const abertoFinal = css.lastIndexOf("/*");
+  if (abertoFinal > css.lastIndexOf("*/")) {
+    achados.push({
+      index: abertoFinal,
+      trecho: css.slice(abertoFinal, abertoFinal + 60),
+    });
+    return achados;
   }
-  // Comentário sem fecho: o último início é maior que o último fim.
-  if (css.lastIndexOf("/*") > css.lastIndexOf("*/")) {
-    const i = css.lastIndexOf("/*");
-    achados.push({ index: i, trecho: css.slice(i, i + 60) });
-  }
-  // Sequência fora de comentário, no início de uma linha: quebra de linha
-  // escrita à mão no lugar do byte 0x0A. No regex, a barra invertida precisa
-  // de duas barras para casar o caractere de barra.
-  const linhaEscapada = /^[^\S\n]*\\[nr](?=[^\S\n]*$)/gm;
-  for (const linha of css.matchAll(linhaEscapada)) {
-    achados.push({ index: linha.index, trecho: JSON.stringify(linha[0]) });
+
+  const sequencia = new RegExp(BARRA + BARRA + "[nr]", "g");
+  for (const m of css.matchAll(sequencia)) {
+    const i = m.index;
+    if (dentroDeComentario(css, i) >= 0) continue;
+    const inicioLinha = css.lastIndexOf(NL, i) + 1;
+    const fimLinha = css.indexOf(NL, i);
+    const linha = css.slice(inicioLinha, fimLinha === -1 ? css.length : fimLinha);
+    const antes = css.slice(0, i);
+    const depois = css.slice(i + 2);
+    if (antes.endsWith("*/") && antes.slice(antes.lastIndexOf("*/") + 2).trim() === "")
+      add(i); // (b)
+    else if (linha.trim() === BARRA + linha.trim().slice(1)) add(i); // (c)
+    else if (/^\s*\}/.test(depois)) add(i); // (d)
   }
   return achados;
 }
