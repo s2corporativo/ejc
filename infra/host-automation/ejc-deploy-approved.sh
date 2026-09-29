@@ -24,7 +24,7 @@ docker compose version >/dev/null 2>&1 || fail "Docker Compose ausente"
 [ -d "$SOURCE_DIR/.git" ] || fail "checkout privado ausente em $SOURCE_DIR; provisione uma clone read-only com deploy key antes de habilitar o servico"
 
 log "atualizando checkout operacional read-only"
-git -C "$SOURCE_DIR" fetch --prune origin main
+git -C "$SOURCE_DIR" fetch --prune origin 'refs/heads/main:refs/remotes/origin/main'
 git -C "$SOURCE_DIR" checkout -f main
 git -C "$SOURCE_DIR" reset --hard origin/main
 git -C "$SOURCE_DIR" clean -fdx
@@ -60,7 +60,7 @@ esac
 
 # Revalida o SHA depois de adquirir o mutex. Se main avancou enquanto esperava,
 # o novo commit precisa passar pelo Woodpecker e esta execucao nao toca producao.
-git -C "$SOURCE_DIR" fetch --prune origin main
+git -C "$SOURCE_DIR" fetch --prune origin 'refs/heads/main:refs/remotes/origin/main'
 LATEST_SHA="$(git -C "$SOURCE_DIR" rev-parse origin/main)"
 [ "$LATEST_SHA" = "$TARGET_SHA" ] || fail "main mudou antes da decisao de migration; deploy abortado"
 
@@ -117,7 +117,7 @@ rsync -a --delete \
   "$SOURCE_DIR/" "$APP_DIR/"
 
 # Revalida main ainda sob o mutex e antes do build/cutover.
-git -C "$SOURCE_DIR" fetch --prune origin main
+git -C "$SOURCE_DIR" fetch --prune origin 'refs/heads/main:refs/remotes/origin/main'
 LATEST_SHA="$(git -C "$SOURCE_DIR" rev-parse origin/main)"
 [ "$LATEST_SHA" = "$TARGET_SHA" ] || fail "main mudou durante a sincronizacao; runtime nao sera trocado"
 
