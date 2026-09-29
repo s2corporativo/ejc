@@ -55,6 +55,8 @@ export const CATEGORIAS_FERRAMENTAS: {
     // que a Entrada Única também renderiza em modo manual) e é o único caminho
     // registrado que não tinha nenhum link no app — o hub é o ponto de entrada
     // coerente para ele.
+    // Verticais jurídicas (ex.: Tributário) não são mais ferramentas de topo:
+    // permanecem disponíveis no contexto do caso/IA e por deep-link legado.
     keys: [
       "produtividade",
       "workflow",
@@ -62,7 +64,6 @@ export const CATEGORIAS_FERRAMENTAS: {
       "assinaturas",
       "crm",
       "cadastro-manual",
-      "tributario",
     ],
   },
 ];
