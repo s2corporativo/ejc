@@ -109,6 +109,20 @@ def _assistant_turn(text: str, tool_calls: list[dict]) -> dict:
     return {"role": "assistant", "content": blocos}
 
 
+def _erro_tool_result(e: Exception) -> dict:
+    """Erro de tool devolvido ao modelo como tool_result.
+
+    Erro de validação de argumento (`ToolArgError`) devolve a razão, que é o
+    contrato público da própria tool e permite ao modelo corrigir. Demais
+    exceções devolvem só o tipo, sem vazar detalhe interno.
+    """
+    from app.services.ai.agent.tools.registry import _ToolArgError
+
+    if isinstance(e, _ToolArgError):
+        return {"erro": "argumento_invalido", "detalhe": str(e)[:300]}
+    return {"erro": type(e).__name__}
+
+
 def _tool_result_turn(tool_use_id: str, resultado: dict) -> dict:
     """Turno user com um bloco tool_result (ESPAÇO REAL)."""
     return {
@@ -189,7 +203,7 @@ async def _processar_tool_calls(tool_calls, *, ctx, messages,
             resultado = await REGISTRY.executar(nome, args, ctx)
         except Exception as e:
             logger.warning("tool '%s' falhou: %s", nome, str(e)[:200])
-            resultado = {"erro": type(e).__name__}
+            resultado = _erro_tool_result(e)
         messages.append(_tool_result_turn(tc.get("id", ""), resultado))
         await _emitir(on_event, "resultado", {"ferramenta": nome, "resultado": resultado})
     return None
@@ -381,7 +395,7 @@ async def rodar_agente(
                 resultado = await REGISTRY.executar(nome, args, ctx)
             except Exception as e:
                 logger.warning("tool '%s' (retomada) falhou: %s", nome, str(e)[:200])
-                resultado = {"erro": type(e).__name__}
+                resultado = _erro_tool_result(e)
             messages.append(_tool_result_turn(pending.get("id", ""), resultado))
             await _emitir(on_event, "resultado", {"ferramenta": nome, "resultado": resultado})
         elif pending:

@@ -5,11 +5,13 @@
  * Objetivos:
  * 1) medir regras customizadas potencialmente órfãs;
  * 2) impedir que novas "camadas finais" globais sejam adicionadas ao main.tsx;
- * 3) garantir que os tokens canônicos --ejc-* continuem sendo a última camada.
+ * 3) garantir que os tokens canônicos --ejc-* continuem sendo a última camada;
+ * 4) impedir comentário de cabeçalho com `\n` literal, que engole o arquivo.
  *
  * A detecção de órfãos é apenas informativa: classes montadas dinamicamente podem
- * gerar falso positivo. O gate bloqueante atua somente sobre a governança das
- * camadas globais, que é determinística.
+ * gerar falso positivo. O gate bloqueante atua sobre a governança das camadas
+ * globais, sobre a ordem do cascade e sobre comentários quebrados, que são
+ * determinísticos.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
@@ -37,6 +39,24 @@ function stripComments(css) {
   );
 }
 
+/**
+ * Cabeçalho de comentário escrito com barra invertida + "n" (dois bytes)
+ * em vez de quebra de linha: o navegador lê o início de comentário e procura
+ * o fim em qualquer byte posterior, o que engole TODO o arquivo seguinte.
+ * Em 28/09/2026 isso desligou o tema claro inteiro de ejc-tokens.css sem
+ * erro de build nem de lint. Detectar e reverter.
+ *
+ * Nota: este próprio comentário descreve o defeito sem escrever a sequência,
+ * porque o detector a encontraria aqui.
+ */
+function cabecalhosQuebrados(css) {
+  const padrao = /\/\*[^*]*\\n/g;
+  return [...css.matchAll(padrao)].map((match) => ({
+    index: match.index,
+    trecho: match[0].slice(0, 60),
+  }));
+}
+
 function collectVocabulary() {
   const classes = new Set();
   const dynamicPrefixes = new Set();
@@ -48,7 +68,7 @@ function collectVocabulary() {
   for (const file of files) {
     const text = readFileSync(file, "utf8");
     const literals = text.match(
-      /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|\`(?:[^\`\\]|\\.)*\`/gs,
+      /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|\`(?:[^\`\\\n]|\\.)*\`/gs,
     );
     if (!literals) continue;
     for (const raw of literals) {
@@ -132,6 +152,7 @@ function auditOrphans() {
       rules: rules.length,
       orphanRules: orphanRules.length,
       sample: orphanRules.slice(0, 5).map((rule) => rule.selector),
+      brokenComments: cabecalhosQuebrados(css),
     };
   });
 }
@@ -154,6 +175,18 @@ function verifyGovernance() {
   const allowed = new Set(governance.allowed_global_imports ?? []);
   const unknown = imports.filter((item) => !allowed.has(item));
   let ok = true;
+
+  const broken = auditOrphans().filter((item) => item.brokenComments.length);
+  if (broken.length) {
+    for (const item of broken) {
+      for (const comment of item.brokenComments) {
+        console.error(
+          `ERRO: ${item.file}: comentario com "\\n" literal na posicao ${comment.index} (${comment.trecho}) — engole o restante do arquivo.`,
+        );
+      }
+    }
+    ok = false;
+  }
 
   if (unknown.length) {
     console.error(
@@ -180,7 +213,7 @@ function verifyGovernance() {
 
   if (ok) {
     console.log(
-      `Governança CSS OK — ${imports.length}/${max} camadas globais; tokens canônicos por último.`,
+      `Governança CSS OK — ${imports.length}/${max} camadas globais; tokens canônicos por último; nenhum comentário quebrado.`,
     );
   }
   return ok;
@@ -190,16 +223,18 @@ const args = new Set(process.argv.slice(2));
 const report = auditOrphans();
 
 if (args.has("--json")) {
-  console.log(JSON.stringify({ globalImports: globalCssImports(), report }, null, 2));
+  console.log(
+    JSON.stringify({ globalImports: globalCssImports(), report }, null, 2),
+  );
 } else {
   console.log("Auditoria conservadora de CSS — EJC\n");
   console.log(
-    `${"arquivo".padEnd(52)}${"linhas".padStart(8)}${"regras".padStart(8)}${"órfãs*".padStart(9)}`,
+    `${"arquivo".padEnd(52)}${"linhas".padStart(8)}${"regras".padStart(8)}${"órfãs*".padStart(9)}${"com.quebr.".padStart(13)}`,
   );
-  console.log("-".repeat(77));
+  console.log("-".repeat(90));
   for (const item of report) {
     console.log(
-      `${item.file.padEnd(52)}${String(item.lines).padStart(8)}${String(item.rules).padStart(8)}${String(item.orphanRules).padStart(9)}`,
+      `${item.file.padEnd(52)}${String(item.lines).padStart(8)}${String(item.rules).padStart(8)}${String(item.orphanRules).padStart(9)}${String(item.brokenComments.length).padStart(13)}`,
     );
   }
   console.log("\n* órfãs = heurística informativa; não é gate destrutivo.");
