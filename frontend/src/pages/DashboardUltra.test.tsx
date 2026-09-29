@@ -40,6 +40,7 @@ vi.mock("./EntradaUnica", () => ({
 }));
 
 import DashboardUltra from "./DashboardUltra";
+import { LEGACY_REDIRECTS, STAFF_ROUTES } from "../config/moduleRegistry";
 
 const dataBase = new Date();
 const hoje = format(dataBase, "yyyy-MM-dd");
@@ -382,5 +383,55 @@ describe("DashboardUltra — identidade premium DPT", () => {
       ),
     ).toBeTruthy();
     expect(screen.queryByTestId("entrada-unica")).not.toBeTruthy();
+  });
+});
+
+describe("DashboardUltra — atalhos do Acesso rápido", () => {
+  const ATALHOS = [
+    { rotulo: "Novo caso", href: "/entrada" },
+    { rotulo: "Anexar documentos", href: "/documentos" },
+    { rotulo: "Modelos e peças", href: "/pecas" },
+    {
+      rotulo: "Consultar jurisprudência",
+      href: "/inteligencia?tab=pesquisa",
+    },
+    { rotulo: "Minhas tarefas", href: "/atividades?tipo=tarefa" },
+  ];
+
+  async function abrirAtalhos() {
+    mockGetOk();
+    renderizar();
+    abrirControles();
+    await screen.findByText("Acesso rápido");
+  }
+
+  it("aponta para rotas canônicas registradas no moduleRegistry", async () => {
+    await abrirAtalhos();
+
+    // Cada destino precisa existir como rota real (path do registry) ou ser o
+    // path canônico de um redirect legado já mapeado — nenhum atalho pode
+    // apontar para uma URL que o App não renderiza.
+    const legítimos = new Set(STAFF_ROUTES.map((r) => r.path));
+    for (const redirect of LEGACY_REDIRECTS) {
+      legítimos.add(redirect.to.split("?")[0]);
+    }
+
+    for (const { rotulo, href } of ATALHOS) {
+      const link = screen.getByRole("link", { name: rotulo });
+      expect(link.getAttribute("href"), rotulo).toBe(href);
+      expect(legítimos.has(href.split("?")[0]), `${rotulo} -> ${href}`).toBe(
+        true,
+      );
+    }
+  });
+
+  it("não mantém o atalho de novo caso no redirect legado /casos/novo", async () => {
+    await abrirAtalhos();
+
+    const hrefs = ATALHOS.map(
+      ({ rotulo }) => screen.getByRole("link", { name: rotulo }).getAttribute("href"),
+    );
+    expect(hrefs).not.toContain("/casos/novo");
+    expect(hrefs).toContain("/entrada");
   });
 });

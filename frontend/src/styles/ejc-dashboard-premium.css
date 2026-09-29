@@ -1373,6 +1373,59 @@ html:not(.dark) .sidebar-bronze .sidebar-nav-item.is-active svg {
   color: var(--ejc-dash-gold);
 }
 
+/* ── Logomarca do escritório nos pontos de apresentação ──────────────────── */
+/* O PNG de marca é transparente: sem object-fit o desenho é esticado dentro
+   do slot, porque o glifo que ele substituiu não precisava da propriedade. */
+.ejc-assistente {
+  display: block;
+  flex: 0 0 auto;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.ejc-assistente--fallback {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--ejc-dash-gold);
+  color: var(--ejc-dash-green);
+  font-family: var(--ejc-dash-serif);
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Herói do Dashboard: a marca ocupa o círculo dourado de 46px com folga
+   interna, sem invadir a borda. */
+.ejc-dash__entry-icon .ejc-assistente,
+.ejc-dash__entry-icon .ejc-assistente--fallback {
+  width: 46px;
+  height: 46px;
+  padding: 9px;
+  font-size: 15px;
+}
+
+/* Linha de identidade da variante "full" (/entrada). */
+.ejc-entry-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ejc-entry-identity__mark {
+  width: 40px;
+  height: 40px;
+  padding: 6px;
+  font-size: 13px;
+}
+
+.ejc-entry-identity__text {
+  font-family: var(--ejc-dash-serif);
+  font-size: 15px;
+  font-weight: 600;
+  color: #22332c;
+}
+
 .ejc-entry-pill__input {
   flex: 1 1 auto;
   min-width: 0;
