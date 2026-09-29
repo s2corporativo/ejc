@@ -116,9 +116,12 @@ async def diagnosticar_integridade(db: AsyncSession) -> dict[str, Any]:
             "documento_de_caso_excluido",
             "documents",
             "alta",
-            "Nenhuma exclusão. Documento de caso soft-deletado herda a "
-            "invisibilidade operacional do caso e reaparece se o caso for "
-            "restaurado. Reclassificar para GED geral apenas por decisão humana.",
+            "Nenhuma exclusão. ATENÇÃO: enquanto as superfícies operacionais "
+            "não filtrarem por deleted_at do caso, este documento pode "
+            "permanecer visível no GED de sócio (documents.listar) e no portal "
+            "do cliente (/portal/documentos) mesmo com o caso excluído. "
+            "Excluir o documento ou corrigir as superfícies (decisão humana); "
+            "restaurar o caso o traz de volta.",
         ),
         (
             "deadlines",
@@ -147,7 +150,11 @@ async def diagnosticar_integridade(db: AsyncSession) -> dict[str, Any]:
                 estado_pai="excluido",
                 severidade=severidade,
                 acao_recomendada=acao,
-                impacta_integridade=(tipo != "documento_de_caso_excluido"),
+                # Fail-closed: enquanto documents.listar (sócio+) e
+                # /portal/documentos não excluírem documentos de casos
+                # soft-deletados, o registro pode continuar visível e o
+                # relatório não pode classificá-lo como inofensivo.
+                impacta_integridade=True,
             )
         )
 

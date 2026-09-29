@@ -508,8 +508,11 @@ async def test_diagnostico_detecta_peca_de_caso_excluido():
             await _limpar(db, client_id, [case_id], uid)
 
 
-async def test_documento_de_caso_excluido_e_informativo():
-    """Documento preservado de caso soft-deletado não torna a base inconsistente."""
+async def test_documento_de_caso_excluido_impacta_integridade():
+    """Documento preservado de caso soft-deletado é fail-closed: as rotas
+    (documents.listar p/ sócio+ e /portal/documentos) ainda não filtram por
+    deleted_at do caso, então o registro pode continuar visível e o relatório
+    NÃO pode dizer integro=true (revisão P1 da #1864)."""
     from app.core.database import AsyncSessionLocal
     from app.services.integridade_service import diagnosticar_integridade
 
@@ -538,16 +541,17 @@ async def test_documento_de_caso_excluido_e_informativo():
             alvo = achados["documento_de_caso_excluido"]
 
             assert doc_id in alvo["ids"]
-            assert alvo["impacta_integridade"] is False
+            assert alvo["impacta_integridade"] is True
             assert (
                 depois["resumo"]["total_registros_afetados"]
-                == antes["resumo"]["total_registros_afetados"]
+                == antes["resumo"]["total_registros_afetados"] + 1
             )
             assert (
                 depois["resumo"]["total_registros_informativos"]
-                == antes["resumo"].get("total_registros_informativos", 0) + 1
+                == antes["resumo"].get("total_registros_informativos", 0)
             )
-            assert "documento_de_caso_excluido" in depois["resumo"]["tipos_informativos"]
+            assert "documento_de_caso_excluido" not in depois["resumo"]["tipos_informativos"]
+            assert depois["resumo"]["integro"] is False
         finally:
             await _limpar(db, client_id, [case_id], uid)
 
