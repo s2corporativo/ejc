@@ -42,7 +42,9 @@ try {
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload({ waitUntil: "networkidle" });
-  assert(await page.locator('input[type="email"]').isVisible(), "login não responsivo em viewport móvel");
+  const mobileEmail = page.locator('input[type="email"]');
+  await mobileEmail.waitFor({ state: "visible", timeout: 5000 });
+  assert(await mobileEmail.isVisible(), "login não responsivo em viewport móvel");
 
   await page.goto(`${BASE_URL}/clientes`, { waitUntil: "networkidle", timeout: 30000 });
   await page.waitForURL("**/login", { timeout: 10000 });
