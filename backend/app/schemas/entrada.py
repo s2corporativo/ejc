@@ -29,6 +29,19 @@ class PrazoEntrada(BaseModel):
     responsavel_id: str | None = Field(default=None, max_length=36)
 
 
+class ProcessoConfirmadoEntrada(BaseModel):
+    """Metadados processuais confirmados pelo advogado no HITL.
+
+    Não cria CNJ novo por si só: o service exige que este número coincida
+    exatamente com o CNJ já detectado/reconciliado no rascunho.
+    """
+
+    numero_cnj: str = Field(min_length=20, max_length=30)
+    tribunal: str | None = Field(default=None, max_length=160)
+    comarca: str | None = Field(default=None, max_length=160)
+    vara: str | None = Field(default=None, max_length=160)
+
+
 class VincularProcessoEntradaRequest(BaseModel):
     """Confirma que um CNJ detectado pertence a um caso já existente."""
 
@@ -53,6 +66,7 @@ class CriarCasoEntradaRequest(BaseModel):
     parte_contraria: str | None = Field(default=None, max_length=255)
     documentos_ids: list[str] = Field(default_factory=list, max_length=40)
     prazo: PrazoEntrada | None = None
+    processo_confirmado: ProcessoConfirmadoEntrada | None = None
 
     # Triagem jurídica revisada. Estes campos são aditivos e não exigem nova
     # tabela: prioridade alimenta Case.prioridade; os demais permanecem no
