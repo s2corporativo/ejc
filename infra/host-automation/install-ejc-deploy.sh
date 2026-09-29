@@ -32,7 +32,7 @@ EOF
 [ -f "$APP_DIR/.env" ] || { echo "$APP_DIR/.env ausente" >&2; exit 2; }
 [ "$(stat -c '%u:%a' "$APP_DIR/.env")" = "0:600" ] || { echo "$APP_DIR/.env deve ser root:root 0600" >&2; exit 2; }
 
-git -C "$SOURCE_DIR" fetch --prune origin main
+git -C "$SOURCE_DIR" fetch --prune origin 'refs/heads/main:refs/remotes/origin/main'
 git -C "$SOURCE_DIR" rev-parse --verify origin/main >/dev/null
 
 install -m 755 "$ROOT/ejc-deploy-approved.sh" "$TARGET/ejc-deploy-approved.sh"
