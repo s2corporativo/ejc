@@ -2,9 +2,20 @@
 
 ## Autoridade visual
 
-A identidade canônica do EJC é a referência Tech Blue DPT aprovada em
-20/09/2026: navy profundo, azul elétrico/ciano, neutros frios, títulos
-editoriais serifados e interface sans-serif limpa.
+A identidade canônica do EJC (28/09/2026) é **base neutra + acento único +
+ouro de marca**:
+
+- **Papel neutro** `#F6F7F9`, superfícies brancas, tinta grafite `#101828`.
+- **Ação:** UM azul `#1D4ED8` (botões, foco, item ativo, links). Sem gradiente
+  no acento e sem família de cores: o que é ação não disputa com o resto.
+- **Marca:** ouro DPT `#8F7117`, igual ao dos PDFs Visual Law, reservado a
+  logo, filete de seção, destaque editorial e ao rótulo de marca. Nunca é a
+  cor do botão de ação.
+- **IA:** violeta `#7C3AED`, exclusivo de superfícies de inteligência.
+- **Estado:** sucesso, atenção, perigo e informação são semânticos e nunca
+  comunicam sozinhos (sempre com ícone ou rótulo).
+- **Títulos serifados** (Playfair Display) para o display editorial; interface
+  em Inter; dados processuais e monetários em algarismos tabulares.
 
 A imagem de referência define o **idioma visual**. O código vigente define a
 **autoridade funcional**. Nenhuma alteração visual pode substituir dados reais,
@@ -29,14 +40,20 @@ paleta local quando já existir token semântico equivalente.
 
 ## Paleta
 
-Famílias principais:
+Regra de uso, sem exceção:
 
-- **Navy:** superfícies institucionais, sidebar e ações estruturais.
-- **Azul/ciano:** destaque, foco, seleção e elementos editoriais.
-- **Névoa fria/off-white:** canvas principal.
-- **Branco:** superfícies de trabalho.
-- **Tinta escura:** texto principal.
-- **Cores semânticas:** sucesso, atenção, perigo e informação.
+| Papel | Token | Onde pode aparecer |
+|-------|-------|---------------------|
+| Ação | `--ejc-primary` | botões, foco, item ativo, links, abas |
+| Marca | `--ejc-gold` | logo, filete de seção, rótulo de marca |
+| IA | `--ejc-ai` | superfícies de inteligência, badge de fonte |
+| Estado | `--ejc-success/warning/danger/info` | prazos, riscos, validação |
+| Superfície/tinta | `--ejc-background/surface/…`, `--ejc-text/…` | papel, cards, texto |
+
+O ouro NUNCA é a cor de ação e o azul NUNCA é a cor de marca. O tema escuro
+troca só os literais: acento claro (`#5B8DEF`) para texto e ícones, tom sólido
+da família (`--ejc-primary-solid`) no botão primário, ouro claro (`#D9B45C`)
+na marca.
 
 Os valores concretos vivem em `ejc-tokens.css`; este documento não duplica
 HEX para evitar divergência.
@@ -58,12 +75,13 @@ incremental e comprovada:
 1. alterar o componente ou a camada que já é dona do elemento;
 2. preferir tokens e primitivos canônicos;
 3. remover CSS antigo somente após evidência de que não possui consumidores;
-4. nunca trocar o visual Tech Blue DPT por uma identidade paralela;
+4. nunca criar uma terceira paleta (a atual é neutro + acento + ouro);
 5. nunca fazer big-bang rewrite apenas para saneamento visual.
 
 O gate `npm run audit:css:verificar` impede aumento das camadas globais do
-`main.tsx` e garante que `ejc-tokens.css` continue sendo a última camada do
-cascade. O relatório de regras potencialmente órfãs é conservador e deve ser
+`main.tsx`, garante que `ejc-tokens.css` continue sendo a última camada do
+cascade e bloqueia cabeçalho de comentário com barra invertida + "n", que
+engole o restante do arquivo (foi assim que o tema de 28/09 ficou inerte). O relatório de regras potencialmente órfãs é conservador e deve ser
 usado como evidência para PRs de remoção, não como autorização automática para
 deletar CSS.
 
@@ -146,7 +164,7 @@ No CI oficial, a governança CSS roda antes da suíte de frontend.
 
 ## Critérios de aceite
 
-- [ ] identidade Tech Blue DPT preservada;
+- [ ] identidade neutro + acento único + ouro de marca preservada;
 - [ ] nenhuma nova camada global de CSS criada sem decisão explícita;
 - [ ] tokens canônicos continuam por último no cascade;
 - [ ] dados do dashboard são reais ou degradam explicitamente;

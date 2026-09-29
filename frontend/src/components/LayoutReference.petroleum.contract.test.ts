@@ -11,15 +11,9 @@ const dashboard = readFileSync(
   resolve(ROOT, "src/pages/DashboardUltra.tsx"),
   "utf8",
 );
-const theme = readFileSync(
-  resolve(ROOT, "src/styles/ejc-reference-systemwide.css"),
-  "utf8",
-);
-const premium = readFileSync(
-  resolve(ROOT, "src/styles/ejc-dashboard-premium.css"),
-  "utf8",
-);
 const tokens = readFileSync(resolve(ROOT, "src/styles/ejc-tokens.css"), "utf8");
+const css = tokens;
+const main = readFileSync(resolve(ROOT, "src/main.tsx"), "utf8");
 
 function luminance(hex: string) {
   const channels = hex
@@ -39,8 +33,121 @@ function contrast(foreground: string, background: string) {
   return (values[0] + 0.05) / (values[1] + 0.05);
 }
 
-describe("EJC Identidade Premium DPT — contrato visual canônico", () => {
-  it("mantém a marca institucional grande na sidebar sem alterar a navegação canônica", () => {
+/** Bloco de regras que abre em `sel`: percorre as chaves e devolve até o fecho. */
+function bloco(sel: string) {
+  const inicio = css.indexOf(sel + " {");
+  const abertura = css.indexOf("{", inicio);
+  let depth = 0;
+  for (let i = abertura; i < css.length; i += 1) {
+    if (css[i] === "{") depth += 1;
+    else if (css[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return css.slice(inicio, i + 1);
+    }
+  }
+  return "";
+}
+
+function blocoClaro() {
+  return bloco("html:not(.dark)");
+}
+
+function blocoEscuro() {
+  // Há `.dark { ... }` aninhado nas regras de apresentação do shell; o bloco
+  // de TEMA é o primeiro que declara as variáveis de superfície.
+  const candidato = bloco(".dark");
+  return candidato.includes("--ejc-background") ? candidato : "";
+}
+
+describe("EJC — tema canônico neutro com acento único e ouro de marca", () => {
+  it("não deixa nenhum cabeçalho de comentário com quebra de linha literal", () => {
+    // Em 28/09/2026 o cabeçalho do bloco claro trazia uma barra invertida
+    // seguida de "n" no lugar da quebra de linha: o comentário nunca fechou,
+    // o navegador tratou TODO o tema como comentário e a paleta neutra nunca
+    // existiu em produção. Qualquer cabeçalho com essa sequência reabre a
+    // mesma falha (scripts/auditar-css.mjs --verificar também bloqueia).
+    const cabecalhos = tokens.match(/\/\*[^]*?\*\//g) ?? [];
+    for (const cabecalho of cabecalhos) {
+      expect(
+        cabecalho.slice(0, 3),
+        "cabeçalho de comentário com barra invertida abre e nunca fecha",
+      ).not.toContain("\\" + "n");
+    }
+    expect(blocoClaro()).toContain("--ejc-primary: #1d4ed8");
+  });
+
+  it("fixa a paleta neutra com um só acento de ação e o ouro reservado à marca", () => {
+    const claro = blocoClaro();
+    // Superfície e tinta
+    expect(claro).toContain("--ejc-background: #f6f7f9");
+    expect(claro).toContain("--ejc-surface: #ffffff");
+    expect(claro).toContain("--ejc-surface-muted: #f2f4f7");
+    expect(claro).toContain("--ejc-border: #e4e7ec");
+    expect(claro).toContain("--ejc-text: #101828");
+    expect(claro).toContain("--ejc-text-secondary: #475467");
+    // Ação: azul único. Sem família azul+roxo+ciano nem gradiente no acento.
+    expect(claro).toContain("--ejc-primary: #1d4ed8");
+    expect(claro).toContain("--ejc-primary-soft: #eff4ff");
+    expect(claro).toContain("--ejc-primary-contrast: #ffffff");
+    expect(claro).toContain("--ejc-vibrant-gradient: #1d4ed8");
+    expect(claro).not.toContain("--ejc-vibrant-cyan");
+    expect(claro).not.toContain("linear-gradient(135deg, #2563eb");
+    // Marca: ouro DPT, igual aos PDFs Visual Law
+    expect(claro).toContain("--ejc-gold: #8f7117");
+    expect(claro).toContain("--ejc-gold-ink: #8f7117");
+    expect(claro).toContain("--ejc-gold-soft: #f7f1dc");
+    // IA: violeta, exclusivo de inteligência
+    expect(claro).toContain("--ejc-ai: #7c3aed");
+    // Foco: azul da ação
+    expect(claro).toContain("--ejc-focus-ring: rgba(29, 78, 216, 0.4)");
+  });
+
+  it("preserva contraste AA no claro e no escuro", () => {
+    const claro = blocoClaro();
+    const escuro = blocoEscuro();
+
+    expect(contrast("#101828", "#ffffff")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#101828", "#f6f7f9")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#475467", "#ffffff")).toBeGreaterThanOrEqual(4.5);
+    // Ação: branco sobre azul = 7:1 (AAA)
+    expect(contrast("#ffffff", "#1d4ed8")).toBeGreaterThanOrEqual(4.5);
+    // Marca: ouro DPT sobre branco = 4,6:1 (AA)
+    expect(contrast("#8f7117", "#ffffff")).toBeGreaterThanOrEqual(4.5);
+    // Escuro: canvas grafite, tinta clara, acento azul claro, ouro claro.
+    // Um só acento: claro para texto/ícones (5,4:1 sobre a superfície) e o
+    // tom sólido da família no botão primário (4,8:1 com branco).
+    expect(contrast("#f2f4f7", "#0c0f14")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#f2f4f7", "#151a21")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#5b8def", "#151a21")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#ffffff", "#3b6fd4")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#d9b45c", "#151a21")).toBeGreaterThanOrEqual(4.5);
+    expect(escuro).toContain("--ejc-surface: #151a21");
+    expect(escuro).toContain("--ejc-primary: #5b8def");
+    expect(escuro).toContain("--ejc-primary-solid: #3b6fd4");
+    expect(escuro).toContain("--ejc-gold: #d9b45c");
+  });
+
+  it("não deixa a paleta esmeralda da geração anterior como cor de papel", () => {
+    // A paleta esmeralda foi substituída em 18/09 e o tema neutro em 28/09.
+    // O bloco claro é a fonte; nenhum literal esmeralda pode voltar como
+    // fundo, ação ou texto de marca.
+    const claro = blocoClaro();
+    for (const literal of ["#0a4132", "#04291f", "#14503f", "#1d2b26"]) {
+      expect(claro, `literal esmeralda ${literal} no tema claro`).not.toContain(
+        literal,
+      );
+    }
+  });
+
+  it("mantém a camada morta premium-shell fora do bundle", () => {
+    // premium-shell.css (618 linhas) estiliza `ejc-premium-topbar` e
+    // `ejc-sidebar-week`, que nenhum componente renderiza desde o shell v2.
+    expect(main).not.toContain("premium-shell");
+  });
+});
+
+describe("EJC — shell canônico", () => {
+  it("mantém a marca, a navegação canônica e a largura do menu", () => {
     expect(layout).toContain("md:w-[17rem]");
     expect(layout).toContain("md:left-[17rem]");
     expect(layout).toContain("z-[60]");
@@ -48,12 +155,36 @@ describe("EJC Identidade Premium DPT — contrato visual canônico", () => {
     expect(layout).toContain("ejc-sidebar-brand__logo");
     expect(layout).toContain("selectMainNavigation");
     expect(layout).toContain("officeName");
-    expect(layout).toContain("ejc-sidebar-epigraph");
     expect(layout).not.toContain("md:w-[15.5rem]");
     expect(layout).not.toContain("SidebarWeekCalendar");
   });
 
-  it("reproduz a composição da referência premium no início", () => {
+  it("mantém as classes de navegação agrupada que o shell vai consumir", () => {
+    // `moduleRegistry.group` já existe e o CSS já tem `.sidebar-group-label`.
+    // O shell (LayoutReference.tsx) é editado pelos PRs #1866 e #1867, então
+    // este PR entrega as regras; o componente entra depois do merge deles.
+    expect(layout).toContain("sidebar-nav-item");
+    expect(tokens).toContain(".sidebar-group-label");
+    expect(tokens).toContain(".sidebar-week");
+  });
+
+  it("reserva a área do calendário semanal abaixo do menu lateral", () => {
+    // O epígrafe (panorama de Betim + citação) ocupava ~30% da altura da
+    // sidebar com informação institucional já presente no login. A regra
+    // saiu do CSS claro e dá lugar ao calendário da semana.
+    expect(tokens).not.toContain(".ejc-sidebar-epigraph");
+    expect(tokens).toContain(".sidebar-week");
+  });
+
+  it("mantém o menu, a busca global e o relógio do header", () => {
+    expect(layout).toContain("ejc-header-search");
+    expect(layout).toContain("ejc-app-header");
+    expect(layout).toContain("ejc-header-clock");
+  });
+});
+
+describe("EJC — início canônico", () => {
+  it("reproduz a composição da referência no início", () => {
     expect(dashboard).toContain("ejc-dash__greeting");
     expect(dashboard).toContain("ejc-dash__entry");
     expect(dashboard).toContain("Entrada Única");
@@ -68,50 +199,6 @@ describe("EJC Identidade Premium DPT — contrato visual canônico", () => {
     expect(dashboard).toContain("Acesso rápido");
     expect(dashboard).toContain("Minha rotina hoje");
     expect(dashboard).toContain("/brand/dashboard-themis.jpg");
-  });
-
-  it("fixa a paleta Esmeralda & Ouro da referência no tema final", () => {
-    expect(theme).toContain("--ejc-petroleum: #0c3a2d");
-    expect(theme).toContain("--ejc-ice: #f5f4ef");
-    expect(theme).toContain("--ejc-gold: #cfa961");
-    expect(theme).toContain(
-      "linear-gradient(180deg, #0b3d30 0%, #01201b 100%)",
-    );
-    // Referência DPT: item ativo da sidebar em OURO TRANSLÚCIDO (não sólido),
-    // com filete interno dourado — gradiente canônico fixado em contrato.
-    expect(theme).toContain("rgba(201, 155, 59, 0.46) 0%");
-    expect(theme).toContain("rgba(201, 155, 59, 0.3) 100%");
-    expect(premium).toContain("--ejc-dash-green: #0a4132");
-    expect(premium).toContain("--ejc-dash-gold: #cfa961");
-    expect(premium).toContain(
-      '"Playfair Display", Georgia, "Times New Roman", serif',
-    );
-    expect(premium).toContain("@media (max-width: 767px)");
-    expect(premium).toContain("@media (prefers-reduced-motion: reduce)");
-    // Rodapé da sidebar com panorama de Betim/MG (#1756) ancorado ao fundo
-    // esmeralda da paleta canônica (sem resíduo navy do tema anterior).
-    expect(premium).not.toContain("rgba(15, 39, 71");
-    expect(premium).not.toContain("rgba(7, 24, 46");
-    expect(premium).not.toContain("rgba(56, 189, 248");
-    expect(premium).not.toContain("rgba(125, 211, 252");
-    expect(premium).not.toContain("#0f2747");
-    expect(premium).not.toContain("#38bdf8");
-  });
-
-  it("preserva contraste AA e foco perceptível na paleta canônica", () => {
-    expect(tokens).toContain("--ejc-primary: #0a4132");
-    expect(tokens).toContain("--ejc-gold-ink: #8f7117");
-    expect(tokens).toContain("--ejc-background: #f5f4ef");
-    expect(tokens).toContain("--ejc-text: #1d2b26");
-    expect(tokens).toContain("--ejc-focus-ring: rgba(143, 113, 23, 0.65)");
-
-    expect(contrast("#0a4132", "#ffffff")).toBeGreaterThanOrEqual(4.5);
-    expect(contrast("#8f7117", "#ffffff")).toBeGreaterThanOrEqual(4.5);
-    expect(contrast("#1d2b26", "#f5f4ef")).toBeGreaterThanOrEqual(4.5);
-    expect(contrast("#ede6da", "#14110a")).toBeGreaterThanOrEqual(4.5);
-    // Ouro sobre esmeralda (cartões institucionais) — texto grande/UI ≥ 3:1.
-    expect(contrast("#cfa961", "#0a4132")).toBeGreaterThanOrEqual(3);
-    expect(contrast("#eaca7f", "#04291f")).toBeGreaterThanOrEqual(3);
   });
 
   it("alimenta o início com endpoints reais e degrada para traço, nunca zero falso", () => {
