@@ -10,6 +10,12 @@ TARGET_SHA=""
 
 log() { printf '[ejc-approved] %s\n' "$*"; }
 fail() { printf '[ejc-approved] ERRO: %s\n' "$*" >&2; exit 2; }
+emit_evidence() {
+  local evidence="$APP_DIR/scripts/release_evidence.py"
+  [ -f "$evidence" ] || fail "gerador de evidencia ausente: $evidence"
+  python3 "$evidence" --mode release --expected-sha "$TARGET_SHA" ||
+    fail "evidencia de release reprovada"
+}
 cleanup() { [ -z "$POLICY_FILE" ] || rm -f -- "$POLICY_FILE"; }
 trap cleanup EXIT
 
