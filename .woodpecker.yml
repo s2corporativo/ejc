@@ -80,12 +80,14 @@ steps:
     image: python:3.11-bookworm
     depends_on: [security-secrets]
     commands:
-      - bash -n scripts/backup.sh scripts/backup/ativar_backup.sh infra/selfhosted/bootstrap.sh scripts/tests/test_backup_wrapper.sh scripts/tests/test_ci_secret_gate.sh scripts/tests/test_rag_activation.sh scripts/legacy_script_guard.sh scripts/tests/test_legacy_script_guards.sh
+      - bash -n scripts/backup.sh scripts/backup/ativar_backup.sh infra/selfhosted/bootstrap.sh infra/host-automation/install-observability.sh scripts/tests/test_backup_wrapper.sh scripts/tests/test_ci_secret_gate.sh scripts/tests/test_rag_activation.sh scripts/legacy_script_guard.sh scripts/tests/test_legacy_script_guards.sh
       - bash scripts/tests/test_backup_wrapper.sh
       - bash scripts/tests/test_ci_secret_gate.sh
       - bash scripts/tests/test_rag_activation.sh
       - bash -n scripts/legacy_script_guard.sh
       - bash scripts/tests/test_legacy_script_guards.sh
+      - python -m py_compile scripts/release_evidence.py
+      - python scripts/release_evidence.py --self-test
     # Contratos leves rodam sempre: seus insumos cruzam código, exemplos e scanners.
 
   deploy-validation:
@@ -93,7 +95,7 @@ steps:
     depends_on: [security-secrets]
     commands:
       # Sintaxe dos scripts de deploy/host-automation (gates de deploy aprovado).
-      - bash -n scripts/deploy_vps_safe.sh scripts/deploy_workflow_transaction.sh infra/host-automation/woodpecker-approved-sha.sh infra/host-automation/ejc-deploy-approved.sh infra/host-automation/install.sh infra/host-automation/install-ejc-deploy.sh scripts/deploy.sh scripts/deploy-vps.sh scripts/atualizar-vps.sh scripts/vps_setup.sh
+      - bash -n scripts/deploy_vps_safe.sh scripts/deploy_workflow_transaction.sh infra/host-automation/woodpecker-approved-sha.sh infra/host-automation/ejc-deploy-approved.sh infra/host-automation/install.sh infra/host-automation/install-ejc-deploy.sh infra/host-automation/install-observability.sh scripts/deploy.sh scripts/deploy-vps.sh scripts/atualizar-vps.sh scripts/vps_setup.sh
       # Contratos executáveis de deploy e rollback.
       - bash scripts/tests/test_deploy_rollback.sh
       - bash infra/host-automation/tests/test_gate.sh
@@ -260,6 +262,30 @@ steps:
       - npm run audit:css:verificar
       - npm test
       - npm run build
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - *critical_change
+      - path:
+          include:
+            - 'frontend/**'
+            - 'qa/**'
+            - '.woodpecker.yml'
+          on_empty: false
+
+  # Browser gate obrigatório, sem segredos: valida o bundle real e o fail-closed
+  # das rotas protegidas. O E2E autenticado continua reservado a staging/prod.
+  playwright-gate:
+    image: mcr.microsoft.com/playwright:v1.63.0-noble
+    depends_on: [frontend]
+    volumes:
+      - ejc-ci-npm-cache:/root/.npm
+    commands:
+      - cd frontend
+      - npm ci --prefer-offline
+      - npm run build
+      - npm run test:playwright:gate
     when:
       - event: push
         branch: main
