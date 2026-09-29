@@ -539,7 +539,26 @@ async def chat(
 
     if not cadeia:
         # Sem candidato elegível: kill-switch externo ligado e nenhum provider
-        # local disponível. Falha honesta, sem tocar em rede externa.
+        # local disponível, OU escolha explícita (provider_force) inelegível —
+        # fail-closed sem tocar em rede externa. Falha honesta e MEDIDA: o
+        # bloqueio de política é registrado para /ia-governanca/provedores
+        # (antes esta rota aparecia como "0 falhas" — review P2 da #1869).
+        motivo = (
+            f"provider_forcado_inelegivel:{provider_force}"
+            if provider_force in ("groq", "ollama", "anthropic", "maritaca")
+            else "sem_provedor_elegivel"
+        )
+        try:
+            from app.services.ai.provider_metrics_runtime import (
+                registrar_bloqueio_politica,
+            )
+
+            await registrar_bloqueio_politica(task_type=task_type, motivo=motivo)
+        except Exception as e:  # métrica nunca quebra a resposta de erro
+            logger.warning(
+                "[Gateway] falha ao registrar bloqueio de política: %s",
+                descricao_tecnica_segura(e),
+            )
         raise SafeAIError(
             f"Nenhum provedor de IA elegível para task={task_type}.",
             code="no_provider",
@@ -890,8 +909,19 @@ def provedores_configurados() -> list[str]:
 
 
 def ia_disponivel() -> bool:
-    """True se a IA está habilitada E há ao menos um provedor configurado."""
-    return bool(settings.AI_ENABLED) and bool(provedores_configurados())
+    """True se a IA está habilitada E há provedor elegível no modo atual.
+
+    Fail-closed (review #1869): com AI_PROVIDER forçando um provider
+    inelegível, nenhuma chamada roda (_resolver_cadeia devolve cadeia vazia);
+    anunciar disponibilidade deixaria a UI ativa para erro garantido e o
+    diagnóstico anunciando um fallback que não existe.
+    """
+    if not bool(settings.AI_ENABLED):
+        return False
+    selecionado = str(getattr(settings, "AI_PROVIDER", "auto") or "auto").strip().lower()
+    if selecionado in ("groq", "ollama", "anthropic", "maritaca"):
+        return _provider_elegivel(selecionado)
+    return bool(provedores_configurados())
 
 
 # ── Helpers internos ──────────────────────────────────────────────────────────

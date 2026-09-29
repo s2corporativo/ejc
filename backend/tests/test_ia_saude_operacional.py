@@ -96,10 +96,14 @@ def test_provider_forcado_elegivel_vira_unico_runtime():
     assert estado["runtime"]["groq"] is False
 
 
-def test_provider_forcado_inelegivel_cai_para_cadeia_automatica():
+def test_provider_forcado_inelegivel_fica_indisponivel_sem_fallback():
+    # Fail-closed (review #1869): escolha explícita não troca de destino.
+    # O status não pode anunciar auto_fallback inexistente nem deixar a UI
+    # ativa para erro garantido (no_provider no gateway).
     cfg = _cfg_provedores(ai_provider="maritaca")
     estado = _estado_provedores(cfg)
 
     assert estado["forcado_inelegivel"] is True
-    assert estado["modo"] == "auto_fallback"
-    assert estado["elegiveis"] == ["ollama", "anthropic", "groq"]
+    assert estado["modo"] == "indisponivel"
+    assert estado["elegiveis"] == []
+    assert not any(estado["runtime"].values())
