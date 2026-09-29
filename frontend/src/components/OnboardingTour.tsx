@@ -275,7 +275,7 @@ export default function OnboardingTour() {
                         : `Marcar como feita: ${task.title}`
                     }
                     className={cn(
-                      "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors",
+                      "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border transition-colors",
                       done
                         ? "border-ejc-gold bg-ejc-gold text-white"
                         : "border-zinc-300 text-transparent hover:border-ejc-gold",

@@ -129,6 +129,7 @@ APP_DIR="$DEPLOY_APP" \
 TARGET_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
 REQUIRE_PREDEPLOY_BACKUP=1 \
 ENSURE_DAILY_BACKUP=1 \
+MIN_FREE_GB=1 \
 bash "$DEPLOY_CASE/deploy.sh" >"$TMP/deploy-out" 2>"$TMP/deploy-err"
 deploy_rc=$?
 set -e
