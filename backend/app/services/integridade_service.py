@@ -27,6 +27,7 @@ async def _achado(
     severidade: str,
     acao_recomendada: str,
     params: dict[str, Any] | None = None,
+    impacta_integridade: bool = True,
 ) -> dict[str, Any]:
     """Conta o conjunto completo e materializa no máximo ``LIMITE_IDS`` IDs.
 
@@ -75,6 +76,7 @@ async def _achado(
         "ids": ids,
         "truncado": total > len(ids),
         "acao_recomendada": acao_recomendada,
+        "impacta_integridade": impacta_integridade,
     }
 
 
@@ -114,8 +116,12 @@ async def diagnosticar_integridade(db: AsyncSession) -> dict[str, Any]:
             "documento_de_caso_excluido",
             "documents",
             "alta",
-            "Nenhuma exclusão. Avaliar se o documento deve ser reclassificado "
-            "para o GED geral ou seguir a visibilidade do caso.",
+            "Nenhuma exclusão. ATENÇÃO: enquanto as superfícies operacionais "
+            "não filtrarem por deleted_at do caso, este documento pode "
+            "permanecer visível no GED de sócio (documents.listar) e no portal "
+            "do cliente (/portal/documentos) mesmo com o caso excluído. "
+            "Excluir o documento ou corrigir as superfícies (decisão humana); "
+            "restaurar o caso o traz de volta.",
         ),
         (
             "deadlines",
@@ -144,6 +150,11 @@ async def diagnosticar_integridade(db: AsyncSession) -> dict[str, Any]:
                 estado_pai="excluido",
                 severidade=severidade,
                 acao_recomendada=acao,
+                # Fail-closed: enquanto documents.listar (sócio+) e
+                # /portal/documentos não excluírem documentos de casos
+                # soft-deletados, o registro pode continuar visível e o
+                # relatório não pode classificá-lo como inofensivo.
+                impacta_integridade=True,
             )
         )
 
@@ -255,7 +266,16 @@ async def diagnosticar_integridade(db: AsyncSession) -> dict[str, Any]:
             }
         )
 
-    total_achados = sum(achado["total"] for achado in achados)
+    total_achados = sum(
+        achado["total"]
+        for achado in achados
+        if achado.get("impacta_integridade", True)
+    )
+    total_informativos = sum(
+        achado["total"]
+        for achado in achados
+        if not achado.get("impacta_integridade", True)
+    )
     return {
         "gerado_em": datetime.now(timezone.utc).isoformat(),
         "somente_leitura": True,
@@ -263,9 +283,17 @@ async def diagnosticar_integridade(db: AsyncSession) -> dict[str, Any]:
         "contadores": contadores,
         "resumo": {
             "tipos_com_achado": [
-                achado["tipo"] for achado in achados if achado["total"]
+                achado["tipo"]
+                for achado in achados
+                if achado["total"] and achado.get("impacta_integridade", True)
+            ],
+            "tipos_informativos": [
+                achado["tipo"]
+                for achado in achados
+                if achado["total"] and not achado.get("impacta_integridade", True)
             ],
             "total_registros_afetados": total_achados,
+            "total_registros_informativos": total_informativos,
             "integro": total_achados == 0,
         },
     }
