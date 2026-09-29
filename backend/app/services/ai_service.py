@@ -998,6 +998,24 @@ async def extrair_prazos_ia(
     }
 
 
+def _custo_log(resp) -> float | None:
+    """Custo calculado pelo gateway. Ausente/None significa DESCONHECIDO.
+
+    Não converte ausência em 0.0: um custo não apurado precisa permanecer
+    distinguível de um custo apurado como zero (custo real zero vs. preço
+    desconhecido). Só o gateway tem o valor; None se a resposta não o carrega.
+    """
+    if resp is None:
+        return None
+    value = getattr(resp, "custo_estimado_brl", None)
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 async def _log_ai(db, user_id, tipo_uso_str, prompt, resposta,
                   pii, fontes, resp_groq, case_id):
     """Helper de log para as funções ECJ — mesmo padrão do analisar_caso."""
@@ -1011,6 +1029,7 @@ async def _log_ai(db, user_id, tipo_uso_str, prompt, resposta,
         fontes_rag="; ".join(f["chunk_id"] for f in fontes) or None if fontes else None,
         tokens_input=_tokens_input(resp_groq),
         tokens_output=_tokens_output(resp_groq),
+        custo_estimado=_custo_log(resp_groq),
         status_hitl=AIStatusHITL.gerado,
     )
     db.add(log)
