@@ -1373,6 +1373,36 @@ html:not(.dark) .sidebar-bronze .sidebar-nav-item.is-active svg {
   color: var(--ejc-dash-gold);
 }
 
+/* ── Identidade do assistente (logomarca do escritório) ──────────────────── */
+/* O componente IdentidadeAssistente entrega a imagem com a classe
+   `ejc-assistente` mais a classe de layout do ponto onde ela aparece. A base
+   só cuida do que é comum aos dois formatos; o dimensionamento fica com o
+   chamador (.ejc-dash__entry-icon = herói, .ejc-entry-pill__spark = pílula).
+   O PNG da marca é transparente e não quadrado — sem `object-fit: contain`
+   ele seria esticado e perderia a proporção do monograma. */
+.ejc-assistente {
+  object-fit: contain;
+}
+
+/* Fallback tipográfico quando a imagem não carrega no ambiente implantado.
+   `display: inline-grid + place-items` centra as iniciais dentro do mesmo
+   círculo, para que a falha não desloque nada do hero. */
+.ejc-assistente--fallback {
+  display: inline-grid;
+  place-items: center;
+  font-family: var(--ejc-dash-serif);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--ejc-dash-gold);
+}
+
+.ejc-dash__entry-icon .ejc-assistente {
+  width: 30px;
+  height: 30px;
+}
+
 .ejc-entry-pill__input {
   flex: 1 1 auto;
   min-width: 0;
@@ -1936,4 +1966,263 @@ html:not(.dark)
   .ejc-dash__mode button {
     transition: none;
   }
+}
+
+/* ───────────────────────────────────────────────────────────────────────── */
+/* Sidebar — widget de agenda (mini-calendário abaixo do menu)              */
+/* A sidebar é escura nos DOIS temas (painel navy `sidebar-bronze`), então o */
+/* widget não usa variantes `dark:` do Tailwind: as cores vêm daqui, como no */
+/* rodapé `ejc-sidebar-epigraph` logo acima.                                */
+
+.ejc-sidebar-agenda {
+  padding: 12px 12px 14px;
+  border-top: 1px solid rgba(229, 206, 127, 0.13);
+}
+
+.ejc-sidebar-agenda__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ejc-sidebar-agenda__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: rgba(228, 196, 110, 0.9);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.ejc-sidebar-agenda__nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ejc-sidebar-agenda__nav-btn {
+  display: inline-flex;
+  height: 22px;
+  width: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: rgba(217, 224, 230, 0.72);
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.ejc-sidebar-agenda__nav-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #eaca7f;
+}
+
+.ejc-sidebar-agenda__nav-btn:focus-visible {
+  outline: 2px solid var(--ejc-focus-ring);
+  outline-offset: 1px;
+}
+
+.ejc-sidebar-agenda__mes {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 6px 0 8px;
+  color: rgba(217, 224, 230, 0.9);
+  font-family: var(--ejc-dash-serif);
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.ejc-sidebar-agenda__total {
+  color: rgba(234, 202, 127, 0.72);
+  font-family: var(--ejc-sans, inherit);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: none;
+}
+
+.ejc-sidebar-agenda__grade {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ejc-sidebar-agenda__semana,
+.ejc-sidebar-agenda__linha {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.ejc-sidebar-agenda__semana span {
+  padding-bottom: 2px;
+  text-align: center;
+  color: rgba(217, 224, 230, 0.45);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.ejc-sidebar-agenda__dia {
+  position: relative;
+  display: flex;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: rgba(217, 224, 230, 0.86);
+  font-size: 11px;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.ejc-sidebar-agenda__dia:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.ejc-sidebar-agenda__dia:focus-visible {
+  outline: 2px solid var(--ejc-focus-ring);
+  outline-offset: -2px;
+}
+
+.ejc-sidebar-agenda__dia.is-outro-mes {
+  color: rgba(217, 224, 230, 0.3);
+}
+
+.ejc-sidebar-agenda__dia.is-hoje {
+  box-shadow: inset 0 0 0 1px rgba(234, 202, 127, 0.55);
+  color: #eaca7f;
+  font-weight: 700;
+}
+
+.ejc-sidebar-agenda__dia.is-selecionado {
+  background: rgba(201, 162, 39, 0.22);
+  color: #fff;
+  font-weight: 700;
+}
+
+/* Dia com prazo/compromisso: marcador dourado sob o número. */
+.ejc-sidebar-agenda__dia.is-com-itens::after {
+  content: "";
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  width: 3px;
+  height: 3px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: #eaca7f;
+}
+
+.ejc-sidebar-agenda__status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  color: rgba(217, 224, 230, 0.6);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.ejc-sidebar-agenda__erro {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 10px;
+  border: 1px dashed rgba(180, 35, 24, 0.55);
+  border-radius: 10px;
+  background: rgba(180, 35, 24, 0.12);
+  color: #f4b0a8;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.ejc-sidebar-agenda__erro p {
+  margin: 0;
+}
+
+.ejc-sidebar-agenda__retry {
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 3px 8px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.ejc-sidebar-agenda__retry:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.ejc-sidebar-agenda__retry:focus-visible {
+  outline: 2px solid var(--ejc-focus-ring);
+  outline-offset: 1px;
+}
+
+.ejc-sidebar-agenda__lista {
+  margin-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 8px;
+}
+
+.ejc-sidebar-agenda__lista-titulo {
+  margin: 0 0 4px;
+  color: rgba(228, 196, 110, 0.9);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: capitalize;
+}
+
+.ejc-sidebar-agenda__item {
+  display: block;
+  width: 100%;
+  border-radius: 8px;
+  padding: 5px 6px;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.ejc-sidebar-agenda__item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ejc-sidebar-agenda__item:focus-visible {
+  outline: 2px solid var(--ejc-focus-ring);
+  outline-offset: -2px;
+}
+
+.ejc-sidebar-agenda__item-titulo {
+  display: block;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.ejc-sidebar-agenda__item-caso {
+  display: block;
+  color: rgba(217, 224, 230, 0.55);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.ejc-sidebar-agenda__collapsed {
+  width: 100%;
+  justify-content: center;
+  color: rgba(228, 196, 110, 0.88);
+}
+
+.ejc-sidebar-agenda__collapsed:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #eaca7f;
 }

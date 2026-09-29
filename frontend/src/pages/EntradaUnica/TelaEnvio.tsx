@@ -11,12 +11,12 @@ import {
   FileText,
   Loader2,
   Paperclip,
-  Sparkles,
   Upload,
   X,
 } from "lucide-react";
 import { Button, Card, Textarea, cn } from "../../components/UI";
 import { toast } from "../../components/Toast";
+import { IdentidadeAssistente } from "./IdentidadeAssistente";
 import type { EntradaMeta } from "./types";
 
 export const MINIMO_RELATO = 40;
@@ -94,7 +94,10 @@ export function TelaInicial({
           }}
           className={cn("ejc-entry-pill", arrastando && "is-drag")}
         >
-          <Sparkles className="ejc-entry-pill__spark" aria-hidden="true" />
+          <IdentidadeAssistente
+            variante="pill"
+            className="ejc-entry-pill__spark"
+          />
           <textarea
             ref={pillRef}
             className="ejc-entry-pill__input"
@@ -163,6 +166,17 @@ export function TelaInicial({
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
+      {/* Coluna esquerda do assistente na tela cheia: mesma marca do herói do
+          Dashboard (pílula), para que /entrada e / não pareçam dois produtos. */}
+      <div className="flex items-center gap-2.5">
+        <IdentidadeAssistente
+          variante="pill"
+          className="ejc-entry-pill__spark"
+        />
+        <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+          EJC · Inteligência Jurídica
+        </span>
+      </div>
       <Textarea
         value={texto}
         onChange={(e) => onTexto(e.target.value)}

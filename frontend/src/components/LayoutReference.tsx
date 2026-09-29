@@ -14,6 +14,7 @@ import {
   Sun,
   X,
 } from "lucide-react";
+import AgendaSidebar from "./AgendaSidebar";
 import CaseContextBar from "./CaseContextBar";
 import CommandPalette from "./CommandPalette";
 import ErrorBoundary from "./ErrorBoundary";
@@ -429,6 +430,10 @@ export default function LayoutReference() {
         >
           <div className="space-y-1">{visible.map(renderNavItem)}</div>
         </nav>
+
+        {/* Agenda do mês corrente, logo abaixo do menu. Ela encolhe para um
+            único botão quando a sidebar colapsa (não cabe 4.75rem). */}
+        <AgendaSidebar colapsado={navCollapsed} />
 
         {!navCollapsed && (
           <div className="ejc-sidebar-epigraph" aria-hidden="true">

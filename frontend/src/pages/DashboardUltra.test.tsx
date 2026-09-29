@@ -40,6 +40,7 @@ vi.mock("./EntradaUnica", () => ({
 }));
 
 import DashboardUltra from "./DashboardUltra";
+import { STAFF_ROUTES as MODULE_REGISTRY } from "../config/moduleRegistry";
 
 const dataBase = new Date();
 const hoje = format(dataBase, "yyyy-MM-dd");
@@ -382,5 +383,62 @@ describe("DashboardUltra — identidade premium DPT", () => {
       ),
     ).toBeTruthy();
     expect(screen.queryByTestId("entrada-unica")).not.toBeTruthy();
+  });
+});
+
+// ── Atalhos do "Acesso rápido" ─────────────────────────────────────────────
+// O mockup aprovado pelo Titular pede cinco atalhos no cabeçalho. Cada um tem
+// de apontar para uma rota REAL de `moduleRegistry.tsx` (fonte da verdade —
+// nunca um <Route> solto no App) e para o destino canônico quando existe um
+// redirect legado para a mesma tela.
+const ATALHOS_CANONICOS = [
+  { rotulo: "Novo caso", destino: "/entrada" },
+  { rotulo: "Anexar documentos", destino: "/documentos" },
+  {
+    rotulo: "Consultar jurisprudência",
+    destino: "/inteligencia",
+    query: "?tab=pesquisa",
+  },
+  { rotulo: "Modelos e peças", destino: "/pecas" },
+  {
+    rotulo: "Minhas tarefas",
+    destino: "/atividades",
+    query: "?tipo=tarefa",
+  },
+];
+
+describe("DashboardUltra — atalhos apontam para rotas do registry", () => {
+  it("resolve os cinco atalhos do mockup para paths registrados", async () => {
+    mockGetOk();
+    renderizar();
+    abrirControles();
+
+    await screen.findByText("Acesso rápido");
+    const registrados = new Set(
+      MODULE_REGISTRY.flatMap((modulo) => [
+        modulo.path,
+        ...(modulo.subPaths ?? []),
+      ]),
+    );
+
+    for (const atalho of ATALHOS_CANONICOS) {
+      expect(registrados.has(atalho.destino)).toBe(true);
+      const link = await screen.findByRole("link", { name: atalho.rotulo });
+      const href = link.getAttribute("href") ?? "";
+      // `to` relativo resolve para /<path><query> dentro do MemoryRouter.
+      expect(href).toBe(`${atalho.destino}${atalho.query ?? ""}`);
+    }
+  });
+
+  it("não deixa atalho apontando para a abertura guiada legada /casos/novo", async () => {
+    mockGetOk();
+    renderizar();
+    abrirControles();
+
+    await screen.findByText("Acesso rápido");
+    const hrefs = screen
+      .getAllByRole("link")
+      .map((link) => link.getAttribute("href") ?? "");
+    expect(hrefs.some((href) => href.startsWith("/casos/novo"))).toBe(false);
   });
 });

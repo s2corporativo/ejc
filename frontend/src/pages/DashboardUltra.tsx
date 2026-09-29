@@ -34,6 +34,7 @@ import api from "../lib/api";
 import { asList } from "../lib/list";
 import { useAuth } from "../stores/auth";
 import { EntradaInteligente } from "./EntradaUnica";
+import { IdentidadeAssistente } from "./EntradaUnica/IdentidadeAssistente";
 
 /**
  * Início canônico do EJC — referência visual premium DPT (18/09/2026).
@@ -504,9 +505,12 @@ export default function DashboardUltra() {
           aria-label="Leitura e análise do caso com IA"
         >
           <div className="ejc-dash__entry-head ejc-dash__entry-head--ai-home">
-            <span className="ejc-dash__entry-icon" aria-hidden="true">
-              <Sparkles />
-            </span>
+            {/* Coluna esquerda do assistente: a logomarca do escritório ocupa
+                o slot que no mockup era a ilustração do pássaro. */}
+            <IdentidadeAssistente
+              variante="heroi"
+              className="ejc-dash__entry-icon"
+            />
             <div className="ejc-dash__entry-copy">
               <span className="ejc-dash__entry-kicker">
                 EJC · Inteligência Jurídica
@@ -807,23 +811,23 @@ export default function DashboardUltra() {
             <strong>Acesso rápido</strong>
           </div>
           <div className="ejc-dash__quick-items">
-            <Link to="/casos/novo">
+            {/* Atalhos canônicos do mockup. Cada destino existe em
+                src/config/moduleRegistry.tsx — "Novo caso" aponta para a Entrada
+                Jurídica (`/entrada`), que substituiu a abertura guiada
+                `/casos/novo` e é o que a pílula do herói executa. "Minhas
+                tarefas" aponta direto para a Central de Atividades, destino do
+                redirect legado `/tarefas`. */}
+            <Link to="/entrada">
               <span aria-hidden="true">
                 <Plus />
               </span>
               Novo caso
             </Link>
-            <Link to="/cadastro-manual">
-              <span aria-hidden="true">
-                <Users />
-              </span>
-              Novo cliente
-            </Link>
-            <Link to="/pecas">
+            <Link to="/documentos">
               <span aria-hidden="true">
                 <FileText />
               </span>
-              Gerar documento
+              Anexar documentos
             </Link>
             <Link to="/inteligencia?tab=pesquisa">
               <span aria-hidden="true">
@@ -831,17 +835,17 @@ export default function DashboardUltra() {
               </span>
               Consultar jurisprudência
             </Link>
-            <Link to="/teses">
+            <Link to="/pecas">
               <span aria-hidden="true">
                 <BookOpen />
               </span>
-              Buscar no banco de teses
+              Modelos e peças
             </Link>
-            <Link to="/financeiro">
+            <Link to="/atividades?tipo=tarefa">
               <span aria-hidden="true">
-                <BarChart3 />
+                <CalendarDays />
               </span>
-              Relatório financeiro
+              Minhas tarefas
             </Link>
           </div>
         </section>
