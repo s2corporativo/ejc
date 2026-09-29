@@ -5,9 +5,8 @@ import {
 } from "../canonicalRoutes";
 
 describe("canonical routes", () => {
-  it("consolida o contexto jurídico no núcleo de inteligência", () => {
-    expect(CANONICAL_ROUTES.inteligencia).toBe("/inteligencia");
-    expect("areasAtuacao" in CANONICAL_ROUTES).toBe(false);
+  it("uses semantic area-of-practice naming", () => {
+    expect(CANONICAL_ROUTES.areasAtuacao).toBe("/areas-de-atuacao");
   });
 
   it("has unique legacy aliases and canonical destinations", () => {

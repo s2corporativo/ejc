@@ -243,7 +243,7 @@ export default function LayoutReference() {
       <a className="ejc-skip-link" href="#conteudo-principal">
         Pular para o conteúdo principal
       </a>
-      {!privacyMode && <CommandPalette />}
+      <CommandPalette privacyMode={privacyMode} />
 
       <header
         className={cn(

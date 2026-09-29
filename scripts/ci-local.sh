@@ -314,6 +314,7 @@ start_pg() {
   export APP_ENV=development
   export DATABASE_URL="postgresql+asyncpg://$DBU:$DBP@127.0.0.1:$PG_PORT/$DBN"
   export DATABASE_URL_SYNC="postgresql://$DBU:$DBP@127.0.0.1:$PG_PORT/$DBN"
+  export MIGRATION_DATABASE_URL="$DATABASE_URL_SYNC"
   export SCHEMA_CHECK_DATABASE_URL="$DATABASE_URL_SYNC"
   export RUN_DB_TESTS=1
   ok "PostgreSQL efêmero pronto em 127.0.0.1:$PG_PORT"

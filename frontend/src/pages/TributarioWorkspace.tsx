@@ -118,7 +118,7 @@ export default function TributarioWorkspace() {
         actions={
           <div className="flex flex-wrap gap-2">
             <Link
-              to="/inteligencia?tab=conhecimento"
+              to="/areas-de-atuacao/tributario"
               className="btn-gold text-sm"
             >
               Abrir núcleo técnico
@@ -192,14 +192,14 @@ export default function TributarioWorkspace() {
             descricao:
               "Autos, prescrição/decadência, parcelamento, Simples e demais ferramentas homologadas.",
             icon: Calculator,
-            to: "/inteligencia?tab=conhecimento",
+            to: "/areas-de-atuacao/tributario",
           },
           {
             title: "Créditos potenciais",
             descricao:
               "Análise fiscal por XML/NF-e como pré-auditoria, sempre sujeita a validação profissional.",
             icon: FileSearch,
-            to: "/inteligencia?tab=conhecimento",
+            to: "/areas-de-atuacao/tributario",
           },
           {
             title: "Pesquisa e jurisprudência",
@@ -244,7 +244,7 @@ export default function TributarioWorkspace() {
             </p>
           </div>
           <Link
-            to="/inteligencia?tab=conhecimento"
+            to="/areas-de-atuacao/tributario"
             className="btn-secondary text-xs"
           >
             Ver núcleo completo

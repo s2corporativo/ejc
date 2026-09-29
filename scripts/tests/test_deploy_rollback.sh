@@ -51,6 +51,7 @@ EOF
 cat > "$APP/scripts/backup.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+printf 'backup-invoked\n' >> "${BACKUP_TEST_LOG:?}"
 if [ "${FAIL_BACKUP:-0}" = "1" ]; then
   echo backup-failed >&2
   exit 9
@@ -132,13 +133,25 @@ cat > "$BIN/curl" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "{\"status\":\"ok\",\"commit\":\"${EXPECTED_HEALTH_SHA:?}\"}"
 EOF
-chmod +x "$BIN/docker" "$BIN/sleep" "$BIN/curl"
+# Stub determinístico de df: os casos ordinários ficam independentes do espaço
+# real do host (runner pode ter menos que 1 GiB livres e o ENOSPC mascararia
+# todos os contratos seguintes). O caso 0.3a injeta resposta baixa controlada.
+cat > "$BIN/df" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+avail="${FAKE_DF_AVAIL_KB:-104857600}" # 100 GiB por padrão
+printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
+printf 'fixture-fs %s 0 %s 0%% /\n' "$((avail * 2))" "$avail"
+EOF
+chmod +x "$BIN/docker" "$BIN/sleep" "$BIN/curl" "$BIN/df"
 
 fail() {
   echo "[rollback-test] FALHA: $*" >&2
   exit 1
 }
 
+BACKUP_TEST_LOG="$TMP/backup.log"
+: > "$BACKUP_TEST_LOG"
 COMMON_ENV=(
   "APP_DIR=$APP"
   "EJC_TEST_LOCK_FILE=$LOCK"
@@ -147,6 +160,13 @@ COMMON_ENV=(
   "FAKE_DOCKER_LOG=$LOG"
   "EXPECTED_HEALTH_SHA=$TEST_SHA"
   "OLD_SHA_FOR_TEST=$OLD_SHA"
+  # Fixtures vivem em TMP (mktemp -d); df é stubado (100 GiB determinísticos),
+  # então o gate de capacidade nunca depende do disco do host. MIN_FREE_GB=1
+  # mantém o contrato produtivo; o gate real é travado nos casos 0.3a/0.3b.
+  "MIN_FREE_GB=1"
+  # Prova de ordem: toda invocação do backup é registrada, permitindo asserir
+  # que o gate de capacidade bloqueia ANTES de qualquer backup pré-deploy.
+  "BACKUP_TEST_LOG=$BACKUP_TEST_LOG"
 )
 
 # 0) Lock ocupado bloqueia antes de APP_DIR/Docker/runtime.
@@ -191,6 +211,36 @@ printf '%s' "$LOCK_SRC" | grep -q 'inode mudou durante abertura' || fail "helper
 ! printf '%s' "$LOCK_SRC" | grep -q '\${HOME' || fail "lock voltou a depender de HOME"
 ! printf '%s' "$LOCK_SRC" | grep -q 'EJC_DEPLOY_LOCK_ROOT:-' || fail "lock produtivo voltou a aceitar override de raiz"
 ! printf '%s' "$LOCK_SRC" | grep -q 'app_canon' || fail "APP_DIR voltou a selecionar namespace de lock"
+
+# 0.3a) Gate de capacidade: df baixo controlado (reproduz ENOSPC real, 500 MB
+# livres) bloqueia antes de backup/build/tag.
+: > "$LOG"
+: > "$BACKUP_TEST_LOG"
+set +e
+env "${COMMON_ENV[@]}" FAKE_DF_AVAIL_KB=500000 TARGET_SHA="$TEST_SHA" \
+  ENSURE_DAILY_BACKUP=0 REQUIRE_PREDEPLOY_BACKUP=0 \
+  bash "$APP/scripts/deploy_vps_safe.sh" >"$TMP/capacity.out" 2>"$TMP/capacity.err"
+capacity_rc=$?
+set -e
+[ "$capacity_rc" -eq 1 ] || fail "gate de capacidade retornou rc=$capacity_rc, esperado 1"
+grep -q 'espaço livre insuficiente para deploy (500000 KB; mínimo 1 GB)' "$TMP/capacity.out" \
+  || fail "gate de capacidade não parseou o df stubado"
+! grep -q '^compose build ' "$LOG" || fail "build iniciou após bloqueio de capacidade"
+! grep -q '^tag ' "$LOG" || fail "docker tag ocorreu após bloqueio de capacidade"
+[ ! -s "$BACKUP_TEST_LOG" ] || fail "backup rodou antes do gate de capacidade"
+
+# 0.3b) MIN_FREE_GB gigante também bloqueia com filesystem folgado (stub 100 GiB).
+: > "$LOG"
+: > "$BACKUP_TEST_LOG"
+set +e
+env "${COMMON_ENV[@]}" MIN_FREE_GB=99999 TARGET_SHA="$TEST_SHA" \
+  ENSURE_DAILY_BACKUP=0 REQUIRE_PREDEPLOY_BACKUP=0 \
+  bash "$APP/scripts/deploy_vps_safe.sh" >"$TMP/capacity2.out" 2>"$TMP/capacity2.err"
+capacity2_rc=$?
+set -e
+[ "$capacity2_rc" -eq 1 ] || fail "gate de capacidade (MIN_FREE_GB) retornou rc=$capacity2_rc, esperado 1"
+grep -q 'espaço livre insuficiente' "$TMP/capacity2.out" || fail "gate MIN_FREE_GB não foi registrado"
+[ ! -s "$BACKUP_TEST_LOG" ] || fail "backup rodou antes do gate de capacidade"
 
 # 1) Migration incompatível falha antes de Docker.
 : > "$LOG"

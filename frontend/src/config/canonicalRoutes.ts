@@ -32,6 +32,9 @@ export const CANONICAL_ROUTES = {
   documentos: rotaCanonica("documentos"),
   pecas: rotaCanonica("pecas"),
   inteligencia: rotaCanonica("inteligencia"),
+  // Chave semântica: o módulo "ramos" é a Área de Atuação canônica
+  // (rota /areas-de-atuacao desde a unificação de nomenclatura).
+  areasAtuacao: rotaCanonica("ramos"),
   financeiro: rotaCanonica("financeiro"),
   configuracoes: rotaCanonica("configuracoes"),
 } as const;

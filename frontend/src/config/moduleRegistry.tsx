@@ -90,14 +90,8 @@ export const LEGACY_CANONICAL_REDIRECTS: LegacyCanonicalRedirect[] = [
   },
   {
     from: "/ramos",
-    to: "/inteligencia?tab=conhecimento",
-    reason: "Áreas de Atuação foram consolidadas no núcleo de inteligência.",
-  },
-  {
-    from: "/areas-de-atuacao",
-    to: "/inteligencia?tab=conhecimento",
-    reason:
-      "O hub de ramos foi desativado; conhecimento e contexto seguem em Inteligência.",
+    to: "/areas-de-atuacao",
+    reason: "Área de Atuação usa nomenclatura semântica.",
   },
 ];
 
@@ -193,6 +187,8 @@ const Central = lazy(() => import("../pages/Central"));
 const AgendaDia = lazy(() => import("../pages/AgendaDia"));
 const GestaoDocumental = lazy(() => import("../pages/GestaoDocumental"));
 const Pecas = lazy(() => import("../pages/Pecas"));
+const RamosHub = lazy(() => import("../pages/RamosHub"));
+const RamoBase = lazy(() => import("../pages/ramos/RamoBase"));
 const TributarioWorkspace = lazy(() => import("../pages/TributarioWorkspace"));
 const CRMLeads = lazy(() => import("../pages/CRMLeads"));
 const FinanceiroWorkspace = lazy(() => import("../pages/FinanceiroWorkspace"));
@@ -520,6 +516,37 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     usesAI: true,
     roles: ROLES.compliance,
     backendPrefixes: ["/api/triagem"],
+  },
+  {
+    key: "ramos",
+    path: "/areas-de-atuacao",
+    label: "Áreas de Atuação",
+    description: "Áreas jurídicas e ferramentas especializadas do escritório.",
+    group: "Pesquisar & IA",
+    icon: Scale,
+    component: RamosHub,
+    roles: ROLES.juridico,
+    // EJC Core Wave 1 (#1843): ramo jurídico passa a ser contexto/metadado,
+    // não um workspace concorrente no menu. Deep-links ficam vivos nesta onda.
+    showInNav: false,
+    order: 30,
+    helpKey: "ramos",
+    usesAI: true,
+    sensitive: true,
+  },
+  {
+    key: "ramo-detalhe",
+    path: "/areas-de-atuacao/:slug",
+    label: "Núcleo Jurídico",
+    description: "Ferramentas especializadas do ramo selecionado.",
+    group: "Pesquisar & IA",
+    icon: Scale,
+    component: RamoBase,
+    roles: ROLES.juridico,
+    helpKey: "ramos",
+    status: "hidden",
+    usesAI: true,
+    sensitive: true,
   },
   {
     // Workspace tributário (reconstrução do #1550 como SATÉLITE): o menu
@@ -1104,8 +1131,8 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   },
   {
     from: "/ambiental",
-    to: "/inteligencia?tab=conhecimento",
-    reason: "O núcleo ambiental foi incorporado ao núcleo de inteligência.",
+    to: "/areas-de-atuacao/ambiental",
+    reason: "O núcleo ambiental foi incorporado às Áreas de Atuação.",
   },
   {
     from: "/dashboard-executivo",
