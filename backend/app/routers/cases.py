@@ -17,7 +17,7 @@ from app.core.rate_limit import consumir, rate_limit
 from app.core.security import (get_current_user, require_roles, ROLE_LEVEL,
                                  require_roles_exact, requer_equipe_juridica)
 from app.models.user import User
-from app.models.case import Case, CaseFase, CaseMovimento, CaseStatus
+from app.models.case import Case, CaseFase, CaseMovimento, CaseStatus, CasePrioridade
 from app.models.client import Client
 from app.models.audit_log import criar_audit_log
 
@@ -124,6 +124,8 @@ async def listar(
     status_f: Optional[str] = Query(None, alias="status"),
     arquivo: str = Query("ativos", pattern="^(ativos|arquivados|todos)$"),
     advogado_id: Optional[str] = None,
+    urgentes: bool = False,
+    sem_proxima_acao: bool = False,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -167,6 +169,19 @@ async def listar(
             q = q.where(Case.status == validar_status_caso(status_f))
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e)) from None
+    if urgentes:
+        q = q.where(
+            Case.prioridade.in_([CasePrioridade.alta, CasePrioridade.critica])
+        )
+    if sem_proxima_acao:
+        # View operacional para localizar registros legados/inconsistentes.
+        # Casos novos ativos já exigem próxima ação no create/update.
+        q = q.where(
+            or_(
+                Case.proxima_acao.is_(None),
+                sqlfunc.btrim(Case.proxima_acao) == "",
+            )
+        )
     q = q.order_by(Case.created_at.desc())
 
     total = (await db.execute(
