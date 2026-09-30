@@ -183,6 +183,18 @@ class DptOpportunityQueueItem(BaseModel):
     campanha_ref: str | None = None
 
 
+class DptPrepareShareRequest(BaseModel):
+    aprovado: bool = False
+    days: int = Field(default=30, ge=1, le=90)
+
+
+class DptPrepareShareResponse(BaseModel):
+    document_id: str
+    client_id: str
+    publicado_portal: Literal[False] = False
+    next_step: str
+
+
 # Ciclo de vida LGPD (Issue #1086)
 class DptCicloVidaMudarEstadoRequest(BaseModel):
     novo_estado: ESTADOS_TRANSICAO_MANUAL = Field(
