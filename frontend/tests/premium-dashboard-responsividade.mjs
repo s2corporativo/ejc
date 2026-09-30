@@ -267,24 +267,8 @@ async function installApiFixtures(page) {
 async function inspectDashboard(page, viewport, failures) {
   await page.waitForSelector(".ejc-dash", { timeout: 15000 });
 
-  // V4: dashboard operacional é a página inicial; Entrada por IA permanece ação explícita.
-  await page
-    .waitForFunction(
-      () => {
-        const texto = document.querySelector("main")?.innerText ?? "";
-        return (
-          texto.includes("Meu Dia") &&
-          texto.includes("Meus casos prioritários") &&
-          texto.includes("Clientes ativos")
-        );
-      },
-      { timeout: 15000 },
-    )
-    .catch(() => {
-      failures.push(
-        `${viewport.name}: dashboard V4 não montou com dados operacionais`,
-      );
-    });
+  // V4: dashboard operacional é a página inicial; o conteúdo é validado abaixo.
+  await page.waitForTimeout(250);
 
   const layout = await page.evaluate(() => {
     const topbar = document.querySelector("header.fixed.inset-x-0.top-0");
@@ -335,29 +319,20 @@ async function inspectDashboard(page, viewport, failures) {
     }
   }
 
-  // Composição canônica da referência (seção 9 do prompt mestre) com os
-  // números das fixtures — provando que os indicadores vêm de dados reais.
+  // Composição canônica V4 com dados das fixtures.
   for (const expected of [
-    "carlos",
-    "entrada única",
+    "entrada por ia",
+    "novo caso",
+    "meu dia",
     "prazos hoje",
     "clientes ativos",
     "casos em andamento",
-    "documentos recentes",
     "48",
-    "98",
-    "129",
-    "agenda e prazos",
-    "casos em destaque",
+    "meus casos prioritários",
     "empresa x vs. banco y",
-    "construtora alpha",
+    "prioridades e decisões",
     "prazo final — contestação",
-    "minha rotina hoje",
-    "2 de 5 concluídas",
-    "acesso rápido",
-    "novo caso",
-    "novo cliente",
-    "enviar documentos",
+    "fluxo jurídico",
   ]) {
     if (!normalizedMainText.includes(expected.toLocaleLowerCase("pt-BR"))) {
       failures.push(`${viewport.name}: conteúdo canônico ausente: ${expected}`);
