@@ -147,6 +147,7 @@ async def resumo_financeiro_caso(db, case: Case) -> dict:
         "pendente_sucumbencia": bool(case.pendente_sucumbencia),
         "pendente_exito": bool(case.pendente_exito),
         "regra_rateio": regra_atual.nome,
+        "regra_rateio_escopo": regra_atual.escopo,
         "percentual_advogado_atual": _money(regra_atual.percentual_advogado),
         "descontar_despesas_comissao": bool(regra_atual.descontar_despesas),
         "advogado_responsavel_id": case.advogado_responsavel_id,
