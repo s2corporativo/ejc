@@ -1,0 +1,11 @@
+[Unit]
+Description=EJC weekly safe sanitation and drift check
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/s2-automation/host/ejc-weekly-saneamento.sh
+User=root
+Group=root
+Nice=10

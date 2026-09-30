@@ -140,7 +140,8 @@ def test_sha_alvo_chega_a_quem_carimba_o_release(manual):
 
 @sem_workflow
 def test_idempotencia_por_sha_preservada_no_workflow(workflow):
-    assert ".deploy_last_sha" in workflow
+    assert ".deployed_sha" in workflow
+    assert ' > "$APP_DIR/.deploy_last_sha"' not in workflow
 
 
 # ── 2. Recusas, exercitadas de verdade ──────────────────────────────────────

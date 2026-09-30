@@ -35,7 +35,7 @@
 ## Próximos passos para publicar
 
 1. **Merge da branch homologada em main** (sem conflitos — base comum, zero divergência)
-2. Na VPS Contabo: `cd /opt/ejc && git fetch && bash scripts/atualizar-vps.sh`
+2. Na VPS Contabo: usar /opt/s2-automation/host/ejc-deploy-approved.sh ou scripts/deploy_manual.sh --sha <SHA>
    (requer acesso SSH à VPS — credenciais NÃO armazenadas no sandbox; pedir takeover ou o usuário roda o script)
 3. Smoke final: `/api/health`, `/api/health/ready`, frontend 200; retestar F-01/F-02 (500s apontados na auditoria, presumivelmente corrigidos pela versão homologada)
 

@@ -49,7 +49,7 @@ isso, 3 call sites ainda usam o endpoint legado `/ai/analisar-caso`
 > consumidor) e a matriz de migração foi corrigida. O descompasso de fundo
 > permanece: o núcleo `/api/ai/core/*` continua sem consumidor no frontend —
 > registrado como pendência com dono a definir em
-> `docs/HIGIENIZACAO_BACKLOG_FRONTEND.md`.
+> `docs/arquivo/historico-2026/HIGIENIZACAO_BACKLOG_FRONTEND.md`.
 
 ### 3. `SalaAnaliseJuridica.tsx:277-285` — contexto serializado dentro do prompt
 

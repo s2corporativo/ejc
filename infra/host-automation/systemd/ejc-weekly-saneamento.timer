@@ -1,0 +1,11 @@
+[Unit]
+Description=Run EJC safe sanitation weekly
+
+[Timer]
+OnCalendar=Sun *-*-* 07:20:00 UTC
+RandomizedDelaySec=20m
+Persistent=true
+Unit=ejc-weekly-saneamento.service
+
+[Install]
+WantedBy=timers.target
