@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Refina o inventário bruto com análise de montagem indireta e duplicidade real.
 
-O gerador base privilegia cobertura. Este segundo passe corrige duas fontes comuns
+O gerador base privilegia cobertura. Este segundo passe corrige três fontes comuns
 de falso positivo:
 
 1. routers anexados a outros routers por ``include_router`` antes de chegarem ao
    ``main.py``;
 2. arquivos de camadas diferentes com o mesmo domínio (model/router/service),
    que são arquitetura normal e não duplicidade.
+3. arquivos da mesma camada e diretório já adjudicados por override humano
+   (classificação ``manter`` em ``config/architecture_inventory_overrides.json``),
+   que deixam de ser listados como famílias candidatas à consolidação.
 """
 from __future__ import annotations
 
@@ -241,7 +244,20 @@ def refine(root: Path, output: Path) -> dict[str, Any]:
             item.rationale = "Mesma nomenclatura em camada distinta não caracteriza duplicidade funcional."
             item.needs_review = True
 
-    duplicate_map = refined_duplicate_families(items)
+    # Adjudicações explícitas (override → manter) prevalecem sobre a heurística
+    # de nomenclatura da mesma camada: saem da lista de candidatas à consolidação.
+    adjudicados = {
+        item.path
+        for item in items
+        if item.classification_source == "override" and item.classification == "manter"
+    }
+
+    def family_candidates(itens: Iterable[Any]) -> dict[str, list[str]]:
+        return refined_duplicate_families(
+            [item for item in itens if item.path not in adjudicados]
+        )
+
+    duplicate_map = family_candidates(items)
     duplicate_paths = {path for paths in duplicate_map.values() for path in paths}
     for item in items:
         if item.path not in duplicate_paths:
@@ -257,7 +273,7 @@ def refine(root: Path, output: Path) -> dict[str, Any]:
         item.needs_review = True
 
     items.sort(key=lambda item: (item.kind, item.path, item.line or 0, item.name, item.route or ""))
-    generator.duplicate_families = refined_duplicate_families
+    generator.duplicate_families = family_candidates
 
     payload["generated_at"] = datetime.now(timezone.utc).isoformat()
     payload["refined"] = True
