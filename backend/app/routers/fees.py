@@ -663,6 +663,19 @@ async def estornar_pagamento(
     db.add(estorno)
     await db.flush()
 
+    commission_reversal = None
+    if fee.case_id and fee.tipo != FeeTipo.custas_despesas:
+        from app.services.commission_service import registrar_reversao_comissao_estorno
+
+        commission_reversal = await registrar_reversao_comissao_estorno(
+            db,
+            fee_payment_id=payment_id,
+            fee_estorno_id=estorno.id,
+            valor_estorno=payload.valor,
+            motivo=payload.motivo,
+            user=cu,
+        )
+
     total_pago, _pos = await total_pago_efetivo(db, fee)
     reaberto = False
     if (
@@ -697,6 +710,14 @@ async def estornar_pagamento(
             "motivo": payload.motivo,
             "total_pago_efetivo": float(total_pago),
             "reaberto": reaberto,
+            "commission_reversal": (
+                {
+                    k: (str(v) if isinstance(v, Decimal) else v)
+                    for k, v in commission_reversal.items()
+                }
+                if commission_reversal
+                else None
+            ),
         },
     )
     await db.commit()
@@ -709,6 +730,7 @@ async def estornar_pagamento(
             else None
         ),
         "reaberto": reaberto,
+        "commission_reversal": commission_reversal,
         "detail": (
             "Estorno registrado; honorário reaberto para cobrança"
             if reaberto
