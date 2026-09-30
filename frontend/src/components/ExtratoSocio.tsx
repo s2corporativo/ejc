@@ -1,5 +1,5 @@
 // src/components/ExtratoSocio.tsx
-// Modal de extrato financeiro do advogado/sócio: honorários + saques de êxito + distribuições.
+// Modal de extrato financeiro do advogado/sócio: honorários + comissões/retiradas + distribuições.
 import { useState } from "react";
 import { BarChart2, TrendingUp, Wallet, PieChart } from "lucide-react";
 import api from "../lib/api";
@@ -82,7 +82,7 @@ export default function ExtratoSocio({ userId, nome, isSocio = false }: Props) {
               {data.resumo?.saques_exito !== undefined && (
                 <Kpi
                   icon={Wallet}
-                  label="Saques de êxito"
+                  label="Comissões / retiradas"
                   value={fmtR(data.resumo.saques_exito)}
                 />
               )}
@@ -148,7 +148,7 @@ export default function ExtratoSocio({ userId, nome, isSocio = false }: Props) {
 
             {/* Saques de êxito */}
             {data.saques?.length > 0 && (
-              <Section title="Saques de êxito">
+              <Section title="Comissões e retiradas">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="text-left text-slate-500 border-b">
@@ -165,7 +165,7 @@ export default function ExtratoSocio({ userId, nome, isSocio = false }: Props) {
                         className="border-b border-slate-50 hover:bg-slate-50/50"
                       >
                         <td className="py-1.5 pr-3 text-slate-700">
-                          {s.description ?? "Êxito"}
+                          {s.description ?? "Comissão / retirada"}
                         </td>
                         <td className="py-1.5 pr-3">
                           <span

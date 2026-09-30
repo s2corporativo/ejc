@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { Modal, Spinner, fmtMoney } from "../components/UI";
+import ExtratoSocio from "../components/ExtratoSocio";
 import { toast } from "../components/Toast";
 
 interface CommissionRow {
@@ -426,6 +427,14 @@ export default function Comissoes({ onBack }: { onBack: () => void }) {
                     </span>
                   </td>
                   <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-1">
+                      {row.advogado_id && (
+                        <ExtratoSocio
+                          userId={row.advogado_id}
+                          nome={row.advogado || "Advogado"}
+                        />
+                      )}
+                    </div>
                     {row.status === "calculada" && (
                       <button
                         type="button"
