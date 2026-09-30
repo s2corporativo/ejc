@@ -99,10 +99,12 @@ def _estado_provedores(cfg) -> dict:
 
     runtime = {p: False for p in configurados}
     if bool(cfg.AI_ENABLED):
-        # Mesmo contrato de _resolver_cadeia: provider forçado elegível vira a
-        # cadeia única; se for inelegível, o gateway cai para a cadeia automática.
-        if forcado and configurados[forcado]:
-            runtime[forcado] = True
+        # Mesmo contrato de _resolver_cadeia (fail-closed 2026-09): escolha
+        # explícita NÃO troca de destino. O provider forçado é a cadeia
+        # INTEIRA — elegível, roda sozinho; inelegível, nada roda (sem
+        # fallback silencioso para os demais).
+        if forcado:
+            runtime[forcado] = bool(configurados[forcado])
         else:
             runtime.update(configurados)
 
@@ -115,9 +117,9 @@ def _estado_provedores(cfg) -> dict:
         modo = "indisponivel"
     elif forcado and runtime.get(forcado):
         modo = "local" if forcado == "ollama" else "externo"
-    elif forcado_inelegivel:
-        modo = "auto_fallback"
     else:
+        # Modo auto. O caso forcado_inelegivel já caiu em "indisponivel"
+        # acima (cadeia vazia no gateway — sem fallback silencioso).
         modo = "auto"
 
     return {

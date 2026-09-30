@@ -8,7 +8,7 @@ Contrato consolidado (Núcleo Único + API 2026):
   - provider: Haiku/legado mantém temperature, sem extra_body, com teto
     ANTHROPIC_MAX_TOKENS;
   - gateway: cadeia respeita AI_PROVIDER_PRIORITY + elegibilidade; sem chave
-    a Claude é pulada; provider_force inelegível degrada para cadeia automática;
+    a Claude é pulada; provider_force inelegível bloqueia a chamada;
   - tabela de preços corrigida (Opus 4.8 = 5/25, não 15/75).
 """
 from __future__ import annotations
@@ -206,14 +206,12 @@ def test_gateway_force_anthropic_com_chave(monkeypatch):
     assert cadeia == [("anthropic", g.settings.ANTHROPIC_MODEL_COMPLEXO)]
 
 
-def test_gateway_force_anthropic_sem_chave_degrada(monkeypatch):
-    # EJC skills com engine=anthropic não podem falhar duro sem chave:
-    # caem na cadeia automática (Ollama/Groq).
+def test_gateway_force_anthropic_sem_chave_bloqueia(monkeypatch):
+    # Escolha explícita indisponível não autoriza outro provedor/modelo.
     _prep(monkeypatch, tem_chave=False)
     cadeia = g._resolver_cadeia("elaboracao_peca", provider_force="anthropic",
                                 model_override=None)
-    assert cadeia, "cadeia não pode ficar vazia"
-    assert all(p != "anthropic" for p, _ in cadeia)
+    assert cadeia == []
 
 
 def test_gateway_model_override_tem_prioridade(monkeypatch):
