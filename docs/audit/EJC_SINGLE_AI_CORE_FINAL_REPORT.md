@@ -2,7 +2,7 @@
 
 Data: 2026-07-04 · Branch: `claude/ejc-legal-ai-architecture-s2ctes` · PR: #23
 
-> **Nota de atualização (2026-07-27)** — documento histórico, mantido como registro do que foi entregue no PR #23. Uma referência deste relatório não corresponde mais ao código: `frontend/src/lib/aiCore.ts` (citado nas seções 2, 3 e 6) foi **removido em 1befdf0 sem nunca ter tido um consumidor** — nenhuma tela chegou a importá-lo. O backend do núcleo (`/api/ai/core/*`) segue como descrito aqui; o que não se concretizou foi a migração do frontend, hoje registrada como pendência em `docs/HIGIENIZACAO_BACKLOG_FRONTEND.md`.
+> **Nota de atualização (2026-07-27)** — documento histórico, mantido como registro do que foi entregue no PR #23. Uma referência deste relatório não corresponde mais ao código: `frontend/src/lib/aiCore.ts` (citado nas seções 2, 3 e 6) foi **removido em 1befdf0 sem nunca ter tido um consumidor** — nenhuma tela chegou a importá-lo. O backend do núcleo (`/api/ai/core/*`) segue como descrito aqui; o que não se concretizou foi a migração do frontend, hoje registrada como pendência em `docs/arquivo/historico-2026/HIGIENIZACAO_BACKLOG_FRONTEND.md`.
 
 ## 1. Situação anterior
 
@@ -11,7 +11,7 @@ Data: 2026-07-04 · Branch: `claude/ejc-legal-ai-architecture-s2ctes` · PR: #23
 - Decisão de provider fragmentada (TASK_ROUTING + system_prompts/router + env), sem política LGPD unificada e sem barreira final de PII.
 - Provider Anthropic funcional mas sem timeout, sem teto de tokens, sem kill-switch.
 - 1 prompt jurídico montado no navegador; conteúdo integral de peças trafegando pelo browser.
-- Detalhe completo: `docs/ai/EJC_SINGLE_AI_CORE_AUDIT.md`.
+- Detalhe completo: `docs/arquivo/ai-auditorias-2026/EJC_SINGLE_AI_CORE_AUDIT.md`.
 
 ## 2. Situação nova
 
@@ -64,7 +64,7 @@ Matriz completa em `docs/ai/EJC_AI_ENDPOINT_MIGRATION_MATRIX.md`. Destaques: `do
 
 ## 9. Duplicidades removidas
 
-`docs/ai/EJC_AI_DUPLICATION_REMOVAL_REPORT.md`: dois gateways → um; lógica de IA por módulo → núcleo; decisão de provider → policy única; prompt no cliente → servidor; AILog canônico via `ai_guard` nos fluxos novos/corrigidos.
+`docs/arquivo/ai-auditorias-2026/EJC_AI_DUPLICATION_REMOVAL_REPORT.md`: dois gateways → um; lógica de IA por módulo → núcleo; decisão de provider → policy única; prompt no cliente → servidor; AILog canônico via `ai_guard` nos fluxos novos/corrigidos.
 
 ## 10. LGPD/OAB, HITL e logs
 

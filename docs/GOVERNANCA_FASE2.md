@@ -20,7 +20,7 @@ Executar **na ordem**. Cada item tem pré-requisito do anterior.
 | 1 | Travas de governança no CI | `.github/workflows/governanca.yml` | 2 |
 | 2 | Proteção da branch `main` | `scripts/governanca/branch-protection.sh` | tudo |
 | 3 | Levantamento de PRs P0 | `scripts/governanca/levantamento-pr-p0.sh` | 4 |
-| 4 | Issue de consolidação + execução | `docs/ISSUE_E_PROMPT_CONSOLIDACAO_P0.md` | novas frentes |
+| 4 | Issue de consolidação + execução | `docs/arquivo/historico-2026/ISSUE_E_PROMPT_CONSOLIDACAO_P0.md` | novas frentes |
 | 5 | Inventário do repositório | `scripts/governanca/inventario-repo.sh` | — |
 | 6 | Documentos de preenchimento humano | `docs/REGRAS_JURIDICAS.md`, `docs/FLUXO_CANONICO_EJC.md` | — |
 
@@ -119,7 +119,7 @@ que a análise não foi feita por inferência.
 
 ## 4. Consolidação
 
-`docs/ISSUE_E_PROMPT_CONSOLIDACAO_P0.md` contém o corpo da Issue pronto para
+`docs/arquivo/historico-2026/ISSUE_E_PROMPT_CONSOLIDACAO_P0.md` contém o corpo da Issue pronto para
 `gh issue create` e o prompt operacional para o Claude Code, em modo de planejamento primeiro.
 
 ## 5. Inventário

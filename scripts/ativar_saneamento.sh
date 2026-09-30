@@ -164,8 +164,8 @@ tarefa_deploy() {
   git merge-base --is-ancestor "$TARGET_SHA" origin/main \
     || erro "SHA $TARGET_SHA não está integrado à main — o runbook exige SHA da main"
 
-  if sudo -n test -f "$APP_DIR/.deploy_last_sha" \
-     && [ "$(sudo -n cat "$APP_DIR/.deploy_last_sha")" = "$TARGET_SHA" ]; then
+  if sudo -n test -f "$APP_DIR/.deployed_sha" \
+     && [ "$(sudo -n cat "$APP_DIR/.deployed_sha")" = "$TARGET_SHA" ]; then
     log "SHA $TARGET_SHA já implantado — pulando (idempotente)."
     return
   fi
@@ -297,4 +297,4 @@ fi
 unset EJC_SENHA
 log "Concluído. Verificação rápida:"
 log "  curl -s $BASE_URL/api/saneamento/tpu/cobertura -H \"Authorization: Bearer \$TOKEN\""
-log "  sudo cat $APP_DIR/.deploy_last_sha"
+log "  sudo cat $APP_DIR/.deployed_sha"

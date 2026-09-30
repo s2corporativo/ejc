@@ -115,3 +115,7 @@ backend/app/seeds/backups/
 backend/app/eval/relatorio_gold_ia.json
 # Worktrees efêmeros criados por agentes de IA para trabalho isolado.
 .claude/worktrees/
+
+# Marcadores operacionais de deploy (runtime da VPS, nunca versionar)
+.deployed_sha
+.deploy_last_sha

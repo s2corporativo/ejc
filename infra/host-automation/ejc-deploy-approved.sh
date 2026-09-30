@@ -32,7 +32,13 @@ TARGET_SHA="$(git -C "$SOURCE_DIR" rev-parse HEAD)"
 [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "SHA alvo invalido"
 
 DEPLOYED_SHA=""
-[ -f "$APP_DIR/.deployed_sha" ] && DEPLOYED_SHA="$(cat "$APP_DIR/.deployed_sha" 2>/dev/null || true)"
+# .deployed_sha é o único marcador canônico. .deploy_last_sha é aceito somente
+# como leitura de compatibilidade durante a migração e nunca mais é gravado.
+if [ -f "$APP_DIR/.deployed_sha" ]; then
+  DEPLOYED_SHA="$(cat "$APP_DIR/.deployed_sha" 2>/dev/null || true)"
+elif [ -f "$APP_DIR/.deploy_last_sha" ]; then
+  DEPLOYED_SHA="$(cat "$APP_DIR/.deploy_last_sha" 2>/dev/null || true)"
+fi
 if [ "$DEPLOYED_SHA" = "$TARGET_SHA" ] && curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
   log "producao ja esta saudavel no SHA $TARGET_SHA; nada a fazer"
   exit 0
@@ -133,6 +139,9 @@ bash scripts/deploy_vps_safe.sh
 
 curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health >/dev/null
 curl -fsS --connect-timeout 5 --max-time 15 https://ejc.depaulateixeira.adv.br/api/health >/dev/null
-printf '%s\n' "$TARGET_SHA" > "$APP_DIR/.deploy_last_sha"
-chmod 600 "$APP_DIR/.deploy_last_sha"
+[ -f "$APP_DIR/.deployed_sha" ] || fail "deploy terminou sem marcador canônico .deployed_sha"
+DEPLOYED_FINAL="$(tr -d '\r\n' < "$APP_DIR/.deployed_sha")"
+[ "$DEPLOYED_FINAL" = "$TARGET_SHA" ] || fail ".deployed_sha divergente após deploy: $DEPLOYED_FINAL"
+rm -f -- "$APP_DIR/.deploy_last_sha"
+chmod 600 "$APP_DIR/.deployed_sha"
 log "deploy concluido e health local/publico confirmados: $TARGET_SHA"

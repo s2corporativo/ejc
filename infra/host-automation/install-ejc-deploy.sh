@@ -15,9 +15,9 @@ set -a
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 set +a
-if [ -z "${WOODPECKER_LOCAL_DB:-}" ]; then
+if [ -z "${WOODPECKER_LOCAL_PG_CONTAINER:-}" ] && [ -z "${WOODPECKER_LOCAL_DB:-}" ]; then
   [ -n "${WOODPECKER_TOKEN:-}" ] && [ "${WOODPECKER_TOKEN:-}" != "TROCAR" ] || {
-    echo "Configure WOODPECKER_LOCAL_DB ou WOODPECKER_TOKEN antes de habilitar o deploy" >&2
+    echo "Configure WOODPECKER_LOCAL_PG_CONTAINER, WOODPECKER_LOCAL_DB ou WOODPECKER_TOKEN antes de habilitar o deploy" >&2
     exit 2
   }
 fi
@@ -40,6 +40,9 @@ install -m 644 "$ROOT/systemd/ejc-deploy-approved.service" /etc/systemd/system/e
 install -m 644 "$ROOT/systemd/ejc-deploy-approved.timer" /etc/systemd/system/ejc-deploy-approved.timer
 install -m 644 "$ROOT/ejc-observability.service" /etc/systemd/system/ejc-observability.service
 install -m 644 "$ROOT/ejc-observability.timer" /etc/systemd/system/ejc-observability.timer
+install -m 755 "$ROOT/ejc-weekly-saneamento.sh" "$TARGET/ejc-weekly-saneamento.sh"
+install -m 644 "$ROOT/systemd/ejc-weekly-saneamento.service" /etc/systemd/system/ejc-weekly-saneamento.service
+install -m 644 "$ROOT/systemd/ejc-weekly-saneamento.timer" /etc/systemd/system/ejc-weekly-saneamento.timer
 systemctl daemon-reload
 
 # Primeira prova e deploy sao executados antes de habilitar a agenda. Se o SHA
@@ -47,6 +50,7 @@ systemctl daemon-reload
 systemctl start ejc-deploy-approved.service
 systemctl enable --now ejc-deploy-approved.timer
 systemctl enable --now ejc-observability.timer
+systemctl enable --now ejc-weekly-saneamento.timer
 
 echo "EJC deploy host-level instalado."
 echo "Status: systemctl status ejc-deploy-approved.timer"

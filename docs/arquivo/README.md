@@ -12,3 +12,9 @@
 - `scripts_legado/` — scripts de deploy/atualização fora de uso.
 - `auditoria-grafo/` e `auditoria_e2e/` — auditorias encerradas (cada uma com
   seu próprio banner).
+
+- historico-2026/ — documentos de status/publicação já superados.
+- ai-auditorias-2026/ — auditorias de IA preservadas como evidência histórica.
+- branch-hygiene-2026-09-30.csv — inventário da rodada de saneamento de branches.
+
+Índice da documentação viva: docs/README.md.

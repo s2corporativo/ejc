@@ -14,7 +14,7 @@
 # Ordem dos steps (DAG com depends_on — o Woodpecker executa em ONDAS de
 # nível: uma onda só inicia quando a anterior INTEIRA termina):
 #   Onda 1: security-secrets (falha barata, ~1min);
-#   Onda 2: ops-contracts + deploy-validation + lint + backend-tests ∥
+#   Onda 2: ops-contracts + deploy-validation + graphify-guard + lint + backend-tests ∥
 #           frontend ∥ security-sast ∥ security-vulnerabilities + migration-.
 #           check (as suítes pesadas independentes em PARALELO, ~14min);
 #   Onda 3: agents-contracts (serializa writer do cache pip com backend) e
@@ -24,7 +24,7 @@
 # membros — todos obrigatórios para o merge; apenas a topologia mudou.
 #
 # Classificação dos testes (ver RUNBOOK_CI_CD_WOODPECKER.md):
-# - OBRIGATÓRIOS (bloqueiam): security-secrets, ops-contracts, deploy-validation,
+# - OBRIGATÓRIOS (bloqueiam): security-secrets, ops-contracts, deploy-validation, graphify-guard,
 #   lint, backend-tests, frontend, frontend-e2e, migration-check, agents-contracts,
 #   security-sast, security-vulnerabilities;
 # - NÃO BLOQUEANTES (baseline pendente de saneamento): security-misconfig-audit;
@@ -80,11 +80,12 @@ steps:
     image: python:3.11-bookworm
     depends_on: [security-secrets]
     commands:
-      - bash -n scripts/backup.sh scripts/backup/ativar_backup.sh infra/selfhosted/bootstrap.sh scripts/tests/test_backup_wrapper.sh scripts/tests/test_ci_secret_gate.sh scripts/tests/test_rag_activation.sh scripts/tests/test_legacy_script_guards.sh
+      - bash -n scripts/backup.sh scripts/backup/ativar_backup.sh infra/selfhosted/bootstrap.sh scripts/tests/test_backup_wrapper.sh scripts/tests/test_ci_secret_gate.sh scripts/tests/test_rag_activation.sh scripts/tests/test_legacy_script_guards.sh scripts/ci_graphify_guard.sh infra/host-automation/ejc-weekly-saneamento.sh
       - bash scripts/tests/test_backup_wrapper.sh
       - bash scripts/tests/test_ci_secret_gate.sh
       - bash scripts/tests/test_rag_activation.sh
       - bash scripts/tests/test_legacy_script_guards.sh
+      - python3 scripts/tests/test_saneamento_governanca.py
     # Contratos leves rodam sempre: seus insumos cruzam código, exemplos e scanners.
 
   deploy-validation:
@@ -98,6 +99,46 @@ steps:
       - bash infra/host-automation/tests/test_gate.sh
       - python scripts/tests/test_docker_log_rotation.py
     # Deploy validation roda sempre: os scripts de deploy cruzam código, imagens e infra.
+
+  graphify-guard:
+    image: python:3.11-bookworm
+    depends_on: [security-secrets]
+    commands:
+      - apt-get update -qq && apt-get install -y -qq --no-install-recommends git
+      - bash scripts/ci_graphify_guard.sh
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - event: pull_request
+        path:
+          include:
+            - 'backend/**'
+            - 'frontend/**'
+            - 'scripts/**'
+            - 'infra/**'
+            - 'ops/**'
+            - 'config/**'
+            - 'nginx/**'
+            - 'vps-tools/**'
+            - '.github/**'
+            - '.githooks/**'
+            - '.claude/**'
+            - '.env.example'
+            - '.woodpecker.yml'
+            - '.gitleaks*'
+            - '.semgrep*'
+            - '.trivy*'
+            - 'AGENTS.md'
+            - 'CLAUDE.md'
+            - 'docs/GOVERNANCA*'
+            - 'docker-compose*.yml'
+            - '**/Dockerfile*'
+            - '**/requirements*.txt'
+            - '**/package*.json'
+            - '**/*lock*'
+            - '**/pyproject.toml'
+          on_empty: true
 
   # ── Cadeia obrigatória de gates ──
   lint:
