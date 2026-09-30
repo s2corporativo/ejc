@@ -139,6 +139,7 @@ async def montar_eventos_caso(db: AsyncSession, case_id: str) -> list[dict]:
     from app.models.document import Document
     from app.models.fee import Fee
     from app.models.legal_doc import LegalDoc
+    from app.models.ai_log import AILog
     from app.models.process import Process
     from app.models.process_integrity import ProcessDataProvenance
 
@@ -239,6 +240,28 @@ async def montar_eventos_caso(db: AsyncSession, case_id: str) -> list[dict]:
             "descricao": peca.titulo,
             "fonte": "pecas",
             "confirmado": bool(peca.human_reviewed),
+        })
+
+    # Logs de IA entram apenas como metadados operacionais: tipo de uso,
+    # modelo e status HITL. O prompt e a resposta NÃO são expostos na timeline.
+    for log in (
+        await db.execute(
+            select(AILog)
+            .where(AILog.case_id == case_id)
+            .order_by(AILog.created_at.desc())
+            .limit(300)
+        )
+    ).scalars().all():
+        eventos.append({
+            "data": log.created_at,
+            "categoria": "ia",
+            "tipo": _val(log.tipo_uso),
+            "descricao": (
+                f"Execução de IA · {log.modelo} · "
+                f"revisão {_val(log.status_hitl)}"
+            ),
+            "fonte": "ai_log",
+            "confirmado": _val(log.status_hitl) in ("revisado", "aplicado"),
         })
 
     eventos.sort(key=lambda e: (e["data"].isoformat() if hasattr(e["data"], "isoformat")
