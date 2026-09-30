@@ -413,6 +413,21 @@ ADICOES_INTENCIONAIS |= {
     ("/api/licitacao-auditoria/audit-report-template", "GET"),
 }
 
+# Financeiro/comissões (30/09/2026): novas superfícies autenticadas para
+# operação, recorrências, regras de rateio e aprovação de comissões. São
+# adições deliberadas do módulo financeiro; nenhuma rota existente foi removida.
+ADICOES_INTENCIONAIS |= {
+    ("/api/despesas/recorrentes/gerar", "POST"),
+    ("/api/financeiro/comissoes", "GET"),
+    ("/api/financeiro/comissoes/opcoes", "GET"),
+    ("/api/financeiro/comissoes/regras", "GET"),
+    ("/api/financeiro/comissoes/regras", "POST"),
+    ("/api/financeiro/comissoes/regras/{rule_id}", "DELETE"),
+    ("/api/financeiro/comissoes/regras/{rule_id}", "PATCH"),
+    ("/api/financeiro/comissoes/{allocation_id}/enviar-aprovacao", "POST"),
+    ("/api/financeiro/operacional", "GET"),
+}
+
 def test_paridade_openapi_com_snapshot_anterior():
     from app.main import app
 

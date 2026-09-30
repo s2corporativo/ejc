@@ -6,7 +6,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # Atualizar este identificador no mesmo PR que adicionar uma nova migration.
-HEAD_REVISION = "163_process_provenance_party_identity"
+HEAD_REVISION = "164_commission_rules"
 MERGE_REVISION = "104_merge_entrada_orquestrador"
 EXPECTED_PARENTS = {
     "101_entrada_universal_documentos",
