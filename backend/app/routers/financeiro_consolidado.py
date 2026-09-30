@@ -790,6 +790,79 @@ async def listar_comissoes(
     }
 
 
+@router.post("/comissoes/{allocation_id}/enviar-aprovacao")
+async def enviar_comissao_para_aprovacao(
+    allocation_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    _exigir_financeiro(cu)
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT a.*, c.titulo, c.numero_interno
+                FROM case_receipt_allocations a
+                JOIN cases c ON c.id = a.case_id
+                WHERE a.id=:id
+                FOR UPDATE
+                """
+            ),
+            {"id": allocation_id},
+        )
+    ).mappings().first()
+    if not row:
+        raise HTTPException(404, "Comissão não encontrada")
+    if row["withdrawal_id"]:
+        return {"ok": True, "withdrawal_id": row["withdrawal_id"], "already_exists": True}
+    if not row["advogado_responsavel_id"] or _money(row["valor_advogado"]) <= 0:
+        raise HTTPException(422, "Comissão sem advogado ou valor disponível para aprovação")
+
+    wid = str(uuid4())
+    await db.execute(
+        text(
+            """
+            INSERT INTO partner_withdrawals
+                (id, partner_id, gross_value, case_expenses, net_value,
+                 partner_share, description, period_reference, status,
+                 created_at, updated_at)
+            VALUES
+                (:id, :partner_id, :gross, :expenses, :net, :share,
+                 :description, :ref, 'pendente', now(), now())
+            """
+        ),
+        {
+            "id": wid,
+            "partner_id": row["advogado_responsavel_id"],
+            "gross": row["bruto_recebido"],
+            "expenses": row["despesas_deduzidas"],
+            "net": row["base_liquida"],
+            "share": row["valor_advogado"],
+            "description": f"Comissão — {row['numero_interno'] or row['titulo']}",
+            "ref": f"commission:{row['fee_payment_id']}",
+        },
+    )
+    await db.execute(
+        text(
+            "UPDATE case_receipt_allocations SET withdrawal_id=:wid WHERE id=:id"
+        ),
+        {"wid": wid, "id": allocation_id},
+    )
+    from app.models.audit_log import criar_audit_log
+    await criar_audit_log(
+        db,
+        cu.id,
+        cu.role.value,
+        "SUBMIT",
+        "case_receipt_allocations",
+        allocation_id,
+        detalhes="Comissão enviada à fila de aprovação.",
+        dados_depois={"withdrawal_id": wid},
+    )
+    await db.commit()
+    return {"ok": True, "withdrawal_id": wid}
+
+
 @router.get("/comissoes/regras", dependencies=[Depends(rate_limit("fin-comissoes-regras", 60))])
 async def listar_regras_comissao(
     db: AsyncSession = Depends(get_db),
