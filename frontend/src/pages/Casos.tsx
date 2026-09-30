@@ -78,6 +78,9 @@ export default function Casos() {
   const [arquivoF, setArquivoF] = useState<"ativos" | "arquivados" | "todos">(
     "ativos",
   );
+  const [savedView, setSavedView] = useState<
+    "padrao" | "urgentes" | "sem_proxima_acao"
+  >("padrao");
   const [desarquivandoId, setDesarquivandoId] = useState<string | null>(null);
   // Exclusão (soft delete → Lixeira) restrita a administração/sócios
   const { user } = useAuth();
@@ -193,6 +196,9 @@ export default function Casos() {
           status: statusF || undefined,
           advogado_id: advogadoF || undefined,
           arquivo: arquivoF,
+          urgentes: savedView === "urgentes" ? true : undefined,
+          sem_proxima_acao:
+            savedView === "sem_proxima_acao" ? true : undefined,
           page_size: 50,
         },
       })
@@ -270,7 +276,7 @@ export default function Casos() {
   useEffect(() => {
     const t = setTimeout(load, 350);
     return () => clearTimeout(t);
-  }, [search, areaF, statusF, advogadoF, arquivoF]);
+  }, [search, areaF, statusF, advogadoF, arquivoF, savedView]);
 
   // Passo 3 do fluxograma documental: abre a REVISÃO antes de qualquer escrita.
   // Só depois de "Confirmar criação" é que salvar() cria o caso e anexa o doc.
@@ -634,6 +640,69 @@ export default function Casos() {
           </div>
         }
       />
+
+      {view === "lista" && (
+        <div className="ejc-saved-views" aria-label="Visões rápidas de casos">
+          <span>Visões</span>
+          <button
+            type="button"
+            className={
+              savedView === "padrao" && arquivoF === "ativos" ? "is-active" : ""
+            }
+            onClick={() => {
+              setSavedView("padrao");
+              setArquivoF("ativos");
+              setStatusF("");
+            }}
+          >
+            Ativos
+          </button>
+          <button
+            type="button"
+            className={savedView === "urgentes" ? "is-active" : ""}
+            onClick={() => {
+              setSavedView("urgentes");
+              setArquivoF("ativos");
+              setStatusF("");
+            }}
+          >
+            Urgentes
+          </button>
+          <button
+            type="button"
+            className={savedView === "sem_proxima_acao" ? "is-active" : ""}
+            onClick={() => {
+              setSavedView("sem_proxima_acao");
+              setArquivoF("ativos");
+              setStatusF("");
+            }}
+          >
+            Sem próxima ação
+          </button>
+          <button
+            type="button"
+            className={arquivoF === "arquivados" ? "is-active" : ""}
+            onClick={() => {
+              setSavedView("padrao");
+              setArquivoF("arquivados");
+              setStatusF("");
+            }}
+          >
+            Arquivados
+          </button>
+          <button
+            type="button"
+            className={arquivoF === "todos" ? "is-active" : ""}
+            onClick={() => {
+              setSavedView("padrao");
+              setArquivoF("todos");
+              setStatusF("");
+            }}
+          >
+            Todos
+          </button>
+        </div>
+      )}
 
       {view === "lista" && <CasosStats />}
 
