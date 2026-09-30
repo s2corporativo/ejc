@@ -155,14 +155,14 @@ export default function CommandPalette({
         ? [
             {
               path: NOVO_CASO_DOCUMENTO_PATH,
-              label: "Novo caso por documento",
-              description: "Enviar arquivos, revisar os dados e criar o caso",
+              label: "Entrada por IA",
+              description: "Analisar documentos e iniciar um caso com inteligência jurídica",
               icon: FileUp,
             },
             {
               path: NOVO_CASO_MANUAL_PATH,
-              label: "Novo caso manual",
-              description: "Preencher um cadastro passo a passo",
+              label: "+ Novo Caso",
+              description: "Cadastrar cliente e caso sem usar IA",
               icon: PenLine,
             },
           ]
