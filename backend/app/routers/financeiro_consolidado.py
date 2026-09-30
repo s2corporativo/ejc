@@ -939,6 +939,8 @@ async def painel_operacional(
     _exigir_financeiro(cu)
     hoje = date.today()
     limite = hoje + timedelta(days=30)
+    # SQL composto apenas por CTE constante e bind params; sem entrada estrutural do usuário.
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     recebiveis=(await db.execute(text(f"""
         WITH {LEDGER_COMPAT_CTES}
         SELECT f.id,f.descricao,f.data_vencimento,
@@ -963,6 +965,8 @@ async def painel_operacional(
           AND vencimento BETWEEN :hoje AND :limite
         ORDER BY vencimento,id LIMIT 8
     """),{"hoje":hoje,"limite":limite})).mappings().all()
+    # SQL composto apenas por CTE constante e bind params; sem entrada estrutural do usuário.
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     inad=(await db.execute(text(f"""
         WITH {LEDGER_COMPAT_CTES}
         SELECT COUNT(DISTINCT f.client_id) AS clientes,COUNT(*) AS titulos,
@@ -973,6 +977,8 @@ async def painel_operacional(
           AND f.valor IS NOT NULL AND f.data_vencimento < :hoje
           AND GREATEST(COALESCE(f.valor,0)-COALESCE(pe.total_pago,0),0)>0
     """),{"hoje":hoje})).mappings().first()
+    # SQL composto apenas por CTE constante e bind params; sem entrada estrutural do usuário.
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     totais=(await db.execute(text(f"""
         WITH {LEDGER_COMPAT_CTES},
         entradas AS (
@@ -987,6 +993,8 @@ async def painel_operacional(
         )
         SELECT (SELECT total FROM entradas) entradas,(SELECT total FROM saidas) saidas
     """),{"hoje":hoje,"limite":limite})).mappings().first()
+    # SQL composto apenas por CTE constante e bind params; sem entrada estrutural do usuário.
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     mov=(await db.execute(text(f"""
         WITH {LEDGER_COMPAT_CTES}, mov AS (
           SELECT 'entrada'::text natureza,re.data_pagamento data,f.descricao,re.valor,
@@ -2176,6 +2184,8 @@ async def previsao_comissoes(
 
     rows = (
         await db.execute(
+            # SQL composto apenas por CTE constante e bind params; sem entrada estrutural do usuário.
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             text(
                 f"""
                 WITH {LEDGER_COMPAT_CTES},
@@ -2808,6 +2818,8 @@ async def atualizar_regra_comissao(
         params[key] = value
     sets.append("updated_at=NOW()")
     await db.execute(
+        # Nomes de coluna vêm exclusivamente do mapa campos; valores usam bind params.
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         text(f"UPDATE commission_rules SET {', '.join(sets)} WHERE id=:id AND deleted_at IS NULL"),
         params,
     )

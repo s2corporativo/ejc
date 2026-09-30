@@ -18,7 +18,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case
-from app.models.fee import Fee, FeeEstorno, FeePayment, FeeStatus
+from app.models.fee import Fee, FeeEstorno, FeePayment, FeeStatus, FeeTipo
 from app.models.user import User
 from app.schemas.common import MsgResponse
 from app.schemas.fee import (
@@ -527,7 +527,6 @@ async def registrar_pagamento(
     db.add(payment)
     await db.flush()
 
-    commission_result = None
     if fee.case_id and fee.tipo != FeeTipo.custas_despesas:
         caso_comissao = (
             await db.execute(
@@ -540,7 +539,7 @@ async def registrar_pagamento(
         if caso_comissao:
             from app.services.commission_service import alocar_comissao_pagamento
 
-            commission_result = await alocar_comissao_pagamento(
+            await alocar_comissao_pagamento(
                 db,
                 caso_comissao,
                 payment,

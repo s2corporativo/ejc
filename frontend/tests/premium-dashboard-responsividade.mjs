@@ -267,38 +267,22 @@ async function installApiFixtures(page) {
 async function inspectDashboard(page, viewport, failures) {
   await page.waitForSelector(".ejc-dash", { timeout: 15000 });
 
-  // #1857: a experiência padrão deve ser exclusivamente a Entrada Única.
-  await page
-    .waitForFunction(
-      () => {
-        const texto = document.querySelector("main")?.innerText ?? "";
-        return texto.includes("Como posso trabalhar neste caso?");
-      },
-      { timeout: 15000 },
-    )
-    .catch(() => {
-      failures.push(
-        `${viewport.name}: experiência IA não montou como página inicial`,
-      );
-    });
-
-  // O painel operacional é deliberadamente sob demanda.
-  await page.getByRole("button", { name: "Controles", exact: true }).click();
-
-  // Dados reais (das fixtures) renderizados após abrir Controles.
+  // V4: dashboard operacional é a página inicial; Entrada por IA permanece ação explícita.
   await page
     .waitForFunction(
       () => {
         const texto = document.querySelector("main")?.innerText ?? "";
         return (
-          texto.includes("Casos em destaque") && texto.includes("Clientes ativos")
+          texto.includes("Meu Dia") &&
+          texto.includes("Meus casos prioritários") &&
+          texto.includes("Clientes ativos")
         );
       },
       { timeout: 15000 },
     )
     .catch(() => {
       failures.push(
-        `${viewport.name}: Controles não montou com dados operacionais`,
+        `${viewport.name}: dashboard V4 não montou com dados operacionais`,
       );
     });
 

@@ -69,7 +69,7 @@ describe("LinhaDoTempoProcessual", () => {
 
     render(<LinhaDoTempoProcessual caseId="case-1" />);
 
-    expect(await screen.findByText("Eventos do caso")).toBeTruthy();
+    expect(await screen.findByText("Timeline única do caso")).toBeTruthy();
     expect(screen.getByText(/Revisão da contestação/)).toBeTruthy();
     expect(screen.getByText(/1.5h registradas/)).toBeTruthy();
     expect(screen.getByText(/1.5h a faturar/)).toBeTruthy();
