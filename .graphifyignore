@@ -1,0 +1,23 @@
+# Graphify do EJC — índice técnico, não arquivo histórico.
+# Sintaxe .gitignore. .gitignore continua sendo respeitado automaticamente.
+
+# Arquivos históricos/arquivados que poluem comunidades sem representar runtime atual.
+docs/arquivo/
+qa/arquivo/
+
+# Relatórios históricos na raiz; arquitetura vigente permanece em docs/ e código.
+RELATORIO_*.md
+
+# Evidências binárias/estáticas não necessárias ao mapa de dependências.
+frontend/public/brand/
+frontend/public/*.png
+frontend/public/*.jpg
+frontend/public/*.jpeg
+
+# Cobertura/cache/build (redundante com .gitignore em parte, explícito para clareza).
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+**/node_modules/
+**/dist/
+**/build/
