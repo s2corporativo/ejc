@@ -2,7 +2,7 @@
 from __future__ import annotations
 from sqlalchemy import (
     Column, String, DateTime, Date, Enum as SAEnum, func, Text, Numeric,
-    ForeignKey, UniqueConstraint,
+    ForeignKey, UniqueConstraint, Boolean, Integer,
 )
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -124,6 +124,28 @@ class FeeCobrancaEnvio(Base):
     enviado_em = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class CommissionRule(Base):
+    """Regra de comissão versionada por vigência e escopo."""
+    __tablename__ = "commission_rules"
+
+    id = Column(String(36), primary_key=True)
+    nome = Column(String(120), nullable=False)
+    escopo = Column(String(20), nullable=False)
+    area = Column(String(50), nullable=True, index=True)
+    advogado_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    case_id = Column(String(36), ForeignKey("cases.id", ondelete="CASCADE"), nullable=True, index=True)
+    percentual_advogado = Column(Numeric(5, 2), nullable=False)
+    descontar_despesas = Column(Boolean, nullable=False, default=True)
+    prioridade = Column(Integer, nullable=False, default=100)
+    ativo = Column(Boolean, nullable=False, default=True)
+    vigencia_inicio = Column(Date, nullable=False, server_default=func.current_date())
+    vigencia_fim = Column(Date, nullable=True)
+    created_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+
+
 class CaseReceiptAllocation(Base):
     """Rateio econômico de um recebimento lançado pelo fluxo do caso.
 
@@ -143,4 +165,9 @@ class CaseReceiptAllocation(Base):
     valor_advogado = Column(Numeric(14, 2), nullable=False)
     valor_escritorio = Column(Numeric(14, 2), nullable=False)
     regra = Column(String(50), nullable=False)
+    commission_rule_id = Column(String(36), ForeignKey("commission_rules.id", ondelete="SET NULL"), nullable=True, index=True)
+    bruto_recebido = Column(Numeric(14, 2), nullable=False)
+    despesas_deduzidas = Column(Numeric(14, 2), nullable=False, default=0)
+    base_liquida = Column(Numeric(14, 2), nullable=False)
+    withdrawal_id = Column(String(36), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
