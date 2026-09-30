@@ -1,0 +1,11 @@
+[Unit]
+Description=Run EJC read-only observability probe every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+Unit=ejc-observability.service
+
+[Install]
+WantedBy=timers.target
