@@ -15,12 +15,22 @@ Este guia orienta a configuração do Antigravity para trabalhar no EJC com agen
 
 | Finalidade | Uso no dia a dia | Cuidados |
 |---|---|---|
+| Graphify MCP | Consultar o grafo do código por símbolos, vizinhança e caminhos antes de varrer arquivos | Índice auxiliar; regenerar após mudança e confirmar conclusões no código |
 | GitHub | Ler issues, PRs, checks, diffs e criar PRs rastreáveis | Token com menor privilégio; sem bypass de proteção |
 | Sistema de arquivos do workspace | Navegar pelo repositório aberto e anexar evidências locais | Limitar ao workspace; não expor arquivos pessoais |
 | PostgreSQL local/homologação | Validar schema, migrations, pgvector e consultas controladas | Preferir read-only; nunca usar produção como teste |
 | Docker local | Subir ambiente de desenvolvimento e serviços auxiliares | Evitar remoção de volumes; sem `down -v` sem decisão humana |
 | Navegador/Playwright | Validar frontend, rotas, autenticação, estados e console | Usar usuários/dados fictícios |
 | Observabilidade/logs | Investigar falhas recorrentes e regressões | Sanitizar logs; não copiar PII, documentos ou segredo |
+
+## Ferramentas auxiliares recomendadas
+
+- **Superpowers**: planejamento, TDD, depuração sistemática e revisão disciplinada do fluxo de desenvolvimento.
+- **Context7**: documentação atualizada de bibliotecas/frameworks para reduzir uso de APIs obsoletas.
+- **Codex Security**: análise de segurança complementar para mudanças sensíveis.
+- **Firecrawl**: pesquisa técnica externa e documentação web quando o repositório não contém a resposta.
+
+Essas ferramentas não substituem Graphify, testes, revisão do diff nem as regras do repositório. Para o EJC, evite instalar conectores redundantes sem uma função concreta.
 
 ## Agentes pertinentes
 
@@ -46,5 +56,13 @@ Ao final, entregue causa, arquivos alterados, comandos executados, evidências s
 ```
 
 ## Configuração MCP
+
+O Graphify atual expõe MCP por stdio com:
+
+```bash
+python -m graphify.serve graphify-out/graph.json
+```
+
+O bootstrap do Claude mantém um venv isolado em cache com `graphifyy[mcp]`. Use o interpretador desse venv no cliente MCP local. O arquivo `graphify-out/graph.json` é regenerável e permanece fora do Git.
 
 Use `docs/ia/mcp_config.example.jsonc` como referência. Copie para o local de configuração do seu Antigravity apenas quando souber quais servidores MCP estão instalados na máquina e substitua os placeholders por variáveis de ambiente locais. Não commite a configuração real.
