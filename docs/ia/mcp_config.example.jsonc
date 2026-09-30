@@ -2,6 +2,11 @@
   // Exemplo seguro: não cole tokens reais neste arquivo.
   // Copie para a configuração local do Antigravity e use variáveis de ambiente.
   "mcpServers": {
+    "graphify": {
+      "type": "stdio",
+      "command": "<python-do-venv-ejc-graphify>",
+      "args": ["-m", "graphify.serve", "graphify-out/graph.json"]
+    },
     "github-readonly": {
       "command": "<comando-do-servidor-mcp-github>",
       "args": [],
