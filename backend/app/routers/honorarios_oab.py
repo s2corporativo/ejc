@@ -629,12 +629,30 @@ async def gerar_rateio(
     calc = await _calcular(fee_id, db)
     if not calc["pago"]:
         raise HTTPException(422, "Honorário de êxito ainda não foi pago")
+
+    comissao_nova = (
+        await db.execute(
+            text("""
+                SELECT a.id
+                FROM case_receipt_allocations a
+                JOIN fee_payments fp ON fp.id = a.fee_payment_id
+                WHERE fp.fee_id = :fee_id
+                LIMIT 1
+            """),
+            {"fee_id": fee_id},
+        )
+    ).scalar_one_or_none()
+    if comissao_nova:
+        raise HTTPException(
+            409,
+            "Este honorário já usa o controle novo de Comissões; utilize Financeiro > Receber > Comissões.",
+        )
     socio_id = calc["titular"]["partner_id"]
     if not socio_id:
         raise HTTPException(422, "Advogado titular do caso não é sócio cadastrado — rateio manual necessário")
     partner_id = calc["titular"]["user_id"]
 
-    ref = f"exito:{fee_id}"
+    ref = f"exito:{fee_id[:34]}"
     dup = (await db.execute(text("""
         SELECT id FROM partner_withdrawals
         WHERE period_reference = :ref AND deleted_at IS NULL
