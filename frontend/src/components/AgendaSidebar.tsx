@@ -82,6 +82,17 @@ export default function AgendaSidebar({
     return mapa;
   }, [atividades.dados]);
 
+  const proximosCompromissos = useMemo(() => {
+    const hojeChave = CHAVE(hoje);
+    return (atividades.dados ?? [])
+      .filter((atividade) => {
+        if (!atividade?.date) return false;
+        return String(atividade.date).slice(0, 10) > hojeChave;
+      })
+      .sort((a, b) => String(a.date ?? "").localeCompare(String(b.date ?? "")))
+      .slice(0, 3);
+  }, [atividades.dados, hoje]);
+
   // Grade de 6 semanas: é o que o calendário mensal precisa caber sem mudar
   // de altura ao navegar de um mês para outro. As células de completeza não
   // repetem datas (repetir geraria rótulos duplicados para o leitor de tela):
@@ -133,9 +144,10 @@ export default function AgendaSidebar({
   const indiceFoco = indiceSelecionado >= 0 ? indiceSelecionado : 0;
 
   const focar = (indice: number) => {
-    const alvo = gradeRef.current?.querySelectorAll<HTMLButtonElement>(
-      '[role="gridcell"]',
-    )[indice];
+    const alvo =
+      gradeRef.current?.querySelectorAll<HTMLButtonElement>(
+        '[role="gridcell"]',
+      )[indice];
     alvo?.focus();
   };
 
@@ -322,12 +334,50 @@ export default function AgendaSidebar({
             })}
           </div>
 
+          <div className="ejc-sidebar-agenda__upcoming">
+            <div className="ejc-sidebar-agenda__upcoming-head">
+              <strong>Próximos</strong>
+              <Link to="/atividades">Ver agenda</Link>
+            </div>
+            {proximosCompromissos.length === 0 ? (
+              <p className="ejc-sidebar-agenda__upcoming-empty">
+                Sem próximos compromissos.
+              </p>
+            ) : (
+              <ul>
+                {proximosCompromissos.map((atividade, index) => {
+                  const data = String(atividade.date).slice(0, 10);
+                  const destino = atividade.case_id
+                    ? `/casos/${atividade.case_id}`
+                    : `/atividades/dia/${data}`;
+                  return (
+                    <li key={atividade.id ?? `proximo-${data}-${index}`}>
+                      <Link to={destino}>
+                        <time>
+                          {format(new Date(`${data}T12:00:00`), "dd/MM")}
+                        </time>
+                        <span>
+                          <strong>{atividade.titulo || "Compromisso"}</strong>
+                          <small>{atividade.caso_titulo || "Agenda"}</small>
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+
           {listaAberta && (
             <div className="ejc-sidebar-agenda__list">
               <p className="ejc-sidebar-agenda__list-head">
-                {format(new Date(`${chaveSelecionada}T00:00:00`), "dd 'de' MMMM", {
-                  locale: ptBR,
-                })}
+                {format(
+                  new Date(`${chaveSelecionada}T00:00:00`),
+                  "dd 'de' MMMM",
+                  {
+                    locale: ptBR,
+                  },
+                )}
               </p>
               {itensSelecionados.length === 0 ? (
                 <p className="ejc-sidebar-agenda__list-empty">

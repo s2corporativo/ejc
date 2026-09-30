@@ -92,6 +92,7 @@ export default function LayoutReference() {
   );
 
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [caseFocusExpanded, setCaseFocusExpanded] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifCount, setNotifCount] = useState(0);
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -139,6 +140,20 @@ export default function LayoutReference() {
     };
   }, []);
 
+  const caseFocusRoute = useMemo(() => {
+    if (/^\/casos\/(?!novo(?:\/|$))[^/]+/.test(location.pathname)) {
+      return true;
+    }
+    if (location.pathname === "/ajuizamento") {
+      return Boolean(new URLSearchParams(location.search).get("caso"));
+    }
+    return false;
+  }, [location.pathname, location.search]);
+
+  useEffect(() => {
+    setCaseFocusExpanded(false);
+  }, [location.pathname, location.search]);
+
   const visible = useMemo(
     () =>
       selectMainNavigation(
@@ -150,9 +165,16 @@ export default function LayoutReference() {
     [user?.role, lifecycleSettings],
   );
 
-  const sidebarWidth = collapsed ? "md:w-[4.75rem]" : "md:w-[17rem]";
-  const contentMargin = collapsed ? "md:ml-[4.75rem]" : "md:ml-[17rem]";
-  const navCollapsed = isSidebarNavigationCollapsed(collapsed, mobileOpen);
+  const effectiveCollapsed =
+    collapsed || (caseFocusRoute && !caseFocusExpanded);
+  const sidebarWidth = effectiveCollapsed ? "md:w-[4.75rem]" : "md:w-[17rem]";
+  const contentMargin = effectiveCollapsed
+    ? "md:ml-[4.75rem]"
+    : "md:ml-[17rem]";
+  const navCollapsed = isSidebarNavigationCollapsed(
+    effectiveCollapsed,
+    mobileOpen,
+  );
   const clock = formatClock(now);
   const whatsappUrl = getWhatsAppUrl();
   const mailtoUrl = getMailtoUrl();
@@ -195,7 +217,7 @@ export default function LayoutReference() {
       <header
         className={cn(
           "ejc-app-header fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-white transition-all",
-          collapsed ? "md:left-[4.75rem]" : "md:left-[17rem]",
+          effectiveCollapsed ? "md:left-[4.75rem]" : "md:left-[17rem]",
         )}
       >
         <div className="flex items-center gap-3 px-3 md:px-5">
@@ -204,12 +226,18 @@ export default function LayoutReference() {
             className="icon-btn"
             onClick={() => {
               if (window.matchMedia("(min-width: 768px)").matches) {
-                setSidebarCollapsed(!collapsed);
+                if (caseFocusRoute) {
+                  setCaseFocusExpanded((value) => !value);
+                } else {
+                  setSidebarCollapsed(!collapsed);
+                }
               } else {
                 setMobileOpen(true);
               }
             }}
-            aria-label={collapsed ? "Expandir menu" : "Abrir ou recolher menu"}
+            aria-label={
+              effectiveCollapsed ? "Expandir menu" : "Abrir ou recolher menu"
+            }
           >
             <Menu className="h-5 w-5" />
           </button>
@@ -220,8 +248,8 @@ export default function LayoutReference() {
             aria-label="Ir para o início do EJC"
           >
             <img
-              src={officeBranding.logoPath}
-              alt={officeBranding.officeName}
+              src="/brand/ejc-wordmark.svg"
+              alt="EJC — Inteligência Jurídica"
               className="brand-logo-img h-9 w-auto max-w-[150px] object-contain"
             />
           </Link>
@@ -234,7 +262,7 @@ export default function LayoutReference() {
             >
               <Search className="h-4 w-4 shrink-0" />
               <span className="hidden truncate sm:inline">
-                Buscar por clientes, processos, documentos…
+                Buscar clientes, casos, documentos, tarefas ou comandos…
               </span>
               <span className="truncate sm:hidden">Buscar…</span>
               <kbd className="ml-auto hidden px-1.5 py-0.5 text-[10px] font-medium sm:block">
@@ -403,8 +431,8 @@ export default function LayoutReference() {
             aria-label="Ir para o início do EJC"
           >
             <img
-              src={officeBranding.logoPath}
-              alt={officeBranding.officeName}
+              src="/brand/ejc-wordmark.svg"
+              alt="EJC — Inteligência Jurídica"
               className="ejc-sidebar-brand__logo"
             />
             {!navCollapsed && (

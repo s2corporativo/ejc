@@ -136,9 +136,7 @@ describe("EJC — tema canônico neutro com acento único e ouro de marca", () =
     expect(premium).toMatch(
       /\.dark \.ejc-dash__tabs button\.is-active\s*\{[^}]*var\(--ejc-primary-surface\)/,
     );
-    expect(premium).toMatch(
-      /\.ejc-dash__mode button\.is-active\s*\{[^}]*var\(--ejc-primary-surface\)/,
-    );
+    expect(premium).not.toContain(".ejc-dash__mode");
     // Epígrafe: no claro, o rótulo da cidade segue com texto claro sobre o
     // overlay escuro da foto (tinta escura ali ficaria ~1:1).
     expect(css).not.toContain(
@@ -228,11 +226,12 @@ describe("EJC — início canônico", () => {
     expect(dashboard).toContain("Clientes ativos");
     expect(dashboard).toContain("Casos em andamento");
     expect(dashboard).toContain("Documentos recentes");
-    expect(dashboard).toContain("Agenda e Prazos");
     expect(dashboard).toContain("Casos em destaque");
-    expect(dashboard).toContain("Acesso rápido");
-    expect(dashboard).toContain("Minha rotina hoje");
-    expect(dashboard).toContain("/brand/dashboard-themis.jpg");
+    expect(dashboard).toContain("Fluxo jurídico");
+    expect(dashboard).toContain("Decisões que exigem sua atenção hoje");
+    expect(dashboard).toContain("Começar novo trabalho");
+    expect(dashboard).not.toContain('aria-label="Agenda e Prazos"');
+    expect(dashboard).not.toContain("Minha rotina hoje");
   });
 
   it("alimenta o início com endpoints reais e degrada para traço, nunca zero falso", () => {

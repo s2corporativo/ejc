@@ -11,7 +11,8 @@ import {
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
-  BarChart3,
+  AlertTriangle,
+  BookOpen,
   Briefcase,
   CalendarClock,
   CalendarDays,
@@ -19,10 +20,13 @@ import {
   ChevronRight,
   FileText,
   FolderKanban,
+  Gavel,
+  Library,
+  Lightbulb,
   ListTodo,
   Paperclip,
-  Plus,
   Scale,
+  Search,
   ShieldCheck,
   Sparkles,
   Users,
@@ -34,18 +38,16 @@ import { officeBranding } from "../config/officeBranding";
 import api from "../lib/api";
 import { asList } from "../lib/list";
 import { useAuth } from "../stores/auth";
+import { getUltimoCasoId } from "../stores/caseContext";
 import { EntradaInteligente } from "./EntradaUnica";
 import { IdentidadeAssistente } from "./EntradaUnica/IdentidadeAssistente";
 
 /**
- * Início canônico do EJC — referência visual premium DPT (18/09/2026).
+ * Início canônico do EJC — cockpit jurídico.
  *
- * Composição idêntica ao mockup aprovado pelo Titular: saudação, hero da
- * Entrada Única, quatro sinais operacionais, Agenda e Prazos, Casos em
- * destaque, Acesso rápido e coluna lateral (manifesto, calendário, rotina e
- * citação institucional). Todos os números vêm de endpoints reais; fonte
- * indisponível degrada para "—" (nunca zero falso), espelhando o contrato do
- * GET /dashboard (campo `degradado`).
+ * Prioriza entrada, decisões acionáveis, casos e o fluxo de trabalho. Agenda
+ * mensal e próximos compromissos vivem somente na sidebar; detalhes históricos
+ * e módulos avançados ficam um nível abaixo para reduzir redundância visual.
  */
 
 type Atividade = {
@@ -93,8 +95,24 @@ type IntegridadeResumo = {
   contagens?: Record<string, number | null>;
 };
 
-type AbaAgenda = "hoje" | "amanha" | "semana";
-type ExperienciaDashboard = "ia" | "controles";
+type LegalDocResumo = {
+  id: string;
+  titulo?: string;
+  status?: string;
+  case_id?: string | null;
+  tipo_peca?: string;
+  human_reviewed?: boolean;
+};
+
+type DecisaoHoje = {
+  id: string;
+  prioridade: number;
+  titulo: string;
+  detalhe: string;
+  acao: string;
+  to: string;
+  tom: "danger" | "warning" | "info" | "success";
+};
 
 const PAPEIS_INTEGRIDADE = new Set([
   "superadmin",
@@ -104,51 +122,10 @@ const PAPEIS_INTEGRIDADE = new Set([
   "advogado_auxiliar",
 ]);
 
-const ROTULO_TIPO: Record<string, string> = {
-  prazo: "Prazo",
-  tarefa: "Tarefa",
-  intimacao: "Intimação",
-  movimentacao: "Movimentação",
-  evento: "Agenda",
-};
-
-const DIAS_CURTOS = ["D", "S", "T", "Q", "Q", "S", "S"];
-
-function horaDe(date?: string | null): string {
-  if (!date) return "—";
-  const m = date.match(/[T ](\d{2}:\d{2})/);
-  return m ? m[1] : "—";
-}
-
-function pontoClasse(a: Atividade): string {
-  if (a.tipo === "tarefa") return "is-green";
-  if (a.tipo === "intimacao" || a.tipo === "movimentacao") return "is-blue";
-  if (a.urgencia === "vencido" || a.urgencia === "critico") return "is-red";
-  if (a.urgencia === "atencao") return "is-orange";
-  return "is-gold";
-}
-
 function chipDeCaso(status?: string): { rotulo: string; classe: string } {
   if (status === "encerrado") return { rotulo: "Concluso", classe: "is-gold" };
   if (status === "arquivado") return { rotulo: "Arquivado", classe: "is-gray" };
   return { rotulo: "Em andamento", classe: "is-green" };
-}
-
-function dataDaAba(aba: AbaAgenda): string {
-  const base =
-    aba === "amanha" ? new Date(Date.now() + 86_400_000) : new Date();
-  return format(base, "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
-}
-
-function semanaDaAba(aba: AbaAgenda): string {
-  if (aba !== "semana") return "";
-  // Mesmo intervalo do filtro `agendaFiltrada` (dias_restantes 2..7): a
-  // legenda mostra exatamente o período exibido, sem dias fantasmas.
-  const inicio = new Date(Date.now() + 2 * 86_400_000);
-  const fim = new Date(Date.now() + 7 * 86_400_000);
-  return `${format(inicio, "dd")} a ${format(fim, "dd 'de' MMMM", {
-    locale: ptBR,
-  })}`;
 }
 
 function saudacaoPorHora(): string {
@@ -222,8 +199,8 @@ export default function DashboardUltra() {
   const navigate = useNavigate();
   const canUseIntegridade = PAPEIS_INTEGRIDADE.has(user?.role || "");
 
-  const [experiencia, setExperiencia] = useState<ExperienciaDashboard>("ia");
   const [carregado, setCarregado] = useState(false);
+  const [ultimoCaso, setUltimoCaso] = useState<CasoResumo | null>(null);
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [integridade, setIntegridade] = useState<IntegridadeResumo | null>(
     null,
@@ -234,16 +211,16 @@ export default function DashboardUltra() {
     null,
   );
   const [tarefas, setTarefas] = useState<Tarefa[] | null>(null);
-  const [aba, setAba] = useState<AbaAgenda>("hoje");
-  const [diaSelecionado, setDiaSelecionado] = useState<string | null>(null);
-  const [mesOffset, setMesOffset] = useState(0);
+  const [pecasRecentes, setPecasRecentes] = useState<LegalDocResumo[] | null>(
+    null,
+  );
 
   const carregar = useCallback(async () => {
     const inicioDocs = format(
       new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
       "yyyy-MM-dd",
     );
-    const [rKpis, rAtiv, rCasos, rDocs, rTarefas, rIntegridade] =
+    const [rKpis, rAtiv, rCasos, rDocs, rTarefas, rIntegridade, rPecas] =
       await Promise.allSettled([
         api.get("/dashboard/"),
         api.get("/atividades", { params: { apenas_pendentes: true } }),
@@ -255,6 +232,7 @@ export default function DashboardUltra() {
         canUseIntegridade
           ? api.get("/saneamento/integridade")
           : Promise.resolve({ data: null }),
+        api.get("/legal-docs/", { params: { page: 1, page_size: 30 } }),
       ]);
     setKpis(rKpis.status === "fulfilled" ? (rKpis.value.data as Kpis) : null);
     setAtividades(
@@ -280,41 +258,34 @@ export default function DashboardUltra() {
         ? (rIntegridade.value.data as IntegridadeResumo)
         : null,
     );
+    setPecasRecentes(
+      rPecas.status === "fulfilled"
+        ? asList<LegalDocResumo>(rPecas.value.data)
+        : null,
+    );
     setCarregado(true);
   }, [canUseIntegridade]);
 
   useEffect(() => {
-    if (experiencia !== "controles" || carregado) return;
+    if (carregado) return;
     void carregar();
-  }, [carregar, carregado, experiencia]);
+  }, [carregar, carregado]);
 
-  const alternarTarefa = useCallback(async (tarefa: Tarefa) => {
-    const novoStatus = tarefa.status === "concluida" ? "a_fazer" : "concluida";
-    const novoConcluidaEm =
-      novoStatus === "concluida" ? new Date().toISOString() : null;
-    setTarefas((atual) =>
-      (atual ?? []).map((item) =>
-        item.id === tarefa.id
-          ? { ...item, status: novoStatus, concluida_em: novoConcluidaEm }
-          : item,
-      ),
-    );
-    try {
-      await api.patch(`/tasks/${tarefa.id}`, { status: novoStatus });
-    } catch {
-      setTarefas((atual) =>
-        (atual ?? []).map((item) =>
-          item.id === tarefa.id
-            ? {
-                ...item,
-                status: tarefa.status,
-                concluida_em: tarefa.concluida_em ?? null,
-              }
-            : item,
-        ),
-      );
-      toast.error("Não foi possível atualizar a tarefa.");
-    }
+  useEffect(() => {
+    const id = getUltimoCasoId();
+    if (!id) return;
+    let ativo = true;
+    api
+      .get(`/cases/${id}`)
+      .then((response) => {
+        if (ativo) setUltimoCaso(response.data as CasoResumo);
+      })
+      .catch(() => {
+        if (ativo) setUltimoCaso(null);
+      });
+    return () => {
+      ativo = false;
+    };
   }, []);
 
   const primeiroNome = user?.full_name?.trim().split(/\s+/)[0] || "usuário";
@@ -346,22 +317,6 @@ export default function DashboardUltra() {
       return total + (typeof valor === "number" ? valor : 0);
     }, 0);
   }, [integridade]);
-
-  const agendaFiltrada = useMemo(() => {
-    if (!atividades) return null;
-    if (diaSelecionado) {
-      return atividades
-        .filter((a) => a.date?.slice(0, 10) === diaSelecionado)
-        .slice(0, 6);
-    }
-    const dentroDaAba = atividades.filter((a) => {
-      const d = a.dias_restantes;
-      if (aba === "hoje") return d === 0;
-      if (aba === "amanha") return d === 1;
-      return d !== null && d !== undefined && d >= 2 && d <= 7;
-    });
-    return dentroDaAba.slice(0, 6);
-  }, [atividades, aba, diaSelecionado]);
 
   const casosEmDestaque = useMemo(() => {
     if (!casos) return null;
@@ -398,27 +353,6 @@ export default function DashboardUltra() {
   }, [tarefas, hoje]);
 
   const rotinaPendentes = rotinaHoje.filter((t) => t.status !== "concluida");
-  const rotinaConcluidas = rotinaHoje.filter((t) => t.status === "concluida");
-  const rotinaTotal = rotinaHoje.length;
-  const rotinaFeitas = rotinaConcluidas.length;
-
-  const mesVisivel = useMemo(
-    () => addMonths(startOfMonth(new Date()), mesOffset),
-    [mesOffset],
-  );
-  const diasDoMes = useMemo(() => {
-    const inicio = startOfWeek(startOfMonth(mesVisivel), { weekStartsOn: 0 });
-    const fim = endOfWeek(endOfMonth(mesVisivel), { weekStartsOn: 0 });
-    return eachDayOfInterval({ start: inicio, end: fim });
-  }, [mesVisivel]);
-  const diasComAtividade = useMemo(() => {
-    if (!atividades) return new Set<string>();
-    return new Set(
-      atividades
-        .filter((a) => a.date)
-        .map((a) => (a.date as string).slice(0, 10)),
-    );
-  }, [atividades]);
 
   const canUseLegal = useMemo(() => {
     const roles = new Set(["superadmin", "admin", "socio", "advogado"]);
@@ -435,134 +369,295 @@ export default function DashboardUltra() {
     return roles.has(user?.role || "");
   }, [user?.role]);
 
+  const temCarteira =
+    carregado &&
+    ((kpis?.casos?.ativos ?? 0) > 0 ||
+      (casos?.length ?? 0) > 0 ||
+      Boolean(ultimoCaso?.id));
+
+  const decisoesHoje = useMemo<DecisaoHoje[]>(() => {
+    const decisoes: DecisaoHoje[] = [];
+    const casosPorId = new Map(
+      (casos ?? []).filter((caso) => caso.id).map((caso) => [caso.id!, caso]),
+    );
+
+    for (const peca of pecasRecentes ?? []) {
+      if (!["em_revisao", "corrigida"].includes(peca.status ?? "")) continue;
+      const caso = peca.case_id ? casosPorId.get(peca.case_id) : undefined;
+      decisoes.push({
+        id: `peca-${peca.id}`,
+        prioridade: peca.status === "em_revisao" ? 120 : 112,
+        titulo:
+          peca.status === "em_revisao"
+            ? "Peça aguardando sua revisão"
+            : "Peça corrigida aguardando aprovação",
+        detalhe: [peca.titulo || "Peça jurídica", caso?.titulo]
+          .filter(Boolean)
+          .join(" · "),
+        acao:
+          peca.status === "em_revisao" ? "Revisar peça" : "Conferir e aprovar",
+        to: peca.case_id
+          ? `/casos/${peca.case_id}?tab=pecas#revisao`
+          : "/pecas",
+        tom: "danger",
+      });
+    }
+
+    for (const atividade of atividades ?? []) {
+      if (atividade.tipo !== "prazo") continue;
+      const dias = atividade.dias_restantes;
+      if (
+        dias === null ||
+        dias === undefined ||
+        (dias > 3 && atividade.urgencia !== "critico")
+      ) {
+        continue;
+      }
+      const caso = atividade.case_id
+        ? casosPorId.get(atividade.case_id)
+        : undefined;
+      decisoes.push({
+        id: `prazo-${atividade.id ?? atividade.titulo}`,
+        prioridade: dias < 0 ? 118 : dias === 0 ? 110 : 94 - dias,
+        titulo:
+          dias < 0
+            ? "Prazo vencido exige decisão"
+            : dias === 0
+              ? "Prazo vence hoje"
+              : `Prazo em ${dias} dia(s)`,
+        detalhe: [
+          atividade.titulo || "Prazo",
+          caso?.titulo || atividade.caso_titulo,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        acao: atividade.case_id ? "Abrir caso e resolver" : "Resolver prazo",
+        to: atividade.case_id
+          ? `/casos/${atividade.case_id}`
+          : "/atividades?tipo=prazo",
+        tom: dias <= 0 ? "danger" : "warning",
+      });
+    }
+
+    for (const tarefa of rotinaPendentes) {
+      decisoes.push({
+        id: `tarefa-${tarefa.id}`,
+        prioridade: scoreTarefaHoje(tarefa, hoje),
+        titulo: "Tarefa requer ação hoje",
+        detalhe: tarefa.titulo || "Tarefa pendente",
+        acao: "Abrir tarefa",
+        to: "/atividades?tipo=tarefa",
+        tom: "info",
+      });
+    }
+
+    for (const caso of casosEmDestaque ?? []) {
+      const risco = (caso.risco ?? "").toLowerCase();
+      if (!["alto", "critico", "crítico"].includes(risco)) continue;
+      decisoes.push({
+        id: `risco-${caso.id ?? caso.titulo}`,
+        prioridade: risco.startsWith("crit") ? 88 : 76,
+        titulo: risco.startsWith("crit")
+          ? "Caso com risco crítico"
+          : "Caso com risco alto",
+        detalhe: [caso.titulo || "Caso", caso.proxima_acao]
+          .filter(Boolean)
+          .join(" · "),
+        acao: "Revisar estratégia",
+        to: caso.id ? `/casos/${caso.id}?tab=dossie` : "/radar",
+        tom: "warning",
+      });
+    }
+
+    const unicas = new Map<string, DecisaoHoje>();
+    for (const decisao of decisoes.sort(
+      (a, b) => b.prioridade - a.prioridade,
+    )) {
+      const chave = decisao.to + "|" + decisao.titulo;
+      if (!unicas.has(chave)) unicas.set(chave, decisao);
+    }
+    return [...unicas.values()].slice(0, 3);
+  }, [
+    atividades,
+    casos,
+    casosEmDestaque,
+    hoje,
+    pecasRecentes,
+    rotinaPendentes,
+  ]);
+
   const valorOuTraco = (v: number | null | undefined) =>
     v === null || v === undefined ? "—" : String(v);
 
-  return (
-    <div className={`ejc-dash ejc-dash--${experiencia}`}>
-      <nav className="ejc-dash__mode" aria-label="Experiência do Início">
-        <button
-          type="button"
-          className={experiencia === "ia" ? "is-active" : ""}
-          aria-current={experiencia === "ia" ? "page" : undefined}
-          onClick={() => setExperiencia("ia")}
-        >
-          <Sparkles aria-hidden="true" /> IA
-        </button>
-        <button
-          type="button"
-          className={experiencia === "controles" ? "is-active" : ""}
-          aria-current={experiencia === "controles" ? "page" : undefined}
-          onClick={() => setExperiencia("controles")}
-        >
-          <BarChart3 aria-hidden="true" /> Controles
-        </button>
-      </nav>
-      <section
-        className="ejc-dash__ai-home"
-        aria-label="Entrada de casos"
-        hidden={experiencia !== "ia"}
-      >
-        <div className="ejc-dash__entry-options" aria-label="Escolha como iniciar">
-          {canUseEntry && (
-            <Link
-              to="/cadastro-manual?aba=caso"
-              className="ejc-dash__entry-option is-manual"
-            >
-              <span className="ejc-dash__entry-option-icon" aria-hidden="true">
-                <Briefcase />
-              </span>
-              <span>
-                <strong>Cadastrar caso manualmente</strong>
-                <small>
-                  Cliente, título, área, processo e valor. Direto, sem IA.
-                </small>
-              </span>
-              <ChevronRight aria-hidden="true" />
-            </Link>
-          )}
-          {canUseLegal && (
-            <a
-              href="#ejc-ai-intake"
-              className="ejc-dash__entry-option is-ai"
-            >
-              <span className="ejc-dash__entry-option-icon" aria-hidden="true">
-                <Sparkles />
-              </span>
-              <span>
-                <strong>Ler e analisar caso com IA</strong>
-                <small>
-                  Relate a situação ou envie documentos para a análise jurídica.
-                </small>
-              </span>
-              <ChevronRight aria-hidden="true" />
-            </a>
-          )}
-        </div>
+  const metrica = (v: number | null | undefined) =>
+    carregado ? (
+      valorOuTraco(v)
+    ) : (
+      <span className="ejc-skeleton ejc-skeleton--metric" aria-hidden="true" />
+    );
 
-        <section
-          id="ejc-ai-intake"
-          className="ejc-dash__entry ejc-dash__entry--ai-home"
-          aria-label="Leitura e análise do caso com IA"
-        >
-          <div className="ejc-dash__entry-head ejc-dash__entry-head--ai-home">
-            <span className="ejc-dash__entry-icon">
-              <IdentidadeAssistente />
-            </span>
-            <div className="ejc-dash__entry-copy">
+  return (
+    <div className="ejc-dash">
+      <section
+        className={`ejc-dash__ai-home ${temCarteira ? "is-compact" : ""}`}
+        aria-label="Entrada de casos"
+      >
+        {temCarteira ? (
+          <div className="ejc-dash__entry-compact">
+            <div>
               <span className="ejc-dash__entry-kicker">
-                EJC · Inteligência Jurídica
+                EJC · Entrada Jurídica
               </span>
-              <h1>Leitura e análise do caso com IA</h1>
-              <p>
-                Relate a situação ou anexe os documentos. A IA organiza o
-                contexto jurídico e propõe o fluxo para sua confirmação.
-              </p>
+              <strong>Começar novo trabalho</strong>
+              <small>
+                Sua carteira já está ativa. Entre direto por IA ou cadastro
+                manual sem ocupar o painel de decisões.
+              </small>
+            </div>
+            <div className="ejc-dash__entry-compact-actions">
+              {canUseLegal && (
+                <Link to="/entrada" className="is-primary">
+                  <Sparkles aria-hidden="true" />
+                  Analisar novo caso
+                </Link>
+              )}
+              {canUseEntry && (
+                <Link to="/cadastro-manual?aba=caso">
+                  <Briefcase aria-hidden="true" />
+                  Cadastro manual
+                </Link>
+              )}
             </div>
           </div>
+        ) : (
+          <>
+            <div
+              className="ejc-dash__entry-options"
+              aria-label="Escolha como iniciar"
+            >
+              {canUseEntry && (
+                <Link
+                  to="/cadastro-manual?aba=caso"
+                  className="ejc-dash__entry-option is-manual"
+                >
+                  <span
+                    className="ejc-dash__entry-option-icon"
+                    aria-hidden="true"
+                  >
+                    <Briefcase />
+                  </span>
+                  <span>
+                    <strong>Cadastrar caso manualmente</strong>
+                    <small>
+                      Cliente, título, área, processo e valor. Direto, sem IA.
+                    </small>
+                  </span>
+                  <ChevronRight aria-hidden="true" />
+                </Link>
+              )}
+              {canUseLegal && (
+                <a
+                  href="#ejc-ai-intake"
+                  className="ejc-dash__entry-option is-ai"
+                >
+                  <span
+                    className="ejc-dash__entry-option-icon"
+                    aria-hidden="true"
+                  >
+                    <Sparkles />
+                  </span>
+                  <span>
+                    <strong>Ler e analisar caso com IA</strong>
+                    <small>
+                      Relate a situação ou envie documentos para a análise
+                      jurídica.
+                    </small>
+                  </span>
+                  <ChevronRight aria-hidden="true" />
+                </a>
+              )}
+            </div>
 
-          {canUseLegal ? (
-            <div className="ejc-dash__entry-body">
-              <EntradaInteligente embedded />
-            </div>
-          ) : canUseEntry ? (
-            <div className="ejc-dash__entry-body ejc-dash__entry-body--plain">
-              <p>
-                Seu perfil pode cadastrar clientes e casos manualmente, sem IA.
-              </p>
-              <Link
-                to="/cadastro-manual?aba=caso"
-                className="ejc-dash__entry-cta"
-              >
-                Cadastrar caso manualmente
-              </Link>
-            </div>
-          ) : (
-            <div className="ejc-dash__entry-body ejc-dash__entry-body--plain">
-              <p>
-                A Entrada Única está disponível apenas aos perfis autorizados.
-              </p>
-            </div>
-          )}
-        </section>
+            <section
+              id="ejc-ai-intake"
+              className="ejc-dash__entry ejc-dash__entry--ai-home"
+              aria-label="Leitura e análise do caso com IA"
+            >
+              <div className="ejc-dash__entry-head ejc-dash__entry-head--ai-home">
+                <span className="ejc-dash__entry-icon">
+                  <IdentidadeAssistente />
+                </span>
+                <div className="ejc-dash__entry-copy">
+                  <span className="ejc-dash__entry-kicker">
+                    EJC · Inteligência Jurídica
+                  </span>
+                  <h1>Leitura e análise do caso com IA</h1>
+                  <p>
+                    Relate a situação ou anexe os documentos. A IA organiza o
+                    contexto jurídico e propõe o fluxo para sua confirmação.
+                  </p>
+                </div>
+              </div>
+
+              {canUseLegal ? (
+                <div className="ejc-dash__entry-body">
+                  <EntradaInteligente embedded />
+                </div>
+              ) : canUseEntry ? (
+                <div className="ejc-dash__entry-body ejc-dash__entry-body--plain">
+                  <p>
+                    Seu perfil pode cadastrar clientes e casos manualmente, sem
+                    IA.
+                  </p>
+                  <Link
+                    to="/cadastro-manual?aba=caso"
+                    className="ejc-dash__entry-cta"
+                  >
+                    Cadastrar caso manualmente
+                  </Link>
+                </div>
+              ) : (
+                <div className="ejc-dash__entry-body ejc-dash__entry-body--plain">
+                  <p>
+                    A Entrada Única está disponível apenas aos perfis
+                    autorizados.
+                  </p>
+                </div>
+              )}
+            </section>
+          </>
+        )}
       </section>
-      <div
-        className="ejc-dash__controls"
-        aria-label="Controles do escritório"
-        hidden={experiencia !== "controles"}
-      >
+      <div className="ejc-dash__workspace" aria-label="Painel do escritório">
         <header className="ejc-dash__greeting" aria-label="Saudação do dia">
           <div>
             <h1>
               {saudacaoPorHora()}, {primeiroNome}!
             </h1>
-            <p>Disciplina hoje. Grandes conquistas sempre.</p>
+            <p>O que vamos resolver hoje?</p>
           </div>
-          <div className="ejc-dash__greeting-tag" aria-hidden="true">
-            <span>Conhecimento</span>
-            <span>Estratégia</span>
-            <span>Resultados reais</span>
-          </div>
+          {ultimoCaso?.id ? (
+            <Link
+              to={`/casos/${ultimoCaso.id}`}
+              className="ejc-dash__resume"
+              aria-label={`Continuar de onde parei: ${ultimoCaso.titulo || "Caso"}`}
+            >
+              <span>
+                <small>Continuar de onde parei</small>
+                <strong>{ultimoCaso.titulo || "Caso"}</strong>
+                <em>
+                  {ultimoCaso.proxima_acao || "Retomar o trabalho neste caso"}
+                </em>
+              </span>
+              <ChevronRight aria-hidden="true" />
+            </Link>
+          ) : (
+            <div className="ejc-dash__greeting-tag" aria-hidden="true">
+              <span>Conhecimento</span>
+              <span>Estratégia</span>
+              <span>Resultados reais</span>
+            </div>
+          )}
         </header>
 
         <section className="ejc-dash__stats" aria-label="Sinais do escritório">
@@ -574,7 +669,7 @@ export default function DashboardUltra() {
             <span className="ejc-dash__stat-icon" aria-hidden="true">
               <CalendarClock />
             </span>
-            <strong>{valorOuTraco(prazosHoje)}</strong>
+            <strong>{metrica(prazosHoje)}</strong>
             <small>Prazos hoje</small>
             <ChevronRight className="ejc-dash__stat-chev" aria-hidden="true" />
           </Link>
@@ -586,7 +681,7 @@ export default function DashboardUltra() {
             <span className="ejc-dash__stat-icon" aria-hidden="true">
               <Users />
             </span>
-            <strong>{valorOuTraco(kpis?.clientes_ativos)}</strong>
+            <strong>{metrica(kpis?.clientes_ativos)}</strong>
             <small>Clientes ativos</small>
             <ChevronRight className="ejc-dash__stat-chev" aria-hidden="true" />
           </Link>
@@ -598,7 +693,7 @@ export default function DashboardUltra() {
             <span className="ejc-dash__stat-icon" aria-hidden="true">
               <FolderKanban />
             </span>
-            <strong>{valorOuTraco(kpis?.casos?.ativos)}</strong>
+            <strong>{metrica(kpis?.casos?.ativos)}</strong>
             <small>Casos em andamento</small>
             <ChevronRight className="ejc-dash__stat-chev" aria-hidden="true" />
           </Link>
@@ -611,7 +706,7 @@ export default function DashboardUltra() {
               <span className="ejc-dash__stat-icon" aria-hidden="true">
                 <ShieldCheck />
               </span>
-              <strong>{valorOuTraco(integridadeTotal)}</strong>
+              <strong>{metrica(integridadeTotal)}</strong>
               <small>Integridade da carteira</small>
               <ChevronRight
                 className="ejc-dash__stat-chev"
@@ -627,7 +722,7 @@ export default function DashboardUltra() {
               <span className="ejc-dash__stat-icon" aria-hidden="true">
                 <FileText />
               </span>
-              <strong>{valorOuTraco(documentosRecentes)}</strong>
+              <strong>{metrica(documentosRecentes)}</strong>
               <small>Documentos recentes</small>
               <ChevronRight
                 className="ejc-dash__stat-chev"
@@ -638,113 +733,6 @@ export default function DashboardUltra() {
         </section>
 
         <div className="ejc-dash__panels">
-          <section className="ejc-dash__panel" aria-label="Agenda e Prazos">
-            <div className="ejc-dash__panel-head">
-              <div className="ejc-dash__panel-title">
-                <span className="ejc-dash__panel-ico" aria-hidden="true">
-                  <CalendarDays />
-                </span>
-                <h3>Agenda e Prazos</h3>
-              </div>
-              <Link to="/atividades" className="ejc-dash__panel-more">
-                Ver todos <ChevronRight aria-hidden="true" />
-              </Link>
-            </div>
-            <div className="ejc-dash__panel-tools">
-              <div
-                className="ejc-dash__tabs"
-                role="tablist"
-                aria-label="Período"
-              >
-                {(
-                  [
-                    ["hoje", "Hoje"],
-                    ["amanha", "Amanhã"],
-                    ["semana", "Esta semana"],
-                  ] as const
-                ).map(([valor, rotulo]) => (
-                  <button
-                    key={valor}
-                    type="button"
-                    role="tab"
-                    aria-selected={aba === valor}
-                    className={aba === valor ? "is-active" : ""}
-                    onClick={() => {
-                      setDiaSelecionado(null);
-                      setAba(valor);
-                    }}
-                  >
-                    {rotulo}
-                  </button>
-                ))}
-              </div>
-              {diaSelecionado ? (
-                <button
-                  type="button"
-                  className="ejc-dash__date-filter"
-                  onClick={() => setDiaSelecionado(null)}
-                  aria-label="Remover filtro de data"
-                >
-                  {format(new Date(`${diaSelecionado}T12:00:00`), "dd/MM/yyyy")}
-                  <span aria-hidden="true">×</span>
-                </button>
-              ) : (
-                <p className="ejc-dash__panel-date" aria-hidden="true">
-                  {aba === "semana" ? (
-                    <strong>{semanaDaAba(aba)}</strong>
-                  ) : (
-                    <>
-                      <strong>{dataDaAba(aba)}</strong>
-                      <span>
-                        {format(
-                          aba === "amanha"
-                            ? new Date(Date.now() + 86_400_000)
-                            : new Date(),
-                          "EEEE",
-                          { locale: ptBR },
-                        )}
-                      </span>
-                    </>
-                  )}
-                </p>
-              )}
-            </div>
-            <ol className="ejc-dash__timeline">
-              {agendaFiltrada === null ? (
-                <li className="ejc-dash__empty">Agenda indisponível agora.</li>
-              ) : agendaFiltrada.length === 0 ? (
-                <li className="ejc-dash__empty">
-                  Nada na agenda para o período.
-                </li>
-              ) : (
-                agendaFiltrada.map((a) => (
-                  <li key={a.id ?? `${a.tipo}-${a.titulo}`}>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        a.case_id
-                          ? navigate(`/casos/${a.case_id}`)
-                          : navigate("/atividades")
-                      }
-                    >
-                      <time>{horaDe(a.date)}</time>
-                      <span className={`ejc-dash__dot ${pontoClasse(a)}`} />
-                      <span className="ejc-dash__item">
-                        <strong>{a.titulo || "Atividade"}</strong>
-                        <small>
-                          {a.caso_titulo
-                            ? a.caso_titulo
-                            : (ROTULO_TIPO[a.tipo ?? ""] ?? "Atividade")}
-                        </small>
-                      </span>
-                      <ChevronRight aria-hidden="true" />
-                    </button>
-                  </li>
-                ))
-              )}
-            </ol>
-          </section>
-
           <section className="ejc-dash__panel" aria-label="Casos em destaque">
             <div className="ejc-dash__panel-head">
               <div className="ejc-dash__panel-title">
@@ -761,8 +749,11 @@ export default function DashboardUltra() {
               {casosEmDestaque === null ? (
                 <li className="ejc-dash__empty">Casos indisponíveis agora.</li>
               ) : casosEmDestaque.length === 0 ? (
-                <li className="ejc-dash__empty">
-                  Nenhum caso cadastrado ainda.
+                <li className="ejc-dash__empty ejc-dash__empty--action">
+                  <span>Nenhum caso cadastrado ainda.</span>
+                  <Link to="/cadastro-manual?aba=caso">
+                    Cadastrar primeiro caso
+                  </Link>
                 </li>
               ) : (
                 casosEmDestaque.map((c) => {
@@ -801,199 +792,267 @@ export default function DashboardUltra() {
               )}
             </ul>
           </section>
+
+          <section
+            className="ejc-dash__panel ejc-dash__radar"
+            aria-label="Radar Estratégico do Escritório"
+          >
+            <div className="ejc-dash__panel-head">
+              <div className="ejc-dash__panel-title">
+                <span className="ejc-dash__panel-ico" aria-hidden="true">
+                  <Sparkles />
+                </span>
+                <h3>Radar Estratégico do Escritório</h3>
+              </div>
+              <Link to="/radar" className="ejc-dash__panel-more">
+                Análise completa <ChevronRight aria-hidden="true" />
+              </Link>
+            </div>
+
+            <div className="ejc-dash__decision-head">
+              <div>
+                <strong>Decisões que exigem sua atenção hoje</strong>
+                <small>
+                  Revisões, prazos, tarefas e riscos ordenados por urgência.
+                </small>
+              </div>
+              <span>{carregado ? decisoesHoje.length : "—"}</span>
+            </div>
+
+            <ol className="ejc-dash__decision-list">
+              {!carregado ? (
+                [0, 1, 2].map((item) => (
+                  <li key={item} className="is-loading" aria-hidden="true">
+                    <span className="ejc-skeleton ejc-skeleton--decision" />
+                  </li>
+                ))
+              ) : decisoesHoje.length === 0 ? (
+                <li className="is-clear">
+                  <span className="is-success">
+                    <ShieldCheck aria-hidden="true" />
+                  </span>
+                  <div>
+                    <strong>Nenhuma decisão crítica pendente agora</strong>
+                    <small>
+                      Continue pela agenda, casos em destaque ou pela busca
+                      universal.
+                    </small>
+                  </div>
+                  <Link to="/atividades">Ver agenda</Link>
+                </li>
+              ) : (
+                decisoesHoje.map((decisao, index) => (
+                  <li key={decisao.id}>
+                    <Link to={decisao.to}>
+                      <span className={`is-${decisao.tom}`}>
+                        <strong>{String(index + 1).padStart(2, "0")}</strong>
+                        <AlertTriangle aria-hidden="true" />
+                      </span>
+                      <div>
+                        <strong>{decisao.titulo}</strong>
+                        <small>{decisao.detalhe}</small>
+                      </div>
+                      <em>{decisao.acao}</em>
+                      <ChevronRight aria-hidden="true" />
+                    </Link>
+                  </li>
+                ))
+              )}
+            </ol>
+          </section>
         </div>
 
-        <section className="ejc-dash__quick" aria-label="Acesso rápido">
+        <section className="ejc-dash__quick" aria-label="Fluxo jurídico">
           <div className="ejc-dash__quick-head">
             <Zap aria-hidden="true" />
-            <strong>Acesso rápido</strong>
+            <strong>Fluxo jurídico</strong>
+            <small>Do caso à próxima ação</small>
           </div>
           <div className="ejc-dash__quick-items">
-            {/* Atalhos para rotas canônicas do registry (moduleRegistry.tsx).
-                "Novo caso" vai para /entrada, e não /casos/novo: o próprio
-                registry trata /casos/novo como compatibilidade e manda novos
-                fluxos para a Entrada Jurídica. "Minhas tarefas" aponta direto
-                ao destino canônico, sem passar pelo redirect legado /tarefas. */}
-            <Link to="/entrada">
+            <Link to="/entrada" aria-label="Analisar caso">
               <span aria-hidden="true">
-                <Plus />
+                <Sparkles />
               </span>
-              Novo caso
+              <small aria-hidden="true">01</small>
+              Analisar caso
             </Link>
-            <Link to="/documentos">
+            <Link to="/documentos" aria-label="Provas">
               <span aria-hidden="true">
                 <Paperclip />
               </span>
-              Anexar documentos
+              <small aria-hidden="true">02</small>
+              Provas
             </Link>
-            <Link to="/pecas">
-              <span aria-hidden="true">
-                <FileText />
-              </span>
-              Modelos e peças
-            </Link>
-            <Link to="/inteligencia?tab=pesquisa">
+            <Link to="/teses" aria-label="Teses">
               <span aria-hidden="true">
                 <Scale />
               </span>
-              Consultar jurisprudência
+              <small aria-hidden="true">03</small>
+              Teses
             </Link>
-            <Link to="/atividades?tipo=tarefa">
+            <Link to="/inteligencia?tab=assistente" aria-label="Estratégia">
               <span aria-hidden="true">
-                <ListTodo />
+                <ShieldCheck />
               </span>
-              Minhas tarefas
+              <small aria-hidden="true">04</small>
+              Estratégia
+            </Link>
+            <Link to="/pecas" aria-label="Peça">
+              <span aria-hidden="true">
+                <FileText />
+              </span>
+              <small aria-hidden="true">05</small>
+              Peça
+            </Link>
+            <Link to="/pecas" aria-label="Revisão">
+              <span aria-hidden="true">
+                <Gavel />
+              </span>
+              <small aria-hidden="true">06</small>
+              Revisão
+            </Link>
+            <Link to="/ajuizamento" aria-label="Ajuizamento">
+              <span aria-hidden="true">
+                <ChevronRight />
+              </span>
+              <small aria-hidden="true">07</small>
+              Ajuizamento
             </Link>
           </div>
         </section>
 
-        <aside className="ejc-dash__side" aria-label="Painel lateral">
-          {/* Painel único da referência: manifesto + calendário + rotina
-            compartilham a mesma superfície esmeralda (sem costuras). */}
-          <div className="ejc-dash__side-panel">
-            <div className="ejc-dash__manifesto">
-              <img
-                src="/brand/dashboard-themis.jpg"
-                alt=""
-                aria-hidden="true"
-                loading="lazy"
-              />
-              <p>
-                Direito
-                <br />
-                que constrói
-                <br />
-                possibilidades.
-              </p>
+        <section
+          className="ejc-dash__extras"
+          aria-label="Inteligência e conhecimento"
+        >
+          <article className="ejc-dash__extra-card">
+            <div className="ejc-dash__extra-head">
+              <span>
+                <Sparkles aria-hidden="true" />
+              </span>
+              <strong>Inteligência estratégica</strong>
+              <Link to="/inteligencia">
+                Acessar <ChevronRight aria-hidden="true" />
+              </Link>
             </div>
-
-            <div className="ejc-dash__calendar">
-              <div className="ejc-dash__calendar-head">
-                <strong>
-                  {(() => {
-                    const mes = format(mesVisivel, "MMMM 'de' yyyy", {
-                      locale: ptBR,
-                    });
-                    return mes.charAt(0).toUpperCase() + mes.slice(1);
-                  })()}
-                </strong>
+            <div className="ejc-dash__extra-links">
+              <Link to="/entrada">
+                <Sparkles aria-hidden="true" />
                 <span>
-                  <button
-                    type="button"
-                    aria-label="Mês anterior"
-                    onClick={() => setMesOffset((v) => v - 1)}
-                  >
-                    <ChevronLeft aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Mês seguinte"
-                    onClick={() => setMesOffset((v) => v + 1)}
-                  >
-                    <ChevronRight aria-hidden="true" />
-                  </button>
+                  <strong>Análise estratégica</strong>
+                  <small>Entrada Única com IA</small>
                 </span>
-              </div>
-              <div className="ejc-dash__calendar-grid" role="grid">
-                {DIAS_CURTOS.map((d, i) => (
-                  <span key={`${d}-${i}`} className="ejc-dash__calendar-dow">
-                    {d}
-                  </span>
-                ))}
-                {diasDoMes.map((dia) => {
-                  const chave = format(dia, "yyyy-MM-dd");
-                  const temAtividade = diasComAtividade.has(chave);
-                  const classes = ["ejc-dash__calendar-day"];
-                  if (!isSameMonth(dia, mesVisivel)) classes.push("is-out");
-                  if (temAtividade) classes.push("has-event");
-                  if (diaSelecionado === chave) classes.push("is-selected");
-                  return (
-                    <button
-                      key={chave}
-                      type="button"
-                      className={classes.join(" ")}
-                      aria-label={format(dia, "dd/MM/yyyy")}
-                      aria-pressed={diaSelecionado === chave}
-                      aria-current={
-                        chave === format(new Date(), "yyyy-MM-dd")
-                          ? "date"
-                          : undefined
-                      }
-                      onClick={() =>
-                        setDiaSelecionado((atual) =>
-                          atual === chave ? null : chave,
-                        )
-                      }
-                    >
-                      {format(dia, "d")}
-                      {temAtividade && <i aria-hidden="true" />}
-                    </button>
-                  );
-                })}
-              </div>
+              </Link>
+              <Link to="/documentos">
+                <FileText aria-hidden="true" />
+                <span>
+                  <strong>Mapa da prova</strong>
+                  <small>Documentos, fatos e lacunas</small>
+                </span>
+              </Link>
+              <Link to="/inteligencia?tab=pesquisa">
+                <Search aria-hidden="true" />
+                <span>
+                  <strong>Pesquisa jurisprudencial</strong>
+                  <small>Precedentes e fundamentos</small>
+                </span>
+              </Link>
+              <Link to="/pecas">
+                <Gavel aria-hidden="true" />
+                <span>
+                  <strong>Revisão de peça</strong>
+                  <small>Estrutura e consistência</small>
+                </span>
+              </Link>
             </div>
+          </article>
 
-            <div className="ejc-dash__routine">
-              <div className="ejc-dash__routine-head">
-                <strong>Minha rotina hoje</strong>
-                <small>
-                  {carregado && tarefas
-                    ? `${rotinaFeitas} de ${rotinaTotal} concluídas`
-                    : "carregando…"}
-                </small>
-              </div>
-              <div className="ejc-dash__routine-bar" aria-hidden="true">
-                <i
-                  style={{
-                    width:
-                      rotinaTotal > 0
-                        ? `${Math.round((rotinaFeitas / rotinaTotal) * 100)}%`
-                        : "0%",
-                  }}
-                />
-              </div>
-              <ul>
-                {rotinaPendentes.map((t) => (
-                  <li key={t.id}>
-                    <button
-                      type="button"
-                      onClick={() => void alternarTarefa(t)}
-                    >
-                      <span className="ejc-dash__check" aria-hidden="true" />
-                      {t.titulo || "Tarefa"}
-                    </button>
-                  </li>
-                ))}
-                {rotinaConcluidas.map((t) => (
-                  <li key={t.id}>
-                    <button
-                      type="button"
-                      className="is-done"
-                      onClick={() => void alternarTarefa(t)}
-                    >
-                      <span className="ejc-dash__check" aria-hidden="true" />
-                      {t.titulo || "Tarefa"}
-                    </button>
-                  </li>
-                ))}
-                {carregado && tarefas && rotinaTotal === 0 && (
-                  <li className="ejc-dash__empty">
-                    Nenhuma tarefa sua por agora.
-                  </li>
-                )}
-              </ul>
+          <article className="ejc-dash__extra-card">
+            <div className="ejc-dash__extra-head">
+              <span>
+                <Lightbulb aria-hidden="true" />
+              </span>
+              <strong>Teses e oportunidades</strong>
+              <Link to="/teses">
+                Ver banco <ChevronRight aria-hidden="true" />
+              </Link>
             </div>
-          </div>
+            <div className="ejc-dash__extra-links">
+              <Link to="/teses">
+                <Scale aria-hidden="true" />
+                <span>
+                  <strong>Banco de teses</strong>
+                  <small>Teses consolidadas do escritório</small>
+                </span>
+              </Link>
+              <Link to="/radar">
+                <AlertTriangle aria-hidden="true" />
+                <span>
+                  <strong>Riscos e nulidades</strong>
+                  <small>Pontos que exigem ação</small>
+                </span>
+              </Link>
+              <Link to="/inteligencia?tab=assistente">
+                <Gavel aria-hidden="true" />
+                <span>
+                  <strong>Advogado do Diabo</strong>
+                  <small>Ataque, defesa e fragilidades</small>
+                </span>
+              </Link>
+              <Link to="/atividades">
+                <CalendarClock aria-hidden="true" />
+                <span>
+                  <strong>Próximas ações</strong>
+                  <small>Prazos, tarefas e agenda</small>
+                </span>
+              </Link>
+            </div>
+          </article>
 
-          <div className="ejc-dash__quote">
-            <span aria-hidden="true">“</span>
-            <p>Segurança jurídica é base para grandes conquistas.</p>
-            <div className="ejc-dash__quote-brand">
-              <img src={officeBranding.logoPath} alt="" aria-hidden="true" />
-              <small>{officeBranding.officeName}</small>
+          <article className="ejc-dash__extra-card">
+            <div className="ejc-dash__extra-head">
+              <span>
+                <Library aria-hidden="true" />
+              </span>
+              <strong>Base de conhecimento</strong>
+              <Link to="/inteligencia?tab=conhecimento">
+                Acessar <ChevronRight aria-hidden="true" />
+              </Link>
             </div>
-          </div>
-        </aside>
+            <div className="ejc-dash__knowledge-grid">
+              <Link to="/inteligencia?tab=pesquisa">
+                <Scale aria-hidden="true" />
+                <strong>STF</strong>
+                <small>Repercussão geral</small>
+              </Link>
+              <Link to="/inteligencia?tab=pesquisa">
+                <Gavel aria-hidden="true" />
+                <strong>STJ</strong>
+                <small>Repetitivos</small>
+              </Link>
+              <Link to="/datajud">
+                <FolderKanban aria-hidden="true" />
+                <strong>CNJ</strong>
+                <small>DataJud</small>
+              </Link>
+              <Link to="/inteligencia?tab=conhecimento">
+                <BookOpen aria-hidden="true" />
+                <strong>Legislação</strong>
+                <small>Códigos e normas</small>
+              </Link>
+              <Link to="/inteligencia?tab=pesquisa">
+                <Search aria-hidden="true" />
+                <strong>Jurisprudência</strong>
+                <small>Busca avançada</small>
+              </Link>
+              <Link to="/teses">
+                <Lightbulb aria-hidden="true" />
+                <strong>Memória</strong>
+                <small>Teses e resultados</small>
+              </Link>
+            </div>
+          </article>
+        </section>
 
         <footer className="ejc-dash__footer">
           <span>

@@ -11,6 +11,10 @@ import {
   PenLine,
   ScanSearch,
   Wrench,
+  ClipboardCheck,
+  Timer,
+  WalletCards,
+  Library,
 } from "lucide-react";
 import api from "../lib/api";
 import { filterModulesByLifecycle } from "../lib/moduleLifecycle";
@@ -30,17 +34,32 @@ const ICON: Record<string, typeof Users> = {
   cliente: Users,
   caso: Briefcase,
   peca: FileText,
+  documento: FileText,
+  tarefa: ClipboardCheck,
+  prazo: Timer,
+  financeiro: WalletCards,
 };
 const LABEL: Record<string, string> = {
   cliente: "Cliente",
   caso: "Caso",
   peca: "Peça",
+  documento: "Documento",
+  tarefa: "Tarefa",
+  prazo: "Prazo",
+  financeiro: "Financeiro",
 };
 
 type TipoBusca = "tudo" | "parte" | "cpf" | "processo";
 
 interface ResultadoBusca {
-  tipo: "cliente" | "caso" | "peca";
+  tipo:
+    | "cliente"
+    | "caso"
+    | "peca"
+    | "documento"
+    | "tarefa"
+    | "prazo"
+    | "financeiro";
   id: number | string;
   titulo: string;
   subtitulo?: string | null;
@@ -62,7 +81,7 @@ const TIPOS: { value: TipoBusca; label: string }[] = [
 ];
 
 const PLACEHOLDER: Record<TipoBusca, string> = {
-  tudo: "Buscar clientes, casos, peças…",
+  tudo: "Buscar clientes, casos, documentos, peças, tarefas…",
   parte: "Nome da parte…",
   cpf: "CPF ou CNPJ da parte/cliente…",
   processo: "Número do processo (CNJ ou interno)…",
@@ -171,6 +190,22 @@ export default function CommandPalette({
             },
           ]
         : []),
+      ...(canUseLegalAI
+        ? [
+            {
+              path: "/teses",
+              label: "Buscar tese / Banco de teses",
+              description: "Pesquisar teses, fundamentos e memória jurídica",
+              icon: Library,
+            },
+            {
+              path: "/pecas",
+              label: "Produzir contestação ou peça",
+              description: "Abrir produção jurídica, revisão e aprovação",
+              icon: PenLine,
+            },
+          ]
+        : []),
       {
         // Hub "Mais Ferramentas": sem esta entrada, o catálogo de módulos
         // avançados só era alcançável por URL direta (auditoria de
@@ -180,6 +215,12 @@ export default function CommandPalette({
         label: "Mais ferramentas",
         description: "Abrir o catálogo de módulos avançados do escritório",
         icon: Wrench,
+      },
+      {
+        path: "/atividades?tipo=prazo",
+        label: "Prazos hoje",
+        description: "Ver prazos e vencimentos que exigem atenção",
+        icon: Timer,
       },
       {
         path: "/atividades",
