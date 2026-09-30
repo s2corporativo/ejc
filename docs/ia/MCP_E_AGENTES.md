@@ -15,6 +15,7 @@ Este guia orienta a configuração do Antigravity para trabalhar no EJC com agen
 
 | Finalidade | Uso no dia a dia | Cuidados |
 |---|---|---|
+| Graphify | Consultar o mapa vivo de símbolos/dependências antes de varrer código | Índice auxiliar; confirmar no arquivo antes de editar/concluir |
 | GitHub | Ler issues, PRs, checks, diffs e criar PRs rastreáveis | Token com menor privilégio; sem bypass de proteção |
 | Sistema de arquivos do workspace | Navegar pelo repositório aberto e anexar evidências locais | Limitar ao workspace; não expor arquivos pessoais |
 | PostgreSQL local/homologação | Validar schema, migrations, pgvector e consultas controladas | Preferir read-only; nunca usar produção como teste |
@@ -44,6 +45,14 @@ Confirme repositório, remoto GitHub, branch, estado do Git, PRs concorrentes e 
 
 Ao final, entregue causa, arquivos alterados, comandos executados, evidências sanitizadas, riscos residuais, rollback e recomendação de PR. Não faça merge ou deploy sem CI verde e autorização.
 ```
+
+## Graphify + MCP
+
+O EJC usa Graphify em ambiente Python isolado. A versão é fixada no hook de sessão para evitar deriva entre agentes. O índice `graphify-out/` é regenerável e não é fonte da verdade.
+
+Depois da primeira geração do grafo, leia o caminho absoluto do interpretador em `graphify-out/.graphify_python` e configure-o como `GRAPHIFY_PYTHON` no cliente MCP local. O servidor é iniciado com `-m graphify.serve graphify-out/graph.json` e expõe consultas de grafo para agentes compatíveis. Não versione caminho absoluto da máquina nem credenciais.
+
+A `.graphifyignore` exclui arquivo histórico e evidência gerada, mas preserva código, migrations, scripts e infraestrutura. Para mudança relevante de arquitetura, execute `graphify update .` antes de usar `query`, `explain` ou `path`.
 
 ## Configuração MCP
 
