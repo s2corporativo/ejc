@@ -23,7 +23,7 @@
 
 ### Próximo passo (fora do escopo do sandbox)
 
-- Atualizar produção na VPS Contabo: `scripts/atualizar-vps.sh` (requer SSH na VPS — credenciais não disponíveis no sandbox)
+- Atualizar produção pela automação aprovada (/opt/s2-automation/host/ejc-deploy-approved.sh) ou scripts/deploy_manual.sh --sha <SHA>
 - Roteiro seguro de deploy: git pull → backup.sh → build backend/frontend → migrations (alembic upgrade head) → restart backend+worker → healthcheck
 
 ## Estado atual

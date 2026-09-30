@@ -1,37 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-HELPER="$ROOT/scripts/legacy_script_guard.sh"
-fail() { printf 'legacy guard test: %s\n' "$*" >&2; exit 1; }
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
-for rel in scripts/deploy.sh scripts/deploy-vps.sh scripts/atualizar-vps.sh scripts/vps_setup.sh; do
-  out="$(mktemp)"
-  err="$(mktemp)"
-  set +e
-  env -u EJC_LEGACY_SCRIPT_OK -u EJC_LEGACY_SCRIPT_REASON bash "$ROOT/$rel" >"$out" 2>"$err"
-  rc=$?
-  set -e
-  [ "$rc" -eq 64 ] || fail "$rel retornou rc=$rc sem opt-in; esperado 64"
-  grep -Fq '[legacy-guard] BLOQUEADO:' "$err" || fail "$rel não emitiu bloqueio explícito"
-  rm -f "$out" "$err"
+fail() { echo "FAIL: $*" >&2; exit 1; }
+
+legacy=(
+  scripts/deploy.sh
+  scripts/deploy-vps.sh
+  scripts/atualizar-vps.sh
+  scripts/vps_setup.sh
+  scripts/legacy_script_guard.sh
+)
+
+for rel in "${legacy[@]}"; do
+  [ ! -e "$ROOT/$rel" ] || fail "$rel voltou ao repositório; use o caminho canônico de deploy"
 done
 
-set +e
-missing_reason="$(EJC_LEGACY_SCRIPT_OK=I_UNDERSTAND_THIS_IS_LEGACY bash -c 'source "$1"; ejc_legacy_script_guard "fixture" "replacement"' _ "$HELPER" 2>&1)"
-missing_reason_rc=$?
-set -e
-[ "$missing_reason_rc" -eq 64 ] || fail 'helper liberou contingência sem motivo'
-grep -Fq 'EJC_LEGACY_SCRIPT_REASON é obrigatório' <<<"$missing_reason" || fail 'helper não explicou motivo obrigatório'
-
-optin="$(EJC_LEGACY_SCRIPT_OK=I_UNDERSTAND_THIS_IS_LEGACY EJC_LEGACY_SCRIPT_REASON=teste-controlado bash -c 'source "$1"; ejc_legacy_script_guard "fixture" "replacement"; printf OPTIN_OK' _ "$HELPER" 2>/dev/null)"
-[ "$optin" = 'OPTIN_OK' ] || fail 'helper não libera contingência explicitamente documentada'
-
-grep -Fq 'Woodpecker self-hosted' "$ROOT/README.md" || fail 'README ainda não declara o CI oficial'
-for rel in scripts/deploy.sh scripts/atualizar-vps.sh; do
-  grep -Fq '/opt/s2-automation/host/ejc-deploy-approved.sh' "$ROOT/$rel" ||     fail "$rel ainda redireciona operador para caminho sem gate host-level"
-done
 if grep -Fq './scripts/atualizar-vps.sh' "$ROOT/docs/DEPLOY-VPS.md"; then
-  fail 'runbook ativo ainda recomenda atualizar-vps.sh'
+  fail "docs/DEPLOY-VPS.md ainda referencia atualizar-vps.sh"
 fi
 
-printf 'legacy deploy guards: 4 scripts bloqueados antes de qualquer mutação; opt-in exige frase + motivo; documentação ativa saneada.\n'
+grep -Fq 'scripts/deploy_manual.sh' "$ROOT/docs/DEPLOY-VPS.md" || fail "docs/DEPLOY-VPS.md perdeu o caminho manual canônico"
+grep -Fq 'ejc-deploy-approved.sh' "$ROOT/docs/DEPLOY-VPS.md" || fail "docs/DEPLOY-VPS.md perdeu o gate de deploy aprovado"
+
+echo "OK: scripts legados removidos e caminhos canônicos preservados"
