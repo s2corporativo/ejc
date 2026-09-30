@@ -17,6 +17,7 @@ import {
   Library,
 } from "lucide-react";
 import api from "../lib/api";
+import { toast } from "./Toast";
 import { filterModulesByLifecycle } from "../lib/moduleLifecycle";
 import { useAuth } from "../stores/auth";
 import { useModuleLifecycleStore } from "../stores/moduleLifecycle";
@@ -72,6 +73,17 @@ interface QuickAction {
   description: string;
   icon: typeof Users;
 }
+
+type NaturalCommand = {
+  kind: "deadline" | "navigate";
+  label: string;
+  detail: string;
+  path?: string;
+  caseId?: string;
+  date?: string;
+  title?: string;
+  ready: boolean;
+};
 
 const TIPOS: { value: TipoBusca; label: string }[] = [
   { value: "tudo", label: "Tudo" },
@@ -130,6 +142,21 @@ export function textoBuscaModulo(item: {
   );
 }
 
+function naturalDate(token: string): string | null {
+  const normalized = normalizarBusca(token);
+  const date = new Date();
+  if (normalized === "amanha") date.setDate(date.getDate() + 1);
+  else if (normalized !== "hoje") {
+    const match = token.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (!match) return null;
+    date.setFullYear(Number(match[3]), Number(match[2]) - 1, Number(match[1]));
+  }
+  const ano = date.getFullYear();
+  const mes = String(date.getMonth() + 1).padStart(2, "0");
+  const dia = String(date.getDate()).padStart(2, "0");
+  return `${ano}-${mes}-${dia}`;
+}
+
 export default function CommandPalette({
   privacyMode = false,
 }: {
@@ -143,26 +170,40 @@ export default function CommandPalette({
   const [res, setRes] = useState<ResultadoBusca[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [naturalCommand, setNaturalCommand] = useState<NaturalCommand | null>(
+    null,
+  );
+  const [commandRunning, setCommandRunning] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const role = user?.role ?? "";
   const lifecycleSettings = useModuleLifecycleStore((state) => state.settings);
   const canCreateCase = (ROLES.clientes as readonly string[]).includes(role);
   const canUseLegalAI = (ROLES.juridico as readonly string[]).includes(role);
+  const canUseFinanceiroGlobal = (
+    ROLES.financeiro as readonly string[]
+  ).includes(role);
+  const canRegisterCaseReceipt = [
+    "superadmin",
+    "admin",
+    "socio",
+    "advogado",
+  ].includes(role);
   const quickActions = useMemo<QuickAction[]>(
     () => [
       ...(canCreateCase
         ? [
             {
               path: NOVO_CASO_DOCUMENTO_PATH,
-              label: "Novo caso por documento",
-              description: "Enviar arquivos, revisar os dados e criar o caso",
+              label: "Entrada por IA",
+              description:
+                "Analisar documentos e iniciar um caso com inteligência jurídica",
               icon: FileUp,
             },
             {
               path: NOVO_CASO_MANUAL_PATH,
-              label: "Novo caso manual",
-              description: "Preencher um cadastro passo a passo",
+              label: "+ Novo Caso",
+              description: "Cadastrar cliente e caso sem usar IA",
               icon: PenLine,
             },
           ]
@@ -331,8 +372,191 @@ export default function CommandPalette({
       setQ("");
       setRes([]);
       setTipo("tudo");
+      setNaturalCommand(null);
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open || privacyMode) {
+      setNaturalCommand(null);
+      return;
+    }
+
+    const raw = q.trim();
+    const normalized = normalizarBusca(raw);
+    if (raw.length < 3) {
+      setNaturalCommand(null);
+      return;
+    }
+
+    const staticCommands: Array<[string[], NaturalCommand]> = [
+      [
+        ["novo caso", "criar caso"],
+        {
+          kind: "navigate",
+          label: "Abrir Novo Caso",
+          detail: "Cadastro manual sem IA.",
+          path: NOVO_CASO_MANUAL_PATH,
+          ready: canCreateCase,
+        },
+      ],
+      [
+        ["entrada por ia", "analisar documento"],
+        {
+          kind: "navigate",
+          label: "Abrir Entrada por IA",
+          detail: "Enviar documentos ou relatar o caso para análise.",
+          path: NOVO_CASO_DOCUMENTO_PATH,
+          ready: canUseLegalAI,
+        },
+      ],
+      [
+        ["financeiro", "abrir financeiro", "ir para financeiro"],
+        {
+          kind: "navigate",
+          label: "Abrir Financeiro",
+          detail: "Ir para recebimentos, pagamentos e caixa.",
+          path: "/financeiro",
+          ready: canUseFinanceiroGlobal,
+        },
+      ],
+      [
+        ["agenda", "abrir agenda", "ir para agenda"],
+        {
+          kind: "navigate",
+          label: "Abrir Agenda",
+          detail: "Ir para prazos, tarefas e compromissos.",
+          path: "/atividades",
+          ready: true,
+        },
+      ],
+    ];
+
+    for (const [aliases, command] of staticCommands) {
+      if (aliases.includes(normalized)) {
+        setNaturalCommand(command);
+        return;
+      }
+    }
+
+    const deadlineMatch = raw.match(
+      /^criar\s+prazo\s+(hoje|amanhã|amanha|\d{1,2}\/\d{1,2}\/\d{4})(?:\s+para\s+(.+?))?\s+no\s+caso\s+(.+)$/i,
+    );
+    const paymentMatch = raw.match(
+      /^registrar\s+pagamento(?:\s+de)?\s+(?:r\$\s*)?([\d.,]+)\s+no\s+caso\s+(.+)$/i,
+    );
+    const openCaseMatch = raw.match(/^abrir\s+caso\s+(.+)$/i);
+
+    const caseTerm =
+      deadlineMatch?.[3]?.trim() ||
+      paymentMatch?.[2]?.trim() ||
+      openCaseMatch?.[1]?.trim();
+
+    if (!caseTerm) {
+      setNaturalCommand(null);
+      return;
+    }
+
+    let stale = false;
+    setNaturalCommand({
+      kind: "navigate",
+      label: "Localizando caso…",
+      detail: caseTerm,
+      ready: false,
+    });
+
+    const timer = setTimeout(() => {
+      api
+        .get("/search", { params: { q: caseTerm, tipo: "tudo" } })
+        .then((response) => {
+          if (stale) return;
+          const resultados = Array.isArray(response.data?.resultados)
+            ? (response.data.resultados as ResultadoBusca[])
+            : [];
+          const caso = resultados.find((item) => item.tipo === "caso");
+          if (!caso) {
+            setNaturalCommand({
+              kind: "navigate",
+              label: "Caso não localizado",
+              detail: "Refine o nome do caso no comando.",
+              ready: false,
+            });
+            return;
+          }
+
+          if (deadlineMatch) {
+            const date = naturalDate(deadlineMatch[1]);
+            const title = deadlineMatch[2]?.trim() || "Providência jurídica";
+            setNaturalCommand({
+              kind: "deadline",
+              label: "Criar prazo",
+              detail:
+                caso.titulo +
+                " · " +
+                (date || deadlineMatch[1]) +
+                " · " +
+                title,
+              caseId: String(caso.id),
+              date: date || undefined,
+              title,
+              ready: Boolean(date && canCreateCase),
+            });
+            return;
+          }
+
+          if (paymentMatch) {
+            const rawValue = paymentMatch[1]
+              .replace(/\./g, "")
+              .replace(",", ".");
+            const value = Number(rawValue);
+            setNaturalCommand({
+              kind: "navigate",
+              label: "Preparar registro de pagamento",
+              detail:
+                caso.titulo +
+                (Number.isFinite(value)
+                  ? " · " +
+                    value.toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL",
+                    })
+                  : ""),
+              path:
+                "/casos/" +
+                caso.id +
+                "?tab=financeiro&recebimento=" +
+                encodeURIComponent(Number.isFinite(value) ? String(value) : ""),
+              ready: canRegisterCaseReceipt,
+            });
+            return;
+          }
+
+          setNaturalCommand({
+            kind: "navigate",
+            label: "Abrir caso",
+            detail: caso.titulo,
+            path: caso.link,
+            ready: true,
+          });
+        })
+        .catch(() => {
+          if (!stale) setNaturalCommand(null);
+        });
+    }, 220);
+
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [
+    canCreateCase,
+    canRegisterCaseReceipt,
+    canUseFinanceiroGlobal,
+    canUseLegalAI,
+    open,
+    privacyMode,
+    q,
+  ]);
 
   // Sempre que a lista navegável mudar, reposiciona o destaque no topo.
   useEffect(() => {
@@ -390,6 +614,41 @@ export default function CommandPalette({
   const go = (link: string) => {
     setOpen(false);
     nav(link);
+  };
+
+  const executeNaturalCommand = async () => {
+    if (!naturalCommand?.ready || commandRunning) return;
+    if (naturalCommand.kind === "navigate") {
+      if (naturalCommand.path) go(naturalCommand.path);
+      return;
+    }
+
+    if (
+      naturalCommand.kind === "deadline" &&
+      naturalCommand.caseId &&
+      naturalCommand.date &&
+      naturalCommand.title
+    ) {
+      setCommandRunning(true);
+      try {
+        await api.post("/deadlines/", {
+          titulo: naturalCommand.title,
+          tipo: "processual",
+          prioridade: "media",
+          data_prazo: naturalCommand.date,
+          case_id: naturalCommand.caseId,
+        });
+        toast.success("Prazo criado e vinculado ao caso.");
+        setOpen(false);
+        nav("/casos/" + naturalCommand.caseId + "?tab=prazos");
+      } catch (error: any) {
+        toast.error(
+          error?.response?.data?.detail || "Não foi possível criar o prazo.",
+        );
+      } finally {
+        setCommandRunning(false);
+      }
+    }
   };
 
   const onKeyDownList = (event: React.KeyboardEvent) => {
@@ -478,6 +737,26 @@ export default function CommandPalette({
           aria-label="Resultados da busca"
           className="max-h-80 overflow-auto"
         >
+          {naturalCommand && (
+            <div className="ejc-command-preview">
+              <div>
+                <span>Comando interpretado</span>
+                <strong>{naturalCommand.label}</strong>
+                <small>{naturalCommand.detail}</small>
+              </div>
+              <button
+                type="button"
+                disabled={!naturalCommand.ready || commandRunning}
+                onClick={executeNaturalCommand}
+              >
+                {commandRunning
+                  ? "Executando…"
+                  : naturalCommand.kind === "deadline"
+                    ? "Confirmar criação"
+                    : "Executar"}
+              </button>
+            </div>
+          )}
           {loading && (
             <div className="p-6 text-center text-sm text-slate-400">
               Buscando…

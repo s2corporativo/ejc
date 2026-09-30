@@ -716,6 +716,7 @@ export function Modal({
   wide,
   size,
   footer,
+  placement = "center",
 }: {
   open: boolean;
   onClose: () => void;
@@ -725,6 +726,7 @@ export function Modal({
   wide?: boolean;
   size?: ModalSize;
   footer?: ReactNode;
+  placement?: "center" | "right";
 }) {
   useEffect(() => {
     if (!open) return;
@@ -742,12 +744,19 @@ export function Modal({
       ? "max-w-4xl"
       : "max-w-lg";
   return (
-    <div className="modal-backdrop animate-fade-in" onClick={onClose}>
+    <div
+      className={cn(
+        "modal-backdrop animate-fade-in",
+        placement === "right" && "modal-backdrop--right",
+      )}
+      onClick={onClose}
+    >
       <div
         role="dialog"
         aria-modal="true"
         className={cn(
           "w-full max-h-[90vh] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-float animate-pop",
+          placement === "right" && "ejc-drawer-panel",
           sizeClass,
         )}
         onClick={(e) => e.stopPropagation()}

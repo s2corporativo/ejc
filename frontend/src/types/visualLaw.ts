@@ -10,7 +10,12 @@ export interface TimelineFase {
 }
 
 export type CategoriaEvento =
-  "movimento" | "prazo" | "documento" | "honorario" | "atividade";
+  | "movimento"
+  | "prazo"
+  | "documento"
+  | "honorario"
+  | "atividade"
+  | "ia";
 
 export interface TimelineEvento {
   data: string;
