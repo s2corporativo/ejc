@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Optional
 from uuid import uuid4
@@ -256,6 +256,32 @@ async def criar(
                 status_code=422,
                 detail="client_id não corresponde ao cliente do caso informado",
             )
+
+    duplicado_q = select(Fee.id).where(
+        Fee.deleted_at.is_(None),
+        Fee.status != FeeStatus.cancelado,
+        Fee.client_id == payload.client_id,
+        Fee.tipo == payload.tipo,
+        Fee.descricao == payload.descricao,
+        Fee.data_vencimento == payload.data_vencimento,
+        Fee.created_at >= datetime.now(timezone.utc) - timedelta(minutes=10),
+    )
+    duplicado_q = duplicado_q.where(
+        Fee.case_id == payload.case_id if payload.case_id else Fee.case_id.is_(None)
+    )
+    if payload.valor is None:
+        duplicado_q = duplicado_q.where(Fee.valor.is_(None))
+    else:
+        duplicado_q = duplicado_q.where(Fee.valor == payload.valor)
+    if payload.percentual_exito is None:
+        duplicado_q = duplicado_q.where(Fee.percentual_exito.is_(None))
+    else:
+        duplicado_q = duplicado_q.where(Fee.percentual_exito == payload.percentual_exito)
+    if (await db.execute(duplicado_q.limit(1))).scalar_one_or_none():
+        raise HTTPException(
+            status_code=409,
+            detail="Possível lançamento duplicado: honorário idêntico criado nos últimos 10 minutos.",
+        )
 
     fee = Fee(id=str(uuid4()), **payload.model_dump())
     db.add(fee)

@@ -562,6 +562,89 @@ async def demonstrativo_gerencial(
     }
 
 
+
+@router.get("/operacional", dependencies=[Depends(rate_limit("fin-operacional", 60))])
+async def painel_operacional(
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    _exigir_financeiro(cu)
+    hoje = date.today()
+    limite = hoje + timedelta(days=30)
+    recebiveis=(await db.execute(text(f"""
+        WITH {LEDGER_COMPAT_CTES}
+        SELECT f.id,f.descricao,f.data_vencimento,
+          GREATEST(COALESCE(f.valor,0)-COALESCE(pe.total_pago,0),0) AS saldo,
+          f.client_id,f.case_id,COALESCE(cl.nome,cl.razao_social,'Cliente') AS cliente,
+          c.titulo AS caso
+        FROM fees f
+        LEFT JOIN pagamentos_efetivos pe ON pe.fee_id=f.id
+        LEFT JOIN clients cl ON cl.id=f.client_id AND cl.deleted_at IS NULL
+        LEFT JOIN cases c ON c.id=f.case_id AND c.deleted_at IS NULL
+        WHERE f.deleted_at IS NULL
+          AND CAST(f.status AS text) IN ('pendente','atrasado')
+          AND f.valor IS NOT NULL
+          AND f.data_vencimento BETWEEN :hoje AND :limite
+          AND GREATEST(COALESCE(f.valor,0)-COALESCE(pe.total_pago,0),0)>0
+        ORDER BY f.data_vencimento,f.id LIMIT 8
+    """),{"hoje":hoje,"limite":limite})).mappings().all()
+    pagamentos=(await db.execute(text("""
+        SELECT id,descricao,valor,vencimento,categoria
+        FROM office_expenses
+        WHERE deleted_at IS NULL AND status='pendente'
+          AND vencimento BETWEEN :hoje AND :limite
+        ORDER BY vencimento,id LIMIT 8
+    """),{"hoje":hoje,"limite":limite})).mappings().all()
+    inad=(await db.execute(text(f"""
+        WITH {LEDGER_COMPAT_CTES}
+        SELECT COUNT(DISTINCT f.client_id) AS clientes,COUNT(*) AS titulos,
+          COALESCE(SUM(GREATEST(COALESCE(f.valor,0)-COALESCE(pe.total_pago,0),0)),0) AS valor
+        FROM fees f LEFT JOIN pagamentos_efetivos pe ON pe.fee_id=f.id
+        WHERE f.deleted_at IS NULL
+          AND CAST(f.status AS text) IN ('pendente','atrasado')
+          AND f.valor IS NOT NULL AND f.data_vencimento < :hoje
+          AND GREATEST(COALESCE(f.valor,0)-COALESCE(pe.total_pago,0),0)>0
+    """),{"hoje":hoje})).mappings().first()
+    totais=(await db.execute(text(f"""
+        WITH {LEDGER_COMPAT_CTES},
+        entradas AS (
+          SELECT COALESCE(SUM(GREATEST(COALESCE(f.valor,0)-COALESCE(pe.total_pago,0),0)),0) total
+          FROM fees f LEFT JOIN pagamentos_efetivos pe ON pe.fee_id=f.id
+          WHERE f.deleted_at IS NULL AND CAST(f.status AS text) IN ('pendente','atrasado')
+            AND f.valor IS NOT NULL AND f.data_vencimento BETWEEN :hoje AND :limite
+        ),
+        saidas AS (
+          SELECT COALESCE(SUM(valor),0) total FROM office_expenses
+          WHERE deleted_at IS NULL AND status='pendente' AND vencimento BETWEEN :hoje AND :limite
+        )
+        SELECT (SELECT total FROM entradas) entradas,(SELECT total FROM saidas) saidas
+    """),{"hoje":hoje,"limite":limite})).mappings().first()
+    mov=(await db.execute(text(f"""
+        WITH {LEDGER_COMPAT_CTES}, mov AS (
+          SELECT 'entrada'::text natureza,re.data_pagamento data,f.descricao,re.valor,
+                 f.id referencia_id,f.client_id,f.case_id,
+                 COALESCE(cl.nome,cl.razao_social,'Cliente') cliente,c.titulo caso
+          FROM recebimentos_efetivos re JOIN fees f ON f.id=re.fee_id
+          LEFT JOIN clients cl ON cl.id=f.client_id AND cl.deleted_at IS NULL
+          LEFT JOIN cases c ON c.id=f.case_id AND c.deleted_at IS NULL
+          WHERE f.deleted_at IS NULL
+          UNION ALL
+          SELECT 'saida',oe.pago_em,oe.descricao,oe.valor,oe.id,NULL,NULL,NULL,NULL
+          FROM office_expenses oe
+          WHERE oe.deleted_at IS NULL AND oe.status='pago' AND oe.pago_em IS NOT NULL
+        )
+        SELECT * FROM mov WHERE data IS NOT NULL ORDER BY data DESC,referencia_id DESC LIMIT 12
+    """))).mappings().all()
+    e=_money(totais["entradas"]); sai=_money(totais["saidas"])
+    return {
+      "proximos_30_dias":{"entradas":e,"saidas":sai,"saldo":_money(e-sai)},
+      "inadimplencia":{"clientes":int(inad["clientes"] or 0),"titulos":int(inad["titulos"] or 0),"valor":_money(inad["valor"])},
+      "proximos_recebimentos":[{"id":r["id"],"descricao":r["descricao"],"vencimento":r["data_vencimento"],"valor":_money(r["saldo"]),"client_id":r["client_id"],"case_id":r["case_id"],"cliente":r["cliente"],"caso":r["caso"]} for r in recebiveis],
+      "proximos_pagamentos":[{"id":r["id"],"descricao":r["descricao"],"vencimento":r["vencimento"],"valor":_money(r["valor"]),"categoria":r["categoria"]} for r in pagamentos],
+      "movimentacoes_recentes":[{"natureza":r["natureza"],"data":r["data"],"descricao":r["descricao"],"valor":_money(r["valor"]),"referencia_id":r["referencia_id"],"client_id":r["client_id"],"case_id":r["case_id"],"cliente":r["cliente"],"caso":r["caso"]} for r in mov],
+    }
+
+
 @router.get("/fechamento-inteligente", dependencies=[Depends(rate_limit("fin-fechamento-inteligente", 10))])
 async def fechamento_inteligente(
     competencia: Optional[str] = Query(None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
