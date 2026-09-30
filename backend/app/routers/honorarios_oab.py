@@ -652,7 +652,7 @@ async def gerar_rateio(
         raise HTTPException(422, "Advogado titular do caso não é sócio cadastrado — rateio manual necessário")
     partner_id = calc["titular"]["user_id"]
 
-    ref = f"exito:{fee_id}"
+    ref = f"exito:{fee_id[:34]}"
     dup = (await db.execute(text("""
         SELECT id FROM partner_withdrawals
         WHERE period_reference = :ref AND deleted_at IS NULL

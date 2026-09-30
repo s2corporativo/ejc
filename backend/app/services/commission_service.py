@@ -236,7 +236,7 @@ async def alocar_comissao_pagamento(
                 "net": calc["base_liquida"],
                 "share": calc["valor_advogado"],
                 "description": f"Comissão — {case.numero_interno or case.titulo}",
-                "ref": f"commission:{payment.id}",
+                "ref": f"commission:{payment.id[:29]}",
             },
         )
 

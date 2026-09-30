@@ -839,7 +839,7 @@ async def enviar_comissao_para_aprovacao(
             "net": row["base_liquida"],
             "share": row["valor_advogado"],
             "description": f"Comissão — {row['numero_interno'] or row['titulo']}",
-            "ref": f"commission:{row['fee_payment_id']}",
+            "ref": f"commission:{str(row['fee_payment_id'])[:29]}",
         },
     )
     await db.execute(
