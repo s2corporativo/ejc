@@ -24,9 +24,36 @@ set +a
 
 command -v python3 >/dev/null 2>&1 || fail "python3 ausente"
 
+LOCAL_PG_CONTAINER="${WOODPECKER_LOCAL_PG_CONTAINER:-}"
 LOCAL_DB="${WOODPECKER_LOCAL_DB:-}"
 WOODPECKER_SERVER_URL="${WOODPECKER_SERVER_URL:-https://ci.depaulateixeira.adv.br}"
 WOODPECKER_TOKEN="${WOODPECKER_TOKEN:-}"
+
+if [ -n "$LOCAL_PG_CONTAINER" ]; then
+  [[ "$LOCAL_PG_CONTAINER" =~ ^[A-Za-z0-9_.-]+$ ]] || fail "container PostgreSQL local invalido"
+  command -v docker >/dev/null 2>&1 || fail "docker ausente para consulta PostgreSQL local"
+  docker inspect "$LOCAL_PG_CONTAINER" >/dev/null 2>&1 || fail "container PostgreSQL local ausente: $LOCAL_PG_CONTAINER"
+  rc=0
+  approval="$(
+    docker exec "$LOCAL_PG_CONTAINER"       psql -U woodpecker -d woodpecker -Atq -v ON_ERROR_STOP=1       -c "SELECT p.number || '|' || COALESCE(p.finished,0)
+            FROM pipelines AS p
+            JOIN repos AS r ON r.id = p.repo_id
+           WHERE r.full_name = '$REPO_FULL_NAME'
+             AND lower(p.commit) = lower('$TARGET_SHA')
+             AND p.branch = 'main'
+             AND p.event = 'push'
+             AND p.status = 'success'
+           ORDER BY p.finished DESC, p.number DESC
+           LIMIT 1;" 2>/dev/null
+  )" || rc=$?
+  [ "$rc" -eq 0 ] || fail "falha ao consultar PostgreSQL local do Woodpecker"
+  [ -n "$approval" ] || fail "SHA $TARGET_SHA nao possui pipeline push/main success no PostgreSQL local"
+  pipeline_number="${approval%%|*}"
+  [[ "$pipeline_number" =~ ^[0-9]+$ ]] || fail "pipeline local aprovado sem numero valido"
+  printf '[woodpecker-gate] APROVADO modo=postgres repo=%s sha=%s pipeline=%s\n' \
+    "$REPO_FULL_NAME" "$TARGET_SHA" "$pipeline_number"
+  exit 0
+fi
 
 if [ -n "$LOCAL_DB" ]; then
   [ -f "$LOCAL_DB" ] || fail "SQLite local ausente: $LOCAL_DB"
@@ -76,7 +103,7 @@ PY
   exit 0
 fi
 
-[ -n "$WOODPECKER_TOKEN" ] || fail "configure WOODPECKER_LOCAL_DB ou WOODPECKER_TOKEN"
+[ -n "$WOODPECKER_TOKEN" ] || fail "configure WOODPECKER_LOCAL_PG_CONTAINER, WOODPECKER_LOCAL_DB ou WOODPECKER_TOKEN"
 [ "$WOODPECKER_TOKEN" != "TROCAR" ] || fail "WOODPECKER_TOKEN ainda e placeholder"
 command -v curl >/dev/null 2>&1 || fail "curl ausente"
 

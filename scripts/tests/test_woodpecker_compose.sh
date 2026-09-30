@@ -51,6 +51,14 @@ server_block="$(
   ' "$COMPOSE_FILE"
 )"
 
+db_block="$(
+  awk '
+    /^  woodpecker-db:/     {inside=1}
+    /^  woodpecker-server:/ {inside=0}
+    inside {print}
+  ' "$COMPOSE_FILE"
+)"
+
 agent_block="$(
   awk '
     /^  woodpecker-agent:/ {inside=1}
@@ -68,10 +76,20 @@ grep -Fq -- '- WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET:?' <<<"$server_
   || fail "servidor sem WOODPECKER_AGENT_SECRET obrigatório"
 grep -Fq -- '- WOODPECKER_GRPC_SECRET=${WOODPECKER_GRPC_SECRET:?' <<<"$server_block" \
   || fail "servidor sem WOODPECKER_GRPC_SECRET independente e obrigatório"
-grep -Fq -- '- WOODPECKER_DATABASE_MAX_CONNECTIONS=${WOODPECKER_DATABASE_MAX_CONNECTIONS:-1}' <<<"$server_block" \
-  || fail "SQLite do Woodpecker sem serialização do pool"
-grep -Fq -- '- WOODPECKER_DATABASE_IDLE_CONNECTIONS=${WOODPECKER_DATABASE_IDLE_CONNECTIONS:-1}' <<<"$server_block" \
-  || fail "SQLite do Woodpecker mantém mais de uma conexão idle por padrão"
+grep -Fq -- 'image: postgres:16-alpine' <<<"$db_block" \
+  || fail "PostgreSQL do Woodpecker não está fixado em 16-alpine"
+grep -Fq -- 'logging: *woodpecker-logging' <<<"$db_block" \
+  || fail "PostgreSQL sem política de rotação de logs"
+grep -Fq -- '- woodpecker-postgres-data:/var/lib/postgresql/data' <<<"$db_block" \
+  || fail "PostgreSQL sem volume persistente"
+grep -Fq -- '- WOODPECKER_DATABASE_DRIVER=postgres' <<<"$server_block" \
+  || fail "servidor Woodpecker não usa PostgreSQL"
+grep -Fq -- 'WOODPECKER_DATABASE_DATASOURCE=postgres://woodpecker:' <<<"$server_block" \
+  || fail "servidor sem datasource PostgreSQL canônico"
+grep -Fq -- '- WOODPECKER_DATABASE_MAX_CONNECTIONS=${WOODPECKER_DATABASE_MAX_CONNECTIONS:-10}' <<<"$server_block" \
+  || fail "pool PostgreSQL sem limite conservador"
+grep -Fq -- '- WOODPECKER_DATABASE_IDLE_CONNECTIONS=${WOODPECKER_DATABASE_IDLE_CONNECTIONS:-2}' <<<"$server_block" \
+  || fail "pool PostgreSQL sem limite idle conservador"
 grep -Fq -- '- WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET:?' <<<"$agent_block" \
   || fail "agente sem WOODPECKER_AGENT_SECRET obrigatório"
 grep -Fq -- '- woodpecker-agent-config:/etc/woodpecker' <<<"$agent_block" \
@@ -98,19 +116,24 @@ WOODPECKER_GITHUB_CLIENT=test-client \
 WOODPECKER_GITHUB_SECRET=test-oauth-secret \
 WOODPECKER_AGENT_SECRET=test-agent-secret \
 WOODPECKER_GRPC_SECRET=test-grpc-secret \
+WOODPECKER_DB_PASSWORD=test-db-secret \
   docker compose -f "$COMPOSE_FILE" config >"$rendered"
 
 grep -Eq -- 'WOODPECKER_AGENT_SECRET: "?test-agent-secret"?$' "$rendered" \
   || fail "segredo do agente não chegou à configuração renderizada"
 grep -Eq -- 'WOODPECKER_GRPC_SECRET: "?test-grpc-secret"?$' "$rendered" \
   || fail "segredo gRPC independente não chegou à configuração renderizada"
-grep -Eq -- 'WOODPECKER_DATABASE_MAX_CONNECTIONS: "?1"?$' "$rendered" \
-  || fail "limite serial do pool SQLite não chegou à configuração renderizada"
-grep -Eq -- 'WOODPECKER_DATABASE_IDLE_CONNECTIONS: "?1"?$' "$rendered" \
-  || fail "limite idle do pool SQLite não chegou à configuração renderizada"
+grep -Eq -- 'WOODPECKER_DATABASE_DRIVER: "?postgres"?$' "$rendered" \
+  || fail "driver PostgreSQL não chegou à configuração renderizada"
+grep -Eq -- 'WOODPECKER_DATABASE_MAX_CONNECTIONS: "?10"?$' "$rendered" \
+  || fail "limite do pool PostgreSQL não chegou à configuração renderizada"
+grep -Eq -- 'WOODPECKER_DATABASE_IDLE_CONNECTIONS: "?2"?$' "$rendered" \
+  || fail "limite idle do pool PostgreSQL não chegou à configuração renderizada"
+grep -Fq -- 'woodpecker-postgres-data:' "$rendered" \
+  || fail "volume PostgreSQL não chegou à configuração renderizada"
 grep -Eq -- 'WOODPECKER_BACKEND_DOCKER_LIMIT_MEM: "?3221225472"?$' "$rendered" \
   || fail "limite de memória não chegou à configuração renderizada"
 grep -Eq -- 'WOODPECKER_BACKEND_DOCKER_LIMIT_CPU_QUOTA: "?100000"?$' "$rendered" \
   || fail "limite de CPU não chegou à configuração renderizada"
 
-printf 'Woodpecker compose: autenticação, versão, SQLite serializado, limites, persistência, API e recuperação válidos.\n'
+printf 'Woodpecker compose: autenticação, PostgreSQL, limites, persistência, API e recuperação válidos.\n'
