@@ -380,12 +380,15 @@ steps:
   security-misconfig-audit:
     image: aquasec/trivy:0.74.0
     depends_on: [security-vulnerabilities]
+    # Esta auditoria é baseline informativa: um erro do scanner não pode
+    # bloquear a esteira até a promoção explícita prevista no runbook.
+    failure: ignore
     volumes:
       - ejc-ci-trivy-cache:/root/.cache/trivy
     commands:
-      # Auditoria inicialmente não bloqueante: há findings legados conhecidos.
-      # Promover para exit-code 1 somente após saneamento/baseline explícito.
-      - trivy fs --scanners misconfig --severity HIGH,CRITICAL --exit-code 0 .
+      # Não percorre artefatos MUTÁVEIS gerados em paralelo pelos jobs de
+      # frontend/backend; isso evita ENOENT durante npm ci/vite/pytest.
+      - trivy fs --scanners misconfig --severity HIGH,CRITICAL --exit-code 0 --skip-dirs frontend/node_modules --skip-dirs frontend/dist --skip-dirs backend/.pytest_cache .
     when:
       - event: push
         branch: main
