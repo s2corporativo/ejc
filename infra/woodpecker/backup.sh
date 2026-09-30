@@ -72,21 +72,28 @@ else
   chmod 700 -- "$BACKUP_ROOT"
 fi
 
+db_container="$(docker compose ps -aq woodpecker-db)"
 server_container="$(docker compose ps -aq woodpecker-server)"
 agent_container="$(docker compose ps -aq woodpecker-agent)"
+[ -n "$db_container" ] || fail "contêiner woodpecker-db não existe"
 [ -n "$server_container" ] || fail "contêiner woodpecker-server não existe"
 [ -n "$agent_container" ] || fail "contêiner woodpecker-agent não existe"
 
+db_volume="$(
+  docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Name}}{{end}}{{end}}' "$db_container"
+)"
 server_volume="$(
   docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/woodpecker"}}{{.Name}}{{end}}{{end}}' "$server_container"
 )"
 agent_volume="$(
   docker inspect --format '{{range .Mounts}}{{if eq .Destination "/etc/woodpecker"}}{{.Name}}{{end}}{{end}}' "$agent_container"
 )"
-[ -n "$server_volume" ] || fail "volume do banco Woodpecker não encontrado"
+[ -n "$db_volume" ] || fail "volume PostgreSQL do Woodpecker não encontrado"
+[ -n "$server_volume" ] || fail "volume auxiliar do servidor Woodpecker não encontrado"
 [ -n "$agent_volume" ] || fail "volume de identidade do agente não encontrado"
 
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+db_archive="woodpecker-postgres-data-$timestamp.tar.gz"
 server_archive="woodpecker-server-data-$timestamp.tar.gz"
 agent_archive="woodpecker-agent-config-$timestamp.tar.gz"
 
@@ -95,11 +102,11 @@ cleanup_on_exit() {
   if [ -n "$verify_volume" ]; then
     docker volume rm "$verify_volume" >/dev/null 2>&1 || true
   fi
-  docker compose start woodpecker-server woodpecker-agent >/dev/null 2>&1 || true
+  docker compose up -d woodpecker-db woodpecker-server woodpecker-agent >/dev/null 2>&1 || true
 }
 trap cleanup_on_exit EXIT
 
-docker compose stop woodpecker-agent woodpecker-server
+docker compose stop woodpecker-agent woodpecker-server woodpecker-db
 
 backup_volume() {
   local volume_name="$1" archive_name="$2"
@@ -127,8 +134,10 @@ verify_restore() {
   verify_volume=""
 }
 
+backup_volume "$db_volume" "$db_archive"
 backup_volume "$server_volume" "$server_archive"
 backup_volume "$agent_volume" "$agent_archive"
+verify_restore "$db_archive"
 verify_restore "$server_archive"
 verify_restore "$agent_archive"
 
@@ -141,6 +150,8 @@ manifest="woodpecker-backup-$timestamp.manifest"
 printf '%s\n' \
   "created_utc=$timestamp" \
   "git_head=$git_head" \
+  "db_archive=$db_archive" \
+  "db_volume=$db_volume" \
   "server_archive=$server_archive" \
   "server_volume=$server_volume" \
   "server_image_ref=$server_image_ref" \
@@ -154,10 +165,11 @@ sha256sum "$BACKUP_ROOT/$manifest" >"$BACKUP_ROOT/$manifest.sha256"
 chmod 600 "$BACKUP_ROOT/$manifest" "$BACKUP_ROOT/$manifest.sha256"
 sha256sum -c -- "$BACKUP_ROOT/$manifest.sha256" >/dev/null
 
-docker compose start woodpecker-server woodpecker-agent
+docker compose up -d woodpecker-db woodpecker-server woodpecker-agent
 trap - EXIT
 
-printf 'Backups verificados e manifesto criado:\n%s\n%s\n%s\n' \
+printf 'Backups verificados e manifesto criado:\n%s\n%s\n%s\n%s\n' \
+  "$BACKUP_ROOT/$db_archive" \
   "$BACKUP_ROOT/$server_archive" \
   "$BACKUP_ROOT/$agent_archive" \
   "$BACKUP_ROOT/$manifest"
