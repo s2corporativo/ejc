@@ -1,0 +1,3 @@
+# Evita invalidar o cache de contexto a cada atualização automática do grafo.
+graphify-out/
+backend/graphify-out/
