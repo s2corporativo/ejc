@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 const mocks = vi.hoisted(() => ({
@@ -37,29 +37,33 @@ describe("CaseContextBar", () => {
     mocks.sair.mockClear();
   });
 
-  it("expõe cinco destinos canônicos do workspace do caso", () => {
-    renderBar("/casos/case-1?tab=documentos");
+  it("expõe o fluxo jurídico canônico do caso", () => {
+    renderBar("/casos/case-1?tab=provas");
 
     expect(
-      screen.getByRole("link", { name: "Visão" }).getAttribute("href"),
+      screen.getByRole("link", { name: "Fatos" }).getAttribute("href"),
     ).toBe("/casos/case-1?tab=resumo");
     expect(
-      screen.getByRole("link", { name: "Atividades" }).getAttribute("href"),
-    ).toBe("/casos/case-1?tab=timeline");
+      screen.getByRole("link", { name: "Provas" }).getAttribute("href"),
+    ).toBe("/casos/case-1?tab=provas");
     expect(
-      screen.getByRole("link", { name: "Documentos" }).getAttribute("href"),
-    ).toBe("/casos/case-1?tab=documentos");
-    expect(
-      screen.getByRole("link", { name: "Estratégia" }).getAttribute("href"),
+      screen.getByRole("link", { name: "Teses" }).getAttribute("href"),
     ).toBe("/casos/case-1?tab=teses");
     expect(
-      screen.getByRole("link", { name: "Financeiro" }).getAttribute("href"),
-    ).toBe("/casos/case-1?tab=financeiro");
+      screen.getByRole("link", { name: "Estratégia" }).getAttribute("href"),
+    ).toBe("/casos/case-1?tab=dossie");
     expect(
-      screen
-        .getByRole("link", { name: "Documentos" })
-        .getAttribute("aria-current"),
-    ).toBe("page");
+      screen.getByRole("link", { name: "Peça" }).getAttribute("href"),
+    ).toBe("/casos/case-1?tab=pecas");
+    expect(
+      screen.getByRole("link", { name: "Revisão" }).getAttribute("href"),
+    ).toBe("/casos/case-1?tab=pecas#revisao");
+    expect(
+      screen.getByRole("link", { name: "Ajuizamento" }).getAttribute("href"),
+    ).toBe("/ajuizamento?caso=case-1");
+    expect(
+      screen.getByRole("link", { name: "Provas" }).getAttribute("aria-current"),
+    ).toBe("step");
   });
 
   it("mantém a saída explícita do modo caso", () => {

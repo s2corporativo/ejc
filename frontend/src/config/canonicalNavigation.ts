@@ -38,12 +38,14 @@ export const CANONICAL_MAIN_NAV = [
   { key: "configuracoes", label: "Configurações" },
 ] as const;
 
-/** Menu estrutural mínimo do EJC após a consolidação IA/Controles. */
+/** Menu estrutural enxuto do EJC: domínios de trabalho, não módulos internos. */
 export const CANONICAL_CORE_NAV = [
   { key: "dashboard", label: "Início" },
   { key: "clientes", label: "Clientes" },
-  { key: "casos", label: "Casos e Processos" },
+  { key: "casos", label: "Casos" },
+  { key: "atividades", label: "Atividades" },
   { key: "financeiro", label: "Financeiro" },
+  { key: "inteligencia", label: "Inteligência" },
   { key: "configuracoes", label: "Administração" },
 ] as const;
 

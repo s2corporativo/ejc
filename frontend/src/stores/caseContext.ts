@@ -24,6 +24,24 @@ export interface CasoAtivo {
 }
 
 const STORAGE_KEY = "ejc_caso_ativo";
+const LAST_CASE_KEY = "ejc_ultimo_caso_id";
+
+export function getUltimoCasoId(): string | null {
+  try {
+    const id = localStorage.getItem(LAST_CASE_KEY);
+    return id && id.trim() ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistUltimoCasoId(id: string) {
+  try {
+    localStorage.setItem(LAST_CASE_KEY, id);
+  } catch {
+    // O atalho "Continuar de onde parei" é um conforto, não um requisito.
+  }
+}
 
 function readStored(): CasoAtivo | null {
   try {
@@ -80,6 +98,7 @@ export const useCaseContext = create<CaseContextState>((set, get) => ({
         proxima_acao_prazo: data?.proxima_acao_prazo || undefined,
       };
       persist(caso);
+      persistUltimoCasoId(id);
       set({ caso });
       if (data?.client_id) {
         // Nome do cliente carregado em segundo plano — falha silenciosa

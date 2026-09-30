@@ -163,11 +163,32 @@ function mockGetOk() {
     if (url === "/dashboard/") return Promise.resolve({ data: kpisOk });
     if (url === "/atividades") return Promise.resolve({ data: atividadesOk });
     if (url === "/cases/") return Promise.resolve({ data: casosOk });
+    if (url === "/cases/c9")
+      return Promise.resolve({
+        data: {
+          id: "c9",
+          titulo: "Caso que estava em andamento",
+          proxima_acao: "Revisar documentos",
+        },
+      });
     if (url === "/documents/")
       return Promise.resolve({ data: { data: [], total: 129 } });
     if (url === "/tasks/") return Promise.resolve({ data: tarefasOk });
     if (url === "/saneamento/integridade")
       return Promise.resolve({ data: integridadeOk });
+    if (url === "/legal-docs/")
+      return Promise.resolve({
+        data: {
+          data: [
+            {
+              id: "p1",
+              titulo: "Contestação Banco Y",
+              status: "em_revisao",
+              case_id: "c1",
+            },
+          ],
+        },
+      });
     return Promise.reject(new Error(`GET inesperado: ${url}`));
   });
 }
@@ -181,200 +202,151 @@ function renderizar() {
 }
 
 function abrirControles() {
-  fireEvent.click(screen.getByRole("button", { name: "Controles" }));
+  // Compatibilidade dos testes históricos: o dashboard agora é único e os
+  // dados operacionais carregam automaticamente.
 }
 
 beforeEach(() => {
   getMock.mockReset();
   patchMock.mockReset();
   papelAtual = "advogado";
+  localStorage.clear();
 });
 
 afterEach(() => {
   cleanup();
 });
 
-describe("DashboardUltra — identidade premium DPT", () => {
-  it("abre na IA, sem carregar controles nem exibir ruído operacional", () => {
-    mockGetOk();
+describe("DashboardUltra — cockpit jurídico final", () => {
+  it("mantém a Entrada Única completa para carteira vazia", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url === "/dashboard/")
+        return Promise.resolve({
+          data: { casos: { ativos: 0 }, clientes_ativos: 0 },
+        });
+      if (url === "/atividades") return Promise.resolve({ data: { data: [] } });
+      if (url === "/cases/") return Promise.resolve({ data: { data: [] } });
+      if (url === "/documents/")
+        return Promise.resolve({ data: { data: [], total: 0 } });
+      if (url === "/tasks/") return Promise.resolve({ data: { data: [] } });
+      if (url === "/saneamento/integridade")
+        return Promise.resolve({ data: integridadeOk });
+      if (url === "/legal-docs/")
+        return Promise.resolve({ data: { data: [] } });
+      return Promise.reject(new Error(`GET inesperado: ${url}`));
+    });
+
     renderizar();
 
-    expect(
-      screen.getByRole("button", { name: "IA" }).getAttribute("aria-current"),
-    ).toBe("page");
-    expect(
-      screen.getByText("Leitura e análise do caso com IA"),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole("link", { name: /Cadastrar caso manualmente/ }),
-    ).toBeTruthy();
-    expect(
-      screen.getByTestId("entrada-unica").getAttribute("data-embedded"),
-    ).toBe("true");
-    const controles = screen.getByLabelText("Controles do escritório");
-    expect(controles.hasAttribute("hidden")).toBe(true);
-    expect(getMock).not.toHaveBeenCalled();
+    expect(screen.getByText("Leitura e análise do caso com IA")).toBeTruthy();
+    expect(screen.getByTestId("entrada-unica")).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.queryByText("Começar novo trabalho")).not.toBeTruthy(),
+    );
   });
 
-  it("abre os controles sob demanda e só então carrega dados operacionais", async () => {
+  it("compacta a entrada quando a carteira já está ativa", async () => {
     mockGetOk();
     renderizar();
-    abrirControles();
 
-    expect(await screen.findByText(/, Clovis!/)).toBeTruthy();
-    expect(screen.getByText("Agenda e Prazos")).toBeTruthy();
-    expect(screen.getByText("Casos em destaque")).toBeTruthy();
-    expect(screen.getByText("Acesso rápido")).toBeTruthy();
-    expect(screen.getByText("Minha rotina hoje")).toBeTruthy();
-    await waitFor(() => expect(getMock).toHaveBeenCalled());
+    expect(await screen.findByText("Começar novo trabalho")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Analisar novo caso" })
+        .getAttribute("href"),
+    ).toBe("/entrada");
+    expect(
+      screen
+        .getByRole("link", { name: "Cadastro manual" })
+        .getAttribute("href"),
+    ).toBe("/cadastro-manual?aba=caso");
+    expect(screen.queryByTestId("entrada-unica")).not.toBeTruthy();
   });
 
-  it("mantém a Entrada Única montada ao alternar IA e Controles", () => {
+  it("mostra somente sinais operacionais reais e casos em destaque", async () => {
     mockGetOk();
     renderizar();
 
-    const entradaAntes = screen.getByTestId("entrada-unica");
-    abrirControles();
-    fireEvent.click(screen.getByRole("button", { name: "IA" }));
-
-    expect(screen.getByTestId("entrada-unica")).toBe(entradaAntes);
-  });
-
-  it("exibe sinais operacionais com números reais dos endpoints", async () => {
-    mockGetOk();
-    renderizar();
-    abrirControles();
-
-    // Prazos hoje = atividades tipo prazo com dias_restantes 0 → 1
     await waitFor(() =>
       expect(screen.getByLabelText("Prazos hoje: 1")).toBeTruthy(),
     );
     expect(screen.getByLabelText("Clientes ativos: 48")).toBeTruthy();
     expect(screen.getByLabelText("Casos em andamento: 3")).toBeTruthy();
     expect(screen.getByLabelText("Pendências de integridade: 4")).toBeTruthy();
+    expect(screen.getByText("Casos em destaque")).toBeTruthy();
+    expect(screen.queryByText("Agenda e Prazos")).not.toBeTruthy();
+    expect(screen.queryByText("Minha rotina hoje")).not.toBeTruthy();
   });
 
-  it("filtra a agenda por aba Hoje/Amanhã/Esta semana", async () => {
+  it("prioriza a fila de decisões por revisão, prazo e risco", async () => {
     mockGetOk();
     renderizar();
-    abrirControles();
-
-    expect(await screen.findByText("Prazo final — Contestação")).toBeTruthy();
-    expect(screen.queryByText("Intimação — audiência")).not.toBeTruthy();
-
-    fireEvent.click(screen.getByRole("tab", { name: "Amanhã" }));
-    expect(screen.getByText("Intimação — audiência")).toBeTruthy();
-    expect(screen.queryByText("Prazo final — Contestação")).not.toBeTruthy();
-  });
-
-  it("prioriza casos em destaque por risco, prazo e próxima ação", async () => {
-    mockGetOk();
-    renderizar();
-    abrirControles();
 
     expect(
-      (await screen.findAllByText("Empresa X vs. Banco Y")).length,
-    ).toBeGreaterThan(0);
-    const chips = screen.getAllByText("Em andamento");
-    expect(chips.length).toBeGreaterThan(0);
-    expect(screen.getByText("Concluso")).toBeTruthy();
-    expect(
-      screen.getByText(/Proc. nº 1001234-56\.2023\.8\.26\.0100/),
+      await screen.findByText("Decisões que exigem sua atenção hoje"),
     ).toBeTruthy();
-    expect(screen.getByText(/Próxima: Protocolar contestação/)).toBeTruthy();
+    expect(screen.getByText("Peça aguardando sua revisão")).toBeTruthy();
+    expect(screen.getByText(/Contestação Banco Y/)).toBeTruthy();
+    const revisar = screen.getByRole("link", { name: /Revisar peça/ });
+    expect(revisar.getAttribute("href")).toBe("/casos/c1?tab=pecas#revisao");
   });
 
-  it("filtra a agenda pelo dia selecionado no calendário", async () => {
+  it("oferece continuar de onde parei com dados revalidados pela API", async () => {
+    localStorage.setItem("ejc_ultimo_caso_id", "c9");
     mockGetOk();
     renderizar();
-    abrirControles();
 
-    const hojeLabel = format(dataBase, "dd/MM/yyyy");
-    const botaoDia = await screen.findByRole("button", { name: hojeLabel });
-    fireEvent.click(botaoDia);
-
-    expect(
-      screen.getByRole("button", { name: "Remover filtro de data" }),
-    ).toBeTruthy();
-    expect(screen.getByText("Prazo final — Contestação")).toBeTruthy();
-    expect(screen.queryByText("Intimação — audiência")).not.toBeTruthy();
-  });
-
-  it("mostra na rotina apenas tarefas acionáveis hoje e conclusões do dia", async () => {
-    mockGetOk();
-    renderizar();
-    abrirControles();
-
-    expect(await screen.findByText("Revisar petição inicial")).toBeTruthy();
-    expect(
-      screen.getByText("Retorno para cliente — Grupo Santos"),
-    ).toBeTruthy();
-    expect(screen.getByText("Estudo tema 1.234/STJ")).toBeTruthy();
-    expect(
-      screen.queryByText("Tarefa futura que não pertence à rotina de hoje"),
-    ).not.toBeTruthy();
-    expect(screen.getByText("1 de 3 concluídas")).toBeTruthy();
-  });
-
-  it("conclui tarefa da rotina via PATCH e reage ao clique", async () => {
-    mockGetOk();
-    patchMock.mockResolvedValue({ data: {} });
-    renderizar();
-    abrirControles();
-
-    const botao = await screen.findByRole("button", {
-      name: /Revisar petição inicial/,
+    const continuar = await screen.findByRole("link", {
+      name: /Continuar de onde parei: Caso que estava em andamento/,
     });
-    fireEvent.click(botao);
-
-    await waitFor(() =>
-      expect(patchMock).toHaveBeenCalledWith("/tasks/t1", {
-        status: "concluida",
-      }),
-    );
+    expect(continuar.getAttribute("href")).toBe("/casos/c9");
+    expect(screen.getByText("Revisar documentos")).toBeTruthy();
   });
 
-  it("reabre tarefa concluída com status canônico a_fazer", async () => {
+  it("preserva o fluxo jurídico em sete etapas com rotas reais", async () => {
     mockGetOk();
-    patchMock.mockResolvedValue({ data: {} });
     renderizar();
-    abrirControles();
+    await screen.findByText("Fluxo jurídico");
 
-    const botao = await screen.findByRole("button", {
-      name: /Estudo tema 1\.234\/STJ/,
-    });
-    fireEvent.click(botao);
+    const atalhos = [
+      ["Analisar caso", "/entrada"],
+      ["Provas", "/documentos"],
+      ["Teses", "/teses"],
+      ["Estratégia", "/inteligencia?tab=assistente"],
+      ["Peça", "/pecas"],
+      ["Revisão", "/pecas"],
+      ["Ajuizamento", "/ajuizamento"],
+    ] as const;
 
-    await waitFor(() =>
-      expect(patchMock).toHaveBeenCalledWith("/tasks/t3", {
-        status: "a_fazer",
-      }),
-    );
+    const legitimos = new Set(STAFF_ROUTES.map((r) => r.path));
+    for (const redirect of LEGACY_REDIRECTS) {
+      legitimos.add(redirect.to.split("?")[0]);
+    }
+
+    for (const [rotulo, href] of atalhos) {
+      const link = screen.getByRole("link", { name: rotulo });
+      expect(link.getAttribute("href")).toBe(href);
+      expect(legitimos.has(href.split("?")[0])).toBe(true);
+    }
   });
 
-  it("degrada para traço quando a fonte falha (nunca zero falso)", async () => {
+  it("restringe a Entrada Jurídica por papel", async () => {
+    papelAtual = "cliente_externo";
     getMock.mockImplementation((url: string) => {
-      if (url === "/atividades") return Promise.reject(new Error("fora do ar"));
-      if (url === "/dashboard/") return Promise.reject(new Error("fora do ar"));
-      if (url === "/cases/") return Promise.resolve({ data: casosOk });
+      if (url === "/dashboard/")
+        return Promise.resolve({
+          data: { casos: { ativos: 0 }, clientes_ativos: 0 },
+        });
+      if (url === "/atividades") return Promise.resolve({ data: { data: [] } });
+      if (url === "/cases/") return Promise.resolve({ data: { data: [] } });
       if (url === "/documents/")
-        return Promise.resolve({ data: { data: [], total: 129 } });
-      if (url === "/tasks/") return Promise.resolve({ data: tarefasOk });
+        return Promise.resolve({ data: { data: [], total: 0 } });
+      if (url === "/tasks/") return Promise.resolve({ data: { data: [] } });
+      if (url === "/legal-docs/")
+        return Promise.resolve({ data: { data: [] } });
       return Promise.reject(new Error(`GET inesperado: ${url}`));
     });
-    renderizar();
-    abrirControles();
 
-    await waitFor(() =>
-      expect(screen.getByLabelText("Prazos hoje: —")).toBeTruthy(),
-    );
-    expect(screen.getByLabelText("Clientes ativos: —")).toBeTruthy();
-    expect(screen.getByText("Agenda indisponível agora.")).toBeTruthy();
-  });
-
-  it("restringe a Entrada Única por papel (perfis autorizados)", async () => {
-    mockGetOk();
-    papelAtual = "cliente_externo";
     renderizar();
 
     expect(
@@ -383,55 +355,5 @@ describe("DashboardUltra — identidade premium DPT", () => {
       ),
     ).toBeTruthy();
     expect(screen.queryByTestId("entrada-unica")).not.toBeTruthy();
-  });
-});
-
-describe("DashboardUltra — atalhos do Acesso rápido", () => {
-  const ATALHOS = [
-    { rotulo: "Novo caso", href: "/entrada" },
-    { rotulo: "Anexar documentos", href: "/documentos" },
-    { rotulo: "Modelos e peças", href: "/pecas" },
-    {
-      rotulo: "Consultar jurisprudência",
-      href: "/inteligencia?tab=pesquisa",
-    },
-    { rotulo: "Minhas tarefas", href: "/atividades?tipo=tarefa" },
-  ];
-
-  async function abrirAtalhos() {
-    mockGetOk();
-    renderizar();
-    abrirControles();
-    await screen.findByText("Acesso rápido");
-  }
-
-  it("aponta para rotas canônicas registradas no moduleRegistry", async () => {
-    await abrirAtalhos();
-
-    // Cada destino precisa existir como rota real (path do registry) ou ser o
-    // path canônico de um redirect legado já mapeado — nenhum atalho pode
-    // apontar para uma URL que o App não renderiza.
-    const legítimos = new Set(STAFF_ROUTES.map((r) => r.path));
-    for (const redirect of LEGACY_REDIRECTS) {
-      legítimos.add(redirect.to.split("?")[0]);
-    }
-
-    for (const { rotulo, href } of ATALHOS) {
-      const link = screen.getByRole("link", { name: rotulo });
-      expect(link.getAttribute("href"), rotulo).toBe(href);
-      expect(legítimos.has(href.split("?")[0]), `${rotulo} -> ${href}`).toBe(
-        true,
-      );
-    }
-  });
-
-  it("não mantém o atalho de novo caso no redirect legado /casos/novo", async () => {
-    await abrirAtalhos();
-
-    const hrefs = ATALHOS.map(
-      ({ rotulo }) => screen.getByRole("link", { name: rotulo }).getAttribute("href"),
-    );
-    expect(hrefs).not.toContain("/casos/novo");
-    expect(hrefs).toContain("/entrada");
   });
 });
