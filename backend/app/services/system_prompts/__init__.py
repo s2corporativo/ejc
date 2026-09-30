@@ -1,4 +1,4 @@
-"""Exporta system prompts + router para o ai_gateway."""
+"""Exporta system prompts + registro de modelos por tarefa (registry) para o ai_gateway."""
 from .base import BASE_PROMPT, AVISO_RASCUNHO, IDENTIDADE, RESTRICOES, COMPORTAMENTO
 from .triagem import PROMPT_TRIAGEM
 from .analise_caso import PROMPT_ANALISE_CASO
@@ -33,7 +33,7 @@ from .bancario import PROMPT_BANCARIO
 from .lgpd_digital import PROMPT_LGPD_DIGITAL
 from .audiencia import PROMPT_AUDIENCIA
 from .pesquisa_juridica import PROMPT_PESQUISA_JURIDICA
-from .router import TarefaIA, ConfiguracaoIA, get_configuracao
+from .registry import TarefaIA, ConfiguracaoIA, get_configuracao
 
 # Regras transversais dos prompts do Núcleo Único (evita repetição literal).
 _REGRA_FONTES = """
