@@ -18,6 +18,12 @@ from app.core.security import get_current_user
 from app.core.sql_safe import construir_update
 from app.models.audit_log import criar_audit_log
 from app.models.user import User
+from app.services.finance_governance import (
+    competencia_de_data,
+    exigir_competencia_aberta,
+    limite_dupla_aprovacao,
+    solicitar_ou_consumir_aprovacao,
+)
 
 _FIN = {"superadmin", "admin", "socio", "financeiro"}
 
@@ -309,6 +315,9 @@ async def gerar_recorrentes(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    await exigir_competencia_aberta(
+        db, body.competencia, "Gerar despesas recorrentes"
+    )
     ano_alvo, mes_alvo = (int(p) for p in body.competencia.split("-"))
     templates = (
         await db.execute(text("""
@@ -383,6 +392,20 @@ async def create_despesa(
     current_user: User = Depends(get_current_user),
 ):
     dados = _normalizar_baixa(body.model_dump())
+    competencia_mutacao = (
+        dados.get("competencia")
+        or competencia_de_data(dados.get("pago_em") or dados.get("vencimento"))
+    )
+    await exigir_competencia_aberta(
+        db, competencia_mutacao, "Criar despesa"
+    )
+    approval_required = None
+    if dados.get("status") == "pago":
+        limite = await limite_dupla_aprovacao(db)
+        if Decimal(str(dados["valor"])) >= limite:
+            dados["status"] = "pendente"
+            dados["pago_em"] = None
+            approval_required = True
     duplicado = (
         await db.execute(
             text(
@@ -425,6 +448,16 @@ async def create_despesa(
         {**dados, "created_by": current_user.id},
     )
     row = dict(result.mappings().first())
+    approval_info = None
+    if approval_required:
+        approval_info = await solicitar_ou_consumir_aprovacao(
+            db,
+            entity_type="office_expense",
+            entity_id=row["id"],
+            amount=row["valor"],
+            user=current_user,
+            reason="Pagamento de despesa acima da alçada configurada.",
+        )
     await criar_audit_log(
         db,
         current_user.id,
@@ -436,6 +469,10 @@ async def create_despesa(
         dados_depois=jsonable_encoder(row),
     )
     await db.commit()
+    if approval_info and approval_info.get("required"):
+        row["approval_required"] = True
+        row["approval_id"] = approval_info.get("approval_id")
+        row["approval_threshold"] = approval_info.get("threshold")
     return row
 
 
@@ -465,7 +502,57 @@ async def update_despesa(
     updates = body.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(status_code=422, detail="Nenhum campo informado para atualizar")
+    competencia_atual = (
+        antes["competencia"]
+        or competencia_de_data(antes["pago_em"] or antes["vencimento"])
+    )
+    await exigir_competencia_aberta(
+        db, competencia_atual, "Alterar despesa"
+    )
     updates = _normalizar_baixa(updates, status_atual=antes["status"])
+    competencia_nova = (
+        updates.get("competencia")
+        or antes["competencia"]
+        or competencia_de_data(
+            updates.get("pago_em")
+            or antes["pago_em"]
+            or updates.get("vencimento")
+            or antes["vencimento"]
+        )
+    )
+    await exigir_competencia_aberta(
+        db, competencia_nova, "Alterar despesa"
+    )
+    if updates.get("status") == "pago" and antes["status"] != "pago":
+        approval = await solicitar_ou_consumir_aprovacao(
+            db,
+            entity_type="office_expense",
+            entity_id=despesa_id,
+            amount=antes["valor"],
+            user=current_user,
+            reason="Pagamento de despesa acima da alçada configurada.",
+        )
+        if approval.get("required"):
+            await criar_audit_log(
+                db,
+                current_user.id,
+                current_user.role.value,
+                "REQUEST_APPROVAL",
+                "office_expenses",
+                despesa_id,
+                detalhes="Baixa aguardando segunda aprovação financeira.",
+                dados_depois={
+                    "approval_id": approval.get("approval_id"),
+                    "valor": str(antes["valor"]),
+                },
+            )
+            await db.commit()
+            return {
+                **dict(antes),
+                "approval_required": True,
+                "approval_id": approval.get("approval_id"),
+                "approval_threshold": approval.get("threshold"),
+            }
 
     stmt, params = construir_update(
         updates,
@@ -529,6 +616,13 @@ async def delete_despesa(
     antes = atual.mappings().first()
     if not antes:
         raise HTTPException(status_code=404, detail="Despesa não encontrada")
+    competencia_atual = (
+        antes["competencia"]
+        or competencia_de_data(antes["pago_em"] or antes["vencimento"])
+    )
+    await exigir_competencia_aberta(
+        db, competencia_atual, "Excluir despesa"
+    )
 
     await db.execute(
         text("UPDATE office_expenses SET deleted_at=NOW(), updated_at=NOW() WHERE id=:id"),

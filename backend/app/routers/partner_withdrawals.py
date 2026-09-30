@@ -260,6 +260,27 @@ async def pay_withdrawal(
     if row["status"] != "aprovado":
         raise HTTPException(409, f"Withdrawal must be approved before payment (current: '{row['status']}')")
 
+    from app.services.finance_governance import (
+        competencia_de_data,
+        exigir_competencia_aberta,
+        limite_dupla_aprovacao,
+    )
+
+    await exigir_competencia_aberta(
+        db,
+        competencia_de_data(datetime.now(timezone.utc)),
+        "Pagar retirada/comissão",
+    )
+    limite = await limite_dupla_aprovacao(db)
+    if (
+        Decimal(str(row["partner_share"] or 0)) >= limite
+        and str(row.get("approved_by") or "") == str(current_user.id)
+    ):
+        raise HTTPException(
+            403,
+            "Pagamento acima da alçada exige executor diferente de quem aprovou.",
+        )
+
     await db.execute(
         text(
             """

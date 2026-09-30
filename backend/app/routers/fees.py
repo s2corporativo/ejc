@@ -30,6 +30,7 @@ from app.schemas.fee import (
 )
 from app.services.document_access_policy import exigir_documento_compativel_com_caso
 from app.services.fee_ledger_compat import total_pago_efetivo
+from app.services.finance_governance import competencia_de_data, exigir_competencia_aberta
 
 _FINANCEIRO_TOTAL = {"superadmin", "admin", "socio", "financeiro"}
 _RE_COMPETENCIA = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
@@ -462,6 +463,11 @@ async def registrar_pagamento(
         raise HTTPException(status_code=404, detail="Honorário não encontrado")
     if fee.status == FeeStatus.cancelado:
         raise HTTPException(status_code=409, detail="Honorário cancelado não aceita pagamento")
+    await exigir_competencia_aberta(
+        db,
+        competencia_de_data(payload.data_pagamento),
+        "Registrar recebimento",
+    )
     if fee.status == FeeStatus.pago:
         raise HTTPException(status_code=409, detail="Honorário já está quitado")
 
@@ -610,6 +616,11 @@ async def estornar_pagamento(
         raise HTTPException(
             status_code=409, detail="Honorário cancelado não aceita estorno"
         )
+    await exigir_competencia_aberta(
+        db,
+        competencia_de_data(payload.data_estorno),
+        "Registrar estorno",
+    )
 
     pagamento = (
         await db.execute(
