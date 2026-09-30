@@ -2,6 +2,16 @@
   // Exemplo seguro: não cole tokens reais neste arquivo.
   // Copie para a configuração local do Antigravity e use variáveis de ambiente.
   "mcpServers": {
+    "graphify": {
+      // Defina GRAPHIFY_PYTHON com o caminho absoluto gravado em
+      // graphify-out/.graphify_python após a primeira execução.
+      "command": "${GRAPHIFY_PYTHON}",
+      "args": [
+        "-m",
+        "graphify.serve",
+        "${workspaceFolder}/graphify-out/graph.json"
+      ]
+    },
     "github-readonly": {
       "command": "<comando-do-servidor-mcp-github>",
       "args": [],
