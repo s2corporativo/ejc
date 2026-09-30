@@ -506,7 +506,7 @@ export default function DashboardUltra() {
           <div className="ejc-dash__entry-compact">
             <div>
               <span className="ejc-dash__entry-kicker">
-                EJC · Entrada Jurídica
+                EJC · Legal Intelligence Workspace
               </span>
               <strong>Começar novo trabalho</strong>
               <small>
@@ -518,13 +518,13 @@ export default function DashboardUltra() {
               {canUseLegal && (
                 <Link to="/entrada" className="is-primary">
                   <Sparkles aria-hidden="true" />
-                  Analisar novo caso
+                  Entrada por IA
                 </Link>
               )}
               {canUseEntry && (
                 <Link to="/cadastro-manual?aba=caso">
                   <Briefcase aria-hidden="true" />
-                  Cadastro manual
+                  + Novo Caso
                 </Link>
               )}
             </div>
@@ -634,7 +634,7 @@ export default function DashboardUltra() {
             <h1>
               {saudacaoPorHora()}, {primeiroNome}!
             </h1>
-            <p>O que vamos resolver hoje?</p>
+            <p>Aqui está o que precisa da sua atenção hoje.</p>
           </div>
           {ultimoCaso?.id ? (
             <Link
@@ -661,18 +661,20 @@ export default function DashboardUltra() {
         </header>
 
         <section className="ejc-dash__stats" aria-label="Sinais do escritório">
-          <Link
-            to="/atividades?tipo=prazo"
-            className="ejc-dash__stat is-dark"
-            aria-label={`Prazos hoje: ${valorOuTraco(prazosHoje)}`}
-          >
-            <span className="ejc-dash__stat-icon" aria-hidden="true">
-              <CalendarClock />
-            </span>
-            <strong>{metrica(prazosHoje)}</strong>
-            <small>Prazos hoje</small>
-            <ChevronRight className="ejc-dash__stat-chev" aria-hidden="true" />
-          </Link>
+          {(!carregado || (prazosHoje ?? 0) > 0) && (
+            <Link
+              to="/atividades?tipo=prazo"
+              className="ejc-dash__stat is-dark"
+              aria-label={`Prazos hoje: ${valorOuTraco(prazosHoje)}`}
+            >
+              <span className="ejc-dash__stat-icon" aria-hidden="true">
+                <CalendarClock />
+              </span>
+              <strong>{metrica(prazosHoje)}</strong>
+              <small>Prazos hoje</small>
+              <ChevronRight className="ejc-dash__stat-chev" aria-hidden="true" />
+            </Link>
+          )}
           <Link
             to="/clientes"
             className="ejc-dash__stat"
@@ -739,7 +741,7 @@ export default function DashboardUltra() {
                 <span className="ejc-dash__panel-ico" aria-hidden="true">
                   <Briefcase />
                 </span>
-                <h3>Casos em destaque</h3>
+                <h3>Meus casos prioritários</h3>
               </div>
               <Link to="/casos" className="ejc-dash__panel-more">
                 Ver todos <ChevronRight aria-hidden="true" />
@@ -802,7 +804,7 @@ export default function DashboardUltra() {
                 <span className="ejc-dash__panel-ico" aria-hidden="true">
                   <Sparkles />
                 </span>
-                <h3>Radar Estratégico do Escritório</h3>
+                <h3>Prioridades e decisões</h3>
               </div>
               <Link to="/radar" className="ejc-dash__panel-more">
                 Análise completa <ChevronRight aria-hidden="true" />
