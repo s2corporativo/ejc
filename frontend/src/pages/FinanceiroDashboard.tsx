@@ -278,23 +278,6 @@ export default function FinanceiroDashboard({
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard
-          label="Saldo do mês"
-          value={fmtR$(caixa)}
-          detail={`Margem ${Number(data?.margem_pct ?? 0).toLocaleString("pt-BR")}%`}
-          icon={PiggyBank}
-          tone={caixa >= 0 ? "green" : "red"}
-        />
-        <StatCard
-          label="Recebido"
-          value={fmtR$(recebido)}
-          detail="Entradas efetivas no mês"
-          icon={Wallet}
-          tone="blue"
-          onClick={
-            onDrillDown ? () => onDrillDown("honorarios", "pago") : undefined
-          }
-        />
-        <StatCard
           label="A receber"
           value={fmtR$(aReceber)}
           detail={
@@ -311,6 +294,16 @@ export default function FinanceiroDashboard({
           }
         />
         <StatCard
+          label="Recebido no mês"
+          value={fmtR$(recebido)}
+          detail="Entradas efetivas no mês"
+          icon={Wallet}
+          tone="blue"
+          onClick={
+            onDrillDown ? () => onDrillDown("honorarios", "pago") : undefined
+          }
+        />
+        <StatCard
           label="A pagar"
           value={fmtR$(aPagar)}
           detail={`${fmtR$(saidas)} pagos no mês`}
@@ -319,6 +312,13 @@ export default function FinanceiroDashboard({
           onClick={
             onDrillDown ? () => onDrillDown("despesas", "pendente") : undefined
           }
+        />
+        <StatCard
+          label="Saldo"
+          value={fmtR$(caixa)}
+          detail={`Margem ${Number(data?.margem_pct ?? 0).toLocaleString("pt-BR")}%`}
+          icon={PiggyBank}
+          tone={caixa >= 0 ? "green" : "red"}
         />
       </div>
 

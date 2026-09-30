@@ -4,7 +4,6 @@ import App from "./App";
 import { initTheme } from "./stores/theme";
 import "./styles/fonts.css";
 import "./index.css";
-import "./styles/bronze-elegance.css";
 import "./styles/site-system.css";
 // Polimento específico da página Financeiro (escopo .executive-workspace).
 // Não duplica o site-system e mantém o padrão branco+ouro (aba ativa escura é exceção permitida).
@@ -12,7 +11,6 @@ import "./styles/workspace-executive.css";
 // Camada final do AppShell v2 e do dashboard ultra: somente apresentação,
 // sem alterar regras de negócio, rotas, RBAC ou contratos de API.
 import "./styles/saas-ultra-v2.css";
-import "./styles/saas-ultra-accessibility.css";
 // Design de referência aprovado em 16/08/2026. Mantém os componentes
 // específicos do dashboard e do AppShell já homologados.
 import "./styles/ejc-reference-2026.css";
@@ -23,7 +21,7 @@ import "./styles/ejc-reference-systemwide.css";
 // Início e acabamentos do shell sobre a paleta esmeralda + ouro.
 import "./styles/ejc-dashboard-premium.css";
 // FONTE ÚNICA do design system canônico: tokens semânticos --ejc-* + aliases
-// de todas as gerações legadas. Importada por último — vence o cascade.
+// e regras finais do workspace moderno. Importada por último — vence o cascade.
 import "./styles/ejc-tokens.css";
 
 initTheme();
