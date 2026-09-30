@@ -44,6 +44,15 @@ services:
     image: woodpeckerci/woodpecker-agent:v3.18.0
     restart: unless-stopped
     logging: *woodpecker-logging
+    # A capacidade precisa estar DECLARADA aqui, não numa escala pontual: sem
+    # isto, um `up`/`restart`/reboot recria o stack com UM agente só e a
+    # esteira degrada silenciosamente (medido em 2026-09-29 — os agentes 2 e 3
+    # desapareceram no restart e o check required ficou PENDING sem avançar).
+    # Três agentes porque a Onda 2 do .woodpecker.yml roda cinco jobs
+    # independentes em paralelo; com um só, a onda inteira serializa.
+    # Ver issue #1909. Ajustar junto se a Onda 2 mudar de topologia.
+    deploy:
+      replicas: ${WOODPECKER_AGENT_REPLICAS:-3}
     depends_on:
       - woodpecker-server
     volumes:

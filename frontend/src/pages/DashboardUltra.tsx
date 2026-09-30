@@ -12,7 +12,6 @@ import {
 import { ptBR } from "date-fns/locale";
 import {
   BarChart3,
-  BookOpen,
   Briefcase,
   CalendarClock,
   CalendarDays,
@@ -20,6 +19,8 @@ import {
   ChevronRight,
   FileText,
   FolderKanban,
+  ListTodo,
+  Paperclip,
   Plus,
   Scale,
   ShieldCheck,
@@ -34,6 +35,7 @@ import api from "../lib/api";
 import { asList } from "../lib/list";
 import { useAuth } from "../stores/auth";
 import { EntradaInteligente } from "./EntradaUnica";
+import { IdentidadeAssistente } from "./EntradaUnica/IdentidadeAssistente";
 
 /**
  * Início canônico do EJC — referência visual premium DPT (18/09/2026).
@@ -504,8 +506,8 @@ export default function DashboardUltra() {
           aria-label="Leitura e análise do caso com IA"
         >
           <div className="ejc-dash__entry-head ejc-dash__entry-head--ai-home">
-            <span className="ejc-dash__entry-icon" aria-hidden="true">
-              <Sparkles />
+            <span className="ejc-dash__entry-icon">
+              <IdentidadeAssistente />
             </span>
             <div className="ejc-dash__entry-copy">
               <span className="ejc-dash__entry-kicker">
@@ -807,23 +809,28 @@ export default function DashboardUltra() {
             <strong>Acesso rápido</strong>
           </div>
           <div className="ejc-dash__quick-items">
-            <Link to="/casos/novo">
+            {/* Atalhos para rotas canônicas do registry (moduleRegistry.tsx).
+                "Novo caso" vai para /entrada, e não /casos/novo: o próprio
+                registry trata /casos/novo como compatibilidade e manda novos
+                fluxos para a Entrada Jurídica. "Minhas tarefas" aponta direto
+                ao destino canônico, sem passar pelo redirect legado /tarefas. */}
+            <Link to="/entrada">
               <span aria-hidden="true">
                 <Plus />
               </span>
               Novo caso
             </Link>
-            <Link to="/cadastro-manual">
+            <Link to="/documentos">
               <span aria-hidden="true">
-                <Users />
+                <Paperclip />
               </span>
-              Novo cliente
+              Anexar documentos
             </Link>
             <Link to="/pecas">
               <span aria-hidden="true">
                 <FileText />
               </span>
-              Gerar documento
+              Modelos e peças
             </Link>
             <Link to="/inteligencia?tab=pesquisa">
               <span aria-hidden="true">
@@ -831,17 +838,11 @@ export default function DashboardUltra() {
               </span>
               Consultar jurisprudência
             </Link>
-            <Link to="/teses">
+            <Link to="/atividades?tipo=tarefa">
               <span aria-hidden="true">
-                <BookOpen />
+                <ListTodo />
               </span>
-              Buscar no banco de teses
-            </Link>
-            <Link to="/financeiro">
-              <span aria-hidden="true">
-                <BarChart3 />
-              </span>
-              Relatório financeiro
+              Minhas tarefas
             </Link>
           </div>
         </section>
