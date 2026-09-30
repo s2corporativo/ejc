@@ -1,5 +1,6 @@
 import csv
 import io
+import calendar
 from datetime import date
 from decimal import Decimal
 from typing import Literal, Optional
@@ -79,6 +80,21 @@ class DespesaCreate(_DespesaCampos):
 
 class DespesaUpdate(_DespesaCampos):
     pass
+
+
+class GerarRecorrentesIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    competencia: str
+
+    @field_validator("competencia")
+    @classmethod
+    def _validar_competencia(cls, valor: str) -> str:
+        if len(valor) != 7 or valor[4] != "-":
+            raise ValueError("competencia inválida: use AAAA-MM")
+        ano, mes = (int(p) for p in valor.split("-"))
+        if ano < 1900 or mes < 1 or mes > 12:
+            raise ValueError("competencia inválida: use AAAA-MM")
+        return valor
 
 
 def _normalizar_baixa(dados: dict, *, status_atual: Optional[str] = None) -> dict:
@@ -287,6 +303,79 @@ async def export_despesas_csv(
     )
 
 
+@router.post("/recorrentes/gerar", status_code=201)
+async def gerar_recorrentes(
+    body: GerarRecorrentesIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ano_alvo, mes_alvo = (int(p) for p in body.competencia.split("-"))
+    templates = (
+        await db.execute(text("""
+            SELECT DISTINCT ON (categoria, COALESCE(subcategoria,''), tipo, descricao)
+                id, categoria, subcategoria, tipo, descricao, valor,
+                vencimento, recorrencia, competencia
+            FROM office_expenses
+            WHERE deleted_at IS NULL AND recorrente=TRUE AND status!='cancelado'
+            ORDER BY categoria, COALESCE(subcategoria,''), tipo, descricao,
+                     updated_at DESC NULLS LAST, created_at DESC
+        """))
+    ).mappings().all()
+    gerados, ignorados = [], []
+    for t in templates:
+        recorrencia=(t["recorrencia"] or "mensal").lower()
+        devido=True
+        if t["competencia"]:
+            ano_base, mes_base=(int(p) for p in t["competencia"].split("-"))
+            delta=(ano_alvo-ano_base)*12+(mes_alvo-mes_base)
+            devido = delta >= 0 and (
+                recorrencia == "mensal"
+                or (recorrencia == "trimestral" and delta % 3 == 0)
+                or (recorrencia == "anual" and delta % 12 == 0)
+            )
+        if not devido:
+            continue
+        vencimento=None
+        if t["vencimento"]:
+            dia=min(t["vencimento"].day, calendar.monthrange(ano_alvo, mes_alvo)[1])
+            vencimento=date(ano_alvo, mes_alvo, dia)
+        existente=(await db.execute(text("""
+            SELECT id FROM office_expenses
+            WHERE deleted_at IS NULL AND status!='cancelado'
+              AND competencia=:competencia AND categoria=:categoria
+              AND COALESCE(subcategoria,'')=COALESCE(:subcategoria,'')
+              AND tipo=:tipo AND descricao=:descricao AND valor=:valor
+            LIMIT 1
+        """), {
+            "competencia":body.competencia,"categoria":t["categoria"],
+            "subcategoria":t["subcategoria"],"tipo":t["tipo"],
+            "descricao":t["descricao"],"valor":t["valor"],
+        })).scalar_one_or_none()
+        if existente:
+            ignorados.append(existente); continue
+        novo=(await db.execute(text("""
+            INSERT INTO office_expenses
+              (categoria,subcategoria,tipo,descricao,valor,vencimento,recorrente,
+               recorrencia,status,competencia,created_by)
+            VALUES
+              (:categoria,:subcategoria,:tipo,:descricao,:valor,:vencimento,
+               FALSE,NULL,'pendente',:competencia,:created_by)
+            RETURNING id
+        """), {
+            "categoria":t["categoria"],"subcategoria":t["subcategoria"],
+            "tipo":t["tipo"],"descricao":t["descricao"],"valor":t["valor"],
+            "vencimento":vencimento,"competencia":body.competencia,
+            "created_by":current_user.id,
+        })).scalar_one()
+        gerados.append(novo)
+        await criar_audit_log(
+            db,current_user.id,current_user.role.value,"CREATE","office_expenses",novo,
+            detalhes=f"Despesa recorrente gerada para {body.competencia}; template={t['id']}",
+        )
+    await db.commit()
+    return {"competencia":body.competencia,"gerados":len(gerados),"ignorados":len(ignorados),"ids":gerados}
+
+
 @router.post("", status_code=201)
 async def create_despesa(
     body: DespesaCreate,
@@ -294,6 +383,30 @@ async def create_despesa(
     current_user: User = Depends(get_current_user),
 ):
     dados = _normalizar_baixa(body.model_dump())
+    duplicado = (
+        await db.execute(
+            text(
+                """
+                SELECT id FROM office_expenses
+                WHERE deleted_at IS NULL AND status != 'cancelado'
+                  AND categoria=:categoria AND tipo=:tipo AND descricao=:descricao
+                  AND valor=:valor
+                  AND vencimento IS NOT DISTINCT FROM :vencimento
+                  AND competencia IS NOT DISTINCT FROM :competencia
+                  AND created_at >= NOW() - INTERVAL '10 minutes'
+                LIMIT 1
+                """
+            ),
+            {
+                "categoria": dados["categoria"], "tipo": dados["tipo"],
+                "descricao": dados["descricao"], "valor": dados["valor"],
+                "vencimento": dados.get("vencimento"),
+                "competencia": dados.get("competencia"),
+            },
+        )
+    ).scalar_one_or_none()
+    if duplicado:
+        raise HTTPException(status_code=409, detail="Possível despesa duplicada: lançamento idêntico criado nos últimos 10 minutos.")
     result = await db.execute(
         text(
             """
