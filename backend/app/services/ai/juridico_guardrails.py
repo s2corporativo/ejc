@@ -233,22 +233,29 @@ def aplicar_guardrail_merito(texto: str) -> tuple[str, bool]:
     injetado, `aplicar_guardrail_merito` devolvia `(texto, False)` e a
     qualificação errada sobrevivia intacta.
 
-    A idempotência agora é ESTRUTURAL e não fiduciária: o aviso canônico é
-    SEPARADO do texto antes da análise e devolvido no fim, de modo que
-    (a) o aviso nunca é analisado, (b) o texto do modelo é sempre analisado,
-    e um marcador forjado deixa de ser motivo para nada. Um marcador isolado
+    A idempotência agora é ESTRUTURAL e não fiduciária: TODAS as ocorrências
+    do aviso canônico são REMOVIDAS do texto antes da análise e UM aviso é
+    reanexado no fim, de modo que (a) o aviso nunca é analisado, (b) o texto
+    do modelo é SEMPRE analisado — inteiro, de qualquer posição — e um
+    marcador forjado deixa de ser motivo para nada. Um marcador isolado
     injetado pelo modelo é inerte: não contém palavra-gatilho, permanece no
     texto como parte da saída e é o que o revisor humano vê.
+
+    Remoção por `replace` (e não por fatiar o `split()`, achado de review do
+    codex-connector, P1): juntar só os índices pares do split descartava
+    texto real que viesse DEPOIS de um aviso reproduzido — "aviso + texto
+    errado" burlava a correção, e correção disparada no 1º segmento apagava
+    silenciosamente tudo que vinha depois do aviso injetado.
 
     Retorna (texto_final, foi_corrigido).
     """
     if not texto:
         return texto, False
-    # Separa NOSSO aviso do texto do modelo. `partes[1::2]` são as partes que
-    # saíram como aviso; `partes[0::2]` são o texto a corrigir. Reaplicar não
-    # duplica aviso: um aviso já presente é devolvido intacto uma vez.
-    partes = texto.split(_AVISO_CORRECAO_MERITO)
-    corpo = "".join(partes[0::2])
+    # Remove TODAS as ocorrências do nosso aviso do texto do modelo, de
+    # qualquer posição — o que sobra é o corpo a analisar, completo. Reaplicar
+    # não duplica aviso: o corpo é devolvido com exatamente UM aviso no fim.
+    havia_aviso = _AVISO_CORRECAO_MERITO in texto
+    corpo = texto.replace(_AVISO_CORRECAO_MERITO, "")
     # O aviso canônico já foi separado acima, então qualquer marcador que ainda
     # sobrar no corpo é, por construção, um marcador BARE reproduzido pelo
     # modelo (indução por documento/RAG). Ele não tem função legítima: o único
@@ -268,9 +275,15 @@ def aplicar_guardrail_merito(texto: str) -> tuple[str, bool]:
     novo, n = _substituir_no_match(novo, _RE_ART485_DEPOIS, _SUBSTITUICAO_ART485)
     total += n
     if total == 0:
-        # Nada a corrigir: devolve o texto como estava, com os avisos que já
-        # existiam. Idempotente e sem tocar no que o revisor já aprovou.
-        return texto, False
+        if not havia_aviso:
+            # Texto limpo e sem gatilho: no-op puro, sem tocar no que o
+            # revisor já aprovou.
+            return texto, False
+        # Havia aviso (releitura legítima ou injetado em posição estranha) e
+        # nada a corrigir: devolve o corpo com UM aviso canônico no fim. Para
+        # a releitura legítima (corpo + aviso) a saída é idêntica à entrada;
+        # para injeção em posição estranha, normaliza sem fingir correção.
+        return corpo + _AVISO_CORRECAO_MERITO, False
     # Reaplica a partir do corpo corrigido e anexa UM aviso (HITL nunca é
     # silencioso, e nunca duplicado).
     return novo + _AVISO_CORRECAO_MERITO, True
