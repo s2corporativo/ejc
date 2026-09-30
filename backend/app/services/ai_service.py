@@ -845,13 +845,29 @@ async def analisar_caso(
         }
 
     # 4. AI LOG (rastreabilidade LGPD + HITL)
+    # O prompt LOGADO é pseudonimizado com as entidades do caso: a coluna
+    # `prompt_sanitizado` é "sem PII" e o sanitizador estrutural sozinho não
+    # pega marca comercial de uma palavra (o `@validates` do model não tem como
+    # saber os nomes do caso). O usuário continua recebendo `resposta`, reidratada.
+    # `nomes_proteger` é uma lista plana, sem tipo; usamos a chave `cliente`
+    # porque é uma das quatro que `_Pseudonimizador` reconhece — uma chave fora
+    # de `_ORDEM_ENTIDADES` é IGNORADA EM SILÊNCIO. O rótulo do marcador não
+    # importa num log de auditoria; o que importa é a substituição ocorrer.
+    prompt_para_log = prompt_usuario[:8000]
+    if nomes_caso:
+        from app.models.ai_log import pseudonimizar_texto_auditoria as _pseud_audit
+
+        prompt_para_log = _pseud_audit(
+            prompt_para_log, {"cliente": list(nomes_caso)}
+        ) or prompt_para_log
+
     log = AILog(
         id=str(uuid4()),
         user_id=user_id,
         case_id=case_id,
         tipo_uso=AITipoUso.analise_caso,
         modelo=_modelo_log(resp, modelo_usar),
-        prompt_sanitizado=prompt_usuario[:8000],
+        prompt_sanitizado=prompt_para_log,
         pii_removida=houve_pii,
         resposta=resposta,
         fontes_rag="; ".join(f["chunk_id"] for f in fontes) or None,
