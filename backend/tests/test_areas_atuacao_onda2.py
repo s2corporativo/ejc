@@ -5,13 +5,13 @@ ferramenta corrigida: caso feliz, entrada inválida (422), marco ausente (422),
 exceção legal e — onde couber — ano bissexto. Toda resposta corrigida carrega
 `fontes`, `vigencia_regra` e `versao_regra`.
 """
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from fastapi import HTTPException
 
 from app.routers import ramos
-from app.services.deadline_calculator import prazo_dias_uteis
+from app.services.deadline_calculator import prazo_dias_corridos, prazo_dias_uteis
 
 
 def _assert_metadados_regra(r: dict):
@@ -1294,8 +1294,17 @@ async def test_reajuste_aluguel_exige_indice_e_respeita_anualidade():
 
 
 async def test_mandado_seguranca_120_dias_e_vencido():
-    r = await ramos.adm_ms(data_ato_coator=date(2026, 6, 1), cu=None)
-    assert r["prazo_impetracao"] == date(2026, 9, 29)
+    # O cálculo puro dos 120 dias corridos é verificado com par fixo imortal
+    # (01/06/2026 + 120 = 29/09/2026, terça-feira — dia útil, sem prorrogação).
+    # A parte viva do endpoint é ancorada em hoje: qualquer data fixa do lado
+    # do `vencido` é time-bomb — este teste ficou vermelho em 30/09/2026, no
+    # dia seguinte ao vencimento do prazo fixo 29/09/2026, e derrubou a esteira
+    # de PRs alheios ao arquivo.
+    assert prazo_dias_corridos(date(2026, 6, 1), 120) == date(2026, 9, 29)
+    ato_recente = date.today() - timedelta(days=1)
+    r = await ramos.adm_ms(data_ato_coator=ato_recente, cu=None)
+    assert r["prazo_impetracao"] == prazo_dias_corridos(ato_recente, 120)
+    assert r["dias_restantes"] > 100          # horizonte do prazo de 120 dias
     assert r["vencido"] is False and "DECADENCIAL" in r["natureza_do_prazo"]
     velho = await ramos.adm_ms(data_ato_coator=date(2020, 1, 1), cu=None)
     assert velho["vencido"] is True and velho["dias_desde_o_vencimento"] > 0
