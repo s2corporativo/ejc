@@ -151,14 +151,101 @@ def extract_table_names(source: str) -> list[str]:
 
 
 def router_mounts(root: Path) -> tuple[str, set[str], dict[str, list[str]]]:
-    main_path = root / "backend/app/main.py"
+    """Mapeia montagens reais de routers FastAPI no backend.
+
+    Retorna (fonte_do_main, paths_relativos_montados, atributos_por_path).
+
+    Substitui o regex antigo (``app.include_router\\(\\s*mod.attr``), que perdia
+    mecanismos presentes no código real e inflava routers "não montados":
+
+    - includes multilinha com comentários inline (main.py:540-550);
+    - imports com alias: ``from app.routers import api_keys as api_keys_router``;
+    - import do objeto router: ``from app.modules.dpt360.router import router as
+      dpt360_router`` seguido de ``include_router(dpt360_router)``;
+    - composição por cópia de rotas: ``for _r in mod.router.routes:`` +
+      ``add_api_route(...)`` — padrão de ``app/routers/ramos.py``;
+    - includes fora do main.py (qualquer módulo pode montar sub-routers).
+
+    A chave do resultado é o path relativo do ARQUIVO (stems colidem: vários
+    ``router.py`` em pacotes distintos).
+    """
+    backend = root / "backend/app"
+    main_path = backend / "main.py"
     source = safe_read(main_path) if main_path.exists() else ""
-    mounted_modules: set[str] = set()
+    mounted_paths: set[str] = set()
     mounted_attrs: dict[str, list[str]] = defaultdict(list)
-    for module, attr in re.findall(r"app\.include_router\(\s*([A-Za-z_][\w]*)\.([A-Za-z_][\w]*)", source):
-        mounted_modules.add(module)
-        mounted_attrs[module].append(attr)
-    return source, mounted_modules, dict(mounted_attrs)
+    if not backend.exists():
+        return source, mounted_paths, dict(mounted_attrs)
+
+    def resolve_module(module: str) -> str | None:
+        if not module.startswith("app."):
+            return None
+        base = root / "backend" / Path(*module.split("."))
+        for candidate in (base.with_suffix(".py"), base / "__init__.py"):
+            if candidate.exists():
+                return candidate.relative_to(root).as_posix()
+        return None
+
+    for path in sorted(backend.rglob("*.py")):
+        if any(part in IGNORED_DIRS for part in path.parts):
+            continue
+        relative = rel(root, path)
+        try:
+            tree = ast.parse(safe_read(path), filename=relative)
+        except SyntaxError:
+            continue
+        symbols: dict[str, str] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                for alias in node.names:
+                    symbols[alias.asname or alias.name] = f"{node.module}.{alias.name}"
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    symbols[alias.asname or alias.name] = alias.name
+        for node in ast.walk(tree):
+            # 1) include_router(x.router) | include_router(x) — em qualquer objeto
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "include_router"
+                and node.args
+            ):
+                target = node.args[0]
+                attr: str | None = None
+                if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name):
+                    attr = target.attr
+                    binding = target.value.id
+                elif isinstance(target, ast.Name):
+                    binding = target.id
+                else:
+                    binding = ""
+                if binding:
+                    symbol = symbols.get(binding, "")
+                    target_path = resolve_module(symbol)
+                    if not target_path and "." in symbol:
+                        # `from pkg.mod import objeto as alias` — o nome importado
+                        # é um OBJETO (ex.: a instância router), não um submódulo.
+                        # O arquivo que define o objeto é pkg/mod.
+                        target_path = resolve_module(symbol.rsplit(".", 1)[0])
+                    if target_path:
+                        mounted_paths.add(target_path)
+                        mounted_attrs[target_path].append(attr or "__module__")
+            # 2) composição por cópia de rotas: <alias>.router.routes
+            if isinstance(node, ast.Attribute) and node.attr == "routes":
+                inner = node.value
+                if (
+                    isinstance(inner, ast.Attribute)
+                    and inner.attr == "router"
+                    and isinstance(inner.value, ast.Name)
+                ):
+                    symbol = symbols.get(inner.value.id, "")
+                    target_path = resolve_module(symbol)
+                    if not target_path and "." in symbol:
+                        target_path = resolve_module(symbol.rsplit(".", 1)[0])
+                    if target_path:
+                        mounted_paths.add(target_path)
+                        mounted_attrs[target_path].append("router")
+    return source, mounted_paths, dict(mounted_attrs)
 
 
 def router_prefixes(tree: ast.AST) -> dict[str, str]:
@@ -184,9 +271,17 @@ def router_prefixes(tree: ast.AST) -> dict[str, str]:
     return result
 
 
+def defines_api_router(tree: ast.AST) -> bool:
+    """True se o arquivo declara alguma variável via chamada real a APIRouter(...)."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and dotted_name(node.func).split(".")[-1] == "APIRouter":
+            return True
+    return False
+
+
 def python_inventory(root: Path) -> list[InventoryItem]:
     items: list[InventoryItem] = []
-    _, mounted_modules, mounted_attrs = router_mounts(root)
+    _, mounted_paths, mounted_attrs = router_mounts(root)
     backend = root / "backend/app"
     if not backend.exists():
         return items
@@ -219,7 +314,15 @@ def python_inventory(root: Path) -> list[InventoryItem]:
         is_router_file = "/routers/" in f"/{relative}" or relative.endswith("/router.py")
         is_service_file = "/services/" in f"/{relative}"
         is_model_file = "/models/" in f"/{relative}"
-        mounted = stem in mounted_modules if is_router_file else None
+        # Arquivos em routers/ (ou router.py) sem APIRouter próprio não são
+        # routers: __init__.py de re-exports, módulos compartilhados e registros
+        # de configuração. mounted=None evita falso "desativar" por heurística
+        # de caminho (ex.: services/system_prompts/router.py, que é registro de
+        # modelos/prompts de IA, e routers/ramos_comum.py, bloco compartilhado).
+        if is_router_file and defines_api_router(tree):
+            mounted = relative in mounted_paths
+        else:
+            mounted = None
 
         file_kind = "python_module"
         if is_router_file:
@@ -235,10 +338,10 @@ def python_inventory(root: Path) -> list[InventoryItem]:
             name=stem,
             path=relative,
             mounted=mounted,
-            active=mounted if is_router_file else True,
+            active=mounted if mounted is not None else True,
             dependencies=imports,
             tables=tables,
-            metadata={"mounted_router_attributes": mounted_attrs.get(stem, [])},
+            metadata={"mounted_router_attributes": mounted_attrs.get(relative, [])},
         ))
 
         prefixes = router_prefixes(tree)
@@ -294,9 +397,12 @@ def python_inventory(root: Path) -> list[InventoryItem]:
                     endpoints.append((parts[-1].upper(), full_route, router_var))
 
                 if endpoints:
+                    attrs_montados = mounted_attrs.get(relative, [])
                     for method, route, router_var in endpoints:
                         endpoint_mounted = mounted and (
-                            not mounted_attrs.get(stem) or router_var in mounted_attrs.get(stem, [])
+                            not attrs_montados
+                            or "__module__" in attrs_montados
+                            or router_var in attrs_montados
                         )
                         items.append(InventoryItem(
                             id=stable_id("endpoint", relative, qualified, node.lineno, f"{method} {route}"),
