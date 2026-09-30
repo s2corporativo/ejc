@@ -10,6 +10,7 @@
     "lint": "tsc --noEmit",
     "lint:eslint": "eslint \"src/**/*.{ts,tsx}\"",
     "test": "vitest run",
+    "test:ci": "vitest run --maxWorkers=2 --no-file-parallelism",
     "test:watch": "vitest",
     "test:responsive": "node tests/responsividade.mjs",
     "test:premium-responsive": "node tests/premium-dashboard-responsividade.mjs && node tests/dashboard-ultra-reduced-motion.mjs",

@@ -526,8 +526,9 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: Scale,
     component: RamosHub,
     roles: ROLES.juridico,
-    // EJC Core Wave 1 (#1843): ramo jurídico passa a ser contexto/metadado,
-    // não um workspace concorrente no menu. Deep-links ficam vivos nesta onda.
+    // Decisão #1900 (30/09/2026): manter rebaixado. Ramo jurídico é
+    // contexto/metadado, não workspace concorrente; deep-links permanecem vivos.
+    // Revisar esta decisão em 15/12/2026 ou antes se não houver consumidores.
     showInNav: false,
     order: 30,
     helpKey: "ramos",
