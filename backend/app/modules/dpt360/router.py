@@ -23,6 +23,7 @@ from app.modules.dpt360.radar_service import (
     build_today_radar,
 )
 from app.modules.dpt360.report_service import build_executive_report
+from app.modules.dpt360.sharing_service import prepare_approved_report_for_portal
 from app.modules.dpt360.schemas import (
     DptActionRequest,
     DptActionResponse,
@@ -33,6 +34,8 @@ from app.modules.dpt360.schemas import (
     DptDiagnosticKind,
     DptDiagnosticReadiness,
     DptOpportunityQueueItem,
+    DptPrepareShareRequest,
+    DptPrepareShareResponse,
 )
 
 router = APIRouter(prefix="/dpt360", tags=["DPT Empresarial 360"])
@@ -129,6 +132,21 @@ async def executive_report(
     if report is None:
         raise HTTPException(status_code=404, detail="Empresa não encontrada")
     return report
+
+
+@router.post(
+    "/reports/executive/{client_id}/prepare-share",
+    response_model=DptPrepareShareResponse,
+    dependencies=[Depends(rate_limit("dpt360-prepare-share", 10))],
+)
+async def prepare_executive_report_share(
+    client_id: str,
+    payload: DptPrepareShareRequest,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(DPT_ROLES)),
+) -> DptPrepareShareResponse:
+    """Aprova/prepara documento canônico; NÃO publica no Portal."""
+    return await prepare_approved_report_for_portal(db, cu, client_id, payload)
 
 
 @router.get(

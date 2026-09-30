@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
-import { FileText, ShieldAlert, ShieldCheck } from "lucide-react";
+import { FileText, ShieldAlert, ShieldCheck, Share2 } from "lucide-react";
 import type { DptCompany } from "./api";
 import DptPortalGuard from "./DptPortalGuard";
-import { getDptExecutiveReport, type DptExecutiveReport } from "./reportApi";
+import {
+  getDptExecutiveReport,
+  prepareDptExecutiveReport,
+  type DptExecutiveReport,
+} from "./reportApi";
 
 function traceText(value: unknown): string {
   try {
@@ -18,11 +22,14 @@ export default function DptReports({ companies }: { companies: DptCompany[] }) {
   const [report, setReport] = useState<DptExecutiveReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const [preparedDocId, setPreparedDocId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!companies.some((company) => company.id === clientId)) {
       setClientId(companies[0]?.id || "");
       setReport(null);
+      setPreparedDocId(null);
     }
   }, [companies, clientId]);
 
@@ -31,12 +38,28 @@ export default function DptReports({ companies }: { companies: DptCompany[] }) {
     setLoading(true);
     setError(false);
     setReport(null);
+    setPreparedDocId(null);
     try {
       setReport(await getDptExecutiveReport(clientId, days));
     } catch {
       setError(true);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function prepareShare() {
+    if (!report || !clientId || preparing) return;
+    const confirmed = window.confirm(
+      "Confirmo que revisei o relatório e quero prepará-lo como documento canônico. Esta ação NÃO publica no Portal.",
+    );
+    if (!confirmed) return;
+    setPreparing(true);
+    try {
+      const result = await prepareDptExecutiveReport(clientId, days);
+      setPreparedDocId(result.document_id);
+    } finally {
+      setPreparing(false);
     }
   }
 
@@ -279,6 +302,26 @@ export default function DptReports({ companies }: { companies: DptCompany[] }) {
           <p className="mt-5 rounded-xl border border-slate-200 p-3 text-xs leading-5 text-slate-500 dark:border-white/10">
             {report.nota}
           </p>
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-400/20 dark:bg-amber-400/10">
+            <button
+              type="button"
+              onClick={() => void prepareShare()}
+              disabled={preparing}
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-slate-950"
+            >
+              <Share2 className="h-3.5 w-3.5" />
+              {preparing ? "Preparando…" : "Aprovar e preparar para Portal"}
+            </button>
+            <p className="mt-2 text-xs leading-5 text-amber-800 dark:text-amber-200">
+              Este ato cria um documento canônico não publicado. A publicação ao
+              cliente continua exigindo o comando explícito do Portal/Data Room.
+            </p>
+            {preparedDocId ? (
+              <p className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                Documento preparado: {preparedDocId}. Nenhum envio ao cliente foi feito.
+              </p>
+            ) : null}
+          </div>
         </section>
       ) : null}
       <DptPortalGuard />

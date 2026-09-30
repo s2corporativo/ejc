@@ -4,13 +4,15 @@ import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DptCompany } from "./api";
 import DptReports from "./DptReports";
-import { getDptExecutiveReport } from "./reportApi";
+import { getDptExecutiveReport, prepareDptExecutiveReport } from "./reportApi";
 
 vi.mock("./reportApi", () => ({
   getDptExecutiveReport: vi.fn(),
+  prepareDptExecutiveReport: vi.fn(),
 }));
 
 const getReportMock = vi.mocked(getDptExecutiveReport);
+const prepareReportMock = vi.mocked(prepareDptExecutiveReport);
 
 const EMPRESA: DptCompany = {
   id: "c1",
@@ -88,4 +90,29 @@ describe("DptReports — aviso de cobertura parcial", () => {
     );
     expect(screen.getByText(/carteira truncada em 200 empresas/)).toBeTruthy();
   });
+});
+
+
+it("prepara documento aprovado sem publicar automaticamente", async () => {
+  getReportMock.mockResolvedValue(relatorioBase());
+  prepareReportMock.mockResolvedValue({
+    document_id: "doc-1",
+    client_id: "c1",
+    publicado_portal: false,
+    next_step: "Publicar depois.",
+  });
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+
+  await gerarRelatorio();
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: /Aprovar e preparar para Portal/i })).toBeTruthy(),
+  );
+  await act(async () => {
+    screen.getByRole("button", { name: /Aprovar e preparar para Portal/i }).click();
+  });
+
+  await waitFor(() =>
+    expect(prepareReportMock).toHaveBeenCalledWith("c1", 30),
+  );
+  expect(screen.getByText(/Nenhum envio ao cliente foi feito/i)).toBeTruthy();
 });

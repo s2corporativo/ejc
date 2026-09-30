@@ -34,3 +34,21 @@ export async function getDptExecutiveReport(
   );
   return response.data;
 }
+
+export type DptPreparedShare = {
+  document_id: string;
+  client_id: string;
+  publicado_portal: false;
+  next_step: string;
+};
+
+export async function prepareDptExecutiveReport(
+  clientId: string,
+  days = 30,
+): Promise<DptPreparedShare> {
+  const response = await api.post<DptPreparedShare>(
+    `/dpt360/reports/executive/${clientId}/prepare-share`,
+    { aprovado: true, days },
+  );
+  return response.data;
+}
