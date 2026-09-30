@@ -3,6 +3,15 @@
 Gerado em: 2026-09-20T13:13:37.395397+00:00
 Fingerprint das fontes: `39582ab0c8103c118532b5c4e694f68ca71131c3469b02b9961e5609315614a2`
 
+> **⚠️ Artefatos pesados fora do versionamento (2026-10-01):** `architecture_inventory.json` (27,7 MB), `architecture_inventory.csv` (21,3 MB) e `classification_review.csv` (20,3 MB) foram removidos do repositório — eram 65% de todo o conteúdo rastreado e ficam obsoletos a cada evolução da main. Eles estão no `.gitignore` e devem ser **regenerados localmente** quando necessários:
+>
+> ```bash
+> python3 scripts/generate_architecture_inventory.py --output docs/audit/inventory
+> python3 scripts/refine_architecture_inventory.py --output docs/audit/inventory
+> ```
+>
+> Este README, `manifest.json` e `duplicate_families.json` permanecem versionados por serem leves e descritivos.
+
 > Este inventário é descritivo e conservador. Nenhuma exclusão deve ocorrer apenas por heurística. 
 > Itens marcados para exclusão exigem migração, telemetria, busca de consumidores e plano de rollback.
 

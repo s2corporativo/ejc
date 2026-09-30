@@ -119,3 +119,9 @@ backend/app/eval/relatorio_gold_ia.json
 # Marcadores operacionais de deploy (runtime da VPS, nunca versionar)
 .deployed_sha
 .deploy_last_sha
+
+# Inventário arquitetural gerado (Fase 0) — regenerável, não versionar
+# Fonte: scripts/generate_architecture_inventory.py + refine_architecture_inventory.py
+docs/audit/inventory/architecture_inventory.json
+docs/audit/inventory/architecture_inventory.csv
+docs/audit/inventory/classification_review.csv
