@@ -444,6 +444,58 @@ html:not(.dark) .sidebar-nav-item.is-active svg {
   color: var(--ejc-primary) !important;
 }
 
+/* Agenda da sidebar (AgendaSidebar, #1907): as regras base em
+   ejc-dashboard-premium.css foram escritas para a sidebar escura da geração
+   esmeralda (texto branco translúcido, filete e rótulos em --ejc-dash-gold).
+   Com a sidebar clara esses textos ficam brancos sobre branco. A camada
+   clara devolve a tinta neutra e mantém o dourado só como marca (rótulo do
+   mês, dia com compromisso). some quando a agenda for reescrita com tokens. */
+html:not(.dark) .ejc-sidebar-agenda {
+  border-top-color: var(--ejc-border) !important;
+}
+
+html:not(.dark) .ejc-sidebar-agenda__title,
+html:not(.dark) .ejc-sidebar-agenda__month,
+html:not(.dark) .ejc-sidebar-agenda__item-title,
+html:not(.dark) .ejc-sidebar-agenda__list-head,
+html:not(.dark) .ejc-sidebar-agenda__weekdays,
+html:not(.dark) .ejc-sidebar-agenda__grid {
+  color: var(--ejc-text-secondary) !important;
+}
+
+html:not(.dark) .ejc-sidebar-agenda__item,
+html:not(.dark) .ejc-sidebar-agenda__weekdays {
+  background: var(--ejc-surface-muted) !important;
+  border-color: var(--ejc-border) !important;
+}
+
+html:not(.dark) .ejc-sidebar-agenda__item-case,
+html:not(.dark) .ejc-sidebar-agenda__item-title,
+html:not(.dark) .ejc-sidebar-agenda__weekdays span,
+html:not(.dark) .ejc-sidebar-agenda__grid button {
+  color: var(--ejc-text) !important;
+}
+
+html:not(.dark) .ejc-sidebar-agenda__nav .icon-btn,
+html:not(.dark) .ejc-sidebar-agenda__compact,
+html:not(.dark) .ejc-sidebar-agenda__dot {
+  color: var(--ejc-text-secondary) !important;
+}
+
+html:not(.dark) .ejc-sidebar-agenda__nav .icon-btn:hover {
+  background: var(--ejc-surface-muted) !important;
+  color: var(--ejc-primary) !important;
+}
+
+html:not(.dark) .ejc-sidebar-agenda__day.is-today,
+html:not(.dark) .ejc-sidebar-agenda__grid .is-today {
+  color: var(--ejc-primary) !important;
+}
+
+html:not(.dark) .ejc-sidebar-agenda__error {
+  color: var(--ejc-danger) !important;
+}
+
 html:not(.dark) .sidebar-group-label {
   padding: 0.25rem 0.75rem 0.375rem;
   font-size: 10px;

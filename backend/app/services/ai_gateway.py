@@ -311,6 +311,11 @@ class GatewayResponse:
     roteamento_score: int | None = None
     # True quando a resposta veio do cache (dedup de requisição idêntica).
     cache_hit: bool = False
+    # Versão PSEUDONIMIZADA da resposta (sem PII real) — é a que deve ser
+    # gravada em AILog/cache/observabilidade. `texto` pode estar REIDRATADO
+    # (marcadores trocados de volta pelos nomes reais) e serve para o USUÁR
+    # ler. Vazio = não houve pseudonimização; nesse caso use `texto`.
+    texto_para_log: str = ""
     # Nº de buscas web (verificação ativa) executadas pelo provedor nesta
     # chamada (0 = tool desligado/não usado). Metadado de auditoria.
     web_search_requests: int = 0
@@ -666,6 +671,7 @@ async def chat(
                     )
                     resp = GatewayResponse(
                         texto=texto,
+                        texto_para_log=texto_para_log or texto,
                         modelo=modelo_real,
                         provedor=provider,
                         task_type=task_type,
@@ -708,8 +714,11 @@ async def chat(
                     )
                     _lf.flush()
                     # Grava no cache apenas respostas bem-sucedidas (TTL curto).
+                    # #40 (paridade com executar_tarefa_ia): o cache é
+                    # armazenamento persistente — recebe a versão PSEUDONIMIZADA
+                    # (texto_para_log), nunca a reidratada com PII real.
                     await ai_cache.gravar(_cache_key, {
-                        "texto": texto, "modelo": modelo_real, "provedor": provider,
+                        "texto": texto_para_log, "modelo": modelo_real, "provedor": provider,
                         "input_tokens": inp, "output_tokens": out,
                         "custo_estimado_brl": custo_brl,
                         "fallback_ativado": fallback_ativado,
