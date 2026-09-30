@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import subprocess
+import urllib.parse
 import urllib.request
 import shutil
 from datetime import datetime, timedelta, timezone
@@ -19,6 +20,18 @@ REQUIRED_CONTAINERS = {
     "ejc_worker",
 }
 RESTORE_MAX_AGE = timedelta(days=9)
+ALLOWED_PROBE_HOSTS = {"127.0.0.1", "ejc.depaulateixeira.adv.br"}
+
+
+def validate_probe_url(url: str) -> str:
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("unsupported probe scheme")
+    if parsed.hostname not in ALLOWED_PROBE_HOSTS:
+        raise ValueError("unsupported probe host")
+    if parsed.username or parsed.password:
+        raise ValueError("credentials are not allowed in probe URL")
+    return url
 
 
 def run(args: list[str], timeout: int = 30) -> tuple[int, str]:
@@ -33,7 +46,8 @@ def run(args: list[str], timeout: int = 30) -> tuple[int, str]:
 
 def get_json(url: str) -> tuple[bool, dict]:
     try:
-        with urllib.request.urlopen(url, timeout=15) as response:
+        safe_url = validate_probe_url(url)
+        with urllib.request.urlopen(safe_url, timeout=15) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             data = json.loads(response.read().decode("utf-8"))
             return response.status == 200, data
     except Exception as exc:
@@ -42,8 +56,9 @@ def get_json(url: str) -> tuple[bool, dict]:
 
 def get_status(url: str) -> tuple[bool, int | None]:
     try:
-        request = urllib.request.Request(url, method="HEAD")
-        with urllib.request.urlopen(request, timeout=15) as response:
+        safe_url = validate_probe_url(url)
+        request = urllib.request.Request(safe_url, method="HEAD")
+        with urllib.request.urlopen(request, timeout=15) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             return response.status == 200, response.status
     except Exception:
         return False, None
