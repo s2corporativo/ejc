@@ -48,6 +48,50 @@ if PATH="$TMP/bin:$PATH" \
   exit 1
 fi
 
+# ── Modo PostgreSQL local via docker exec ───────────────────────────────────
+mkdir -p "$TMP/pgbin"
+cat > "$TMP/pgbin/docker" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  inspect)
+    [ "${2:-}" = "woodpecker-test-db" ]
+    ;;
+  exec)
+    args="$*"
+    if grep -Fq "__GOOD_SHA__" <<<"$args"; then
+      printf '%s\n' '88|654321'
+    fi
+    ;;
+  *)
+    echo "docker inesperado: $*" >&2
+    exit 2
+    ;;
+esac
+EOF
+sed -i "s/__GOOD_SHA__/$GOOD_SHA/g" "$TMP/pgbin/docker"
+chmod 755 "$TMP/pgbin/docker"
+
+cat > "$TMP/woodpecker-pg.env" <<EOF
+WOODPECKER_LOCAL_PG_CONTAINER=woodpecker-test-db
+WOODPECKER_LOCAL_DB=
+WOODPECKER_SERVER_URL=https://ci.example.invalid
+WOODPECKER_TOKEN=TROCAR
+EOF
+chmod 600 "$TMP/woodpecker-pg.env"
+
+PATH="$TMP/pgbin:$PATH" \
+WOODPECKER_HOST_ENV_FILE="$TMP/woodpecker-pg.env" \
+  "$ROOT/woodpecker-approved-sha.sh" s2corporativo/test "$GOOD_SHA" \
+  | grep -q 'APROVADO modo=postgres'
+
+if PATH="$TMP/pgbin:$PATH" \
+   WOODPECKER_HOST_ENV_FILE="$TMP/woodpecker-pg.env" \
+   "$ROOT/woodpecker-approved-sha.sh" s2corporativo/test "$BAD_SHA" >/dev/null 2>&1; then
+  echo "gate PostgreSQL aceitou SHA sem pipeline aprovado" >&2
+  exit 1
+fi
+
 # ── Modo SQLite local read-only ─────────────────────────────────────────────
 python3 - "$TMP/woodpecker.sqlite" "$GOOD_SHA" <<'PY'
 import sqlite3
@@ -147,6 +191,7 @@ chmod 600 "$UPGRADE/etc/woodpecker.env"
 
 EJC_HOST_AUTOMATION_TARGET="$UPGRADE/host" \
 EJC_HOST_AUTOMATION_ENV_DIR="$UPGRADE/etc" \
+WOODPECKER_LOCAL_PG_CONTAINER_DEFAULT=woodpecker-does-not-exist \
 WOODPECKER_LOCAL_DB_DEFAULT="$UPGRADE/woodpecker.sqlite" \
   "$ROOT/install.sh" >/dev/null
 
@@ -163,4 +208,17 @@ grep -Fxq "WOODPECKER_LOCAL_DB=$UPGRADE/woodpecker.sqlite" \
 echo "upgrade de woodpecker.env legado: SQLite local configurado"
 
 
-echo "gate Woodpecker: API e SQLite local aprovam/bloqueiam conforme esperado"
+echo "gate Woodpecker: API, PostgreSQL local e SQLite legado aprovam/bloqueiam conforme esperado"
+
+# Regressao: fetch explicito deve atualizar origin/main, nao apenas FETCH_HEAD.
+for rel in ejc-deploy-approved.sh install-ejc-deploy.sh ../../scripts/deploy_manual.sh; do
+  file="$ROOT/$rel"
+  grep -Fq "refs/heads/main:refs/remotes/origin/main" "$file" || {
+    echo "$rel nao atualiza origin/main explicitamente" >&2
+    exit 1
+  }
+  if grep -Fq "fetch --prune origin main" "$file"; then
+    echo "$rel voltou ao fetch ambiguo" >&2
+    exit 1
+  fi
+done

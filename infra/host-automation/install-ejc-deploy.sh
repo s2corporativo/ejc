@@ -32,18 +32,21 @@ EOF
 [ -f "$APP_DIR/.env" ] || { echo "$APP_DIR/.env ausente" >&2; exit 2; }
 [ "$(stat -c '%u:%a' "$APP_DIR/.env")" = "0:600" ] || { echo "$APP_DIR/.env deve ser root:root 0600" >&2; exit 2; }
 
-git -C "$SOURCE_DIR" fetch --prune origin main
+git -C "$SOURCE_DIR" fetch --prune origin 'refs/heads/main:refs/remotes/origin/main'
 git -C "$SOURCE_DIR" rev-parse --verify origin/main >/dev/null
 
 install -m 755 "$ROOT/ejc-deploy-approved.sh" "$TARGET/ejc-deploy-approved.sh"
 install -m 644 "$ROOT/systemd/ejc-deploy-approved.service" /etc/systemd/system/ejc-deploy-approved.service
 install -m 644 "$ROOT/systemd/ejc-deploy-approved.timer" /etc/systemd/system/ejc-deploy-approved.timer
+install -m 644 "$ROOT/ejc-observability.service" /etc/systemd/system/ejc-observability.service
+install -m 644 "$ROOT/ejc-observability.timer" /etc/systemd/system/ejc-observability.timer
 systemctl daemon-reload
 
 # Primeira prova e deploy sao executados antes de habilitar a agenda. Se o SHA
 # ainda nao estiver verde no Woodpecker, nada fica automatizado pela metade.
 systemctl start ejc-deploy-approved.service
 systemctl enable --now ejc-deploy-approved.timer
+systemctl enable --now ejc-observability.timer
 
 echo "EJC deploy host-level instalado."
 echo "Status: systemctl status ejc-deploy-approved.timer"

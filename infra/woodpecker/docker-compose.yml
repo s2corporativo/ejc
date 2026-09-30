@@ -8,10 +8,31 @@ x-logging: &woodpecker-logging
     max-file: "5"
 
 services:
+  woodpecker-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *woodpecker-logging
+    mem_limit: 768m
+    environment:
+      - POSTGRES_USER=woodpecker
+      - POSTGRES_PASSWORD=${WOODPECKER_DB_PASSWORD:?defina WOODPECKER_DB_PASSWORD no .env}
+      - POSTGRES_DB=woodpecker
+    volumes:
+      - woodpecker-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U woodpecker -d woodpecker"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
   woodpecker-server:
     image: woodpeckerci/woodpecker-server:v3.18.0
     restart: unless-stopped
     logging: *woodpecker-logging
+    depends_on:
+      woodpecker-db:
+        condition: service_healthy
     ports:
       # Só loopback: o Nginx do host faz o TLS e o proxy público.
       - "127.0.0.1:8100:8000"
@@ -25,12 +46,13 @@ services:
       - WOODPECKER_GITHUB=true
       - WOODPECKER_GITHUB_CLIENT=${WOODPECKER_GITHUB_CLIENT:?defina WOODPECKER_GITHUB_CLIENT no .env}
       - WOODPECKER_GITHUB_SECRET=${WOODPECKER_GITHUB_SECRET:?defina WOODPECKER_GITHUB_SECRET no .env}
-      # SQLite é o datastore padrão desta instância. Como o servidor é único e
-      # o agente já executa 1 workflow por vez, serializamos o pool para evitar
-      # concorrência de escrita que pode resultar em "database is locked".
-      # Se o lock reaparecer, a próxima etapa é migração controlada para Postgres.
-      - WOODPECKER_DATABASE_MAX_CONNECTIONS=${WOODPECKER_DATABASE_MAX_CONNECTIONS:-1}
-      - WOODPECKER_DATABASE_IDLE_CONNECTIONS=${WOODPECKER_DATABASE_IDLE_CONNECTIONS:-1}
+      # PostgreSQL remove a contenção de escrita observada no SQLite quando
+      # pipelines e agentes concorrem na mesma VPS. O SQLite antigo permanece
+      # apenas como artefato de rollback, fora do caminho de escrita atual.
+      - WOODPECKER_DATABASE_DRIVER=postgres
+      - WOODPECKER_DATABASE_DATASOURCE=postgres://woodpecker:${WOODPECKER_DB_PASSWORD:?defina WOODPECKER_DB_PASSWORD no .env}@woodpecker-db:5432/woodpecker?sslmode=disable
+      - WOODPECKER_DATABASE_MAX_CONNECTIONS=${WOODPECKER_DATABASE_MAX_CONNECTIONS:-10}
+      - WOODPECKER_DATABASE_IDLE_CONNECTIONS=${WOODPECKER_DATABASE_IDLE_CONNECTIONS:-2}
       # Funções distintas no v3: AGENT_SECRET autentica/registra agentes;
       # GRPC_SECRET assina JWTs das conexões gRPC. Use segredos independentes.
       - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET:?defina WOODPECKER_AGENT_SECRET no .env}
@@ -44,6 +66,15 @@ services:
     image: woodpeckerci/woodpecker-agent:v3.18.0
     restart: unless-stopped
     logging: *woodpecker-logging
+    # A capacidade precisa estar DECLARADA aqui, não numa escala pontual: sem
+    # isto, um `up`/`restart`/reboot recria o stack com UM agente só e a
+    # esteira degrada silenciosamente (medido em 2026-09-29 — os agentes 2 e 3
+    # desapareceram no restart e o check required ficou PENDING sem avançar).
+    # Três agentes porque a Onda 2 do .woodpecker.yml roda cinco jobs
+    # independentes em paralelo; com um só, a onda inteira serializa.
+    # Ver issue #1909. Ajustar junto se a Onda 2 mudar de topologia.
+    deploy:
+      replicas: ${WOODPECKER_AGENT_REPLICAS:-3}
     depends_on:
       - woodpecker-server
     volumes:
@@ -61,5 +92,6 @@ services:
       - WOODPECKER_BACKEND_DOCKER_LIMIT_CPU_SHARES=${WOODPECKER_JOB_CPU_SHARES:-512}
 
 volumes:
+  woodpecker-postgres-data:
   woodpecker-server-data:
   woodpecker-agent-config:

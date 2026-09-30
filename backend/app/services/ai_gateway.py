@@ -311,6 +311,11 @@ class GatewayResponse:
     roteamento_score: int | None = None
     # True quando a resposta veio do cache (dedup de requisição idêntica).
     cache_hit: bool = False
+    # Versão PSEUDONIMIZADA da resposta (sem PII real) — é a que deve ser
+    # gravada em AILog/cache/observabilidade. `texto` pode estar REIDRATADO
+    # (marcadores trocados de volta pelos nomes reais) e serve para o USUÁR
+    # ler. Vazio = não houve pseudonimização; nesse caso use `texto`.
+    texto_para_log: str = ""
     # Nº de buscas web (verificação ativa) executadas pelo provedor nesta
     # chamada (0 = tool desligado/não usado). Metadado de auditoria.
     web_search_requests: int = 0
@@ -539,7 +544,26 @@ async def chat(
 
     if not cadeia:
         # Sem candidato elegível: kill-switch externo ligado e nenhum provider
-        # local disponível. Falha honesta, sem tocar em rede externa.
+        # local disponível, OU escolha explícita (provider_force) inelegível —
+        # fail-closed sem tocar em rede externa. Falha honesta e MEDIDA: o
+        # bloqueio de política é registrado para /ia-governanca/provedores
+        # (antes esta rota aparecia como "0 falhas" — review P2 da #1869).
+        motivo = (
+            f"provider_forcado_inelegivel:{provider_force}"
+            if provider_force in ("groq", "ollama", "anthropic", "maritaca")
+            else "sem_provedor_elegivel"
+        )
+        try:
+            from app.services.ai.provider_metrics_runtime import (
+                registrar_bloqueio_politica,
+            )
+
+            await registrar_bloqueio_politica(task_type=task_type, motivo=motivo)
+        except Exception as e:  # métrica nunca quebra a resposta de erro
+            logger.warning(
+                "[Gateway] falha ao registrar bloqueio de política: %s",
+                descricao_tecnica_segura(e),
+            )
         raise SafeAIError(
             f"Nenhum provedor de IA elegível para task={task_type}.",
             code="no_provider",
@@ -647,6 +671,7 @@ async def chat(
                     )
                     resp = GatewayResponse(
                         texto=texto,
+                        texto_para_log=texto_para_log or texto,
                         modelo=modelo_real,
                         provedor=provider,
                         task_type=task_type,
@@ -689,8 +714,11 @@ async def chat(
                     )
                     _lf.flush()
                     # Grava no cache apenas respostas bem-sucedidas (TTL curto).
+                    # #40 (paridade com executar_tarefa_ia): o cache é
+                    # armazenamento persistente — recebe a versão PSEUDONIMIZADA
+                    # (texto_para_log), nunca a reidratada com PII real.
                     await ai_cache.gravar(_cache_key, {
-                        "texto": texto, "modelo": modelo_real, "provedor": provider,
+                        "texto": texto_para_log, "modelo": modelo_real, "provedor": provider,
                         "input_tokens": inp, "output_tokens": out,
                         "custo_estimado_brl": custo_brl,
                         "fallback_ativado": fallback_ativado,
@@ -890,8 +918,19 @@ def provedores_configurados() -> list[str]:
 
 
 def ia_disponivel() -> bool:
-    """True se a IA está habilitada E há ao menos um provedor configurado."""
-    return bool(settings.AI_ENABLED) and bool(provedores_configurados())
+    """True se a IA está habilitada E há provedor elegível no modo atual.
+
+    Fail-closed (review #1869): com AI_PROVIDER forçando um provider
+    inelegível, nenhuma chamada roda (_resolver_cadeia devolve cadeia vazia);
+    anunciar disponibilidade deixaria a UI ativa para erro garantido e o
+    diagnóstico anunciando um fallback que não existe.
+    """
+    if not bool(settings.AI_ENABLED):
+        return False
+    selecionado = str(getattr(settings, "AI_PROVIDER", "auto") or "auto").strip().lower()
+    if selecionado in ("groq", "ollama", "anthropic", "maritaca"):
+        return _provider_elegivel(selecionado)
+    return bool(provedores_configurados())
 
 
 # ── Helpers internos ──────────────────────────────────────────────────────────
@@ -963,14 +1002,16 @@ def _resolver_cadeia(
     if provider_force in ("groq", "ollama", "anthropic", "maritaca"):
         if _provider_elegivel(provider_force):
             return [(provider_force, _resolver_modelo(provider_force, task_type, model_override))]
-        # Provider forçado inelegível (sem chave/desabilitado/policy): não
-        # falhar duro — loga e cai no roteamento automático, preservando o
-        # comportamento das EJC skills com engine fixo.
+        # Escolha explícita não autoriza trocar de destino. Além de contrariar
+        # a AIProviderPolicy, o fallback podia enviar uma chamada local-only
+        # (provider_force="ollama") a um externo quando Ollama era inelegível.
+        # A cadeia vazia segue o erro seguro já tratado pelos chamadores.
         logger.warning(
             "[Gateway] provider '%s' forçado mas inelegível "
-            "(chave/enable/policy); usando cadeia automática.",
+            "(chave/enable/policy); chamada bloqueada sem fallback.",
             provider_force,
         )
+        return []
 
     base = TASK_ROUTING.get(task_type, TASK_ROUTING["analise_juridica"])
     candidatos = _ordenar_por_prioridade([p for p, _ in base])

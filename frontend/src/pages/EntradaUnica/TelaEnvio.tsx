@@ -11,12 +11,12 @@ import {
   FileText,
   Loader2,
   Paperclip,
-  Sparkles,
   Upload,
   X,
 } from "lucide-react";
 import { Button, Card, Textarea, cn } from "../../components/UI";
 import { toast } from "../../components/Toast";
+import { IdentidadeAssistente } from "./IdentidadeAssistente";
 import type { EntradaMeta } from "./types";
 
 export const MINIMO_RELATO = 40;
@@ -94,7 +94,7 @@ export function TelaInicial({
           }}
           className={cn("ejc-entry-pill", arrastando && "is-drag")}
         >
-          <Sparkles className="ejc-entry-pill__spark" aria-hidden="true" />
+          <IdentidadeAssistente className="ejc-entry-pill__spark" />
           <textarea
             ref={pillRef}
             className="ejc-entry-pill__input"
@@ -163,6 +163,12 @@ export function TelaInicial({
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
+      <div className="ejc-entry-identity">
+        <IdentidadeAssistente className="ejc-entry-identity__mark" />
+        <span className="ejc-entry-identity__text">
+          Relate o caso ou anexe os documentos
+        </span>
+      </div>
       <Textarea
         value={texto}
         onChange={(e) => onTexto(e.target.value)}

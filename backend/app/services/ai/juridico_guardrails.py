@@ -97,9 +97,15 @@ _AVISO_CORRECAO_MERITO = (
 
 
 def ja_corrigido(texto: str | None) -> bool:
-    """True se `texto` já contém o marcador deste guardrail — ou seja, já foi
-    processado por `aplicar_guardrail_merito` antes. Usado para tornar a
-    reaplicação em leitura (GET /ai/logs) idempotente."""
+    """True se `texto` contém o marcador deste guardrail.
+
+    NÃO use isto como decisão de segurança: o marcador é uma string que a saída
+    do modelo reproduz quando induzida, e foi exatamente essa confiança que
+    desligava o guardrail por inteiro (ver `aplicar_guardrail_merito`). Fica
+    como predicado de apresentação/diagnóstico — `aplicar_guardrail_merito`
+    não o consulta, porque separa o aviso canônico do texto em vez de confiar
+    no texto.
+    """
     return bool(texto) and MARCADOR_CORRECAO_MERITO in texto
 
 _PRESCRICAO_DECADENCIA = r"(?:prescri(?:[cç][ãa]o|cional)|decad[êe]ncial?)"
@@ -213,17 +219,52 @@ def aplicar_guardrail_merito(texto: str) -> tuple[str, bool]:
     nunca é silenciosa.
 
     Idempotente (achado de review, Codex, PR #703, P1): se `texto` já contém
-    o marcador deste guardrail (`ja_corrigido`), retorna sem tocar — evita que
-    releituras (GET /ai/logs) encontrem as palavras-gatilho DENTRO do próprio
-    aviso anexado numa correção anterior e o reescrevam de novo.
+    o aviso deste guardrail, retorna sem tocar — evita que releituras
+    (GET /ai/logs) encontrem as palavras-gatilho DENTRO do próprio aviso anexado
+    numa correção anterior e o reescrevam de novo.
+
+    A idempotência NÃO pode depender de confiar no texto de entrada (achado de
+    review, codex-connector, PR #1906, P1): a implementação anterior testava
+    `MARCADOR_CORRECAO_MERITO in texto` e, se estivesse presente, pulava TUDO.
+    Esse marcador é uma string curta que a própria saída do modelo reproduz
+    quando o texto foi induzido por conteúdo externo (documento, RAG), e aí o
+    guardrail — a última linha determinística de correção do art. 487, II — era
+    desligado por inteiro. Reproduzido antes da correção: com o marcador
+    injetado, `aplicar_guardrail_merito` devolvia `(texto, False)` e a
+    qualificação errada sobrevivia intacta.
+
+    A idempotência agora é ESTRUTURAL e não fiduciária: TODAS as ocorrências
+    do aviso canônico são REMOVIDAS do texto antes da análise e UM aviso é
+    reanexado no fim, de modo que (a) o aviso nunca é analisado, (b) o texto
+    do modelo é SEMPRE analisado — inteiro, de qualquer posição — e um
+    marcador forjado deixa de ser motivo para nada. Um marcador isolado
+    injetado pelo modelo é inerte: não contém palavra-gatilho, permanece no
+    texto como parte da saída e é o que o revisor humano vê.
+
+    Remoção por `replace` (e não por fatiar o `split()`, achado de review do
+    codex-connector, P1): juntar só os índices pares do split descartava
+    texto real que viesse DEPOIS de um aviso reproduzido — "aviso + texto
+    errado" burlava a correção, e correção disparada no 1º segmento apagava
+    silenciosamente tudo que vinha depois do aviso injetado.
 
     Retorna (texto_final, foi_corrigido).
     """
     if not texto:
         return texto, False
-    if ja_corrigido(texto):
-        return texto, False
-    novo = texto
+    # Remove TODAS as ocorrências do nosso aviso do texto do modelo, de
+    # qualquer posição — o que sobra é o corpo a analisar, completo. Reaplicar
+    # não duplica aviso: o corpo é devolvido com exatamente UM aviso no fim.
+    havia_aviso = _AVISO_CORRECAO_MERITO in texto
+    corpo = texto.replace(_AVISO_CORRECAO_MERITO, "")
+    # O aviso canônico já foi separado acima, então qualquer marcador que ainda
+    # sobrar no corpo é, por construção, um marcador BARE reproduzido pelo
+    # modelo (indução por documento/RAG). Ele não tem função legítima: o único
+    # uso real do marcador é dentro do aviso que nós mesmos anexamos. Removê-lo
+    # evita que o revisor encontre dois marcadores e que a injeção finja, aos
+    # olhos de quem lê, que a correção já foi feita.
+    if MARCADOR_CORRECAO_MERITO in corpo:
+        corpo = corpo.replace(MARCADOR_CORRECAO_MERITO, "")
+    novo = corpo
     total = 0
     novo, n = _substituir_no_match(novo, _RE_CLAUSULA_ANTES, _SUBSTITUICAO_CLAUSULA)
     total += n
@@ -234,7 +275,17 @@ def aplicar_guardrail_merito(texto: str) -> tuple[str, bool]:
     novo, n = _substituir_no_match(novo, _RE_ART485_DEPOIS, _SUBSTITUICAO_ART485)
     total += n
     if total == 0:
-        return texto, False
+        if not havia_aviso:
+            # Texto limpo e sem gatilho: no-op puro, sem tocar no que o
+            # revisor já aprovou.
+            return texto, False
+        # Havia aviso (releitura legítima ou injetado em posição estranha) e
+        # nada a corrigir: devolve o corpo com UM aviso canônico no fim. Para
+        # a releitura legítima (corpo + aviso) a saída é idêntica à entrada;
+        # para injeção em posição estranha, normaliza sem fingir correção.
+        return corpo + _AVISO_CORRECAO_MERITO, False
+    # Reaplica a partir do corpo corrigido e anexa UM aviso (HITL nunca é
+    # silencioso, e nunca duplicado).
     return novo + _AVISO_CORRECAO_MERITO, True
 
 

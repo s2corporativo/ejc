@@ -1,7 +1,8 @@
 // ── Navegação canônica do modo caso (Fase 1 do plano de simplificação) ───────
-// Fonte ÚNICA dos cinco destinos do caso: a barra persistente
-// (CaseContextBar), a página do caso (CasoDetalhe/GROUPS) e o dock de ações
-// (CaseCommandDock) derivam TODOS desta lista — os rótulos não podem divergir.
+// Fonte dos cinco agrupadores internos do workspace do caso: a página
+// (CasoDetalhe/GROUPS) e o dock de ações (CaseCommandDock) derivam desta lista.
+// A CaseContextBar usa o fluxo operacional de sete etapas do cockpit e aponta
+// para abas pertencentes a estes agrupadores.
 // As abas (?tab=...) continuam sendo a unidade de deep-link; cada seção apenas
 // agrupa abas existentes. Nenhuma aba é removida — só reagrupada.
 import {

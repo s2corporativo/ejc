@@ -64,7 +64,7 @@ class ScopeContract(unittest.TestCase):
 
     def test_frontend_only_does_not_start_backend_tests(self):
         gates = selected(self.workflow, "pull_request", "main", ["frontend/src/pages/Page.tsx"])
-        self.assertEqual(gates, {"frontend", "ops-contracts", "deploy-validation",
+        self.assertEqual(gates, {"frontend", "frontend-e2e", "ops-contracts", "deploy-validation",
                                  "security-sast", "security-secrets"})
 
     def test_backend_test_only_does_not_start_frontend_tests(self):

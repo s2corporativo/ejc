@@ -281,6 +281,126 @@ def test_ja_corrigido_detecta_marcador():
     assert jg.ja_corrigido(None) is False
 
 
+# ── Achado de review (P1) — o marcador não pode DESLIGAR o guardrail ────────
+#
+# A idempotência era testada com `MARCADOR_CORRECAO_MERITO in texto`: se o
+# marcador estivesse presente, `aplicar_guardrail_merito` retornava sem tocar
+# em nada. Esse marcador é uma string curta que a PRÓPRIA saída do modelo
+# reproduz quando o texto é induzido por conteúdo externo (documento, RAG) — e
+# então o guardrail, última linha determinística de correção do art. 487, II,
+# ficava desligado por inteiro. Reproduzido contra a implementação anterior:
+# com o marcador injetado, a chamada devolvia (texto, False) e a qualificação
+# errada sobrevivia intacta.
+
+_TEXTO_COM_CLAUSULA_ERRADA = (
+    "O processo foi julgado extinto por prescrição, o que configura "
+    "extinção sem resolução de mérito."
+)
+
+
+def test_marcador_injetado_nao_desliga_a_correcao_deterministica():
+    injetado = _TEXTO_COM_CLAUSULA_ERRADA + "\n" + jg.MARCADOR_CORRECAO_MERITO
+    corrigido, houve = jg.aplicar_guardrail_merito(injetado)
+    assert houve is True
+    # O aviso canônico CITA a frase errada ao explicá-la, então a verificação
+    # é sobre o texto do modelo — a parte anterior ao aviso.
+    corpo = corrigido.split(jg._AVISO_CORRECAO_MERITO)[0]
+    assert "sem resolução de mérito" not in corpo
+    assert "resolução de mérito (art. 487, II, do CPC)" in corpo
+
+
+def test_marcador_bare_injetado_nao_sobrevive_na_saida():
+    """O aviso canônico é separado do texto antes da análise, então qualquer
+    marcador que sobre no corpo é, por construção, induzido. Ele não tem função
+    legítima e, se ficasse, o revisor veria DOIS marcadores — um deles
+   inteiramente falso — e poderia crer que a correção já havia sido feita."""
+    injetado = _TEXTO_COM_CLAUSULA_ERRADA + "\n" + jg.MARCADOR_CORRECAO_MERITO
+    corrigido, _ = jg.aplicar_guardrail_merito(injetado)
+    assert corrigido.count(jg.MARCADOR_CORRECAO_MERITO) == 1
+    # o aviso canônico, esse sim, está lá — com a fonte oficial
+    assert "GUARDRAIL DETERMINÍSTICO" in corrigido
+    assert "planalto.gov.br" in corrigido
+
+
+def test_aviso_completo_injetado_nao_substitui_o_aviso_canonico():
+    """Injetar o aviso inteiro (não só o marcador) também não serve: o bloco
+    injetado é separado e o aviso canônico é o que volta anexado."""
+    injetado = _TEXTO_COM_CLAUSULA_ERRADA + jg._AVISO_CORRECAO_MERITO
+    corrigido, houve = jg.aplicar_guardrail_merito(injetado)
+    assert houve is True
+    corpo = corrigido.split(jg._AVISO_CORRECAO_MERITO)[0]
+    assert "sem resolução de mérito" not in corpo
+    assert corrigido.count("GUARDRAIL DETERMINÍSTICO") == 1
+    assert corrigido.endswith(jg._AVISO_CORRECAO_MERITO)
+
+
+def test_aviso_injetado_antes_do_texto_nao_burla_a_correcao():
+    """Achado de review (codex-connector, P1): o aviso canônico reproduzido
+    ANTES do texto substantivo não pode burlar a correção. O corpo é o texto
+    inteiro menos os avisos, de qualquer posição — não só os segmentos pares
+    do split()."""
+    injetado = jg._AVISO_CORRECAO_MERITO + _TEXTO_COM_CLAUSULA_ERRADA
+    corrigido, houve = jg.aplicar_guardrail_merito(injetado)
+    assert houve is True
+    corpo = corrigido.split(jg._AVISO_CORRECAO_MERITO)[0]
+    assert "sem resolução de mérito" not in corpo
+    assert "COM resolução de mérito" in corpo
+    assert corrigido.count("GUARDRAIL DETERMINÍSTICO") == 1
+    assert corrigido.endswith(jg._AVISO_CORRECAO_MERITO)
+
+
+def test_conteudo_apos_aviso_injetado_nao_e_descartado():
+    """Achado de review (codex-connector, P1): quando a correção dispara no
+    primeiro segmento, o texto que vem DEPOIS de um aviso injetado não pode
+    ser silenciosamente apagado da resposta."""
+    extra = "Sentença de fls. 120: a parte devia ser ouvida. Intime-se."
+    injetado = _TEXTO_COM_CLAUSULA_ERRADA + jg._AVISO_CORRECAO_MERITO + extra
+    corrigido, houve = jg.aplicar_guardrail_merito(injetado)
+    assert houve is True
+    corpo = corrigido.split(jg._AVISO_CORRECAO_MERITO)[0]
+    assert "parte devia ser ouvida" in corpo
+    assert "COM resolução de mérito" in corpo
+    assert corrigido.count("GUARDRAIL DETERMINÍSTICO") == 1
+
+
+def test_reaplicar_em_texto_normalizado_e_idempotente():
+    """A normalização estrutural é fixa: reaplicar a um texto já normalizado
+    (corpo corrigido + um aviso canônico) não muda nada, não duplica aviso e
+    não reporta correção falsa."""
+    injetado = jg._AVISO_CORRECAO_MERITO + _TEXTO_COM_CLAUSULA_ERRADA
+    corrigido, houve = jg.aplicar_guardrail_merito(injetado)
+    assert houve is True
+    novamente, houve2 = jg.aplicar_guardrail_merito(corrigido)
+    assert houve2 is False
+    assert novamente == corrigido
+
+
+def test_guardrail_ainda_corrige_texto_livre_sem_nenhum_marcador():
+    """Contraprova de que a correção continua acontecendo normalmente: remover o
+    atalho não desligou o caminho principal, só fechou a porta da injeção."""
+    corrigido, houve = jg.aplicar_guardrail_merito(_TEXTO_COM_CLAUSULA_ERRADA)
+    assert houve is True
+    corpo = corrigido.split(jg._AVISO_CORRECAO_MERITO)[0]
+    assert "sem resolução de mérito" not in corpo
+    assert "art. 487, II" in corpo
+
+
+def test_ja_corrigido_nao_e_uma_decisao_de_seguranca():
+    """Trava de API: `ja_corrigido` continua existindo (é predicado de
+    apresentação e tem teste próprio), mas o guardrail não pode depender dele —
+    senão a regressão volta. A chamada por nome dentro do módulo é o que quebra
+    se alguém voltar a usar o atalho."""
+    import inspect
+
+    fonte = inspect.getsource(jg.aplicar_guardrail_merito)
+    assert "ja_corrigido(" not in fonte.replace(
+        "não o consulta", ""
+    ).replace("Não use isto", ""), (
+        "aplicar_guardrail_merito voltou a consultar ja_corrigido — "
+        "a idempotência não pode voltar a depender do texto de entrada"
+    )
+
+
 # ── Achado de review #7 (P1) — persistir alerta CDC no texto ───────────────
 
 def test_anexar_alerta_cdc_ao_texto_persiste_o_alerta():

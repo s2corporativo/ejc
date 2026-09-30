@@ -25,7 +25,7 @@
 #
 # Classificação dos testes (ver RUNBOOK_CI_CD_WOODPECKER.md):
 # - OBRIGATÓRIOS (bloqueiam): security-secrets, ops-contracts, deploy-validation,
-#   lint, backend-tests, frontend, migration-check, agents-contracts,
+#   lint, backend-tests, frontend, frontend-e2e, migration-check, agents-contracts,
 #   security-sast, security-vulnerabilities;
 # - NÃO BLOQUEANTES (baseline pendente de saneamento): security-misconfig-audit;
 # - PESADOS (escopados por diff, sempre na main/manual): backend-tests (pytest
@@ -272,6 +272,37 @@ steps:
             - '.woodpecker.yml'
           on_empty: false
 
+  # Browser gate obrigatório: Chromium real contra o build do frontend.
+  # Não usa credenciais nem dados reais; mocka apenas refresh não autenticado.
+  frontend-e2e:
+    image: mcr.microsoft.com/playwright:v1.63.0-noble
+    depends_on: [frontend]
+    volumes:
+      - ejc-ci-npm-cache:/root/.npm
+    commands:
+      - cd frontend
+      - npm ci --include=dev --prefer-offline
+      - npm run build
+      - npm run preview -- --host 0.0.0.0 --port 4173 >/tmp/ejc-vite-preview.log 2>&1 &
+      - |
+        for i in $(seq 1 30); do
+          node -e "fetch('http://127.0.0.1:4173/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" && break
+          sleep 1
+        done
+      - node -e "fetch('http://127.0.0.1:4173/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      - EJC_BASE_URL=http://127.0.0.1:4173 npm run test:e2e:ci
+    when:
+      - event: push
+        branch: main
+      - event: manual
+      - *critical_change
+      - path:
+          include:
+            - 'frontend/**'
+            - 'qa/**'
+            - '.woodpecker.yml'
+          on_empty: false
+
   # Gate estrutural de migrations SEM banco: head único, sem órfãos, sem
   # duplicatas, sem ciclos + classificador expand-only executado de verdade
   # (antes era apenas py_compile). O upgrade real contra PostgreSQL permanece
@@ -349,12 +380,15 @@ steps:
   security-misconfig-audit:
     image: aquasec/trivy:0.74.0
     depends_on: [security-vulnerabilities]
+    # Esta auditoria é baseline informativa: um erro do scanner não pode
+    # bloquear a esteira até a promoção explícita prevista no runbook.
+    failure: ignore
     volumes:
       - ejc-ci-trivy-cache:/root/.cache/trivy
     commands:
-      # Auditoria inicialmente não bloqueante: há findings legados conhecidos.
-      # Promover para exit-code 1 somente após saneamento/baseline explícito.
-      - trivy fs --scanners misconfig --severity HIGH,CRITICAL --exit-code 0 .
+      # Não percorre artefatos MUTÁVEIS gerados em paralelo pelos jobs de
+      # frontend/backend; isso evita ENOENT durante npm ci/vite/pytest.
+      - trivy fs --scanners misconfig --severity HIGH,CRITICAL --exit-code 0 --skip-dirs frontend/node_modules --skip-dirs frontend/dist --skip-dirs backend/.pytest_cache .
     when:
       - event: push
         branch: main

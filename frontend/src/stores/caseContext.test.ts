@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import api from "../lib/api";
-import { useCaseContext } from "./caseContext";
+import { getUltimoCasoId, useCaseContext } from "./caseContext";
 
 vi.mock("../lib/api", () => ({
   default: {
@@ -12,6 +12,7 @@ vi.mock("../lib/api", () => ({
 describe("caseContext — próxima ação persistente", () => {
   beforeEach(() => {
     sessionStorage.clear();
+    localStorage.clear();
     useCaseContext.setState({ caso: null });
     vi.clearAllMocks();
   });
@@ -45,5 +46,19 @@ describe("caseContext — próxima ação persistente", () => {
     const salvo = JSON.parse(sessionStorage.getItem("ejc_caso_ativo") || "{}");
     expect(salvo.proxima_acao).toBe("Protocolar manifestação");
     expect(salvo.proxima_acao_prazo).toBe("2026-09-05T12:00:00-03:00");
+    expect(getUltimoCasoId()).toBe("caso-1");
+  });
+
+  it("mantém o último caso mesmo após sair do modo caso", async () => {
+    vi.mocked(api.get).mockResolvedValue({
+      data: { id: "caso-2", titulo: "Caso persistente" },
+    } as never);
+
+    await useCaseContext.getState().ativar("caso-2");
+    useCaseContext.getState().sair();
+
+    expect(useCaseContext.getState().caso).toBeNull();
+    expect(sessionStorage.getItem("ejc_caso_ativo")).toBeNull();
+    expect(getUltimoCasoId()).toBe("caso-2");
   });
 });

@@ -134,6 +134,7 @@ ADICOES_INTENCIONAIS = {
     ("/api/dpt360/diagnostics/readiness/{client_id}", "GET"),
     ("/api/dpt360/radar/today", "GET"),
     ("/api/dpt360/reports/executive/{client_id}", "GET"),
+    ("/api/dpt360/reports/executive/{client_id}/prepare-share", "POST"),
     ("/api/dpt360/intake/opportunities", "GET"),
     ("/api/dpt360/intake/opportunities", "POST"),
     ("/api/dpt360/actions", "POST"),
