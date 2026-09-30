@@ -777,7 +777,17 @@ async def listar_comissoes(
         and r["paid_at"].year == hoje.year
         and r["paid_at"].month == hoje.month
     ), Decimal("0")))
-    escritorio = _money(sum((Decimal(str(r["valor_escritorio"] or 0)) for r in all_rows), Decimal("0")))
+    escritorio_total = (
+        await db.execute(
+            text(
+                """
+                SELECT COALESCE(SUM(valor_escritorio), 0)
+                FROM case_receipt_allocations
+                """
+            )
+        )
+    ).scalar()
+    escritorio = _money(escritorio_total)
     return {
         "data": data,
         "resumo": {
