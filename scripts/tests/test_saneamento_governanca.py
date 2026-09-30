@@ -15,6 +15,8 @@ require('rm -f -- "$APP_DIR/.deploy_last_sha"' in approved, "compatibilidade nã
 wood=(ROOT/".woodpecker.yml").read_text()
 require("graphify-guard:" in wood, "CI sem gate Graphify")
 require("scripts/ci_graphify_guard.sh" in wood, "CI não executa wrapper Graphify")
+graph_guard=(ROOT/"scripts/ci_graphify_guard.sh").read_text()
+require("CI_PREV_COMMIT_SHA" in graph_guard, "Graphify push/main não usa commit anterior nativo do Woodpecker")
 
 for rel in (
     "infra/host-automation/ejc-weekly-saneamento.sh",

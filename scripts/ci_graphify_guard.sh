@@ -10,7 +10,11 @@ command -v git >/dev/null 2>&1 || {
 }
 git fetch --quiet origin "refs/heads/$TARGET:refs/remotes/origin/$TARGET"
 BASE="origin/$TARGET"
-if [ -n "${CI_COMMIT_BEFORE:-}" ] && git cat-file -e "${CI_COMMIT_BEFORE}^{commit}" 2>/dev/null; then
+# Woodpecker expõe o commit anterior de forma nativa; em push/main isso evita
+# comparar HEAD com a própria origin/main já atualizada e perder deleções.
+if [ -n "${CI_PREV_COMMIT_SHA:-}" ] && git cat-file -e "${CI_PREV_COMMIT_SHA}^{commit}" 2>/dev/null; then
+  BASE="$CI_PREV_COMMIT_SHA"
+elif [ -n "${CI_COMMIT_BEFORE:-}" ] && git cat-file -e "${CI_COMMIT_BEFORE}^{commit}" 2>/dev/null; then
   BASE="$CI_COMMIT_BEFORE"
 fi
 
