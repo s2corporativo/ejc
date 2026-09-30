@@ -16,8 +16,6 @@ import ErrorBoundary from "../components/ErrorBoundary";
 import { PageHeader, Spinner } from "../components/UI";
 import { useAuth } from "../stores/auth";
 
-// Code-splitting por aba (auditoria §2.6 #4): as páginas do workspace são
-// carregadas sob demanda — uma aba renderiza por vez.
 const FinanceiroDashboard = lazy(() => import("./FinanceiroDashboard"));
 const Honorarios = lazy(() => import("./Honorarios"));
 const NotasFiscais = lazy(() => import("./NotasFiscais"));
@@ -27,15 +25,17 @@ const OfficeContracts = lazy(() => import("./OfficeContracts"));
 
 const TABS = [
   { k: "visao", label: "Visão geral", icon: BarChart3 },
-  { k: "honorarios", label: "Recebimentos", icon: Wallet },
-  { k: "despesas", label: "Despesas", icon: TrendingDown },
-  { k: "nfse", label: "Notas fiscais (NFS-e)", icon: Receipt },
-  { k: "contratos", label: "Contratos do escritório", icon: FileText },
-  { k: "recorrentes", label: "Despesas recorrentes", icon: MoreHorizontal },
-  // Deep-links históricos: não aparecem mais no menu Financeiro.
+  { k: "honorarios", label: "Receber", icon: Wallet },
+  { k: "despesas", label: "Pagar", icon: TrendingDown },
+  { k: "nfse", label: "NFS-e", icon: Receipt },
+  { k: "contratos", label: "Contratos", icon: FileText },
+  { k: "recorrentes", label: "Recorrentes", icon: MoreHorizontal },
+  // Deep-links históricos preservados, sem ocupar o menu principal.
   { k: "societaria", label: "Sociedade", icon: Building2 },
   { k: "estimador", label: "Estimador de honorários", icon: Calculator },
 ] as const;
+
+export type FinanceTab = (typeof TABS)[number]["k"];
 
 const PRINCIPAIS: ReadonlySet<FinanceTab> = new Set([
   "visao",
@@ -44,8 +44,6 @@ const PRINCIPAIS: ReadonlySet<FinanceTab> = new Set([
 ]);
 const MAIS: ReadonlyArray<FinanceTab> = ["nfse", "contratos", "recorrentes"];
 const SOCIEDADE_ROLES = new Set(["superadmin", "admin", "socio"]);
-
-export type FinanceTab = (typeof TABS)[number]["k"];
 
 export const isFinanceTab = (value: string | null): value is FinanceTab =>
   TABS.some((tab) => tab.k === value);
@@ -94,6 +92,7 @@ export default function FinanceiroWorkspace() {
       : "/gestao-escritorio/sociedade";
     return <Navigate to={destino} replace />;
   }
+
   if (tabSolicitada === "estimador") {
     return <Navigate to="/inteligencia?tab=honorarios" replace />;
   }
@@ -124,20 +123,20 @@ export default function FinanceiroWorkspace() {
   return (
     <div className="executive-workspace space-y-5">
       <PageHeader
-        eyebrow="Gestão financeira"
+        eyebrow="Financeiro"
         title="Financeiro"
-        subtitle="Receber, pagar e acompanhar o caixa do escritório em um único fluxo operacional."
+        subtitle="Caixa, recebimentos e pagamentos em um só lugar."
         actions={
           mostraCompetencia ? (
             <label className="input flex w-auto items-center gap-2 py-1.5">
-              <Calendar className="w-4 h-4 text-slate-400" />
-              <span className="text-xs font-medium text-slate-500">
-                Competência
+              <Calendar className="h-4 w-4 text-slate-400" />
+              <span className="hidden text-xs font-medium text-slate-500 sm:inline">
+                Mês
               </span>
               <input
                 type="month"
                 aria-label="Competência financeira"
-                className="text-sm text-slate-700 outline-none bg-transparent"
+                className="bg-transparent text-sm text-slate-700 outline-none dark:text-slate-200"
                 value={competencia}
                 onChange={(e) => setCompetencia(e.target.value)}
               />
@@ -146,19 +145,21 @@ export default function FinanceiroWorkspace() {
         }
       />
 
-      <div className="flex items-center gap-2 overflow-visible">
-        <div className="flex w-fit gap-1 rounded-xl bg-slate-900/[0.05] p-1 dark:bg-white/[0.07]">
+      <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto rounded-xl bg-slate-900/[0.04] p-1 dark:bg-white/[0.06] sm:flex-none">
           {principais.map(({ k, label, icon: Icon }) => (
             <button
               key={k}
+              type="button"
               onClick={() => setTab(k)}
-              className={`flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg px-4 text-sm font-medium transition-all ${
+              className={`flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg px-3.5 text-sm font-medium transition-all ${
                 tab === k
-                  ? "bg-primary-600 text-white shadow-sm shadow-primary-600/20"
-                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                  ? "bg-primary-600 text-white shadow-sm"
+                  : "text-slate-500 hover:bg-white hover:text-slate-800 dark:text-slate-400 dark:hover:bg-white/[0.08] dark:hover:text-slate-100"
               }`}
             >
-              <Icon size={14} /> {label}
+              <Icon size={14} />
+              {label}
             </button>
           ))}
         </div>
@@ -169,22 +170,27 @@ export default function FinanceiroWorkspace() {
             onClick={() => setMaisAberto((v) => !v)}
             className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-all ${
               MAIS.includes(tab)
-                ? "bg-slate-800 text-white"
-                : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                ? "bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900"
+                : "text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-white/[0.08] dark:hover:text-slate-100"
             }`}
             aria-expanded={maisAberto}
+            aria-label="Mais opções financeiras"
           >
-            Mais <ChevronDown size={14} />
+            Mais
+            <ChevronDown size={14} />
           </button>
+
           {maisAberto && (
-            <div className="absolute left-0 top-11 z-30 min-w-64 rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+            <div className="absolute right-0 top-11 z-30 min-w-52 rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-700 dark:bg-slate-900">
               {extras.map(({ k, label, icon: Icon }) => (
                 <button
                   key={k}
+                  type="button"
                   onClick={() => setTab(k)}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/[0.06]"
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/[0.06] dark:hover:text-white"
                 >
-                  <Icon size={15} /> {label}
+                  <Icon size={15} />
+                  {label}
                 </button>
               ))}
             </div>
