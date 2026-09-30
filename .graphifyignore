@@ -1,0 +1,19 @@
+# Reduz ruído histórico/artefatos no mapa sem esconder código executável.
+# Sintaxe: igual ao .gitignore. O .gitignore também é respeitado pelo Graphify.
+
+# Relatórios e evidências históricas arquivadas — úteis para auditoria humana,
+# mas poluíam queries semânticas e comunidades do grafo.
+docs/arquivo/
+qa/arquivo/
+RELATORIO_*.md
+
+# Inventários derivados/artefatos de auditoria; regeneráveis.
+docs/audit/inventory/
+
+# Lockfiles não representam arquitetura executável e geram volume sem ganho.
+frontend/package-lock.json
+frontend/pnpm-lock.yaml
+
+# O próprio índice nunca deve indexar a si mesmo.
+graphify-out/
+backend/graphify-out/
