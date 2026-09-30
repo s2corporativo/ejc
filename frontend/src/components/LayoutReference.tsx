@@ -9,6 +9,7 @@ import {
   Mail,
   Menu,
   MessageCircle,
+  List,
   Moon,
   Search,
   Sun,
@@ -21,7 +22,9 @@ import ErrorBoundary from "./ErrorBoundary";
 import HelpButton from "./HelpButton";
 import IaStatusBanner from "./IaStatusBanner";
 import ModuleLifecycleGate from "./ModuleLifecycleGate";
+import NovoCasoWizard from "./NovoCasoWizard";
 import OnboardingTour from "./OnboardingTour";
+import RecentCasesNav from "./RecentCasesNav";
 import SecurityMenu from "./SecurityMenu";
 import { toast } from "./Toast";
 import { Tooltip, cn } from "./UI";
@@ -68,6 +71,22 @@ function formatClock(date: Date) {
   };
 }
 
+function notificationActionLabel(notification: any): string {
+  const texto = `${notification?.titulo || ""} ${notification?.mensagem || ""}`.toLowerCase();
+  const link = String(notification?.link || "").toLowerCase();
+  if (texto.includes("prazo") || link.includes("tipo=prazo")) return "Ver prazo";
+  if (texto.includes("revis") || texto.includes("peça") || link.includes("/pecas"))
+    return "Revisar";
+  if (
+    texto.includes("pagamento") ||
+    texto.includes("honor") ||
+    texto.includes("finance")
+  )
+    return "Abrir financeiro";
+  if (link.includes("/casos/")) return "Abrir caso";
+  return notification?.link ? "Abrir" : "Ver detalhes";
+}
+
 /**
  * AppShell canônico do EJC.
  *
@@ -94,9 +113,13 @@ export default function LayoutReference() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [caseFocusExpanded, setCaseFocusExpanded] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [novoCasoOpen, setNovoCasoOpen] = useState(false);
   const [notifCount, setNotifCount] = useState(0);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [now, setNow] = useState(() => new Date());
+  const [compactMode, setCompactMode] = useState(
+    () => localStorage.getItem("ejc_density") === "compact",
+  );
   const [privacyMode, setPrivacyMode] = useState(
     () => localStorage.getItem("ejc_privacy_mode") === "true",
   );
@@ -112,6 +135,12 @@ export default function LayoutReference() {
     if (privacyMode) setNotifOpen(false);
     return () => document.documentElement.classList.remove("ejc-privacy-mode");
   }, [privacyMode]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("ejc-density-compact", compactMode);
+    localStorage.setItem("ejc_density", compactMode ? "compact" : "comfortable");
+    return () => document.documentElement.classList.remove("ejc-density-compact");
+  }, [compactMode]);
 
   useEffect(() => {
     const loadNotifications = () => {
@@ -178,6 +207,22 @@ export default function LayoutReference() {
   const clock = formatClock(now);
   const whatsappUrl = getWhatsAppUrl();
   const mailtoUrl = getMailtoUrl();
+  const canCreateCase = new Set([
+    "superadmin",
+    "admin",
+    "socio",
+    "advogado",
+    "advogado_auxiliar",
+    "estagiario",
+    "secretaria",
+  ]).has(user?.role || "");
+  const canUseLegalHeader = new Set([
+    "superadmin",
+    "admin",
+    "socio",
+    "advogado",
+    "advogado_auxiliar",
+  ]).has(user?.role || "");
 
   const renderNavItem = (item: ModuleRoute) => {
     const Icon = item.icon;
@@ -271,6 +316,25 @@ export default function LayoutReference() {
             </button>
           </div>
 
+          <div className="ejc-header-primary-actions">
+            {canCreateCase && (
+              <button
+                type="button"
+                onClick={() => setNovoCasoOpen(true)}
+                className="ejc-header-action is-primary"
+              >
+                <span className="ejc-header-action-plus" aria-hidden="true">+</span>
+                <span>Novo Caso</span>
+              </button>
+            )}
+            {canUseLegalHeader && (
+              <Link to="/entrada" className="ejc-header-action is-ai">
+                <Bot className="h-4 w-4" aria-hidden="true" />
+                <span>Entrada por IA</span>
+              </Link>
+            )}
+          </div>
+
           <div
             className="ejc-header-clock"
             aria-label={`${clock.dateText}, ${clock.subtext}`}
@@ -297,6 +361,20 @@ export default function LayoutReference() {
             ) : (
               <Moon className="h-4 w-4" aria-hidden="true" />
             )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setCompactMode((value) => !value)}
+            className={cn(
+              "icon-btn hidden sm:flex",
+              compactMode && "bg-primary-50 text-primary-700",
+            )}
+            title={compactMode ? "Usar densidade confortável" : "Usar modo compacto"}
+            aria-label={compactMode ? "Usar densidade confortável" : "Usar modo compacto"}
+            aria-pressed={compactMode}
+          >
+            <List className="h-4 w-4" />
           </button>
 
           <button
@@ -393,6 +471,9 @@ export default function LayoutReference() {
                         <div className="mt-1 line-clamp-2 text-xs text-slate-500">
                           {notification.mensagem}
                         </div>
+                        <div className="ejc-notification-action">
+                          {notificationActionLabel(notification)}
+                        </div>
                       </button>
                     ))
                   )}
@@ -457,6 +538,10 @@ export default function LayoutReference() {
           aria-label="Navegação principal"
         >
           <div className="space-y-1">{visible.map(renderNavItem)}</div>
+          <RecentCasesNav
+            collapsed={navCollapsed}
+            onNavigate={() => setMobileOpen(false)}
+          />
         </nav>
 
         <AgendaSidebar navCollapsed={navCollapsed} />
@@ -549,6 +634,10 @@ export default function LayoutReference() {
         </main>
       </div>
 
+      <NovoCasoWizard
+        open={novoCasoOpen}
+        onClose={() => setNovoCasoOpen(false)}
+      />
       <OnboardingTour />
       {iaDisponivel ? (
         <Link

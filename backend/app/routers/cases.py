@@ -17,7 +17,7 @@ from app.core.rate_limit import consumir, rate_limit
 from app.core.security import (get_current_user, require_roles, ROLE_LEVEL,
                                  require_roles_exact, requer_equipe_juridica)
 from app.models.user import User
-from app.models.case import Case, CaseFase, CaseMovimento, CaseStatus
+from app.models.case import Case, CaseFase, CaseMovimento, CaseStatus, CasePrioridade
 from app.models.client import Client
 from app.models.audit_log import criar_audit_log
 
@@ -44,6 +44,7 @@ from app.routers.kit_documental import KitDocumentalIn, _req_advogado as _req_ad
 from app.models.case_parte import CaseParte
 from app.models.caso_area import CasoArea
 from app.models.deadline import Deadline, DeadlineTipo, DeadlineStatus
+from app.models.fee import Fee, FeeStatus
 from app.services.extracao_estruturada import parse_data_br
 from app.core.ownership import role_str, verificar_acesso_caso
 from app.core.status_caso import (
@@ -124,6 +125,11 @@ async def listar(
     status_f: Optional[str] = Query(None, alias="status"),
     arquivo: str = Query("ativos", pattern="^(ativos|arquivados|todos)$"),
     advogado_id: Optional[str] = None,
+    urgentes: bool = False,
+    sem_proxima_acao: bool = False,
+    aguardando_cliente: bool = False,
+    aguardando_decisao: bool = False,
+    financeiro_pendente: bool = False,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -167,6 +173,49 @@ async def listar(
             q = q.where(Case.status == validar_status_caso(status_f))
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e)) from None
+    if urgentes:
+        q = q.where(
+            Case.prioridade.in_([CasePrioridade.alta, CasePrioridade.critica])
+        )
+    if sem_proxima_acao:
+        # View operacional para localizar registros legados/inconsistentes.
+        # Casos novos ativos já exigem próxima ação no create/update.
+        q = q.where(
+            or_(
+                Case.proxima_acao.is_(None),
+                sqlfunc.btrim(Case.proxima_acao) == "",
+            )
+        )
+    if aguardando_cliente:
+        # Estado operacional explícito registrado na próxima ação.
+        q = q.where(Case.proxima_acao.is_not(None)).where(
+            or_(
+                Case.proxima_acao.ilike("%aguard%cliente%"),
+                Case.proxima_acao.ilike("%retorno%cliente%"),
+                Case.proxima_acao.ilike("%cliente%document%"),
+            )
+        )
+    if aguardando_decisao:
+        # Protocolado é o estado canônico de caso já entregue ao órgão/juízo;
+        # expressões de próxima ação cobrem casos administrativos equivalentes.
+        q = q.where(
+            or_(
+                Case.status == CaseStatus.protocolado,
+                Case.proxima_acao.ilike("%aguard%decis%"),
+                Case.proxima_acao.ilike("%aguard%julg%"),
+                Case.proxima_acao.ilike("%aguard%senten%"),
+            )
+        )
+    if financeiro_pendente:
+        q = q.where(
+            Case.id.in_(
+                select(Fee.case_id).where(
+                    Fee.deleted_at.is_(None),
+                    Fee.case_id.is_not(None),
+                    Fee.status.in_([FeeStatus.pendente, FeeStatus.atrasado]),
+                )
+            )
+        )
     q = q.order_by(Case.created_at.desc())
 
     total = (await db.execute(
