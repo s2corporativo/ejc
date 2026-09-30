@@ -93,6 +93,15 @@ const CATEGORIAS: Array<{
     dot: "border-sky-400 bg-sky-50 text-sky-600",
     icone: <Clock3 className="h-3 w-3" />,
   },
+  {
+    key: "ia",
+    label: "IA",
+    singular: "Inteligência",
+    chip: "border-violet-200 text-violet-700 hover:bg-violet-50",
+    chipAtivo: "bg-violet-600 border-violet-600 text-white",
+    dot: "border-violet-400 bg-violet-50 text-violet-600",
+    icone: <Lightbulb className="h-3 w-3" />,
+  },
 ];
 
 const LIMITE_INICIAL = 30;
@@ -343,7 +352,7 @@ export default function LinhaDoTempoProcessual({ caseId }: { caseId: string }) {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h3 className="text-sm font-semibold uppercase text-slate-500">
-              Eventos do caso
+              Timeline única do caso
             </h3>
             {resumoHoras && (
               <p className="mt-1 text-xs text-slate-400">
