@@ -115,3 +115,9 @@ backend/app/seeds/backups/
 backend/app/eval/relatorio_gold_ia.json
 # Worktrees efêmeros criados por agentes de IA para trabalho isolado.
 .claude/worktrees/
+
+# Inventário arquitetural gerado (Fase 0) — regenerável, não versionar
+# Fonte: scripts/generate_architecture_inventory.py + refine_architecture_inventory.py
+docs/audit/inventory/architecture_inventory.json
+docs/audit/inventory/architecture_inventory.csv
+docs/audit/inventory/classification_review.csv
