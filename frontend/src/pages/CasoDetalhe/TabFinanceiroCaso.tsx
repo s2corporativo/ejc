@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router";
 import api from "../../lib/api";
 import type { Case, Fee } from "../../types";
 import { toast } from "../../components/Toast";
@@ -26,6 +27,7 @@ interface ResumoFinanceiro {
 
 export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
   const user = useAuth((state) => state.user);
+  const [searchParams] = useSearchParams();
   const podeReconciliar = new Set([
     "superadmin",
     "admin",
@@ -38,7 +40,9 @@ export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
   const [salvando, setSalvando] = useState(false);
   const [recebendo, setRecebendo] = useState(false);
   const [reconciliando, setReconciliando] = useState(false);
-  const [valorRecebido, setValorRecebido] = useState("");
+  const [valorRecebido, setValorRecebido] = useState(
+    () => searchParams.get("recebimento") || "",
+  );
   const [form, setForm] = useState({
     classificacao_financeira: caso.classificacao_financeira ?? "normal",
     valor_pleiteado: caso.valor_pleiteado?.toString() ?? "",

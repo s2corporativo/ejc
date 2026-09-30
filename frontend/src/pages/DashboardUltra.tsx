@@ -198,6 +198,10 @@ export default function DashboardUltra() {
   const user = useAuth((state) => state.user);
   const navigate = useNavigate();
   const canUseIntegridade = PAPEIS_INTEGRIDADE.has(user?.role || "");
+  const canUseFinanceiro = useMemo(() => {
+    const roles = new Set(["superadmin", "admin", "socio", "financeiro"]);
+    return roles.has(user?.role || "");
+  }, [user?.role]);
 
   const [carregado, setCarregado] = useState(false);
   const [ultimoCaso, setUltimoCaso] = useState<CasoResumo | null>(null);
@@ -214,26 +218,40 @@ export default function DashboardUltra() {
   const [pecasRecentes, setPecasRecentes] = useState<LegalDocResumo[] | null>(
     null,
   );
+  const [financeiroAtencao, setFinanceiroAtencao] = useState<any[] | null>(
+    null,
+  );
 
   const carregar = useCallback(async () => {
     const inicioDocs = format(
       new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
       "yyyy-MM-dd",
     );
-    const [rKpis, rAtiv, rCasos, rDocs, rTarefas, rIntegridade, rPecas] =
-      await Promise.allSettled([
-        api.get("/dashboard/"),
-        api.get("/atividades", { params: { apenas_pendentes: true } }),
-        api.get("/cases/", { params: { page: 1, page_size: 20 } }),
-        api.get("/documents/", {
-          params: { page: 1, page_size: 1, data_inicio: inicioDocs },
-        }),
-        api.get("/tasks/", { params: { minhas: true } }),
-        canUseIntegridade
-          ? api.get("/saneamento/integridade")
-          : Promise.resolve({ data: null }),
-        api.get("/legal-docs/", { params: { page: 1, page_size: 30 } }),
-      ]);
+    const [
+      rKpis,
+      rAtiv,
+      rCasos,
+      rDocs,
+      rTarefas,
+      rIntegridade,
+      rPecas,
+      rFinanceiro,
+    ] = await Promise.allSettled([
+      api.get("/dashboard/"),
+      api.get("/atividades", { params: { apenas_pendentes: true } }),
+      api.get("/cases/", { params: { page: 1, page_size: 50 } }),
+      api.get("/documents/", {
+        params: { page: 1, page_size: 1, data_inicio: inicioDocs },
+      }),
+      api.get("/tasks/", { params: { minhas: true } }),
+      canUseIntegridade
+        ? api.get("/saneamento/integridade")
+        : Promise.resolve({ data: null }),
+      api.get("/legal-docs/", { params: { page: 1, page_size: 30 } }),
+      canUseFinanceiro
+        ? api.get("/financeiro/atencao")
+        : Promise.resolve({ data: null }),
+    ]);
     setKpis(rKpis.status === "fulfilled" ? (rKpis.value.data as Kpis) : null);
     setAtividades(
       rAtiv.status === "fulfilled" ? asList<Atividade>(rAtiv.value.data) : null,
@@ -263,8 +281,14 @@ export default function DashboardUltra() {
         ? asList<LegalDocResumo>(rPecas.value.data)
         : null,
     );
+    setFinanceiroAtencao(
+      rFinanceiro.status === "fulfilled" &&
+        Array.isArray(rFinanceiro.value.data?.itens)
+        ? rFinanceiro.value.data.itens
+        : null,
+    );
     setCarregado(true);
-  }, [canUseIntegridade]);
+  }, [canUseFinanceiro, canUseIntegridade]);
 
   useEffect(() => {
     if (carregado) return;
@@ -296,6 +320,36 @@ export default function DashboardUltra() {
       (a) => a.tipo === "prazo" && a.dias_restantes === 0,
     ).length;
   }, [atividades]);
+
+  const intimacoesNovas = useMemo(() => {
+    if (!atividades) return null;
+    return atividades.filter((atividade) => {
+      const tipo = String(atividade.tipo || "").toLowerCase();
+      const status = String(atividade.status || "").toLowerCase();
+      return (
+        tipo.includes("intim") && !["concluido", "tratado"].includes(status)
+      );
+    }).length;
+  }, [atividades]);
+
+  const casosSemProximaAcao = useMemo(() => {
+    if (!casos) return null;
+    return casos.filter((caso) => {
+      const status = String(caso.status || "").toLowerCase();
+      return (
+        !["encerrado", "arquivado"].includes(status) &&
+        !caso.proxima_acao?.trim()
+      );
+    }).length;
+  }, [casos]);
+
+  const valorFinanceiroAtencao = useMemo(() => {
+    if (!financeiroAtencao) return null;
+    return financeiroAtencao.reduce((total, item) => {
+      const valor = Number(item?.valor ?? 0);
+      return total + (Number.isFinite(valor) && valor > 0 ? valor : 0);
+    }, 0);
+  }, [financeiroAtencao]);
 
   const integridadeTotal = useMemo(() => {
     if (!integridade) return null;
@@ -353,6 +407,15 @@ export default function DashboardUltra() {
   }, [tarefas, hoje]);
 
   const rotinaPendentes = rotinaHoje.filter((t) => t.status !== "concluida");
+  const tarefasUrgentes = rotinaPendentes.filter((tarefa) => {
+    const prioridade = String(tarefa.prioridade || "").toLowerCase();
+    const limite = tarefa.data_limite?.slice(0, 10);
+    return (
+      prioridade === "urgente" ||
+      prioridade === "alta" ||
+      Boolean(limite && limite <= hoje)
+    );
+  });
 
   const canUseLegal = useMemo(() => {
     const roles = new Set(["superadmin", "admin", "socio", "advogado"]);
@@ -368,7 +431,6 @@ export default function DashboardUltra() {
     ]);
     return roles.has(user?.role || "");
   }, [user?.role]);
-
   const temCarteira =
     carregado &&
     ((kpis?.casos?.ativos ?? 0) > 0 ||
@@ -506,7 +568,7 @@ export default function DashboardUltra() {
           <div className="ejc-dash__entry-compact">
             <div>
               <span className="ejc-dash__entry-kicker">
-                EJC · Entrada Jurídica
+                EJC · Legal Intelligence Workspace
               </span>
               <strong>Começar novo trabalho</strong>
               <small>
@@ -518,13 +580,12 @@ export default function DashboardUltra() {
               {canUseLegal && (
                 <Link to="/entrada" className="is-primary">
                   <Sparkles aria-hidden="true" />
-                  Analisar novo caso
+                  Entrada por IA
                 </Link>
               )}
               {canUseEntry && (
                 <Link to="/cadastro-manual?aba=caso">
-                  <Briefcase aria-hidden="true" />
-                  Cadastro manual
+                  <Briefcase aria-hidden="true" />+ Novo Caso
                 </Link>
               )}
             </div>
@@ -634,7 +695,7 @@ export default function DashboardUltra() {
             <h1>
               {saudacaoPorHora()}, {primeiroNome}!
             </h1>
-            <p>O que vamos resolver hoje?</p>
+            <p>Aqui está o que precisa da sua atenção hoje.</p>
           </div>
           {ultimoCaso?.id ? (
             <Link
@@ -660,19 +721,73 @@ export default function DashboardUltra() {
           )}
         </header>
 
+        <section className="ejc-my-day" aria-label="Meu Dia">
+          <div className="ejc-my-day__head">
+            <div>
+              <span>Meu Dia</span>
+              <strong>O que exige ação agora</strong>
+            </div>
+            <Link to="/atividades">
+              Abrir agenda <ChevronRight aria-hidden="true" />
+            </Link>
+          </div>
+          <div className="ejc-my-day__grid">
+            <Link to="/atividades?tipo=prazo" className="is-danger">
+              <CalendarClock aria-hidden="true" />
+              <strong>{metrica(prazosHoje)}</strong>
+              <span>Prazos hoje</span>
+            </Link>
+            <Link to="/atividades?tipo=intimacao" className="is-info">
+              <Gavel aria-hidden="true" />
+              <strong>{metrica(intimacoesNovas)}</strong>
+              <span>Intimações novas</span>
+            </Link>
+            <Link to="/atividades?tipo=tarefa" className="is-warning">
+              <ListTodo aria-hidden="true" />
+              <strong>{metrica(tarefasUrgentes.length)}</strong>
+              <span>Tarefas urgentes</span>
+            </Link>
+            <Link to="/casos?view=sem_proxima_acao" className="is-warning">
+              <Briefcase aria-hidden="true" />
+              <strong>{metrica(casosSemProximaAcao)}</strong>
+              <span>Sem próxima ação</span>
+            </Link>
+            {canUseFinanceiro && (
+              <Link to="/financeiro?tab=visao" className="is-success">
+                <Zap aria-hidden="true" />
+                <strong>
+                  {carregado && valorFinanceiroAtencao !== null
+                    ? valorFinanceiroAtencao.toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL",
+                        maximumFractionDigits: 0,
+                      })
+                    : "—"}
+                </strong>
+                <span>Valores em atenção</span>
+              </Link>
+            )}
+          </div>
+        </section>
+
         <section className="ejc-dash__stats" aria-label="Sinais do escritório">
-          <Link
-            to="/atividades?tipo=prazo"
-            className="ejc-dash__stat is-dark"
-            aria-label={`Prazos hoje: ${valorOuTraco(prazosHoje)}`}
-          >
-            <span className="ejc-dash__stat-icon" aria-hidden="true">
-              <CalendarClock />
-            </span>
-            <strong>{metrica(prazosHoje)}</strong>
-            <small>Prazos hoje</small>
-            <ChevronRight className="ejc-dash__stat-chev" aria-hidden="true" />
-          </Link>
+          {(!carregado || (prazosHoje ?? 0) > 0) && (
+            <Link
+              to="/atividades?tipo=prazo"
+              className="ejc-dash__stat is-dark"
+              aria-label={`Prazos hoje: ${valorOuTraco(prazosHoje)}`}
+            >
+              <span className="ejc-dash__stat-icon" aria-hidden="true">
+                <CalendarClock />
+              </span>
+              <strong>{metrica(prazosHoje)}</strong>
+              <small>Prazos hoje</small>
+              <ChevronRight
+                className="ejc-dash__stat-chev"
+                aria-hidden="true"
+              />
+            </Link>
+          )}
           <Link
             to="/clientes"
             className="ejc-dash__stat"
@@ -739,7 +854,7 @@ export default function DashboardUltra() {
                 <span className="ejc-dash__panel-ico" aria-hidden="true">
                   <Briefcase />
                 </span>
-                <h3>Casos em destaque</h3>
+                <h3>Meus casos prioritários</h3>
               </div>
               <Link to="/casos" className="ejc-dash__panel-more">
                 Ver todos <ChevronRight aria-hidden="true" />
@@ -802,7 +917,7 @@ export default function DashboardUltra() {
                 <span className="ejc-dash__panel-ico" aria-hidden="true">
                   <Sparkles />
                 </span>
-                <h3>Radar Estratégico do Escritório</h3>
+                <h3>Prioridades e decisões</h3>
               </div>
               <Link to="/radar" className="ejc-dash__panel-more">
                 Análise completa <ChevronRight aria-hidden="true" />

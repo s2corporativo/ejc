@@ -78,6 +78,14 @@ export default function Casos() {
   const [arquivoF, setArquivoF] = useState<"ativos" | "arquivados" | "todos">(
     "ativos",
   );
+  const [savedView, setSavedView] = useState<
+    | "padrao"
+    | "urgentes"
+    | "sem_proxima_acao"
+    | "aguardando_cliente"
+    | "aguardando_decisao"
+    | "financeiro_pendente"
+  >("padrao");
   const [desarquivandoId, setDesarquivandoId] = useState<string | null>(null);
   // Exclusão (soft delete → Lixeira) restrita a administração/sócios
   const { user } = useAuth();
@@ -94,6 +102,21 @@ export default function Casos() {
   const location = useLocation();
   const nav = useNavigate();
   const novoCasoModo = resolverModoNovoCaso(location.pathname, location.search);
+
+  useEffect(() => {
+    const viewParam = new URLSearchParams(location.search).get("view");
+    if (
+      viewParam === "urgentes" ||
+      viewParam === "sem_proxima_acao" ||
+      viewParam === "aguardando_cliente" ||
+      viewParam === "aguardando_decisao" ||
+      viewParam === "financeiro_pendente"
+    ) {
+      setSavedView(viewParam);
+      setArquivoF("ativos");
+      setStatusF("");
+    }
+  }, [location.search]);
   const wizardAberto = novoCasoModo === "manual";
   const [form, setForm] = useState<any>({
     area: "civil",
@@ -193,6 +216,14 @@ export default function Casos() {
           status: statusF || undefined,
           advogado_id: advogadoF || undefined,
           arquivo: arquivoF,
+          urgentes: savedView === "urgentes" ? true : undefined,
+          sem_proxima_acao: savedView === "sem_proxima_acao" ? true : undefined,
+          aguardando_cliente:
+            savedView === "aguardando_cliente" ? true : undefined,
+          aguardando_decisao:
+            savedView === "aguardando_decisao" ? true : undefined,
+          financeiro_pendente:
+            savedView === "financeiro_pendente" ? true : undefined,
           page_size: 50,
         },
       })
@@ -270,7 +301,7 @@ export default function Casos() {
   useEffect(() => {
     const t = setTimeout(load, 350);
     return () => clearTimeout(t);
-  }, [search, areaF, statusF, advogadoF, arquivoF]);
+  }, [search, areaF, statusF, advogadoF, arquivoF, savedView]);
 
   // Passo 3 do fluxograma documental: abre a REVISÃO antes de qualquer escrita.
   // Só depois de "Confirmar criação" é que salvar() cria o caso e anexa o doc.
@@ -634,6 +665,102 @@ export default function Casos() {
           </div>
         }
       />
+
+      {view === "lista" && (
+        <div className="ejc-saved-views" aria-label="Visões rápidas de casos">
+          <span>Visões</span>
+          <button
+            type="button"
+            className={
+              savedView === "padrao" && arquivoF === "ativos" ? "is-active" : ""
+            }
+            onClick={() => {
+              setSavedView("padrao");
+              setArquivoF("ativos");
+              setStatusF("");
+            }}
+          >
+            Ativos
+          </button>
+          <button
+            type="button"
+            className={savedView === "urgentes" ? "is-active" : ""}
+            onClick={() => {
+              setSavedView("urgentes");
+              setArquivoF("ativos");
+              setStatusF("");
+            }}
+          >
+            Urgentes
+          </button>
+          <button
+            type="button"
+            className={savedView === "sem_proxima_acao" ? "is-active" : ""}
+            onClick={() => {
+              setSavedView("sem_proxima_acao");
+              setArquivoF("ativos");
+              setStatusF("");
+            }}
+          >
+            Sem próxima ação
+          </button>
+          <button
+            type="button"
+            className={savedView === "aguardando_cliente" ? "is-active" : ""}
+            onClick={() => {
+              setSavedView("aguardando_cliente");
+              setArquivoF("ativos");
+              setStatusF("");
+            }}
+          >
+            Aguardando cliente
+          </button>
+          <button
+            type="button"
+            className={savedView === "aguardando_decisao" ? "is-active" : ""}
+            onClick={() => {
+              setSavedView("aguardando_decisao");
+              setArquivoF("ativos");
+              setStatusF("");
+            }}
+          >
+            Aguardando decisão
+          </button>
+          <button
+            type="button"
+            className={savedView === "financeiro_pendente" ? "is-active" : ""}
+            onClick={() => {
+              setSavedView("financeiro_pendente");
+              setArquivoF("ativos");
+              setStatusF("");
+            }}
+          >
+            Financeiro pendente
+          </button>
+          <button
+            type="button"
+            className={arquivoF === "arquivados" ? "is-active" : ""}
+            onClick={() => {
+              setSavedView("padrao");
+              setArquivoF("arquivados");
+              setStatusF("");
+            }}
+          >
+            Arquivados
+          </button>
+          <button
+            type="button"
+            className={arquivoF === "todos" ? "is-active" : ""}
+            onClick={() => {
+              setSavedView("padrao");
+              setArquivoF("todos");
+              setStatusF("");
+            }}
+          >
+            Todos
+          </button>
+        </div>
+      )}
 
       {view === "lista" && <CasosStats />}
 
