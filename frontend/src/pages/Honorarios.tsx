@@ -13,6 +13,7 @@ import {
   History,
 } from "lucide-react";
 import QRCode from "qrcode";
+import Comissoes from "./Comissoes";
 import api from "../lib/api";
 import { asList } from "../lib/list";
 import type { Fee, Client, Paged } from "../types";
@@ -50,7 +51,7 @@ export default function Honorarios() {
   const [data, setData] = useState<Paged<Fee> | null>(null);
   const [resumo, setResumo] = useState<any>(null);
   const [clientes, setClientes] = useState<Client[]>([]);
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [statusF, setStatusF] = useState(() => {
     const s = searchParams.get("status");
     return s && STATUS_VALIDOS.includes(s) ? s : "";
@@ -304,6 +305,18 @@ export default function Honorarios() {
     }
   };
 
+  if (searchParams.get("view") === "comissoes") {
+    return (
+      <Comissoes
+        onBack={() => {
+          const params = new URLSearchParams(searchParams);
+          params.delete("view");
+          setSearchParams(params, { replace: true });
+        }}
+      />
+    );
+  }
+
   return (
     <div>
       <div className="flex gap-2 items-center justify-end flex-wrap mb-4">
@@ -351,6 +364,17 @@ export default function Honorarios() {
           className="btn-secondary px-3 py-1.5 text-xs"
         >
           <FileType2 size={13} /> PDF
+        </button>
+        <button
+          type="button"
+          className="btn-secondary px-3 py-1.5 text-xs"
+          onClick={() => {
+            const params = new URLSearchParams(searchParams);
+            params.set("view", "comissoes");
+            setSearchParams(params, { replace: true });
+          }}
+        >
+          Comissões
         </button>
         <button className="btn-gold" onClick={() => setModal(true)}>
           <Plus size={16} /> Novo lançamento
