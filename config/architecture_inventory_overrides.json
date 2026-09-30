@@ -305,6 +305,56 @@
       "classification": "desativar",
       "confidence": "média",
       "rationale": "Router histórico identificado como desconectado; confirmar inexistência de consumidores antes de excluir."
+    },
+    {
+      "kind": "service",
+      "path": "backend/app/services/google_drive.py",
+      "classification": "manter",
+      "confidence": "alta",
+      "rationale": "Adapter de ARMAZENAGEM do GED (rclone); paralelo a google_drive_service.py por decisão de Fase 7 (17/09/2026): protocolos e planos de dados distintos — não consolidar (docs/auditoria/2026-09-17-fase7-pendencias-menores.md)."
+    },
+    {
+      "kind": "service",
+      "path": "backend/app/services/google_drive_service.py",
+      "classification": "manter",
+      "confidence": "alta",
+      "rationale": "SINCRONIZAÇÃO Drive → base de conhecimento RAG (googleapiclient); paralelo a google_drive.py por decisão de Fase 7 (17/09/2026): protocolos e planos de dados distintos — não consolidar (docs/auditoria/2026-09-17-fase7-pendencias-menores.md)."
+    },
+    {
+      "path": "backend/app/modules/legacy_verticals/__init__.py",
+      "classification": "excluir após migração",
+      "confidence": "alta",
+      "rationale": "Camada de compatibilidade da migração #1843 (EJC Core) com consumidores ativos; exclusão somente na Onda 6 da #1843, após telemetria, backup e rollback."
+    },
+    {
+      "path": "backend/app/modules/legacy_verticals/case_context_adapter.py",
+      "classification": "excluir após migração",
+      "confidence": "alta",
+      "rationale": "Adapter de contexto de verticais consumido por app/services/case_context.py; isolamento de models especializados vigente até a Onda 6 da #1843 (telemetria, backup e rollback)."
+    },
+    {
+      "path": "backend/app/modules/legacy_verticals/lgpd_adapter.py",
+      "classification": "excluir após migração",
+      "confidence": "alta",
+      "rationale": "Anonimização LGPD de dados legados consumida por app/services/client_anonimizacao.py; removível apenas após expurgo dos dados das verticais (Onda 6 da #1843)."
+    },
+    {
+      "path": "backend/app/modules/legacy_verticals/trash_entities.py",
+      "classification": "excluir após migração",
+      "confidence": "alta",
+      "rationale": "Entidades de lixeira de verticais consumidas por app/routers/trash.py; removível apenas com o expurgo das tabelas especializadas (Onda 6 da #1843)."
+    },
+    {
+      "path": "frontend/src/components/LegacyRedirect.tsx",
+      "classification": "excluir após migração",
+      "confidence": "alta",
+      "rationale": "Redirect que preserva deep-links das verticais ocultadas (Onda 1 da #1843); consumidores ativos: App.tsx, moduleRegistry.tsx e Dpt360Workspace.tsx; remover na Onda 6."
+    },
+    {
+      "path": "frontend/src/components/LegacyRedirect.test.tsx",
+      "classification": "excluir após migração",
+      "confidence": "alta",
+      "rationale": "Cobertura do redirect de deep-links; remover junto com LegacyRedirect.tsx na Onda 6 da #1843."
     }
   ]
 }
