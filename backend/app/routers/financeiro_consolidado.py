@@ -20,12 +20,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.rate_limit import rate_limit
-from sqlalchemy import text
+from sqlalchemy import text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.models.fee import FeeTipo
+from app.models.fee import CommissionRule, FeeTipo
 from app.models.user import User
 from app.services.fee_ledger_compat import LEDGER_COMPAT_CTES
 
@@ -922,7 +922,9 @@ async def painel_operacional(
     _exigir_financeiro(cu)
     hoje = date.today()
     limite = hoje + timedelta(days=30)
-    recebiveis=(await db.execute(text(f"""
+    recebiveis=(await db.execute(# LEDGER_COMPAT_CTES é literal interno; valores de runtime usam bind params.
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+    text(f"""
         WITH {LEDGER_COMPAT_CTES}
         SELECT f.id,f.descricao,f.data_vencimento,
           GREATEST(COALESCE(f.valor,0)-COALESCE(pe.total_pago,0),0) AS saldo,
@@ -946,7 +948,9 @@ async def painel_operacional(
           AND vencimento BETWEEN :hoje AND :limite
         ORDER BY vencimento,id LIMIT 8
     """),{"hoje":hoje,"limite":limite})).mappings().all()
-    inad=(await db.execute(text(f"""
+    inad=(await db.execute(# LEDGER_COMPAT_CTES é literal interno; valores de runtime usam bind params.
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+    text(f"""
         WITH {LEDGER_COMPAT_CTES}
         SELECT COUNT(DISTINCT f.client_id) AS clientes,COUNT(*) AS titulos,
           COALESCE(SUM(GREATEST(COALESCE(f.valor,0)-COALESCE(pe.total_pago,0),0)),0) AS valor
@@ -956,7 +960,9 @@ async def painel_operacional(
           AND f.valor IS NOT NULL AND f.data_vencimento < :hoje
           AND GREATEST(COALESCE(f.valor,0)-COALESCE(pe.total_pago,0),0)>0
     """),{"hoje":hoje})).mappings().first()
-    totais=(await db.execute(text(f"""
+    totais=(await db.execute(# LEDGER_COMPAT_CTES é literal interno; valores de runtime usam bind params.
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+    text(f"""
         WITH {LEDGER_COMPAT_CTES},
         entradas AS (
           SELECT COALESCE(SUM(GREATEST(COALESCE(f.valor,0)-COALESCE(pe.total_pago,0),0)),0) total
@@ -970,7 +976,9 @@ async def painel_operacional(
         )
         SELECT (SELECT total FROM entradas) entradas,(SELECT total FROM saidas) saidas
     """),{"hoje":hoje,"limite":limite})).mappings().first()
-    mov=(await db.execute(text(f"""
+    mov=(await db.execute(# LEDGER_COMPAT_CTES é literal interno; valores de runtime usam bind params.
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+    text(f"""
         WITH {LEDGER_COMPAT_CTES}, mov AS (
           SELECT 'entrada'::text natureza,re.data_pagamento data,f.descricao,re.valor,
                  f.id referencia_id,f.client_id,f.case_id,
@@ -1351,6 +1359,8 @@ async def previsao_comissoes(
 
     rows = (
         await db.execute(
+            # LEDGER_COMPAT_CTES é literal interno; valores de runtime usam bind params.
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             text(
                 f"""
                 WITH {LEDGER_COMPAT_CTES},
@@ -1952,14 +1962,15 @@ async def atualizar_regra_comissao(
         "ativo": "ativo",
         "vigencia_fim": "vigencia_fim",
     }
-    sets, params = [], {"id": rule_id}
-    for key, value in changes.items():
-        sets.append(f"{campos[key]}=:{key}")
-        params[key] = value
-    sets.append("updated_at=NOW()")
+    valores = {campos[key]: value for key, value in changes.items()}
+    valores["updated_at"] = datetime.now(timezone.utc)
     await db.execute(
-        text(f"UPDATE commission_rules SET {', '.join(sets)} WHERE id=:id AND deleted_at IS NULL"),
-        params,
+        update(CommissionRule)
+        .where(
+            CommissionRule.id == rule_id,
+            CommissionRule.deleted_at.is_(None),
+        )
+        .values(**valores)
     )
     from app.models.audit_log import criar_audit_log
     await criar_audit_log(

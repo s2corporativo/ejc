@@ -413,6 +413,27 @@ ADICOES_INTENCIONAIS |= {
     ("/api/licitacao-auditoria/audit-report-template", "GET"),
 }
 
+# Financeiro operacional/comissões — consolidação de 30/09/2026.
+# Rotas autenticadas e sujeitas aos mesmos gates fiduciários do módulo financeiro.
+ADICOES_INTENCIONAIS |= {
+    ("/api/despesas/recorrentes/gerar", "POST"),
+    ("/api/financeiro/comissoes", "GET"),
+    ("/api/financeiro/comissoes/conferencia", "GET"),
+    ("/api/financeiro/comissoes/extrato-mensal", "GET"),
+    ("/api/financeiro/comissoes/fechamentos", "POST"),
+    ("/api/financeiro/comissoes/fechamentos/{competencia}", "GET"),
+    ("/api/financeiro/comissoes/lotes-pagamento", "POST"),
+    ("/api/financeiro/comissoes/opcoes", "GET"),
+    ("/api/financeiro/comissoes/previsao", "GET"),
+    ("/api/financeiro/comissoes/regras", "GET"),
+    ("/api/financeiro/comissoes/regras", "POST"),
+    ("/api/financeiro/comissoes/regras/{rule_id}", "DELETE"),
+    ("/api/financeiro/comissoes/regras/{rule_id}", "PATCH"),
+    ("/api/financeiro/comissoes/{allocation_id}/ajustes", "POST"),
+    ("/api/financeiro/comissoes/{allocation_id}/enviar-aprovacao", "POST"),
+    ("/api/financeiro/operacional", "GET"),
+}
+
 def test_paridade_openapi_com_snapshot_anterior():
     from app.main import app
 
