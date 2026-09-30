@@ -521,6 +521,26 @@ async def registrar_pagamento(
     db.add(payment)
     await db.flush()
 
+    commission_result = None
+    if fee.case_id and fee.tipo != FeeTipo.custas_despesas:
+        caso_comissao = (
+            await db.execute(
+                select(Case).where(
+                    Case.id == fee.case_id,
+                    Case.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+        if caso_comissao:
+            from app.services.commission_service import alocar_comissao_pagamento
+
+            commission_result = await alocar_comissao_pagamento(
+                db,
+                caso_comissao,
+                payment,
+                cu,
+            )
+
     total_pago, _legado_pos = await total_pago_efetivo(db, fee)
 
     quitado = False

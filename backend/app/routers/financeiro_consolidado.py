@@ -12,9 +12,11 @@ DRE contábil ou validação fiscal pelo profissional responsável.
 """
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Optional
+from typing import Optional, Literal
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.rate_limit import rate_limit
 from sqlalchemy import text
@@ -44,6 +46,53 @@ _GESTOR_FIN = {"superadmin", "admin", "socio", "financeiro"}
 def _exigir_financeiro(cu: User) -> None:
     if cu.role.value not in _GESTOR_FIN:
         raise HTTPException(403, "Acesso restrito a gestão/financeiro")
+
+
+_GESTOR_REGRAS = {"superadmin", "admin", "socio"}
+
+
+class CommissionRuleIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    nome: str = Field(min_length=2, max_length=120)
+    escopo: Literal["padrao", "area", "advogado", "caso"]
+    percentual_advogado: Decimal = Field(ge=0, le=100)
+    descontar_despesas: bool = True
+    prioridade: int = Field(100, ge=0, le=10000)
+    ativo: bool = True
+    area: Optional[str] = Field(None, max_length=50)
+    advogado_id: Optional[str] = Field(None, max_length=36)
+    case_id: Optional[str] = Field(None, max_length=36)
+    vigencia_inicio: date = Field(default_factory=date.today)
+    vigencia_fim: Optional[date] = None
+
+    @model_validator(mode="after")
+    def validar_escopo(self):
+        if self.vigencia_fim and self.vigencia_fim < self.vigencia_inicio:
+            raise ValueError("vigência final não pode ser anterior à inicial")
+        if self.escopo == "area" and not self.area:
+            raise ValueError("regra por área exige area")
+        if self.escopo == "advogado" and not self.advogado_id:
+            raise ValueError("regra por advogado exige advogado_id")
+        if self.escopo == "caso" and not self.case_id:
+            raise ValueError("regra por caso exige case_id")
+        return self
+
+
+class CommissionRulePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    nome: Optional[str] = Field(None, min_length=2, max_length=120)
+    percentual_advogado: Optional[Decimal] = Field(None, ge=0, le=100)
+    descontar_despesas: Optional[bool] = None
+    prioridade: Optional[int] = Field(None, ge=0, le=10000)
+    ativo: Optional[bool] = None
+    vigencia_fim: Optional[date] = None
+
+
+def _exigir_gestor_regras(cu: User) -> None:
+    if cu.role.value not in _GESTOR_REGRAS:
+        raise HTTPException(403, "Alteração de regras exige sócio ou administração")
 
 
 def _competencia_atual(competencia: Optional[str]) -> str:
@@ -642,6 +691,297 @@ async def painel_operacional(
       "proximos_recebimentos":[{"id":r["id"],"descricao":r["descricao"],"vencimento":r["data_vencimento"],"valor":_money(r["saldo"]),"client_id":r["client_id"],"case_id":r["case_id"],"cliente":r["cliente"],"caso":r["caso"]} for r in recebiveis],
       "proximos_pagamentos":[{"id":r["id"],"descricao":r["descricao"],"vencimento":r["vencimento"],"valor":_money(r["valor"]),"categoria":r["categoria"]} for r in pagamentos],
       "movimentacoes_recentes":[{"natureza":r["natureza"],"data":r["data"],"descricao":r["descricao"],"valor":_money(r["valor"]),"referencia_id":r["referencia_id"],"client_id":r["client_id"],"case_id":r["case_id"],"cliente":r["cliente"],"caso":r["caso"]} for r in mov],
+    }
+
+
+@router.get("/comissoes", dependencies=[Depends(rate_limit("fin-comissoes", 60))])
+async def listar_comissoes(
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    _exigir_financeiro(cu)
+    rows = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    a.id,
+                    a.case_id,
+                    a.fee_payment_id,
+                    a.advogado_responsavel_id AS advogado_id,
+                    u.full_name AS advogado,
+                    c.titulo AS caso,
+                    c.numero_interno,
+                    COALESCE(cl.nome, cl.razao_social, 'Cliente') AS cliente,
+                    fp.data_pagamento,
+                    a.bruto_recebido,
+                    a.despesas_deduzidas,
+                    a.base_liquida,
+                    a.percentual_advogado,
+                    a.valor_advogado,
+                    a.valor_escritorio,
+                    cr.nome AS regra_nome,
+                    a.withdrawal_id,
+                    pw.status AS withdrawal_status,
+                    pw.approved_at,
+                    pw.paid_at,
+                    CASE
+                        WHEN a.valor_advogado <= 0 THEN 'sem_comissao'
+                        WHEN a.withdrawal_id IS NULL THEN 'calculada'
+                        WHEN pw.status = 'pendente' THEN 'a_aprovar'
+                        WHEN pw.status = 'aprovado' THEN 'a_pagar'
+                        WHEN pw.status = 'pago' THEN 'paga'
+                        WHEN pw.status = 'rejeitado' THEN 'rejeitada'
+                        ELSE COALESCE(pw.status, 'calculada')
+                    END AS status
+                FROM case_receipt_allocations a
+                JOIN fee_payments fp ON fp.id = a.fee_payment_id
+                JOIN fees f ON f.id = fp.fee_id
+                JOIN cases c ON c.id = a.case_id
+                LEFT JOIN clients cl ON cl.id = f.client_id AND cl.deleted_at IS NULL
+                LEFT JOIN users u ON u.id = a.advogado_responsavel_id
+                LEFT JOIN commission_rules cr ON cr.id = a.commission_rule_id
+                LEFT JOIN partner_withdrawals pw ON pw.id = a.withdrawal_id AND pw.deleted_at IS NULL
+                WHERE f.deleted_at IS NULL
+                  AND a.valor_advogado > 0
+                ORDER BY fp.data_pagamento DESC, a.created_at DESC
+                LIMIT 500
+                """
+            )
+        )
+    ).mappings().all()
+    data = [dict(r) for r in rows]
+    termo = (search or "").strip().casefold()
+    if termo:
+        data = [
+            r for r in data
+            if termo in " ".join(
+                str(r.get(k) or "")
+                for k in ("advogado", "cliente", "caso", "numero_interno", "bruto_recebido", "valor_advogado")
+            ).casefold()
+        ]
+    if status:
+        data = [r for r in data if r.get("status") == status]
+
+    all_rows = [dict(r) for r in rows]
+    def total_por(st):
+        return _money(sum((Decimal(str(r["valor_advogado"] or 0)) for r in all_rows if r["status"] == st), Decimal("0")))
+    hoje = date.today()
+    pago_mes = _money(sum((
+        Decimal(str(r["valor_advogado"] or 0))
+        for r in all_rows
+        if r["status"] == "paga"
+        and r["paid_at"] is not None
+        and r["paid_at"].year == hoje.year
+        and r["paid_at"].month == hoje.month
+    ), Decimal("0")))
+    escritorio = _money(sum((Decimal(str(r["valor_escritorio"] or 0)) for r in all_rows), Decimal("0")))
+    return {
+        "data": data,
+        "resumo": {
+            "calculada": total_por("calculada"),
+            "a_aprovar": total_por("a_aprovar"),
+            "a_pagar": total_por("a_pagar"),
+            "paga_mes": pago_mes,
+            "escritorio_total": escritorio,
+        },
+    }
+
+
+@router.get("/comissoes/regras", dependencies=[Depends(rate_limit("fin-comissoes-regras", 60))])
+async def listar_regras_comissao(
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    _exigir_financeiro(cu)
+    rows = (
+        await db.execute(
+            text(
+                """
+                SELECT r.*, u.full_name AS advogado_nome,
+                       c.titulo AS caso_titulo, c.numero_interno
+                FROM commission_rules r
+                LEFT JOIN users u ON u.id = r.advogado_id
+                LEFT JOIN cases c ON c.id = r.case_id
+                WHERE r.deleted_at IS NULL
+                ORDER BY r.ativo DESC,
+                    CASE r.escopo WHEN 'caso' THEN 1 WHEN 'advogado' THEN 2
+                         WHEN 'area' THEN 3 ELSE 4 END,
+                    r.prioridade, r.created_at DESC
+                """
+            )
+        )
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+@router.post("/comissoes/regras", status_code=201)
+async def criar_regra_comissao(
+    body: CommissionRuleIn,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    _exigir_gestor_regras(cu)
+    rid = str(uuid4())
+    await db.execute(
+        text(
+            """
+            INSERT INTO commission_rules
+                (id,nome,escopo,area,advogado_id,case_id,percentual_advogado,
+                 descontar_despesas,prioridade,ativo,vigencia_inicio,vigencia_fim,
+                 created_by,created_at,updated_at)
+            VALUES
+                (:id,:nome,:escopo,:area,:advogado_id,:case_id,:pct,
+                 :descontar,:prioridade,:ativo,:inicio,:fim,:created_by,now(),now())
+            """
+        ),
+        {
+            "id": rid, "nome": body.nome, "escopo": body.escopo,
+            "area": body.area if body.escopo == "area" else None,
+            "advogado_id": body.advogado_id if body.escopo == "advogado" else None,
+            "case_id": body.case_id if body.escopo == "caso" else None,
+            "pct": body.percentual_advogado, "descontar": body.descontar_despesas,
+            "prioridade": body.prioridade, "ativo": body.ativo,
+            "inicio": body.vigencia_inicio, "fim": body.vigencia_fim,
+            "created_by": cu.id,
+        },
+    )
+    from app.models.audit_log import criar_audit_log
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "CREATE", "commission_rules", rid,
+        detalhes="Regra de comissão criada.",
+        dados_depois=body.model_dump(mode="json"),
+    )
+    await db.commit()
+    return {"id": rid, "ok": True}
+
+
+@router.patch("/comissoes/regras/{rule_id}")
+async def atualizar_regra_comissao(
+    rule_id: str,
+    body: CommissionRulePatch,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    _exigir_gestor_regras(cu)
+    atual = (
+        await db.execute(
+            text("SELECT * FROM commission_rules WHERE id=:id AND deleted_at IS NULL"),
+            {"id": rule_id},
+        )
+    ).mappings().first()
+    if not atual:
+        raise HTTPException(404, "Regra de comissão não encontrada")
+    changes = body.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(422, "Nenhuma alteração informada")
+    campos = {
+        "nome": "nome",
+        "percentual_advogado": "percentual_advogado",
+        "descontar_despesas": "descontar_despesas",
+        "prioridade": "prioridade",
+        "ativo": "ativo",
+        "vigencia_fim": "vigencia_fim",
+    }
+    sets, params = [], {"id": rule_id}
+    for key, value in changes.items():
+        sets.append(f"{campos[key]}=:{key}")
+        params[key] = value
+    sets.append("updated_at=NOW()")
+    await db.execute(
+        text(f"UPDATE commission_rules SET {', '.join(sets)} WHERE id=:id AND deleted_at IS NULL"),
+        params,
+    )
+    from app.models.audit_log import criar_audit_log
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "UPDATE", "commission_rules", rule_id,
+        dados_antes={k: atual.get(campos[k]) for k in changes},
+        dados_depois=body.model_dump(exclude_unset=True, mode="json"),
+    )
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/comissoes/regras/{rule_id}")
+async def remover_regra_comissao(
+    rule_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    _exigir_gestor_regras(cu)
+    if rule_id in {"commission-default-50", "commission-area-civil-0"}:
+        raise HTTPException(409, "Regra estrutural: desative ou altere em vez de excluir")
+    row = (
+        await db.execute(
+            text("SELECT id FROM commission_rules WHERE id=:id AND deleted_at IS NULL"),
+            {"id": rule_id},
+        )
+    ).first()
+    if not row:
+        raise HTTPException(404, "Regra de comissão não encontrada")
+    await db.execute(
+        text("UPDATE commission_rules SET deleted_at=NOW(), ativo=FALSE, updated_at=NOW() WHERE id=:id"),
+        {"id": rule_id},
+    )
+    from app.models.audit_log import criar_audit_log
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "DELETE", "commission_rules", rule_id,
+        detalhes="Regra de comissão removida por soft delete.",
+    )
+    await db.commit()
+    return {"ok": True}
+
+
+@router.get("/comissoes/opcoes")
+async def opcoes_comissao(
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    _exigir_financeiro(cu)
+    advogados = (
+        await db.execute(
+            text(
+                """
+                SELECT id, full_name, CAST(role AS text) AS role
+                FROM users
+                WHERE deleted_at IS NULL AND is_active=TRUE
+                  AND CAST(role AS text) IN ('advogado','socio','admin','superadmin')
+                ORDER BY full_name
+                """
+            )
+        )
+    ).mappings().all()
+    casos = (
+        await db.execute(
+            text(
+                """
+                SELECT id, titulo, numero_interno, CAST(area AS text) AS area
+                FROM cases
+                WHERE deleted_at IS NULL AND CAST(status AS text) != 'arquivado'
+                ORDER BY created_at DESC
+                LIMIT 500
+                """
+            )
+        )
+    ).mappings().all()
+    areas = (
+        await db.execute(
+            text(
+                """
+                SELECT DISTINCT CAST(area AS text) AS area
+                FROM cases
+                WHERE deleted_at IS NULL
+                ORDER BY area
+                """
+            )
+        )
+    ).scalars().all()
+    return {
+        "advogados": [dict(r) for r in advogados],
+        "casos": [dict(r) for r in casos],
+        "areas": [a for a in areas if a],
     }
 
 
