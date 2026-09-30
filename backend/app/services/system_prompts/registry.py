@@ -1,6 +1,6 @@
-"""Router de modelos/prompts por tarefa.
+"""Registro de modelos/prompts por tarefa.
 
-O router define preferência de qualidade/custo/latência, mas os nomes reais dos
+O registro define preferência de qualidade/custo/latência, mas os nomes reais dos
 modelos vêm exclusivamente de Settings/.env. A política e o gateway continuam
 responsáveis por elegibilidade, sigilo, fallback e kill-switch.
 """
