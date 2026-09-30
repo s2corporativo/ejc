@@ -873,8 +873,16 @@ export default function CasoDetalhe() {
     }
   };
 
-  const grupoAtivo =
-    GROUPS.find((g) => g.tabs.includes(activeTab)) ?? GROUPS[0];
+  const primaryFlowTabs = new Set<TabKey>([
+    "resumo",
+    "provas",
+    "teses",
+    "dossie",
+    "pecas",
+  ]);
+  const tabsMais = filtrarTabsW3(TABS.map((tab) => tab.key)).filter(
+    (tab) => !primaryFlowTabs.has(tab),
+  );
   const activeTabLabel =
     TABS.find((t) => t.key === activeTab)?.label ?? "Resumo";
   const numeroProcesso =
@@ -963,67 +971,49 @@ export default function CasoDetalhe() {
             </button>
           </div>
         </div>
-        {/* Tab bar — grupos */}
         <div className="border-t border-slate-100 px-3 py-2">
-          <div className="flex gap-1 overflow-x-auto scrollbar-thin">
-            {GROUPS.map((g) => {
-              const ativo = g.tabs.includes(activeTab);
-              return (
-                <button
-                  key={g.label}
-                  onClick={() => setSearchParams({ tab: g.tabs[0] })}
-                  className={`h-9 flex-shrink-0 rounded-lg px-3 text-sm font-medium transition-all ${
-                    ativo
-                      ? "bg-primary-600 text-white shadow-sm shadow-primary-600/20"
-                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-                  }`}
-                >
-                  {g.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        {/* Sub-abas do grupo ativo */}
-        {(() => {
-          const grp = grupoAtivo;
-          if (grp.tabs.length <= 1 && !grp.links?.length) return null;
-          return (
-            <div className="flex gap-2 overflow-x-auto border-t border-slate-100 bg-slate-50/70 px-3 py-2 scrollbar-thin">
-              <span className="hidden text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 sm:inline-flex sm:items-center">
-                {grp.label}
-              </span>
-              {grp.tabs.length > 1 &&
-                filtrarTabsW3(grp.tabs).map((k) => {
+          <details className="group relative">
+            <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:border-primary-300 hover:bg-primary-50">
+              Mais
+              <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50/90 p-3 shadow-sm">
+              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                Recursos complementares do caso
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {tabsMais.map((k) => {
                   const t = TABS.find((x) => x.key === k)!;
                   return (
                     <button
                       key={k}
+                      type="button"
                       onClick={() => setSearchParams({ tab: k })}
-                      className={`h-8 flex-shrink-0 rounded-full px-3 text-xs font-medium transition-colors ${
+                      className={`h-8 rounded-full px-3 text-xs font-medium transition-colors ${
                         activeTab === k
                           ? "bg-slate-950 text-white"
-                          : "text-slate-600 hover:bg-white hover:text-slate-950"
+                          : "border border-slate-200 bg-white text-slate-600 hover:border-primary-300 hover:text-slate-950"
                       }`}
                     >
                       {t.label}
                     </button>
                   );
                 })}
-              {/* Rotas irmãs do caso vinculadas a esta seção (Sala de Guerra,
-                  Jornada, Entrevista) — páginas próprias, não abas. */}
-              {grp.links?.map((l) => (
-                <Link
-                  key={l.label}
-                  to={l.to(caso.id)}
-                  className="flex h-8 flex-shrink-0 items-center rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-primary-700 transition-colors hover:border-primary-300 hover:bg-primary-50"
-                >
-                  {l.label}
-                </Link>
-              ))}
+                {Object.values(GROUP_LINKS)
+                  .flat()
+                  .map((link) => (
+                    <Link
+                      key={link.label}
+                      to={link.to(caso.id)}
+                      className="flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-primary-700 transition-colors hover:border-primary-300 hover:bg-primary-50"
+                    >
+                      {link.label}
+                    </Link>
+                  ))}
+              </div>
             </div>
-          );
-        })()}
+          </details>
+        </div>
       </div>
 
       <div className="flex items-center justify-between">

@@ -28,7 +28,10 @@ export default function TabPecas({ caseId }: { caseId: string }) {
 
   return (
     <div className="space-y-5" data-case-context={caseId}>
-      <section className="rounded-2xl border border-primary-100 bg-gradient-to-br from-primary-50/80 to-white p-5 shadow-sm">
+      <section
+        id="revisao"
+        className="rounded-2xl border border-primary-100 bg-gradient-to-br from-primary-50/80 to-white p-5 shadow-sm"
+      >
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-3xl">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-primary-700">

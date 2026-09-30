@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
-import { addMonths, format } from "date-fns";
+import { addDays, addMonths, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import AgendaSidebar from "./AgendaSidebar";
 
@@ -69,7 +75,9 @@ describe("AgendaSidebar — calendário da agenda na sidebar", () => {
     expect(getMock).toHaveBeenCalledWith("/atividades", {
       params: { apenas_pendentes: false },
     });
-    expect(screen.getByRole("grid", { name: "Calendário do mês" })).toBeTruthy();
+    expect(
+      screen.getByRole("grid", { name: "Calendário do mês" }),
+    ).toBeTruthy();
     expect(screen.getByText(ROTULO_MES)).toBeTruthy();
   });
 
@@ -78,6 +86,41 @@ describe("AgendaSidebar — calendário da agenda na sidebar", () => {
     await waitFor(() =>
       expect(screen.getByLabelText(`${ROTULO_HOJE} — 2 itens`)).toBeTruthy(),
     );
+  });
+
+  it("mostra no máximo três próximos compromissos abaixo do calendário", async () => {
+    const amanha = format(addDays(HOJE, 1), "yyyy-MM-dd");
+    const depois = format(addDays(HOJE, 2), "yyyy-MM-dd");
+    getMock.mockResolvedValue({
+      data: [
+        ...payload().data,
+        {
+          id: "fut-1",
+          titulo: "Reunião com cliente",
+          date: amanha,
+          case_id: "caso-2",
+          caso_titulo: "Caso futuro",
+        },
+        {
+          id: "fut-2",
+          titulo: "Protocolar manifestação",
+          date: depois,
+          case_id: null,
+          caso_titulo: null,
+        },
+      ],
+    });
+
+    renderAgenda();
+
+    expect(await screen.findByText("Próximos")).toBeTruthy();
+    expect(screen.getByText("Reunião com cliente")).toBeTruthy();
+    expect(screen.getByText("Protocolar manifestação")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: /Reunião com cliente/ })
+        .getAttribute("href"),
+    ).toBe("/casos/caso-2");
   });
 
   it("rotula cada dia por extenso, nunca só pelo número, e sem repetição", async () => {

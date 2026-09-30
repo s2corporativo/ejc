@@ -90,18 +90,20 @@ describe("canonicalNavigation — menu Core mínimo", () => {
     }
   });
 
-  it("expõe somente os cinco destinos estruturais do escritório", () => {
+  it("expõe somente os sete domínios estruturais do escritório", () => {
     expect(CANONICAL_CORE_NAV.map((item) => item.key)).toEqual([
       "dashboard",
       "clientes",
       "casos",
+      "atividades",
       "financeiro",
+      "inteligencia",
       "configuracoes",
     ]);
     expect(CANONICAL_MENU_9_NAV).toBe(CANONICAL_CORE_NAV);
   });
 
-  it("rotula Casos como Casos e Processos e mantém áreas operacionais fora da lateral", () => {
+  it("mantém atividades e inteligência na lateral, sem expor módulos internos", () => {
     const entrada = [
       mod("dashboard", "Início"),
       mod("clientes", "Clientes"),
@@ -121,16 +123,16 @@ describe("canonicalNavigation — menu Core mínimo", () => {
     expect(saida.map((item) => [item.key, item.label])).toEqual([
       ["dashboard", "Início"],
       ["clientes", "Clientes"],
-      ["casos", "Casos e Processos"],
+      ["casos", "Casos"],
+      ["atividades", "Atividades"],
       ["financeiro", "Financeiro"],
+      ["inteligencia", "Inteligência"],
       ["configuracoes", "Administração"],
     ]);
     expect(
       saida.some((item) =>
         [
-          "atividades",
           "pecas",
-          "inteligencia",
           "documentos",
           "banco-teses",
           "radar",
@@ -191,7 +193,8 @@ describe("canonicalNavigation — menu Core mínimo", () => {
     expect(selectMainNavigation(entrada).map((item) => item.label)).toEqual([
       "Início",
       "Clientes",
-      "Casos e Processos",
+      "Casos",
+      "Inteligência",
       "Administração",
     ]);
 
@@ -210,7 +213,8 @@ describe("canonicalNavigation — menu Core mínimo", () => {
     expect(selectMainNavigation(entrada).map((item) => item.label)).toEqual([
       "Início",
       "Clientes",
-      "Casos e Processos",
+      "Casos",
+      "Inteligência",
       "Administração",
     ]);
   });

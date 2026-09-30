@@ -81,8 +81,8 @@ e escala com o que o diff toca:
 | Mudança | Portão antes do push |
 |---|---|
 | Só documentação/`.md`/comentários | Nenhum (declare docs-only no PR) |
-| Só `frontend/src` | `cd frontend && npm run lint && npm test && npm run build` |
-| Só backend, sem tocar banco/models/services/routers compartilhados | `cd backend && ruff check app && pytest <área alterada>` + suíte completa `pytest` uma vez antes do push |
+| Só `frontend/src` | Linux/CI: `cd frontend && npm run lint && npm test && npm run build`; Windows: substitua `npm test` por `npm run test:ci` |
+| Só backend, sem tocar banco/models/services/routers compartilhados | Portão oficial completo somente em Linux/CI/WSL/container: `cd backend && ruff check app && pytest <área alterada>` + suíte completa `pytest` uma vez antes do push |
 | Banco, models, migrations, seeds | Acima + `alembic upgrade head` do zero em PostgreSQL 16 + pgvector local |
 | Cruza backend e frontend | Ambas as colunas |
 
@@ -115,13 +115,25 @@ uvicorn app.main:app --reload --port 8000
 cd frontend && npm ci
 npm run dev                   # :5173, proxy /api → :8000
 npm run lint                  # = tsc --noEmit
-npm test                      # vitest run
+npm test                      # vitest run (Linux/CI)
+npm run test:ci               # Windows: 2 workers, sem paralelismo entre arquivos
+
 npm run build
 
 # Stack completa / CI local
 docker compose up -d --build
 scripts/ci-local.sh
 ```
+
+### Portões por sistema operacional
+
+- **Backend:** a evidência oficial da suíte completa é Linux (CI, WSL ou container).
+  Windows nativo pode executar Ruff e testes-alvo, mas não deve declarar o
+  backend "verde" quando dependências Unix/nativas impedirem a coleta completa.
+- **Frontend:** Linux/CI mantém o paralelismo padrão do Vitest. Em Windows nativo,
+  use `npm run test:ci`, que fixa `--maxWorkers=2 --no-file-parallelism` para
+  evitar morte intermitente de workers. O critério não deve ser trocado
+  silenciosamente durante uma validação.
 
 ## Arquitetura — o essencial
 
