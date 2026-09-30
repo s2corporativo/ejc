@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   Copy,
   ArchiveRestore,
+  Star,
 } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
@@ -47,6 +48,11 @@ import {
 import BadgesAlerta from "../components/visual/BadgesAlerta";
 import CalculadoraAcordo from "../components/visual/CalculadoraAcordo";
 import { useAuth } from "../stores/auth";
+import {
+  isCaseFavorite,
+  rememberRecentCase,
+  toggleCaseFavorite,
+} from "../lib/recentCases";
 import {
   CASE_NAV_SECTIONS,
   LEGACY_CASE_TAB_REDIRECTS,
@@ -672,6 +678,7 @@ export default function CasoDetalhe() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [caso, setCaso] = useState<Case | null>(null);
+  const [favorite, setFavorite] = useState(false);
 
   // Abas legadas (?tab=orquestrador) são normalizadas de forma síncrona para a
   // aba nova — nenhum deep-link antigo quebra nem mostra tela vazia. Abas
@@ -703,6 +710,16 @@ export default function CasoDetalhe() {
       .then((r) => setCaso(r.data))
       .catch(() => navigate("/casos"));
   }, [id]);
+
+  useEffect(() => {
+    if (!caso?.id) return;
+    rememberRecentCase({
+      id: caso.id,
+      titulo: caso.titulo,
+      area: caso.area,
+    });
+    setFavorite(isCaseFavorite(caso.id));
+  }, [caso?.id, caso?.titulo, caso?.area]);
 
   if (!caso) {
     return (
@@ -873,13 +890,18 @@ export default function CasoDetalhe() {
     }
   };
 
-  const primaryFlowTabs = new Set<TabKey>([
-    "resumo",
-    "provas",
-    "teses",
-    "dossie",
-    "pecas",
-  ]);
+  const primaryCaseTabs: { key: TabKey; label: string }[] = [
+    { key: "resumo", label: "Visão geral" },
+    { key: "timeline", label: "Timeline" },
+    { key: "documentos", label: "Documentos" },
+    { key: "teses", label: "Estratégia" },
+    { key: "pecas", label: "Peças" },
+    { key: "prazos", label: "Prazos" },
+    { key: "financeiro", label: "Financeiro" },
+  ];
+  const primaryFlowTabs = new Set<TabKey>(
+    primaryCaseTabs.map((item) => item.key),
+  );
   const tabsMais = filtrarTabsW3(TABS.map((tab) => tab.key)).filter(
     (tab) => !primaryFlowTabs.has(tab),
   );
@@ -895,6 +917,7 @@ export default function CasoDetalhe() {
         caseId={caso.id}
         titulo={caso.titulo}
         tela={activeTabLabel}
+        area={caso.area}
       />
       {/* Sticky header + tabs */}
       <div className="sticky top-[4.25rem] z-20 card bg-white">
@@ -941,6 +964,18 @@ export default function CasoDetalhe() {
                   </strong>
                 </span>
               )}
+              {caso.proxima_acao && (
+                <span className="ejc-case-next-action">
+                  Próxima ação:{" "}
+                  <strong>{caso.proxima_acao}</strong>
+                </span>
+              )}
+              {caso.proxima_acao_prazo && (
+                <span className="ejc-case-next-deadline">
+                  Prazo:{" "}
+                  <strong>{fmtDate(caso.proxima_acao_prazo)}</strong>
+                </span>
+              )}
               {caso.created_at && (
                 <span>
                   Abertura:{" "}
@@ -954,6 +989,32 @@ export default function CasoDetalhe() {
             <BadgesAlerta caseId={caso.id} className="mt-2" />
           </div>
           <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
+            <button
+              type="button"
+              onClick={() =>
+                setFavorite(
+                  toggleCaseFavorite({
+                    id: caso.id,
+                    titulo: caso.titulo,
+                    area: caso.area,
+                  }),
+                )
+              }
+              className={
+                favorite
+                  ? "btn-secondary h-9 text-xs is-favorite"
+                  : "btn-secondary h-9 text-xs"
+              }
+              aria-pressed={favorite}
+              title={favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+            >
+              <Star
+                size={14}
+                className={favorite ? "fill-current" : ""}
+                aria-hidden="true"
+              />
+              {favorite ? "Favorito" : "Favoritar"}
+            </button>
             {/* Fase 3 (QA): "IA do caso" leva à aba Teses — o assistente
                 contextual (ContextualAIAssistant) segue disponível em todas
                 as abas do caso, inclusive nesta. */}
@@ -971,8 +1032,20 @@ export default function CasoDetalhe() {
             </button>
           </div>
         </div>
-        <div className="border-t border-slate-100 px-3 py-2">
-          <details className="group relative">
+        <div className="ejc-case-nav-row border-t border-slate-100 px-3 py-2">
+          <nav className="ejc-case-primary-tabs" aria-label="Áreas principais do caso">
+            {primaryCaseTabs.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setSearchParams({ tab: item.key })}
+                className={activeTab === item.key ? "is-active" : ""}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+          <details className="group relative ejc-case-more">
             <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:border-primary-300 hover:bg-primary-50">
               Mais
               <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
@@ -1016,18 +1089,47 @@ export default function CasoDetalhe() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="eyebrow">Caso</div>
-          <h2 className="mt-1 text-lg font-semibold text-slate-950">
-            {activeTabLabel}
-          </h2>
+      <div className="ejc-case-workspace-grid">
+        <div className="ejc-case-main-column">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="eyebrow">Caso</div>
+              <h2 className="mt-1 text-lg font-semibold text-slate-950">
+                {activeTabLabel}
+              </h2>
+            </div>
+          </div>
+          <div>{renderTab()}</div>
         </div>
+
+        <aside className="ejc-case-ai-rail" aria-label="EJC Intelligence do caso">
+          <div className="ejc-case-ai-rail-head">
+            <div>
+              <span>EJC Intelligence</span>
+              <strong>Assistente contextual</strong>
+            </div>
+            <Sparkles size={18} aria-hidden="true" />
+          </div>
+          <div className="ejc-case-ai-shortcuts">
+            <button type="button" onClick={() => setSearchParams({ tab: "ferramentas" })}>
+              Analisar
+            </button>
+            <button type="button" onClick={() => setSearchParams({ tab: "indicadores" })}>
+              Pesquisar
+            </button>
+            <button type="button" onClick={() => setSearchParams({ tab: "ferramentas" })}>
+              Advogado do Diabo
+            </button>
+            <button type="button" onClick={() => setSearchParams({ tab: "pecas" })}>
+              Criar peça
+            </button>
+            <button type="button" onClick={() => setSearchParams({ tab: "pecas" })}>
+              Revisar
+            </button>
+          </div>
+          <ContextualAIAssistant caso={caso} surface={activeTab} />
+        </aside>
       </div>
-
-      <ContextualAIAssistant caso={caso} surface={activeTab} />
-
-      <div>{renderTab()}</div>
     </div>
   );
 }
