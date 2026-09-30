@@ -10,6 +10,7 @@ import {
 import RodapeRegra, { METADADOS_REGRA } from "../../components/RodapeRegra";
 import AnaliseEstrategica from "../../components/AnaliseEstrategica";
 import IaDefensivaCaso from "./IaDefensivaCaso";
+import ComparadorJuridicoCaso from "../../components/ComparadorJuridicoCaso";
 import { Spinner } from "../../components/UI";
 import type { Case } from "../../types";
 import { ramosDaArea } from "../ramos/ramosConfig";
@@ -520,6 +521,9 @@ export default function TabFerramentas({ caso }: { caso: Case }) {
           Acesse Ramos no menu lateral para as calculadoras gerais.
         </div>
       )}
+
+      {/* Comparação jurídica transversal — integrada ao caso. */}
+      <ComparadorJuridicoCaso caso={caso} />
 
       {/* Análise Estratégica IA — sempre disponível */}
       <AnaliseEstrategica caseId={caso.id} />

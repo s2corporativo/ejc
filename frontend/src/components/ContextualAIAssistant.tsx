@@ -90,7 +90,7 @@ export default function ContextualAIAssistant({
   caso: Case;
   surface: string;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const [actions, setActions] = useState<ContextualAction[]>([]);
   const [selected, setSelected] = useState("");
   const [query, setQuery] = useState("");
