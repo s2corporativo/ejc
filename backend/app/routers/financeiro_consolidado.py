@@ -336,7 +336,7 @@ async def _commission_statement(
                 LEFT JOIN ajustes aj ON aj.allocation_id=a.id
                 WHERE fp.data_pagamento >= :inicio
                   AND fp.data_pagamento < :fim
-                  AND (:advogado_id IS NULL OR a.advogado_responsavel_id=:advogado_id)
+                  AND (CAST(:advogado_id AS varchar) IS NULL OR a.advogado_responsavel_id=CAST(:advogado_id AS varchar))
                 ORDER BY u.full_name, fp.data_pagamento, a.created_at
                 """
             ),
@@ -1079,8 +1079,8 @@ async def listar_comissoes(
                 LEFT JOIN ajustes aj ON aj.allocation_id = a.id
                 WHERE f.deleted_at IS NULL
                   AND a.valor_advogado > 0
-                  AND (:inicio IS NULL OR fp.data_pagamento >= :inicio)
-                  AND (:fim IS NULL OR fp.data_pagamento < :fim)
+                  AND (CAST(:inicio AS date) IS NULL OR fp.data_pagamento >= CAST(:inicio AS date))
+                  AND (CAST(:fim AS date) IS NULL OR fp.data_pagamento < CAST(:fim AS date))
                 ORDER BY fp.data_pagamento DESC, a.created_at DESC
                 LIMIT 1000
                 """
@@ -1134,8 +1134,8 @@ async def listar_comissoes(
                         SUM(i.valor_pago) AS valor
                     FROM commission_payment_batch_items i
                     JOIN commission_payment_batches b ON b.id=i.batch_id
-                    WHERE (:inicio IS NULL OR b.paid_at >= :inicio)
-                      AND (:fim IS NULL OR b.paid_at < :fim)
+                    WHERE (CAST(:inicio AS timestamptz) IS NULL OR b.paid_at >= CAST(:inicio AS timestamptz))
+                      AND (CAST(:fim AS timestamptz) IS NULL OR b.paid_at < CAST(:fim AS timestamptz))
                     GROUP BY i.partner_id
                     UNION ALL
                     SELECT
@@ -1145,8 +1145,8 @@ async def listar_comissoes(
                     WHERE pw.deleted_at IS NULL
                       AND pw.status='pago'
                       AND pw.payment_batch_id IS NULL
-                      AND (:inicio IS NULL OR pw.paid_at >= :inicio)
-                      AND (:fim IS NULL OR pw.paid_at < :fim)
+                      AND (CAST(:inicio AS timestamptz) IS NULL OR pw.paid_at >= CAST(:inicio AS timestamptz))
+                      AND (CAST(:fim AS timestamptz) IS NULL OR pw.paid_at < CAST(:fim AS timestamptz))
                     GROUP BY pw.partner_id
                 )
                 SELECT partner_id,COALESCE(SUM(valor),0) AS valor
@@ -1410,8 +1410,8 @@ async def previsao_comissoes(
                 ) cr ON TRUE
                 WHERE s.saldo > 0
                   AND c.advogado_responsavel_id IS NOT NULL
-                  AND (:inicio IS NULL OR s.data_vencimento >= :inicio)
-                  AND (:fim IS NULL OR s.data_vencimento < :fim)
+                  AND (CAST(:inicio AS date) IS NULL OR s.data_vencimento >= CAST(:inicio AS date))
+                  AND (CAST(:fim AS date) IS NULL OR s.data_vencimento < CAST(:fim AS date))
                 ORDER BY s.data_vencimento NULLS LAST,c.numero_interno
                 LIMIT 1000
                 """
@@ -1433,8 +1433,8 @@ async def previsao_comissoes(
                   AND f.percentual_exito IS NOT NULL
                   AND CAST(f.status AS text) IN ('pendente','atrasado')
                   AND c.advogado_responsavel_id IS NOT NULL
-                  AND (:inicio IS NULL OR f.data_vencimento >= :inicio)
-                  AND (:fim IS NULL OR f.data_vencimento < :fim)
+                  AND (CAST(:inicio AS date) IS NULL OR f.data_vencimento >= CAST(:inicio AS date))
+                  AND (CAST(:fim AS date) IS NULL OR f.data_vencimento < CAST(:fim AS date))
                 """
             ),
             {"inicio": inicio, "fim": fim},
