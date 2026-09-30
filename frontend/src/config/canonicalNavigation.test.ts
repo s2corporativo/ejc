@@ -90,15 +90,16 @@ describe("canonicalNavigation — menu Core mínimo", () => {
     }
   });
 
-  it("expõe somente os sete domínios estruturais do escritório", () => {
+  it("expõe somente os oito domínios estruturais do escritório", () => {
     expect(CANONICAL_CORE_NAV.map((item) => item.key)).toEqual([
       "dashboard",
-      "clientes",
       "casos",
       "atividades",
+      "documentos",
+      "pecas",
       "financeiro",
+      "clientes",
       "inteligencia",
-      "configuracoes",
     ]);
     expect(CANONICAL_MENU_9_NAV).toBe(CANONICAL_CORE_NAV);
   });
@@ -122,22 +123,19 @@ describe("canonicalNavigation — menu Core mínimo", () => {
     const saida = selectMainNavigation(entrada, { menu9: true });
     expect(saida.map((item) => [item.key, item.label])).toEqual([
       ["dashboard", "Início"],
-      ["clientes", "Clientes"],
       ["casos", "Casos"],
-      ["atividades", "Atividades"],
+      ["atividades", "Agenda"],
+      ["documentos", "Documentos"],
+      ["pecas", "Peças"],
       ["financeiro", "Financeiro"],
+      ["clientes", "Clientes"],
       ["inteligencia", "Inteligência"],
-      ["configuracoes", "Administração"],
     ]);
     expect(
       saida.some((item) =>
-        [
-          "pecas",
-          "documentos",
-          "banco-teses",
-          "radar",
-          "produtividade",
-        ].includes(item.key),
+        ["configuracoes", "banco-teses", "radar", "produtividade"].includes(
+          item.key,
+        ),
       ),
     ).toBe(false);
   });
@@ -152,9 +150,8 @@ describe("canonicalNavigation — menu Core mínimo", () => {
     const saida = selectMainNavigation(entrada, { menu9: true });
     expect(saida.map((item) => item.key)).toEqual([
       "dashboard",
-      "clientes",
       "casos",
-      "configuracoes",
+      "clientes",
     ]);
     expect(saida.some((item) => item.key === "financeiro")).toBe(false);
   });
@@ -192,10 +189,9 @@ describe("canonicalNavigation — menu Core mínimo", () => {
     expect(isMenu9Enabled()).toBe(true);
     expect(selectMainNavigation(entrada).map((item) => item.label)).toEqual([
       "Início",
-      "Clientes",
       "Casos",
+      "Clientes",
       "Inteligência",
-      "Administração",
     ]);
 
     setMenu9Enabled(false);
@@ -212,10 +208,9 @@ describe("canonicalNavigation — menu Core mínimo", () => {
     expect(isMenu9Enabled()).toBe(true);
     expect(selectMainNavigation(entrada).map((item) => item.label)).toEqual([
       "Início",
-      "Clientes",
       "Casos",
+      "Clientes",
       "Inteligência",
-      "Administração",
     ]);
   });
 });

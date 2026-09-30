@@ -252,12 +252,12 @@ describe("DashboardUltra — cockpit jurídico final", () => {
     expect(await screen.findByText("Começar novo trabalho")).toBeTruthy();
     expect(
       screen
-        .getByRole("link", { name: "Analisar novo caso" })
+        .getByRole("link", { name: "Entrada por IA" })
         .getAttribute("href"),
     ).toBe("/entrada");
     expect(
       screen
-        .getByRole("link", { name: "Cadastro manual" })
+        .getByRole("link", { name: /Novo Caso/ })
         .getAttribute("href"),
     ).toBe("/cadastro-manual?aba=caso");
     expect(screen.queryByTestId("entrada-unica")).not.toBeTruthy();
@@ -273,7 +273,9 @@ describe("DashboardUltra — cockpit jurídico final", () => {
     expect(screen.getByLabelText("Clientes ativos: 48")).toBeTruthy();
     expect(screen.getByLabelText("Casos em andamento: 3")).toBeTruthy();
     expect(screen.getByLabelText("Pendências de integridade: 4")).toBeTruthy();
-    expect(screen.getByText("Casos em destaque")).toBeTruthy();
+    expect(screen.getByLabelText("Casos em destaque")).toBeTruthy();
+    expect(screen.getByText("Meus casos prioritários")).toBeTruthy();
+    expect(screen.getByLabelText("Meu Dia")).toBeTruthy();
     expect(screen.queryByText("Agenda e Prazos")).not.toBeTruthy();
     expect(screen.queryByText("Minha rotina hoje")).not.toBeTruthy();
   });
