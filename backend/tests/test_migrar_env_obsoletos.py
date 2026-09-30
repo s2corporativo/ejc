@@ -212,9 +212,12 @@ class TestWiringNosDeploys:
         assert "migrar_env_obsoletos.sh" in conteudo
         assert '--backup-path "$ENV_ROLLBACK_FILE"' in conteudo
 
-    def test_bootstrap_manual_chama_a_migracao(self):
-        conteudo = (RAIZ / "scripts" / "deploy-vps.sh").read_text(encoding="utf-8")
-        assert "migrar_env_obsoletos.sh" in conteudo
+    def test_bootstrap_legado_removido_e_manual_usa_transacao_segura(self):
+        assert not (RAIZ / "scripts" / "deploy-vps.sh").exists()
+        manual = (RAIZ / "scripts" / "deploy_manual.sh").read_text(encoding="utf-8")
+        assert "deploy_workflow_transaction.sh" in manual
+        tx = (RAIZ / "scripts" / "deploy_workflow_transaction.sh").read_text(encoding="utf-8")
+        assert "bash scripts/deploy_vps_safe.sh" in tx
 
     def test_transacao_de_deploy_usa_o_script_seguro(self):
         """Elo VIVO da cadeia: transaction.sh (mutex + estado) → deploy_vps_safe.sh.
