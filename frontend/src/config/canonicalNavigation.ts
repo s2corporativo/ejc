@@ -41,12 +41,13 @@ export const CANONICAL_MAIN_NAV = [
 /** Menu estrutural enxuto do EJC: domínios de trabalho, não módulos internos. */
 export const CANONICAL_CORE_NAV = [
   { key: "dashboard", label: "Início" },
-  { key: "clientes", label: "Clientes" },
   { key: "casos", label: "Casos" },
-  { key: "atividades", label: "Atividades" },
+  { key: "atividades", label: "Agenda" },
+  { key: "documentos", label: "Documentos" },
+  { key: "pecas", label: "Peças" },
   { key: "financeiro", label: "Financeiro" },
+  { key: "clientes", label: "Clientes" },
   { key: "inteligencia", label: "Inteligência" },
-  { key: "configuracoes", label: "Administração" },
 ] as const;
 
 /**

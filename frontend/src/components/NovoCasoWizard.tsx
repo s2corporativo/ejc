@@ -246,7 +246,13 @@ export default function NovoCasoWizard({
   const nomeCliente = (c: Client) => c.nome || c.razao_social || "Sem nome";
 
   return (
-    <Modal open={open} onClose={fechar} title="Novo caso manual — sem IA" wide>
+    <Modal
+      open={open}
+      onClose={fechar}
+      title="Novo caso manual — sem IA"
+      wide
+      placement="right"
+    >
       <div className="mb-5 rounded-xl border border-success-200 bg-success-50 px-4 py-3">
         <p className="text-sm font-semibold text-success-800">
           Cadastro rápido e totalmente manual
