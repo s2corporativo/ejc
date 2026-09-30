@@ -14,6 +14,9 @@ interface ResumoFinanceiro {
   pendente_sucumbencia: boolean;
   pendente_exito: boolean;
   regra_rateio: string;
+  regra_rateio_escopo?: string | null;
+  percentual_advogado_atual?: number | null;
+  descontar_despesas_comissao?: boolean;
   advogado_responsavel_id?: string | null;
   advogado_responsavel_nome?: string | null;
   rateio_pendente_quantidade?: number;
@@ -106,12 +109,13 @@ export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
         { valor },
       );
       setValorRecebido("");
+      const pct = Number(data?.rateio?.percentual_advogado ?? 0);
       toast.success(
         data?.rateio?.rateio_pendente
-          ? "Recebimento registrado; rateio pendente até definir o responsável."
-          : data?.rateio?.regra === "institucional_integral_escritorio"
-            ? "Recebimento lançado: 100% para o escritório."
-            : "Recebimento lançado: 50% responsável / 50% escritório.",
+          ? "Recebimento registrado; comissão pendente até definir o responsável."
+          : `Recebimento lançado: ${pct.toLocaleString("pt-BR")}% responsável / ${(
+              100 - pct
+            ).toLocaleString("pt-BR")}% escritório.`,
       );
       await carregar();
     } catch (e: any) {
@@ -251,8 +255,8 @@ export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
           </p>
           {resumo?.rateio_pendente_sem_responsavel && (
             <p className="mt-1 font-medium">
-              O recebimento pode ser registrado, mas o rateio 50/50 ficará
-              pendente até a definição do advogado responsável.
+              O recebimento pode ser registrado, mas a comissão ficará pendente
+              até a definição do advogado responsável.
             </p>
           )}
           {podeReconciliar &&
@@ -276,10 +280,22 @@ export default function TabFinanceiroCaso({ caso }: { caso: Case }) {
         <h3 className="font-semibold">Registrar valor recebido</h3>
         <p className="mt-1 text-xs text-slate-500">
           Registre aqui receita de honorários efetivamente recebida pelo
-          escritório, não valores pertencentes ao cliente.{" "}
-          {resumo?.regra_rateio === "institucional_integral_escritorio"
-            ? "Carteira institucional: 100% escritório."
-            : "Rateio: 50% responsável / 50% escritório."}
+          escritório, não valores pertencentes ao cliente. Regra atual:{" "}
+          {resumo?.regra_rateio || "padrão"} —{" "}
+          {Number(resumo?.percentual_advogado_atual ?? 0).toLocaleString(
+            "pt-BR",
+          )}
+          % responsável /{" "}
+          {(
+            100 - Number(resumo?.percentual_advogado_atual ?? 0)
+          ).toLocaleString("pt-BR")}
+          % escritório.
+          {resumo?.descontar_despesas_comissao
+            ? " Despesas pagas do caso são deduzidas antes do cálculo."
+            : " Cálculo sobre o bruto."}
+          {resumo?.regra_rateio_escopo === "caso"
+            ? " Regra específica deste caso."
+            : ""}
         </p>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <input

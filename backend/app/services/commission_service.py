@@ -293,3 +293,227 @@ async def alocar_comissao_pagamento(
         "commission_rule_id": alloc.commission_rule_id,
         "rateio_pendente": False,
     }
+
+
+async def _aplicar_ajuste_em_retirada(
+    db,
+    *,
+    allocation_id: str,
+    advogado_id: str | None,
+    withdrawal_id: str | None,
+    case_id: str,
+    delta_advogado: Decimal,
+    adjustment_id: str,
+) -> Decimal:
+    """Aplica o ajuste na ordem ainda aberta quando possível.
+
+    Retirada pendente/aprovada é corrigida no próprio valor operacional.
+    Retirada paga nunca é reescrita: ajuste negativo vira crédito do escritório
+    a compensar em lote futuro; ajuste positivo gera nova ordem pendente.
+    """
+    if delta_advogado == 0 or not advogado_id:
+        return Decimal("0.00")
+
+    row = None
+    if withdrawal_id:
+        row = (
+            await db.execute(
+                text(
+                    """
+                    SELECT id, status, partner_share
+                    FROM partner_withdrawals
+                    WHERE id=:id AND deleted_at IS NULL
+                    FOR UPDATE
+                    """
+                ),
+                {"id": withdrawal_id},
+            )
+        ).mappings().first()
+
+    if row and row["status"] in {"pendente", "aprovado"}:
+        atual = money(row["partner_share"])
+        if delta_advogado < 0:
+            aplicado = max(delta_advogado, -atual)
+        else:
+            aplicado = delta_advogado
+        novo = money(atual + aplicado)
+        novo_status = "cancelado" if novo == 0 else row["status"]
+        await db.execute(
+            text(
+                """
+                UPDATE partner_withdrawals
+                SET partner_share=:share,
+                    status=:status,
+                    updated_at=NOW()
+                WHERE id=:id
+                """
+            ),
+            {"share": novo, "status": novo_status, "id": row["id"]},
+        )
+        return money(aplicado)
+
+    # Se a ordem original já foi paga/cancelada (ou não existe), o ajuste
+    # permanece como saldo pendente. Ele será compensado no próximo lote do
+    # advogado, sem criar uma retirada paralela invisível na interface.
+
+    return Decimal("0.00")
+
+
+async def registrar_ajuste_comissao(
+    db,
+    *,
+    allocation_id: str,
+    valor_advogado,
+    valor_escritorio,
+    motivo: str,
+    user,
+    source_type: str = "ajuste",
+    fee_estorno_id: str | None = None,
+) -> dict:
+    """Acrescenta ajuste imutável ao rateio, sem editar o snapshot original."""
+    delta_adv = money(valor_advogado)
+    delta_esc = money(valor_escritorio)
+    if delta_adv == 0 and delta_esc == 0:
+        return {"ajuste_id": None, "ignorado": True}
+    if source_type not in {"ajuste", "estorno"}:
+        raise ValueError("source_type inválido")
+
+    allocation = (
+        await db.execute(
+            text(
+                """
+                SELECT id, case_id, advogado_responsavel_id, withdrawal_id
+                FROM case_receipt_allocations
+                WHERE id=:id
+                FOR UPDATE
+                """
+            ),
+            {"id": allocation_id},
+        )
+    ).mappings().first()
+    if not allocation:
+        raise ValueError("alocação de comissão não encontrada")
+
+    if fee_estorno_id:
+        existente = (
+            await db.execute(
+                text(
+                    """
+                    SELECT id
+                    FROM commission_adjustments
+                    WHERE fee_estorno_id=:id
+                    LIMIT 1
+                    """
+                ),
+                {"id": fee_estorno_id},
+            )
+        ).scalar_one_or_none()
+        if existente:
+            return {"ajuste_id": existente, "ja_existia": True}
+
+    aid = str(uuid4())
+    applied = await _aplicar_ajuste_em_retirada(
+        db,
+        allocation_id=allocation_id,
+        advogado_id=allocation["advogado_responsavel_id"],
+        withdrawal_id=allocation["withdrawal_id"],
+        case_id=allocation["case_id"],
+        delta_advogado=delta_adv,
+        adjustment_id=aid,
+    )
+
+    await db.execute(
+        text(
+            """
+            INSERT INTO commission_adjustments
+                (id, allocation_id, fee_estorno_id, source_type,
+                 valor_advogado, valor_escritorio, applied_value,
+                 motivo, created_by, created_at)
+            VALUES
+                (:id, :allocation_id, :fee_estorno_id, :source_type,
+                 :valor_advogado, :valor_escritorio, :applied_value,
+                 :motivo, :created_by, NOW())
+            """
+        ),
+        {
+            "id": aid,
+            "allocation_id": allocation_id,
+            "fee_estorno_id": fee_estorno_id,
+            "source_type": source_type,
+            "valor_advogado": delta_adv,
+            "valor_escritorio": delta_esc,
+            "applied_value": applied,
+            "motivo": motivo,
+            "created_by": getattr(user, "id", None),
+        },
+    )
+
+    await criar_audit_log(
+        db,
+        getattr(user, "id", None),
+        _role(user) or "system",
+        "COMMISSION_ADJUSTMENT",
+        "case_receipt_allocations",
+        allocation_id,
+        detalhes=motivo[:500],
+        dados_depois={
+            "adjustment_id": aid,
+            "source_type": source_type,
+            "valor_advogado": str(delta_adv),
+            "valor_escritorio": str(delta_esc),
+            "applied_value": str(applied),
+            "fee_estorno_id": fee_estorno_id,
+        },
+    )
+    return {
+        "ajuste_id": aid,
+        "valor_advogado": delta_adv,
+        "valor_escritorio": delta_esc,
+        "aplicado_na_ordem": applied,
+        "saldo_pendente": money(delta_adv - applied),
+    }
+
+
+async def registrar_reversao_comissao_estorno(
+    db,
+    *,
+    fee_payment_id: str,
+    fee_estorno_id: str,
+    valor_estorno,
+    motivo: str,
+    user,
+) -> dict | None:
+    """Reverte proporcionalmente a comissão quando o recebimento é estornado."""
+    alloc = (
+        await db.execute(
+            text(
+                """
+                SELECT id, bruto_recebido, valor_advogado, valor_escritorio
+                FROM case_receipt_allocations
+                WHERE fee_payment_id=:payment_id
+                """
+            ),
+            {"payment_id": fee_payment_id},
+        )
+    ).mappings().first()
+    if not alloc:
+        return None
+
+    bruto = money(alloc["bruto_recebido"])
+    estorno = money(valor_estorno)
+    if bruto <= 0 or estorno <= 0:
+        return None
+    proporcao = min(estorno / bruto, Decimal("1"))
+    delta_adv = -money(money(alloc["valor_advogado"]) * proporcao)
+    delta_esc = -money(money(alloc["valor_escritorio"]) * proporcao)
+
+    return await registrar_ajuste_comissao(
+        db,
+        allocation_id=alloc["id"],
+        valor_advogado=delta_adv,
+        valor_escritorio=delta_esc,
+        motivo=f"Estorno proporcional do recebimento: {motivo}",
+        user=user,
+        source_type="estorno",
+        fee_estorno_id=fee_estorno_id,
+    )
