@@ -297,7 +297,7 @@ async def test_buscar_tjmg_rede_falhou_marca_metricas(monkeypatch):
     monkeypatch.setattr(je.httpx, "AsyncClient", _CliRedeCaida)
     met: dict = {}
     assert await je.buscar_tjmg("dano moral", metricas=met) == []
-    assert met == {"rede_falhou": True, "html_bytes": 0, "blocos": 0, "http_status": None}
+    assert met == {"rede_falhou": True, "html_bytes": 0, "blocos": 0}
 
 
 async def test_buscar_tjmg_bloqueio_http_registra_status(monkeypatch):

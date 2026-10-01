@@ -261,8 +261,12 @@ async def buscar_tjmg(
                 rede_falhou=True,
                 html_bytes=0,
                 blocos=0,
-                http_status=status_http,
             )
+            # Compatibilidade: o contrato histórico não tinha http_status.
+            # Só acrescentamos a chave quando existe evidência HTTP concreta;
+            # falha genérica de rede continua com o shape antigo.
+            if status_http is not None:
+                metricas["http_status"] = status_http
         return []
 
     if metricas is not None:

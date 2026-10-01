@@ -30,9 +30,23 @@ async def _dispose_engine_apos_teste():
 async def _criar_doc(db, *, status="pendente", n_chunks_com_embedding=0, n_chunks_sem=0):
     doc_id = str(uuid4())
     await db.execute(text(
-        "INSERT INTO knowledge_docs (id, titulo, categoria, status_indexacao) "
-        "VALUES (:id, 'DOC_TESTE_RECONCILIA', 'legislacao', :s)"
-    ), {"id": doc_id, "s": status})
+        "INSERT INTO knowledge_docs "
+        "(id, titulo, categoria, status_indexacao, extra) "
+        "VALUES (:id, 'DOC_TESTE_RECONCILIA', 'legislacao', :s, "
+        "CAST(:extra AS jsonb))"
+    ), {
+        "id": doc_id,
+        "s": status,
+        # O reparador agora respeita exatamente o gate de recuperação do RAG.
+        # O fixture representa um documento JURIDICAMENTE elegível; testes de
+        # inelegibilidade ficam separados para não confundir governança com a
+        # mecânica de consertar chunks órfãos.
+        "extra": (
+            '{"rag_status":"aprovado","legal_status":"vigente",'
+            '"legal_status_origem":"teste_db",'
+            '"legal_status_verificado_em":"2026-10-01T00:00:00Z"}'
+        ),
+    })
     vec = "[" + ",".join(["0.000000"] * EMBED_DIM) + "]"
     idx = 0
     for _ in range(n_chunks_com_embedding):
@@ -112,6 +126,40 @@ async def test_reembedar_conserta_doc_ja_marcado_indexado_com_chunk_orfao(monkey
                 "todos os chunks (inclusive o antes órfão) devem ter embedding")
         finally:
             await db.execute(text("DELETE FROM knowledge_docs WHERE id=:id"), {"id": doc_id})
+            await db.commit()
+
+
+async def test_reembedar_nao_vetoriza_documento_bloqueado_pelo_gate(monkeypatch):
+    """Documento fora do gate jurídico permanece sem embedding."""
+    from app.core.database import AsyncSessionLocal
+    import scripts.reembedar_chunks_orfaos as reemb
+
+    async def _vetores_ok(textos):
+        return [[0.0] * EMBED_DIM for _ in textos]
+
+    monkeypatch.setattr(reemb, "gerar_embeddings", _vetores_ok)
+    monkeypatch.setattr(reemb, "emb_disponivel", lambda: True)
+
+    async with AsyncSessionLocal() as db:
+        doc_id = await _criar_doc(
+            db, status="indexado", n_chunks_com_embedding=1, n_chunks_sem=1
+        )
+        await db.execute(text(
+            "UPDATE knowledge_docs "
+            "SET extra = jsonb_set(extra, '{rag_status}', CAST(:status AS jsonb)) "
+            "WHERE id=:id"
+        ), {"id": doc_id, "status": '"pendente"'})
+        await db.commit()
+        try:
+            await reemb.reembedar(batch_size=10)
+            chunks = (await db.execute(text(
+                "SELECT embedding FROM knowledge_chunks WHERE doc_id=:id"
+            ), {"id": doc_id})).all()
+            assert sum(1 for chunk in chunks if chunk.embedding is None) == 1
+        finally:
+            await db.execute(
+                text("DELETE FROM knowledge_docs WHERE id=:id"), {"id": doc_id}
+            )
             await db.commit()
 
 
