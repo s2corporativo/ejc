@@ -40,9 +40,26 @@ for rel in sys.argv[2:]:
 
 if errors:
     raise SystemExit("\n".join(errors))
-if checked < 10:
+# Duas checagens de health antes feitas por curl foram consolidadas no
+# check_release_identity.py. Mantemos a cobertura mínima dos curls restantes e
+# provamos explicitamente que o checker novo também tem timeout de rede.
+if checked < 8:
     raise SystemExit(f"cobertura inesperadamente baixa: apenas {checked} comandos curl")
-print(f"curl timeout contract: {checked} comandos ativos cobertos")
+
+identity = (root / "scripts/check_release_identity.py").read_text(encoding="utf-8")
+if "urlopen(url, timeout=15)" not in identity:
+    raise SystemExit("checker canônico de identidade perdeu timeout HTTP")
+
+deploy = (root / "scripts/deploy_vps_safe.sh").read_text(encoding="utf-8")
+approved = (root / "infra/host-automation/ejc-deploy-approved.sh").read_text(encoding="utf-8")
+weekly = (root / "infra/host-automation/ejc-weekly-saneamento.sh").read_text(encoding="utf-8")
+for label, content in (
+    ("deploy", deploy), ("approved", approved), ("weekly", weekly)
+):
+    if "check_release_identity.py" not in content:
+        raise SystemExit(f"{label}: checker canônico de identidade não está integrado")
+
+print(f"timeout contract: {checked} curls + checker canônico HTTP cobertos")
 PY
 
 TMP="$(mktemp -d)"

@@ -469,9 +469,22 @@ RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate frontend
 sleep 8
 EJC_DOMAIN="$DOMAIN" bash scripts/post_deploy_check.sh
 
+# Prova de identidade antes de persistir o marcador.
+python3 scripts/check_release_identity.py \
+  --expected "$GIT_SHA" \
+  --app-dir "$APP_DIR" \
+  --public-url "https://$DOMAIN/api/health" \
+  --skip-marker
+
 printf '%s\n' "$GIT_SHA" > "$DEPLOYED_SHA_TMP"
-chmod 644 "$DEPLOYED_SHA_TMP"
+chmod 600 "$DEPLOYED_SHA_TMP"
 mv -f -- "$DEPLOYED_SHA_TMP" "$APP_DIR/.deployed_sha"
+
+# Prova final: TARGET_SHA == health local == health público == .deployed_sha.
+python3 scripts/check_release_identity.py \
+  --expected "$GIT_SHA" \
+  --app-dir "$APP_DIR" \
+  --public-url "https://$DOMAIN/api/health"
 log "Versão implantada registrada atomicamente em .deployed_sha."
 
 ROLLBACK_ARMED=0

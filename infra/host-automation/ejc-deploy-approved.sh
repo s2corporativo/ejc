@@ -137,11 +137,10 @@ REQUIRE_PREDEPLOY_BACKUP=1 \
 ENSURE_DAILY_BACKUP=1 \
 bash scripts/deploy_vps_safe.sh
 
-curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health >/dev/null
-curl -fsS --connect-timeout 5 --max-time 15 https://ejc.depaulateixeira.adv.br/api/health >/dev/null
-[ -f "$APP_DIR/.deployed_sha" ] || fail "deploy terminou sem marcador canônico .deployed_sha"
-DEPLOYED_FINAL="$(tr -d '\r\n' < "$APP_DIR/.deployed_sha")"
-[ "$DEPLOYED_FINAL" = "$TARGET_SHA" ] || fail ".deployed_sha divergente após deploy: $DEPLOYED_FINAL"
+[ -x "$APP_DIR/scripts/check_release_identity.py" ] || fail "checker de identidade da release ausente"
+python3 "$APP_DIR/scripts/check_release_identity.py" \
+  --expected "$TARGET_SHA" \
+  --app-dir "$APP_DIR"
 rm -f -- "$APP_DIR/.deploy_last_sha"
 chmod 600 "$APP_DIR/.deployed_sha"
-log "deploy concluido e health local/publico confirmados: $TARGET_SHA"
+log "deploy concluido com identidade canônica confirmada: $TARGET_SHA"
