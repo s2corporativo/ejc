@@ -30,7 +30,11 @@ from app.schemas.fee import (
 )
 from app.services.document_access_policy import exigir_documento_compativel_com_caso
 from app.services.fee_ledger import total_pago_efetivo
-from app.services.finance_governance import competencia_de_data, exigir_competencia_aberta
+from app.services.finance_governance import (
+    competencia_de_data,
+    exigir_competencia_aberta,
+    permitir_correcao_competencia_fechada,
+)
 
 _FINANCEIRO_TOTAL = {"superadmin", "admin", "socio", "financeiro"}
 _RE_COMPETENCIA = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
@@ -323,8 +327,41 @@ async def atualizar(
         raise HTTPException(status_code=404, detail="Honorário não encontrado")
 
     alteracoes = payload.model_dump(exclude_unset=True)
-    total_pago, _legado = await total_pago_efetivo(db, fee)
+    motivo_correcao = (alteracoes.pop("motivo_correcao", None) or "").strip() or None
+    if not alteracoes:
+        raise HTTPException(status_code=422, detail="Nenhum campo informado para atualizar")
+
+    competencias = set()
+    for data_ref in (fee.data_vencimento, fee.data_pagamento, alteracoes.get("data_vencimento")):
+        if data_ref:
+            competencias.add(competencia_de_data(data_ref))
+    correcao_fechada = False
+    for competencia_ref in sorted(competencias):
+        correcao_fechada = (
+            await permitir_correcao_competencia_fechada(
+                db, competencia_ref, motivo_correcao, "Alterar honorário"
+            )
+            or correcao_fechada
+        )
+
+    novo_case_id = alteracoes.get("case_id", fee.case_id)
+    novo_client_id = alteracoes.get("client_id", fee.client_id)
+    if novo_case_id:
+        caso = (await db.execute(select(Case).where(Case.id == novo_case_id, Case.deleted_at.is_(None)))).scalar_one_or_none()
+        if not caso:
+            raise HTTPException(status_code=404, detail="Caso não encontrado")
+        if str(caso.client_id) != str(novo_client_id):
+            raise HTTPException(status_code=422, detail="client_id não corresponde ao cliente do caso informado")
+
+    novo_tipo = alteracoes.get("tipo", getattr(fee.tipo, "value", fee.tipo))
+    novo_percentual = alteracoes.get("percentual_exito", fee.percentual_exito)
     novo_valor = alteracoes.get("valor", fee.valor)
+    if novo_valor is None and novo_percentual is None:
+        raise HTTPException(status_code=422, detail="honorário exige valor ou percentual de êxito")
+    if novo_percentual is not None and str(novo_tipo) not in {"exito", "misto"}:
+        raise HTTPException(status_code=422, detail="percentual de êxito só se aplica aos tipos exito/misto")
+
+    total_pago, _legado = await total_pago_efetivo(db, fee)
     novo_status = alteracoes.get("status", fee.status)
     novo_status_valor = getattr(novo_status, "value", novo_status)
 
@@ -363,11 +400,15 @@ async def atualizar(
         db,
         cu.id,
         cu.role.value,
-        "UPDATE",
+        "CORRECAO_FECHAMENTO" if correcao_fechada else "UPDATE",
         "fees",
         fee_id,
+        detalhes=(
+            f"campos alterados: {sorted(alteracoes)}"
+            + (f"; motivo_correcao={motivo_correcao}" if motivo_correcao else "")
+        ),
         dados_antes=dados_antes,
-        dados_depois=payload.model_dump(exclude_unset=True, mode="json"),
+        dados_depois=jsonable_encoder({key: getattr(fee, key, None) for key in alteracoes}),
     )
     await db.commit()
     await db.refresh(fee)

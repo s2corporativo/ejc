@@ -172,6 +172,7 @@ export interface Fee {
   data_pagamento?: string;
   client_id: string;
   case_id?: string;
+  observacoes?: string | null;
   created_at: string;
 }
 export interface EnvCase {

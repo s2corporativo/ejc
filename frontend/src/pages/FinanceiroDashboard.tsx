@@ -364,8 +364,15 @@ export default function FinanceiroDashboard({
     }
     setFechando(true);
     try {
-      await api.post("/financeiro/fechamentos", { competencia });
-      toast.success(`Competência ${competencia} fechada e protegida.`);
+      const { data } = await api.post("/financeiro/fechamentos", {
+        competencia,
+      });
+      const baseline = data?.snapshot?.reference_baseline;
+      toast.success(
+        baseline?.is_baseline
+          ? `Competência ${competencia} fechada. Snapshot financeiro de referência criado.`
+          : `Competência ${competencia} fechada e protegida.`,
+      );
       await load();
     } catch (e: unknown) {
       toast.error(apiErrorMessage(e, "Não foi possível fechar a competência."));
@@ -776,7 +783,8 @@ export default function FinanceiroDashboard({
               <div>
                 <h3 className="font-semibold">Fechamento da competência</h3>
                 <p className="text-xs text-slate-400">
-                  Mês fechado não aceita reescrita direta de caixa.
+                  Mês fechado preserva o snapshot. Correções continuam possíveis
+                  com justificativa e auditoria.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">

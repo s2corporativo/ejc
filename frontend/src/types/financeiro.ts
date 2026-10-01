@@ -227,6 +227,9 @@ export interface FeeFormState {
   valor?: number | string;
   percentual_exito?: number | string;
   data_vencimento?: string;
+  status?: string;
+  observacoes?: string;
+  motivo_correcao?: string;
 }
 
 export interface FeePaymentForm {
