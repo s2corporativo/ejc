@@ -86,6 +86,8 @@ steps:
       - bash scripts/tests/test_rag_activation.sh
       - bash scripts/tests/test_legacy_script_guards.sh
       - python3 scripts/tests/test_saneamento_governanca.py
+      - python3 scripts/check_release_freeze.py
+      - python3 -m pytest -q scripts/tests/test_release_freeze.py scripts/tests/test_ci_affected_tests.py
     # Contratos leves rodam sempre: seus insumos cruzam código, exemplos e scanners.
 
   deploy-validation:
