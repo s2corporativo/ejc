@@ -620,6 +620,13 @@ class TestIsolamentoCriticaDoGateEIngestao:
             )
         assert exc.value.status_code == 403
 
+    def test_conhecimento_ia_e_restrito_na_escrita_e_recuperacao(self):
+        from app.services.ingestion_service import _CATEGORIAS_RESTRITAS
+        from app.services.ai_service import _RESTRICTED_CATS
+
+        assert "conhecimento_ia" in _CATEGORIAS_RESTRITAS
+        assert "conhecimento_ia" in _RESTRICTED_CATS
+
     def test_ingestao_ailog_nao_aceita_categoria_de_fonte_oficial(self):
         """Texto de IA jamais pode se rotular como legislação/jurisprudência."""
         from pydantic import ValidationError
