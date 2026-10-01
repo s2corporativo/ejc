@@ -676,8 +676,11 @@ async def ingerir_ai_log_aprovado(
             "origem": "ai_log_hitl",
             "status_hitl": log.status_hitl.value,
             "aprovado_por": str(cu.id),
+            "human_reviewed": True,
+            "requires_human_review": False,
             "escopo": "caso",
             "fonte_primaria": False,
+            "tipo_fonte": "sintese_ia_revisada",
         },
         confianca="media",
     )
