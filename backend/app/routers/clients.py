@@ -29,6 +29,12 @@ from app.schemas.client import (
     ClientCreate, ClientUpdate, ClientResponse, ConflitoCheckRequest,
 )
 from app.schemas.common import MsgResponse
+from app.core.pagination_cursor import (
+    CursorInvalido,
+    cond_keyset_2,
+    make_cursor,
+    parse_cursor,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/clients", tags=["Clientes / CRM"])
@@ -408,10 +414,16 @@ async def checar_conflito(
     }
 
 
+_ORDER_CURSOR_CLIENTS = "created_at.desc|id.desc"
+
+
 @router.get("/", dependencies=[Depends(rate_limit("clients-listar", 120))])
 async def listar(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=500),
     search: Optional[str] = None, status_f: Optional[str] = Query(None, alias="status"),
+    # Opt-in (Tarefa 5): keyset com desempate por id; offset+total preservado.
+    pagination: str = Query("offset", pattern="^(offset|cursor)$"),
+    cursor: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(_req_clientes_leitura),
 ):
@@ -450,6 +462,49 @@ async def listar(
                        f"{sorted(s.value for s in ClientStatus)}",
             )
         q = q.where(Client.status == status_f)
+
+    filtros = {"search": search, "status": status_f}
+
+    if pagination == "cursor":
+        last: list | None = None
+        if cursor:
+            try:
+                last = parse_cursor(
+                    cursor, "clients", cu, filtros, _ORDER_CURSOR_CLIENTS
+                )
+            except CursorInvalido as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            try:
+                last[0] = (
+                    datetime.fromisoformat(last[0]) if last[0] else None
+                )
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail="cursor com chave de continuação inválida",
+                ) from exc
+            q = q.where(cond_keyset_2(
+                Client.created_at, Client.id, last,
+                direction="desc", nulls_tail=False,
+            ))
+        q = q.order_by(Client.created_at.desc(), Client.id.desc())
+        rows = (await db.execute(q.limit(page_size + 1))).scalars().all()
+        tem_mais = len(rows) > page_size
+        rows = rows[:page_size]
+        next_cursor = None
+        if tem_mais and rows:
+            u = rows[-1]
+            next_cursor = make_cursor(
+                "clients", cu, filtros, _ORDER_CURSOR_CLIENTS,
+                [u.created_at.isoformat() if u.created_at else None, u.id],
+            )
+        return {
+            "data": [ClientResponse.model_validate(c) for c in rows],
+            "page_size": page_size,
+            "has_more": tem_mais,
+            "next_cursor": next_cursor,
+        }
+
     q = q.order_by(Client.created_at.desc())
 
     total = (await db.execute(

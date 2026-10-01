@@ -31,6 +31,12 @@ from app.schemas.deadline import (
     DeadlineResponse,
     DeadlineUpdate,
 )
+from app.core.pagination_cursor import (
+    CursorInvalido,
+    cond_keyset_2,
+    make_cursor,
+    parse_cursor,
+)
 from app.services.deadline_calculator import (
     calcular_prazo_processual,
     dias_uteis_restantes,
@@ -43,6 +49,10 @@ router = APIRouter(prefix="/deadlines", tags=["Prazos"])
 logger = logging.getLogger("ejc.deadlines")
 
 _MAX_EXPORT = 5000
+
+# Ordenação canônica do modo cursor (Tarefa 5): data_prazo NOT NULL, id
+# desempata — prazos com a mesma data não pulam nem duplicam entre páginas.
+_ORDER_CURSOR_DEADLINES = "data_prazo.asc|id.asc"
 
 
 def _ids_casos_do_usuario(user: User):
@@ -270,6 +280,11 @@ async def listar(
     case_id: Optional[str] = None,
     tipo: Optional[str] = None,
     apenas_meus: bool = False,
+    # Opt-in (Tarefa 5): keyset (data_prazo ASC, id ASC) — fecha pulo/duplicação
+    # sob offset com prazos de mesma data (dataset tem 20 empatados, baseline
+    # §7.3). Offset+total preservado no default.
+    pagination: str = Query("offset", pattern="^(offset|cursor)$"),
+    cursor: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -284,6 +299,68 @@ async def listar(
     q = _filtro_escopo_prazos(q, cu)
     if apenas_meus:
         q = q.where(Deadline.responsavel_id == cu.id)
+
+    filtros = {
+        "status": status_normalizado,
+        "case_id": case_id,
+        "tipo": tipo,
+        "apenas_meus": apenas_meus,
+    }
+
+    if pagination == "cursor":
+        last: list | None = None
+        if cursor:
+            try:
+                last = parse_cursor(
+                    cursor, "deadlines", cu, filtros, _ORDER_CURSOR_DEADLINES
+                )
+            except CursorInvalido as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            try:
+                last[0] = date.fromisoformat(last[0]) if last[0] else None
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail="cursor com chave de continuação inválida",
+                ) from exc
+            # data_prazo é NOT NULL (baseline §2) — sem ramos de NULL.
+            q = q.where(cond_keyset_2(
+                Deadline.data_prazo, Deadline.id, last,
+                direction="asc", nulls_tail=False,
+            ))
+        q = q.order_by(Deadline.data_prazo.asc(), Deadline.id.asc())
+        rows = (await db.execute(q.limit(page_size + 1))).scalars().all()
+        tem_mais = len(rows) > page_size
+        rows = rows[:page_size]
+        next_cursor = None
+        if tem_mais and rows:
+            u = rows[-1]
+            next_cursor = make_cursor(
+                "deadlines", cu, filtros, _ORDER_CURSOR_DEADLINES,
+                [
+                    u.data_prazo.isoformat() if u.data_prazo else None,
+                    u.id,
+                ],
+            )
+        hoje_c = hoje_operacional()
+        data_c = []
+        for d in rows:
+            item = DeadlineResponse.model_validate(d).model_dump()
+            dias = (d.data_prazo - hoje_c).days
+            item["dias_restantes"] = dias
+            item["urgencia"] = (
+                "vencido" if dias < 0 else
+                "critico" if dias <= 3 else
+                "atencao" if dias <= 7 else "normal"
+            )
+            data_c.append(item)
+        return {
+            "data": data_c,
+            "page_size": page_size,
+            "has_more": tem_mais,
+            "next_cursor": next_cursor,
+        }
+
     q = q.order_by(Deadline.data_prazo.asc())
 
     total = (await db.execute(

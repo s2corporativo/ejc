@@ -46,6 +46,12 @@ from app.models.caso_area import CasoArea
 from app.models.deadline import Deadline, DeadlineTipo, DeadlineStatus
 from app.services.extracao_estruturada import parse_data_br
 from app.core.ownership import role_str, verificar_acesso_caso
+from app.core.pagination_cursor import (
+    CursorInvalido,
+    cond_keyset_2,
+    make_cursor,
+    parse_cursor,
+)
 from app.core.status_caso import (
     STATUS_ABERTOS,
     validar_area_caso,
@@ -116,6 +122,9 @@ def _filtro_visibilidade(q, user: User):
     ))
 
 
+_ORDER_CURSOR_CASES = "created_at.desc|id.desc"
+
+
 @router.get("/", dependencies=[Depends(rate_limit("cases-listar", 120))])
 async def listar(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=500),
@@ -124,6 +133,11 @@ async def listar(
     status_f: Optional[str] = Query(None, alias="status"),
     arquivo: str = Query("ativos", pattern="^(ativos|arquivados|todos)$"),
     advogado_id: Optional[str] = None,
+    # Opt-in (Tarefa 5; baseline §10): keyset com desempate por id — o legacy
+    # ordena só por created_at e casos com timestamp idêntico pulam/duplicam
+    # sob offset. Default preserva offset+total (rollback = não enviar).
+    pagination: str = Query("offset", pattern="^(offset|cursor)$"),
+    cursor: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -167,6 +181,50 @@ async def listar(
             q = q.where(Case.status == validar_status_caso(status_f))
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e)) from None
+
+    filtros = {
+        "search": search, "area": area, "status": status_f,
+        "arquivo": arquivo, "advogado_id": advogado_id,
+    }
+
+    if pagination == "cursor":
+        last: list | None = None
+        if cursor:
+            try:
+                last = parse_cursor(cursor, "cases", cu, filtros, _ORDER_CURSOR_CASES)
+            except CursorInvalido as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            try:
+                last[0] = (
+                    datetime.fromisoformat(last[0]) if last[0] else None
+                )
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail="cursor com chave de continuação inválida",
+                ) from exc
+            q = q.where(cond_keyset_2(
+                Case.created_at, Case.id, last,
+                direction="desc", nulls_tail=False,
+            ))
+        q = q.order_by(Case.created_at.desc(), Case.id.desc())
+        rows = (await db.execute(q.limit(page_size + 1))).scalars().all()
+        tem_mais = len(rows) > page_size
+        rows = rows[:page_size]
+        next_cursor = None
+        if tem_mais and rows:
+            u = rows[-1]
+            next_cursor = make_cursor(
+                "cases", cu, filtros, _ORDER_CURSOR_CASES,
+                [u.created_at.isoformat() if u.created_at else None, u.id],
+            )
+        return {
+            "data": [CaseResponse.model_validate(c) for c in rows],
+            "page_size": page_size,
+            "has_more": tem_mais,
+            "next_cursor": next_cursor,
+        }
+
     q = q.order_by(Case.created_at.desc())
 
     total = (await db.execute(

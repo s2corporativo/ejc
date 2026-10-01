@@ -32,11 +32,19 @@ import hmac
 import json
 from typing import Any, Mapping
 
+from sqlalchemy import and_, or_
+
 from app.core.config import get_settings
 
 settings = get_settings()
 
-__all__ = ["CursorInvalido", "canon_filters", "make_cursor", "parse_cursor"]
+__all__ = [
+    "CursorInvalido",
+    "canon_filters",
+    "cond_keyset_2",
+    "make_cursor",
+    "parse_cursor",
+]
 
 _FORMATO = "json"
 _SEP = "."
@@ -173,3 +181,31 @@ def parse_cursor(
     if not isinstance(chave, list):
         raise CursorInvalido("cursor sem chave de continuação")
     return chave
+
+
+def cond_keyset_2(col_a, col_b, last, *, direction: str, nulls_tail: bool):
+    """Condição 'linha vem DEPOIS de last' para ordenação de 2 colunas.
+
+    Regras (baseline §6.4 — páginas do cursor são uma partição determinística
+    da MESMA ordem do caminho legacy):
+      • col_b é o desempate absoluto (id) — presumido NOT NULL;
+      • direction="desc" replica `col_a DESC` do Postgres, cujo default é
+        NULLS FIRST ⇒ nulls_tail=False (NULL ≡ cabeça);
+      • para ordenações NULLS LAST (forçadas ou ASC default) use
+        nulls_tail=True ⇒ NULL ≡ cauda, e as linhas NULL vêm DEPOIS de
+        qualquer valor.
+    `last` é a dupla (valor_a, valor_b) do cursor — valores Python nativos
+    (coerção ISO→date/datetime é responsabilidade do router, como em tasks.py).
+    """
+    if len(last) != 2:
+        raise CursorInvalido("cursor incompatível com a ordenação atual")
+    last_a, last_b = last
+    compara = (col_a < last_a) if direction == "desc" else (col_a > last_a)
+    if last_a is None:
+        # last está na cauda (ou cabeça) dos NULL: restam só NULLs, por (col_b)
+        return and_(col_a.is_(None), col_b > last_b)
+    ramos = []
+    if nulls_tail:
+        ramos.append(col_a.is_(None))  # NULLs vêm depois de qualquer valor
+    ramos.extend([compara, and_(col_a == last_a, col_b > last_b)])
+    return or_(*ramos)

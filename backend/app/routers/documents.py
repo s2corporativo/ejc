@@ -21,6 +21,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.ownership import is_gestao, verificar_acesso_caso
+from app.core.pagination_cursor import (
+    CursorInvalido,
+    cond_keyset_2,
+    make_cursor,
+    parse_cursor,
+)
 from app.core.publicacao_externa import confidencialidade_str, pode_publicar_externamente
 from app.core.rate_limit import rate_limit
 from app.core.security import ROLE_LEVEL, get_current_user
@@ -51,6 +57,11 @@ from app.services.document_reference_guard import exigir_documento_sem_referenci
 settings = get_settings()
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/documents", tags=["Documentos / GED"])
+
+# Ordenação canônica do modo cursor (Tarefa 5): o legado JÁ ordena por
+# (created_at DESC, id DESC) — desempate absoluto herdado, zero mudança de
+# ordem; o cursor apenas a torna navegável sem OFFSET.
+_ORDER_CURSOR_DOCS = "created_at.desc|id.desc"
 
 EXTENSOES_PERMITIDAS = {".pdf", ".docx", ".doc", ".jpg", ".jpeg", ".png", ".xlsx", ".xls", ".txt", ".md", ".xml"}
 # Markdown entra como texto plano: aceito na ingestão universal e no GED
@@ -517,6 +528,10 @@ async def listar(
         None,
         description="true → somente documentos sem tipo (tipo IS NULL)",
     ),
+    # Opt-in (Tarefa 5): keyset (created_at DESC, id DESC — o único legado que
+    # JÁ tinha desempate). Offset+total preservado no default.
+    pagination: str = Query("offset", pattern="^(offset|cursor)$"),
+    cursor: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -611,6 +626,61 @@ async def listar(
             | (Document.ocr_text.ilike(padrao, escape="\\"))
         )
     query = query.order_by(Document.created_at.desc(), Document.id.desc())
+
+    filtros = {
+        "case_id": case_id,
+        "client_id": client_id,
+        "tipo": tipo,
+        "confidencialidade": confidencialidade,
+        "classificacao_pendente": classificacao_pendente,
+        "data_inicio": data_inicio.isoformat() if data_inicio else None,
+        "data_fim": data_fim.isoformat() if data_fim else None,
+        "search": search,
+    }
+
+    if pagination == "cursor":
+        last: list | None = None
+        if cursor:
+            try:
+                last = parse_cursor(
+                    cursor, "documents", cu, filtros, _ORDER_CURSOR_DOCS
+                )
+            except CursorInvalido as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            try:
+                last[0] = (
+                    datetime.fromisoformat(last[0]) if last[0] else None
+                )
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail="cursor com chave de continuação inválida",
+                ) from exc
+            query = query.where(cond_keyset_2(
+                Document.created_at, Document.id, last,
+                direction="desc", nulls_tail=False,
+            ))
+        rows = (
+            await db.execute(query.limit(page_size + 1))
+        ).scalars().all()
+        tem_mais = len(rows) > page_size
+        rows = rows[:page_size]
+        next_cursor = None
+        if tem_mais and rows:
+            u = rows[-1]
+            next_cursor = make_cursor(
+                "documents", cu, filtros, _ORDER_CURSOR_DOCS,
+                [
+                    u.created_at.isoformat() if u.created_at else None,
+                    u.id,
+                ],
+            )
+        return {
+            "data": [_serializar_documento(d) for d in rows],
+            "page_size": page_size,
+            "has_more": tem_mais,
+            "next_cursor": next_cursor,
+        }
 
     total = (
         await db.execute(select(sqlfunc.count()).select_from(query.subquery()))
