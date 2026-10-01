@@ -692,3 +692,50 @@ async def test_ingerir_rfb_layout_atual_persiste_fonte_canonica_curta(monkeypatc
     assert ups[0]["fonte"] == rfb._url_ato("143499")
     assert len(ups[0]["fonte"]) <= 255
     assert ups[0]["extra"]["consultar_inteiro_teor_em"] == ups[0]["fonte"]
+
+
+async def test_anpd_pdf_wrapper_html_resolve_display_file(monkeypatch):
+    url = "https://www.gov.br/anpd/pt-br/guia.pdf"
+    real = url + "/@@display-file/file"
+    chamadas = []
+
+    async def fake_fetch(alvo, **kwargs):
+        chamadas.append(alvo)
+        if alvo == url:
+            html = f'<html><body><a href="{real}">Guia.pdf</a></body></html>'
+            return SimpleNamespace(
+                content=html.encode(), text=html,
+                headers={"content-type": "text/html; charset=utf-8"},
+            )
+        if alvo == real:
+            return SimpleNamespace(
+                content=b"%PDF-1.7 fake", text="",
+                headers={"content-type": "application/pdf"},
+            )
+        raise AssertionError(alvo)
+
+    monkeypatch.setattr(anpd, "fetch", fake_fetch)
+    monkeypatch.setattr(anpd, "_texto_pdf", lambda raw: "Texto PDF válido " * 30)
+
+    texto = await anpd._conteudo(url)
+
+    assert texto and "Texto PDF válido" in texto
+    assert chamadas == [url, real]
+
+
+async def test_anpd_pdf_wrapper_nao_segue_dominio_externo(monkeypatch):
+    url = "https://www.gov.br/anpd/pt-br/guia.pdf"
+    html = '<html><body><a href="https://evil.example/guia.pdf">Guia</a></body></html>'
+    chamadas = []
+
+    async def fake_fetch(alvo, **kwargs):
+        chamadas.append(alvo)
+        return SimpleNamespace(
+            content=html.encode(), text=html,
+            headers={"content-type": "text/html"},
+        )
+
+    monkeypatch.setattr(anpd, "fetch", fake_fetch)
+
+    assert await anpd._conteudo(url) is None
+    assert chamadas == [url]
