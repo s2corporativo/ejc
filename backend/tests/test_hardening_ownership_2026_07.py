@@ -379,7 +379,16 @@ async def test_A6_socio_nao_paga_propria_retirada_403():
 
 
 async def test_A6_socio_paga_retirada_de_outro_ok():
-    db = _SeqDB([_Res(first={"id": "w1", "partner_id": "socio-2", "status": "aprovado"}), _Res()])
+    db = _SeqDB([
+        _Res(first={
+            "id": "w1",
+            "partner_id": "socio-2",
+            "status": "aprovado",
+            "partner_share": "1000.00",
+            "approved_by": "socio-3",
+        }),
+        _Res(),
+    ])
     out = await pay_withdrawal("w1", db, _WUser("socio", "socio-1"))
     assert out["status"] == "pago"
 
