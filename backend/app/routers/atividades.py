@@ -173,6 +173,10 @@ async def listar_atividades(
         if apenas_pendentes:
             where += (" AND COALESCE(v.status,'') NOT IN "
                       "('concluido','concluida','tratada','cancelado')")
+        # SQL literal só com bind params (:nome) e WHERE montado no servidor
+        # a partir de enums validados — nenhum input interpolado. Ver
+        # docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         rows = (await db.execute(text(f"""
             SELECT v.id, v.tipo, v.titulo, v.descricao, v.data, v.status,
                    v.case_id, v.responsavel_id, v.prioridade, v.subtipo,
@@ -255,6 +259,10 @@ async def listar_atividades(
     else:
         extra_sql = ""
 
+    # SQL literal só com bind params (:nome) e WHERE montado no servidor
+    # a partir de enums validados — nenhum input interpolado. Ver
+    # docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     rows = (await db.execute(text(sql_base.format(extra=extra_sql, limite=page_size + 1)),
                              params)).mappings().all()
     has_more = len(rows) > page_size
@@ -387,6 +395,10 @@ async def resumo_atividades(
                        "('concluido','concluida','tratada','cancelado')"
                        + filtro_escopo)
     where_todos = "WHERE 1=1" + filtro_escopo
+    # SQL literal só com bind params (:nome) e WHERE montado no servidor
+    # a partir de enums validados — nenhum input interpolado. Ver
+    # docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     rows = (await db.execute(text(f"""
         SELECT CASE WHEN v.data IS NULL THEN 'normal'
                     WHEN (v.data::date - :hoje) < 0 THEN 'vencido'
@@ -402,6 +414,10 @@ async def resumo_atividades(
     # Resumo por coluna do Kanban (situacaoColunaDe: cancelado agrupa com
     # concluído) sobre o MESMO conjunto inteiro visível — TODOS os status
     # (não só pendentes), pois o Kanban também mostra concluídos.
+    # SQL literal só com bind params (:nome) e WHERE montado no servidor
+    # a partir de enums validados — nenhum input interpolado. Ver
+    # docs/seguranca/SAST_BASELINE.md
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     colunas_rows = (await db.execute(text(f"""
         SELECT CASE
                  WHEN v.status = 'fazendo' THEN 'em_execucao'

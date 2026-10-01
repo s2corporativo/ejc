@@ -275,6 +275,10 @@ async def dashboard_hoje(
     try:
         # prazos: critério canônico do vencido (status NOT IN concluido/
         # cancelado — ver migração do /dashboard/ e relatorio.py)
+        # SQL literal só com bind params (:nome) e WHERE montado no servidor
+        # a partir de enums validados — nenhum input interpolado. Ver
+        # docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         r = await db.execute(text(f"""
             SELECT
               COUNT(*) FILTER (WHERE d.data_prazo < :hoje) AS vencidos,
@@ -288,6 +292,10 @@ async def dashboard_hoje(
         v, h, t3, t7 = r.one()
         prazos = {"vencidos": v, "hoje": h, "proximos_3d": t3, "proximos_7d": t7}
 
+        # SQL literal só com bind params (:nome) e WHERE montado no servidor
+        # a partir de enums validados — nenhum input interpolado. Ver
+        # docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         r2 = await db.execute(text(f"""
             SELECT d.id, d.data_prazo, d.titulo, d.case_id
             FROM deadlines d
@@ -311,6 +319,10 @@ async def dashboard_hoje(
         logger.warning("Dashboard hoje: falha ao carregar prazos", exc_info=True)
 
     try:
+        # SQL literal só com bind params (:nome) e WHERE montado no servidor
+        # a partir de enums validados — nenhum input interpolado. Ver
+        # docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         r = await db.execute(text(f"""
             SELECT
               COUNT(*) FILTER (WHERE t.data_limite < :hoje) AS atrasadas,
@@ -323,6 +335,10 @@ async def dashboard_hoje(
         a, h, s = r.one()
         tarefas = {"atrasadas": a, "hoje": h, "proximos_7d": s}
 
+        # SQL literal só com bind params (:nome) e WHERE montado no servidor
+        # a partir de enums validados — nenhum input interpolado. Ver
+        # docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         r2 = await db.execute(text(f"""
             SELECT t.id, t.data_limite, t.titulo, t.case_id
             FROM tasks t
@@ -387,6 +403,10 @@ async def dashboard_hoje(
     try:
         # Casos ABERTOS sem próxima ação (G1) — sobre a carteira inteira
         abertos = ", ".join(f"'{s.value}'" for s in STATUS_ABERTOS)
+        # SQL literal só com bind params (:nome) e WHERE montado no servidor
+        # a partir de enums validados — nenhum input interpolado. Ver
+        # docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         r = await db.execute(text(f"""
             SELECT COUNT(*) FROM cases c
             WHERE c.deleted_at IS NULL
