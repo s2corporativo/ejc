@@ -62,6 +62,7 @@ from app.models.suspensao import SuspensaoTribunal  # noqa
 # metadata completa (causa-raiz do drift de schema). Import de módulo basta —
 # executa as definições de classe e as anexa a Base.metadata.
 from app.models import ai_skill            # noqa
+from app.models import ai_learning         # noqa  (aprendizado jurídico supervisionado — migration 168)
 from app.models import atendimento         # noqa
 from app.models import bank_analysis       # noqa
 from app.models import case_intelligence   # noqa  (snapshot versionado da inteligência do caso — migração 101)
