@@ -68,6 +68,7 @@ def main():
     c = conn()
     target = ("ejc_restore_offsite_" + secrets.token_hex(5))[:63]
     created = False
+    result = None
     try:
         with tempfile.TemporaryDirectory(prefix="ejc_restore_offsite_") as tmp:
             enc = Path(tmp) / "backup.enc"
@@ -90,15 +91,21 @@ def main():
                 raise RuntimeError(f"alembic mismatch backup={dst_version} production={src_version}")
             if dst_tables != src_tables:
                 raise RuntimeError(f"table count mismatch backup={dst_tables} production={src_tables}")
-            print(json.dumps({"status":"sucesso","arquivo":latest,"remote_bytes":remote_bytes,
+            result = {"status":"sucesso","arquivo":latest,"remote_bytes":remote_bytes,
                 "dump_bytes":clear_bytes,"alembic_version":dst_version,"tabelas_publicas":dst_tables,
                 "executado_em":datetime.now(timezone.utc).isoformat(),
-                "duracao_segundos":round(time.monotonic()-started,2)}, sort_keys=True))
-            return 0
+                "duracao_segundos":round(time.monotonic()-started,2)}
     finally:
         if created:
-            subprocess.run(["dropdb","-h",c["host"],"-p",c["port"],"-U",c["user"],"--if-exists",target],
-                           env=pg_env(c), check=False, capture_output=True, text=True)
+            # Falha de cleanup não pode ser silenciosa: um restore órfão cresce
+            # o backup diário e pode consumir o disco. PostgreSQL 16 suporta
+            # --force, que encerra conexões residuais antes de remover o DB.
+            run(["dropdb","-h",c["host"],"-p",c["port"],"-U",c["user"],
+                 "--if-exists","--force",target], pg_env(c), 120)
+    if result is None:
+        raise RuntimeError("restore drill terminou sem resultado")
+    print(json.dumps(result, sort_keys=True))
+    return 0
 
 if __name__ == "__main__":
     try:
