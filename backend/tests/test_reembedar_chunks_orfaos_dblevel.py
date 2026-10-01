@@ -146,9 +146,9 @@ async def test_reembedar_nao_vetoriza_documento_bloqueado_pelo_gate(monkeypatch)
         )
         await db.execute(text(
             "UPDATE knowledge_docs "
-            "SET extra = jsonb_set(extra, '{rag_status}', '"pendente"'::jsonb) "
+            "SET extra = jsonb_set(extra, '{rag_status}', CAST(:status AS jsonb)) "
             "WHERE id=:id"
-        ), {"id": doc_id})
+        ), {"id": doc_id, "status": '"pendente"'})
         await db.commit()
         try:
             await reemb.reembedar(batch_size=10)
