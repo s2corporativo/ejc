@@ -611,6 +611,10 @@ async def ingerir_ai_log_aprovado(
     Assim o feedback humano melhora consultas futuras sem transformar texto de
     IA em fonte oficial nem vazar estratégia/dados entre clientes.
     """
+    requer_equipe_juridica(
+        cu, "Aprendizado institucional restrito à equipe jurídica."
+    )
+
     from app.models.ai_log import (
         AILog, AIStatusHITL, pseudonimizar_texto_auditoria,
     )
