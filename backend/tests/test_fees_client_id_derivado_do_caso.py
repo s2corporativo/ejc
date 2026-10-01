@@ -98,6 +98,7 @@ async def test_criar_com_case_id_de_um_cliente_e_client_id_de_outro_e_422():
 async def test_criar_sem_case_id_nao_consulta_caso_e_cria_normalmente():
     from app.routers.fees import criar
 
+    # Sem case_id há apenas a consulta anti-duplicidade antes da criação.
     db = _FakeDB([None])
     payload = _payload(case_id=None, client_id="cliente-A")
 
@@ -112,6 +113,7 @@ async def test_criar_sem_case_id_nao_consulta_caso_e_cria_normalmente():
 async def test_criar_com_case_id_e_client_id_coerentes_cria_normalmente():
     from app.routers.fees import criar
 
+    # 1) caso coerente; 2) consulta anti-duplicidade sem ocorrência.
     db = _FakeDB([_case(id="case1", client_id="cliente-A"), None])
     payload = _payload(case_id="case1", client_id="cliente-A")
 
