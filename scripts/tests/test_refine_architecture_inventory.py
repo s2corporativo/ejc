@@ -24,6 +24,84 @@ REFINER = load("inventory_refiner_test", ROOT_SCRIPTS / "refine_architecture_inv
 
 
 class RefineArchitectureInventoryTest(unittest.TestCase):
+    def test_route_copy_composition_mounts_source_routers(self) -> None:
+        """Cópia de rotas (mod.router.routes + add_api_route) monta o módulo alvo."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            routers = root / "backend/app/routers"
+            models = root / "backend/app/models"
+            pages = root / "frontend/src/pages"
+            config = root / "config"
+            scripts = root / "scripts"
+            for directory in (routers, models, pages, config, scripts):
+                directory.mkdir(parents=True, exist_ok=True)
+
+            (scripts / "generate_architecture_inventory.py").write_text(
+                (ROOT_SCRIPTS / "generate_architecture_inventory.py").read_text(
+                    encoding="utf-8"
+                ),
+                encoding="utf-8",
+            )
+            (root / "backend/app/main.py").write_text(
+                "from app.routers import ramos\n"
+                "app.include_router(ramos.router, prefix='/api')\n",
+                encoding="utf-8",
+            )
+            (routers / "ramos.py").write_text(
+                "from fastapi import APIRouter\n"
+                "from app.routers import ramos_civel as _ramos_civel\n"
+                "router = APIRouter()\n"
+                "for _r in _ramos_civel.router.routes:\n"
+                "    router.add_api_route(_r.path, _r.endpoint, methods=_r.methods)\n",
+                encoding="utf-8",
+            )
+            (routers / "ramos_civel.py").write_text(
+                "from fastapi import APIRouter\n"
+                "router = APIRouter(prefix='/ramos-civel')\n"
+                "@router.get('/acoes')\n"
+                "async def listar_acoes():\n"
+                "    return []\n",
+                encoding="utf-8",
+            )
+            # router genuinamente órfão deve permanecer desativar
+            (routers / "orfaos.py").write_text(
+                "from fastapi import APIRouter\nrouter = APIRouter(prefix='/orfao')\n",
+                encoding="utf-8",
+            )
+            (models / "case.py").write_text(
+                "from app.core.database import Base\n"
+                "class Case(Base):\n    __tablename__ = 'cases'\n",
+                encoding="utf-8",
+            )
+            (config / "architecture_inventory_overrides.json").write_text(
+                json.dumps({"rules": []}), encoding="utf-8"
+            )
+
+            output = root / "inventory"
+            GENERATOR.generate(root, output)
+            manifest = REFINER.refine(root, output)
+            payload = json.loads(
+                (output / "architecture_inventory.json").read_text(encoding="utf-8")
+            )
+            items = payload["items"]
+
+            civel = next(
+                item for item in items
+                if item["kind"] == "router" and item["path"].endswith("ramos_civel.py")
+            )
+            orfao = next(
+                item for item in items
+                if item["kind"] == "router" and item["path"].endswith("orfaos.py")
+            )
+            self.assertTrue(civel["mounted"], "cópia de rotas deve montar o módulo alvo")
+            self.assertEqual(civel["classification"], "manter")
+            # Com o gerador corrigido, o bruto já nasce montado/correto
+            # (conservative-default); o refiner apenas PRESERVA o acerto.
+            self.assertEqual(civel["classification_source"], "conservative-default")
+            self.assertFalse(orfao["mounted"])
+            self.assertEqual(orfao["classification"], "desativar")
+            self.assertEqual(manifest["unmounted_routers"], 1)
+
     def test_resolves_alias_and_indirect_mount_without_cross_layer_duplicates(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -140,6 +218,95 @@ class RefineArchitectureInventoryTest(unittest.TestCase):
             self.assertFalse(
                 case_groups, "model e router do mesmo domínio não são duplicidade"
             )
+
+
+    def test_adjudicated_override_leaves_family_out_of_candidates(self) -> None:
+        """Override humano (manter) retira o par da lista de famílias candidatas."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            routers = root / "backend/app/routers"
+            models = root / "backend/app/models"
+            services = root / "backend/app/services"
+            config = root / "config"
+            scripts = root / "scripts"
+            for directory in (routers, models, services, config, scripts):
+                directory.mkdir(parents=True, exist_ok=True)
+
+            (scripts / "generate_architecture_inventory.py").write_text(
+                (ROOT_SCRIPTS / "generate_architecture_inventory.py").read_text(
+                    encoding="utf-8"
+                ),
+                encoding="utf-8",
+            )
+            (root / "backend/app/main.py").write_text(
+                "from app.routers import parent\n"
+                "app.include_router(parent.router, prefix='/api')\n",
+                encoding="utf-8",
+            )
+            (routers / "parent.py").write_text(
+                "from fastapi import APIRouter\nrouter = APIRouter(prefix='/parent')\n",
+                encoding="utf-8",
+            )
+            (models / "case.py").write_text(
+                "from app.core.database import Base\n"
+                "class Case(Base):\n    __tablename__ = 'cases'\n",
+                encoding="utf-8",
+            )
+            # Par adjudicado: decisão documentada (ex.: Fase 7) diz não consolidar.
+            (services / "bar.py").write_text('"""Adapter de armazenagem."""\n', encoding="utf-8")
+            (services / "bar_service.py").write_text('"""Sincronização de conhecimento."""\n', encoding="utf-8")
+            # Par ainda sem adjudicação: continua candidato à consolidação.
+            (services / "foo.py").write_text('"""Fachada A."""\n', encoding="utf-8")
+            (services / "foo_v2.py").write_text('"""Fachada B."""\n', encoding="utf-8")
+            (config / "architecture_inventory_overrides.json").write_text(
+                json.dumps({
+                    "rules": [
+                        {
+                            "path": "backend/app/services/bar.py",
+                            "classification": "manter",
+                            "confidence": "alta",
+                            "rationale": "Adapter de armazenagem; decisão documentada de não consolidar.",
+                        },
+                        {
+                            "path": "backend/app/services/bar_service.py",
+                            "classification": "manter",
+                            "confidence": "alta",
+                            "rationale": "Sincronização RAG; decisão documentada de não consolidar.",
+                        },
+                    ]
+                }),
+                encoding="utf-8",
+            )
+
+            output = root / "inventory"
+            GENERATOR.generate(root, output)
+            REFINER.refine(root, output)
+            payload = json.loads(
+                (output / "architecture_inventory.json").read_text(encoding="utf-8")
+            )
+            items = payload["items"]
+
+            bar = next(item for item in items if item["path"].endswith("services/bar.py"))
+            bar_service = next(
+                item for item in items if item["path"].endswith("services/bar_service.py")
+            )
+            foo = next(item for item in items if item["path"].endswith("services/foo.py"))
+            self.assertEqual(bar["classification"], "manter")
+            self.assertEqual(bar["classification_source"], "override")
+            self.assertEqual(bar_service["classification"], "manter")
+            self.assertEqual(foo["classification"], "consolidar")
+
+            duplicates = json.loads(
+                (output / "duplicate_families.json").read_text(encoding="utf-8")
+            )
+            all_paths = [path for paths in duplicates.values() for path in paths]
+            self.assertNotIn("backend/app/services/bar.py", all_paths)
+            self.assertNotIn("backend/app/services/bar_service.py", all_paths)
+            self.assertIn("backend/app/services/foo.py", all_paths)
+
+            readme = (output / "README.md").read_text(encoding="utf-8")
+            self.assertNotIn("### `service:backend/app/services:bar`", readme)
+            self.assertIn("### `service:backend/app/services:foo`", readme)
 
 
 if __name__ == "__main__":

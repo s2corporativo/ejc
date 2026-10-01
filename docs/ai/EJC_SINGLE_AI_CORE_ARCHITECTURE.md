@@ -44,7 +44,7 @@ resposta padronizada (dict) → frontend exibe rascunho para revisão humana
 | `core/audit_logger.py` | Ponte única para AILog via ai_guard.registrar_ai_log (erro propaga) | audit_logger.py:45 |
 | `provider_policy.py` | Decisão pura de elegibilidade/ordem de providers + barreira LGPD | provider_policy.py:43 |
 
-Fora de `ai/`: `ai_gateway.py` (dispatch + fallback + barreira final), `sanitizer.py`/`ai_guard.py` (LGPD), `citation_check.py` (anti-alucinação), `system_prompts/` (prompts + router de modelo por tarefa), `case_context.py` (dossiê sanitizado).
+Fora de `ai/`: `ai_gateway.py` (dispatch + fallback + barreira final), `sanitizer.py`/`ai_guard.py` (LGPD), `citation_check.py` (anti-alucinação), `system_prompts/` (prompts + registro de modelo por tarefa), `case_context.py` (dossiê sanitizado).
 
 ## 3. Contratos
 

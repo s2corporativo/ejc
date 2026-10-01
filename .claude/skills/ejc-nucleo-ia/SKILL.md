@@ -30,7 +30,7 @@ Subsistema que faz os agentes de IA "atuarem dentro do EJC" e assistirem os advo
 | Barreira ética | `system_prompts/base.py` | `BASE_PROMPT` (IDENTIDADE+RESTRIÇÕES OAB+COMPORTAMENTO) e `AVISO_RASCUNHO` |
 | Prompt por ramo | `system_prompts/<ramo>.py` | `PROMPT_<RAMO> = BASE_PROMPT + "<regra da área>" + AVISO_RASCUNHO` |
 | Registro de prompts | `system_prompts/__init__.py` | `SYSTEM_PROMPTS: dict[str,str]` (prompt_key → texto) |
-| Router modelo/tarefa | `system_prompts/router.py` | `TarefaIA` (enum) + `CONFIGURACOES` (provider/modelo/tokens/temp) |
+| Registro modelo/tarefa | `system_prompts/registry.py` | `TarefaIA` (enum) + `CONFIGURACOES` (provider/modelo/tokens/temp) |
 | Agentes internos | `ai/core/agent_registry.py` | `AGENT_REGISTRY: dict[str,AgenteInterno]` (metadado puro) |
 | Skills do pipeline | `ai/core/skill_registry.py` | `SKILL_REGISTRY` (capacidade reutilizável; `handler=None` = não automática) |
 | Roteamento | `ai/core/intent_classifier.py` | `TASK_TYPE_PARA_AGENTE` + `_KEYWORDS_PARA_AGENTE` (determinístico, sem LLM) |

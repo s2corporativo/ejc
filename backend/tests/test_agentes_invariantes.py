@@ -5,7 +5,7 @@ roteamento: todo alias resolve, todo prompt_key existe, toda tarefa tem config,
 toda skill existe, e agentes jurídicos com afirmação normativa exigem fonte.
 """
 from app.services.system_prompts import SYSTEM_PROMPTS, TarefaIA, get_configuracao
-from app.services.system_prompts.router import CONFIGURACOES
+from app.services.system_prompts.registry import CONFIGURACOES
 from app.services.ai.core.agent_registry import AGENT_REGISTRY
 from app.services.ai.core.skill_registry import SKILL_REGISTRY
 from app.services.ai.core.intent_classifier import (

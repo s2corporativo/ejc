@@ -16,6 +16,136 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ArchitectureInventoryGeneratorTest(unittest.TestCase):
+    def test_mount_analysis_modern_mechanisms_and_orphans(self) -> None:
+        """Mecanismos reais de montagem + órfão genuíno continua detectado."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            routers = root / "backend/app/routers"
+            dpt360 = root / "backend/app/modules/dpt360"
+            prompts = root / "backend/app/services/system_prompts"
+            for directory in (routers, dpt360, prompts, root / "frontend/src/pages",
+                              root / "frontend/src/config", root / "config"):
+                directory.mkdir(parents=True, exist_ok=True)
+
+            (root / "backend/app/main.py").write_text(
+                "from app.routers import cases\n"
+                "from app.routers import api_keys as api_keys_router\n"
+                "from app.routers import ramos\n"
+                "from app.modules.dpt360.router import router as dpt360_router\n"
+                "app.include_router(                       # antes: jurisprudencia.include_router(...)\n"
+                "    cases.router, prefix='/api')\n"
+                "app.include_router(api_keys_router.router, prefix='/api')\n"
+                "app.include_router(ramos.router, prefix='/api')\n"
+                "app.include_router(dpt360_router, prefix='/api')\n",
+                encoding="utf-8",
+            )
+            (routers / "cases.py").write_text(
+                "from fastapi import APIRouter\n"
+                "router = APIRouter(prefix='/cases')\n"
+                "@router.get('/{case_id}')\n"
+                "async def obter_caso(case_id: str):\n"
+                "    return {'id': case_id}\n",
+                encoding="utf-8",
+            )
+            (routers / "api_keys.py").write_text(
+                "from fastapi import APIRouter\nrouter = APIRouter(prefix='/keys')\n",
+                encoding="utf-8",
+            )
+            # composição por cópia de rotas (padrão real de app/routers/ramos.py)
+            (routers / "ramos.py").write_text(
+                "from fastapi import APIRouter\n"
+                "from app.routers import ramos_civel as _ramos_civel\n"
+                "router = APIRouter()\n"
+                "for _r in _ramos_civel.router.routes:\n"
+                "    router.add_api_route(_r.path, _r.endpoint, methods=_r.methods)\n",
+                encoding="utf-8",
+            )
+            (routers / "ramos_civel.py").write_text(
+                "from fastapi import APIRouter\n"
+                "router = APIRouter(prefix='/ramos-civel')\n"
+                "@router.get('/acoes')\n"
+                "async def listar_acoes():\n"
+                "    return []\n",
+                encoding="utf-8",
+            )
+            # router.py montado via import do objeto com alias (bare include)
+            (dpt360 / "router.py").write_text(
+                "from fastapi import APIRouter\n"
+                "router = APIRouter(prefix='/dpt360')\n"
+                "@router.get('/resumo')\n"
+                "async def resumo():\n"
+                "    return {}\n",
+                encoding="utf-8",
+            )
+            # router.py sem APIRouter: registro de configuração, não é router
+            (prompts / "router.py").write_text(
+                "from enum import Enum\n"
+                "class TarefaIA(str, Enum):\n"
+                "    RAPIDO = 'rapido'\n",
+                encoding="utf-8",
+            )
+            # __init__.py de re-exports, sem APIRouter
+            (routers / "__init__.py").write_text(
+                "from app.routers import cases\n",
+                encoding="utf-8",
+            )
+            # órfão genuíno: APIRouter + endpoints, nunca incluído
+            (routers / "orfaos.py").write_text(
+                "from fastapi import APIRouter\n"
+                "router = APIRouter(prefix='/orfaos')\n"
+                "@router.get('/velho')\n"
+                "async def velho():\n"
+                "    return {}\n",
+                encoding="utf-8",
+            )
+            (root / "frontend/src/pages/Inicio.tsx").write_text(
+                "export default function Inicio() { return null; }\n",
+                encoding="utf-8",
+            )
+            (root / "frontend/src/config/moduleRegistry.tsx").write_text(
+                "export const STAFF_ROUTES = [\n"
+                "  { key: 'inicio', path: '/inicio', label: 'Início', component: Inicio, showInNav: true },\n"
+                "];\n",
+                encoding="utf-8",
+            )
+            (root / "frontend/src/App.tsx").write_text(
+                "const App = () => <Route path='/login' element={<Login />} />;\n",
+                encoding="utf-8",
+            )
+
+            output = root / "inventory"
+            manifest = MODULE.generate(root, output)
+            payload = json.loads((output / "architecture_inventory.json").read_text(encoding="utf-8"))
+            items = payload["items"]
+            by_path = {item["path"]: item for item in items if item["kind"] == "router"}
+
+            def router_item(suffix: str) -> dict:
+                return next(v for k, v in by_path.items() if k.endswith(suffix))
+
+            # montados pelos mecanismos modernos (bruto já deve acertar)
+            self.assertTrue(router_item("routers/cases.py")["mounted"])
+            self.assertTrue(router_item("routers/api_keys.py")["mounted"])
+            self.assertTrue(router_item("routers/ramos.py")["mounted"])
+            self.assertTrue(router_item("routers/ramos_civel.py")["mounted"])
+            self.assertTrue(router_item("modules/dpt360/router.py")["mounted"])
+            # endpoint do módulo composto por cópia também é montado
+            self.assertTrue(any(
+                item["kind"] == "endpoint" and item["route"] == "/api/ramos-civel/acoes"
+                and item["mounted"] is True
+                for item in items
+            ))
+            # não-routers: mounted=None (não "desativar")
+            self.assertIsNone(router_item("system_prompts/router.py")["mounted"])
+            self.assertIsNone(router_item("routers/__init__.py")["mounted"])
+            self.assertNotEqual(
+                router_item("system_prompts/router.py")["classification"], "desativar"
+            )
+            # órfão genuíno segue detectado com alta confiança
+            orfao = router_item("routers/orfaos.py")
+            self.assertFalse(orfao["mounted"])
+            self.assertEqual(orfao["classification"], "desativar")
+            self.assertEqual(manifest["unmounted_routers"], 1)
+
     def test_detects_core_artifacts_and_applies_override(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
