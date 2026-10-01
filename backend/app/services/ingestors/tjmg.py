@@ -187,11 +187,19 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
         if met.get("rede_falhou"):
             # buscar_tjmg degrada rede/HTTP para lista vazia para não quebrar a
             # busca interativa. No ingestor agendado isso NÃO pode virar
-            # sucesso vazio: conta como falha de tema e, se ocorrer em todos,
-            # a execução falha alto no bloco final.
+            # sucesso vazio. 401/403 no endpoint de pesquisa são condições
+            # sistêmicas do portal: repetir todos os temas só aumenta carga e
+            # latência, portanto falha cedo sem tentar contornar o upstream.
             temas_com_falha += 1
+            status_http = met.get("http_status")
             logger.warning("TJMG tema %r: falha de rede/HTTP na origem — "
                            "0 itens (não é ausência de julgados)", tema)
+            if status_http in {401, 403}:
+                raise RuntimeError(
+                    f"TJMG: portal de jurisprudência recusou a consulta "
+                    f"(HTTP {status_http}); ingestão interrompida sem novas "
+                    "tentativas nesta execução."
+                )
         elif met.get("html_bytes", 0) > 0 and blocos_tema == 0:
             logger.warning(
                 "TJMG tema %r: HTML recebido (%d bytes) mas 0 blocos casaram o "
