@@ -210,12 +210,12 @@ steps:
     image: python:3.11-bookworm
     depends_on: [security-secrets]
     environment:
-      DATABASE_URL: postgresql+asyncpg://ejc_user@db:5432/ejc_db
-      DATABASE_URL_SYNC: postgresql://ejc_user@db:5432/ejc_db
-      SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user@db:5432/ejc_db
+      DATABASE_URL: postgresql+asyncpg://ejc_user@db:5432/ejc_fast
+      DATABASE_URL_SYNC: postgresql://ejc_user@db:5432/ejc_fast
+      SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user@db:5432/ejc_fast
       RUN_DB_TESTS: "1"
     volumes:
-      - ejc-ci-pip-cache:/root/.cache/pip
+      - ejc-ci-pip-fast-cache:/root/.cache/pip
       - ejc-ci-apt-archives:/var/cache/apt/archives
       - ejc-ci-apt-lists:/var/lib/apt/lists
     commands:
@@ -230,7 +230,8 @@ steps:
       - pip install --quiet -r backend/requirements.txt
       - python -m compileall backend/app -q
       - until pg_isready -h db -U ejc_user -q; do sleep 1; done
-      - cd backend && python -m alembic upgrade head && cd ..
+      - createdb -h db -U ejc_user ejc_fast 2>/dev/null || true
+      - (cd backend && python -m alembic upgrade head)
       - python scripts/ci_affected_tests.py --stack backend --base origin/main > /tmp/ejc-backend-affected.txt
       - test -s /tmp/ejc-backend-affected.txt
       - cd backend && xargs -r pytest -q < /tmp/ejc-backend-affected.txt
@@ -330,16 +331,17 @@ steps:
     image: node:22
     depends_on: [security-secrets]
     volumes:
-      - ejc-ci-npm-cache:/root/.npm
+      - ejc-ci-npm-fast-cache:/root/.npm
     commands:
       - apt-get update -qq && apt-get install -y -qq --no-install-recommends git python3
       - git fetch --quiet --depth=200 origin main:refs/remotes/origin/main
-      - cd frontend && npm ci --prefer-offline
-      - cd frontend && npm run lint
-      - cd frontend && npm run audit:css:verificar
+      - rm -rf /tmp/ejc-frontend-fast && mkdir -p /tmp/ejc-frontend-fast && tar --exclude='./node_modules' -C frontend -cf - . | tar -C /tmp/ejc-frontend-fast -xf -
+      - cd /tmp/ejc-frontend-fast && npm ci --prefer-offline
+      - cd /tmp/ejc-frontend-fast && npm run lint
+      - cd /tmp/ejc-frontend-fast && npm run audit:css:verificar
       - python3 scripts/ci_affected_tests.py --stack frontend --base origin/main > /tmp/ejc-frontend-affected.txt
       - test -s /tmp/ejc-frontend-affected.txt
-      - cd frontend && xargs -r npx vitest run --maxWorkers=2 --no-file-parallelism < /tmp/ejc-frontend-affected.txt
+      - cd /tmp/ejc-frontend-fast && xargs -r npx vitest run --maxWorkers=2 --no-file-parallelism < /tmp/ejc-frontend-affected.txt
     when:
       - event: pull_request
         path:
@@ -394,6 +396,7 @@ steps:
         done
       - node -e "fetch('http://127.0.0.1:4173/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
       - EJC_BASE_URL=http://127.0.0.1:4173 npm run test:e2e:ci
+      - npm run test:visual-regression
     when:
       - event: push
         branch: main
