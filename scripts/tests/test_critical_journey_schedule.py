@@ -7,6 +7,7 @@ def test_runner_exige_credencial_dedicada_e_cleanup():
     assert "/etc/ejc/critical-journey.env" in src
     assert "EJC_ALLOW_PRODUCTION_E2E=true" in src
     assert "EJC_E2E_CLEANUP=true" in src
+    assert "EJC_CASE_CREATION_MODE=manual" in src
     assert "run_case_journey.py" in src
     assert "EJC_TEST_PASSWORD" in src
 
@@ -24,3 +25,5 @@ def test_jornada_cobre_pesquisa_e_logout():
     assert "jornada.logout" in src
     assert "/api/auth/logout" in src
     assert "jornada.logout.refresh_revogado" in src
+    assert "EJC_CASE_CREATION_MODE" in src
+    assert "core._create_case(client, state, matrix)" in src

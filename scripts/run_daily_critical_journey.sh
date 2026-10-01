@@ -30,6 +30,7 @@ export EJC_BASE_URL="${EJC_BASE_URL:-https://ejc.depaulateixeira.adv.br}"
 export EJC_ALLOW_PRODUCTION_E2E=true
 export EJC_E2E_CLEANUP=true
 export EJC_E2E_STRICT=true
+export EJC_CASE_CREATION_MODE=manual
 SOURCE_REPORT="$APP_DIR/qa/e2e/reports/e2e_fictitious_report.json"
 rm -f -- "$SOURCE_REPORT"
 
