@@ -113,13 +113,16 @@ const server = http.createServer(async (request, response) => {
     let file = path.join(DIST, pathname);
     const validFile = existsSync(file) && (await statIsFile(file));
     if (!validFile) file = path.join(DIST, "index.html");
+    const body = await readFile(file);
     response.writeHead(200, {
       "content-type": MIME[path.extname(file)] || "application/octet-stream",
       "cache-control": "no-store",
     });
-    response.end(await readFile(file));
+    response.end(body);
   } catch (error) {
-    response.writeHead(500);
+    if (!response.headersSent) {
+      response.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
+    }
     response.end(String(error));
   }
 });
