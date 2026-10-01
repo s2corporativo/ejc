@@ -69,6 +69,15 @@ type Subsistema = {
   total_gb?: number;
   percentual_livre?: number;
   coletor?: string | null;
+  commit?: string | null;
+  deployed_at?: string | null;
+  feature_flags?: Record<string, boolean>;
+  redis?: boolean | null;
+  workers?: number;
+  backup_enabled?: boolean;
+  last_run_at?: string | null;
+  last_status?: string | null;
+  age_hours?: number | null;
 };
 
 type DiagnosticoPayload = {
@@ -401,6 +410,78 @@ function SubsistemaCard({ sub }: { sub: Subsistema }) {
 // Renderiza os extras relevantes conforme as chaves presentes no subsistema.
 function SubsistemaExtras({ sub }: { sub: Subsistema }) {
   const blocos: React.ReactNode[] = [];
+
+  // Release / runtime e kill-switches
+  if (sub.commit || sub.deployed_at || sub.feature_flags) {
+    blocos.push(
+      <div key="runtime" className="space-y-2 text-xs">
+        <div className="flex flex-wrap gap-2">
+          {sub.commit && (
+            <Chip tone="slate" label={`commit: ${sub.commit.slice(0, 8)}`} />
+          )}
+          {sub.deployed_at && (
+            <Chip tone="slate" label={`deploy: ${fmtDataHora(sub.deployed_at)}`} />
+          )}
+        </div>
+        {sub.feature_flags && (
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(sub.feature_flags).map(([key, active]) => (
+              <Chip
+                key={key}
+                tone={active ? "green" : "amber"}
+                label={`${key}: ${active ? "on" : "off"}`}
+              />
+            ))}
+          </div>
+        )}
+      </div>,
+    );
+  }
+
+  if (sub.redis != null || sub.workers != null) {
+    blocos.push(
+      <div key="queue" className="flex flex-wrap gap-2">
+        {sub.redis != null && (
+          <Chip
+            tone={sub.redis ? "green" : "red"}
+            label={sub.redis ? "Redis OK" : "Redis indisponível"}
+          />
+        )}
+        {sub.workers != null && (
+          <Chip
+            tone={sub.workers > 0 ? "green" : "amber"}
+            label={`${sub.workers} worker(s)`}
+          />
+        )}
+      </div>,
+    );
+  }
+
+  // Backup — última execução efetiva, não apenas a configuração.
+  if (sub.backup_enabled != null || sub.last_run_at || sub.last_status) {
+    blocos.push(
+      <div key="backup" className="flex flex-wrap gap-2">
+        {sub.backup_enabled != null && (
+          <Chip
+            tone={sub.backup_enabled ? "green" : "amber"}
+            label={`backup: ${sub.backup_enabled ? "on" : "off"}`}
+          />
+        )}
+        {sub.last_run_at && (
+          <Chip tone="slate" label={`último backup: ${fmtDataHora(sub.last_run_at)}`} />
+        )}
+        {sub.last_status && (
+          <Chip
+            tone={sub.last_status === "sucesso" ? "green" : "amber"}
+            label={`status: ${sub.last_status}`}
+          />
+        )}
+        {sub.age_hours != null && (
+          <Chip tone="slate" label={`${sub.age_hours}h atrás`} />
+        )}
+      </div>,
+    );
+  }
 
   // Banco de dados
   if (sub.pgvector != null || sub.conexoes_ativas != null) {

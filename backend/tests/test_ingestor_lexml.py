@@ -312,6 +312,23 @@ async def test_ingerir_tolerante_a_erro_de_busca(monkeypatch):
     assert chamadas["n"] > 1, "as consultas seguintes têm de ser tentadas"
 
 
+async def test_ingerir_bloqueio_antibot_falha_na_primeira_consulta(monkeypatch):
+    """Bloqueio sistêmico não dispara dezenas de requisições de repetição."""
+    import pytest as _pytest
+
+    s = get_settings()
+    monkeypatch.setattr(s, "LEXML_INGEST_TEMAS", "tema1,tema2", raising=False)
+    chamadas = {"n": 0}
+
+    async def fake_buscar(palavras, tipo="jurisprudencia", por_pagina=10, **kw):
+        chamadas["n"] += 1
+        raise lexml.LexMLBloqueadoError("challenge")
+
+    monkeypatch.setattr(lexml, "buscar_lexml", fake_buscar)
+    with _pytest.raises(lexml.LexMLBloqueadoError, match="interrompida"):
+        await lexml.ingerir(_FakeDB())
+    assert chamadas["n"] == 1
+
 async def test_ingerir_falha_alto_quando_todas_as_consultas_estouram(monkeypatch):
     """Plano inteiramente falho não pode ser reportado como execução sadia."""
     import pytest as _pytest

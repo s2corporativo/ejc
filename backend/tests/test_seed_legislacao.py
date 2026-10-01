@@ -140,6 +140,18 @@ def test_extrair_texto_recompoe_ordinal_superscrito_isolado():
     assert rotulos == ["Art. 1", "Art. 1-A"]
 
 
+def test_extrair_texto_recompoe_artigo_camara_em_duas_linhas():
+    html = """<html><body>
+      <p>Art.</p><p>1º Primeiro artigo.</p>
+      <p>Art.</p><p>2º Segundo artigo.</p>
+    </body></html>"""
+    texto = extrair_texto_planalto(html)
+    assert "Art. 1º Primeiro artigo." in texto
+    assert "Art. 2º Segundo artigo." in texto
+    rotulos = [r for r, _ in dividir_artigos(texto) if r]
+    assert rotulos == ["Art. 1", "Art. 2"]
+
+
 def test_dividir_artigos_sufixo_reset_e_milhar():
     txt = ("Art. 19. Caput.\n"
            "Art. 19-A. Incluído depois.\n"
@@ -214,7 +226,11 @@ def test_catalogo_unificado_planalto_sem_duplicatas():
             "lep", "l11101", "lcp123", "l8213", "l8906", "ctb",
             "l8112", "idoso", "lacp", "l9784", "lai", "l9868"} == set(slugs)
     for lei in CATALOGO:
-        assert lei["url"].startswith("https://www.planalto.gov.br/ccivil_03/"), lei["slug"]
+        if lei["slug"] == "maria_penha":
+            assert lei["url"].startswith("https://www2.camara.leg.br/legin/")
+            assert lei.get("origem") == "camara"
+        else:
+            assert lei["url"].startswith("https://www.planalto.gov.br/ccivil_03/"), lei["slug"]
         assert lei["titulo"] and lei["area"], lei["slug"]
     # o wrapper CLI reexporta o MESMO catálogo (escritor único, sem cópia)
     assert sl.CATALOGO is pl.CATALOGO
@@ -303,6 +319,17 @@ async def test_seed_governanca_categoria_confianca_chave(pipeline_mockado):
            {"planalto:cdc", "planalto:lgpd"}
     assert execucoes and execucoes[0]["status"] == "sucesso" \
            and execucoes[0]["novos"] == 2 and execucoes[0]["total"] == 2
+
+
+async def test_maria_penha_preserva_chave_legada_e_registra_fonte_camara(pipeline_mockado):
+    chamadas, _ = pipeline_mockado
+    rel = await sl.executar_seed_legislacao(_FakeDB(), apenas="maria_penha")
+    assert not rel["falhas"] and list(rel["sucessos"]) == ["maria_penha"]
+    chamada = chamadas[-1]
+    assert chamada["chave_origem"] == "planalto:maria_penha"
+    assert chamada["fonte"].startswith("https://www2.camara.leg.br/legin/")
+    assert chamada["extra"]["fonte_url"] == chamada["fonte"]
+    assert chamada["extra"]["origem"] == "camara"
 
 
 async def test_falha_de_uma_lei_nao_aborta_as_demais(pipeline_mockado, monkeypatch, html):

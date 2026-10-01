@@ -43,6 +43,10 @@ install -m 644 "$ROOT/ejc-observability.timer" /etc/systemd/system/ejc-observabi
 install -m 755 "$ROOT/ejc-weekly-saneamento.sh" "$TARGET/ejc-weekly-saneamento.sh"
 install -m 644 "$ROOT/systemd/ejc-weekly-saneamento.service" /etc/systemd/system/ejc-weekly-saneamento.service
 install -m 644 "$ROOT/systemd/ejc-weekly-saneamento.timer" /etc/systemd/system/ejc-weekly-saneamento.timer
+install -m 644 "$ROOT/systemd/ejc-critical-journey.service" /etc/systemd/system/ejc-critical-journey.service
+install -m 644 "$ROOT/systemd/ejc-critical-journey.timer" /etc/systemd/system/ejc-critical-journey.timer
+install -m 644 "$ROOT/systemd/ejc-rollback-readiness.service" /etc/systemd/system/ejc-rollback-readiness.service
+install -m 644 "$ROOT/systemd/ejc-rollback-readiness.timer" /etc/systemd/system/ejc-rollback-readiness.timer
 systemctl daemon-reload
 
 # Primeira prova e deploy sao executados antes de habilitar a agenda. Se o SHA
@@ -51,6 +55,8 @@ systemctl start ejc-deploy-approved.service
 systemctl enable --now ejc-deploy-approved.timer
 systemctl enable --now ejc-observability.timer
 systemctl enable --now ejc-weekly-saneamento.timer
+systemctl enable --now ejc-critical-journey.timer
+systemctl enable --now ejc-rollback-readiness.timer
 
 echo "EJC deploy host-level instalado."
 echo "Status: systemctl status ejc-deploy-approved.timer"

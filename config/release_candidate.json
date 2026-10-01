@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "release": "homologacao-final-20260930",
+  "require_full_ci": true,
+  "purpose": "Gate integral antes de merge/deploy/homologacao; remover/atualizar somente em nova release.",
+  "freeze_main": true,
+  "allowed_source_branch": "fix/homologacao-final-20260930"
+}

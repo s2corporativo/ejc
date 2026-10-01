@@ -8,6 +8,7 @@ from typing import Any
 from app.core.config import Settings
 from app.services.ai.provider_registry import PROVIDERS_SUPORTADOS, provider_elegivel_com
 from app.services.notification_preferences import whatsapp_configurado
+from app.integrations.feature_flags import enabled as integration_flag_enabled
 
 
 @dataclass(frozen=True)
@@ -230,6 +231,26 @@ def _estado_overlay_seguro() -> dict[str, Any]:
 
 
 
+def _google_drive_knowledge_configuration() -> tuple[bool, bool, bool]:
+    """Estado estático seguro do Drive Knowledge: enabled, pasta e autenticação.
+
+    Não considera apenas o ID da pasta como configurado: a sincronização real
+    usa google_drive_service._build_credentials e exige OAuth ou service
+    account utilizável. O helper reutiliza auth_status para manter painel e
+    executor com a mesma regra sem expor qualquer segredo.
+    """
+    enabled = os.getenv("GOOGLE_DRIVE_ENABLED", "").strip().casefold() in {
+        "1", "true", "yes", "on", "sim",
+    }
+    folder = bool(os.getenv("GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID", "").strip())
+    try:
+        from app.services import google_drive_service as gdrive
+
+        auth = bool(gdrive.auth_status().get("configured"))
+    except Exception:
+        auth = False
+    return enabled, folder, auth
+
 def _backup_gdrive_auth_configured() -> bool:
     """Delega ao contrato canônico do backup; não duplica regra de credencial."""
     try:
@@ -268,6 +289,9 @@ def build_integration_status(
     para `attention`. Omitido (default) → comportamento e contrato idênticos ao
     histórico (os consumidores atuais chamam sem esse argumento)."""
     backup_configured, backup_destino = _backup_configuration(settings)
+    drive_knowledge_enabled, drive_knowledge_folder, drive_knowledge_auth = (
+        _google_drive_knowledge_configuration()
+    )
 
     items = [
         # Elegibilidade pela fonte única (provider_registry): antes esta cópia
@@ -461,15 +485,15 @@ def build_integration_status(
             key="google_drive_knowledge",
             label="Google Drive Knowledge",
             group="Conhecimento",
-            enabled=os.getenv("GOOGLE_DRIVE_ENABLED", "").strip().casefold()
-                    in {"1", "true", "yes", "on", "sim"},
-            configured=bool(os.getenv("GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID", "").strip()),
+            enabled=drive_knowledge_enabled,
+            configured=drive_knowledge_folder and drive_knowledge_auth,
             ready_detail=(
-                "Google Drive Knowledge habilitado e pasta institucional configurada; "
-                "o estado operacional informa se ja houve sincronizacao."
+                "Google Drive Knowledge habilitado com pasta e autenticação configuradas; "
+                "o estado operacional informa a última sincronização."
             ),
             missing_detail=(
-                "Google Drive Knowledge habilitado sem GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID."
+                "Google Drive Knowledge habilitado, mas falta pasta institucional "
+                "ou credencial OAuth/Service Account utilizável."
             ),
             mode="Drive -> RAG",
         ),
@@ -510,6 +534,109 @@ def build_integration_status(
                 "OpenCNPJ/BrasilAPI/ReceitaWS pública para CNPJ."
             ),
             mode="consulta anônima com rate limit; sem Conecta gov.br",
+        ),
+        _status(
+            key="cnj_sgt",
+            label="CNJ/SGT — Tabelas Processuais Unificadas",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("cnj_sgt"),
+            configured=True,
+            ready_detail="Conector público CNJ/SGT habilitado; não exige credencial.",
+            mode="API pública oficial",
+        ),
+        _status(
+            key="tcu",
+            label="TCU — Dados Abertos",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("tcu"),
+            configured=True,
+            ready_detail="Conector público do TCU habilitado; não exige credencial.",
+            mode="dados abertos oficiais",
+        ),
+        _status(
+            key="ibge",
+            label="IBGE — Localidades",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("ibge"),
+            configured=True,
+            ready_detail="Conector público do IBGE habilitado; não exige credencial.",
+            mode="API pública oficial",
+        ),
+        _status(
+            key="ibama",
+            label="IBAMA — Dados Abertos",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("ibama"),
+            configured=True,
+            ready_detail="Conector CKAN do IBAMA habilitado; não exige credencial.",
+            mode="catálogo oficial de dados abertos",
+        ),
+        _status(
+            key="consumidor_gov",
+            label="Consumidor.gov.br / MJ — Dados Abertos",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("mj"),
+            configured=True,
+            ready_detail="Conector CKAN do Ministério da Justiça habilitado; não exige credencial.",
+            mode="catálogo oficial de dados abertos",
+        ),
+        _status(
+            key="cvm",
+            label="CVM — Dados Abertos",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("cvm"),
+            configured=True,
+            ready_detail="Conector CKAN da CVM habilitado; não exige credencial.",
+            mode="catálogo oficial de dados abertos",
+        ),
+        _status(
+            key="tse",
+            label="TSE — Dados Abertos",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("tse"),
+            configured=True,
+            ready_detail="Conector CKAN do TSE habilitado; não exige credencial.",
+            mode="catálogo oficial de dados abertos",
+        ),
+        _status(
+            key="pgfn",
+            label="PGFN — Dívida Ativa / Dados Abertos",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("pgfn"),
+            configured=True,
+            ready_detail="Conector público da PGFN habilitado; não exige credencial.",
+            mode="catálogo bulk oficial",
+        ),
+        _status(
+            key="querido_diario",
+            label="Querido Diário",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("querido_diario"),
+            configured=True,
+            ready_detail=(
+                "Agregador municipal habilitado; resultados exigem preservação "
+                "do link da fonte oficial para conferência."
+            ),
+            mode="fonte secundária pública",
+        ),
+        _status(
+            key="ide_sisema",
+            label="IDE-Sisema / MG",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("ide_sisema"),
+            configured=True,
+            ready_detail="Conector público WFS do Sisema/MG habilitado; não exige credencial.",
+            mode="geodados ambientais oficiais",
+        ),
+        _status(
+            key="jurimetria_tribunais",
+            label="Jurimetria dos Tribunais / DataJud",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("jurimetria_tribunais"),
+            configured=bool(settings.DATAJUD_ENABLED and settings.DATAJUD_API_KEY),
+            ready_detail="Jurimetria habilitada sobre os índices públicos do DataJud.",
+            missing_detail="Jurimetria habilitada, mas DataJud não está configurado.",
+            mode="DataJud agregado",
         ),
         _status(
             key="infosimples",

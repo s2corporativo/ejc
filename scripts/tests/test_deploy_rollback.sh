@@ -72,6 +72,29 @@ cat > "$APP/scripts/post_deploy_check.sh" <<EOF
 set -euo pipefail
 echo post-check >> "$POST_LOG"
 EOF
+cat > "$APP/scripts/check_release_identity.py" <<'PY'
+#!/usr/bin/env python3
+import argparse
+import os
+from pathlib import Path
+
+p = argparse.ArgumentParser()
+p.add_argument("--expected", required=True)
+p.add_argument("--app-dir", required=True)
+p.add_argument("--public-url")
+p.add_argument("--local-url")
+p.add_argument("--skip-marker", action="store_true")
+args = p.parse_args()
+
+expected = os.environ["EXPECTED_HEALTH_SHA"]
+if args.expected != expected:
+    raise SystemExit(2)
+if not args.skip_marker:
+    marker = Path(args.app_dir, ".deployed_sha")
+    if not marker.exists() or marker.read_text().strip() != expected:
+        raise SystemExit(2)
+PY
+chmod +x "$APP/scripts/check_release_identity.py"
 chmod +x "$APP/scripts/"*.sh "$APP/scripts/backup/"*.sh
 
 cat > "$BIN/docker" <<'EOF'

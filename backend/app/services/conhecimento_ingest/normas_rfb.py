@@ -217,7 +217,13 @@ async def ingerir(db: AsyncSession) -> dict:
             if chave in vistos:
                 continue
             vistos.add(chave)
-            url = ato.get("fonte_url") or _url_ato(ato["id_ato"])
+            # O layout atual da RFB acrescenta ao href um fragmento /vs/<base64>
+            # com a lista inteira de resultados da busca. Em produção já vimos
+            # URLs com ~900 caracteres, maiores que knowledge_docs.fonte (255),
+            # embora o ato tenha um link oficial curto e estável por idAto.
+            # Persistimos e usamos esse link canônico; não truncamos URL nem
+            # ampliamos schema só para guardar estado efêmero de navegação.
+            url = _url_ato(ato["id_ato"])
             try:
                 ementa = (ato.get("ementa") or "").strip()
                 if ementa:

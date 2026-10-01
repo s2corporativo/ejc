@@ -1,7 +1,9 @@
 """Testes do classificador conservador de migrations de deploy."""
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -224,3 +226,41 @@ def test_heads_multiplos_e_caminho_ramificado_falham(tmp_path: Path):
     _write(tmp_path / "002b.py", "002b", "001", "pass")
     with pytest.raises(RuntimeError, match="head único"):
         evaluate(tmp_path, "001")
+
+
+def test_revisao_humana_por_hash_exato_e_fail_closed_se_arquivo_mudar(tmp_path: Path):
+    _base(tmp_path)
+    migration = tmp_path / "002.py"
+    _write(
+        migration,
+        "002",
+        "001",
+        'op.execute("UPDATE base SET id=id WHERE id IS NOT NULL")',
+    )
+    digest = hashlib.sha256(migration.read_bytes()).hexdigest()
+    (tmp_path.parent / "MIGRATION_REVIEW_MANIFEST.json").write_text(
+        json.dumps(
+            {
+                "002": {
+                    "file": "002.py",
+                    "sha256": digest,
+                    "status": "aplicada_e_auditada",
+                    "reason": "revisão humana de teste vinculada ao conteúdo exato",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = evaluate(tmp_path, "001")
+    assert result["compatible"] is True
+    assert result["migrations"][0]["policy"] == "human_reviewed_sha256"
+    assert result["migrations"][0]["reviewed_findings"]
+
+    migration.write_text(migration.read_text() + "\n# alteração posterior\n", encoding="utf-8")
+    result = evaluate(tmp_path, "001")
+    assert result["compatible"] is False
+    assert any(
+        "hash da migration diverge" in reason
+        for reason in result["migrations"][0]["reasons"]
+    )

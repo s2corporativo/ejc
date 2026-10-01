@@ -14,7 +14,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse
 from app.core.config import get_settings
 from app.core.log_sanitizer import safe_exception_log, sanitize_log_value
 from app.core.database import check_db
+from app.core.operational_flags import require_financeiro_enabled
 from app.core.auth_middleware import AuthMiddleware
 from app.core.api_version_middleware import APIVersionCompatibilityMiddleware
 from app.services.scheduler import start_scheduler, stop_scheduler
@@ -428,7 +429,7 @@ app.include_router(case_intelligence.router, prefix=API)
 app.include_router(case_partes.router, prefix=API)
 app.include_router(cases.router, prefix=API)
 app.include_router(caso_areas.router, prefix=API)
-app.include_router(centro_custos.router, prefix=API)
+app.include_router(centro_custos.router, prefix=API, dependencies=[Depends(require_financeiro_enabled)])
 app.include_router(cerebro.router, prefix=API)
 app.include_router(checklists.router, prefix=API)
 app.include_router(clients.router, prefix=API)
@@ -443,10 +444,10 @@ app.include_router(dpt360_router, prefix=API)
 app.include_router(data_room.router, prefix=API)
 app.include_router(datajud.router, prefix=API)
 app.include_router(deadlines.router, prefix=API)
-app.include_router(despesas.router, prefix=API)
+app.include_router(despesas.router, prefix=API, dependencies=[Depends(require_financeiro_enabled)])
 # Composição do #1492/#1493 (2026-09-05): o router existia sem registro —
 # a UI de TabTimeline chamava /despesas-processuais e recebia 404.
-app.include_router(despesas_processuais.router, prefix=API)
+app.include_router(despesas_processuais.router, prefix=API, dependencies=[Depends(require_financeiro_enabled)])
 app.include_router(diario_oficial.router, prefix=API)
 app.include_router(raio_x.router, prefix=API)
 app.include_router(legal_chat.router, prefix=API)
@@ -458,10 +459,10 @@ app.include_router(etiquetas.router, prefix=API)  # P3: prefixo canônico /etiqu
 app.include_router(etiquetas.casos_router, prefix=API)
 app.include_router(evolution_webhook.router, prefix=API)
 app.include_router(export.router, prefix=API)
-app.include_router(extratos.router, prefix=API)
-app.include_router(fees.router, prefix=API)
-app.include_router(financeiro_consolidado.router, prefix=API)
-app.include_router(gestao_societaria.router, prefix=API)
+app.include_router(extratos.router, prefix=API, dependencies=[Depends(require_financeiro_enabled)])
+app.include_router(fees.router, prefix=API, dependencies=[Depends(require_financeiro_enabled)])
+app.include_router(financeiro_consolidado.router, prefix=API, dependencies=[Depends(require_financeiro_enabled)])
+app.include_router(gestao_societaria.router, prefix=API, dependencies=[Depends(require_financeiro_enabled)])
 app.include_router(google_drive_knowledge.router, prefix=API)  # /api/rag/google-drive/* (curadoria da base, piso admin/socio)
 app.include_router(ia_adversarial.router, prefix=API)
 app.include_router(ia_agente.router, prefix=API)
@@ -513,10 +514,10 @@ app.include_router(defesas_revisoes_avancado.router, prefix=API)
 app.include_router(novos_modulos.casos_router, prefix=API)
 app.include_router(observabilidade.router, prefix=API)
 app.include_router(office_contracts.router, prefix=API)
-app.include_router(partner_withdrawals.router, prefix=API)
+app.include_router(partner_withdrawals.router, prefix=API, dependencies=[Depends(require_financeiro_enabled)])
 app.include_router(peca_geracao.router, prefix=API)
 app.include_router(pending_items.router, prefix=API)
-app.include_router(pix.router, prefix=API)
+app.include_router(pix.router, prefix=API, dependencies=[Depends(require_financeiro_enabled)])
 app.include_router(portal.router, prefix=API)
 app.include_router(portal_documentos.router, prefix=API)  # Portal: solicitações de documentos + upload (migration 084)
 app.include_router(solicitacoes_documentos.router, prefix=API)  # advogado: solicitação de documentos ao cliente (migration 084)

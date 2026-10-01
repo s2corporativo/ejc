@@ -1,0 +1,11 @@
+[Unit]
+Description=Run EJC rollback readiness drill weekly
+
+[Timer]
+OnCalendar=Sun *-*-* 06:40:00 UTC
+RandomizedDelaySec=10m
+Persistent=true
+Unit=ejc-rollback-readiness.service
+
+[Install]
+WantedBy=timers.target

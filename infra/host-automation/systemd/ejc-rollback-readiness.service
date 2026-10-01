@@ -1,0 +1,13 @@
+[Unit]
+Description=EJC isolated rollback readiness drill
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/ejc
+ExecStart=/opt/ejc/scripts/rollback_readiness_drill.sh
+TimeoutStartSec=10min
+Nice=10

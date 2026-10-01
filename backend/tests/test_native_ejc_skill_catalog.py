@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from app.services.module_registry import MODULE_REGISTRY
+from app.core.taxonomia import AREAS_CANONICAS
 from app.services.ai.core.agent_registry import AGENT_REGISTRY
 from app.services.ai.core.dpt360_registry import DPT_SKILL_NAMES
 from app.services.ai.core.ejc_skill_catalog import (
@@ -15,22 +16,7 @@ from app.services.ai.core.intent_classifier import classify_intent
 from app.services.ai.core.skill_registry import SKILL_REGISTRY
 
 
-EXPECTED_LEGAL_AREAS = {
-    "empresarial",
-    "civil",       # chave canônica (AREAS_CANONICAS); "civel" é alias
-    "criminal",    # chave canônica; "penal" é alias
-    "trabalhista",
-    "administrativo",
-    "bancario",
-    "tributario",
-    "ambiental",
-    "consumidor",
-    "familia",
-    "imobiliario",
-    "previdenciario",
-    "digital_lgpd",
-    "transito",
-}
+EXPECTED_LEGAL_AREAS = set(AREAS_CANONICAS)
 
 # Só as áreas com agente dedicado sobrevivem à consolidação 38→8 de
 # 2026-09-06 (escopo definido pelo titular). As demais áreas canônicas
@@ -54,27 +40,22 @@ def test_catalogo_cobre_todos_os_ramos_e_modulos() -> None:
 
     assert set(LEGAL_AREA_SPECS) == EXPECTED_LEGAL_AREAS
     assert set(MODULE_SKILL_SPECS) == module_keys
-    assert len(LEGAL_AREA_SPECS) == 14
+    assert len(LEGAL_AREA_SPECS) == len(AREAS_CANONICAS)
     # 34 módulos = 34 (onda 2) - noticias (CORTE-4) - victory-vault (CORTE-3)
     # + ajuizamento e ajuizamento-perfis (PR #1536) — paridade com o
     # moduleRegistry do frontend.
     assert len(MODULE_SKILL_SPECS) == 34
-    assert len(native_skill_specs()) == 48
+    assert len(native_skill_specs()) == 34 + len(AREAS_CANONICAS)
 
     coverage = native_skill_coverage()
-    assert coverage["total_native_skills"] == 48
+    assert coverage["total_native_skills"] == 34 + len(AREAS_CANONICAS)
     assert coverage["modules"]["missing"] == []
-    # C7: a cobertura agora é medida contra a taxonomia CANÔNICA — e acusa as
-    # áreas sem método de ramo em vez de comparar o catálogo consigo mesmo.
-    from app.core.taxonomia import AREAS_CANONICAS
+    # Cobertura jurídica nativa completa: toda área canônica possui um método
+    # seguro de análise, sem criar nova taxonomia nem hardcode de jurisprudência.
     assert coverage["legal_areas"]["expected"] == len(AREAS_CANONICAS)
     assert coverage["legal_areas"]["nao_canonicas"] == []
-    faltantes = set(coverage["legal_areas"]["missing"])
-    assert faltantes == set(AREAS_CANONICAS) - EXPECTED_LEGAL_AREAS
-    assert faltantes, "há áreas canônicas sem método de ramo (decisão de advogado)"
-    # `complete` é a métrica ASPIRACIONAL e segue False — é a verdade, e o
-    # painel de cobertura deve continuar mostrando isso.
-    assert coverage["complete"] is False
+    assert coverage["legal_areas"]["missing"] == []
+    assert coverage["complete"] is True
     # `estrutura_ok` é a métrica OPERACIONAL, e É True: todo módulo tem método,
     # nenhuma área foge do enum. A separação conserta um defeito real achado no
     # pente fino de 03/09 — `skills_native_ejc_seed` usava `complete` como
@@ -177,6 +158,30 @@ def test_aliases_forenses_resolvem_para_chave_canonica() -> None:
                               ("penal", "ramo_criminal"), ("criminal", "ramo_criminal")):
         plan = resolve_native_skill_plan(task_type="chat", domain=dominio, message="")
         assert esperado in plan.skill_names, (dominio, plan.skill_names)
+
+
+def test_toda_area_canonica_resolve_para_skill_nativa() -> None:
+    for area in AREAS_CANONICAS:
+        plan = resolve_native_skill_plan(task_type="chat", domain=area, message="")
+        assert plan.legal_area == area, (area, plan.legal_area)
+        assert f"ramo_{area}" in plan.skill_names, (area, plan.skill_names)
+
+
+def test_novos_ramos_resolvem_por_alias_e_keyword() -> None:
+    casos = (
+        ("licitacao", "", "licitacoes"),
+        ("sucessao", "", "sucessoes"),
+        ("societario", "", "societario"),
+        (None, "Auditar edital de pregão e habilitação do fornecedor.", "licitacoes"),
+        (None, "Analisar inventário, herança, testamento e partilha.", "sucessoes"),
+        (None, "Examinar prontuário e consentimento informado em alegação de erro médico.", "medico"),
+    )
+    for dominio, mensagem, esperado in casos:
+        plan = resolve_native_skill_plan(
+            task_type="chat", domain=dominio, message=mensagem
+        )
+        assert plan.legal_area == esperado, (dominio, mensagem, plan.legal_area)
+        assert f"ramo_{esperado}" in plan.skill_names
 
 
 def test_empate_de_keywords_nao_escolhe_ramo() -> None:

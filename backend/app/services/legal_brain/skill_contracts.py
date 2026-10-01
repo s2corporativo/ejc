@@ -197,6 +197,149 @@ _LEGAL_OVERLAYS: dict[str, dict[str, tuple[str, ...]]] = {
             "fotografias, registros do equipamento e decisões administrativas disponíveis",
         ),
     },
+    "constitucional": {
+        "issue_types": ("competencia_rito", "prova_onus_lacunas", "tutela_urgencia"),
+        "required_questions": (
+            "Qual ato ou norma é questionado e qual parâmetro constitucional é invocado?",
+            "Qual via de controle, legitimidade e competência precisam ser confirmadas?",
+            "Quais efeitos concretos e medidas urgentes dependem de prova?",
+        ),
+        "required_evidence": (
+            "ato ou norma questionada em versão oficial",
+            "documentos que demonstrem legitimidade e efeitos concretos",
+            "precedentes vinculantes e atos processuais pertinentes, com fonte oficial",
+        ),
+    },
+    "contratual": {
+        "issue_types": ("competencia_rito", "prescricao_decadencia", "prova_onus_lacunas", "tutela_urgencia"),
+        "required_questions": (
+            "Qual contrato, regime jurídico e obrigação estão em discussão?",
+            "Quais formação, execução, mora, inadimplemento, revisão ou extinção precisam ser confirmados?",
+            "Quais cláusulas, garantias, prazos e danos dependem de prova?",
+        ),
+        "required_evidence": (
+            "contrato integral e aditivos",
+            "comunicações, notificações e comprovantes de cumprimento ou inadimplemento",
+            "documentos de garantia, pagamentos e prejuízos alegados",
+        ),
+    },
+    "societario": {
+        "issue_types": ("competencia_rito", "prescricao_decadencia", "prova_onus_lacunas", "tutela_urgencia"),
+        "required_questions": (
+            "Qual tipo societário, quadro de sócios e ato societário estão em discussão?",
+            "Quais poderes, quóruns, deliberações, deveres ou conflitos precisam ser confirmados?",
+            "Há retirada, exclusão, reorganização ou apuração de haveres em debate?",
+        ),
+        "required_evidence": (
+            "contrato ou estatuto social e alterações",
+            "atas, deliberações, livros e registros societários pertinentes",
+            "documentos contábeis e comunicações ligadas ao conflito",
+        ),
+    },
+    "sucessoes": {
+        "issue_types": ("competencia_rito", "prescricao_decadencia", "prova_onus_lacunas", "tutela_urgencia"),
+        "required_questions": (
+            "Quando ocorreu a abertura da sucessão e quem são os interessados documentados?",
+            "Quais meação, herdeiros, testamento, doações, dívidas e bens precisam ser confirmados?",
+            "Qual via de inventário, competência e obrigação tributária estão em discussão?",
+        ),
+        "required_evidence": (
+            "certidões de estado civil e óbito pertinentes",
+            "testamento, doações e documentos patrimoniais disponíveis",
+            "matrículas, extratos, avaliações e documentos fiscais relevantes",
+        ),
+    },
+    "licitacoes": {
+        "issue_types": ("competencia_rito", "prescricao_decadencia", "prova_onus_lacunas", "tutela_urgencia"),
+        "required_questions": (
+            "Qual ente, órgão, procedimento, fase e objeto da contratação estão em discussão?",
+            "Quais regras do edital, habilitação, julgamento, recurso, execução ou sanção precisam ser confirmadas?",
+            "Qual prazo ou medida urgente depende da fonte oficial do procedimento?",
+        ),
+        "required_evidence": (
+            "edital, anexos e publicações oficiais do certame",
+            "proposta, habilitação, atas, decisões e recursos pertinentes",
+            "contrato, ordens, medições, notificações e processo sancionador quando houver",
+        ),
+    },
+    "saude": {
+        "issue_types": ("competencia_rito", "prova_onus_lacunas", "tutela_urgencia"),
+        "required_questions": (
+            "O caso envolve SUS, saúde suplementar, fornecimento público ou responsabilidade civil?",
+            "Qual indicação clínica, urgência, cobertura, negativa ou protocolo precisa ser documentado?",
+            "Quais requisitos regulatórios, competência e tutela dependem de confirmação?",
+        ),
+        "required_evidence": (
+            "prescrição e relatório clínico pertinentes",
+            "contrato, negativa formal ou processo administrativo",
+            "normas e protocolos oficiais vigentes aplicáveis ao pedido",
+        ),
+    },
+    "medico": {
+        "issue_types": ("competencia_rito", "prescricao_decadencia", "prova_onus_lacunas", "tutela_urgencia"),
+        "required_questions": (
+            "Qual atendimento, conduta, dano e nexo alegados precisam ser reconstruídos?",
+            "Quais consentimento, informação, protocolos e evolução clínica estão documentados?",
+            "A conclusão depende de perícia técnica ou documentação adicional?",
+        ),
+        "required_evidence": (
+            "prontuário integral e termos de consentimento",
+            "laudos, exames, prescrições e registros de atendimento",
+            "prova pericial ou técnica adequada quando necessária",
+        ),
+    },
+    "agrario": {
+        "issue_types": ("competencia_rito", "prescricao_decadencia", "prova_onus_lacunas", "tutela_urgencia"),
+        "required_questions": (
+            "Qual imóvel rural, posse, propriedade ou contrato está em discussão?",
+            "Quais cadeia dominial, área, cadastro, georreferenciamento ou ocupação precisam ser confirmados?",
+            "Há conflito fundiário, regularização ou medida urgente?",
+        ),
+        "required_evidence": (
+            "matrícula, títulos e documentos possessórios",
+            "cadastros rurais, mapas, memoriais e levantamentos técnicos pertinentes",
+            "contratos rurais, notificações e registros de ocupação",
+        ),
+    },
+    "agronegocio": {
+        "issue_types": ("competencia_rito", "prescricao_decadencia", "prova_onus_lacunas", "tutela_urgencia"),
+        "required_questions": (
+            "Qual operação, produto, contrato, crédito ou garantia da cadeia agro está em discussão?",
+            "Quais quantidade, qualidade, preço, entrega, inadimplemento ou risco precisam ser confirmados?",
+            "Há efeitos regulatórios, ambientais, tributários ou trabalhistas conexos?",
+        ),
+        "required_evidence": (
+            "contratos, CPRs, títulos e garantias pertinentes",
+            "notas, romaneios, laudos de qualidade, armazenagem e transporte",
+            "comprovantes financeiros e comunicações da operação",
+        ),
+    },
+    "eleitoral": {
+        "issue_types": ("competencia_rito", "prescricao_decadencia", "prova_onus_lacunas", "tutela_urgencia"),
+        "required_questions": (
+            "Qual ato, sujeito, eleição, fase do calendário e procedimento estão em discussão?",
+            "Quais competência, legitimidade, prazo, prova e resolução vigente precisam ser confirmados?",
+            "Há conteúdo digital ou propaganda que exija preservação técnica da prova?",
+        ),
+        "required_evidence": (
+            "ato, petição, decisão ou registro eleitoral oficial pertinente",
+            "resoluções e normas eleitorais vigentes da fonte oficial",
+            "provas digitais preservadas e documentos de calendário/prazo aplicáveis",
+        ),
+    },
+    "internacional": {
+        "issue_types": ("competencia_rito", "prescricao_decadencia", "prova_onus_lacunas", "tutela_urgencia"),
+        "required_questions": (
+            "Quais países, domicílios, nacionalidades e relações transnacionais são relevantes?",
+            "Qual jurisdição, lei aplicável, tratado, foro ou arbitragem precisa ser confirmada?",
+            "Há cooperação, citação, homologação ou execução internacional em curso?",
+        ),
+        "required_evidence": (
+            "contratos e cláusulas de foro/arbitragem pertinentes",
+            "tratados e atos oficiais vigentes aplicáveis",
+            "documentos estrangeiros, traduções e atos de cooperação disponíveis",
+        ),
+    },
 }
 
 

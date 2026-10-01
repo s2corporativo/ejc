@@ -4,7 +4,8 @@
 #
 # Política de escopo:
 # - push na main e execução manual: suíte completa;
-# - pull request: executa apenas os gates materialmente afetados pelo diff;
+# - pull request comum: gate rápido + testes diretamente afetados;
+# - PR com config/release_candidate.json (ou diff desconhecido): suíte completa;
 # - security-secrets: sempre executa, inclusive em docs-only;
 # - runtime, segurança, migrations e deploy: suíte completa por caminhos críticos;
 # - diff vazio/desconhecido: suíte completa (fail-closed);
@@ -86,6 +87,7 @@ steps:
       - bash scripts/tests/test_rag_activation.sh
       - bash scripts/tests/test_legacy_script_guards.sh
       - python3 scripts/tests/test_saneamento_governanca.py
+      - python3 scripts/check_release_freeze.py
     # Contratos leves rodam sempre: seus insumos cruzam código, exemplos e scanners.
 
   deploy-validation:
@@ -203,6 +205,58 @@ steps:
             - 'backend/alembic.ini'
           on_empty: false
 
+  # Gate rápido de PR: contratos + testes diretamente afetados.
+  # A suíte integral permanece em backend-tests para release/main/manual.
+  backend-fast:
+    image: python:3.11-bookworm
+    depends_on: [security-secrets]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ejc_user@db:5432/ejc_fast
+      DATABASE_URL_SYNC: postgresql://ejc_user@db:5432/ejc_fast
+      SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user@db:5432/ejc_fast
+      RUN_DB_TESTS: "1"
+    volumes:
+      - ejc-ci-pip-fast-cache:/root/.cache/pip
+      - ejc-ci-apt-archives:/var/cache/apt/archives
+      - ejc-ci-apt-lists:/var/lib/apt/lists
+    commands:
+      - |
+        for tentativa in 1 2 3 4; do
+          apt-get -o DPkg::Lock::Timeout=300 update -qq && \
+          apt-get -o DPkg::Lock::Timeout=300 install -y -qq --no-install-recommends git jq libmagic1 postgresql-client && \
+          break
+          sleep 15
+        done
+      - git fetch --quiet --depth=200 origin main:refs/remotes/origin/main
+      # PR de release executa a suíte integral. O gate rápido deve sair antes de
+      # tocar no banco para não concorrer com backend-tests no mesmo PostgreSQL.
+      - |
+        if git diff --name-only origin/main HEAD | grep -Fxq 'config/release_candidate.json'; then
+          echo "release candidate: backend-fast coberto por backend-tests; encerrando gate rápido sem duplicar DB/testes."
+          exit 0
+        fi
+      - pip install --quiet -r backend/requirements.txt
+      - python -m compileall backend/app -q
+      - until pg_isready -h db -U ejc_user -q; do sleep 1; done
+      - createdb -h db -U ejc_user ejc_fast 2>/dev/null || true
+      - (cd backend && python -m alembic upgrade head)
+      - python scripts/ci_affected_tests.py --stack backend --base origin/main > /tmp/ejc-backend-affected.txt
+      - test -s /tmp/ejc-backend-affected.txt
+      - cd backend && xargs -r pytest -q < /tmp/ejc-backend-affected.txt
+    when:
+      - event: pull_request
+        path:
+          include:
+            - 'backend/**'
+            - 'scripts/**'
+            - 'config/**'
+            - 'qa/**'
+            - '.env.example'
+            - '.woodpecker.yml'
+            - 'docker-compose*.yml'
+            - '**/requirements*.txt'
+          on_empty: true
+
   backend-tests:
     image: python:3.11-bookworm
     depends_on: [security-secrets]
@@ -255,22 +309,16 @@ steps:
       - event: push
         branch: main
       - event: manual
-      - *critical_change
-      - path:
+      - event: pull_request
+        path:
           include:
-            - 'backend/**'
-            - 'qa/**'
-            - 'config/**'
-            - '.env.example'
-            - '.woodpecker.yml'
-            - 'docker-compose.yml'
-            - 'docker-compose.*.yml'
-          on_empty: false
+            - 'config/release_candidate.json'
+          on_empty: true
 
   # O SDK de agentes é ferramenta operacional isolada e tem dependências próprias.
   agents-contracts:
     image: python:3.11-bookworm
-    depends_on: [backend-tests]
+    depends_on: [security-secrets]
     volumes:
       - ejc-ci-pip-cache:/root/.cache/pip
     commands:
@@ -286,9 +334,44 @@ steps:
           include: ['ops/agents/**', '.woodpecker.yml']
           on_empty: false
 
-  frontend:
+  # Gate rápido do frontend em PR: tipos, CSS e testes diretamente afetados.
+  frontend-fast:
     image: node:22
     depends_on: [security-secrets]
+    volumes:
+      - ejc-ci-npm-fast-cache:/root/.npm
+    commands:
+      - apt-get update -qq && apt-get install -y -qq --no-install-recommends git python3
+      - git fetch --quiet --depth=200 origin main:refs/remotes/origin/main
+      # Evita dois `npm ci` simultâneos no MESMO workspace (frontend-fast e
+      # frontend integral), causa observada de ENOTEMPTY/tsc ausente.
+      - |
+        if git diff --name-only origin/main HEAD | grep -Fxq 'config/release_candidate.json'; then
+          echo "release candidate: frontend-fast coberto por frontend integral; encerrando gate rápido sem tocar node_modules."
+          exit 0
+        fi
+      - rm -rf /tmp/ejc-frontend-fast && mkdir -p /tmp/ejc-frontend-fast && tar --exclude='./node_modules' -C frontend -cf - . | tar -C /tmp/ejc-frontend-fast -xf -
+      - cd /tmp/ejc-frontend-fast && npm ci --prefer-offline
+      - cd /tmp/ejc-frontend-fast && npm run lint
+      - cd /tmp/ejc-frontend-fast && npm run audit:css:verificar
+      - python3 scripts/ci_affected_tests.py --stack frontend --base origin/main > /tmp/ejc-frontend-affected.txt
+      - test -s /tmp/ejc-frontend-affected.txt
+      - cd /tmp/ejc-frontend-fast && xargs -r npx vitest run --maxWorkers=2 --no-file-parallelism < /tmp/ejc-frontend-affected.txt
+    when:
+      - event: pull_request
+        path:
+          include:
+            - 'frontend/**'
+            - 'config/**'
+            - 'qa/**'
+            - '.woodpecker.yml'
+          on_empty: true
+
+  frontend:
+    image: node:22
+    # Quando a suíte integral é exigida, backend-tests também é exigido.
+    # Serializar os dois maiores consumidores evita OOM/exit 137 no host CI.
+    depends_on: [backend-tests]
     volumes:
       # Tarballs e metadados npm em cache; `npm ci --prefer-offline` consome o
       # cache local e só vai à rede no que faltar (sem mascarar lockfile novo).
@@ -305,13 +388,11 @@ steps:
       - event: push
         branch: main
       - event: manual
-      - *critical_change
-      - path:
+      - event: pull_request
+        path:
           include:
-            - 'frontend/**'
-            - 'qa/**'
-            - '.woodpecker.yml'
-          on_empty: false
+            - 'config/release_candidate.json'
+          on_empty: true
 
   # Browser gate obrigatório: Chromium real contra o build do frontend.
   # Não usa credenciais nem dados reais; mocka apenas refresh não autenticado.
@@ -332,17 +413,16 @@ steps:
         done
       - node -e "fetch('http://127.0.0.1:4173/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
       - EJC_BASE_URL=http://127.0.0.1:4173 npm run test:e2e:ci
+      - npm run test:visual-regression
     when:
       - event: push
         branch: main
       - event: manual
-      - *critical_change
-      - path:
+      - event: pull_request
+        path:
           include:
-            - 'frontend/**'
-            - 'qa/**'
-            - '.woodpecker.yml'
-          on_empty: false
+            - 'config/release_candidate.json'
+          on_empty: true
 
   # Gate estrutural de migrations SEM banco: head único, sem órfãos, sem
   # duplicatas, sem ciclos + classificador expand-only executado de verdade

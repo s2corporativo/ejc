@@ -8,12 +8,10 @@ cd "$APP_DIR"
 log(){ printf '[ejc-weekly] %s\n' "$*"; }
 git fetch --prune origin 'refs/heads/main:refs/remotes/origin/main'
 MAIN_SHA="$(git rev-parse origin/main)"
-DEPLOYED="$(tr -d '\r\n' < .deployed_sha 2>/dev/null || true)"
-HEALTH_SHA="$(curl -fsS --connect-timeout 5 --max-time 15 https://ejc.depaulateixeira.adv.br/api/health | python3 -c 'import json,sys;print(json.load(sys.stdin).get("commit",""))')"
-
-log "main=$MAIN_SHA deployed=$DEPLOYED health=$HEALTH_SHA"
-[ "$MAIN_SHA" = "$DEPLOYED" ] || { log "ALERTA: main != .deployed_sha"; exit 2; }
-[ "$MAIN_SHA" = "$HEALTH_SHA" ] || { log "ALERTA: main != produção"; exit 2; }
+log "validando identidade canônica da release: main=$MAIN_SHA"
+python3 scripts/check_release_identity.py \
+  --expected "$MAIN_SHA" \
+  --app-dir "$APP_DIR"
 
 python3 scripts/branch_hygiene.py --manifest "$REPORT_DIR/branches.csv"
 git worktree prune

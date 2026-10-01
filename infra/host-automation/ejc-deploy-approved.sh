@@ -113,7 +113,7 @@ log "sincronizando somente o SHA aprovado sob mutex"
 rsync -a --delete \
   --exclude '.git/' \
   --exclude '.env' --exclude '.env.*' \
-  --exclude '.deployed_sha' --exclude '.deploy_last_sha' \
+  --exclude '.deployed_sha' --exclude '.rollback_last_sha' --exclude '.deploy_last_sha' \
   --exclude 'uploads/' --exclude 'backups/' \
   --exclude 'logs/' --exclude 'data/' --exclude 'storage/' \
   --exclude 'secrets/' --exclude 'certs/' --exclude 'tmp/' \
@@ -137,11 +137,19 @@ REQUIRE_PREDEPLOY_BACKUP=1 \
 ENSURE_DAILY_BACKUP=1 \
 bash scripts/deploy_vps_safe.sh
 
-curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/api/health >/dev/null
-curl -fsS --connect-timeout 5 --max-time 15 https://ejc.depaulateixeira.adv.br/api/health >/dev/null
-[ -f "$APP_DIR/.deployed_sha" ] || fail "deploy terminou sem marcador canônico .deployed_sha"
-DEPLOYED_FINAL="$(tr -d '\r\n' < "$APP_DIR/.deployed_sha")"
-[ "$DEPLOYED_FINAL" = "$TARGET_SHA" ] || fail ".deployed_sha divergente após deploy: $DEPLOYED_FINAL"
+[ -x "$APP_DIR/scripts/post_deploy_smoke.sh" ] || fail "smoke pós-deploy ausente"
+EJC_DOMAIN="ejc.depaulateixeira.adv.br" \
+  bash "$APP_DIR/scripts/post_deploy_smoke.sh" "$TARGET_SHA"
 rm -f -- "$APP_DIR/.deploy_last_sha"
 chmod 600 "$APP_DIR/.deployed_sha"
-log "deploy concluido e health local/publico confirmados: $TARGET_SHA"
+
+# Higiene pós-release é deliberadamente não-bloqueante: falha de limpeza não
+# invalida um runtime já homologado. O relatório permanece em /var/lib/ejc-maintenance.
+if [ -x "$APP_DIR/scripts/post_release_hygiene.sh" ]; then
+  if bash "$APP_DIR/scripts/post_release_hygiene.sh" "$TARGET_SHA"; then
+    log "higiene pós-release concluída"
+  else
+    log "AVISO: higiene pós-release terminou com pendências; produção permanece válida"
+  fi
+fi
+log "deploy concluido com identidade e smoke pós-deploy confirmados: $TARGET_SHA"

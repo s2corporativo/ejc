@@ -114,16 +114,64 @@ def _texto_pdf(raw: bytes) -> str:
     return extrair_texto_pdf(raw)["texto"]
 
 
+def _url_oficial_gov_br(url: str) -> bool:
+    parte = urlparse(url)
+    return parte.scheme in {"http", "https"} and (
+        parte.netloc == "gov.br" or parte.netloc.endswith(".gov.br")
+    )
+
+
+async def _baixar_pdf_real(url: str) -> bytes | None:
+    """Resolve wrappers HTML do gov.br que usam URL terminada em .pdf.
+
+    O Plone pode responder 200/text-html para um caminho .pdf e colocar o
+    binário real em /@@display-file/file. Nunca entrega HTML ao PyMuPDF: valida
+    a assinatura %PDF e segue, no máximo, um link oficial gov.br descoberto na
+    própria página. Sem bypass, sem domínio externo e sem recursão ilimitada.
+    """
+    r = await fetch(
+        url, headers={"Accept": "application/pdf,*/*"}, timeout=60,
+        validar_ssrf=True,
+    )
+    if r.content.startswith(b"%PDF"):
+        return r.content
+
+    content_type = (r.headers.get("content-type") or "").lower()
+    parece_html = "html" in content_type or r.content.lstrip().startswith(b"<")
+    if not parece_html:
+        logger.warning("ANPD: caminho .pdf não devolveu PDF nem HTML reconhecível")
+        return None
+
+    original = url.split("#", 1)[0].rstrip("/")
+    for href, _rotulo in extrair_ancoras(r.text):
+        candidato = urljoin(url, href).split("#", 1)[0]
+        if candidato.rstrip("/") == original or not _url_oficial_gov_br(candidato):
+            continue
+        path = urlparse(candidato).path.lower()
+        if not (path.endswith(".pdf") or "/@@display-file/file" in path):
+            continue
+        rr = await fetch(
+            candidato, headers={"Accept": "application/pdf,*/*"}, timeout=60,
+            validar_ssrf=True,
+        )
+        if rr.content.startswith(b"%PDF"):
+            return rr.content
+
+    logger.warning("ANPD: wrapper HTML de PDF sem binário oficial localizável")
+    return None
+
+
 async def _conteudo(url: str) -> str | None:
     """Baixa e extrai o texto do documento (HTML ou PDF). None = sem conteúdo."""
     if urlparse(url).path.lower().endswith(".pdf"):
-        r = await fetch(url, headers={"Accept": "*/*"}, timeout=60, validar_ssrf=True)
-        if len(r.content) > MAX_PDF_BYTES:
-            logger.warning("ANPD: PDF muito grande (%d bytes), pulado: %s",
-                           len(r.content), url)
+        raw = await _baixar_pdf_real(url)
+        if raw is None:
+            return None
+        if len(raw) > MAX_PDF_BYTES:
+            logger.warning("ANPD: PDF muito grande (%d bytes), pulado", len(raw))
             return None
         # extração é CPU-bound → thread para não travar o event loop
-        return await asyncio.to_thread(_texto_pdf, r.content)
+        return await asyncio.to_thread(_texto_pdf, raw)
     r = await fetch(url, headers={"Accept": "text/html"}, timeout=30, validar_ssrf=True)
     return html_para_texto(r.text)
 

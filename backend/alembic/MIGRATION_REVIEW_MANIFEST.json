@@ -1,0 +1,20 @@
+{
+  "164_commission_rules": {
+    "file": "164_commission_rules.py",
+    "sha256": "fe854fe465e3a6a2999d82c22df01603784f212af91d0ace53c5513e688a4dbb",
+    "status": "aplicada_e_auditada",
+    "reason": "Backfills e endurecimento NOT NULL já aplicados e revisados; qualquer alteração invalida esta aprovação."
+  },
+  "165_commission_operations": {
+    "file": "165_commission_operations.py",
+    "sha256": "54ac96ac273c78f982c4c67253ac64183ffd2b2f5e83febc36a2c2603038f936",
+    "status": "aplicada_e_auditada",
+    "reason": "Índice UNIQUE parcial criado sobre tabela nova na migration já aplicada; revisão vinculada ao conteúdo exato."
+  },
+  "166_finance_governance": {
+    "file": "166_finance_governance.py",
+    "sha256": "86313fa2a47479c007ab4772147c693c2656963312d0f45a8b1f30649c5e0e0e",
+    "status": "aplicada_e_auditada",
+    "reason": "Seed idempotente e constraints da governança financeira já aplicados; revisão vinculada ao conteúdo exato."
+  }
+}

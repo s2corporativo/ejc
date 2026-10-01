@@ -1,0 +1,11 @@
+[Unit]
+Description=Run EJC fictitious critical journey daily
+
+[Timer]
+OnCalendar=*-*-* 09:10:00 America/Sao_Paulo
+RandomizedDelaySec=15m
+Persistent=true
+Unit=ejc-critical-journey.service
+
+[Install]
+WantedBy=timers.target
