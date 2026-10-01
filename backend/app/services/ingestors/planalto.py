@@ -125,8 +125,13 @@ CATALOGO: list[dict] = [
     {"slug": "l5478", "titulo": "Lei de Alimentos (Lei 5.478/1968)", "area": "familia",
      "url": "https://www.planalto.gov.br/ccivil_03/leis/l5478.htm"},
     # Bloco penal
+    # O endpoint do Planalto para a Lei 11.340/2006 fica intermitente/indisponível
+    # na VPS. Usa-se o TEXTO ATUALIZADO oficial da Câmara dos Deputados, que
+    # preserva a lei consolidada e suas alterações. A chave planalto:<slug> é
+    # mantida apenas por compatibilidade histórica do RAG.
     {"slug": "maria_penha", "titulo": "Lei Maria da Penha (Lei 11.340/2006)", "area": "penal",
-     "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2006/lei/l11340.htm"},
+     "url": "https://www2.camara.leg.br/legin/fed/lei/2006/lei-11340-7-agosto-2006-545133-normaatualizada-pl.html",
+     "origem": "camara"},
     {"slug": "l11343", "titulo": "Lei de Drogas (Lei 11.343/2006)", "area": "penal",
      "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2006/lei/l11343.htm"},
     {"slug": "lep", "titulo": "Lei de Execução Penal (Lei 7.210/1984)", "area": "penal",
@@ -238,6 +243,22 @@ def extrair_texto_planalto(html: str) -> str:
     i = 0
     while i < len(brutas):
         ln = brutas[i]
+        # A Câmara dos Deputados (texto atualizado) pode separar o marcador
+        # "Art." do número/corpo em nós HTML distintos, resultando em:
+        #   Art.
+        #   1º Texto do artigo...
+        # Recompõe somente esse padrão inequívoco antes da divisão por artigo.
+        if (
+            ln.strip() == "Art."
+            and i + 1 < len(brutas)
+            and re.match(
+                r"^\d{1,3}(?:\.\d{3})*\s*(?:[ºo°])?(?:-[A-Za-z]{1,3})?[.\sº°]",
+                brutas[i + 1].strip(),
+            )
+        ):
+            ln = f"Art. {brutas[i + 1].strip()}"
+            i += 1
+
         if (
             _RE_ART_BARE.fullmatch(ln.strip())
             and i + 1 < len(brutas)
@@ -521,7 +542,7 @@ async def ingerir_diploma(
         fonte=diploma["url"],
         extra={
             "slug": diploma["slug"], "area": diploma["area"],
-            "fonte_url": diploma["url"], "origem": "planalto",
+            "fonte_url": diploma["url"], "origem": diploma.get("origem", "planalto"),
             "artigos": prep["artigos"], "divisao": "por_artigo",
             # Curadoria (governança RAG da main): fonte oficial nasce aprovada
             # e tipada — nunca entra em quarentena.
