@@ -670,6 +670,64 @@ def _cleanup_seguro(
         )
 
 
+def _validar_busca_global(client: httpx.Client, state: core.SuiteState) -> None:
+    termo = core.MARKER_RUN
+    resposta = core._request(
+        client,
+        state,
+        name="jornada.pesquisa.global",
+        method="GET",
+        path=f"/api/search?q={termo}&tipo=tudo&limit=20",
+        expected=[200],
+    )
+    if resposta is None or resposta.status_code != 200:
+        return
+    corpo = resposta.json()
+    resultados = corpo.get("resultados") or []
+    core._afirmar(
+        state,
+        "jornada.pesquisa.encontrou_dados_ficticios",
+        len(resultados) > 0,
+        "busca global não retornou nenhum registro da execução fictícia",
+    )
+
+
+def _logout(client: httpx.Client, state: core.SuiteState) -> None:
+    if not state.refresh_token:
+        core._afirmar(
+            state,
+            "jornada.logout.precondicao",
+            False,
+            "login não devolveu refresh_token",
+        )
+        return
+    refresh = state.refresh_token
+    resposta = core._request(
+        client,
+        state,
+        name="jornada.logout",
+        method="POST",
+        path="/api/auth/logout",
+        expected=[200],
+        json_body={"refresh_token": refresh},
+        autenticado=False,
+    )
+    if resposta is None or resposta.status_code != 200:
+        return
+    core._request(
+        client,
+        state,
+        name="jornada.logout.refresh_revogado",
+        method="POST",
+        path="/api/auth/refresh",
+        expected=[401],
+        json_body={"refresh_token": refresh},
+        autenticado=False,
+    )
+    state.access_token = None
+    state.refresh_token = None
+
+
 def main() -> None:
     base_url = core._env("EJC_BASE_URL").rstrip("/")
     if (
@@ -732,6 +790,7 @@ def main() -> None:
             fee_id = _criar_e_validar_honorario(client, state)
             _validar_inteligencia_do_caso(client, state)
             _validar_dpt360(client, state)
+            _validar_busca_global(client, state)
         finally:
             # Dependências FK: satélites primeiro, depois documento/caso/cliente
             # no cleanup canônico. Cada remoção usa apenas IDs desta execução.
@@ -751,6 +810,7 @@ def main() -> None:
                 _cleanup_seguro(
                     state, "core", core._cleanup, client, state
                 )
+            _cleanup_seguro(state, "logout", _logout, client, state)
             core._write_report(state, matrix)
 
 
