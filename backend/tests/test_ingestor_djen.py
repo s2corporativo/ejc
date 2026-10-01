@@ -429,6 +429,51 @@ async def test_job_djen_interrompe_repeticoes_em_geo_bloqueado(monkeypatch):
     assert chamadas["captura"] == 1
     assert chamadas["rag"] == 0
 
+async def test_job_djen_para_no_primeiro_geo_bloqueado(monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+    from app.services import scheduler as sch
+    from app.services.djen_service import DjenCapturaResultado
+    import app.services.djen_service as djen_svc
+
+    chamadas = []
+    ingestao = []
+
+    async def fake_capturar(db, adv):
+        chamadas.append(adv.id)
+        return DjenCapturaResultado(
+            configurada=True, fonte_ok=False, recebidas=0, novas=0,
+            duplicadas=0, ignoradas=0, erro="geo_bloqueado",
+            paginas=0, janela_dias=7,
+        )
+
+    async def fake_ingestao(*, excluir_oabs=None):
+        ingestao.append(excluir_oabs)
+
+    monkeypatch.setattr(djen_svc, "capturar_para_advogado", fake_capturar)
+    monkeypatch.setattr(sch, "job_ingestao_djen", fake_ingestao)
+    monkeypatch.setattr(sch, "_bater_ponto", AsyncMock())
+
+    fake_db = MagicMock()
+    adv1 = MagicMock(id=1, is_active=True, deleted_at=None, djen_oab_numero="11111", djen_oab_uf="MG", oab_number=None)
+    adv2 = MagicMock(id=2, is_active=True, deleted_at=None, djen_oab_numero="22222", djen_oab_uf="MG", oab_number=None)
+    fake_db.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(
+        return_value=MagicMock(all=MagicMock(return_value=[adv1, adv2])),
+    )))
+    fake_db.commit = AsyncMock()
+
+    class _FakeSessionCM:
+        async def __aenter__(self):
+            return fake_db
+        async def __aexit__(self, *args):
+            return False
+
+    monkeypatch.setattr(sch, "AsyncSessionLocal", lambda: _FakeSessionCM())
+
+    await sch.job_djen_intimacoes()
+
+    assert chamadas == [1]
+    assert ingestao == []
+
 def test_job_djen_consolidado_no_scheduler():
     """Há um único job DJEN; a ingestão RAG roda dentro da captura canônica."""
     import inspect
