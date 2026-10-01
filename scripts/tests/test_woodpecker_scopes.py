@@ -93,6 +93,20 @@ class ScopeContract(unittest.TestCase):
         self.assertIn("frontend", gates)
         self.assertIn("frontend-e2e", gates)
 
+    def test_release_candidate_fast_gates_saem_antes_de_recursos_compartilhados(self):
+        backend_fast = "\n".join(self.workflow["steps"]["backend-fast"]["commands"])
+        frontend_fast = "\n".join(self.workflow["steps"]["frontend-fast"]["commands"])
+        self.assertIn("config/release_candidate.json", backend_fast)
+        self.assertIn("exit 0", backend_fast)
+        self.assertIn("config/release_candidate.json", frontend_fast)
+        self.assertIn("exit 0", frontend_fast)
+
+        # Full frontend só começa após backend-tests: evita as duas suítes
+        # pesadas concorrendo por RAM/CPU quando um release candidate dispara
+        # o gate integral.
+        deps = self.workflow["steps"]["frontend"].get("depends_on", [])
+        self.assertIn("backend-tests", deps)
+
     def test_normal_critical_pr_stays_fast_but_keeps_security(self):
         gates = selected(
             self.workflow, "pull_request", "main", ["backend/app/routers/auth.py"]

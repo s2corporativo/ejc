@@ -227,6 +227,13 @@ steps:
           sleep 15
         done
       - git fetch --quiet --depth=200 origin main:refs/remotes/origin/main
+      # PR de release executa a suíte integral. O gate rápido deve sair antes de
+      # tocar no banco para não concorrer com backend-tests no mesmo PostgreSQL.
+      - |
+        if git diff --name-only origin/main HEAD | grep -Fxq 'config/release_candidate.json'; then
+          echo "release candidate: backend-fast coberto por backend-tests; encerrando gate rápido sem duplicar DB/testes."
+          exit 0
+        fi
       - pip install --quiet -r backend/requirements.txt
       - python -m compileall backend/app -q
       - until pg_isready -h db -U ejc_user -q; do sleep 1; done
@@ -335,6 +342,13 @@ steps:
     commands:
       - apt-get update -qq && apt-get install -y -qq --no-install-recommends git python3
       - git fetch --quiet --depth=200 origin main:refs/remotes/origin/main
+      # Evita dois `npm ci` simultâneos no MESMO workspace (frontend-fast e
+      # frontend integral), causa observada de ENOTEMPTY/tsc ausente.
+      - |
+        if git diff --name-only origin/main HEAD | grep -Fxq 'config/release_candidate.json'; then
+          echo "release candidate: frontend-fast coberto por frontend integral; encerrando gate rápido sem tocar node_modules."
+          exit 0
+        fi
       - rm -rf /tmp/ejc-frontend-fast && mkdir -p /tmp/ejc-frontend-fast && tar --exclude='./node_modules' -C frontend -cf - . | tar -C /tmp/ejc-frontend-fast -xf -
       - cd /tmp/ejc-frontend-fast && npm ci --prefer-offline
       - cd /tmp/ejc-frontend-fast && npm run lint
@@ -354,7 +368,9 @@ steps:
 
   frontend:
     image: node:22
-    depends_on: [security-secrets]
+    # Quando a suíte integral é exigida, backend-tests também é exigido.
+    # Serializar os dois maiores consumidores evita OOM/exit 137 no host CI.
+    depends_on: [backend-tests]
     volumes:
       # Tarballs e metadados npm em cache; `npm ci --prefer-offline` consome o
       # cache local e só vai à rede no que faltar (sem mascarar lockfile novo).
