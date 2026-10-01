@@ -53,13 +53,18 @@ if "urlopen(url, timeout=15)" not in identity:
 deploy = (root / "scripts/deploy_vps_safe.sh").read_text(encoding="utf-8")
 approved = (root / "infra/host-automation/ejc-deploy-approved.sh").read_text(encoding="utf-8")
 weekly = (root / "infra/host-automation/ejc-weekly-saneamento.sh").read_text(encoding="utf-8")
-for label, content in (
-    ("deploy", deploy), ("approved", approved), ("weekly", weekly)
-):
-    if "check_release_identity.py" not in content:
-        raise SystemExit(f"{label}: checker canônico de identidade não está integrado")
+smoke = (root / "scripts/post_deploy_smoke.sh").read_text(encoding="utf-8")
 
-print(f"timeout contract: {checked} curls + checker canônico HTTP cobertos")
+if "check_release_identity.py" not in deploy:
+    raise SystemExit("deploy: checker canônico de identidade não está integrado")
+if "check_release_identity.py" not in weekly:
+    raise SystemExit("weekly: checker canônico de identidade não está integrado")
+if "post_deploy_smoke.sh" not in approved:
+    raise SystemExit("approved: smoke canônico pós-deploy não está integrado")
+if "check_release_identity.py" not in smoke:
+    raise SystemExit("smoke: checker canônico de identidade não está integrado")
+
+print(f"timeout contract: {checked} curls + checker/smoke canônicos cobertos")
 PY
 
 TMP="$(mktemp -d)"
