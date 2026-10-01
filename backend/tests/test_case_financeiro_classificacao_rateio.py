@@ -99,17 +99,20 @@ class _ScalarResultFake:
 
 
 class _RuleFake:
-    def __init__(self, percentual_advogado):
+    def __init__(self, pct):
         self.id = "rule-test"
-        self.nome = "Regra de teste"
-        self.percentual_advogado = Decimal(str(percentual_advogado))
+        self.nome = "Regra teste"
+        self.escopo = "padrao"
+        self.percentual_advogado = Decimal(str(pct))
         self.descontar_despesas = True
+        self.prioridade = 100
+        self.ativo = True
 
 
 class _FakeDB:
-    def __init__(self, *, rule_pct=None):
+    def __init__(self, commission_pct=0):
         self.events = []
-        self.rule_pct = rule_pct
+        self.commission_pct = commission_pct
         self.withdrawal_params = None
         self.exec_count = 0
 
@@ -122,21 +125,21 @@ class _FakeDB:
     async def execute(self, statement, params=None):
         self.exec_count += 1
         sql = str(statement)
+        descriptions = getattr(statement, "column_descriptions", None) or []
+        entity = descriptions[0].get("entity") if descriptions else None
+        entity_name = getattr(entity, "__name__", "")
 
+        if "finance_month_closings" in sql:
+            return _ScalarResultFake(None)
+        if entity_name == "CaseReceiptAllocation":
+            return _ScalarResultFake(None)
+        if entity_name == "CommissionRule":
+            return _ScalarResultFake(_RuleFake(self.commission_pct))
+        if "centro_custos" in sql or "despesas_deduzidas" in sql:
+            return _ScalarResultFake(0)
         if params and "gross" in params and "share" in params:
             self.withdrawal_params = params
             return _ScalarResultFake()
-
-        # Consultas novas do commission_service: o fake modela explicitamente
-        # regra vigente, idempotência e despesas já deduzidas.
-        if "FROM commission_rules" in sql:
-            regra = None if self.rule_pct is None else _RuleFake(self.rule_pct)
-            return _ScalarResultFake(regra)
-        if "FROM case_receipt_allocations" in sql:
-            return _ScalarResultFake(None if "fee_payment_id" in sql else 0)
-        if "FROM centro_custos" in sql:
-            return _ScalarResultFake(0)
-
         return _ScalarResultFake(None)
 
 
@@ -144,7 +147,7 @@ class _FakeDB:
 async def test_registrar_recebimento_persiste_fee_payment_antes_da_alocacao():
     from app.services.case_finance_service import registrar_recebimento_caso
 
-    db = _FakeDB(rule_pct=0)
+    db = _FakeDB()
     await registrar_recebimento_caso(db, _CaseFake(), Decimal("100.00"), _UserFake())
 
     assert db.events[:5] == [
@@ -165,14 +168,13 @@ async def test_rateio_nao_lanca_valor_bruto_como_retirada_do_advogado():
             value = "trabalhista"
         area = _Area()
 
-    db = _FakeDB(rule_pct=50)
+    db = _FakeDB(commission_pct=50)
     result = await registrar_recebimento_caso(
         db, CaseNaoCivil(), Decimal("100.00"), _UserFake()
     )
 
     assert result["valor_advogado"] == Decimal("50.00")
     assert db.withdrawal_params is not None
-    # gross/net preservam a base financeira; partner_share é a parcela efetiva.
     assert db.withdrawal_params["gross"] == Decimal("100.00")
     assert db.withdrawal_params["net"] == Decimal("100.00")
     assert db.withdrawal_params["share"] == Decimal("50.00")
@@ -208,15 +210,15 @@ async def test_recebimento_sem_responsavel_fica_pendente_sem_alocacao():
 
         area = _Area()
 
-    db = _FakeDB(rule_pct=50)
+    db = _FakeDB(commission_pct=50)
     result = await registrar_recebimento_caso(
         db, CaseSemResponsavel(), Decimal("2500.00"), _UserFake()
     )
 
     assert result["rateio_pendente"] is True
     assert result["allocation_id"] is None
-    assert result["valor_advogado"] is None
-    assert result["valor_escritorio"] is None
+    assert result.get("valor_advogado") is None
+    assert result.get("valor_escritorio") is None
     assert ("add", "CaseReceiptAllocation") not in db.events
     assert db.events[:4] == [
         ("add", "Fee"),
@@ -233,7 +235,7 @@ async def test_civil_sem_responsavel_aloca_integralmente_ao_escritorio():
     class CaseCivilSemResponsavel(_CaseFake):
         advogado_responsavel_id = None
 
-    db = _FakeDB(rule_pct=0)
+    db = _FakeDB()
     result = await registrar_recebimento_caso(
         db, CaseCivilSemResponsavel(), Decimal("100.00"), _UserFake()
     )
@@ -259,7 +261,7 @@ async def test_reconciliacao_rateio_50_50_exige_responsavel_definido():
 
     with pytest.raises(HTTPException) as exc:
         await reconciliar_rateios_pendentes(
-            _FakeDB(),
+            _FakeDB(commission_pct=50),
             CaseSemResponsavel(),
             _UserFake(),
         )

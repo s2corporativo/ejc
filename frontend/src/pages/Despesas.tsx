@@ -199,10 +199,15 @@ export default function Despesas({
       recorrencia: form.recorrente ? form.recorrencia : undefined,
     };
     try {
-      if (editId) {
-        await api.patch(`/despesas/${editId}`, payload);
+      const response = editId
+        ? await api.patch(`/despesas/${editId}`, payload)
+        : await api.post("/despesas", payload);
+      if (response.data?.approval_required) {
+        toast.info(
+          `Pagamento acima da alçada. Segunda aprovação solicitada antes da baixa.`,
+        );
       } else {
-        await api.post("/despesas", payload);
+        toast.success(editId ? "Despesa atualizada." : "Despesa criada.");
       }
       setShowForm(false);
       load();
@@ -213,10 +218,17 @@ export default function Despesas({
 
   async function marcarPago(id: string) {
     try {
-      await api.patch(`/despesas/${id}`, {
+      const { data } = await api.patch(`/despesas/${id}`, {
         status: "pago",
         pago_em: new Date().toISOString().split("T")[0],
       });
+      if (data?.approval_required) {
+        toast.info(
+          "Baixa acima da alçada: aguardando segunda aprovação financeira.",
+        );
+      } else {
+        toast.success("Despesa marcada como paga.");
+      }
       load();
     } catch (e: any) {
       toast.error(

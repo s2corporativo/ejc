@@ -13,6 +13,7 @@ from app.models.case import Case
 from app.models.fee import CaseReceiptAllocation, Fee, FeeEstorno, FeePayment, FeeStatus, FeeTipo
 from app.models.user import User
 from app.services.commission_service import alocar_comissao_pagamento, resolver_regra_comissao
+from app.services.finance_governance import competencia_de_data, exigir_competencia_aberta
 
 _Q2 = Decimal("0.01")
 
@@ -166,6 +167,11 @@ async def registrar_recebimento_caso(db, case: Case, valor, user) -> dict:
     valor = _money(valor)
     if valor <= 0:
         raise HTTPException(422, "O valor recebido deve ser maior que zero")
+    await exigir_competencia_aberta(
+        db,
+        competencia_de_data(date.today()),
+        "Registrar recebimento pelo caso",
+    )
 
     fid = str(uuid4())
     pid = str(uuid4())

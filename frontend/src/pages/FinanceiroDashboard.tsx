@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ElementType } from "react";
+import { useNavigate } from "react-router";
 import {
   AlertCircle,
   CheckCircle2,
@@ -9,6 +10,10 @@ import {
   RefreshCw,
   TrendingDown,
   Wallet,
+  ShieldCheck,
+  Upload,
+  Landmark,
+  BarChart3,
 } from "lucide-react";
 import api from "../lib/api";
 import { Modal, Spinner } from "../components/UI";
@@ -143,8 +148,21 @@ export default function FinanceiroDashboard({
   onDrillDown?: (tab: "honorarios" | "despesas", status?: string) => void;
   onNavigate?: (tab: FinanceDestino) => void;
 }) {
+  const navigate = useNavigate();
   const [data, setData] = useState<any>(null);
   const [atencao, setAtencao] = useState<AtencaoItem[]>([]);
+  const [rentabilidade, setRentabilidade] = useState<any>(null);
+  const [excecoes, setExcecoes] = useState<any>({ itens: [], total: 0 });
+  const [fechamento, setFechamento] = useState<any>(null);
+  const [distribuicao, setDistribuicao] = useState<any>(null);
+  const [aprovacoes, setAprovacoes] = useState<any[]>([]);
+  const [governancaAberta, setGovernancaAberta] = useState(false);
+  const [fechando, setFechando] = useState(false);
+  const [limite, setLimite] = useState("10000");
+  const [salvandoPolitica, setSalvandoPolitica] = useState(false);
+  const [bankFile, setBankFile] = useState<File | null>(null);
+  const [importandoBanco, setImportandoBanco] = useState(false);
+  const [conciliacao, setConciliacao] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [relatorioAberto, setRelatorioAberto] = useState(false);
@@ -155,15 +173,34 @@ export default function FinanceiroDashboard({
     setLoading(true);
     setErro(null);
 
-    const [consolidado, fila] = await Promise.allSettled([
+    const [
+      consolidado,
+      fila,
+      rent,
+      exc,
+      fechamentoResp,
+      distribuicaoResp,
+      politicaResp,
+      aprovacoesResp,
+    ] = await Promise.allSettled([
       api.get("/financeiro/consolidado", { params: { competencia } }),
       api.get("/financeiro/atencao"),
+      api.get("/financeiro/rentabilidade", { params: { competencia } }),
+      api.get("/financeiro/excecoes", { params: { competencia } }),
+      api.get(`/financeiro/fechamentos/${competencia}`),
+      api.get("/financeiro/distribuicao-disponivel", {
+        params: { competencia },
+      }),
+      api.get("/financeiro/politica"),
+      api.get("/financeiro/aprovacoes", { params: { status: "pendente" } }),
     ]);
 
     if (consolidado.status === "rejected") {
       const e: any = consolidado.reason;
       setData(null);
       setAtencao([]);
+      setRentabilidade(null);
+      setExcecoes({ itens: [], total: 0 });
       setErro(
         e?.response?.data?.detail || "Não foi possível carregar o financeiro.",
       );
@@ -175,6 +212,29 @@ export default function FinanceiroDashboard({
     setAtencao(
       fila.status === "fulfilled" && Array.isArray(fila.value.data?.itens)
         ? fila.value.data.itens
+        : [],
+    );
+    setRentabilidade(rent.status === "fulfilled" ? rent.value.data : null);
+    setExcecoes(
+      exc.status === "fulfilled" ? exc.value.data : { itens: [], total: 0 },
+    );
+    setFechamento(
+      fechamentoResp.status === "fulfilled" ? fechamentoResp.value.data : null,
+    );
+    setDistribuicao(
+      distribuicaoResp.status === "fulfilled"
+        ? distribuicaoResp.value.data
+        : null,
+    );
+    if (politicaResp.status === "fulfilled") {
+      setLimite(
+        String(politicaResp.value.data?.double_approval_threshold ?? 10000),
+      );
+    }
+    setAprovacoes(
+      aprovacoesResp.status === "fulfilled" &&
+        Array.isArray(aprovacoesResp.value.data)
+        ? aprovacoesResp.value.data
         : [],
     );
     setLoading(false);
@@ -209,6 +269,95 @@ export default function FinanceiroDashboard({
       return;
     }
     onNavigate?.(acao.tab);
+  };
+
+  const fecharMes = async () => {
+    if (fechando || fechamento?.id) return;
+    setFechando(true);
+    try {
+      await api.post("/financeiro/fechamentos", { competencia });
+      toast.success(`Competência ${competencia} fechada e protegida.`);
+      await load();
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      toast.error(
+        typeof detail === "object"
+          ? detail?.message || "Existem bloqueios antes do fechamento."
+          : detail || "Não foi possível fechar a competência.",
+      );
+    } finally {
+      setFechando(false);
+    }
+  };
+
+  const salvarPolitica = async () => {
+    const valor = Number(limite);
+    if (!Number.isFinite(valor) || valor < 0) {
+      toast.error("Informe uma alçada válida.");
+      return;
+    }
+    setSalvandoPolitica(true);
+    try {
+      const { data } = await api.patch("/financeiro/politica", {
+        double_approval_threshold: valor,
+      });
+      toast.success("Alçada financeira atualizada.");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Falha ao atualizar alçada.");
+    } finally {
+      setSalvandoPolitica(false);
+    }
+  };
+
+  const aprovarSolicitacao = async (id: string) => {
+    try {
+      await api.post(`/financeiro/aprovacoes/${id}/aprovar`);
+      toast.success("Segunda aprovação concedida.");
+      await load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Falha ao aprovar pagamento.");
+    }
+  };
+
+  const importarExtrato = async () => {
+    if (!bankFile || importandoBanco) return;
+    setImportandoBanco(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", bankFile);
+      const { data } = await api.post("/bank-analysis/upload", fd);
+      const analysisId = data?.analise?.id;
+      if (!analysisId) throw new Error("Análise bancária sem identificador");
+      const recon = await api.get(`/financeiro/conciliacao/${analysisId}`);
+      setConciliacao(recon.data);
+      toast.success("Extrato importado. Sugestões de conciliação geradas.");
+    } catch (e: any) {
+      toast.error(
+        e?.response?.data?.detail ||
+          e?.message ||
+          "Falha ao importar o extrato.",
+      );
+    } finally {
+      setImportandoBanco(false);
+    }
+  };
+
+  const confirmarConciliacao = async (item: any) => {
+    try {
+      await api.post("/financeiro/conciliacao/confirmar", {
+        bank_transaction_id: item.bank_transaction_id,
+        target_type: item.target_type,
+        target_id: item.target_id,
+      });
+      const analysisId = conciliacao?.analise?.id;
+      if (analysisId) {
+        const { data } = await api.get(`/financeiro/conciliacao/${analysisId}`);
+        setConciliacao(data);
+      }
+      toast.success("Movimento conciliado.");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Falha na conciliação.");
+    }
   };
 
   if (loading) {
@@ -255,7 +404,25 @@ export default function FinanceiroDashboard({
         <p className="text-xs text-slate-400 dark:text-slate-500">
           {competenciaLabel(competencia)}
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {Number(excecoes?.total ?? 0) > 0 && (
+            <button
+              type="button"
+              onClick={() => setGovernancaAberta(true)}
+              className="btn-secondary text-sm"
+            >
+              <AlertCircle className="h-4 w-4 text-amber-500" />
+              {excecoes.total} exceção(ões)
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setGovernancaAberta(true)}
+            className="btn-secondary text-sm"
+          >
+            <ShieldCheck className="h-4 w-4" />
+            Governança
+          </button>
           <button
             type="button"
             onClick={abrirRelatorio}
@@ -321,6 +488,53 @@ export default function FinanceiroDashboard({
           tone={caixa >= 0 ? "green" : "red"}
         />
       </div>
+
+      <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900 dark:text-white">
+              <BarChart3 className="h-4 w-4 text-primary-500" />
+              Rentabilidade do escritório
+            </h2>
+            <p className="mt-0.5 text-xs text-slate-400">
+              Recebido − despesas dos casos − comissões − despesas gerais.
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-slate-400">Resultado líquido</p>
+            <p
+              className={`text-xl font-semibold ${
+                Number(rentabilidade?.resumo?.resultado_escritorio ?? 0) >= 0
+                  ? "text-emerald-700 dark:text-emerald-300"
+                  : "text-rose-700 dark:text-rose-300"
+              }`}
+            >
+              {fmtR$(Number(rentabilidade?.resumo?.resultado_escritorio ?? 0))}
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          {(rentabilidade?.casos ?? []).slice(0, 3).map((item: any) => (
+            <div
+              key={item.case_id}
+              className="rounded-xl border border-slate-100 p-3 dark:border-slate-800"
+            >
+              <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
+                {item.numero_interno || item.caso}
+              </p>
+              <p className="truncate text-xs text-slate-400">{item.cliente}</p>
+              <p className="mt-2 text-sm font-semibold">
+                {fmtR$(Number(item.resultado || 0))}
+              </p>
+            </div>
+          ))}
+          {(rentabilidade?.casos ?? []).length === 0 && (
+            <p className="text-sm text-slate-400">
+              Sem movimentação por caso nesta competência.
+            </p>
+          )}
+        </div>
+      </section>
 
       <div className="grid gap-4 lg:grid-cols-[1.35fr_0.65fr]">
         <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
@@ -463,6 +677,220 @@ export default function FinanceiroDashboard({
       <p className="px-1 text-[11px] text-slate-400 dark:text-slate-600">
         Visão gerencial. Caixa considera apenas pagamentos e baixas efetivos.
       </p>
+
+      <Modal
+        open={governancaAberta}
+        onClose={() => setGovernancaAberta(false)}
+        title={`Governança financeira · ${competenciaLabel(competencia)}`}
+        wide
+      >
+        <div className="space-y-5">
+          <section>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="font-semibold">Fechamento da competência</h3>
+                <p className="text-xs text-slate-400">
+                  Mês fechado não aceita reescrita direta de caixa.
+                </p>
+              </div>
+              <button
+                type="button"
+                className={fechamento?.id ? "btn-secondary" : "btn-primary"}
+                disabled={!!fechamento?.id || fechando}
+                onClick={fecharMes}
+              >
+                {fechamento?.id
+                  ? "Competência fechada"
+                  : fechando
+                    ? "Fechando..."
+                    : "Fechar mês"}
+              </button>
+            </div>
+          </section>
+
+          <section className="border-t border-slate-100 pt-4 dark:border-slate-800">
+            <h3 className="font-semibold">Exceções</h3>
+            {(excecoes?.itens ?? []).length === 0 ? (
+              <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-300">
+                Nenhuma exceção financeira detectada.
+              </p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {(excecoes.itens ?? []).map((item: any) => (
+                  <div
+                    key={item.codigo}
+                    className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-white/[0.04]"
+                  >
+                    <span>{item.titulo}</span>
+                    <strong>
+                      {item.qtd}
+                      {item.valor != null
+                        ? ` · ${fmtR$(Number(item.valor))}`
+                        : ""}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="border-t border-slate-100 pt-4 dark:border-slate-800">
+            <h3 className="font-semibold">Alçada e segunda aprovação</h3>
+            <div className="mt-3 flex flex-wrap items-end gap-2">
+              <label className="min-w-56 flex-1">
+                <span className="label">
+                  Limite para segunda aprovação (R$)
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  step="100"
+                  className="input"
+                  value={limite}
+                  onChange={(e) => setLimite(e.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={salvandoPolitica}
+                onClick={salvarPolitica}
+              >
+                Salvar alçada
+              </button>
+            </div>
+            {aprovacoes.length > 0 && (
+              <div className="mt-3 divide-y divide-slate-100 dark:divide-slate-800">
+                {aprovacoes.slice(0, 8).map((a) => (
+                  <div
+                    key={a.id}
+                    className="flex items-center justify-between gap-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">
+                        {a.entity_type === "office_expense"
+                          ? "Despesa"
+                          : a.entity_type}
+                        {" · "}
+                        {fmtR$(Number(a.amount || 0))}
+                      </p>
+                      <p className="truncate text-xs text-slate-400">
+                        Solicitado por {a.solicitado_por_nome || "usuário"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-secondary px-3 py-1 text-xs"
+                      onClick={() => aprovarSolicitacao(a.id)}
+                    >
+                      Aprovar
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="border-t border-slate-100 pt-4 dark:border-slate-800">
+            <h3 className="font-semibold">Conciliação bancária</h3>
+            <p className="mt-1 text-xs text-slate-400">
+              Importe OFX ou CSV. O EJC sugere correspondências por valor e
+              data; a confirmação continua humana.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <label className="input flex min-w-56 flex-1 cursor-pointer items-center gap-2">
+                <Upload className="h-4 w-4 text-slate-400" />
+                <span className="truncate text-sm">
+                  {bankFile?.name || "Selecionar OFX/CSV"}
+                </span>
+                <input
+                  type="file"
+                  accept=".ofx,.csv,.txt"
+                  className="hidden"
+                  onChange={(e) => setBankFile(e.target.files?.[0] || null)}
+                />
+              </label>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={!bankFile || importandoBanco}
+                onClick={importarExtrato}
+              >
+                {importandoBanco ? "Importando..." : "Importar e sugerir"}
+              </button>
+            </div>
+            {conciliacao && (
+              <div className="mt-3">
+                <p className="text-xs text-slate-400">
+                  {conciliacao.confirmados} conciliado(s) ·{" "}
+                  {conciliacao.pendentes} pendente(s)
+                </p>
+                <div className="mt-2 max-h-64 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
+                  {(conciliacao.sugestoes ?? [])
+                    .filter((item: any) => item.status !== "rejeitado")
+                    .slice(0, 20)
+                    .map((item: any) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between gap-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm">
+                            {item.bank_description} ·{" "}
+                            {fmtR$(Number(item.bank_value))}
+                          </p>
+                          <p className="truncate text-xs text-slate-400">
+                            Sugestão: {item.label} · confiança{" "}
+                            {Math.round(Number(item.confidence || 0) * 100)}%
+                          </p>
+                        </div>
+                        {item.status === "confirmado" ? (
+                          <span className="text-xs text-emerald-600">
+                            Conciliado
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn-secondary px-2.5 py-1 text-xs"
+                            onClick={() => confirmarConciliacao(item)}
+                          >
+                            Confirmar
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          </section>
+
+          <section className="border-t border-slate-100 pt-4 dark:border-slate-800">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="font-semibold">Distribuição societária</h3>
+                <p className="text-xs text-slate-400">
+                  Resultado disponível:{" "}
+                  {fmtR$(Number(distribuicao?.disponivel ?? 0))}
+                  {distribuicao?.fechado
+                    ? " · mês fechado"
+                    : " · feche o mês antes de distribuir"}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={!distribuicao?.fechado}
+                onClick={() =>
+                  navigate("/gestao-escritorio/sociedade?sub=distribuicao")
+                }
+              >
+                <Landmark className="h-4 w-4" />
+                Ir para Sociedade
+              </button>
+            </div>
+          </section>
+        </div>
+      </Modal>
 
       <Modal
         open={relatorioAberto}

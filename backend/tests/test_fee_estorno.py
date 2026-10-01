@@ -74,8 +74,10 @@ class _LedgerFakeDB:
         self.commits = 0
         self.flushes = 0
 
-    async def execute(self, q):
+    async def execute(self, q, params=None):
         sql = str(q)
+        if "finance_month_closings" in sql:
+            return _Res(scalar=None)
         cols = getattr(q, "column_descriptions", None)
         entidade = cols[0]["entity"] if cols else None
 

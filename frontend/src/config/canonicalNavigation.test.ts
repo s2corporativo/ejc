@@ -90,7 +90,7 @@ describe("canonicalNavigation — menu Core mínimo", () => {
     }
   });
 
-  it("expõe somente os oito domínios estruturais do escritório", () => {
+  it("expõe somente os sete domínios estruturais do escritório", () => {
     expect(CANONICAL_CORE_NAV.map((item) => item.key)).toEqual([
       "dashboard",
       "casos",
@@ -133,7 +133,7 @@ describe("canonicalNavigation — menu Core mínimo", () => {
     ]);
     expect(
       saida.some((item) =>
-        ["configuracoes", "banco-teses", "radar", "produtividade"].includes(
+        ["banco-teses", "radar", "produtividade", "configuracoes"].includes(
           item.key,
         ),
       ),
