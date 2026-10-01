@@ -114,6 +114,27 @@ def _texto_pdf(raw: bytes) -> str:
     return extrair_texto_pdf(raw)["texto"]
 
 
+def _pdf_ou_html(raw: bytes, texto_http: str) -> tuple[str, str]:
+    """Classifica resposta de URL .pdf sem confiar na extensão.
+
+    Portais gov.br podem manter links históricos .pdf que redirecionam para
+    HTML. O gate por magic bytes evita entregar HTML ao PyMuPDF e, quando a
+    página oficial tem conteúdo útil, reaproveita o texto com proveniência.
+    """
+    assinatura = (raw or b"")[:16].lstrip()
+    if assinatura.startswith(b"%PDF-"):
+        return "pdf", ""
+    amostra = assinatura.lower()
+    if amostra.startswith((b"<!doctype", b"<html", b"<body", b"<div")):
+        texto = html_para_texto(texto_http or "")
+        if len(texto) >= MIN_CONTEUDO:
+            return "html", texto
+    raise ValueError(
+        "URL .pdf não retornou PDF válido nem HTML oficial utilizável "
+        f"(assinatura={assinatura[:12]!r})"
+    )
+
+
 async def _conteudo(url: str) -> str | None:
     """Baixa e extrai o texto do documento (HTML ou PDF). None = sem conteúdo."""
     if urlparse(url).path.lower().endswith(".pdf"):
@@ -122,11 +143,14 @@ async def _conteudo(url: str) -> str | None:
             logger.warning("ANPD: PDF muito grande (%d bytes), pulado: %s",
                            len(r.content), url)
             return None
+        tipo, fallback = _pdf_ou_html(r.content, getattr(r, "text", "") or "")
+        if tipo == "html":
+            logger.warning("ANPD: URL .pdf respondeu HTML oficial; usando texto da página: %s", url)
+            return fallback
         # extração é CPU-bound → thread para não travar o event loop
         return await asyncio.to_thread(_texto_pdf, r.content)
     r = await fetch(url, headers={"Accept": "text/html"}, timeout=30, validar_ssrf=True)
     return html_para_texto(r.text)
-
 
 async def ingerir(db: AsyncSession) -> dict:
     """Raspagem leve das páginas oficiais da ANPD → RAG.
