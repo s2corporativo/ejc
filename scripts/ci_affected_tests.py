@@ -91,13 +91,26 @@ def select_frontend(repo: Path, changed: list[str]) -> list[str]:
 
 
 def changed_paths(repo: Path, base: str) -> list[str]:
+    command = ["git", "diff", "--name-only", "--diff-filter=ACMR", f"{base}...HEAD"]
     proc = subprocess.run(
-        ["git", "diff", "--name-only", "--diff-filter=ACMR", f"{base}...HEAD"],
+        command,
         cwd=repo,
         text=True,
         capture_output=True,
         check=False,
     )
+    if proc.returncode != 0 and "no merge base" in proc.stderr.lower():
+        # Woodpecker pode entregar PR merge commits em checkout raso. Nesse
+        # cenário os dois commits existem, mas o ancestral comum está fora da
+        # profundidade clonada. O diff de duas pontas preserva a seleção
+        # conservadora sem exigir unshallow do repositório inteiro.
+        proc = subprocess.run(
+            ["git", "diff", "--name-only", "--diff-filter=ACMR", base, "HEAD"],
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "git diff falhou")
     return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
