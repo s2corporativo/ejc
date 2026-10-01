@@ -14,40 +14,19 @@ import { useAuth } from "../stores/auth";
 import { usePreferencesStore } from "../stores/preferences";
 import { canRoleAccessPath } from "../config/moduleRegistry";
 import { officeBranding } from "../config/officeBranding";
-// Vinheta de marca (10s, muda, toca UMA vez e congela no logo final)
-const BRAND_INTRO_VIDEO = "/brand/logo-intro.mp4";
-const BRAND_INTRO_POSTER = "/brand/logo-intro-poster.jpg";
-
-/** Vinheta da logomarca no login. Respeita prefers-reduced-motion e cai
- *  para a logomarca estática se o vídeo falhar (rede lenta/bloqueio). */
+/** Marca de produto no login: estática, leve e coerente com o AppShell. */
 function BrandIntro({ className }: { className?: string }) {
-  const [fallback, setFallback] = useState(false);
-  const reduceMotion =
-    typeof window !== "undefined" &&
-    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-
-  if (fallback || reduceMotion) {
-    return (
-      <img
-        src={officeBranding.logoPath}
-        alt={officeBranding.officeName}
-        className={`brand-logo-img h-40 w-auto max-w-[440px] ${className || ""}`}
-      />
-    );
-  }
   return (
-    <video
-      className={`w-[460px] max-w-full rounded-xl shadow-card ${className || ""}`}
-      autoPlay
-      muted
-      playsInline
-      preload="auto"
-      poster={BRAND_INTRO_POSTER}
-      onError={() => setFallback(true)}
-      aria-label={officeBranding.officeName}
-    >
-      <source src={BRAND_INTRO_VIDEO} type="video/mp4" />
-    </video>
+    <div className={`flex items-center gap-3 ${className || ""}`}>
+      <img
+        src="/brand/ejc-wordmark.svg"
+        alt="EJC — Inteligência Jurídica"
+        className="brand-logo-img h-10 w-auto max-w-[190px]"
+      />
+      <span className="hidden border-l border-slate-200 pl-3 text-[11px] font-medium leading-4 text-slate-500 xl:block">
+        {officeBranding.officeName}
+      </span>
+    </div>
   );
 }
 
@@ -151,7 +130,7 @@ export default function LoginModern() {
           </div>
 
           <div className="relative max-w-2xl">
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-ouro-palha px-3 py-1 text-xs font-semibold text-ouro-profundo">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-lg bg-primary-50 px-2.5 py-1 text-xs font-semibold text-primary-700">
               <Sparkles className="h-3.5 w-3.5" />
               Plataforma jurídica empresarial
             </div>
@@ -171,7 +150,7 @@ export default function LoginModern() {
               ].map(([title, desc]) => (
                 <div
                   key={title}
-                  className="rounded-xl border border-border bg-white p-3 shadow-soft transition-shadow duration-150 hover:shadow-card"
+                  className="rounded-lg border border-border bg-white p-3 shadow-sm"
                 >
                   <div className="text-sm font-semibold text-slate-950">
                     {title}
@@ -192,16 +171,16 @@ export default function LoginModern() {
           <div className="w-full max-w-md animate-rise">
             <div className="mb-8 flex items-center justify-center lg:hidden">
               <img
-                src={officeBranding.logoPath}
-                alt={officeBranding.officeName}
-                className="brand-logo-img h-28 w-auto max-w-[320px]"
+                src="/brand/ejc-wordmark.svg"
+                alt="EJC — Inteligência Jurídica"
+                className="brand-logo-img h-12 w-auto max-w-[210px]"
               />
             </div>
 
             {/* Card de login flat: borda 1px + sombra mínima (idioma Verdelimp) */}
-            <div className="rounded-xl border border-border bg-white p-6 shadow-card">
+            <div className="rounded-xl border border-border bg-white p-6 shadow-sm">
               <div className="mb-7">
-                <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-ouro-palha text-ouro-profundo">
+                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-primary-50 text-primary-700">
                   {requiresTotp ? (
                     <ShieldCheck className="h-5 w-5" />
                   ) : (

@@ -681,7 +681,7 @@ export default function CommandPalette({
         role="dialog"
         aria-modal="true"
         aria-label="Busca global do sistema"
-        className="w-full max-w-xl card shadow-float overflow-hidden animate-pop"
+        className="w-full max-w-xl card overflow-hidden shadow-lg animate-pop"
         onClick={(event) => event.stopPropagation()}
         onKeyDown={onKeyDownList}
       >

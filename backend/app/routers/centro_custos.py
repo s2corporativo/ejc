@@ -20,6 +20,12 @@ from app.models.case import Case
 from app.models.centro_custo import CentroCusto, CentroCustoTipo, CentroCustoCategoria
 from app.models.audit_log import criar_audit_log
 from app.services.document_access_policy import exigir_documento_compativel_com_caso
+from app.services.finance_governance import (
+    competencia_de_data,
+    exigir_competencia_aberta,
+    limite_dupla_aprovacao,
+    solicitar_ou_consumir_aprovacao,
+)
 
 router = APIRouter(prefix="/centro-custos", tags=["Centro de Custos"])
 
@@ -153,8 +159,34 @@ async def criar_lancamento(
             case=case,
         )
 
-    c = CentroCusto(id=str(uuid4()), created_by=cu.id, **req.model_dump())
+    competencia = competencia_de_data(
+        req.data_pagamento if req.pago else req.data_lancamento
+    )
+    await exigir_competencia_aberta(
+        db, competencia, "Criar lançamento no centro de custos"
+    )
+    dados = req.model_dump()
+    approval_required = False
+    if req.pago:
+        limite = await limite_dupla_aprovacao(db)
+        if Decimal(str(req.valor)) >= limite:
+            dados["pago"] = False
+            dados["data_pagamento"] = None
+            approval_required = True
+
+    c = CentroCusto(id=str(uuid4()), created_by=cu.id, **dados)
     db.add(c)
+    await db.flush()
+    approval_info = None
+    if approval_required:
+        approval_info = await solicitar_ou_consumir_aprovacao(
+            db,
+            entity_type="case_expense",
+            entity_id=c.id,
+            amount=req.valor,
+            user=cu,
+            reason="Pagamento de despesa do caso acima da alçada configurada.",
+        )
     await criar_audit_log(
         db,
         cu.id,
@@ -173,7 +205,12 @@ async def criar_lancamento(
         },
     )
     await db.commit()
-    return _out(c)
+    out = _out(c)
+    if approval_info and approval_info.get("required"):
+        out["approval_required"] = True
+        out["approval_id"] = approval_info.get("approval_id")
+        out["approval_threshold"] = float(approval_info.get("threshold") or 0)
+    return out
 
 
 @router.get("/caso/{case_id}/resumo")
@@ -324,7 +361,34 @@ async def atualizar_lancamento(
         raise HTTPException(404)
     if c.case_id:
         await verificar_acesso_caso(db, cu, c.case_id)
-    for campo, valor in req.model_dump(exclude_none=True).items():
+    competencia_atual = competencia_de_data(
+        c.data_pagamento if c.pago else c.data_lancamento
+    )
+    await exigir_competencia_aberta(
+        db, competencia_atual, "Alterar centro de custos"
+    )
+    dados = req.model_dump(exclude_none=True)
+    data_ref = dados.get("data_pagamento") or c.data_pagamento or c.data_lancamento
+    await exigir_competencia_aberta(
+        db, competencia_de_data(data_ref), "Alterar centro de custos"
+    )
+    if dados.get("pago") is True and not c.pago:
+        approval = await solicitar_ou_consumir_aprovacao(
+            db,
+            entity_type="case_expense",
+            entity_id=c.id,
+            amount=c.valor,
+            user=cu,
+            reason="Pagamento de despesa do caso acima da alçada configurada.",
+        )
+        if approval.get("required"):
+            await db.commit()
+            out = _out(c)
+            out["approval_required"] = True
+            out["approval_id"] = approval.get("approval_id")
+            out["approval_threshold"] = float(approval.get("threshold") or 0)
+            return out
+    for campo, valor in dados.items():
         setattr(c, campo, valor)
     await db.commit()
     return _out(c)
@@ -343,6 +407,11 @@ async def remover_lancamento(
     ))).scalar_one_or_none()
     if not c:
         raise HTTPException(404)
+    await exigir_competencia_aberta(
+        db,
+        competencia_de_data(c.data_pagamento if c.pago else c.data_lancamento),
+        "Excluir centro de custos",
+    )
     # Soft-delete (arquitetural): nunca apagar lançamento financeiro fisicamente
     c.deleted_at = datetime.now(timezone.utc)
     await criar_audit_log(

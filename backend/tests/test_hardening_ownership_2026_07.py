@@ -349,7 +349,10 @@ class _WUser:
 
 async def test_A6_socio_nao_aprova_propria_retirada_403():
     """Auto-aprovação bloqueada (SoD): partner_id == current_user.id → 403."""
-    db = _SeqDB([_Res(first={"id": "w1", "partner_id": "socio-1", "status": "pendente"})])
+    db = _SeqDB([
+        _Res(scalar=True),
+        _Res(first={"id": "w1", "partner_id": "socio-1", "status": "pendente"}),
+    ])
     with pytest.raises(HTTPException) as exc:
         await approve_withdrawal("w1", db, _WUser("socio", "socio-1"))
     assert exc.value.status_code == 403
@@ -357,7 +360,11 @@ async def test_A6_socio_nao_aprova_propria_retirada_403():
 
 async def test_A6_socio_aprova_retirada_de_outro_ok():
     """Sócio aprova a retirada de OUTRO sócio (pendente) normalmente."""
-    db = _SeqDB([_Res(first={"id": "w1", "partner_id": "socio-2", "status": "pendente"}), _Res()])
+    db = _SeqDB([
+        _Res(scalar=True),
+        _Res(first={"id": "w1", "partner_id": "socio-2", "status": "pendente"}),
+        _Res(),
+    ])
     out = await approve_withdrawal("w1", db, _WUser("socio", "socio-1"))
     assert out["status"] == "aprovado"
     assert db.committed is True
@@ -365,21 +372,37 @@ async def test_A6_socio_aprova_retirada_de_outro_ok():
 
 async def test_A6_superadmin_nao_aprova_propria_retirada_403():
     """Nem superadmin escapa da segregação (auto-dealing é do indivíduo)."""
-    db = _SeqDB([_Res(first={"id": "w1", "partner_id": "god-1", "status": "pendente"})])
+    db = _SeqDB([
+        _Res(scalar=True),
+        _Res(first={"id": "w1", "partner_id": "god-1", "status": "pendente"}),
+    ])
     with pytest.raises(HTTPException) as exc:
         await approve_withdrawal("w1", db, _WUser("superadmin", "god-1"))
     assert exc.value.status_code == 403
 
 
 async def test_A6_socio_nao_paga_propria_retirada_403():
-    db = _SeqDB([_Res(first={"id": "w1", "partner_id": "socio-1", "status": "aprovado"})])
+    db = _SeqDB([
+        _Res(scalar=True),
+        _Res(first={"id": "w1", "partner_id": "socio-1", "status": "aprovado"}),
+    ])
     with pytest.raises(HTTPException) as exc:
         await pay_withdrawal("w1", db, _WUser("socio", "socio-1"))
     assert exc.value.status_code == 403
 
 
 async def test_A6_socio_paga_retirada_de_outro_ok():
-    db = _SeqDB([_Res(first={"id": "w1", "partner_id": "socio-2", "status": "aprovado"}), _Res()])
+    db = _SeqDB([
+        _Res(scalar=True),
+        _Res(first={
+            "id": "w1",
+            "partner_id": "socio-2",
+            "status": "aprovado",
+            "partner_share": "1000.00",
+            "approved_by": "socio-3",
+        }),
+        _Res(),
+    ])
     out = await pay_withdrawal("w1", db, _WUser("socio", "socio-1"))
     assert out["status"] == "pago"
 

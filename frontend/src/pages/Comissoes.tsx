@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
-  ArrowLeft,
   Building2,
-  CalendarCheck,
   Check,
   FileCheck2,
   Pencil,
@@ -18,6 +16,20 @@ import api from "../lib/api";
 import ExtratoSocio from "../components/ExtratoSocio";
 import { Modal, Spinner, fmtMoney } from "../components/UI";
 import { toast } from "../components/Toast";
+import { apiErrorMessage } from "../lib/apiError";
+import {
+  COMMISSION_STATUS_LABELS,
+  type CommissionStatus,
+} from "../lib/financeiro";
+import type {
+  CommissionConference,
+  CommissionForecast,
+  CommissionLawyerSummary,
+  CommissionListResponse,
+  CommissionStatement,
+  CommissionSummary,
+  FinanceClosing,
+} from "../types/financeiro";
 
 interface CommissionRow {
   id: string;
@@ -42,7 +54,7 @@ interface CommissionRow {
   regra_escopo?: string | null;
   withdrawal_id?: string | null;
   valor_ordem_pagamento?: number | null;
-  status: string;
+  status: CommissionStatus;
   payment_method?: string | null;
   payment_reference?: string | null;
   comprovante_doc_id?: string | null;
@@ -76,16 +88,9 @@ interface Options {
   areas: string[];
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  calculada: "Calculada",
-  a_aprovar: "A aprovar",
-  a_pagar: "A pagar",
-  paga: "Paga",
-  rejeitada: "Rejeitada",
-  estornada: "Estornada",
-};
+const STATUS_LABEL = COMMISSION_STATUS_LABELS;
 
-const STATUS_CLASS: Record<string, string> = {
+const STATUS_CLASS: Record<CommissionStatus, string> = {
   calculada:
     "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
   a_aprovar:
@@ -107,11 +112,6 @@ const EMPTY_RULE = {
   case_id: "",
 };
 
-const currentMonth = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-};
-
 function fmtDate(value?: string | null) {
   if (!value) return "—";
   const raw = String(value).slice(0, 10).split("-");
@@ -130,17 +130,24 @@ function ruleTarget(rule: RuleRow) {
   return "Todos os casos";
 }
 
-export default function Comissoes({ onBack }: { onBack: () => void }) {
+export default function Comissoes({
+  competencia,
+  focusId,
+}: {
+  competencia: string;
+  focusId?: string;
+}) {
   const [rows, setRows] = useState<CommissionRow[]>([]);
-  const [resumo, setResumo] = useState<any>({});
-  const [porAdvogado, setPorAdvogado] = useState<any[]>([]);
-  const [previsao, setPrevisao] = useState<any>({});
-  const [conferencia, setConferencia] = useState<any>(null);
-  const [fechamento, setFechamento] = useState<any>(null);
+  const [resumo, setResumo] = useState<CommissionSummary>({});
+  const [porAdvogado, setPorAdvogado] = useState<CommissionLawyerSummary[]>([]);
+  const [previsao, setPrevisao] = useState<CommissionForecast>({});
+  const [conferencia, setConferencia] = useState<CommissionConference | null>(
+    null,
+  );
+  const [fechamento, setFechamento] = useState<FinanceClosing | null>(null);
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState("");
-  const [status, setStatus] = useState("");
-  const [competencia, setCompetencia] = useState<string | null>(currentMonth());
+  const [status, setStatus] = useState<"" | CommissionStatus>("");
 
   const [regrasOpen, setRegrasOpen] = useState(false);
   const [rules, setRules] = useState<RuleRow[]>([]);
@@ -169,39 +176,40 @@ export default function Comissoes({ onBack }: { onBack: () => void }) {
   const [ajustando, setAjustando] = useState(false);
 
   const [extratoOpen, setExtratoOpen] = useState(false);
-  const [extrato, setExtrato] = useState<any>(null);
+  const [extrato, setExtrato] = useState<CommissionStatement | null>(null);
   const [extratoLoading, setExtratoLoading] = useState(false);
   const [acaoId, setAcaoId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params = competencia ? { competencia } : {};
-      const requests: Promise<any>[] = [
-        api.get("/financeiro/comissoes", { params }),
-        api.get("/financeiro/comissoes/previsao", { params }),
-      ];
-      if (competencia) {
-        requests.push(
-          api.get("/financeiro/comissoes/conferencia", {
-            params: { competencia },
+      const params = { competencia };
+      const [baseResp, previsaoResp, conferenciaResp, fechamentoResp] =
+        await Promise.all([
+          api.get<CommissionListResponse<CommissionRow>>(
+            "/financeiro/comissoes",
+            { params },
+          ),
+          api.get<CommissionForecast>("/financeiro/comissoes/previsao", {
+            params,
           }),
-        );
-        requests.push(
-          api.get(`/financeiro/comissoes/fechamentos/${competencia}`),
-        );
-      }
-      const result = await Promise.all(requests);
-      const base = result[0].data ?? {};
-      setRows(Array.isArray(base.data) ? base.data : []);
+          api.get<CommissionConference>("/financeiro/comissoes/conferencia", {
+            params,
+          }),
+          api.get<FinanceClosing>(
+            `/financeiro/comissoes/fechamentos/${competencia}`,
+          ),
+        ]);
+      const base = baseResp.data;
+      setRows(base.data ?? []);
       setResumo(base.resumo ?? {});
-      setPorAdvogado(Array.isArray(base.por_advogado) ? base.por_advogado : []);
-      setPrevisao(result[1].data ?? {});
-      setConferencia(competencia ? (result[2]?.data ?? null) : null);
-      setFechamento(competencia ? (result[3]?.data ?? null) : null);
+      setPorAdvogado(base.por_advogado ?? []);
+      setPrevisao(previsaoResp.data ?? {});
+      setConferencia(conferenciaResp.data ?? null);
+      setFechamento(fechamentoResp.data ?? null);
       setSelected(new Set());
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Falha ao carregar comissões.");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Falha ao carregar comissões."));
     } finally {
       setLoading(false);
     }
@@ -215,8 +223,8 @@ export default function Comissoes({ onBack }: { onBack: () => void }) {
       ]);
       setRules(Array.isArray(r.data) ? r.data : []);
       setOptions(o.data ?? { advogados: [], casos: [], areas: [] });
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Falha ao carregar regras.");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Falha ao carregar regras."));
     }
   }, []);
 
@@ -227,6 +235,19 @@ export default function Comissoes({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     if (regrasOpen) void loadRules();
   }, [regrasOpen, loadRules]);
+
+  useEffect(() => {
+    if (!focusId || !rows.length) return;
+    requestAnimationFrame(() => {
+      const row = rows.find(
+        (item) => item.id === focusId || item.withdrawal_id === focusId,
+      );
+      if (!row) return;
+      document
+        .getElementById(`finance-commission-${row.id}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [focusId, rows]);
 
   const visiveis = useMemo(() => {
     const termo = busca.trim().toLocaleLowerCase("pt-BR");
@@ -265,10 +286,8 @@ export default function Comissoes({ onBack }: { onBack: () => void }) {
         toast.success("Comissão aprovada.");
       }
       await load();
-    } catch (e: any) {
-      toast.error(
-        e?.response?.data?.detail || "Não foi possível atualizar a comissão.",
-      );
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Não foi possível atualizar a comissão."));
     } finally {
       setAcaoId(null);
     }
@@ -330,10 +349,9 @@ export default function Comissoes({ onBack }: { onBack: () => void }) {
         observacao: "",
       });
       await load();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(
-        e?.response?.data?.detail ||
-          "Não foi possível registrar o pagamento em lote.",
+        apiErrorMessage(e, "Não foi possível registrar o pagamento em lote."),
       );
     } finally {
       setPagando(false);
@@ -365,8 +383,8 @@ export default function Comissoes({ onBack }: { onBack: () => void }) {
       setAjusteRow(null);
       setAjusteForm({ valor: "", motivo: "" });
       await load();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Falha ao registrar ajuste.");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Falha ao registrar ajuste."));
     } finally {
       setAjustando(false);
     }
@@ -384,9 +402,9 @@ export default function Comissoes({ onBack }: { onBack: () => void }) {
         params: { competencia },
       });
       setExtrato(data);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setExtratoOpen(false);
-      toast.error(e?.response?.data?.detail || "Falha ao carregar extrato.");
+      toast.error(apiErrorMessage(e, "Falha ao carregar extrato."));
     } finally {
       setExtratoLoading(false);
     }
@@ -398,13 +416,8 @@ export default function Comissoes({ onBack }: { onBack: () => void }) {
       await api.post("/financeiro/comissoes/fechamentos", { competencia });
       toast.success(`Competência ${competencia} fechada em snapshot.`);
       await load();
-    } catch (e: any) {
-      const detail = e?.response?.data?.detail;
-      toast.error(
-        typeof detail === "object"
-          ? detail?.message || "Existem pendências antes do fechamento."
-          : detail || "Falha ao fechar competência.",
-      );
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Falha ao fechar competência."));
     }
   }
 
@@ -475,8 +488,8 @@ export default function Comissoes({ onBack }: { onBack: () => void }) {
       resetRule();
       await loadRules();
       await load();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Falha ao salvar regra.");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Falha ao salvar regra."));
     } finally {
       setSalvandoRule(false);
     }
@@ -489,35 +502,23 @@ export default function Comissoes({ onBack }: { onBack: () => void }) {
       });
       await loadRules();
       await load();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Falha ao alterar regra.");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Falha ao alterar regra."));
     }
   }
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <button type="button" className="btn-ghost" onClick={onBack}>
-          <ArrowLeft className="h-4 w-4" />
-          Honorários
-        </button>
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Comissões
+          </h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Competência {competencia}
+          </p>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
-          <label className="input flex w-auto items-center gap-2 py-1.5">
-            <CalendarCheck className="h-4 w-4 text-slate-400" />
-            <input
-              type="month"
-              className="bg-transparent text-sm outline-none"
-              value={competencia || ""}
-              onChange={(e) => setCompetencia(e.target.value || null)}
-            />
-          </label>
-          <button
-            type="button"
-            className="btn-ghost text-xs"
-            onClick={() => setCompetencia(null)}
-          >
-            Todos
-          </button>
           <button
             type="button"
             className="btn-secondary"
@@ -547,13 +548,15 @@ export default function Comissoes({ onBack }: { onBack: () => void }) {
       </div>
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
-        {[
-          ["A aprovar", resumo.a_aprovar, UserRound],
-          ["A pagar", resumo.a_pagar, Wallet],
-          ["Pago no período", resumo.paga_periodo, Check],
-          ["Previsto", previsao.total, SlidersHorizontal],
-          ["Ajustes pendentes", resumo.ajustes_pendentes, AlertTriangle],
-        ].map(([label, value, Icon]: any) => (
+        {(
+          [
+            ["A aprovar", resumo.a_aprovar, UserRound],
+            ["A pagar", resumo.a_pagar, Wallet],
+            ["Pago no período", resumo.paga_periodo, Check],
+            ["Previsto", previsao.total, SlidersHorizontal],
+            ["Ajustes pendentes", resumo.ajustes_pendentes, AlertTriangle],
+          ] as Array<[string, number | string | undefined, typeof UserRound]>
+        ).map(([label, value, Icon]) => (
           <div key={label} className="card p-4">
             <div className="flex items-center gap-2 text-slate-400">
               <Icon className="h-4 w-4" />
@@ -575,7 +578,7 @@ export default function Comissoes({ onBack }: { onBack: () => void }) {
         </p>
       )}
 
-      {competencia && conferencia?.itens?.length > 0 && (
+      {competencia && conferencia && conferencia.itens.length > 0 && (
         <section className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-900/50 dark:bg-amber-950/20">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-amber-600" />
@@ -584,7 +587,7 @@ export default function Comissoes({ onBack }: { onBack: () => void }) {
             </h3>
           </div>
           <div className="mt-3 grid gap-2 md:grid-cols-2">
-            {conferencia.itens.map((item: any) => (
+            {conferencia.itens.map((item) => (
               <div
                 key={item.codigo}
                 className="rounded-xl bg-white/70 px-3 py-2 text-xs dark:bg-white/[0.04]"
@@ -616,8 +619,8 @@ export default function Comissoes({ onBack }: { onBack: () => void }) {
                 <div className="flex items-center justify-between gap-2">
                   <strong className="truncate text-sm">{item.advogado}</strong>
                   <ExtratoSocio
-                    userId={item.advogado_id}
-                    nome={item.advogado}
+                    userId={item.advogado_id ?? ""}
+                    nome={item.advogado ?? "Advogado"}
                   />
                 </div>
                 <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-500">
@@ -647,7 +650,7 @@ export default function Comissoes({ onBack }: { onBack: () => void }) {
         <select
           className="input w-auto"
           value={status}
-          onChange={(e) => setStatus(e.target.value)}
+          onChange={(e) => setStatus(e.target.value as "" | CommissionStatus)}
         >
           <option value="">Todos os status</option>
           <option value="calculada">Calculada</option>
@@ -702,7 +705,15 @@ export default function Comissoes({ onBack }: { onBack: () => void }) {
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {visiveis.map((row) => (
-                <tr key={row.id}>
+                <tr
+                  id={`finance-commission-${row.id}`}
+                  key={row.id}
+                  className={
+                    focusId === row.id || focusId === row.withdrawal_id
+                      ? "ring-2 ring-inset ring-primary-400 bg-primary-50/50 dark:bg-primary-400/10"
+                      : ""
+                  }
+                >
                   <td className="px-3 py-3 text-center">
                     {row.status === "a_pagar" && row.withdrawal_id && (
                       <input
@@ -1013,7 +1024,7 @@ export default function Comissoes({ onBack }: { onBack: () => void }) {
               ))}
             </div>
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {(extrato.por_advogado ?? []).map((item: any) => (
+              {(extrato.por_advogado ?? []).map((item) => (
                 <div
                   key={item.advogado_id || item.advogado}
                   className="grid grid-cols-2 gap-2 py-3 text-sm md:grid-cols-5"

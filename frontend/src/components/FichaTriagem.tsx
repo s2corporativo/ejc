@@ -262,7 +262,7 @@ export default function FichaTriagem({
     <section className="card p-5" aria-label="Ficha de triagem pré-peça">
       <header className="flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3">
-          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ouro-palha text-ouro-profundo">
+          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-700">
             <ClipboardCheck size={18} />
           </div>
           <div>

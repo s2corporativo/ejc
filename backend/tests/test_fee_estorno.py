@@ -33,7 +33,7 @@ from app.models.fee import Fee, FeeEstorno, FeePayment, FeeStatus
 from app.models.user import User, UserRole
 from app.routers.fees import estornar_pagamento
 from app.schemas.fee import FeeEstornoCreate
-from app.services.fee_ledger_compat import total_pago_efetivo
+from app.services.fee_ledger import total_pago_efetivo
 
 HOJE = date.today()
 ANTEONTEM = HOJE - timedelta(days=2)
@@ -74,8 +74,10 @@ class _LedgerFakeDB:
         self.commits = 0
         self.flushes = 0
 
-    async def execute(self, q):
+    async def execute(self, q, params=None):
         sql = str(q)
+        if "finance_month_closings" in sql:
+            return _Res(scalar=None)
         cols = getattr(q, "column_descriptions", None)
         entidade = cols[0]["entity"] if cols else None
 

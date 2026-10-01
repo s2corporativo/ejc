@@ -297,12 +297,16 @@ export default function OfficeContracts() {
                       <div className="flex gap-1">
                         <button
                           onClick={() => openEdit(c)}
+                          aria-label="Editar contrato"
+                          title="Editar contrato"
                           className="p-1.5 rounded text-slate-400 hover:text-primary-600 hover:bg-primary-50"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => remove(c.id)}
+                          aria-label="Excluir contrato"
+                          title="Excluir contrato"
                           className="p-1.5 rounded text-slate-400 hover:text-danger-600 hover:bg-danger-50"
                         >
                           <Trash2 className="w-3.5 h-3.5" />

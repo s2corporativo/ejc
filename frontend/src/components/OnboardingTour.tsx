@@ -113,11 +113,10 @@ export default function OnboardingTour() {
       setView("recolhido");
       return;
     }
-    const timer = setTimeout(() => {
-      localStorage.setItem(STATE_KEY, "aberto");
-      setView("aberto");
-    }, 700);
-    return () => clearTimeout(timer);
+    // Primeira visita: não cobre a home. O launcher discreto permanece
+    // disponível para quem quiser seguir o checklist.
+    localStorage.setItem(STATE_KEY, "recolhido");
+    setView("recolhido");
   }, []);
 
   const setEstado = useCallback((next: View) => {
@@ -200,11 +199,11 @@ export default function OnboardingTour() {
         type="button"
         onClick={abrir}
         aria-label={`Primeiros passos: ${concluidas} de ${total} concluídos. Reabrir.`}
-        className="fixed bottom-5 right-20 z-40 flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 shadow-md"
+        className="fixed bottom-4 right-16 z-40 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm"
       >
-        <Sparkles className="h-4 w-4 text-ejc-gold" />
+        <Sparkles className="h-4 w-4 text-primary-600" />
         Primeiros passos
-        <span className="rounded-full bg-ejc-gold-soft px-1.5 py-0.5 text-xs font-semibold text-ejc-gold-ink">
+        <span className="rounded-md bg-primary-50 px-1.5 py-0.5 text-[11px] font-semibold text-primary-700">
           {concluidas}/{total}
         </span>
       </button>
@@ -214,7 +213,7 @@ export default function OnboardingTour() {
   return (
     // pointer-events-none no wrapper: a faixa flex NÃO pode bloquear cliques
     // fora do card (só o painel em si recebe eventos).
-    <div className="onboarding-tour pointer-events-none fixed inset-x-4 bottom-4 z-50 flex justify-center sm:inset-x-auto sm:right-4 sm:justify-end">
+    <div className="onboarding-tour pointer-events-none fixed inset-x-3 bottom-3 z-50 flex justify-center sm:inset-x-auto sm:right-4 sm:bottom-4 sm:justify-end">
       <div
         ref={panelRef}
         tabIndex={-1}
@@ -222,16 +221,16 @@ export default function OnboardingTour() {
         aria-modal="false"
         aria-labelledby="onboarding-title"
         aria-describedby="onboarding-sub"
-        className="card pointer-events-auto w-full max-w-sm overflow-hidden focus:outline-none"
+        className="card pointer-events-auto w-full max-w-[360px] overflow-hidden border-slate-200 shadow-lg focus:outline-none"
       >
-        <div className="h-1 bg-zinc-100">
+        <div className="h-0.5 bg-slate-100">
           <div
-            className="h-full bg-ejc-gold transition-all duration-300"
+            className="h-full bg-primary-600 transition-all duration-300"
             style={{ width: `${(concluidas / total) * 100}%` }}
           />
         </div>
 
-        <div className="p-5">
+        <div className="p-4">
           <div className="flex items-start justify-between gap-2">
             <div>
               <h2
@@ -263,7 +262,7 @@ export default function OnboardingTour() {
               return (
                 <li
                   key={task.id}
-                  className="flex items-start gap-3 rounded-xl p-2 transition-colors hover:bg-zinc-50"
+                  className="flex items-start gap-3 rounded-lg p-2 transition-colors hover:bg-slate-50"
                 >
                   <button
                     type="button"
@@ -277,8 +276,8 @@ export default function OnboardingTour() {
                     className={cn(
                       "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors",
                       done
-                        ? "border-ejc-gold bg-ejc-gold text-white"
-                        : "border-zinc-300 text-transparent hover:border-ejc-gold",
+                        ? "border-primary-600 bg-primary-600 text-white"
+                        : "border-slate-300 text-transparent hover:border-primary-500",
                     )}
                   >
                     <Check className="h-3.5 w-3.5" />

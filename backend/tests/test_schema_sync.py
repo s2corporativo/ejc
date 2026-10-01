@@ -106,6 +106,12 @@ _SEM_MODEL_INTENCIONAL = {
     "jur_processos", "jur_tribunais", "kanban_columns", "memoria_institucional",
     "modelos_documentos", "office_contracts", "office_expenses",
     "partner_withdrawals", "portal_mensagens", "pricing_rules",
+    # Financeiro V4: tabelas operacionais acessadas deliberadamente via SQL
+    # explícito nos serviços/routers de governança e comissões.
+    "commission_adjustments", "commission_month_closings",
+    "commission_payment_batch_items", "commission_payment_batches",
+    "finance_month_closings", "finance_payment_approvals",
+    "finance_policy_settings", "finance_reconciliation_matches",
     "score_juridico", "teses_vitoriosas",
     # Contador atômico de numeração de peças (migration 090): tabela-utilitária
     # de 2 colunas (area PK, ultimo) acessada só via UPSERT ... RETURNING em
