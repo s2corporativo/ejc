@@ -51,49 +51,78 @@ class ScopeContract(unittest.TestCase):
     def setUpClass(cls):
         cls.workflow = yaml.safe_load((ROOT / ".woodpecker.yml").read_text())
         cls.all_steps = set(cls.workflow["steps"])
+        cls.fast_steps = {"backend-fast", "frontend-fast"}
+        cls.full_steps = cls.all_steps - cls.fast_steps
 
-    def test_main_and_manual_always_run_every_gate(self):
+    def test_main_and_manual_run_full_suite_without_fast_duplicates(self):
         for event, branch in [("push", "main"), ("manual", "feature/example")]:
             for paths in [[], ["docs/example.md"], ["frontend/src/pages/Page.tsx"]]:
                 with self.subTest(event=event, paths=paths):
-                    self.assertEqual(selected(self.workflow, event, branch, paths), self.all_steps)
+                    self.assertEqual(
+                        selected(self.workflow, event, branch, paths),
+                        self.full_steps,
+                    )
 
     def test_docs_only_keeps_light_contracts_and_secret_scan(self):
         self.assertEqual(selected(self.workflow, "pull_request", "main", ["docs/example.md"]),
                          {"ops-contracts", "deploy-validation", "security-secrets"})
 
-    def test_frontend_only_does_not_start_backend_tests(self):
+    def test_frontend_only_uses_fast_frontend_gate(self):
         gates = selected(self.workflow, "pull_request", "main", ["frontend/src/pages/Page.tsx"])
-        self.assertEqual(gates, {"frontend", "frontend-e2e", "ops-contracts", "deploy-validation",
-                                 "graphify-guard", "security-sast", "security-secrets"})
+        self.assertEqual(gates, {
+            "frontend-fast", "ops-contracts", "deploy-validation",
+            "graphify-guard", "security-sast", "security-secrets",
+        })
+        self.assertNotIn("frontend", gates)
+        self.assertNotIn("frontend-e2e", gates)
 
-    def test_backend_test_only_does_not_start_frontend_tests(self):
+    def test_backend_test_only_uses_fast_backend_gate(self):
         gates = selected(self.workflow, "pull_request", "main", ["backend/tests/test_example.py"])
-        self.assertEqual(gates, {"backend-tests", "ops-contracts", "deploy-validation",
-                                 "graphify-guard", "security-sast", "security-secrets"})
+        self.assertEqual(gates, {
+            "backend-fast", "ops-contracts", "deploy-validation",
+            "graphify-guard", "security-sast", "security-secrets",
+        })
+        self.assertNotIn("backend-tests", gates)
 
-    def test_sensitive_changes_require_full_suite(self):
-        paths = [".gitleaks.toml", ".semgrepignore", ".env.example", ".woodpecker.yml",
-                 "scripts/backup.sh", "scripts/tests/test_woodpecker_scopes.py",
-                 "backend/alembic/versions/160_example.py", "backend/app/routers/auth.py",
-                 "backend/app/services/ai_service.py", "backend/app/services/datajud_service.py",
-                 "backend/app/middleware/auth.py", "backend/app/modules/legal/service.py",
-                 "backend/requirements.txt", "frontend/package-lock.json", "backend/Dockerfile",
-                 "frontend/src/lib/api.ts", "frontend/src/stores/authStore.ts",
-                 "frontend/src/components/RouteGuards.tsx",
-                 "infra/host-automation/woodpecker-approved-sha.sh", "ops/agents/runtime.py",
-                 "docker-compose.yml", "CLAUDE.md", "docs/GOVERNANCA_IA.md"]
-        for path in paths:
-            with self.subTest(path=path):
-                self.assertEqual(selected(self.workflow, "pull_request", "main", [path]), self.all_steps)
+    def test_release_candidate_requires_full_suite(self):
+        gates = selected(
+            self.workflow, "pull_request", "main", ["config/release_candidate.json"]
+        )
+        self.assertTrue(self.full_steps <= gates)
+        self.assertIn("backend-tests", gates)
+        self.assertIn("frontend", gates)
+        self.assertIn("frontend-e2e", gates)
+
+    def test_normal_critical_pr_stays_fast_but_keeps_security(self):
+        gates = selected(
+            self.workflow, "pull_request", "main", ["backend/app/routers/auth.py"]
+        )
+        self.assertIn("backend-fast", gates)
+        self.assertNotIn("backend-tests", gates)
+        self.assertNotIn("frontend", gates)
+        self.assertNotIn("frontend-e2e", gates)
+        for required in (
+            "security-secrets", "security-sast", "security-vulnerabilities",
+            "lint", "migration-check", "graphify-guard",
+        ):
+            self.assertIn(required, gates)
 
     def test_empty_diff_fails_closed(self):
-        self.assertEqual(selected(self.workflow, "pull_request", "main", []), self.all_steps)
+        gates = selected(self.workflow, "pull_request", "main", [])
+        self.assertTrue(self.full_steps <= gates)
 
-    def test_mixed_diff_retains_critical_gates(self):
-        self.assertEqual(selected(self.workflow, "pull_request", "main",
-                                  ["docs/example.md", "backend/app/services/datajud_service.py"]),
-                         self.all_steps)
+    def test_mixed_diff_retains_critical_fast_gates(self):
+        gates = selected(
+            self.workflow, "pull_request", "main",
+            ["docs/example.md", "backend/app/services/datajud_service.py"],
+        )
+        self.assertIn("backend-fast", gates)
+        self.assertNotIn("backend-tests", gates)
+        for required in (
+            "security-secrets", "security-sast", "security-vulnerabilities",
+            "lint", "migration-check", "graphify-guard",
+        ):
+            self.assertIn(required, gates)
 
     def test_light_contracts_have_no_filter(self):
         self.assertNotIn("when", self.workflow["steps"]["ops-contracts"])
