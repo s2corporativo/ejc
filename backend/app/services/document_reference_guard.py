@@ -153,35 +153,28 @@ async def referencias_ativas_documento(
                 Document.deleted_at.is_(None),
             )
         ).label("versao_posterior"),
+        text(
+            """
+            EXISTS(
+                SELECT 1 FROM office_expenses
+                WHERE comprovante_doc_id=:document_id AND deleted_at IS NULL
+            ) AS office_expense,
+            EXISTS(
+                SELECT 1 FROM bank_analyses
+                WHERE document_id=:document_id AND deleted_at IS NULL
+            ) AS bank_analysis,
+            EXISTS(
+                SELECT 1 FROM partner_withdrawals
+                WHERE comprovante_doc_id=:document_id AND deleted_at IS NULL
+            ) AS partner_withdrawal,
+            EXISTS(
+                SELECT 1 FROM commission_payment_batches
+                WHERE comprovante_doc_id=:document_id
+            ) AS commission_batch
+            """
+        ).bindparams(document_id=document_id),
     )
     flags = dict((await db.execute(stmt)).mappings().one())
-    financeiros = (
-        await db.execute(
-            text(
-                """
-                SELECT
-                    EXISTS(
-                        SELECT 1 FROM office_expenses
-                        WHERE comprovante_doc_id=:document_id AND deleted_at IS NULL
-                    ) AS office_expense,
-                    EXISTS(
-                        SELECT 1 FROM bank_analyses
-                        WHERE document_id=:document_id AND deleted_at IS NULL
-                    ) AS bank_analysis,
-                    EXISTS(
-                        SELECT 1 FROM partner_withdrawals
-                        WHERE comprovante_doc_id=:document_id AND deleted_at IS NULL
-                    ) AS partner_withdrawal,
-                    EXISTS(
-                        SELECT 1 FROM commission_payment_batches
-                        WHERE comprovante_doc_id=:document_id
-                    ) AS commission_batch
-                """
-            ),
-            {"document_id": document_id},
-        )
-    ).mappings().one()
-    flags.update(dict(financeiros))
 
     codigos_bloqueantes = (
         {"protocolo", "prova"}
