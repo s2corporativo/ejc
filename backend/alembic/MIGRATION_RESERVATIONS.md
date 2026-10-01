@@ -2,7 +2,7 @@
 
 Este arquivo é o ledger canônico de **reservas futuras** e do trecho recente da cadeia Alembic. O histórico detalhado de reservas antigas permanece preservado no Git.
 
-**Head canônico atual da `main`:** `168_ai_supervised_learning`
+**Head canônico atual da `main`:** `167_finance_fk_indexes`
 **Head esperado nesta árvore após as migrations do branch:** `168_ai_supervised_learning`
 **Próximo prefixo livre nesta árvore:** `169`
 
