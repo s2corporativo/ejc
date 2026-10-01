@@ -354,7 +354,7 @@ steps:
       - cd /tmp/ejc-frontend-fast && npm ci --prefer-offline
       - cd /tmp/ejc-frontend-fast && npm run lint
       - cd /tmp/ejc-frontend-fast && npm run audit:css:verificar
-      - python3 scripts/ci_affected_tests.py --stack frontend --base origin/main > /tmp/ejc-frontend-affected.txt
+      - python3 "$CI_WORKSPACE/scripts/ci_affected_tests.py" --stack frontend --base origin/main --repo "$CI_WORKSPACE" > /tmp/ejc-frontend-affected.txt
       - test -s /tmp/ejc-frontend-affected.txt
       - cd /tmp/ejc-frontend-fast && xargs -r npx vitest run --maxWorkers=2 --no-file-parallelism < /tmp/ejc-frontend-affected.txt
     when:
