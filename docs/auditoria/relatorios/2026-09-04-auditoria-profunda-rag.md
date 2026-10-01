@@ -15,7 +15,7 @@ Onde o impacto depende do estado dos dados, o relatório fornece o SQL de mediç
 em vez de estimar.
 
 **Base de continuidade**: este relatório parte do
-`RELATORIO_ANALISE_E2E_IA_2026-09-03.md` (§5.3, itens C1–C9) e registra
+`docs/arquivo/relatorios/RELATORIO_ANALISE_E2E_IA_2026-09-03.md` (§5.3, itens C1–C9) e registra
 explicitamente o que já foi fechado desde então, o que permanece aberto e o que
 é achado novo.
 

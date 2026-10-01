@@ -7,10 +7,9 @@ Este documento orienta agentes como Antigravity, Codex e Claude ao corrigir ou e
 1. `docs/GOVERNANCA_IA.md`
 2. `CLAUDE.md`
 3. `AGENTS.md`
-4. `.agent/rules/*.md`
-5. `docs/FLUXO_DE_DESENVOLVIMENTO.md`
-6. `docs/CRITERIOS_DE_ACEITE.md`
-7. Este arquivo
+4. `docs/FLUXO_DE_DESENVOLVIMENTO.md`
+5. `docs/CRITERIOS_DE_ACEITE.md`
+6. Este arquivo
 
 Se houver divergencia, siga a governanca canonica e registre a harmonizacao no PR.
 
@@ -40,7 +39,6 @@ O EJC e um sistema juridico full-stack para casos/processos, clientes, prazos, d
 | `docs/ia/VALIDACOES_IDE.md` | Ver quais tarefas do Antigravity/VS Code executar |
 | `docs/ia/PROBLEMAS_CONHECIDOS.md` | Registrar falhas comprovadas, recorrentes ou pendentes |
 | `docs/ia/MCP_E_AGENTES.md` | Orientar MCPs e agentes especializados sem versionar credenciais |
-| `.agent/workflows/` | Fluxos prontos para inventário, correção e revisão de PR |
 
 ## Comandos de verificacao
 

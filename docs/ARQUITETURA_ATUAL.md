@@ -1,6 +1,6 @@
 # ARQUITETURA ATUAL — EJC
 
-> Gerado por `scripts/governanca/inventario-repo.sh` em 2026-08-30, commit `9fe3642d`.
+> Gerado por `scripts/governanca/inventario-repo.sh` em 2026-10-01, commit `54c7fc4e`.
 > Descreve o estado observado, nao o estado desejado.
 
 ## 1. Dependencias declaradas — backend
@@ -50,7 +50,7 @@ python-dateutil==2.9.0
 slowapi==0.1.9
 bcrypt==4.0.1
 pyotp==2.10.0
-PyJWT==2.14.0
+PyJWT==2.15.0
 cryptography==50.0.0
 
 # HTTP and integrations
@@ -73,7 +73,7 @@ google-auth==2.55.1
 
 ```
   "dependencies": {
-    "axios": "^1.19.0",
+    "axios": "^1.20.0",
     "date-fns": "^3.6.0",
     "lucide-react": "^1.29.0",
     "qrcode": "^1.5.4",
@@ -87,50 +87,53 @@ google-auth==2.55.1
 ## 3. Servicos em Docker Compose
 
 ```
-2:  db:
-6:    image: pgvector/pgvector:pg16
-20:    volumes:
-28:  redis:
-30:    image: redis:7-alpine
-37:    volumes:
-45:  backend:
-60:    ports:
-109:    volumes:
-123:    depends_on:
-130:    # OBRIGATÓRIO: o frontend usa depends_on: backend: service_healthy —
-140:  worker:
-171:    volumes:
-174:    depends_on:
-190:  frontend:
-197:    ports:
-205:    depends_on:
-218:  langfuse-db:
-219:    image: postgres:16-alpine
-221:    profiles: ["observability"]
-234:    volumes:
-242:  langfuse:
-243:    image: langfuse/langfuse:2
-245:    profiles: ["observability"]
-249:    depends_on:
-254:    ports:
-281:  ollama:
-283:    image: ollama/ollama:0.31.1
-285:    profiles: ["ia-local"]
-304:    volumes:
-314:  ollama-init:
-320:    image: ollama/ollama:0.31.1
-322:    profiles: ["ia-local"]
-325:    depends_on:
-357:  default:
-359:  ia:
-361:volumes:
-362:  postgres_data:
-363:  uploads_data:
-364:  backups_data:
-365:  fastembed_cache:
-366:  redis_data:
-367:  langfuse_db_data:
-368:  ollama_models:
+2:  driver: json-file
+3:  options:
+8:  db:
+12:    image: pgvector/pgvector:pg16
+31:    volumes:
+39:  redis:
+41:    image: redis:7-alpine
+49:    volumes:
+57:  backend:
+73:    ports:
+145:    volumes:
+159:    depends_on:
+166:    # OBRIGATÓRIO: o frontend usa depends_on: backend: service_healthy —
+178:      # de subir — e o `frontend`, que declara `depends_on: backend:
+183:  worker:
+222:    volumes:
+225:    depends_on:
+241:  frontend:
+256:    ports:
+264:    depends_on:
+277:  langfuse-db:
+278:    image: postgres:16-alpine
+280:    profiles: ["observability"]
+294:    volumes:
+302:  langfuse:
+303:    image: langfuse/langfuse:2
+305:    profiles: ["observability"]
+310:    depends_on:
+315:    ports:
+342:  ollama:
+344:    image: ollama/ollama:0.31.1
+346:    profiles: ["ia-local"]
+366:    volumes:
+376:  ollama-init:
+382:    image: ollama/ollama:0.31.1
+384:    profiles: ["ia-local"]
+388:    depends_on:
+420:  default:
+422:  ia:
+424:volumes:
+425:  postgres_data:
+426:  uploads_data:
+427:  backups_data:
+428:  fastembed_cache:
+429:  redis_data:
+430:  langfuse_db_data:
+431:  ollama_models:
 ```
 
 ## 4. Variaveis de ambiente esperadas
@@ -142,40 +145,54 @@ ADMIN_NAME
 ADMIN_PASSWORD
 AI_ACCEPT_EXTERNAL_WITHOUT_SANITIZATION
 AI_AGENT_ENABLED
+AI_AGENT_HITL_TTL_SEGUNDOS
+AI_AGENT_MAX_CUSTO_BRL
 AI_AGENT_MAX_STEPS
 AI_AGENT_MAX_TOKENS
+AI_AGENT_PROVIDER
 AI_BUDGET_ALERTA_BRL
+AI_CHAIN_DEADLINE_SECONDS
+AI_CONTEXTO_MAX_CHARS
+AI_CONTEXTO_MAX_CHARS_SECAO
 AI_ENABLED
 AI_EXTERNAL_PROVIDERS_ALLOWED
+AI_GROUNDING_DATAJUD_ENABLED
+AI_LIVE_GROUNDING_ENABLED
 AI_LONG_DOCUMENT_CHUNK_CHARS
 AI_LONG_DOCUMENT_MAX_CHARS
 AI_LONG_DOCUMENT_MAX_CHUNKS
 AI_NIVEL_INTELIGENCIA_MERITO
 AI_NIVEL_INTELIGENCIA_PADRAO
+AI_PROFILE
 AI_PROMPT_CACHING_ENABLED
 AI_PROVIDER
 AI_PROVIDER_PRIORITY
 AI_REQUIRE_HITL
 AI_REQUIRE_SANITIZATION_FOR_EXTERNAL
-AI_RESPONSE_CACHE_ENABLED
 AI_RESPONSE_CACHE_TTL
 AI_SANITIZATION_MODE_MAP
 AI_WEB_SEARCH_CUSTO_USD_POR_1000
 AI_WEB_SEARCH_ENABLED
 AI_WEB_SEARCH_MAX_USES
 ANTHROPIC_API_KEY
+ANTHROPIC_AUTO_ROUTING_ENABLED
 ANTHROPIC_EFFORT
 ANTHROPIC_ENABLED
 ANTHROPIC_MAX_TOKENS
 ANTHROPIC_MODEL_COMPLEXO
 ANTHROPIC_MODEL_RAPIDO
 ANTHROPIC_TIMEOUT_SECONDS
+API_ROTAS_DEPRECIADAS
+API_ROTAS_SUNSET
+APP_DATABASE_URL
+APP_DATABASE_URL_SYNC
 APP_ENV
 AUDIO_TRANSCRIPTION_DPA_APPROVED
 AUDIO_TRANSCRIPTION_ENABLED
 AUDIO_TRANSCRIPTION_MAX_MB
 AUDIO_TRANSCRIPTION_TIMEOUT
 BACKUP_DB_MAX_MB
+BACKUP_DELETE_LOCAL_AFTER_OFFSITE
 BACKUP_DESTINO
 BACKUP_DIR
 BACKUP_DRIVE_FOLDER_ID
@@ -201,32 +218,47 @@ BACKUP_UPLOADS_MAX_MB
 CELERY_ENABLED
 CITACOES_MODO_ESTRITO
 CITACOES_POLITICA
+CLIENTE_KIT_ADMISSAO_AUTOMATICO
+CNJ_SGT_ENABLED
 COBRANCA_ENABLED
 CONECTA_CLIENT_ID
 CONECTA_CLIENT_SECRET
 CONHECIMENTO_INGEST_ENABLED
+CONSUMIDOR_GOV_OPEN_DATA_ENABLED
 CORS_ORIGINS
+CVM_OPEN_DATA_ENABLED
 DATAJUD_API_KEY
 DATAJUD_BASE_URL
+DATAJUD_CACHE_REDIS_ENABLED
+DATAJUD_CACHE_REDIS_TTL
 DATAJUD_CACHE_TTL_SEGUNDOS
 DATAJUD_ENABLED
+DATAJUD_RATE_LIMIT_RPS
 DATAJUD_SYNC_ENABLED
 DATAJUD_SYNC_HORA_UTC
 DATAJUD_TIMEOUT_SECONDS
 DEBUG
 DIAGNOSTICO_ENABLED
+DJEN_CAPTURA_INGERIR_RAG
+DJEN_HTTP_PROXY_URL
 DJEN_INGEST_ENABLED
 DJEN_INGEST_JANELA_DIAS
 DJEN_OABS_MONITORADAS
 DUAS_IAS_ENABLED
 DUAS_IAS_TASK_TYPES
+EJC_DB_SHM_SIZE
 EMAIL_ENABLED
 EMBEDDINGS_BATCH
 EMBEDDINGS_DIM
 EMBEDDINGS_ENABLED
+EMBEDDINGS_MAX_CHARS
 EMBEDDINGS_MODEL
 EMBEDDINGS_PROVIDER
 ENABLE_SCHEDULER
+ENTRADA_EXPURGO_DIAS
+ENTRADA_EXPURGO_ENABLED
+ENTRADA_UNICA_ENABLED
+EPROC_INTEGRATION_ENABLED
 ESCRITORIO_CEP
 ESCRITORIO_CIDADE
 ESCRITORIO_CNPJ
@@ -235,11 +267,16 @@ ESCRITORIO_ENDERECO
 ESCRITORIO_ESTADO
 ESCRITORIO_NOME
 ESCRITORIO_OAB
+ESCRITORIO_SITE
+ESCRITORIO_SOCIO_TITULAR
 EVOLUTION_API_KEY
 EVOLUTION_API_URL
 EVOLUTION_INSTANCE
+EVOLUTION_TIMEOUT
 EVOLUTION_WEBHOOK_SECRET
 FERIADOS_BRASILAPI_ENABLED
+FICHA_TRIAGEM_OBRIGATORIA
+FINANCEIRO_ENABLED
 FORCE_SKILLS_UPDATE
 FORCE_TEMPLATES_UPDATE
 FORWARDED_ALLOW_IPS
@@ -265,9 +302,18 @@ GROQ_PRECO_OUTPUT_BRL_POR_MILHAO
 GROQ_TIMEOUT
 GROQ_TRANSCRIPTION_MODEL
 GROQ_ZDR_VERIFIED
+IA_ANALISE_ASYNC_ENABLED
+IA_ANALISE_ASYNC_TTL_SEGUNDOS
+IBAMA_OPEN_DATA_ENABLED
+IBGE_LOCALIDADES_ENABLED
+IDE_SISEMA_ENABLED
 INDICES_BCB_ENABLED
 INDICES_BCB_TIMEOUT
 INTAKE_EXTERNAL_FALLBACK
+JUDICIAL_FILING_ENABLED
+JURIMETRIA_TRIBUNAIS_CACHE_TTL_SEGUNDOS
+JURIMETRIA_TRIBUNAIS_ENABLED
+JURIMETRIA_TRIBUNAIS_MAX_PROCESSOS
 JURIS_IMPORT_FONTES
 LANGFUSE_CAPTURE_CONTENT
 LANGFUSE_DB_PASSWORD
@@ -283,6 +329,15 @@ LEXML_INGEST_MAX_POR_TEMA
 LEXML_INGEST_TEMAS
 LOG_JSON
 LOG_LEVEL
+MANUS_AGENT_PROFILE
+MANUS_API_BASE_URL
+MANUS_API_KEY
+MANUS_AUTO_ROUTING_ENABLED
+MANUS_CONNECT_TIMEOUT
+MANUS_ENABLED
+MANUS_MAX_INPUT_CHARS
+MANUS_READ_TIMEOUT
+MANUS_WRITE_TIMEOUT
 MARITACA_API_KEY
 MARITACA_BASE_URL
 MARITACA_ENABLED
@@ -291,31 +346,63 @@ MARITACA_MODEL
 MARITACA_MODEL_RAPIDO
 MARITACA_TIMEOUT
 MAX_UPLOAD_MB
+NFSE_REGIME_TRIBUTARIO
+NFSE_TIPO_RETENCAO_ISS_DEFAULT
+NFSE_TRIB_ISSQN_DEFAULT
 NORMAS_RFB_TERMOS
 OLLAMA_BASE_URL
 OLLAMA_ENABLED
 OLLAMA_KEEP_ALIVE
 OLLAMA_MEM_LIMIT
 OLLAMA_PULL_MODELS
+OLLAMA_TIMEOUT
+PDPJ_CLIENT_ID
+PDPJ_CLIENT_SECRET
+PDPJ_ENVIRONMENT
+PDPJ_INTEGRATION_ENABLED
+PDPJ_TIMEOUT_SECONDS
+PECAS_AUTOCRITICA_ENABLED
 PECAS_DEMONSTRATIVO_CALCULADORA_ENABLED
+PECAS_PESQUISA_QUESTOES_ENABLED
+PECAS_RAG_MODELOS_ENABLED
+PECAS_RAG_MODELOS_TOPK
+PERTINENCIA_ENABLED
+PGFN_OPEN_DATA_ENABLED
 PII_ENCRYPTION_KEY
 PII_HASH_KEY
+PJE_MNI_ENABLED
+PJE_MNI_TIMEOUT_SECONDS
 POSTGRES_DB
 POSTGRES_PASSWORD
 POSTGRES_USER
 PUSH_ENABLED
+QUERIDO_DIARIO_ENABLED
+QUERIDO_DIARIO_MONITOR_ENABLED
+QUERIDO_DIARIO_MONITOR_HORA_UTC
+QUERIDO_DIARIO_MONITOR_JANELA_DIAS
+QUERIDO_DIARIO_MONITOR_MUNICIPIOS
+QUERIDO_DIARIO_MONITOR_TERMOS
+QUERIDO_DIARIO_RADAR_CLIENTES_ENABLED
+QUERIDO_DIARIO_RADAR_INCLUI_PF
+QUERIDO_DIARIO_RADAR_MAX_CLIENTES
 RADAR_LEGISLATIVO_ENABLED
 RADAR_LEGISLATIVO_TERMOS
+RAG_AUTO_REEMBED_BATCH
+RAG_AUTO_REEMBED_ENABLED
 RAG_EXIGIR_APROVADO
 RAG_EXIGIR_VIGENCIA_VERIFICADA
 RAG_FTS_ENABLED
 RAG_HYDE_ENABLED
+RAG_MIN_SIM
 RAG_RERANK_ENABLED
 RAG_RERANK_MODEL
+RAG_RERANK_POOL_MIN
+RAG_RERANK_POOL_MULT
 RAG_SUMULAS_QUARENTENA
 RAG_SUMULAS_SEED_ENABLED
 RATE_LIMIT_REDIS_ENABLED
 REDIS_URL
+REFRESH_TOKEN_EXPIRE_DAYS
 RELATORIO_DONO_ENABLED
 REQUIRE_2FA_ROLES
 ROTEAMENTO_INTELIGENTE_ENABLED
@@ -326,16 +413,28 @@ ROTEAMENTO_PROVIDER_MEDIO
 ROTEAMENTO_PROVIDER_PESADO
 SALARIO_MINIMO_BRL
 SALA_JURIDICA_AUTO_ESTADO
+SCHEDULER_MISFIRE_GRACE_SECONDS
 SECRET_KEY
+SEED_EMBED_ORFAOS
 SENTRY_DSN
+SENTRY_ENVIRONMENT
+SENTRY_TRACES_SAMPLE_RATE
 SMTP_HOST
 SMTP_PASSWORD
 SMTP_PORT
 SMTP_USER
+STARTUP_STEP_TIMEOUT_SECONDS
+TCU_OPEN_DATA_ENABLED
 TJMG_INGEST_ENABLED
 TJMG_INGEST_JANELA_DIAS
 TJMG_INGEST_MAX_POR_TEMA
 TJMG_INGEST_TEMAS
+TRANSPARENCIA_API_KEY
+TRANSPARENCIA_BASE_URL
+TRANSPARENCIA_ENABLED
+TSE_OPEN_DATA_ENABLED
+TWO_FACTOR_AUTH_ENABLED
+TWO_FACTOR_SETUP_TOKEN_EXPIRE_MINUTES
 USD_BRL_RATE
 VAPID_CLAIM_EMAIL
 VAPID_PRIVATE_KEY
@@ -350,27 +449,6 @@ WHATSAPP_ENABLED
 
 | Workflow | Gatilhos | Jobs (nome do check) |
 |---|---|---|
-| `architecture-inventory.yml` | pull_request push workflow_dispatch | Generate complete architecture inventory |
-| `architecture-refactor-wave1.yml` | push workflow_dispatch | Apply canonical contracts and compatible routes |
-| `architecture-refactor-wave2.yml` | push workflow_dispatch | Apply Case and Process separation |
-| `auto-integracao.yml` | — | — |
-| `backup-gdrive-activation.yml` | pull_request workflow_dispatch | Validar backup, migration e rollback · Executar prova integral cifrada na VPS |
-| `ci.yml` | pull_request push workflow_dispatch | Backend — suíte completa + schema/RAG (Postgres pgvector) · Eval — smoke dos gold sets (offline, bloqueante) · Frontend — testes + typecheck + build |
-| `continuity-ui-gates.yml` | pull_request push workflow_dispatch | Continuidade — backup cifrado + restore em banco vazio · Frontend — ESLint + browser responsivo |
-| `deploy-staging.yml` | workflow_dispatch | — |
-| `deploy-vps.yml` | workflow_dispatch | — |
-| `ejc-release-gate.yml` | pull_request push | P0 guard — conflitos e segredos · P1 backend — deps, compile e governança jurídica · P1 frontend — build |
-| `frontend-ci.yml` | workflow_dispatch | Typecheck, build and tests |
-| `governanca.yml` | pull_request | Governança — travas de PR |
-| `legal-quality-certification.yml` | workflow_dispatch | Gold jurídico humano — 75 casos / 15 por área |
-| `main-provenance.yml` | push | Governança — comprovar origem da atualização da main |
-| `probe-apis.yml` | push workflow_dispatch | — |
-| `producao-prova-continuidade.yml` | workflow_dispatch | Produção — flags efetivas, restauração e rollback |
-| `production-backup-monitor.yml` | schedule workflow_dispatch | Produção — saúde do backup diário |
-| `rag-production-activation.yml` | pull_request workflow_dispatch | Validar ativação, idempotência e rollback · Ativar RAG semântico na VPS |
-| `recover-selfhosted-runner.yml` | push workflow_dispatch | Recuperar runner ejc-vps via SSH |
-| `recover-woodpecker.yml` | push workflow_dispatch | Aplicar correção do Woodpecker na VPS |
-| `release-certification.yml` | pull_request push workflow_dispatch | Contrato da certificação · Certificar pacote real |
 
 > Os nomes de job desta tabela sao os contextos exigidos na protecao da
 > branch `main` (`scripts/governanca/branch-protection.sh`). Renomear um
@@ -385,12 +463,14 @@ api.anthropic.com
 api.bcb.gov.br
 api.groq.com
 api.infosimples.com
+api.manus.ai
 api.nuvemfiscal.com.br
 api.opencnpj.org
 api.portaldatransparencia.gov.br
-api.queridodiario.ok.org.br
+api.queridodiario.org.br
 app.seu-dominio.adv.br
 auth.nuvemfiscal.com.br
+bhissdigital.pbh.gov.br
 brasilapi.com.br
 busca.inpi.gov.br
 carf.economia.gov.br
@@ -410,15 +490,13 @@ dadosabertos.tse.jus.br
 dadosabertos.web.stj.jus.br
 datajud-wiki.cnj.jus.br
 depaulateixeira.adv.br
+docs.pdpj.jus.br
+docs.pje.jus.br
 drive.google.com
+dte.igarape.mg.gov.br
 ejc.depaulateixeira.adv.br
 embeddings
 evil.com
-evolution
-example.test
-exemplo.gov.br
-geoserver.meioambiente.mg.gov.br
-github.com
 ```
 
 > Toda integracao externa do EJC e opt-in por flag de ambiente, com default
