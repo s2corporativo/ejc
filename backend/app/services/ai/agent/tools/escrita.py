@@ -49,7 +49,7 @@ async def gerar_minuta_peca(args: dict, ctx: AgentContext) -> dict:
     from app.services.ai.entidades_caso import entidades_do_caso
     from app.services.ai_gateway import executar_tarefa_ia
     from app.services.ai.sanitization_policy import modo_para_task, modo_sigilo_do_caso
-    from app.services.system_prompts.router import TarefaIA
+    from app.services.system_prompts.registry import TarefaIA
 
     tipo = (args.get("tipo") or "peça").strip()
     instrucoes = (args.get("instrucoes") or "").strip()

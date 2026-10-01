@@ -66,7 +66,7 @@ class ModoSanitizacao(str, Enum):
 
 
 # ── Mapeamento DEFAULT (revisável por Dr. Clovis) ─────────────────────────────
-# Chaves em minúsculo; cobre o vocabulário de TarefaIA (system_prompts/router.py)
+# Chaves em minúsculo; cobre o vocabulário de TarefaIA (system_prompts/registry.py)
 # E os task_types do ai_gateway (TASK_ROUTING + aliases), pois `chat()` pode
 # receber qualquer um dos dois. Comparação é feita sobre o task_type ORIGINAL
 # (antes da normalização por aliases do gateway).

@@ -159,7 +159,7 @@ def test_provider_explicito_indisponivel_informa_a_causa(monkeypatch):
 
 def test_orchestrator_mapeia_honorarios_como_rotina():
     from app.services.ai.core.orchestrator import _TAREFA_PARA_GATEWAY
-    from app.services.system_prompts.router import TarefaIA
+    from app.services.system_prompts.registry import TarefaIA
 
     assert _TAREFA_PARA_GATEWAY[TarefaIA.HONORARIOS] == "honorarios"
 

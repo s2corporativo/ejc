@@ -2,7 +2,7 @@
 
 Data: 2026-07-04.
 
-Cadeia de decisão: `task_type/domain/keywords → agente (intent_classifier) → TarefaIA → ConfiguracaoIA (system_prompts/router.py) → task_type do gateway → cadeia de providers (TASK_ROUTING + AI_PROVIDER_PRIORITY + elegibilidade)`.
+Cadeia de decisão: `task_type/domain/keywords → agente (intent_classifier) → TarefaIA → ConfiguracaoIA (system_prompts/registry.py) → task_type do gateway → cadeia de providers (TASK_ROUTING + AI_PROVIDER_PRIORITY + elegibilidade)`.
 
 ## 1. task_type/domain/keywords → agente (intent_classifier.py)
 
@@ -33,7 +33,7 @@ Fallback por keywords na mensagem (`_KEYWORDS_PARA_AGENTE`, linhas 86-98, mais e
 
 `tarefa_padrao` do agente (tabela em `EJC_AI_AGENTS_AND_SKILLS.md`); ajuste fino: LicitacaoComplianceAgent com task/domain "ambiental" usa `TarefaIA.AMBIENTAL` (intent_classifier.py:151-153).
 
-## 3. TarefaIA → ConfiguracaoIA (system_prompts/router.py:53-72)
+## 3. TarefaIA → ConfiguracaoIA (system_prompts/registry.py:53-72)
 
 `get_configuracao(tarefa)` devolve provider/model/prompt_key/max_tokens/temperature. `_RAPIDO`=ANTHROPIC_MODEL_RAPIDO, `_COMPLEXO`=ANTHROPIC_MODEL_COMPLEXO (defaults Haiku), `_GROQ`=llama-3.3-70b-versatile:
 
