@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+import hashlib
+import json
 from decimal import Decimal
 from uuid import uuid4
 
@@ -38,7 +40,82 @@ async def exigir_competencia_aberta(db, competencia: str, acao: str) -> None:
         )
 
 
+async def permitir_correcao_competencia_fechada(
+    db, competencia: str | None, motivo: str | None, acao: str
+) -> bool:
+    if not competencia or not await competencia_fechada(db, competencia):
+        return False
+    justificativa = (motivo or "").strip()
+    if len(justificativa) < 5:
+        raise HTTPException(
+            422,
+            f"Competência {competencia} está fechada. Para {acao.lower()}, informe motivo_correcao com a justificativa da alteração.",
+        )
+    return True
 
+
+
+
+async def construir_snapshot_referencia(db, competencia: str, *, pre_fechamento: dict, rentabilidade: dict) -> dict:
+    ano, mes = (int(v) for v in competencia.split("-"))
+    inicio = date(ano, mes, 1)
+    fim = date(ano + (1 if mes == 12 else 0), 1 if mes == 12 else mes + 1, 1)
+    params = {"inicio": inicio, "fim": fim, "competencia": competencia}
+    row = (await db.execute(text("""
+        SELECT
+          COALESCE((SELECT SUM(fp.valor) FROM fee_payments fp JOIN fees f ON f.id=fp.fee_id
+                    WHERE f.deleted_at IS NULL AND fp.data_pagamento>=:inicio AND fp.data_pagamento<:fim),0) AS receitas,
+          COALESCE((SELECT SUM(fe.valor) FROM fee_estornos fe
+                    WHERE fe.data_estorno>=:inicio AND fe.data_estorno<:fim),0) AS estornos,
+          COALESCE((SELECT SUM(oe.valor) FROM office_expenses oe
+                    WHERE oe.deleted_at IS NULL AND oe.status='pago'
+                      AND oe.pago_em>=:inicio AND oe.pago_em<:fim),0) AS despesas_escritorio,
+          COALESCE((SELECT SUM(cc.valor) FROM centro_custos cc
+                    WHERE cc.deleted_at IS NULL AND CAST(cc.tipo AS text)='despesa' AND cc.pago=TRUE
+                      AND COALESCE(cc.data_pagamento,cc.data_lancamento)>=:inicio
+                      AND COALESCE(cc.data_pagamento,cc.data_lancamento)<:fim),0) AS despesas_casos,
+          COALESCE((SELECT SUM(a.valor_advogado) FROM case_receipt_allocations a
+                    JOIN fee_payments fp ON fp.id=a.fee_payment_id
+                    WHERE fp.data_pagamento>=:inicio AND fp.data_pagamento<:fim),0) AS comissoes_geradas,
+          COALESCE((SELECT SUM(pw.partner_share) FROM partner_withdrawals pw
+                    WHERE pw.deleted_at IS NULL AND pw.status='pago'
+                      AND pw.paid_at>=:inicio AND pw.paid_at<:fim),0) AS comissoes_pagas,
+          (SELECT COUNT(*) FROM (
+             SELECT fp.comprovante_doc_id AS doc_id FROM fee_payments fp
+              WHERE fp.data_pagamento>=:inicio AND fp.data_pagamento<:fim AND fp.comprovante_doc_id IS NOT NULL
+             UNION SELECT oe.comprovante_doc_id FROM office_expenses oe
+              WHERE oe.deleted_at IS NULL AND oe.comprovante_doc_id IS NOT NULL
+                AND (oe.competencia=:competencia OR (oe.pago_em>=:inicio AND oe.pago_em<:fim))
+             UNION SELECT pw.comprovante_doc_id FROM partner_withdrawals pw
+              WHERE pw.deleted_at IS NULL AND pw.comprovante_doc_id IS NOT NULL
+                AND pw.paid_at>=:inicio AND pw.paid_at<:fim
+          ) docs) AS documentos_vinculados
+    """), params)).mappings().one()
+    baseline_existente = (await db.execute(text("""
+        SELECT COUNT(*) FROM finance_month_closings
+        WHERE COALESCE((snapshot_json->'reference_baseline'->>'is_baseline')::boolean,FALSE)=TRUE
+    """))).scalar() or 0
+    bloqueios = int(pre_fechamento.get("total_bloqueios") or 0)
+    revisoes = int(pre_fechamento.get("total_revisoes") or 0)
+    resumo_rent = rentabilidade.get("resumo") or {}
+    payload = {
+        "competencia": competencia,
+        "receitas": float(row["receitas"] or 0),
+        "estornos": float(row["estornos"] or 0),
+        "despesas_escritorio": float(row["despesas_escritorio"] or 0),
+        "despesas_casos": float(row["despesas_casos"] or 0),
+        "comissoes_geradas": float(row["comissoes_geradas"] or 0),
+        "comissoes_pagas": float(row["comissoes_pagas"] or 0),
+        "resultado_escritorio": float(resumo_rent.get("resultado_escritorio") or 0),
+        "documentos_vinculados": int(row["documentos_vinculados"] or 0),
+        "score_integridade": int(pre_fechamento.get("score_integridade") or 0),
+        "bloqueios": bloqueios, "revisoes": revisoes,
+    }
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+    return {**payload,
+            "is_baseline": baseline_existente == 0 and bloqueios == 0 and revisoes == 0,
+            "immutable": True, "sha256": digest,
+            "criterio_baseline": "primeiro fechamento sem bloqueios nem revisoes"}
 
 async def exigir_lock_financeiro(db, namespace: str, key: str) -> None:
     """Adquire lock transacional não bloqueante para operação financeira única."""

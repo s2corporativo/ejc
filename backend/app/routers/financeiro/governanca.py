@@ -364,6 +364,36 @@ async def obter_fechamento_financeiro(
     return dict(row) if row else {"competencia": competencia, "fechado": False}
 
 
+@router.get("/baseline-referencia")
+async def obter_baseline_referencia(
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    _exigir_financeiro(cu)
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT id,competencia,snapshot_json,closed_by,closed_at,created_at
+                FROM finance_month_closings
+                WHERE COALESCE(
+                    (snapshot_json->'reference_baseline'->>'is_baseline')::boolean,
+                    FALSE
+                ) = TRUE
+                ORDER BY closed_at
+                LIMIT 1
+                """
+            )
+        )
+    ).mappings().first()
+    if not row:
+        return {
+            "disponivel": False,
+            "motivo": "Nenhum fechamento íntegro sem revisões foi concluído ainda.",
+        }
+    return {"disponivel": True, **dict(row)}
+
+
 @router.post("/fechamentos", status_code=201)
 async def fechar_competencia_financeira(
     body: FinanceCloseIn,
@@ -371,7 +401,10 @@ async def fechar_competencia_financeira(
     cu: User = Depends(get_current_user),
 ):
     _exigir_gestor_regras(cu)
-    from app.services.finance_governance import exigir_lock_financeiro
+    from app.services.finance_governance import (
+        exigir_lock_financeiro,
+        construir_snapshot_referencia,
+    )
     await exigir_lock_financeiro(db, "finance_close", body.competencia)
     existente = (
         await db.execute(
@@ -394,10 +427,17 @@ async def fechar_competencia_financeira(
             },
         )
     rent = await rentabilidade_financeira(body.competencia, db, cu)
+    reference_baseline = await construir_snapshot_referencia(
+        db,
+        body.competencia,
+        pre_fechamento=pre,
+        rentabilidade=rent,
+    )
     snapshot = {
         "pre_fechamento": pre,
         "rentabilidade": rent,
         "demonstrativo": pre.get("snapshot"),
+        "reference_baseline": reference_baseline,
     }
     cid = str(uuid4())
     agora = datetime.now(timezone.utc)
@@ -427,7 +467,11 @@ async def fechar_competencia_financeira(
         "finance_month_closings",
         cid,
         detalhes=f"Competência financeira {body.competencia} fechada.",
-        dados_depois={"competencia": body.competencia},
+        dados_depois={
+            "competencia": body.competencia,
+            "baseline_referencia": reference_baseline["is_baseline"],
+            "baseline_sha256": reference_baseline["sha256"],
+        },
     )
     await db.commit()
     return {

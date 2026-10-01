@@ -442,6 +442,7 @@ ADICOES_INTENCIONAIS |= {
     ("/api/financeiro/distribuicao-disponivel", "GET"),
     ("/api/financeiro/fechamentos/{competencia}", "GET"),
     ("/api/financeiro/fechamentos", "POST"),
+    ("/api/financeiro/baseline-referencia", "GET"),
     ("/api/financeiro/excecoes", "GET"),
     ("/api/financeiro/conciliacao/{analysis_id}", "GET"),
     ("/api/financeiro/conciliacao/confirmar", "POST"),

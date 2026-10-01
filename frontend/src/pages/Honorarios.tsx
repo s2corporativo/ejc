@@ -11,11 +11,12 @@ import {
   Split,
   QrCode,
   History,
+  Pencil,
 } from "lucide-react";
 import QRCode from "qrcode";
 import api from "../lib/api";
 import { asList } from "../lib/list";
-import type { Fee, Client, Paged } from "../types";
+import type { Fee, Client, Case, Paged } from "../types";
 import { apiErrorMessage } from "../lib/apiError";
 import { FEE_STATUSES } from "../lib/financeiro";
 import type {
@@ -71,6 +72,8 @@ export default function Honorarios({
   const [data, setData] = useState<Paged<FeeRow> | null>(null);
   const [resumo, setResumo] = useState<HonorariosResumo | null>(null);
   const [clientes, setClientes] = useState<Client[]>([]);
+  const [casos, setCasos] = useState<Case[]>([]);
+  const [editFeeId, setEditFeeId] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const [statusF, setStatusF] = useState(() => {
     const s = searchParams.get("status");
@@ -147,7 +150,34 @@ export default function Honorarios({
       .get("/clients/", { params: { page_size: 100 } })
       .then((r) => setClientes(asList<Client>(r.data)))
       .catch(() => setClientes([]));
+    api
+      .get("/cases/", { params: { page_size: 200 } })
+      .then((r) => setCasos(asList<Case>(r.data)))
+      .catch(() => setCasos([]));
   }, [statusF, competencia]);
+
+  const abrirNovo = () => {
+    setEditFeeId(null);
+    setForm({ tipo: "fixo" });
+    setModal(true);
+  };
+
+  const abrirEdicao = (fee: FeeRow) => {
+    setEditFeeId(fee.id);
+    setForm({
+      tipo: fee.tipo,
+      descricao: fee.descricao,
+      client_id: fee.client_id,
+      case_id: fee.case_id || "",
+      valor: fee.valor ?? "",
+      percentual_exito: fee.percentual_exito ?? "",
+      data_vencimento: fee.data_vencimento || "",
+      status: fee.status,
+      observacoes: fee.observacoes || "",
+      motivo_correcao: "",
+    });
+    setModal(true);
+  };
 
   const salvar = async () => {
     if (!form.descricao || !form.client_id) {
@@ -158,9 +188,28 @@ export default function Honorarios({
     try {
       const payload = Object.fromEntries(
         Object.entries(form).filter(([, v]) => v !== "" && v !== null),
-      );
-      await api.post("/fees/", payload);
+      ) as Record<string, unknown>;
+      if (!editFeeId) {
+        delete payload.status;
+        delete payload.motivo_correcao;
+        await api.post("/fees/", payload);
+        toast.success("Honorário criado.");
+      } else {
+        payload.case_id = form.case_id || null;
+        payload.data_vencimento = form.data_vencimento || null;
+        payload.observacoes = form.observacoes || null;
+        payload.percentual_exito =
+          form.percentual_exito === "" || form.percentual_exito == null
+            ? null
+            : Number(form.percentual_exito);
+        payload.valor =
+          form.valor === "" || form.valor == null ? null : Number(form.valor);
+        if (!form.motivo_correcao) delete payload.motivo_correcao;
+        await api.patch(`/fees/${editFeeId}`, payload);
+        toast.success("Honorário atualizado.");
+      }
       setModal(false);
+      setEditFeeId(null);
       setForm({ tipo: "fixo" });
       load();
     } catch (e: unknown) {
@@ -399,7 +448,7 @@ export default function Honorarios({
         >
           <FileType2 size={13} /> PDF
         </button>
-        <button className="btn-gold" onClick={() => setModal(true)}>
+        <button className="btn-gold" onClick={abrirNovo}>
           <Plus size={16} /> Novo lançamento
         </button>
       </div>
@@ -493,6 +542,13 @@ export default function Honorarios({
                   </td>
                   <td className="px-4 py-3">
                     <button
+                      className="btn-ghost px-2 py-1 text-primary-600"
+                      title="Editar honorário"
+                      onClick={() => abrirEdicao(f)}
+                    >
+                      <Pencil size={15} />
+                    </button>
+                    <button
                       className="btn-ghost px-2 py-1 text-slate-500"
                       title="Histórico de pagamentos"
                       onClick={() => abrirHistorico(f)}
@@ -538,8 +594,11 @@ export default function Honorarios({
 
       <Modal
         open={modal}
-        onClose={() => setModal(false)}
-        title="Novo lançamento"
+        onClose={() => {
+          setModal(false);
+          setEditFeeId(null);
+        }}
+        title={editFeeId ? "Editar honorário" : "Novo lançamento"}
         wide
       >
         <div className="grid sm:grid-cols-2 gap-4">
@@ -556,7 +615,13 @@ export default function Honorarios({
             <select
               className="input"
               value={form.client_id || ""}
-              onChange={(e) => setForm({ ...form, client_id: e.target.value })}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  client_id: e.target.value,
+                  case_id: "",
+                })
+              }
             >
               <option value="">Selecione...</option>
               {clientes.map((c) => (
@@ -564,6 +629,26 @@ export default function Honorarios({
                   {c.nome || c.razao_social}
                 </option>
               ))}
+            </select>
+          </div>
+          <div>
+            <label className="label">Caso</label>
+            <select
+              className="input"
+              value={form.case_id || ""}
+              onChange={(e) => setForm({ ...form, case_id: e.target.value })}
+            >
+              <option value="">Sem caso vinculado</option>
+              {casos
+                .filter(
+                  (c) => !form.client_id || c.client_id === form.client_id,
+                )
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.numero_interno ? `${c.numero_interno} — ` : ""}
+                    {c.titulo}
+                  </option>
+                ))}
             </select>
           </div>
           <div>
@@ -635,10 +720,56 @@ export default function Honorarios({
               }
             />
           </div>
+          {editFeeId && (
+            <div>
+              <label className="label">Status</label>
+              <select
+                className="input"
+                value={form.status || "pendente"}
+                onChange={(e) => setForm({ ...form, status: e.target.value })}
+              >
+                <option value="pendente">Pendente</option>
+                <option value="atrasado">Em atraso</option>
+                <option value="pago">Pago</option>
+                <option value="cancelado">Cancelado</option>
+              </select>
+            </div>
+          )}
+          <div className="sm:col-span-2">
+            <label className="label">Observações</label>
+            <textarea
+              className="input min-h-20"
+              value={form.observacoes || ""}
+              onChange={(e) =>
+                setForm({ ...form, observacoes: e.target.value })
+              }
+            />
+          </div>
+          {editFeeId && (
+            <div className="sm:col-span-2">
+              <label className="label">Motivo da correção</label>
+              <textarea
+                className="input min-h-16"
+                placeholder="Obrigatório apenas quando o lançamento pertencer a competência já fechada."
+                value={form.motivo_correcao || ""}
+                onChange={(e) =>
+                  setForm({ ...form, motivo_correcao: e.target.value })
+                }
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Em mês fechado, a alteração fica registrada com antes/depois,
+                usuário, data e justificativa.
+              </p>
+            </div>
+          )}
         </div>
         <div className="flex justify-end mt-5">
           <button className="btn-primary" disabled={salvando} onClick={salvar}>
-            {salvando ? "Salvando..." : "Lançar"}
+            {salvando
+              ? "Salvando..."
+              : editFeeId
+                ? "Salvar alterações"
+                : "Lançar"}
           </button>
         </div>
       </Modal>

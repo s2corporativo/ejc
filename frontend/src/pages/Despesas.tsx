@@ -35,6 +35,7 @@ interface Despesa {
   recorrencia?: string;
   status: ExpenseStatus;
   competencia?: string;
+  comprovante_doc_id?: string;
   created_at: string;
 }
 
@@ -49,10 +50,13 @@ interface FormState {
   descricao: string;
   valor: string;
   vencimento: string;
+  pago_em: string;
   recorrente: boolean;
   recorrencia: string;
   status: ExpenseStatus;
   competencia: string;
+  comprovante_doc_id: string;
+  motivo_correcao: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -62,10 +66,13 @@ const EMPTY_FORM: FormState = {
   descricao: "",
   valor: "",
   vencimento: "",
+  pago_em: "",
   recorrente: false,
   recorrencia: "mensal",
   status: "pendente",
   competencia: "",
+  comprovante_doc_id: "",
+  motivo_correcao: "",
 };
 
 const STATUS_VALIDOS = EXPENSE_STATUSES;
@@ -174,24 +181,44 @@ export default function Despesas({
       descricao: d.descricao,
       valor: String(d.valor),
       vencimento: d.vencimento ?? "",
+      pago_em: d.pago_em ?? "",
       recorrente: d.recorrente,
       recorrencia: d.recorrencia ?? "mensal",
       status: d.status,
       competencia: d.competencia ?? "",
+      comprovante_doc_id: d.comprovante_doc_id ?? "",
+      motivo_correcao: "",
     });
     setEditId(d.id);
     setShowForm(true);
   }
 
   async function save() {
-    const payload = {
+    const payload: Record<string, unknown> = {
       ...form,
       valor: parseFloat(form.valor) || 0,
-      vencimento: form.vencimento || undefined,
-      subcategoria: form.subcategoria || undefined,
-      competencia: form.competencia || undefined,
-      recorrencia: form.recorrente ? form.recorrencia : undefined,
+      vencimento: editId
+        ? form.vencimento || null
+        : form.vencimento || undefined,
+      pago_em: editId ? form.pago_em || null : form.pago_em || undefined,
+      subcategoria: editId
+        ? form.subcategoria || null
+        : form.subcategoria || undefined,
+      competencia: editId
+        ? form.competencia || null
+        : form.competencia || undefined,
+      comprovante_doc_id: editId
+        ? form.comprovante_doc_id || null
+        : form.comprovante_doc_id || undefined,
+      recorrencia: editId
+        ? form.recorrente
+          ? form.recorrencia
+          : null
+        : form.recorrente
+          ? form.recorrencia
+          : undefined,
     };
+    if (!editId) delete payload.motivo_correcao;
     try {
       const response = editId
         ? await api.patch(`/despesas/${editId}`, payload)
@@ -463,6 +490,19 @@ export default function Despesas({
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">
+                Subcategoria
+              </label>
+              <input
+                type="text"
+                className="input"
+                value={form.subcategoria}
+                onChange={(e) =>
+                  setForm({ ...form, subcategoria: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
                 Descrição *
               </label>
               <input
@@ -542,6 +582,54 @@ export default function Despesas({
                 </select>
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Data de pagamento
+                </label>
+                <input
+                  type="date"
+                  className="input"
+                  value={form.pago_em}
+                  onChange={(e) =>
+                    setForm({ ...form, pago_em: e.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Comprovante GED
+                </label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="ID do documento no GED"
+                  value={form.comprovante_doc_id}
+                  onChange={(e) =>
+                    setForm({ ...form, comprovante_doc_id: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+            {editId && (
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Motivo da correção
+                </label>
+                <textarea
+                  className="input min-h-16"
+                  placeholder="Obrigatório apenas quando a competência já estiver fechada."
+                  value={form.motivo_correcao}
+                  onChange={(e) =>
+                    setForm({ ...form, motivo_correcao: e.target.value })
+                  }
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Correções em mês fechado preservam o snapshot e registram
+                  antes/depois na auditoria.
+                </p>
+              </div>
+            )}
             <div className="flex items-center gap-3">
               <input
                 type="checkbox"

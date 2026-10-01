@@ -81,7 +81,7 @@ steps:
     image: python:3.11-bookworm
     depends_on: [security-secrets]
     commands:
-      - bash -n scripts/backup.sh scripts/backup/ativar_backup.sh infra/selfhosted/bootstrap.sh scripts/tests/test_backup_wrapper.sh scripts/tests/test_ci_secret_gate.sh scripts/tests/test_rag_activation.sh scripts/tests/test_legacy_script_guards.sh scripts/ci_graphify_guard.sh infra/host-automation/ejc-weekly-saneamento.sh
+      - bash -n scripts/backup.sh scripts/backup/ativar_backup.sh infra/selfhosted/bootstrap.sh scripts/tests/test_backup_wrapper.sh scripts/tests/test_ci_secret_gate.sh scripts/tests/test_rag_activation.sh scripts/tests/test_legacy_script_guards.sh scripts/ci_graphify_guard.sh scripts/ci_finance_feature_freeze.sh infra/host-automation/ejc-weekly-saneamento.sh
       - bash scripts/tests/test_backup_wrapper.sh
       - bash scripts/tests/test_ci_secret_gate.sh
       - bash scripts/tests/test_rag_activation.sh
@@ -108,6 +108,7 @@ steps:
     commands:
       - apt-get update -qq && apt-get install -y -qq --no-install-recommends git
       - bash scripts/ci_graphify_guard.sh
+      - bash scripts/ci_finance_feature_freeze.sh
     when:
       - event: push
         branch: main

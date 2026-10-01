@@ -25,6 +25,7 @@ from app.services.finance_governance import (
     exigir_competencia_aberta,
     limite_dupla_aprovacao,
     solicitar_ou_consumir_aprovacao,
+    permitir_correcao_competencia_fechada,
 )
 
 _FIN = {"superadmin", "admin", "socio", "financeiro"}
@@ -88,7 +89,8 @@ class DespesaCreate(_DespesaCampos):
 
 
 class DespesaUpdate(_DespesaCampos):
-    pass
+    motivo_correcao: Optional[str] = Field(None, max_length=1000)
+
 
 
 class GerarRecorrentesIn(BaseModel):
@@ -507,14 +509,15 @@ async def update_despesa(
         raise HTTPException(status_code=404, detail="Despesa não encontrada")
 
     updates = body.model_dump(exclude_unset=True)
+    motivo_correcao = (updates.pop("motivo_correcao", None) or "").strip() or None
     if not updates:
         raise HTTPException(status_code=422, detail="Nenhum campo informado para atualizar")
     competencia_atual = (
         antes["competencia"]
         or competencia_de_data(antes["pago_em"] or antes["vencimento"])
     )
-    await exigir_competencia_aberta(
-        db, competencia_atual, "Alterar despesa"
+    correcao_fechada = await permitir_correcao_competencia_fechada(
+        db, competencia_atual, motivo_correcao, "Alterar despesa"
     )
     updates = _normalizar_baixa(updates, status_atual=antes["status"])
     if updates.get("comprovante_doc_id"):
@@ -538,8 +541,11 @@ async def update_despesa(
             or antes["vencimento"]
         )
     )
-    await exigir_competencia_aberta(
-        db, competencia_nova, "Alterar despesa"
+    correcao_fechada = (
+        await permitir_correcao_competencia_fechada(
+            db, competencia_nova, motivo_correcao, "Alterar despesa"
+        )
+        or correcao_fechada
     )
     if updates.get("status") == "pago" and antes["status"] != "pago":
         approval = await solicitar_ou_consumir_aprovacao(
@@ -602,10 +608,13 @@ async def update_despesa(
         db,
         current_user.id,
         current_user.role.value,
-        "UPDATE",
+        "CORRECAO_FECHAMENTO" if correcao_fechada else "UPDATE",
         "office_expenses",
         despesa_id,
-        detalhes=f"campos alterados: {sorted(updates)}",
+        detalhes=(
+            f"campos alterados: {sorted(updates)}"
+            + (f"; motivo_correcao={motivo_correcao}" if motivo_correcao else "")
+        ),
         dados_antes=jsonable_encoder(dict(antes)),
         dados_depois=jsonable_encoder(depois),
     )
