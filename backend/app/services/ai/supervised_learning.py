@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from typing import Any
 from uuid import uuid4
 
@@ -11,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.core.security import requer_equipe_juridica
 from app.models.ai_learning import AILearningEvent, AILearningEventType
-from app.models.ai_log import AILog
+from app.models.ai_log import AILog, pseudonimizar_texto_auditoria
 from app.models.case import Case
 
 DIFFICULTIES = {"normal", "complexo", "fronteira", "excepcional"}
@@ -56,6 +57,16 @@ async def register_correction(
             raw_area = getattr(case.area, "value", case.area)
             resolved_area = str(raw_area or "").strip().lower() or None
 
+    try:
+        _refs_text = pseudonimizar_texto_auditoria(
+            json.dumps(source_refs or [], ensure_ascii=False)
+        )
+        safe_source_refs = json.loads(_refs_text or "[]")
+        if not isinstance(safe_source_refs, list):
+            safe_source_refs = []
+    except Exception:
+        safe_source_refs = []
+
     event = AILearningEvent(
         id=str(uuid4()),
         ai_log_id=log.id,
@@ -69,7 +80,7 @@ async def register_correction(
         original_text=log.resposta or "",
         corrected_text=corrected_text,
         reason=reason,
-        source_refs=source_refs or [],
+        source_refs=safe_source_refs,
         metadata_json={
             "model": log.modelo,
             "tipo_uso": getattr(log.tipo_uso, "value", str(log.tipo_uso)),
@@ -104,6 +115,11 @@ async def review_event(
 
     # Para transformar correção em gold/benchmark, exige revisão independente.
     independent = str(event.created_by or "") != str(user.id)
+    if approved and not independent:
+        raise HTTPException(
+            409,
+            "Aprovação do aprendizado exige revisor humano independente do autor.",
+        )
     eligible = bool(
         approved
         and independent
@@ -146,6 +162,7 @@ async def approved_learning_context(
         select(AILearningEvent)
         .where(
             AILearningEvent.approved.is_(True),
+            AILearningEvent.benchmark_eligible.is_(True),
             AILearningEvent.event_type == AILearningEventType.correction,
         )
         .order_by(AILearningEvent.approved_at.desc(), AILearningEvent.created_at.desc())
