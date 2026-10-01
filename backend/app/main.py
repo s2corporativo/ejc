@@ -93,6 +93,7 @@ from app.routers import ia_citacoes
 from app.routers import ia_defensiva
 from app.routers import ia_especializada
 from app.routers import ia_governanca
+from app.routers import ai_learning
 from app.routers import ia_saude
 from app.routers import indice_risco
 from app.routers import indices
@@ -473,6 +474,7 @@ app.include_router(ia_citacoes.router, prefix=API)
 app.include_router(ia_defensiva.router, prefix=API)
 app.include_router(ia_especializada.router, prefix=API)
 app.include_router(ia_governanca.router, prefix=API)
+app.include_router(ai_learning.router, prefix=API)
 app.include_router(ia_saude.router, prefix=API)
 app.include_router(ia_saude.router_status, prefix=API)  # GET /api/ia/status
 app.include_router(indice_risco.router, prefix=API)
