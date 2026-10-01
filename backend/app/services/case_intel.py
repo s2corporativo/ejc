@@ -335,6 +335,30 @@ async def aprendizado_encerramento(case_id: str) -> None:
                     tipo_uso=AITipoUso.outro, modelo=_modelo_log(resp),
                     prompt_sanitizado=base_limpo[:8000], pii_removida=houve_pii,
                     resposta=bruto[:8000], status_hitl=AIStatusHITL.gerado))
+
+            # O desfecho real entra também na fila de APRENDIZADO SUPERVISIONADO.
+            # Ele NÃO nasce aprovado: resultado processual isolado não transforma
+            # uma tese em regra e a lição gerada por IA precisa de curadoria humana.
+            from app.models.ai_learning import AILearningEvent, AILearningEventType
+            db.add(AILearningEvent(
+                id=str(uuid4()),
+                case_id=case.id,
+                created_by=case.advogado_responsavel_id,
+                event_type=AILearningEventType.outcome,
+                area=area or None,
+                original_text=base_limpo[:8000],
+                reason=(
+                    "Desfecho registrado no encerramento do caso; revisar contexto, "
+                    "causalidade e transferibilidade antes de reutilizar a lição."
+                ),
+                metadata_json={
+                    "source": "case_close",
+                    "resultado": resultado or None,
+                    "exito_classificado": bool(exito),
+                },
+                approved=False,
+                benchmark_eligible=False,
+            ))
             await db.commit()
 
             # Banco de Teses (transação separada — falha aqui não desfaz a memória).
