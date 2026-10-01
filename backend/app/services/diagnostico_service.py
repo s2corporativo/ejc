@@ -67,6 +67,70 @@ def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat() if dt is not None else None
 
 
+async def _probe_runtime_release(settings: Settings) -> dict[str, Any]:
+    inicio = time.perf_counter()
+    sha = (os.getenv("GIT_SHA") or "").strip()
+    deployed_at = (os.getenv("EJC_DEPLOYED_AT") or "").strip() or None
+    flags = {
+        "entrada_unica": bool(settings.ENTRADA_UNICA_ENABLED),
+        "financeiro": bool(settings.FINANCEIRO_ENABLED),
+        "ia": bool(settings.AI_ENABLED),
+        "ajuizamento": bool(settings.JUDICIAL_FILING_ENABLED),
+    }
+    sha_ok = len(sha) == 40 and all(c in "0123456789abcdef" for c in sha.lower())
+    return _sub(
+        "Release / Runtime",
+        "ok" if sha_ok else "alerta",
+        f"Release {sha[:8] if sha else 'desconhecida'} em execução"
+        + (f" desde {deployed_at}." if deployed_at else "."),
+        "Confirme o GIT_SHA injetado pelo deploy." if not sha_ok else "Nenhuma ação necessária.",
+        _ms(inicio),
+        commit=sha or None,
+        deployed_at=deployed_at,
+        feature_flags=flags,
+    )
+
+
+async def _probe_fila_async(settings: Settings) -> dict[str, Any]:
+    inicio = time.perf_counter()
+    if not settings.CELERY_ENABLED:
+        return _sub(
+            "Fila assíncrona / Redis", "desligado",
+            "Celery está desabilitado; tarefas usam fallback local quando previsto.",
+            "Nenhuma ação necessária se esta for a configuração esperada.",
+            _ms(inicio), redis=None, workers=0,
+        )
+
+    from app.tasks.dispatcher import _redis_alcancavel
+    redis_ok = await _redis_alcancavel(settings.REDIS_URL)
+    if not redis_ok:
+        return _sub(
+            "Fila assíncrona / Redis", "erro",
+            "Celery está habilitado, mas o Redis não respondeu ao ping.",
+            "Restabeleça o Redis; o dispatcher pode cair para BackgroundTasks onde houver fallback.",
+            _ms(inicio), redis=False, workers=0,
+        )
+
+    def _worker_count() -> int:
+        from app.core.celery_app import celery_app
+        respostas = celery_app.control.inspect(timeout=1.5).ping() or {}
+        return len(respostas)
+
+    try:
+        workers = await asyncio.wait_for(asyncio.to_thread(_worker_count), timeout=3.0)
+    except Exception:
+        workers = 0
+
+    return _sub(
+        "Fila assíncrona / Redis",
+        "ok" if workers > 0 else "alerta",
+        f"Redis operacional e {workers} worker(s) Celery responderam."
+        if workers > 0 else "Redis operacional, mas nenhum worker Celery respondeu ao ping.",
+        "Nenhuma ação necessária." if workers > 0 else "Verifique o container ejc_worker e os logs do Celery.",
+        _ms(inicio), redis=True, workers=workers,
+    )
+
+
 # ── Probe: Banco de dados ─────────────────────────────────────────────────────
 async def _probe_banco(session) -> dict[str, Any]:
     inicio = time.perf_counter()
@@ -755,8 +819,10 @@ async def diagnostico_completo(db=None) -> dict[str, Any]:
     settings = get_settings()
 
     tarefas = [
+        _rodar("Release / Runtime", _probe_runtime_release(settings)),
         _rodar("Banco de dados", _com_sessao(_probe_banco)),
         _rodar("Migrations (Alembic)", _com_sessao(_probe_migrations)),
+        _rodar("Fila assíncrona / Redis", _probe_fila_async(settings)),
         _rodar("IA / Provedores", _probe_ia(settings)),
         _rodar("Integrações externas", _probe_integracoes(settings)),
         _rodar("Embeddings / RAG", _probe_rag(settings)),
