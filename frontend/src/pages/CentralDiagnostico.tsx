@@ -74,6 +74,10 @@ type Subsistema = {
   feature_flags?: Record<string, boolean>;
   redis?: boolean | null;
   workers?: number;
+  backup_enabled?: boolean;
+  last_run_at?: string | null;
+  last_status?: string | null;
+  age_hours?: number | null;
 };
 
 type DiagnosticoPayload = {
@@ -448,6 +452,32 @@ function SubsistemaExtras({ sub }: { sub: Subsistema }) {
             tone={sub.workers > 0 ? "green" : "amber"}
             label={`${sub.workers} worker(s)`}
           />
+        )}
+      </div>,
+    );
+  }
+
+  // Backup — última execução efetiva, não apenas a configuração.
+  if (sub.backup_enabled != null || sub.last_run_at || sub.last_status) {
+    blocos.push(
+      <div key="backup" className="flex flex-wrap gap-2">
+        {sub.backup_enabled != null && (
+          <Chip
+            tone={sub.backup_enabled ? "green" : "amber"}
+            label={`backup: ${sub.backup_enabled ? "on" : "off"}`}
+          />
+        )}
+        {sub.last_run_at && (
+          <Chip tone="slate" label={`último backup: ${fmtDataHora(sub.last_run_at)}`} />
+        )}
+        {sub.last_status && (
+          <Chip
+            tone={sub.last_status === "sucesso" ? "green" : "amber"}
+            label={`status: ${sub.last_status}`}
+          />
+        )}
+        {sub.age_hours != null && (
+          <Chip tone="slate" label={`${sub.age_hours}h atrás`} />
         )}
       </div>,
     );

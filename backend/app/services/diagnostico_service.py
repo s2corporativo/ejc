@@ -631,42 +631,81 @@ async def _probe_heartbeat_jobs(session, settings: Settings) -> dict[str, Any]:
 
 
 # ── Probe: Backup offsite ─────────────────────────────────────────────────────
-async def _probe_backup(settings: Settings) -> dict[str, Any]:
-    """Sinaliza produção rodando SEM backup offsite (achado da auditoria): o
-    backup cifrado é o único mitigante do ponto único de falha do banco. Só
-    leitura de config — NÃO liga o backup."""
+async def _probe_backup(session, settings: Settings) -> dict[str, Any]:
+    """Expõe configuração e a última execução conhecida do backup, sem segredos."""
     inicio = time.perf_counter()
     producao = (settings.APP_ENV or "").strip().lower() == "production"
     habilitado = bool(settings.BACKUP_ENABLED)
+
+    last_run_at = None
+    last_status = None
+    age_hours = None
+    try:
+        from app.services import backup_service
+        estado = await backup_service.obter_estado(session)
+        if estado:
+            last_status = estado.get("last_status")
+            raw = estado.get("last_run_at")
+            if isinstance(raw, datetime):
+                last_dt = raw if raw.tzinfo else raw.replace(tzinfo=timezone.utc)
+            elif raw:
+                try:
+                    last_dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+                    if last_dt.tzinfo is None:
+                        last_dt = last_dt.replace(tzinfo=timezone.utc)
+                except ValueError:
+                    last_dt = None
+            else:
+                last_dt = None
+            if last_dt is not None:
+                last_dt = last_dt.astimezone(timezone.utc)
+                last_run_at = last_dt.isoformat()
+                age_hours = round(
+                    (datetime.now(timezone.utc) - last_dt).total_seconds() / 3600, 2
+                )
+    except Exception as exc:  # telemetria: não derruba o diagnóstico inteiro
+        logger.warning("[diagnostico] estado do backup indisponível: %s", type(exc).__name__)
+
+    extra = {
+        "app_env": settings.APP_ENV,
+        "backup_enabled": habilitado,
+        "last_run_at": last_run_at,
+        "last_status": last_status,
+        "age_hours": age_hours,
+    }
 
     if producao and not habilitado:
         return _sub(
             "Backup offsite",
             "alerta",
-            "Ambiente de PRODUÇÃO com BACKUP_ENABLED=false — o backup cifrado "
-            "offsite (único mitigante do ponto único de falha do banco) está "
-            "DESLIGADO.",
-            "Defina BACKUP_ENABLED=true (e BACKUP_ENCRYPTION_KEY) para proteger "
-            "os dados contra perda total.",
+            "Ambiente de PRODUÇÃO com BACKUP_ENABLED=false; proteção offsite está desligada.",
+            "Defina BACKUP_ENABLED=true e valide a execução mais recente.",
             _ms(inicio),
-            app_env=settings.APP_ENV, backup_enabled=habilitado,
+            **extra,
         )
     if habilitado:
-        return _sub(
-            "Backup offsite",
-            "ok",
-            "Backup cifrado offsite habilitado (BACKUP_ENABLED=true).",
-            "Nenhuma ação necessária.",
-            _ms(inicio),
-            app_env=settings.APP_ENV, backup_enabled=True,
+        detalhe = "Backup cifrado offsite habilitado."
+        if last_run_at:
+            detalhe += f" Última execução: {last_run_at}"
+            if last_status:
+                detalhe += f" ({last_status})."
+        else:
+            detalhe += " Nenhuma execução anterior foi localizada."
+        status = "ok" if last_run_at and last_status == "sucesso" else "alerta"
+        acao = (
+            "Nenhuma ação necessária."
+            if status == "ok"
+            else "Verifique o agendamento e a última execução do backup."
         )
+        return _sub("Backup offsite", status, detalhe, acao, _ms(inicio), **extra)
+
     return _sub(
         "Backup offsite",
         "desligado",
-        "Backup offsite desabilitado (BACKUP_ENABLED=false) fora de produção.",
-        "Em produção, habilite BACKUP_ENABLED=true para proteção contra perda total.",
+        "Backup offsite desabilitado fora de produção.",
+        "Em produção, habilite BACKUP_ENABLED=true.",
         _ms(inicio),
-        app_env=settings.APP_ENV, backup_enabled=False,
+        **extra,
     )
 
 
@@ -828,7 +867,7 @@ async def diagnostico_completo(db=None) -> dict[str, Any]:
         _rodar("Embeddings / RAG", _probe_rag(settings)),
         _rodar("Scheduler / jobs", _com_sessao(_probe_scheduler, settings)),
         _rodar("Jobs monitorados (heartbeat)", _com_sessao(_probe_heartbeat_jobs, settings)),
-        _rodar("Backup offsite", _probe_backup(settings)),
+        _rodar("Backup offsite", _com_sessao(_probe_backup, settings)),
         _rodar("Disco / uploads", _probe_disco(settings)),
         _rodar("Erros recentes", _probe_erros(settings)),
     ]
