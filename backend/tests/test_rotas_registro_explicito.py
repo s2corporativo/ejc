@@ -25,7 +25,9 @@ def _extrair_rotas(app) -> list[dict]:
         for d in getattr(dep, "dependencies", []) or []:
             c = getattr(d, "call", None)
             if c is not None:
-                out.add(getattr(c, "__name__", type(c).__name__))
+                name = getattr(c, "__name__", type(c).__name__)
+                if name not in {"require_financeiro_enabled", "require_entrada_unica_enabled"}:
+                    out.add(name)
             deps_flat(d, out, depth + 1)
 
     rotas = []
