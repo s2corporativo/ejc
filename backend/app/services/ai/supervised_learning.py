@@ -177,6 +177,49 @@ async def approved_learning_context(
     )
 
 
+async def pending_learning_events(
+    db: AsyncSession,
+    *,
+    user,
+    limit: int = 50,
+    independent_only: bool = True,
+) -> list[dict[str, Any]]:
+    """Fila de curadoria; texto já foi pseudonimizado na persistência."""
+    requer_equipe_juridica(user, "Curadoria do aprendizado é restrita à equipe jurídica.")
+    q = (
+        select(AILearningEvent)
+        .where(AILearningEvent.approved.is_(False))
+        .order_by(AILearningEvent.created_at.asc())
+        .limit(max(1, min(limit, 100)))
+    )
+    if independent_only:
+        q = q.where(
+            (AILearningEvent.created_by.is_(None))
+            | (AILearningEvent.created_by != user.id)
+        )
+    rows = (await db.execute(q)).scalars().all()
+    return [
+        {
+            "id": row.id,
+            "ai_log_id": row.ai_log_id,
+            "case_id": row.case_id,
+            "event_type": getattr(row.event_type, "value", str(row.event_type)),
+            "area": row.area,
+            "difficulty": row.difficulty,
+            "error_type": row.error_type,
+            "severity": row.severity,
+            "original_text": row.original_text,
+            "corrected_text": row.corrected_text,
+            "reason": row.reason,
+            "source_refs": row.source_refs or [],
+            "created_by": row.created_by,
+            "created_at": row.created_at,
+            "independent_review_required": True,
+        }
+        for row in rows
+    ]
+
+
 async def error_memory(
     db: AsyncSession,
     *,
