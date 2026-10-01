@@ -324,7 +324,7 @@ async def test_seed_governanca_categoria_confianca_chave(pipeline_mockado):
 async def test_maria_penha_preserva_chave_legada_e_registra_fonte_camara(pipeline_mockado):
     chamadas, _ = pipeline_mockado
     rel = await sl.executar_seed_legislacao(_FakeDB(), apenas="maria_penha")
-    assert not rel["falhas"] and rel["sucessos"] == ["maria_penha"]
+    assert not rel["falhas"] and list(rel["sucessos"]) == ["maria_penha"]
     chamada = chamadas[-1]
     assert chamada["chave_origem"] == "planalto:maria_penha"
     assert chamada["fonte"].startswith("https://www2.camara.leg.br/legin/")
