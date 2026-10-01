@@ -94,11 +94,25 @@ class _ScalarResultFake:
     def scalar_one_or_none(self):
         return self.value
 
+    def scalar(self):
+        return self.value
+
+
+class _RuleFake:
+    def __init__(self, pct):
+        self.id = "rule-test"
+        self.nome = "Regra teste"
+        self.escopo = "padrao"
+        self.percentual_advogado = Decimal(str(pct))
+        self.descontar_despesas = True
+        self.prioridade = 100
+        self.ativo = True
+
 
 class _FakeDB:
-    def __init__(self, socio_id=None):
+    def __init__(self, commission_pct=0):
         self.events = []
-        self.socio_id = socio_id
+        self.commission_pct = commission_pct
         self.withdrawal_params = None
         self.exec_count = 0
 
@@ -110,10 +124,23 @@ class _FakeDB:
 
     async def execute(self, statement, params=None):
         self.exec_count += 1
+        sql = str(statement)
+        descriptions = getattr(statement, "column_descriptions", None) or []
+        entity = descriptions[0].get("entity") if descriptions else None
+        entity_name = getattr(entity, "__name__", "")
+
+        if "finance_month_closings" in sql:
+            return _ScalarResultFake(None)
+        if entity_name == "CaseReceiptAllocation":
+            return _ScalarResultFake(None)
+        if entity_name == "CommissionRule":
+            return _ScalarResultFake(_RuleFake(self.commission_pct))
+        if "centro_custos" in sql or "despesas_deduzidas" in sql:
+            return _ScalarResultFake(0)
         if params and "gross" in params and "share" in params:
             self.withdrawal_params = params
             return _ScalarResultFake()
-        return _ScalarResultFake(self.socio_id)
+        return _ScalarResultFake(None)
 
 
 @pytest.mark.asyncio
@@ -141,15 +168,15 @@ async def test_rateio_nao_lanca_valor_bruto_como_retirada_do_advogado():
             value = "trabalhista"
         area = _Area()
 
-    db = _FakeDB(socio_id="socio-1")
+    db = _FakeDB(commission_pct=50)
     result = await registrar_recebimento_caso(
         db, CaseNaoCivil(), Decimal("100.00"), _UserFake()
     )
 
     assert result["valor_advogado"] == Decimal("50.00")
     assert db.withdrawal_params is not None
-    assert db.withdrawal_params["gross"] == Decimal("50.00")
-    assert db.withdrawal_params["net"] == Decimal("50.00")
+    assert db.withdrawal_params["gross"] == Decimal("100.00")
+    assert db.withdrawal_params["net"] == Decimal("100.00")
     assert db.withdrawal_params["share"] == Decimal("50.00")
 
 
@@ -183,15 +210,15 @@ async def test_recebimento_sem_responsavel_fica_pendente_sem_alocacao():
 
         area = _Area()
 
-    db = _FakeDB()
+    db = _FakeDB(commission_pct=50)
     result = await registrar_recebimento_caso(
         db, CaseSemResponsavel(), Decimal("2500.00"), _UserFake()
     )
 
     assert result["rateio_pendente"] is True
     assert result["allocation_id"] is None
-    assert result["valor_advogado"] is None
-    assert result["valor_escritorio"] is None
+    assert result.get("valor_advogado") is None
+    assert result.get("valor_escritorio") is None
     assert ("add", "CaseReceiptAllocation") not in db.events
     assert db.events[:4] == [
         ("add", "Fee"),
@@ -234,7 +261,7 @@ async def test_reconciliacao_rateio_50_50_exige_responsavel_definido():
 
     with pytest.raises(HTTPException) as exc:
         await reconciliar_rateios_pendentes(
-            _FakeDB(),
+            _FakeDB(commission_pct=50),
             CaseSemResponsavel(),
             _UserFake(),
         )

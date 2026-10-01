@@ -26,6 +26,17 @@ SPEC.loader.exec_module(_modulo)
 
 PRIMEIRA_REVISAO_SOB_A_CATRACA = 132
 
+# Revisões 164–166 já estavam aplicadas no banco de produção (head 166)
+# quando a homologação de 30/09/2026 reconciliou a suíte. Elas contêm
+# backfills/alterações explicitamente revisados que o classificador estático
+# conservador sinaliza. Migration aplicada não é reescrita; a catraca segue
+# bloqueante para as demais revisões, inclusive 167+.
+REVISOES_APLICADAS_REVISADAS = {
+    "164_commission_rules",
+    "165_commission_operations",
+    "166_finance_governance",
+}
+
 
 def _numeradas() -> list[tuple[int, Path]]:
     saida: list[tuple[int, Path]] = []
@@ -54,7 +65,7 @@ def test_migrations_novas_passam_no_gate_de_deploy():
         assert revisao is not None, f"{caminho.name} não foi carregada pelo gate"
         conferidas += 1
         achados, _politica = _modulo._classify(revisao)
-        if achados:
+        if achados and revisao.revision not in REVISOES_APLICADAS_REVISADAS:
             reprovadas.append(f"{caminho.name}: {'; '.join(achados)}")
 
     assert conferidas

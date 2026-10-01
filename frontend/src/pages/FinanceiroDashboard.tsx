@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ElementType } from "react";
+import { useNavigate } from "react-router";
 import {
   AlertCircle,
   CheckCircle2,
@@ -9,25 +10,50 @@ import {
   RefreshCw,
   TrendingDown,
   Wallet,
+  ShieldCheck,
+  Upload,
+  Landmark,
+  BarChart3,
+  Download,
 } from "lucide-react";
 import api from "../lib/api";
+import {
+  currentFinanceCompetence,
+  financeCompetenceLabel,
+  formatCurrency,
+} from "../lib/financeiro";
 import { Modal, Spinner } from "../components/UI";
 import { toast } from "../components/Toast";
+import { apiErrorMessage } from "../lib/apiError";
+import type {
+  DistributionAvailability,
+  FinanceAction as FinanceActionBase,
+  FinanceApproval,
+  FinanceClosing,
+  FinanceConsolidated,
+  FinanceExceptionItem,
+  FinanceExceptionsResponse,
+  MonthlyReport,
+  PreClosingResponse,
+  ReconciliationResponse,
+  ReconciliationSuggestion,
+  RentabilidadeResponse,
+} from "../types/financeiro";
 
-function fmtR$(value: number | undefined | null) {
-  return Number(value ?? 0).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
+const formatBRL = formatCurrency;
+const competenciaLabel = financeCompetenceLabel;
 
-function competenciaLabel(competencia: string) {
-  const [ano, mes] = competencia.split("-");
-  return `${mes}/${ano}`;
-}
-
-type FinanceDestino = "honorarios" | "despesas" | "nfse" | "contratos";
-type FinanceAction = { tab?: FinanceDestino; status?: string };
+type FinanceDestino =
+  | "visao"
+  | "honorarios"
+  | "despesas"
+  | "comissoes"
+  | "nfse"
+  | "contratos"
+  | "recorrentes"
+  | "societaria"
+  | "estimador";
+type FinanceAction = Omit<FinanceActionBase, "tab"> & { tab?: FinanceDestino };
 
 interface AtencaoItem {
   codigo: string;
@@ -114,7 +140,7 @@ function FlowRow({
       <div className="mb-1.5 flex items-center justify-between gap-4 text-sm">
         <span className="text-slate-500 dark:text-slate-400">{label}</span>
         <span className="font-semibold text-slate-800 dark:text-slate-100">
-          {fmtR$(value)}
+          {formatBRL(value)}
         </span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
@@ -129,44 +155,85 @@ function FlowRow({
   );
 }
 
-function competenciaAtual() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
-
 export default function FinanceiroDashboard({
-  competencia = competenciaAtual(),
+  competencia = currentFinanceCompetence(),
   onDrillDown,
   onNavigate,
 }: {
   competencia?: string;
-  onDrillDown?: (tab: "honorarios" | "despesas", status?: string) => void;
+  onDrillDown?: (
+    tab: "honorarios" | "despesas" | "comissoes",
+    status?: string,
+    focus?: string,
+  ) => void;
   onNavigate?: (tab: FinanceDestino) => void;
 }) {
-  const [data, setData] = useState<any>(null);
+  const navigate = useNavigate();
+  const [data, setData] = useState<FinanceConsolidated | null>(null);
   const [atencao, setAtencao] = useState<AtencaoItem[]>([]);
+  const [rentabilidade, setRentabilidade] =
+    useState<RentabilidadeResponse | null>(null);
+  const [excecoes, setExcecoes] = useState<FinanceExceptionsResponse>({
+    competencia,
+    itens: [],
+    total: 0,
+  });
+  const [fechamento, setFechamento] = useState<FinanceClosing | null>(null);
+  const [preFechamento, setPreFechamento] = useState<PreClosingResponse | null>(
+    null,
+  );
+  const [preparandoFechamento, setPreparandoFechamento] = useState(false);
+  const [distribuicao, setDistribuicao] =
+    useState<DistributionAvailability | null>(null);
+  const [aprovacoes, setAprovacoes] = useState<FinanceApproval[]>([]);
+  const [governancaAberta, setGovernancaAberta] = useState(false);
+  const [fechando, setFechando] = useState(false);
+  const [limite, setLimite] = useState("10000");
+  const [salvandoPolitica, setSalvandoPolitica] = useState(false);
+  const [bankFile, setBankFile] = useState<File | null>(null);
+  const [importandoBanco, setImportandoBanco] = useState(false);
+  const [conciliacao, setConciliacao] = useState<ReconciliationResponse | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [relatorioAberto, setRelatorioAberto] = useState(false);
   const [relatorioLoading, setRelatorioLoading] = useState(false);
-  const [relatorio, setRelatorio] = useState<any>(null);
+  const [relatorio, setRelatorio] = useState<MonthlyReport | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setErro(null);
 
-    const [consolidado, fila] = await Promise.allSettled([
+    const [
+      consolidado,
+      fila,
+      rent,
+      exc,
+      fechamentoResp,
+      distribuicaoResp,
+      politicaResp,
+      aprovacoesResp,
+    ] = await Promise.allSettled([
       api.get("/financeiro/consolidado", { params: { competencia } }),
       api.get("/financeiro/atencao"),
+      api.get("/financeiro/rentabilidade", { params: { competencia } }),
+      api.get("/financeiro/excecoes", { params: { competencia } }),
+      api.get(`/financeiro/fechamentos/${competencia}`),
+      api.get("/financeiro/distribuicao-disponivel", {
+        params: { competencia },
+      }),
+      api.get("/financeiro/politica"),
+      api.get("/financeiro/aprovacoes", { params: { status: "pendente" } }),
     ]);
 
     if (consolidado.status === "rejected") {
-      const e: any = consolidado.reason;
+      const e: unknown = consolidado.reason;
       setData(null);
       setAtencao([]);
-      setErro(
-        e?.response?.data?.detail || "Não foi possível carregar o financeiro.",
-      );
+      setRentabilidade(null);
+      setExcecoes({ competencia, itens: [], total: 0 });
+      setErro(apiErrorMessage(e, "Não foi possível carregar o financeiro."));
       setLoading(false);
       return;
     }
@@ -177,12 +244,60 @@ export default function FinanceiroDashboard({
         ? fila.value.data.itens
         : [],
     );
+    setRentabilidade(rent.status === "fulfilled" ? rent.value.data : null);
+    setExcecoes(
+      exc.status === "fulfilled"
+        ? exc.value.data
+        : { competencia, itens: [], total: 0 },
+    );
+    setFechamento(
+      fechamentoResp.status === "fulfilled" ? fechamentoResp.value.data : null,
+    );
+    setDistribuicao(
+      distribuicaoResp.status === "fulfilled"
+        ? distribuicaoResp.value.data
+        : null,
+    );
+    if (politicaResp.status === "fulfilled") {
+      setLimite(
+        String(politicaResp.value.data?.double_approval_threshold ?? 10000),
+      );
+    }
+    setAprovacoes(
+      aprovacoesResp.status === "fulfilled" &&
+        Array.isArray(aprovacoesResp.value.data)
+        ? aprovacoesResp.value.data
+        : [],
+    );
     setLoading(false);
   }, [competencia]);
 
   useEffect(() => {
+    setPreFechamento(null);
     load();
   }, [load]);
+
+  const baixarPacoteMensal = async () => {
+    try {
+      const response = await api.get(
+        `/relatorio/mensal/${competencia}/pacote`,
+        {
+          responseType: "blob",
+        },
+      );
+      const url = URL.createObjectURL(response.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `financeiro-${competencia}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Pacote financeiro mensal gerado.");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Falha ao gerar o pacote financeiro."));
+    }
+  };
 
   const abrirRelatorio = async () => {
     setRelatorioAberto(true);
@@ -192,23 +307,144 @@ export default function FinanceiroDashboard({
         params: { mes: competencia },
       });
       setRelatorio(r.data);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setRelatorioAberto(false);
-      toast.error(
-        e?.response?.data?.detail || "Falha ao carregar o relatório.",
-      );
+      toast.error(apiErrorMessage(e, "Falha ao carregar o relatório."));
     } finally {
       setRelatorioLoading(false);
     }
   };
 
-  const navegarAcao = (acao?: FinanceAction) => {
-    if (!acao?.tab) return;
-    if ((acao.tab === "honorarios" || acao.tab === "despesas") && onDrillDown) {
-      onDrillDown(acao.tab, acao.status);
+  const navegarAcao = (acao?: FinanceActionBase) => {
+    const tab = acao?.tab as FinanceDestino | undefined;
+    if (!tab) return;
+    if (
+      (tab === "honorarios" || tab === "despesas" || tab === "comissoes") &&
+      onDrillDown
+    ) {
+      onDrillDown(tab, acao?.status, acao?.focus);
       return;
     }
-    onNavigate?.(acao.tab);
+    onNavigate?.(tab);
+  };
+
+  const prepararFechamento = async () => {
+    if (preparandoFechamento) return;
+    setPreparandoFechamento(true);
+    try {
+      const { data } = await api.get("/financeiro/fechamento-inteligente", {
+        params: { competencia },
+      });
+      setPreFechamento(data);
+      if (data?.total_bloqueios > 0) {
+        toast.error(
+          `Fechamento preparado com ${data.total_bloqueios} bloqueio(s) a corrigir.`,
+        );
+      } else {
+        toast.success("Checklist preparado. A competência pode ser fechada.");
+      }
+    } catch (e: unknown) {
+      toast.error(
+        apiErrorMessage(e, "Não foi possível preparar o fechamento."),
+      );
+    } finally {
+      setPreparandoFechamento(false);
+    }
+  };
+
+  const fecharMes = async () => {
+    if (fechando || fechamento?.id) return;
+    if (!preFechamento) {
+      toast.error("Prepare o fechamento antes de bloquear a competência.");
+      return;
+    }
+    if (!preFechamento?.pode_fechar_persistente) {
+      toast.error("Corrija os bloqueios do checklist antes de fechar o mês.");
+      return;
+    }
+    setFechando(true);
+    try {
+      const { data } = await api.post("/financeiro/fechamentos", {
+        competencia,
+      });
+      const baseline = data?.snapshot?.reference_baseline;
+      toast.success(
+        baseline?.is_baseline
+          ? `Competência ${competencia} fechada. Snapshot financeiro de referência criado.`
+          : `Competência ${competencia} fechada e protegida.`,
+      );
+      await load();
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Não foi possível fechar a competência."));
+    } finally {
+      setFechando(false);
+    }
+  };
+
+  const salvarPolitica = async () => {
+    const valor = Number(limite);
+    if (!Number.isFinite(valor) || valor < 0) {
+      toast.error("Informe uma alçada válida.");
+      return;
+    }
+    setSalvandoPolitica(true);
+    try {
+      const { data } = await api.patch("/financeiro/politica", {
+        double_approval_threshold: valor,
+      });
+      toast.success("Alçada financeira atualizada.");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Falha ao atualizar alçada."));
+    } finally {
+      setSalvandoPolitica(false);
+    }
+  };
+
+  const aprovarSolicitacao = async (id: string) => {
+    try {
+      await api.post(`/financeiro/aprovacoes/${id}/aprovar`);
+      toast.success("Segunda aprovação concedida.");
+      await load();
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Falha ao aprovar pagamento."));
+    }
+  };
+
+  const importarExtrato = async () => {
+    if (!bankFile || importandoBanco) return;
+    setImportandoBanco(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", bankFile);
+      const { data } = await api.post("/bank-analysis/upload", fd);
+      const analysisId = data?.analise?.id;
+      if (!analysisId) throw new Error("Análise bancária sem identificador");
+      const recon = await api.get(`/financeiro/conciliacao/${analysisId}`);
+      setConciliacao(recon.data);
+      toast.success("Extrato importado. Sugestões de conciliação geradas.");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Falha ao importar o extrato."));
+    } finally {
+      setImportandoBanco(false);
+    }
+  };
+
+  const confirmarConciliacao = async (item: ReconciliationSuggestion) => {
+    try {
+      await api.post("/financeiro/conciliacao/confirmar", {
+        bank_transaction_id: item.bank_transaction_id,
+        target_type: item.target_type,
+        target_id: item.target_id,
+      });
+      const analysisId = conciliacao?.analise?.id;
+      if (analysisId) {
+        const { data } = await api.get(`/financeiro/conciliacao/${analysisId}`);
+        setConciliacao(data);
+      }
+      toast.success("Movimento conciliado.");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Falha na conciliação."));
+    }
   };
 
   if (loading) {
@@ -255,7 +491,25 @@ export default function FinanceiroDashboard({
         <p className="text-xs text-slate-400 dark:text-slate-500">
           {competenciaLabel(competencia)}
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {Number(excecoes?.total ?? 0) > 0 && (
+            <button
+              type="button"
+              onClick={() => setGovernancaAberta(true)}
+              className="btn-secondary text-sm"
+            >
+              <AlertCircle className="h-4 w-4 text-amber-500" />
+              {excecoes.total} exceção(ões)
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setGovernancaAberta(true)}
+            className="btn-secondary text-sm"
+          >
+            <ShieldCheck className="h-4 w-4" />
+            Governança
+          </button>
           <button
             type="button"
             onClick={abrirRelatorio}
@@ -279,10 +533,10 @@ export default function FinanceiroDashboard({
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard
           label="A receber"
-          value={fmtR$(aReceber)}
+          value={formatBRL(aReceber)}
           detail={
             atrasado > 0
-              ? `${fmtR$(atrasado)} em atraso`
+              ? `${formatBRL(atrasado)} em atraso`
               : "Sem atraso relevante"
           }
           icon={CircleDollarSign}
@@ -295,7 +549,7 @@ export default function FinanceiroDashboard({
         />
         <StatCard
           label="Recebido no mês"
-          value={fmtR$(recebido)}
+          value={formatBRL(recebido)}
           detail="Entradas efetivas no mês"
           icon={Wallet}
           tone="blue"
@@ -305,8 +559,8 @@ export default function FinanceiroDashboard({
         />
         <StatCard
           label="A pagar"
-          value={fmtR$(aPagar)}
-          detail={`${fmtR$(saidas)} pagos no mês`}
+          value={formatBRL(aPagar)}
+          detail={`${formatBRL(saidas)} pagos no mês`}
           icon={TrendingDown}
           tone="red"
           onClick={
@@ -315,12 +569,65 @@ export default function FinanceiroDashboard({
         />
         <StatCard
           label="Saldo"
-          value={fmtR$(caixa)}
+          value={formatBRL(caixa)}
           detail={`Margem ${Number(data?.margem_pct ?? 0).toLocaleString("pt-BR")}%`}
           icon={PiggyBank}
           tone={caixa >= 0 ? "green" : "red"}
         />
       </div>
+
+      <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900 dark:text-white">
+              <BarChart3 className="h-4 w-4 text-primary-500" />
+              Rentabilidade do escritório
+            </h2>
+            <p className="mt-0.5 text-xs text-slate-400">
+              Recebido − despesas dos casos − comissões − despesas gerais.
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-slate-400">Resultado líquido</p>
+            <p
+              className={`text-xl font-semibold ${
+                Number(rentabilidade?.resumo?.resultado_escritorio ?? 0) >= 0
+                  ? "text-emerald-700 dark:text-emerald-300"
+                  : "text-rose-700 dark:text-rose-300"
+              }`}
+            >
+              {formatBRL(
+                Number(rentabilidade?.resumo?.resultado_escritorio ?? 0),
+              )}
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          {(rentabilidade?.casos ?? [])
+            .slice(0, 3)
+            .map((item: RentabilidadeResponse["casos"][number]) => (
+              <div
+                key={item.case_id}
+                className="rounded-xl border border-slate-100 p-3 dark:border-slate-800"
+              >
+                <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
+                  {item.numero_interno || item.caso}
+                </p>
+                <p className="truncate text-xs text-slate-400">
+                  {item.cliente}
+                </p>
+                <p className="mt-2 text-sm font-semibold">
+                  {formatBRL(Number(item.resultado || 0))}
+                </p>
+              </div>
+            ))}
+          {(rentabilidade?.casos ?? []).length === 0 && (
+            <p className="text-sm text-slate-400">
+              Sem movimentação por caso nesta competência.
+            </p>
+          )}
+        </div>
+      </section>
 
       <div className="grid gap-4 lg:grid-cols-[1.35fr_0.65fr]">
         <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
@@ -370,7 +677,7 @@ export default function FinanceiroDashboard({
                   : "text-rose-700 dark:text-rose-300"
               }`}
             >
-              {fmtR$(caixa)}
+              {formatBRL(caixa)}
             </span>
           </div>
         </section>
@@ -385,7 +692,7 @@ export default function FinanceiroDashboard({
                 Em atraso
               </span>
               <strong className="text-sm text-rose-700 dark:text-rose-300">
-                {fmtR$(atrasado)}
+                {formatBRL(atrasado)}
               </strong>
             </div>
             <div className="flex items-center justify-between gap-3 py-3">
@@ -393,7 +700,7 @@ export default function FinanceiroDashboard({
                 Honorários futuros
               </span>
               <strong className="text-sm text-slate-800 dark:text-slate-100">
-                {fmtR$(honorariosFuturos)}
+                {formatBRL(honorariosFuturos)}
               </strong>
             </div>
             <div className="flex items-center justify-between gap-3 py-3">
@@ -401,7 +708,7 @@ export default function FinanceiroDashboard({
                 Despesas lançadas
               </span>
               <strong className="text-sm text-slate-800 dark:text-slate-100">
-                {fmtR$(despesasLancadas)}
+                {formatBRL(despesasLancadas)}
               </strong>
             </div>
           </div>
@@ -450,7 +757,7 @@ export default function FinanceiroDashboard({
                   </p>
                   <p className="mt-0.5 text-xs text-slate-400">
                     {item.qtd} {item.qtd === 1 ? "item" : "itens"}
-                    {item.valor != null ? ` · ${fmtR$(item.valor)}` : ""}
+                    {item.valor != null ? ` · ${formatBRL(item.valor)}` : ""}
                   </p>
                 </div>
                 <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 dark:text-slate-600" />
@@ -463,6 +770,315 @@ export default function FinanceiroDashboard({
       <p className="px-1 text-[11px] text-slate-400 dark:text-slate-600">
         Visão gerencial. Caixa considera apenas pagamentos e baixas efetivos.
       </p>
+
+      <Modal
+        open={governancaAberta}
+        onClose={() => setGovernancaAberta(false)}
+        title={`Governança financeira · ${competenciaLabel(competencia)}`}
+        wide
+      >
+        <div className="space-y-5">
+          <section>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="font-semibold">Fechamento da competência</h3>
+                <p className="text-xs text-slate-400">
+                  Mês fechado preserva o snapshot. Correções continuam possíveis
+                  com justificativa e auditoria.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {!fechamento?.id && (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={preparandoFechamento}
+                    onClick={prepararFechamento}
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                    {preparandoFechamento
+                      ? "Preparando..."
+                      : preFechamento
+                        ? "Atualizar checklist"
+                        : "Preparar fechamento"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={fechamento?.id ? "btn-secondary" : "btn-primary"}
+                  disabled={
+                    !!fechamento?.id ||
+                    fechando ||
+                    !preFechamento?.pode_fechar_persistente
+                  }
+                  onClick={fecharMes}
+                >
+                  {fechamento?.id
+                    ? "Competência fechada"
+                    : fechando
+                      ? "Fechando..."
+                      : "Fechar mês"}
+                </button>
+              </div>
+            </div>
+          </section>
+
+          {preFechamento && !fechamento?.id && (
+            <section className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="font-semibold">Checklist de fechamento</h3>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Integridade {preFechamento.score_integridade}% ·{" "}
+                    {preFechamento.total_bloqueios} bloqueio(s) ·{" "}
+                    {preFechamento.total_revisoes} revisão(ões)
+                  </p>
+                </div>
+                <span
+                  className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                    preFechamento.pode_fechar_persistente
+                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300"
+                      : "bg-rose-50 text-rose-700 dark:bg-rose-400/10 dark:text-rose-300"
+                  }`}
+                >
+                  {preFechamento.pode_fechar_persistente
+                    ? "Pronto para fechar"
+                    : "Correções obrigatórias"}
+                </span>
+              </div>
+              {[
+                ...(preFechamento.bloqueios ?? []),
+                ...(preFechamento.revisoes ?? []),
+              ].map((item: FinanceExceptionItem) => (
+                <button
+                  key={item.codigo}
+                  type="button"
+                  className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-left text-sm dark:bg-white/[0.04]"
+                  onClick={() => navegarAcao(item.acao)}
+                >
+                  <span>
+                    {item.severidade === "bloqueio" ? "Bloqueio" : "Revisar"} ·{" "}
+                    {item.titulo}
+                  </span>
+                  <strong>{item.qtd}</strong>
+                </button>
+              ))}
+              {preFechamento.total_bloqueios === 0 &&
+                preFechamento.total_revisoes === 0 && (
+                  <p className="mt-3 text-sm text-emerald-700 dark:text-emerald-300">
+                    Recebimentos, despesas e integridade financeira conferidos.
+                  </p>
+                )}
+            </section>
+          )}
+
+          <section className="border-t border-slate-100 pt-4 dark:border-slate-800">
+            <h3 className="font-semibold">Exceções</h3>
+            {(excecoes?.itens ?? []).length === 0 ? (
+              <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-300">
+                Nenhuma exceção financeira detectada.
+              </p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {(excecoes.itens ?? []).map((item: FinanceExceptionItem) => (
+                  <div
+                    key={item.codigo}
+                    className="rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-white/[0.04]"
+                  >
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between gap-3 text-left"
+                      onClick={() => navegarAcao(item.acao)}
+                    >
+                      <span>{item.titulo}</span>
+                      <strong>
+                        {item.qtd}
+                        {item.valor != null
+                          ? ` · ${formatBRL(Number(item.valor))}`
+                          : ""}
+                      </strong>
+                    </button>
+                    {(item.registros ?? []).length > 0 && (
+                      <div className="mt-2 space-y-1 border-t border-slate-200/70 pt-2 dark:border-slate-700">
+                        {(item.registros ?? []).slice(0, 5).map((registro) => (
+                          <button
+                            key={registro.id}
+                            type="button"
+                            className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs hover:bg-white dark:hover:bg-white/[0.06]"
+                            onClick={() => navegarAcao(registro.action)}
+                          >
+                            <span className="truncate">{registro.label}</span>
+                            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="border-t border-slate-100 pt-4 dark:border-slate-800">
+            <h3 className="font-semibold">Alçada e segunda aprovação</h3>
+            <div className="mt-3 flex flex-wrap items-end gap-2">
+              <label className="min-w-56 flex-1">
+                <span className="label">
+                  Limite para segunda aprovação (R$)
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  step="100"
+                  className="input"
+                  value={limite}
+                  onChange={(e) => setLimite(e.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={salvandoPolitica}
+                onClick={salvarPolitica}
+              >
+                Salvar alçada
+              </button>
+            </div>
+            {aprovacoes.length > 0 && (
+              <div className="mt-3 divide-y divide-slate-100 dark:divide-slate-800">
+                {aprovacoes.slice(0, 8).map((a) => (
+                  <div
+                    key={a.id}
+                    className="flex items-center justify-between gap-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">
+                        {a.entity_type === "office_expense"
+                          ? "Despesa"
+                          : a.entity_type}
+                        {" · "}
+                        {formatBRL(Number(a.amount || 0))}
+                      </p>
+                      <p className="truncate text-xs text-slate-400">
+                        Solicitado por {a.solicitado_por_nome || "usuário"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-secondary px-3 py-1 text-xs"
+                      onClick={() => aprovarSolicitacao(a.id)}
+                    >
+                      Aprovar
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="border-t border-slate-100 pt-4 dark:border-slate-800">
+            <h3 className="font-semibold">Conciliação bancária</h3>
+            <p className="mt-1 text-xs text-slate-400">
+              Importe OFX ou CSV. O EJC sugere correspondências por valor e
+              data; a confirmação continua humana.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <label className="input flex min-w-56 flex-1 cursor-pointer items-center gap-2">
+                <Upload className="h-4 w-4 text-slate-400" />
+                <span className="truncate text-sm">
+                  {bankFile?.name || "Selecionar OFX/CSV"}
+                </span>
+                <input
+                  type="file"
+                  accept=".ofx,.csv,.txt"
+                  className="hidden"
+                  onChange={(e) => setBankFile(e.target.files?.[0] || null)}
+                />
+              </label>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={!bankFile || importandoBanco}
+                onClick={importarExtrato}
+              >
+                {importandoBanco ? "Importando..." : "Importar e sugerir"}
+              </button>
+            </div>
+            {conciliacao && (
+              <div className="mt-3">
+                <p className="text-xs text-slate-400">
+                  {conciliacao.confirmados} conciliado(s) ·{" "}
+                  {conciliacao.pendentes} pendente(s)
+                </p>
+                <div className="mt-2 max-h-64 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
+                  {(conciliacao.sugestoes ?? [])
+                    .filter(
+                      (item: ReconciliationSuggestion) =>
+                        item.status !== "rejeitado",
+                    )
+                    .slice(0, 20)
+                    .map((item: ReconciliationSuggestion) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between gap-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm">
+                            {item.bank_description} ·{" "}
+                            {formatBRL(Number(item.bank_value))}
+                          </p>
+                          <p className="truncate text-xs text-slate-400">
+                            Sugestão: {item.label} · confiança{" "}
+                            {Math.round(Number(item.confidence || 0) * 100)}%
+                          </p>
+                        </div>
+                        {item.status === "confirmado" ? (
+                          <span className="text-xs text-emerald-600">
+                            Conciliado
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn-secondary px-2.5 py-1 text-xs"
+                            onClick={() => confirmarConciliacao(item)}
+                          >
+                            Confirmar
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          </section>
+
+          <section className="border-t border-slate-100 pt-4 dark:border-slate-800">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="font-semibold">Distribuição societária</h3>
+                <p className="text-xs text-slate-400">
+                  Resultado disponível:{" "}
+                  {formatBRL(Number(distribuicao?.disponivel ?? 0))}
+                  {distribuicao?.fechado
+                    ? " · mês fechado"
+                    : " · feche o mês antes de distribuir"}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={!distribuicao?.fechado}
+                onClick={() =>
+                  navigate("/gestao-escritorio/sociedade?sub=distribuicao")
+                }
+              >
+                <Landmark className="h-4 w-4" />
+                Ir para Sociedade
+              </button>
+            </div>
+          </section>
+        </div>
+      </Modal>
 
       <Modal
         open={relatorioAberto}
@@ -492,7 +1108,7 @@ export default function FinanceiroDashboard({
                 >
                   <p className="text-xs text-slate-400">{label}</p>
                   <p className="mt-1 font-semibold text-slate-900 dark:text-white">
-                    {fmtR$(Number(value ?? 0))}
+                    {formatBRL(Number(value ?? 0))}
                   </p>
                 </div>
               ))}
@@ -516,6 +1132,16 @@ export default function FinanceiroDashboard({
                 </p>
                 <p className="text-xs text-slate-400">Prazos vencidos</p>
               </div>
+            </div>
+            <div className="flex justify-end border-t border-slate-100 pt-4 dark:border-slate-800">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={baixarPacoteMensal}
+              >
+                <Download className="h-4 w-4" />
+                Baixar PDF + planilhas + auditoria
+              </button>
             </div>
             <p className="text-[11px] leading-relaxed text-slate-400">
               {relatorio.aviso}

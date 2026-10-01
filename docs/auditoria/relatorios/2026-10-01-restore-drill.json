@@ -1,0 +1,12 @@
+{
+  "alembic_version": "167_finance_fk_indexes",
+  "banco_temporario_removido": true,
+  "dump_bytes": 408715013,
+  "dump_cifrado_bytes": 544953444,
+  "dump_claro_removido_antes_da_restauracao": true,
+  "duracao_segundos": 782.25,
+  "executado_em": "2026-10-01T00:36:36.960909+00:00",
+  "marcador_integridade": true,
+  "status": "sucesso",
+  "tabelas_publicas": 182
+}

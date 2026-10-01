@@ -552,7 +552,9 @@ function PendingItemsPanel({
               )}
               <button
                 onClick={() => remove(item.id)}
-                className="p-1 text-slate-300 hover:text-danger-500 transition-colors"
+                aria-label="Remover pendência"
+                title="Remover pendência"
+                className="p-1.5 text-slate-300 hover:text-danger-500 transition-colors"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1281,6 +1283,8 @@ export default function DossieCliente() {
       <div className="flex items-start gap-3">
         <button
           onClick={() => navigate(-1)}
+          aria-label="Voltar"
+          title="Voltar"
           className="btn-ghost p-2 rounded-lg mt-1"
         >
           <ArrowLeft className="w-4 h-4" />

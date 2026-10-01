@@ -450,7 +450,7 @@ export default function OrquestradorPanel({
                             {rota && (
                               <Link
                                 to={rota.to}
-                                className="text-xs font-medium text-ouro-profundo underline underline-offset-2"
+                                className="text-xs font-medium text-primary-700 underline underline-offset-2"
                               >
                                 {rota.label}
                               </Link>

@@ -264,14 +264,14 @@ function AreaCard({
         <button
           type="button"
           onClick={() => onFavorito(area.slug)}
-          className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-black/[0.04] hover:text-ouro dark:hover:bg-white/[0.06]"
+          className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-primary-50 hover:text-primary-600 dark:hover:bg-white/[0.06]"
           aria-label={
             favorito ? "Remover dos favoritos" : "Adicionar aos favoritos"
           }
           title={favorito ? "Remover dos favoritos" : "Adicionar aos favoritos"}
         >
           <Star
-            className={`h-4 w-4 ${favorito ? "fill-current text-ouro" : ""}`}
+            className={`h-4 w-4 ${favorito ? "fill-current text-primary-600" : ""}`}
           />
         </button>
       </div>
@@ -421,7 +421,7 @@ export default function RamosHub() {
                 {grupo.titulo}
                 {temFavoritas && (
                   <span
-                    className="ml-2 text-xs font-normal text-ouro"
+                    className="ml-2 text-xs font-normal text-primary-600"
                     aria-hidden="true"
                   >
                     ★ favorita{favoritas.length > 1 ? "s" : ""}
