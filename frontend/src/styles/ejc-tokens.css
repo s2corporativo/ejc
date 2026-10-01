@@ -1529,8 +1529,11 @@ html:not(.dark) .sidebar-bronze > div:last-of-type {
 .ejc-dash__extra-head > a {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  font-size: 9.5px;
+  gap: 3px;
+  min-height: 32px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  font-size: 11px;
   color: var(--ejc-primary);
   text-decoration: none;
 }
@@ -3527,6 +3530,9 @@ html:not(.dark) .ejc-my-day {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-height: 32px;
+  padding: 4px 6px;
+  border-radius: 8px;
   color: #255da8;
   font-size: 12px;
   font-weight: 650;
@@ -4424,5 +4430,16 @@ html:not(.dark) .ejc-my-day__grid {
 @media (max-width: 430px) {
   html:not(.dark) .ejc-my-day__grid {
     grid-template-columns: 1fr !important;
+  }
+}
+
+
+/* Alvos de toque do Dashboard — homologação 30/09/2026. */
+@media (pointer: coarse) {
+  .ejc-dash__panel-more,
+  .ejc-dash__extra-head > a,
+  .ejc-my-day__head > a {
+    min-height: 44px;
+    padding-inline: 8px;
   }
 }
