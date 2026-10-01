@@ -86,6 +86,26 @@ def _classificar_backup_estado(
     }
 
 
+def _detail_erro_fonte(slug: str, ultimo_erro: str | None) -> str:
+    """Traduz causas conhecidas em diagnóstico sanitizado, sem payload/PII."""
+    erro = (ultimo_erro or "").lower()
+    if slug == "djen" and "geo_bloqueado" in erro:
+        return (
+            "DJEN/Comunica recusou a origem de rede por restrição geográfica; "
+            "a captura foi interrompida e não deve ser considerada concluída."
+        )
+    if slug == "lexml" and ("anti-bot" in erro or "desafio" in erro):
+        return (
+            "LexML respondeu com desafio anti-bot; a ingestão foi interrompida "
+            "sem tentativa de contornar a proteção externa."
+        )
+    if slug == "tjmg" and ("http 401" in erro or "http 403" in erro):
+        return (
+            "O portal público de jurisprudência do TJMG recusou a consulta; "
+            "o ciclo foi interrompido sem repetição automática."
+        )
+    return f"Última execução de {slug} falhou; consulte o diagnóstico da fonte."
+
 async def coletar_estados_operacionais(db: AsyncSession) -> dict[str, dict[str, Any]]:
     """Lê estado persistido; não faz chamadas externas nem expõe erro bruto."""
     estados: dict[str, dict[str, Any]] = {}
@@ -105,7 +125,7 @@ async def coletar_estados_operacionais(db: AsyncSession) -> dict[str, dict[str, 
             status = (fonte.ultimo_status or "").strip().lower()
             if status == "erro":
                 state = "erro"
-                detail = f"Última execução de {fonte.slug} falhou; consulte o diagnóstico da fonte."
+                detail = _detail_erro_fonte(fonte.slug, fonte.ultimo_erro)
             elif status == "parcial":
                 state = "alerta"
                 detail = f"Última execução de {fonte.slug} foi parcial; há itens/falhas a revisar."
