@@ -142,4 +142,14 @@ EJC_DOMAIN="ejc.depaulateixeira.adv.br" \
   bash "$APP_DIR/scripts/post_deploy_smoke.sh" "$TARGET_SHA"
 rm -f -- "$APP_DIR/.deploy_last_sha"
 chmod 600 "$APP_DIR/.deployed_sha"
+
+# Higiene pós-release é deliberadamente não-bloqueante: falha de limpeza não
+# invalida um runtime já homologado. O relatório permanece em /var/lib/ejc-maintenance.
+if [ -x "$APP_DIR/scripts/post_release_hygiene.sh" ]; then
+  if bash "$APP_DIR/scripts/post_release_hygiene.sh" "$TARGET_SHA"; then
+    log "higiene pós-release concluída"
+  else
+    log "AVISO: higiene pós-release terminou com pendências; produção permanece válida"
+  fi
+fi
 log "deploy concluido com identidade e smoke pós-deploy confirmados: $TARGET_SHA"
