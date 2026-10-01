@@ -230,14 +230,14 @@ steps:
       # PR de release executa a suíte integral. O gate rápido deve sair antes de
       # tocar no banco para não concorrer com backend-tests no mesmo PostgreSQL.
       - |
-        if git diff --name-only origin/main...HEAD | grep -Fxq 'config/release_candidate.json'; then
+        if git diff --name-only origin/main HEAD | grep -Fxq 'config/release_candidate.json'; then
           echo "release candidate: backend-fast coberto por backend-tests; encerrando gate rápido sem duplicar DB/testes."
           exit 0
         fi
       - pip install --quiet -r backend/requirements.txt
       - python -m compileall backend/app -q
       - until pg_isready -h db -U ejc_user -q; do sleep 1; done
-      - cd backend && python -m alembic upgrade head && cd ..
+      - (cd backend && python -m alembic upgrade head)
       - python scripts/ci_affected_tests.py --stack backend --base origin/main > /tmp/ejc-backend-affected.txt
       - test -s /tmp/ejc-backend-affected.txt
       - cd backend && xargs -r pytest -q < /tmp/ejc-backend-affected.txt
@@ -344,13 +344,13 @@ steps:
       # Evita dois `npm ci` simultâneos no MESMO workspace (frontend-fast e
       # frontend integral), causa observada de ENOTEMPTY/tsc ausente.
       - |
-        if git diff --name-only origin/main...HEAD | grep -Fxq 'config/release_candidate.json'; then
+        if git diff --name-only origin/main HEAD | grep -Fxq 'config/release_candidate.json'; then
           echo "release candidate: frontend-fast coberto por frontend integral; encerrando gate rápido sem tocar node_modules."
           exit 0
         fi
-      - cd frontend && npm ci --prefer-offline
-      - cd frontend && npm run lint
-      - cd frontend && npm run audit:css:verificar
+      - npm --prefix frontend ci --prefer-offline
+      - npm --prefix frontend run lint
+      - npm --prefix frontend run audit:css:verificar
       - python3 scripts/ci_affected_tests.py --stack frontend --base origin/main > /tmp/ejc-frontend-affected.txt
       - test -s /tmp/ejc-frontend-affected.txt
       - cd frontend && xargs -r npx vitest run --maxWorkers=2 --no-file-parallelism < /tmp/ejc-frontend-affected.txt
