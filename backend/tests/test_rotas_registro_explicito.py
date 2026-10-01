@@ -51,6 +51,13 @@ def _extrair_rotas(app) -> list[dict]:
 # Adições INTENCIONAIS posteriores ao snapshot. O registro explícito (§4.1) não
 # pode criar nem remover rota; qualquer outra novidade falha o teste.
 ADICOES_INTENCIONAIS = {
+    # Aprendizado supervisionado jurídico: correção humana, revisão
+    # independente, memória de erros e backfill idempotente de desfechos.
+    ("/api/ia-learning/corrections", "POST"),
+    ("/api/ia-learning/{event_id}/review", "POST"),
+    ("/api/ia-learning/summary", "GET"),
+    ("/api/ia-learning/errors", "GET"),
+    ("/api/ia-learning/outcomes/backfill", "POST"),
     # Dashboard/Sala Jurídica — release #1657. Novas superfícies autenticadas;
     # não removem nem afrouxam rotas existentes.
     ("/api/atividades/alertas-inteligentes", "GET"),
