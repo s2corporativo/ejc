@@ -354,3 +354,21 @@ def test_jurimetria_habilitada_sem_datajud_fica_attention(monkeypatch):
     assert item["enabled"] is True
     assert item["configured"] is False
     assert item["status"] == "attention"
+
+
+def test_diagnostico_sanitizado_de_fontes_externas():
+    from app.services.integration_runtime_status import _detail_erro_fonte
+
+    djen = _detail_erro_fonte(
+        "djen", "DjenContratoError: causas=geo_bloqueado:3; OAB omitida"
+    )
+    lexml = _detail_erro_fonte(
+        "lexml", "LexMLBloqueadoError: desafio anti-bot"
+    )
+    tjmg = _detail_erro_fonte(
+        "tjmg", "RuntimeError: portal recusou consulta HTTP 401"
+    )
+    assert "restrição geográfica" in djen
+    assert "OAB" not in djen
+    assert "anti-bot" in lexml
+    assert "recusou" in tjmg
