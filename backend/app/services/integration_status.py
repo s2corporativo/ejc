@@ -8,6 +8,7 @@ from typing import Any
 from app.core.config import Settings
 from app.services.ai.provider_registry import PROVIDERS_SUPORTADOS, provider_elegivel_com
 from app.services.notification_preferences import whatsapp_configurado
+from app.integrations.feature_flags import enabled as integration_flag_enabled
 
 
 @dataclass(frozen=True)
@@ -533,6 +534,109 @@ def build_integration_status(
                 "OpenCNPJ/BrasilAPI/ReceitaWS pública para CNPJ."
             ),
             mode="consulta anônima com rate limit; sem Conecta gov.br",
+        ),
+        _status(
+            key="cnj_sgt",
+            label="CNJ/SGT — Tabelas Processuais Unificadas",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("cnj_sgt"),
+            configured=True,
+            ready_detail="Conector público CNJ/SGT habilitado; não exige credencial.",
+            mode="API pública oficial",
+        ),
+        _status(
+            key="tcu",
+            label="TCU — Dados Abertos",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("tcu"),
+            configured=True,
+            ready_detail="Conector público do TCU habilitado; não exige credencial.",
+            mode="dados abertos oficiais",
+        ),
+        _status(
+            key="ibge",
+            label="IBGE — Localidades",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("ibge"),
+            configured=True,
+            ready_detail="Conector público do IBGE habilitado; não exige credencial.",
+            mode="API pública oficial",
+        ),
+        _status(
+            key="ibama",
+            label="IBAMA — Dados Abertos",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("ibama"),
+            configured=True,
+            ready_detail="Conector CKAN do IBAMA habilitado; não exige credencial.",
+            mode="catálogo oficial de dados abertos",
+        ),
+        _status(
+            key="consumidor_gov",
+            label="Consumidor.gov.br / MJ — Dados Abertos",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("mj"),
+            configured=True,
+            ready_detail="Conector CKAN do Ministério da Justiça habilitado; não exige credencial.",
+            mode="catálogo oficial de dados abertos",
+        ),
+        _status(
+            key="cvm",
+            label="CVM — Dados Abertos",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("cvm"),
+            configured=True,
+            ready_detail="Conector CKAN da CVM habilitado; não exige credencial.",
+            mode="catálogo oficial de dados abertos",
+        ),
+        _status(
+            key="tse",
+            label="TSE — Dados Abertos",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("tse"),
+            configured=True,
+            ready_detail="Conector CKAN do TSE habilitado; não exige credencial.",
+            mode="catálogo oficial de dados abertos",
+        ),
+        _status(
+            key="pgfn",
+            label="PGFN — Dívida Ativa / Dados Abertos",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("pgfn"),
+            configured=True,
+            ready_detail="Conector público da PGFN habilitado; não exige credencial.",
+            mode="catálogo bulk oficial",
+        ),
+        _status(
+            key="querido_diario",
+            label="Querido Diário",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("querido_diario"),
+            configured=True,
+            ready_detail=(
+                "Agregador municipal habilitado; resultados exigem preservação "
+                "do link da fonte oficial para conferência."
+            ),
+            mode="fonte secundária pública",
+        ),
+        _status(
+            key="ide_sisema",
+            label="IDE-Sisema / MG",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("ide_sisema"),
+            configured=True,
+            ready_detail="Conector público WFS do Sisema/MG habilitado; não exige credencial.",
+            mode="geodados ambientais oficiais",
+        ),
+        _status(
+            key="jurimetria_tribunais",
+            label="Jurimetria dos Tribunais / DataJud",
+            group="Serviços específicos",
+            enabled=integration_flag_enabled("jurimetria_tribunais"),
+            configured=bool(settings.DATAJUD_ENABLED and settings.DATAJUD_API_KEY),
+            ready_detail="Jurimetria habilitada sobre os índices públicos do DataJud.",
+            missing_detail="Jurimetria habilitada, mas DataJud não está configurado.",
+            mode="DataJud agregado",
         ),
         _status(
             key="infosimples",
