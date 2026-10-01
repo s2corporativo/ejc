@@ -113,7 +113,7 @@ log "sincronizando somente o SHA aprovado sob mutex"
 rsync -a --delete \
   --exclude '.git/' \
   --exclude '.env' --exclude '.env.*' \
-  --exclude '.deployed_sha' --exclude '.deploy_last_sha' \
+  --exclude '.deployed_sha' --exclude '.rollback_last_sha' --exclude '.deploy_last_sha' \
   --exclude 'uploads/' --exclude 'backups/' \
   --exclude 'logs/' --exclude 'data/' --exclude 'storage/' \
   --exclude 'secrets/' --exclude 'certs/' --exclude 'tmp/' \
