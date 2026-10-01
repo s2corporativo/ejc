@@ -61,27 +61,27 @@ export default {
         // Sidebar clara: branco com hover neutro quente e realce ouro palha.
         sidebar: {
           DEFAULT: "#FFFFFF",
-          light: "#FAF9F6",
-          hover: "#F8F6F0",
-          active: "#F7F1DC",
+          light: "#F8FAFC",
+          hover: "#F1F5F9",
+          active: "#E8F1FF",
         },
         // Primária — OURO institucional "De Paula Teixeira" (escala oficial
         // dos PDFs Visual Law). 600 #8F7117 = ação (texto branco 4,6:1 AA);
         // 700 #6F5711 = hover/texto-acento forte (6,9:1); 900 #3B2F0B =
         // near-black de títulos (13,2:1 AAA); 50/100 = palha (fundos suaves).
         primary: {
-          DEFAULT: "#8F7117",
-          50: "#FAF6E7",
-          100: "#F7F1DC",
-          200: "#EFE3B4",
-          300: "#E5CE7F",
-          400: "#C9A227",
-          500: "#A6842A",
-          600: "#8F7117",
-          700: "#6F5711",
-          800: "#55420D",
-          900: "#3B2F0B",
-          950: "#2A2108",
+          DEFAULT: "#2563EB",
+          50: "#EFF6FF",
+          100: "#DBEAFE",
+          200: "#BFDBFE",
+          300: "#93C5FD",
+          400: "#60A5FA",
+          500: "#3B82F6",
+          600: "#2563EB",
+          700: "#1D4ED8",
+          800: "#1E40AF",
+          900: "#1E3A8A",
+          950: "#172554",
         },
         // IA — violeta reservado a superfícies e ações de inteligência.
         ai: {
@@ -164,8 +164,8 @@ export default {
         },
         // Canvas branco/off-white QUENTE (pedido do dono: base branca,
         // nada de cinza pesado) + hairline quente quase invisível.
-        canvas: "#FFFFFF",
-        parchment: "#F7F9FC",
+        canvas: "#F7F8FA",
+        parchment: "#F8FAFC",
         muted: "#667085",
         border: "#E5EAF0",
         // Status — success=mint (#0CA678), danger/error=soft-red (#E03131),
@@ -266,11 +266,13 @@ export default {
           "sans-serif",
         ],
         serif: [
-          '"Playfair Display"',
-          "Georgia",
-          "Cambria",
-          '"Times New Roman"',
-          "serif",
+          '"Inter"',
+          "ui-sans-serif",
+          "system-ui",
+          "-apple-system",
+          '"Segoe UI"',
+          "Roboto",
+          "sans-serif",
         ],
         // Mono de sistema — dados processuais (nº CNJ, CPF/CNPJ, valores).
         // Sem fonte externa: usa o que já existe no SO.

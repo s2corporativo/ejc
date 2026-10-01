@@ -20,6 +20,7 @@ from app.core.security import get_current_user, requer_equipe_juridica
 from app.models.user import User
 from app.models.bank_analysis import BankAnalysis, BankTransaction, BankAbusiveCharge
 from app.services.bank_statement import parse_extrato, detectar_abusivas
+from app.services.finance_document_service import preparar_extrato_no_ged
 from app.services import bank_report
 from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.core.rate_limit import rate_limit
@@ -61,13 +62,19 @@ async def upload(
         raise HTTPException(413, "Arquivo excede 25MB")
 
     aid = str(uuid4())
+    ged = await preparar_extrato_no_ged(
+        db,
+        cu,
+        conteudo=conteudo,
+        filename=file.filename or f"extrato.{fmt}",
+        mimetype=file.content_type,
+        formato=fmt,
+        case_id=case_id or None,
+        client_id=client_id or None,
+    )
     try:
         if fmt == "pdf":
-            os.makedirs(f"{settings.UPLOAD_DIR}/bank", exist_ok=True)
-            caminho = f"{settings.UPLOAD_DIR}/bank/{aid}.pdf"
-            with open(caminho, "wb") as f:
-                f.write(conteudo)
-            transacoes = parse_extrato("pdf", caminho)
+            transacoes = parse_extrato("pdf", str(ged.caminho_absoluto))
         else:
             try:
                 texto = conteudo.decode("utf-8")
@@ -75,7 +82,12 @@ async def upload(
                 texto = conteudo.decode("latin-1", errors="ignore")
             transacoes = parse_extrato(fmt, texto)
     except Exception as e:
-        raise HTTPException(422, f"Falha ao ler o extrato: {e}")
+        await db.rollback()
+        try:
+            ged.caminho_absoluto.unlink()
+        except FileNotFoundError:
+            pass
+        raise HTTPException(422, f"Falha ao ler o extrato: {e}") from e
 
     if not transacoes:
         raise HTTPException(422, "Nenhuma transação reconhecida no arquivo. "
@@ -93,6 +105,7 @@ async def upload(
     db.add(BankAnalysis(
         id=aid, case_id=case_id or None, client_id=client_id or None,
         banco=banco or None, formato=fmt, arquivo_nome=(file.filename or "")[:255],
+        document_id=ged.documento.id,
         periodo_inicio=min(datas) if datas else None,
         periodo_fim=max(datas) if datas else None,
         total_transacoes=len(transacoes),
@@ -114,7 +127,15 @@ async def upload(
             descricao=c.get("descricao"), base_legal=c.get("base_legal"),
             prioridade=c.get("prioridade"), valor=c.get("valor"),
         ))
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        try:
+            ged.caminho_absoluto.unlink()
+        except FileNotFoundError:
+            pass
+        raise
     return await detalhe(aid, db, cu)
 
 

@@ -172,15 +172,18 @@ describe("EJC — tema canônico neutro com acento único e ouro de marca", () =
 });
 
 describe("EJC — shell canônico", () => {
-  it("mantém a marca, a navegação canônica e a largura do menu", () => {
-    expect(layout).toContain("md:w-[17rem]");
-    expect(layout).toContain("md:left-[17rem]");
+  it("mantém a marca, a navegação canônica e a largura V4 do menu", () => {
+    expect(layout).toContain('"md:w-64"');
+    expect(layout).toContain('"md:ml-64"');
+    expect(layout).toContain('"md:left-64"');
+    expect(layout).toContain('"md:w-[4.5rem]"');
+    expect(layout).toContain('"md:left-[4.5rem]"');
     expect(layout).toContain("z-[60]");
     expect(layout).toContain("md:z-40");
     expect(layout).toContain("ejc-sidebar-brand__logo");
     expect(layout).toContain("selectMainNavigation");
     expect(layout).toContain("officeName");
-    expect(layout).not.toContain("md:w-[15.5rem]");
+    expect(layout).not.toContain("md:w-[17rem]");
     expect(layout).not.toContain("SidebarWeekCalendar");
   });
 
@@ -200,12 +203,10 @@ describe("EJC — shell canônico", () => {
     expect(tokens).toContain(".sidebar-week");
   });
 
-  it("mantém o epígrafe legível enquanto o shell ainda o renderiza", () => {
-    // A regra base em ejc-dashboard-premium.css fixa o texto do epígrafe em
-    // branco translúculo para a sidebar escura; com a sidebar clara o texto
-    // sumiria. A camada clara precisa devolver a tinta neutra.
-    expect(layout).toContain("ejc-sidebar-epigraph");
-    expect(tokens).toContain("html:not(.dark) .ejc-sidebar-epigraph__quote");
+  it("não renderiza epígrafe decorativo na sidebar operacional V4", () => {
+    // O V4 removeu foto/citação institucional para priorizar navegação,
+    // recentes e agenda no espaço vertical do workspace.
+    expect(layout).not.toContain("ejc-sidebar-epigraph");
   });
 
   it("mantém o menu, a busca global e o relógio do header", () => {

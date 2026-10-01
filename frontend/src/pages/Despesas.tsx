@@ -2,6 +2,14 @@ import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router";
 import { Plus, Check, Trash2, RefreshCw, Filter, Download } from "lucide-react";
 import api from "../lib/api";
+import { apiErrorMessage } from "../lib/apiError";
+import {
+  FINANCE_CATEGORIES,
+  FINANCE_CATEGORY_LABELS,
+  EXPENSE_STATUSES,
+  formatCurrency,
+  type ExpenseStatus,
+} from "../lib/financeiro";
 import { toast } from "../components/Toast";
 import {
   Modal,
@@ -25,41 +33,15 @@ interface Despesa {
   pago_em?: string;
   recorrente: boolean;
   recorrencia?: string;
-  status: "pendente" | "pago" | "cancelado";
+  status: ExpenseStatus;
   competencia?: string;
+  comprovante_doc_id?: string;
   created_at: string;
 }
 
-const CATEGORIAS = [
-  "infraestrutura",
-  "tecnologia",
-  "pessoal",
-  "oab",
-  "marketing",
-  "operacao",
-  "fiscal",
-  "investimento",
-  "outro",
-];
-
-const CAT_LABEL: Record<string, string> = {
-  infraestrutura: "Infraestrutura",
-  tecnologia: "Tecnologia",
-  pessoal: "Pessoal / Pró-labore",
-  oab: "OAB / Anuidade",
-  marketing: "Marketing",
-  operacao: "Operação",
-  fiscal: "Fiscal / Contab.",
-  investimento: "Investimento",
-  outro: "Outros",
-};
-
-function fmtR$(v: number) {
-  return (v ?? 0).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
+const CATEGORIAS = FINANCE_CATEGORIES;
+const CAT_LABEL = FINANCE_CATEGORY_LABELS;
+const formatBRL = formatCurrency;
 
 interface FormState {
   categoria: string;
@@ -68,10 +50,13 @@ interface FormState {
   descricao: string;
   valor: string;
   vencimento: string;
+  pago_em: string;
   recorrente: boolean;
   recorrencia: string;
-  status: "pendente" | "pago" | "cancelado";
+  status: ExpenseStatus;
   competencia: string;
+  comprovante_doc_id: string;
+  motivo_correcao: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -81,19 +66,24 @@ const EMPTY_FORM: FormState = {
   descricao: "",
   valor: "",
   vencimento: "",
+  pago_em: "",
   recorrente: false,
   recorrencia: "mensal",
   status: "pendente",
   competencia: "",
+  comprovante_doc_id: "",
+  motivo_correcao: "",
 };
 
-const STATUS_VALIDOS = ["pendente", "pago", "cancelado"];
+const STATUS_VALIDOS = EXPENSE_STATUSES;
 
 export default function Despesas({
   competencia,
+  focusId,
 }: {
   /** Competência (AAAA-MM) — controlada pelo FinanceiroWorkspace. */
   competencia?: string;
+  focusId?: string;
 }) {
   const [items, setItems] = useState<Despesa[]>([]);
   const [loading, setLoading] = useState(true);
@@ -108,7 +98,9 @@ export default function Despesas({
   const [filterCat, setFilterCat] = useState("");
   const [filterStatus, setFilterStatus] = useState(() => {
     const s = searchParams.get("status");
-    return s && STATUS_VALIDOS.includes(s) ? s : "";
+    return s && STATUS_VALIDOS.some((status) => status === s)
+      ? (s as ExpenseStatus)
+      : "";
   });
   const filterComp = competencia ?? "";
 
@@ -152,6 +144,15 @@ export default function Despesas({
     load();
   }, [load]);
 
+  useEffect(() => {
+    if (!focusId || !items.length) return;
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`finance-expense-${focusId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [focusId, items]);
+
   function openNew() {
     setForm({ ...EMPTY_FORM, competencia: filterComp });
     setEditId(null);
@@ -180,48 +181,78 @@ export default function Despesas({
       descricao: d.descricao,
       valor: String(d.valor),
       vencimento: d.vencimento ?? "",
+      pago_em: d.pago_em ?? "",
       recorrente: d.recorrente,
       recorrencia: d.recorrencia ?? "mensal",
       status: d.status,
       competencia: d.competencia ?? "",
+      comprovante_doc_id: d.comprovante_doc_id ?? "",
+      motivo_correcao: "",
     });
     setEditId(d.id);
     setShowForm(true);
   }
 
   async function save() {
-    const payload = {
+    const payload: Record<string, unknown> = {
       ...form,
       valor: parseFloat(form.valor) || 0,
-      vencimento: form.vencimento || undefined,
-      subcategoria: form.subcategoria || undefined,
-      competencia: form.competencia || undefined,
-      recorrencia: form.recorrente ? form.recorrencia : undefined,
+      vencimento: editId
+        ? form.vencimento || null
+        : form.vencimento || undefined,
+      pago_em: editId ? form.pago_em || null : form.pago_em || undefined,
+      subcategoria: editId
+        ? form.subcategoria || null
+        : form.subcategoria || undefined,
+      competencia: editId
+        ? form.competencia || null
+        : form.competencia || undefined,
+      comprovante_doc_id: editId
+        ? form.comprovante_doc_id || null
+        : form.comprovante_doc_id || undefined,
+      recorrencia: editId
+        ? form.recorrente
+          ? form.recorrencia
+          : null
+        : form.recorrente
+          ? form.recorrencia
+          : undefined,
     };
+    if (!editId) delete payload.motivo_correcao;
     try {
-      if (editId) {
-        await api.patch(`/despesas/${editId}`, payload);
+      const response = editId
+        ? await api.patch(`/despesas/${editId}`, payload)
+        : await api.post("/despesas", payload);
+      if (response.data?.approval_required) {
+        toast.info(
+          `Pagamento acima da alçada. Segunda aprovação solicitada antes da baixa.`,
+        );
       } else {
-        await api.post("/despesas", payload);
+        toast.success(editId ? "Despesa atualizada." : "Despesa criada.");
       }
       setShowForm(false);
       load();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Erro ao salvar a despesa");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Erro ao salvar a despesa"));
     }
   }
 
   async function marcarPago(id: string) {
     try {
-      await api.patch(`/despesas/${id}`, {
+      const { data } = await api.patch(`/despesas/${id}`, {
         status: "pago",
         pago_em: new Date().toISOString().split("T")[0],
       });
+      if (data?.approval_required) {
+        toast.info(
+          "Baixa acima da alçada: aguardando segunda aprovação financeira.",
+        );
+      } else {
+        toast.success("Despesa marcada como paga.");
+      }
       load();
-    } catch (e: any) {
-      toast.error(
-        e?.response?.data?.detail || "Erro ao marcar a despesa como paga",
-      );
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Erro ao marcar a despesa como paga"));
     }
   }
 
@@ -235,8 +266,8 @@ export default function Despesas({
       await api.delete(`/despesas/${pendenteExcluir}`);
       setPendenteExcluir(null);
       load();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Erro ao excluir a despesa");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Erro ao excluir a despesa"));
     }
   }
 
@@ -281,7 +312,9 @@ export default function Despesas({
             <p className="text-xs text-slate-500 uppercase tracking-wide">
               {label}
             </p>
-            <p className={`text-xl font-bold mt-1 ${cls}`}>{fmtR$(value)}</p>
+            <p className={`text-xl font-bold mt-1 ${cls}`}>
+              {formatBRL(value)}
+            </p>
           </div>
         ))}
       </div>
@@ -348,8 +381,13 @@ export default function Despesas({
             <tbody className="divide-y divide-slate-100">
               {items.map((d) => (
                 <tr
+                  id={`finance-expense-${d.id}`}
                   key={d.id}
-                  className="hover:bg-slate-50 cursor-pointer"
+                  className={`hover:bg-slate-50 cursor-pointer ${
+                    focusId === d.id
+                      ? "ring-2 ring-inset ring-primary-400 bg-primary-50/50"
+                      : ""
+                  }`}
                   onClick={() => openEdit(d)}
                 >
                   <td className="px-4 py-3 text-slate-600">
@@ -367,7 +405,7 @@ export default function Despesas({
                     {d.tipo}
                   </td>
                   <td className="px-4 py-3 text-right font-semibold text-slate-800">
-                    {fmtR$(d.valor)}
+                    {formatBRL(d.valor)}
                   </td>
                   <td className="px-4 py-3 text-slate-500">
                     {fmtDate(d.vencimento)}
@@ -452,6 +490,19 @@ export default function Despesas({
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">
+                Subcategoria
+              </label>
+              <input
+                type="text"
+                className="input"
+                value={form.subcategoria}
+                onChange={(e) =>
+                  setForm({ ...form, subcategoria: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
                 Descrição *
               </label>
               <input
@@ -531,6 +582,54 @@ export default function Despesas({
                 </select>
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Data de pagamento
+                </label>
+                <input
+                  type="date"
+                  className="input"
+                  value={form.pago_em}
+                  onChange={(e) =>
+                    setForm({ ...form, pago_em: e.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Comprovante GED
+                </label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="ID do documento no GED"
+                  value={form.comprovante_doc_id}
+                  onChange={(e) =>
+                    setForm({ ...form, comprovante_doc_id: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+            {editId && (
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Motivo da correção
+                </label>
+                <textarea
+                  className="input min-h-16"
+                  placeholder="Obrigatório apenas quando a competência já estiver fechada."
+                  value={form.motivo_correcao}
+                  onChange={(e) =>
+                    setForm({ ...form, motivo_correcao: e.target.value })
+                  }
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Correções em mês fechado preservam o snapshot e registram
+                  antes/depois na auditoria.
+                </p>
+              </div>
+            )}
             <div className="flex items-center gap-3">
               <input
                 type="checkbox"

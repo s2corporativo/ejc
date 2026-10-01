@@ -26,7 +26,7 @@ export default function PortalLayout() {
               alt={officeBranding.officeName}
               className="brand-logo-img h-12 w-auto max-w-[220px] sm:h-14 sm:max-w-[260px]"
             />
-            <div className="hidden text-[10px] font-semibold uppercase tracking-[0.25em] text-ouro-profundo sm:block">
+            <div className="hidden text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 sm:block">
               Portal do Cliente
             </div>
           </div>
@@ -54,7 +54,7 @@ export default function PortalLayout() {
                 className={({ isActive }) =>
                   `relative flex shrink-0 items-center gap-2 px-4 py-2.5 text-sm transition-colors ${
                     isActive
-                      ? "font-semibold text-ouro-profundo after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:bg-ouro-claro"
+                      ? "font-semibold text-primary-700 after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary-600"
                       : "text-slate-500 hover:text-slate-900"
                   }`
                 }

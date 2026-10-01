@@ -80,7 +80,7 @@ const TYPE_CONFIG: Record<
   compromisso: {
     label: "Compromisso",
     icon: CalendarClock,
-    className: "bg-ouro-palha text-ouro-profundo ring-ouro-claro/60",
+    className: "bg-primary-50 text-primary-700 ring-primary-200",
   },
 };
 
@@ -246,7 +246,7 @@ export default function AgendaDia() {
                 <Link
                   key={`${item.fonte || type}-${item.id || index}`}
                   to={destination}
-                  className="group flex items-start gap-4 px-4 py-4 transition-colors hover:bg-ouro-palha/30 sm:px-5"
+                  className="group flex items-start gap-4 px-4 py-4 transition-colors hover:bg-slate-50 sm:px-5"
                 >
                   <span
                     className={`mt-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset ${config.className}`}
@@ -259,7 +259,7 @@ export default function AgendaDia() {
                       <strong className="truncate text-sm font-semibold text-slate-900">
                         {item.titulo || "Atividade sem título"}
                       </strong>
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-ouro-profundo">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                         {config.label}
                       </span>
                     </span>
@@ -278,7 +278,7 @@ export default function AgendaDia() {
                   <span className="flex shrink-0 flex-col items-end gap-2">
                     {item.hora && (
                       <span className="inline-flex items-center gap-1 text-xs font-semibold tabular-nums text-slate-700">
-                        <Clock3 className="h-3.5 w-3.5 text-ouro-profundo" />
+                        <Clock3 className="h-3.5 w-3.5 text-primary-600" />
                         {item.hora}
                       </span>
                     )}

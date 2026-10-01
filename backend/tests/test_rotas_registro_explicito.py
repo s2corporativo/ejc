@@ -413,6 +413,41 @@ ADICOES_INTENCIONAIS |= {
     ("/api/licitacao-auditoria/audit-report-template", "GET"),
 }
 
+# Financeiro V4 — comissões, fechamento e despesas recorrentes (30/09/2026).
+# Superfícies autenticadas; não removem nem afrouxam rotas existentes.
+ADICOES_INTENCIONAIS |= {
+    ("/api/despesas/recorrentes/gerar", "POST"),
+    ("/api/financeiro/comissoes", "GET"),
+    ("/api/financeiro/comissoes/{allocation_id}/enviar-aprovacao", "POST"),
+    ("/api/financeiro/comissoes/{allocation_id}/ajustes", "POST"),
+    ("/api/financeiro/comissoes/previsao", "GET"),
+    ("/api/financeiro/comissoes/conferencia", "GET"),
+    ("/api/financeiro/comissoes/extrato-mensal", "GET"),
+    ("/api/financeiro/comissoes/fechamentos/{competencia}", "GET"),
+    ("/api/financeiro/comissoes/fechamentos", "POST"),
+    ("/api/financeiro/comissoes/lotes-pagamento", "POST"),
+    ("/api/financeiro/comissoes/regras", "GET"),
+    ("/api/financeiro/comissoes/regras", "POST"),
+    ("/api/financeiro/comissoes/regras/{rule_id}", "PATCH"),
+    ("/api/financeiro/comissoes/regras/{rule_id}", "DELETE"),
+    ("/api/financeiro/comissoes/opcoes", "GET"),
+    ("/api/financeiro/operacional", "GET"),
+    ("/api/financeiro/politica", "GET"),
+    ("/api/financeiro/politica", "PATCH"),
+    ("/api/financeiro/aprovacoes", "GET"),
+    ("/api/financeiro/aprovacoes/{approval_id}/aprovar", "POST"),
+    ("/api/financeiro/rentabilidade", "GET"),
+    ("/api/financeiro/distribuicao-disponivel", "GET"),
+    ("/api/financeiro/fechamentos/{competencia}", "GET"),
+    ("/api/financeiro/fechamentos", "POST"),
+    ("/api/financeiro/baseline-referencia", "GET"),
+    ("/api/financeiro/excecoes", "GET"),
+    ("/api/financeiro/conciliacao/{analysis_id}", "GET"),
+    ("/api/financeiro/conciliacao/confirmar", "POST"),
+    ("/api/relatorio/mensal/{mes}/pacote", "GET"),
+}
+
+
 def test_paridade_openapi_com_snapshot_anterior():
     from app.main import app
 
