@@ -4,7 +4,8 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import urllib.request
+import http.client
+from urllib.parse import urlsplit
 from pathlib import Path
 
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -23,8 +24,29 @@ def validate_identity(*, expected: str, marker: str | None, local_commit: str,
     return errors
 
 def _health_commit(url: str) -> str:
-    with urllib.request.urlopen(url, timeout=15) as response:
-        payload = json.load(response)
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("health URL precisa usar http/https com host explícito")
+    if parsed.username or parsed.password:
+        raise ValueError("credenciais embutidas não são permitidas na health URL")
+
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    connection_cls = (
+        http.client.HTTPSConnection if parsed.scheme == "https"
+        else http.client.HTTPConnection
+    )
+    conn = connection_cls(parsed.hostname, port=port, timeout=15)
+    path = parsed.path or "/"
+    if parsed.query:
+        path += "?" + parsed.query
+    try:
+        conn.request("GET", path, headers={"Accept": "application/json"})
+        response = conn.getresponse()
+        if response.status < 200 or response.status >= 300:
+            raise RuntimeError(f"health URL retornou HTTP {response.status}")
+        payload = json.loads(response.read().decode("utf-8"))
+    finally:
+        conn.close()
     return str(payload.get("commit", "")).strip()
 
 def main() -> int:

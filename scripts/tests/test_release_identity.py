@@ -19,3 +19,10 @@ def test_pre_marker_valida_runtime_sem_exigir_arquivo():
         expected=SHA, marker=None, local_commit=SHA, public_commit=SHA,
         require_marker=False,
     ) == []
+
+def test_health_commit_rejeita_esquema_file():
+    from scripts.check_release_identity import _health_commit
+    import pytest
+
+    with pytest.raises(ValueError, match="http/https"):
+        _health_commit("file:///etc/passwd")
