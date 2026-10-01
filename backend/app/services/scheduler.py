@@ -1813,6 +1813,7 @@ async def job_djen_intimacoes():
 
     _hb_status, _hb_detail = "ok", None
     oabs_capturadas: set[tuple[str, str]] = set()
+    bloqueio_sistemico = False
     try:
         async with AsyncSessionLocal() as db:
             candidatos = (await db.execute(select(_U).where(
@@ -1835,6 +1836,18 @@ async def job_djen_intimacoes():
                     if resultado.fonte_ok and numero and uf:
                         oabs_capturadas.add((numero, uf))
                     total += resultado
+                    if resultado.erro == "geo_bloqueado":
+                        # Bloqueio por país é da distribuição do CNJ e afeta
+                        # todas as OABs desta origem de rede. Repetir usuários
+                        # e depois o ingestor RAG só multiplica chamadas que
+                        # necessariamente falharão no mesmo ciclo.
+                        bloqueio_sistemico = True
+                        _hb_status, _hb_detail = "erro", "geo_bloqueado"
+                        logger.error(
+                            "[DJEN] upstream bloqueou a origem por região; "
+                            "ciclo interrompido sem repetir outras OABs"
+                        )
+                        break
                 except Exception as e:
                     _hb_status = "erro"
                     logger.warning(
@@ -1845,8 +1858,10 @@ async def job_djen_intimacoes():
             logger.info("[DJEN] %s intimação(ões) nova(s)", total)
 
         # Uma única janela operacional: o RAG consulta somente OABs de ambiente
-        # que não acabaram de ser consultadas acima.
-        await job_ingestao_djen(excluir_oabs=oabs_capturadas)
+        # que não acabaram de ser consultadas acima. Bloqueio geográfico é
+        # sistêmico, então o segundo fluxo não repete a chamada na mesma rede.
+        if not bloqueio_sistemico:
+            await job_ingestao_djen(excluir_oabs=oabs_capturadas)
     except Exception as e:
         _hb_status, _hb_detail = "erro", type(e).__name__
         logger.error("[DJEN] falha na captura consolidada; tipo=%s", type(e).__name__)

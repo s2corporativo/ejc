@@ -305,6 +305,27 @@ async def test_ingerir_tolerante_a_erro_de_upsert(monkeypatch):
     assert (novos, total) == (0, 0)
 
 
+
+
+async def test_ingerir_tjmg_falha_cedo_em_401_do_portal(monkeypatch):
+    import pytest
+
+    s = get_settings()
+    monkeypatch.setattr(s, "TJMG_INGEST_TEMAS", "tema1,tema2", raising=False)
+    monkeypatch.setattr(s, "TJMG_INGEST_JANELA_DIAS", 0, raising=False)
+    chamadas = {"n": 0}
+
+    async def fake_buscar(palavras, por_pagina=10, *, metricas=None, **kw):
+        chamadas["n"] += 1
+        if metricas is not None:
+            metricas.update(rede_falhou=True, html_bytes=0, blocos=0, http_status=401)
+        return []
+
+    monkeypatch.setattr(tjmg, "buscar_tjmg", fake_buscar)
+    with pytest.raises(RuntimeError, match="HTTP 401"):
+        await tjmg.ingerir(_FakeDB())
+    assert chamadas["n"] == 1
+
 # ── 5. Gate no scheduler ──────────────────────────────────────────────────────
 
 async def test_job_tjmg_gate_off_e_on(monkeypatch):

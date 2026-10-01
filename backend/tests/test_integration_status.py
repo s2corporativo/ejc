@@ -267,3 +267,108 @@ def test_backup_gdrive_inherit_respeita_google_drive_auth_mode(monkeypatch):
     assert backup["enabled"] is True
     assert backup["configured"] is False
     assert backup["status"] == "attention"
+
+
+def test_drive_knowledge_exige_pasta_e_credencial(monkeypatch):
+    settings = Settings(_env_file=None, APP_ENV="development")
+    monkeypatch.setenv("GOOGLE_DRIVE_ENABLED", "true")
+    monkeypatch.setenv("GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID", "folder-fake")
+    monkeypatch.setenv("GOOGLE_DRIVE_AUTH_MODE", "oauth")
+    for name in (
+        "GOOGLE_DRIVE_OAUTH_USER_FILE",
+        "GOOGLE_DRIVE_OAUTH_USER_JSON",
+        "GOOGLE_DRIVE_OAUTH_CLIENT_ID",
+        "GOOGLE_DRIVE_OAUTH_CLIENT_SECRET",
+        "GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN",
+        "GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE",
+        "GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    item = _items_by_key(build_integration_status(settings))["google_drive_knowledge"]
+
+    assert item["enabled"] is True
+    assert item["configured"] is False
+    assert item["status"] == "attention"
+    assert "credencial" in item["detail"].lower()
+
+
+def test_drive_knowledge_pronto_quando_pasta_e_auth_estao_presentes(monkeypatch):
+    settings = Settings(_env_file=None, APP_ENV="development")
+    monkeypatch.setenv("GOOGLE_DRIVE_ENABLED", "true")
+    monkeypatch.setenv("GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID", "folder-fake")
+    monkeypatch.setenv("GOOGLE_DRIVE_AUTH_MODE", "service_account")
+    monkeypatch.setenv(
+        "GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON",
+        '{"type":"service_account"}',
+    )
+
+    item = _items_by_key(build_integration_status(settings))["google_drive_knowledge"]
+
+    assert item["enabled"] is True
+    assert item["configured"] is True
+    assert item["status"] == "ready"
+
+
+def test_painel_inventaria_conectores_especificos_respeitando_flags(monkeypatch):
+    settings = Settings(
+        _env_file=None, APP_ENV="development",
+        DATAJUD_ENABLED=True, DATAJUD_API_KEY="fake-nao-expor",
+    )
+    flags = {
+        "CNJ_SGT_ENABLED": "true",
+        "TCU_OPEN_DATA_ENABLED": "false",
+        "IBGE_LOCALIDADES_ENABLED": "true",
+        "IBAMA_OPEN_DATA_ENABLED": "false",
+        "CONSUMIDOR_GOV_OPEN_DATA_ENABLED": "false",
+        "CVM_OPEN_DATA_ENABLED": "false",
+        "TSE_OPEN_DATA_ENABLED": "true",
+        "PGFN_OPEN_DATA_ENABLED": "false",
+        "QUERIDO_DIARIO_ENABLED": "false",
+        "IDE_SISEMA_ENABLED": "true",
+        "JURIMETRIA_TRIBUNAIS_ENABLED": "true",
+    }
+    for name, value in flags.items():
+        monkeypatch.setenv(name, value)
+
+    items = _items_by_key(build_integration_status(settings))
+    expected = {
+        "cnj_sgt", "tcu", "ibge", "ibama", "consumidor_gov", "cvm",
+        "tse", "pgfn", "querido_diario", "ide_sisema", "jurimetria_tribunais",
+    }
+    assert expected <= set(items)
+    assert items["cnj_sgt"]["status"] == "ready"
+    assert items["tcu"]["status"] == "disabled"
+    assert items["jurimetria_tribunais"]["configured"] is True
+    assert items["jurimetria_tribunais"]["group"] == "Serviços específicos"
+    assert "fake-nao-expor" not in str(build_integration_status(settings))
+
+
+def test_jurimetria_habilitada_sem_datajud_fica_attention(monkeypatch):
+    monkeypatch.setenv("JURIMETRIA_TRIBUNAIS_ENABLED", "true")
+    settings = Settings(
+        _env_file=None, APP_ENV="development",
+        DATAJUD_ENABLED=True, DATAJUD_API_KEY="",
+    )
+    item = _items_by_key(build_integration_status(settings))["jurimetria_tribunais"]
+    assert item["enabled"] is True
+    assert item["configured"] is False
+    assert item["status"] == "attention"
+
+
+def test_diagnostico_sanitizado_de_fontes_externas():
+    from app.services.integration_runtime_status import _detail_erro_fonte
+
+    djen = _detail_erro_fonte(
+        "djen", "DjenContratoError: causas=geo_bloqueado:3; OAB omitida"
+    )
+    lexml = _detail_erro_fonte(
+        "lexml", "LexMLBloqueadoError: desafio anti-bot"
+    )
+    tjmg = _detail_erro_fonte(
+        "tjmg", "RuntimeError: portal recusou consulta HTTP 401"
+    )
+    assert "restrição geográfica" in djen
+    assert "OAB" not in djen
+    assert "anti-bot" in lexml
+    assert "recusou" in tjmg

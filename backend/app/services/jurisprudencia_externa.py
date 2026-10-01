@@ -252,7 +252,17 @@ async def buscar_tjmg(
     except Exception as exc:
         logger.warning("TJMG indisponível: %s", exc)
         if metricas is not None:
-            metricas.update(rede_falhou=True, html_bytes=0, blocos=0)
+            status_http = (
+                exc.response.status_code
+                if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None
+                else None
+            )
+            metricas.update(
+                rede_falhou=True,
+                html_bytes=0,
+                blocos=0,
+                http_status=status_http,
+            )
         return []
 
     if metricas is not None:

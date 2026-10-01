@@ -43,6 +43,7 @@ from sqlalchemy import text
 
 from app.core.database import AsyncSessionLocal
 from app.services.embedding_service import gerar_embeddings, disponivel as emb_disponivel
+from app.services.ai_service import filtros_gate_rag
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("ejc.reembedar_orfaos")
@@ -50,12 +51,13 @@ logger = logging.getLogger("ejc.reembedar_orfaos")
 # Documentos VIGENTES/não excluídos com PELO MENOS UM chunk sem embedding —
 # não filtra por status_indexacao de propósito: é exatamente o caso de doc já
 # rotulado 'indexado' com chunks órfãos que queremos capturar.
-_SQL_DOCS_COM_ORFAO = text("""
+_SQL_DOCS_COM_ORFAO = text(f"""
     SELECT DISTINCT kd.id
     FROM knowledge_docs kd
     JOIN knowledge_chunks kc ON kc.doc_id = kd.id
     WHERE kd.deleted_at IS NULL AND kd.vigente = true
       AND kc.embedding IS NULL
+      {filtros_gate_rag()}
       AND kd.id > :after
     ORDER BY kd.id
     LIMIT :limit

@@ -353,12 +353,17 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
         try:
             itens = await buscar_lexml(consulta, tipo=tipo, por_pagina=max_item)
         except LexMLBloqueadoError as e:
-            # Contado à parte: bloqueio anti-bot não é "não achei nada", é "não
-            # perguntei". Se TODAS as consultas forem bloqueadas, a execução
-            # inteira falha ao final em vez de reportar (0, 0) como sucesso.
+            # Desafio anti-bot é condição SISTÊMICA do host, não ausência de
+            # resultado daquele tema. Repetir as ~53 consultas só pressiona o
+            # serviço externo e atrasa o job sem aumentar a chance de sucesso.
+            # Falha imediatamente e deixa o scheduler/painel registrar a fonte
+            # como indisponível; não há tentativa de contornar o mecanismo.
             bloqueadas += 1
             logger.warning("LexML %s %r bloqueado: %s", tipo, consulta, e)
-            continue
+            raise LexMLBloqueadoError(
+                "LexML respondeu com desafio anti-bot. Ingestão interrompida "
+                "sem novas tentativas nesta execução."
+            ) from e
         except Exception as e:   # rede/XML — nunca derruba a execução inteira
             # Contado junto com os bloqueios: consulta que ESTOUROU também não
             # é "não achei nada". Sem este contador, uma queda de rede em 100%

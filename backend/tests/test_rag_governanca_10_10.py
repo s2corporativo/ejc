@@ -34,6 +34,10 @@ def test_reindex_usa_paginacao_estavel_sem_offset():
     sql = str(reemb._SQL_DOCS_COM_ORFAO).upper()
     assert "OFFSET" not in sql
     assert "KD.ID > :AFTER" in sql
+    # O reparador usa o mesmo gate do retrieval: não vetoriza conteúdo que a
+    # IA está proibida de recuperar (pendente/recusado/quarentena/vigência).
+    assert "RAG_STATUS" in sql
+    assert "APROVADO" in sql
     assert "begin_nested" in inspect.getsource(reemb.reembedar)
 
 
