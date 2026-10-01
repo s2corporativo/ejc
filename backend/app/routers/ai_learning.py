@@ -14,6 +14,7 @@ from app.models.user import User
 from app.services.ai.supervised_learning import (
     error_memory,
     learning_summary,
+    pending_learning_events,
     register_correction,
     review_event,
 )
@@ -120,6 +121,20 @@ async def summary(
     cu: User = Depends(_staff),
 ):
     return await learning_summary(db)
+
+
+@router.get("/pending")
+async def pending(
+    limit: int = Query(default=50, ge=1, le=100),
+    independent_only: bool = Query(default=True),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_staff),
+):
+    return {
+        "data": await pending_learning_events(
+            db, user=cu, limit=limit, independent_only=independent_only
+        )
+    }
 
 
 @router.get("/errors")
