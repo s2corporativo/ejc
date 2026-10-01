@@ -144,6 +144,9 @@ async def listar(
 
 @router.get("/resumo")
 async def resumo(
+    competencia: Optional[str] = Query(
+        None, description="Competência dos saldos e caixa (formato AAAA-MM)"
+    ),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -153,6 +156,15 @@ async def resumo(
     não existe nenhum ``fee_payments`` para ele, evitando dupla contagem.
     """
     hoje = date.today()
+    if competencia:
+        if not _RE_COMPETENCIA.fullmatch(competencia):
+            raise HTTPException(
+                status_code=422,
+                detail="competencia inválida: use o formato AAAA-MM",
+            )
+        ano_ref, mes_ref = (int(p) for p in competencia.split("-"))
+    else:
+        ano_ref, mes_ref = hoje.year, hoje.month
 
     pagamentos_por_fee = (
         select(
@@ -186,13 +198,19 @@ async def resumo(
         .outerjoin(estornos_por_fee, estornos_por_fee.c.fee_id == Fee.id)
         .where(Fee.deleted_at.is_(None))
     )
+    if competencia:
+        base_saldos = base_saldos.where(
+            sqlfunc.extract("year", Fee.data_vencimento) == ano_ref,
+            sqlfunc.extract("month", Fee.data_vencimento) == mes_ref,
+        )
+
     base_caixa = (
         select(sqlfunc.coalesce(sqlfunc.sum(FeePayment.valor), 0))
         .join(Fee, Fee.id == FeePayment.fee_id)
         .where(
             Fee.deleted_at.is_(None),
-            sqlfunc.extract("month", FeePayment.data_pagamento) == hoje.month,
-            sqlfunc.extract("year", FeePayment.data_pagamento) == hoje.year,
+            sqlfunc.extract("month", FeePayment.data_pagamento) == mes_ref,
+            sqlfunc.extract("year", FeePayment.data_pagamento) == ano_ref,
         )
     )
     existe_pagamento = select(FeePayment.id).where(FeePayment.fee_id == Fee.id).exists()
@@ -201,8 +219,8 @@ async def resumo(
         Fee.status == FeeStatus.pago,
         Fee.valor.is_not(None),
         Fee.data_pagamento.is_not(None),
-        sqlfunc.extract("month", Fee.data_pagamento) == hoje.month,
-        sqlfunc.extract("year", Fee.data_pagamento) == hoje.year,
+        sqlfunc.extract("month", Fee.data_pagamento) == mes_ref,
+        sqlfunc.extract("year", Fee.data_pagamento) == ano_ref,
         ~existe_pagamento,
     )
     base_percentuais = select(sqlfunc.count(Fee.id)).where(
@@ -211,6 +229,12 @@ async def resumo(
         Fee.percentual_exito.is_not(None),
         Fee.status.in_([FeeStatus.pendente, FeeStatus.atrasado]),
     )
+
+    if competencia:
+        base_percentuais = base_percentuais.where(
+            sqlfunc.extract("year", Fee.data_vencimento) == ano_ref,
+            sqlfunc.extract("month", Fee.data_vencimento) == mes_ref,
+        )
 
     escopo = "escritorio"
     if not _ve_financeiro_total(cu):

@@ -1,7 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
-import { AlertTriangle, Calendar, Repeat } from "lucide-react";
+import { Calendar, Repeat } from "lucide-react";
 import api from "../lib/api";
 import { Spinner, ErrorState } from "../components/UI";
+import { toast } from "../components/Toast";
+import {
+  FINANCE_CATEGORY_LABELS,
+  formatCurrency,
+  nextFinanceCompetence,
+} from "../lib/financeiro";
 
 interface Despesa {
   id: string;
@@ -13,34 +19,14 @@ interface Despesa {
   status: string;
 }
 
-const CAT_LABEL: Record<string, string> = {
-  infraestrutura: "Infraestrutura",
-  tecnologia: "Tecnologia",
-  pessoal: "Pessoal / Pró-labore",
-  oab: "OAB / Anuidade",
-  marketing: "Marketing",
-  operacao: "Operação",
-  fiscal: "Fiscal / Contab.",
-  investimento: "Investimento",
-  outro: "Outros",
-};
-
-function fmtR$(v: number) {
-  return (v ?? 0).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
+const CAT_LABEL = FINANCE_CATEGORY_LABELS;
 
 export default function DespesasRecorrentes() {
   const [recorrentes, setRecorrentes] = useState<Despesa[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [targetComp, setTargetComp] = useState(() => {
-    const now = new Date();
-    const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
-  });
+  const [targetComp, setTargetComp] = useState(nextFinanceCompetence);
+  const [generating, setGenerating] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -67,16 +53,32 @@ export default function DespesasRecorrentes() {
 
   const total = recorrentes.reduce((s, d) => s + d.valor, 0);
 
+  const gerar = async () => {
+    if (generating || !targetComp || recorrentes.length === 0) return;
+    setGenerating(true);
+    try {
+      const { data } = await api.post("/despesas/recorrentes/gerar", {
+        competencia: targetComp,
+      });
+      toast.success(
+        String(data?.gerados ?? 0) +
+          " lançamento(s) gerado(s); " +
+          String(data?.ignorados ?? 0) +
+          " já existiam.",
+      );
+      await load();
+    } catch (e: any) {
+      toast.error(
+        e?.response?.data?.detail ||
+          "Não foi possível gerar as despesas recorrentes.",
+      );
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
-      {/*
-        Fail-closed temporário: a implementação histórica gerava N POSTs no
-        browser e copiava `recorrente: true` para os novos lançamentos. Sem
-        template_id/run idempotente no banco, um duplo clique/reexecução podia
-        duplicar o mês e os próprios lançamentos passavam a funcionar como
-        novos "templates". A geração fica indisponível até o schema financeiro
-        idempotente previsto na Issue #969 entrar em migration linear.
-      */}
       <div className="card p-5">
         <h2 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
           <Repeat className="w-4 h-4 text-primary-500" />
@@ -94,22 +96,18 @@ export default function DespesasRecorrentes() {
           </div>
           <button
             type="button"
-            disabled
-            title="Aguardando geração idempotente no backend"
-            className="btn-primary opacity-50 cursor-not-allowed"
+            disabled={generating || recorrentes.length === 0}
+            className="btn-primary"
+            onClick={gerar}
           >
-            Gerar {recorrentes.length} lançamentos
+            {generating
+              ? "Gerando..."
+              : "Gerar " + recorrentes.length + " lançamento(s)"}
           </button>
         </div>
-        <div className="mt-3 flex items-start gap-2 rounded-lg bg-warn-50 px-3 py-2 text-sm text-warn-800">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>
-            Geração automática temporariamente bloqueada para evitar lançamentos
-            duplicados. Os cadastros recorrentes continuam visíveis; a geração
-            será reativada quando o backend tiver template separado e chave
-            idempotente por competência.
-          </span>
-        </div>
+        <p className="mt-3 text-xs text-slate-500">
+          A geração é idempotente: lançamentos existentes são ignorados.
+        </p>
       </div>
 
       <div className="rounded-xl bg-slate-900/[0.04] p-4 flex items-center justify-between dark:bg-white/[0.06]">
@@ -117,7 +115,7 @@ export default function DespesasRecorrentes() {
           {recorrentes.length} despesas recorrentes cadastradas
         </span>
         <span className="font-semibold text-slate-800">
-          Total mensal: {fmtR$(total)}
+          Total mensal: {formatCurrency(total)}
         </span>
       </div>
 
@@ -154,7 +152,7 @@ export default function DespesasRecorrentes() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right font-semibold text-slate-800">
-                    {fmtR$(d.valor)}
+                    {formatCurrency(d.valor)}
                   </td>
                 </tr>
               ))}

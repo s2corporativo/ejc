@@ -13,7 +13,6 @@ import {
   History,
 } from "lucide-react";
 import QRCode from "qrcode";
-import Comissoes from "./Comissoes";
 import api from "../lib/api";
 import { asList } from "../lib/list";
 import type { Fee, Client, Paged } from "../types";
@@ -47,7 +46,7 @@ export function quantoCobrar(f: Fee): string {
   return fmtMoney(f.valor);
 }
 
-export default function Honorarios() {
+export default function Honorarios({ competencia }: { competencia?: string }) {
   const [data, setData] = useState<Paged<Fee> | null>(null);
   const [resumo, setResumo] = useState<any>(null);
   const [clientes, setClientes] = useState<Client[]>([]);
@@ -87,12 +86,18 @@ export default function Honorarios() {
     setError(false);
     api
       .get("/fees/", {
-        params: { status: statusF || undefined, page_size: 50 },
+        params: {
+          status: statusF || undefined,
+          competencia: competencia || undefined,
+          page_size: 50,
+        },
       })
       .then((r) => setData(r.data))
       .catch(() => setError(true));
     api
-      .get("/fees/resumo")
+      .get("/fees/resumo", {
+        params: { competencia: competencia || undefined },
+      })
       .then((r) => setResumo(r.data))
       .catch(() => {});
   };
@@ -103,7 +108,7 @@ export default function Honorarios() {
       .get("/clients/", { params: { page_size: 100 } })
       .then((r) => setClientes(asList<Client>(r.data)))
       .catch(() => setClientes([]));
-  }, [statusF]);
+  }, [statusF, competencia]);
 
   const salvar = async () => {
     if (!form.descricao || !form.client_id) {
@@ -305,18 +310,6 @@ export default function Honorarios() {
     }
   };
 
-  if (searchParams.get("view") === "comissoes") {
-    return (
-      <Comissoes
-        onBack={() => {
-          const params = new URLSearchParams(searchParams);
-          params.delete("view");
-          setSearchParams(params, { replace: true });
-        }}
-      />
-    );
-  }
-
   return (
     <div>
       <div className="flex gap-2 items-center justify-end flex-wrap mb-4">
@@ -364,17 +357,6 @@ export default function Honorarios() {
           className="btn-secondary px-3 py-1.5 text-xs"
         >
           <FileType2 size={13} /> PDF
-        </button>
-        <button
-          type="button"
-          className="btn-secondary px-3 py-1.5 text-xs"
-          onClick={() => {
-            const params = new URLSearchParams(searchParams);
-            params.set("view", "comissoes");
-            setSearchParams(params, { replace: true });
-          }}
-        >
-          Comissões
         </button>
         <button className="btn-gold" onClick={() => setModal(true)}>
           <Plus size={16} /> Novo lançamento

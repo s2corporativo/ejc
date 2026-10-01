@@ -2,6 +2,11 @@ import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router";
 import { Plus, Check, Trash2, RefreshCw, Filter, Download } from "lucide-react";
 import api from "../lib/api";
+import {
+  FINANCE_CATEGORIES,
+  FINANCE_CATEGORY_LABELS,
+  formatCurrency,
+} from "../lib/financeiro";
 import { toast } from "../components/Toast";
 import {
   Modal,
@@ -30,36 +35,9 @@ interface Despesa {
   created_at: string;
 }
 
-const CATEGORIAS = [
-  "infraestrutura",
-  "tecnologia",
-  "pessoal",
-  "oab",
-  "marketing",
-  "operacao",
-  "fiscal",
-  "investimento",
-  "outro",
-];
-
-const CAT_LABEL: Record<string, string> = {
-  infraestrutura: "Infraestrutura",
-  tecnologia: "Tecnologia",
-  pessoal: "Pessoal / Pró-labore",
-  oab: "OAB / Anuidade",
-  marketing: "Marketing",
-  operacao: "Operação",
-  fiscal: "Fiscal / Contab.",
-  investimento: "Investimento",
-  outro: "Outros",
-};
-
-function fmtR$(v: number) {
-  return (v ?? 0).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
+const CATEGORIAS = FINANCE_CATEGORIES;
+const CAT_LABEL = FINANCE_CATEGORY_LABELS;
+const formatBRL = formatCurrency;
 
 interface FormState {
   categoria: string;
@@ -293,7 +271,9 @@ export default function Despesas({
             <p className="text-xs text-slate-500 uppercase tracking-wide">
               {label}
             </p>
-            <p className={`text-xl font-bold mt-1 ${cls}`}>{fmtR$(value)}</p>
+            <p className={`text-xl font-bold mt-1 ${cls}`}>
+              {formatBRL(value)}
+            </p>
           </div>
         ))}
       </div>
@@ -379,7 +359,7 @@ export default function Despesas({
                     {d.tipo}
                   </td>
                   <td className="px-4 py-3 text-right font-semibold text-slate-800">
-                    {fmtR$(d.valor)}
+                    {formatBRL(d.valor)}
                   </td>
                   <td className="px-4 py-3 text-slate-500">
                     {fmtDate(d.vencimento)}

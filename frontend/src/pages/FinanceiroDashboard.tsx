@@ -16,20 +16,16 @@ import {
   BarChart3,
 } from "lucide-react";
 import api from "../lib/api";
+import {
+  currentFinanceCompetence,
+  financeCompetenceLabel,
+  formatCurrency,
+} from "../lib/financeiro";
 import { Modal, Spinner } from "../components/UI";
 import { toast } from "../components/Toast";
 
-function fmtR$(value: number | undefined | null) {
-  return Number(value ?? 0).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
-
-function competenciaLabel(competencia: string) {
-  const [ano, mes] = competencia.split("-");
-  return `${mes}/${ano}`;
-}
+const formatBRL = formatCurrency;
+const competenciaLabel = financeCompetenceLabel;
 
 type FinanceDestino = "honorarios" | "despesas" | "nfse" | "contratos";
 type FinanceAction = { tab?: FinanceDestino; status?: string };
@@ -119,7 +115,7 @@ function FlowRow({
       <div className="mb-1.5 flex items-center justify-between gap-4 text-sm">
         <span className="text-slate-500 dark:text-slate-400">{label}</span>
         <span className="font-semibold text-slate-800 dark:text-slate-100">
-          {fmtR$(value)}
+          {formatBRL(value)}
         </span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
@@ -134,13 +130,8 @@ function FlowRow({
   );
 }
 
-function competenciaAtual() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
-
 export default function FinanceiroDashboard({
-  competencia = competenciaAtual(),
+  competencia = currentFinanceCompetence(),
   onDrillDown,
   onNavigate,
 }: {
@@ -481,10 +472,10 @@ export default function FinanceiroDashboard({
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard
           label="A receber"
-          value={fmtR$(aReceber)}
+          value={formatBRL(aReceber)}
           detail={
             atrasado > 0
-              ? `${fmtR$(atrasado)} em atraso`
+              ? `${formatBRL(atrasado)} em atraso`
               : "Sem atraso relevante"
           }
           icon={CircleDollarSign}
@@ -497,7 +488,7 @@ export default function FinanceiroDashboard({
         />
         <StatCard
           label="Recebido no mês"
-          value={fmtR$(recebido)}
+          value={formatBRL(recebido)}
           detail="Entradas efetivas no mês"
           icon={Wallet}
           tone="blue"
@@ -507,8 +498,8 @@ export default function FinanceiroDashboard({
         />
         <StatCard
           label="A pagar"
-          value={fmtR$(aPagar)}
-          detail={`${fmtR$(saidas)} pagos no mês`}
+          value={formatBRL(aPagar)}
+          detail={`${formatBRL(saidas)} pagos no mês`}
           icon={TrendingDown}
           tone="red"
           onClick={
@@ -517,7 +508,7 @@ export default function FinanceiroDashboard({
         />
         <StatCard
           label="Saldo"
-          value={fmtR$(caixa)}
+          value={formatBRL(caixa)}
           detail={`Margem ${Number(data?.margem_pct ?? 0).toLocaleString("pt-BR")}%`}
           icon={PiggyBank}
           tone={caixa >= 0 ? "green" : "red"}
@@ -544,7 +535,9 @@ export default function FinanceiroDashboard({
                   : "text-rose-700 dark:text-rose-300"
               }`}
             >
-              {fmtR$(Number(rentabilidade?.resumo?.resultado_escritorio ?? 0))}
+              {formatBRL(
+                Number(rentabilidade?.resumo?.resultado_escritorio ?? 0),
+              )}
             </p>
           </div>
         </div>
@@ -559,7 +552,7 @@ export default function FinanceiroDashboard({
               </p>
               <p className="truncate text-xs text-slate-400">{item.cliente}</p>
               <p className="mt-2 text-sm font-semibold">
-                {fmtR$(Number(item.resultado || 0))}
+                {formatBRL(Number(item.resultado || 0))}
               </p>
             </div>
           ))}
@@ -619,7 +612,7 @@ export default function FinanceiroDashboard({
                   : "text-rose-700 dark:text-rose-300"
               }`}
             >
-              {fmtR$(caixa)}
+              {formatBRL(caixa)}
             </span>
           </div>
         </section>
@@ -634,7 +627,7 @@ export default function FinanceiroDashboard({
                 Em atraso
               </span>
               <strong className="text-sm text-rose-700 dark:text-rose-300">
-                {fmtR$(atrasado)}
+                {formatBRL(atrasado)}
               </strong>
             </div>
             <div className="flex items-center justify-between gap-3 py-3">
@@ -642,7 +635,7 @@ export default function FinanceiroDashboard({
                 Honorários futuros
               </span>
               <strong className="text-sm text-slate-800 dark:text-slate-100">
-                {fmtR$(honorariosFuturos)}
+                {formatBRL(honorariosFuturos)}
               </strong>
             </div>
             <div className="flex items-center justify-between gap-3 py-3">
@@ -650,7 +643,7 @@ export default function FinanceiroDashboard({
                 Despesas lançadas
               </span>
               <strong className="text-sm text-slate-800 dark:text-slate-100">
-                {fmtR$(despesasLancadas)}
+                {formatBRL(despesasLancadas)}
               </strong>
             </div>
           </div>
@@ -699,7 +692,7 @@ export default function FinanceiroDashboard({
                   </p>
                   <p className="mt-0.5 text-xs text-slate-400">
                     {item.qtd} {item.qtd === 1 ? "item" : "itens"}
-                    {item.valor != null ? ` · ${fmtR$(item.valor)}` : ""}
+                    {item.valor != null ? ` · ${formatBRL(item.valor)}` : ""}
                   </p>
                 </div>
                 <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 dark:text-slate-600" />
@@ -830,7 +823,7 @@ export default function FinanceiroDashboard({
                     <strong>
                       {item.qtd}
                       {item.valor != null
-                        ? ` · ${fmtR$(Number(item.valor))}`
+                        ? ` · ${formatBRL(Number(item.valor))}`
                         : ""}
                     </strong>
                   </div>
@@ -877,7 +870,7 @@ export default function FinanceiroDashboard({
                           ? "Despesa"
                           : a.entity_type}
                         {" · "}
-                        {fmtR$(Number(a.amount || 0))}
+                        {formatBRL(Number(a.amount || 0))}
                       </p>
                       <p className="truncate text-xs text-slate-400">
                         Solicitado por {a.solicitado_por_nome || "usuário"}
@@ -942,7 +935,7 @@ export default function FinanceiroDashboard({
                         <div className="min-w-0">
                           <p className="truncate text-sm">
                             {item.bank_description} ·{" "}
-                            {fmtR$(Number(item.bank_value))}
+                            {formatBRL(Number(item.bank_value))}
                           </p>
                           <p className="truncate text-xs text-slate-400">
                             Sugestão: {item.label} · confiança{" "}
@@ -975,7 +968,7 @@ export default function FinanceiroDashboard({
                 <h3 className="font-semibold">Distribuição societária</h3>
                 <p className="text-xs text-slate-400">
                   Resultado disponível:{" "}
-                  {fmtR$(Number(distribuicao?.disponivel ?? 0))}
+                  {formatBRL(Number(distribuicao?.disponivel ?? 0))}
                   {distribuicao?.fechado
                     ? " · mês fechado"
                     : " · feche o mês antes de distribuir"}
@@ -1025,7 +1018,7 @@ export default function FinanceiroDashboard({
                 >
                   <p className="text-xs text-slate-400">{label}</p>
                   <p className="mt-1 font-semibold text-slate-900 dark:text-white">
-                    {fmtR$(Number(value ?? 0))}
+                    {formatBRL(Number(value ?? 0))}
                   </p>
                 </div>
               ))}

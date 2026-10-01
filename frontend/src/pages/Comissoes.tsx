@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
-  ArrowLeft,
   Building2,
-  CalendarCheck,
   Check,
   FileCheck2,
   Pencil,
@@ -107,11 +105,6 @@ const EMPTY_RULE = {
   case_id: "",
 };
 
-const currentMonth = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-};
-
 function fmtDate(value?: string | null) {
   if (!value) return "—";
   const raw = String(value).slice(0, 10).split("-");
@@ -130,7 +123,7 @@ function ruleTarget(rule: RuleRow) {
   return "Todos os casos";
 }
 
-export default function Comissoes({ onBack }: { onBack: () => void }) {
+export default function Comissoes({ competencia }: { competencia: string }) {
   const [rows, setRows] = useState<CommissionRow[]>([]);
   const [resumo, setResumo] = useState<any>({});
   const [porAdvogado, setPorAdvogado] = useState<any[]>([]);
@@ -140,7 +133,6 @@ export default function Comissoes({ onBack }: { onBack: () => void }) {
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState("");
   const [status, setStatus] = useState("");
-  const [competencia, setCompetencia] = useState<string | null>(currentMonth());
 
   const [regrasOpen, setRegrasOpen] = useState(false);
   const [rules, setRules] = useState<RuleRow[]>([]);
@@ -497,27 +489,15 @@ export default function Comissoes({ onBack }: { onBack: () => void }) {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <button type="button" className="btn-ghost" onClick={onBack}>
-          <ArrowLeft className="h-4 w-4" />
-          Honorários
-        </button>
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Comissões
+          </h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Competência {competencia}
+          </p>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
-          <label className="input flex w-auto items-center gap-2 py-1.5">
-            <CalendarCheck className="h-4 w-4 text-slate-400" />
-            <input
-              type="month"
-              className="bg-transparent text-sm outline-none"
-              value={competencia || ""}
-              onChange={(e) => setCompetencia(e.target.value || null)}
-            />
-          </label>
-          <button
-            type="button"
-            className="btn-ghost text-xs"
-            onClick={() => setCompetencia(null)}
-          >
-            Todos
-          </button>
           <button
             type="button"
             className="btn-secondary"
@@ -575,7 +555,7 @@ export default function Comissoes({ onBack }: { onBack: () => void }) {
         </p>
       )}
 
-      {competencia && conferencia?.itens?.length > 0 && (
+      {competencia && conferencia && conferencia.itens.length > 0 && (
         <section className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-900/50 dark:bg-amber-950/20">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-amber-600" />

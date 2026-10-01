@@ -10,6 +10,7 @@ describe("FinanceiroWorkspace deep links", () => {
   it.each([
     "visao",
     "honorarios",
+    "comissoes",
     "nfse",
     "despesas",
     "recorrentes",
