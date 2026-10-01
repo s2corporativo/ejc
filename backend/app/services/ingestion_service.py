@@ -353,6 +353,22 @@ async def upsert_documento(
     h = _sha1(conteudo)
     agora = datetime.now(timezone.utc)
 
+    # Metadados temporais/rastreabilidade: todo conteúdo que passa pelo upsert
+    # declara de onde veio e quando foi reingerido. Em legislação, ausência de
+    # prova de vigência vira estado EXPLÍCITO "vigencia_nao_verificada" — nunca
+    # "vigente" por presunção. A recuperação RAG já falha fechado nesse estado.
+    extra = dict(extra or {})
+    extra.setdefault("source", fonte)
+    extra.setdefault("jurisdiction", tribunal)
+    extra["last_ingested_at"] = agora.isoformat()
+    if "legisl" in (categoria or "").lower() and not extra.get("legal_status"):
+        extra["legal_status"] = "vigencia_nao_verificada"
+    if extra.get("legal_status_verificado_em") and not extra.get("last_verified_at"):
+        extra["last_verified_at"] = extra.get("legal_status_verificado_em")
+    else:
+        extra.setdefault("last_verified_at", None)
+    extra.setdefault("superseded_by", None)
+
     existente = (await db.execute(
         select(KnowledgeDoc).where(
             KnowledgeDoc.chave_origem == chave_origem,
@@ -449,6 +465,14 @@ async def upsert_documento(
                     extra_nova_versao[campo] = anterior[campo]
                 else:
                     extra_nova_versao.pop(campo, None)
+        # Encadeia a versão anterior de forma explícita para auditoria:
+        # "vigente=False" diz que saiu de uso; superseded_by diz QUAL versão a
+        # substituiu. Isso evita conhecimento temporal órfão.
+        _old_extra = dict(existente.extra or {})
+        _old_extra["superseded_by"] = doc_id
+        _old_extra["superseded_at"] = agora.isoformat()
+        existente.extra = _old_extra
+
         db.add(KnowledgeDoc(
             id=doc_id, titulo=titulo, categoria=categoria,
             fonte=fonte, tribunal=tribunal, extra=extra_nova_versao,
