@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import urllib.parse
 import urllib.request
@@ -114,6 +115,8 @@ def main() -> int:
     parser.add_argument("--sha", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
+    if not re.fullmatch(r"[0-9a-f]{40}", args.sha):
+        raise SystemExit("--sha precisa ser SHA-1 completo em minúsculas")
 
     now = datetime.now(timezone.utc)
     try:
@@ -199,6 +202,49 @@ def main() -> int:
         and timedelta(0) <= (now - restore_at) <= RESTORE_MAX_AGE
     )
 
+    # Prova de CI do SHA exato: o deploy aprovado consulta o mesmo datastore
+    # Woodpecker. Aqui registramos pipeline e steps para o certificado ser
+    # auditável sem depender de memória/descrição de PR.
+    ci_query = (
+        "SELECT number,status FROM pipelines "
+        f"WHERE repo_id=2 AND commit='{args.sha}' ORDER BY number DESC LIMIT 1;"
+    )
+    rc_ci, ci_raw = run([
+        "docker", "exec", "woodpecker-woodpecker-db-1",
+        "psql", "-U", "woodpecker", "-d", "woodpecker", "-AtF", "|", "-c", ci_query,
+    ])
+    ci_number = None
+    ci_status = None
+    if rc_ci == 0 and ci_raw:
+        parts = ci_raw.splitlines()[0].split("|", 1)
+        if len(parts) == 2:
+            try:
+                ci_number = int(parts[0])
+            except ValueError:
+                ci_number = None
+            ci_status = parts[1]
+
+    ci_steps: list[dict[str, object]] = []
+    if ci_number is not None:
+        step_query = (
+            "SELECT name,state,exit_code FROM steps "
+            "WHERE pipeline_id=(SELECT id FROM pipelines "
+            f"WHERE repo_id=2 AND number={ci_number}) ORDER BY id;"
+        )
+        rc_steps, steps_raw = run([
+            "docker", "exec", "woodpecker-woodpecker-db-1",
+            "psql", "-U", "woodpecker", "-d", "woodpecker", "-AtF", "|", "-c", step_query,
+        ])
+        if rc_steps == 0:
+            for line in steps_raw.splitlines():
+                parts = line.split("|")
+                if len(parts) == 3:
+                    try:
+                        exit_code = int(parts[2])
+                    except ValueError:
+                        exit_code = None
+                    ci_steps.append({"name": parts[0], "state": parts[1], "exit_code": exit_code})
+
     ready_checks = ready.get("checks") if isinstance(ready, dict) else {}
     ready_blockers_ok = bool(
         isinstance(ready_checks, dict)
@@ -207,6 +253,8 @@ def main() -> int:
     )
 
     checks = {
+        "ci_approved": ci_status == "success" and bool(ci_steps)
+        and all(step.get("state") in {"success", "skipped"} for step in ci_steps),
         "sha_matches": deployed == args.sha == health.get("commit") == public.get("commit"),
         "health_local": health_ok and health.get("status") == "ok",
         "readiness": ready_ok and ready.get("status") == "ready" and ready_blockers_ok,
@@ -233,6 +281,11 @@ def main() -> int:
         "generated_at": now.isoformat(),
         "sha": args.sha,
         "deployed_sha": deployed,
+        "ci": {
+            "pipeline": ci_number,
+            "status": ci_status,
+            "steps": ci_steps,
+        },
         "checks": checks,
         "health": health,
         "readiness": ready,

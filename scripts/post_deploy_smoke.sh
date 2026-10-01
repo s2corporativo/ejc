@@ -62,7 +62,28 @@ payload = {
 }
 Path(report).write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)+"\n", encoding="utf-8")
 os.chmod(report, 0o600)
-print(json.dumps({"status":"success","report":report,"evidence_rc":int(evidence_rc)}, ensure_ascii=False))
+
+# O certificado canônico é release-evidence-<sha>.json: incorpora o smoke
+# executado nesta mesma rodada em vez de obrigar consulta a dois arquivos.
+evidence_path = Path(evidence)
+if evidence_path.exists():
+    try:
+        cert = json.loads(evidence_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        cert = {"status": "failed", "sha": sha}
+    cert["post_deploy_smoke"] = payload["http_smoke"]
+    cert["identity"] = identity
+    cert["certified_at"] = payload["generated_at"]
+    evidence_path.write_text(
+        json.dumps(cert, ensure_ascii=False, indent=2, sort_keys=True)+"\n",
+        encoding="utf-8",
+    )
+    os.chmod(evidence_path, 0o600)
+    latest = evidence_path.with_name("release-evidence-latest.json")
+    latest.write_text(evidence_path.read_text(encoding="utf-8"), encoding="utf-8")
+    os.chmod(latest, 0o600)
+
+print(json.dumps({"status":"success","report":report,"evidence":evidence,"evidence_rc":int(evidence_rc)}, ensure_ascii=False))
 PY
 
-echo "post-deploy smoke: OK — $REPORT"
+echo "post-deploy smoke: OK — certificado $EVIDENCE"
