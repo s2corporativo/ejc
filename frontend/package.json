@@ -21,7 +21,9 @@
     "types:check": "cd ../backend && APP_ENV=development python scripts/gerar_tipos_frontend.py --check",
     "audit:css": "node scripts/auditar-css.mjs",
     "audit:css:verificar": "node scripts/auditar-css.mjs --verificar",
-    "test:e2e:ci": "node tests/e2e-ci.mjs"
+    "test:e2e:ci": "node tests/e2e-ci.mjs",
+    "test:visual-regression": "node tests/visual-regression.mjs",
+    "test:visual:update": "node tests/visual-regression.mjs --update"
   },
   "dependencies": {
     "axios": "^1.20.0",

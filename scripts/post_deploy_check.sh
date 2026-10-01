@@ -44,6 +44,15 @@ check_http_code "${BASE_URL}/" "200"
 check_http_code "${BASE_URL}/api/health" "200"
 check_http_code "${BASE_URL}/api/health/ready" "200"
 
+# Smoke das rotas canônicas do SPA. Autenticação/console/responsividade são
+# cobertos pelo Playwright no CI; aqui provamos que o artefato publicado serve
+# todas as entradas principais após o deploy.
+for route in \
+  /login /atividades /clientes /casos /financeiro /documentos \
+  /inteligencia /teses /radar /produtividade /configuracoes; do
+  check_http_code "${BASE_URL}${route}" "200"
+done
+
 login_code="$(curl -k -sS --max-time 20 -o /tmp/ejc_login_check.json -w "%{http_code}" \
   -H "Content-Type: application/json" \
   -d '{"email":"healthcheck@invalid.local","password":"invalid"}' \

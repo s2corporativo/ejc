@@ -208,6 +208,11 @@ async def alocar_comissao_pagamento(
         return {
             "allocation_id": None,
             "withdrawal_id": None,
+            "valor_advogado": None,
+            "valor_escritorio": None,
+            "percentual_advogado": pct,
+            "despesas_deduzidas": calc["despesas"],
+            "base_liquida": calc["base_liquida"],
             "rateio_pendente": True,
             "regra": regra.nome,
             "commission_rule_id": regra.id,

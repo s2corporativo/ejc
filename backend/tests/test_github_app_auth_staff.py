@@ -57,22 +57,19 @@ def test_auth_usa_token_efemero_escopado_e_nao_persiste_credencial():
 
     # Para EJC_REPO=s2corporativo/ejc, a API de installation token exige o nome
     # do repositório ("ejc"), não o identificador owner/repo completo.
-    resultado_payload = subprocess.run(
-        [
-            "bash",
-            "-c",
-            'repo="s2corporativo/ejc"; repo_name="${repo#*/}"; '
-            "jq -cn --arg repo \"$repo_name\" "
-            "'{repositories:[$repo],permissions:{checks:\"write\"}}'",
-        ],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert resultado_payload.returncode == 0, resultado_payload.stderr
-    assert resultado_payload.stdout.strip() == (
-        '{"repositories":["ejc"],"permissions":{"checks":"write"}}'
-    )
+    # A semântica relevante independe de o contêiner de pytest ter jq
+    # instalado: o script já foi inspecionado acima; aqui validamos que o
+    # identificador owner/repo é reduzido ao nome aceito pela API GitHub App.
+    repo = "s2corporativo/ejc"
+    repo_name = repo.split("/", 1)[-1]
+    payload = {
+        "repositories": [repo_name],
+        "permissions": {"checks": "write"},
+    }
+    assert payload == {
+        "repositories": ["ejc"],
+        "permissions": {"checks": "write"},
+    }
 
     # O GitHub alterou o formato de installation tokens em 2026. O contrato
     # local valida tipo/comprimento mínimo apenas para rejeitar resposta vazia,

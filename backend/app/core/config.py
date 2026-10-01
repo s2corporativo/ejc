@@ -1084,6 +1084,12 @@ class Settings(BaseSettings):
     # leitura; sem integração externa nova. False → GET /diagnostico/central 503.
     DIAGNOSTICO_ENABLED: bool = True
 
+    # ── Kill-switches operacionais de jornadas críticas ───────────────────
+    # Default ON para preservar o comportamento atual. Permitem desligar a
+    # superfície inteira sem apagar código, alterar banco ou fazer rollback.
+    ENTRADA_UNICA_ENABLED: bool = True
+    FINANCEIRO_ENABLED: bool = True
+
     # ── Fila assíncrona (Celery + Redis — Fase 3A) ────────────────────────
     # CELERY_ENABLED=False (default) preserva o comportamento atual: tarefas
     # de indexação rodam em BackgroundTasks no próprio processo da API.

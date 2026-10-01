@@ -40,9 +40,33 @@ for rel in sys.argv[2:]:
 
 if errors:
     raise SystemExit("\n".join(errors))
-if checked < 10:
+# Duas checagens de health antes feitas por curl foram consolidadas no
+# check_release_identity.py. Mantemos a cobertura mínima dos curls restantes e
+# provamos explicitamente que o checker novo também tem timeout de rede.
+if checked < 8:
     raise SystemExit(f"cobertura inesperadamente baixa: apenas {checked} comandos curl")
-print(f"curl timeout contract: {checked} comandos ativos cobertos")
+
+identity = (root / "scripts/check_release_identity.py").read_text(encoding="utf-8")
+if not all(token in identity for token in ("HTTPConnection", "HTTPSConnection", "timeout=15")):
+    raise SystemExit("checker canônico de identidade perdeu timeout HTTP")
+if "parsed.scheme not in {\"http\", \"https\"}" not in identity:
+    raise SystemExit("checker canônico de identidade perdeu restrição de esquema HTTP(S)")
+
+deploy = (root / "scripts/deploy_vps_safe.sh").read_text(encoding="utf-8")
+approved = (root / "infra/host-automation/ejc-deploy-approved.sh").read_text(encoding="utf-8")
+weekly = (root / "infra/host-automation/ejc-weekly-saneamento.sh").read_text(encoding="utf-8")
+smoke = (root / "scripts/post_deploy_smoke.sh").read_text(encoding="utf-8")
+
+if "check_release_identity.py" not in deploy:
+    raise SystemExit("deploy: checker canônico de identidade não está integrado")
+if "check_release_identity.py" not in weekly:
+    raise SystemExit("weekly: checker canônico de identidade não está integrado")
+if "post_deploy_smoke.sh" not in approved:
+    raise SystemExit("approved: smoke canônico pós-deploy não está integrado")
+if "check_release_identity.py" not in smoke:
+    raise SystemExit("smoke: checker canônico de identidade não está integrado")
+
+print(f"timeout contract: {checked} curls + checker/smoke canônicos cobertos")
 PY
 
 TMP="$(mktemp -d)"

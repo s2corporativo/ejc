@@ -26,16 +26,9 @@ SPEC.loader.exec_module(_modulo)
 
 PRIMEIRA_REVISAO_SOB_A_CATRACA = 132
 
-# Revisões 164–166 já estavam aplicadas no banco de produção (head 166)
-# quando a homologação de 30/09/2026 reconciliou a suíte. Elas contêm
-# backfills/alterações explicitamente revisados que o classificador estático
-# conservador sinaliza. Migration aplicada não é reescrita; a catraca segue
-# bloqueante para as demais revisões, inclusive 167+.
-REVISOES_APLICADAS_REVISADAS = {
-    "164_commission_rules",
-    "165_commission_operations",
-    "166_finance_governance",
-}
+# Revisões históricas que exigem revisão humana só podem passar se o
+# MIGRATION_REVIEW_MANIFEST.json corresponder ao SHA-256 EXATO do arquivo.
+# O mecanismo é o mesmo consumido por evaluate()/deploy, sem bypass por número.
 
 
 def _numeradas() -> list[tuple[int, Path]]:
@@ -54,19 +47,25 @@ def test_a_catraca_alcanca_alguma_migration():
 
 
 def test_migrations_novas_passam_no_gate_de_deploy():
-    revisoes = {rev.path: rev for rev in _modulo._load_revisions(VERSIONS).values()}
+    revisoes = _modulo._load_revisions(VERSIONS)
+    manifest = _modulo._load_review_manifest(VERSIONS)
     reprovadas: list[str] = []
     conferidas = 0
 
     for numero, caminho in _numeradas():
         if numero < PRIMEIRA_REVISAO_SOB_A_CATRACA:
             continue
-        revisao = revisoes.get(caminho)
+        revisao = next((r for r in revisoes.values() if r.path == caminho), None)
         assert revisao is not None, f"{caminho.name} não foi carregada pelo gate"
         conferidas += 1
         achados, _politica = _modulo._classify(revisao)
-        if achados and revisao.revision not in REVISOES_APLICADAS_REVISADAS:
-            reprovadas.append(f"{caminho.name}: {'; '.join(achados)}")
+        if achados:
+            aprovado, erro = _modulo._exact_review_approval(revisao, achados, manifest)
+            if not aprovado:
+                motivos = list(achados)
+                if erro:
+                    motivos.append(erro)
+                reprovadas.append(f"{caminho.name}: {'; '.join(motivos)}")
 
     assert conferidas
     assert not reprovadas, (
@@ -98,3 +97,12 @@ def test_seed_de_tribunais_e_idempotente_por_construcao():
     assert "NOT EXISTS" in sql
     assert _modulo._assignment(arvore, "deployment_policy") == "additive_data_backfill"
     assert _modulo._assignment(arvore, "data_backfill_targets") == ("tribunais",)
+
+
+def test_manifesto_de_revisao_historica_e_estreito():
+    manifest = _modulo._load_review_manifest(VERSIONS)
+    assert set(manifest) == {
+        "164_commission_rules",
+        "165_commission_operations",
+        "166_finance_governance",
+    }

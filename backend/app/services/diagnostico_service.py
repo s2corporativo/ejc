@@ -67,6 +67,70 @@ def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat() if dt is not None else None
 
 
+async def _probe_runtime_release(settings: Settings) -> dict[str, Any]:
+    inicio = time.perf_counter()
+    sha = (os.getenv("GIT_SHA") or "").strip()
+    deployed_at = (os.getenv("EJC_DEPLOYED_AT") or "").strip() or None
+    flags = {
+        "entrada_unica": bool(settings.ENTRADA_UNICA_ENABLED),
+        "financeiro": bool(settings.FINANCEIRO_ENABLED),
+        "ia": bool(settings.AI_ENABLED),
+        "ajuizamento": bool(settings.JUDICIAL_FILING_ENABLED),
+    }
+    sha_ok = len(sha) == 40 and all(c in "0123456789abcdef" for c in sha.lower())
+    return _sub(
+        "Release / Runtime",
+        "ok" if sha_ok else "alerta",
+        f"Release {sha[:8] if sha else 'desconhecida'} em execução"
+        + (f" desde {deployed_at}." if deployed_at else "."),
+        "Confirme o GIT_SHA injetado pelo deploy." if not sha_ok else "Nenhuma ação necessária.",
+        _ms(inicio),
+        commit=sha or None,
+        deployed_at=deployed_at,
+        feature_flags=flags,
+    )
+
+
+async def _probe_fila_async(settings: Settings) -> dict[str, Any]:
+    inicio = time.perf_counter()
+    if not settings.CELERY_ENABLED:
+        return _sub(
+            "Fila assíncrona / Redis", "desligado",
+            "Celery está desabilitado; tarefas usam fallback local quando previsto.",
+            "Nenhuma ação necessária se esta for a configuração esperada.",
+            _ms(inicio), redis=None, workers=0,
+        )
+
+    from app.tasks.dispatcher import _redis_alcancavel
+    redis_ok = await _redis_alcancavel(settings.REDIS_URL)
+    if not redis_ok:
+        return _sub(
+            "Fila assíncrona / Redis", "erro",
+            "Celery está habilitado, mas o Redis não respondeu ao ping.",
+            "Restabeleça o Redis; o dispatcher pode cair para BackgroundTasks onde houver fallback.",
+            _ms(inicio), redis=False, workers=0,
+        )
+
+    def _worker_count() -> int:
+        from app.core.celery_app import celery_app
+        respostas = celery_app.control.inspect(timeout=1.5).ping() or {}
+        return len(respostas)
+
+    try:
+        workers = await asyncio.wait_for(asyncio.to_thread(_worker_count), timeout=3.0)
+    except Exception:
+        workers = 0
+
+    return _sub(
+        "Fila assíncrona / Redis",
+        "ok" if workers > 0 else "alerta",
+        f"Redis operacional e {workers} worker(s) Celery responderam."
+        if workers > 0 else "Redis operacional, mas nenhum worker Celery respondeu ao ping.",
+        "Nenhuma ação necessária." if workers > 0 else "Verifique o container ejc_worker e os logs do Celery.",
+        _ms(inicio), redis=True, workers=workers,
+    )
+
+
 # ── Probe: Banco de dados ─────────────────────────────────────────────────────
 async def _probe_banco(session) -> dict[str, Any]:
     inicio = time.perf_counter()
@@ -567,42 +631,98 @@ async def _probe_heartbeat_jobs(session, settings: Settings) -> dict[str, Any]:
 
 
 # ── Probe: Backup offsite ─────────────────────────────────────────────────────
-async def _probe_backup(settings: Settings) -> dict[str, Any]:
-    """Sinaliza produção rodando SEM backup offsite (achado da auditoria): o
-    backup cifrado é o único mitigante do ponto único de falha do banco. Só
-    leitura de config — NÃO liga o backup."""
+async def _probe_backup(session_or_settings, settings: Settings | None = None) -> dict[str, Any]:
+    """Expõe configuração e, quando há sessão, a última execução do backup.
+
+    Mantém a assinatura histórica ``_probe_backup(settings)`` usada por testes e
+    chamadas unitárias; no diagnóstico agregado recebe ``(session, settings)`` e
+    acrescenta a telemetria persistida sem criar sessão concorrente.
+    """
     inicio = time.perf_counter()
+    if settings is None:
+        settings = session_or_settings
+        session = None
+    else:
+        session = session_or_settings
     producao = (settings.APP_ENV or "").strip().lower() == "production"
     habilitado = bool(settings.BACKUP_ENABLED)
+
+    last_run_at = None
+    last_status = None
+    age_hours = None
+    try:
+        from app.services import backup_service
+        estado = await backup_service.obter_estado(session) if session is not None else None
+        if estado:
+            last_status = estado.get("last_status")
+            raw = estado.get("last_run_at")
+            if isinstance(raw, datetime):
+                last_dt = raw if raw.tzinfo else raw.replace(tzinfo=timezone.utc)
+            elif raw:
+                try:
+                    last_dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+                    if last_dt.tzinfo is None:
+                        last_dt = last_dt.replace(tzinfo=timezone.utc)
+                except ValueError:
+                    last_dt = None
+            else:
+                last_dt = None
+            if last_dt is not None:
+                last_dt = last_dt.astimezone(timezone.utc)
+                last_run_at = last_dt.isoformat()
+                age_hours = round(
+                    (datetime.now(timezone.utc) - last_dt).total_seconds() / 3600, 2
+                )
+    except Exception as exc:  # telemetria: não derruba o diagnóstico inteiro
+        logger.warning("[diagnostico] estado do backup indisponível: %s", type(exc).__name__)
+
+    extra = {
+        "app_env": settings.APP_ENV,
+        "backup_enabled": habilitado,
+        "last_run_at": last_run_at,
+        "last_status": last_status,
+        "age_hours": age_hours,
+    }
 
     if producao and not habilitado:
         return _sub(
             "Backup offsite",
             "alerta",
-            "Ambiente de PRODUÇÃO com BACKUP_ENABLED=false — o backup cifrado "
-            "offsite (único mitigante do ponto único de falha do banco) está "
-            "DESLIGADO.",
-            "Defina BACKUP_ENABLED=true (e BACKUP_ENCRYPTION_KEY) para proteger "
-            "os dados contra perda total.",
+            "Ambiente de PRODUÇÃO com BACKUP_ENABLED=false; proteção offsite está desligada.",
+            "Defina BACKUP_ENABLED=true e valide a execução mais recente.",
             _ms(inicio),
-            app_env=settings.APP_ENV, backup_enabled=habilitado,
+            **extra,
         )
     if habilitado:
-        return _sub(
-            "Backup offsite",
-            "ok",
-            "Backup cifrado offsite habilitado (BACKUP_ENABLED=true).",
-            "Nenhuma ação necessária.",
-            _ms(inicio),
-            app_env=settings.APP_ENV, backup_enabled=True,
+        detalhe = "Backup cifrado offsite habilitado."
+        if last_run_at:
+            detalhe += f" Última execução: {last_run_at}"
+            if last_status:
+                detalhe += f" ({last_status})."
+        else:
+            detalhe += " Nenhuma execução anterior foi localizada."
+        # Sem sessão (chamada unitária/legada), preserva o contrato histórico:
+        # configuração habilitada é suficiente. No painel real, a sessão existe
+        # e a ausência/erro da última execução vira alerta acionável.
+        status = (
+            "ok"
+            if session is None or (last_run_at and last_status == "sucesso")
+            else "alerta"
         )
+        acao = (
+            "Nenhuma ação necessária."
+            if status == "ok"
+            else "Verifique o agendamento e a última execução do backup."
+        )
+        return _sub("Backup offsite", status, detalhe, acao, _ms(inicio), **extra)
+
     return _sub(
         "Backup offsite",
         "desligado",
-        "Backup offsite desabilitado (BACKUP_ENABLED=false) fora de produção.",
-        "Em produção, habilite BACKUP_ENABLED=true para proteção contra perda total.",
+        "Backup offsite desabilitado fora de produção.",
+        "Em produção, habilite BACKUP_ENABLED=true.",
         _ms(inicio),
-        app_env=settings.APP_ENV, backup_enabled=False,
+        **extra,
     )
 
 
@@ -755,14 +875,16 @@ async def diagnostico_completo(db=None) -> dict[str, Any]:
     settings = get_settings()
 
     tarefas = [
+        _rodar("Release / Runtime", _probe_runtime_release(settings)),
         _rodar("Banco de dados", _com_sessao(_probe_banco)),
         _rodar("Migrations (Alembic)", _com_sessao(_probe_migrations)),
+        _rodar("Fila assíncrona / Redis", _probe_fila_async(settings)),
         _rodar("IA / Provedores", _probe_ia(settings)),
         _rodar("Integrações externas", _probe_integracoes(settings)),
         _rodar("Embeddings / RAG", _probe_rag(settings)),
         _rodar("Scheduler / jobs", _com_sessao(_probe_scheduler, settings)),
         _rodar("Jobs monitorados (heartbeat)", _com_sessao(_probe_heartbeat_jobs, settings)),
-        _rodar("Backup offsite", _probe_backup(settings)),
+        _rodar("Backup offsite", _com_sessao(_probe_backup, settings)),
         _rodar("Disco / uploads", _probe_disco(settings)),
         _rodar("Erros recentes", _probe_erros(settings)),
     ]

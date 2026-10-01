@@ -101,24 +101,33 @@ relock_env_if_needed() {
 # recarregue um GIT_SHA antigo do .env e faça /api/health anunciar artefato
 # incorreto. Garante exatamente UM GIT_SHA= no .env (dedup de entradas legadas).
 persist_git_sha_env() {
-  python3 - "$GIT_SHA" <<'PY'
+  python3 - "$GIT_SHA" "$(date -u +%FT%TZ)" <<'PY'
 from pathlib import Path
 import sys
 
 path = Path(".env")
 sha = sys.argv[1]
+deployed_at = sys.argv[2]
 lines = path.read_text(encoding="utf-8").splitlines()
 out = []
-seen = False
+seen_sha = False
+seen_deployed_at = False
 for line in lines:
     if line.startswith("GIT_SHA="):
-        if not seen:
+        if not seen_sha:
             out.append(f"GIT_SHA={sha}")
-            seen = True
+            seen_sha = True
+        continue
+    if line.startswith("EJC_DEPLOYED_AT="):
+        if not seen_deployed_at:
+            out.append(f"EJC_DEPLOYED_AT={deployed_at}")
+            seen_deployed_at = True
         continue
     out.append(line)
-if not seen:
+if not seen_sha:
     out.append(f"GIT_SHA={sha}")
+if not seen_deployed_at:
+    out.append(f"EJC_DEPLOYED_AT={deployed_at}")
 path.write_text("\n".join(out) + "\n", encoding="utf-8")
 PY
 }
@@ -512,10 +521,36 @@ RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate frontend
 sleep 8
 EJC_DOMAIN="$DOMAIN" bash scripts/post_deploy_check.sh
 
+# Prova de identidade antes de persistir o marcador.
+python3 scripts/check_release_identity.py \
+  --expected "$GIT_SHA" \
+  --app-dir "$APP_DIR" \
+  --public-url "https://$DOMAIN/api/health" \
+  --skip-marker
+
 printf '%s\n' "$GIT_SHA" > "$DEPLOYED_SHA_TMP"
-chmod 644 "$DEPLOYED_SHA_TMP"
+chmod 600 "$DEPLOYED_SHA_TMP"
 mv -f -- "$DEPLOYED_SHA_TMP" "$APP_DIR/.deployed_sha"
+
+# Prova final: TARGET_SHA == health local == health público == .deployed_sha.
+python3 scripts/check_release_identity.py \
+  --expected "$GIT_SHA" \
+  --app-dir "$APP_DIR" \
+  --public-url "https://$DOMAIN/api/health"
 log "Versão implantada registrada atomicamente em .deployed_sha."
+
+# Mantém exatamente UMA geração anterior como artefato de rollback comprovável.
+# As tags temporárias continuam sendo removidas; rollback-last fica protegida
+# por uma tag não-dangling e é substituída somente no próximo deploy.
+if [[ "$OLD_GIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  [ -n "$OLD_BACKEND_TAG" ] && docker tag "$OLD_BACKEND_TAG" ejc-backend:rollback-last
+  [ -n "$OLD_WORKER_TAG" ] && docker tag "$OLD_WORKER_TAG" ejc-worker:rollback-last
+  [ -n "$OLD_FRONTEND_TAG" ] && docker tag "$OLD_FRONTEND_TAG" ejc-frontend:rollback-last
+  printf '%s\n' "$OLD_GIT_SHA" > "$APP_DIR/.rollback_last_sha.new.$$"
+  chmod 600 "$APP_DIR/.rollback_last_sha.new.$$"
+  mv -f -- "$APP_DIR/.rollback_last_sha.new.$$" "$APP_DIR/.rollback_last_sha"
+  log "Runtime anterior preservado como rollback-last: $OLD_GIT_SHA"
+fi
 
 ROLLBACK_ARMED=0
 cleanup_temp_files

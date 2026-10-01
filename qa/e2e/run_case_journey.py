@@ -670,6 +670,64 @@ def _cleanup_seguro(
         )
 
 
+def _validar_busca_global(client: httpx.Client, state: core.SuiteState) -> None:
+    termo = core.MARKER_RUN
+    resposta = core._request(
+        client,
+        state,
+        name="jornada.pesquisa.global",
+        method="GET",
+        path=f"/api/search?q={termo}&tipo=tudo&limit=20",
+        expected=[200],
+    )
+    if resposta is None or resposta.status_code != 200:
+        return
+    corpo = resposta.json()
+    resultados = corpo.get("resultados") or []
+    core._afirmar(
+        state,
+        "jornada.pesquisa.encontrou_dados_ficticios",
+        len(resultados) > 0,
+        "busca global não retornou nenhum registro da execução fictícia",
+    )
+
+
+def _logout(client: httpx.Client, state: core.SuiteState) -> None:
+    if not state.refresh_token:
+        core._afirmar(
+            state,
+            "jornada.logout.precondicao",
+            False,
+            "login não devolveu refresh_token",
+        )
+        return
+    refresh = state.refresh_token
+    resposta = core._request(
+        client,
+        state,
+        name="jornada.logout",
+        method="POST",
+        path="/api/auth/logout",
+        expected=[200],
+        json_body={"refresh_token": refresh},
+        autenticado=False,
+    )
+    if resposta is None or resposta.status_code != 200:
+        return
+    core._request(
+        client,
+        state,
+        name="jornada.logout.refresh_revogado",
+        method="POST",
+        path="/api/auth/refresh",
+        expected=[401],
+        json_body={"refresh_token": refresh},
+        autenticado=False,
+    )
+    state.access_token = None
+    state.refresh_token = None
+
+
 def main() -> None:
     base_url = core._env("EJC_BASE_URL").rstrip("/")
     if (
@@ -702,25 +760,36 @@ def main() -> None:
             )
             core._login(client, state)
             core._negativas_de_autorizacao(client, state)
-            core._matrix_smoke(
-                client,
-                state,
-                matrix,
-                covered_posts=core._POST_COBERTO_POR_FLUXO - {"/api/cases/"},
-                skipped_posts={
-                    "/api/cases/": (
-                        "não coberto nesta jornada: a origem canônica do caso é "
-                        "POST /api/entrada/{rascunho_id}/criar-caso; o endpoint "
-                        "direto permanece coberto por run_fictitious_smoke.py"
-                    )
-                },
-            )
+            creation_mode = os.getenv("EJC_CASE_CREATION_MODE", "entrada").strip().lower()
+            if creation_mode not in {"entrada", "manual"}:
+                raise SystemExit("EJC_CASE_CREATION_MODE deve ser 'entrada' ou 'manual'")
+
+            if creation_mode == "manual":
+                core._matrix_smoke(client, state, matrix)
+            else:
+                core._matrix_smoke(
+                    client,
+                    state,
+                    matrix,
+                    covered_posts=core._POST_COBERTO_POR_FLUXO - {"/api/cases/"},
+                    skipped_posts={
+                        "/api/cases/": (
+                            "não coberto nesta jornada: a origem canônica do caso é "
+                            "POST /api/entrada/{rascunho_id}/criar-caso; o endpoint "
+                            "direto permanece coberto por run_fictitious_smoke.py"
+                        )
+                    },
+                )
             core._create_client(client, state, matrix)
 
-            # DIFERENÇA CENTRAL desta jornada: o caso não é criado diretamente
-            # por /api/cases/. Ele nasce pela Entrada Única e pela confirmação
-            # HITL, igual ao fluxo padrão do dashboard.
-            _criar_caso_via_entrada(client, state, matrix)
+            if creation_mode == "manual":
+                # Jornada diária operacional: evita qualquer chamada paga de IA
+                # e prova o cadastro rápido usado para casos já existentes.
+                core._create_case(client, state, matrix)
+            else:
+                # Jornada específica da Entrada Única, mantida sob execução
+                # explícita para testar IA + HITL quando desejado.
+                _criar_caso_via_entrada(client, state, matrix)
 
             core._upload_document(client, state, matrix)
             core._case_followups(client, state, matrix)
@@ -732,6 +801,7 @@ def main() -> None:
             fee_id = _criar_e_validar_honorario(client, state)
             _validar_inteligencia_do_caso(client, state)
             _validar_dpt360(client, state)
+            _validar_busca_global(client, state)
         finally:
             # Dependências FK: satélites primeiro, depois documento/caso/cliente
             # no cleanup canônico. Cada remoção usa apenas IDs desta execução.
@@ -751,6 +821,7 @@ def main() -> None:
                 _cleanup_seguro(
                     state, "core", core._cleanup, client, state
                 )
+            _cleanup_seguro(state, "logout", _logout, client, state)
             core._write_report(state, matrix)
 
 

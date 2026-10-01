@@ -22,7 +22,7 @@ import hashlib
 import json
 import re
 import sys
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -151,31 +151,16 @@ def extract_table_names(source: str) -> list[str]:
 
 
 def router_mounts(root: Path) -> tuple[str, set[str], dict[str, list[str]]]:
-    """Mapeia montagens reais de routers FastAPI no backend.
-
-    Retorna (fonte_do_main, paths_relativos_montados, atributos_por_path).
-
-    Substitui o regex antigo (``app.include_router\\(\\s*mod.attr``), que perdia
-    mecanismos presentes no código real e inflava routers "não montados":
-
-    - includes multilinha com comentários inline (main.py:540-550);
-    - imports com alias: ``from app.routers import api_keys as api_keys_router``;
-    - import do objeto router: ``from app.modules.dpt360.router import router as
-      dpt360_router`` seguido de ``include_router(dpt360_router)``;
-    - composição por cópia de rotas: ``for _r in mod.router.routes:`` +
-      ``add_api_route(...)`` — padrão de ``app/routers/ramos.py``;
-    - includes fora do main.py (qualquer módulo pode montar sub-routers).
-
-    A chave do resultado é o path relativo do ARQUIVO (stems colidem: vários
-    ``router.py`` em pacotes distintos).
-    """
+    """Mapeia apenas routers alcancaveis a partir do FastAPI principal."""
     backend = root / "backend/app"
     main_path = backend / "main.py"
     source = safe_read(main_path) if main_path.exists() else ""
-    mounted_paths: set[str] = set()
-    mounted_attrs: dict[str, list[str]] = defaultdict(list)
     if not backend.exists():
-        return source, mounted_paths, dict(mounted_attrs)
+        return source, set(), {}
+
+    root_key = "<fastapi-app>"
+    graph: dict[str, set[str]] = defaultdict(set)
+    attrs_by_edge: dict[tuple[str, str], set[str]] = defaultdict(set)
 
     def resolve_module(module: str) -> str | None:
         if not module.startswith("app."):
@@ -186,6 +171,36 @@ def router_mounts(root: Path) -> tuple[str, set[str], dict[str, list[str]]]:
                 return candidate.relative_to(root).as_posix()
         return None
 
+    def symbols_for(tree: ast.AST) -> dict[str, str]:
+        symbols: dict[str, str] = {}
+        for node in getattr(tree, "body", []):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                for alias in node.names:
+                    direct = resolve_module(f"{node.module}.{alias.name}")
+                    base = resolve_module(node.module)
+                    if direct:
+                        symbols[alias.asname or alias.name] = direct
+                    elif base:
+                        symbols[alias.asname or alias.name] = base
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    resolved = resolve_module(alias.name)
+                    if resolved:
+                        symbols[alias.asname or alias.name.split(".")[-1]] = resolved
+        return symbols
+
+    def resolve_expr(expr: ast.AST, symbols: dict[str, str], current: str) -> str | None:
+        if isinstance(expr, ast.Name):
+            if expr.id in {"router", "api_router"}:
+                return current
+            return symbols.get(expr.id)
+        if isinstance(expr, ast.Attribute):
+            if isinstance(expr.value, ast.Name):
+                return symbols.get(expr.value.id)
+            return resolve_expr(expr.value, symbols, current)
+        return None
+
+    main_relative = rel(root, main_path) if main_path.exists() else ""
     for path in sorted(backend.rglob("*.py")):
         if any(part in IGNORED_DIRS for part in path.parts):
             continue
@@ -194,43 +209,9 @@ def router_mounts(root: Path) -> tuple[str, set[str], dict[str, list[str]]]:
             tree = ast.parse(safe_read(path), filename=relative)
         except SyntaxError:
             continue
-        symbols: dict[str, str] = {}
+        symbols = symbols_for(tree)
+
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module:
-                for alias in node.names:
-                    symbols[alias.asname or alias.name] = f"{node.module}.{alias.name}"
-            elif isinstance(node, ast.Import):
-                for alias in node.names:
-                    symbols[alias.asname or alias.name] = alias.name
-        for node in ast.walk(tree):
-            # 1) include_router(x.router) | include_router(x) — em qualquer objeto
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "include_router"
-                and node.args
-            ):
-                target = node.args[0]
-                attr: str | None = None
-                if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name):
-                    attr = target.attr
-                    binding = target.value.id
-                elif isinstance(target, ast.Name):
-                    binding = target.id
-                else:
-                    binding = ""
-                if binding:
-                    symbol = symbols.get(binding, "")
-                    target_path = resolve_module(symbol)
-                    if not target_path and "." in symbol:
-                        # `from pkg.mod import objeto as alias` — o nome importado
-                        # é um OBJETO (ex.: a instância router), não um submódulo.
-                        # O arquivo que define o objeto é pkg/mod.
-                        target_path = resolve_module(symbol.rsplit(".", 1)[0])
-                    if target_path:
-                        mounted_paths.add(target_path)
-                        mounted_attrs[target_path].append(attr or "__module__")
-            # 2) composição por cópia de rotas: <alias>.router.routes
             if isinstance(node, ast.Attribute) and node.attr == "routes":
                 inner = node.value
                 if (
@@ -238,14 +219,54 @@ def router_mounts(root: Path) -> tuple[str, set[str], dict[str, list[str]]]:
                     and inner.attr == "router"
                     and isinstance(inner.value, ast.Name)
                 ):
-                    symbol = symbols.get(inner.value.id, "")
-                    target_path = resolve_module(symbol)
-                    if not target_path and "." in symbol:
-                        target_path = resolve_module(symbol.rsplit(".", 1)[0])
-                    if target_path:
-                        mounted_paths.add(target_path)
-                        mounted_attrs[target_path].append("router")
-    return source, mounted_paths, dict(mounted_attrs)
+                    child = symbols.get(inner.value.id)
+                    if child and child != relative:
+                        graph[relative].add(child)
+                        attrs_by_edge[(relative, child)].add("router")
+
+            if (
+                not isinstance(node, ast.Call)
+                or not isinstance(node.func, ast.Attribute)
+                or node.func.attr != "include_router"
+                or not node.args
+            ):
+                continue
+
+            parent_expr = node.func.value
+            if (
+                relative == main_relative
+                and isinstance(parent_expr, ast.Name)
+                and parent_expr.id == "app"
+            ):
+                parent = root_key
+            else:
+                parent = resolve_expr(parent_expr, symbols, relative)
+
+            child = resolve_expr(node.args[0], symbols, relative)
+            if parent and child:
+                graph[parent].add(child)
+                attr = node.args[0].attr if isinstance(node.args[0], ast.Attribute) else "__module__"
+                attrs_by_edge[(parent, child)].add(attr)
+
+    mounted: set[str] = set()
+    mounted_attrs: dict[str, set[str]] = defaultdict(set)
+    queue: deque[str] = deque(graph.get(root_key, set()))
+    for child in graph.get(root_key, set()):
+        mounted_attrs[child].update(attrs_by_edge.get((root_key, child), set()))
+
+    while queue:
+        current = queue.popleft()
+        if current in mounted:
+            continue
+        mounted.add(current)
+        for child in graph.get(current, set()):
+            mounted_attrs[child].update(attrs_by_edge.get((current, child), set()))
+            if child not in mounted:
+                queue.append(child)
+
+    return source, mounted, {
+        path: sorted(attrs) for path, attrs in mounted_attrs.items()
+    }
 
 
 def router_prefixes(tree: ast.AST) -> dict[str, str]:
@@ -325,7 +346,7 @@ def python_inventory(root: Path) -> list[InventoryItem]:
             mounted = None
 
         file_kind = "python_module"
-        if is_router_file:
+        if is_router_file and defines_api_router(tree):
             file_kind = "router"
         elif is_service_file:
             file_kind = "service"

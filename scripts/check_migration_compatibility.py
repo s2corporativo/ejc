@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -379,6 +380,57 @@ def _safe_backfill_sql_findings(
     return findings, used_targets
 
 
+REVIEW_MANIFEST_FILENAME = "MIGRATION_REVIEW_MANIFEST.json"
+REVIEWED_POLICY = "human_reviewed_sha256"
+
+
+def _load_review_manifest(directory: Path) -> dict[str, dict[str, str]]:
+    path = directory.parent / REVIEW_MANIFEST_FILENAME
+    if not path.exists():
+        return {}
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise RuntimeError(f"{REVIEW_MANIFEST_FILENAME} precisa conter um objeto JSON")
+    out: dict[str, dict[str, str]] = {}
+    for revision, entry in raw.items():
+        if not isinstance(revision, str) or not isinstance(entry, dict):
+            raise RuntimeError(f"entrada inválida em {REVIEW_MANIFEST_FILENAME}")
+        required = {"file", "sha256", "status", "reason"}
+        if set(entry) != required:
+            raise RuntimeError(
+                f"{revision}: manifesto exige exatamente {sorted(required)}"
+            )
+        if entry["status"] != "aplicada_e_auditada":
+            raise RuntimeError(f"{revision}: status de revisão inválido")
+        if not isinstance(entry["reason"], str) or not entry["reason"].strip():
+            raise RuntimeError(f"{revision}: reason vazio")
+        digest = entry["sha256"]
+        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise RuntimeError(f"{revision}: sha256 inválido")
+        out[revision] = {k: str(v) for k, v in entry.items()}
+    return out
+
+
+def _exact_review_approval(
+    revision: Revision,
+    findings: list[str],
+    manifest: dict[str, dict[str, str]],
+) -> tuple[bool, str | None]:
+    # Revisão humana é uma exceção estreita somente para algo que o
+    # classificador já bloqueou. Migration expand-only não depende do manifesto.
+    if not findings:
+        return False, None
+    entry = manifest.get(revision.revision)
+    if not entry:
+        return False, None
+    if entry["file"] != revision.path.name:
+        return False, "manifesto aponta arquivo diferente"
+    digest = hashlib.sha256(revision.path.read_bytes()).hexdigest()
+    if digest != entry["sha256"]:
+        return False, "hash da migration diverge da revisão humana registrada"
+    return True, None
+
+
 def _classify(revision: Revision) -> tuple[list[str], str]:
     tree = ast.parse(
         revision.path.read_text(encoding="utf-8"),
@@ -496,15 +548,26 @@ def evaluate(directory: Path, current_revision: str) -> dict[str, object]:
     revisions = _load_revisions(directory)
     target, pending = _linear_pending_path(revisions, current_revision)
     migrations: list[dict[str, object]] = []
+    manifest = _load_review_manifest(directory)
     for revision in pending:
         reasons, policy = _classify(revision)
+        reviewed, review_error = _exact_review_approval(revision, reasons, manifest)
+        effective_reasons = list(reasons)
+        reviewed_findings: list[str] = []
+        if reviewed:
+            reviewed_findings = effective_reasons
+            effective_reasons = []
+            policy = REVIEWED_POLICY
+        elif review_error:
+            effective_reasons.append(review_error)
         migrations.append(
             {
                 "revision": revision.revision,
                 "file": revision.path.name,
                 "policy": policy,
-                "compatible": not reasons,
-                "reasons": reasons,
+                "compatible": not effective_reasons,
+                "reasons": effective_reasons,
+                "reviewed_findings": reviewed_findings,
             }
         )
     return {
