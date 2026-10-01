@@ -520,6 +520,8 @@ class TestIsolamentoCriticaDoGateEIngestao:
         from app.routers import rag as rag_router
         from app.routers.rag import ingerir_ai_log_aprovado, IngerirAILogRequest
         from app.services import ingestion_service
+        from app.core import ownership
+        from app.services.ai import entidades_caso
         from app.models.ai_log import AIStatusHITL, AITipoUso
         from app.services.ai.adversarial import MARCADOR_AILOG
 
@@ -530,13 +532,26 @@ class TestIsolamentoCriticaDoGateEIngestao:
         ):
             capturado["conteudo"] = conteudo
             capturado["extra"] = kw.get("extra")
+            capturado["client_id"] = kw.get("client_id")
+            capturado["case_id"] = kw.get("case_id")
+            capturado["categoria"] = categoria
             return "novo"
 
+        async def fake_acesso(db, cu, case_id):
+            assert case_id == "case-1"
+            return SimpleNamespace(id=case_id, client_id="client-1")
+
+        async def fake_entidades(db, case_id):
+            assert case_id == "case-1"
+            return {}
+
         monkeypatch.setattr(ingestion_service, "upsert_documento", fake_upsert)
+        monkeypatch.setattr(ownership, "verificar_acesso_caso", fake_acesso)
+        monkeypatch.setattr(entidades_caso, "entidades_do_caso", fake_entidades)
         monkeypatch.setattr(rag_router, "chunk_texto", lambda t: ["c1", "c2"])
 
         log = SimpleNamespace(
-            id="log-1", user_id="user-1",
+            id="log-1", user_id="user-1", case_id="case-1",
             status_hitl=AIStatusHITL.revisado,
             tipo_uso=AITipoUso.redacao_peca,
             created_at=_dt.datetime(2026, 7, 5),
@@ -551,7 +566,44 @@ class TestIsolamentoCriticaDoGateEIngestao:
         assert capturado["conteudo"] == log.resposta
         assert "verificar fonte" not in capturado["conteudo"]
         assert MARCADOR_AILOG not in capturado["conteudo"]
+        assert capturado["categoria"] == "conhecimento_ia"
+        assert capturado["client_id"] == "client-1"
+        assert capturado["case_id"] == "case-1"
+        assert capturado["extra"]["escopo"] == "caso"
+        assert capturado["extra"]["fonte_primaria"] is False
+        assert out["escopo"] == {"client_id": "client-1", "case_id": "case-1"}
 
+
+
+    async def test_ingestao_ailog_sem_caso_falha_fechado(self):
+        """Feedback aprovado sem escopo real não vira conhecimento global."""
+        import datetime as _dt
+        from fastapi import HTTPException
+        from app.routers.rag import ingerir_ai_log_aprovado, IngerirAILogRequest
+        from app.models.ai_log import AIStatusHITL, AITipoUso
+
+        log = SimpleNamespace(
+            id="log-global", user_id="user-1", case_id=None,
+            status_hitl=AIStatusHITL.aplicado,
+            tipo_uso=AITipoUso.outro,
+            created_at=_dt.datetime(2026, 7, 5),
+            resposta="Conteúdo revisado suficientemente longo para testar o bloqueio fail-closed.",
+        )
+        with pytest.raises(HTTPException) as exc:
+            await ingerir_ai_log_aprovado(
+                "log-global", IngerirAILogRequest(), db=_ExecDB(log),
+                cu=SimpleNamespace(id="user-1"),
+            )
+        assert exc.value.status_code == 400
+        assert "vinculado a um caso" in str(exc.value.detail)
+
+    def test_ingestao_ailog_nao_aceita_categoria_de_fonte_oficial(self):
+        """Texto de IA jamais pode se rotular como legislação/jurisprudência."""
+        from pydantic import ValidationError
+        from app.routers.rag import IngerirAILogRequest
+
+        with pytest.raises(ValidationError):
+            IngerirAILogRequest(categoria="jurisprudencia")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 4c. Hardening: marcador reservado forjado no texto de entrada é neutralizado
