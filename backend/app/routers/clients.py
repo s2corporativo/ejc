@@ -16,6 +16,9 @@ from app.core.client_ownership import (
     pode_ver_cliente as _pode_ver_cliente_canonico,
     visao_total_clientes,
 )
+from app.core.pagination_cursor import (
+    condicao_lexicografica, deserializar_key, make_cursor, parse_cursor,
+)
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
@@ -414,6 +417,9 @@ async def listar(
     search: Optional[str] = None, status_f: Optional[str] = Query(None, alias="status"),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(_req_clientes_leitura),
+    *,  # novos parâmetros keyword-only: assinatura posicional legado intacta
+    pagination: Optional[str] = Query(None, pattern="^(cursor)$"),
+    cursor: Optional[str] = None,
 ):
     q = select(Client).where(Client.deleted_at.is_(None))
     # Segregação de titularidade (sigilo interno): advogado/adv_auxiliar só veem
@@ -450,10 +456,36 @@ async def listar(
                        f"{sorted(s.value for s in ClientStatus)}",
             )
         q = q.where(Client.status == status_f)
-    q = q.order_by(Client.created_at.desc())
+    _ORDEM_CURSOR = "created_at:desc,id:desc"
+    _filtros_cursor = {"search": search, "status": status_f}
+
+    if pagination == "cursor":
+        from datetime import datetime as _dt
+        if cursor:
+            chave = deserializar_key(
+                parse_cursor(cursor, "/clients", cu, _filtros_cursor,
+                             _ORDEM_CURSOR),
+                _dt.fromisoformat, None)
+            q = q.where(condicao_lexicografica(
+                [Client.created_at, Client.id], chave, ["desc", "desc"]))
+        q = q.order_by(Client.created_at.desc().nullsfirst(),
+                       Client.id.desc()).limit(page_size + 1)
+        rows_c = (await db.execute(q)).scalars().all()
+        has_more = len(rows_c) > page_size
+        pagina_c = rows_c[:page_size]
+        next_cursor = None
+        if has_more and pagina_c:
+            u = pagina_c[-1]
+            next_cursor = make_cursor("/clients", cu, _filtros_cursor,
+                                      _ORDEM_CURSOR, [u.created_at, u.id])
+        return {"data": [ClientResponse.model_validate(c) for c in pagina_c],
+                "page_size": page_size, "has_more": has_more,
+                "next_cursor": next_cursor}
+
+    q = q.order_by(Client.created_at.desc(), Client.id.desc())
 
     total = (await db.execute(
-        select(sqlfunc.count()).select_from(q.subquery())
+        select(sqlfunc.count()).select_from(q.order_by(None).subquery())
     )).scalar()
     rows = (await db.execute(
         q.offset((page - 1) * page_size).limit(page_size)

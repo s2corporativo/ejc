@@ -4,14 +4,14 @@ import logging
 import time
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import func as sqlfunc, select, text
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func as sqlfunc, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import require_roles
 from app.core.status_caso import contar_ativos, filtrar_aguardando_revisao
-from app.models.case import CaseStatus
+from app.models.case import Case, CaseStatus
 from app.models.legal_doc import LegalDoc
 from app.models.user import User
 
@@ -209,12 +209,255 @@ async def dashboard(
     return resposta
 
 
+# ═══ Cockpit "Meu Dia" — Tarefa 4 ═══
+# Sem o cache em processo de 30 s do /dashboard/ (dados críticos de prazo/
+# tarefa exigem leitura fresca pós-escrita; invalidação = nova consulta).
+# Escopo por padrão NÃO expõe dados de outro dono:
+#   - gestão (sócio+): "escritorio" — visão legítima global (mesma
+#     is_gestao de atividades/deadlines);
+#   - demais staff: "carteira" — mesmas regras de visibilidade do feed
+#     (caso da carteira OU responsável direto).
+# Diferente de 0: bloco que falhou vem `null` + nomeado em `degradado`.
+# Decisões priorizadas: ranking do DashboardUltra preservado (peça em revisão
+# 120, prazo vencido 118, peça corrigida 112, prazo hoje 110, tarefa atrasada
+# 105, tarefa hoje 100, prazo ≤3d 94-dias) — computadas no backend sobre a
+# CARTEIRA INTEIRA permitida (não sobre amostras de 30/50 itens).
+@router.get("/hoje")
+async def dashboard_hoje(
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["secretaria"])),
+):
+    from datetime import datetime as _dt
+
+    from app.core.clock import hoje_operacional
+    from app.core.status_caso import STATUS_ABERTOS
+
+    # Defesa em profundidade (chamada direta do handler não passa pelo
+    # require_roles): portal do cliente nunca recebe cockpit operacional.
+    if getattr(cu.role, "value", str(cu.role)) == "cliente_externo":
+        raise HTTPException(status_code=403, detail="Sem permissão")
+
+    hoje = hoje_operacional()
+    d3, d7 = hoje + timedelta(days=3), hoje + timedelta(days=7)
+    gestao = _is_gestao(cu)
+    escopo = "escritorio" if gestao else "carteira"
+
+    # ── escopo comum (mesma regra do feed de atividades/prazos) ─────────────
+    filtro_wallet_prazos = ""
+    filtro_wallet_tarefas = ""
+    filtro_wallet_casos = ""
+    params: dict = {"hoje": hoje, "d3": d3, "d7": d7}
+    if not gestao:
+        _casos_uid = ("SELECT c2.id FROM cases c2 WHERE c2.deleted_at IS NULL "
+                      "AND (c2.advogado_responsavel_id = :uid "
+                      "OR c2.advogado_auxiliar_id = :uid)")
+        filtro_wallet_casos = ("AND (c.advogado_responsavel_id = :uid "
+                               "OR c.advogado_auxiliar_id = :uid)")
+        filtro_wallet_prazos = ("AND (d.case_id IN (" + _casos_uid + ") "
+                                "OR d.responsavel_id = :uid)")
+        filtro_wallet_tarefas = ("AND (t.case_id IN (" + _casos_uid + ") "
+                                 "OR (t.case_id IS NULL AND "
+                                 "(t.responsavel_id = :uid OR t.criado_por = :uid)))")
+        params["uid"] = cu.id
+
+    degradado: list[str] = []
+    prazos: dict | None = None
+    tarefas: dict | None = None
+    pecas_revisao: int | None = None
+    casos_sem_acao: int | None = None
+    decisoes: list[dict] = []
+
+    def _abrir_prazo(row) -> dict:
+        return {"id": row[0], "tipo": "prazo", "prioridade": row[1],
+                "titulo": row[2], "case_id": row[3],
+                "link": f"/casos/{row[3]}" if row[3] else "/atividades?tipo=prazo"}
+
+    try:
+        # prazos: critério canônico do vencido (status NOT IN concluido/
+        # cancelado — ver migração do /dashboard/ e relatorio.py)
+        # SQL literal só com bind params (:nome) e WHERE montado no servidor
+        # a partir de enums validados — nenhum input interpolado. Ver
+        # docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+        r = await db.execute(text(f"""
+            SELECT
+              COUNT(*) FILTER (WHERE d.data_prazo < :hoje) AS vencidos,
+              COUNT(*) FILTER (WHERE d.data_prazo = :hoje) AS hoje,
+              COUNT(*) FILTER (WHERE d.data_prazo > :hoje AND d.data_prazo <= :d3) AS tres_d,
+              COUNT(*) FILTER (WHERE d.data_prazo > :d3 AND d.data_prazo <= :d7) AS sete_d
+            FROM deadlines d
+            WHERE d.status NOT IN ('concluido','cancelado')
+              AND d.deleted_at IS NULL {filtro_wallet_prazos}
+        """), params)
+        v, h, t3, t7 = r.one()
+        prazos = {"vencidos": v, "hoje": h, "proximos_3d": t3, "proximos_7d": t7}
+
+        # SQL literal só com bind params (:nome) e WHERE montado no servidor
+        # a partir de enums validados — nenhum input interpolado. Ver
+        # docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+        r2 = await db.execute(text(f"""
+            SELECT d.id, d.data_prazo, d.titulo, d.case_id
+            FROM deadlines d
+            WHERE d.status NOT IN ('concluido','cancelado')
+              AND d.deleted_at IS NULL
+              AND d.data_prazo <= :d3 {filtro_wallet_prazos}
+            ORDER BY d.data_prazo ASC, d.id ASC
+            LIMIT 20
+        """), params)
+        for row in r2:
+            dias = (row[1] - hoje).days
+            if dias < 0:
+                prio = 118
+            elif dias == 0:
+                prio = 110
+            else:
+                prio = 94 - dias
+            decisoes.append(_abrir_prazo((row[0], prio, row[2], row[3])))
+    except Exception:
+        degradado.append("prazos")
+        logger.warning("Dashboard hoje: falha ao carregar prazos", exc_info=True)
+
+    try:
+        # SQL literal só com bind params (:nome) e WHERE montado no servidor
+        # a partir de enums validados — nenhum input interpolado. Ver
+        # docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+        r = await db.execute(text(f"""
+            SELECT
+              COUNT(*) FILTER (WHERE t.data_limite < :hoje) AS atrasadas,
+              COUNT(*) FILTER (WHERE t.data_limite = :hoje) AS hoje,
+              COUNT(*) FILTER (WHERE t.data_limite > :hoje AND t.data_limite <= :d7) AS semana
+            FROM tasks t
+            WHERE t.status NOT IN ('concluida') AND t.deleted_at IS NULL
+              {filtro_wallet_tarefas}
+        """), params)
+        a, h, s = r.one()
+        tarefas = {"atrasadas": a, "hoje": h, "proximos_7d": s}
+
+        # SQL literal só com bind params (:nome) e WHERE montado no servidor
+        # a partir de enums validados — nenhum input interpolado. Ver
+        # docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+        r2 = await db.execute(text(f"""
+            SELECT t.id, t.data_limite, t.titulo, t.case_id
+            FROM tasks t
+            WHERE t.status NOT IN ('concluida') AND t.deleted_at IS NULL
+              AND t.data_limite <= :hoje {filtro_wallet_tarefas}
+            ORDER BY t.data_limite ASC NULLS LAST, t.created_at, t.id
+            LIMIT 20
+        """), params)
+        for row in r2:
+            atrasada = row[1] is not None and row[1] < hoje
+            decisoes.append({
+                "id": row[0], "tipo": "tarefa",
+                "prioridade": 105 if atrasada else 100,
+                "titulo": row[2], "case_id": row[3],
+                "link": "/atividades?tipo=tarefa",
+            })
+    except Exception:
+        degradado.append("tarefas")
+        logger.warning("Dashboard hoje: falha ao carregar tarefas", exc_info=True)
+
+    try:
+        # Fila de revisão: MESMA definição de core/status_caso.py, agora sobre
+        # a carteira inteira permitida (não sobre amostra de 30 itens)
+        from app.core.status_caso import filtrar_aguardando_revisao
+        from app.models.legal_doc import LegalDoc
+        q = select(sqlfunc.count(LegalDoc.id))
+        if not gestao:
+            q = q.where(or_(
+                LegalDoc.case_id.in_(select(Case.id).where(
+                    Case.deleted_at.is_(None),
+                    or_(Case.advogado_responsavel_id == cu.id,
+                        Case.advogado_auxiliar_id == cu.id))),
+            ))
+        pecas_revisao = (await db.execute(
+            filtrar_aguardando_revisao(q))).scalar()
+        if pecas_revisao is None:
+            pecas_revisao = 0
+        # decisões de peças (em revisão 120 / corrigida 112) sobre a carteira
+        q2 = select(LegalDoc.id, LegalDoc.status, LegalDoc.titulo,
+                    LegalDoc.case_id)
+        if not gestao:
+            q2 = q2.where(or_(
+                LegalDoc.case_id.in_(select(Case.id).where(
+                    Case.deleted_at.is_(None),
+                    or_(Case.advogado_responsavel_id == cu.id,
+                        Case.advogado_auxiliar_id == cu.id))),
+            ))
+        q2 = filtrar_aguardando_revisao(q2.where(
+            LegalDoc.status.in_(["em_revisao", "corrigida"]))).limit(10)
+        for row in (await db.execute(q2)).all():
+            prio = 120 if row[1] == "em_revisao" else 112
+            decisoes.append({
+                "id": row[0], "tipo": "peca", "prioridade": prio,
+                "titulo": row[2], "case_id": row[3],
+                "link": (f"/casos/{row[3]}?tab=pecas#revisao" if row[3]
+                         else "/pecas"),
+            })
+    except Exception:
+        degradado.append("pecas_revisao")
+        logger.warning("Dashboard hoje: falha ao carregar peças HITL", exc_info=True)
+
+    try:
+        # Casos ABERTOS sem próxima ação (G1) — sobre a carteira inteira
+        abertos = ", ".join(f"'{s.value}'" for s in STATUS_ABERTOS)
+        # SQL literal só com bind params (:nome) e WHERE montado no servidor
+        # a partir de enums validados — nenhum input interpolado. Ver
+        # docs/seguranca/SAST_BASELINE.md
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+        r = await db.execute(text(f"""
+            SELECT COUNT(*) FROM cases c
+            WHERE c.deleted_at IS NULL
+              AND c.status IN ({abertos})
+              AND (c.proxima_acao IS NULL OR btrim(c.proxima_acao) = '')
+              {filtro_wallet_casos}
+        """), params)
+        casos_sem_acao = r.scalar() or 0
+    except Exception:
+        degradado.append("casos_sem_proxima_acao")
+        logger.warning("Dashboard hoje: falha ao carregar casos sem ação",
+                       exc_info=True)
+
+    # top 3 priorizadas (ranking preservado), ids estáveis
+    vistos: set[str] = set()
+    top: list[dict] = []
+    for d in sorted(decisoes, key=lambda x: -x["prioridade"]):
+        chave = f"{d['tipo']}:{d['id']}"
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        top.append(d)
+        if len(top) == 3:
+            break
+
+    return {
+        "escopo": escopo,
+        "data_operacional": hoje.isoformat(),
+        "gerado_em": _dt.now().isoformat(timespec="seconds"),
+        "contagens": {
+            "prazos": prazos,
+            "tarefas": tarefas,
+            "pecas_revisao": pecas_revisao,
+            "casos_sem_proxima_acao": casos_sem_acao,
+        },
+        "decisoes": top,
+        "degradado": degradado,
+    }
+
+
 # ═══ Relatório Gerencial Mensal (PDF) ═══
 from fastapi import Query as _Q, HTTPException as _HTTPExc
 from fastapi.responses import Response as _R
 from datetime import date as _date
 from app.services.pdf_service import relatorio_mensal_pdf_async
 from app.core.security import require_roles as _rr
+
+
+def _is_gestao(cu: User) -> bool:
+    from app.core.ownership import is_gestao as _ig
+    return _ig(cu)
 
 
 # Coleta movida para services/dashboard_service.py (correção de camada

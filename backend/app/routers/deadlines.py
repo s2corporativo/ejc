@@ -18,6 +18,9 @@ from app.core.clock import hoje_operacional
 from app.core.csv_safe import sanitize_csv_row
 from app.core.database import get_db
 from app.core.ownership import is_gestao, verificar_acesso_caso
+from app.core.pagination_cursor import (
+    condicao_lexicografica, deserializar_key, make_cursor, parse_cursor,
+)
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, requer_advogado
 from app.models.audit_log import criar_audit_log
@@ -272,6 +275,9 @@ async def listar(
     apenas_meus: bool = False,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
+    *,  # novos parâmetros keyword-only: assinatura posicional legado intacta
+    pagination: Optional[str] = Query(None, pattern="^(cursor)$"),
+    cursor: Optional[str] = None,
 ):
     q = select(Deadline).where(Deadline.deleted_at.is_(None))
     status_normalizado = _normalizar_status_filtro(status_f)
@@ -284,10 +290,46 @@ async def listar(
     q = _filtro_escopo_prazos(q, cu)
     if apenas_meus:
         q = q.where(Deadline.responsavel_id == cu.id)
-    q = q.order_by(Deadline.data_prazo.asc())
+    _ORDEM_CURSOR = "data_prazo:asc,id:asc"
+    _filtros_cursor = {"status": status_normalizado, "case_id": case_id,
+                       "tipo": tipo, "apenas_meus": apenas_meus}
+
+    if pagination == "cursor":
+        if cursor:
+            chave = deserializar_key(
+                parse_cursor(cursor, "/deadlines", cu, _filtros_cursor,
+                             _ORDEM_CURSOR), date.fromisoformat, None)
+            q = q.where(condicao_lexicografica(
+                [Deadline.data_prazo, Deadline.id], chave))
+        q = q.order_by(Deadline.data_prazo.asc(), Deadline.id.asc()
+                       ).limit(page_size + 1)
+        rows_c = (await db.execute(q)).scalars().all()
+        has_more = len(rows_c) > page_size
+        pagina_c = rows_c[:page_size]
+        next_cursor = None
+        if has_more and pagina_c:
+            u = pagina_c[-1]
+            next_cursor = make_cursor("/deadlines", cu, _filtros_cursor,
+                                      _ORDEM_CURSOR,
+                                      [u.data_prazo, u.id])
+        data_c = []
+        for d in pagina_c:
+            item = DeadlineResponse.model_validate(d).model_dump()
+            dias = (d.data_prazo - hoje_operacional()).days
+            item["dias_restantes"] = dias
+            item["urgencia"] = (
+                "vencido" if dias < 0 else
+                "critico" if dias <= 3 else
+                "atencao" if dias <= 7 else "normal"
+            )
+            data_c.append(item)
+        return {"data": data_c, "page_size": page_size, "has_more": has_more,
+                "next_cursor": next_cursor}
+
+    q = q.order_by(Deadline.data_prazo.asc(), Deadline.id.asc())
 
     total = (await db.execute(
-        select(sqlfunc.count()).select_from(q.subquery())
+        select(sqlfunc.count()).select_from(q.order_by(None).subquery())
     )).scalar()
     rows = (await db.execute(
         q.offset((page - 1) * page_size).limit(page_size)

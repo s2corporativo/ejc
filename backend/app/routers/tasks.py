@@ -19,9 +19,17 @@ from app.models.case import Case
 from app.models.notification import Notification
 from app.schemas.common import MsgResponse
 from app.core.ownership import verificar_acesso_caso, is_gestao
+from app.core.pagination_cursor import (
+    condicao_lexicografica, deserializar_key, make_cursor, parse_cursor,
+)
 from app.modules.auditoria.middleware import registrar_acao
 
 router = APIRouter(prefix="/tasks", tags=["Tarefas"])
+
+# Ordem TOTAL da listagem (cursor): data_limite ASC NULLS LAST, created_at ASC
+# (PG: ASC já é NULLS LAST), id ASC como desempate único. Mesma ordem do
+# legado + `id` — páginas ficam estáveis sob empates.
+_TASK_ORDER_STR = "data_limite:asc_nulls_last,created_at:asc,id:asc"
 
 
 class TaskIn(BaseModel):
@@ -103,8 +111,14 @@ async def _verificar_acesso_tarefa(
 async def listar(
     case_id: Optional[str] = None,
     minhas: bool = Query(False, description="Só tarefas onde sou responsável"),
+    # Tarefa 2 — paginação opt-in: `pagination=cursor` ativa keyset; SEM o
+    # parâmetro, o legado segue byte a byte (mesmo shape, sem limite novo).
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
+    *,  # novos parâmetros keyword-only: assinatura posicional legado intacta
+    pagination: Optional[str] = Query(None, pattern="^(cursor)$"),
+    cursor: Optional[str] = None,
+    page_size: int = Query(50, ge=1, le=500),
 ):
     q = select(Task).where(Task.deleted_at.is_(None))
     if case_id:
@@ -115,6 +129,9 @@ async def listar(
     # Regra canônica: tarefa COM caso só é visível pela carteira do caso;
     # tarefa SEM caso é pessoal ao criador/responsável. Casos órfãos não são
     # escape-hatch para perfis baixos — somente gestão pode vê-los.
+    # (IMUTÁVEL nesta fase — o cursor NÃO altera o predicado de visibilidade;
+    #  a autorização é reaplicada em TODA página, pois a query é reconstruída
+    #  do zero a cada chamada e o cursor só carrega a chave de continuação.)
     if not is_gestao(cu):
         q = q.where(
             or_(
@@ -128,16 +145,48 @@ async def listar(
                 ),
             )
         )
+
+    def _serializar(t: Task) -> dict:
+        return {"id": t.id, "titulo": t.titulo, "descricao": t.descricao,
+                "status": t.status.value, "prioridade": t.prioridade,
+                "data_limite": t.data_limite, "case_id": t.case_id,
+                "responsavel_id": t.responsavel_id, "created_at": t.created_at,
+                "concluida_em": t.concluida_em}
+
+    if pagination == "cursor":
+        # ── modo cursor: keyset (sem OFFSET, sem COUNT) ──────────────────────
+        filtros = {"case_id": case_id, "minhas": minhas}
+        if cursor:
+            bruto = parse_cursor(cursor, "/tasks", cu, filtros, _TASK_ORDER_STR)
+            chave = deserializar_key(
+                bruto, date.fromisoformat, datetime.fromisoformat, None)
+            q = q.where(condicao_lexicografica(
+                [Task.data_limite, Task.created_at, Task.id], chave))
+        # ordenação total: NULLS LAST explícito + desempate por id
+        q = q.order_by(
+            Task.data_limite.asc().nullslast(),
+            Task.created_at.asc().nullslast(),
+            Task.id.asc(),
+        ).limit(page_size + 1)  # n+1 detecta has_more sem COUNT
+        rows = (await db.execute(q)).scalars().all()
+        has_more = len(rows) > page_size
+        pagina = rows[:page_size]
+        if has_more and pagina:
+            ultimo = pagina[-1]
+            next_cursor = make_cursor(
+                "/tasks", cu, filtros, _TASK_ORDER_STR,
+                [ultimo.data_limite, ultimo.created_at, ultimo.id],
+            )
+        else:
+            next_cursor = None
+        return {"data": [_serializar(t) for t in pagina],
+                "page_size": page_size, "has_more": has_more,
+                "next_cursor": next_cursor}
+
+    # ── legado (sem pagination=cursor): inalterado ──────────────────────────
     q = q.order_by(Task.data_limite.asc().nullslast(), Task.created_at)
     rows = (await db.execute(q)).scalars().all()
-    return {"data": [
-        {"id": t.id, "titulo": t.titulo, "descricao": t.descricao,
-         "status": t.status.value, "prioridade": t.prioridade,
-         "data_limite": t.data_limite, "case_id": t.case_id,
-         "responsavel_id": t.responsavel_id, "created_at": t.created_at,
-         "concluida_em": t.concluida_em}
-        for t in rows
-    ]}
+    return {"data": [_serializar(t) for t in rows]}
 
 
 @router.post("/", status_code=201)

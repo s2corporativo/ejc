@@ -221,6 +221,29 @@ export default function DashboardUltra() {
   const [financeiroAtencao, setFinanceiroAtencao] = useState<any[] | null>(
     null,
   );
+  // Tarefa 4: decisões do cockpit computadas no BACKEND (GET /dashboard/hoje)
+  // sobre a carteira inteira permitida — não sobre amostras de 30/50 itens.
+  const [hojeBackend, setHojeBackend] = useState<
+    | {
+        escopo: string;
+        contagens: {
+          prazos: { vencidos: number; hoje: number } | null;
+          tarefas: { atrasadas: number; hoje: number } | null;
+          pecas_revisao: number | null;
+          casos_sem_proxima_acao: number | null;
+        };
+        decisoes: {
+          id: string;
+          tipo: string;
+          prioridade: number;
+          titulo: string | null;
+          case_id: string | null;
+          link: string;
+        }[];
+        degradado: string[];
+      }
+    | null
+  >(null);
 
   const carregar = useCallback(async () => {
     const inicioDocs = format(
@@ -236,6 +259,7 @@ export default function DashboardUltra() {
       rIntegridade,
       rPecas,
       rFinanceiro,
+      rHoje,
     ] = await Promise.allSettled([
       api.get("/dashboard/"),
       api.get("/atividades", { params: { apenas_pendentes: true } }),
@@ -251,6 +275,7 @@ export default function DashboardUltra() {
       canUseFinanceiro
         ? api.get("/financeiro/atencao")
         : Promise.resolve({ data: null }),
+      api.get("/dashboard/hoje"),
     ]);
     setKpis(rKpis.status === "fulfilled" ? (rKpis.value.data as Kpis) : null);
     setAtividades(
@@ -286,6 +311,9 @@ export default function DashboardUltra() {
         Array.isArray(rFinanceiro.value.data?.itens)
         ? rFinanceiro.value.data.itens
         : null,
+    );
+    setHojeBackend(
+      rHoje.status === "fulfilled" ? (rHoje.value.data as never) : null,
     );
     setCarregado(true);
   }, [canUseFinanceiro, canUseIntegridade]);
@@ -438,6 +466,57 @@ export default function DashboardUltra() {
       Boolean(ultimoCaso?.id));
 
   const decisoesHoje = useMemo<DecisaoHoje[]>(() => {
+    // ── Tarefa 4: prioridade do BACKEND (carteira inteira, ranking igual) ──
+    // O /dashboard/hoje computa as decisões server-side sobre TODA a carteira
+    // permitida; o fallback legado (amostras de 30 peças/50 casos) só entra
+    // se a rota não responder. Texto da UI preservado.
+    if (hojeBackend) {
+      return hojeBackend.decisoes.map((d) => {
+        const p = d.prioridade;
+        if (d.tipo === "peca") {
+          const revisao = p >= 120;
+          return {
+            id: `hoje-peca-${d.id}`,
+            prioridade: p,
+            titulo: revisao
+              ? "Peça aguardando sua revisão"
+              : "Peça corrigida aguardando aprovação",
+            detalhe: d.titulo ?? "Peça jurídica",
+            acao: revisao ? "Revisar peça" : "Conferir e aprovar",
+            to: d.link,
+            tom: "danger" as const,
+          };
+        }
+        if (d.tipo === "prazo") {
+          const vencido = p >= 118;
+          return {
+            id: `hoje-prazo-${d.id}`,
+            prioridade: p,
+            titulo: vencido
+              ? "Prazo vencido exige decisão"
+              : p >= 110
+                ? "Prazo vence hoje"
+                : "Prazo vence em até 3 dias",
+            detalhe: d.titulo ?? "Prazo",
+            acao: d.case_id ? "Abrir caso e resolver" : "Resolver prazo",
+            to: d.link,
+            tom: vencido || p >= 110 ? ("danger" as const) : ("warning" as const),
+          };
+        }
+        const atrasada = p >= 105;
+        return {
+          id: `hoje-tarefa-${d.id}`,
+          prioridade: p,
+          titulo: atrasada
+            ? "Tarefa atrasada requer ação"
+            : "Tarefa requer ação hoje",
+          detalhe: d.titulo ?? "Tarefa pendente",
+          acao: "Abrir tarefa",
+          to: d.link,
+          tom: atrasada ? ("warning" as const) : ("info" as const),
+        };
+      });
+    }
     const decisoes: DecisaoHoje[] = [];
     const casosPorId = new Map(
       (casos ?? []).filter((caso) => caso.id).map((caso) => [caso.id!, caso]),
@@ -544,6 +623,7 @@ export default function DashboardUltra() {
     casos,
     casosEmDestaque,
     hoje,
+    hojeBackend,
     pecasRecentes,
     rotinaPendentes,
   ]);

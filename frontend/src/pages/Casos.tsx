@@ -62,6 +62,10 @@ import {
 export default function Casos() {
   const areas = useAreas();
   const [data, setData] = useState<Paged<Case> | null>(null);
+  // ── Tarefa 5: carregamento incremental real (pagination=cursor) ─────────
+  const [cursorCasos, setCursorCasos] = useState<string | null>(null);
+  const [temMaisCasos, setTemMaisCasos] = useState(false);
+  const [carregandoMaisCasos, setCarregandoMaisCasos] = useState(false);
   const [clientes, setClientes] = useState<Client[]>([]);
   const [advogados, setAdvogados] = useState<User[]>([]);
   const [search, setSearch] = useState("");
@@ -208,6 +212,10 @@ export default function Casos() {
   const load = () => {
     const my = ++seq.current;
     setErro(false);
+    // Tarefa 5: cursor mode — primeira página de 50 + "Carregar mais";
+    // troca de filtro reseta a navegação (load sempre recomeça do início).
+    setCursorCasos(null);
+    setTemMaisCasos(false);
     return api
       .get("/cases/", {
         params: {
@@ -224,17 +232,83 @@ export default function Casos() {
             savedView === "aguardando_decisao" ? true : undefined,
           financeiro_pendente:
             savedView === "financeiro_pendente" ? true : undefined,
+          pagination: "cursor",
           page_size: 50,
         },
       })
       .then((r) => {
-        if (my === seq.current) setData(r.data);
+        if (my !== seq.current) return;
+        const corpo = r.data as {
+          data: Case[];
+          has_more: boolean;
+          next_cursor: string | null;
+        };
+        setData({
+          data: corpo.data,
+          // total exato SÓ quando o conjunto exaurido (has_more=false):
+          // contagem acumulada == total do escopo filtrado
+          total: corpo.data.length,
+          page: 1,
+          page_size: 50,
+        });
+        setTemMaisCasos(corpo.has_more);
+        setCursorCasos(corpo.next_cursor ?? null);
       })
       .catch(() => {
         if (my !== seq.current) return;
         setErro(true);
         toast.error("Falha ao carregar casos");
       });
+  };
+
+  // Continuação incremental: anexa a próxima página do cursor (guarda seq).
+  const carregarMaisCasos = async () => {
+    if (!cursorCasos || carregandoMaisCasos) return;
+    const my = seq.current;
+    setCarregandoMaisCasos(true);
+    try {
+      const r = await api.get("/cases/", {
+        params: {
+          search: search || undefined,
+          area: areaF || undefined,
+          status: statusF || undefined,
+          advogado_id: advogadoF || undefined,
+          arquivo: arquivoF,
+          urgentes: savedView === "urgentes" ? true : undefined,
+          sem_proxima_acao: savedView === "sem_proxima_acao" ? true : undefined,
+          aguardando_cliente:
+            savedView === "aguardando_cliente" ? true : undefined,
+          aguardando_decisao:
+            savedView === "aguardando_decisao" ? true : undefined,
+          financeiro_pendente:
+            savedView === "financeiro_pendente" ? true : undefined,
+          pagination: "cursor",
+          page_size: 50,
+          cursor: cursorCasos,
+        },
+      });
+      if (my !== seq.current) return; // resposta fora de ordem: descarta
+      const corpo = r.data as {
+        data: Case[];
+        has_more: boolean;
+        next_cursor: string | null;
+      };
+      setData((atual) =>
+        atual
+          ? {
+              ...atual,
+              data: [...atual.data, ...corpo.data],
+              total: atual.data.length + corpo.data.length,
+            }
+          : atual,
+      );
+      setTemMaisCasos(corpo.has_more);
+      setCursorCasos(corpo.next_cursor ?? null);
+    } catch {
+      toast.error("Não foi possível carregar mais casos");
+    } finally {
+      setCarregandoMaisCasos(false);
+    }
   };
 
   const desarquivar = async (id: string) => {
@@ -632,7 +706,7 @@ export default function Casos() {
     <div>
       <PageHeader
         title="Casos e Processos"
-        subtitle={`${data?.total ?? 0} casos`}
+        subtitle={`${data ? (temMaisCasos ? `${data.data.length}+ casos` : `${data.data.length} casos`) : "0 casos"}`}
         actions={
           <div className="flex flex-wrap gap-2 items-center">
             <div className="flex rounded-lg overflow-hidden bg-slate-900/[0.05] dark:bg-white/[0.07]">
@@ -798,6 +872,9 @@ export default function Casos() {
             desarquivandoId={desarquivandoId}
             onRecarregar={load}
             onDesarquivar={desarquivar}
+            temMais={temMaisCasos}
+            onCarregarMais={carregarMaisCasos}
+            carregandoMais={carregandoMaisCasos}
             onPedirExclusao={(caso) => {
               setDelMotivo("");
               setDelCaso(caso);

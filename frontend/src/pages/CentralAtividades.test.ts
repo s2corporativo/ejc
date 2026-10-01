@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
+  cursorFlagAtiva,
   isActivityView,
   mapAgendaTipo,
+  mapAtividadeCursor,
   situacaoColunaDe,
   situacaoDe,
 } from "./CentralAtividades";
@@ -77,5 +79,85 @@ describe("mapAgendaTipo — subtipo real do evento de agenda", () => {
     expect(mapAgendaTipo("qualquer")).toBe("compromisso");
     expect(mapAgendaTipo(null)).toBe("compromisso");
     expect(mapAgendaTipo(undefined)).toBe("compromisso");
+  });
+});
+
+describe("cursorFlagAtiva — rollback da paginação por flag (Tarefa 3)", () => {
+  afterEach(() => {
+    localStorage.removeItem("ejc:atividades-cursor");
+  });
+
+  it("ativa por padrão (sem flag no localStorage)", () => {
+    expect(cursorFlagAtiva()).toBe(true);
+  });
+
+  it("flag '0' desliga o modo cursor (rollback para o legado)", () => {
+    localStorage.setItem("ejc:atividades-cursor", "0");
+    expect(cursorFlagAtiva()).toBe(false);
+  });
+
+  it("qualquer valor diferente de '0' mantém o cursor ativo", () => {
+    localStorage.setItem("ejc:atividades-cursor", "1");
+    expect(cursorFlagAtiva()).toBe(true);
+  });
+});
+
+describe("mapAtividadeCursor — enriquecimento inline da página (Tarefa 3)", () => {
+  const base = {
+    id: "abc",
+    tipo: "prazo",
+    titulo: "Prazo X",
+    descricao: null,
+    date: "2026-10-05",
+    status: "pendente",
+    case_id: "c1",
+    caso_titulo: "Caso Um",
+    responsavel_id: "u1",
+    prioridade: "alta",
+    subtipo: null,
+    dias_restantes: 4,
+    urgencia: "atencao",
+    confirmado: false,
+    ciencia_confirmada: true,
+    hora: null,
+    local: null,
+  };
+
+  it("prazo recebe confirmado/ciencia_confirmada inline (botão não some)", () => {
+    const item = mapAtividadeCursor(base);
+    expect(item.fonte).toBe("prazo");
+    expect(item.confirmado).toBe(false);
+    expect(item.ciencia_confirmada).toBe(true);
+    expect(item.origem).toBe("Prazos");
+  });
+
+  it("agenda recebe hora/local inline", () => {
+    const item = mapAtividadeCursor({
+      ...base,
+      tipo: "agenda",
+      subtipo: "audiencia",
+      hora: "09:30",
+      local: "Fórum Central",
+    });
+    expect(item.tipo).toBe("audiencia");
+    expect(item.hora).toBe("09:30");
+    expect(item.local).toBe("Fórum Central");
+    expect(item.origem).toBe("Agenda");
+  });
+
+  it("campos ausentes viram undefined sem quebrar o shape", () => {
+    const item = mapAtividadeCursor({ ...base, confirmado: undefined, hora: undefined });
+    expect(item.confirmado).toBeUndefined();
+    expect(item.dias_restantes).toBe(4);
+    expect(item.caso_titulo).toBe("Caso Um");
+  });
+
+  it("suspensão e intimação mapeiam origem correta", () => {
+    expect(mapAtividadeCursor({ ...base, tipo: "suspensao" }).origem).toBe(
+      "Tribunais",
+    );
+    expect(mapAtividadeCursor({ ...base, tipo: "intimacao" }).origem).toBe(
+      "DJEN",
+    );
   });
 });

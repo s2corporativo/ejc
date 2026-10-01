@@ -14,6 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.rate_limit import consumir, rate_limit
+from app.core.pagination_cursor import (
+    condicao_lexicografica, deserializar_key, make_cursor, parse_cursor,
+)
 from app.core.security import (get_current_user, require_roles, ROLE_LEVEL,
                                  require_roles_exact, requer_equipe_juridica)
 from app.models.user import User
@@ -130,8 +133,12 @@ async def listar(
     aguardando_cliente: bool = False,
     aguardando_decisao: bool = False,
     financeiro_pendente: bool = False,
+    # Tarefa 5: paginação opt-in por cursor (legado offset intocado)
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
+    *,  # novos parâmetros keyword-only: assinatura posicional legado intacta
+    pagination: Optional[str] = Query(None, pattern="^(cursor)$"),
+    cursor: Optional[str] = None,
 ):
     # M04 (homologação 2026-08-15): gate EXATO de equipe jurídica no corpo —
     # require_roles(EQUIPE_JURIDICA) deixaria financeiro passar pelo fallback
@@ -216,10 +223,46 @@ async def listar(
                 )
             )
         )
-    q = q.order_by(Case.created_at.desc())
+    _ORDEM_CURSOR = "created_at:desc,id:desc"
 
+    def _filtros_cursor() -> dict:
+        return {"search": search, "area": area, "status": status_f,
+                "arquivo": arquivo, "advogado_id": advogado_id,
+                "urgentes": urgentes, "sem_proxima_acao": sem_proxima_acao,
+                "aguardando_cliente": aguardando_cliente,
+                "aguardando_decisao": aguardando_decisao,
+                "financeiro_pendente": financeiro_pendente}
+
+    if pagination == "cursor":
+        # keyset: mesma visibilidade + filtros, ordem total (created_at DESC
+        # NULLS FIRST, id DESC), LIMIT n+1, sem COUNT
+        from datetime import datetime as _dt
+        if cursor:
+            chave = deserializar_key(
+                parse_cursor(cursor, "/cases", cu, _filtros_cursor(),
+                             _ORDEM_CURSOR),
+                _dt.fromisoformat, None)
+            q = q.where(condicao_lexicografica(
+                [Case.created_at, Case.id], chave, ["desc", "desc"]))
+        q = q.order_by(Case.created_at.desc().nullsfirst(), Case.id.desc()
+                       ).limit(page_size + 1)
+        rows_c = (await db.execute(q)).scalars().all()
+        has_more = len(rows_c) > page_size
+        pagina_c = rows_c[:page_size]
+        next_cursor = None
+        if has_more and pagina_c:
+            u = pagina_c[-1]
+            next_cursor = make_cursor("/cases", cu, _filtros_cursor(),
+                                      _ORDEM_CURSOR, [u.created_at, u.id])
+        return {"data": [CaseResponse.model_validate(c) for c in pagina_c],
+                "page_size": page_size, "has_more": has_more,
+                "next_cursor": next_cursor}
+
+    q = q.order_by(Case.created_at.desc(), Case.id.desc())
+
+    # count da base filtrada SEM ORDER BY (sort inútil fora do plano)
     total = (await db.execute(
-        select(sqlfunc.count()).select_from(q.subquery())
+        select(sqlfunc.count()).select_from(q.order_by(None).subquery())
     )).scalar()
     rows = (await db.execute(
         q.offset((page - 1) * page_size).limit(page_size)

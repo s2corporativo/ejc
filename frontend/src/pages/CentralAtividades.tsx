@@ -129,6 +129,65 @@ export function situacaoColunaDe(status?: string | null): SituacaoColuna {
   return s === "cancelado" ? "concluido" : s;
 }
 
+// ── Tarefa 3: feed cursor + resumo (sem fan-out) ─────────────────────────────
+/** Flag de rollback: "0" no localStorage volta ao legado sem deploy. */
+export function cursorFlagAtiva(): boolean {
+  try {
+    return (localStorage.getItem("ejc:atividades-cursor") ?? "1") !== "0";
+  } catch {
+    return true;
+  }
+}
+
+export interface ResumoAtividades {
+  vencido: number;
+  critico: number;
+  atencao: number;
+  normal: number;
+  total_pendentes: number;
+  colunas: { nao_tratado: number; em_execucao: number; concluido: number };
+  data_operacional: string;
+  gerado_em: string;
+}
+
+/** Mapeia item do modo cursor: enriquecimento já vem INLINE na página
+ *  autorizada (confirmado/ciencia_confirmada p/ prazo; hora/local p/ agenda). */
+export function mapAtividadeCursor(a: any): Activity {
+  const bruto: string = a.tipo;
+  const fonte: Fonte =
+    bruto === "agenda" ? "agenda" : (bruto as Fonte);
+  const origem =
+    fonte === "prazo"
+      ? "Prazos"
+      : fonte === "tarefa"
+        ? "Tarefas"
+        : fonte === "agenda"
+          ? "Agenda"
+          : fonte === "intimacao"
+            ? "DJEN"
+            : "Tribunais";
+  return {
+    id: a.id,
+    tipo: fonte === "agenda" ? mapAgendaTipo(a.subtipo) : (bruto as ItemType),
+    fonte,
+    titulo: a.titulo,
+    descricao: a.descricao,
+    date: a.date,
+    dias_restantes: a.dias_restantes ?? undefined,
+    urgencia: a.urgencia ?? "normal",
+    status: a.status,
+    case_id: a.case_id,
+    caso_titulo: a.caso_titulo,
+    responsavel_id: a.responsavel_id ?? undefined,
+    prioridade: a.prioridade ?? undefined,
+    hora: a.hora ?? undefined,
+    local: a.local ?? undefined,
+    origem,
+    confirmado: a.confirmado,
+    ciencia_confirmada: a.ciencia_confirmada,
+  };
+}
+
 /** A view vw_atividades devolve tipo 'agenda' para eventos; o subtipo real
  *  (reuniao/audiencia/diligencia/compromisso) vem de /agenda-eventos/. */
 export function mapAgendaTipo(tipo?: string | null): ItemType {
@@ -517,10 +576,19 @@ function ActivityRow({
   );
 }
 
-function CalendarView({ items }: { items: Activity[] }) {
-  const today = new Date();
-  const [month, setMonth] = useState(today.getMonth());
-  const [year, setYear] = useState(today.getFullYear());
+function CalendarView({
+  items,
+  mes,
+  ano,
+  onTrocaMes,
+}: {
+  items: Activity[];
+  mes: number;
+  ano: number;
+  onTrocaMes: (delta: number) => void;
+}) {
+  const month = mes;
+  const year = ano;
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDay = new Date(year, month, 1).getDay();
@@ -551,17 +619,11 @@ function CalendarView({ items }: { items: Activity[] }) {
   const dayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
   function prevMonth() {
-    if (month === 0) {
-      setMonth(11);
-      setYear((y) => y - 1);
-    } else setMonth((m) => m - 1);
+    onTrocaMes(-1);
   }
 
   function nextMonth() {
-    if (month === 11) {
-      setMonth(0);
-      setYear((y) => y + 1);
-    } else setMonth((m) => m + 1);
+    onTrocaMes(1);
   }
 
   return (
@@ -606,10 +668,11 @@ function CalendarView({ items }: { items: Activity[] }) {
             const day = i + 1;
             const key = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
             const dayItems = itemsByDay[key] ?? [];
+            const hoje = new Date();
             const isToday =
-              day === today.getDate() &&
-              month === today.getMonth() &&
-              year === today.getFullYear();
+              day === hoje.getDate() &&
+              month === hoje.getMonth() &&
+              year === hoje.getFullYear();
             const hasUrgent = dayItems.some((it) =>
               ["vencido", "critico"].includes(it.urgencia ?? ""),
             );
@@ -760,13 +823,23 @@ function KanbanAtividades({
   items,
   nomeDe,
   onMove,
+  contagens,
+  temMais,
+  onCarregarMais,
+  carregandoMais,
 }: {
   items: Activity[];
   nomeDe: (id?: string) => string | undefined;
   onMove: (item: Activity, alvo: Situacao) => void;
+  /** Contagens do conjunto INTEIRO visível (GET /atividades/resumo) — o
+   *  badge da coluna não depende de quantas linhas já foram carregadas. */
+  contagens?: Record<string, number>;
+  temMais?: boolean;
+  onCarregarMais?: () => void;
+  carregandoMais?: boolean;
 }) {
   const [drag, setDrag] = useState<string | null>(null);
-  if (items.length === 0) {
+  if (items.length === 0 && !temMais) {
     return <Empty message="Nada na agenda" />;
   }
   return (
@@ -792,7 +865,7 @@ function KanbanAtividades({
                 {label}
               </span>
               <span className="ml-auto text-[11px] text-slate-400 bg-slate-900/[0.05] rounded-full px-1.5 dark:bg-white/[0.07]">
-                {itens.length}
+                {contagens?.[key] ?? itens.length}
               </span>
             </div>
             <div className="p-2 space-y-2 max-h-[60vh] overflow-y-auto">
@@ -854,10 +927,42 @@ function KanbanAtividades({
                   </div>
                 );
               })}
+              {/* Há mais linhas desta coluna ainda não consultadas — NUNCA
+                  mostrar vazio antes de esgotar as páginas (contrato T3). */}
+              {temMais && onCarregarMais && (
+                <button
+                  onClick={onCarregarMais}
+                  disabled={carregandoMais}
+                  className="w-full text-xs text-primary-600 hover:bg-primary-50 rounded-lg py-1.5 disabled:opacity-60 dark:text-primary-300 dark:hover:bg-slate-800"
+                >
+                  {carregandoMais ? "Carregando..." : "Carregar mais"}
+                </button>
+              )}
             </div>
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** Botão comum de continuação de paginação por cursor (lista/timeline). */
+function BotaoCarregarMais({
+  onClick,
+  carregando,
+}: {
+  onClick: () => void;
+  carregando?: boolean;
+}) {
+  return (
+    <div className="flex justify-center py-4">
+      <button
+        onClick={onClick}
+        disabled={carregando}
+        className="px-4 py-2 rounded-lg text-sm bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] disabled:opacity-60 dark:bg-white/[0.07] dark:text-slate-300"
+      >
+        {carregando ? "Carregando..." : "Carregar mais atividades"}
+      </button>
     </div>
   );
 }
@@ -954,10 +1059,70 @@ export default function CentralAtividades() {
     SituacaoColuna | "todos"
   >("todos");
 
+  // ── Tarefa 3: feed paginado por cursor (opt-in com rollback por flag) ─────
+  // Rollback: `localStorage.setItem("ejc:atividades-cursor", "0")` volta ao
+  // legado (fan-out antigo) sem deploy.
+  const cursorFeed = cursorFlagAtiva();
+  const [feedCursor, setFeedCursor] = useState<string | null>(null);
+  const [temMaisPaginas, setTemMaisPaginas] = useState(false);
+  const [carregandoMais, setCarregandoMais] = useState(false);
+  const [resumo, setResumo] = useState<ResumoAtividades | null>(null);
+  // Kanban: carregamento incremental por coluna (cursor próprio por coluna)
+  const [colunasKanban, setColunasKanban] = useState<Record<
+    string,
+    { items: Activity[]; cursor: string | null; hasMore: boolean }
+  > | null>(null);
+  // Calendário: janela mensal no servidor — navegação de período dispara
+  // recarga com data_inicio/data_fim do mês selecionado.
+  const [mesCal, setMesCal] = useState(() => new Date().getMonth());
+  const [anoCal, setAnoCal] = useState(() => new Date().getFullYear());
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(false);
     try {
+      if (cursorFlagAtiva()) {
+        // ── modo cursor: 1 chamada de feed (página) + 1 de resumo ──────────
+        // O enriquecimento (confirmado/ciencia/hora/local) já vem inline na
+        // página autorizada — elimina o fan-out de /agenda-eventos (500) e
+        // /deadlines (até 2.000). Calendário usa janela mensal do servidor;
+        // Kanban carrega por coluna (cursor próprio).
+        setColunasKanban(null);
+        const paramsFeed: Record<string, unknown> = {
+          pagination: "cursor",
+          page_size: view === "calendario" ? 200 : 50,
+          apenas_pendentes: false,
+        };
+        if (contextCaseId) paramsFeed.case_id = contextCaseId;
+        if (view === "calendario") {
+          const primeiro = new Date(anoCal, mesCal, 1);
+          const ultimo = new Date(anoCal, mesCal + 1, 0);
+          const iso = (d: Date) => d.toISOString().slice(0, 10);
+          paramsFeed.data_inicio = iso(primeiro);
+          paramsFeed.data_fim = iso(ultimo);
+        }
+        const [feedR, resumoR] = await Promise.allSettled([
+          api.get("/atividades", { params: paramsFeed }),
+          api.get("/atividades/resumo", {
+            params: contextCaseId ? { case_id: contextCaseId } : {},
+          }),
+        ]);
+        if (feedR.status !== "fulfilled") {
+          setError(true);
+          return;
+        }
+        const corpo = feedR.value.data as {
+          data: any[];
+          has_more?: boolean;
+          next_cursor?: string | null;
+        };
+        setItems(corpo.data.map(mapAtividadeCursor));
+        setFeedCursor(corpo.next_cursor ?? null);
+        setTemMaisPaginas(Boolean(corpo.has_more));
+        setResumo(resumoR.status === "fulfilled" ? resumoR.value.data : null);
+        return;
+      }
+      // ── modo legado (rollback por flag): fan-out preservado ───────────────
       // Fonte primária: GET /atividades (vw_atividades) — já entrega
       // responsavel_id, prioridade e subtipo por item, para TODOS os itens
       // visíveis (sem o corte de responsável do /deadlines/ nem o limite de
@@ -1065,7 +1230,50 @@ export default function CentralAtividades() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [contextCaseId, view, mesCal, anoCal]);
+
+  // "Carregar mais" (lista/timeline): anexa a próxima página do cursor — sem
+  // recarregar o que já está em tela; âncora de continuação = next_cursor.
+  const carregarMais = useCallback(async () => {
+    if (!feedCursor || carregandoMais) return;
+    setCarregandoMais(true);
+    try {
+      const params: Record<string, unknown> = {
+        pagination: "cursor",
+        page_size: 50,
+        apenas_pendentes: false,
+        cursor: feedCursor,
+      };
+      if (contextCaseId) params.case_id = contextCaseId;
+      const { data } = await api.get("/atividades", { params });
+      setItems((atual) => [...atual, ...asList(data).map(mapAtividadeCursor)]);
+      setFeedCursor(data?.next_cursor ?? null);
+      setTemMaisPaginas(Boolean(data?.has_more));
+    } catch {
+      toast.error("Não foi possível carregar mais atividades");
+    } finally {
+      setCarregandoMais(false);
+    }
+  }, [feedCursor, carregandoMais, contextCaseId]);
+
+  // Navegação de período do calendário (janela mensal no servidor).
+  const trocarMesCalendario = useCallback(
+    (delta: number) => {
+      setMesCal((m) => {
+        const novo = m + delta;
+        if (novo < 0) {
+          setAnoCal((y) => y - 1);
+          return 11;
+        }
+        if (novo > 11) {
+          setAnoCal((y) => y + 1);
+          return 0;
+        }
+        return novo;
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     load();
@@ -1470,12 +1678,22 @@ export default function CentralAtividades() {
   const pendentes = (
     contextCaseId ? items.filter((i) => i.case_id === contextCaseId) : items
   ).filter((i) => situacaoColunaDe(i.status) !== "concluido");
-  const stats = {
-    vencido: pendentes.filter((i) => i.urgencia === "vencido").length,
-    critico: pendentes.filter((i) => i.urgencia === "critico").length,
-    atencao: pendentes.filter((i) => i.urgencia === "atencao").length,
-    normal: pendentes.filter((i) => i.urgencia === "normal").length,
-  };
+  // Modo cursor: os contadores vêm do SERVIDOR (GET /atividades/resumo) —
+  // conjunto INTEIRO visível, não a página carregada. Fallback: contagem
+  // client-side sobre o que já está em tela (comportamento legado).
+  const stats = resumo
+    ? {
+        vencido: resumo.vencido,
+        critico: resumo.critico,
+        atencao: resumo.atencao,
+        normal: resumo.normal,
+      }
+    : {
+        vencido: pendentes.filter((i) => i.urgencia === "vencido").length,
+        critico: pendentes.filter((i) => i.urgencia === "critico").length,
+        atencao: pendentes.filter((i) => i.urgencia === "atencao").length,
+        normal: pendentes.filter((i) => i.urgencia === "normal").length,
+      };
 
   const tituloModal =
     form.categoria === "prazo"
@@ -1755,7 +1973,12 @@ export default function CentralAtividades() {
       ) : view === "calendario" ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2">
-            <CalendarView items={filtered} />
+            <CalendarView
+              items={filtered}
+              mes={mesCal}
+              ano={anoCal}
+              onTrocaMes={trocarMesCalendario}
+            />
           </div>
           <div className="card overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-100">
@@ -1779,12 +2002,32 @@ export default function CentralAtividades() {
           items={filtered}
           nomeDe={nomeDe}
           onMove={moverSituacao}
+          contagens={
+            resumo
+              ? {
+                  nao_tratado: resumo.colunas.nao_tratado,
+                  em_execucao: resumo.colunas.em_execucao,
+                  concluido: resumo.colunas.concluido,
+                }
+              : undefined
+          }
+          temMais={temMaisPaginas}
+          onCarregarMais={carregarMais}
+          carregandoMais={carregandoMais}
         />
       ) : view === "timeline" ? (
-        <TimelineView items={filtered} />
+        <>
+          <TimelineView items={filtered} />
+          {temMaisPaginas && (
+            <BotaoCarregarMais
+              onClick={carregarMais}
+              carregando={carregandoMais}
+            />
+          )}
+        </>
       ) : (
         <div className="card overflow-hidden">
-          {filtered.length === 0 ? (
+          {filtered.length === 0 && !temMaisPaginas ? (
             <div className="py-16 text-center">
               <CheckCircle className="w-10 h-10 text-success-400 mx-auto mb-3" />
               <p className="text-slate-500 font-medium">
@@ -1795,13 +2038,21 @@ export default function CentralAtividades() {
               </p>
             </div>
           ) : (
-            filtered.map((item) => (
-              <ActivityRow
-                key={`${item.fonte}-${item.id}`}
-                item={item}
-                {...rowActions}
-              />
-            ))
+            <>
+              {filtered.map((item) => (
+                <ActivityRow
+                  key={`${item.fonte}-${item.id}`}
+                  item={item}
+                  {...rowActions}
+                />
+              ))}
+              {temMaisPaginas && (
+                <BotaoCarregarMais
+                  onClick={carregarMais}
+                  carregando={carregandoMais}
+                />
+              )}
+            </>
           )}
         </div>
       )}

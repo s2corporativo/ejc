@@ -1,0 +1,38 @@
+{
+ "legado (sem limite)|A1": {
+  "p50": 13.2,
+  "p95": 28.5,
+  "kb": 74.0
+ },
+ "cursor page_size=50|A1": {
+  "p50": 8.4,
+  "p95": 9.1,
+  "kb": 16.5
+ },
+ "cursor page_size=200|A1": {
+  "p50": 12.5,
+  "p95": 12.8,
+  "kb": 64.9
+ },
+ "legado (sem limite)|socio": {
+  "p50": 17.9,
+  "p95": 230.6,
+  "kb": 128.1
+ },
+ "cursor page_size=50|socio": {
+  "p50": 7.9,
+  "p95": 8.3,
+  "kb": 16.5
+ },
+ "cursor page_size=200|socio": {
+  "p50": 12.2,
+  "p95": 13.0,
+  "kb": 64.4
+ },
+ "legado-repeticao|A1": {
+  "p50": 13.6
+ },
+ "legado-repeticao|socio": {
+  "p50": 17.4
+ }
+}
