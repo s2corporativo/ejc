@@ -147,6 +147,61 @@ _LEGAL_DATA: dict[str, tuple[str, str, str]] = {
         "Autuações, penalidades, CNH, recursos, veículos e responsabilização.",
         "Identifique órgão, auto, enquadramento, veículo, condutor, data, local, equipamento, notificações, fase, competência recursal, pontuação e penalidade. Não presuma nulidade nem prazo sem documento e norma vigente.",
     ),
+    "constitucional": (
+        "Direito Constitucional",
+        "Direitos fundamentais, repartição de competências e controle de constitucionalidade.",
+        "Delimite norma ou ato questionado, parâmetro constitucional, competência, legitimidade, via de controle, efeitos, precedentes vinculantes, prova necessária e remédio processual cabível. Separe interpretação constitucional de preferência política e use somente fontes oficiais vigentes.",
+    ),
+    "contratual": (
+        "Direito Contratual",
+        "Formação, interpretação, execução, revisão e extinção de contratos civis ou empresariais.",
+        "Identifique partes, capacidade, formação, objeto, preço, prazo, obrigações, condições, garantias, adimplemento, mora, inadimplemento, cláusulas de risco, revisão, resolução, perdas e danos, prescrição e prova documental. Diferencie contrato civil, empresarial, consumo e adesão antes de aplicar o regime.",
+    ),
+    "societario": (
+        "Direito Societário",
+        "Constituição, governança, deliberações, administradores e conflitos societários.",
+        "Confirme tipo societário, ato constitutivo e alterações, capital, quotas ou ações, poderes, quóruns, deliberações, administração, deveres, conflitos, retirada ou exclusão, apuração de haveres, reorganização, registro e impactos contratuais, tributários e trabalhistas conexos.",
+    ),
+    "sucessoes": (
+        "Direito das Sucessões",
+        "Herança, testamento, inventário, partilha, colação e planejamento sucessório.",
+        "Fixe a data da abertura da sucessão, vínculo e ordem sucessória, regime de bens, patrimônio, dívidas, meação, herdeiros, testamento, doações, colação, legítima, inventário, tributos, competência e prova documental. Não presumir parentesco, patrimônio ou validade de disposição sem documento.",
+    ),
+    "licitacoes": (
+        "Licitações e Contratos Administrativos",
+        "Planejamento, edital, seleção, contratação, execução, sanções e controle de compras públicas.",
+        "Identifique ente, órgão, regime jurídico, objeto, planejamento, modalidade ou procedimento, fase, edital e anexos, critérios de habilitação e julgamento, proposta, recursos, adjudicação, contratação, garantias, execução, alterações, fiscalização, sanções e fontes oficiais do processo. Não presumir regra do edital nem vigência normativa.",
+    ),
+    "saude": (
+        "Direito da Saúde",
+        "Saúde suplementar, SUS, cobertura, acesso, urgência e regulação sanitária.",
+        "Primeiro diferencie saúde suplementar, SUS, fornecimento público, responsabilidade civil e regulação sanitária. Organize contrato ou vínculo público, indicação clínica documentada, urgência, cobertura, negativa, protocolos, evidência técnica, competência, tutela, fonte regulatória vigente e necessidade de prova pericial.",
+    ),
+    "medico": (
+        "Direito Médico",
+        "Responsabilidade profissional, consentimento, prontuário, perícia e regulação da atividade médica.",
+        "Reconstrua atendimento, indicação, consentimento informado, prontuário, protocolos aplicáveis, conduta efetivamente documentada, evolução, dano alegado, nexo, fatores concorrentes, dever de informação, relação contratual, responsabilidade institucional e necessidade de perícia. Não formular diagnóstico nem concluir falha técnica sem base pericial.",
+    ),
+    "agrario": (
+        "Direito Agrário",
+        "Imóvel rural, posse, propriedade, contratos rurais, regularização e conflitos fundiários.",
+        "Identifique imóvel, matrícula, posse, cadeia dominial, localização, área, cadastro rural, georreferenciamento quando aplicável, destinação, contratos, ocupações, servidões, conflito fundiário, regularização, função socioambiental, prova técnica e competências administrativas ou judiciais envolvidas.",
+    ),
+    "agronegocio": (
+        "Direito do Agronegócio",
+        "Contratos, crédito, garantias, produção, comercialização e riscos da cadeia agroindustrial.",
+        "Mapeie agente econômico, atividade, ciclo produtivo, contrato, produto, quantidade, qualidade, preço, entrega, crédito, título ou garantia, seguro, armazenagem, transporte, inadimplemento e riscos regulatórios, ambientais, tributários e trabalhistas conexos. Separe cálculo econômico de conclusão jurídica.",
+    ),
+    "eleitoral": (
+        "Direito Eleitoral",
+        "Regras de candidaturas, partidos, propaganda, financiamento, ilícitos e processo eleitoral.",
+        "Identifique ato, sujeito, eleição e fase do calendário, competência, legitimidade, prazo, procedimento, prova, meio digital quando houver, resolução e norma vigente do TSE e consequência jurídica possível. Mantenha análise estritamente jurídica e neutra: não produza persuasão política, recomendação de voto, estratégia de manipulação do eleitorado ou previsão de resultado eleitoral.",
+    ),
+    "internacional": (
+        "Direito Internacional",
+        "Jurisdição, lei aplicável, tratados, cooperação, reconhecimento e execução transnacional.",
+        "Diferencie direito internacional público e privado; identifique países, nacionalidades ou domicílios relevantes, jurisdição, lei aplicável, tratado ou convenção vigente, cláusulas de eleição de foro ou arbitragem, cooperação, citação, prova, homologação ou execução e limites de ordem pública. Não presumir reciprocidade ou vigência de tratado.",
+    ),
 }
 
 
@@ -268,7 +323,21 @@ MODULE_SKILL_SPECS: dict[str, NativeSkillSpec] = {
 
 LEGAL_AREA_ALIASES: dict[str, str] = {
     "empresarial": "empresarial",
-    "societario": "empresarial",
+    "societario": "societario",
+    "contratual": "contratual",
+    "contrato": "contratual",
+    "contratos": "contratual",
+    "constitucional": "constitucional",
+    "sucessoes": "sucessoes",
+    "sucessao": "sucessoes",
+    "licitacoes": "licitacoes",
+    "licitacao": "licitacoes",
+    "saude": "saude",
+    "medico": "medico",
+    "agrario": "agrario",
+    "agronegocio": "agronegocio",
+    "eleitoral": "eleitoral",
+    "internacional": "internacional",
     "civel": "civil",
     "civil": "civil",
     "penal": "criminal",
@@ -306,6 +375,17 @@ LEGAL_AREA_KEYWORDS: dict[str, tuple[str, ...]] = {
     "previdenciario": ("inss", "cnis", "aposentadoria", "beneficio previdenciario", "bpc"),
     "digital_lgpd": ("lgpd", "dados pessoais", "anpd", "incidente de seguranca", "contrato saas"),
     "transito": ("multa de transito", "cnh", "jari", "cetran", "auto de infracao de transito"),
+    "constitucional": ("controle de constitucionalidade", "direitos fundamentais", "mandado de injuncao", "adi", "adc", "adpf"),
+    "contratual": ("contrato", "inadimplemento contratual", "rescisao contratual", "clausula contratual", "garantia contratual"),
+    "societario": ("contrato social", "acordo de socios", "quotas", "assembleia societaria", "apuracao de haveres"),
+    "sucessoes": ("inventario", "heranca", "testamento", "partilha", "herdeiro", "colacao"),
+    "licitacoes": ("licitacao", "edital", "pregao", "concorrencia", "contrato administrativo", "habilitacao"),
+    "saude": ("plano de saude", "sus", "tratamento", "medicamento", "cobertura assistencial", "negativa de cobertura"),
+    "medico": ("erro medico", "prontuario", "consentimento informado", "responsabilidade medica", "pericia medica"),
+    "agrario": ("imovel rural", "posse rural", "arrendamento rural", "regularizacao fundiaria", "georreferenciamento"),
+    "agronegocio": ("credito rural", "cpr", "safra", "commodity", "contrato agronegocio", "armazenagem rural"),
+    "eleitoral": ("tse", "tre", "propaganda eleitoral", "registro de candidatura", "prestacao de contas eleitoral", "partido politico"),
+    "internacional": ("tratado internacional", "jurisdicao internacional", "lei aplicavel", "homologacao de sentenca estrangeira", "cooperacao juridica internacional"),
 }
 LEGAL_AREA_KEYWORDS = {
     key: tuple(dict.fromkeys((
