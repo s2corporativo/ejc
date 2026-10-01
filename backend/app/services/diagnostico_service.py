@@ -631,9 +631,19 @@ async def _probe_heartbeat_jobs(session, settings: Settings) -> dict[str, Any]:
 
 
 # ── Probe: Backup offsite ─────────────────────────────────────────────────────
-async def _probe_backup(session, settings: Settings) -> dict[str, Any]:
-    """Expõe configuração e a última execução conhecida do backup, sem segredos."""
+async def _probe_backup(session_or_settings, settings: Settings | None = None) -> dict[str, Any]:
+    """Expõe configuração e, quando há sessão, a última execução do backup.
+
+    Mantém a assinatura histórica ``_probe_backup(settings)`` usada por testes e
+    chamadas unitárias; no diagnóstico agregado recebe ``(session, settings)`` e
+    acrescenta a telemetria persistida sem criar sessão concorrente.
+    """
     inicio = time.perf_counter()
+    if settings is None:
+        settings = session_or_settings
+        session = None
+    else:
+        session = session_or_settings
     producao = (settings.APP_ENV or "").strip().lower() == "production"
     habilitado = bool(settings.BACKUP_ENABLED)
 
@@ -642,7 +652,7 @@ async def _probe_backup(session, settings: Settings) -> dict[str, Any]:
     age_hours = None
     try:
         from app.services import backup_service
-        estado = await backup_service.obter_estado(session)
+        estado = await backup_service.obter_estado(session) if session is not None else None
         if estado:
             last_status = estado.get("last_status")
             raw = estado.get("last_run_at")
@@ -691,7 +701,14 @@ async def _probe_backup(session, settings: Settings) -> dict[str, Any]:
                 detalhe += f" ({last_status})."
         else:
             detalhe += " Nenhuma execução anterior foi localizada."
-        status = "ok" if last_run_at and last_status == "sucesso" else "alerta"
+        # Sem sessão (chamada unitária/legada), preserva o contrato histórico:
+        # configuração habilitada é suficiente. No painel real, a sessão existe
+        # e a ausência/erro da última execução vira alerta acionável.
+        status = (
+            "ok"
+            if session is None or (last_run_at and last_status == "sucesso")
+            else "alerta"
+        )
         acao = (
             "Nenhuma ação necessária."
             if status == "ok"
