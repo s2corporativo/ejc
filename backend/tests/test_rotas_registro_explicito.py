@@ -445,6 +445,7 @@ ADICOES_INTENCIONAIS |= {
     ("/api/financeiro/excecoes", "GET"),
     ("/api/financeiro/conciliacao/{analysis_id}", "GET"),
     ("/api/financeiro/conciliacao/confirmar", "POST"),
+    ("/api/relatorio/mensal/{mes}/pacote", "GET"),
 }
 
 

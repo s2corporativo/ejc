@@ -1,3 +1,44 @@
+export const FEE_STATUSES = [
+  "pendente",
+  "atrasado",
+  "pago",
+  "cancelado",
+] as const;
+export type FeeStatus = (typeof FEE_STATUSES)[number];
+
+export const EXPENSE_STATUSES = ["pendente", "pago", "cancelado"] as const;
+export type ExpenseStatus = (typeof EXPENSE_STATUSES)[number];
+
+export const COMMISSION_STATUSES = [
+  "calculada",
+  "a_aprovar",
+  "a_pagar",
+  "paga",
+  "rejeitada",
+  "estornada",
+] as const;
+export type CommissionStatus = (typeof COMMISSION_STATUSES)[number];
+
+export const COMMISSION_STATUS_LABELS: Record<CommissionStatus, string> = {
+  calculada: "Calculada",
+  a_aprovar: "A aprovar",
+  a_pagar: "A pagar",
+  paga: "Paga",
+  rejeitada: "Rejeitada",
+  estornada: "Estornada",
+};
+
+export const COMMISSION_STATUS_FLOW: Readonly<
+  Record<CommissionStatus, readonly CommissionStatus[]>
+> = {
+  calculada: ["a_aprovar", "estornada"],
+  a_aprovar: ["a_pagar", "rejeitada", "estornada"],
+  a_pagar: ["paga", "estornada"],
+  paga: [],
+  rejeitada: [],
+  estornada: [],
+};
+
 export const FINANCE_STATUS = {
   pendente: "Pendente",
   atrasado: "Em atraso",

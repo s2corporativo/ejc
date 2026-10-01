@@ -18,6 +18,8 @@ from app.core.security import get_current_user
 from app.core.sql_safe import construir_update
 from app.models.audit_log import criar_audit_log
 from app.models.user import User
+from app.services.finance_status import EXPENSE_TRANSITIONS, exigir_transicao
+from app.services.finance_document_service import exigir_documento_financeiro
 from app.services.finance_governance import (
     competencia_de_data,
     exigir_competencia_aberta,
@@ -51,6 +53,7 @@ class _DespesaCampos(BaseModel):
     recorrencia: Optional[str] = Field(None, max_length=100)
     status: Optional[Literal["pendente", "pago", "cancelado"]] = None
     competencia: Optional[str] = None
+    comprovante_doc_id: Optional[str] = Field(None, max_length=36)
 
     @field_validator("categoria", "descricao")
     @classmethod
@@ -239,7 +242,7 @@ async def list_despesas(
         text("""
             SELECT id, categoria, subcategoria, tipo, descricao, valor,
                    vencimento, pago_em, recorrente, recorrencia, status,
-                   competencia, created_by, created_at, updated_at
+                   competencia, comprovante_doc_id, created_by, created_at, updated_at
             FROM office_expenses
             WHERE deleted_at IS NULL
               AND (CAST(:categoria AS text) IS NULL OR categoria = :categoria)
@@ -406,6 +409,10 @@ async def create_despesa(
             dados["status"] = "pendente"
             dados["pago_em"] = None
             approval_required = True
+    if dados.get("comprovante_doc_id"):
+        await exigir_documento_financeiro(
+            db, current_user, dados["comprovante_doc_id"]
+        )
     duplicado = (
         await db.execute(
             text(
@@ -435,14 +442,14 @@ async def create_despesa(
             """
             INSERT INTO office_expenses
                 (categoria, subcategoria, tipo, descricao, valor, vencimento, pago_em,
-                 recorrente, recorrencia, status, competencia, created_by)
+                 recorrente, recorrencia, status, competencia, comprovante_doc_id, created_by)
             VALUES
                 (:categoria, :subcategoria, :tipo, :descricao, :valor,
                  :vencimento, :pago_em, :recorrente, :recorrencia, :status,
-                 :competencia, :created_by)
+                 :competencia, :comprovante_doc_id, :created_by)
             RETURNING id, categoria, subcategoria, tipo, descricao, valor,
                       vencimento, pago_em, recorrente, recorrencia, status,
-                      competencia, created_at
+                      competencia, comprovante_doc_id, created_at
             """
         ),
         {**dados, "created_by": current_user.id},
@@ -488,7 +495,7 @@ async def update_despesa(
             """
             SELECT id, categoria, subcategoria, tipo, descricao, valor,
                    vencimento, pago_em, recorrente, recorrencia, status,
-                   competencia, created_at, updated_at
+                   competencia, comprovante_doc_id, created_at, updated_at
             FROM office_expenses
             WHERE id=:id AND deleted_at IS NULL
             """
@@ -510,6 +517,17 @@ async def update_despesa(
         db, competencia_atual, "Alterar despesa"
     )
     updates = _normalizar_baixa(updates, status_atual=antes["status"])
+    if updates.get("comprovante_doc_id"):
+        await exigir_documento_financeiro(
+            db, current_user, str(updates["comprovante_doc_id"])
+        )
+    if "status" in updates:
+        exigir_transicao(
+            str(antes["status"]),
+            str(updates["status"]),
+            EXPENSE_TRANSITIONS,
+            entidade="despesa",
+        )
     competencia_nova = (
         updates.get("competencia")
         or antes["competencia"]
@@ -569,7 +587,7 @@ async def update_despesa(
             """
             SELECT id, categoria, subcategoria, tipo, descricao, valor,
                    vencimento, pago_em, recorrente, recorrencia, status,
-                   competencia, created_at, updated_at
+                   competencia, comprovante_doc_id, created_at, updated_at
             FROM office_expenses
             WHERE id=:id AND deleted_at IS NULL
             """
@@ -606,7 +624,7 @@ async def delete_despesa(
             """
             SELECT id, categoria, subcategoria, tipo, descricao, valor,
                    vencimento, pago_em, recorrente, recorrencia, status,
-                   competencia, created_at, updated_at
+                   competencia, comprovante_doc_id, created_at, updated_at
             FROM office_expenses
             WHERE id=:id AND deleted_at IS NULL
             """

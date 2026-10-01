@@ -16,6 +16,20 @@ import QRCode from "qrcode";
 import api from "../lib/api";
 import { asList } from "../lib/list";
 import type { Fee, Client, Paged } from "../types";
+import { apiErrorMessage } from "../lib/apiError";
+import { FEE_STATUSES } from "../lib/financeiro";
+import type {
+  FeeFormState,
+  FeeHistoryModal,
+  FeePaymentForm,
+  FeePaymentHistory,
+  FeeRateioModal,
+  FeeRefundForm,
+  FeeRefundModal,
+  HonorariosResumo,
+  PixConfig,
+  PixResult,
+} from "../types/financeiro";
 import {
   StatusBadge,
   Modal,
@@ -26,7 +40,8 @@ import {
   fmtMoney,
 } from "../components/UI";
 
-const STATUS_VALIDOS = ["pendente", "atrasado", "pago"];
+const STATUS_VALIDOS = FEE_STATUSES.filter((status) => status !== "cancelado");
+type FeeRow = Fee & { client_nome?: string | null; saldo?: number };
 const TIPOS_COM_PERCENTUAL = ["exito", "misto"];
 
 function hojeISO(): string {
@@ -46,38 +61,53 @@ export function quantoCobrar(f: Fee): string {
   return fmtMoney(f.valor);
 }
 
-export default function Honorarios({ competencia }: { competencia?: string }) {
-  const [data, setData] = useState<Paged<Fee> | null>(null);
-  const [resumo, setResumo] = useState<any>(null);
+export default function Honorarios({
+  competencia,
+  focusId,
+}: {
+  competencia?: string;
+  focusId?: string;
+}) {
+  const [data, setData] = useState<Paged<FeeRow> | null>(null);
+  const [resumo, setResumo] = useState<HonorariosResumo | null>(null);
   const [clientes, setClientes] = useState<Client[]>([]);
   const [searchParams, setSearchParams] = useSearchParams();
   const [statusF, setStatusF] = useState(() => {
     const s = searchParams.get("status");
-    return s && STATUS_VALIDOS.includes(s) ? s : "";
+    return s && STATUS_VALIDOS.some((status) => status === s) ? s : "";
   });
   const [modal, setModal] = useState(false);
   const [pagModal, setPagModal] = useState<Fee | null>(null);
-  const [histModal, setHistModal] = useState<any>(null);
-  const [form, setForm] = useState<any>({ tipo: "fixo" });
-  const [pag, setPag] = useState<any>({});
+  const [histModal, setHistModal] = useState<FeeHistoryModal<FeeRow> | null>(
+    null,
+  );
+  const [form, setForm] = useState<FeeFormState>({ tipo: "fixo" });
+  const [pag, setPag] = useState<FeePaymentForm>({});
   const [salvando, setSalvando] = useState(false);
   const [registrando, setRegistrando] = useState(false);
-  const [estModal, setEstModal] = useState<any>(null);
-  const [est, setEst] = useState<any>({});
+  const [estModal, setEstModal] = useState<FeeRefundModal | null>(null);
+  const [est, setEst] = useState<FeeRefundForm>({});
   const [estornando, setEstornando] = useState(false);
-  const [rateioModal, setRateioModal] = useState<any>(null);
-  const [pixModal, setPixModal] = useState<any>(null);
-  const [pixCfg, setPixCfg] = useState<any>(() => {
+  const [rateioModal, setRateioModal] = useState<FeeRateioModal<FeeRow> | null>(
+    null,
+  );
+  const [pixModal, setPixModal] = useState<(FeeRow & { saldo: number }) | null>(
+    null,
+  );
+  const [pixCfg, setPixCfg] = useState<PixConfig>(() => {
     try {
       // Chave PIX pode conter CPF/CNPJ/e-mail/telefone. Não persiste em
       // localStorage: fica apenas na sessão atual do navegador.
       localStorage.removeItem("ejc_pix");
-      return JSON.parse(sessionStorage.getItem("ejc_pix") || "{}");
+      const parsed: unknown = JSON.parse(
+        sessionStorage.getItem("ejc_pix") || "{}",
+      );
+      return parsed && typeof parsed === "object" ? (parsed as PixConfig) : {};
     } catch {
       return {};
     }
   });
-  const [pixRes, setPixRes] = useState<any>(null);
+  const [pixRes, setPixRes] = useState<PixResult | null>(null);
   const [pixQr, setPixQr] = useState("");
   const [rateioLoading, setRateioLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -103,6 +133,15 @@ export default function Honorarios({ competencia }: { competencia?: string }) {
   };
 
   useEffect(() => {
+    if (!focusId || !data?.data?.length) return;
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`finance-fee-${focusId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [focusId, data]);
+
+  useEffect(() => {
     load();
     api
       .get("/clients/", { params: { page_size: 100 } })
@@ -124,21 +163,21 @@ export default function Honorarios({ competencia }: { competencia?: string }) {
       setModal(false);
       setForm({ tipo: "fixo" });
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Erro"));
     } finally {
       setSalvando(false);
     }
   };
 
-  const abrirRateio = async (fee: any) => {
+  const abrirRateio = async (fee: FeeRow) => {
     setRateioLoading(true);
     setRateioModal({ fee });
     try {
       const r = await api.get(`/honorarios-oab/${fee.id}/rateio`);
       setRateioModal({ fee, calc: r.data });
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao calcular rateio");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Erro ao calcular rateio"));
       setRateioModal(null);
     } finally {
       setRateioLoading(false);
@@ -154,23 +193,23 @@ export default function Honorarios({ competencia }: { competencia?: string }) {
       );
       setRateioModal(null);
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao gerar rateio");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Erro ao gerar rateio"));
     }
   };
 
-  const abrirHistorico = async (fee: Fee) => {
+  const abrirHistorico = async (fee: FeeRow) => {
     setHistModal({ fee, loading: true });
     try {
       const r = await api.get(`/fees/${fee.id}/pagamentos`);
       setHistModal({ fee, loading: false, data: r.data });
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao carregar pagamentos");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Erro ao carregar pagamentos"));
       setHistModal(null);
     }
   };
 
-  const abrirPagamento = async (fee: Fee) => {
+  const abrirPagamento = async (fee: FeeRow) => {
     let valor: number | string | undefined = fee.valor ?? undefined;
     try {
       const r = await api.get(`/fees/${fee.id}/pagamentos`);
@@ -191,15 +230,15 @@ export default function Honorarios({ competencia }: { competencia?: string }) {
       setPagModal(null);
       setPag({});
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao registrar pagamento");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Erro ao registrar pagamento"));
     } finally {
       setRegistrando(false);
     }
   };
 
   // ── Estorno de pagamento (fluxo próprio e auditável — P2 da homologação) ──
-  const abrirEstorno = (fee: Fee, p: any) => {
+  const abrirEstorno = (fee: FeeRow, p: FeePaymentHistory) => {
     const disponivel = Number(p.valor ?? 0) - Number(p.estornado ?? 0);
     if (disponivel <= 0) {
       toast.error("Este pagamento já está integralmente estornado.");
@@ -235,14 +274,14 @@ export default function Honorarios({ competencia }: { competencia?: string }) {
       setEst({});
       if (histModal?.fee) void abrirHistorico(histModal.fee);
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao registrar estorno");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Erro ao registrar estorno"));
     } finally {
       setEstornando(false);
     }
   };
 
-  const abrirPix = async (fee: Fee) => {
+  const abrirPix = async (fee: FeeRow) => {
     // Cobrança deve ser fail-closed: nunca gerar PIX pelo valor bruto quando há
     // pagamentos parciais. Consulta o subledger antes de abrir o modal.
     try {
@@ -260,17 +299,17 @@ export default function Honorarios({ competencia }: { competencia?: string }) {
         );
         return;
       }
-      setPixModal({ ...fee, saldo });
+      setPixModal({ ...fee, saldo: Number(saldo) });
       setPixRes(null);
       setPixQr("");
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(
-        e.response?.data?.detail || "Não foi possível apurar o saldo para PIX",
+        apiErrorMessage(e, "Não foi possível apurar o saldo para PIX"),
       );
     }
   };
 
-  const gerarPix = async (fee: any) => {
+  const gerarPix = async (fee: FeeRow & { saldo?: number }) => {
     if (!pixCfg.chave) {
       toast.error("Informe a chave PIX do escritório (campo abaixo).");
       return;
@@ -290,7 +329,9 @@ export default function Honorarios({ competencia }: { competencia?: string }) {
         setPixModal(null);
         return;
       }
-      setPixModal((atual: any) => (atual ? { ...atual, saldo } : atual));
+      setPixModal((atual) =>
+        atual ? { ...atual, saldo: Number(saldo) } : atual,
+      );
       const { data } = await api.post("/pix/cobranca", {
         chave: pixCfg.chave,
         nome: pixCfg.nome || "Escritorio",
@@ -305,8 +346,8 @@ export default function Honorarios({ competencia }: { competencia?: string }) {
         margin: 1,
       });
       setPixQr(url);
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao gerar PIX");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Falha ao gerar PIX"));
     }
   };
 
@@ -323,9 +364,9 @@ export default function Honorarios({ competencia }: { competencia?: string }) {
               cobranca: quantoCobrar(f),
               vencimento: f.data_vencimento,
               status: f.status,
-              cliente: (f as any).client_nome ?? "",
+              cliente: f.client_nome ?? "",
             }));
-            exportCsv(rows as any, "honorarios.csv");
+            exportCsv(rows, "honorarios.csv");
           }}
           className="btn-secondary px-3 py-1.5 text-xs"
         >
@@ -339,7 +380,7 @@ export default function Honorarios({ competencia }: { competencia?: string }) {
               quantoCobrar(f),
               f.data_vencimento ?? "",
               f.status,
-              (f as any).client_nome ?? "",
+              f.client_nome ?? "",
             ]);
             exportPdf(
               "Honorários",
@@ -428,7 +469,15 @@ export default function Honorarios({ competencia }: { competencia?: string }) {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {(Array.isArray(data.data) ? data.data : []).map((f) => (
-                <tr key={f.id} className="hover:bg-slate-50">
+                <tr
+                  id={`finance-fee-${f.id}`}
+                  key={f.id}
+                  className={`hover:bg-slate-50 ${
+                    focusId === f.id
+                      ? "ring-2 ring-inset ring-primary-400 bg-primary-50/50"
+                      : ""
+                  }`}
+                >
                   <td className="px-4 py-3 font-medium text-navy">
                     {f.descricao}
                   </td>
@@ -691,7 +740,7 @@ export default function Honorarios({ competencia }: { competencia?: string }) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {histModal.data.pagamentos.map((p: any) => {
+                    {histModal.data.pagamentos.map((p) => {
                       const disponivel =
                         Number(p.valor ?? 0) - Number(p.estornado ?? 0);
                       return (
@@ -733,7 +782,7 @@ export default function Honorarios({ competencia }: { competencia?: string }) {
                   Estornos registrados
                 </div>
                 <ul className="space-y-1 text-sm">
-                  {histModal.data.estornos.map((e: any) => (
+                  {histModal.data.estornos.map((e) => (
                     <li
                       key={e.id}
                       className="flex items-start justify-between gap-3 border border-slate-100 rounded-lg p-2"
@@ -834,33 +883,35 @@ export default function Honorarios({ competencia }: { competencia?: string }) {
               <b>{rateioModal.calc.titular?.nome || "—"}</b>
             </div>
             <div className="space-y-2 text-sm">
-              {[
+              {(
                 [
-                  "Honorário de êxito (bruto)",
-                  rateioModal.calc.bruto,
-                  "text-navy",
-                ],
-                [
-                  "(−) Despesas do caso",
-                  rateioModal.calc.despesas_caso,
-                  "text-danger-500",
-                ],
-                [
-                  "(=) Líquido a ratear",
-                  rateioModal.calc.liquido,
-                  "text-navy font-bold",
-                ],
-                [
-                  "Titular do caso (50%)",
-                  rateioModal.calc.titular?.valor,
-                  "text-success-600 font-bold",
-                ],
-                [
-                  "Escritório (50%)",
-                  rateioModal.calc.escritorio?.valor,
-                  "text-bronze-deep font-bold",
-                ],
-              ].map(([l, v, cls]: any) => (
+                  [
+                    "Honorário de êxito (bruto)",
+                    rateioModal.calc.bruto,
+                    "text-navy",
+                  ],
+                  [
+                    "(−) Despesas do caso",
+                    rateioModal.calc.despesas_caso,
+                    "text-danger-500",
+                  ],
+                  [
+                    "(=) Líquido a ratear",
+                    rateioModal.calc.liquido,
+                    "text-navy font-bold",
+                  ],
+                  [
+                    "Titular do caso (50%)",
+                    rateioModal.calc.titular?.valor,
+                    "text-success-600 font-bold",
+                  ],
+                  [
+                    "Escritório (50%)",
+                    rateioModal.calc.escritorio?.valor,
+                    "text-bronze-deep font-bold",
+                  ],
+                ] as Array<[string, number | string | undefined, string]>
+              ).map(([l, v, cls]) => (
                 <div
                   key={l}
                   className="flex justify-between border-b border-slate-100 pb-1.5"

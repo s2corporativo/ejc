@@ -435,9 +435,52 @@ RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate worker
 connect_evolution_network_if_present ejc_worker
 
 if [ "$ENSURE_DAILY_BACKUP" = "1" ]; then
-  log "Garantindo agendamento e prova recente do backup cifrado"
-  if bash scripts/backup/ativar_backup.sh; then
-    log "Backup diário verificado com sucesso."
+  log "Garantindo configuração e prova recente do backup cifrado"
+  BACKUP_DESTINO_RUNTIME="$(docker compose exec -T backend python - <<'PY'
+from app.services.backup_service import configuracao_status
+print(str(configuracao_status().get("destino") or "gdrive").strip().lower())
+PY
+)"
+  if [ "$BACKUP_DESTINO_RUNTIME" = "rclone" ]; then
+    # O gate pré-deploy acabou de exigir prova cifrada nova via scripts/backup.sh,
+    # inclusive offsite_ok=true quando a política é obrigatória. No runtime novo
+    # basta confirmar que a mesma configuração rclone ficou efetivamente carregada;
+    # não há motivo para exigir credencial Google em um destino rclone.
+    if docker compose exec -T backend python - <<'PY'
+import json
+from app.services.backup_service import configuracao_status
+
+status = configuracao_status()
+required = (
+    "enabled",
+    "chave_configurada",
+    "pg_dump_disponivel",
+    "rclone_remote_configurado",
+    "rclone_disponivel",
+)
+problems = [field for field in required if not bool(status.get(field))]
+if str(status.get("destino") or "").strip().lower() != "rclone":
+    problems.append("destino_nao_rclone")
+print(json.dumps({
+    "ok": not problems,
+    "destino": status.get("destino"),
+    "offsite_obrigatorio": bool(status.get("offsite_obrigatorio")),
+    "problemas": problems,
+}, ensure_ascii=False, sort_keys=True))
+raise SystemExit(0 if not problems else 1)
+PY
+    then
+      log "Backup rclone verificado no runtime novo; prova cifrada pré-deploy permanece válida."
+    else
+      if [ "$REQUIRE_PREDEPLOY_BACKUP" = "1" ]; then
+        log "ERRO CRÍTICO: configuração rclone do backup não ficou válida no runtime novo."
+        log "Deploy será revertido para preservar a política de continuidade."
+        exit 1
+      fi
+      log "AVISO: configuração rclone pós-deploy inválida; contingência explícita mantém o deploy."
+    fi
+  elif bash scripts/backup/ativar_backup.sh; then
+    log "Backup diário Google Drive verificado com sucesso."
   else
     if [ "$REQUIRE_PREDEPLOY_BACKUP" = "1" ]; then
       log "ERRO CRÍTICO: ativação/verificação obrigatória do backup diário falhou."

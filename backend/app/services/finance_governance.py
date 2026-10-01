@@ -7,6 +7,8 @@ from uuid import uuid4
 from fastapi import HTTPException
 from sqlalchemy import text
 
+from app.services.finance_status import APPROVAL_TRANSITIONS, exigir_transicao
+
 
 def competencia_de_data(value: date | datetime | None) -> str:
     d = value.date() if isinstance(value, datetime) else value
@@ -33,6 +35,24 @@ async def exigir_competencia_aberta(db, competencia: str, acao: str) -> None:
                 f"{acao} não pode reescrever um mês fechado; registre a correção "
                 "como novo ajuste/estorno na competência atual."
             ),
+        )
+
+
+
+
+async def exigir_lock_financeiro(db, namespace: str, key: str) -> None:
+    """Adquire lock transacional não bloqueante para operação financeira única."""
+    lock_key = f"{namespace}:{key}"
+    adquirido = (
+        await db.execute(
+            text("SELECT pg_try_advisory_xact_lock(hashtext(:lock_key))"),
+            {"lock_key": lock_key},
+        )
+    ).scalar()
+    if not adquirido:
+        raise HTTPException(
+            409,
+            "Outra operação financeira equivalente está em andamento. Tente novamente.",
         )
 
 
@@ -81,6 +101,12 @@ async def solicitar_ou_consumir_aprovacao(
         )
     ).mappings().first()
     if aprovado:
+        exigir_transicao(
+            "aprovado",
+            "consumido",
+            APPROVAL_TRANSITIONS,
+            entidade="aprovação financeira",
+        )
         await db.execute(
             text(
                 """
@@ -148,6 +174,7 @@ async def solicitar_ou_consumir_aprovacao(
 
 
 async def aprovar_solicitacao(db, approval_id: str, user) -> dict:
+    await exigir_lock_financeiro(db, "finance_approval", approval_id)
     row = (
         await db.execute(
             text(
@@ -163,8 +190,12 @@ async def aprovar_solicitacao(db, approval_id: str, user) -> dict:
     ).mappings().first()
     if not row:
         raise HTTPException(404, "Solicitação de aprovação não encontrada")
-    if row["status"] != "pendente":
-        raise HTTPException(409, f"Solicitação já está {row['status']}")
+    exigir_transicao(
+        str(row["status"]),
+        "aprovado",
+        APPROVAL_TRANSITIONS,
+        entidade="aprovação financeira",
+    )
     if str(row["requested_by"]) == str(getattr(user, "id", "")):
         raise HTTPException(
             403,

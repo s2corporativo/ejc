@@ -18,7 +18,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 APP_DIR = BACKEND_DIR / "app"
-HEAD_REVISION = "167_finance_fk_indexes"
+HEAD_REVISION = "168_finance_ged_links"
 
 RAW_SQL_TABLES_ESPERADAS = {
     "agenda_eventos", "areas", "case_ambiental", "case_etiquetas",
@@ -297,7 +297,7 @@ def _sql_executavel(valor: str) -> str | None:
 
 # `WITH nome AS (`, cada `, nome AS (` da lista encadeada, e o `nome AS (` que
 # abre um bloco de CTEs guardado em constante própria (o `WITH` fica no
-# f-string do chamador — ver services/fee_ledger_compat.LEDGER_COMPAT_CTES).
+# f-string do chamador — ver services/fee_ledger.LEDGER_CTES).
 _RE_CTE = re.compile(
     r'(?:\bWITH\b|,|\A)\s*"?([a-z_][a-z0-9_]*)"?\s+AS\s*\(', re.I
 )
@@ -325,7 +325,7 @@ def _tabelas_referenciadas_raw() -> tuple[set[str], dict[str, set[str]]]:
 
     # Primeiro passe: nomes de CTE de TODO o app. Precisa ser global porque um
     # bloco de CTEs pode morar em constante de um módulo (services/
-    # fee_ledger_compat.LEDGER_COMPAT_CTES) e ser interpolado por f-string em
+    # fee_ledger.LEDGER_CTES) e ser interpolado por f-string em
     # outro (routers/financeiro_consolidado.py) — no arquivo consumidor o nome
     # só aparece em FROM/JOIN, nunca em `... AS (`. Nome de CTE é local ao
     # statement, não é tabela, e não tem — nem deve ter — classificação DR.

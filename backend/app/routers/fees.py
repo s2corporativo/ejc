@@ -29,7 +29,7 @@ from app.schemas.fee import (
     FeeUpdate,
 )
 from app.services.document_access_policy import exigir_documento_compativel_com_caso
-from app.services.fee_ledger_compat import total_pago_efetivo
+from app.services.fee_ledger import total_pago_efetivo
 from app.services.finance_governance import competencia_de_data, exigir_competencia_aberta
 
 _FINANCEIRO_TOTAL = {"superadmin", "admin", "socio", "financeiro"}
@@ -150,11 +150,7 @@ async def resumo(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """KPIs de cobrança/caixa com compatibilidade para quitações legadas.
-
-    O subledger ganha sempre. Um fee legado ``pago`` só entra no caixa quando
-    não existe nenhum ``fee_payments`` para ele, evitando dupla contagem.
-    """
+    """KPIs de cobrança e caixa baseados exclusivamente no subledger canônico."""
     hoje = date.today()
     if competencia:
         if not _RE_COMPETENCIA.fullmatch(competencia):
@@ -213,16 +209,6 @@ async def resumo(
             sqlfunc.extract("year", FeePayment.data_pagamento) == ano_ref,
         )
     )
-    existe_pagamento = select(FeePayment.id).where(FeePayment.fee_id == Fee.id).exists()
-    base_caixa_legado = select(sqlfunc.coalesce(sqlfunc.sum(Fee.valor), 0)).where(
-        Fee.deleted_at.is_(None),
-        Fee.status == FeeStatus.pago,
-        Fee.valor.is_not(None),
-        Fee.data_pagamento.is_not(None),
-        sqlfunc.extract("month", Fee.data_pagamento) == mes_ref,
-        sqlfunc.extract("year", Fee.data_pagamento) == ano_ref,
-        ~existe_pagamento,
-    )
     base_percentuais = select(sqlfunc.count(Fee.id)).where(
         Fee.deleted_at.is_(None),
         Fee.valor.is_(None),
@@ -241,19 +227,16 @@ async def resumo(
         ids = _ids_casos_do_usuario(cu)
         base_saldos = base_saldos.where(Fee.case_id.in_(ids))
         base_caixa = base_caixa.where(Fee.case_id.in_(ids))
-        base_caixa_legado = base_caixa_legado.where(Fee.case_id.in_(ids))
         base_percentuais = base_percentuais.where(Fee.case_id.in_(ids))
         escopo = "meus_casos"
 
     pendente, atrasado = (await db.execute(base_saldos)).one()
     recebido_real = Decimal(str((await db.execute(base_caixa)).scalar() or 0))
-    recebido_legado = Decimal(str((await db.execute(base_caixa_legado)).scalar() or 0))
     percentuais_sem_valor = (await db.execute(base_percentuais)).scalar() or 0
     return {
         "pendente": float(pendente or 0),
         "atrasado": float(atrasado or 0),
-        "recebido_mes": float(recebido_real + recebido_legado),
-        "recebido_mes_legado": float(recebido_legado),
+        "recebido_mes": float(recebido_real),
         "percentuais_sem_valor": int(percentuais_sem_valor),
         "escopo": escopo,
     }
@@ -416,7 +399,7 @@ async def listar_pagamentos(
             .order_by(FeeEstorno.data_estorno.desc(), FeeEstorno.created_at.desc())
         )
     ).scalars().all()
-    total_pago, legado = await total_pago_efetivo(db, fee)
+    total_pago, _ = await total_pago_efetivo(db, fee)
     saldo = None
     if fee.valor is not None:
         saldo = max(Decimal(str(fee.valor)) - total_pago, Decimal("0"))
@@ -431,10 +414,6 @@ async def listar_pagamentos(
         "total_pago": float(total_pago),
         "total_estornado": float(total_estornado),
         "saldo": float(saldo) if saldo is not None else None,
-        "legacy_pago_sem_subledger": legado,
-        "data_pagamento_legacy": (
-            fee.data_pagamento.isoformat() if legado and fee.data_pagamento else None
-        ),
         "pagamentos": [
             {
                 "id": p.id,
@@ -518,15 +497,7 @@ async def registrar_pagamento(
             case=caso,
         )
 
-    total_antes, legado = await total_pago_efetivo(db, fee)
-    if legado:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Honorário quitado em registro legado sem subledger; normalize o histórico "
-                "em fluxo controlado antes de lançar novo pagamento"
-            ),
-        )
+    total_antes, _ = await total_pago_efetivo(db, fee)
     if fee.valor is not None:
         devido = Decimal(str(fee.valor))
         if total_antes >= devido:
@@ -659,15 +630,7 @@ async def estornar_pagamento(
             detail="Pagamento não encontrado para este honorário",
         )
 
-    total_pago, legado = await total_pago_efetivo(db, fee)
-    if legado:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Honorário quitado em registro legado sem subledger; normalize o "
-                "histórico em fluxo controlado antes de lançar estorno"
-            ),
-        )
+    total_pago, _ = await total_pago_efetivo(db, fee)
 
     estornado_anterior = (
         await db.execute(
