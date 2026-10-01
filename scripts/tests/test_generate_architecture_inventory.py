@@ -89,6 +89,23 @@ class ArchitectureInventoryGeneratorTest(unittest.TestCase):
                 "from app.routers import cases\n",
                 encoding="utf-8",
             )
+            # Pai órfão inclui filho: o filho não pode virar mounted só por
+            # estar referenciado por um router que não chega ao FastAPI principal.
+            (routers / "orphan_parent.py").write_text(
+                "from fastapi import APIRouter\n"
+                "from app.routers import orphan_child\n"
+                "router = APIRouter()\n"
+                "router.include_router(orphan_child.router)\n",
+                encoding="utf-8",
+            )
+            (routers / "orphan_child.py").write_text(
+                "from fastapi import APIRouter\n"
+                "router = APIRouter(prefix='/orphan-child')\n"
+                "@router.get('/x')\n"
+                "async def x(): return {}\n",
+                encoding="utf-8",
+            )
+
             # órfão genuíno: APIRouter + endpoints, nunca incluído
             (routers / "orfaos.py").write_text(
                 "from fastapi import APIRouter\n"
@@ -122,6 +139,12 @@ class ArchitectureInventoryGeneratorTest(unittest.TestCase):
             def router_item(suffix: str) -> dict:
                 return next(v for k, v in by_path.items() if k.endswith(suffix))
 
+            def item_by_path(suffix: str) -> dict:
+                return next(
+                    item for item in items
+                    if item["path"].endswith(suffix) and item.get("line") is None
+                )
+
             # montados pelos mecanismos modernos (bruto já deve acertar)
             self.assertTrue(router_item("routers/cases.py")["mounted"])
             self.assertTrue(router_item("routers/api_keys.py")["mounted"])
@@ -134,17 +157,21 @@ class ArchitectureInventoryGeneratorTest(unittest.TestCase):
                 and item["mounted"] is True
                 for item in items
             ))
-            # não-routers: mounted=None (não "desativar")
-            self.assertIsNone(router_item("system_prompts/router.py")["mounted"])
-            self.assertIsNone(router_item("routers/__init__.py")["mounted"])
-            self.assertNotEqual(
-                router_item("system_prompts/router.py")["classification"], "desativar"
-            )
+            # não-routers: kind python_module + mounted=None.
+            helper_prompt = item_by_path("system_prompts/router.py")
+            helper_init = item_by_path("routers/__init__.py")
+            self.assertNotEqual(helper_prompt["kind"], "router")
+            self.assertEqual(helper_init["kind"], "python_module")
+            self.assertIsNone(helper_prompt["mounted"])
+            self.assertIsNone(helper_init["mounted"])
+            self.assertNotEqual(helper_prompt["classification"], "desativar")
             # órfão genuíno segue detectado com alta confiança
             orfao = router_item("routers/orfaos.py")
             self.assertFalse(orfao["mounted"])
             self.assertEqual(orfao["classification"], "desativar")
-            self.assertEqual(manifest["unmounted_routers"], 1)
+            self.assertFalse(router_item("routers/orphan_parent.py")["mounted"])
+            self.assertFalse(router_item("routers/orphan_child.py")["mounted"])
+            self.assertEqual(manifest["unmounted_routers"], 3)
 
     def test_detects_core_artifacts_and_applies_override(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
