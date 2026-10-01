@@ -755,7 +755,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         className={cn(
-          "w-full max-h-[90vh] overflow-auto rounded-xl border border-slate-200 bg-white shadow-lg animate-pop",
+          "w-full max-h-[90vh] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-float animate-pop",
           placement === "right" && "ejc-drawer-panel",
           sizeClass,
         )}
