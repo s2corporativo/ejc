@@ -233,13 +233,6 @@ ADICOES_INTENCIONAIS = {
     ("/api/processes/{pid}/proveniencia", "GET"),
     ("/api/saneamento/divergencias/{divergencia_id}/aplicar", "POST"),
     ("/api/saneamento/integridade", "GET"),
-    # PR #1945 (perf entrada/caso/hoje): cards da Central e cockpit "Hoje"
-    # calculados no backend. Ambas autenticadas: /atividades/resumo exige
-    # get_current_user e nega cliente_externo; /dashboard/hoje exige
-    # require_roles(["secretaria"]) com bloqueio explícito de cliente_externo.
-    # Somente leitura; nenhuma superfície pública nova.
-    ("/api/atividades/resumo", "GET"),
-    ("/api/dashboard/hoje", "GET"),
 }
 
 REMOCOES_INTENCIONAIS = {
@@ -394,6 +387,14 @@ ADICOES_INTENCIONAIS |= {
 # pelo Núcleo Único (sigilo, escopo, RAG, gate de citações, HITL, AILog). As
 # portas antigas de /ai/* e /ia-especializada/* seguem registradas — nada foi
 # removido aqui, então não há entrada correspondente em REMOCOES_INTENCIONAIS.
+# PR #1945 — endpoints server-side da Central de Atividades e do cockpit Hoje.
+# São superfícies autenticadas que substituem fan-out/amostragem do frontend,
+# sem remover rotas legadas.
+ADICOES_INTENCIONAIS |= {
+    ("/api/atividades/resumo", "GET"),
+    ("/api/dashboard/hoje", "GET"),
+}
+
 ADICOES_INTENCIONAIS |= {
     # Composição de 2026-09-05 dos PRs empilhados promovidos à main:
     # #1490 (Data Room público token-bound) e #1492/#1493 (despesas
