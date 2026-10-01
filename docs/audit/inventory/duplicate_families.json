@@ -1,6 +1,0 @@
-{
-  "service:backend/app/services:google_drive": [
-    "backend/app/services/google_drive.py",
-    "backend/app/services/google_drive_service.py"
-  ]
-}

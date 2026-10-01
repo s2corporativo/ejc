@@ -1,3 +1,0 @@
-# Relatórios gerados localmente/CI; reintegração validada contra a main após o PR #438.
-*.json
-!.gitignore
