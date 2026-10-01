@@ -663,3 +663,32 @@ def test_parse_resultados_rfb_layout_atual_normasinternet2():
     assert "Ementa oficial" in ato["ementa"]
     assert ato["fonte_url"].startswith("https://normasinternet2.receita.fazenda.gov.br/")
     assert ato["inteiro_teor"] is False
+
+
+async def test_ingerir_rfb_layout_atual_persiste_fonte_canonica_curta(monkeypatch):
+    navegacao = "x" * 700
+    html = f"""
+    <table>
+      <tr class='linhaResultados'>
+        <td><a href='https://normasinternet2.receita.fazenda.gov.br/#/consulta/externa/143499/vs/{navegacao}'>Solução de Consulta</a></td>
+        <td><a href='https://normasinternet2.receita.fazenda.gov.br/#/consulta/externa/143499/vs/{navegacao}'>123</a></td>
+        <td><a href='https://normasinternet2.receita.fazenda.gov.br/#/consulta/externa/143499/vs/{navegacao}'>Cosit</a></td>
+        <td><a href='https://normasinternet2.receita.fazenda.gov.br/#/consulta/externa/143499/vs/{navegacao}'>19/09/2026</a></td>
+        <td><a href='https://normasinternet2.receita.fazenda.gov.br/#/consulta/externa/143499/vs/{navegacao}'>
+          Ementa oficial longa o suficiente para o ingestor persistir o ato
+          sem precisar baixar inteiro teor nesta execução de regressão.
+        </a></td>
+      </tr>
+    </table>
+    """
+    ups = _prepara_rfb(
+        monkeypatch, resultados_por_termo={"IRPF": html}, termos="IRPF"
+    )
+
+    resumo = await rfb.ingerir(_FakeDB())
+
+    assert resumo["novos"] == 1
+    assert len(ups) == 1
+    assert ups[0]["fonte"] == rfb._url_ato("143499")
+    assert len(ups[0]["fonte"]) <= 255
+    assert ups[0]["extra"]["consultar_inteiro_teor_em"] == ups[0]["fonte"]
