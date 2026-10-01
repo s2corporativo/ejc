@@ -292,7 +292,9 @@ async def test_aprovar_distribuicao_commit_unico_com_auditoria():
         id="dist1", mes_referencia="2026-01", valor_total=Decimal("10000.00"),
         socios_json="[]", created_by="admin1", status="calculado",
     )
-    db = _FakeDB([d])
+    # A política de alçada é consultada antes da aprovação. Um limite acima
+    # do valor mantém este cenário focado no commit único + auditoria.
+    db = _FakeDB([d, Decimal("20000.00")])
     out = await aprovar_distribuicao(dist_id="dist1", db=db,
                                      cu=_user(UserRole.admin, "admin1"))
     assert out["status"] == "aprovado"

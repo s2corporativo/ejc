@@ -265,6 +265,28 @@ async def calcular_distribuicao(
     if not _is_socio(cu):
         raise HTTPException(403)
 
+    from app.services.finance_governance import resultado_disponivel_distribuicao
+
+    disponibilidade = await resultado_disponivel_distribuicao(
+        db, req.mes_referencia
+    )
+    if not disponibilidade["fechado"]:
+        raise HTTPException(
+            409,
+            (
+                "A distribuição societária exige competência financeira fechada. "
+                "Feche o mês no Financeiro antes de distribuir lucros."
+            ),
+        )
+    if Decimal(str(req.valor_total)) > Decimal(str(disponibilidade["disponivel"])):
+        raise HTTPException(
+            422,
+            (
+                f"Valor solicitado excede o resultado disponível do mês "
+                f"(disponível: {float(disponibilidade['disponivel']):.2f})."
+            ),
+        )
+
     await _travar_cap_table(db)
     socios = (
         await db.execute(select(Socio).where(Socio.ativo.is_(True)))
@@ -396,6 +418,21 @@ async def aprovar_distribuicao(
         raise HTTPException(404)
     if d.status != "calculado":
         raise HTTPException(422, f"Distribuição já está '{d.status}'")
+
+    from app.services.finance_governance import limite_dupla_aprovacao
+
+    limite = await limite_dupla_aprovacao(db)
+    if (
+        Decimal(str(d.valor_total)) >= limite
+        and str(d.created_by or "") == str(cu.id)
+    ):
+        raise HTTPException(
+            403,
+            (
+                f"Distribuição acima da alçada de {float(limite):.2f} exige "
+                "aprovação por outro sócio/administrador."
+            ),
+        )
 
     status_antes = d.status
     d.status = "aprovado"

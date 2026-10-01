@@ -3,7 +3,7 @@
 # Distinto de analise_bancaria.py (que analisa CONTRATOS via IA). Aqui é
 # determinístico: parser de extrato + motor de regras com base legal.
 from __future__ import annotations
-from sqlalchemy import Column, String, DateTime, Date, Integer, Numeric, Text, func
+from sqlalchemy import Column, String, DateTime, Date, Integer, Numeric, Text, ForeignKey, func
 from app.core.database import Base
 
 
@@ -15,6 +15,7 @@ class BankAnalysis(Base):
     banco           = Column(String(60), nullable=True)
     formato         = Column(String(10), nullable=True)   # pdf|ofx|csv
     arquivo_nome    = Column(String(255), nullable=True)
+    document_id     = Column(String(36), ForeignKey("documents.id", ondelete="SET NULL"), nullable=True, index=True)
     periodo_inicio  = Column(Date, nullable=True)
     periodo_fim     = Column(Date, nullable=True)
     total_transacoes = Column(Integer, default=0)

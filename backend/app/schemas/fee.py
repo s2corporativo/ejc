@@ -1,6 +1,6 @@
 # ── app/schemas/fee.py ───────────────────────────────────────────────────────
 from __future__ import annotations
-from pydantic import BaseModel, ConfigDict, condecimal, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, condecimal, field_validator, model_validator
 from typing import Optional
 from datetime import date, datetime
 from decimal import Decimal
@@ -61,15 +61,29 @@ class FeeCreate(BaseModel):
 
 
 class FeeUpdate(BaseModel):
-    """Alteração parcial de honorário com validação monetária estrita."""
+    """Alteração parcial de honorário; campos de negócio permanecem editáveis."""
 
     model_config = ConfigDict(extra="forbid")
 
+    tipo: Optional[str] = None
     descricao: Optional[str] = None
     valor: Optional[ValorNaoNegativo] = None
+    percentual_exito: Optional[PercentualNaoNegativo] = None
     status: Optional[str] = None
     data_vencimento: Optional[date] = None
+    client_id: Optional[str] = None
+    case_id: Optional[str] = None
     observacoes: Optional[str] = None
+    motivo_correcao: Optional[str] = Field(None, max_length=1000)
+
+    @field_validator("tipo")
+    @classmethod
+    def _validar_tipo(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        if v not in _TIPOS_FEE_VALIDOS:
+            raise ValueError(f"tipo de honorário inválido: {v!r}. Valores permitidos: {sorted(_TIPOS_FEE_VALIDOS)}")
+        return v
 
     @field_validator("status")
     @classmethod
@@ -146,6 +160,7 @@ class FeeResponse(BaseModel):
     data_pagamento: Optional[date] = None
     client_id: str
     case_id: Optional[str] = None
+    observacoes: Optional[str] = None
     created_at: datetime
 
     class Config:

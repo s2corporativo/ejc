@@ -72,10 +72,16 @@ function formatClock(date: Date) {
 }
 
 function notificationActionLabel(notification: any): string {
-  const texto = `${notification?.titulo || ""} ${notification?.mensagem || ""}`.toLowerCase();
+  const texto =
+    `${notification?.titulo || ""} ${notification?.mensagem || ""}`.toLowerCase();
   const link = String(notification?.link || "").toLowerCase();
-  if (texto.includes("prazo") || link.includes("tipo=prazo")) return "Ver prazo";
-  if (texto.includes("revis") || texto.includes("peça") || link.includes("/pecas"))
+  if (texto.includes("prazo") || link.includes("tipo=prazo"))
+    return "Ver prazo";
+  if (
+    texto.includes("revis") ||
+    texto.includes("peça") ||
+    link.includes("/pecas")
+  )
     return "Revisar";
   if (
     texto.includes("pagamento") ||
@@ -137,9 +143,16 @@ export default function LayoutReference() {
   }, [privacyMode]);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("ejc-density-compact", compactMode);
-    localStorage.setItem("ejc_density", compactMode ? "compact" : "comfortable");
-    return () => document.documentElement.classList.remove("ejc-density-compact");
+    document.documentElement.classList.toggle(
+      "ejc-density-compact",
+      compactMode,
+    );
+    localStorage.setItem(
+      "ejc_density",
+      compactMode ? "compact" : "comfortable",
+    );
+    return () =>
+      document.documentElement.classList.remove("ejc-density-compact");
   }, [compactMode]);
 
   useEffect(() => {
@@ -196,10 +209,8 @@ export default function LayoutReference() {
 
   const effectiveCollapsed =
     collapsed || (caseFocusRoute && !caseFocusExpanded);
-  const sidebarWidth = effectiveCollapsed ? "md:w-[4.75rem]" : "md:w-[17rem]";
-  const contentMargin = effectiveCollapsed
-    ? "md:ml-[4.75rem]"
-    : "md:ml-[17rem]";
+  const sidebarWidth = effectiveCollapsed ? "md:w-[4.5rem]" : "md:w-64";
+  const contentMargin = effectiveCollapsed ? "md:ml-[4.5rem]" : "md:ml-64";
   const navCollapsed = isSidebarNavigationCollapsed(
     effectiveCollapsed,
     mobileOpen,
@@ -262,7 +273,7 @@ export default function LayoutReference() {
       <header
         className={cn(
           "ejc-app-header fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-white transition-all",
-          effectiveCollapsed ? "md:left-[4.75rem]" : "md:left-[17rem]",
+          effectiveCollapsed ? "md:left-[4.5rem]" : "md:left-64",
         )}
       >
         <div className="flex items-center gap-3 px-3 md:px-5">
@@ -311,7 +322,7 @@ export default function LayoutReference() {
               </span>
               <span className="truncate sm:hidden">Buscar…</span>
               <kbd className="ml-auto hidden px-1.5 py-0.5 text-[10px] font-medium sm:block">
-                ⌘ K
+                Ctrl K
               </kbd>
             </button>
           </div>
@@ -323,7 +334,9 @@ export default function LayoutReference() {
                 onClick={() => setNovoCasoOpen(true)}
                 className="ejc-header-action is-primary"
               >
-                <span className="ejc-header-action-plus" aria-hidden="true">+</span>
+                <span className="ejc-header-action-plus" aria-hidden="true">
+                  +
+                </span>
                 <span>Novo Caso</span>
               </button>
             )}
@@ -370,8 +383,12 @@ export default function LayoutReference() {
               "icon-btn hidden sm:flex",
               compactMode && "bg-primary-50 text-primary-700",
             )}
-            title={compactMode ? "Usar densidade confortável" : "Usar modo compacto"}
-            aria-label={compactMode ? "Usar densidade confortável" : "Usar modo compacto"}
+            title={
+              compactMode ? "Usar densidade confortável" : "Usar modo compacto"
+            }
+            aria-label={
+              compactMode ? "Usar densidade confortável" : "Usar modo compacto"
+            }
             aria-pressed={compactMode}
           >
             <List className="h-4 w-4" />
@@ -419,7 +436,7 @@ export default function LayoutReference() {
             </button>
 
             {notifOpen && (
-              <div className="card absolute right-0 mt-2 w-80 overflow-hidden py-0 shadow-float animate-pop">
+              <div className="card absolute right-0 mt-2 w-80 overflow-hidden py-0 shadow-lg animate-pop">
                 <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                   <div className="text-sm font-semibold text-slate-950">
                     Notificações
@@ -546,24 +563,6 @@ export default function LayoutReference() {
 
         <AgendaSidebar navCollapsed={navCollapsed} />
 
-        {!navCollapsed && (
-          <div className="ejc-sidebar-epigraph" aria-hidden="true">
-            <p className="ejc-sidebar-epigraph__quote">
-              “Estratégia jurídica para um amanhã mais seguro.”
-            </p>
-            <div className="ejc-sidebar-epigraph__figure">
-              {/* Panorama real de Betim/MG (sede do escritório). Fonte:
-                  anúncio "Suíte Vista Panorâmica Betim". O overlay navy do
-                  CSS integra a foto ao plano de fundo da sidebar. */}
-              <img src="/brand/sidebar-betim.jpg" alt="" loading="lazy" />
-              <div className="ejc-sidebar-epigraph__city">
-                <strong>BETIM | MINAS GERAIS</strong>
-                <small>EXCELÊNCIA EM CADA DETALHE</small>
-              </div>
-            </div>
-          </div>
-        )}
-
         <div className="border-t border-slate-200 bg-white">
           <div
             className={cn(
@@ -617,7 +616,7 @@ export default function LayoutReference() {
 
       <div
         className={cn(
-          "relative z-10 flex min-h-screen flex-col pt-[72px] transition-all",
+          "relative z-10 flex min-h-screen flex-col pt-16 transition-all",
           contentMargin,
         )}
       >
@@ -642,7 +641,7 @@ export default function LayoutReference() {
       {iaDisponivel ? (
         <Link
           to="/inteligencia?tab=assistente"
-          className="fixed bottom-5 right-5 z-30 hidden h-11 w-11 items-center justify-center rounded-xl bg-ejc-primary text-white shadow-float transition hover:-translate-y-0.5 hover:bg-ejc-primary-hover md:flex"
+          className="fixed bottom-5 right-5 z-30 hidden h-10 w-10 items-center justify-center rounded-lg bg-ejc-primary text-white shadow-md transition-colors hover:bg-ejc-primary-hover md:flex"
           aria-label="Assistente IA"
         >
           <Bot className="h-5 w-5" />
