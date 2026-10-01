@@ -235,6 +235,11 @@ function tipoCfg(tipo: ItemType) {
 const PRAZOS_PAGE_SIZE = 200;
 /** Teto de páginas do enriquecimento de prazos (200 × 10 = 2.000 prazos). */
 const PRAZOS_MAX_PAGINAS = 10;
+// Tarefa 3 (plano de performance): feed paginado por cursor (páginas de 50)
+// + /resumo server-side. ROLLBACK PRIMEIRA ONDA: mudar para `false` volta ao
+// carregamento legado (3 chamadas + páginas de prazos) sem tocar o backend.
+const USAR_CURSOR_CENTRAL = true;
+const PAGE_SIZE_CENTRAL = 50;
 
 function apiErro(e: unknown, fallback: string): string {
   const detail = (e as { response?: { data?: { detail?: unknown } } })?.response
@@ -913,6 +918,17 @@ export default function CentralAtividades() {
   };
 
   const [items, setItems] = useState<Activity[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [carregandoMais, setCarregandoMais] = useState(false);
+  // Contadores de urgência do servidor (/atividades/resumo) — fonte única
+  // que não se auto-zera com os filtros da UI (mesma semântica dos cards).
+  const [resumo, setResumo] = useState<{
+    vencido: number;
+    critico: number;
+    atencao: number;
+    normal: number;
+  } | null>(null);
   const [responsaveis, setResponsaveis] = useState<Responsavel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -954,7 +970,51 @@ export default function CentralAtividades() {
     SituacaoColuna | "todos"
   >("todos");
 
-  const load = useCallback(async () => {
+  // ── Fonte do feed (Tarefa 3 — plano de performance, baseline §10) ─────
+  // USAR_CURSOR_CENTRAL=true: 1 página de 50 do feed + 1 /resumo (2 chamadas)
+  // com enriquecimento server-side (confirmado/ciência/hora/local). ROLLBACK:
+  // voltar para `false` restaura o carregamento legado (3 chamadas + páginas
+  // de prazos) sem deploy do backend — flag do cliente, primeira onda.
+  const mapearAtividade = (a: any): Activity => {
+    const bruto: string = a.tipo;
+    const fonte: Fonte = bruto === "agenda" ? "agenda" : (bruto as Fonte);
+    const origem =
+      fonte === "prazo"
+        ? "Prazos"
+        : fonte === "tarefa"
+          ? "Tarefas"
+          : fonte === "agenda"
+            ? "Agenda"
+            : fonte === "intimacao"
+              ? "DJEN"
+              : "Tribunais";
+    return {
+      id: a.id,
+      tipo:
+        fonte === "agenda"
+          ? mapAgendaTipo(a.subtipo)
+          : (bruto as ItemType),
+      fonte,
+      titulo: a.titulo,
+      descricao: a.descricao,
+      date: a.date,
+      dias_restantes: a.dias_restantes ?? undefined,
+      urgencia: a.urgencia ?? "normal",
+      status: a.status,
+      case_id: a.case_id,
+      caso_titulo: a.caso_titulo,
+      responsavel_id: a.responsavel_id ?? undefined,
+      prioridade: a.prioridade ?? undefined,
+      // Enriquecimento server-side (modo cursor); ausentes no legado.
+      hora: a.hora ?? undefined,
+      local: a.local ?? undefined,
+      origem,
+      confirmado: a.confirmado,
+      ciencia_confirmada: a.ciencia_confirmada,
+    };
+  };
+
+  const loadLegado = useCallback(async () => {
     setLoading(true);
     setError(false);
     try {
@@ -1021,51 +1081,112 @@ export default function CentralAtividades() {
       }
 
       const all: Activity[] = asList(ativ.value.data).map((a: any) => {
-        const bruto: string = a.tipo;
-        const fonte: Fonte = bruto === "agenda" ? "agenda" : (bruto as Fonte);
+        const fonte: Fonte = a.tipo === "agenda" ? "agenda" : a.tipo;
         const evento = fonte === "agenda" ? agendaMap[a.id] : undefined;
         const prazo = fonte === "prazo" ? prazoMap[a.id] : undefined;
-        const origem =
-          fonte === "prazo"
-            ? "Prazos"
-            : fonte === "tarefa"
-              ? "Tarefas"
-              : fonte === "agenda"
-                ? "Agenda"
-                : fonte === "intimacao"
-                  ? "DJEN"
-                  : "Tribunais";
+        const base = mapearAtividade(a);
         return {
-          id: a.id,
+          ...base,
           tipo:
             fonte === "agenda"
               ? mapAgendaTipo(a.subtipo ?? evento?.tipo)
-              : (bruto as ItemType),
-          fonte,
-          titulo: a.titulo,
-          descricao: a.descricao,
-          date: a.date,
-          dias_restantes: a.dias_restantes ?? undefined,
-          urgencia: a.urgencia ?? "normal",
-          status: a.status,
-          case_id: a.case_id,
-          caso_titulo: a.caso_titulo,
-          responsavel_id: a.responsavel_id ?? undefined,
-          prioridade: a.prioridade ?? undefined,
+              : base.tipo,
           hora: evento?.hora ?? undefined,
           local: evento?.local ?? undefined,
-          origem,
           confirmado: prazo?.confirmado,
           ciencia_confirmada: prazo?.ciencia_confirmada,
         };
       });
       setItems(all);
+      setNextCursor(null);
+      setHasMore(false);
     } catch {
       setError(true);
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const loadCursor = useCallback(
+    async (mais: boolean) => {
+      if (mais) {
+        if (!nextCursor || carregandoMais) return;
+        setCarregandoMais(true);
+        try {
+          const r = await api.get("/atividades", {
+            params: {
+              apenas_pendentes: false,
+              pagination: "cursor",
+              page_size: PAGE_SIZE_CENTRAL,
+              case_id: contextCaseId || undefined,
+              cursor: nextCursor,
+            },
+          });
+          const novos = asList(r.data).map(mapearAtividade);
+          setItems((prev) => [...prev, ...novos]);
+          setNextCursor(r.data?.next_cursor ?? null);
+          setHasMore(Boolean(r.data?.has_more));
+        } catch (e) {
+          toast.error(apiErro(e, "Não foi possível carregar mais atividades"));
+        } finally {
+          setCarregandoMais(false);
+        }
+        return;
+      }
+      setLoading(true);
+      setError(false);
+      try {
+        // Página 1 + resumo em paralelo: 2 chamadas no lugar de 3 + até 9
+        // páginas de prazos. O resumo falha → cards caem para o cálculo
+        // client-side (estado de hoje), a tela segue funcionando.
+        const [ativ, resumoR] = await Promise.allSettled([
+          api.get("/atividades", {
+            params: {
+              apenas_pendentes: false,
+              pagination: "cursor",
+              page_size: PAGE_SIZE_CENTRAL,
+              case_id: contextCaseId || undefined,
+            },
+          }),
+          api.get("/atividades/resumo", {
+            params: { case_id: contextCaseId || undefined },
+          }),
+        ]);
+        if (ativ.status !== "fulfilled") {
+          setError(true);
+          return;
+        }
+        const all: Activity[] = asList(ativ.value.data).map(mapearAtividade);
+        setItems(all);
+        setNextCursor(ativ.value.data?.next_cursor ?? null);
+        setHasMore(Boolean(ativ.value.data?.has_more));
+        setResumo(
+          resumoR.status === "fulfilled"
+            ? {
+                vencido: Number(resumoR.value.data?.vencido ?? 0),
+                critico: Number(resumoR.value.data?.critico ?? 0),
+                atencao: Number(resumoR.value.data?.atencao ?? 0),
+                normal: Number(resumoR.value.data?.normal ?? 0),
+              }
+            : null,
+        );
+      } catch {
+        setError(true);
+      } finally {
+        setLoading(false);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [nextCursor, carregandoMais, contextCaseId],
+  );
+
+  const load = useCallback(
+    async (mais = false) => {
+      if (USAR_CURSOR_CENTRAL) return loadCursor(mais);
+      return loadLegado();
+    },
+    [loadCursor, loadLegado],
+  );
 
   useEffect(() => {
     load();
@@ -1467,15 +1588,19 @@ export default function CentralAtividades() {
   // Com contexto de caso ativo, as estatísticas refletem só o caso — mas NÃO
   // aplicam os filtros de tipo/urgência/situação da UI: os cards de urgência
   // são os próprios botões de filtro e não podem se auto-zerar.
+  // Fonte única (Tarefa 3): /atividades/resumo conta o conjunto visível no
+  // servidor com o MESMO predicado do feed. Cai para o cálculo client-side
+  // apenas se o resumo não chegou (legado ou falha pontual).
   const pendentes = (
     contextCaseId ? items.filter((i) => i.case_id === contextCaseId) : items
   ).filter((i) => situacaoColunaDe(i.status) !== "concluido");
-  const stats = {
-    vencido: pendentes.filter((i) => i.urgencia === "vencido").length,
-    critico: pendentes.filter((i) => i.urgencia === "critico").length,
-    atencao: pendentes.filter((i) => i.urgencia === "atencao").length,
-    normal: pendentes.filter((i) => i.urgencia === "normal").length,
-  };
+  const stats =
+    resumo ?? {
+      vencido: pendentes.filter((i) => i.urgencia === "vencido").length,
+      critico: pendentes.filter((i) => i.urgencia === "critico").length,
+      atencao: pendentes.filter((i) => i.urgencia === "atencao").length,
+      normal: pendentes.filter((i) => i.urgencia === "normal").length,
+    };
 
   const tituloModal =
     form.categoria === "prazo"
@@ -1750,7 +1875,7 @@ export default function CentralAtividades() {
       ) : error ? (
         <ErrorState
           message="Não foi possível carregar as atividades. Verifique sua conexão e tente novamente."
-          onRetry={load}
+          onRetry={() => load()}
         />
       ) : view === "calendario" ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -1802,6 +1927,17 @@ export default function CentralAtividades() {
                 {...rowActions}
               />
             ))
+          )}
+          {USAR_CURSOR_CENTRAL && hasMore && nextCursor && (
+            <div className="py-4 text-center border-t border-slate-100">
+              <button
+                onClick={() => load(true)}
+                disabled={carregandoMais}
+                className="px-4 py-2 text-sm rounded-lg bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] disabled:opacity-50"
+              >
+                {carregandoMais ? "Carregando…" : "Carregar mais atividades"}
+              </button>
+            </div>
           )}
         </div>
       )}
