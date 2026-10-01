@@ -137,10 +137,9 @@ REQUIRE_PREDEPLOY_BACKUP=1 \
 ENSURE_DAILY_BACKUP=1 \
 bash scripts/deploy_vps_safe.sh
 
-[ -x "$APP_DIR/scripts/check_release_identity.py" ] || fail "checker de identidade da release ausente"
-python3 "$APP_DIR/scripts/check_release_identity.py" \
-  --expected "$TARGET_SHA" \
-  --app-dir "$APP_DIR"
+[ -x "$APP_DIR/scripts/post_deploy_smoke.sh" ] || fail "smoke pós-deploy ausente"
+EJC_DOMAIN="ejc.depaulateixeira.adv.br" \
+  bash "$APP_DIR/scripts/post_deploy_smoke.sh" "$TARGET_SHA"
 rm -f -- "$APP_DIR/.deploy_last_sha"
 chmod 600 "$APP_DIR/.deployed_sha"
-log "deploy concluido com identidade canônica confirmada: $TARGET_SHA"
+log "deploy concluido com identidade e smoke pós-deploy confirmados: $TARGET_SHA"
