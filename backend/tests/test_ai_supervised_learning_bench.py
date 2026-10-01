@@ -164,3 +164,43 @@ async def test_nova_versao_aponta_superseded_by(monkeypatch):
     assert existing.vigente is False
     assert existing.extra["superseded_by"] == new_doc.id
     assert existing.extra["superseded_at"]
+
+
+
+class _ReviewDB:
+    def __init__(self, event):
+        self.event = event
+
+    async def get(self, model, key):
+        return self.event
+
+
+@pytest.mark.asyncio
+async def test_aprovacao_do_proprio_autor_e_bloqueada():
+    from fastapi import HTTPException
+    from types import SimpleNamespace
+    from app.models.ai_learning import AILearningEventType
+    from app.models.user import UserRole
+    from app.services.ai.supervised_learning import review_event
+
+    event = SimpleNamespace(
+        id="evt",
+        case_id=None,
+        created_by="u1",
+        event_type=AILearningEventType.correction,
+        corrected_text="Correção humana suficientemente detalhada.",
+        reason="A resposta original omitiu uma questão jurídica relevante.",
+        metadata_json={},
+        ai_log_id=None,
+    )
+    user = SimpleNamespace(id="u1", role=UserRole.advogado)
+    with pytest.raises(HTTPException) as exc:
+        await review_event(
+            _ReviewDB(event),
+            user=user,
+            event_id="evt",
+            approved=True,
+            notes="Tentativa de autoaprovação.",
+        )
+    assert exc.value.status_code == 409
+    assert "independente" in str(exc.value.detail).lower()
