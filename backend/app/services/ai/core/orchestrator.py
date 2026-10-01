@@ -183,6 +183,35 @@ class SingleAICoreOrchestrator:
             )
             raise HTTPException(422, decisao.bloqueio_motivo or "Chamada de IA bloqueada pela política de segurança.")
 
+        # 5.5) Roteamento adaptativo SOMENTE com benchmark certificado.
+        # A recomendação nunca cria elegibilidade: ela só pode escolher dentro
+        # da cadeia já permitida e a policy é reaplicada com o provider explícito.
+        if provider_solicitado is None and bool(
+            getattr(get_settings(), "AI_ADAPTIVE_ROUTING_ENABLED", False)
+        ):
+            from app.services.ai.provider_quality_policy import recommend_provider
+            _raw_area = getattr(getattr(caso, "area", None), "value", None) or (
+                native_plan.legal_area or domain or ""
+            )
+            _eligible = [p for p, _ in decisao.provider_chain]
+            _recommended, _why = recommend_provider(
+                area=str(_raw_area or "").strip().lower() or None,
+                task_type=intent.tarefa.value,
+                eligible=_eligible,
+            )
+            if _recommended:
+                _adaptive = AIProviderPolicy().avaliar(
+                    f"{mensagem_sana}\n{ctx.texto}",
+                    intent.tarefa.value,
+                    ja_sanitizado=False,
+                    exige_fonte=intent.exige_fonte,
+                    provider_solicitado=_recommended,
+                )
+                if _adaptive.permitido:
+                    provider_solicitado = _recommended
+                    decisao = _adaptive
+                    logger.info("[adaptive-routing] %s", _why)
+
         # 6) Chamada via ai_gateway (barreira final de PII lá dentro) ─────────
         from app.services import ai_gateway
         cfg = get_configuracao(intent.tarefa)
@@ -192,6 +221,29 @@ class SingleAICoreOrchestrator:
                 "\n\n## MÉTODOS NATIVOS ATIVOS DO EJC\n"
                 + "\n\n".join(native_plan.prompt_blocks)
             )
+
+        # Correções humanas aprovadas entram como ALERTA METODOLÓGICO, nunca
+        # como fonte jurídica. O bloco é pseudonimizado na persistência e fica
+        # vazio até existirem eventos aprovados.
+        if db is not None and bool(
+            getattr(get_settings(), "AI_SUPERVISED_LEARNING_ENABLED", True)
+        ):
+            from app.services.ai.supervised_learning import approved_learning_context
+            _learning_area = (
+                native_plan.legal_area
+                or getattr(getattr(caso, "area", None), "value", None)
+                or None
+            )
+            _learning = await approved_learning_context(
+                db,
+                area=_learning_area,
+                limit=int(
+                    getattr(get_settings(), "AI_SUPERVISED_LEARNING_MAX_LESSONS", 3)
+                    or 3
+                ),
+            )
+            if _learning:
+                system_prompt += "\n\n## APRENDIZADO SUPERVISIONADO INTERNO\n" + _learning
         # Bloco aditivo por superfície (ex.: padrão obrigatório da Sala
         # Jurídica). Opt-in via params["prompt_extra"]; chave desconhecida é
         # ignorada — jamais derruba a chamada.
