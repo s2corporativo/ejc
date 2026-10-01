@@ -569,6 +569,8 @@ async def fechar_competencia_comissoes(
     cu: User = Depends(get_current_user),
 ):
     _exigir_gestor_regras(cu)
+    from app.services.finance_governance import exigir_lock_financeiro
+    await exigir_lock_financeiro(db, "commission_close", body.competencia)
     existente = (
         await db.execute(
             text(

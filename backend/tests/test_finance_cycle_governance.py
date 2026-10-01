@@ -18,8 +18,10 @@ from app.models.user import User
 from app.routers.financeiro_consolidado import (
     CommissionBatchIn,
     FinanceCloseIn,
+    ReconcileConfirmIn,
     fechar_competencia_financeira,
     pagar_comissoes_em_lote,
+    confirmar_conciliacao_bancaria,
 )
 from app.routers.partner_withdrawals import approve_withdrawal
 from app.services.commission_service import (
@@ -150,7 +152,7 @@ async def test_ciclo_financeiro_governado_com_rollback():
             payment = FeePayment(
                 id=pid,
                 fee_id=fid,
-                valor=Decimal("1000.00"),
+                valor=Decimal("600.00"),
                 data_pagamento=date.today(),
                 forma="pix",
             )
@@ -158,19 +160,19 @@ async def test_ciclo_financeiro_governado_com_rollback():
             await db.flush()
 
             alloc = await alocar_comissao_pagamento(db, caso, payment, gestor)
-            assert alloc["base_liquida"] == Decimal("900.00")
+            assert alloc["base_liquida"] == Decimal("500.00")
             assert alloc["despesas_deduzidas"] == Decimal("100.00")
             wid = alloc["withdrawal_id"]
             assert wid
 
-            # Estorno de 20% reverte proporcionalmente a comissão.
+            # Estorno de 20% do recebimento parcial reverte proporcionalmente a comissão.
             eid = str(uuid4())
             db.add(
                 FeeEstorno(
                     id=eid,
                     fee_id=fid,
                     fee_payment_id=pid,
-                    valor=Decimal("200.00"),
+                    valor=Decimal("120.00"),
                     motivo="teste rollback",
                     data_estorno=date.today(),
                 )
@@ -180,7 +182,7 @@ async def test_ciclo_financeiro_governado_com_rollback():
                 db,
                 fee_payment_id=pid,
                 fee_estorno_id=eid,
-                valor_estorno=Decimal("200.00"),
+                valor_estorno=Decimal("120.00"),
                 motivo="teste rollback",
                 user=gestor,
             )
@@ -211,6 +213,59 @@ async def test_ciclo_financeiro_governado_com_rollback():
                 user=gestor,
             )
             assert ajuste["saldo_pendente"] == Decimal("25.00")
+
+            # Conciliação bancária do recebimento parcial usa o mesmo ledger.
+            analysis_id, bank_tx_id, match_id = str(uuid4()), str(uuid4()), str(uuid4())
+            await db.execute(
+                text(
+                    """
+                    INSERT INTO bank_analyses
+                        (id,formato,arquivo_nome,total_transacoes,status,created_by)
+                    VALUES (:id,'csv','TESTE-ROLLBACK.csv',1,'concluido',:uid)
+                    """
+                ),
+                {"id": analysis_id, "uid": gestor.id},
+            )
+            await db.execute(
+                text(
+                    """
+                    INSERT INTO bank_transactions
+                        (id,analysis_id,data,descricao,valor,tipo)
+                    VALUES (:id,:analysis_id,:data,'TESTE RECEBIMENTO PARCIAL',:valor,'credito')
+                    """
+                ),
+                {
+                    "id": bank_tx_id,
+                    "analysis_id": analysis_id,
+                    "data": date.today(),
+                    "valor": Decimal("600.00"),
+                },
+            )
+            await db.execute(
+                text(
+                    """
+                    INSERT INTO finance_reconciliation_matches
+                        (id,bank_transaction_id,target_type,target_id,confidence,status,reason,created_by)
+                    VALUES (:id,:bank_tx,'fee_payment',:target,1.0,'sugerido','teste e2e',:uid)
+                    """
+                ),
+                {
+                    "id": match_id,
+                    "bank_tx": bank_tx_id,
+                    "target": pid,
+                    "uid": gestor.id,
+                },
+            )
+            reconciliado = await confirmar_conciliacao_bancaria(
+                ReconcileConfirmIn(
+                    bank_transaction_id=bank_tx_id,
+                    target_type="fee_payment",
+                    target_id=pid,
+                ),
+                db=db,
+                cu=gestor,
+            )
+            assert reconciliado["status"] == "confirmado"
 
             # Fechamento futuro sem movimento cria snapshot e bloqueio persistente.
             fechamento = await fechar_competencia_financeira(

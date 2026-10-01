@@ -3,8 +3,8 @@
 Este arquivo é o ledger canônico de **reservas futuras** e do trecho recente da cadeia Alembic. O histórico detalhado de reservas antigas permanece preservado no Git.
 
 **Head canônico atual da `main`:** `167_finance_fk_indexes`
-**Head esperado nesta árvore após as migrations do branch:** `167_finance_fk_indexes`
-**Próximo prefixo livre nesta árvore:** `168`
+**Head esperado nesta árvore após as migrations do branch:** `168_finance_ged_links`
+**Próximo prefixo livre nesta árvore:** `169`
 
 > Estado da `main` após integração de `158_case_partes_trabalhista_pii_expand` e `159_user_cpf_secure`. A migration 159 parte diretamente de 158 e integra a cadeia canônica.
 
@@ -62,6 +62,7 @@ gh pr list --state open
 | `165_commission_operations` | `164_commission_rules` | **Mesclada** | Ajustes, lotes de pagamento e fechamento mensal de comissões. |
 | `166_finance_governance` | `165_commission_operations` | **Mesclada** | Fechamento financeiro, alçadas e conciliação. |
 | `167_finance_fk_indexes` | `166_finance_governance` | **Mesclada** | Índices aditivos para FKs de comprovantes em commission_payment_batches e partner_withdrawals. |
+| `168_finance_ged_links` | `167_finance_fk_indexes` | **Reservada** | Padroniza comprovantes/documentos do Financeiro no GED canônico (`documents`) para despesas gerais, extratos bancários e pagamentos de honorários. |
 
 ### Estado atual a partir do head 162 integrado
 

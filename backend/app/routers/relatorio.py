@@ -1,14 +1,13 @@
 """Relatório mensal consolidado — GET /api/relatorio/mensal?mes=YYYY-MM.
 
-Honorários recebidos usam o ledger efetivo compartilhado: `fee_payments` é a
-fonte soberana e, somente quando não existe nenhuma linha no subledger, um fee
-legado já `pago` com `valor` e `data_pagamento` é reconhecido em leitura. Saídas
-de caixa usam `office_expenses.pago_em`; competência continua separada.
+Honorários recebidos usam exclusivamente o subledger canônico ``fee_payments``;
+saídas de caixa usam ``office_expenses.pago_em`` e competência permanece separada.
 """
 from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +16,7 @@ from app.core.security import get_current_user
 from app.core.status_caso import STATUS_ABERTOS
 from app.models.user import User
 from app.services.fee_ledger import LEDGER_CTES
+from app.services.finance_monthly_package import gerar_pacote_financeiro_mensal
 
 _ABERTOS_SQL = ",".join(f"'{s.value}'" for s in STATUS_ABERTOS)
 router = APIRouter(prefix="/relatorio", tags=["Relatório"])
@@ -60,7 +60,7 @@ async def relatorio_mensal(
                 WHERE f.deleted_at IS NULL
             ),
             recebimentos_mes AS (
-                SELECT fee_id, valor, legado_sem_subledger
+                SELECT fee_id, valor
                 FROM recebimentos_efetivos
                 WHERE date_trunc('month', data_pagamento)
                       = date_trunc('month', CAST(:mes AS date))
@@ -74,11 +74,7 @@ async def relatorio_mensal(
                     WHERE status IN ('pendente','atrasado')
                 ), 0) AS total_pendente,
                 COALESCE(SUM(saldo) FILTER (WHERE status='atrasado'), 0) AS total_atrasado,
-                (SELECT COALESCE(SUM(valor), 0) FROM recebimentos_mes) AS recebido_mes,
-                (SELECT COUNT(*) FROM recebimentos_mes
-                 WHERE legado_sem_subledger) AS recebimentos_legados_qtd,
-                (SELECT COALESCE(SUM(valor), 0) FROM recebimentos_mes
-                 WHERE legado_sem_subledger) AS recebimentos_legados_valor
+                (SELECT COALESCE(SUM(valor), 0) FROM recebimentos_mes) AS recebido_mes
             FROM saldos
             """
         ),
@@ -167,8 +163,7 @@ async def relatorio_mensal(
             WITH {LEDGER_CTES}
             SELECT CAST(f.tipo AS text) AS tipo,
                    COUNT(DISTINCT re.fee_id) AS qtd,
-                   COALESCE(SUM(re.valor), 0) AS total,
-                   COUNT(*) FILTER (WHERE re.legado_sem_subledger) AS legados_qtd
+                   COALESCE(SUM(re.valor), 0) AS total
             FROM recebimentos_efetivos re
             JOIN fees f ON f.id = re.fee_id
             WHERE date_trunc('month', re.data_pagamento)
@@ -211,8 +206,6 @@ async def relatorio_mensal(
             "qtd_pendentes": int(hon_data.get("qtd_pendentes") or 0),
             "qtd_recebidos_mes": int(hon_data.get("qtd_recebidos_mes") or 0),
             "qtd_pagos_mes": int(hon_data.get("qtd_recebidos_mes") or 0),
-            "recebimentos_legados_qtd": int(hon_data.get("recebimentos_legados_qtd") or 0),
-            "recebimentos_legados_valor": float(hon_data.get("recebimentos_legados_valor") or 0),
             "despesas_pagas": despesas_pagas_caixa,
             "despesas_pagas_competencia": despesas_pagas_competencia,
             "despesas_pendentes": float(desp_data.get("total_pendente") or 0),
@@ -233,7 +226,6 @@ async def relatorio_mensal(
                 "tipo": r["tipo"],
                 "qtd": int(r["qtd"]),
                 "total": float(r["total"]),
-                "legados_qtd": int(r["legados_qtd"] or 0),
             }
             for r in por_tipo.mappings().all()
         ],
@@ -243,8 +235,31 @@ async def relatorio_mensal(
         ],
         "aviso": (
             "Relatório gerencial do EJC. Entradas e saídas de caixa derivam de "
-            "pagamentos/baixas efetivos; quitações históricas sem subledger são "
-            "identificadas separadamente e não geram lançamentos sintéticos. Não "
+            "pagamentos e baixas efetivamente registrados no ledger canônico. Não "
             "substitui escrituração ou validação contábil."
         ),
     }
+
+
+@router.get("/mensal/{mes}/pacote")
+async def pacote_financeiro_mensal(
+    mes: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Baixa o dossiê mensal único: PDF + JSON + CSVs + trilha de auditoria."""
+    if cu.role.value not in _GESTOR_FIN:
+        raise HTTPException(403, "Acesso restrito a gestão/financeiro")
+    import re
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", mes):
+        raise HTTPException(422, "mes inválido: use AAAA-MM")
+    resumo = await relatorio_mensal(mes=mes, db=db, cu=cu)
+    conteudo = await gerar_pacote_financeiro_mensal(db, mes, resumo)
+    return Response(
+        content=conteudo,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="financeiro-{mes}.zip"',
+            "Cache-Control": "no-store",
+        },
+    )

@@ -35,8 +35,7 @@ pagamentos_reais AS (
 pagamentos_efetivos AS (
     SELECT
         f.id AS fee_id,
-        COALESCE(pr.total_pago, 0) AS total_pago,
-        FALSE AS legado_sem_subledger
+        COALESCE(pr.total_pago, 0) AS total_pago
     FROM fees f
     LEFT JOIN pagamentos_reais pr ON pr.fee_id = f.id
     WHERE f.deleted_at IS NULL
@@ -45,8 +44,7 @@ recebimentos_efetivos AS (
     SELECT
         fp.fee_id,
         fp.valor,
-        fp.data_pagamento,
-        FALSE AS legado_sem_subledger
+        fp.data_pagamento
     FROM fee_payments fp
     JOIN fees f ON f.id = fp.fee_id
     WHERE f.deleted_at IS NULL

@@ -68,6 +68,7 @@ export function nextFinanceParams(
   params.set("tab", next);
   if (next !== "societaria") params.delete("sub");
   params.delete("status");
+  params.delete("focus");
   if (extra) {
     for (const [k, v] of Object.entries(extra)) params.set(k, v);
   }
@@ -106,6 +107,7 @@ export default function FinanceiroWorkspace() {
     tabSolicitada === "societaria" && !podeSociedade ? "visao" : tabSolicitada;
   const rawComp = searchParams.get("comp");
   const competencia = isCompetencia(rawComp) ? rawComp : competenciaAtual();
+  const focus = searchParams.get("focus") || undefined;
   const mostraCompetencia = TABS_COM_COMPETENCIA.has(tab);
 
   const setTab = (next: FinanceTab, extra?: Record<string, string>) => {
@@ -215,15 +217,24 @@ export default function FinanceiroWorkspace() {
             {tab === "visao" && (
               <FinanceiroDashboard
                 competencia={competencia}
-                onDrillDown={(destino, status) =>
-                  setTab(destino, status ? { status } : undefined)
+                onDrillDown={(destino, status, focusId) =>
+                  setTab(destino, {
+                    ...(status ? { status } : {}),
+                    ...(focusId ? { focus: focusId } : {}),
+                  })
                 }
                 onNavigate={(destino) => setTab(destino)}
               />
             )}
-            {tab === "honorarios" && <Honorarios competencia={competencia} />}
-            {tab === "despesas" && <Despesas competencia={competencia} />}
-            {tab === "comissoes" && <Comissoes competencia={competencia} />}
+            {tab === "honorarios" && (
+              <Honorarios competencia={competencia} focusId={focus} />
+            )}
+            {tab === "despesas" && (
+              <Despesas competencia={competencia} focusId={focus} />
+            )}
+            {tab === "comissoes" && (
+              <Comissoes competencia={competencia} focusId={focus} />
+            )}
             {tab === "nfse" && <NotasFiscais />}
             {tab === "contratos" && <OfficeContracts />}
             {tab === "recorrentes" && <DespesasRecorrentes />}

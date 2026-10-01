@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from fastapi import HTTPException
-from sqlalchemy import exists, select
+from sqlalchemy import exists, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.centro_custo import CentroCusto
@@ -59,6 +59,10 @@ _REFERENCIAS: tuple[ReferenciaDocumento, ...] = (
     ReferenciaDocumento("assinatura", "solicitação de assinatura"),
     ReferenciaDocumento("centro_custo", "lançamento de centro de custos"),
     ReferenciaDocumento("fee_payment", "comprovante financeiro"),
+    ReferenciaDocumento("office_expense", "despesa geral do escritório"),
+    ReferenciaDocumento("bank_analysis", "extrato bancário conciliado"),
+    ReferenciaDocumento("partner_withdrawal", "retirada/comissão"),
+    ReferenciaDocumento("commission_batch", "lote de comissões"),
     ReferenciaDocumento("deadline", "prazo originado do documento"),
     ReferenciaDocumento("solicitacao_cliente", "solicitação documental do cliente"),
     ReferenciaDocumento("contrato", "contrato societário"),
@@ -150,7 +154,34 @@ async def referencias_ativas_documento(
             )
         ).label("versao_posterior"),
     )
-    flags = (await db.execute(stmt)).mappings().one()
+    flags = dict((await db.execute(stmt)).mappings().one())
+    financeiros = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    EXISTS(
+                        SELECT 1 FROM office_expenses
+                        WHERE comprovante_doc_id=:document_id AND deleted_at IS NULL
+                    ) AS office_expense,
+                    EXISTS(
+                        SELECT 1 FROM bank_analyses
+                        WHERE document_id=:document_id AND deleted_at IS NULL
+                    ) AS bank_analysis,
+                    EXISTS(
+                        SELECT 1 FROM partner_withdrawals
+                        WHERE comprovante_doc_id=:document_id AND deleted_at IS NULL
+                    ) AS partner_withdrawal,
+                    EXISTS(
+                        SELECT 1 FROM commission_payment_batches
+                        WHERE comprovante_doc_id=:document_id
+                    ) AS commission_batch
+                """
+            ),
+            {"document_id": document_id},
+        )
+    ).mappings().one()
+    flags.update(dict(financeiros))
 
     codigos_bloqueantes = (
         {"protocolo", "prova"}

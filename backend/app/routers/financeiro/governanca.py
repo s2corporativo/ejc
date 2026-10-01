@@ -347,6 +347,8 @@ async def fechar_competencia_financeira(
     cu: User = Depends(get_current_user),
 ):
     _exigir_gestor_regras(cu)
+    from app.services.finance_governance import exigir_lock_financeiro
+    await exigir_lock_financeiro(db, "finance_close", body.competencia)
     existente = (
         await db.execute(
             text(
@@ -422,6 +424,18 @@ async def excecoes_financeiras(
     inicio, fim = _month_bounds(competencia)
     itens: list[dict] = []
 
+    async def registros(sql: str, params: dict, *, tab: str, id_col: str = "id"):
+        rows = (await db.execute(text(sql), params)).mappings().all()
+        return [
+            {
+                "id": str(r[id_col]),
+                "label": str(r.get("label") or r[id_col]),
+                "value": r.get("value"),
+                "action": {"tab": tab, "focus": str(r[id_col])},
+            }
+            for r in rows
+        ]
+
     duplicados = (
         await db.execute(
             text(
@@ -446,6 +460,20 @@ async def excecoes_financeiras(
                 "titulo": "Possíveis honorários duplicados",
                 "qtd": int(duplicados),
                 "severidade": "revisao",
+                "acao": {"tab": "honorarios"},
+                "registros": await registros(
+                    """
+                    SELECT MIN(id) AS id, descricao AS label, COUNT(*) AS value
+                    FROM fees
+                    WHERE deleted_at IS NULL AND CAST(status AS text) <> 'cancelado'
+                    GROUP BY client_id,COALESCE(case_id,''),descricao,valor,data_vencimento
+                    HAVING COUNT(*) > 1
+                    ORDER BY COUNT(*) DESC
+                    LIMIT 20
+                    """,
+                    {},
+                    tab="honorarios",
+                ),
             }
         )
 
@@ -473,6 +501,18 @@ async def excecoes_financeiras(
                 "qtd": int(sem_caso[0] or 0),
                 "valor": _money(sem_caso[1]),
                 "severidade": "revisao",
+                "acao": {"tab": "honorarios"},
+                "registros": await registros(
+                    """
+                    SELECT f.id, f.descricao AS label, fp.valor AS value
+                    FROM fee_payments fp JOIN fees f ON f.id=fp.fee_id
+                    WHERE f.deleted_at IS NULL AND f.case_id IS NULL
+                      AND fp.data_pagamento >= :inicio AND fp.data_pagamento < :fim
+                    ORDER BY fp.data_pagamento DESC LIMIT 20
+                    """,
+                    {"inicio": inicio, "fim": fim},
+                    tab="honorarios",
+                ),
             }
         )
 
@@ -500,6 +540,21 @@ async def excecoes_financeiras(
                 "qtd": int(sem_comprovante[0] or 0),
                 "valor": _money(sem_comprovante[1]),
                 "severidade": "revisao",
+                "acao": {"tab": "comissoes"},
+                "registros": await registros(
+                    """
+                    SELECT id,
+                           COALESCE(description,'Comissão/retirada') AS label,
+                           partner_share AS value
+                    FROM partner_withdrawals
+                    WHERE deleted_at IS NULL AND status='pago'
+                      AND paid_at >= :inicio AND paid_at < :fim
+                      AND comprovante_doc_id IS NULL
+                    ORDER BY paid_at DESC LIMIT 20
+                    """,
+                    {"inicio": inicio, "fim": fim},
+                    tab="comissoes",
+                ),
             }
         )
 
@@ -530,6 +585,23 @@ async def excecoes_financeiras(
                 "qtd": int(sem_responsavel[0] or 0),
                 "valor": _money(sem_responsavel[1]),
                 "severidade": "bloqueio",
+                "acao": {"tab": "honorarios"},
+                "registros": await registros(
+                    """
+                    SELECT f.id, f.descricao AS label, fp.valor AS value
+                    FROM fee_payments fp
+                    JOIN fees f ON f.id=fp.fee_id
+                    JOIN cases c ON c.id=f.case_id AND c.deleted_at IS NULL
+                    LEFT JOIN case_receipt_allocations a ON a.fee_payment_id=fp.id
+                    WHERE f.deleted_at IS NULL
+                      AND c.advogado_responsavel_id IS NULL
+                      AND a.id IS NULL
+                      AND fp.data_pagamento >= :inicio AND fp.data_pagamento < :fim
+                    ORDER BY fp.data_pagamento DESC LIMIT 20
+                    """,
+                    {"inicio": inicio, "fim": fim},
+                    tab="honorarios",
+                ),
             }
         )
 

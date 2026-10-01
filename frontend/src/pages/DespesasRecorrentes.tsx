@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Calendar, Repeat } from "lucide-react";
 import api from "../lib/api";
+import { apiErrorMessage } from "../lib/apiError";
 import { Spinner, ErrorState } from "../components/UI";
 import { toast } from "../components/Toast";
 import {
@@ -67,10 +68,9 @@ export default function DespesasRecorrentes() {
           " já existiam.",
       );
       await load();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(
-        e?.response?.data?.detail ||
-          "Não foi possível gerar as despesas recorrentes.",
+        apiErrorMessage(e, "Não foi possível gerar as despesas recorrentes."),
       );
     } finally {
       setGenerating(false);

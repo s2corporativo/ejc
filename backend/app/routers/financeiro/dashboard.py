@@ -478,7 +478,7 @@ async def demonstrativo_gerencial(
         "criterios": {
             "receita_competencia": "mês de data_vencimento do honorário",
             "despesa_competencia": "office_expenses.competencia",
-            "entrada_caixa": "fee_payments.data_pagamento; fallback legado não duplicante",
+            "entrada_caixa": "fee_payments.data_pagamento (ledger canônico)",
             "saida_caixa": "office_expenses.pago_em",
         },
         "competencia_operacional": {

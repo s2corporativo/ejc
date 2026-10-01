@@ -56,12 +56,7 @@ async def fechamento_inteligente(
                           AND f.data_vencimento <=
                               (date_trunc('month', CAST(:mes AS date))
                                + INTERVAL '1 month - 1 day')::date
-                    ), 0) AS recebiveis_pendentes_valor,
-                    COUNT(*) FILTER (
-                        WHERE pe.legado_sem_subledger = TRUE
-                          AND date_trunc('month', f.data_pagamento)
-                              = date_trunc('month', CAST(:mes AS date))
-                    ) AS legados_sem_subledger
+                    ), 0) AS recebiveis_pendentes_valor
                 FROM fees f
                 LEFT JOIN pagamentos_efetivos pe ON pe.fee_id = f.id
                 WHERE f.deleted_at IS NULL
@@ -188,14 +183,6 @@ async def fechamento_inteligente(
         valor=comprovantes["total"],
         acao={"tab": "honorarios"},
     )
-    adicionar(
-        "legados_sem_subledger",
-        "revisao",
-        "Quitações históricas ainda não foram normalizadas no subledger",
-        fee_integridade["legados_sem_subledger"],
-        acao={"tab": "honorarios", "status": "pago"},
-    )
-
     status, score = _classificar_fechamento(itens)
     snapshot = await demonstrativo_gerencial(competencia, db, cu)
     bloqueios = [item for item in itens if item["severidade"] == "bloqueio"]

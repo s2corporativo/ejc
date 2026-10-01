@@ -2,10 +2,13 @@ import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router";
 import { Plus, Check, Trash2, RefreshCw, Filter, Download } from "lucide-react";
 import api from "../lib/api";
+import { apiErrorMessage } from "../lib/apiError";
 import {
   FINANCE_CATEGORIES,
   FINANCE_CATEGORY_LABELS,
+  EXPENSE_STATUSES,
   formatCurrency,
+  type ExpenseStatus,
 } from "../lib/financeiro";
 import { toast } from "../components/Toast";
 import {
@@ -30,7 +33,7 @@ interface Despesa {
   pago_em?: string;
   recorrente: boolean;
   recorrencia?: string;
-  status: "pendente" | "pago" | "cancelado";
+  status: ExpenseStatus;
   competencia?: string;
   created_at: string;
 }
@@ -48,7 +51,7 @@ interface FormState {
   vencimento: string;
   recorrente: boolean;
   recorrencia: string;
-  status: "pendente" | "pago" | "cancelado";
+  status: ExpenseStatus;
   competencia: string;
 }
 
@@ -65,13 +68,15 @@ const EMPTY_FORM: FormState = {
   competencia: "",
 };
 
-const STATUS_VALIDOS = ["pendente", "pago", "cancelado"];
+const STATUS_VALIDOS = EXPENSE_STATUSES;
 
 export default function Despesas({
   competencia,
+  focusId,
 }: {
   /** Competência (AAAA-MM) — controlada pelo FinanceiroWorkspace. */
   competencia?: string;
+  focusId?: string;
 }) {
   const [items, setItems] = useState<Despesa[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,7 +91,9 @@ export default function Despesas({
   const [filterCat, setFilterCat] = useState("");
   const [filterStatus, setFilterStatus] = useState(() => {
     const s = searchParams.get("status");
-    return s && STATUS_VALIDOS.includes(s) ? s : "";
+    return s && STATUS_VALIDOS.some((status) => status === s)
+      ? (s as ExpenseStatus)
+      : "";
   });
   const filterComp = competencia ?? "";
 
@@ -129,6 +136,15 @@ export default function Despesas({
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!focusId || !items.length) return;
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`finance-expense-${focusId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [focusId, items]);
 
   function openNew() {
     setForm({ ...EMPTY_FORM, competencia: filterComp });
@@ -189,8 +205,8 @@ export default function Despesas({
       }
       setShowForm(false);
       load();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Erro ao salvar a despesa");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Erro ao salvar a despesa"));
     }
   }
 
@@ -208,10 +224,8 @@ export default function Despesas({
         toast.success("Despesa marcada como paga.");
       }
       load();
-    } catch (e: any) {
-      toast.error(
-        e?.response?.data?.detail || "Erro ao marcar a despesa como paga",
-      );
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Erro ao marcar a despesa como paga"));
     }
   }
 
@@ -225,8 +239,8 @@ export default function Despesas({
       await api.delete(`/despesas/${pendenteExcluir}`);
       setPendenteExcluir(null);
       load();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Erro ao excluir a despesa");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Erro ao excluir a despesa"));
     }
   }
 
@@ -340,8 +354,13 @@ export default function Despesas({
             <tbody className="divide-y divide-slate-100">
               {items.map((d) => (
                 <tr
+                  id={`finance-expense-${d.id}`}
                   key={d.id}
-                  className="hover:bg-slate-50 cursor-pointer"
+                  className={`hover:bg-slate-50 cursor-pointer ${
+                    focusId === d.id
+                      ? "ring-2 ring-inset ring-primary-400 bg-primary-50/50"
+                      : ""
+                  }`}
                   onClick={() => openEdit(d)}
                 >
                   <td className="px-4 py-3 text-slate-600">

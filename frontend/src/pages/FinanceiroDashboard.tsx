@@ -14,6 +14,7 @@ import {
   Upload,
   Landmark,
   BarChart3,
+  Download,
 } from "lucide-react";
 import api from "../lib/api";
 import {
@@ -23,12 +24,36 @@ import {
 } from "../lib/financeiro";
 import { Modal, Spinner } from "../components/UI";
 import { toast } from "../components/Toast";
+import { apiErrorMessage } from "../lib/apiError";
+import type {
+  DistributionAvailability,
+  FinanceAction as FinanceActionBase,
+  FinanceApproval,
+  FinanceClosing,
+  FinanceConsolidated,
+  FinanceExceptionItem,
+  FinanceExceptionsResponse,
+  MonthlyReport,
+  PreClosingResponse,
+  ReconciliationResponse,
+  ReconciliationSuggestion,
+  RentabilidadeResponse,
+} from "../types/financeiro";
 
 const formatBRL = formatCurrency;
 const competenciaLabel = financeCompetenceLabel;
 
-type FinanceDestino = "honorarios" | "despesas" | "nfse" | "contratos";
-type FinanceAction = { tab?: FinanceDestino; status?: string };
+type FinanceDestino =
+  | "visao"
+  | "honorarios"
+  | "despesas"
+  | "comissoes"
+  | "nfse"
+  | "contratos"
+  | "recorrentes"
+  | "societaria"
+  | "estimador";
+type FinanceAction = Omit<FinanceActionBase, "tab"> & { tab?: FinanceDestino };
 
 interface AtencaoItem {
   codigo: string;
@@ -136,31 +161,45 @@ export default function FinanceiroDashboard({
   onNavigate,
 }: {
   competencia?: string;
-  onDrillDown?: (tab: "honorarios" | "despesas", status?: string) => void;
+  onDrillDown?: (
+    tab: "honorarios" | "despesas" | "comissoes",
+    status?: string,
+    focus?: string,
+  ) => void;
   onNavigate?: (tab: FinanceDestino) => void;
 }) {
   const navigate = useNavigate();
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<FinanceConsolidated | null>(null);
   const [atencao, setAtencao] = useState<AtencaoItem[]>([]);
-  const [rentabilidade, setRentabilidade] = useState<any>(null);
-  const [excecoes, setExcecoes] = useState<any>({ itens: [], total: 0 });
-  const [fechamento, setFechamento] = useState<any>(null);
-  const [preFechamento, setPreFechamento] = useState<any>(null);
+  const [rentabilidade, setRentabilidade] =
+    useState<RentabilidadeResponse | null>(null);
+  const [excecoes, setExcecoes] = useState<FinanceExceptionsResponse>({
+    competencia,
+    itens: [],
+    total: 0,
+  });
+  const [fechamento, setFechamento] = useState<FinanceClosing | null>(null);
+  const [preFechamento, setPreFechamento] = useState<PreClosingResponse | null>(
+    null,
+  );
   const [preparandoFechamento, setPreparandoFechamento] = useState(false);
-  const [distribuicao, setDistribuicao] = useState<any>(null);
-  const [aprovacoes, setAprovacoes] = useState<any[]>([]);
+  const [distribuicao, setDistribuicao] =
+    useState<DistributionAvailability | null>(null);
+  const [aprovacoes, setAprovacoes] = useState<FinanceApproval[]>([]);
   const [governancaAberta, setGovernancaAberta] = useState(false);
   const [fechando, setFechando] = useState(false);
   const [limite, setLimite] = useState("10000");
   const [salvandoPolitica, setSalvandoPolitica] = useState(false);
   const [bankFile, setBankFile] = useState<File | null>(null);
   const [importandoBanco, setImportandoBanco] = useState(false);
-  const [conciliacao, setConciliacao] = useState<any>(null);
+  const [conciliacao, setConciliacao] = useState<ReconciliationResponse | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [relatorioAberto, setRelatorioAberto] = useState(false);
   const [relatorioLoading, setRelatorioLoading] = useState(false);
-  const [relatorio, setRelatorio] = useState<any>(null);
+  const [relatorio, setRelatorio] = useState<MonthlyReport | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -189,14 +228,12 @@ export default function FinanceiroDashboard({
     ]);
 
     if (consolidado.status === "rejected") {
-      const e: any = consolidado.reason;
+      const e: unknown = consolidado.reason;
       setData(null);
       setAtencao([]);
       setRentabilidade(null);
-      setExcecoes({ itens: [], total: 0 });
-      setErro(
-        e?.response?.data?.detail || "Não foi possível carregar o financeiro.",
-      );
+      setExcecoes({ competencia, itens: [], total: 0 });
+      setErro(apiErrorMessage(e, "Não foi possível carregar o financeiro."));
       setLoading(false);
       return;
     }
@@ -209,7 +246,9 @@ export default function FinanceiroDashboard({
     );
     setRentabilidade(rent.status === "fulfilled" ? rent.value.data : null);
     setExcecoes(
-      exc.status === "fulfilled" ? exc.value.data : { itens: [], total: 0 },
+      exc.status === "fulfilled"
+        ? exc.value.data
+        : { competencia, itens: [], total: 0 },
     );
     setFechamento(
       fechamentoResp.status === "fulfilled" ? fechamentoResp.value.data : null,
@@ -238,6 +277,28 @@ export default function FinanceiroDashboard({
     load();
   }, [load]);
 
+  const baixarPacoteMensal = async () => {
+    try {
+      const response = await api.get(
+        `/relatorio/mensal/${competencia}/pacote`,
+        {
+          responseType: "blob",
+        },
+      );
+      const url = URL.createObjectURL(response.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `financeiro-${competencia}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Pacote financeiro mensal gerado.");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Falha ao gerar o pacote financeiro."));
+    }
+  };
+
   const abrirRelatorio = async () => {
     setRelatorioAberto(true);
     setRelatorioLoading(true);
@@ -246,23 +307,25 @@ export default function FinanceiroDashboard({
         params: { mes: competencia },
       });
       setRelatorio(r.data);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setRelatorioAberto(false);
-      toast.error(
-        e?.response?.data?.detail || "Falha ao carregar o relatório.",
-      );
+      toast.error(apiErrorMessage(e, "Falha ao carregar o relatório."));
     } finally {
       setRelatorioLoading(false);
     }
   };
 
-  const navegarAcao = (acao?: FinanceAction) => {
-    if (!acao?.tab) return;
-    if ((acao.tab === "honorarios" || acao.tab === "despesas") && onDrillDown) {
-      onDrillDown(acao.tab, acao.status);
+  const navegarAcao = (acao?: FinanceActionBase) => {
+    const tab = acao?.tab as FinanceDestino | undefined;
+    if (!tab) return;
+    if (
+      (tab === "honorarios" || tab === "despesas" || tab === "comissoes") &&
+      onDrillDown
+    ) {
+      onDrillDown(tab, acao?.status, acao?.focus);
       return;
     }
-    onNavigate?.(acao.tab);
+    onNavigate?.(tab);
   };
 
   const prepararFechamento = async () => {
@@ -280,9 +343,9 @@ export default function FinanceiroDashboard({
       } else {
         toast.success("Checklist preparado. A competência pode ser fechada.");
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(
-        e?.response?.data?.detail || "Não foi possível preparar o fechamento.",
+        apiErrorMessage(e, "Não foi possível preparar o fechamento."),
       );
     } finally {
       setPreparandoFechamento(false);
@@ -304,13 +367,8 @@ export default function FinanceiroDashboard({
       await api.post("/financeiro/fechamentos", { competencia });
       toast.success(`Competência ${competencia} fechada e protegida.`);
       await load();
-    } catch (e: any) {
-      const detail = e?.response?.data?.detail;
-      toast.error(
-        typeof detail === "object"
-          ? detail?.message || "Existem bloqueios antes do fechamento."
-          : detail || "Não foi possível fechar a competência.",
-      );
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Não foi possível fechar a competência."));
     } finally {
       setFechando(false);
     }
@@ -328,8 +386,8 @@ export default function FinanceiroDashboard({
         double_approval_threshold: valor,
       });
       toast.success("Alçada financeira atualizada.");
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Falha ao atualizar alçada.");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Falha ao atualizar alçada."));
     } finally {
       setSalvandoPolitica(false);
     }
@@ -340,8 +398,8 @@ export default function FinanceiroDashboard({
       await api.post(`/financeiro/aprovacoes/${id}/aprovar`);
       toast.success("Segunda aprovação concedida.");
       await load();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Falha ao aprovar pagamento.");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Falha ao aprovar pagamento."));
     }
   };
 
@@ -357,18 +415,14 @@ export default function FinanceiroDashboard({
       const recon = await api.get(`/financeiro/conciliacao/${analysisId}`);
       setConciliacao(recon.data);
       toast.success("Extrato importado. Sugestões de conciliação geradas.");
-    } catch (e: any) {
-      toast.error(
-        e?.response?.data?.detail ||
-          e?.message ||
-          "Falha ao importar o extrato.",
-      );
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Falha ao importar o extrato."));
     } finally {
       setImportandoBanco(false);
     }
   };
 
-  const confirmarConciliacao = async (item: any) => {
+  const confirmarConciliacao = async (item: ReconciliationSuggestion) => {
     try {
       await api.post("/financeiro/conciliacao/confirmar", {
         bank_transaction_id: item.bank_transaction_id,
@@ -381,8 +435,8 @@ export default function FinanceiroDashboard({
         setConciliacao(data);
       }
       toast.success("Movimento conciliado.");
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Falha na conciliação.");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Falha na conciliação."));
     }
   };
 
@@ -542,20 +596,24 @@ export default function FinanceiroDashboard({
           </div>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
-          {(rentabilidade?.casos ?? []).slice(0, 3).map((item: any) => (
-            <div
-              key={item.case_id}
-              className="rounded-xl border border-slate-100 p-3 dark:border-slate-800"
-            >
-              <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
-                {item.numero_interno || item.caso}
-              </p>
-              <p className="truncate text-xs text-slate-400">{item.cliente}</p>
-              <p className="mt-2 text-sm font-semibold">
-                {formatBRL(Number(item.resultado || 0))}
-              </p>
-            </div>
-          ))}
+          {(rentabilidade?.casos ?? [])
+            .slice(0, 3)
+            .map((item: RentabilidadeResponse["casos"][number]) => (
+              <div
+                key={item.case_id}
+                className="rounded-xl border border-slate-100 p-3 dark:border-slate-800"
+              >
+                <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
+                  {item.numero_interno || item.caso}
+                </p>
+                <p className="truncate text-xs text-slate-400">
+                  {item.cliente}
+                </p>
+                <p className="mt-2 text-sm font-semibold">
+                  {formatBRL(Number(item.resultado || 0))}
+                </p>
+              </div>
+            ))}
           {(rentabilidade?.casos ?? []).length === 0 && (
             <p className="text-sm text-slate-400">
               Sem movimentação por caso nesta competência.
@@ -783,7 +841,7 @@ export default function FinanceiroDashboard({
               {[
                 ...(preFechamento.bloqueios ?? []),
                 ...(preFechamento.revisoes ?? []),
-              ].map((item: any) => (
+              ].map((item: FinanceExceptionItem) => (
                 <button
                   key={item.codigo}
                   type="button"
@@ -814,18 +872,39 @@ export default function FinanceiroDashboard({
               </p>
             ) : (
               <div className="mt-3 space-y-2">
-                {(excecoes.itens ?? []).map((item: any) => (
+                {(excecoes.itens ?? []).map((item: FinanceExceptionItem) => (
                   <div
                     key={item.codigo}
-                    className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-white/[0.04]"
+                    className="rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-white/[0.04]"
                   >
-                    <span>{item.titulo}</span>
-                    <strong>
-                      {item.qtd}
-                      {item.valor != null
-                        ? ` · ${formatBRL(Number(item.valor))}`
-                        : ""}
-                    </strong>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between gap-3 text-left"
+                      onClick={() => navegarAcao(item.acao)}
+                    >
+                      <span>{item.titulo}</span>
+                      <strong>
+                        {item.qtd}
+                        {item.valor != null
+                          ? ` · ${formatBRL(Number(item.valor))}`
+                          : ""}
+                      </strong>
+                    </button>
+                    {(item.registros ?? []).length > 0 && (
+                      <div className="mt-2 space-y-1 border-t border-slate-200/70 pt-2 dark:border-slate-700">
+                        {(item.registros ?? []).slice(0, 5).map((registro) => (
+                          <button
+                            key={registro.id}
+                            type="button"
+                            className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs hover:bg-white dark:hover:bg-white/[0.06]"
+                            onClick={() => navegarAcao(registro.action)}
+                          >
+                            <span className="truncate">{registro.label}</span>
+                            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -925,9 +1004,12 @@ export default function FinanceiroDashboard({
                 </p>
                 <div className="mt-2 max-h-64 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
                   {(conciliacao.sugestoes ?? [])
-                    .filter((item: any) => item.status !== "rejeitado")
+                    .filter(
+                      (item: ReconciliationSuggestion) =>
+                        item.status !== "rejeitado",
+                    )
                     .slice(0, 20)
-                    .map((item: any) => (
+                    .map((item: ReconciliationSuggestion) => (
                       <div
                         key={item.id}
                         className="flex items-center justify-between gap-3 py-2"
@@ -1042,6 +1124,16 @@ export default function FinanceiroDashboard({
                 </p>
                 <p className="text-xs text-slate-400">Prazos vencidos</p>
               </div>
+            </div>
+            <div className="flex justify-end border-t border-slate-100 pt-4 dark:border-slate-800">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={baixarPacoteMensal}
+              >
+                <Download className="h-4 w-4" />
+                Baixar PDF + planilhas + auditoria
+              </button>
             </div>
             <p className="text-[11px] leading-relaxed text-slate-400">
               {relatorio.aviso}

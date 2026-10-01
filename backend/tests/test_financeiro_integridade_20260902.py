@@ -319,8 +319,7 @@ def test_ledger_nao_inventa_recebimento_para_fee_aberto_sem_pagamentos():
 def test_cte_ledger_e_canonico_e_sem_fallback():
     assert "WHERE f.deleted_at IS NULL" in LEDGER_CTES
     assert "fee_payments" in LEDGER_CTES
-    assert "FALSE AS legado_sem_subledger" in LEDGER_CTES
-    assert "TRUE AS legado_sem_subledger" not in LEDGER_CTES
+    assert "legado_sem_subledger" not in LEDGER_CTES
     assert "NOT EXISTS" not in LEDGER_CTES
 
 
