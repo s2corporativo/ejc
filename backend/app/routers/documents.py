@@ -520,10 +520,11 @@ async def listar(
         None,
         description="true → somente documentos sem tipo (tipo IS NULL)",
     ),
-    pagination: Optional[str] = Query(None, pattern="^(cursor)$"),
-    cursor: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
+    *,  # novos parâmetros keyword-only: assinatura posicional legado intacta
+    pagination: Optional[str] = Query(None, pattern="^(cursor)$"),
+    cursor: Optional[str] = None,
 ):
     conf_filtro: Optional[DocConfidencialidade] = None
     if confidencialidade:

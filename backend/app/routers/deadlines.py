@@ -273,10 +273,11 @@ async def listar(
     case_id: Optional[str] = None,
     tipo: Optional[str] = None,
     apenas_meus: bool = False,
-    pagination: Optional[str] = Query(None, pattern="^(cursor)$"),
-    cursor: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
+    *,  # novos parâmetros keyword-only: assinatura posicional legado intacta
+    pagination: Optional[str] = Query(None, pattern="^(cursor)$"),
+    cursor: Optional[str] = None,
 ):
     q = select(Deadline).where(Deadline.deleted_at.is_(None))
     status_normalizado = _normalizar_status_filtro(status_f)

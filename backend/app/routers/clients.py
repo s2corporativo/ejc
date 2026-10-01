@@ -415,10 +415,11 @@ async def checar_conflito(
 async def listar(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=500),
     search: Optional[str] = None, status_f: Optional[str] = Query(None, alias="status"),
-    pagination: Optional[str] = Query(None, pattern="^(cursor)$"),
-    cursor: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(_req_clientes_leitura),
+    *,  # novos parâmetros keyword-only: assinatura posicional legado intacta
+    pagination: Optional[str] = Query(None, pattern="^(cursor)$"),
+    cursor: Optional[str] = None,
 ):
     q = select(Client).where(Client.deleted_at.is_(None))
     # Segregação de titularidade (sigilo interno): advogado/adv_auxiliar só veem

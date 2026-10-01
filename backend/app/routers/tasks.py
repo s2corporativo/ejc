@@ -113,11 +113,12 @@ async def listar(
     minhas: bool = Query(False, description="Só tarefas onde sou responsável"),
     # Tarefa 2 — paginação opt-in: `pagination=cursor` ativa keyset; SEM o
     # parâmetro, o legado segue byte a byte (mesmo shape, sem limite novo).
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+    *,  # novos parâmetros keyword-only: assinatura posicional legado intacta
     pagination: Optional[str] = Query(None, pattern="^(cursor)$"),
     cursor: Optional[str] = None,
     page_size: int = Query(50, ge=1, le=500),
-    db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
 ):
     q = select(Task).where(Task.deleted_at.is_(None))
     if case_id:

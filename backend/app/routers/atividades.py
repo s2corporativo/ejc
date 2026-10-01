@@ -12,7 +12,7 @@ visível (não da página) — replica a regra dos cards da Central
 (CentralAtividades.tsx:1452-1478): pendentes do escopo/contexto, SEM aplicar os
 filtros de tipo/urgência/situação do clique, para os cards não se auto-zerarem.
 """
-from datetime import date as _date, datetime as _datetime, timedelta as _timedelta
+from datetime import date as _date, datetime as _datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import bindparam, text

@@ -134,10 +134,11 @@ async def listar(
     aguardando_decisao: bool = False,
     financeiro_pendente: bool = False,
     # Tarefa 5: paginação opt-in por cursor (legado offset intocado)
-    pagination: Optional[str] = Query(None, pattern="^(cursor)$"),
-    cursor: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
+    *,  # novos parâmetros keyword-only: assinatura posicional legado intacta
+    pagination: Optional[str] = Query(None, pattern="^(cursor)$"),
+    cursor: Optional[str] = None,
 ):
     # M04 (homologação 2026-08-15): gate EXATO de equipe jurídica no corpo —
     # require_roles(EQUIPE_JURIDICA) deixaria financeiro passar pelo fallback
