@@ -75,6 +75,10 @@ services:
       - "127.0.0.1:8000:8000"
     networks: [default, ia]
     env_file:
+      # Segredos operacionais ficam fora do checkout e sobrevivem a rsync/deploy.
+      # O arquivo é opcional em dev; em produção é root:root 0600.
+      - path: ${EJC_SECRET_ENV_FILE:-/opt/ejc-secrets/runtime.env}
+        required: false
       - .env
     environment:
       APP_ENV: production
@@ -188,6 +192,10 @@ services:
     networks: [default, ia]
     command: celery -A app.core.celery_app.celery_app worker --loglevel=INFO --concurrency=2
     env_file:
+      # Segredos operacionais ficam fora do checkout e sobrevivem a rsync/deploy.
+      # O arquivo é opcional em dev; em produção é root:root 0600.
+      - path: ${EJC_SECRET_ENV_FILE:-/opt/ejc-secrets/runtime.env}
+        required: false
       - .env
     environment:
       APP_ENV: production
