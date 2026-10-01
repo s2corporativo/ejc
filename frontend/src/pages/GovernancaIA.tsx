@@ -85,6 +85,9 @@ export default function GovernancaIA() {
   const [learningPending, setLearningPending] = useState<any[]>([]);
   const [learningErrors, setLearningErrors] = useState<any[]>([]);
   const [learningLoading, setLearningLoading] = useState(false);
+  const [learningReviewNotes, setLearningReviewNotes] = useState<
+    Record<string, string>
+  >({});
   const [jurisForm, setJurisForm] = useState({
     titulo: "",
     ementa: "",
@@ -172,15 +175,23 @@ export default function GovernancaIA() {
   };
 
   const revisarAprendizado = async (id: string, approved: boolean) => {
+    const notes = (learningReviewNotes[id] || "").trim();
+    if (notes.length < 10) {
+      toast.error("Registre uma justificativa de revisão com pelo menos 10 caracteres.");
+      return;
+    }
     setSalvando(`learning:${id}`);
     try {
       await api.post(`/ia-learning/${id}/review`, {
         approved,
-        notes: approved
-          ? "Revisão jurídica independente realizada na Governança da IA."
-          : "Correção rejeitada na curadoria do aprendizado.",
+        notes,
       });
       toast.success(approved ? "Correção aprovada." : "Correção rejeitada.");
+      setLearningReviewNotes((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
       await carregarAprendizado();
     } catch (e) {
       toast.error(mensagemErroHttp(e, "Falha ao revisar aprendizado"));
@@ -931,17 +942,35 @@ export default function GovernancaIA() {
                           </div>
                         </details>
                       )}
+                      <textarea
+                        className="input min-h-[70px] mt-3"
+                        aria-label="Justificativa da revisão"
+                        placeholder="O que foi conferido e por que aprovar/rejeitar esta correção?"
+                        value={learningReviewNotes[item.id] || ""}
+                        onChange={(e) =>
+                          setLearningReviewNotes((prev) => ({
+                            ...prev,
+                            [item.id]: e.target.value,
+                          }))
+                        }
+                      />
                       <div className="flex gap-2 mt-3">
                         <button
                           className="btn-primary text-xs"
-                          disabled={salvando === `learning:${item.id}`}
+                          disabled={
+                            salvando === `learning:${item.id}` ||
+                            (learningReviewNotes[item.id] || "").trim().length < 10
+                          }
                           onClick={() => revisarAprendizado(item.id, true)}
                         >
                           Aprovar aprendizado
                         </button>
                         <button
                           className="btn-ghost text-xs text-danger-600"
-                          disabled={salvando === `learning:${item.id}`}
+                          disabled={
+                            salvando === `learning:${item.id}` ||
+                            (learningReviewNotes[item.id] || "").trim().length < 10
+                          }
                           onClick={() => revisarAprendizado(item.id, false)}
                         >
                           Rejeitar
