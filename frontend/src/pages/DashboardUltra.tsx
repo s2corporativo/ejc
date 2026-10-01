@@ -114,6 +114,30 @@ type DecisaoHoje = {
   tom: "danger" | "warning" | "info" | "success";
 };
 
+type HojeBackend = {
+  data_operacional?: string;
+  contadores?: {
+    casos_ativos?: number;
+    casos_total?: number;
+    prazos_vencidos?: number;
+    prazos_hoje?: number;
+    prazos_proximos_3d?: number;
+    tarefas_hoje_minhas?: number;
+    pecas_aguardando_revisao?: number;
+    documentos_7d?: number;
+  };
+  decisoes?: Array<{
+    id: string;
+    prioridade?: number;
+    titulo: string;
+    detalhe: string;
+    acao: string;
+    to: string;
+    tom: "danger" | "warning" | "info" | "success";
+  }>;
+  degradado?: string[];
+};
+
 const PAPEIS_INTEGRIDADE = new Set([
   "superadmin",
   "admin",
@@ -121,6 +145,12 @@ const PAPEIS_INTEGRIDADE = new Set([
   "advogado",
   "advogado_auxiliar",
 ]);
+
+// Tarefa 4 (plano de performance, baseline §10): decisões e badges do Hoje
+// vêm do backend (GET /dashboard/hoje) sobre a carteira INTEIRA — não mais
+// de amostras do navegador (casos p1=20, peças=30). ROLLBACK SEGUNDA ONDA:
+// mudar para `false` restaura o cálculo client-side sem deploy do backend.
+const USAR_DASHBOARD_HOJE = true;
 
 function chipDeCaso(status?: string): { rotulo: string; classe: string } {
   if (status === "encerrado") return { rotulo: "Concluso", classe: "is-gold" };
@@ -214,13 +244,16 @@ export default function DashboardUltra() {
   const [pecasRecentes, setPecasRecentes] = useState<LegalDocResumo[] | null>(
     null,
   );
+  // Resposta autorizada do cockpit (Tarefa 4) — null = backend indisponível
+  // ou flag desligada; nesse caso a página calcula tudo client-side (hoje).
+  const [hojeBackend, setHojeBackend] = useState<HojeBackend | null>(null);
 
   const carregar = useCallback(async () => {
     const inicioDocs = format(
       new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
       "yyyy-MM-dd",
     );
-    const [rKpis, rAtiv, rCasos, rDocs, rTarefas, rIntegridade, rPecas] =
+    const [rKpis, rAtiv, rCasos, rDocs, rTarefas, rIntegridade, rPecas, rHoje] =
       await Promise.allSettled([
         api.get("/dashboard/"),
         api.get("/atividades", { params: { apenas_pendentes: true } }),
@@ -233,6 +266,9 @@ export default function DashboardUltra() {
           ? api.get("/saneamento/integridade")
           : Promise.resolve({ data: null }),
         api.get("/legal-docs/", { params: { page: 1, page_size: 30 } }),
+        USAR_DASHBOARD_HOJE
+          ? api.get("/dashboard/hoje")
+          : Promise.resolve({ data: null }),
       ]);
     setKpis(rKpis.status === "fulfilled" ? (rKpis.value.data as Kpis) : null);
     setAtividades(
@@ -263,6 +299,11 @@ export default function DashboardUltra() {
         ? asList<LegalDocResumo>(rPecas.value.data)
         : null,
     );
+    setHojeBackend(
+      rHoje.status === "fulfilled" && rHoje.value.data
+        ? (rHoje.value.data as HojeBackend)
+        : null,
+    );
     setCarregado(true);
   }, [canUseIntegridade]);
 
@@ -291,11 +332,15 @@ export default function DashboardUltra() {
   const primeiroNome = user?.full_name?.trim().split(/\s+/)[0] || "usuário";
 
   const prazosHoje = useMemo(() => {
+    // Fonte autorizada (Tarefa 4): contagem sobre a carteira inteira.
+    if (hojeBackend?.contadores && typeof hojeBackend.contadores.prazos_hoje === "number") {
+      return hojeBackend.contadores.prazos_hoje;
+    }
     if (!atividades) return null;
     return atividades.filter(
       (a) => a.tipo === "prazo" && a.dias_restantes === 0,
     ).length;
-  }, [atividades]);
+  }, [hojeBackend, atividades]);
 
   const integridadeTotal = useMemo(() => {
     if (!integridade) return null;
@@ -376,6 +421,19 @@ export default function DashboardUltra() {
       Boolean(ultimoCaso?.id));
 
   const decisoesHoje = useMemo<DecisaoHoje[]>(() => {
+    // Fonte autorizada (Tarefa 4): decisões calculadas no servidor sobre o
+    // conjunto completo permitido pela visibilidade — sem amostra do navegador.
+    if (hojeBackend?.decisoes && hojeBackend.decisoes.length > 0) {
+      return hojeBackend.decisoes.map((d, index) => ({
+        id: d.id,
+        prioridade: d.prioridade ?? 1000 - index,
+        titulo: d.titulo,
+        detalhe: d.detalhe,
+        acao: d.acao,
+        to: d.to,
+        tom: d.tom,
+      }));
+    }
     const decisoes: DecisaoHoje[] = [];
     const casosPorId = new Map(
       (casos ?? []).filter((caso) => caso.id).map((caso) => [caso.id!, caso]),
