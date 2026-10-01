@@ -204,3 +204,42 @@ async def test_aprovacao_do_proprio_autor_e_bloqueada():
         )
     assert exc.value.status_code == 409
     assert "independente" in str(exc.value.detail).lower()
+
+
+
+class _Rows:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self._rows
+
+
+class _LearningDB:
+    def __init__(self, rows):
+        self.rows = rows
+
+    async def execute(self, stmt):
+        return _Rows(self.rows)
+
+
+@pytest.mark.asyncio
+async def test_aprendizado_entre_casos_usa_licao_generalizada_nao_resposta_integral():
+    from app.services.ai.supervised_learning import approved_learning_context
+
+    row = SimpleNamespace(
+        reason="Erro específico do caso.",
+        corrected_text="ESTRATEGIA SIGILOSA COMPLETA DO CASO",
+        error_type="prova",
+        metadata_json={
+            "review_notes": "Sempre separar alegação, fato provado e lacuna documental."
+        },
+    )
+    texto = await approved_learning_context(
+        _LearningDB([row]), area="civil", limit=3
+    )
+    assert "Sempre separar alegação" in texto
+    assert "ESTRATEGIA SIGILOSA" not in texto
