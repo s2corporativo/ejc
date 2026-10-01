@@ -56,6 +56,7 @@ ADICOES_INTENCIONAIS = {
     ("/api/ia-learning/corrections", "POST"),
     ("/api/ia-learning/{event_id}/review", "POST"),
     ("/api/ia-learning/summary", "GET"),
+    ("/api/ia-learning/pending", "GET"),
     ("/api/ia-learning/errors", "GET"),
     ("/api/ia-learning/outcomes/backfill", "POST"),
     # Dashboard/Sala Jurídica — release #1657. Novas superfícies autenticadas;
