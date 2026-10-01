@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.ownership import is_gestao
+from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.core.security import requer_equipe_juridica
 from app.models.ai_learning import AILearningEvent, AILearningEventType
 from app.models.ai_log import AILog
@@ -97,6 +97,10 @@ async def review_event(
     event = await db.get(AILearningEvent, event_id)
     if not event:
         raise HTTPException(404, "Evento de aprendizado não encontrado.")
+    if event.case_id:
+        # Correções podem conter estratégia/prova do caso, ainda que
+        # pseudonimizadas. O ID do evento nunca pode furar o ownership.
+        await verificar_acesso_caso(db, user, str(event.case_id))
 
     # Para transformar correção em gold/benchmark, exige revisão independente.
     independent = str(event.created_by or "") != str(user.id)
@@ -198,6 +202,15 @@ async def pending_learning_events(
             | (AILearningEvent.created_by != user.id)
         )
     rows = (await db.execute(q)).scalars().all()
+    visible: list[AILearningEvent] = []
+    for row in rows:
+        if row.case_id and not is_gestao(user):
+            try:
+                await verificar_acesso_caso(db, user, str(row.case_id))
+            except HTTPException:
+                continue
+        visible.append(row)
+
     return [
         {
             "id": row.id,
@@ -216,7 +229,7 @@ async def pending_learning_events(
             "created_at": row.created_at,
             "independent_review_required": True,
         }
-        for row in rows
+        for row in visible
     ]
 
 
