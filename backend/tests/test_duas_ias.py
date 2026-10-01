@@ -571,6 +571,9 @@ class TestIsolamentoCriticaDoGateEIngestao:
         assert capturado["case_id"] == "case-1"
         assert capturado["extra"]["escopo"] == "caso"
         assert capturado["extra"]["fonte_primaria"] is False
+        assert capturado["extra"]["human_reviewed"] is True
+        assert capturado["extra"]["requires_human_review"] is False
+        assert capturado["extra"]["tipo_fonte"] == "sintese_ia_revisada"
         assert out["escopo"] == {"client_id": "client-1", "case_id": "case-1"}
 
 
