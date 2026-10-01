@@ -4426,3 +4426,11 @@ html:not(.dark) .ejc-my-day__grid {
     grid-template-columns: 1fr !important;
   }
 }
+
+/* Homologação V4 — alvo mínimo para links compactos do dashboard. */
+.ejc-my-day__head > a,
+.ejc-dash__panel-more,
+.ejc-dash__extra-head > a {
+  min-height: 24px;
+  align-items: center;
+}
