@@ -32,6 +32,9 @@ export default function CasosTabela({
   onRecarregar,
   onDesarquivar,
   onPedirExclusao,
+  temMais,
+  onCarregarMais,
+  carregandoMais,
 }: {
   erro: boolean;
   data: Paged<Case> | null;
@@ -42,6 +45,10 @@ export default function CasosTabela({
   onRecarregar: () => void;
   onDesarquivar: (id: string) => void;
   onPedirExclusao: (caso: Case) => void;
+  /** Tarefa 5: paginação incremental por cursor (opcional p/ compat). */
+  temMais?: boolean;
+  onCarregarMais?: () => void;
+  carregandoMais?: boolean;
 }) {
   return erro && !data ? (
     <EmptyState
@@ -171,6 +178,17 @@ export default function CasosTabela({
           ))}
         </tbody>
       </table>
+      {temMais && onCarregarMais && (
+        <div className="flex justify-center py-4 border-t border-slate-100">
+          <button
+            onClick={onCarregarMais}
+            disabled={carregandoMais}
+            className="px-4 py-2 rounded-lg text-sm bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] disabled:opacity-60 dark:bg-white/[0.07] dark:text-slate-300"
+          >
+            {carregandoMais ? "Carregando..." : "Carregar mais casos"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

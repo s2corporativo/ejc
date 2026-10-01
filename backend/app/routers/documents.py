@@ -20,6 +20,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.pagination_cursor import (
+    condicao_lexicografica, deserializar_key, make_cursor, parse_cursor,
+)
 from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.core.publicacao_externa import confidencialidade_str, pode_publicar_externamente
 from app.core.rate_limit import rate_limit
@@ -517,6 +520,8 @@ async def listar(
         None,
         description="true → somente documentos sem tipo (tipo IS NULL)",
     ),
+    pagination: Optional[str] = Query(None, pattern="^(cursor)$"),
+    cursor: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -610,10 +615,47 @@ async def listar(
             (Document.titulo.ilike(padrao, escape="\\"))
             | (Document.ocr_text.ilike(padrao, escape="\\"))
         )
+    _ORDEM_CURSOR = "created_at:desc,id:desc"
+    _filtros_cursor = {"case_id": case_id, "client_id": client_id,
+                       "search": search, "tipo": tipo,
+                       "confidencialidade": confidencialidade,
+                       "data_inicio": data_inicio.isoformat() if data_inicio else None,
+                       "data_fim": data_fim.isoformat() if data_fim else None,
+                       "classificacao_pendente": classificacao_pendente}
+
+    if pagination == "cursor":
+        from datetime import datetime as _dt
+        if cursor:
+            chave = deserializar_key(
+                parse_cursor(cursor, "/documents", cu, _filtros_cursor,
+                             _ORDEM_CURSOR),
+                _dt.fromisoformat, None)
+            query = query.where(condicao_lexicografica(
+                [Document.created_at, Document.id], chave, ["desc", "desc"]))
+        query = query.order_by(Document.created_at.desc(), Document.id.desc()
+                               ).limit(page_size + 1)
+        rows_c = (
+            await db.execute(query)
+        ).scalars().all()
+        has_more = len(rows_c) > page_size
+        pagina_c = rows_c[:page_size]
+        next_cursor = None
+        if has_more and pagina_c:
+            u = pagina_c[-1]
+            next_cursor = make_cursor("/documents", cu, _filtros_cursor,
+                                      _ORDEM_CURSOR, [u.created_at, u.id])
+        return {
+            "data": [_serializar_documento(d) for d in pagina_c],
+            "page_size": page_size, "has_more": has_more,
+            "next_cursor": next_cursor,
+        }
+
     query = query.order_by(Document.created_at.desc(), Document.id.desc())
 
     total = (
-        await db.execute(select(sqlfunc.count()).select_from(query.subquery()))
+        await db.execute(
+            select(sqlfunc.count()).select_from(query.order_by(None).subquery())
+        )
     ).scalar()
     rows = (
         await db.execute(query.offset((page - 1) * page_size).limit(page_size))

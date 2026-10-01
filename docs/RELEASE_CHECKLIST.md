@@ -79,3 +79,45 @@ O release **não sai** se:
 - a mudança jurídica não tem fonte oficial, vigência e teste;
 - HITL, gate de citações ou sanitização de PII foram enfraquecidos;
 - o rollback não é viável.
+
+## 6. Registro por release
+
+Anexo factual por release — **não altera as regras das seções 1–5**; apenas
+registra, no momento da aprovação, o plano de rollout/rollback e as evidências
+que já existem. As caixas das seções 1–5 continuam sendo marcadas por quem
+faz o merge/deploy.
+
+### 2026-10-02 — Performance Entrada → Caso → Hoje (cursor, Central, Hoje)
+
+- **Escopo:** `pagination=cursor` opt-in em `/tasks`, `/atividades`,
+  `/cases`, `/clients`, `/deadlines`, `/documents`; `GET /atividades/resumo`;
+  `GET /dashboard/hoje`; Frontend Central/Casos/DashboardUltra consumindo as
+  rotas novas. Rotas e shapes legados preservados byte a byte; nada é removido.
+- **Migrations:** **nenhuma** (Tarefa 6 provou que o índice candidato fica
+  dentro do ruído — tentativa revertida com evidência em
+  `docs/performance/ejc-entrada-caso-hoje-baseline.md` §8.1). Não há downgrade
+  de banco a fazer.
+- **Rollout em ondas (seção 3 deste checklist):** 1) backend (legado intacto,
+  rotas novas inativas até o cliente pedir); 2) Central por flag; 3) Casos
+  incremental; 4) demais listas. Cada onda observa p95/payload antes da
+  seguinte.
+- **Rollback:** desligar flag do cliente
+  (`localStorage["ejc:atividades-cursor"]="0"` restaura o Central legado; as
+  demais telas voltam ao legado removendo o opt-in do fetch). Nenhuma
+  migração de banco a reverter; rotas novas podem permanecer no ar inativas.
+- **Segredo novo:** nenhum componente ou variável nova (cursor usa
+  `SECRET_KEY` existente; segredo nunca versionado).
+- **Evidência local (§6-B da governança):** backend 124/124 testes passando
+  (37 das suítes novas + 87 de regressão dos routers tocados, com banco
+  PostgreSQL real — 0 skips, incluindo `test_schema_sync`); frontend 43/43
+  nos 3 alvos + typecheck 0 erros; DAG 159 migrations head único. Baseline e
+  gates em `docs/performance/ejc-entrada-caso-hoje-baseline.md`.
+- **Homologação p75 (H1–H3):** medido em navegador real (Playwright/Chromium,
+  stack sintética local) em 2026-10-01: login→Hoje p75 1.474,7 ms; Casos
+  (primeira linha) p75 2.556,0 ms; Central (primeira ação) p75 1.720,2 ms —
+  detalhes em `docs/performance/ejc-entrada-caso-hoje-baseline.md` §8.3-bis.
+  Pendência de campo restante: repetir o roteiro em homologação compartilhada
+  com rede de produção, se o titular desejar números de rede real.
+- **Autorização:** titular autorizou a finalização ("faça todo o necessário",
+  2026-10-02); merge e deploy seguem sendo atos humanos conforme o topo
+  deste documento.
