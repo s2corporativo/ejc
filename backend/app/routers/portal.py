@@ -21,7 +21,7 @@ from app.models.deadline import Deadline
 from app.models.fee import Fee
 from app.models.document import Document, DocConfidencialidade
 from app.models.audit_log import criar_audit_log
-from app.services.fee_ledger_compat import LEDGER_COMPAT_CTES
+from app.services.fee_ledger import LEDGER_CTES
 
 router = APIRouter(prefix="/portal", tags=["Portal do Cliente"])
 
@@ -156,12 +156,7 @@ async def financeiro(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Financeiro do próprio cliente com ledger real + fallback legado seguro.
-
-    `fee_payments` é soberano. Apenas fees antigos já quitados, com valor e
-    data_pagamento, entram como pagamento legado quando NÃO existe nenhuma linha
-    no subledger. Nenhum pagamento sintético é persistido por esta leitura.
-    """
+    """Financeiro do próprio cliente baseado no subledger canônico de pagamentos."""
     client_id = _exigir_cliente(cu)
 
     ledger = await db.execute(
@@ -170,8 +165,8 @@ async def financeiro(
         # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         text(
             f"""
-            WITH {LEDGER_COMPAT_CTES}
-            SELECT pe.fee_id, pe.total_pago, pe.legado_sem_subledger
+            WITH {LEDGER_CTES}
+            SELECT pe.fee_id, pe.total_pago
             FROM pagamentos_efetivos pe
             JOIN fees f ON f.id = pe.fee_id
             WHERE f.client_id = :client_id
@@ -181,10 +176,7 @@ async def financeiro(
         {"client_id": client_id},
     )
     por_fee = {
-        r["fee_id"]: {
-            "total_pago": float(r["total_pago"] or 0),
-            "legado_sem_subledger": bool(r["legado_sem_subledger"]),
-        }
+        r["fee_id"]: float(r["total_pago"] or 0)
         for r in ledger.mappings().all()
     }
 
@@ -197,8 +189,7 @@ async def financeiro(
     data = []
     for fee in rows:
         valor_contratado = float(fee.valor) if fee.valor is not None else None
-        compat = por_fee.get(fee.id, {"total_pago": 0.0, "legado_sem_subledger": False})
-        total_pago = float(compat["total_pago"])
+        total_pago = float(por_fee.get(fee.id, 0.0))
         saldo = (
             max(valor_contratado - total_pago, 0.0)
             if valor_contratado is not None
@@ -210,7 +201,6 @@ async def financeiro(
             "valor_contratado": valor_contratado,
             "total_pago": total_pago,
             "saldo": saldo,
-            "pagamento_legado_sem_subledger": bool(compat["legado_sem_subledger"]),
             "percentual_exito": (
                 float(fee.percentual_exito)
                 if fee.percentual_exito is not None

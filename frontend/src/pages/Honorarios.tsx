@@ -11,12 +11,26 @@ import {
   Split,
   QrCode,
   History,
+  Pencil,
 } from "lucide-react";
 import QRCode from "qrcode";
-import Comissoes from "./Comissoes";
 import api from "../lib/api";
 import { asList } from "../lib/list";
-import type { Fee, Client, Paged } from "../types";
+import type { Fee, Client, Case, Paged } from "../types";
+import { apiErrorMessage } from "../lib/apiError";
+import { FEE_STATUSES } from "../lib/financeiro";
+import type {
+  FeeFormState,
+  FeeHistoryModal,
+  FeePaymentForm,
+  FeePaymentHistory,
+  FeeRateioModal,
+  FeeRefundForm,
+  FeeRefundModal,
+  HonorariosResumo,
+  PixConfig,
+  PixResult,
+} from "../types/financeiro";
 import {
   StatusBadge,
   Modal,
@@ -27,7 +41,8 @@ import {
   fmtMoney,
 } from "../components/UI";
 
-const STATUS_VALIDOS = ["pendente", "atrasado", "pago"];
+const STATUS_VALIDOS = FEE_STATUSES.filter((status) => status !== "cancelado");
+type FeeRow = Fee & { client_nome?: string | null; saldo?: number };
 const TIPOS_COM_PERCENTUAL = ["exito", "misto"];
 
 function hojeISO(): string {
@@ -47,38 +62,55 @@ export function quantoCobrar(f: Fee): string {
   return fmtMoney(f.valor);
 }
 
-export default function Honorarios() {
-  const [data, setData] = useState<Paged<Fee> | null>(null);
-  const [resumo, setResumo] = useState<any>(null);
+export default function Honorarios({
+  competencia,
+  focusId,
+}: {
+  competencia?: string;
+  focusId?: string;
+}) {
+  const [data, setData] = useState<Paged<FeeRow> | null>(null);
+  const [resumo, setResumo] = useState<HonorariosResumo | null>(null);
   const [clientes, setClientes] = useState<Client[]>([]);
+  const [casos, setCasos] = useState<Case[]>([]);
+  const [editFeeId, setEditFeeId] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const [statusF, setStatusF] = useState(() => {
     const s = searchParams.get("status");
-    return s && STATUS_VALIDOS.includes(s) ? s : "";
+    return s && STATUS_VALIDOS.some((status) => status === s) ? s : "";
   });
   const [modal, setModal] = useState(false);
   const [pagModal, setPagModal] = useState<Fee | null>(null);
-  const [histModal, setHistModal] = useState<any>(null);
-  const [form, setForm] = useState<any>({ tipo: "fixo" });
-  const [pag, setPag] = useState<any>({});
+  const [histModal, setHistModal] = useState<FeeHistoryModal<FeeRow> | null>(
+    null,
+  );
+  const [form, setForm] = useState<FeeFormState>({ tipo: "fixo" });
+  const [pag, setPag] = useState<FeePaymentForm>({});
   const [salvando, setSalvando] = useState(false);
   const [registrando, setRegistrando] = useState(false);
-  const [estModal, setEstModal] = useState<any>(null);
-  const [est, setEst] = useState<any>({});
+  const [estModal, setEstModal] = useState<FeeRefundModal | null>(null);
+  const [est, setEst] = useState<FeeRefundForm>({});
   const [estornando, setEstornando] = useState(false);
-  const [rateioModal, setRateioModal] = useState<any>(null);
-  const [pixModal, setPixModal] = useState<any>(null);
-  const [pixCfg, setPixCfg] = useState<any>(() => {
+  const [rateioModal, setRateioModal] = useState<FeeRateioModal<FeeRow> | null>(
+    null,
+  );
+  const [pixModal, setPixModal] = useState<(FeeRow & { saldo: number }) | null>(
+    null,
+  );
+  const [pixCfg, setPixCfg] = useState<PixConfig>(() => {
     try {
       // Chave PIX pode conter CPF/CNPJ/e-mail/telefone. Não persiste em
       // localStorage: fica apenas na sessão atual do navegador.
       localStorage.removeItem("ejc_pix");
-      return JSON.parse(sessionStorage.getItem("ejc_pix") || "{}");
+      const parsed: unknown = JSON.parse(
+        sessionStorage.getItem("ejc_pix") || "{}",
+      );
+      return parsed && typeof parsed === "object" ? (parsed as PixConfig) : {};
     } catch {
       return {};
     }
   });
-  const [pixRes, setPixRes] = useState<any>(null);
+  const [pixRes, setPixRes] = useState<PixResult | null>(null);
   const [pixQr, setPixQr] = useState("");
   const [rateioLoading, setRateioLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -87,15 +119,30 @@ export default function Honorarios() {
     setError(false);
     api
       .get("/fees/", {
-        params: { status: statusF || undefined, page_size: 50 },
+        params: {
+          status: statusF || undefined,
+          competencia: competencia || undefined,
+          page_size: 50,
+        },
       })
       .then((r) => setData(r.data))
       .catch(() => setError(true));
     api
-      .get("/fees/resumo")
+      .get("/fees/resumo", {
+        params: { competencia: competencia || undefined },
+      })
       .then((r) => setResumo(r.data))
       .catch(() => {});
   };
+
+  useEffect(() => {
+    if (!focusId || !data?.data?.length) return;
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`finance-fee-${focusId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [focusId, data]);
 
   useEffect(() => {
     load();
@@ -103,7 +150,34 @@ export default function Honorarios() {
       .get("/clients/", { params: { page_size: 100 } })
       .then((r) => setClientes(asList<Client>(r.data)))
       .catch(() => setClientes([]));
-  }, [statusF]);
+    api
+      .get("/cases/", { params: { page_size: 200 } })
+      .then((r) => setCasos(asList<Case>(r.data)))
+      .catch(() => setCasos([]));
+  }, [statusF, competencia]);
+
+  const abrirNovo = () => {
+    setEditFeeId(null);
+    setForm({ tipo: "fixo" });
+    setModal(true);
+  };
+
+  const abrirEdicao = (fee: FeeRow) => {
+    setEditFeeId(fee.id);
+    setForm({
+      tipo: fee.tipo,
+      descricao: fee.descricao,
+      client_id: fee.client_id,
+      case_id: fee.case_id || "",
+      valor: fee.valor ?? "",
+      percentual_exito: fee.percentual_exito ?? "",
+      data_vencimento: fee.data_vencimento || "",
+      status: fee.status,
+      observacoes: fee.observacoes || "",
+      motivo_correcao: "",
+    });
+    setModal(true);
+  };
 
   const salvar = async () => {
     if (!form.descricao || !form.client_id) {
@@ -114,26 +188,45 @@ export default function Honorarios() {
     try {
       const payload = Object.fromEntries(
         Object.entries(form).filter(([, v]) => v !== "" && v !== null),
-      );
-      await api.post("/fees/", payload);
+      ) as Record<string, unknown>;
+      if (!editFeeId) {
+        delete payload.status;
+        delete payload.motivo_correcao;
+        await api.post("/fees/", payload);
+        toast.success("Honorário criado.");
+      } else {
+        payload.case_id = form.case_id || null;
+        payload.data_vencimento = form.data_vencimento || null;
+        payload.observacoes = form.observacoes || null;
+        payload.percentual_exito =
+          form.percentual_exito === "" || form.percentual_exito == null
+            ? null
+            : Number(form.percentual_exito);
+        payload.valor =
+          form.valor === "" || form.valor == null ? null : Number(form.valor);
+        if (!form.motivo_correcao) delete payload.motivo_correcao;
+        await api.patch(`/fees/${editFeeId}`, payload);
+        toast.success("Honorário atualizado.");
+      }
       setModal(false);
+      setEditFeeId(null);
       setForm({ tipo: "fixo" });
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Erro"));
     } finally {
       setSalvando(false);
     }
   };
 
-  const abrirRateio = async (fee: any) => {
+  const abrirRateio = async (fee: FeeRow) => {
     setRateioLoading(true);
     setRateioModal({ fee });
     try {
       const r = await api.get(`/honorarios-oab/${fee.id}/rateio`);
       setRateioModal({ fee, calc: r.data });
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao calcular rateio");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Erro ao calcular rateio"));
       setRateioModal(null);
     } finally {
       setRateioLoading(false);
@@ -149,23 +242,23 @@ export default function Honorarios() {
       );
       setRateioModal(null);
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao gerar rateio");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Erro ao gerar rateio"));
     }
   };
 
-  const abrirHistorico = async (fee: Fee) => {
+  const abrirHistorico = async (fee: FeeRow) => {
     setHistModal({ fee, loading: true });
     try {
       const r = await api.get(`/fees/${fee.id}/pagamentos`);
       setHistModal({ fee, loading: false, data: r.data });
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao carregar pagamentos");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Erro ao carregar pagamentos"));
       setHistModal(null);
     }
   };
 
-  const abrirPagamento = async (fee: Fee) => {
+  const abrirPagamento = async (fee: FeeRow) => {
     let valor: number | string | undefined = fee.valor ?? undefined;
     try {
       const r = await api.get(`/fees/${fee.id}/pagamentos`);
@@ -186,15 +279,15 @@ export default function Honorarios() {
       setPagModal(null);
       setPag({});
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao registrar pagamento");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Erro ao registrar pagamento"));
     } finally {
       setRegistrando(false);
     }
   };
 
   // ── Estorno de pagamento (fluxo próprio e auditável — P2 da homologação) ──
-  const abrirEstorno = (fee: Fee, p: any) => {
+  const abrirEstorno = (fee: FeeRow, p: FeePaymentHistory) => {
     const disponivel = Number(p.valor ?? 0) - Number(p.estornado ?? 0);
     if (disponivel <= 0) {
       toast.error("Este pagamento já está integralmente estornado.");
@@ -230,14 +323,14 @@ export default function Honorarios() {
       setEst({});
       if (histModal?.fee) void abrirHistorico(histModal.fee);
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao registrar estorno");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Erro ao registrar estorno"));
     } finally {
       setEstornando(false);
     }
   };
 
-  const abrirPix = async (fee: Fee) => {
+  const abrirPix = async (fee: FeeRow) => {
     // Cobrança deve ser fail-closed: nunca gerar PIX pelo valor bruto quando há
     // pagamentos parciais. Consulta o subledger antes de abrir o modal.
     try {
@@ -255,17 +348,17 @@ export default function Honorarios() {
         );
         return;
       }
-      setPixModal({ ...fee, saldo });
+      setPixModal({ ...fee, saldo: Number(saldo) });
       setPixRes(null);
       setPixQr("");
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(
-        e.response?.data?.detail || "Não foi possível apurar o saldo para PIX",
+        apiErrorMessage(e, "Não foi possível apurar o saldo para PIX"),
       );
     }
   };
 
-  const gerarPix = async (fee: any) => {
+  const gerarPix = async (fee: FeeRow & { saldo?: number }) => {
     if (!pixCfg.chave) {
       toast.error("Informe a chave PIX do escritório (campo abaixo).");
       return;
@@ -285,7 +378,9 @@ export default function Honorarios() {
         setPixModal(null);
         return;
       }
-      setPixModal((atual: any) => (atual ? { ...atual, saldo } : atual));
+      setPixModal((atual) =>
+        atual ? { ...atual, saldo: Number(saldo) } : atual,
+      );
       const { data } = await api.post("/pix/cobranca", {
         chave: pixCfg.chave,
         nome: pixCfg.nome || "Escritorio",
@@ -300,22 +395,10 @@ export default function Honorarios() {
         margin: 1,
       });
       setPixQr(url);
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao gerar PIX");
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, "Falha ao gerar PIX"));
     }
   };
-
-  if (searchParams.get("view") === "comissoes") {
-    return (
-      <Comissoes
-        onBack={() => {
-          const params = new URLSearchParams(searchParams);
-          params.delete("view");
-          setSearchParams(params, { replace: true });
-        }}
-      />
-    );
-  }
 
   return (
     <div>
@@ -330,9 +413,9 @@ export default function Honorarios() {
               cobranca: quantoCobrar(f),
               vencimento: f.data_vencimento,
               status: f.status,
-              cliente: (f as any).client_nome ?? "",
+              cliente: f.client_nome ?? "",
             }));
-            exportCsv(rows as any, "honorarios.csv");
+            exportCsv(rows, "honorarios.csv");
           }}
           className="btn-secondary px-3 py-1.5 text-xs"
         >
@@ -346,7 +429,7 @@ export default function Honorarios() {
               quantoCobrar(f),
               f.data_vencimento ?? "",
               f.status,
-              (f as any).client_nome ?? "",
+              f.client_nome ?? "",
             ]);
             exportPdf(
               "Honorários",
@@ -365,18 +448,7 @@ export default function Honorarios() {
         >
           <FileType2 size={13} /> PDF
         </button>
-        <button
-          type="button"
-          className="btn-secondary px-3 py-1.5 text-xs"
-          onClick={() => {
-            const params = new URLSearchParams(searchParams);
-            params.set("view", "comissoes");
-            setSearchParams(params, { replace: true });
-          }}
-        >
-          Comissões
-        </button>
-        <button className="btn-gold" onClick={() => setModal(true)}>
+        <button className="btn-gold" onClick={abrirNovo}>
           <Plus size={16} /> Novo lançamento
         </button>
       </div>
@@ -446,7 +518,15 @@ export default function Honorarios() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {(Array.isArray(data.data) ? data.data : []).map((f) => (
-                <tr key={f.id} className="hover:bg-slate-50">
+                <tr
+                  id={`finance-fee-${f.id}`}
+                  key={f.id}
+                  className={`hover:bg-slate-50 ${
+                    focusId === f.id
+                      ? "ring-2 ring-inset ring-primary-400 bg-primary-50/50"
+                      : ""
+                  }`}
+                >
                   <td className="px-4 py-3 font-medium text-navy">
                     {f.descricao}
                   </td>
@@ -461,6 +541,13 @@ export default function Honorarios() {
                     <StatusBadge value={f.status} />
                   </td>
                   <td className="px-4 py-3">
+                    <button
+                      className="btn-ghost px-2 py-1 text-primary-600"
+                      title="Editar honorário"
+                      onClick={() => abrirEdicao(f)}
+                    >
+                      <Pencil size={15} />
+                    </button>
                     <button
                       className="btn-ghost px-2 py-1 text-slate-500"
                       title="Histórico de pagamentos"
@@ -507,8 +594,11 @@ export default function Honorarios() {
 
       <Modal
         open={modal}
-        onClose={() => setModal(false)}
-        title="Novo lançamento"
+        onClose={() => {
+          setModal(false);
+          setEditFeeId(null);
+        }}
+        title={editFeeId ? "Editar honorário" : "Novo lançamento"}
         wide
       >
         <div className="grid sm:grid-cols-2 gap-4">
@@ -525,7 +615,13 @@ export default function Honorarios() {
             <select
               className="input"
               value={form.client_id || ""}
-              onChange={(e) => setForm({ ...form, client_id: e.target.value })}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  client_id: e.target.value,
+                  case_id: "",
+                })
+              }
             >
               <option value="">Selecione...</option>
               {clientes.map((c) => (
@@ -533,6 +629,26 @@ export default function Honorarios() {
                   {c.nome || c.razao_social}
                 </option>
               ))}
+            </select>
+          </div>
+          <div>
+            <label className="label">Caso</label>
+            <select
+              className="input"
+              value={form.case_id || ""}
+              onChange={(e) => setForm({ ...form, case_id: e.target.value })}
+            >
+              <option value="">Sem caso vinculado</option>
+              {casos
+                .filter(
+                  (c) => !form.client_id || c.client_id === form.client_id,
+                )
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.numero_interno ? `${c.numero_interno} — ` : ""}
+                    {c.titulo}
+                  </option>
+                ))}
             </select>
           </div>
           <div>
@@ -604,10 +720,56 @@ export default function Honorarios() {
               }
             />
           </div>
+          {editFeeId && (
+            <div>
+              <label className="label">Status</label>
+              <select
+                className="input"
+                value={form.status || "pendente"}
+                onChange={(e) => setForm({ ...form, status: e.target.value })}
+              >
+                <option value="pendente">Pendente</option>
+                <option value="atrasado">Em atraso</option>
+                <option value="pago">Pago</option>
+                <option value="cancelado">Cancelado</option>
+              </select>
+            </div>
+          )}
+          <div className="sm:col-span-2">
+            <label className="label">Observações</label>
+            <textarea
+              className="input min-h-20"
+              value={form.observacoes || ""}
+              onChange={(e) =>
+                setForm({ ...form, observacoes: e.target.value })
+              }
+            />
+          </div>
+          {editFeeId && (
+            <div className="sm:col-span-2">
+              <label className="label">Motivo da correção</label>
+              <textarea
+                className="input min-h-16"
+                placeholder="Obrigatório apenas quando o lançamento pertencer a competência já fechada."
+                value={form.motivo_correcao || ""}
+                onChange={(e) =>
+                  setForm({ ...form, motivo_correcao: e.target.value })
+                }
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Em mês fechado, a alteração fica registrada com antes/depois,
+                usuário, data e justificativa.
+              </p>
+            </div>
+          )}
         </div>
         <div className="flex justify-end mt-5">
           <button className="btn-primary" disabled={salvando} onClick={salvar}>
-            {salvando ? "Salvando..." : "Lançar"}
+            {salvando
+              ? "Salvando..."
+              : editFeeId
+                ? "Salvar alterações"
+                : "Lançar"}
           </button>
         </div>
       </Modal>
@@ -709,7 +871,7 @@ export default function Honorarios() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {histModal.data.pagamentos.map((p: any) => {
+                    {histModal.data.pagamentos.map((p) => {
                       const disponivel =
                         Number(p.valor ?? 0) - Number(p.estornado ?? 0);
                       return (
@@ -751,7 +913,7 @@ export default function Honorarios() {
                   Estornos registrados
                 </div>
                 <ul className="space-y-1 text-sm">
-                  {histModal.data.estornos.map((e: any) => (
+                  {histModal.data.estornos.map((e) => (
                     <li
                       key={e.id}
                       className="flex items-start justify-between gap-3 border border-slate-100 rounded-lg p-2"
@@ -852,33 +1014,35 @@ export default function Honorarios() {
               <b>{rateioModal.calc.titular?.nome || "—"}</b>
             </div>
             <div className="space-y-2 text-sm">
-              {[
+              {(
                 [
-                  "Honorário de êxito (bruto)",
-                  rateioModal.calc.bruto,
-                  "text-navy",
-                ],
-                [
-                  "(−) Despesas do caso",
-                  rateioModal.calc.despesas_caso,
-                  "text-danger-500",
-                ],
-                [
-                  "(=) Líquido a ratear",
-                  rateioModal.calc.liquido,
-                  "text-navy font-bold",
-                ],
-                [
-                  "Titular do caso (50%)",
-                  rateioModal.calc.titular?.valor,
-                  "text-success-600 font-bold",
-                ],
-                [
-                  "Escritório (50%)",
-                  rateioModal.calc.escritorio?.valor,
-                  "text-bronze-deep font-bold",
-                ],
-              ].map(([l, v, cls]: any) => (
+                  [
+                    "Honorário de êxito (bruto)",
+                    rateioModal.calc.bruto,
+                    "text-navy",
+                  ],
+                  [
+                    "(−) Despesas do caso",
+                    rateioModal.calc.despesas_caso,
+                    "text-danger-500",
+                  ],
+                  [
+                    "(=) Líquido a ratear",
+                    rateioModal.calc.liquido,
+                    "text-navy font-bold",
+                  ],
+                  [
+                    "Titular do caso (50%)",
+                    rateioModal.calc.titular?.valor,
+                    "text-success-600 font-bold",
+                  ],
+                  [
+                    "Escritório (50%)",
+                    rateioModal.calc.escritorio?.valor,
+                    "text-bronze-deep font-bold",
+                  ],
+                ] as Array<[string, number | string | undefined, string]>
+              ).map(([l, v, cls]) => (
                 <div
                   key={l}
                   className="flex justify-between border-b border-slate-100 pb-1.5"

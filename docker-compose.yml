@@ -76,6 +76,10 @@ services:
     networks: [default, ia]
     env_file:
       - .env
+      # Segredos operacionais ficam fora do checkout e sobrevivem a rsync/deploy.
+      # Vem depois de .env para ter precedência; opcional em desenvolvimento.
+      - path: ${EJC_SECRET_ENV_FILE:-/opt/ejc-secrets/runtime.env}
+        required: false
     environment:
       APP_ENV: production
       # SHA do commit publicado — exposto em /api/health como prova de qual
@@ -189,6 +193,10 @@ services:
     command: celery -A app.core.celery_app.celery_app worker --loglevel=INFO --concurrency=2
     env_file:
       - .env
+      # Segredos operacionais ficam fora do checkout e sobrevivem a rsync/deploy.
+      # Vem depois de .env para ter precedência; opcional em desenvolvimento.
+      - path: ${EJC_SECRET_ENV_FILE:-/opt/ejc-secrets/runtime.env}
+        required: false
     environment:
       APP_ENV: production
       # SHA do commit publicado — exposto em /api/health como prova de qual

@@ -4,6 +4,8 @@
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 import logging
+import os
+from pathlib import Path
 from functools import lru_cache
 from typing import List
 from pydantic import model_validator
@@ -1210,6 +1212,40 @@ class Settings(BaseSettings):
             )
             if not valor
         ]
+
+    @model_validator(mode="after")
+    def _carregar_segredos_de_arquivo(self):
+        """Permite Docker/Kubernetes secrets via VAR_FILE sem expor o valor no env.
+
+        Precedência deliberada: VAR_FILE vence VAR. Isso permite migração gradual:
+        criar o arquivo 0600, apontar VAR_FILE e só então remover o segredo do .env.
+        O arquivo precisa existir, ser regular e não pode estar vazio.
+        """
+        campos = (
+            "SECRET_KEY",
+            "PII_ENCRYPTION_KEY",
+            "PII_HASH_KEY",
+            "VAULT_MASTER_KEYS",
+            "BACKUP_ENCRYPTION_KEY",
+            "GROQ_API_KEY",
+            "MARITACA_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "MANUS_API_KEY",
+            "SMTP_PASSWORD",
+            "LANGFUSE_SECRET_KEY",
+        )
+        for campo in campos:
+            arquivo = (os.getenv(f"{campo}_FILE") or "").strip()
+            if not arquivo:
+                continue
+            path = Path(arquivo)
+            if not path.is_file():
+                raise ValueError(f"{campo}_FILE não aponta para arquivo regular: {arquivo}")
+            valor = path.read_text(encoding="utf-8").strip()
+            if not valor:
+                raise ValueError(f"{campo}_FILE aponta para arquivo vazio: {arquivo}")
+            setattr(self, campo, valor)
+        return self
 
     @model_validator(mode="after")
     def _validar_sunset(self):

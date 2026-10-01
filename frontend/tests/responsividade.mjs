@@ -86,14 +86,29 @@ async function main() {
         viewport: { width: viewport.width, height: viewport.height },
       });
       const page = await context.newPage();
+      await page.route("**/api/**", (route) =>
+        route.fulfill({
+          status: 401,
+          contentType: "application/json",
+          body: '{"detail":"responsive-test unauthenticated"}',
+        }),
+      );
       const consoleErrors = [];
       page.on("console", (message) => {
-        if (message.type() === "error") consoleErrors.push(message.text());
+        if (message.type() !== "error") return;
+        const text = message.text();
+        if (text.includes("Failed to load resource") && text.includes("401")) {
+          return;
+        }
+        consoleErrors.push(text);
       });
       page.on("pageerror", (error) => consoleErrors.push(String(error)));
 
-      await page.goto(base, { waitUntil: "networkidle" });
-      await page.waitForSelector("input", { timeout: 10000 });
+      await page.goto(`${base}login`, { waitUntil: "networkidle" });
+      await page.waitForSelector('input[type="email"], input[name="email"]', {
+        state: "visible",
+        timeout: 10000,
+      });
 
       const { scrollWidth, innerWidth } = await page.evaluate(() => ({
         scrollWidth: document.documentElement.scrollWidth,

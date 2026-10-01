@@ -18,6 +18,15 @@ from app.core.security import get_current_user
 from app.core.sql_safe import construir_update
 from app.models.audit_log import criar_audit_log
 from app.models.user import User
+from app.services.finance_status import EXPENSE_TRANSITIONS, exigir_transicao
+from app.services.finance_document_service import exigir_documento_financeiro
+from app.services.finance_governance import (
+    competencia_de_data,
+    exigir_competencia_aberta,
+    limite_dupla_aprovacao,
+    solicitar_ou_consumir_aprovacao,
+    permitir_correcao_competencia_fechada,
+)
 
 _FIN = {"superadmin", "admin", "socio", "financeiro"}
 
@@ -45,6 +54,7 @@ class _DespesaCampos(BaseModel):
     recorrencia: Optional[str] = Field(None, max_length=100)
     status: Optional[Literal["pendente", "pago", "cancelado"]] = None
     competencia: Optional[str] = None
+    comprovante_doc_id: Optional[str] = Field(None, max_length=36)
 
     @field_validator("categoria", "descricao")
     @classmethod
@@ -79,7 +89,8 @@ class DespesaCreate(_DespesaCampos):
 
 
 class DespesaUpdate(_DespesaCampos):
-    pass
+    motivo_correcao: Optional[str] = Field(None, max_length=1000)
+
 
 
 class GerarRecorrentesIn(BaseModel):
@@ -233,7 +244,7 @@ async def list_despesas(
         text("""
             SELECT id, categoria, subcategoria, tipo, descricao, valor,
                    vencimento, pago_em, recorrente, recorrencia, status,
-                   competencia, created_by, created_at, updated_at
+                   competencia, comprovante_doc_id, created_by, created_at, updated_at
             FROM office_expenses
             WHERE deleted_at IS NULL
               AND (CAST(:categoria AS text) IS NULL OR categoria = :categoria)
@@ -309,6 +320,9 @@ async def gerar_recorrentes(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    await exigir_competencia_aberta(
+        db, body.competencia, "Gerar despesas recorrentes"
+    )
     ano_alvo, mes_alvo = (int(p) for p in body.competencia.split("-"))
     templates = (
         await db.execute(text("""
@@ -383,6 +397,24 @@ async def create_despesa(
     current_user: User = Depends(get_current_user),
 ):
     dados = _normalizar_baixa(body.model_dump())
+    competencia_mutacao = (
+        dados.get("competencia")
+        or competencia_de_data(dados.get("pago_em") or dados.get("vencimento"))
+    )
+    await exigir_competencia_aberta(
+        db, competencia_mutacao, "Criar despesa"
+    )
+    approval_required = None
+    if dados.get("status") == "pago":
+        limite = await limite_dupla_aprovacao(db)
+        if Decimal(str(dados["valor"])) >= limite:
+            dados["status"] = "pendente"
+            dados["pago_em"] = None
+            approval_required = True
+    if dados.get("comprovante_doc_id"):
+        await exigir_documento_financeiro(
+            db, current_user, dados["comprovante_doc_id"]
+        )
     duplicado = (
         await db.execute(
             text(
@@ -412,19 +444,29 @@ async def create_despesa(
             """
             INSERT INTO office_expenses
                 (categoria, subcategoria, tipo, descricao, valor, vencimento, pago_em,
-                 recorrente, recorrencia, status, competencia, created_by)
+                 recorrente, recorrencia, status, competencia, comprovante_doc_id, created_by)
             VALUES
                 (:categoria, :subcategoria, :tipo, :descricao, :valor,
                  :vencimento, :pago_em, :recorrente, :recorrencia, :status,
-                 :competencia, :created_by)
+                 :competencia, :comprovante_doc_id, :created_by)
             RETURNING id, categoria, subcategoria, tipo, descricao, valor,
                       vencimento, pago_em, recorrente, recorrencia, status,
-                      competencia, created_at
+                      competencia, comprovante_doc_id, created_at
             """
         ),
         {**dados, "created_by": current_user.id},
     )
     row = dict(result.mappings().first())
+    approval_info = None
+    if approval_required:
+        approval_info = await solicitar_ou_consumir_aprovacao(
+            db,
+            entity_type="office_expense",
+            entity_id=row["id"],
+            amount=row["valor"],
+            user=current_user,
+            reason="Pagamento de despesa acima da alçada configurada.",
+        )
     await criar_audit_log(
         db,
         current_user.id,
@@ -436,6 +478,10 @@ async def create_despesa(
         dados_depois=jsonable_encoder(row),
     )
     await db.commit()
+    if approval_info and approval_info.get("required"):
+        row["approval_required"] = True
+        row["approval_id"] = approval_info.get("approval_id")
+        row["approval_threshold"] = approval_info.get("threshold")
     return row
 
 
@@ -451,7 +497,7 @@ async def update_despesa(
             """
             SELECT id, categoria, subcategoria, tipo, descricao, valor,
                    vencimento, pago_em, recorrente, recorrencia, status,
-                   competencia, created_at, updated_at
+                   competencia, comprovante_doc_id, created_at, updated_at
             FROM office_expenses
             WHERE id=:id AND deleted_at IS NULL
             """
@@ -463,9 +509,74 @@ async def update_despesa(
         raise HTTPException(status_code=404, detail="Despesa não encontrada")
 
     updates = body.model_dump(exclude_unset=True)
+    motivo_correcao = (updates.pop("motivo_correcao", None) or "").strip() or None
     if not updates:
         raise HTTPException(status_code=422, detail="Nenhum campo informado para atualizar")
+    competencia_atual = (
+        antes["competencia"]
+        or competencia_de_data(antes["pago_em"] or antes["vencimento"])
+    )
+    correcao_fechada = await permitir_correcao_competencia_fechada(
+        db, competencia_atual, motivo_correcao, "Alterar despesa"
+    )
     updates = _normalizar_baixa(updates, status_atual=antes["status"])
+    if updates.get("comprovante_doc_id"):
+        await exigir_documento_financeiro(
+            db, current_user, str(updates["comprovante_doc_id"])
+        )
+    if "status" in updates:
+        exigir_transicao(
+            str(antes["status"]),
+            str(updates["status"]),
+            EXPENSE_TRANSITIONS,
+            entidade="despesa",
+        )
+    competencia_nova = (
+        updates.get("competencia")
+        or antes["competencia"]
+        or competencia_de_data(
+            updates.get("pago_em")
+            or antes["pago_em"]
+            or updates.get("vencimento")
+            or antes["vencimento"]
+        )
+    )
+    correcao_fechada = (
+        await permitir_correcao_competencia_fechada(
+            db, competencia_nova, motivo_correcao, "Alterar despesa"
+        )
+        or correcao_fechada
+    )
+    if updates.get("status") == "pago" and antes["status"] != "pago":
+        approval = await solicitar_ou_consumir_aprovacao(
+            db,
+            entity_type="office_expense",
+            entity_id=despesa_id,
+            amount=antes["valor"],
+            user=current_user,
+            reason="Pagamento de despesa acima da alçada configurada.",
+        )
+        if approval.get("required"):
+            await criar_audit_log(
+                db,
+                current_user.id,
+                current_user.role.value,
+                "REQUEST_APPROVAL",
+                "office_expenses",
+                despesa_id,
+                detalhes="Baixa aguardando segunda aprovação financeira.",
+                dados_depois={
+                    "approval_id": approval.get("approval_id"),
+                    "valor": str(antes["valor"]),
+                },
+            )
+            await db.commit()
+            return {
+                **dict(antes),
+                "approval_required": True,
+                "approval_id": approval.get("approval_id"),
+                "approval_threshold": approval.get("threshold"),
+            }
 
     stmt, params = construir_update(
         updates,
@@ -482,7 +593,7 @@ async def update_despesa(
             """
             SELECT id, categoria, subcategoria, tipo, descricao, valor,
                    vencimento, pago_em, recorrente, recorrencia, status,
-                   competencia, created_at, updated_at
+                   competencia, comprovante_doc_id, created_at, updated_at
             FROM office_expenses
             WHERE id=:id AND deleted_at IS NULL
             """
@@ -497,10 +608,13 @@ async def update_despesa(
         db,
         current_user.id,
         current_user.role.value,
-        "UPDATE",
+        "CORRECAO_FECHAMENTO" if correcao_fechada else "UPDATE",
         "office_expenses",
         despesa_id,
-        detalhes=f"campos alterados: {sorted(updates)}",
+        detalhes=(
+            f"campos alterados: {sorted(updates)}"
+            + (f"; motivo_correcao={motivo_correcao}" if motivo_correcao else "")
+        ),
         dados_antes=jsonable_encoder(dict(antes)),
         dados_depois=jsonable_encoder(depois),
     )
@@ -519,7 +633,7 @@ async def delete_despesa(
             """
             SELECT id, categoria, subcategoria, tipo, descricao, valor,
                    vencimento, pago_em, recorrente, recorrencia, status,
-                   competencia, created_at, updated_at
+                   competencia, comprovante_doc_id, created_at, updated_at
             FROM office_expenses
             WHERE id=:id AND deleted_at IS NULL
             """
@@ -529,6 +643,13 @@ async def delete_despesa(
     antes = atual.mappings().first()
     if not antes:
         raise HTTPException(status_code=404, detail="Despesa não encontrada")
+    competencia_atual = (
+        antes["competencia"]
+        or competencia_de_data(antes["pago_em"] or antes["vencimento"])
+    )
+    await exigir_competencia_aberta(
+        db, competencia_atual, "Excluir despesa"
+    )
 
     await db.execute(
         text("UPDATE office_expenses SET deleted_at=NOW(), updated_at=NOW() WHERE id=:id"),

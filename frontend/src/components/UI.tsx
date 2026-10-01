@@ -80,7 +80,7 @@ const toneClasses: Record<Tone, string> = {
   teal: "bg-teal-50 text-teal-700 ring-teal-200",
   ai: "bg-ai-50 text-ai-700 ring-ai-200",
   // Ouro institucional — apenas destaque pontual (nunca tom padrão)
-  ouro: "bg-ouro-palha text-ouro-profundo ring-ouro-claro/60",
+  ouro: "bg-primary-50 text-primary-700 ring-primary-200",
 };
 
 // Barra SUPERIOR de 3px do KPI card (idioma Verdelimp) na cor do
@@ -101,7 +101,7 @@ const toneBarClasses: Record<Tone, string> = {
   violet: "before:bg-info-500",
   teal: "before:bg-teal-500",
   ai: "before:bg-ai-500",
-  ouro: "before:bg-ouro-claro",
+  ouro: "before:bg-primary-500",
 };
 
 // Botões no idioma flat/compacto (padrão Verdelimp, cores EJC): primary
@@ -147,7 +147,7 @@ export function Button({
     <button
       {...props}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-lg font-bold transition-all duration-150 ease-out active:scale-[.98]",
+        "inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-colors duration-150 ease-out",
         "focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50",
         sizeClass,
         buttonClasses[variant],
@@ -464,16 +464,16 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="ejc-page-header mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
-        {eyebrow && <div className="eyebrow mb-1.5">{eyebrow}</div>}
-        {/* Título denso (~20px/700) na cor escura da marca + filete ouro */}
-        <h1 className="text-xl font-bold tracking-tight text-primary-900">
+        {eyebrow && <div className="eyebrow mb-1">{eyebrow}</div>}
+        <h1 className="ejc-page-title text-[22px] font-semibold tracking-[-0.025em] text-slate-950">
           {title}
         </h1>
-        <div className="mt-1.5 h-0.5 w-10 rounded-full bg-ouro-claro" />
         {subtitle && (
-          <p className="mt-1.5 max-w-3xl text-sm text-slate-500">{subtitle}</p>
+          <p className="mt-1 max-w-3xl text-[13px] leading-5 text-slate-500">
+            {subtitle}
+          </p>
         )}
       </div>
       {/* `shrink-0` incondicional anulava o `flex-wrap`: o container ficava preso
@@ -755,7 +755,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         className={cn(
-          "w-full max-h-[90vh] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-float animate-pop",
+          "w-full max-h-[90vh] overflow-auto rounded-xl border border-slate-200 bg-white shadow-lg animate-pop",
           placement === "right" && "ejc-drawer-panel",
           sizeClass,
         )}
@@ -1150,7 +1150,7 @@ export function Empty({
 export function Spinner() {
   return (
     <div className="flex items-center justify-center p-12">
-      <Loader2 className="h-8 w-8 animate-spin text-ouro" />
+      <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
     </div>
   );
 }
