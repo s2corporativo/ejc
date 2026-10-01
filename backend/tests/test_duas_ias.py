@@ -560,7 +560,7 @@ class TestIsolamentoCriticaDoGateEIngestao:
         )
         out = await ingerir_ai_log_aprovado(
             "log-1", IngerirAILogRequest(), db=_ExecDB(log),
-            cu=SimpleNamespace(id="user-1"),
+            cu=SimpleNamespace(id="user-1", role="advogado"),
         )
         assert out["ok"] is True
         assert capturado["conteudo"] == log.resposta
@@ -595,10 +595,30 @@ class TestIsolamentoCriticaDoGateEIngestao:
         with pytest.raises(HTTPException) as exc:
             await ingerir_ai_log_aprovado(
                 "log-global", IngerirAILogRequest(), db=_ExecDB(log),
-                cu=SimpleNamespace(id="user-1"),
+                cu=SimpleNamespace(id="user-1", role="advogado"),
             )
         assert exc.value.status_code == 400
         assert "vinculado a um caso" in str(exc.value.detail)
+
+    async def test_ingestao_ailog_rejeita_perfil_nao_juridico(self):
+        import datetime as _dt
+        from fastapi import HTTPException
+        from app.routers.rag import ingerir_ai_log_aprovado, IngerirAILogRequest
+        from app.models.ai_log import AIStatusHITL, AITipoUso
+
+        log = SimpleNamespace(
+            id="log-fin", user_id="user-1", case_id="case-1",
+            status_hitl=AIStatusHITL.revisado,
+            tipo_uso=AITipoUso.outro,
+            created_at=_dt.datetime(2026, 7, 5),
+            resposta="Conteúdo revisado suficientemente longo para validar o gate de equipe jurídica.",
+        )
+        with pytest.raises(HTTPException) as exc:
+            await ingerir_ai_log_aprovado(
+                "log-fin", IngerirAILogRequest(), db=_ExecDB(log),
+                cu=SimpleNamespace(id="user-1", role="financeiro"),
+            )
+        assert exc.value.status_code == 403
 
     def test_ingestao_ailog_nao_aceita_categoria_de_fonte_oficial(self):
         """Texto de IA jamais pode se rotular como legislação/jurisprudência."""
@@ -861,7 +881,7 @@ class TestEndpointCriticaAdversarial:
         db = _EndpointDB()
         c = await critica_adversarial_endpoint(
             CriticaAdversarialRequest(texto_peca=TEXTO_PECA, provedor_origem="ollama"),
-            db=db, cu=SimpleNamespace(id="user-1"),
+            db=db, cu=SimpleNamespace(id="user-1", role="advogado"),
         )
         assert c.disponivel is True and c.provider_diverso is True
         # AILog gravado (trilha LGPD/OAB).
@@ -880,7 +900,7 @@ class TestEndpointCriticaAdversarial:
         db = _EndpointDB()
         c = await critica_adversarial_endpoint(
             CriticaAdversarialRequest(texto_peca=TEXTO_PECA),
-            db=db, cu=SimpleNamespace(id="user-1"),
+            db=db, cu=SimpleNamespace(id="user-1", role="advogado"),
         )
         assert c.disponivel is False
         assert db.added == [] and db.commits == 0  # nada de log sem chamada de IA
