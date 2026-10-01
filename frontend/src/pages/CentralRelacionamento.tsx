@@ -349,7 +349,9 @@ export default function CentralRelacionamento() {
                         onClick={() =>
                           openWA(lead.whatsapp || lead.telefone!, lead.nome)
                         }
-                        className="p-1 bg-green-50 text-green-600 rounded hover:bg-green-100"
+                        aria-label={`Abrir WhatsApp de ${lead.nome}`}
+                        title="Abrir WhatsApp"
+                        className="p-1.5 bg-green-50 text-green-600 rounded hover:bg-green-100"
                       >
                         <MessageCircle className="w-3 h-3" />
                       </button>
@@ -357,7 +359,9 @@ export default function CentralRelacionamento() {
                     {lead.email && (
                       <a
                         href={`mailto:${lead.email}`}
-                        className="p-1 bg-slate-50 text-slate-500 rounded hover:bg-slate-100"
+                        aria-label={`Enviar e-mail para ${lead.nome}`}
+                        title="Enviar e-mail"
+                        className="p-1.5 bg-slate-50 text-slate-500 rounded hover:bg-slate-100"
                       >
                         <Mail className="w-3 h-3" />
                       </a>
@@ -414,6 +418,8 @@ export default function CentralRelacionamento() {
                   {(c.whatsapp || c.telefone) && (
                     <button
                       onClick={() => openWA(c.whatsapp || c.telefone!, c.nome)}
+                      aria-label={`Abrir WhatsApp de ${c.nome}`}
+                      title="Abrir WhatsApp"
                       className="p-1.5 bg-green-50 text-green-600 rounded-lg hover:bg-green-100"
                     >
                       <MessageCircle className="w-3.5 h-3.5" />
@@ -422,6 +428,8 @@ export default function CentralRelacionamento() {
                   {c.telefone && (
                     <a
                       href={`tel:${c.telefone}`}
+                      aria-label={`Ligar para ${c.nome}`}
+                      title="Ligar"
                       className="p-1.5 bg-primary-50 text-primary-600 rounded-lg hover:bg-primary-100"
                     >
                       <Phone className="w-3.5 h-3.5" />
@@ -430,6 +438,8 @@ export default function CentralRelacionamento() {
                   {c.email && (
                     <a
                       href={`mailto:${c.email}`}
+                      aria-label={`Enviar e-mail para ${c.nome}`}
+                      title="Enviar e-mail"
                       className="p-1.5 bg-slate-50 text-slate-500 rounded-lg hover:bg-slate-100"
                     >
                       <Mail className="w-3.5 h-3.5" />
@@ -437,6 +447,8 @@ export default function CentralRelacionamento() {
                   )}
                   <button
                     onClick={() => nav(`/clientes/${c.id}`)}
+                    aria-label={`Abrir cliente ${c.nome}`}
+                    title="Abrir cliente"
                     className="p-1.5 bg-slate-50 text-slate-500 rounded-lg hover:bg-slate-100"
                   >
                     <ChevronRight className="w-3.5 h-3.5" />
