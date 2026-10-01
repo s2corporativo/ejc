@@ -42,7 +42,11 @@ class CorrectionIn(BaseModel):
 
 class ReviewIn(BaseModel):
     approved: bool
-    notes: str | None = Field(default=None, max_length=2000)
+    notes: str = Field(
+        min_length=10,
+        max_length=2000,
+        description="Justificativa auditável da decisão de curadoria",
+    )
 
 
 @router.post("/corrections")
