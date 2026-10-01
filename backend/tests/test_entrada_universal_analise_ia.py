@@ -24,7 +24,7 @@ from app.routers import entrada_universal as router
 from app.services.ai.core.agent_registry import AGENT_REGISTRY
 from app.services.ai.core.intent_classifier import classify_intent
 from app.services.system_prompts import TarefaIA
-from app.services.system_prompts.router import get_configuracao
+from app.services.system_prompts.registry import get_configuracao
 
 _SCHEMA_COMPLETO = {
     "tipo_documento_principal": "peticao_inicial",

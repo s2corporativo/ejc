@@ -140,6 +140,21 @@ def mounted_router_paths(root: Path) -> tuple[set[str], dict[str, list[str]], se
                 symbols[variable] = relative
 
         for node in ast.walk(tree):
+            # Composição por cópia de rotas: `for _r in mod.router.routes:`
+            # seguido de add_api_route(...) re-registra as rotas do módulo alvo
+            # no router do arquivo corrente (padrão de app/routers/ramos.py).
+            # Trata como aresta de montagem: arquivo corrente montado implica
+            # módulo alvo montado.
+            if isinstance(node, ast.Attribute) and node.attr == "routes":
+                inner = node.value
+                if (
+                    isinstance(inner, ast.Attribute)
+                    and inner.attr == "router"
+                    and isinstance(inner.value, ast.Name)
+                ):
+                    target = symbols.get(inner.value.id)
+                    if target and target != relative:
+                        graph[relative].add(target)
             if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
                 continue
             if node.func.attr != "include_router" or not node.args:

@@ -24,6 +24,84 @@ REFINER = load("inventory_refiner_test", ROOT_SCRIPTS / "refine_architecture_inv
 
 
 class RefineArchitectureInventoryTest(unittest.TestCase):
+    def test_route_copy_composition_mounts_source_routers(self) -> None:
+        """Cópia de rotas (mod.router.routes + add_api_route) monta o módulo alvo."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            routers = root / "backend/app/routers"
+            models = root / "backend/app/models"
+            pages = root / "frontend/src/pages"
+            config = root / "config"
+            scripts = root / "scripts"
+            for directory in (routers, models, pages, config, scripts):
+                directory.mkdir(parents=True, exist_ok=True)
+
+            (scripts / "generate_architecture_inventory.py").write_text(
+                (ROOT_SCRIPTS / "generate_architecture_inventory.py").read_text(
+                    encoding="utf-8"
+                ),
+                encoding="utf-8",
+            )
+            (root / "backend/app/main.py").write_text(
+                "from app.routers import ramos\n"
+                "app.include_router(ramos.router, prefix='/api')\n",
+                encoding="utf-8",
+            )
+            (routers / "ramos.py").write_text(
+                "from fastapi import APIRouter\n"
+                "from app.routers import ramos_civel as _ramos_civel\n"
+                "router = APIRouter()\n"
+                "for _r in _ramos_civel.router.routes:\n"
+                "    router.add_api_route(_r.path, _r.endpoint, methods=_r.methods)\n",
+                encoding="utf-8",
+            )
+            (routers / "ramos_civel.py").write_text(
+                "from fastapi import APIRouter\n"
+                "router = APIRouter(prefix='/ramos-civel')\n"
+                "@router.get('/acoes')\n"
+                "async def listar_acoes():\n"
+                "    return []\n",
+                encoding="utf-8",
+            )
+            # router genuinamente órfão deve permanecer desativar
+            (routers / "orfaos.py").write_text(
+                "from fastapi import APIRouter\nrouter = APIRouter(prefix='/orfao')\n",
+                encoding="utf-8",
+            )
+            (models / "case.py").write_text(
+                "from app.core.database import Base\n"
+                "class Case(Base):\n    __tablename__ = 'cases'\n",
+                encoding="utf-8",
+            )
+            (config / "architecture_inventory_overrides.json").write_text(
+                json.dumps({"rules": []}), encoding="utf-8"
+            )
+
+            output = root / "inventory"
+            GENERATOR.generate(root, output)
+            manifest = REFINER.refine(root, output)
+            payload = json.loads(
+                (output / "architecture_inventory.json").read_text(encoding="utf-8")
+            )
+            items = payload["items"]
+
+            civel = next(
+                item for item in items
+                if item["kind"] == "router" and item["path"].endswith("ramos_civel.py")
+            )
+            orfao = next(
+                item for item in items
+                if item["kind"] == "router" and item["path"].endswith("orfaos.py")
+            )
+            self.assertTrue(civel["mounted"], "cópia de rotas deve montar o módulo alvo")
+            self.assertEqual(civel["classification"], "manter")
+            # Com o gerador corrigido, o bruto já nasce montado/correto
+            # (conservative-default); o refiner apenas PRESERVA o acerto.
+            self.assertEqual(civel["classification_source"], "conservative-default")
+            self.assertFalse(orfao["mounted"])
+            self.assertEqual(orfao["classification"], "desativar")
+            self.assertEqual(manifest["unmounted_routers"], 1)
+
     def test_resolves_alias_and_indirect_mount_without_cross_layer_duplicates(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
