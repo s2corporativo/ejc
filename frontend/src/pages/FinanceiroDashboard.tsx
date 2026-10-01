@@ -154,6 +154,8 @@ export default function FinanceiroDashboard({
   const [rentabilidade, setRentabilidade] = useState<any>(null);
   const [excecoes, setExcecoes] = useState<any>({ itens: [], total: 0 });
   const [fechamento, setFechamento] = useState<any>(null);
+  const [preFechamento, setPreFechamento] = useState<any>(null);
+  const [preparandoFechamento, setPreparandoFechamento] = useState(false);
   const [distribuicao, setDistribuicao] = useState<any>(null);
   const [aprovacoes, setAprovacoes] = useState<any[]>([]);
   const [governancaAberta, setGovernancaAberta] = useState(false);
@@ -241,6 +243,7 @@ export default function FinanceiroDashboard({
   }, [competencia]);
 
   useEffect(() => {
+    setPreFechamento(null);
     load();
   }, [load]);
 
@@ -271,8 +274,40 @@ export default function FinanceiroDashboard({
     onNavigate?.(acao.tab);
   };
 
+  const prepararFechamento = async () => {
+    if (preparandoFechamento) return;
+    setPreparandoFechamento(true);
+    try {
+      const { data } = await api.get("/financeiro/fechamento-inteligente", {
+        params: { competencia },
+      });
+      setPreFechamento(data);
+      if (data?.total_bloqueios > 0) {
+        toast.error(
+          `Fechamento preparado com ${data.total_bloqueios} bloqueio(s) a corrigir.`,
+        );
+      } else {
+        toast.success("Checklist preparado. A competência pode ser fechada.");
+      }
+    } catch (e: any) {
+      toast.error(
+        e?.response?.data?.detail || "Não foi possível preparar o fechamento.",
+      );
+    } finally {
+      setPreparandoFechamento(false);
+    }
+  };
+
   const fecharMes = async () => {
     if (fechando || fechamento?.id) return;
+    if (!preFechamento) {
+      toast.error("Prepare o fechamento antes de bloquear a competência.");
+      return;
+    }
+    if (!preFechamento?.pode_fechar_persistente) {
+      toast.error("Corrija os bloqueios do checklist antes de fechar o mês.");
+      return;
+    }
     setFechando(true);
     try {
       await api.post("/financeiro/fechamentos", { competencia });
@@ -693,20 +728,90 @@ export default function FinanceiroDashboard({
                   Mês fechado não aceita reescrita direta de caixa.
                 </p>
               </div>
-              <button
-                type="button"
-                className={fechamento?.id ? "btn-secondary" : "btn-primary"}
-                disabled={!!fechamento?.id || fechando}
-                onClick={fecharMes}
-              >
-                {fechamento?.id
-                  ? "Competência fechada"
-                  : fechando
-                    ? "Fechando..."
-                    : "Fechar mês"}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                {!fechamento?.id && (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={preparandoFechamento}
+                    onClick={prepararFechamento}
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                    {preparandoFechamento
+                      ? "Preparando..."
+                      : preFechamento
+                        ? "Atualizar checklist"
+                        : "Preparar fechamento"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={fechamento?.id ? "btn-secondary" : "btn-primary"}
+                  disabled={
+                    !!fechamento?.id ||
+                    fechando ||
+                    !preFechamento?.pode_fechar_persistente
+                  }
+                  onClick={fecharMes}
+                >
+                  {fechamento?.id
+                    ? "Competência fechada"
+                    : fechando
+                      ? "Fechando..."
+                      : "Fechar mês"}
+                </button>
+              </div>
             </div>
           </section>
+
+          {preFechamento && !fechamento?.id && (
+            <section className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="font-semibold">Checklist de fechamento</h3>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Integridade {preFechamento.score_integridade}% ·{" "}
+                    {preFechamento.total_bloqueios} bloqueio(s) ·{" "}
+                    {preFechamento.total_revisoes} revisão(ões)
+                  </p>
+                </div>
+                <span
+                  className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                    preFechamento.pode_fechar_persistente
+                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300"
+                      : "bg-rose-50 text-rose-700 dark:bg-rose-400/10 dark:text-rose-300"
+                  }`}
+                >
+                  {preFechamento.pode_fechar_persistente
+                    ? "Pronto para fechar"
+                    : "Correções obrigatórias"}
+                </span>
+              </div>
+              {[
+                ...(preFechamento.bloqueios ?? []),
+                ...(preFechamento.revisoes ?? []),
+              ].map((item: any) => (
+                <button
+                  key={item.codigo}
+                  type="button"
+                  className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-left text-sm dark:bg-white/[0.04]"
+                  onClick={() => navegarAcao(item.acao)}
+                >
+                  <span>
+                    {item.severidade === "bloqueio" ? "Bloqueio" : "Revisar"} ·{" "}
+                    {item.titulo}
+                  </span>
+                  <strong>{item.qtd}</strong>
+                </button>
+              ))}
+              {preFechamento.total_bloqueios === 0 &&
+                preFechamento.total_revisoes === 0 && (
+                  <p className="mt-3 text-sm text-emerald-700 dark:text-emerald-300">
+                    Recebimentos, despesas e integridade financeira conferidos.
+                  </p>
+                )}
+            </section>
+          )}
 
           <section className="border-t border-slate-100 pt-4 dark:border-slate-800">
             <h3 className="font-semibold">Exceções</h3>
