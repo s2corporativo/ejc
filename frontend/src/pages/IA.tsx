@@ -1,6 +1,13 @@
 import { useEffect, useState, useCallback } from "react";
 import Markdown from "../components/Markdown";
-import { Sparkles, FileText, History, Eye, ShieldCheck } from "lucide-react";
+import {
+  Sparkles,
+  FileText,
+  History,
+  Eye,
+  ShieldCheck,
+  GraduationCap,
+} from "lucide-react";
 import api from "../lib/api";
 import {
   EmptyState,
@@ -48,6 +55,13 @@ export default function IA() {
   const [casos, setCasos] = useState<any[]>([]);
   const [dossie, setDossie] = useState<string | null>(null);
   const [loadingDossie, setLoadingDossie] = useState(false);
+  const [corrigindoLog, setCorrigindoLog] = useState<string | null>(null);
+  const [correcaoTexto, setCorrecaoTexto] = useState("");
+  const [correcaoMotivo, setCorrecaoMotivo] = useState("");
+  const [correcaoErro, setCorrecaoErro] = useState("");
+  const [correcaoSeveridade, setCorrecaoSeveridade] = useState("media");
+  const [correcaoDificuldade, setCorrecaoDificuldade] = useState("normal");
+  const [salvandoCorrecao, setSalvandoCorrecao] = useState(false);
 
   const carregarLogs = useCallback(async () => {
     setLoadingLogs(true);
@@ -173,6 +187,45 @@ export default function IA() {
       await recarregarLogs();
     } catch (e) {
       toast.error(mensagemErroHttp(e, "Não foi possível registrar a revisão."));
+    }
+  };
+
+  const abrirCorrecao = (log: any) => {
+    setCorrigindoLog(log.id);
+    setCorrecaoTexto(log.resposta || "");
+    setCorrecaoMotivo("");
+    setCorrecaoErro("");
+    setCorrecaoSeveridade("media");
+    setCorrecaoDificuldade("normal");
+  };
+
+  const salvarCorrecao = async () => {
+    if (!corrigindoLog || correcaoTexto.trim().length < 20) return;
+    if (correcaoMotivo.trim().length < 10) {
+      toast.error("Explique em pelo menos 10 caracteres o que foi corrigido.");
+      return;
+    }
+    setSalvandoCorrecao(true);
+    try {
+      await api.post("/ia-learning/corrections", {
+        ai_log_id: corrigindoLog,
+        corrected_text: correcaoTexto,
+        reason: correcaoMotivo,
+        error_type: correcaoErro.trim() || undefined,
+        severity: correcaoSeveridade,
+        difficulty: correcaoDificuldade,
+      });
+      toast.success(
+        "Correção registrada. Outro advogado deve revisá-la antes de entrar no aprendizado.",
+      );
+      setCorrigindoLog(null);
+      await recarregarLogs();
+    } catch (e) {
+      toast.error(
+        mensagemErroHttp(e, "Não foi possível registrar a correção supervisionada."),
+      );
+    } finally {
+      setSalvandoCorrecao(false);
     }
   };
 
@@ -472,6 +525,96 @@ export default function IA() {
                     </summary>
                     <Markdown source={l.resposta} className="mt-2 text-xs" />
                   </details>
+                )}
+                {l.resposta && (
+                  <div className="mt-2">
+                    <button
+                      className="btn-ghost text-xs px-2 py-1 text-primary-700"
+                      onClick={() =>
+                        corrigindoLog === l.id
+                          ? setCorrigindoLog(null)
+                          : abrirCorrecao(l)
+                      }
+                    >
+                      <GraduationCap size={14} />
+                      {corrigindoLog === l.id
+                        ? "Fechar correção"
+                        : "Corrigir para ensinar"}
+                    </button>
+                  </div>
+                )}
+                {corrigindoLog === l.id && (
+                  <div className="mt-3 rounded-lg border border-primary-200 bg-primary-50/40 p-3 space-y-3">
+                    <p className="text-xs text-slate-600">
+                      A correção não vira conhecimento automaticamente. Ela exige
+                      revisão independente de outro advogado.
+                    </p>
+                    <textarea
+                      className="input min-h-[180px]"
+                      aria-label="Resposta corrigida"
+                      value={correcaoTexto}
+                      onChange={(e) => setCorrecaoTexto(e.target.value)}
+                    />
+                    <textarea
+                      className="input min-h-[80px]"
+                      aria-label="Motivo da correção"
+                      placeholder="Explique o erro e por que esta versão está correta."
+                      value={correcaoMotivo}
+                      onChange={(e) => setCorrecaoMotivo(e.target.value)}
+                    />
+                    <div className="grid sm:grid-cols-3 gap-2">
+                      <input
+                        className="input"
+                        aria-label="Tipo de erro"
+                        placeholder="Tipo de erro (ex.: citação, prova, rito)"
+                        value={correcaoErro}
+                        onChange={(e) => setCorrecaoErro(e.target.value)}
+                      />
+                      <select
+                        className="input"
+                        aria-label="Severidade do erro"
+                        value={correcaoSeveridade}
+                        onChange={(e) => setCorrecaoSeveridade(e.target.value)}
+                      >
+                        <option value="baixa">Severidade baixa</option>
+                        <option value="media">Severidade média</option>
+                        <option value="alta">Severidade alta</option>
+                        <option value="critica">Severidade crítica</option>
+                      </select>
+                      <select
+                        className="input"
+                        aria-label="Dificuldade do caso"
+                        value={correcaoDificuldade}
+                        onChange={(e) => setCorrecaoDificuldade(e.target.value)}
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="complexo">Complexo</option>
+                        <option value="fronteira">Fronteira</option>
+                        <option value="excepcional">Excepcional</option>
+                      </select>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        className="btn-primary text-xs"
+                        disabled={
+                          salvandoCorrecao ||
+                          correcaoTexto.trim().length < 20 ||
+                          correcaoMotivo.trim().length < 10
+                        }
+                        onClick={salvarCorrecao}
+                      >
+                        {salvandoCorrecao
+                          ? "Registrando..."
+                          : "Enviar para revisão independente"}
+                      </button>
+                      <button
+                        className="btn-ghost text-xs"
+                        onClick={() => setCorrigindoLog(null)}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
                 )}
                 {l.status_hitl === "gerado" && (
                   <div className="flex gap-2 mt-2">

@@ -8,6 +8,7 @@ import {
   ListChecks,
   ShieldCheck,
   SlidersHorizontal,
+  GraduationCap,
 } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner, fmtDate, fmtMoney } from "../components/UI";
@@ -23,7 +24,13 @@ export const APROVAR_DIRETO_PADRAO = false;
 export const EMENTA_MIN = 50;
 
 type Tab =
-  "visao" | "curadoria" | "mgjec" | "prompts" | "fontes" | "guardrails";
+  | "visao"
+  | "curadoria"
+  | "mgjec"
+  | "prompts"
+  | "fontes"
+  | "guardrails"
+  | "aprendizado";
 
 // Custo zero/ausente aparece como R$ 0,00 (dashboards de custo somam a partir
 // do zero) — por isso o `?? 0` antes do formatador canônico.
@@ -54,6 +61,7 @@ const TABS_VALIDAS: Tab[] = [
   "prompts",
   "fontes",
   "guardrails",
+  "aprendizado",
 ];
 
 export default function GovernancaIA() {
@@ -73,6 +81,13 @@ export default function GovernancaIA() {
   const [guard, setGuard] = useState<any>(null);
   const [mgjec, setMgjec] = useState<any[]>([]);
   const [geometria, setGeometria] = useState<any>(null);
+  const [learningSummary, setLearningSummary] = useState<any>(null);
+  const [learningPending, setLearningPending] = useState<any[]>([]);
+  const [learningErrors, setLearningErrors] = useState<any[]>([]);
+  const [learningLoading, setLearningLoading] = useState(false);
+  const [learningReviewNotes, setLearningReviewNotes] = useState<
+    Record<string, string>
+  >({});
   const [jurisForm, setJurisForm] = useState({
     titulo: "",
     ementa: "",
@@ -137,9 +152,61 @@ export default function GovernancaIA() {
     }
   };
 
+  const carregarAprendizado = async () => {
+    setLearningLoading(true);
+    try {
+      const [summary, pending, errors] = await Promise.all([
+        api.get("/ia-learning/summary"),
+        api.get("/ia-learning/pending", {
+          params: { limit: 50, independent_only: true },
+        }),
+        api.get("/ia-learning/errors", { params: { limit: 50 } }),
+      ]);
+      setLearningSummary(summary.data);
+      setLearningPending(pending.data?.data || []);
+      setLearningErrors(errors.data?.data || []);
+    } catch (e) {
+      toast.error(
+        mensagemErroHttp(e, "Falha ao carregar aprendizado supervisionado"),
+      );
+    } finally {
+      setLearningLoading(false);
+    }
+  };
+
+  const revisarAprendizado = async (id: string, approved: boolean) => {
+    const notes = (learningReviewNotes[id] || "").trim();
+    if (notes.length < 10) {
+      toast.error("Registre uma justificativa de revisão com pelo menos 10 caracteres.");
+      return;
+    }
+    setSalvando(`learning:${id}`);
+    try {
+      await api.post(`/ia-learning/${id}/review`, {
+        approved,
+        notes,
+      });
+      toast.success(approved ? "Correção aprovada." : "Correção rejeitada.");
+      setLearningReviewNotes((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      await carregarAprendizado();
+    } catch (e) {
+      toast.error(mensagemErroHttp(e, "Falha ao revisar aprendizado"));
+    } finally {
+      setSalvando(null);
+    }
+  };
+
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    if (tab === "aprendizado") void carregarAprendizado();
+  }, [tab]);
 
   const extrairUrlJurisprudencia = async () => {
     if (!urlImportacao) return;
@@ -224,6 +291,7 @@ export default function GovernancaIA() {
     { k: "prompts", label: "Prompts", icon: SlidersHorizontal },
     { k: "fontes", label: "Fontes", icon: FileCheck2 },
     { k: "guardrails", label: "Guardrails", icon: ShieldCheck },
+    { k: "aprendizado", label: "Aprendizado", icon: GraduationCap },
   ] as const;
 
   return (
@@ -789,6 +857,162 @@ export default function GovernancaIA() {
               );
             })}
           </div>
+        </div>
+      )}
+
+      {tab === "aprendizado" && (
+        <div className="space-y-4">
+          {learningLoading ? (
+            <div className="py-12 flex justify-center">
+              <Spinner />
+            </div>
+          ) : (
+            <>
+              <div className="grid sm:grid-cols-3 gap-4">
+                <Kpi
+                  label="Correções/eventos"
+                  value={learningSummary?.events ?? 0}
+                  hint="registrados no ciclo supervisionado"
+                />
+                <Kpi
+                  label="Aprovados"
+                  value={learningSummary?.approved ?? 0}
+                  hint="revisados por humano"
+                />
+                <Kpi
+                  label="Elegíveis ao benchmark"
+                  value={learningSummary?.benchmark_eligible ?? 0}
+                  hint="exigem revisão independente"
+                />
+              </div>
+
+              <div className="card p-4">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div>
+                    <h3 className="font-semibold text-ink">
+                      Fila de revisão independente
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Correções feitas pelo próprio revisor não aparecem nesta fila.
+                      Aprovar aqui não transforma a correção em fonte jurídica.
+                    </p>
+                  </div>
+                  <span className="badge bg-primary-100 text-primary-700">
+                    {learningPending.length} pendente(s)
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  {learningPending.map((item) => (
+                    <div
+                      key={item.id}
+                      className="rounded-lg border border-slate-200 p-3"
+                    >
+                      <div className="flex flex-wrap gap-2 items-center mb-2 text-xs">
+                        <span className="font-semibold text-navy">
+                          {item.event_type}
+                        </span>
+                        {item.area && <span className="badge">{item.area}</span>}
+                        {item.difficulty && (
+                          <span className="badge">{item.difficulty}</span>
+                        )}
+                        {item.severity && (
+                          <span className="badge">{item.severity}</span>
+                        )}
+                        {item.error_type && (
+                          <span className="badge">{item.error_type}</span>
+                        )}
+                      </div>
+                      <p className="text-sm text-slate-700">{item.reason}</p>
+                      {item.corrected_text && (
+                        <details className="mt-2">
+                          <summary className="cursor-pointer text-xs font-medium text-navy">
+                            Comparar resposta original e correção
+                          </summary>
+                          <div className="grid lg:grid-cols-2 gap-3 mt-2">
+                            <div className="rounded bg-slate-50 p-3 text-xs whitespace-pre-wrap">
+                              <b>Original</b>
+                              <br />
+                              {item.original_text || "—"}
+                            </div>
+                            <div className="rounded bg-success-50 p-3 text-xs whitespace-pre-wrap">
+                              <b>Correção</b>
+                              <br />
+                              {item.corrected_text}
+                            </div>
+                          </div>
+                        </details>
+                      )}
+                      <textarea
+                        className="input min-h-[70px] mt-3"
+                        aria-label="Justificativa da revisão"
+                        placeholder="O que foi conferido e por que aprovar/rejeitar esta correção?"
+                        value={learningReviewNotes[item.id] || ""}
+                        onChange={(e) =>
+                          setLearningReviewNotes((prev) => ({
+                            ...prev,
+                            [item.id]: e.target.value,
+                          }))
+                        }
+                      />
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          className="btn-primary text-xs"
+                          disabled={
+                            salvando === `learning:${item.id}` ||
+                            (learningReviewNotes[item.id] || "").trim().length < 10
+                          }
+                          onClick={() => revisarAprendizado(item.id, true)}
+                        >
+                          Aprovar aprendizado
+                        </button>
+                        <button
+                          className="btn-ghost text-xs text-danger-600"
+                          disabled={
+                            salvando === `learning:${item.id}` ||
+                            (learningReviewNotes[item.id] || "").trim().length < 10
+                          }
+                          onClick={() => revisarAprendizado(item.id, false)}
+                        >
+                          Rejeitar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {learningPending.length === 0 && (
+                    <p className="text-sm text-slate-500">
+                      Nenhuma correção de outro advogado aguardando sua revisão.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="card p-4">
+                <h3 className="font-semibold text-ink mb-3">
+                  Memória de erros aprovada
+                </h3>
+                {learningErrors.length ? (
+                  <div className="space-y-2">
+                    {learningErrors.slice(0, 20).map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex flex-wrap gap-2 text-sm border-b border-slate-100 pb-2"
+                      >
+                        <b>{item.error_type || "erro"}</b>
+                        <span>{item.area || "sem área"}</span>
+                        <span>{item.severity || "—"}</span>
+                        <span className="text-slate-500">{item.reason}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500">
+                    A memória de erros será formada somente por correções humanas
+                    aprovadas.
+                  </p>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
 
