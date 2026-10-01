@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from fastapi import HTTPException
-from sqlalchemy import exists, select, text
+from sqlalchemy import column, exists, select, table
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.centro_custo import CentroCusto
@@ -31,6 +31,34 @@ from app.models.processo_eletronico import DocumentoProcessoEletronicoDedup
 from app.models.prova import Prova
 from app.models.signature import SignatureRequest
 from app.models.solicitacao_documento import SolicitacaoDocumentoItem
+
+
+# Tabelas financeiras mantidas por SQL explícito, sem modelos ORM dedicados.
+# TableClause preserva bind params e aliases no RowMapping sem uma segunda
+# ida ao banco.
+_OFFICE_EXPENSES = table(
+    "office_expenses",
+    column("id"),
+    column("comprovante_doc_id"),
+    column("deleted_at"),
+)
+_BANK_ANALYSES = table(
+    "bank_analyses",
+    column("id"),
+    column("document_id"),
+    column("deleted_at"),
+)
+_PARTNER_WITHDRAWALS = table(
+    "partner_withdrawals",
+    column("id"),
+    column("comprovante_doc_id"),
+    column("deleted_at"),
+)
+_COMMISSION_PAYMENT_BATCHES = table(
+    "commission_payment_batches",
+    column("id"),
+    column("comprovante_doc_id"),
+)
 
 
 class EscopoGuardaDocumento(str, Enum):
@@ -153,26 +181,29 @@ async def referencias_ativas_documento(
                 Document.deleted_at.is_(None),
             )
         ).label("versao_posterior"),
-        text(
-            """
-            EXISTS(
-                SELECT 1 FROM office_expenses
-                WHERE comprovante_doc_id=:document_id AND deleted_at IS NULL
-            ) AS office_expense,
-            EXISTS(
-                SELECT 1 FROM bank_analyses
-                WHERE document_id=:document_id AND deleted_at IS NULL
-            ) AS bank_analysis,
-            EXISTS(
-                SELECT 1 FROM partner_withdrawals
-                WHERE comprovante_doc_id=:document_id AND deleted_at IS NULL
-            ) AS partner_withdrawal,
-            EXISTS(
-                SELECT 1 FROM commission_payment_batches
-                WHERE comprovante_doc_id=:document_id
-            ) AS commission_batch
-            """
-        ).bindparams(document_id=document_id),
+        exists(
+            select(_OFFICE_EXPENSES.c.id).where(
+                _OFFICE_EXPENSES.c.comprovante_doc_id == document_id,
+                _OFFICE_EXPENSES.c.deleted_at.is_(None),
+            )
+        ).label("office_expense"),
+        exists(
+            select(_BANK_ANALYSES.c.id).where(
+                _BANK_ANALYSES.c.document_id == document_id,
+                _BANK_ANALYSES.c.deleted_at.is_(None),
+            )
+        ).label("bank_analysis"),
+        exists(
+            select(_PARTNER_WITHDRAWALS.c.id).where(
+                _PARTNER_WITHDRAWALS.c.comprovante_doc_id == document_id,
+                _PARTNER_WITHDRAWALS.c.deleted_at.is_(None),
+            )
+        ).label("partner_withdrawal"),
+        exists(
+            select(_COMMISSION_PAYMENT_BATCHES.c.id).where(
+                _COMMISSION_PAYMENT_BATCHES.c.comprovante_doc_id == document_id
+            )
+        ).label("commission_batch"),
     )
     flags = dict((await db.execute(stmt)).mappings().one())
 
