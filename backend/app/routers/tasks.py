@@ -19,9 +19,16 @@ from app.models.case import Case
 from app.models.notification import Notification
 from app.schemas.common import MsgResponse
 from app.core.ownership import verificar_acesso_caso, is_gestao
+from app.core.pagination_cursor import CursorInvalido, make_cursor, parse_cursor
 from app.modules.auditoria.middleware import registrar_acao
 
 router = APIRouter(prefix="/tasks", tags=["Tarefas"])
+
+# Ordenação canônica do modo cursor (Tarefa 2 — baseline §10): chave estável
+# com desempate ABSOLUTO (id). O legacy ordena por (data_limite NULLS LAST,
+# created_at) — sem id, linhas com created_at idêntico podem pular/duplicar
+# entre chamadas; o modo cursor fecha esse buraco sem tocar o legado.
+_CURSOR_ORDER = "data_limite.asc.nullslast|created_at.asc|id.asc"
 
 
 class TaskIn(BaseModel):
@@ -99,10 +106,50 @@ async def _verificar_acesso_tarefa(
     raise HTTPException(status_code=403, detail="Sem permissão para esta tarefa")
 
 
+def _keyset_continuacao(q, last: list):
+    """Continua DEPOIS de last=(data_limite, created_at, id) sob NULLS LAST.
+
+    Comparador de tupla do Postgres não serve: NULL não compara (a linha com
+    data_limite NULL sairia da página). RAMOS explícitos com os impossíveis
+    eliminados em Python — NULLS LAST em ASC significa NULL ≡ +infinito:
+    após um last com valor, NULLs ainda estão à frente; após um last NULL,
+    só restam NULLs ordenadas por (created_at, id).
+    """
+    last_dl, last_ca, last_id = last
+    if last_dl is None:
+        return q.where(
+            Task.data_limite.is_(None),
+            or_(
+                Task.created_at > last_ca,
+                and_(Task.created_at == last_ca, Task.id > last_id),
+            ),
+        )
+    return q.where(
+        or_(
+            Task.data_limite.is_(None),  # NULLS LAST: vem depois de qualquer valor
+            Task.data_limite > last_dl,
+            and_(
+                Task.data_limite == last_dl,
+                or_(
+                    Task.created_at > last_ca,
+                    and_(Task.created_at == last_ca, Task.id > last_id),
+                ),
+            ),
+        )
+    )
+
+
 @router.get("/")
 async def listar(
     case_id: Optional[str] = None,
     minhas: bool = Query(False, description="Só tarefas onde sou responsável"),
+    # Opt-in de performance (Tarefa 2; baseline §10): `pagination=cursor`
+    # troca o feed completo por páginas keyset assinadas (HMAC, revalidadas
+    # por usuário/filtros/ordem). Default preserva o contrato atual (sem
+    # corte) — nenhum cliente quebra; rollback = parar de enviar o parâmetro.
+    pagination: str = Query("offset", pattern="^(offset|cursor)$"),
+    cursor: Optional[str] = None,
+    page_size: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -128,6 +175,72 @@ async def listar(
                 ),
             )
         )
+    filtros = {"case_id": case_id, "minhas": minhas}
+
+    if pagination == "cursor":
+        # ── Modo keyset (opt-in) ─────────────────────────────────────────
+        # O predicado de visibilidade acima é reavaliado NESTA query — a
+        # página nunca é concedida pelo cursor, sempre pela carteira atual.
+        last: list | None = None
+        if cursor:
+            try:
+                last = parse_cursor(cursor, "tasks", cu, filtros, _CURSOR_ORDER)
+            except CursorInvalido as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            if len(last) != 3:
+                raise HTTPException(
+                    status_code=409,
+                    detail="cursor incompatível com a ordenação atual",
+                )
+            # Coerção de tipos: o cursor serializa ISO; a comparação SQL
+            # exige date/datetime nativos (asyncpg não compara colunas com
+            # texto cru). Formato ruim aqui = cursor de outro contrato → 409.
+            try:
+                last = [
+                    date.fromisoformat(last[0]) if last[0] else None,
+                    datetime.fromisoformat(last[1]),
+                    str(last[2]),
+                ]
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail="cursor com chave de continuação inválida",
+                ) from exc
+        q = q.order_by(
+            Task.data_limite.asc().nullslast(), Task.created_at.asc(), Task.id.asc()
+        )
+        if last is not None:
+            q = _keyset_continuacao(q, last)
+        # page_size+1 resolve has_more sem count(*) (o custo que se quer eliminar).
+        rows = (await db.execute(q.limit(page_size + 1))).scalars().all()
+        tem_mais = len(rows) > page_size
+        rows = rows[:page_size]
+        next_cursor = None
+        if tem_mais and rows:
+            ultimo = rows[-1]
+            next_cursor = make_cursor(
+                "tasks", cu, filtros, _CURSOR_ORDER,
+                [
+                    ultimo.data_limite.isoformat() if ultimo.data_limite else None,
+                    ultimo.created_at.isoformat() if ultimo.created_at else None,
+                    ultimo.id,
+                ],
+            )
+        return {
+            "data": [
+                {"id": t.id, "titulo": t.titulo, "descricao": t.descricao,
+                 "status": t.status.value, "prioridade": t.prioridade,
+                 "data_limite": t.data_limite, "case_id": t.case_id,
+                 "responsavel_id": t.responsavel_id, "created_at": t.created_at,
+                 "concluida_em": t.concluida_em}
+                for t in rows
+            ],
+            "page_size": page_size,
+            "has_more": tem_mais,
+            "next_cursor": next_cursor,
+        }
+
+    # ── Legado (inalterado): feed completo, sem corte ────────────────────
     q = q.order_by(Task.data_limite.asc().nullslast(), Task.created_at)
     rows = (await db.execute(q)).scalars().all()
     return {"data": [

@@ -41,6 +41,14 @@ class Settings(BaseSettings):
     # env var ACCESS_TOKEN_EXPIRE_HOURS (ver .env.example).
     ACCESS_TOKEN_EXPIRE_HOURS: int = 2
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    # Chave HMAC dos cursores de paginação keyset (core/pagination_cursor.py).
+    # Default vazio = fallback ao SECRET_KEY (mesma postura dos segredos acima:
+    # obrigatória em produção via validação do SECRET_KEY, efêmera em dev —
+    # cursores morrem no restart e o frontend refaz a página 1). Rotacionar
+    # esta chave invalida cursores em aberto (efeito aceitável: cursor é
+    # curto-vivo por definição); NÃO derivar do SECRET_KEY para poder
+    # rotacionar um sem deslogar os usuários do outro.
+    PAGINATION_CURSOR_SECRET: str = ""
 
     # ── 2FA (TOTP) — recurso opcional; enforcement por papel é opt-in ─────
     # Decisão do titular consolidada em 05/08/2026 e revalidada na #1580:
