@@ -179,14 +179,16 @@ async def approved_learning_context(
 
     blocks: list[str] = []
     for row in rows:
-        reason = (row.reason or "").strip()[:700]
-        corrected = (row.corrected_text or "").strip()[:1200]
-        if not reason and not corrected:
+        # Não injeta a resposta corrigida completa em outros casos: mesmo
+        # pseudonimizada, ela pode carregar estratégia/fatos reconhecíveis.
+        # O aprendizado operacional entre casos usa SOMENTE a justificativa
+        # generalizada do revisor independente.
+        review_note = str((row.metadata_json or {}).get("review_notes") or "").strip()[:900]
+        if not review_note:
             continue
         tag = row.error_type or "correcao_humana"
         blocks.append(
-            f"- [{tag}] MOTIVO: {reason or 'não informado'}\n"
-            f"  PADRÃO CORRIGIDO: {corrected or 'não informado'}"
+            f"- [{tag}] LIÇÃO GENERALIZADA PELO REVISOR: {review_note}"
         )
     if not blocks:
         return ""
