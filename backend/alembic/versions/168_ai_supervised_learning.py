@@ -13,14 +13,18 @@ down_revision = "167_finance_fk_indexes"
 branch_labels = None
 depends_on = None
 
-EVENT_TYPE = sa.Enum(
+EVENT_TYPE = postgresql.ENUM(
     "correction", "error", "outcome", "benchmark",
     name="ailearningeventtype",
+    create_type=False,
 )
 
 
 def upgrade() -> None:
-    EVENT_TYPE.create(op.get_bind(), checkfirst=True)
+    postgresql.ENUM(
+        "correction", "error", "outcome", "benchmark",
+        name="ailearningeventtype",
+    ).create(op.get_bind(), checkfirst=True)
     op.create_table(
         "ai_learning_events",
         sa.Column("id", sa.String(length=36), primary_key=True),
@@ -101,4 +105,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("ai_learning_events")
-    EVENT_TYPE.drop(op.get_bind(), checkfirst=True)
+    postgresql.ENUM(
+        "correction", "error", "outcome", "benchmark",
+        name="ailearningeventtype",
+    ).drop(op.get_bind(), checkfirst=True)
