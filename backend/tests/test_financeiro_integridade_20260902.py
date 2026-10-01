@@ -23,7 +23,7 @@ from app.routers.office_contracts import ContractCreate
 from app.routers.partner_withdrawals import WithdrawalCreate
 from app.routers.pix import PixCobrancaIn, gerar_brcode
 from app.schemas.fee import FeePaymentCreate, FeeUpdate
-from app.services.fee_ledger_compat import LEDGER_COMPAT_CTES, total_pago_efetivo
+from app.services.fee_ledger import LEDGER_CTES, total_pago_efetivo
 
 
 def test_fee_update_recusa_valor_negativo_e_campos_fantasmas():
@@ -250,7 +250,7 @@ class _ResultadoOneFake:
 
     def scalar(self):
         # Compatível com consultas de agregação escalar (ex.: soma de
-        # estornos em fee_ledger_compat.total_pago_efetivo).
+        # estornos em fee_ledger.total_pago_efetivo).
         return self.values
 
 
@@ -280,19 +280,22 @@ def test_ledger_real_prevalece_sobre_fallback_legado_sem_duplicar():
     assert legado is False
 
 
-def test_ledger_reconhece_quitacao_legada_somente_sem_subledger():
+def test_ledger_nao_reconhece_quitacao_fora_do_subledger():
     fee = SimpleNamespace(
-        id="fee-legado",
+        id="fee-antigo",
         status=FeeStatus.pago,
         data_pagamento=date(2026, 8, 20),
         valor=Decimal("1000.00"),
     )
-    db = _DBFake([_ResultadoOneFake((Decimal("0"), 0))])
+    db = _DBFake([
+        _ResultadoOneFake((Decimal("0"), 0)),
+        _ResultadoOneFake(Decimal("0")),
+    ])
 
     total, legado = asyncio.run(total_pago_efetivo(db, fee))
 
-    assert total == Decimal("1000.00")
-    assert legado is True
+    assert total == Decimal("0")
+    assert legado is False
 
 
 def test_ledger_nao_inventa_recebimento_para_fee_aberto_sem_pagamentos():
@@ -302,7 +305,10 @@ def test_ledger_nao_inventa_recebimento_para_fee_aberto_sem_pagamentos():
         data_pagamento=None,
         valor=Decimal("1000.00"),
     )
-    db = _DBFake([_ResultadoOneFake((Decimal("0"), 0))])
+    db = _DBFake([
+        _ResultadoOneFake((Decimal("0"), 0)),
+        _ResultadoOneFake(Decimal("0")),
+    ])
 
     total, legado = asyncio.run(total_pago_efetivo(db, fee))
 
@@ -310,12 +316,12 @@ def test_ledger_nao_inventa_recebimento_para_fee_aberto_sem_pagamentos():
     assert legado is False
 
 
-def test_cte_ledger_exclui_soft_deleted_e_exige_not_exists_no_fallback():
-    assert "WHERE f.deleted_at IS NULL" in LEDGER_COMPAT_CTES
-    assert "NOT EXISTS" in LEDGER_COMPAT_CTES
-    assert "SELECT 1 FROM fee_payments fp WHERE fp.fee_id = f.id" in LEDGER_COMPAT_CTES
-    assert "FALSE AS legado_sem_subledger" in LEDGER_COMPAT_CTES
-    assert "TRUE AS legado_sem_subledger" in LEDGER_COMPAT_CTES
+def test_cte_ledger_e_canonico_e_sem_fallback():
+    assert "WHERE f.deleted_at IS NULL" in LEDGER_CTES
+    assert "fee_payments" in LEDGER_CTES
+    assert "FALSE AS legado_sem_subledger" in LEDGER_CTES
+    assert "TRUE AS legado_sem_subledger" not in LEDGER_CTES
+    assert "NOT EXISTS" not in LEDGER_CTES
 
 
 def test_fila_atencao_prioriza_risco_e_nao_expoe_pii():

@@ -16,7 +16,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.status_caso import STATUS_ABERTOS
 from app.models.user import User
-from app.services.fee_ledger_compat import LEDGER_COMPAT_CTES
+from app.services.fee_ledger import LEDGER_CTES
 
 _ABERTOS_SQL = ",".join(f"'{s.value}'" for s in STATUS_ABERTOS)
 router = APIRouter(prefix="/relatorio", tags=["Relatório"])
@@ -46,7 +46,7 @@ async def relatorio_mensal(
         # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         text(
             f"""
-            WITH {LEDGER_COMPAT_CTES},
+            WITH {LEDGER_CTES},
             saldos AS (
                 SELECT
                     f.id,
@@ -164,7 +164,7 @@ async def relatorio_mensal(
         # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         text(
             f"""
-            WITH {LEDGER_COMPAT_CTES}
+            WITH {LEDGER_CTES}
             SELECT CAST(f.tipo AS text) AS tipo,
                    COUNT(DISTINCT re.fee_id) AS qtd,
                    COALESCE(SUM(re.valor), 0) AS total,

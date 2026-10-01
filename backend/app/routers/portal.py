@@ -21,7 +21,7 @@ from app.models.deadline import Deadline
 from app.models.fee import Fee
 from app.models.document import Document, DocConfidencialidade
 from app.models.audit_log import criar_audit_log
-from app.services.fee_ledger_compat import LEDGER_COMPAT_CTES
+from app.services.fee_ledger import LEDGER_CTES
 
 router = APIRouter(prefix="/portal", tags=["Portal do Cliente"])
 
@@ -170,7 +170,7 @@ async def financeiro(
         # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         text(
             f"""
-            WITH {LEDGER_COMPAT_CTES}
+            WITH {LEDGER_CTES}
             SELECT pe.fee_id, pe.total_pago, pe.legado_sem_subledger
             FROM pagamentos_efetivos pe
             JOIN fees f ON f.id = pe.fee_id

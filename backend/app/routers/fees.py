@@ -29,7 +29,7 @@ from app.schemas.fee import (
     FeeUpdate,
 )
 from app.services.document_access_policy import exigir_documento_compativel_com_caso
-from app.services.fee_ledger_compat import total_pago_efetivo
+from app.services.fee_ledger import total_pago_efetivo
 from app.services.finance_governance import competencia_de_data, exigir_competencia_aberta
 
 _FINANCEIRO_TOTAL = {"superadmin", "admin", "socio", "financeiro"}
