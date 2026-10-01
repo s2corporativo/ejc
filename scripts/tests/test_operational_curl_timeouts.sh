@@ -47,8 +47,10 @@ if checked < 8:
     raise SystemExit(f"cobertura inesperadamente baixa: apenas {checked} comandos curl")
 
 identity = (root / "scripts/check_release_identity.py").read_text(encoding="utf-8")
-if "urlopen(url, timeout=15)" not in identity:
+if not all(token in identity for token in ("HTTPConnection", "HTTPSConnection", "timeout=15")):
     raise SystemExit("checker canônico de identidade perdeu timeout HTTP")
+if "parsed.scheme not in {\"http\", \"https\"}" not in identity:
+    raise SystemExit("checker canônico de identidade perdeu restrição de esquema HTTP(S)")
 
 deploy = (root / "scripts/deploy_vps_safe.sh").read_text(encoding="utf-8")
 approved = (root / "infra/host-automation/ejc-deploy-approved.sh").read_text(encoding="utf-8")
