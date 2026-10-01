@@ -39,7 +39,13 @@ def build_legal_brain_plan(
         or native_plan.legal_area
     )
     area = canonical_requested_area or native_plan.legal_area or domain
-    specialization = resolve_area_specialization(canonical_requested_area)
+    # A especialização por SYSTEM_PROMPTS é apenas fallback legado/shadow.
+    # Com skill nativa para a área, não injeta nem duplica método paralelo.
+    specialization = (
+        resolve_area_specialization(canonical_requested_area)
+        if not native_plan.legal_area
+        else None
+    )
 
     issues = identify_legal_issues(message, area=area)
     plans = tuple(

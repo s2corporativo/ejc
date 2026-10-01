@@ -1,3 +1,4 @@
+from app.core.taxonomia import AREAS_CANONICAS
 from app.services.ai.core.ejc_skill_catalog import (
     LEGAL_AREA_SPECS,
     MODULE_SKILL_SPECS,
@@ -43,13 +44,13 @@ def test_modulos_nao_recebem_overlay_juridico_por_engano():
         assert contract.required_evidence == ()
 
 
-def test_areas_sem_metodo_continuam_lacuna_explicita_sem_skill_inventada():
+def test_todas_as_areas_canonicas_tem_skill_e_overlay_metodologico():
     coverage = native_skill_coverage()
-    missing = set(coverage["legal_areas"]["missing"])
-    assert missing  # a lacuna aspiracional continua verdadeira
+    assert coverage["legal_areas"]["missing"] == []
+    assert coverage["complete"] is True
 
     contracts = native_legal_skill_contracts()
     contract_areas = {
         contract.area for contract in contracts if contract.key.startswith("ramo_")
     }
-    assert missing.isdisjoint(contract_areas)
+    assert contract_areas == set(AREAS_CANONICAS)

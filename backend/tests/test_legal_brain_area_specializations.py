@@ -8,13 +8,13 @@ from app.services.legal_brain import (
 from app.services.system_prompts import SYSTEM_PROMPTS
 
 
-def test_cobertura_suplementar_fecha_exatamente_lacunas_nativas_atuais():
+def test_cobertura_nativa_esta_completa_e_fallback_permanece_canonico():
     missing = set(native_skill_coverage()["legal_areas"]["missing"])
     supplemental = set(supplemental_area_coverage()["covered"])
 
-    assert missing
-    assert supplemental == missing
-    assert missing <= set(AREAS_CANONICAS)
+    assert missing == set()
+    assert supplemental
+    assert supplemental <= set(AREAS_CANONICAS)
 
 
 def test_especializacoes_diretas_referenciam_prompt_canonico_sem_copiar_texto():
@@ -57,7 +57,7 @@ def test_area_inexistente_falha_fechado():
     assert resolve_area_specialization(None) is None
 
 
-def test_plano_shadow_reconhece_area_sem_skill_nativa_sem_injetar_runtime():
+def test_plano_de_area_nativa_nao_duplica_especializacao_suplementar():
     plan = build_legal_brain_plan(
         task_type="analise_juridica",
         domain="sucessoes",
@@ -66,10 +66,8 @@ def test_plano_shadow_reconhece_area_sem_skill_nativa_sem_injetar_runtime():
 
     assert plan.area == "sucessoes"
     assert "area_juridica_nao_confirmada" not in plan.warnings
-    assert "area_com_especializacao_existente_ainda_sem_skill_nativa" in plan.warnings
-    specialization = plan.to_dict()["metadata"]["area_specialization"]
-    assert specialization["prompt_key"] == "sucessoes"
-    assert specialization["runtime_injected"] is False
+    assert "area_com_especializacao_existente_ainda_sem_skill_nativa" not in plan.warnings
+    assert plan.to_dict()["metadata"]["area_specialization"] is None
 
 
 def test_area_ja_nativa_nao_recebe_overlay_suplementar():
