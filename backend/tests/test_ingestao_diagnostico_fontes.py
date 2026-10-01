@@ -297,7 +297,31 @@ async def test_buscar_tjmg_rede_falhou_marca_metricas(monkeypatch):
     monkeypatch.setattr(je.httpx, "AsyncClient", _CliRedeCaida)
     met: dict = {}
     assert await je.buscar_tjmg("dano moral", metricas=met) == []
-    assert met == {"rede_falhou": True, "html_bytes": 0, "blocos": 0}
+    assert met == {"rede_falhou": True, "html_bytes": 0, "blocos": 0, "http_status": None}
+
+
+async def test_buscar_tjmg_bloqueio_http_registra_status(monkeypatch):
+    # 401/403 do TJMG (anti-bot) precisa chegar ao ingestor como http_status,
+    # distinguindo bloqueio de rede caída.
+    resposta = je.httpx.Response(403, request=je.httpx.Request("POST", "https://www5.tjmg.jus.br"))
+
+    class _CliBloqueado:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, *a, **kw):
+            return resposta
+
+    monkeypatch.setattr(je.httpx, "AsyncClient", _CliBloqueado)
+    met: dict = {}
+    assert await je.buscar_tjmg("dano moral", metricas=met) == []
+    assert met == {"rede_falhou": True, "html_bytes": 0, "blocos": 0, "http_status": 403}
 
 
 # ── 5. Ingestor TJMG distingue e loga os três zeros ───────────────────────────
