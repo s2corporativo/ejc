@@ -225,13 +225,6 @@ ADICOES_INTENCIONAIS = {
     ("/api/processes/{pid}/proveniencia", "GET"),
     ("/api/saneamento/divergencias/{divergencia_id}/aplicar", "POST"),
     ("/api/saneamento/integridade", "GET"),
-    # PR #1945 (perf entrada/caso/hoje): cards da Central e cockpit "Hoje"
-    # calculados no backend. Ambas autenticadas: /atividades/resumo exige
-    # get_current_user e nega cliente_externo; /dashboard/hoje exige
-    # require_roles(["secretaria"]) com bloqueio explícito de cliente_externo.
-    # Somente leitura; nenhuma superfície pública nova.
-    ("/api/atividades/resumo", "GET"),
-    ("/api/dashboard/hoje", "GET"),
 }
 
 REMOCOES_INTENCIONAIS = {
