@@ -308,3 +308,49 @@ def test_drive_knowledge_pronto_quando_pasta_e_auth_estao_presentes(monkeypatch)
     assert item["enabled"] is True
     assert item["configured"] is True
     assert item["status"] == "ready"
+
+
+def test_painel_inventaria_conectores_especificos_respeitando_flags(monkeypatch):
+    settings = Settings(
+        _env_file=None, APP_ENV="development",
+        DATAJUD_ENABLED=True, DATAJUD_API_KEY="fake-nao-expor",
+    )
+    flags = {
+        "CNJ_SGT_ENABLED": "true",
+        "TCU_OPEN_DATA_ENABLED": "false",
+        "IBGE_LOCALIDADES_ENABLED": "true",
+        "IBAMA_OPEN_DATA_ENABLED": "false",
+        "CONSUMIDOR_GOV_OPEN_DATA_ENABLED": "false",
+        "CVM_OPEN_DATA_ENABLED": "false",
+        "TSE_OPEN_DATA_ENABLED": "true",
+        "PGFN_OPEN_DATA_ENABLED": "false",
+        "QUERIDO_DIARIO_ENABLED": "false",
+        "IDE_SISEMA_ENABLED": "true",
+        "JURIMETRIA_TRIBUNAIS_ENABLED": "true",
+    }
+    for name, value in flags.items():
+        monkeypatch.setenv(name, value)
+
+    items = _items_by_key(build_integration_status(settings))
+    expected = {
+        "cnj_sgt", "tcu", "ibge", "ibama", "consumidor_gov", "cvm",
+        "tse", "pgfn", "querido_diario", "ide_sisema", "jurimetria_tribunais",
+    }
+    assert expected <= set(items)
+    assert items["cnj_sgt"]["status"] == "ready"
+    assert items["tcu"]["status"] == "disabled"
+    assert items["jurimetria_tribunais"]["configured"] is True
+    assert items["jurimetria_tribunais"]["group"] == "Serviços específicos"
+    assert "fake-nao-expor" not in str(build_integration_status(settings))
+
+
+def test_jurimetria_habilitada_sem_datajud_fica_attention(monkeypatch):
+    monkeypatch.setenv("JURIMETRIA_TRIBUNAIS_ENABLED", "true")
+    settings = Settings(
+        _env_file=None, APP_ENV="development",
+        DATAJUD_ENABLED=True, DATAJUD_API_KEY="",
+    )
+    item = _items_by_key(build_integration_status(settings))["jurimetria_tribunais"]
+    assert item["enabled"] is True
+    assert item["configured"] is False
+    assert item["status"] == "attention"
