@@ -230,6 +230,26 @@ def _estado_overlay_seguro() -> dict[str, Any]:
 
 
 
+def _google_drive_knowledge_configuration() -> tuple[bool, bool, bool]:
+    """Estado estático seguro do Drive Knowledge: enabled, pasta e autenticação.
+
+    Não considera apenas o ID da pasta como configurado: a sincronização real
+    usa google_drive_service._build_credentials e exige OAuth ou service
+    account utilizável. O helper reutiliza auth_status para manter painel e
+    executor com a mesma regra sem expor qualquer segredo.
+    """
+    enabled = os.getenv("GOOGLE_DRIVE_ENABLED", "").strip().casefold() in {
+        "1", "true", "yes", "on", "sim",
+    }
+    folder = bool(os.getenv("GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID", "").strip())
+    try:
+        from app.services import google_drive_service as gdrive
+
+        auth = bool(gdrive.auth_status().get("configured"))
+    except Exception:
+        auth = False
+    return enabled, folder, auth
+
 def _backup_gdrive_auth_configured() -> bool:
     """Delega ao contrato canônico do backup; não duplica regra de credencial."""
     try:
@@ -268,6 +288,9 @@ def build_integration_status(
     para `attention`. Omitido (default) → comportamento e contrato idênticos ao
     histórico (os consumidores atuais chamam sem esse argumento)."""
     backup_configured, backup_destino = _backup_configuration(settings)
+    drive_knowledge_enabled, drive_knowledge_folder, drive_knowledge_auth = (
+        _google_drive_knowledge_configuration()
+    )
 
     items = [
         # Elegibilidade pela fonte única (provider_registry): antes esta cópia
@@ -461,15 +484,15 @@ def build_integration_status(
             key="google_drive_knowledge",
             label="Google Drive Knowledge",
             group="Conhecimento",
-            enabled=os.getenv("GOOGLE_DRIVE_ENABLED", "").strip().casefold()
-                    in {"1", "true", "yes", "on", "sim"},
-            configured=bool(os.getenv("GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID", "").strip()),
+            enabled=drive_knowledge_enabled,
+            configured=drive_knowledge_folder and drive_knowledge_auth,
             ready_detail=(
-                "Google Drive Knowledge habilitado e pasta institucional configurada; "
-                "o estado operacional informa se ja houve sincronizacao."
+                "Google Drive Knowledge habilitado com pasta e autenticação configuradas; "
+                "o estado operacional informa a última sincronização."
             ),
             missing_detail=(
-                "Google Drive Knowledge habilitado sem GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID."
+                "Google Drive Knowledge habilitado, mas falta pasta institucional "
+                "ou credencial OAuth/Service Account utilizável."
             ),
             mode="Drive -> RAG",
         ),
