@@ -23,8 +23,6 @@ import "./styles/ejc-dashboard-premium.css";
 // FONTE ÚNICA do design system canônico: tokens semânticos --ejc-* + aliases
 // e regras finais do workspace moderno. Importada por último — vence o cascade.
 import "./styles/ejc-tokens.css";
-// Camada visual final do workspace moderno (ações, IA contextual e densidade).
-import "./styles/ejc-modern-blue.css";
 
 initTheme();
 
