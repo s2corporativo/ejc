@@ -21,6 +21,7 @@ const VIEWPORTS = [
   { name: "desktop-1440", width: 1440, height: 900 },
   { name: "tablet-768", width: 768, height: 1024 },
 ];
+const THEMES = ["light", "dark"];
 
 const ROUTES = [
   { name: "agenda", path: "/atividades", sentinel: "Agenda" },
@@ -182,24 +183,35 @@ async function main() {
   const failures = [];
 
   try {
-    for (const viewport of VIEWPORTS) {
-      const context = await browser.newContext({
-        viewport: { width: viewport.width, height: viewport.height },
-        locale: "pt-BR",
-        timezoneId: "America/Sao_Paulo",
-        reducedMotion: "reduce",
-      });
-      await context.addInitScript(({ user }) => {
-        localStorage.setItem("ejc_access", "token-homologacao-visual");
-        localStorage.setItem("ejc_user", JSON.stringify(user));
-        localStorage.setItem("ejc_theme", "light");
-      }, { user: USER });
+    for (const theme of THEMES) {
+      for (const viewport of VIEWPORTS) {
+        const context = await browser.newContext({
+          viewport: { width: viewport.width, height: viewport.height },
+          locale: "pt-BR",
+          timezoneId: "America/Sao_Paulo",
+          reducedMotion: "reduce",
+        });
+        await context.addInitScript(({ user, theme, fixedNow }) => {
+          const NativeDate = Date;
+          class FixedDate extends NativeDate {
+            constructor(...args) {
+              super(...(args.length ? args : [fixedNow]));
+            }
+            static now() { return fixedNow; }
+          }
+          Object.setPrototypeOf(FixedDate, NativeDate);
+          globalThis.Date = FixedDate;
+          localStorage.setItem("ejc_access", "token-homologacao-visual");
+          localStorage.setItem("ejc_user", JSON.stringify(user));
+          localStorage.setItem("ejc_theme", theme);
+        }, { user: USER, theme, fixedNow: Date.parse("2026-10-01T12:00:00Z") });
 
-      const page = await context.newPage();
-      await installApiFixtures(page);
+        const page = await context.newPage();
+        await installApiFixtures(page);
 
-      for (const rota of ROUTES) {
+        for (const rota of ROUTES) {
         await page.goto(base + rota.path, { waitUntil: "networkidle" });
+        await page.evaluate(() => document.fonts?.ready);
         await page.waitForTimeout(400);
 
         const layout = await page.evaluate(() => ({
@@ -258,17 +270,18 @@ async function main() {
           );
         }
 
-        await page.screenshot({
-          path: path.join(OUT, `modulo-${rota.name}-${viewport.name}.png`),
-          fullPage: false,
-        });
-        console.log(
-          `[${viewport.name}] ${rota.path} → overflow=${overflow}px ${
-            overflow <= 1 ? "OK" : "FALHA"
-          }`,
-        );
+          await page.screenshot({
+            path: path.join(OUT, `modulo-${rota.name}-${theme}-${viewport.name}.png`),
+            fullPage: false,
+          });
+          console.log(
+            `[${theme}/${viewport.name}] ${rota.path} → overflow=${overflow}px ${
+              overflow <= 1 ? "OK" : "FALHA"
+            }`,
+          );
+        }
+        await context.close();
       }
-      await context.close();
     }
   } finally {
     await browser.close();
@@ -281,7 +294,7 @@ async function main() {
     process.exit(1);
   }
   console.log(
-    `\nHOMOLOGAÇÃO DE MÓDULOS: OK — ${ROUTES.length} domínios × ${VIEWPORTS.length} viewports, shell canônico presente, sem overflow. Screenshots em ${OUT}`,
+    `\nHOMOLOGAÇÃO DE MÓDULOS: OK — ${ROUTES.length} domínios × ${THEMES.length} temas × ${VIEWPORTS.length} viewports, shell canônico presente, sem overflow. Screenshots em ${OUT}`,
   );
 }
 
