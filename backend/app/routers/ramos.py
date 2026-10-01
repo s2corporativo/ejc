@@ -14,6 +14,21 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Áreas de Atuação"])
 
+# Tags default DESTE agregador. APIRouter.add_api_route sempre SOMA self.tags
+# às tags da rota (current_tags = router.tags + route.tags), então repassar
+# _r.tags integralmente na cópia duplicava a tag em TODAS as rotas — a origem
+# já carrega as tags default do sub-router de origem (Task 23 / Onda 27c:
+# 82/82 rotas copiadas ficavam com ['Áreas de Atuação', 'Áreas de Atuação']
+# no OpenAPI). A cópia repassa só o DELTA de tags da origem (hoje vazio:
+# nenhum endpoint dos ramos declara tags próprias além do default do router).
+_TAGS_PADRAO_AGR = frozenset(router.tags)
+
+
+def _tags_para_copia(rota_origem) -> list[str]:
+    """Delta de tags da rota de origem (sem as tags default do agregador)."""
+    return [_t for _t in (rota_origem.tags or []) if _t not in _TAGS_PADRAO_AGR]
+
+
 from app.routers import ramos_empresarial as _ramos_empresarial
 for _r in _ramos_empresarial.router.routes:
     if getattr(_r, "path", None):
@@ -21,7 +36,14 @@ for _r in _ramos_empresarial.router.routes:
                              dependencies=_r.dependencies,
                              response_model=_r.response_model,
                              status_code=_r.status_code,
-                             tags=_r.tags, summary=_r.summary,
+                             tags=_tags_para_copia(_r), summary=_r.summary,
+                             description=_r.description,
+                             responses=_r.responses,
+                             operation_id=_r.operation_id,
+                             response_class=_r.response_class,
+                             include_in_schema=_r.include_in_schema,
+                             openapi_extra=_r.openapi_extra,
+                             name=_r.name,
                              deprecated=getattr(_r, "deprecated", False))
 
 from app.routers import ramos_civel as _ramos_civel
@@ -31,7 +53,14 @@ for _r in _ramos_civel.router.routes:
                              dependencies=_r.dependencies,
                              response_model=_r.response_model,
                              status_code=_r.status_code,
-                             tags=_r.tags, summary=_r.summary,
+                             tags=_tags_para_copia(_r), summary=_r.summary,
+                             description=_r.description,
+                             responses=_r.responses,
+                             operation_id=_r.operation_id,
+                             response_class=_r.response_class,
+                             include_in_schema=_r.include_in_schema,
+                             openapi_extra=_r.openapi_extra,
+                             name=_r.name,
                              deprecated=getattr(_r, "deprecated", False))
 
 from app.routers import ramos_penal as _ramos_penal
@@ -41,7 +70,14 @@ for _r in _ramos_penal.router.routes:
                              dependencies=_r.dependencies,
                              response_model=_r.response_model,
                              status_code=_r.status_code,
-                             tags=_r.tags, summary=_r.summary,
+                             tags=_tags_para_copia(_r), summary=_r.summary,
+                             description=_r.description,
+                             responses=_r.responses,
+                             operation_id=_r.operation_id,
+                             response_class=_r.response_class,
+                             include_in_schema=_r.include_in_schema,
+                             openapi_extra=_r.openapi_extra,
+                             name=_r.name,
                              deprecated=getattr(_r, "deprecated", False))
 
 from app.routers import ramos_trabalhista_esp as _ramos_trabalhista_esp
@@ -51,7 +87,14 @@ for _r in _ramos_trabalhista_esp.router.routes:
                              dependencies=_r.dependencies,
                              response_model=_r.response_model,
                              status_code=_r.status_code,
-                             tags=_r.tags, summary=_r.summary,
+                             tags=_tags_para_copia(_r), summary=_r.summary,
+                             description=_r.description,
+                             responses=_r.responses,
+                             operation_id=_r.operation_id,
+                             response_class=_r.response_class,
+                             include_in_schema=_r.include_in_schema,
+                             openapi_extra=_r.openapi_extra,
+                             name=_r.name,
                              deprecated=getattr(_r, "deprecated", False))
 
 from app.routers import ramos_admin_esp as _ramos_admin_esp
@@ -61,7 +104,14 @@ for _r in _ramos_admin_esp.router.routes:
                              dependencies=_r.dependencies,
                              response_model=_r.response_model,
                              status_code=_r.status_code,
-                             tags=_r.tags, summary=_r.summary,
+                             tags=_tags_para_copia(_r), summary=_r.summary,
+                             description=_r.description,
+                             responses=_r.responses,
+                             operation_id=_r.operation_id,
+                             response_class=_r.response_class,
+                             include_in_schema=_r.include_in_schema,
+                             openapi_extra=_r.openapi_extra,
+                             name=_r.name,
                              deprecated=getattr(_r, "deprecated", False))
 
 from app.routers import ramos_bancario as _ramos_bancario
@@ -71,7 +121,14 @@ for _r in _ramos_bancario.router.routes:
                              dependencies=_r.dependencies,
                              response_model=_r.response_model,
                              status_code=_r.status_code,
-                             tags=_r.tags, summary=_r.summary,
+                             tags=_tags_para_copia(_r), summary=_r.summary,
+                             description=_r.description,
+                             responses=_r.responses,
+                             operation_id=_r.operation_id,
+                             response_class=_r.response_class,
+                             include_in_schema=_r.include_in_schema,
+                             openapi_extra=_r.openapi_extra,
+                             name=_r.name,
                              deprecated=getattr(_r, "deprecated", False))
 
 from app.routers import ramos_vitrine as _ramos_vitrine
@@ -81,7 +138,14 @@ for _r in _ramos_vitrine.router.routes:
                              dependencies=_r.dependencies,
                              response_model=_r.response_model,
                              status_code=_r.status_code,
-                             tags=_r.tags, summary=_r.summary,
+                             tags=_tags_para_copia(_r), summary=_r.summary,
+                             description=_r.description,
+                             responses=_r.responses,
+                             operation_id=_r.operation_id,
+                             response_class=_r.response_class,
+                             include_in_schema=_r.include_in_schema,
+                             openapi_extra=_r.openapi_extra,
+                             name=_r.name,
                              deprecated=getattr(_r, "deprecated", False))
 
 # PAF federal versionado: monta antes das ferramentas complementares e substitui
@@ -94,7 +158,14 @@ for _r in _ramos_tributario_paf.router.routes:
                              dependencies=_r.dependencies,
                              response_model=_r.response_model,
                              status_code=_r.status_code,
-                             tags=_r.tags, summary=_r.summary,
+                             tags=_tags_para_copia(_r), summary=_r.summary,
+                             description=_r.description,
+                             responses=_r.responses,
+                             operation_id=_r.operation_id,
+                             response_class=_r.response_class,
+                             include_in_schema=_r.include_in_schema,
+                             openapi_extra=_r.openapi_extra,
+                             name=_r.name,
                              deprecated=getattr(_r, "deprecated", False))
 
 def _selar_endpoint_nao_homologado(endpoint, caminho: str):
@@ -128,7 +199,14 @@ for _r in _ramos_ferramentas_complementares.router.routes:
                              dependencies=_r.dependencies,
                              response_model=_r.response_model,
                              status_code=_r.status_code,
-                             tags=_r.tags, summary=_r.summary,
+                             tags=_tags_para_copia(_r), summary=_r.summary,
+                             description=_r.description,
+                             responses=_r.responses,
+                             operation_id=_r.operation_id,
+                             response_class=_r.response_class,
+                             include_in_schema=_r.include_in_schema,
+                             openapi_extra=_r.openapi_extra,
+                             name=_r.name,
                              deprecated=getattr(_r, "deprecated", False))
 
 

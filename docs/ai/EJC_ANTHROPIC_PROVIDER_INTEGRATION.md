@@ -34,8 +34,8 @@ Anthropic entra no EJC **exclusivamente como um provider plugável do `ai_gatewa
 | `ANTHROPIC_ENABLED` | `true` | Kill-switch sem remover a chave (anthropic_provider.py:35,74) |
 | `ANTHROPIC_TIMEOUT_SECONDS` | `120` | Timeout do client (anthropic_provider.py:44) |
 | `ANTHROPIC_MAX_TOKENS` | `8000` | Teto DURO de saída: `mt = min(max_tokens_do_chamador, ANTHROPIC_MAX_TOKENS)` (anthropic_provider.py:80) |
-| `ANTHROPIC_MODEL_RAPIDO` | `claude-haiku-4-5-20251001` | Tarefas factuais/médias (system_prompts/router.py:11) |
-| `ANTHROPIC_MODEL_COMPLEXO` | `claude-haiku-4-5-20251001` | Tarefas complexas; subir para `claude-sonnet-4-6` via .env quando quiser mais qualidade (router.py:13) |
+| `ANTHROPIC_MODEL_RAPIDO` | `claude-haiku-4-5-20251001` | Tarefas factuais/médias (system_prompts/registry.py:11) |
+| `ANTHROPIC_MODEL_COMPLEXO` | `claude-haiku-4-5-20251001` | Tarefas complexas; subir para `claude-sonnet-4-6` via .env quando quiser mais qualidade (registry.py:13) |
 
 A chave vive **somente** no `.env`/ambiente do processo (Settings pydantic + fallback `os.getenv`, anthropic_provider.py:23-26). Jamais é logada, ecoada em erro, gravada em AILog ou exposta em endpoint — `/ai/core/status` devolve só booleans (`bool(s.ANTHROPIC_ENABLED and s.ANTHROPIC_API_KEY)`, ai_core.py:189). Não há variável `VITE_*` nem chave no bundle do frontend.
 
@@ -53,7 +53,7 @@ A chave vive **somente** no `.env`/ambiente do processo (Settings pydantic + fal
 Dois caminhos, ambos dentro do gateway:
 
 1. **`ai_gateway.chat` (Núcleo Único)** — `TASK_ROUTING` (ai_gateway.py:76-118) inclui `anthropic` nas tarefas complexas (`analise_juridica`, `elaboracao_peca`, `analise_contrato`, `estrategia`, `auditoria_peca`, `jurimetria`); `resumo` e `chat_rapido` NÃO incluem Anthropic (custo). A ordem final respeita `AI_PROVIDER_PRIORITY` (default `ollama,anthropic,groq`) filtrada por elegibilidade (`_resolver_cadeia`, ai_gateway.py:309-330; `_provider_elegivel`, linhas 272-283: exige `ANTHROPIC_ENABLED` + chave + `AI_EXTERNAL_PROVIDERS_ALLOWED`). Modelo: sempre `ANTHROPIC_MODEL_COMPLEXO` neste caminho (`_resolver_modelo`, linhas 303-305).
-2. **`executar_tarefa_ia` (módulo por tarefa)** — `system_prompts/router.py` define provider/modelo por `TarefaIA` (Claude Haiku para prazos/honorários/audiência/rag_query; COMPLEXO para análise/dossiê/minutas etc.; Groq grátis para triagem/resumo).
+2. **`executar_tarefa_ia` (módulo por tarefa)** — `system_prompts/registry.py` define provider/modelo por `TarefaIA` (Claude Haiku para prazos/honorários/audiência/rag_query; COMPLEXO para análise/dossiê/minutas etc.; Groq grátis para triagem/resumo).
 
 **Fallback**: no `chat`, falha de um provider registra motivo curto e tenta o próximo da cadeia (ai_gateway.py:235-240); em `executar_tarefa_ia`, Anthropic indisponível → fallback explícito para Groq (ai_gateway.py:424-431).
 
@@ -73,7 +73,7 @@ Anthropic é provider EXTERNO (`_PROVIDERS_EXTERNOS`, ai_gateway.py:121; provide
 | `ai_gateway.TASK_ROUTING` / `_resolver_cadeia` | Posição na cadeia por tarefa | ai_gateway.py:76-118, 309-330 |
 | `ai_gateway._PRICING_USD_MM` / `_custo_brl` | Custo BRL por chamada | ai_gateway.py:380-390 |
 | `provider_policy.AIProviderPolicy` | Elegibilidade + priorização de tarefas complexas | provider_policy.py:51-55, 113-115 |
-| `system_prompts/router.py` | Provider/modelo por TarefaIA (caminho legado) | router.py:53-72 |
+| `system_prompts/registry.py` | Provider/modelo por TarefaIA (caminho legado) | registry.py:53-72 |
 | `ai_gateway.health` / `/ai/core/status` | Disponibilidade (booleans apenas) | ai_gateway.py:254-267; ai_core.py:189 |
 
 Qualquer outro uso é desvio de arquitetura e deve ser tratado como incidente.

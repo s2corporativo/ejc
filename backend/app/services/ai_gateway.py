@@ -131,7 +131,7 @@ def _nivel_piso(task_label: str | None) -> str:
     Tarefa de saída ESTRUTURADA (JSON) fica em "padrao": o valor ali está na
     fidelidade do formato, e instrução de raciocínio em prosa disputa com o
     "SAÍDA OBRIGATÓRIA — JSON" do próprio prompt. Essas tarefas já foram
-    elevadas por outro caminho — o modelo forte (ver system_prompts/router.py).
+    elevadas por outro caminho — o modelo forte (ver system_prompts/registry.py).
     """
     cfg = get_settings()
     # `task_label` chega no vocabulário ORIGINAL do call site ("redacao_peca",

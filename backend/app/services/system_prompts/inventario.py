@@ -49,9 +49,9 @@ def versao_do_prompt(chave: str) -> str | None:
 
 
 def _consumidores() -> dict[str, list[str]]:
-    """Quem consome cada chave — agentes internos do núcleo + tarefas do router."""
+    """Quem consome cada chave — agentes internos do núcleo + tarefas do registro."""
     from app.services.ai.core.agent_registry import AGENT_REGISTRY
-    from app.services.system_prompts.router import CONFIGURACOES
+    from app.services.system_prompts.registry import CONFIGURACOES
 
     mapa: dict[str, list[str]] = {}
     for agente in AGENT_REGISTRY.values():
