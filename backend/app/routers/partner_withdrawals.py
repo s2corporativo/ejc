@@ -1,4 +1,5 @@
 """Saques de sócios com segregação de funções e trilha de auditoria."""
+from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
@@ -12,6 +13,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.audit_log import criar_audit_log
 from app.models.user import User
+from app.services.finance_status import WITHDRAWAL_TRANSITIONS, exigir_transicao
 
 router = APIRouter(prefix="/partner-withdrawals", tags=["partner-withdrawals"])
 
@@ -174,13 +176,19 @@ async def approve_withdrawal(
     current_user: User = Depends(get_current_user),
 ):
     _require_gestao(current_user)
+    from app.services.finance_governance import exigir_lock_financeiro
+    await exigir_lock_financeiro(db, "withdrawal", withdrawal_id)
     row = await _buscar(db, withdrawal_id)
     if not row:
         raise HTTPException(404, "Withdrawal not found")
     if str(row["partner_id"]) == str(current_user.id):
         raise HTTPException(403, "Aprovação da própria retirada não é permitida — segregação de funções")
-    if row["status"] != "pendente":
-        raise HTTPException(409, f"Cannot approve withdrawal in status '{row['status']}'")
+    exigir_transicao(
+        str(row["status"]),
+        "aprovado",
+        WITHDRAWAL_TRANSITIONS,
+        entidade="retirada/comissão",
+    )
 
     await db.execute(
         text(
@@ -213,13 +221,19 @@ async def reject_withdrawal(
     current_user: User = Depends(get_current_user),
 ):
     _require_gestao(current_user)
+    from app.services.finance_governance import exigir_lock_financeiro
+    await exigir_lock_financeiro(db, "withdrawal", withdrawal_id)
     row = await _buscar(db, withdrawal_id)
     if not row:
         raise HTTPException(404, "Withdrawal not found")
     if str(row["partner_id"]) == str(current_user.id):
         raise HTTPException(403, "Rejeição da própria retirada não é permitida — segregação de funções")
-    if row["status"] != "pendente":
-        raise HTTPException(409, f"Cannot reject withdrawal in status '{row['status']}'")
+    exigir_transicao(
+        str(row["status"]),
+        "rejeitado",
+        WITHDRAWAL_TRANSITIONS,
+        entidade="retirada/comissão",
+    )
 
     await db.execute(
         text(
@@ -252,13 +266,40 @@ async def pay_withdrawal(
     current_user: User = Depends(get_current_user),
 ):
     _require_gestao(current_user)
+    from app.services.finance_governance import exigir_lock_financeiro
+    await exigir_lock_financeiro(db, "withdrawal", withdrawal_id)
     row = await _buscar(db, withdrawal_id)
     if not row:
         raise HTTPException(404, "Withdrawal not found")
     if str(row["partner_id"]) == str(current_user.id):
         raise HTTPException(403, "Pagamento da própria retirada não é permitido — segregação de funções")
-    if row["status"] != "aprovado":
-        raise HTTPException(409, f"Withdrawal must be approved before payment (current: '{row['status']}')")
+    exigir_transicao(
+        str(row["status"]),
+        "pago",
+        WITHDRAWAL_TRANSITIONS,
+        entidade="retirada/comissão",
+    )
+
+    from app.services.finance_governance import (
+        competencia_de_data,
+        exigir_competencia_aberta,
+        limite_dupla_aprovacao,
+    )
+
+    await exigir_competencia_aberta(
+        db,
+        competencia_de_data(datetime.now(timezone.utc)),
+        "Pagar retirada/comissão",
+    )
+    limite = await limite_dupla_aprovacao(db)
+    if (
+        Decimal(str(row["partner_share"] or 0)) >= limite
+        and str(row.get("approved_by") or "") == str(current_user.id)
+    ):
+        raise HTTPException(
+            403,
+            "Pagamento acima da alçada exige executor diferente de quem aprovou.",
+        )
 
     await db.execute(
         text(

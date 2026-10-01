@@ -62,7 +62,7 @@ class FeePayment(Base):
     valor  = Column(Numeric(14, 2), nullable=False)
     data_pagamento = Column(Date, nullable=False)
     forma  = Column(String(30), nullable=True)   # pix|transferencia|dinheiro|cartao
-    comprovante_doc_id = Column(String(36), nullable=True)
+    comprovante_doc_id = Column(String(36), ForeignKey("documents.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     fee = relationship("Fee", back_populates="payments")

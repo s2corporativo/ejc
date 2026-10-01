@@ -286,7 +286,9 @@ export default function CRMLeads() {
                                   lead.nome,
                                 )
                               }
-                              className="p-1 bg-green-50 text-green-600 rounded hover:bg-green-100"
+                              aria-label={`Abrir WhatsApp de ${lead.nome}`}
+                              title="Abrir WhatsApp"
+                              className="p-1.5 bg-green-50 text-green-600 rounded hover:bg-green-100"
                             >
                               <MessageCircle className="w-3 h-3" />
                             </button>
@@ -295,7 +297,9 @@ export default function CRMLeads() {
                             <a
                               href={`tel:${lead.telefone}`}
                               onClick={(e) => e.stopPropagation()}
-                              className="p-1 bg-primary-50 text-primary-600 rounded hover:bg-primary-100"
+                              aria-label={`Ligar para ${lead.nome}`}
+                              title="Ligar"
+                              className="p-1.5 bg-primary-50 text-primary-600 rounded hover:bg-primary-100"
                             >
                               <Phone className="w-3 h-3" />
                             </a>
@@ -304,7 +308,9 @@ export default function CRMLeads() {
                             <a
                               href={`mailto:${lead.email}`}
                               onClick={(e) => e.stopPropagation()}
-                              className="p-1 bg-slate-50 text-slate-600 rounded hover:bg-slate-100"
+                              aria-label={`Enviar e-mail para ${lead.nome}`}
+                              title="Enviar e-mail"
+                              className="p-1.5 bg-slate-50 text-slate-600 rounded hover:bg-slate-100"
                             >
                               <Mail className="w-3 h-3" />
                             </a>

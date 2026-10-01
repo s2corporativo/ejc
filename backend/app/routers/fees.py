@@ -18,7 +18,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case
-from app.models.fee import Fee, FeeEstorno, FeePayment, FeeStatus
+from app.models.fee import Fee, FeeEstorno, FeePayment, FeeStatus, FeeTipo
 from app.models.user import User
 from app.schemas.common import MsgResponse
 from app.schemas.fee import (
@@ -29,7 +29,12 @@ from app.schemas.fee import (
     FeeUpdate,
 )
 from app.services.document_access_policy import exigir_documento_compativel_com_caso
-from app.services.fee_ledger_compat import total_pago_efetivo
+from app.services.fee_ledger import total_pago_efetivo
+from app.services.finance_governance import (
+    competencia_de_data,
+    exigir_competencia_aberta,
+    permitir_correcao_competencia_fechada,
+)
 
 _FINANCEIRO_TOTAL = {"superadmin", "admin", "socio", "financeiro"}
 _RE_COMPETENCIA = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
@@ -143,15 +148,23 @@ async def listar(
 
 @router.get("/resumo")
 async def resumo(
+    competencia: Optional[str] = Query(
+        None, description="Competência dos saldos e caixa (formato AAAA-MM)"
+    ),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """KPIs de cobrança/caixa com compatibilidade para quitações legadas.
-
-    O subledger ganha sempre. Um fee legado ``pago`` só entra no caixa quando
-    não existe nenhum ``fee_payments`` para ele, evitando dupla contagem.
-    """
+    """KPIs de cobrança e caixa baseados exclusivamente no subledger canônico."""
     hoje = date.today()
+    if competencia:
+        if not _RE_COMPETENCIA.fullmatch(competencia):
+            raise HTTPException(
+                status_code=422,
+                detail="competencia inválida: use o formato AAAA-MM",
+            )
+        ano_ref, mes_ref = (int(p) for p in competencia.split("-"))
+    else:
+        ano_ref, mes_ref = hoje.year, hoje.month
 
     pagamentos_por_fee = (
         select(
@@ -185,24 +198,20 @@ async def resumo(
         .outerjoin(estornos_por_fee, estornos_por_fee.c.fee_id == Fee.id)
         .where(Fee.deleted_at.is_(None))
     )
+    if competencia:
+        base_saldos = base_saldos.where(
+            sqlfunc.extract("year", Fee.data_vencimento) == ano_ref,
+            sqlfunc.extract("month", Fee.data_vencimento) == mes_ref,
+        )
+
     base_caixa = (
         select(sqlfunc.coalesce(sqlfunc.sum(FeePayment.valor), 0))
         .join(Fee, Fee.id == FeePayment.fee_id)
         .where(
             Fee.deleted_at.is_(None),
-            sqlfunc.extract("month", FeePayment.data_pagamento) == hoje.month,
-            sqlfunc.extract("year", FeePayment.data_pagamento) == hoje.year,
+            sqlfunc.extract("month", FeePayment.data_pagamento) == mes_ref,
+            sqlfunc.extract("year", FeePayment.data_pagamento) == ano_ref,
         )
-    )
-    existe_pagamento = select(FeePayment.id).where(FeePayment.fee_id == Fee.id).exists()
-    base_caixa_legado = select(sqlfunc.coalesce(sqlfunc.sum(Fee.valor), 0)).where(
-        Fee.deleted_at.is_(None),
-        Fee.status == FeeStatus.pago,
-        Fee.valor.is_not(None),
-        Fee.data_pagamento.is_not(None),
-        sqlfunc.extract("month", Fee.data_pagamento) == hoje.month,
-        sqlfunc.extract("year", Fee.data_pagamento) == hoje.year,
-        ~existe_pagamento,
     )
     base_percentuais = select(sqlfunc.count(Fee.id)).where(
         Fee.deleted_at.is_(None),
@@ -211,24 +220,27 @@ async def resumo(
         Fee.status.in_([FeeStatus.pendente, FeeStatus.atrasado]),
     )
 
+    if competencia:
+        base_percentuais = base_percentuais.where(
+            sqlfunc.extract("year", Fee.data_vencimento) == ano_ref,
+            sqlfunc.extract("month", Fee.data_vencimento) == mes_ref,
+        )
+
     escopo = "escritorio"
     if not _ve_financeiro_total(cu):
         ids = _ids_casos_do_usuario(cu)
         base_saldos = base_saldos.where(Fee.case_id.in_(ids))
         base_caixa = base_caixa.where(Fee.case_id.in_(ids))
-        base_caixa_legado = base_caixa_legado.where(Fee.case_id.in_(ids))
         base_percentuais = base_percentuais.where(Fee.case_id.in_(ids))
         escopo = "meus_casos"
 
     pendente, atrasado = (await db.execute(base_saldos)).one()
     recebido_real = Decimal(str((await db.execute(base_caixa)).scalar() or 0))
-    recebido_legado = Decimal(str((await db.execute(base_caixa_legado)).scalar() or 0))
     percentuais_sem_valor = (await db.execute(base_percentuais)).scalar() or 0
     return {
         "pendente": float(pendente or 0),
         "atrasado": float(atrasado or 0),
-        "recebido_mes": float(recebido_real + recebido_legado),
-        "recebido_mes_legado": float(recebido_legado),
+        "recebido_mes": float(recebido_real),
         "percentuais_sem_valor": int(percentuais_sem_valor),
         "escopo": escopo,
     }
@@ -315,8 +327,41 @@ async def atualizar(
         raise HTTPException(status_code=404, detail="Honorário não encontrado")
 
     alteracoes = payload.model_dump(exclude_unset=True)
-    total_pago, _legado = await total_pago_efetivo(db, fee)
+    motivo_correcao = (alteracoes.pop("motivo_correcao", None) or "").strip() or None
+    if not alteracoes:
+        raise HTTPException(status_code=422, detail="Nenhum campo informado para atualizar")
+
+    competencias = set()
+    for data_ref in (fee.data_vencimento, fee.data_pagamento, alteracoes.get("data_vencimento")):
+        if data_ref:
+            competencias.add(competencia_de_data(data_ref))
+    correcao_fechada = False
+    for competencia_ref in sorted(competencias):
+        correcao_fechada = (
+            await permitir_correcao_competencia_fechada(
+                db, competencia_ref, motivo_correcao, "Alterar honorário"
+            )
+            or correcao_fechada
+        )
+
+    novo_case_id = alteracoes.get("case_id", fee.case_id)
+    novo_client_id = alteracoes.get("client_id", fee.client_id)
+    if novo_case_id:
+        caso = (await db.execute(select(Case).where(Case.id == novo_case_id, Case.deleted_at.is_(None)))).scalar_one_or_none()
+        if not caso:
+            raise HTTPException(status_code=404, detail="Caso não encontrado")
+        if str(caso.client_id) != str(novo_client_id):
+            raise HTTPException(status_code=422, detail="client_id não corresponde ao cliente do caso informado")
+
+    novo_tipo = alteracoes.get("tipo", getattr(fee.tipo, "value", fee.tipo))
+    novo_percentual = alteracoes.get("percentual_exito", fee.percentual_exito)
     novo_valor = alteracoes.get("valor", fee.valor)
+    if novo_valor is None and novo_percentual is None:
+        raise HTTPException(status_code=422, detail="honorário exige valor ou percentual de êxito")
+    if novo_percentual is not None and str(novo_tipo) not in {"exito", "misto"}:
+        raise HTTPException(status_code=422, detail="percentual de êxito só se aplica aos tipos exito/misto")
+
+    total_pago, _legado = await total_pago_efetivo(db, fee)
     novo_status = alteracoes.get("status", fee.status)
     novo_status_valor = getattr(novo_status, "value", novo_status)
 
@@ -355,11 +400,15 @@ async def atualizar(
         db,
         cu.id,
         cu.role.value,
-        "UPDATE",
+        "CORRECAO_FECHAMENTO" if correcao_fechada else "UPDATE",
         "fees",
         fee_id,
+        detalhes=(
+            f"campos alterados: {sorted(alteracoes)}"
+            + (f"; motivo_correcao={motivo_correcao}" if motivo_correcao else "")
+        ),
         dados_antes=dados_antes,
-        dados_depois=payload.model_dump(exclude_unset=True, mode="json"),
+        dados_depois=jsonable_encoder({key: getattr(fee, key, None) for key in alteracoes}),
     )
     await db.commit()
     await db.refresh(fee)
@@ -391,7 +440,7 @@ async def listar_pagamentos(
             .order_by(FeeEstorno.data_estorno.desc(), FeeEstorno.created_at.desc())
         )
     ).scalars().all()
-    total_pago, legado = await total_pago_efetivo(db, fee)
+    total_pago, _ = await total_pago_efetivo(db, fee)
     saldo = None
     if fee.valor is not None:
         saldo = max(Decimal(str(fee.valor)) - total_pago, Decimal("0"))
@@ -406,10 +455,6 @@ async def listar_pagamentos(
         "total_pago": float(total_pago),
         "total_estornado": float(total_estornado),
         "saldo": float(saldo) if saldo is not None else None,
-        "legacy_pago_sem_subledger": legado,
-        "data_pagamento_legacy": (
-            fee.data_pagamento.isoformat() if legado and fee.data_pagamento else None
-        ),
         "pagamentos": [
             {
                 "id": p.id,
@@ -462,6 +507,11 @@ async def registrar_pagamento(
         raise HTTPException(status_code=404, detail="Honorário não encontrado")
     if fee.status == FeeStatus.cancelado:
         raise HTTPException(status_code=409, detail="Honorário cancelado não aceita pagamento")
+    await exigir_competencia_aberta(
+        db,
+        competencia_de_data(payload.data_pagamento),
+        "Registrar recebimento",
+    )
     if fee.status == FeeStatus.pago:
         raise HTTPException(status_code=409, detail="Honorário já está quitado")
 
@@ -488,15 +538,7 @@ async def registrar_pagamento(
             case=caso,
         )
 
-    total_antes, legado = await total_pago_efetivo(db, fee)
-    if legado:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Honorário quitado em registro legado sem subledger; normalize o histórico "
-                "em fluxo controlado antes de lançar novo pagamento"
-            ),
-        )
+    total_antes, _ = await total_pago_efetivo(db, fee)
     if fee.valor is not None:
         devido = Decimal(str(fee.valor))
         if total_antes >= devido:
@@ -521,7 +563,6 @@ async def registrar_pagamento(
     db.add(payment)
     await db.flush()
 
-    commission_result = None
     if fee.case_id and fee.tipo != FeeTipo.custas_despesas:
         caso_comissao = (
             await db.execute(
@@ -534,7 +575,7 @@ async def registrar_pagamento(
         if caso_comissao:
             from app.services.commission_service import alocar_comissao_pagamento
 
-            commission_result = await alocar_comissao_pagamento(
+            await alocar_comissao_pagamento(
                 db,
                 caso_comissao,
                 payment,
@@ -610,6 +651,11 @@ async def estornar_pagamento(
         raise HTTPException(
             status_code=409, detail="Honorário cancelado não aceita estorno"
         )
+    await exigir_competencia_aberta(
+        db,
+        competencia_de_data(payload.data_estorno),
+        "Registrar estorno",
+    )
 
     pagamento = (
         await db.execute(
@@ -625,15 +671,7 @@ async def estornar_pagamento(
             detail="Pagamento não encontrado para este honorário",
         )
 
-    total_pago, legado = await total_pago_efetivo(db, fee)
-    if legado:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Honorário quitado em registro legado sem subledger; normalize o "
-                "histórico em fluxo controlado antes de lançar estorno"
-            ),
-        )
+    total_pago, _ = await total_pago_efetivo(db, fee)
 
     estornado_anterior = (
         await db.execute(
