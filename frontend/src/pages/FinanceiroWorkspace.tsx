@@ -3,6 +3,7 @@ import { Navigate, useSearchParams } from "react-router";
 import {
   BarChart3,
   Wallet,
+  BadgeDollarSign,
   TrendingDown,
   FileText,
   Building2,
@@ -15,11 +16,16 @@ import {
 import ErrorBoundary from "../components/ErrorBoundary";
 import { PageHeader, Spinner } from "../components/UI";
 import { useAuth } from "../stores/auth";
+import {
+  currentFinanceCompetence,
+  isFinanceCompetence,
+} from "../lib/financeiro";
 
 const FinanceiroDashboard = lazy(() => import("./FinanceiroDashboard"));
 const Honorarios = lazy(() => import("./Honorarios"));
 const NotasFiscais = lazy(() => import("./NotasFiscais"));
 const Despesas = lazy(() => import("./Despesas"));
+const Comissoes = lazy(() => import("./Comissoes"));
 const DespesasRecorrentes = lazy(() => import("./DespesasRecorrentes"));
 const OfficeContracts = lazy(() => import("./OfficeContracts"));
 
@@ -27,6 +33,7 @@ const TABS = [
   { k: "visao", label: "Visão geral", icon: BarChart3 },
   { k: "honorarios", label: "Receber", icon: Wallet },
   { k: "despesas", label: "Pagar", icon: TrendingDown },
+  { k: "comissoes", label: "Comissões", icon: BadgeDollarSign },
   { k: "nfse", label: "NFS-e", icon: Receipt },
   { k: "contratos", label: "Contratos", icon: FileText },
   { k: "recorrentes", label: "Recorrentes", icon: MoreHorizontal },
@@ -41,6 +48,7 @@ const PRINCIPAIS: ReadonlySet<FinanceTab> = new Set([
   "visao",
   "honorarios",
   "despesas",
+  "comissoes",
 ]);
 const MAIS: ReadonlyArray<FinanceTab> = ["nfse", "contratos", "recorrentes"];
 const SOCIEDADE_ROLES = new Set(["superadmin", "admin", "socio"]);
@@ -48,13 +56,8 @@ const SOCIEDADE_ROLES = new Set(["superadmin", "admin", "socio"]);
 export const isFinanceTab = (value: string | null): value is FinanceTab =>
   TABS.some((tab) => tab.k === value);
 
-export const isCompetencia = (value: string | null): value is string =>
-  !!value && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
-
-export function competenciaAtual(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
+export const isCompetencia = isFinanceCompetence;
+export const competenciaAtual = currentFinanceCompetence;
 
 export function nextFinanceParams(
   current: URLSearchParams,
@@ -73,7 +76,9 @@ export function nextFinanceParams(
 
 const TABS_COM_COMPETENCIA: ReadonlySet<FinanceTab> = new Set([
   "visao",
+  "honorarios",
   "despesas",
+  "comissoes",
 ]);
 
 export default function FinanceiroWorkspace() {
@@ -216,8 +221,9 @@ export default function FinanceiroWorkspace() {
                 onNavigate={(destino) => setTab(destino)}
               />
             )}
-            {tab === "honorarios" && <Honorarios />}
+            {tab === "honorarios" && <Honorarios competencia={competencia} />}
             {tab === "despesas" && <Despesas competencia={competencia} />}
+            {tab === "comissoes" && <Comissoes competencia={competencia} />}
             {tab === "nfse" && <NotasFiscais />}
             {tab === "contratos" && <OfficeContracts />}
             {tab === "recorrentes" && <DespesasRecorrentes />}
