@@ -43,7 +43,7 @@ from sqlalchemy import text
 
 from app.core.database import AsyncSessionLocal
 from app.services.embedding_service import gerar_embeddings, disponivel as emb_disponivel
-from app.services.ai_service import filtros_gate_rag
+from app.services.knowledge_governance import _ids_recuperaveis
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("ejc.reembedar_orfaos")
@@ -51,13 +51,12 @@ logger = logging.getLogger("ejc.reembedar_orfaos")
 # Documentos VIGENTES/não excluídos com PELO MENOS UM chunk sem embedding —
 # não filtra por status_indexacao de propósito: é exatamente o caso de doc já
 # rotulado 'indexado' com chunks órfãos que queremos capturar.
-_SQL_DOCS_COM_ORFAO = text(f"""
+_SQL_DOCS_COM_ORFAO = text("""
     SELECT DISTINCT kd.id
     FROM knowledge_docs kd
     JOIN knowledge_chunks kc ON kc.doc_id = kd.id
     WHERE kd.deleted_at IS NULL AND kd.vigente = true
       AND kc.embedding IS NULL
-      {filtros_gate_rag()}
       AND kd.id > :after
     ORDER BY kd.id
     LIMIT :limit
@@ -125,6 +124,12 @@ async def reembedar(batch_size: int = 20, dry_run: bool = False) -> dict:
         return {"ok": 0, "erros": 0, "dry_run": 0, "disponivel": False}
 
     total_ok = total_erro = total_dry = 0
+    # Reutiliza a fonte única do gate de recuperação. Ela já aplica aprovação,
+    # vigência, quarentena de súmulas e exclusão do corpus fictício. O conjunto
+    # é calculado uma vez; nenhum fragmento SQL dinâmico é interpolado aqui.
+    async with AsyncSessionLocal() as db:
+        ids_recuperaveis = await _ids_recuperaveis(db)
+
     # Paginação por chave estável. OFFSET sobre um conjunto que encolhe a cada
     # commit pulava documentos (os já resolvidos saíam da consulta e deslocavam
     # os restantes). `after` visita cada id no máximo uma vez nesta execução;
@@ -132,12 +137,16 @@ async def reembedar(batch_size: int = 20, dry_run: bool = False) -> dict:
     after = ""
     while True:
         async with AsyncSessionLocal() as db:
-            lote = (await db.execute(
+            lote_bruto = (await db.execute(
                 _SQL_DOCS_COM_ORFAO, {"limit": batch_size, "after": after}
             )).all()
-            if not lote:
+            if not lote_bruto:
                 break
 
+            lote = [
+                (doc_id,) for (doc_id,) in lote_bruto
+                if str(doc_id) in ids_recuperaveis
+            ]
             for (doc_id,) in lote:
                 try:
                     # SAVEPOINT por documento: erro SQL (ex.: vetor inválido)
@@ -165,7 +174,9 @@ async def reembedar(batch_size: int = 20, dry_run: bool = False) -> dict:
                 after or "<inicio>", total_ok, total_erro, total_dry,
             )
 
-        after = str(lote[-1][0])
+        # Avança pelo lote BRUTO. Se os 20 ids forem inelegíveis, ainda
+        # precisamos continuar procurando os próximos em vez de encerrar cedo.
+        after = str(lote_bruto[-1][0])
 
     logger.info("[reembedar] concluído — ok=%s erros=%s dry-run=%s",
                 total_ok, total_erro, total_dry)
