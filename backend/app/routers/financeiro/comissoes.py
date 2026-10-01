@@ -1,5 +1,37 @@
 """Rotas internas do módulo Financeiro. URLs públicas preservadas."""
-from .common import *  # noqa: F401,F403
+from fastapi import Depends
+from app.core.security import get_current_user
+from app.core.database import get_db
+import json
+from app.services.fee_ledger import LEDGER_CTES
+from fastapi import Query
+from app.core.rate_limit import rate_limit
+from uuid import uuid4
+
+from .common import (
+    APIRouter,
+    AsyncSession,
+    CommissionAdjustmentIn,
+    CommissionBatchIn,
+    CommissionCloseIn,
+    CommissionRuleIn,
+    CommissionRulePatch,
+    date,
+    datetime,
+    Decimal,
+    HTTPException,
+    Optional,
+    text,
+    timezone,
+    User,
+    _commission_conference,
+    _commission_statement,
+    _exigir_financeiro,
+    _exigir_gestor_regras,
+    _GESTOR_FIN,
+    _money,
+    _month_bounds,
+)
 
 router = APIRouter(prefix="/financeiro", tags=["Financeiro"])
 @router.get("/comissoes", dependencies=[Depends(rate_limit("fin-comissoes", 60))])

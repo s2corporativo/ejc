@@ -10,24 +10,22 @@ vencimento contratual dos honorários e a competência declarada das despesas.
 O demonstrativo e o pré-fechamento são GERENCIAIS e não substituem escrituração,
 DRE contábil ou validação fiscal pelo profissional responsável.
 """
-import json
-from datetime import date, datetime, timedelta, timezone
+
+# Namespace compartilhado pelos submódulos financeiros; alguns imports existem
+# deliberadamente para reexportação explícita.
+from datetime import date, datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional, Literal
-from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.core.rate_limit import rate_limit
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
-from app.core.security import get_current_user
 from app.models.fee import FeeTipo
 from app.models.user import User
-from app.services.fee_ledger import LEDGER_CTES
+
 
 router = APIRouter(prefix="/financeiro", tags=["Financeiro Consolidado"])
 

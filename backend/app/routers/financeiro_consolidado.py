@@ -3,6 +3,7 @@
 A implementação foi dividida por responsabilidade. Este módulo preserva o
 import histórico app.routers.financeiro_consolidado e todas as URLs.
 """
+# ruff: noqa: F401
 from fastapi import APIRouter
 
 from app.routers.financeiro import dashboard, governanca, comissoes, fechamento
