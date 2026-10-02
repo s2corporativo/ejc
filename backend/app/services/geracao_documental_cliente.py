@@ -524,12 +524,14 @@ async def contexto_financeiro_contrato(
     raiz = f"[origem:contrato-admissao;client={cli.id};case={case_id or '-'}"
     cond_case = Fee.case_id == case_id if case_id else Fee.case_id.is_(None)
     historico = list((await db.execute(
-        select(Fee).where(
+        select(Fee)
+        .where(
             Fee.client_id == cli.id,
             cond_case,
             Fee.deleted_at.is_(None),
             Fee.observacoes.ilike(f"%{raiz}%"),
         )
+        .order_by(Fee.created_at.asc())
     )).scalars().all())
 
     fixos = [
