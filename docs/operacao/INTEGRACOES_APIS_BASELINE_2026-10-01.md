@@ -56,6 +56,45 @@ Resultados sem credenciais e com uma chamada leve por fonte:
 
 Esses probes servem como baseline de **2026-10-01** e não devem ser hardcoded como estado permanente.
 
+## Revalidação independente — 2026-10-02
+
+Pesquisa documental e probes controlados foram repetidos antes da promoção para produção. O objetivo foi confirmar contratos oficiais e registrar divergências operacionais sem transformar falha externa em sucesso.
+
+### Contratos confirmados em fonte primária
+
+- **DJEN/CNJ:** Swagger oficial v1.0.4 confirma `GET /api/v1/comunicacao` como consulta pública; pesquisas por OAB/texto/processo são limitadas a 10.000 resultados; `itensPorPagina` aceita somente 5 ou 100; HTTP 429 orienta aguardar 1 minuto e proíbe contorno por múltiplos IPs. Também existem `GET /api/v1/comunicacao/tribunal` e `GET /api/v1/caderno/{sigla_tribunal}/{data}/{meio}`.
+- **DataJud/CNJ:** permanece a API oficial para metadados de capa e movimentações processuais, sem equivaler a inteiro teor de jurisprudência nem substituir o DJEN.
+- **TCU:** o webservice oficial de acórdãos continua documentado em `/api/acordao/recupera-acordaos`.
+- **IBAMA, TSE e CVM:** continuam em CKAN; a CVM anunciou no PDA 2026-2028 uma API pública mais ampla futura, mas sem substituição documentada do CKAN atual.
+- **Consumidor.gov.br:** a API operacional é REST autenticada e destinada a credenciadas; não deve ser confundida com dados abertos anônimos.
+- **PGFN:** a fonte oficial continua sendo distribuição bulk trimestral em CSV; não foi localizada API REST oficial equivalente à base completa.
+- **IDE-Sisema/MG:** GeoServer oficial continua expondo WFS/WMS/WCS.
+- **TJMG Jurisprudência:** há portal público e documentação de uso, mas não foi localizada API pública oficial equivalente para pesquisa automatizada de inteiro teor; não inventar endpoint.
+- **LexML:** a arquitetura oficial documenta OAI-PMH para coleta/intercâmbio de metadados, mas não foi confirmado endpoint central oficial de busca textual equivalente ao portal; manter fail-fast no portal e só integrar provedor OAI-PMH com endpoint oficial comprovado.
+
+### Probes da VPS em 2026-10-02
+
+Uma chamada leve por fonte, sem credenciais e sem bypass:
+
+- DJEN `/api/v1/comunicacao?itensPorPagina=5`: **HTTP 403**.
+- DJEN `/api/v1/comunicacao/tribunal`: **HTTP 403**.
+- DJEN `/api/v1/caderno/TJMG/2026-10-01/D`: **HTTP 403**.
+- IBGE Localidades: **HTTP 200 JSON**.
+- TSE CKAN: **HTTP 200 JSON**.
+- CVM CKAN: **HTTP 200 JSON**.
+- TCU Acórdãos: **HTTP 200 JSON**.
+- IDE-Sisema WFS GetCapabilities: **HTTP 200 XML**.
+- IBAMA CKAN: **HTTP 502** nesta execução; tratar como indisponibilidade transitória/atenção, não como contrato inválido.
+- Querido Diário `/health`: **timeout** a partir da VPS nesta execução; manter atenção até nova prova operacional.
+
+### Decisão de arquitetura após a revalidação
+
+1. Não criar fallback não oficial para DJEN: os três endpoints oficiais testados estão bloqueados pela origem atual.
+2. Não usar DataJud como substituto do DJEN ou da jurisprudência de inteiro teor do TJMG.
+3. Não contornar WAF, anti-bot, geoblock ou rate-limit com proxy aleatório, rotação de IP ou scraping agressivo.
+4. O painel só deve promover um conector público de `attention/nao_homologado` para `ready/ok` após prova operacional persistida.
+5. IBAMA e Querido Diário devem permanecer em atenção enquanto a VPS não produzir nova prova positiva.
+
 ## Fontes oficiais consultadas
 
 - CNJ — API Pública DataJud: https://www.cnj.jus.br/sistemas/datajud/api-publica/
