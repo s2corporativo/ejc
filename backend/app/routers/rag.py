@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, UploadFile, File, Form
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, update, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -588,9 +588,17 @@ async def ingest_fontes_oficiais(
 
 
 # ── Destilação RAG com gate humano (#15) ─────────────────────────────────────
+def _norm_categoria(valor: str) -> str:
+    """minúsculas, sem acento, separadores unificados em '_' (anti-bypass)."""
+    import unicodedata
+    base = unicodedata.normalize("NFKD", valor or "")
+    base = "".join(c for c in base if not unicodedata.combining(c))
+    return _re.sub(r"[\s\-]+", "_", base.strip().lower())
+
+
 class IngerirAILogRequest(BaseModel):
-    categoria: str = "conhecimento_ia"
-    titulo_override: str | None = None
+    categoria: str = Field("conhecimento_ia", min_length=3, max_length=60)
+    titulo_override: str | None = Field(None, max_length=200)
 
 @router.post("/ingerir-ai-log/{log_id}", summary="Destila output de IA aprovado para o RAG")
 async def ingerir_ai_log_aprovado(
@@ -610,8 +618,12 @@ async def ingerir_ai_log_aprovado(
     from app.services.ingestion_service import upsert_documento
     from app.services.knowledge_autoapproval import _CATEGORIA_JURIDICA_TOKENS
 
-    cat = (req.categoria or "").strip().lower()
-    if cat in _RESTRICTED_CATS or any(t in cat for t in _CATEGORIA_JURIDICA_TOKENS):
+    from app.services.ingestion_service import _CATEGORIAS_RESTRITAS
+
+    cat = _norm_categoria(req.categoria)
+    restritas = {_norm_categoria(c) for c in (*_RESTRICTED_CATS, *_CATEGORIAS_RESTRITAS)}
+    if (len(cat) < 3 or cat in restritas
+            or any(t in cat for t in _CATEGORIA_JURIDICA_TOKENS)):
         raise HTTPException(
             status_code=422,
             detail=("Saída de IA não pode ser ingerida em categoria restrita ou com "
@@ -632,29 +644,47 @@ async def ingerir_ai_log_aprovado(
     if not log.resposta or len(log.resposta.strip()) < 50:
         raise HTTPException(status_code=400, detail="Output muito curto para ingestão")
 
+    from app.models.ai_log import pseudonimizar_texto_auditoria
+
     titulo = req.titulo_override or f"IA {log.tipo_uso.value} — {log.created_at.strftime('%d/%m/%Y')}"
+    titulo = pseudonimizar_texto_auditoria(titulo)
     fonte  = f"ejc_ia_{log.tipo_uso.value}"
     chave  = f"ai_log_{log.id}"
 
-    resultado = await upsert_documento(
-        db,
-        titulo=titulo,
-        categoria=req.categoria,
-        conteudo=log.resposta,
-        chave_origem=chave,
-        fonte=fonte,
-        extra={
-            # Saída de IA aguarda curadoria humana; a revisão HITL do autor
-            # não equivale à aprovação institucional da base.
-            "rag_status": "pendente",
-            "requires_human_review": True,
-            "origem": "ai_log_hitl",
-            "gerado_por_ia": True,
-            "status_hitl": log.status_hitl.value,
-            "ingerido_por": str(cu.id),
-        },
-        confianca="baixa",
-    )
+    # Isolamento: saída derivada de um caso fica no escopo do caso/cliente
+    # (nunca na base pública); o autor precisa ainda ter acesso ao caso.
+    client_id = None
+    case_id = getattr(log, "case_id", None)
+    if case_id:
+        from app.core.ownership import verificar_acesso_caso
+
+        caso = await verificar_acesso_caso(db, cu, case_id)
+        client_id = caso.client_id
+
+    try:
+        resultado = await upsert_documento(
+            db,
+            titulo=titulo,
+            categoria=cat,
+            conteudo=log.resposta,
+            chave_origem=chave,
+            fonte=fonte,
+            client_id=client_id,
+            case_id=case_id,
+            extra={
+                # Saída de IA aguarda curadoria humana; a revisão HITL do autor
+                # não equivale à aprovação institucional da base.
+                "rag_status": "pendente",
+                "requires_human_review": True,
+                "origem": "ai_log_hitl",
+                "gerado_por_ia": True,
+                "status_hitl": log.status_hitl.value,
+                "ingerido_por": str(cu.id),
+            },
+            confianca="baixa",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     await db.commit()
 
     # Estima chunks para retorno informativo
