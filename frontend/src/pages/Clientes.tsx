@@ -112,6 +112,9 @@ export default function Clientes() {
   const podeVerAdmissao = ["superadmin", "admin", "socio", "advogado"].includes(
     role,
   );
+  const podeSincronizarFinanceiro = ["superadmin", "admin", "socio"].includes(
+    role,
+  );
   const [admissaoModal, setAdmissaoModal] = useState<Client | null>(null);
   const [admissaoPecas, setAdmissaoPecas] = useState<PecaAdmissao[] | null>(
     null,
@@ -264,18 +267,23 @@ export default function Clientes() {
     const alvo = admissaoModal;
     setAdmissaoLoading(true);
     try {
-      await api.post(`/clients/${alvo.id}/gerar-documentos`, {
+      const payload: Record<string, unknown> = {
         forcar_novo: true,
         tipo_poderes: admissaoPoderes.tipo_poderes,
         permite_substabelecimento: admissaoPoderes.permite_substabelecimento,
         poderes_especiais: admissaoPoderes.poderes_especiais.trim() || null,
-        valor_contratual: decimalOuNulo(admissaoFinanceiro.valor_contratual),
-        entrada: decimalOuNulo(admissaoFinanceiro.entrada),
-        numero_parcelas: Number(admissaoFinanceiro.numero_parcelas || "1"),
-        percentual_exito: decimalOuNulo(admissaoFinanceiro.percentual_exito),
-        forma_pagamento: admissaoFinanceiro.forma_pagamento.trim() || null,
-        data_vencimento: admissaoFinanceiro.data_vencimento || null,
-      });
+      };
+      if (podeSincronizarFinanceiro) {
+        Object.assign(payload, {
+          valor_contratual: decimalOuNulo(admissaoFinanceiro.valor_contratual),
+          entrada: decimalOuNulo(admissaoFinanceiro.entrada),
+          numero_parcelas: Number(admissaoFinanceiro.numero_parcelas || "1"),
+          percentual_exito: decimalOuNulo(admissaoFinanceiro.percentual_exito),
+          forma_pagamento: admissaoFinanceiro.forma_pagamento.trim() || null,
+          data_vencimento: admissaoFinanceiro.data_vencimento || null,
+        });
+      }
+      await api.post(`/clients/${alvo.id}/gerar-documentos`, payload);
       toast.success("Procuração e contrato regerados como novos rascunhos.");
       await carregarAdmissao(alvo);
     } catch (e: any) {
@@ -912,83 +920,88 @@ export default function Clientes() {
               ))}
             </ul>
           )}
-          <div className="mt-5 rounded-lg border border-slate-200 p-3">
-            <p className="mb-2 text-xs font-semibold text-navy">
-              Dados do contrato e Financeiro
-            </p>
-            <p className="mb-3 text-xs text-slate-500">
-              Estes dados entram no contrato e sincronizam o contas a receber.
-              Regerar atualiza o lançamento correspondente, sem duplicar cobrança.
-            </p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <FieldLabel>Valor contratual (R$)</FieldLabel>
-                <Input
-                  inputMode="decimal"
-                  placeholder="Ex.: 5.000,00"
-                  value={admissaoFinanceiro.valor_contratual}
-                  onChange={(e) => setAdmissaoFinanceiro({
-                    ...admissaoFinanceiro, valor_contratual: e.target.value,
-                  })}
-                />
-              </div>
-              <div>
-                <FieldLabel>Entrada (R$)</FieldLabel>
-                <Input
-                  inputMode="decimal"
-                  placeholder="Opcional"
-                  value={admissaoFinanceiro.entrada}
-                  onChange={(e) => setAdmissaoFinanceiro({
-                    ...admissaoFinanceiro, entrada: e.target.value,
-                  })}
-                />
-              </div>
-              <div>
-                <FieldLabel>Número de parcelas após a entrada</FieldLabel>
-                <Select
-                  value={admissaoFinanceiro.numero_parcelas}
-                  onChange={(e) => setAdmissaoFinanceiro({
-                    ...admissaoFinanceiro, numero_parcelas: e.target.value,
-                  })}
-                >
-                  {Array.from({ length: 24 }, (_, i) => i + 1).map((n) => (
-                    <option key={n} value={n}>{n}x</option>
-                  ))}
-                </Select>
-              </div>
-              <div>
-                <FieldLabel>Primeiro vencimento</FieldLabel>
-                <Input
-                  type="date"
-                  value={admissaoFinanceiro.data_vencimento}
-                  onChange={(e) => setAdmissaoFinanceiro({
-                    ...admissaoFinanceiro, data_vencimento: e.target.value,
-                  })}
-                />
-              </div>
-              <div>
-                <FieldLabel>Honorários de êxito (%)</FieldLabel>
-                <Input
-                  inputMode="decimal"
-                  placeholder="Opcional"
-                  value={admissaoFinanceiro.percentual_exito}
-                  onChange={(e) => setAdmissaoFinanceiro({
-                    ...admissaoFinanceiro, percentual_exito: e.target.value,
-                  })}
-                />
-              </div>
-              <div>
-                <FieldLabel>Condição adicional</FieldLabel>
-                <Input
-                  placeholder="Ex.: PIX, boleto ou ajuste específico"
-                  value={admissaoFinanceiro.forma_pagamento}
-                  onChange={(e) => setAdmissaoFinanceiro({
-                    ...admissaoFinanceiro, forma_pagamento: e.target.value,
-                  })}
-                />
+          {podeSincronizarFinanceiro && (
+            <>
+            <div className="mt-5 rounded-lg border border-slate-200 p-3">
+              <p className="mb-2 text-xs font-semibold text-navy">
+                Dados do contrato e Financeiro
+              </p>
+              <p className="mb-3 text-xs text-slate-500">
+                Estes dados entram no contrato e sincronizam o contas a receber.
+                Regerar atualiza o lançamento correspondente, sem duplicar cobrança.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <FieldLabel>Valor contratual (R$)</FieldLabel>
+                  <Input
+                    inputMode="decimal"
+                    placeholder="Ex.: 5.000,00"
+                    value={admissaoFinanceiro.valor_contratual}
+                    onChange={(e) => setAdmissaoFinanceiro({
+                      ...admissaoFinanceiro, valor_contratual: e.target.value,
+                    })}
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Entrada (R$)</FieldLabel>
+                  <Input
+                    inputMode="decimal"
+                    placeholder="Opcional"
+                    value={admissaoFinanceiro.entrada}
+                    onChange={(e) => setAdmissaoFinanceiro({
+                      ...admissaoFinanceiro, entrada: e.target.value,
+                    })}
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Número de parcelas após a entrada</FieldLabel>
+                  <Select
+                    value={admissaoFinanceiro.numero_parcelas}
+                    onChange={(e) => setAdmissaoFinanceiro({
+                      ...admissaoFinanceiro, numero_parcelas: e.target.value,
+                    })}
+                  >
+                    {Array.from({ length: 24 }, (_, i) => i + 1).map((n) => (
+                      <option key={n} value={n}>{n}x</option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <FieldLabel>Primeiro vencimento</FieldLabel>
+                  <Input
+                    type="date"
+                    value={admissaoFinanceiro.data_vencimento}
+                    onChange={(e) => setAdmissaoFinanceiro({
+                      ...admissaoFinanceiro, data_vencimento: e.target.value,
+                    })}
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Honorários de êxito (%)</FieldLabel>
+                  <Input
+                    inputMode="decimal"
+                    placeholder="Opcional"
+                    value={admissaoFinanceiro.percentual_exito}
+                    onChange={(e) => setAdmissaoFinanceiro({
+                      ...admissaoFinanceiro, percentual_exito: e.target.value,
+                    })}
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Condição adicional</FieldLabel>
+                  <Input
+                    placeholder="Ex.: PIX, boleto ou ajuste específico"
+                    value={admissaoFinanceiro.forma_pagamento}
+                    onChange={(e) => setAdmissaoFinanceiro({
+                      ...admissaoFinanceiro, forma_pagamento: e.target.value,
+                    })}
+                  />
+                </div>
               </div>
             </div>
-          </div>
+  
+            </>
+          )}
           <div className="mt-3 rounded-lg border border-slate-200 p-3">
             <p className="mb-2 text-xs font-semibold text-navy">
               Poderes da nova procuração
