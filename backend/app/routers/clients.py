@@ -1,15 +1,16 @@
 # ── app/routers/clients.py ───────────────────────────────────────────────────
 # CRM de clientes + VERIFICAÇÃO DE CONFLITO DE INTERESSES (OAB obrigatório)
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from uuid import uuid4
 from typing import Optional
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, or_, func as sqlfunc
 from sqlalchemy.exc import IntegrityError, DataError
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel  # noqa: E402 (module-level p/ _ResolverClienteReq)
+from pydantic import BaseModel, Field  # noqa: E402 (module-level p/ _ResolverClienteReq)
 
 from app.core.client_ownership import (
     ids_clientes_visiveis,
