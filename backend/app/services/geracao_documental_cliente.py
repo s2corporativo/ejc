@@ -29,6 +29,7 @@ from app.services.document_format import padronizar_documento_juridico
 from app.services.documental import (
     _CLAUSULAS_FIXAS_CONTRATO,
     _MARCA,
+    _data_extenso,
     _procuracao,
     _qualificacao,
 )
@@ -659,7 +660,10 @@ def _contrato_cliente(
         f"CONTRATADO: {_settings.ESCRITORIO_NOME}, por seu(sua) advogado(a) "
         f"{advogado}{(' (OAB/MG nº ' + oab + ')') if oab else ''}.\n\n"
         + clausulas
-        + f"{_settings.ESCRITORIO_CIDADE}/{_settings.ESCRITORIO_ESTADO}, [data].\n\n"
+        + (
+            f"{_settings.ESCRITORIO_CIDADE}/{_settings.ESCRITORIO_ESTADO}, "
+            f"{_data_extenso(date.today())}.\n\n"
+        )
         "____________________________   ____________________________\n"
         f"{cli.razao_social or cli.nome} (contratante)        {advogado} (contratado)"
     )
@@ -797,6 +801,15 @@ async def gerar_documentos_cliente(
                 if percentual_exito is not None else "[__]%"
             ),
             "forma_pagamento": forma_pagamento_contrato,
+            "entrada": (
+                formatar_brl(entrada) if entrada is not None else "—"
+            ),
+            "numero_parcelas": numero_parcelas,
+            "primeiro_vencimento": (
+                data_vencimento.strftime("%d/%m/%Y")
+                if data_vencimento is not None else "—"
+            ),
+            "data_documento": _data_extenso(date.today()),
             "numero_processo": "—", "parte_contraria": "—",
             "comarca": _settings.ESCRITORIO_CIDADE, "vara": "—", "valor_causa": "—",
         }
