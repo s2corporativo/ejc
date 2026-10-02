@@ -165,6 +165,10 @@ class AceitarPrazoRequest(BaseModel):
     titulo: Optional[str] = None
     responsavel_id: Optional[str] = None
     prioridade: Optional[str] = None
+    # Vencimento já passado (intimação capturada com atraso ou prazo perdido):
+    # só é registrado com confirmação explícita, para auditar e alertar a
+    # obrigação vencida sem aceitar data digitada por engano.
+    confirmar_prazo_vencido: bool = False
 
 
 @router.get("/")
@@ -526,13 +530,25 @@ async def aceitar_prazo(
         )
 
     data_prazo = payload.data_prazo
-    if data_prazo < hoje_operacional():
+    prazo_ja_vencido = data_prazo < hoje_operacional()
+    if prazo_ja_vencido and not payload.confirmar_prazo_vencido:
         raise HTTPException(
             status_code=422,
-            detail="data_prazo no passado: confira a publicação e o termo inicial.",
+            detail=(
+                "data_prazo no passado: confira a publicação e o termo inicial. "
+                "Se o prazo realmente já venceu, confirme o registro como "
+                "prazo vencido (confirmar_prazo_vencido)."
+            ),
         )
     responsavel_id = await _resolver_responsavel_prazo(
         db, payload.responsavel_id, comunicacao, caso, cu
+    )
+    aviso_vencido = (
+        "Prazo registrado já vencido: será sinalizado como vencido pelo alerta "
+        "das 07h10. Avalie imediatamente a medida cabível (ex.: CPC, art. 223, "
+        "§ 1º — justa causa)."
+        if prazo_ja_vencido
+        else None
     )
     aviso_dia_nao_util = (
         "data_prazo cai em fim de semana: confira a prorrogação para o primeiro "
@@ -586,6 +602,7 @@ async def aceitar_prazo(
             "origem": "djen",
             "com_id": comunicacao.id,
             "modo": "vencimento_manual_revisado",
+            "prazo_vencido_confirmado": prazo_ja_vencido,
         },
     )
     await db.commit()
@@ -597,7 +614,7 @@ async def aceitar_prazo(
         "data_prazo": prazo.data_prazo,
         "titulo": prazo.titulo,
         "base_legal": prazo.base_legal,
-        "aviso": aviso_dia_nao_util,
+        "aviso": " ".join(a for a in (aviso_vencido, aviso_dia_nao_util) if a) or None,
     }
 
 

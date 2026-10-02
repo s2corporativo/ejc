@@ -75,6 +75,21 @@ export function linkOficialSeguro(link?: string | null): string | null {
   }
 }
 
+/** Data local (YYYY-MM-DD) de hoje, para comparar com <input type="date">. */
+export function hojeIso(agora: Date = new Date()): string {
+  const m = String(agora.getMonth() + 1).padStart(2, "0");
+  const d = String(agora.getDate()).padStart(2, "0");
+  return `${agora.getFullYear()}-${m}-${d}`;
+}
+
+/** Vencimento já passado exige confirmação explícita (prazo vencido auditável). */
+export function exigeConfirmacaoVencido(
+  dataPrazo: string,
+  agora: Date = new Date(),
+): boolean {
+  return !!dataPrazo && dataPrazo < hojeIso(agora);
+}
+
 /** Nº CNJ só com dígitos (como vem da comunicação) → máscara usada no cadastro. */
 export function mascararCnj(termo: string): string {
   const d = termo.trim();
@@ -278,6 +293,7 @@ export function PrazoSugeridoModal({
   const [salvando, setSalvando] = useState<"aceitar" | "recusar" | null>(null);
   const [dataPrazo, setDataPrazo] = useState("");
   const [temCaso, setTemCaso] = useState(true);
+  const [confirmaVencido, setConfirmaVencido] = useState(false);
   const dados = sugestao?.dados;
   const status = dados?.prazo_sugerido_status ?? "nenhum";
   const jaResolvido = status === "aceito" || status === "recusado";
@@ -285,6 +301,7 @@ export function PrazoSugeridoModal({
 
   useEffect(() => {
     setDataPrazo("");
+    setConfirmaVencido(false);
     setTemCaso(true); // sem herdar o estado da intimação anterior até o detalhe chegar
   }, [sugestao?.id]);
 
@@ -298,7 +315,12 @@ export function PrazoSugeridoModal({
     try {
       const { data } = await api.post(
         `/intimacoes/${sugestao.id}/aceitar-prazo`,
-        { data_prazo: dataPrazo },
+        {
+          data_prazo: dataPrazo,
+          ...(exigeConfirmacaoVencido(dataPrazo) && confirmaVencido
+            ? { confirmar_prazo_vencido: true }
+            : {}),
+        },
       );
       toast.success(
         data.criado === false
@@ -398,6 +420,20 @@ export function PrazoSugeridoModal({
               Informe a data somente depois de conferir a publicação oficial, o
               termo inicial, o regime aplicável, feriados e suspensões.
             </p>
+            {exigeConfirmacaoVencido(dataPrazo) && (
+              <label className="mt-2 flex items-start gap-2 rounded-lg border border-danger-200 bg-danger-50 p-2 text-xs text-danger-800">
+                <input
+                  type="checkbox"
+                  checked={confirmaVencido}
+                  onChange={(e) => setConfirmaVencido(e.target.checked)}
+                />
+                <span>
+                  O vencimento informado <strong>já passou</strong>. Confirmo o
+                  registro como prazo vencido (será auditado e sinalizado);
+                  avaliarei de imediato a medida cabível.
+                </span>
+              </label>
+            )}
           </div>
 
           <p className="text-[11px] text-slate-500 italic">
@@ -429,7 +465,8 @@ export function PrazoSugeridoModal({
                 salvando !== null ||
                 !dataPrazo ||
                 status === "aceito" ||
-                !temCaso
+                !temCaso ||
+                (exigeConfirmacaoVencido(dataPrazo) && !confirmaVencido)
               }
               className="px-4 py-2 bg-success-600 text-white text-sm rounded-lg hover:bg-success-700 disabled:opacity-60"
             >

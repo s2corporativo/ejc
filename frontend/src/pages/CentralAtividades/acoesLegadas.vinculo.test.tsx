@@ -161,4 +161,48 @@ describe("PrazoSugeridoModal — evidência e vínculo", () => {
     await screen.findByText(/Fica a parte intimada/);
     expect(screen.queryByText("Abrir PDF oficial")).toBeNull();
   });
+
+  it("vencimento passado exige marcar a confirmação e a envia na requisição", async () => {
+    apiGet.mockResolvedValueOnce(detalhe({ case_id: "case-1" }));
+    apiPost.mockResolvedValueOnce({
+      data: { criado: true, data_prazo: "2020-01-10" },
+    });
+    abrir();
+    await screen.findByText(/Fica a parte intimada/);
+
+    fireEvent.change(document.querySelector('input[type="date"]')!, {
+      target: { value: "2020-01-10" },
+    });
+    const aceitar = screen.getByText("Aceitar e criar prazo") as HTMLButtonElement;
+    expect(aceitar.disabled).toBe(true); // sem confirmar, bloqueado
+    expect(screen.getByText(/já passou/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(aceitar.disabled).toBe(false);
+    fireEvent.click(aceitar);
+
+    await waitFor(() =>
+      expect(apiPost).toHaveBeenCalledWith("/intimacoes/com-1/aceitar-prazo", {
+        data_prazo: "2020-01-10",
+        confirmar_prazo_vencido: true,
+      }),
+    );
+  });
+
+  it("vencimento futuro não mostra confirmação nem envia o campo", async () => {
+    apiGet.mockResolvedValueOnce(detalhe({ case_id: "case-1" }));
+    apiPost.mockResolvedValueOnce({ data: { criado: true, data_prazo: "2999-01-10" } });
+    abrir();
+    await screen.findByText(/Fica a parte intimada/);
+    fireEvent.change(document.querySelector('input[type="date"]')!, {
+      target: { value: "2999-01-10" },
+    });
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    fireEvent.click(screen.getByText("Aceitar e criar prazo"));
+    await waitFor(() =>
+      expect(apiPost).toHaveBeenCalledWith("/intimacoes/com-1/aceitar-prazo", {
+        data_prazo: "2999-01-10",
+      }),
+    );
+  });
 });
