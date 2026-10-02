@@ -1,15 +1,16 @@
 # ── app/routers/clients.py ───────────────────────────────────────────────────
 # CRM de clientes + VERIFICAÇÃO DE CONFLITO DE INTERESSES (OAB obrigatório)
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from uuid import uuid4
 from typing import Optional
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, or_, func as sqlfunc
 from sqlalchemy.exc import IntegrityError, DataError
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel  # noqa: E402 (module-level p/ _ResolverClienteReq)
+from pydantic import BaseModel, Field  # noqa: E402 (module-level p/ _ResolverClienteReq)
 
 from app.core.client_ownership import (
     ids_clientes_visiveis,
@@ -641,6 +642,13 @@ class GerarDocsClienteIn(BaseModel):
     tipo_poderes: str = "ad_judicia"
     permite_substabelecimento: bool = True
     poderes_especiais: Optional[str] = None
+    valor_contratual: Optional[Decimal] = Field(default=None, ge=0)
+    entrada: Optional[Decimal] = Field(default=None, ge=0)
+    numero_parcelas: int = Field(default=1, ge=1, le=120)
+    percentual_exito: Optional[Decimal] = Field(default=None, ge=0, le=100)
+    forma_pagamento: Optional[str] = Field(default=None, max_length=500)
+    data_vencimento: Optional[date] = None
+    case_id: Optional[str] = Field(default=None, max_length=36)
     forcar_novo: bool = False
 
 
@@ -665,6 +673,44 @@ async def gerar_documentos_cliente(
     if not c or not await _pode_ver_cliente(cu, c, db):
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
     p = payload or GerarDocsClienteIn()
+    if p.entrada is not None and p.valor_contratual is None:
+        raise HTTPException(
+            status_code=422,
+            detail="entrada exige valor_contratual",
+        )
+    if (
+        p.valor_contratual is not None
+        and p.entrada is not None
+        and p.entrada > p.valor_contratual
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="entrada não pode ser maior que o valor contratual",
+        )
+    if p.numero_parcelas > 1 and p.valor_contratual is None:
+        raise HTTPException(
+            status_code=422,
+            detail="parcelamento exige valor_contratual",
+        )
+    if p.numero_parcelas > 1 and p.data_vencimento is None:
+        raise HTTPException(
+            status_code=422,
+            detail="parcelamento exige o primeiro vencimento",
+        )
+    if p.case_id:
+        from app.models.case import Case
+        caso = (await db.execute(
+            select(Case).where(
+                Case.id == p.case_id,
+                Case.client_id == c.id,
+                Case.deleted_at.is_(None),
+            )
+        )).scalar_one_or_none()
+        if not caso:
+            raise HTTPException(
+                status_code=422,
+                detail="O caso informado não pertence a este cliente ou não está ativo.",
+            )
     from app.services.geracao_documental_cliente import gerar_documentos_cliente as _gerar
     resultado = await _gerar(
         db,
@@ -673,6 +719,13 @@ async def gerar_documentos_cliente(
         tipo_poderes=p.tipo_poderes,
         permite_substabelecimento=p.permite_substabelecimento,
         poderes_especiais=p.poderes_especiais,
+        valor_contratual=p.valor_contratual,
+        entrada=p.entrada,
+        numero_parcelas=p.numero_parcelas,
+        percentual_exito=p.percentual_exito,
+        forma_pagamento=p.forma_pagamento,
+        data_vencimento=p.data_vencimento,
+        case_id=p.case_id,
         forcar_novo=p.forcar_novo,
     )
     # A idempotência devolve o rascunho ANTERIOR quando já existe kit. Se o

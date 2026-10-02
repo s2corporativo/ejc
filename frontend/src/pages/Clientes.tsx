@@ -24,6 +24,9 @@ import {
   Alert,
   Badge,
   Button,
+  FieldLabel,
+  Input,
+  Select,
 } from "../components/UI";
 import { ClientesStats } from "../components/Dashboards";
 import { VerificarReceita } from "../components/Infosimples";
@@ -119,6 +122,14 @@ export default function Clientes() {
     tipo_poderes: "ad_judicia",
     permite_substabelecimento: true,
     poderes_especiais: "",
+  });
+  const [admissaoFinanceiro, setAdmissaoFinanceiro] = useState({
+    valor_contratual: "",
+    entrada: "",
+    numero_parcelas: "1",
+    percentual_exito: "",
+    forma_pagamento: "",
+    data_vencimento: "",
   });
 
   const load = () => {
@@ -241,6 +252,13 @@ export default function Clientes() {
     }
   };
 
+  const decimalOuNulo = (valor: string) => {
+    const normalizado = valor.trim().replace(/\./g, "").replace(",", ".");
+    if (!normalizado) return null;
+    const numero = Number(normalizado);
+    return Number.isFinite(numero) ? numero : null;
+  };
+
   const regerarAdmissao = async () => {
     if (!admissaoModal) return;
     const alvo = admissaoModal;
@@ -251,6 +269,12 @@ export default function Clientes() {
         tipo_poderes: admissaoPoderes.tipo_poderes,
         permite_substabelecimento: admissaoPoderes.permite_substabelecimento,
         poderes_especiais: admissaoPoderes.poderes_especiais.trim() || null,
+        valor_contratual: decimalOuNulo(admissaoFinanceiro.valor_contratual),
+        entrada: decimalOuNulo(admissaoFinanceiro.entrada),
+        numero_parcelas: Number(admissaoFinanceiro.numero_parcelas || "1"),
+        percentual_exito: decimalOuNulo(admissaoFinanceiro.percentual_exito),
+        forma_pagamento: admissaoFinanceiro.forma_pagamento.trim() || null,
+        data_vencimento: admissaoFinanceiro.data_vencimento || null,
       });
       toast.success("Procuração e contrato regerados como novos rascunhos.");
       await carregarAdmissao(alvo);
@@ -399,20 +423,28 @@ export default function Clientes() {
                     {c.documento_exibicao || "—"}
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
-                    <button
+                    <Button
+                      type="button"
                       title="Dossiê Digital"
-                      className="text-bronze hover:text-bronze-dark inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5 font-medium text-xs"
+                      aria-label="Abrir dossiê digital"
+                      variant="ghost"
+                      size="icon"
+                      className="text-bronze hover:text-bronze-dark"
                       onClick={(e) => {
                         e.stopPropagation();
                         window.location.href = `/clientes/${c.id}`;
                       }}
                     >
                       📋
-                    </button>
+                    </Button>
                     {podeCriarAcesso && (
-                      <button
+                      <Button
+                        type="button"
                         title="Acesso ao Portal"
-                        className="text-navy hover:text-gold inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5"
+                        aria-label="Configurar acesso ao Portal"
+                        variant="ghost"
+                        size="icon"
+                        className="text-navy hover:text-gold"
                         onClick={(e) => {
                           e.stopPropagation();
                           setAcessoModal(c);
@@ -423,24 +455,32 @@ export default function Clientes() {
                         }}
                       >
                         <KeyRound size={14} />
-                      </button>
+                      </Button>
                     )}
                     {podeVerAdmissao && (
-                      <button
-                        title="Procuração e contrato de honorários"
-                        className="text-navy hover:text-gold inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5"
+                      <Button
+                        type="button"
+                        title="Gerar procuração, contrato e sincronizar Financeiro"
+                        aria-label="Gerar procuração, contrato e sincronizar Financeiro"
+                        variant="ghost"
+                        size="icon"
+                        className="text-navy hover:text-gold"
                         onClick={(e) => {
                           e.stopPropagation();
                           carregarAdmissao(c);
                         }}
                       >
                         <FileSignature size={14} />
-                      </button>
+                      </Button>
                     )}
                     {podeRelatorioLgpd && (
-                      <button
+                      <Button
+                        type="button"
                         title="Relatório LGPD"
-                        className="text-navy hover:text-gold inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5"
+                        aria-label="Gerar relatório LGPD"
+                        variant="ghost"
+                        size="icon"
+                        className="text-navy hover:text-gold"
                         onClick={async (e) => {
                           e.stopPropagation();
                           try {
@@ -465,12 +505,16 @@ export default function Clientes() {
                         }}
                       >
                         📄
-                      </button>
+                      </Button>
                     )}
                     {podeExcluir && (
-                      <button
+                      <Button
+                        type="button"
                         title="Excluir cliente"
-                        className="inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5 text-red-500/70 hover:text-red-600"
+                        aria-label="Excluir cliente"
+                        variant="ghost"
+                        size="icon"
+                        className="text-red-500/70 hover:text-red-600"
                         onClick={(e) => {
                           e.stopPropagation();
                           setExcluirBloqueios([]);
@@ -479,7 +523,7 @@ export default function Clientes() {
                         }}
                       >
                         <Trash2 size={14} />
-                      </button>
+                      </Button>
                     )}
                   </td>
                   <td className="px-4 py-3 text-slate-500">
@@ -495,8 +539,9 @@ export default function Clientes() {
                               c.nome || "",
                             )
                           }
-                          className="inline-flex min-h-[24px] min-w-[24px] items-center justify-center rounded-full bg-green-100 p-1 text-green-600 transition-colors hover:bg-green-200"
+                          className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-full bg-green-100 p-1 text-green-600 transition-colors hover:bg-green-200"
                           title="Abrir WhatsApp"
+                          aria-label="Abrir WhatsApp"
                         >
                           <svg
                             className="w-3.5 h-3.5"
@@ -868,6 +913,83 @@ export default function Clientes() {
             </ul>
           )}
           <div className="mt-5 rounded-lg border border-slate-200 p-3">
+            <p className="mb-2 text-xs font-semibold text-navy">
+              Dados do contrato e Financeiro
+            </p>
+            <p className="mb-3 text-xs text-slate-500">
+              Estes dados entram no contrato e sincronizam o contas a receber.
+              Regerar atualiza o lançamento correspondente, sem duplicar cobrança.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <FieldLabel>Valor contratual (R$)</FieldLabel>
+                <Input
+                  inputMode="decimal"
+                  placeholder="Ex.: 5.000,00"
+                  value={admissaoFinanceiro.valor_contratual}
+                  onChange={(e) => setAdmissaoFinanceiro({
+                    ...admissaoFinanceiro, valor_contratual: e.target.value,
+                  })}
+                />
+              </div>
+              <div>
+                <FieldLabel>Entrada (R$)</FieldLabel>
+                <Input
+                  inputMode="decimal"
+                  placeholder="Opcional"
+                  value={admissaoFinanceiro.entrada}
+                  onChange={(e) => setAdmissaoFinanceiro({
+                    ...admissaoFinanceiro, entrada: e.target.value,
+                  })}
+                />
+              </div>
+              <div>
+                <FieldLabel>Número de parcelas após a entrada</FieldLabel>
+                <Select
+                  value={admissaoFinanceiro.numero_parcelas}
+                  onChange={(e) => setAdmissaoFinanceiro({
+                    ...admissaoFinanceiro, numero_parcelas: e.target.value,
+                  })}
+                >
+                  {Array.from({ length: 24 }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n}>{n}x</option>
+                  ))}
+                </Select>
+              </div>
+              <div>
+                <FieldLabel>Primeiro vencimento</FieldLabel>
+                <Input
+                  type="date"
+                  value={admissaoFinanceiro.data_vencimento}
+                  onChange={(e) => setAdmissaoFinanceiro({
+                    ...admissaoFinanceiro, data_vencimento: e.target.value,
+                  })}
+                />
+              </div>
+              <div>
+                <FieldLabel>Honorários de êxito (%)</FieldLabel>
+                <Input
+                  inputMode="decimal"
+                  placeholder="Opcional"
+                  value={admissaoFinanceiro.percentual_exito}
+                  onChange={(e) => setAdmissaoFinanceiro({
+                    ...admissaoFinanceiro, percentual_exito: e.target.value,
+                  })}
+                />
+              </div>
+              <div>
+                <FieldLabel>Condição adicional</FieldLabel>
+                <Input
+                  placeholder="Ex.: PIX, boleto ou ajuste específico"
+                  value={admissaoFinanceiro.forma_pagamento}
+                  onChange={(e) => setAdmissaoFinanceiro({
+                    ...admissaoFinanceiro, forma_pagamento: e.target.value,
+                  })}
+                />
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 rounded-lg border border-slate-200 p-3">
             <p className="mb-2 text-xs font-semibold text-navy">
               Poderes da nova procuração
             </p>
