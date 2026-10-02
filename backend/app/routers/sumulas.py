@@ -5,12 +5,13 @@
 # POST /casos/verificar-conflito  — verifica conflito de interesses (qualquer auth)
 # ─────────────────────────────────────────────────────────────────────────────
 from typing import Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 from app.core.database import get_db
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 
@@ -100,11 +101,23 @@ async def buscar_sumulas(
 
 
 # ─── Conflito de Interesses ───────────────────────────────────────────────────
-@router.post("/verificar-conflito")
+# Mesmo gate e mesma cota de /clients/verificar-conflito: a checagem cruza a base
+# inteira por dever ético e não pode servir de oráculo de PII a qualquer login.
+_PERFIS_CONFLITO = {"superadmin", "admin", "socio", "advogado", "secretaria"}
+
+
+def _req_conflito(cu: User = Depends(get_current_user)) -> User:
+    if cu.role.value not in _PERFIS_CONFLITO:
+        raise HTTPException(status_code=403, detail="Sem permissão para verificar conflito")
+    return cu
+
+
+@router.post("/verificar-conflito",
+             dependencies=[Depends(rate_limit("verificar-conflito", 10))])
 async def verificar_conflito(
     req: ConflitoRequest,
     db:  AsyncSession = Depends(get_db),
-    cu:  User         = Depends(get_current_user),
+    cu:  User         = Depends(_req_conflito),
 ):
     """
     Verifica conflito de interesses antes de abrir um caso.
