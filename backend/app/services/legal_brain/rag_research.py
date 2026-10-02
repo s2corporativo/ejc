@@ -10,6 +10,11 @@ from .research_loop import (
 )
 
 
+# "saneamento_fatico" é o purpose emitido por build_clarification_plan;
+# "clarificar_fatos" é mantido por compatibilidade com planos já serializados.
+_CLARIFICATION_PURPOSES = frozenset({"saneamento_fatico", "clarificar_fatos"})
+
+
 def _record_from_rag(
     item: dict[str, Any], *, purpose: str, issue_key: str | None = None
 ) -> dict[str, Any] | None:
@@ -126,7 +131,7 @@ async def execute_research_plan_with_rag(
     executed_steps: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
     clarification_only = bool(plan.steps) and all(
-        step.purpose == "clarificar_fatos" for step in plan.steps
+        step.purpose in _CLARIFICATION_PURPOSES for step in plan.steps
     )
 
     # ``plan.max_cycles`` limita as rodadas. A 1ª executa todos os passos; as
@@ -142,7 +147,7 @@ async def execute_research_plan_with_rag(
         retry: list = []
         progressed = False
         for step in pending:
-            if step.purpose == "clarificar_fatos":
+            if step.purpose in _CLARIFICATION_PURPOSES:
                 executed_steps.append(
                     {"purpose": step.purpose, "query": step.query, "retrieved": 0, "skipped": True}
                 )
