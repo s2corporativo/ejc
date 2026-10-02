@@ -205,17 +205,12 @@ describe("Clientes — documentos de admissão", () => {
         tipo_poderes: "ad_judicia_et_extra",
         permite_substabelecimento: true,
         poderes_especiais: null,
-        valor_contratual: null,
-        entrada: null,
-        numero_parcelas: 1,
-        percentual_exito: null,
-        forma_pagamento: null,
-        data_vencimento: null,
       }),
     );
   });
 
   it("envia cronograma financeiro junto com a reemissão do contrato", async () => {
+    estado.role = "socio";
     montar();
     await screen.findByText("Maria Souza");
     fireEvent.click(
