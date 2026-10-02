@@ -636,6 +636,14 @@ async def _kit_admissao_automatico(db: AsyncSession, c: Client, cu: User) -> Non
 # Campos que alteram os PODERES outorgados — se vierem explícitos e já houver
 # kit emitido, a emissão precisa falhar alto em vez de reaproveitar o antigo.
 _CAMPOS_PODERES = {"tipo_poderes", "permite_substabelecimento", "poderes_especiais"}
+_CAMPOS_FINANCEIROS = {
+    "valor_contratual",
+    "entrada",
+    "numero_parcelas",
+    "percentual_exito",
+    "forma_pagamento",
+    "data_vencimento",
+}
 
 
 class GerarDocsClienteIn(BaseModel):
@@ -673,6 +681,16 @@ async def gerar_documentos_cliente(
     if not c or not await _pode_ver_cliente(cu, c, db):
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
     p = payload or GerarDocsClienteIn()
+    campos_recebidos = payload.model_fields_set if payload else set()
+    pediu_financeiro = bool(_CAMPOS_FINANCEIROS & campos_recebidos)
+    if pediu_financeiro and cu.role.value not in {"superadmin", "admin", "socio"}:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Sincronização financeira do contrato é restrita a "
+                "superadmin, admin ou sócio."
+            ),
+        )
     if p.entrada is not None and p.valor_contratual is None:
         raise HTTPException(
             status_code=422,
@@ -734,16 +752,16 @@ async def gerar_documentos_cliente(
     # assinaria poderes diferentes dos que pediu, acreditando tê-los outorgado.
     # O aviso no corpo não basta — nada obriga o consumidor a lê-lo.
     if resultado.get("ja_existia"):
-        pedidos = _CAMPOS_PODERES & (payload.model_fields_set if payload else set())
+        pedidos = (_CAMPOS_PODERES | _CAMPOS_FINANCEIROS) & campos_recebidos
         if pedidos:
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    "Já existe procuração/contrato em rascunho para este cliente, "
-                    "com os poderes definidos na emissão anterior. Os poderes "
-                    f"informados agora ({', '.join(sorted(pedidos))}) NÃO foram "
-                    "aplicados. Envie forcar_novo=true para emitir nova versão "
-                    "com esses poderes."
+                    "Já existe procuração/contrato em rascunho para este cliente. "
+                    f"Os campos informados agora ({', '.join(sorted(pedidos))}) "
+                    "NÃO foram aplicados ao rascunho anterior. Envie "
+                    "forcar_novo=true para emitir nova versão e sincronizar "
+                    "os dados correspondentes."
                 ),
             )
     return resultado
