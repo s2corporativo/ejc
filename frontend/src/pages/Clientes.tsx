@@ -120,6 +120,12 @@ export default function Clientes() {
     permite_substabelecimento: true,
     poderes_especiais: "",
   });
+  const [admissaoFinanceiro, setAdmissaoFinanceiro] = useState({
+    valor_contratual: "",
+    percentual_exito: "",
+    forma_pagamento: "",
+    data_vencimento: "",
+  });
 
   const load = () => {
     const my = ++seq.current;
@@ -251,6 +257,14 @@ export default function Clientes() {
         tipo_poderes: admissaoPoderes.tipo_poderes,
         permite_substabelecimento: admissaoPoderes.permite_substabelecimento,
         poderes_especiais: admissaoPoderes.poderes_especiais.trim() || null,
+        valor_contratual: admissaoFinanceiro.valor_contratual
+          ? Number(admissaoFinanceiro.valor_contratual.replace(",", "."))
+          : null,
+        percentual_exito: admissaoFinanceiro.percentual_exito
+          ? Number(admissaoFinanceiro.percentual_exito.replace(",", "."))
+          : null,
+        forma_pagamento: admissaoFinanceiro.forma_pagamento.trim() || null,
+        data_vencimento: admissaoFinanceiro.data_vencimento || null,
       });
       toast.success("Procuração e contrato regerados como novos rascunhos.");
       await carregarAdmissao(alvo);
@@ -427,7 +441,7 @@ export default function Clientes() {
                     )}
                     {podeVerAdmissao && (
                       <button
-                        title="Procuração e contrato de honorários"
+                        title="Gerar procuração, contrato e sincronizar Financeiro"
                         className="text-navy hover:text-gold inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -868,6 +882,54 @@ export default function Clientes() {
             </ul>
           )}
           <div className="mt-5 rounded-lg border border-slate-200 p-3">
+            <p className="mb-2 text-xs font-semibold text-navy">
+              Dados do contrato e Financeiro
+            </p>
+            <p className="mb-3 text-xs text-slate-500">
+              Estes dados entram no contrato e sincronizam o contas a receber.
+              Regerar atualiza o lançamento correspondente, sem duplicar cobrança.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input
+                className="input w-full"
+                inputMode="decimal"
+                placeholder="Valor contratual (R$)"
+                value={admissaoFinanceiro.valor_contratual}
+                onChange={(e) => setAdmissaoFinanceiro({
+                  ...admissaoFinanceiro, valor_contratual: e.target.value,
+                })}
+              />
+              <input
+                className="input w-full"
+                inputMode="decimal"
+                placeholder="Êxito (%)"
+                value={admissaoFinanceiro.percentual_exito}
+                onChange={(e) => setAdmissaoFinanceiro({
+                  ...admissaoFinanceiro, percentual_exito: e.target.value,
+                })}
+              />
+              <input
+                className="input w-full sm:col-span-2"
+                placeholder="Forma de pagamento (ex.: entrada + 3 parcelas)"
+                value={admissaoFinanceiro.forma_pagamento}
+                onChange={(e) => setAdmissaoFinanceiro({
+                  ...admissaoFinanceiro, forma_pagamento: e.target.value,
+                })}
+              />
+              <label className="text-xs text-slate-500 sm:col-span-2">
+                Primeiro vencimento
+                <input
+                  className="input mt-1 w-full"
+                  type="date"
+                  value={admissaoFinanceiro.data_vencimento}
+                  onChange={(e) => setAdmissaoFinanceiro({
+                    ...admissaoFinanceiro, data_vencimento: e.target.value,
+                  })}
+                />
+              </label>
+            </div>
+          </div>
+          <div className="mt-3 rounded-lg border border-slate-200 p-3">
             <p className="mb-2 text-xs font-semibold text-navy">
               Poderes da nova procuração
             </p>
