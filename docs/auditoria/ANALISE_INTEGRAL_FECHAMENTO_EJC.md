@@ -93,7 +93,7 @@ Ordenados por severidade. "Confirmado" = verificado no código nesta análise.
 | M2 | **Pipeline de rescan SHA-256 sem gatilho.** `rescan_tasks.agendar_rescan`, `document_rescan_service`, `document_remote_hash_service` e as tabelas da migration 142 existem, mas nenhuma rota, job ou script de `app/` os aciona; `rescan_tasks` nem está no `include` do Celery. | `app/tasks/rescan_tasks.py`; `app/core/celery_app.py:26` | Decidir: expor em rota admin + job, ou remover o código (as tabelas ficam até uma migration *contract*). |
 | M3 | **Parâmetros de API externa nunca confirmados.** | `app/services/transparencia_service.py:218` e `app/routers/car.py:34` (`TODO(verificar-vps)`) | Validar contra a documentação oficial (Portal da Transparência / SICAR) e cobrir com teste de contrato; até lá a consulta pode retornar vazio silenciosamente. |
 | M4 | **Webhook Evolution (WhatsApp) recebe mensagem e não integra.** | `app/routers/evolution_webhook.py:61` (`TODO: integrar com fluxo de CRM/casos`) | Integrar ou desligar a rota pública `/api/webhooks/` para esse provedor. |
-| M5 | **Texto de PR exposto em resposta de API.** | `app/modules/dpt360/radar_service.py:174`: `"dependencias_pendentes": ["PR #895: gate de vigência RAG"]` | Trocar por estado funcional (ex.: "gate de vigência RAG") ou remover o campo. |
+| M5 | ~~Texto de PR exposto em resposta de API.~~ **Corrigido neste PR.** | `app/modules/dpt360/radar_service.py`: `dependencias_pendentes` citava um PR fechado sem merge; o gate de vigência já existe em `services/ai/reranker.py` | Lista vazia + teste de regressão `tests/test_dpt360_radar_sem_referencia_de_pr.py`. |
 | M6 | **Duas superfícies de API para os mesmos 907 endpoints** (`/api` e `/api/v1`), mantidas por normalização no middleware. | `app/core/auth_middleware.py:42-63`; `frontend/src/lib/api.ts` (interceptor que apara prefixo) | Definir `/api/v1` como única e desativar `/api` após janela de telemetria; dobra a superfície de ataque e de testes. |
 | M7 | **Configuração em dois mecanismos.** 278 *settings* em `config.py` (1.590 linhas, 86 flags, 45 desligadas por padrão) **e** 73 leituras diretas de `os.getenv/os.environ` em 30 arquivos; 47 variáveis do `.env.example` não passam pelo `Settings` (ex.: `GOOGLE_DRIVE_*`, `*_OPEN_DATA_ENABLED`). | script de comparação `config.py` × `.env.example` | Centralizar tudo no `Settings` (validação e documentação únicas). |
 
@@ -121,7 +121,6 @@ Ordenados por severidade. "Confirmado" = verificado no código nesta análise.
 | Exports não usados: `Dashboards.tsx` (6), `taxonomia.ts` (5), `types/gerado.ts` (10 constantes), `ramosConfig.ts` (`RAMOS_LISTA*`), `areasWorkspace.ts` (3), `ramoWorkspace.ts` (3) e outros; 40 tipos exportados sem uso | — | knip |
 | `frontend/src/styles/dashboard-canonical.css` | 17 linhas | sem import (removido em #1955) |
 | `frontend/tests/e2e-homologacao.mjs`, `tests/homologacao-modulos.mjs`, `scripts/auditar-css.selftest.mjs` | — | sem script em `package.json` |
-| `app/seeds/checklists_seed.py`, `clausulas_seed.py`, `oab_honorarios_seed.py`, `templates_seed.py` | 1.086 linhas | nenhuma referência em `app/`, testes, scripts, entrypoint ou docs |
 | Rescan SHA-256 (ver M2) | ~700 linhas | sem gatilho |
 | Dependência `fpdf2` | — | o próprio `requirements.txt:85` diz "sem consumidores em app/ — remover" |
 | Reexports de compatibilidade em `app/routers/financeiro_consolidado.py` (15 nomes) | — | `vulture`; só preserva o caminho de import antigo |
@@ -165,8 +164,7 @@ Ordenados por severidade. "Confirmado" = verificado no código nesta análise.
 - **Três rotas "duplicata depreciada"** (`/penal/ferramentas/prescricao-punitiva`,
   `/admin-esp/ferramentas/recurso-multa-transito`, `/trabalhista/ferramentas/horas-extras`)
   ainda chamadas pelo frontend — migrar o chamador para a rota canônica e remover.
-- **Scripts de execução única** em `scripts/`: `fase3_edit.py` (edição pontual de
-  `CasoDetalhe.tsx`), `apply_architecture_refactor_wave1.py`, `audit_2026-07-01/*.sql`
+- **Scripts de execução única** em `scripts/`: `fase3_edit.py` (removido neste PR), `apply_architecture_refactor_wave1.py`, `audit_2026-07-01/*.sql`
   (movido em #1955), `migrar_env_obsoletos.sh`.
 - **`qa/`** com planos de PR específicos (`pr40_*.md`, `evidencias/pr494`).
 
@@ -236,7 +234,7 @@ prefixo de rota e nome de módulo).
 | Financeiro/Honorários (`financeiro` → `financeiro/*`, `fees`, `nfse`) | ⚠️ | 3 PRs abertos tocando contratos/parcelas (#1985, #1991, #1988 mesclado); fachada de reexport; jobs `honorarios`/`regua_cobranca` sem heartbeat (A2) |
 | Data Room / Teses (`banco-teses` → `data_room`, `teses`) | ⚠️ | models `_v4_compat` mantidos só para o Alembic |
 | Sociedade/Contratos societários | ✅ | — |
-| DPT360 / Radar (`dpt360`, `radar`) | ❗ | M5 (texto de PR em resposta de API) |
+| DPT360 / Radar (`dpt360`, `radar`) | ✅ | M5 corrigido neste PR |
 | Integrações públicas (Transparência, CAR, Infosimples, Google Drive) | ❗ | M3; #1974 (Infosimples); #1941 (Drive sem auth própria) |
 | WhatsApp/Evolution | ❗ | M4 |
 | Configurações/Cofre/Usuários/Lixeira/Auditoria | ✅ | cofre com chave efêmera em dev (warning esperado) |
@@ -262,7 +260,7 @@ tabela de verificação do `CLAUDE.md`.
 
 ### Fase 1 — Corrigir o que é risco (§3)
 A2 (heartbeat em todos os jobs jurídicos/LGPD/financeiros) · A3/M1 (bump de
-WeasyPrint e PyJWT) · M3/M4/M5 · B1–B3.
+WeasyPrint e PyJWT) · M3/M4 · B1–B3. (M5 e `scripts/fase3_edit.py` já resolvidos neste PR. O bump de dependências, a remoção de `fpdf2` e a poda de `UI.tsx` aguardam o fechamento dos PRs ativos que tocam `backend/requirements.txt` — #1950, #1951, #1952, #1954, #1955 — e `frontend/src/components/UI.tsx` — #1984, #1985 —, por força da regra 10 do `CLAUDE.md`.)
 
 ### Fase 2 — Eliminar transições (o "como se fosse hoje" de verdade)
 1. **A1:** internalizar os dois *patches* e o hook de documentos; apagar
@@ -321,3 +319,4 @@ aplicadas. Um PR por área (IA, casos, financeiro, documentos, frontend…).
 - Aviso de *pooling* do fastembed: `embedding_service.py` valida `POOLING_ESPERADO` e a versão está fixada (`fastembed==0.8.0`).
 - B023 em `bank_statement.py:66`: a função interna é chamada na mesma iteração.
 - Senhas/segredos literais em código: nenhum encontrado.
+- Seeds `checklists_seed`, `clausulas_seed`, `oab_honorarios_seed`, `templates_seed` (listados inicialmente como mortos): são CLIs manuais (`python -m app.seeds.<nome>`) documentados em `docs/DEPLOY-VPS.md` — a carga da tabela OAB/MG é deliberadamente manual. Mantidos.

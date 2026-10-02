@@ -171,7 +171,7 @@ async def build_today_radar(
         "itens": items[:RADAR_ITEM_LIMIT],
         "cobertura": "parcial" if coverage_partial else "completa",
         "fontes_ativas": ["diario_oficial_alertas: DOU/DOE-MG"],
-        "dependencias_pendentes": ["PR #895: gate de vigência RAG"],
+        "dependencias_pendentes": [],
         "regra_impacto": (
             "Aderência só é exibida quando existe sinal objetivo no perfil/casos "
             "da empresa. Possível impacto não significa irregularidade."
