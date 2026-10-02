@@ -35,7 +35,7 @@ page.on("console", (msg) => {
 
 try {
   await page.goto(`${BASE_URL}/login`, { waitUntil: "networkidle", timeout: 30000 });
-  await page.getByRole("heading", { name: "Entrar no EJC" }).waitFor({ timeout: 10000 });
+  await page.getByRole("heading", { name: "Entrar no escritório" }).waitFor({ timeout: 10000 });
   assert(await page.locator('input[type="email"]').isVisible(), "campo e-mail invisível");
   assert(await page.locator('input[type="password"]').isVisible(), "campo senha invisível");
   assert(await page.locator('button[type="submit"]').isVisible(), "botão de login invisível");
