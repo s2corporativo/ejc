@@ -28,7 +28,10 @@ from app.models.user import User
 from app.models.client import Client, ClientStatus
 from app.models.case import Case, CaseStatus
 from app.models.audit_log import criar_audit_log
-from app.services.geracao_documental_cliente import listar_pecas_cliente
+from app.services.geracao_documental_cliente import (
+    contexto_financeiro_contrato,
+    listar_pecas_cliente,
+)
 from app.schemas.client import (
     ClientCreate, ClientUpdate, ClientResponse, ConflitoCheckRequest,
 )
@@ -787,6 +790,47 @@ async def listar_pecas_geradas(
     if not c or not await _pode_ver_cliente(cu, c, db):
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
     return await listar_pecas_cliente(db, c)
+
+
+@router.get(
+    "/{client_id}/contrato-financeiro",
+    dependencies=[Depends(rate_limit("cliente-contrato-financeiro", 60))],
+)
+async def contrato_financeiro_cliente(
+    client_id: str,
+    case_id: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_req_clientes_leitura),
+):
+    """Termos do contrato reconstruídos do subledger para pré-preencher a UI."""
+    if cu.role.value not in {"superadmin", "admin", "socio"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Dados financeiros do contrato restritos a perfil fiduciário.",
+        )
+    c = (
+        await db.execute(
+            select(Client).where(Client.id == client_id, Client.deleted_at.is_(None))
+        )
+    ).scalar_one_or_none()
+    if not c or not await _pode_ver_cliente(cu, c, db):
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    if case_id:
+        caso = (
+            await db.execute(
+                select(Case).where(
+                    Case.id == case_id,
+                    Case.client_id == c.id,
+                    Case.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+        if not caso:
+            raise HTTPException(
+                status_code=422,
+                detail="O caso informado não pertence a este cliente ou não está ativo.",
+            )
+    return await contexto_financeiro_contrato(db, c, case_id=case_id)
 
 
 @router.get("/{client_id}", response_model=ClientResponse,
