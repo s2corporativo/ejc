@@ -6,6 +6,7 @@ cliente é apenas apresentação e nunca chave de domínio.
 """
 from __future__ import annotations
 
+import re
 from calendar import monthrange
 from datetime import date
 from decimal import Decimal
@@ -505,6 +506,115 @@ async def _sincronizar_financeiro_contrato(
         ),
         "pago_fixo_preservado": float(pago_fixo),
         "exito_preservado": bool(pago_exito > 0),
+    }
+
+
+async def contexto_financeiro_contrato(
+    db: AsyncSession,
+    cli: Client,
+    *,
+    case_id: str | None = None,
+) -> dict:
+    """Reconstrói os termos financeiros correntes a partir do subledger.
+
+    O total contratual atual é o que já foi efetivamente recebido somado ao
+    saldo ainda aberto das parcelas ativas. Parcelas canceladas sem pagamento
+    ficam apenas no histórico e não voltam ao formulário.
+    """
+    raiz = f"[origem:contrato-admissao;client={cli.id};case={case_id or '-'}"
+    cond_case = Fee.case_id == case_id if case_id else Fee.case_id.is_(None)
+    historico = list((await db.execute(
+        select(Fee).where(
+            Fee.client_id == cli.id,
+            cond_case,
+            Fee.deleted_at.is_(None),
+            Fee.observacoes.ilike(f"%{raiz}%"),
+        )
+    )).scalars().all())
+
+    fixos = [
+        fee for fee in historico
+        if ";component=fixo;" in (fee.observacoes or "")
+        or (
+            fee.valor is not None
+            and ";component=exito;" not in (fee.observacoes or "")
+        )
+    ]
+    ativos = [
+        fee for fee in fixos
+        if fee.status in (FeeStatus.pendente, FeeStatus.atrasado)
+    ]
+    pago_total = await _total_pago_efetivo(db, [fee.id for fee in fixos])
+    pago_ativos = await _total_pago_efetivo(db, [fee.id for fee in ativos])
+    saldo_aberto = max(
+        sum((_moeda(fee.valor) for fee in ativos), Decimal("0.00"))
+        - pago_ativos,
+        Decimal("0.00"),
+    )
+    total_atual = pago_total + saldo_aberto
+
+    entrada_aberta = next(
+        (
+            _moeda(fee.valor)
+            for fee in ativos
+            if "item=entrada]" in (fee.observacoes or "")
+        ),
+        Decimal("0.00"),
+    )
+    totais_parcelas: list[int] = []
+    parcelas_ativas: list[Fee] = []
+    for fee in ativos:
+        obs = fee.observacoes or ""
+        match = re.search(r"item=parcela-\d+-de-(\d+)\]", obs)
+        if match:
+            totais_parcelas.append(int(match.group(1)))
+            parcelas_ativas.append(fee)
+    primeiro_vencimento = min(
+        (fee.data_vencimento for fee in parcelas_ativas if fee.data_vencimento),
+        default=None,
+    )
+
+    exitos = [
+        fee for fee in historico
+        if (
+            ";component=exito;" in (fee.observacoes or "")
+            or (fee.percentual_exito is not None and fee.valor is None)
+        )
+        and fee.status != FeeStatus.cancelado
+    ]
+    percentual_exito = next(
+        (
+            _moeda(fee.percentual_exito)
+            for fee in reversed(exitos)
+            if fee.percentual_exito is not None
+        ),
+        None,
+    )
+
+    return {
+        "valor_contratual": float(total_atual) if fixos else None,
+        "valor_pago": float(pago_total),
+        "saldo_aberto": float(saldo_aberto),
+        "entrada": float(entrada_aberta) if entrada_aberta > 0 else None,
+        "numero_parcelas": max(totais_parcelas, default=max(len(parcelas_ativas), 1)),
+        "primeiro_vencimento": (
+            primeiro_vencimento.isoformat() if primeiro_vencimento else None
+        ),
+        "percentual_exito": (
+            float(percentual_exito) if percentual_exito is not None else None
+        ),
+        "cronograma": [
+            {
+                "fee_id": fee.id,
+                "descricao": fee.descricao,
+                "valor": float(fee.valor or 0),
+                "vencimento": (
+                    fee.data_vencimento.isoformat() if fee.data_vencimento else None
+                ),
+                "status": getattr(fee.status, "value", fee.status),
+            }
+            for fee in ativos
+        ],
     }
 
 
