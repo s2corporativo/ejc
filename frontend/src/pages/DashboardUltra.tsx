@@ -19,6 +19,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
+  FileSignature,
   FolderKanban,
   Gavel,
   Library,
@@ -223,27 +224,24 @@ export default function DashboardUltra() {
   );
   // Tarefa 4: decisões do cockpit computadas no BACKEND (GET /dashboard/hoje)
   // sobre a carteira inteira permitida — não sobre amostras de 30/50 itens.
-  const [hojeBackend, setHojeBackend] = useState<
-    | {
-        escopo: string;
-        contagens: {
-          prazos: { vencidos: number; hoje: number } | null;
-          tarefas: { atrasadas: number; hoje: number } | null;
-          pecas_revisao: number | null;
-          casos_sem_proxima_acao: number | null;
-        };
-        decisoes: {
-          id: string;
-          tipo: string;
-          prioridade: number;
-          titulo: string | null;
-          case_id: string | null;
-          link: string;
-        }[];
-        degradado: string[];
-      }
-    | null
-  >(null);
+  const [hojeBackend, setHojeBackend] = useState<{
+    escopo: string;
+    contagens: {
+      prazos: { vencidos: number; hoje: number } | null;
+      tarefas: { atrasadas: number; hoje: number } | null;
+      pecas_revisao: number | null;
+      casos_sem_proxima_acao: number | null;
+    };
+    decisoes: {
+      id: string;
+      tipo: string;
+      prioridade: number;
+      titulo: string | null;
+      case_id: string | null;
+      link: string;
+    }[];
+    degradado: string[];
+  } | null>(null);
 
   const carregar = useCallback(async () => {
     const inicioDocs = format(
@@ -500,7 +498,8 @@ export default function DashboardUltra() {
             detalhe: d.titulo ?? "Prazo",
             acao: d.case_id ? "Abrir caso e resolver" : "Resolver prazo",
             to: d.link,
-            tom: vencido || p >= 110 ? ("danger" as const) : ("warning" as const),
+            tom:
+              vencido || p >= 110 ? ("danger" as const) : ("warning" as const),
           };
         }
         const atrasada = p >= 105;
@@ -648,7 +647,7 @@ export default function DashboardUltra() {
           <div className="ejc-dash__entry-compact">
             <div>
               <span className="ejc-dash__entry-kicker">
-                EJC · Legal Intelligence Workspace
+                De Paula Teixeira · Legal Intelligence Workspace
               </span>
               <strong>Começar novo trabalho</strong>
               <small>
@@ -666,6 +665,12 @@ export default function DashboardUltra() {
               {canUseEntry && (
                 <Link to="/cadastro-manual?aba=caso">
                   <Briefcase aria-hidden="true" />+ Novo Caso
+                </Link>
+              )}
+              {canUseLegal && (
+                <Link to="/clientes?documentos=1">
+                  <FileSignature aria-hidden="true" />
+                  Gerar documentos
                 </Link>
               )}
             </div>
@@ -730,7 +735,7 @@ export default function DashboardUltra() {
                 </span>
                 <div className="ejc-dash__entry-copy">
                   <span className="ejc-dash__entry-kicker">
-                    EJC · Inteligência Jurídica
+                    De Paula Teixeira · Inteligência Jurídica
                   </span>
                   <h1>Leitura e análise do caso com IA</h1>
                   <p>

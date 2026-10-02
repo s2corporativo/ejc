@@ -39,9 +39,9 @@ export default {
           info: "var(--ejc-info)",
         },
         /*
-         * Design System "De Paula Teixeira" — luxo jurídico DOURADO.
-         * O papel do marrom/bronze foi transferido para a família OURO
-         * (mesma família dos PDFs Visual Law — token `ouro` abaixo).
+         * Design System "De Paula Teixeira" — base neutra, ação azul e ouro de marca.
+         * Azul é a cor de ação; ouro fica reservado à identidade institucional
+         * e aos destaques editoriais/Visual Law.
          * Tokens oficiais (fonte única — documentados aqui):
          *   Ouro Near-Black #3B2F0B — texto de destaque e início dos
          *     gradientes escuros (13,2:1 sobre branco, AAA).
@@ -65,10 +65,8 @@ export default {
           hover: "#F1F5F9",
           active: "#E8F1FF",
         },
-        // Primária — OURO institucional "De Paula Teixeira" (escala oficial
-        // dos PDFs Visual Law). 600 #8F7117 = ação (texto branco 4,6:1 AA);
-        // 700 #6F5711 = hover/texto-acento forte (6,9:1); 900 #3B2F0B =
-        // near-black de títulos (13,2:1 AAA); 50/100 = palha (fundos suaves).
+        // Primária — AZUL de ação do sistema. Ouro institucional DPT é marca,
+        // não ação, e permanece nos tokens ejc-gold/ouro.
         primary: {
           DEFAULT: "#2563EB",
           50: "#EFF6FF",

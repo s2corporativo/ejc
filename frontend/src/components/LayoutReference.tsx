@@ -301,11 +301,11 @@ export default function LayoutReference() {
           <Link
             to="/"
             className="flex shrink-0 items-center md:hidden"
-            aria-label="Ir para o início do EJC"
+            aria-label="Ir para o início"
           >
             <img
-              src="/brand/ejc-wordmark.svg"
-              alt="EJC — Inteligência Jurídica"
+              src={officeBranding.logoPath}
+              alt="De Paula Teixeira Sociedade de Advogados"
               className="brand-logo-img h-9 w-auto max-w-[150px] object-contain"
             />
           </Link>
@@ -526,17 +526,17 @@ export default function LayoutReference() {
             to="/"
             onClick={() => setMobileOpen(false)}
             className="ejc-sidebar-brand__link"
-            aria-label="Ir para o início do EJC"
+            aria-label="Ir para o início"
           >
             <img
-              src="/brand/ejc-wordmark.svg"
-              alt="EJC — Inteligência Jurídica"
+              src={officeBranding.logoPath}
+              alt="De Paula Teixeira Sociedade de Advogados"
               className="ejc-sidebar-brand__logo"
             />
             {!navCollapsed && (
               <span className="ejc-sidebar-brand__copy">
                 <strong>{officeBranding.officeName}</strong>
-                <small>Ecossistema Jurídico Clóvis</small>
+                <small>Sociedade de Advogados</small>
               </span>
             )}
           </Link>

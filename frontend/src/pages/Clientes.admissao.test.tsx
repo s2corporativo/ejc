@@ -197,7 +197,7 @@ describe("Clientes — documentos de admissão", () => {
     fireEvent.change(screen.getByDisplayValue("Ad judicia (foro em geral)"), {
       target: { value: "ad_judicia_et_extra" },
     });
-    fireEvent.click(screen.getByText("Gerar novamente"));
+    fireEvent.click(screen.getByText("Gerar nova versão"));
 
     await waitFor(() =>
       expect(postMock).toHaveBeenCalledWith("/clients/cli-1/gerar-documentos", {
@@ -205,7 +205,42 @@ describe("Clientes — documentos de admissão", () => {
         tipo_poderes: "ad_judicia_et_extra",
         permite_substabelecimento: true,
         poderes_especiais: null,
+        valor_contratual: null,
+        percentual_exito: null,
+        forma_pagamento: null,
+        sincronizar_financeiro: true,
       }),
+    );
+  });
+
+  it("envia honorários estruturados do contrato para sincronização financeira", async () => {
+    montar();
+    await screen.findByText("Maria Souza");
+    fireEvent.click(screen.getByTitle("Procuração e contrato de honorários"));
+    await screen.findByText("Procuracao - Maria Souza");
+
+    fireEvent.change(screen.getByPlaceholderText("Ex.: 3500,00"), {
+      target: { value: "3500,00" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Ex.: 20"), {
+      target: { value: "20" },
+    });
+    fireEvent.change(
+      screen.getByPlaceholderText("Ex.: entrada de R$ 1.000 + 5 parcelas"),
+      { target: { value: "entrada + 5 parcelas" } },
+    );
+    fireEvent.click(screen.getByText("Gerar nova versão"));
+
+    await waitFor(() =>
+      expect(postMock).toHaveBeenCalledWith(
+        "/clients/cli-1/gerar-documentos",
+        expect.objectContaining({
+          valor_contratual: 3500,
+          percentual_exito: 20,
+          forma_pagamento: "entrada + 5 parcelas",
+          sincronizar_financeiro: true,
+        }),
+      ),
     );
   });
 

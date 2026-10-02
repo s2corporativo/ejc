@@ -88,8 +88,7 @@ describe("Clientes — exclusão de cliente", () => {
     await screen.findByText("Maria Souza");
 
     fireEvent.click(screen.getByTitle("Excluir cliente"));
-    const titulo = await screen.findByText(/Excluir cliente/i);
-    const modal = titulo.closest(".card")!;
+    const modal = await screen.findByRole("dialog");
     fireEvent.click(within(modal).getByText("Excluir"));
 
     await waitFor(() =>
@@ -120,8 +119,7 @@ describe("Clientes — exclusão de cliente", () => {
     await screen.findByText("Maria Souza");
 
     fireEvent.click(screen.getByTitle("Excluir cliente"));
-    const titulo = await screen.findByText(/Excluir cliente/i);
-    const modal = titulo.closest(".card")!;
+    const modal = await screen.findByRole("dialog");
     fireEvent.click(within(modal).getByText("Excluir"));
 
     await waitFor(() =>

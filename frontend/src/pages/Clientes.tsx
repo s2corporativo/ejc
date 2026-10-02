@@ -1,6 +1,6 @@
 import { toast } from "../components/Toast";
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   Plus,
   Search,
@@ -24,6 +24,9 @@ import {
   Alert,
   Badge,
   Button,
+  Input,
+  Select,
+  FieldLabel,
 } from "../components/UI";
 import { ClientesStats } from "../components/Dashboards";
 import { VerificarReceita } from "../components/Infosimples";
@@ -56,6 +59,13 @@ interface PecaAdmissao {
   status: string;
   admission_kind: string | null;
   created_at: string | null;
+  financeiro?: {
+    fee_id: string;
+    valor_contratual: number | null;
+    percentual_exito: number | null;
+    forma_pagamento: string | null;
+    status: string;
+  } | null;
 }
 
 function openWhatsApp(phone: string, name: string) {
@@ -120,6 +130,16 @@ export default function Clientes() {
     permite_substabelecimento: true,
     poderes_especiais: "",
   });
+  const [admissaoHonorarios, setAdmissaoHonorarios] = useState({
+    valor_contratual: "",
+    percentual_exito: "",
+    forma_pagamento: "",
+  });
+  const [seletorDocumentos, setSeletorDocumentos] = useState(false);
+  const [docPickerSearch, setDocPickerSearch] = useState("");
+  const [docPickerClientes, setDocPickerClientes] = useState<Client[]>([]);
+  const [docPickerLoading, setDocPickerLoading] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const load = () => {
     const my = ++seq.current;
@@ -142,6 +162,58 @@ export default function Clientes() {
     const t = setTimeout(load, search ? 350 : 0);
     return () => clearTimeout(t);
   }, [search, page]);
+
+  useEffect(() => {
+    if (searchParams.get("documentos") === "1" && podeVerAdmissao) {
+      setSeletorDocumentos(true);
+    }
+  }, [searchParams, podeVerAdmissao]);
+
+  useEffect(() => {
+    if (!seletorDocumentos) return;
+    let ativo = true;
+    const t = setTimeout(
+      () => {
+        setDocPickerLoading(true);
+        api
+          .get("/clients/", {
+            params: {
+              search: docPickerSearch || undefined,
+              page: 1,
+              page_size: 20,
+            },
+          })
+          .then((r) => {
+            if (!ativo) return;
+            setDocPickerClientes(
+              Array.isArray(r.data?.data) ? r.data.data : [],
+            );
+          })
+          .catch(() => {
+            if (ativo) {
+              setDocPickerClientes([]);
+              toast.error("Falha ao buscar clientes para gerar documentos");
+            }
+          })
+          .finally(() => {
+            if (ativo) setDocPickerLoading(false);
+          });
+      },
+      docPickerSearch ? 250 : 0,
+    );
+    return () => {
+      ativo = false;
+      clearTimeout(t);
+    };
+  }, [seletorDocumentos, docPickerSearch]);
+
+  const fecharSeletorDocumentos = () => {
+    setSeletorDocumentos(false);
+    setDocPickerSearch("");
+    const proxima = new URLSearchParams(searchParams);
+    proxima.delete("documentos");
+    setSearchParams(proxima, { replace: true });
+  };
 
   // Exclusão: 1ª tentativa sem forcar; 409 devolve bloqueios e o modal
   // passa a oferecer a confirmação forçada (decisão explícita, auditable).
@@ -222,13 +294,35 @@ export default function Clientes() {
     const req = ++admissaoReq.current;
     setAdmissaoModal(c);
     setAdmissaoPecas(null);
+    setAdmissaoHonorarios({
+      valor_contratual: "",
+      percentual_exito: "",
+      forma_pagamento: "",
+    });
     setAdmissaoLoading(true);
     try {
       const { data } = await api.get<PecaAdmissao[]>(
         `/clients/${c.id}/pecas-geradas`,
       );
       if (req !== admissaoReq.current) return;
-      setAdmissaoPecas(Array.isArray(data) ? data : []);
+      const pecas = Array.isArray(data) ? data : [];
+      setAdmissaoPecas(pecas);
+      const financeiro = pecas.find(
+        (peca) => peca.admission_kind === "contrato_honorarios",
+      )?.financeiro;
+      if (financeiro) {
+        setAdmissaoHonorarios({
+          valor_contratual:
+            financeiro.valor_contratual === null
+              ? ""
+              : String(financeiro.valor_contratual),
+          percentual_exito:
+            financeiro.percentual_exito === null
+              ? ""
+              : String(financeiro.percentual_exito),
+          forma_pagamento: financeiro.forma_pagamento || "",
+        });
+      }
     } catch (e: any) {
       if (req !== admissaoReq.current) return;
       setAdmissaoPecas([]);
@@ -244,18 +338,53 @@ export default function Clientes() {
   const regerarAdmissao = async () => {
     if (!admissaoModal) return;
     const alvo = admissaoModal;
+    const valor = admissaoHonorarios.valor_contratual.trim();
+    const exito = admissaoHonorarios.percentual_exito.trim();
+    const valorNumero = valor ? Number(valor.replace(",", ".")) : null;
+    const exitoNumero = exito ? Number(exito.replace(",", ".")) : null;
+    if (
+      valorNumero !== null &&
+      (!Number.isFinite(valorNumero) || valorNumero < 0)
+    ) {
+      toast.error("Informe um valor contratual válido.");
+      return;
+    }
+    if (
+      exitoNumero !== null &&
+      (!Number.isFinite(exitoNumero) || exitoNumero < 0 || exitoNumero > 100)
+    ) {
+      toast.error("O percentual de êxito deve estar entre 0 e 100.");
+      return;
+    }
     setAdmissaoLoading(true);
     try {
-      await api.post(`/clients/${alvo.id}/gerar-documentos`, {
-        forcar_novo: true,
-        tipo_poderes: admissaoPoderes.tipo_poderes,
-        permite_substabelecimento: admissaoPoderes.permite_substabelecimento,
-        poderes_especiais: admissaoPoderes.poderes_especiais.trim() || null,
-      });
-      toast.success("Procuração e contrato regerados como novos rascunhos.");
+      const { data: resultado } = await api.post(
+        "/clients/" + alvo.id + "/gerar-documentos",
+        {
+          forcar_novo: Boolean(admissaoPecas?.length),
+          tipo_poderes: admissaoPoderes.tipo_poderes,
+          permite_substabelecimento: admissaoPoderes.permite_substabelecimento,
+          poderes_especiais: admissaoPoderes.poderes_especiais.trim() || null,
+          valor_contratual: valorNumero,
+          percentual_exito: exitoNumero,
+          forma_pagamento: admissaoHonorarios.forma_pagamento.trim() || null,
+          sincronizar_financeiro: true,
+        },
+      );
+      if (resultado?.financeiro?.status === "sincronizado") {
+        toast.success(
+          "Procuração e contrato gerados. Honorários sincronizados com o financeiro.",
+        );
+      } else if (resultado?.financeiro?.status === "pendente_permissao") {
+        toast.success(
+          "Documentos gerados. A sincronização financeira ficou pendente para perfil autorizado.",
+        );
+      } else {
+        toast.success("Procuração e contrato gerados como rascunhos.");
+      }
       await carregarAdmissao(alvo);
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao regerar os documentos");
+      toast.error(e.response?.data?.detail || "Falha ao gerar os documentos");
       setAdmissaoLoading(false);
     }
   };
@@ -322,9 +451,24 @@ export default function Clientes() {
         title="Clientes"
         subtitle={`${data?.total ?? 0} ${(data?.total ?? 0) === 1 ? "cadastrado" : "cadastrados"}`}
         actions={
-          <button className="btn-gold" onClick={() => setModal(true)}>
-            <Plus size={16} /> Novo cliente
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {podeVerAdmissao && (
+              <Button
+                variant="secondary"
+                icon={<FileSignature size={16} />}
+                onClick={() => setSeletorDocumentos(true)}
+              >
+                Gerar documentos
+              </Button>
+            )}
+            <Button
+              variant="primary"
+              icon={<Plus size={16} />}
+              onClick={() => setModal(true)}
+            >
+              Novo cliente
+            </Button>
+          </div>
         }
       />
 
@@ -332,8 +476,9 @@ export default function Clientes() {
 
       <div className="relative mb-4 max-w-md">
         <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
-        <input
-          className="input pl-9"
+        <Input
+          className="pl-9"
+          aria-label="Buscar clientes"
           placeholder="Buscar por nome, CPF, CNPJ..."
           value={search}
           onChange={(e) => {
@@ -399,20 +544,34 @@ export default function Clientes() {
                     {c.documento_exibicao || "—"}
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
-                    <button
+                    <Button
+                      type="button"
                       title="Dossiê Digital"
-                      className="text-bronze hover:text-bronze-dark inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5 font-medium text-xs"
+                      aria-label={
+                        "Abrir dossiê de " +
+                        (c.nome || c.razao_social || "cliente")
+                      }
+                      variant="ghost"
+                      size="icon"
+                      className="text-bronze hover:text-bronze-dark"
                       onClick={(e) => {
                         e.stopPropagation();
                         window.location.href = `/clientes/${c.id}`;
                       }}
                     >
                       📋
-                    </button>
+                    </Button>
                     {podeCriarAcesso && (
-                      <button
+                      <Button
+                        type="button"
                         title="Acesso ao Portal"
-                        className="text-navy hover:text-gold inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5"
+                        aria-label={
+                          "Criar acesso ao portal para " +
+                          (c.nome || c.razao_social || "cliente")
+                        }
+                        variant="ghost"
+                        size="icon"
+                        className="text-navy hover:text-gold"
                         onClick={(e) => {
                           e.stopPropagation();
                           setAcessoModal(c);
@@ -422,25 +581,39 @@ export default function Clientes() {
                           });
                         }}
                       >
-                        <KeyRound size={14} />
-                      </button>
+                        <KeyRound size={16} />
+                      </Button>
                     )}
                     {podeVerAdmissao && (
-                      <button
+                      <Button
+                        type="button"
                         title="Procuração e contrato de honorários"
-                        className="text-navy hover:text-gold inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5"
+                        aria-label={
+                          "Gerar documentos de " +
+                          (c.nome || c.razao_social || "cliente")
+                        }
+                        variant="ghost"
+                        size="icon"
+                        className="text-navy hover:text-gold"
                         onClick={(e) => {
                           e.stopPropagation();
                           carregarAdmissao(c);
                         }}
                       >
-                        <FileSignature size={14} />
-                      </button>
+                        <FileSignature size={16} />
+                      </Button>
                     )}
                     {podeRelatorioLgpd && (
-                      <button
+                      <Button
+                        type="button"
                         title="Relatório LGPD"
-                        className="text-navy hover:text-gold inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5"
+                        aria-label={
+                          "Gerar relatório LGPD de " +
+                          (c.nome || c.razao_social || "cliente")
+                        }
+                        variant="ghost"
+                        size="icon"
+                        className="text-navy hover:text-gold"
                         onClick={async (e) => {
                           e.stopPropagation();
                           try {
@@ -465,12 +638,18 @@ export default function Clientes() {
                         }}
                       >
                         📄
-                      </button>
+                      </Button>
                     )}
                     {podeExcluir && (
-                      <button
+                      <Button
+                        type="button"
                         title="Excluir cliente"
-                        className="inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5 text-red-500/70 hover:text-red-600"
+                        aria-label={
+                          "Excluir " + (c.nome || c.razao_social || "cliente")
+                        }
+                        variant="ghost"
+                        size="icon"
+                        className="text-red-500/70 hover:text-red-600"
                         onClick={(e) => {
                           e.stopPropagation();
                           setExcluirBloqueios([]);
@@ -478,8 +657,8 @@ export default function Clientes() {
                           setExcluirAlvo(c);
                         }}
                       >
-                        <Trash2 size={14} />
-                      </button>
+                        <Trash2 size={16} />
+                      </Button>
                     )}
                   </td>
                   <td className="px-4 py-3 text-slate-500">
@@ -488,15 +667,22 @@ export default function Clientes() {
                         {c.whatsapp || c.telefone || c.email || "—"}
                       </span>
                       {(c.whatsapp || c.telefone) && (
-                        <button
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
                           onClick={() =>
                             openWhatsApp(
                               c.whatsapp || c.telefone || "",
                               c.nome || "",
                             )
                           }
-                          className="inline-flex min-h-[24px] min-w-[24px] items-center justify-center rounded-full bg-green-100 p-1 text-green-600 transition-colors hover:bg-green-200"
+                          className="rounded-full bg-green-100 text-green-600 hover:bg-green-200"
                           title="Abrir WhatsApp"
+                          aria-label={
+                            "Abrir WhatsApp de " +
+                            (c.nome || c.razao_social || "cliente")
+                          }
                         >
                           <svg
                             className="w-3.5 h-3.5"
@@ -506,7 +692,7 @@ export default function Clientes() {
                             <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
                             <path d="M12 0C5.373 0 0 5.373 0 12c0 2.125.557 4.126 1.535 5.858L.057 23.486a.5.5 0 0 0 .612.612l5.63-1.477A11.95 11.95 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.886 0-3.655-.497-5.191-1.367l-.372-.217-3.858 1.012 1.013-3.842-.228-.384A9.96 9.96 0 0 1 2 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z" />
                           </svg>
-                        </button>
+                        </Button>
                       )}
                     </div>
                   </td>
@@ -559,20 +745,20 @@ export default function Clientes() {
         <div className="grid sm:grid-cols-2 gap-4">
           <div>
             <label className="label">Tipo</label>
-            <select
+            <Select
               className="input"
               value={form.tipo}
               onChange={(e) => setForm({ ...form, tipo: e.target.value })}
             >
               <option value="PF">Pessoa Física</option>
               <option value="PJ">Pessoa Jurídica</option>
-            </select>
+            </Select>
           </div>
           {form.tipo === "PF" ? (
             <>
               <div>
                 <label className="label">Nome completo *</label>
-                <input
+                <Input
                   className="input"
                   value={form.nome || ""}
                   onChange={(e) => setForm({ ...form, nome: e.target.value })}
@@ -581,7 +767,7 @@ export default function Clientes() {
               <div>
                 <label className="label">CPF</label>
                 <div className="flex gap-2">
-                  <input
+                  <Input
                     className="input flex-1"
                     value={form.cpf || ""}
                     onChange={(e) => setForm({ ...form, cpf: e.target.value })}
@@ -599,7 +785,7 @@ export default function Clientes() {
             <>
               <div>
                 <label className="label">Razão social *</label>
-                <input
+                <Input
                   className="input"
                   value={form.razao_social || ""}
                   onChange={(e) =>
@@ -610,7 +796,7 @@ export default function Clientes() {
               <div>
                 <label className="label">CNPJ</label>
                 <div className="flex gap-2">
-                  <input
+                  <Input
                     className="input flex-1"
                     value={form.cnpj || ""}
                     onChange={(e) => setForm({ ...form, cnpj: e.target.value })}
@@ -657,7 +843,7 @@ export default function Clientes() {
           )}
           <div>
             <label className="label">WhatsApp</label>
-            <input
+            <Input
               className="input"
               value={form.whatsapp || ""}
               onChange={(e) => setForm({ ...form, whatsapp: e.target.value })}
@@ -665,7 +851,7 @@ export default function Clientes() {
           </div>
           <div>
             <label className="label">E-mail</label>
-            <input
+            <Input
               className="input"
               value={form.email || ""}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
@@ -675,7 +861,7 @@ export default function Clientes() {
             <div>
               <label className="label">CEP</label>
               <div className="flex gap-1">
-                <input
+                <Input
                   className="input flex-1"
                   value={form.cep || ""}
                   onChange={(e) => setForm({ ...form, cep: e.target.value })}
@@ -698,7 +884,7 @@ export default function Clientes() {
             </div>
             <div className="col-span-2">
               <label className="label">Logradouro</label>
-              <input
+              <Input
                 className="input"
                 value={form.logradouro || ""}
                 onChange={(e) =>
@@ -710,7 +896,7 @@ export default function Clientes() {
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="label">Número</label>
-              <input
+              <Input
                 className="input"
                 value={form.numero || ""}
                 onChange={(e) => setForm({ ...form, numero: e.target.value })}
@@ -718,7 +904,7 @@ export default function Clientes() {
             </div>
             <div className="col-span-2">
               <label className="label">Bairro</label>
-              <input
+              <Input
                 className="input"
                 value={form.bairro || ""}
                 onChange={(e) => setForm({ ...form, bairro: e.target.value })}
@@ -729,7 +915,7 @@ export default function Clientes() {
             <label className="label">
               Parte contrária (se já conhecida — p/ verificação de conflito)
             </label>
-            <input
+            <Input
               className="input"
               value={form.parte_contraria || ""}
               onChange={(e) =>
@@ -820,6 +1006,58 @@ export default function Clientes() {
         </div>
       </Modal>
 
+      {seletorDocumentos && podeVerAdmissao && (
+        <Modal
+          open
+          onClose={fecharSeletorDocumentos}
+          title="Gerar procuração e contrato"
+          size="md"
+        >
+          <p className="mb-3 text-sm text-slate-600">
+            Escolha o cliente. Os dados cadastrais serão usados automaticamente
+            na procuração e no contrato.
+          </p>
+          <Input
+            autoFocus
+            aria-label="Buscar cliente para gerar documentos"
+            placeholder="Buscar cliente por nome, CPF ou CNPJ"
+            value={docPickerSearch}
+            onChange={(e) => setDocPickerSearch(e.target.value)}
+          />
+          <div className="mt-3 max-h-72 divide-y divide-slate-100 overflow-auto rounded-lg border border-slate-200">
+            {docPickerLoading ? (
+              <p className="p-4 text-sm text-slate-500">Buscando clientes…</p>
+            ) : docPickerClientes.length === 0 ? (
+              <p className="p-4 text-sm text-slate-500">
+                Nenhum cliente encontrado.
+              </p>
+            ) : (
+              docPickerClientes.map((cliente) => (
+                <button
+                  key={cliente.id}
+                  type="button"
+                  className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50 focus-visible:bg-slate-50"
+                  onClick={() => {
+                    fecharSeletorDocumentos();
+                    void carregarAdmissao(cliente);
+                  }}
+                >
+                  <span>
+                    <strong className="block text-sm text-slate-900">
+                      {cliente.nome || cliente.razao_social}
+                    </strong>
+                    <small className="text-xs text-slate-500">
+                      {cliente.documento_exibicao || cliente.tipo}
+                    </small>
+                  </span>
+                  <FileSignature size={18} aria-hidden="true" />
+                </button>
+              ))
+            )}
+          </div>
+        </Modal>
+      )}
+
       {admissaoModal && podeVerAdmissao && (
         <Modal
           open
@@ -838,7 +1076,7 @@ export default function Clientes() {
           {!admissaoLoading && admissaoPecas?.length === 0 && (
             <Alert variant="warning">
               Nenhum documento de admissão para este cliente. Use "Gerar
-              novamente" para emitir a procuração e o contrato.
+              documentos" para emitir a procuração e o contrato.
             </Alert>
           )}
           {!admissaoLoading && !!admissaoPecas?.length && (
@@ -877,8 +1115,8 @@ export default function Clientes() {
               o cliente assinará. A versão anterior continua no histórico.
             </p>
             <div className="space-y-2">
-              <select
-                className="input w-full"
+              <Select
+                className="w-full"
                 value={admissaoPoderes.tipo_poderes}
                 onChange={(e) =>
                   setAdmissaoPoderes({
@@ -892,7 +1130,7 @@ export default function Clientes() {
                   Ad judicia et extra (judicial e extrajudicial)
                 </option>
                 <option value="especiais">Poderes especiais</option>
-              </select>
+              </Select>
               <label className="flex items-center gap-2 text-sm text-slate-600">
                 <input
                   type="checkbox"
@@ -906,8 +1144,8 @@ export default function Clientes() {
                 />
                 Permite substabelecimento
               </label>
-              <input
-                className="input w-full"
+              <Input
+                className="w-full"
                 placeholder="Poderes especiais (art. 105 do CPC) — opcional"
                 value={admissaoPoderes.poderes_especiais}
                 onChange={(e) =>
@@ -919,6 +1157,63 @@ export default function Clientes() {
               />
             </div>
           </div>
+
+          <div className="mt-4 rounded-lg border border-slate-200 p-3">
+            <div className="mb-3">
+              <p className="text-sm font-semibold text-slate-900">
+                Honorários do contrato
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Os valores informados entram na minuta. Perfis fiduciários
+                também sincronizam o honorário pendente com o Financeiro, sem
+                duplicar lançamentos.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <FieldLabel>Valor contratual (R$)</FieldLabel>
+                <Input
+                  inputMode="decimal"
+                  placeholder="Ex.: 3500,00"
+                  value={admissaoHonorarios.valor_contratual}
+                  onChange={(e) =>
+                    setAdmissaoHonorarios({
+                      ...admissaoHonorarios,
+                      valor_contratual: e.target.value,
+                    })
+                  }
+                />
+              </div>
+              <div>
+                <FieldLabel>Honorários de êxito (%)</FieldLabel>
+                <Input
+                  inputMode="decimal"
+                  placeholder="Ex.: 20"
+                  value={admissaoHonorarios.percentual_exito}
+                  onChange={(e) =>
+                    setAdmissaoHonorarios({
+                      ...admissaoHonorarios,
+                      percentual_exito: e.target.value,
+                    })
+                  }
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <FieldLabel>Forma de pagamento</FieldLabel>
+                <Input
+                  placeholder="Ex.: entrada de R$ 1.000 + 5 parcelas"
+                  value={admissaoHonorarios.forma_pagamento}
+                  onChange={(e) =>
+                    setAdmissaoHonorarios({
+                      ...admissaoHonorarios,
+                      forma_pagamento: e.target.value,
+                    })
+                  }
+                />
+              </div>
+            </div>
+          </div>
+
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setAdmissaoModal(null)}>
               Fechar
@@ -928,131 +1223,123 @@ export default function Clientes() {
               disabled={admissaoLoading}
               onClick={regerarAdmissao}
             >
-              Gerar novamente
+              {admissaoPecas?.length ? "Gerar nova versão" : "Gerar documentos"}
             </Button>
           </div>
         </Modal>
       )}
 
       {acessoModal && podeCriarAcesso && (
-        <div className="modal-backdrop" onClick={() => setAcessoModal(null)}>
-          <div
-            className="card p-6 w-full max-w-sm"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="font-semibold text-navy mb-1 flex items-center gap-1.5">
-              <KeyRound size={16} /> Acesso ao Portal
-            </h3>
-            <p className="text-xs text-slate-500 mb-4">
-              {acessoModal.nome || acessoModal.razao_social} — o cliente trocará
-              a senha no 1º login.
-            </p>
-            <div className="space-y-3">
-              <input
-                className="input"
-                type="email"
-                placeholder="E-mail de login"
-                value={acessoForm.email}
-                onChange={(e) =>
-                  setAcessoForm({ ...acessoForm, email: e.target.value })
+        <Modal
+          open
+          onClose={() => setAcessoModal(null)}
+          title="Acesso ao Portal"
+          size="sm"
+        >
+          <p className="mb-4 text-sm text-slate-500">
+            {acessoModal.nome || acessoModal.razao_social} — o cliente trocará a
+            senha no primeiro login.
+          </p>
+          <div className="space-y-3">
+            <Input
+              type="email"
+              placeholder="E-mail de login"
+              value={acessoForm.email}
+              onChange={(e) =>
+                setAcessoForm({ ...acessoForm, email: e.target.value })
+              }
+            />
+            <Input
+              type="password"
+              autoComplete="new-password"
+              placeholder="Senha inicial (mín. 10, com letra, número e símbolo)"
+              value={acessoForm.senha_inicial}
+              onChange={(e) =>
+                setAcessoForm({
+                  ...acessoForm,
+                  senha_inicial: e.target.value,
+                })
+              }
+            />
+            <Button
+              className="w-full"
+              onClick={async () => {
+                try {
+                  await api.post(
+                    "/clients/" + acessoModal.id + "/criar-acesso",
+                    acessoForm,
+                  );
+                  toast.success(
+                    "Acesso criado! Informe o e-mail e a senha inicial ao cliente.",
+                  );
+                  setAcessoModal(null);
+                } catch (e: any) {
+                  toast.error(e.response?.data?.detail || "Erro");
                 }
-              />
-              <input
-                className="input"
-                type="password"
-                autoComplete="new-password"
-                placeholder="Senha inicial (mín. 10, com letra, número e símbolo)"
-                value={acessoForm.senha_inicial}
-                onChange={(e) =>
-                  setAcessoForm({
-                    ...acessoForm,
-                    senha_inicial: e.target.value,
-                  })
-                }
-              />
-              <button
-                className="btn-primary w-full justify-center"
-                onClick={async () => {
-                  try {
-                    await api.post(
-                      `/clients/${acessoModal.id}/criar-acesso`,
-                      acessoForm,
-                    );
-                    toast.success(
-                      "Acesso criado! Informe o e-mail e a senha inicial ao cliente.",
-                    );
-                    setAcessoModal(null);
-                  } catch (e: any) {
-                    toast.error(e.response?.data?.detail || "Erro");
-                  }
-                }}
-              >
-                Criar acesso
-              </button>
-            </div>
+              }}
+            >
+              Criar acesso
+            </Button>
           </div>
-        </div>
+        </Modal>
       )}
 
       {excluirAlvo && podeExcluir && (
-        <div className="modal-backdrop" onClick={() => setExcluirAlvo(null)}>
-          <div
-            className="card p-6 w-full max-w-sm"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="font-semibold text-navy mb-1 flex items-center gap-1.5">
-              <Trash2 size={16} /> Excluir cliente
-            </h3>
-            <p className="text-xs text-slate-500 mb-3">
-              {excluirAlvo.nome || excluirAlvo.razao_social} — o cliente sai da
-              listagem (exclusão lógica). Documentos, casos e a trilha de
-              auditoria permanecem preservados, conforme a LGPD.
-            </p>
-            {excluirBloqueios.length > 0 && (
-              <Alert
-                variant="warning"
-                title="Exclusão bloqueada pelas dependências"
-                className="mb-3"
-              >
-                <ul className="list-disc pl-4 text-xs">
-                  {excluirBloqueios.map((b, i) => (
-                    <li key={i}>{b}</li>
-                  ))}
-                </ul>
-              </Alert>
-            )}
-            {excluirBloqueios.length > 0 && (
-              <label className="mb-3 flex items-start gap-2 text-xs text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={excluirForcar}
-                  onChange={(e) => setExcluirForcar(e.target.checked)}
-                  className="mt-0.5"
-                />
-                Confirmar mesmo assim (forçar) — a decisão é registrada na
-                auditoria e fica associada ao seu usuário.
-              </label>
-            )}
-            <div className="mt-4 flex justify-end gap-2">
-              <Button
-                variant="ghost"
-                disabled={excluindo}
-                onClick={() => setExcluirAlvo(null)}
-              >
-                Cancelar
-              </Button>
-              <Button
-                variant="danger"
-                disabled={
-                  excluindo || (excluirBloqueios.length > 0 && !excluirForcar)
-                }
-                onClick={confirmarExclusao}
-              >
-                {excluindo ? "Excluindo..." : "Excluir"}
-              </Button>
-            </div>
+        <Modal
+          open
+          onClose={() => setExcluirAlvo(null)}
+          title="Excluir cliente"
+          size="sm"
+        >
+          <p className="mb-3 text-sm text-slate-500">
+            {excluirAlvo.nome || excluirAlvo.razao_social} — o cliente sai da
+            listagem por exclusão lógica. Documentos, casos e trilha de
+            auditoria permanecem preservados.
+          </p>
+          {excluirBloqueios.length > 0 && (
+            <Alert
+              variant="warning"
+              title="Exclusão bloqueada pelas dependências"
+              className="mb-3"
+            >
+              <ul className="list-disc pl-4 text-xs">
+                {excluirBloqueios.map((b, i) => (
+                  <li key={i}>{b}</li>
+                ))}
+              </ul>
+            </Alert>
+          )}
+          {excluirBloqueios.length > 0 && (
+            <label className="mb-3 flex items-start gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={excluirForcar}
+                onChange={(e) => setExcluirForcar(e.target.checked)}
+                className="mt-0.5"
+              />
+              Confirmar mesmo assim (forçar) — a decisão é registrada na
+              auditoria e associada ao seu usuário.
+            </label>
+          )}
+          <div className="mt-4 flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              disabled={excluindo}
+              onClick={() => setExcluirAlvo(null)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="danger"
+              disabled={
+                excluindo || (excluirBloqueios.length > 0 && !excluirForcar)
+              }
+              onClick={confirmarExclusao}
+            >
+              {excluindo ? "Excluindo..." : "Excluir"}
+            </Button>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

@@ -97,7 +97,7 @@
 
   /* Shorthands compostos: uso `font: var(--ejc-text-h1)` etc.
      (o shorthand `font` normaliza style/variant; itálico é aplicado à parte) */
-  --ejc-text-display: 700 clamp(26px, 2.5vw, 36px) / 1.12 var(--ejc-font-sans);
+  --ejc-font-display: 700 clamp(26px, 2.5vw, 36px) / 1.12 var(--ejc-font-sans);
   --ejc-text-h1: 650 clamp(21px, 2vw, 28px) / 1.2 var(--ejc-font-sans);
   --ejc-text-h2: 650 1.25rem / 1.35 var(--ejc-font-sans);
   --ejc-text-h3: 650 1.125rem / 1.4 var(--ejc-font-sans);

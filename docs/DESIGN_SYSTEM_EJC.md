@@ -38,6 +38,12 @@ rotas, RBAC, contratos de API ou fluxos jurídicos por elementos cenográficos.
 Os tokens `--ejc-*` devem ser preferidos em toda evolução visual. Não criar
 paleta local quando já existir token semântico equivalente.
 
+### Contrato de nomes críticos
+
+- `--ejc-text-display` é **somente tinta/cor** de texto de destaque.
+- `--ejc-font-display` é o shorthand tipográfico de display (`font:`).
+- Um mesmo nome de token nunca pode misturar cor e tipografia.
+
 ## Paleta
 
 Regra de uso, sem exceção:

@@ -109,7 +109,7 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Focus ring dourado consistente para navegação por teclado */
+  /* Focus ring azul de ação, consistente para navegação por teclado */
   :focus-visible {
     outline: none;
     box-shadow: 0 0 0 2px var(--ejc-focus-ring);
