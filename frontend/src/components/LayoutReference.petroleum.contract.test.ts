@@ -80,6 +80,18 @@ describe("EJC — tema canônico neutro com acento único e ouro de marca", () =
     expect(blocoClaro()).toContain("--ejc-primary: #1d4ed8");
   });
 
+  it("mantém cor e shorthand de display em tokens distintos", () => {
+    const valoresDeCor = Array.from(
+      tokens.matchAll(/--ejc-text-display:\s*([^;]+);/g),
+      (match) => match[1].trim(),
+    );
+    expect(valoresDeCor).toEqual(["#101828", "#f2f4f7"]);
+    expect(tokens.match(/--ejc-font-display:/g)).toHaveLength(1);
+    expect(tokens).toContain(
+      "--ejc-font-display: 700 clamp(26px, 2.5vw, 36px) / 1.12 var(--ejc-font-sans);",
+    );
+  });
+
   it("fixa a paleta neutra com um só acento de ação e o ouro reservado à marca", () => {
     const claro = blocoClaro();
     // Superfície e tinta
