@@ -6,7 +6,6 @@ cliente é apenas apresentação e nunca chave de domínio.
 """
 from __future__ import annotations
 
-import re
 from calendar import monthrange
 from datetime import date
 from decimal import Decimal
