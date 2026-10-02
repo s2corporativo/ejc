@@ -66,6 +66,14 @@ class LegalIssue:
     required_questions: tuple[str, ...] = ()
     required_evidence: tuple[str, ...] = ()
     risks: tuple[str, ...] = ()
+    # Campos opcionais e retrocompatíveis (LB8). ``score`` conta indícios
+    # lexicais distintos não negados; ``confidence`` é função determinística do
+    # score (0.0 a 1.0) e NÃO é probabilidade de mérito: só mede a força do
+    # indício textual. ``negated_terms`` lista termos vistos sob negação, que
+    # não contaram como indício.
+    score: int = 0
+    confidence: float = 0.0
+    negated_terms: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
