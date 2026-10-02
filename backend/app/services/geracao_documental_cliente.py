@@ -664,7 +664,7 @@ def _contrato_cliente(
             f"{_settings.ESCRITORIO_CIDADE}/{_settings.ESCRITORIO_ESTADO}, "
             f"{_data_extenso(date.today())}.\n\n"
         )
-        "____________________________   ____________________________\n"
+        + "____________________________   ____________________________\n"
         f"{cli.razao_social or cli.nome} (contratante)        {advogado} (contratado)"
     )
     return padronizar_documento_juridico(texto)
