@@ -16,6 +16,7 @@ from __future__ import annotations
 import copy
 
 import httpx
+import pytest
 
 import app.services.ingestors.djen as djen
 from app.core.config import get_settings
@@ -284,10 +285,12 @@ async def test_ingerir_tolerante_a_resposta_malformada(monkeypatch):
     )
     novos, total = await djen.ingerir(_FakeDB())
     assert (novos, total) == (1, 1)                # só o item válido
-    # payload sem "items" e não-lista → zero itens, sem exceção
+    # payload sem "items" NÃO é "sem resultados": contrato inválido falha alto
     ups2: list[dict] = []
     _prepara(monkeypatch, respostas=[{"status": "error"}], upserts=ups2)
-    assert await djen.ingerir(_FakeDB()) == (0, 0)
+    with pytest.raises(djen.DjenContratoError, match="contrato_invalido"):
+        await djen.ingerir(_FakeDB())
+    assert ups2 == []
 
 
 # ── 5. Gate no scheduler ─────────────────────────────────────────────────────
@@ -329,7 +332,7 @@ async def test_job_djen_nao_exclui_oab_quando_fonte_indisponivel(monkeypatch):
 
     excluir_oabs_chamados: list = []
 
-    async def fake_capturar(db, adv):
+    async def fake_capturar(db, adv, **kwargs):
         return DjenCapturaResultado(
             configurada=True,
             fonte_ok=False,
@@ -386,7 +389,7 @@ async def test_job_djen_interrompe_repeticoes_em_geo_bloqueado(monkeypatch):
 
     chamadas = {"captura": 0, "rag": 0}
 
-    async def fake_capturar(db, adv):
+    async def fake_capturar(db, adv, **kwargs):
         chamadas["captura"] += 1
         return DjenCapturaResultado(
             configurada=True, fonte_ok=False, recebidas=0, novas=0,
@@ -438,7 +441,7 @@ async def test_job_djen_para_no_primeiro_geo_bloqueado(monkeypatch):
     chamadas = []
     ingestao = []
 
-    async def fake_capturar(db, adv):
+    async def fake_capturar(db, adv, **kwargs):
         chamadas.append(adv.id)
         return DjenCapturaResultado(
             configurada=True, fonte_ok=False, recebidas=0, novas=0,
