@@ -19,13 +19,14 @@ externo) com casos A (A1) e B (A2):
 from __future__ import annotations
 
 import os
-from datetime import date, timedelta
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import text
 
+from app.core.clock import hoje_operacional
 from app.routers.dashboard import dashboard, dashboard_hoje
 
 _pg = pytest.mark.skipif(
@@ -75,7 +76,7 @@ async def _criar_prazo(db, *, caso, resp, dias, status="pendente",
         "case_id, responsavel_id) VALUES "
         "(:id, :t, 'processual', 'media', :st, :d, :c, :r)"),
         {"id": did, "t": f"{titulo}-{did[:8]}", "st": status,
-         "d": date.today() + timedelta(days=dias), "c": caso, "r": resp})
+         "d": hoje_operacional() + timedelta(days=dias), "c": caso, "r": resp})
     return did
 
 
@@ -85,7 +86,7 @@ async def _criar_tarefa(db, *, caso, resp, dias) -> str:
         "INSERT INTO tasks (id, titulo, status, prioridade, data_limite, case_id, "
         "responsavel_id, criado_por, created_at) VALUES "
         "(:id, 'tarefa-hoje', 'a_fazer', 'media', :d, :c, :r, :r, now())"),
-        {"id": tid, "d": date.today() + timedelta(days=dias), "c": caso, "r": resp})
+        {"id": tid, "d": hoje_operacional() + timedelta(days=dias), "c": caso, "r": resp})
     return tid
 
 
@@ -156,7 +157,7 @@ async def test_advogado_ve_so_a_proprias_carteira():
             "data_prazo, case_id, responsavel_id) VALUES "
             "(:id, 'regress-hoje-avulso', 'interno', 'media', 'pendente', :d, "
             "NULL, :r)"),
-            {"id": str(uuid4()), "d": date.today() - timedelta(days=1),
+            {"id": str(uuid4()), "d": hoje_operacional() - timedelta(days=1),
              "r": a2})
         await db.commit()
         try:
