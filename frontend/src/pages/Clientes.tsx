@@ -61,6 +61,39 @@ interface PecaAdmissao {
   created_at: string | null;
 }
 
+interface ContratoFinanceiroContexto {
+  valor_contratual: number | null;
+  valor_pago: number;
+  saldo_aberto: number;
+  entrada: number | null;
+  numero_parcelas: number;
+  primeiro_vencimento: string | null;
+  percentual_exito: number | null;
+}
+
+const FINANCEIRO_INICIAL = {
+  valor_contratual: "",
+  entrada: "",
+  numero_parcelas: "1",
+  percentual_exito: "",
+  forma_pagamento: "",
+  data_vencimento: "",
+};
+
+const moedaBr = (valor: number) =>
+  valor.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+
+const decimalParaInput = (valor: number | null | undefined) =>
+  valor === null || valor === undefined
+    ? ""
+    : valor.toLocaleString("pt-BR", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+
 function openWhatsApp(phone: string, name: string) {
   const digits = soDigitos(phone);
   const br = digits.startsWith("55") ? digits : "55" + digits;
@@ -127,13 +160,10 @@ export default function Clientes() {
     poderes_especiais: "",
   });
   const [admissaoFinanceiro, setAdmissaoFinanceiro] = useState({
-    valor_contratual: "",
-    entrada: "",
-    numero_parcelas: "1",
-    percentual_exito: "",
-    forma_pagamento: "",
-    data_vencimento: "",
+    ...FINANCEIRO_INICIAL,
   });
+  const [admissaoResumoFinanceiro, setAdmissaoResumoFinanceiro] =
+    useState<ContratoFinanceiroContexto | null>(null);
 
   const load = () => {
     const my = ++seq.current;
@@ -236,6 +266,8 @@ export default function Clientes() {
     const req = ++admissaoReq.current;
     setAdmissaoModal(c);
     setAdmissaoPecas(null);
+    setAdmissaoFinanceiro({ ...FINANCEIRO_INICIAL });
+    setAdmissaoResumoFinanceiro(null);
     setAdmissaoLoading(true);
     try {
       const { data } = await api.get<PecaAdmissao[]>(
@@ -243,6 +275,31 @@ export default function Clientes() {
       );
       if (req !== admissaoReq.current) return;
       setAdmissaoPecas(Array.isArray(data) ? data : []);
+
+      if (podeSincronizarFinanceiro) {
+        try {
+          const { data: financeiro } =
+            await api.get<ContratoFinanceiroContexto>(
+              `/clients/${c.id}/contrato-financeiro`,
+            );
+          if (req !== admissaoReq.current) return;
+          setAdmissaoResumoFinanceiro(financeiro);
+          setAdmissaoFinanceiro({
+            valor_contratual: decimalParaInput(financeiro.valor_contratual),
+            entrada: decimalParaInput(financeiro.entrada),
+            numero_parcelas: String(financeiro.numero_parcelas || 1),
+            percentual_exito: decimalParaInput(financeiro.percentual_exito),
+            forma_pagamento: "",
+            data_vencimento: financeiro.primeiro_vencimento || "",
+          });
+        } catch {
+          if (req === admissaoReq.current) {
+            toast.info(
+              "Documentos carregados; não foi possível pré-preencher os dados financeiros.",
+            );
+          }
+        }
+      }
     } catch (e: any) {
       if (req !== admissaoReq.current) return;
       setAdmissaoPecas([]);
@@ -256,8 +313,14 @@ export default function Clientes() {
   };
 
   const decimalOuNulo = (valor: string) => {
-    const normalizado = valor.trim().replace(/\./g, "").replace(",", ".");
-    if (!normalizado) return null;
+    const texto = valor.trim().replace(/\s/g, "");
+    if (!texto) return null;
+    let normalizado = texto;
+    if (texto.includes(",")) {
+      normalizado = texto.replace(/\./g, "").replace(",", ".");
+    } else if (/^\d{1,3}(\.\d{3})+$/.test(texto)) {
+      normalizado = texto.replace(/\./g, "");
+    }
     const numero = Number(normalizado);
     return Number.isFinite(numero) ? numero : null;
   };
@@ -273,7 +336,14 @@ export default function Clientes() {
         permite_substabelecimento: admissaoPoderes.permite_substabelecimento,
         poderes_especiais: admissaoPoderes.poderes_especiais.trim() || null,
       };
-      if (podeSincronizarFinanceiro) {
+      const temDadosFinanceiros =
+        !!admissaoFinanceiro.valor_contratual.trim() ||
+        !!admissaoFinanceiro.entrada.trim() ||
+        admissaoFinanceiro.numero_parcelas !== "1" ||
+        !!admissaoFinanceiro.percentual_exito.trim() ||
+        !!admissaoFinanceiro.forma_pagamento.trim() ||
+        !!admissaoFinanceiro.data_vencimento;
+      if (podeSincronizarFinanceiro && temDadosFinanceiros) {
         Object.assign(payload, {
           valor_contratual: decimalOuNulo(admissaoFinanceiro.valor_contratual),
           entrada: decimalOuNulo(admissaoFinanceiro.entrada),
@@ -928,8 +998,25 @@ export default function Clientes() {
               </p>
               <p className="mb-3 text-xs text-slate-500">
                 Estes dados entram no contrato e sincronizam o contas a receber.
-                Regerar atualiza o lançamento correspondente, sem duplicar cobrança.
+                Regerar recalcula somente o saldo ainda aberto, preservando
+                pagamentos já registrados.
               </p>
+              {admissaoResumoFinanceiro && (
+                <div className="mb-3 grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-md bg-slate-50 px-2.5 py-2 text-slate-600">
+                    Já recebido
+                    <strong className="mt-0.5 block text-slate-900">
+                      {moedaBr(admissaoResumoFinanceiro.valor_pago)}
+                    </strong>
+                  </div>
+                  <div className="rounded-md bg-slate-50 px-2.5 py-2 text-slate-600">
+                    Saldo em aberto
+                    <strong className="mt-0.5 block text-slate-900">
+                      {moedaBr(admissaoResumoFinanceiro.saldo_aberto)}
+                    </strong>
+                  </div>
+                </div>
+              )}
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
                   <FieldLabel>Valor contratual (R$)</FieldLabel>
