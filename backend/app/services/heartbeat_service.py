@@ -210,13 +210,17 @@ async def registrar_heartbeat(
             text(
                 """
                 INSERT INTO scheduler_heartbeat
-                    (job_name, last_run_at, last_status, detail, updated_at)
-                VALUES (:job, :agora, :status, :detail, :agora)
+                    (job_name, last_run_at, last_status, detail, updated_at,
+                     last_ok_at)
+                VALUES (:job, :agora, :status, :detail, :agora, :ok_em)
                 ON CONFLICT (job_name) DO UPDATE SET
                     last_run_at = EXCLUDED.last_run_at,
                     last_status = EXCLUDED.last_status,
                     detail      = EXCLUDED.detail,
-                    updated_at  = EXCLUDED.updated_at
+                    updated_at  = EXCLUDED.updated_at,
+                    last_ok_at  = COALESCE(
+                        EXCLUDED.last_ok_at, scheduler_heartbeat.last_ok_at
+                    )
                 """
             ),
             {
@@ -224,6 +228,8 @@ async def registrar_heartbeat(
                 "agora": agora,
                 "status": st,
                 "detail": detalhe,
+                # só um "ok" renova o último sucesso (COALESCE preserva o anterior)
+                "ok_em": agora if st == "ok" else None,
             },
         )
         await db.commit()

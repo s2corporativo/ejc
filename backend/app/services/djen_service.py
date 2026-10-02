@@ -22,6 +22,7 @@ from collections import Counter, defaultdict
 from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta, timezone
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 import httpx
@@ -37,6 +38,7 @@ from tenacity import (
 
 from app.models.case import Case, CaseMovimento, CaseStatus
 from app.core.clock import hoje_operacional
+from app.core.ownership import is_gestao
 from app.models.djen import DjenComunicacao
 from app.models.user import User
 from app.services.djen_http import (
@@ -696,7 +698,13 @@ def _link_oficial(item: dict) -> str | None:
     if not isinstance(link, str):
         return None
     link = link.strip()
-    return link if link.lower().startswith(("https://", "http://")) else None
+    partes = urlsplit(link)
+    host = (partes.hostname or "").lower()
+    # Só https de domínio judiciário (CNJ/PJe/tribunais): uma resposta adulterada
+    # não pode transformar o botão "PDF oficial" em phishing.
+    if partes.scheme != "https" or not (host == "jus.br" or host.endswith(".jus.br")):
+        return None
+    return link
 
 
 def _orgao(item: dict) -> str | None:
@@ -736,29 +744,45 @@ async def _ids_ja_capturados_por_outros(
     db: AsyncSession,
     externos: set[str],
     advogado_id: str,
-) -> set[str]:
-    """Comunicações já capturadas para OUTRO advogado do escritório."""
+) -> dict[str, bool]:
+    """Comunicações já capturadas para OUTRO advogado: id → já tinha caso?
+
+    O segundo valor decide se os efeitos POR CASO (movimento e RAG) já ocorreram:
+    se a captura anterior ficou sem caso, eles ainda precisam ser criados.
+    """
     if not externos:
-        return set()
+        return {}
     rows = (
         await db.execute(
-            select(DjenComunicacao.comunicacao_id_externo).where(
+            select(
+                DjenComunicacao.comunicacao_id_externo,
+                DjenComunicacao.case_id,
+            ).where(
                 DjenComunicacao.comunicacao_id_externo.in_(externos),
                 DjenComunicacao.advogado_id != advogado_id,
             )
         )
-    ).scalars().all()
-    return {str(externo) for externo in rows}
+    ).all()
+    conhecidas: dict[str, bool] = {}
+    for externo, case_id in rows:
+        conhecidas[str(externo)] = conhecidas.get(str(externo), False) or case_id is not None
+    return conhecidas
+
+
+def _adv_atua_no_caso(adv: User, caso: Case) -> bool:
+    return is_gestao(adv) or str(adv.id) in {
+        str(getattr(caso, "advogado_responsavel_id", None)),
+        str(getattr(caso, "advogado_auxiliar_id", None)),
+    }
 
 
 async def janela_reconciliacao_dias(db: AsyncSession) -> int:
     """Janela do job: 7 dias normalmente; amplia após parada/falha prolongada.
 
-    Sem isto, um job parado por mais de ``JANELA_RECONCILIACAO_DIAS`` perdia
-    comunicações sem recuperação automática. Quando o último heartbeat não é
-    "ok" ou está defasado, a janela cobre o intervalo desde a última
-    comunicação capturada (+2 dias de folga), limitado a 90 dias — o
-    deduplicador torna a repetição inofensiva.
+    A defasagem é medida desde o ÚLTIMO SUCESSO real do job (``last_ok_at`` do
+    heartbeat) — não desde a última linha inserida, que a captura manual ou o
+    sucesso de outro advogado renovam sem recuperar o intervalo perdido. Com a
+    janela ampliada (teto de 90 dias) o deduplicador torna a repetição inofensiva.
     """
     from app.models.scheduler_heartbeat import SchedulerHeartbeat
     from app.services.heartbeat_service import JOB_DJEN
@@ -769,26 +793,26 @@ async def janela_reconciliacao_dias(db: AsyncSession) -> int:
                 select(SchedulerHeartbeat).where(SchedulerHeartbeat.job_name == JOB_DJEN)
             )
         ).scalar_one_or_none()
+        if hb is None:
+            return JANELA_RECONCILIACAO_DIAS
         agora = datetime.now(timezone.utc)
-        saudavel = (
-            hb is not None
-            and hb.last_status == "ok"
-            and hb.last_run_at is not None
-            and (agora - hb.last_run_at) <= timedelta(hours=36)
-        )
-        if saudavel:
+        ultimo_ok = getattr(hb, "last_ok_at", None)
+        if ultimo_ok is None and hb.last_status == "ok":
+            ultimo_ok = hb.last_run_at  # linha anterior à coluna last_ok_at
+        if ultimo_ok is None:
             return JANELA_RECONCILIACAO_DIAS
-        ultima = (
-            await db.execute(select(func.max(DjenComunicacao.created_at)))
-        ).scalar()
-        if ultima is None:
+        if ultimo_ok.tzinfo is None:
+            ultimo_ok = ultimo_ok.replace(tzinfo=timezone.utc)
+        if (agora - ultimo_ok) <= timedelta(hours=36):
             return JANELA_RECONCILIACAO_DIAS
-        if ultima.tzinfo is None:
-            ultima = ultima.replace(tzinfo=timezone.utc)
-        defasagem = (agora - ultima).days + 2
+        defasagem = (agora - ultimo_ok).days + 2
         return max(JANELA_RECONCILIACAO_DIAS, min(defasagem, 90))
     except Exception:  # noqa: BLE001 — a janela nunca pode impedir a captura
         logger.warning("DJEN: cálculo da janela de reconciliação falhou; usando padrão")
+        try:
+            await db.rollback()  # sessão não pode ficar em transação abortada
+        except Exception:  # noqa: BLE001
+            pass
         return JANELA_RECONCILIACAO_DIAS
 
 
@@ -837,6 +861,11 @@ async def _capturar_configurado(
         texto = (item.get("texto") or "")[:2000]
         numero_processo = _numero_processo_item(item)
         caso = casos_por_processo.get(numero_processo) if numero_processo else None
+        if caso and external_id in ja_conhecidas and not _adv_atua_no_caso(adv, caso):
+            # Réplica para advogado sem vínculo com o caso: a linha não carrega o
+            # case_id alheio (vazaria a existência do caso e travaria o vínculo
+            # manual); ele a trata/vincula como comunicação sem caso.
+            caso = None
         if caso:
             marcador = "\n[vinculação automática ao caso pelo nº do processo " f"{numero_processo} — conferir]"
             texto = texto[: 2000 - len(marcador)] + marcador
@@ -882,13 +911,10 @@ async def _capturar_configurado(
         tipo_comunicacao = (item.get("tipoComunicacao") or item.get("tipo_comunicacao") or "")[:60]
         numero_fonte = item.get("numero_processo") or item.get("numeroProcesso") or _numero_processo_item(item) or None
 
-        replica = external_id in ja_conhecidas
-        if caso and replica:
-            # Mesma comunicação já capturada para outro advogado: o caso (RAG,
-            # movimento e responsável) já foi atualizado/notificado — só a linha
-            # do advogado é criada, para que ele a enxergue na sua lista.
-            continue
-        if caso:
+        # Efeitos POR CASO (RAG/movimento) e o aviso ao responsável já ocorreram
+        # quando OUTRO advogado capturou antes a mesma comunicação JÁ vinculada.
+        efeitos_do_caso_feitos = ja_conhecidas.get(external_id, False)
+        if caso and not efeitos_do_caso_feitos:
             # Intimação de processo vinculado a caso ativo também vira
             # conhecimento DO CASO no RAG (comunicacao_processual, pendente).
             await _ingerir_rag_do_caso(db, item, caso)
@@ -905,7 +931,14 @@ async def _capturar_configurado(
                 )
             )
 
-        destinatario_id = caso.advogado_responsavel_id if caso and caso.advogado_responsavel_id else adv.id
+        if efeitos_do_caso_feitos:
+            # Cada advogado é avisado da própria linha; o responsável do caso já
+            # recebeu o aviso na primeira captura.
+            if caso and str(caso.advogado_responsavel_id) == str(adv.id):
+                continue
+            destinatario_id = adv.id
+        else:
+            destinatario_id = caso.advogado_responsavel_id if caso and caso.advogado_responsavel_id else adv.id
         titulo = "📨 Nova intimação no DJEN"
         mensagem = f"{tribunal or 'Tribunal'} · proc. " f"{numero_fonte or '—'} · {tipo_comunicacao}" + (
             " · vinculada automaticamente ao caso (conferir)" if caso else ""

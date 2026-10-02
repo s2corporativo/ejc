@@ -1,19 +1,22 @@
-"""DJEN: unicidade por advogado e evidência oficial da comunicação.
+"""DJEN: unicidade por advogado (expansão) e evidência oficial da comunicação.
 
-Auditoria do módulo DJEN (2026-10):
-  • `comunicacao_id_externo` era UNIQUE global — a mesma comunicação destinada
-    a dois advogados do escritório só era entregue ao primeiro que a capturasse.
-    Passa a ser única por (comunicacao_id_externo, advogado_id).
-  • Persiste a evidência oficial: link do PDF, órgão julgador e texto íntegro
-    (sem tags), antes truncado em 2000 caracteres.
+Auditoria do módulo DJEN (2026-10) — passo 1 de 2 (expand):
+  • cria o índice único composto (comunicacao_id_externo, advogado_id) SEM tocar
+    no índice único antigo — durante a janela entre 169 e 170 os dois coexistem
+    (o composto é mais fraco que o antigo, logo nunca falha sobre dado válido);
+  • persiste a evidência oficial: link do PDF, órgão e texto íntegro (sem
+    tags), antes truncado em 2000 caracteres;
+  • `scheduler_heartbeat.last_ok_at`: último SUCESSO real do job (base da
+    janela de reconciliação do DJEN após parada/falha prolongada).
 
-Aditiva e reversível; o downgrade recusa-se a reintroduzir a unicidade global
-se já houver comunicação replicada entre advogados (evita perda de dado).
+A remoção da unicidade global (que impedia a mesma comunicação de chegar a dois
+advogados do escritório) está na 170.
 
 Revision ID: 169_djen_multi_advogado
 Revises: 168_finance_ged_links
 Create Date: 2026-10-02
 """
+import sqlalchemy as sa
 from alembic import op
 
 revision = "169_djen_multi_advogado"
@@ -21,45 +24,30 @@ down_revision = "168_finance_ged_links"
 branch_labels = None
 depends_on = None
 
+# Índice UNIQUE sobre colunas que já são únicas (o composto é mais permissivo que
+# o índice atual): sem risco de violação nem de lock prolongado (tabela pequena).
+deployment_policy = "human_reviewed_unique_index"
+
 
 def upgrade() -> None:
-    op.execute("ALTER TABLE djen_comunicacoes ADD COLUMN IF NOT EXISTS link_oficial TEXT")
-    op.execute("ALTER TABLE djen_comunicacoes ADD COLUMN IF NOT EXISTS orgao VARCHAR(255)")
-    op.execute("ALTER TABLE djen_comunicacoes ADD COLUMN IF NOT EXISTS texto_integral TEXT")
-
-    # Remove a unicidade global (índice único e/ou constraint, conforme o histórico).
-    op.execute(
-        "ALTER TABLE djen_comunicacoes "
-        "DROP CONSTRAINT IF EXISTS djen_comunicacoes_comunicacao_id_externo_key"
+    op.add_column("djen_comunicacoes", sa.Column("texto_integral", sa.Text(), nullable=True))
+    op.add_column("djen_comunicacoes", sa.Column("link_oficial", sa.Text(), nullable=True))
+    op.add_column("djen_comunicacoes", sa.Column("orgao", sa.String(length=255), nullable=True))
+    op.add_column(
+        "scheduler_heartbeat",
+        sa.Column("last_ok_at", sa.DateTime(timezone=True), nullable=True),
     )
-    op.execute("DROP INDEX IF EXISTS ix_djen_comunicacoes_comunicacao_id_externo")
-    op.execute(
-        "CREATE INDEX IF NOT EXISTS ix_djen_comunicacoes_comunicacao_id_externo "
-        "ON djen_comunicacoes (comunicacao_id_externo)"
-    )
-    op.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_djen_comunicacao_externo_advogado "
-        "ON djen_comunicacoes (comunicacao_id_externo, advogado_id)"
+    op.create_index(
+        "uq_djen_comunicacao_externo_advogado",
+        "djen_comunicacoes",
+        ["comunicacao_id_externo", "advogado_id"],
+        unique=True,
     )
 
 
 def downgrade() -> None:
-    conn = op.get_bind()
-    repetidas = conn.exec_driver_sql(
-        "SELECT count(*) FROM (SELECT 1 FROM djen_comunicacoes "
-        "GROUP BY comunicacao_id_externo HAVING count(*) > 1) t"
-    ).scalar()
-    if repetidas:
-        raise RuntimeError(
-            "downgrade 169 recusado: existem comunicações DJEN replicadas entre "
-            "advogados; reintroduzir a unicidade global descartaria dados."
-        )
-    op.execute("DROP INDEX IF EXISTS uq_djen_comunicacao_externo_advogado")
-    op.execute("DROP INDEX IF EXISTS ix_djen_comunicacoes_comunicacao_id_externo")
-    op.execute(
-        "CREATE UNIQUE INDEX ix_djen_comunicacoes_comunicacao_id_externo "
-        "ON djen_comunicacoes (comunicacao_id_externo)"
-    )
-    op.execute("ALTER TABLE djen_comunicacoes DROP COLUMN IF EXISTS texto_integral")
-    op.execute("ALTER TABLE djen_comunicacoes DROP COLUMN IF EXISTS orgao")
-    op.execute("ALTER TABLE djen_comunicacoes DROP COLUMN IF EXISTS link_oficial")
+    op.drop_index("uq_djen_comunicacao_externo_advogado", table_name="djen_comunicacoes")
+    op.drop_column("scheduler_heartbeat", "last_ok_at")
+    op.drop_column("djen_comunicacoes", "orgao")
+    op.drop_column("djen_comunicacoes", "link_oficial")
+    op.drop_column("djen_comunicacoes", "texto_integral")

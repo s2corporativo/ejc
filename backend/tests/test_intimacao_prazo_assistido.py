@@ -362,8 +362,14 @@ async def test_intimacao_sem_caso_nao_gera_prazo_orfao(monkeypatch):
 async def test_responsavel_default_e_o_advogado_da_intimacao(monkeypatch):
     from app.routers import intimacoes
 
-    _liberar_caso(monkeypatch)
-    db = _FakeDB([_com(advogado_id="adv-1")])
+    from types import SimpleNamespace
+
+    async def _caso(db, user, case_id):
+        return SimpleNamespace(advogado_responsavel_id="adv-1", advogado_auxiliar_id=None)
+
+    monkeypatch.setattr(intimacoes, "verificar_acesso_caso", _caso)
+    # 2ª consulta: validação do responsável efetivo (advogado da intimação)
+    db = _FakeDB([_com(advogado_id="adv-1"), _user(uid="adv-1")])
 
     await intimacoes.aceitar_prazo(
         com_id="com-1",

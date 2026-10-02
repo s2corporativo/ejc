@@ -112,16 +112,23 @@ def test_modelo_unico_por_comunicacao_e_advogado():
     assert indices["ix_djen_comunicacoes_comunicacao_id_externo"].unique is False
 
 
-def test_migration_169_e_aditiva_e_reversivel_com_guarda():
-    fonte = (BACKEND / "alembic/versions/169_djen_multi_advogado.py").read_text()
-    assert 'down_revision = "168_finance_ged_links"' in fonte
-    assert "uq_djen_comunicacao_externo_advogado" in fonte
-    assert "ADD COLUMN IF NOT EXISTS texto_integral" in fonte
-    assert "DROP TABLE" not in fonte.upper()
-    assert "downgrade 169 recusado" in fonte  # não reintroduz unicidade com dados replicados
+def test_migrations_169_170_expandem_primeiro_e_so_depois_relaxam_a_unicidade():
+    m169 = (BACKEND / "alembic/versions/169_djen_multi_advogado.py").read_text()
+    m170 = (BACKEND / "alembic/versions/170_djen_remove_unicidade_global.py").read_text()
+    assert 'down_revision = "168_finance_ged_links"' in m169
+    assert 'down_revision = "169_djen_multi_advogado"' in m170
+    # 169: só expande (colunas + índice composto); nada é removido
+    assert "uq_djen_comunicacao_externo_advogado" in m169 and "last_ok_at" in m169
+    assert "drop_" not in m169.split("def downgrade")[0]
+    # 170: relaxa a unicidade global; o downgrade recusa-se com dado replicado
+    assert "downgrade 170 recusado" in m170
+    for m in (m169, m170):
+        assert "DROP TABLE" not in m.upper()
 
 
-def _patch_captura(monkeypatch, *, casos, inativos=frozenset(), conhecidas=frozenset()):
+def _patch_captura(monkeypatch, *, casos, inativos=frozenset(), conhecidas=None):
+    """conhecidas: {id externo: outra captura já tinha caso?}"""
+    conhecidas = dict(conhecidas or {})
     async def _casos(db, numeros):
         return casos
 
@@ -129,7 +136,7 @@ def _patch_captura(monkeypatch, *, casos, inativos=frozenset(), conhecidas=froze
         return set(inativos)
 
     async def _conhecidas(db, externos, advogado_id):
-        return set(conhecidas)
+        return conhecidas
 
     async def _emails(db, ids):
         return {}
@@ -173,11 +180,14 @@ ITEM = {
 }
 
 
-async def test_comunicacao_replicada_a_outro_advogado_chega_ao_segundo(monkeypatch):
-    caso = SimpleNamespace(id="case-1", client_id="cli", advogado_responsavel_id="resp-1")
+async def test_replica_para_advogado_do_caso_avisa_a_ele_sem_duplicar_efeitos_do_caso(monkeypatch):
+    caso = SimpleNamespace(
+        id="case-1", client_id="cli",
+        advogado_responsavel_id="resp-1", advogado_auxiliar_id="adv-2",
+    )
     num = djen_service.normalizar_processo(ITEM["numero_processo"])
     rag, notificacoes = _patch_captura(
-        monkeypatch, casos={num: caso}, conhecidas={"ext-1"}
+        monkeypatch, casos={num: caso}, conhecidas={"ext-1": True}
     )
     db = _FakeDB([_Res(rows=[("uuid-novo", "ext-1")])])
 
@@ -186,9 +196,55 @@ async def test_comunicacao_replicada_a_outro_advogado_chega_ao_segundo(monkeypat
     )
 
     assert res.novas == 1 and res.duplicadas == 0  # a linha do 2º advogado existe
-    # caso já atualizado/notificado pela primeira captura: sem efeitos duplicados
-    assert rag == [] and notificacoes == []
+    assert rag == []  # RAG e movimento são por caso: já feitos
     assert [o for o in db.added if isinstance(o, CaseMovimento)] == []
+    # ...mas o advogado da réplica é avisado da PRÓPRIA linha (antes: silêncio)
+    assert [n[0] for n in notificacoes] == ["adv-2"]
+
+
+async def test_replica_nao_avisa_duas_vezes_o_responsavel_do_caso(monkeypatch):
+    caso = SimpleNamespace(
+        id="case-1", client_id="cli",
+        advogado_responsavel_id="adv-2", advogado_auxiliar_id=None,
+    )
+    num = djen_service.normalizar_processo(ITEM["numero_processo"])
+    _, notificacoes = _patch_captura(monkeypatch, casos={num: caso}, conhecidas={"ext-1": True})
+    db = _FakeDB([_Res(rows=[("uuid", "ext-1")])])
+    await djen_service._capturar_configurado(db, _user(uid="adv-2"), _consulta(ITEM))
+    assert notificacoes == []  # já foi avisado na primeira captura
+
+
+async def test_replica_para_advogado_sem_vinculo_nao_herda_case_id_alheio(monkeypatch):
+    caso = SimpleNamespace(
+        id="case-1", client_id="cli",
+        advogado_responsavel_id="resp-1", advogado_auxiliar_id=None,
+    )
+    num = djen_service.normalizar_processo(ITEM["numero_processo"])
+    rag, notificacoes = _patch_captura(
+        monkeypatch, casos={num: caso}, conhecidas={"ext-1": True}
+    )
+    db = _FakeDB([_Res(rows=[("uuid", "ext-1")])])
+    await djen_service._capturar_configurado(db, _user(uid="adv-estranho"), _consulta(ITEM))
+
+    valores = db.statements[0].compile().params
+    assert next(v for k, v in valores.items() if k.startswith("case_id")) is None
+    assert rag == [] and "vincule manualmente" in notificacoes[0][1]
+
+
+async def test_replica_quando_a_primeira_captura_ficou_sem_caso_ainda_cria_efeitos_do_caso(monkeypatch):
+    caso = SimpleNamespace(
+        id="case-1", client_id="cli",
+        advogado_responsavel_id="resp-1", advogado_auxiliar_id="adv-2",
+    )
+    num = djen_service.normalizar_processo(ITEM["numero_processo"])
+    rag, notificacoes = _patch_captura(
+        monkeypatch, casos={num: caso}, conhecidas={"ext-1": False}
+    )
+    db = _FakeDB([_Res(rows=[("uuid", "ext-1")])])
+    await djen_service._capturar_configurado(db, _user(uid="adv-2"), _consulta(ITEM))
+    assert rag == ["ext-1"]
+    assert len([o for o in db.added if isinstance(o, CaseMovimento)]) == 1
+    assert notificacoes[0][0] == "resp-1"
 
 
 async def test_comunicacao_nova_com_caso_gera_movimento_rag_e_notifica_responsavel(monkeypatch):
@@ -240,43 +296,62 @@ def test_link_oficial_rejeita_esquemas_perigosos_e_texto_vazio_e_none():
     assert djen_service._link_oficial({"link": "data:text/html;base64,AAAA"}) is None
     assert djen_service._link_oficial({"link": 5}) is None
     assert djen_service._link_oficial({"link": " https://x.jus.br/a "}) == "https://x.jus.br/a"
+    assert djen_service._link_oficial({"link": "http://x.jus.br/a"}) is None  # só https
+    assert djen_service._link_oficial({"link": "https://evil.com/x.jus.br"}) is None
+    assert djen_service._link_oficial({"link": "https://jus.br.evil.com/a"}) is None
     assert djen_service._texto_integral({"texto": "  "}) is None
     assert djen_service._texto_integral({}) is None
     assert djen_service._texto_integral({"texto": "<script>x()</script>ok"}).endswith("ok")
 
 
 # ── Achado 3 — janela de reconciliação ───────────────────────────────────────
-def _hb(status="ok", horas=2):
+def _hb(status="ok", horas=2, ok_horas=None):
+    agora = datetime.now(timezone.utc)
     return SimpleNamespace(
         last_status=status,
-        last_run_at=datetime.now(timezone.utc) - timedelta(hours=horas),
+        last_run_at=agora - timedelta(hours=horas),
+        last_ok_at=None if ok_horas is None else agora - timedelta(hours=ok_horas),
     )
 
 
 async def test_janela_padrao_quando_job_saudavel():
-    db = _FakeDB([_Res(_hb())])
+    db = _FakeDB([_Res(_hb(ok_horas=2))])
     assert await djen_service.janela_reconciliacao_dias(db) == 7
 
 
-async def test_janela_amplia_apos_job_parado():
-    ultima = datetime.now(timezone.utc) - timedelta(days=20)
-    db = _FakeDB([_Res(_hb(horas=24 * 15)), _Res(ultima)])
+async def test_janela_mede_desde_o_ultimo_sucesso_real_e_nao_desde_o_ultimo_dado():
+    # job falha todo dia (last_run_at recente, status erro) mas o último ok foi há 20 dias
+    db = _FakeDB([_Res(_hb(status="erro", horas=3, ok_horas=24 * 20))])
     assert await djen_service.janela_reconciliacao_dias(db) == 22
 
 
-async def test_janela_amplia_apos_falha_e_respeita_teto_de_90_dias():
-    ultima = datetime.now(timezone.utc) - timedelta(days=400)
-    db = _FakeDB([_Res(_hb(status="erro")), _Res(ultima)])
+async def test_janela_respeita_teto_de_90_dias():
+    db = _FakeDB([_Res(_hb(status="erro", ok_horas=24 * 400))])
     assert await djen_service.janela_reconciliacao_dias(db) == 90
 
 
-async def test_janela_nunca_impede_a_captura():
+async def test_janela_linha_antiga_sem_last_ok_usa_last_run_quando_status_ok():
+    hb = _hb(status="ok", horas=24 * 15)
+    hb.last_ok_at = None
+    assert await djen_service.janela_reconciliacao_dias(_FakeDB([_Res(hb)])) == 17
+    hb_erro = _hb(status="erro", horas=24 * 15)  # nunca houve sucesso registrado
+    assert await djen_service.janela_reconciliacao_dias(_FakeDB([_Res(hb_erro)])) == 7
+
+
+async def test_janela_nunca_impede_a_captura_e_faz_rollback():
     class _Quebrado:
+        rollbacks = 0
+
         async def execute(self, *a, **k):
             raise RuntimeError("banco indisponível")
 
-    assert await djen_service.janela_reconciliacao_dias(_Quebrado()) == 7
-    assert await djen_service.janela_reconciliacao_dias(_FakeDB([_Res(None), _Res(None)])) == 7
+        async def rollback(self):
+            self.rollbacks += 1
+
+    db = _Quebrado()
+    assert await djen_service.janela_reconciliacao_dias(db) == 7
+    assert db.rollbacks == 1  # sessão não fica em transação abortada
+    assert await djen_service.janela_reconciliacao_dias(_FakeDB([_Res(None)])) == 7
 
 
 # ── Achado 2 — vínculo manual ────────────────────────────────────────────────
@@ -398,9 +473,31 @@ async def test_aceitar_prazo_rejeita_responsavel_sem_vinculo_com_o_caso(monkeypa
     assert exc.value.status_code == 422 and "vínculo" in exc.value.detail
 
 
+async def test_responsavel_padrao_inativo_cai_no_responsavel_do_caso_e_depois_em_quem_aceita(monkeypatch):
+    _liberar_caso(monkeypatch)  # responsável do caso = adv-1
+    inativo = _user(uid="adv-antigo")
+    inativo.is_active = False
+    resp_caso = _user(uid="adv-1")
+    # advogado da intimação (inativo) -> responsável do caso (válido)
+    db = _FakeDB([_Res(_com(case_id="case-9", advogado_id="adv-antigo")), _Res(inativo), _Res(resp_caso)])
+    await intimacoes.aceitar_prazo(
+        "com-1", intimacoes.AceitarPrazoRequest(data_prazo=date(2026, 10, 20)),
+        db=db, cu=_user(uid="socio-1", role=UserRole.socio),
+    )
+    assert next(o for o in db.added if isinstance(o, Deadline)).responsavel_id == "adv-1"
+
+    # nenhum candidato válido -> quem aceita (já passou por verificar_acesso_caso)
+    db2 = _FakeDB([_Res(_com(case_id="case-9", advogado_id="adv-antigo")), _Res(inativo), _Res(None)])
+    await intimacoes.aceitar_prazo(
+        "com-1", intimacoes.AceitarPrazoRequest(data_prazo=date(2026, 10, 20)),
+        db=db2, cu=_user(uid="socio-1", role=UserRole.socio),
+    )
+    assert next(o for o in db2.added if isinstance(o, Deadline)).responsavel_id == "socio-1"
+
+
 async def test_aceitar_prazo_avisa_fim_de_semana_e_usa_lock(monkeypatch):
     _liberar_caso(monkeypatch)
-    db = _FakeDB([_Res(_com(case_id="case-9"))])
+    db = _FakeDB([_Res(_com(case_id="case-9")), _Res(_user(uid="adv-1"))])
     out = await intimacoes.aceitar_prazo(
         "com-1",
         intimacoes.AceitarPrazoRequest(data_prazo=date(2026, 10, 10)),  # sábado
@@ -429,6 +526,28 @@ async def test_captura_manual_aceita_oab_de_perfil_como_o_job(monkeypatch):
     out = await intimacoes.capturar_agora(dias=30, db=_FakeDB(), cu=usuario)
     assert visto["dias"] == 30 and out["novas"] == 0
     assert usuario.id not in intimacoes._capturas_manuais_em_curso  # liberou a trava
+
+
+async def test_captura_manual_limita_janela_da_equipe_a_30_dias_e_gestao_ate_90(monkeypatch):
+    vistos = []
+
+    async def _cap(db, adv, *, dias):
+        vistos.append(dias)
+        return djen_service.DjenCapturaResultado(
+            configurada=True, fonte_ok=True, recebidas=0, novas=0, duplicadas=0, ignoradas=0
+        )
+
+    async def _enviar(res):
+        return None
+
+    monkeypatch.setattr(intimacoes, "capturar_para_advogado", _cap)
+    monkeypatch.setattr(intimacoes, "enviar_emails_pendentes", _enviar)
+    await intimacoes.capturar_agora(dias=90, db=_FakeDB(), cu=_user(djen_oab_numero="1", djen_oab_uf="MG"))
+    await intimacoes.capturar_agora(
+        dias=90, db=_FakeDB(),
+        cu=_user(role=UserRole.socio, uid="socio-1", djen_oab_numero="1", djen_oab_uf="MG"),
+    )
+    assert vistos == [30, 90]
 
 
 async def test_captura_manual_sem_oab_resolvivel_e_422():

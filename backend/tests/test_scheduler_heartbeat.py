@@ -76,6 +76,24 @@ async def test_registrar_heartbeat_upsert_nao_duplica(sqlite_db):
     assert rows[0].detail == "boom no DJEN"
 
 
+async def test_last_ok_at_so_avanca_em_sucesso_e_sobrevive_a_falhas(sqlite_db):
+    """Base da janela de reconciliação do DJEN: último SUCESSO, não última execução."""
+    await hb.registrar_heartbeat(sqlite_db, hb.JOB_DATAJUD, "erro", "falhou")
+    linha = (await sqlite_db.execute(select(SchedulerHeartbeat))).scalar_one()
+    assert linha.last_ok_at is None  # nunca houve sucesso
+
+    await hb.registrar_heartbeat(sqlite_db, hb.JOB_DATAJUD, "ok")
+    sqlite_db.expire_all()  # o UPSERT é SQL cru: descarta o identity map
+    ok1 = (await sqlite_db.execute(select(SchedulerHeartbeat))).scalar_one().last_ok_at
+    assert ok1 is not None
+
+    await hb.registrar_heartbeat(sqlite_db, hb.JOB_DATAJUD, "erro", "caiu de novo")
+    sqlite_db.expire_all()
+    linha = (await sqlite_db.execute(select(SchedulerHeartbeat))).scalar_one()
+    assert linha.last_status == "erro"
+    assert linha.last_ok_at == ok1  # a falha NÃO apaga nem renova o último sucesso
+
+
 async def test_registrar_heartbeat_jobs_distintos_coexistem(sqlite_db):
     await hb.registrar_heartbeat(sqlite_db, hb.JOB_DJEN, "ok")
     await hb.registrar_heartbeat(sqlite_db, hb.JOB_DATAJUD, "ok")

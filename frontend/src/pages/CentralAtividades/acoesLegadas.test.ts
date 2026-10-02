@@ -40,17 +40,29 @@ describe("RBAC das suspensões na Central", () => {
   });
 });
 
-import { linkOficialSeguro } from "./acoesLegadas";
+import { linkOficialSeguro, mascararCnj } from "./acoesLegadas";
 
 describe("link oficial da comunicação DJEN", () => {
-  it("aceita apenas http(s) e recusa esquemas executáveis", () => {
+  it("aceita apenas https de domínio *.jus.br e recusa o resto", () => {
     expect(linkOficialSeguro("https://comunica.pje.jus.br/x")).toBe(
       "https://comunica.pje.jus.br/x",
     );
-    expect(linkOficialSeguro("  http://x.jus.br/a ")).toBe("http://x.jus.br/a");
+    expect(linkOficialSeguro("http://x.jus.br/a")).toBeNull();
+    expect(linkOficialSeguro("https://jus.br.evil.com/a")).toBeNull();
+    expect(linkOficialSeguro("https://evil.com/?u=x.jus.br")).toBeNull();
     expect(linkOficialSeguro("javascript:alert(1)")).toBeNull();
     expect(linkOficialSeguro("data:text/html;base64,AAAA")).toBeNull();
     expect(linkOficialSeguro(null)).toBeNull();
     expect(linkOficialSeguro("")).toBeNull();
+  });
+});
+
+describe("busca de caso por nº CNJ da comunicação", () => {
+  it("aplica a máscara quando vem só com dígitos (20)", () => {
+    expect(mascararCnj("00012345620208130024")).toBe("0001234-56.2020.8.13.0024");
+  });
+  it("não altera texto livre nem números incompletos", () => {
+    expect(mascararCnj(" João ")).toBe("João");
+    expect(mascararCnj("123456")).toBe("123456");
   });
 });

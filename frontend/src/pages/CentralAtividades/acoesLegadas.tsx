@@ -59,9 +59,28 @@ type DetalheIntimacao = {
 
 type CasoBusca = { id: string; titulo: string; numero_processo?: string | null };
 
-/** Só links http(s) viram âncora — nunca `javascript:` vindo da fonte externa. */
+/**
+ * Só https de domínio judiciário (*.jus.br) vira âncora — nunca `javascript:`,
+ * `http:` nem host arbitrário vindo da fonte externa (phishing).
+ */
 export function linkOficialSeguro(link?: string | null): string | null {
-  return link && /^https?:\/\//i.test(link.trim()) ? link.trim() : null;
+  if (!link) return null;
+  try {
+    const u = new URL(link.trim());
+    const host = u.hostname.toLowerCase();
+    const ok = host === "jus.br" || host.endsWith(".jus.br");
+    return u.protocol === "https:" && ok ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Nº CNJ só com dígitos (como vem da comunicação) → máscara usada no cadastro. */
+export function mascararCnj(termo: string): string {
+  const d = termo.trim();
+  return /^\d{20}$/.test(d)
+    ? `${d.slice(0, 7)}-${d.slice(7, 9)}.${d.slice(9, 13)}.${d[13]}.${d.slice(14, 16)}.${d.slice(16)}`
+    : termo.trim();
 }
 
 /**
@@ -85,25 +104,32 @@ function EvidenciaEVinculo({
   const [vinculando, setVinculando] = useState(false);
   const [divergente, setDivergente] = useState<string | null>(null);
 
-  const carregar = () =>
+  // `ativo` descarta respostas de uma intimação anterior (troca com request em voo).
+  const carregar = (ativo: () => boolean = () => true) =>
     api
       .get(`/intimacoes/${comunicacaoId}`)
       .then((r) => {
+        if (!ativo()) return;
         setDet(r.data);
         setErro("");
         onCaso(!!r.data?.case_id);
       })
       .catch((e) => {
+        if (!ativo()) return;
         setErro(erroDetalhe(e, "Não foi possível carregar o texto oficial."));
         onCaso(true); // falha de leitura não deve travar o fluxo existente
       });
 
   useEffect(() => {
+    let vivo = true;
     setDet(null);
     setCasos([]);
     setBusca("");
     setDivergente(null);
-    carregar();
+    carregar(() => vivo);
+    return () => {
+      vivo = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [comunicacaoId]);
 
@@ -111,7 +137,7 @@ function EvidenciaEVinculo({
     if (busca.trim().length < 3) return;
     try {
       const { data } = await api.get("/cases/", {
-        params: { search: busca.trim(), arquivo: "todos", page_size: 8 },
+        params: { search: mascararCnj(busca), arquivo: "todos", page_size: 8 },
       });
       setCasos(Array.isArray(data?.data) ? data.data : []);
     } catch (e) {
@@ -259,6 +285,7 @@ export function PrazoSugeridoModal({
 
   useEffect(() => {
     setDataPrazo("");
+    setTemCaso(true); // sem herdar o estado da intimação anterior até o detalhe chegar
   }, [sugestao?.id]);
 
   const aceitar = async () => {

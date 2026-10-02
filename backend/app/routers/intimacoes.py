@@ -42,6 +42,8 @@ AVISO_ESCOPO_DJEN = (
     "itens como ausência de prazo."
 )
 
+_DIAS_MAX_EQUIPE = 30
+
 # Captura manual: uma por usuário por vez (premissa de worker único).
 _capturas_manuais_em_curso: set[str] = set()
 
@@ -125,6 +127,34 @@ async def _validar_responsavel_prazo(
             detail="Responsável sem vínculo com o caso da intimação",
         )
     return resp
+
+
+async def _resolver_responsavel_prazo(
+    db: AsyncSession,
+    solicitado: Optional[str],
+    comunicacao: DjenComunicacao,
+    caso: Case,
+    cu: User,
+) -> str:
+    """Responsável efetivo do prazo — sempre validado.
+
+    Solicitado explicitamente: valida ou recusa. Sem pedido: advogado da
+    comunicação, depois responsável do caso, depois quem está aceitando (que já
+    passou por ``verificar_acesso_caso``). Nunca atribui prazo a quem não atua
+    no caso ou está inativo.
+    """
+    if solicitado:
+        await _validar_responsavel_prazo(db, solicitado, caso)
+        return solicitado
+    for candidato in (comunicacao.advogado_id, getattr(caso, "advogado_responsavel_id", None)):
+        if not candidato:
+            continue
+        try:
+            await _validar_responsavel_prazo(db, candidato, caso)
+            return candidato
+        except HTTPException:
+            continue
+    return cu.id
 
 
 class AceitarPrazoRequest(BaseModel):
@@ -501,9 +531,9 @@ async def aceitar_prazo(
             status_code=422,
             detail="data_prazo no passado: confira a publicação e o termo inicial.",
         )
-    responsavel_id = payload.responsavel_id or comunicacao.advogado_id or cu.id
-    if payload.responsavel_id:
-        await _validar_responsavel_prazo(db, payload.responsavel_id, caso)
+    responsavel_id = await _resolver_responsavel_prazo(
+        db, payload.responsavel_id, comunicacao, caso, cu
+    )
     aviso_dia_nao_util = (
         "data_prazo cai em fim de semana: confira a prorrogação para o primeiro "
         "dia útil (CPC, art. 224, § 1º) e o calendário forense."
@@ -635,7 +665,9 @@ async def capturar_agora(
 
     _capturas_manuais_em_curso.add(cu.id)
     try:
-        resultado = await capturar_para_advogado(db, cu, dias=dias)
+        # Não gestão: janela máxima de 30 dias (contém o custo contra o CNJ).
+        dias_efetivos = dias if is_gestao(cu) else min(dias, _DIAS_MAX_EQUIPE)
+        resultado = await capturar_para_advogado(db, cu, dias=dias_efetivos)
         if not resultado.fonte_ok:
             await db.rollback()
             raise HTTPException(
