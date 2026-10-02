@@ -170,5 +170,26 @@ async def test_consultar_oab_pagina_vazia_com_count_pendente_falha_fechado(monke
     assert chamadas == [1, 2, 2, 2]
 
 
-def test_djen_page_size_default_conservador():
-    assert djen.ITENS_POR_PAGINA == 50
+def test_djen_page_size_alinhado_ao_swagger_cnj():
+    assert djen.ITENS_POR_PAGINA == 100
+    assert djen.MAX_PAGINAS == 100
+
+
+def test_djen_retry_nao_repete_4xx_e_repete_5xx():
+    import httpx
+
+    req = httpx.Request("GET", "https://comunicaapi.pje.jus.br/api/v1/comunicacao")
+    err_429 = httpx.HTTPStatusError(
+        "rate", request=req, response=httpx.Response(429, request=req)
+    )
+    err_403 = httpx.HTTPStatusError(
+        "forbidden", request=req, response=httpx.Response(403, request=req)
+    )
+    err_503 = httpx.HTTPStatusError(
+        "unavailable", request=req, response=httpx.Response(503, request=req)
+    )
+
+    assert djen._djen_retryable(err_429) is False
+    assert djen._djen_retryable(err_403) is False
+    assert djen._djen_retryable(err_503) is True
+    assert djen.classificar_erro_fonte(err_429) == "rate_limit"

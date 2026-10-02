@@ -94,6 +94,11 @@ def _detail_erro_fonte(slug: str, ultimo_erro: str | None) -> str:
             "DJEN/Comunica recusou a origem de rede por restrição geográfica; "
             "a captura foi interrompida e não deve ser considerada concluída."
         )
+    if slug == "djen" and "rate_limit" in erro:
+        return (
+            "DJEN/Comunica atingiu o limite de requisições; o ciclo foi "
+            "interrompido sem repetição imediata, conforme orientação do CNJ."
+        )
     if slug == "lexml" and ("anti-bot" in erro or "desafio" in erro):
         return (
             "LexML respondeu com desafio anti-bot; a ingestão foi interrompida "
