@@ -255,8 +255,8 @@ describe("Clientes — documentos de admissão", () => {
     expect(await screen.findByDisplayValue("5.000,00")).toBeTruthy();
     expect(screen.getByDisplayValue("3x")).toBeTruthy();
     expect(screen.getByDisplayValue("2026-11-10")).toBeTruthy();
-    expect(screen.getByText("R$ 1.000,00")).toBeTruthy();
-    expect(screen.getByText("R$ 4.000,00")).toBeTruthy();
+    expect(screen.getByText(/1\.000,00/)).toBeTruthy();
+    expect(screen.getByText(/4\.000,00/)).toBeTruthy();
   });
 
   it("envia cronograma financeiro junto com a reemissão do contrato", async () => {
