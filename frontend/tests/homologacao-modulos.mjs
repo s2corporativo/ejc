@@ -179,7 +179,18 @@ async function main() {
 
   mkdirSync(OUT, { recursive: true });
   const base = `http://127.0.0.1:${address.port}`.replace(/\/$/, "");
-  const browser = await chromium.launch({ executablePath: CHROMIUM });
+  const browser = await chromium.launch({
+    executablePath: CHROMIUM,
+    // Rasterização determinística: sem GPU/rasterização parcial por blocos, a
+    // borda/sombra de um chip variava em ~13 px entre execuções idênticas.
+    args: [
+      "--disable-gpu",
+      "--disable-gpu-rasterization",
+      "--disable-partial-raster",
+      "--disable-lcd-text",
+      "--font-render-hinting=none",
+    ],
+  });
   const failures = [];
 
   try {
@@ -273,6 +284,8 @@ async function main() {
           await page.screenshot({
             path: path.join(OUT, `modulo-${rota.name}-${theme}-${viewport.name}.png`),
             fullPage: false,
+            animations: "disabled",
+            caret: "hide",
           });
           console.log(
             `[${theme}/${viewport.name}] ${rota.path} → overflow=${overflow}px ${
