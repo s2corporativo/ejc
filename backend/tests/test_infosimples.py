@@ -9,9 +9,11 @@ Fakes no padrão test_andamentos_datajud/test_sociedades_cliente.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
+import httpx
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -23,6 +25,7 @@ from app.services import infosimples_service
 from app.services.datajud_service import _hash_mov, upsert_movimentos_no_caso
 from app.services.infosimples_service import (
     InfosimplesConsultaError,
+    InfosimplesIndisponivelError,
     IntegracaoDesligadaError,
     LimiteDiarioAtingidoError,
     consultar,
@@ -86,8 +89,13 @@ class _FakeDB:
         if "SELECT COUNT(*) FROM infosimples_uso" in sql:
             return _Res(self.uso_dia)
         if "INSERT INTO infosimples_uso" in sql:
-            self.inserts.append(dict(params or {}))
+            self.inserts.append({"res": None, **dict(params or {})})
             self.uso_dia += 1
+            return _Res(None)
+        if "UPDATE infosimples_uso" in sql:  # conclusão da reserva
+            for ins in self.inserts:
+                if ins["id"] == params["id"]:
+                    ins["code"], ins["res"] = params["code"], params["res"]
             return _Res(None)
         if "FROM cases" in sql:
             return _Res(self.case)
@@ -100,6 +108,9 @@ class _FakeDB:
 
     async def commit(self):
         self.commits += 1
+
+    async def rollback(self):
+        pass
 
 
 def _socio() -> User:
@@ -181,7 +192,7 @@ async def test_consultar_sucesso_registra_custo_e_audita(infosimples_ligado, mon
     assert len(db.inserts) == 1 and db.inserts[0]["res"] is not None
     audits = [a for a in db.added if a.__class__.__name__ == "AuditLog"]
     assert len(audits) == 1 and audits[0].acao == "CONSULTA_PAGA"
-    assert db.commits == 1
+    assert db.commits == 2  # reserva do teto + desfecho/audit
 
 
 # ── Erro 6xx: exceção tipada, conta no teto, sem token na mensagem ─────────────
@@ -221,6 +232,104 @@ async def test_consultar_teto_diario_atingido(infosimples_ligado, monkeypatch):
         await consultar(db, "tribunal/tjmg/processo", {"numero_processo": "1"})
     assert "Limite diário" in str(exc.value)
     assert db.inserts == []
+
+
+class _ShareState:
+    """Estado 'do banco' compartilhado entre sessões concorrentes."""
+
+    def __init__(self):
+        self.linhas: list[dict] = []
+        self.lock = asyncio.Lock()
+
+
+class _SessaoConcorrente:
+    """Sessão que modela a semântica relevante do PostgreSQL: linhas só ficam
+    visíveis após commit e o advisory lock transacional vale até commit/rollback.
+    Há yields (sleep) entre contar e inserir para expor a corrida."""
+
+    def __init__(self, st: _ShareState):
+        self.st, self.pend, self.tem_lock = st, [], False
+
+    async def execute(self, stmt, params=None):
+        sql = str(stmt)
+        if "pg_advisory_xact_lock" in sql:
+            await self.st.lock.acquire()
+            self.tem_lock = True
+            return _Res(None)
+        if "SELECT resultado FROM infosimples_uso" in sql:
+            return _Res(None)
+        if "SELECT COUNT(*) FROM infosimples_uso" in sql:
+            n = len(self.st.linhas)
+            await asyncio.sleep(0.01)
+            return _Res(n)
+        if "INSERT INTO infosimples_uso" in sql:
+            await asyncio.sleep(0.01)
+            self.pend.append({"res": None, **dict(params or {})})
+            return _Res(None)
+        if "UPDATE infosimples_uso" in sql:
+            for ln in self.st.linhas:
+                if ln["id"] == params["id"]:
+                    ln["code"] = params["code"]
+            return _Res(None)
+        return _Res(None)
+
+    def add(self, obj):
+        pass
+
+    def _soltar(self):
+        if self.tem_lock:
+            self.tem_lock = False
+            self.st.lock.release()
+
+    async def commit(self):
+        self.st.linhas.extend(self.pend)
+        self.pend = []
+        self._soltar()
+
+    async def rollback(self):
+        self.pend = []
+        self._soltar()
+
+
+async def test_teto_nao_e_burlado_por_concorrencia(infosimples_ligado, monkeypatch):
+    """E2: N consultas simultâneas lentas NÃO podem ultrapassar o teto."""
+    monkeypatch.setattr(get_settings(), "INFOSIMPLES_MAX_CONSULTAS_DIA", 3)
+    chamadas: list = []
+
+    async def _lenta(url, dados, timeout_s):
+        chamadas.append(1)
+        await asyncio.sleep(0.05)
+        return RESPOSTA_OK
+
+    monkeypatch.setattr(infosimples_service, "_post_form", _lenta)
+    st = _ShareState()
+
+    async def uma(i):
+        return await consultar(_SessaoConcorrente(st), "tribunal/tjmg/processo",
+                               {"numero_processo": str(i)})
+
+    res = await asyncio.gather(*(uma(i) for i in range(10)), return_exceptions=True)
+    ok = [r for r in res if isinstance(r, dict)]
+    barrados = [r for r in res if isinstance(r, LimiteDiarioAtingidoError)]
+    assert len(ok) == 3 and len(barrados) == 7
+    assert len(chamadas) == 3  # só 3 chamadas pagas saíram
+    assert len(st.linhas) == 3
+
+
+async def test_falha_de_rede_apos_reserva_conta_no_teto(infosimples_ligado, monkeypatch):
+    """Falha de rede após o envio mantém a reserva contada (falha fechada)."""
+    monkeypatch.setattr(get_settings(), "INFOSIMPLES_MAX_CONSULTAS_DIA", 1)
+
+    async def _falha(url, dados, timeout_s):
+        raise httpx.ReadTimeout("t")
+
+    monkeypatch.setattr(infosimples_service, "_post_form", _falha)
+    st = _ShareState()
+    with pytest.raises(InfosimplesIndisponivelError):
+        await consultar(_SessaoConcorrente(st), "x/y", {"a": "1"})
+    assert len(st.linhas) == 1 and st.linhas[0]["code"] == -1
+    with pytest.raises(LimiteDiarioAtingidoError):
+        await consultar(_SessaoConcorrente(st), "x/y", {"a": "2"})
 
 
 # ── Cache do mesmo dia: SEM segunda chamada HTTP nem nova cobrança ─────────────
@@ -386,7 +495,7 @@ async def test_endpoint_tjmg_merge_no_caso(infosimples_ligado, monkeypatch):
     # 2 audits: CONSULTA_PAGA (conector) + SYNC (merge na timeline).
     acoes = sorted(a.acao for a in db.added if a.__class__.__name__ == "AuditLog")
     assert acoes == ["CONSULTA_PAGA", "SYNC"]
-    assert db.commits == 2  # bookkeeping do custo + merge
+    assert db.commits == 3  # reserva + bookkeeping do custo + merge
 
 
 async def test_endpoint_tjmg_404_sem_resultado(infosimples_ligado, monkeypatch):
