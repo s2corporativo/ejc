@@ -42,6 +42,7 @@ async def verificar_conflito(
     # hash-aware): cliente por documento (texto puro + cpf_hash/cnpj_hash),
     # cliente por nome e parte contrária em casos. Aqui só formatamos o schema
     # próprio deste endpoint ({resultado, matches, recomendacao, ...}).
+    from app.services.pii_crypto import mascarar_documento
     from app.services.conflito_service import (
         _clientes_por_documentos,
         _clientes_por_nome,
@@ -49,7 +50,10 @@ async def verificar_conflito(
     )
 
     def _doc(c) -> Optional[str]:
-        return c.documento_plain
+        # PII: esta checagem cruza a base inteira (inclusive carteiras alheias)
+        # por dever ético; o documento NUNCA sai em claro (mesma máscara de
+        # /clients/verificar-conflito). Auditoria C1.
+        return mascarar_documento(c.documento_plain)
 
     def _nome(c) -> str:
         return c.nome or c.razao_social or "N/D"
@@ -134,10 +138,8 @@ async def verificar_conflito(
             "id":  str(uuid4()),
             "uid": user_id,
             "cid": case_id,
-            "det": (
-                f"Verificação conflito: {parte_contraria_nome or 'N/D'} / "
-                f"{parte_contraria_doc or 'N/D'} → {resultado}"
-            ),
+            # Sem nome/documento: audit_logs é WORM, não pode reter PII da parte.
+            "det": f"Verificação conflito → {resultado} ({len(matches)} achado(s))",
         })
         await db.commit()
     except Exception:

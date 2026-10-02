@@ -14,6 +14,8 @@ from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 
+_CLIENTES_CONFLITO = {"superadmin", "admin", "socio", "advogado", "secretaria"}
+
 router = APIRouter(prefix="/sumulas", tags=["Súmulas"])
 casos_router = APIRouter(prefix="", tags=["Súmulas — Casos"])
 
@@ -110,6 +112,11 @@ async def verificar_conflito(
     Verifica conflito de interesses antes de abrir um caso.
     OAB EOAB art. 34-35; Código de Ética arts. 15-18.
     """
+    # Mesma matriz de /clients/* (_CLIENTES): quem não gere clientes não cruza
+    # a base de clientes por nome/documento (LGPD / sigilo de carteira).
+    if cu.role.value not in _CLIENTES_CONFLITO:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Sem permissão para verificar conflito")
     from app.services.conflito_interesses import verificar_conflito as _verificar
     return await _verificar(
         db=db,
