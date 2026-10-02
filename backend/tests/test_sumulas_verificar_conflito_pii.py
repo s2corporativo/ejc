@@ -76,3 +76,11 @@ async def test_rota_exige_perfil_de_clientes(_patch, role, ok):
         with pytest.raises(HTTPException) as e:
             await verificar_conflito(req, _DB(), cu)
         assert e.value.status_code == 403
+
+
+def test_mascara_cnpj_e_valores_invalidos():
+    from app.services.pii_crypto import mascarar_documento
+
+    assert mascarar_documento("11222333000181") == "**.222.333/****-**"
+    assert mascarar_documento(None) is None
+    assert mascarar_documento("123") is None

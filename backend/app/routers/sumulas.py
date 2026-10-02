@@ -2,7 +2,7 @@
 # Banco de Súmulas — ingestão e busca de súmulas STF/STJ/TST no banco de teses.
 # POST /sumulas/ingerir-seed  — admin/superadmin only
 # GET  /sumulas/buscar        — busca full-text na tabela teses (tipo=jurisprudencia)
-# POST /casos/verificar-conflito  — verifica conflito de interesses (qualquer auth)
+# POST /sumulas/verificar-conflito — conflito de interesses (equipe que gere clientes)
 # ─────────────────────────────────────────────────────────────────────────────
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 from app.core.database import get_db
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 
@@ -102,7 +103,10 @@ async def buscar_sumulas(
 
 
 # ─── Conflito de Interesses ───────────────────────────────────────────────────
-@router.post("/verificar-conflito")
+@router.post(
+    "/verificar-conflito",
+    dependencies=[Depends(rate_limit("sumulas-verificar-conflito", 10))],
+)
 async def verificar_conflito(
     req: ConflitoRequest,
     db:  AsyncSession = Depends(get_db),
