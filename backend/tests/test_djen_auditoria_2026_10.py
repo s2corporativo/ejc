@@ -437,6 +437,36 @@ async def test_aceitar_prazo_rejeita_data_no_passado(monkeypatch):
             db=_FakeDB([_Res(_com(case_id="case-9"))]), cu=_user(),
         )
     assert exc.value.status_code == 422 and "passado" in exc.value.detail
+    assert "confirmar_prazo_vencido" in exc.value.detail  # diz como registrar o vencido
+
+
+async def test_prazo_ja_vencido_e_registrado_com_confirmacao_e_fica_auditado(monkeypatch):
+    """Intimação capturada com atraso: o vencimento real é passado e precisa ser registrado."""
+    _liberar_caso(monkeypatch)
+    db = _FakeDB([_Res(_com(case_id="case-9")), _Res(_user(uid="adv-1"))])
+    out = await intimacoes.aceitar_prazo(
+        "com-1",
+        intimacoes.AceitarPrazoRequest(data_prazo=date(2026, 9, 30), confirmar_prazo_vencido=True),
+        db=db, cu=_user(),
+    )
+    prazo = next(o for o in db.added if isinstance(o, Deadline))
+    assert out["criado"] is True and prazo.data_prazo == date(2026, 9, 30)
+    assert "já vencido" in out["aviso"] and "223" in out["aviso"]
+    aud = next(o for o in db.added if isinstance(o, AuditLog))
+    assert aud.dados_depois["prazo_vencido_confirmado"] is True
+
+
+async def test_confirmacao_de_vencido_nao_altera_prazo_futuro(monkeypatch):
+    _liberar_caso(monkeypatch)
+    db = _FakeDB([_Res(_com(case_id="case-9")), _Res(_user(uid="adv-1"))])
+    out = await intimacoes.aceitar_prazo(
+        "com-1",
+        intimacoes.AceitarPrazoRequest(data_prazo=date(2026, 10, 20), confirmar_prazo_vencido=True),
+        db=db, cu=_user(),
+    )
+    aud = next(o for o in db.added if isinstance(o, AuditLog))
+    assert aud.dados_depois["prazo_vencido_confirmado"] is False
+    assert out["aviso"] is None
 
 
 async def test_aceitar_prazo_rejeita_responsavel_inativo_ou_inexistente(monkeypatch):

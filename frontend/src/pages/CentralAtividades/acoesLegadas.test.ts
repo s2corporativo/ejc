@@ -40,7 +40,12 @@ describe("RBAC das suspensões na Central", () => {
   });
 });
 
-import { linkOficialSeguro, mascararCnj } from "./acoesLegadas";
+import {
+  exigeConfirmacaoVencido,
+  hojeIso,
+  linkOficialSeguro,
+  mascararCnj,
+} from "./acoesLegadas";
 
 describe("link oficial da comunicação DJEN", () => {
   it("aceita apenas https de domínio *.jus.br e recusa o resto", () => {
@@ -64,5 +69,18 @@ describe("busca de caso por nº CNJ da comunicação", () => {
   it("não altera texto livre nem números incompletos", () => {
     expect(mascararCnj(" João ")).toBe("João");
     expect(mascararCnj("123456")).toBe("123456");
+  });
+});
+
+describe("vencimento já passado", () => {
+  const agora = new Date(2026, 9, 2, 15, 0, 0); // 02/10/2026 (mês 0-based)
+  it("hojeIso usa a data local", () => {
+    expect(hojeIso(agora)).toBe("2026-10-02");
+  });
+  it("exige confirmação só para data anterior a hoje", () => {
+    expect(exigeConfirmacaoVencido("2026-10-01", agora)).toBe(true);
+    expect(exigeConfirmacaoVencido("2026-10-02", agora)).toBe(false);
+    expect(exigeConfirmacaoVencido("2026-12-01", agora)).toBe(false);
+    expect(exigeConfirmacaoVencido("", agora)).toBe(false);
   });
 });
