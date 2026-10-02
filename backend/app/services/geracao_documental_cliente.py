@@ -6,12 +6,13 @@ cliente é apenas apresentação e nunca chave de domínio.
 """
 from __future__ import annotations
 
+from calendar import monthrange
 from datetime import date
 from decimal import Decimal
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -19,7 +20,7 @@ from app.core.ownership import role_str as _role_str
 from app.models.audit_log import criar_audit_log
 from app.models.client import Client
 from app.models.legal_doc import LegalDoc, PecaStatus, PecaTipo
-from app.models.fee import Fee, FeeStatus, FeeTipo
+from app.models.fee import Fee, FeeEstorno, FeePayment, FeeStatus, FeeTipo
 from app.models.redesign import TabelaOABHonorario
 from app.models.template import DocTemplate
 from app.models.user import User
@@ -221,6 +222,292 @@ def _modelo_dict(modelo: DocTemplate | None) -> dict | None:
     return {"id": modelo.id, "titulo": modelo.titulo, "area": modelo.area}
 
 
+def _somar_meses(data: date, meses: int) -> date:
+    """Soma meses preservando o dia quando possível (31/01 → 28/29/02)."""
+    indice = data.month - 1 + meses
+    ano = data.year + indice // 12
+    mes = indice % 12 + 1
+    dia = min(data.day, monthrange(ano, mes)[1])
+    return date(ano, mes, dia)
+
+
+def _moeda(valor: Decimal | int | float | str | None) -> Decimal:
+    return Decimal(str(valor or 0)).quantize(Decimal("0.01"))
+
+
+def _cronograma_fixo(
+    valor_contratual: Decimal | None,
+    entrada: Decimal | None,
+    numero_parcelas: int,
+    primeiro_vencimento: date | None,
+    *,
+    data_entrada: date,
+) -> list[dict]:
+    """Cronograma determinístico: entrada + N parcelas mensais.
+
+    O valor contratual é o TOTAL. A entrada é abatida antes da divisão.
+    Centavos residuais são distribuídos nas primeiras parcelas, garantindo
+    soma exata sem arredondamento financeiro silencioso.
+    """
+    if valor_contratual is None:
+        return []
+    total = _moeda(valor_contratual)
+    valor_entrada = _moeda(entrada)
+    if total < 0 or valor_entrada < 0:
+        raise ValueError("valores financeiros não podem ser negativos")
+    if valor_entrada > total:
+        raise ValueError("entrada não pode ser maior que o valor contratual")
+    if numero_parcelas < 1:
+        raise ValueError("numero_parcelas deve ser pelo menos 1")
+    saldo = total - valor_entrada
+    if saldo > 0 and numero_parcelas > 1 and primeiro_vencimento is None:
+        raise ValueError("parcelamento exige o primeiro vencimento")
+
+    cronograma: list[dict] = []
+    if valor_entrada > 0:
+        cronograma.append(
+            {
+                "chave": "entrada",
+                "rotulo": "Entrada",
+                "valor": valor_entrada,
+                "vencimento": data_entrada,
+            }
+        )
+
+    if saldo <= 0:
+        return cronograma
+
+    centavos = int((saldo * 100).to_integral_value())
+    base, resto = divmod(centavos, numero_parcelas)
+    for indice in range(numero_parcelas):
+        parcela_centavos = base + (1 if indice < resto else 0)
+        if parcela_centavos <= 0:
+            continue
+        vencimento = (
+            _somar_meses(primeiro_vencimento, indice)
+            if primeiro_vencimento is not None
+            else None
+        )
+        cronograma.append(
+            {
+                "chave": f"parcela-{indice + 1}-de-{numero_parcelas}",
+                "rotulo": f"Parcela {indice + 1}/{numero_parcelas}",
+                "valor": Decimal(parcela_centavos) / Decimal("100"),
+                "vencimento": vencimento,
+            }
+        )
+    return cronograma
+
+
+def _descricao_cronograma(
+    cronograma: list[dict], forma_pagamento: str | None
+) -> str:
+    partes: list[str] = []
+    entrada = next((item for item in cronograma if item["chave"] == "entrada"), None)
+    parcelas = [item for item in cronograma if item["chave"] != "entrada"]
+    if entrada:
+        partes.append(f"entrada de {formatar_brl(entrada['valor'])} na assinatura")
+    if parcelas:
+        grupos: dict[Decimal, int] = {}
+        for item in parcelas:
+            grupos[item["valor"]] = grupos.get(item["valor"], 0) + 1
+        valores = " + ".join(
+            f"{quantidade}x {formatar_brl(valor)}"
+            for valor, quantidade in grupos.items()
+        )
+        venc = parcelas[0]["vencimento"]
+        sufixo = (
+            f", com primeiro vencimento em {venc.strftime('%d/%m/%Y')}"
+            if venc is not None
+            else ""
+        )
+        partes.append(
+            f"{len(parcelas)} parcela(s) mensal(is) ({valores}){sufixo}"
+        )
+    livre = (forma_pagamento or "").strip()
+    if livre:
+        partes.append(f"condição adicional: {livre}")
+    return "; ".join(partes) if partes else "[____]"
+
+
+async def _total_pago_efetivo(db: AsyncSession, fee_ids: list[str]) -> Decimal:
+    if not fee_ids:
+        return Decimal("0.00")
+    pagos = (await db.execute(
+        select(func.coalesce(func.sum(FeePayment.valor), 0)).where(
+            FeePayment.fee_id.in_(fee_ids)
+        )
+    )).scalar() or 0
+    estornos = (await db.execute(
+        select(func.coalesce(func.sum(FeeEstorno.valor), 0)).where(
+            FeeEstorno.fee_id.in_(fee_ids)
+        )
+    )).scalar() or 0
+    return max(_moeda(pagos) - _moeda(estornos), Decimal("0.00"))
+
+
+async def _sincronizar_financeiro_contrato(
+    db: AsyncSession,
+    cli: Client,
+    *,
+    nome_cliente: str,
+    valor_contratual: Decimal | None,
+    entrada: Decimal | None,
+    numero_parcelas: int,
+    primeiro_vencimento: date | None,
+    percentual_exito: Decimal | None,
+    forma_pagamento: str | None,
+    case_id: str | None,
+) -> dict:
+    """Materializa o contrato em parcelas do subledger canônico de honorários.
+
+    Reemissão cancela somente cobranças antigas ainda abertas e cria o novo
+    cronograma do saldo remanescente. Pagamentos/estornos são append-only e
+    nunca são alterados. Honorário de êxito já recebido exige ajuste financeiro
+    manual, pois não há base segura para reinterpretar o percentual.
+    """
+    raiz = f"[origem:contrato-admissao;client={cli.id};case={case_id or '-'}"
+    cond_case = Fee.case_id == case_id if case_id else Fee.case_id.is_(None)
+    historico = list((await db.execute(
+        select(Fee).where(
+            Fee.client_id == cli.id,
+            cond_case,
+            Fee.deleted_at.is_(None),
+            Fee.observacoes.ilike(f"%{raiz}%"),
+        )
+    )).scalars().all())
+
+    fixos = [
+        fee for fee in historico
+        if ";component=fixo;" in (fee.observacoes or "")
+        or (
+            fee.valor is not None
+            and ";component=exito;" not in (fee.observacoes or "")
+        )
+    ]
+    exitos = [
+        fee for fee in historico
+        if ";component=exito;" in (fee.observacoes or "")
+        or (fee.percentual_exito is not None and fee.valor is None)
+    ]
+    pago_fixo = await _total_pago_efetivo(db, [fee.id for fee in fixos])
+    pago_exito = await _total_pago_efetivo(db, [fee.id for fee in exitos])
+
+    total = _moeda(valor_contratual) if valor_contratual is not None else None
+    if pago_fixo > 0 and total is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "O contrato já possui recebimentos de honorários fixos. "
+                "Defina o valor contratual ou ajuste o financeiro manualmente."
+            ),
+        )
+    if total is not None and pago_fixo > total:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "O novo valor contratual é menor que o total já recebido. "
+                "Ajuste o financeiro manualmente antes de regerar o contrato."
+            ),
+        )
+
+    if pago_exito > 0:
+        percentuais_anteriores = {
+            _moeda(fee.percentual_exito)
+            for fee in exitos
+            if fee.percentual_exito is not None
+        }
+        novo = _moeda(percentual_exito) if percentual_exito is not None else None
+        if (
+            novo is None
+            or (percentuais_anteriores and novo not in percentuais_anteriores)
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Honorários de êxito deste contrato já possuem recebimento. "
+                    "O percentual não pode ser alterado automaticamente."
+                ),
+            )
+
+    for fee in fixos:
+        if fee.status in (FeeStatus.pendente, FeeStatus.atrasado):
+            fee.status = FeeStatus.cancelado
+    if pago_exito == 0:
+        for fee in exitos:
+            if fee.status in (FeeStatus.pendente, FeeStatus.atrasado):
+                fee.status = FeeStatus.cancelado
+
+    criados: list[Fee] = []
+    restante = (
+        max((total or Decimal("0.00")) - pago_fixo, Decimal("0.00"))
+        if total is not None
+        else Decimal("0.00")
+    )
+    entrada_restante = _moeda(entrada) if pago_fixo == 0 else Decimal("0.00")
+    if entrada_restante > restante:
+        entrada_restante = restante
+
+    cronograma = _cronograma_fixo(
+        restante if total is not None else None,
+        entrada_restante,
+        numero_parcelas,
+        primeiro_vencimento,
+        data_entrada=date.today(),
+    )
+    descricao_condicao = _descricao_cronograma(cronograma, forma_pagamento)
+    for item in cronograma:
+        marcador = f"{raiz};component=fixo;item={item['chave']}]"
+        fee = Fee(
+            id=str(uuid4()),
+            tipo=FeeTipo.fixo,
+            status=FeeStatus.pendente,
+            descricao=(
+                f"Contrato de honorários — {item['rotulo']} — {nome_cliente}"
+            )[:255],
+            valor=item["valor"],
+            percentual_exito=None,
+            data_vencimento=item["vencimento"],
+            client_id=cli.id,
+            case_id=case_id,
+            observacoes=(
+                f"{marcador} Sincronizado a partir do contrato de honorários. "
+                f"Condição: {descricao_condicao}."
+            ),
+        )
+        db.add(fee)
+        criados.append(fee)
+
+    if percentual_exito is not None and pago_exito == 0:
+        marcador = f"{raiz};component=exito;item=percentual]"
+        fee = Fee(
+            id=str(uuid4()),
+            tipo=FeeTipo.exito,
+            status=FeeStatus.pendente,
+            descricao=f"Honorários de êxito — {nome_cliente}"[:255],
+            valor=None,
+            percentual_exito=percentual_exito,
+            data_vencimento=None,
+            client_id=cli.id,
+            case_id=case_id,
+            observacoes=(
+                f"{marcador} Percentual previsto no contrato; valor monetário "
+                "depende do proveito econômico efetivamente apurado."
+            ),
+        )
+        db.add(fee)
+        criados.append(fee)
+
+    return {
+        "fee_ids": [fee.id for fee in criados],
+        "parcelas_criadas": len(
+            [fee for fee in criados if fee.tipo == FeeTipo.fixo]
+        ),
+        "pago_fixo_preservado": float(pago_fixo),
+        "exito_preservado": bool(pago_exito > 0),
+    }
+
+
 def _contrato_cliente(
     cli: Client, advogado: str, area: str, referencia_oab: str | None,
     *, valor_contratual: Decimal | None = None,
@@ -276,6 +563,8 @@ async def gerar_documentos_cliente(
     permite_substabelecimento: bool = True,
     poderes_especiais: str | None = None,
     valor_contratual: Decimal | None = None,
+    entrada: Decimal | None = None,
+    numero_parcelas: int = 1,
     percentual_exito: Decimal | None = None,
     forma_pagamento: str | None = None,
     data_vencimento: date | None = None,
@@ -355,6 +644,19 @@ async def gerar_documentos_cliente(
 
     nome_cliente = cli.razao_social or cli.nome or "Cliente"
     titulos = _titulos(nome_cliente)
+    try:
+        cronograma_contratual = _cronograma_fixo(
+            valor_contratual,
+            entrada,
+            numero_parcelas,
+            data_vencimento,
+            data_entrada=date.today(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    forma_pagamento_contrato = _descricao_cronograma(
+        cronograma_contratual, forma_pagamento
+    )
 
     # Modelos por área jurídica (módulo Templates de Peças): quando o
     # escritório cadastrou um modelo ativo de contrato/procuração para a área
@@ -381,7 +683,7 @@ async def gerar_documentos_cliente(
                 f"{float(percentual_exito):g}%"
                 if percentual_exito is not None else "[__]%"
             ),
-            "forma_pagamento": (forma_pagamento or "").strip() or "[____]",
+            "forma_pagamento": forma_pagamento_contrato,
             "numero_processo": "—", "parte_contraria": "—",
             "comarca": _settings.ESCRITORIO_CIDADE, "vara": "—", "valor_causa": "—",
         }
@@ -403,7 +705,7 @@ async def gerar_documentos_cliente(
             cli, advogado, area, referencia,
             valor_contratual=valor_contratual,
             percentual_exito=percentual_exito,
-            forma_pagamento=forma_pagamento,
+            forma_pagamento=forma_pagamento_contrato,
         )
     )
     conteudos = [
@@ -434,53 +736,20 @@ async def gerar_documentos_cliente(
         db.add(doc)
         criados.append(doc)
 
-    # O contrato alimenta o contas a receber. A chave lógica é cliente+caso;
-    # regerar o documento atualiza o mesmo lançamento e não duplica cobrança.
-    financeiro_id: str | None = None
-    if valor_contratual is not None or percentual_exito is not None:
-        marcador = f"[origem:contrato-admissao;client={cli.id};case={case_id or '-'}]"
-        cond_case = Fee.case_id == case_id if case_id else Fee.case_id.is_(None)
-        existente = (await db.execute(
-            select(Fee).where(
-                Fee.client_id == cli.id,
-                cond_case,
-                Fee.deleted_at.is_(None),
-                Fee.observacoes.ilike(f"%{marcador}%"),
-            )
-        )).scalar_one_or_none()
-        tipo_fee = (
-            FeeTipo.misto
-            if valor_contratual is not None and percentual_exito is not None
-            else FeeTipo.exito
-            if percentual_exito is not None
-            else FeeTipo.fixo
-        )
-        obs = (
-            f"{marcador} Sincronizado a partir do contrato de honorários. "
-            f"Forma de pagamento: {(forma_pagamento or '').strip() or 'não informada'}."
-        )
-        if existente:
-            existente.tipo = tipo_fee
-            existente.valor = valor_contratual
-            existente.percentual_exito = percentual_exito
-            existente.data_vencimento = data_vencimento
-            existente.observacoes = obs
-            financeiro_id = existente.id
-        else:
-            fee = Fee(
-                id=str(uuid4()),
-                tipo=tipo_fee,
-                status=FeeStatus.pendente,
-                descricao=f"Contrato de honorários — {nome_cliente}"[:255],
-                valor=valor_contratual,
-                percentual_exito=percentual_exito,
-                data_vencimento=data_vencimento,
-                client_id=cli.id,
-                case_id=case_id,
-                observacoes=obs,
-            )
-            db.add(fee)
-            financeiro_id = fee.id
+    financeiro = await _sincronizar_financeiro_contrato(
+        db,
+        cli,
+        nome_cliente=nome_cliente,
+        valor_contratual=valor_contratual,
+        entrada=entrada,
+        numero_parcelas=numero_parcelas,
+        primeiro_vencimento=data_vencimento,
+        percentual_exito=percentual_exito,
+        forma_pagamento=forma_pagamento,
+        case_id=case_id,
+    )
+    financeiro_ids = financeiro["fee_ids"]
+    financeiro_id = financeiro_ids[0] if financeiro_ids else None
 
     await criar_audit_log(
         db,
@@ -499,6 +768,9 @@ async def gerar_documentos_cliente(
             "modelo_procuracao": _modelo_dict(modelo_proc),
             "modelo_contrato": _modelo_dict(modelo_contr),
             "financeiro_fee_id": financeiro_id,
+            "financeiro_fee_ids": financeiro_ids,
+            "parcelas_criadas": financeiro["parcelas_criadas"],
+            "pago_fixo_preservado": financeiro["pago_fixo_preservado"],
         },
     )
     await db.commit()
@@ -509,6 +781,9 @@ async def gerar_documentos_cliente(
         "status": PecaStatus.rascunho.value,
         "ja_existia": False,
         "financeiro_fee_id": financeiro_id,
+        "financeiro_fee_ids": financeiro_ids,
+        "parcelas_criadas": financeiro["parcelas_criadas"],
+        "pago_fixo_preservado": financeiro["pago_fixo_preservado"],
         "aviso": AVISO_RASCUNHO,
         "procuracao": {
             "legal_doc_id": proc.id,
