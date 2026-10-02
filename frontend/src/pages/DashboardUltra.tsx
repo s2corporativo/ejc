@@ -19,6 +19,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
+  FileSignature,
   FolderKanban,
   Gavel,
   Library,
@@ -668,6 +669,12 @@ export default function DashboardUltra() {
                   <Briefcase aria-hidden="true" />+ Novo Caso
                 </Link>
               )}
+              {canUseLegal && (
+                <Link to="/clientes">
+                  <FileSignature aria-hidden="true" />
+                  Gerar documentos
+                </Link>
+              )}
             </div>
           </div>
         ) : (
@@ -691,6 +698,26 @@ export default function DashboardUltra() {
                     <strong>Cadastrar caso manualmente</strong>
                     <small>
                       Cliente, título, área, processo e valor. Direto, sem IA.
+                    </small>
+                  </span>
+                  <ChevronRight aria-hidden="true" />
+                </Link>
+              )}
+              {canUseLegal && (
+                <Link
+                  to="/clientes"
+                  className="ejc-dash__entry-option"
+                >
+                  <span
+                    className="ejc-dash__entry-option-icon"
+                    aria-hidden="true"
+                  >
+                    <FileSignature />
+                  </span>
+                  <span>
+                    <strong>Gerar procuração e contrato</strong>
+                    <small>
+                      Use os dados do cliente e sincronize honorários com o Financeiro.
                     </small>
                   </span>
                   <ChevronRight aria-hidden="true" />
