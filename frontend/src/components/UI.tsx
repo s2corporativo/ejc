@@ -107,7 +107,7 @@ const toneBarClasses: Record<Tone, string> = {
 // Botões no idioma flat/compacto (padrão Verdelimp, cores EJC): primary
 // em ouro CHAPADO #8F7117 (texto branco 4,6:1+ AA, sem gradiente/sombra),
 // secundário NEUTRO (branco com borda 1px), ghost terciário.
-// Foco com ring dourado acessível.
+// Foco com ring azul de ação acessível.
 const buttonClasses: Record<ButtonVariant, string> = {
   primary:
     "bg-primary-600 text-white hover:bg-primary-700 active:bg-primary-800 focus:ring-primary-500/40",
@@ -376,7 +376,7 @@ export function FieldLabel({
   required?: boolean;
 }) {
   return (
-    <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
       {children}
       {required && <span className="ml-1 text-danger-500">*</span>}
     </label>
