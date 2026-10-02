@@ -53,7 +53,14 @@ passivo **sem** reescrever o que funciona.
    merge, conferir se a mudança ainda é necessária ou já foi absorvida.
 2. **Duplicidades a resolver pelo titular:** #1957 × #1976 (C1) e #1961 × #1970
    (Manus/AILog). Issues duplicadas correspondentes: #1956 × #1971 e #1960 × #1969.
-3. #1955 é **pré-requisito** de qualquer limpeza documental — esta análise não
+3. **A `main` está congelada no Woodpecker.** `config/release_candidate.json`
+   (`release: homologacao-final-20260930`, `freeze_main: true`) faz
+   `scripts/check_release_freeze.py` reprovar todo PR cuja branch de origem não
+   seja `fix/homologacao-final-20260930` — inclusive PR só de documentação. Ainda
+   assim, PRs seguem sendo mesclados manualmente (ex.: #1988). Cabe ao titular
+   encerrar a release (atualizar ou remover o congelamento) ou formalizar a
+   exceção; enquanto isso, o check `ci/woodpecker/pr` fica vermelho em todos os PRs.
+4. #1955 é **pré-requisito** de qualquer limpeza documental — esta análise não
    toca os arquivos dele (regra 10 do `CLAUDE.md`).
 
 ### 2.2 Issues abertas (15)
@@ -297,7 +304,8 @@ aplicadas. Um PR por área (IA, casos, financeiro, documentos, frontend…).
 
 ## 8. Pontos de decisão do titular
 
-1. Duplicidades de PR (#1957/#1976; #1961/#1970).
+1. Duplicidades de PR (#1957/#1976; #1961/#1970) e o congelamento da `main`
+   pela release `homologacao-final-20260930` (§2.1, item 3).
 2. Congelamento de features durante as Fases 2–3.
 3. Rescan SHA-256: ativar ou remover.
 4. Desativação da superfície `/api` em favor de `/api/v1` (impacta integrações externas, ex.: n8n).
