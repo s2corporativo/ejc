@@ -114,16 +114,36 @@ async def _reembedar_doc(db, doc_id: str, dry_run: bool) -> str:
     return "ok"
 
 
-async def reembedar(batch_size: int = 20, dry_run: bool = False) -> dict:
-    """Reembeda chunks órfãos em lotes. Retorna contagens
-    {"ok", "erros", "dry_run", "disponivel"} — consumidas pelo seed (C1) para
-    logar quantos documentos nasceram vetorizados; o CLI ignora o retorno."""
+async def reembedar(
+    batch_size: int = 20,
+    dry_run: bool = False,
+    *,
+    max_docs: int | None = None,
+    max_batches: int | None = None,
+) -> dict:
+    """Reembeda chunks órfãos em lotes com teto operacional opcional.
+
+    max_docs limita documentos elegíveis efetivamente processados;
+    max_batches limita páginas brutas varridas. Ambos evitam uma remediação
+    longa/onerosa em produção e preservam retomada segura por chave estável.
+    """
+    if batch_size < 1:
+        raise ValueError("batch_size deve ser >= 1")
+    if max_docs is not None and max_docs < 1:
+        raise ValueError("max_docs deve ser >= 1")
+    if max_batches is not None and max_batches < 1:
+        raise ValueError("max_batches deve ser >= 1")
+
     if not emb_disponivel():
         logger.error("Embeddings indisponíveis (EMBEDDINGS_ENABLED off ou "
                      "provider ausente). Abortando sem alterar nada.")
-        return {"ok": 0, "erros": 0, "dry_run": 0, "disponivel": False}
+        return {
+            "ok": 0, "erros": 0, "dry_run": 0, "disponivel": False,
+            "processados": 0, "batches": 0,
+        }
 
     total_ok = total_erro = total_dry = 0
+    processados = batches = 0
     # Reutiliza a fonte única do gate de recuperação. Ela já aplica aprovação,
     # vigência, quarentena de súmulas e exclusão do corpus fictício. O conjunto
     # é calculado uma vez; nenhum fragmento SQL dinâmico é interpolado aqui.
@@ -136,18 +156,28 @@ async def reembedar(batch_size: int = 20, dry_run: bool = False) -> dict:
     # erros ficam órfãos para a próxima execução, sem loop infinito.
     after = ""
     while True:
+        if max_docs is not None and processados >= max_docs:
+            break
+        if max_batches is not None and batches >= max_batches:
+            break
+
         async with AsyncSessionLocal() as db:
             lote_bruto = (await db.execute(
                 _SQL_DOCS_COM_ORFAO, {"limit": batch_size, "after": after}
             )).all()
             if not lote_bruto:
                 break
+            batches += 1
 
             lote = [
                 (doc_id,) for (doc_id,) in lote_bruto
                 if str(doc_id) in ids_recuperaveis
             ]
+            if max_docs is not None:
+                restantes = max_docs - processados
+                lote = lote[:restantes]
             for (doc_id,) in lote:
+                processados += 1
                 try:
                     # SAVEPOINT por documento: erro SQL (ex.: vetor inválido)
                     # não deixa a transação inteira abortada nem impede os
@@ -170,18 +200,28 @@ async def reembedar(batch_size: int = 20, dry_run: bool = False) -> dict:
 
             await db.commit()
             logger.info(
-                "[reembedar] lote (after=%s) commitado — ok=%s erro=%s dry-run=%s",
+                "[reembedar] lote (after=%s) commitado — ok=%s erro=%s "
+                "dry-run=%s processados=%s batches=%s",
                 after or "<inicio>", total_ok, total_erro, total_dry,
+                processados, batches,
             )
 
         # Avança pelo lote BRUTO. Se os 20 ids forem inelegíveis, ainda
         # precisamos continuar procurando os próximos em vez de encerrar cedo.
         after = str(lote_bruto[-1][0])
 
-    logger.info("[reembedar] concluído — ok=%s erros=%s dry-run=%s",
-                total_ok, total_erro, total_dry)
-    return {"ok": total_ok, "erros": total_erro, "dry_run": total_dry,
-            "disponivel": True}
+    logger.info(
+        "[reembedar] concluído — ok=%s erros=%s dry-run=%s processados=%s batches=%s",
+        total_ok, total_erro, total_dry, processados, batches,
+    )
+    return {
+        "ok": total_ok,
+        "erros": total_erro,
+        "dry_run": total_dry,
+        "disponivel": True,
+        "processados": processados,
+        "batches": batches,
+    }
 
 
 if __name__ == "__main__":
@@ -191,5 +231,20 @@ if __name__ == "__main__":
     ap.add_argument("--batch-size", type=int, default=20)
     ap.add_argument("--dry-run", action="store_true",
                     help="Só lista quantos chunks seriam reembedados, sem gravar nada.")
+    ap.add_argument(
+        "--max-docs", type=int, default=None,
+        help="Teto de documentos elegíveis processados nesta execução.",
+    )
+    ap.add_argument(
+        "--max-batches", type=int, default=None,
+        help="Teto de lotes brutos varridos nesta execução.",
+    )
     args = ap.parse_args()
-    asyncio.run(reembedar(args.batch_size, args.dry_run))
+    asyncio.run(
+        reembedar(
+            args.batch_size,
+            args.dry_run,
+            max_docs=args.max_docs,
+            max_batches=args.max_batches,
+        )
+    )

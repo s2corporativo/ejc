@@ -203,3 +203,25 @@ def test_previa_corta_em_fronteira_de_paragrafo_quando_compensa():
     # Fronteira cedo demais: cortar ali jogaria fora metade da prévia útil.
     corpo2 = "a" * 10 + "\n\n" + "b" * (_PREVIA_MAX_CHARS * 2)
     assert len(_recortar_previa(corpo2)) == _PREVIA_MAX_CHARS
+
+
+async def test_reembedar_rejeita_limites_operacionais_invalidos():
+    import pytest
+    import scripts.reembedar_chunks_orfaos as reemb
+
+    with pytest.raises(ValueError, match="batch_size"):
+        await reemb.reembedar(batch_size=0)
+    with pytest.raises(ValueError, match="max_docs"):
+        await reemb.reembedar(max_docs=0)
+    with pytest.raises(ValueError, match="max_batches"):
+        await reemb.reembedar(max_batches=0)
+
+
+def test_reembedar_cli_expoe_tetos_operacionais():
+    from pathlib import Path
+
+    fonte = Path("scripts/reembedar_chunks_orfaos.py").read_text()
+    assert "--max-docs" in fonte
+    assert "--max-batches" in fonte
+    assert "processados" in fonte
+    assert "batches" in fonte

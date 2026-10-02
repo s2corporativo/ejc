@@ -337,11 +337,33 @@ def test_painel_inventaria_conectores_especificos_respeitando_flags(monkeypatch)
         "tse", "pgfn", "querido_diario", "ide_sisema", "jurimetria_tribunais",
     }
     assert expected <= set(items)
-    assert items["cnj_sgt"]["status"] == "ready"
+    assert items["cnj_sgt"]["status"] == "attention"
+    assert items["cnj_sgt"]["operational_state"] == "nao_homologado"
     assert items["tcu"]["status"] == "disabled"
     assert items["jurimetria_tribunais"]["configured"] is True
     assert items["jurimetria_tribunais"]["group"] == "Serviços específicos"
     assert "fake-nao-expor" not in str(build_integration_status(settings))
+
+
+def test_conector_publico_so_vira_ready_com_prova_operacional(monkeypatch):
+    monkeypatch.setenv("CNJ_SGT_ENABLED", "true")
+    settings = Settings(_env_file=None, APP_ENV="development")
+
+    item = _items_by_key(build_integration_status(
+        settings,
+        operational_states={
+            "cnj_sgt": {
+                "state": "ok",
+                "detail": "Probe oficial concluído com sucesso.",
+                "checked_at": "2026-10-01T20:00:00+00:00",
+            }
+        },
+    ))["cnj_sgt"]
+
+    assert item["configured"] is True
+    assert item["status"] == "ready"
+    assert item["operational_state"] == "ok"
+    assert "sucesso" in item["detail"].lower()
 
 
 def test_jurimetria_habilitada_sem_datajud_fica_attention(monkeypatch):

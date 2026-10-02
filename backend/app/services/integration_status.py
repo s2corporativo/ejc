@@ -161,8 +161,13 @@ def _aplicar_estados_operacionais(
             novo_status = "attention"
             if detail:
                 novo_detail = detail
-        elif it.status == "ready" and state == "ok" and detail:
-            novo_detail = detail
+        elif state == "ok" and it.enabled and it.configured:
+            # attention pode ser apenas "habilitado, ainda não homologado".
+            # Prova operacional positiva promove para ready; itens realmente
+            # incompletos nunca entram aqui porque configured=False.
+            novo_status = "ready"
+            if detail:
+                novo_detail = detail
         saida.append(replace(
             it, status=novo_status, detail=novo_detail,
             operational_state=state,
@@ -201,6 +206,47 @@ def _status(
         status=state,
         detail=detail,
         mode=mode,
+    )
+
+
+def _status_publico_sem_prova_operacional(
+    *,
+    key: str,
+    label: str,
+    group: str,
+    enabled: bool,
+    configured: bool = True,
+    ready_detail: str = "Conector habilitado e configurado.",
+    mode: str | None = None,
+    missing_detail: str = (
+        "Integração habilitada, mas a configuração obrigatória está incompleta."
+    ),
+) -> IntegrationStatus:
+    """Evita falso verde em conectores públicos sem probe persistido.
+
+    Feature flag + URL conhecida provam apenas que o conector está habilitado e
+    configurado. Estado ready exige evidência operacional posterior (state=ok).
+    """
+    item = _status(
+        key=key,
+        label=label,
+        group=group,
+        enabled=enabled,
+        configured=configured,
+        ready_detail=ready_detail,
+        missing_detail=missing_detail,
+        mode=mode,
+    )
+    if item.status != "ready":
+        return item
+    return replace(
+        item,
+        status="attention",
+        operational_state="nao_homologado",
+        detail=(
+            "Conector habilitado/configurado; conectividade ainda não "
+            "homologada por prova operacional persistida."
+        ),
     )
 
 
@@ -535,7 +581,7 @@ def build_integration_status(
             ),
             mode="consulta anônima com rate limit; sem Conecta gov.br",
         ),
-        _status(
+        _status_publico_sem_prova_operacional(
             key="cnj_sgt",
             label="CNJ/SGT — Tabelas Processuais Unificadas",
             group="Serviços específicos",
@@ -544,7 +590,7 @@ def build_integration_status(
             ready_detail="Conector público CNJ/SGT habilitado; não exige credencial.",
             mode="API pública oficial",
         ),
-        _status(
+        _status_publico_sem_prova_operacional(
             key="tcu",
             label="TCU — Dados Abertos",
             group="Serviços específicos",
@@ -553,7 +599,7 @@ def build_integration_status(
             ready_detail="Conector público do TCU habilitado; não exige credencial.",
             mode="dados abertos oficiais",
         ),
-        _status(
+        _status_publico_sem_prova_operacional(
             key="ibge",
             label="IBGE — Localidades",
             group="Serviços específicos",
@@ -562,7 +608,7 @@ def build_integration_status(
             ready_detail="Conector público do IBGE habilitado; não exige credencial.",
             mode="API pública oficial",
         ),
-        _status(
+        _status_publico_sem_prova_operacional(
             key="ibama",
             label="IBAMA — Dados Abertos",
             group="Serviços específicos",
@@ -571,7 +617,7 @@ def build_integration_status(
             ready_detail="Conector CKAN do IBAMA habilitado; não exige credencial.",
             mode="catálogo oficial de dados abertos",
         ),
-        _status(
+        _status_publico_sem_prova_operacional(
             key="consumidor_gov",
             label="Consumidor.gov.br / MJ — Dados Abertos",
             group="Serviços específicos",
@@ -580,7 +626,7 @@ def build_integration_status(
             ready_detail="Conector CKAN do Ministério da Justiça habilitado; não exige credencial.",
             mode="catálogo oficial de dados abertos",
         ),
-        _status(
+        _status_publico_sem_prova_operacional(
             key="cvm",
             label="CVM — Dados Abertos",
             group="Serviços específicos",
@@ -589,7 +635,7 @@ def build_integration_status(
             ready_detail="Conector CKAN da CVM habilitado; não exige credencial.",
             mode="catálogo oficial de dados abertos",
         ),
-        _status(
+        _status_publico_sem_prova_operacional(
             key="tse",
             label="TSE — Dados Abertos",
             group="Serviços específicos",
@@ -598,7 +644,7 @@ def build_integration_status(
             ready_detail="Conector CKAN do TSE habilitado; não exige credencial.",
             mode="catálogo oficial de dados abertos",
         ),
-        _status(
+        _status_publico_sem_prova_operacional(
             key="pgfn",
             label="PGFN — Dívida Ativa / Dados Abertos",
             group="Serviços específicos",
@@ -607,7 +653,7 @@ def build_integration_status(
             ready_detail="Conector público da PGFN habilitado; não exige credencial.",
             mode="catálogo bulk oficial",
         ),
-        _status(
+        _status_publico_sem_prova_operacional(
             key="querido_diario",
             label="Querido Diário",
             group="Serviços específicos",
@@ -619,7 +665,7 @@ def build_integration_status(
             ),
             mode="fonte secundária pública",
         ),
-        _status(
+        _status_publico_sem_prova_operacional(
             key="ide_sisema",
             label="IDE-Sisema / MG",
             group="Serviços específicos",
@@ -628,7 +674,7 @@ def build_integration_status(
             ready_detail="Conector público WFS do Sisema/MG habilitado; não exige credencial.",
             mode="geodados ambientais oficiais",
         ),
-        _status(
+        _status_publico_sem_prova_operacional(
             key="jurimetria_tribunais",
             label="Jurimetria dos Tribunais / DataJud",
             group="Serviços específicos",
