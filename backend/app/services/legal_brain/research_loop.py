@@ -112,8 +112,16 @@ def evaluate_research_coverage(records: Iterable[dict]) -> ResearchCoverage:
     Uma classe declarada sem ``source_id``/``canonical_id``/``doc_id``/URL/citação
     não satisfaz nenhum requisito. Flags de validação precisam ser booleanos
     nativos ``True``; strings como ``"false"`` nunca contam como verificação.
+
+    ATENÇÃO: a agregação é GLOBAL (todas as evidências somadas). Com mais de uma
+    questão jurídica, use ``evaluate_research_coverage_by_issue``, que impede
+    que a fonte de uma questão cubra a lacuna de outra.
     """
 
+    return _coverage_of(records)
+
+
+def _coverage_of(records: Iterable[dict]) -> ResearchCoverage:
     primary_source = False
     current_validity = False
     supporting_precedent = False
@@ -147,6 +155,41 @@ def evaluate_research_coverage(records: Iterable[dict]) -> ResearchCoverage:
         adverse_precedent=adverse_precedent,
         factual_fit=factual_fit,
     )
+
+
+def evaluate_research_coverage_by_issue(
+    records: Iterable[dict],
+    *,
+    issue_keys: Iterable[str] = (),
+) -> dict[str, ResearchCoverage]:
+    """Mede cobertura POR questão, atribuindo cada evidência ao seu ``issue_key``.
+
+    Fail-closed: evidência sem ``issue_key`` não é atribuída a nenhuma questão
+    (nunca cobre ninguém por padrão) e toda questão em ``issue_keys`` aparece no
+    resultado, com cobertura vazia se não houver fonte rastreável própria. As
+    regras de proveniência e de booleanos nativos são as de
+    ``evaluate_research_coverage``.
+    """
+
+    grouped: dict[str, list[dict]] = {}
+    for key in issue_keys:
+        clean = str(key or "").strip()
+        if clean:
+            grouped.setdefault(clean, [])
+    for raw in records:
+        if not isinstance(raw, dict):
+            continue
+        key = str(raw.get("issue_key") or "").strip()
+        if not key:
+            continue
+        grouped.setdefault(key, []).append(raw)
+    return {key: _coverage_of(items) for key, items in grouped.items()}
+
+
+def uncovered_issues(coverage_by_issue: dict[str, ResearchCoverage]) -> tuple[str, ...]:
+    """Lista as questões cuja cobertura não está completa."""
+
+    return tuple(key for key, cov in coverage_by_issue.items() if not cov.complete)
 
 
 def next_research_gap(coverage: ResearchCoverage) -> str | None:

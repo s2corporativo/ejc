@@ -125,6 +125,37 @@ class ResearchCoverage:
         )
 
 
+FACTUAL_FIT_STANCES: frozenset[str] = frozenset({"favoravel", "adverso", "neutro"})
+
+
+@dataclass(frozen=True)
+class FactualFitReview:
+    """Revisão humana de aderência fática de uma evidência a uma questão.
+
+    Nunca é produzida automaticamente: exige revisor e data, como
+    ``CaseAssertion``. Contrato puro; a verificação de que o revisor existe, é
+    advogado e está vinculado ao caso cabe ao runtime (ainda inexistente).
+    """
+
+    issue_key: str
+    source_id: str
+    fits: bool
+    reviewed_by_user_id: str
+    reviewed_at: str
+    stance: str | None = None
+    notes: str | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("issue_key", "source_id", "reviewed_by_user_id", "reviewed_at"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"revisão de aderência fática exige {name}")
+        if not isinstance(self.fits, bool):
+            raise ValueError("revisão de aderência fática exige 'fits' booleano")
+        if self.stance is not None and self.stance not in FACTUAL_FIT_STANCES:
+            raise ValueError("posição inválida para revisão de aderência fática")
+
+
 @dataclass(frozen=True)
 class ResearchPlan:
     """Plano limitado de pesquisa ou saneamento para uma questão jurídica."""
