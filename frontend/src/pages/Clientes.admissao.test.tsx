@@ -177,7 +177,7 @@ describe("Clientes — documentos de admissão", () => {
     montar();
     await screen.findByText("Maria Souza");
 
-    fireEvent.click(screen.getByTitle("Procuração e contrato de honorários"));
+    fireEvent.click(screen.getByTitle("Gerar procuração, contrato e sincronizar Financeiro"));
 
     expect(await screen.findByText("Procuracao - Maria Souza")).toBeTruthy();
     expect(
@@ -191,7 +191,7 @@ describe("Clientes — documentos de admissão", () => {
     // como ad_judicia, e o cliente assinaria poderes que ninguém escolheu.
     montar();
     await screen.findByText("Maria Souza");
-    fireEvent.click(screen.getByTitle("Procuração e contrato de honorários"));
+    fireEvent.click(screen.getByTitle("Gerar procuração, contrato e sincronizar Financeiro"));
     await screen.findByText("Procuracao - Maria Souza");
 
     fireEvent.change(screen.getByDisplayValue("Ad judicia (foro em geral)"), {
@@ -205,6 +205,49 @@ describe("Clientes — documentos de admissão", () => {
         tipo_poderes: "ad_judicia_et_extra",
         permite_substabelecimento: true,
         poderes_especiais: null,
+        valor_contratual: null,
+        entrada: null,
+        numero_parcelas: 1,
+        percentual_exito: null,
+        forma_pagamento: null,
+        data_vencimento: null,
+      }),
+    );
+  });
+
+  it("envia cronograma financeiro junto com a reemissão do contrato", async () => {
+    montar();
+    await screen.findByText("Maria Souza");
+    fireEvent.click(
+      screen.getByTitle("Gerar procuração, contrato e sincronizar Financeiro"),
+    );
+    await screen.findByText("Procuracao - Maria Souza");
+
+    fireEvent.change(screen.getByPlaceholderText("Ex.: 5.000,00"), {
+      target: { value: "5.000,00" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Opcional", { exact: true }), {
+      target: { value: "1.000,00" },
+    });
+    fireEvent.change(screen.getByDisplayValue("1x"), {
+      target: { value: "3" },
+    });
+    const data = document.querySelector('input[type="date"]') as HTMLInputElement;
+    fireEvent.change(data, { target: { value: "2026-11-10" } });
+    fireEvent.click(screen.getByText("Gerar novamente"));
+
+    await waitFor(() =>
+      expect(postMock).toHaveBeenCalledWith("/clients/cli-1/gerar-documentos", {
+        forcar_novo: true,
+        tipo_poderes: "ad_judicia",
+        permite_substabelecimento: true,
+        poderes_especiais: null,
+        valor_contratual: 5000,
+        entrada: 1000,
+        numero_parcelas: 3,
+        percentual_exito: null,
+        forma_pagamento: null,
+        data_vencimento: "2026-11-10",
       }),
     );
   });
@@ -231,7 +274,7 @@ describe("Clientes — documentos de admissão", () => {
 
     montar();
     await screen.findByText("Maria Souza");
-    const botoes = screen.getAllByTitle("Procuração e contrato de honorários");
+    const botoes = screen.getAllByTitle("Gerar procuração, contrato e sincronizar Financeiro");
 
     fireEvent.click(botoes[0]); // A — fica pendente
     fireEvent.click(botoes[1]); // B — resolve primeiro
@@ -248,7 +291,7 @@ describe("Clientes — documentos de admissão", () => {
     montar();
     await screen.findByText("Maria Souza");
     expect(
-      screen.queryByTitle("Procuração e contrato de honorários"),
+      screen.queryByTitle("Gerar procuração, contrato e sincronizar Financeiro"),
     ).toBeNull();
   });
 });
