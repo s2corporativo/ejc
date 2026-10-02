@@ -475,6 +475,10 @@ def test_paridade_openapi_com_snapshot_anterior():
     assert not ressuscitadas, f"rota(s) removida(s) por decisão do escritório voltaram: {ressuscitadas}"
 
     AUTH_ALTERACOES_INTENCIONAIS = (
+        # I1 (auditoria de Inteligência, out/2026): /rag/ingerir-ai-log passa a
+        # exigir papel jurídico (require_roles → `checker`), igual ao /rag/ingest.
+        # Só ENDURECE o acesso (antes: qualquer usuário autenticado).
+        (("/api/rag/ingerir-ai-log/{log_id}", "POST"), ["HTTPBearer", "checker", "get_current_user", "get_db"]),
         # PRs #1348/#1349 (auditoria E2E de clientes, set/2026): rate limit
         # (`rate_limit(...)` → dependência `_dep`) adicionado à análise de IA
         # do cliente e ao export CSV de clientes. Só ACRESCENTA uma

@@ -597,15 +597,26 @@ async def ingerir_ai_log_aprovado(
     log_id: str,
     req: IngerirAILogRequest,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(require_roles(["superadmin", "admin", "socio", "advogado"])),
 ):
     """
-    Gate humano de destilação: advogado aprova um output de IA (ai_log)
-    e ele é ingerido no RAG como conhecimento institucional.
-    REGRA: só outputs com status HITL 'revisado' ou 'aplicado' podem ser ingeridos.
+    Destilação de output de IA (ai_log) para a fila de curadoria do RAG.
+    REGRA: só outputs com status HITL 'revisado' ou 'aplicado' podem ser enfileirados,
+    e entram SEMPRE como `rag_status=pendente` (saída de IA nunca vira conhecimento
+    aprovado sem curadoria humana, como no /ingest). Categorias restritas ou com
+    força de fonte jurídica (legislação, súmula, jurisprudência...) são recusadas.
     """
     from app.models.ai_log import AILog, AIStatusHITL
     from app.services.ingestion_service import upsert_documento
+    from app.services.knowledge_autoapproval import _CATEGORIA_JURIDICA_TOKENS
+
+    cat = (req.categoria or "").strip().lower()
+    if cat in _RESTRICTED_CATS or any(t in cat for t in _CATEGORIA_JURIDICA_TOKENS):
+        raise HTTPException(
+            status_code=422,
+            detail=("Saída de IA não pode ser ingerida em categoria restrita ou com "
+                    "força de fonte jurídica; use uma categoria de conhecimento interno."),
+        )
 
     log = (await db.execute(
         select(AILog).where(AILog.id == log_id, AILog.user_id == cu.id)
@@ -633,12 +644,16 @@ async def ingerir_ai_log_aprovado(
         chave_origem=chave,
         fonte=fonte,
         extra={
-            "rag_status": "aprovado",
+            # Saída de IA aguarda curadoria humana; a revisão HITL do autor
+            # não equivale à aprovação institucional da base.
+            "rag_status": "pendente",
+            "requires_human_review": True,
             "origem": "ai_log_hitl",
+            "gerado_por_ia": True,
             "status_hitl": log.status_hitl.value,
-            "aprovado_por": str(cu.id),
+            "ingerido_por": str(cu.id),
         },
-        confianca="media",
+        confianca="baixa",
     )
     await db.commit()
 
@@ -652,5 +667,6 @@ async def ingerir_ai_log_aprovado(
         "chunks_estimados": chunks_estimados,
         "categoria": req.categoria,
         "titulo": titulo,
-        "aviso": "Output ingerido no RAG como conhecimento institucional. Disponível nas próximas consultas.",
+        "rag_status": "pendente",
+        "aviso": "Output enfileirado para curadoria humana; só fica disponível ao RAG após aprovação.",
     }
