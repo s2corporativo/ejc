@@ -10,8 +10,13 @@ const source = readFileSync(
 describe("Central de Atividades — contratos jurídicos de prazo", () => {
   it("envia vencimento conferido ao aceitar prazo DJEN", () => {
     expect(source).toContain("/aceitar-prazo");
-    expect(source).toContain("{ data_prazo: dataPrazo }");
+    expect(source).toContain("data_prazo: dataPrazo");
     expect(source).toContain("Vencimento conferido *");
+    // Prazo vencido só com confirmação explícita do usuário.
+    expect(source).toContain("confirmar_prazo_vencido: true");
+    // O front nunca manda "dias" para cálculo: o backend o recusa sem motor auditável.
+    const bloco = source.slice(source.indexOf("/aceitar-prazo"));
+    expect(bloco.slice(0, bloco.indexOf("toast.success"))).not.toMatch(/\bdias\b/);
   });
 
   it("usa somente o motor canônico de cálculo para o simulador", () => {

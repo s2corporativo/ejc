@@ -41,7 +41,9 @@ def downgrade() -> None:
     if repetidas:
         raise RuntimeError(
             "downgrade 170 recusado: existem comunicações DJEN replicadas entre "
-            "advogados; reintroduzir a unicidade global descartaria dados."
+            "advogados; reintroduzir a unicidade global descartaria dados. "
+            "Procedimento seguro (com reserva das réplicas): "
+            "docs/operacao/ROLLBACK_DJEN_169_170.md"
         )
     op.drop_index(_INDICE, table_name="djen_comunicacoes")
     op.create_index(_INDICE, "djen_comunicacoes", ["comunicacao_id_externo"], unique=True)
