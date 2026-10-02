@@ -569,6 +569,7 @@ async def gerar_documentos_cliente(
     forma_pagamento: str | None = None,
     data_vencimento: date | None = None,
     case_id: str | None = None,
+    sincronizar_financeiro: bool | None = None,
     forcar_novo: bool = False,
 ) -> dict:
     """Gera procuração + contrato vinculados inequivocamente ao cliente."""
@@ -736,18 +737,37 @@ async def gerar_documentos_cliente(
         db.add(doc)
         criados.append(doc)
 
-    financeiro = await _sincronizar_financeiro_contrato(
-        db,
-        cli,
-        nome_cliente=nome_cliente,
-        valor_contratual=valor_contratual,
-        entrada=entrada,
-        numero_parcelas=numero_parcelas,
-        primeiro_vencimento=data_vencimento,
-        percentual_exito=percentual_exito,
-        forma_pagamento=forma_pagamento,
-        case_id=case_id,
-    )
+    if sincronizar_financeiro is None:
+        sincronizar_financeiro = any(
+            (
+                valor_contratual is not None,
+                entrada is not None,
+                numero_parcelas != 1,
+                percentual_exito is not None,
+                bool((forma_pagamento or "").strip()),
+                data_vencimento is not None,
+            )
+        )
+    if sincronizar_financeiro:
+        financeiro = await _sincronizar_financeiro_contrato(
+            db,
+            cli,
+            nome_cliente=nome_cliente,
+            valor_contratual=valor_contratual,
+            entrada=entrada,
+            numero_parcelas=numero_parcelas,
+            primeiro_vencimento=data_vencimento,
+            percentual_exito=percentual_exito,
+            forma_pagamento=forma_pagamento,
+            case_id=case_id,
+        )
+    else:
+        financeiro = {
+            "fee_ids": [],
+            "parcelas_criadas": 0,
+            "pago_fixo_preservado": 0.0,
+            "exito_preservado": False,
+        }
     financeiro_ids = financeiro["fee_ids"]
     financeiro_id = financeiro_ids[0] if financeiro_ids else None
 
