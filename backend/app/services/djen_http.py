@@ -14,8 +14,9 @@ from pydantic import SecretStr
 
 DJEN_COMUNICA_BASE_URL = "https://comunicaapi.pje.jus.br/api/v1"
 DJEN_COMUNICACAO_URL = f"{DJEN_COMUNICA_BASE_URL}/comunicacao"
-# Valor conservador e compatível com o limite observado em produção do Comunica.
-DJEN_ITENS_POR_PAGINA = 50
+# Swagger DJEN 1.0.4 (04/03/2026): valores válidos são 5 ou 100.
+# Usar 100 reduz chamadas/rate-limit sem ultrapassar o contrato oficial.
+DJEN_ITENS_POR_PAGINA = 100
 
 
 def obter_proxy_djen() -> str | None:

@@ -29,7 +29,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import (
     retry,
-    retry_if_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
@@ -50,7 +50,9 @@ _NAO_UF = frozenset({"OA", "NO", "DE", "DA", "DO", "Nº", "N"})
 logger = logging.getLogger("ejc.djen")
 BASE = DJEN_COMUNICACAO_URL
 ITENS_POR_PAGINA = DJEN_ITENS_POR_PAGINA
-MAX_PAGINAS = 200
+# Consultas por OAB são limitadas pelo CNJ a 10.000 resultados; com página
+# oficial de 100 itens, 100 páginas cobrem integralmente o teto documentado.
+MAX_PAGINAS = 100
 MAX_RETRIES_PAGINA_VAZIA = 2
 PAUSA_ENTRE_PAGINAS = 0.25
 JANELA_RECONCILIACAO_DIAS = 7
@@ -198,6 +200,8 @@ def _classificar_erro_fonte(exc: Exception) -> str:
         status = exc.response.status_code if exc.response is not None else 0
         if _e_bloqueio_geografico(exc.response):
             return "geo_bloqueado"
+        if status == 429:
+            return "rate_limit"
         if status >= 500:
             return "http_5xx"
         if status >= 400:
@@ -217,6 +221,21 @@ def classificar_erro_fonte(exc: Exception) -> str:
     proxy, credencial ou corpo integral da resposta upstream.
     """
     return _classificar_erro_fonte(exc)
+
+
+def _djen_retryable(exc: BaseException) -> bool:
+    """Retenta só falhas transitórias que podem melhorar em segundos.
+
+    4xx (inclusive 403 geográfico, 422 contratual e 429 rate-limit) não são
+    repetidos imediatamente. O Swagger do CNJ orienta aguardar 1 minuto após
+    429; bloquear o worker nesse intervalo seria pior que encerrar o ciclo e
+    deixar a próxima execução controlada retentar.
+    """
+    if isinstance(exc, httpx.TransportError):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+        return exc.response.status_code >= 500
+    return False
 
 
 def resumir_execucao(resultados: list[DjenCapturaResultado]) -> dict:
@@ -312,7 +331,7 @@ async def enviar_emails_pendentes(resultado: DjenCapturaResultado) -> None:
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
-    retry=retry_if_exception_type((httpx.TransportError, httpx.HTTPStatusError)),
+    retry=retry_if_exception(_djen_retryable),
     reraise=True,
 )
 async def _djen_get(params: dict) -> dict | list:
