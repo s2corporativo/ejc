@@ -744,6 +744,7 @@ async def gerar_documentos_cliente(
         forma_pagamento=p.forma_pagamento,
         data_vencimento=p.data_vencimento,
         case_id=p.case_id,
+        sincronizar_financeiro=pediu_financeiro,
         forcar_novo=p.forcar_novo,
     )
     # A idempotência devolve o rascunho ANTERIOR quando já existe kit. Se o
