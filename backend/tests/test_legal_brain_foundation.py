@@ -263,3 +263,19 @@ def test_legal_bench_reconhece_adversarial_com_proveniencia():
         },
     )
     assert score.adverse_coverage == 1.0
+
+
+def test_validacao_com_revisor_ou_data_em_branco_e_rejeitada():
+    import pytest
+
+    from app.services.legal_brain import CaseAssertion, EvidenceState
+
+    for revisor, data in (("  ", "2026-10-02"), ("u1", "   "), ("", "")):
+        with pytest.raises(ValueError):
+            CaseAssertion(
+                id="a1",
+                text="fato",
+                state=EvidenceState.VALIDADO_ADVOGADO,
+                validated_by_user_id=revisor,
+                validated_at=data,
+            )

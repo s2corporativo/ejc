@@ -22,7 +22,10 @@ class CaseAssertion:
         if self.state in {
             EvidenceState.VALIDADO_ADVOGADO,
             EvidenceState.CONFIRMADO,
-        } and (not self.validated_by_user_id or not self.validated_at):
+        } and (
+            not (self.validated_by_user_id or "").strip()
+            or not (self.validated_at or "").strip()
+        ):
             raise ValueError(
                 "estado probatório validado exige revisor autenticado e data"
             )
