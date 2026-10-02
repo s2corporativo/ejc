@@ -226,9 +226,11 @@ describe("Clientes — documentos de admissão", () => {
     fireEvent.change(screen.getByPlaceholderText("Ex.: 5.000,00"), {
       target: { value: "5.000,00" },
     });
-    fireEvent.change(screen.getByPlaceholderText("Opcional", { exact: true }), {
-      target: { value: "1.000,00" },
-    });
+    const entrada = screen
+      .getByText("Entrada (R$)")
+      .parentElement?.querySelector("input");
+    expect(entrada).toBeTruthy();
+    fireEvent.change(entrada!, { target: { value: "1.000,00" } });
     fireEvent.change(screen.getByDisplayValue("1x"), {
       target: { value: "3" },
     });
