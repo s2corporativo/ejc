@@ -713,7 +713,17 @@ async def gerar_documentos_cliente(
             status_code=422,
             detail="parcelamento exige valor_contratual",
         )
-    if p.numero_parcelas > 1 and p.data_vencimento is None:
+    saldo_parcelar = (
+        (p.valor_contratual - (p.entrada or Decimal("0")))
+        if p.valor_contratual is not None
+        else None
+    )
+    if (
+        p.numero_parcelas > 1
+        and saldo_parcelar is not None
+        and saldo_parcelar > 0
+        and p.data_vencimento is None
+    ):
         raise HTTPException(
             status_code=422,
             detail="parcelamento exige o primeiro vencimento",
