@@ -1,9 +1,10 @@
 # ── app/routers/clients.py ───────────────────────────────────────────────────
 # CRM de clientes + VERIFICAÇÃO DE CONFLITO DE INTERESSES (OAB obrigatório)
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from uuid import uuid4
 from typing import Optional
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, or_, func as sqlfunc
@@ -642,9 +643,12 @@ class GerarDocsClienteIn(BaseModel):
     permite_substabelecimento: bool = True
     poderes_especiais: Optional[str] = None
     forcar_novo: bool = False
-    valor_contratual: Optional[float] = None
-    percentual_exito: Optional[float] = None
+    valor_contratual: Optional[Decimal] = Field(default=None, ge=0)
+    entrada: Optional[Decimal] = Field(default=None, ge=0)
+    numero_parcelas: int = Field(default=1, ge=1, le=120)
+    percentual_exito: Optional[Decimal] = Field(default=None, ge=0, le=100)
     forma_pagamento: Optional[str] = Field(default=None, max_length=500)
+    data_vencimento: Optional[date] = None
     sincronizar_financeiro: bool = True
 
 
@@ -669,6 +673,37 @@ async def gerar_documentos_cliente(
     if not c or not await _pode_ver_cliente(cu, c, db):
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
     p = payload or GerarDocsClienteIn()
+    if p.entrada is not None and p.valor_contratual is None:
+        raise HTTPException(status_code=422, detail="entrada exige valor_contratual")
+    if (
+        p.valor_contratual is not None
+        and p.entrada is not None
+        and p.entrada > p.valor_contratual
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="entrada não pode ser maior que o valor contratual",
+        )
+    saldo_parcelar = (
+        (p.valor_contratual - (p.entrada or Decimal("0")))
+        if p.valor_contratual is not None
+        else None
+    )
+    if p.numero_parcelas > 1 and p.valor_contratual is None:
+        raise HTTPException(
+            status_code=422,
+            detail="parcelamento exige valor_contratual",
+        )
+    if (
+        p.sincronizar_financeiro
+        and saldo_parcelar is not None
+        and saldo_parcelar > 0
+        and p.data_vencimento is None
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="sincronização parcelada exige o primeiro vencimento",
+        )
     from app.services.geracao_documental_cliente import gerar_documentos_cliente as _gerar
     resultado = await _gerar(
         db,
@@ -679,8 +714,11 @@ async def gerar_documentos_cliente(
         poderes_especiais=p.poderes_especiais,
         forcar_novo=p.forcar_novo,
         valor_contratual=p.valor_contratual,
+        entrada=p.entrada,
+        numero_parcelas=p.numero_parcelas,
         percentual_exito=p.percentual_exito,
         forma_pagamento=p.forma_pagamento,
+        data_vencimento=p.data_vencimento,
         sincronizar_financeiro=p.sincronizar_financeiro,
     )
     # A idempotência devolve o rascunho ANTERIOR quando já existe kit. Se o
