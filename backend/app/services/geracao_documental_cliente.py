@@ -7,6 +7,7 @@ cliente é apenas apresentação e nunca chave de domínio.
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -18,6 +19,7 @@ from app.core.ownership import role_str as _role_str
 from app.models.audit_log import criar_audit_log
 from app.models.client import Client
 from app.models.legal_doc import LegalDoc, PecaStatus, PecaTipo
+from app.models.fee import Fee, FeeStatus, FeeTipo
 from app.models.redesign import TabelaOABHonorario
 from app.models.template import DocTemplate
 from app.models.user import User
@@ -220,19 +222,25 @@ def _modelo_dict(modelo: DocTemplate | None) -> dict | None:
 
 
 def _contrato_cliente(
-    cli: Client, advogado: str, area: str, referencia_oab: str | None
+    cli: Client, advogado: str, area: str, referencia_oab: str | None,
+    *, valor_contratual: Decimal | None = None,
+    percentual_exito: Decimal | None = None,
+    forma_pagamento: str | None = None,
 ) -> str:
     ref = f" ({referencia_oab})" if referencia_oab else ""
     objeto = f" na área de {area}" if area else " em área a definir pelas partes"
+    valor_txt = formatar_brl(valor_contratual) if valor_contratual is not None else "R$ [____]"
+    exito_txt = f"{float(percentual_exito):g}%" if percentual_exito is not None else "[__]%"
+    pagamento_txt = (forma_pagamento or "").strip() or "[____]"
     clausulas = (
         "CLÁUSULA 1 - OBJETO. Prestação de serviços advocatícios ao CONTRATANTE"
         f"{objeto}, abrangendo consultoria e as medidas judiciais ou extrajudiciais "
         "que forem expressamente definidas e aprovadas.\n\n"
-        "CLÁUSULA 2 - HONORÁRIOS. As partes ajustarão o valor final em R$ [____], "
+        f"CLÁUSULA 2 - HONORÁRIOS. As partes ajustam o valor final em {valor_txt}, "
         f"tendo como referência a Tabela de Honorários da OAB/MG{ref}, "
-        "com forma de pagamento [____].\n\n"
+        f"com forma de pagamento {pagamento_txt}.\n\n"
         "CLÁUSULA 3 - HONORÁRIOS DE ÊXITO. Se aplicável e expressamente pactuado, "
-        "o percentual será de [__]% sobre o proveito econômico obtido.\n\n"
+        f"o percentual será de {exito_txt} sobre o proveito econômico obtido.\n\n"
         "CLÁUSULA 4 - HONORÁRIOS SUCUMBENCIAIS. Pertencem ao advogado, nos termos "
         "da legislação aplicável.\n\n"
         "CLÁUSULA 5 - DESPESAS. Custas, taxas e despesas processuais correm por "
@@ -267,6 +275,11 @@ async def gerar_documentos_cliente(
     tipo_poderes: str = "ad_judicia",
     permite_substabelecimento: bool = True,
     poderes_especiais: str | None = None,
+    valor_contratual: Decimal | None = None,
+    percentual_exito: Decimal | None = None,
+    forma_pagamento: str | None = None,
+    data_vencimento: date | None = None,
+    case_id: str | None = None,
     forcar_novo: bool = False,
 ) -> dict:
     """Gera procuração + contrato vinculados inequivocamente ao cliente."""
@@ -360,6 +373,15 @@ async def gerar_documentos_cliente(
             "tipo_poderes": tipo,
             "poderes_especiais": (poderes_especiais or "").strip() or "—",
             "referencia_oab": referencia or "—",
+            "valor_contratual": (
+                formatar_brl(valor_contratual)
+                if valor_contratual is not None else "R$ [____]"
+            ),
+            "percentual_exito": (
+                f"{float(percentual_exito):g}%"
+                if percentual_exito is not None else "[__]%"
+            ),
+            "forma_pagamento": (forma_pagamento or "").strip() or "[____]",
             "numero_processo": "—", "parte_contraria": "—",
             "comarca": _settings.ESCRITORIO_CIDADE, "vara": "—", "valor_causa": "—",
         }
@@ -377,7 +399,12 @@ async def gerar_documentos_cliente(
     )
     texto_contr = (
         _render_modelo(modelo_contr, ctx) if modelo_contr else
-        _contrato_cliente(cli, advogado, area, referencia)
+        _contrato_cliente(
+            cli, advogado, area, referencia,
+            valor_contratual=valor_contratual,
+            percentual_exito=percentual_exito,
+            forma_pagamento=forma_pagamento,
+        )
     )
     conteudos = [
         (titulos[ADMISSION_KIND_PROCURACAO], PecaTipo.procuracao,
@@ -407,6 +434,54 @@ async def gerar_documentos_cliente(
         db.add(doc)
         criados.append(doc)
 
+    # O contrato alimenta o contas a receber. A chave lógica é cliente+caso;
+    # regerar o documento atualiza o mesmo lançamento e não duplica cobrança.
+    financeiro_id: str | None = None
+    if valor_contratual is not None or percentual_exito is not None:
+        marcador = f"[origem:contrato-admissao;client={cli.id};case={case_id or '-'}]"
+        cond_case = Fee.case_id == case_id if case_id else Fee.case_id.is_(None)
+        existente = (await db.execute(
+            select(Fee).where(
+                Fee.client_id == cli.id,
+                cond_case,
+                Fee.deleted_at.is_(None),
+                Fee.observacoes.ilike(f"%{marcador}%"),
+            )
+        )).scalar_one_or_none()
+        tipo_fee = (
+            FeeTipo.misto
+            if valor_contratual is not None and percentual_exito is not None
+            else FeeTipo.exito
+            if percentual_exito is not None
+            else FeeTipo.fixo
+        )
+        obs = (
+            f"{marcador} Sincronizado a partir do contrato de honorários. "
+            f"Forma de pagamento: {(forma_pagamento or '').strip() or 'não informada'}."
+        )
+        if existente:
+            existente.tipo = tipo_fee
+            existente.valor = valor_contratual
+            existente.percentual_exito = percentual_exito
+            existente.data_vencimento = data_vencimento
+            existente.observacoes = obs
+            financeiro_id = existente.id
+        else:
+            fee = Fee(
+                id=str(uuid4()),
+                tipo=tipo_fee,
+                status=FeeStatus.pendente,
+                descricao=f"Contrato de honorários — {nome_cliente}"[:255],
+                valor=valor_contratual,
+                percentual_exito=percentual_exito,
+                data_vencimento=data_vencimento,
+                client_id=cli.id,
+                case_id=case_id,
+                observacoes=obs,
+            )
+            db.add(fee)
+            financeiro_id = fee.id
+
     await criar_audit_log(
         db,
         cu.id,
@@ -423,6 +498,7 @@ async def gerar_documentos_cliente(
             "oab_item_aplicado": valor_sugerido["sugerido"] is not None,
             "modelo_procuracao": _modelo_dict(modelo_proc),
             "modelo_contrato": _modelo_dict(modelo_contr),
+            "financeiro_fee_id": financeiro_id,
         },
     )
     await db.commit()
@@ -432,6 +508,7 @@ async def gerar_documentos_cliente(
         "client_id": cli.id,
         "status": PecaStatus.rascunho.value,
         "ja_existia": False,
+        "financeiro_fee_id": financeiro_id,
         "aviso": AVISO_RASCUNHO,
         "procuracao": {
             "legal_doc_id": proc.id,
