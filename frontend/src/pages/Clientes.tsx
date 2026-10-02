@@ -24,6 +24,9 @@ import {
   Alert,
   Badge,
   Button,
+  FieldLabel,
+  Input,
+  Select,
 } from "../components/UI";
 import { ClientesStats } from "../components/Dashboards";
 import { VerificarReceita } from "../components/Infosimples";
@@ -122,6 +125,8 @@ export default function Clientes() {
   });
   const [admissaoFinanceiro, setAdmissaoFinanceiro] = useState({
     valor_contratual: "",
+    entrada: "",
+    numero_parcelas: "1",
     percentual_exito: "",
     forma_pagamento: "",
     data_vencimento: "",
@@ -247,6 +252,13 @@ export default function Clientes() {
     }
   };
 
+  const decimalOuNulo = (valor: string) => {
+    const normalizado = valor.trim().replace(/\./g, "").replace(",", ".");
+    if (!normalizado) return null;
+    const numero = Number(normalizado);
+    return Number.isFinite(numero) ? numero : null;
+  };
+
   const regerarAdmissao = async () => {
     if (!admissaoModal) return;
     const alvo = admissaoModal;
@@ -257,12 +269,10 @@ export default function Clientes() {
         tipo_poderes: admissaoPoderes.tipo_poderes,
         permite_substabelecimento: admissaoPoderes.permite_substabelecimento,
         poderes_especiais: admissaoPoderes.poderes_especiais.trim() || null,
-        valor_contratual: admissaoFinanceiro.valor_contratual
-          ? Number(admissaoFinanceiro.valor_contratual.replace(",", "."))
-          : null,
-        percentual_exito: admissaoFinanceiro.percentual_exito
-          ? Number(admissaoFinanceiro.percentual_exito.replace(",", "."))
-          : null,
+        valor_contratual: decimalOuNulo(admissaoFinanceiro.valor_contratual),
+        entrada: decimalOuNulo(admissaoFinanceiro.entrada),
+        numero_parcelas: Number(admissaoFinanceiro.numero_parcelas || "1"),
+        percentual_exito: decimalOuNulo(admissaoFinanceiro.percentual_exito),
         forma_pagamento: admissaoFinanceiro.forma_pagamento.trim() || null,
         data_vencimento: admissaoFinanceiro.data_vencimento || null,
       });
@@ -889,44 +899,73 @@ export default function Clientes() {
               Estes dados entram no contrato e sincronizam o contas a receber.
               Regerar atualiza o lançamento correspondente, sem duplicar cobrança.
             </p>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <input
-                className="input w-full"
-                inputMode="decimal"
-                placeholder="Valor contratual (R$)"
-                value={admissaoFinanceiro.valor_contratual}
-                onChange={(e) => setAdmissaoFinanceiro({
-                  ...admissaoFinanceiro, valor_contratual: e.target.value,
-                })}
-              />
-              <input
-                className="input w-full"
-                inputMode="decimal"
-                placeholder="Êxito (%)"
-                value={admissaoFinanceiro.percentual_exito}
-                onChange={(e) => setAdmissaoFinanceiro({
-                  ...admissaoFinanceiro, percentual_exito: e.target.value,
-                })}
-              />
-              <input
-                className="input w-full sm:col-span-2"
-                placeholder="Forma de pagamento (ex.: entrada + 3 parcelas)"
-                value={admissaoFinanceiro.forma_pagamento}
-                onChange={(e) => setAdmissaoFinanceiro({
-                  ...admissaoFinanceiro, forma_pagamento: e.target.value,
-                })}
-              />
-              <label className="text-xs text-slate-500 sm:col-span-2">
-                Primeiro vencimento
-                <input
-                  className="input mt-1 w-full"
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <FieldLabel>Valor contratual (R$)</FieldLabel>
+                <Input
+                  inputMode="decimal"
+                  placeholder="Ex.: 5.000,00"
+                  value={admissaoFinanceiro.valor_contratual}
+                  onChange={(e) => setAdmissaoFinanceiro({
+                    ...admissaoFinanceiro, valor_contratual: e.target.value,
+                  })}
+                />
+              </div>
+              <div>
+                <FieldLabel>Entrada (R$)</FieldLabel>
+                <Input
+                  inputMode="decimal"
+                  placeholder="Opcional"
+                  value={admissaoFinanceiro.entrada}
+                  onChange={(e) => setAdmissaoFinanceiro({
+                    ...admissaoFinanceiro, entrada: e.target.value,
+                  })}
+                />
+              </div>
+              <div>
+                <FieldLabel>Número de parcelas após a entrada</FieldLabel>
+                <Select
+                  value={admissaoFinanceiro.numero_parcelas}
+                  onChange={(e) => setAdmissaoFinanceiro({
+                    ...admissaoFinanceiro, numero_parcelas: e.target.value,
+                  })}
+                >
+                  {Array.from({ length: 24 }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n}>{n}x</option>
+                  ))}
+                </Select>
+              </div>
+              <div>
+                <FieldLabel>Primeiro vencimento</FieldLabel>
+                <Input
                   type="date"
                   value={admissaoFinanceiro.data_vencimento}
                   onChange={(e) => setAdmissaoFinanceiro({
                     ...admissaoFinanceiro, data_vencimento: e.target.value,
                   })}
                 />
-              </label>
+              </div>
+              <div>
+                <FieldLabel>Honorários de êxito (%)</FieldLabel>
+                <Input
+                  inputMode="decimal"
+                  placeholder="Opcional"
+                  value={admissaoFinanceiro.percentual_exito}
+                  onChange={(e) => setAdmissaoFinanceiro({
+                    ...admissaoFinanceiro, percentual_exito: e.target.value,
+                  })}
+                />
+              </div>
+              <div>
+                <FieldLabel>Condição adicional</FieldLabel>
+                <Input
+                  placeholder="Ex.: PIX, boleto ou ajuste específico"
+                  value={admissaoFinanceiro.forma_pagamento}
+                  onChange={(e) => setAdmissaoFinanceiro({
+                    ...admissaoFinanceiro, forma_pagamento: e.target.value,
+                  })}
+                />
+              </div>
             </div>
           </div>
           <div className="mt-3 rounded-lg border border-slate-200 p-3">
