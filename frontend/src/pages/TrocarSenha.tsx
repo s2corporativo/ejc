@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import api, { logout, setAccessToken } from "../lib/api";
+import { officeBranding } from "../config/officeBranding";
 import { toast } from "../components/Toast";
 import { useAuth } from "../stores/auth";
 
@@ -63,7 +64,11 @@ export default function TrocarSenha() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-navy px-4">
       <div className="card w-full max-w-sm p-8">
-        <img src="/logo.png" alt="" className="h-16 mx-auto mb-4" />
+        <img
+          src={officeBranding.logoPath}
+          alt={officeBranding.officeName}
+          className="brand-logo-img h-16 w-auto max-w-[240px] mx-auto mb-4 object-contain"
+        />
         <h1 className="font-semibold text-navy text-center">
           Troca de senha obrigatória
         </h1>
