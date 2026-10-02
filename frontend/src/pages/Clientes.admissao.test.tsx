@@ -94,6 +94,19 @@ beforeEach(() => {
     if (url.includes("/pecas-geradas")) {
       return Promise.resolve({ data: PECAS });
     }
+    if (url.includes("/contrato-financeiro")) {
+      return Promise.resolve({
+        data: {
+          valor_contratual: null,
+          valor_pago: 0,
+          saldo_aberto: 0,
+          entrada: null,
+          numero_parcelas: 1,
+          primeiro_vencimento: null,
+          percentual_exito: null,
+        },
+      });
+    }
     return Promise.resolve({
       data: { data: [CLIENTE], total: 1, page: 1, page_size: 20 },
     });
@@ -207,6 +220,43 @@ describe("Clientes — documentos de admissão", () => {
         poderes_especiais: null,
       }),
     );
+  });
+
+  it("pré-preenche valores vigentes do Financeiro para sócio", async () => {
+    estado.role = "socio";
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/pecas-geradas")) {
+        return Promise.resolve({ data: PECAS });
+      }
+      if (url.includes("/contrato-financeiro")) {
+        return Promise.resolve({
+          data: {
+            valor_contratual: 5000,
+            valor_pago: 1000,
+            saldo_aberto: 4000,
+            entrada: null,
+            numero_parcelas: 3,
+            primeiro_vencimento: "2026-11-10",
+            percentual_exito: 20,
+          },
+        });
+      }
+      return Promise.resolve({
+        data: { data: [CLIENTE], total: 1, page: 1, page_size: 20 },
+      });
+    });
+
+    montar();
+    await screen.findByText("Maria Souza");
+    fireEvent.click(
+      screen.getByTitle("Gerar procuração, contrato e sincronizar Financeiro"),
+    );
+
+    expect(await screen.findByDisplayValue("5.000,00")).toBeTruthy();
+    expect(screen.getByDisplayValue("3x")).toBeTruthy();
+    expect(screen.getByDisplayValue("2026-11-10")).toBeTruthy();
+    expect(screen.getByText("R$ 1.000,00")).toBeTruthy();
+    expect(screen.getByText("R$ 4.000,00")).toBeTruthy();
   });
 
   it("envia cronograma financeiro junto com a reemissão do contrato", async () => {
