@@ -1,5 +1,5 @@
 import type { DeadlineOrigem } from "./gerado";
-// ── Tipos do EJC ─────────────────────────────────────────
+// ── Tipos do sistema ─────────────────────────────────────────
 export interface User {
   id: string;
   email: string;

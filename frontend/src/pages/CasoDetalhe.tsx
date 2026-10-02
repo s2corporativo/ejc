@@ -77,6 +77,7 @@ import TabIntimacoes from "./CasoDetalhe/TabIntimacoes";
 import TabPecas from "./CasoDetalhe/TabPecas";
 import { DataRoomPanel } from "./DataRoom";
 import { filtrarTabsW3 } from "../config/w3Tabs";
+import { officeBranding } from "../config/officeBranding";
 import TabTimeline from "./CasoDetalhe/TabTimeline";
 import TabFinanceiroCaso from "./CasoDetalhe/TabFinanceiroCaso";
 
@@ -1185,11 +1186,15 @@ export default function CasoDetalhe() {
 
         <aside
           className="ejc-case-ai-rail"
-          aria-label="EJC Intelligence do caso"
+          aria-label="Inteligência jurídica do caso"
         >
           <div className="ejc-case-ai-rail-head">
             <div>
-              <span>EJC Intelligence</span>
+              <img
+                src={officeBranding.logoPath}
+                alt={officeBranding.officeName}
+                className="mb-1 h-5 w-auto max-w-[145px] object-contain"
+              />
               <strong>Assistente contextual</strong>
             </div>
             <Sparkles size={18} aria-hidden="true" />

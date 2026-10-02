@@ -119,7 +119,7 @@ function ResumoWorkspace({
     {
       label: "Casos canônicos",
       value: casos.length,
-      descricao: "Fonte única: cadastro central de Casos do EJC.",
+      descricao: "Fonte única: cadastro central de Casos do sistema.",
       icon: Briefcase,
     },
     {
@@ -139,7 +139,7 @@ function ResumoWorkspace({
       label: "Registros especializados",
       value: registros?.length ?? 0,
       descricao: cfg.externo
-        ? "Este núcleo usa apenas registros canônicos do EJC."
+        ? "Este núcleo usa apenas registros canônicos do sistema."
         : "Dados auxiliares vinculados a um caso canônico.",
       icon: FolderOpen,
     },
@@ -292,7 +292,7 @@ function CasosDoRamo({
   }
   if (casos.length === 0) {
     return (
-      <Empty message="Nenhum caso canônico registrado nesta área. Use Novo caso para abrir o cadastro central do EJC." />
+      <Empty message="Nenhum caso canônico registrado nesta área. Use Novo caso para abrir o cadastro central do sistema." />
     );
   }
   return (
@@ -466,7 +466,7 @@ function ReferenciasDoRamo({ cfg }: { cfg: RamoConfig }) {
             Consultas públicas externas
           </h2>
           <p className="mt-1 text-xs text-slate-500">
-            Atalhos contextuais. O EJC não considera a consulta externa como
+            Atalhos contextuais. O sistema não considera a consulta externa como
             validação jurídica automática.
           </p>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -489,7 +489,7 @@ function ReferenciasDoRamo({ cfg }: { cfg: RamoConfig }) {
       <section className="card p-4">
         <h2 className="font-serif font-semibold text-navy">Peças e modelos</h2>
         <p className="mt-1 text-xs leading-5 text-slate-500">
-          Peças continuam no repositório canônico do EJC para manter versão,
+          Peças continuam no repositório canônico do sistema para manter versão,
           revisão humana, vínculo ao caso e trilha de auditoria em um só lugar.
         </p>
         <Link to="/pecas" className="btn-secondary mt-3 inline-flex text-sm">
@@ -565,7 +565,9 @@ export default function RamoBase() {
     api
       .get(cfg.endpoint)
       .then((resposta) =>
-        setRegistros(filtrarRegistrosDoContexto(carregarListaResposta(resposta.data))),
+        setRegistros(
+          filtrarRegistrosDoContexto(carregarListaResposta(resposta.data)),
+        ),
       )
       .catch(() => setRegistros([]));
   };
@@ -602,10 +604,7 @@ export default function RamoBase() {
                 )
                 .filter(Boolean)
             : [];
-          const areasDoCaso = new Set([
-            String(caso.area || ""),
-            ...vinculadas,
-          ]);
+          const areasDoCaso = new Set([String(caso.area || ""), ...vinculadas]);
           const pertenceAoWorkspace = areas.some((area) =>
             areasDoCaso.has(area),
           );
@@ -680,13 +679,7 @@ export default function RamoBase() {
     return () => {
       ativo = false;
     };
-  }, [
-    slug,
-    podeAcessarArea,
-    cfg,
-    caseIdContexto,
-    filtrarRegistrosDoContexto,
-  ]);
+  }, [slug, podeAcessarArea, cfg, caseIdContexto, filtrarRegistrosDoContexto]);
 
   if (!cfg) return <Empty message="Área de atuação não encontrada" />;
   if (!podeAcessarArea) {
@@ -853,9 +846,7 @@ export default function RamoBase() {
           <FerramentasDoRamo
             cfg={cfg}
             casos={casos}
-            caseContext={
-              caseIdContexto ? (casoContexto ?? null) : undefined
-            }
+            caseContext={caseIdContexto ? (casoContexto ?? null) : undefined}
           />
         </div>
       )}

@@ -877,7 +877,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     key: "central-diagnostico",
     path: "/diagnostico",
     label: "Central de Diagnóstico",
-    description: "Saúde dos subsistemas do EJC em tempo real.",
+    description: "Saúde dos subsistemas do sistema em tempo real.",
     group: "Administrar",
     icon: HeartPulse,
     component: CentralDiagnostico,
@@ -909,7 +909,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     key: "mapa-modulos",
     path: "/mapa-modulos",
     label: "Mapa de Módulos",
-    description: "Inventário técnico e funcional do EJC.",
+    description: "Inventário técnico e funcional do sistema.",
     group: "Administrar",
     icon: LayoutGrid,
     component: MapaModulos,
@@ -1148,7 +1148,8 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   {
     from: "/administracao/configuracoes",
     to: "/configuracoes?tab=administracao",
-    reason: "Administração do EJC virou uma aba do workspace de configurações.",
+    reason:
+      "Administração do sistema virou uma aba do workspace de configurações.",
   },
   {
     from: "/conhecimento",
@@ -1244,7 +1245,7 @@ function longestPatternBase(module: ModuleRoute): number {
   );
 }
 
-/** Matcher mínimo compatível com os padrões registrados no EJC (:param e /*). */
+/** Matcher mínimo compatível com os padrões registrados no sistema (:param e /*). */
 export function routePatternMatches(
   pattern: string,
   pathname: string,

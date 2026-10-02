@@ -55,8 +55,8 @@ export default function CompanyLegalTwin({ clientId }: { clientId: string }) {
             </div>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500 dark:text-slate-400">
               Representação factual construída a partir dos registros canônicos
-              do EJC. Ela não cria um segundo cadastro e não transforma ausência
-              de registro em regularidade jurídica.
+              do sistema. Ela não cria um segundo cadastro e não transforma
+              ausência de registro em regularidade jurídica.
             </p>
           </div>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-300">

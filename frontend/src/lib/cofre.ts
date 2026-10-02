@@ -1,9 +1,9 @@
 // ── lib/cofre.ts ─────────────────────────────────────────
 // Client do Cofre de Credenciais (Configurações → Credenciais, PR-5).
 //
-// NÃO confundir com o módulo de API Keys: o COFRE guarda os segredos QUE O EJC
+// NÃO confundir com o módulo de API Keys: o COFRE guarda os segredos QUE O sistema
 // USA para falar com serviços externos (DataJud, Groq, SMTP, Z-API…); API Keys
-// emite as chaves QUE O EJC FORNECE a integradores externos.
+// emite as chaves QUE O sistema FORNECE a integradores externos.
 //
 // Contrato de segurança (backend routers/credential_vault.py): o valor do
 // segredo NUNCA volta pela API — só last4 + metadados. Todas as rotas exigem

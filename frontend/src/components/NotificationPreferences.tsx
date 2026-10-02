@@ -66,7 +66,7 @@ const CHANNELS = [
     key: "push_enabled" as const,
     availability: "push" as const,
     label: "Push no navegador",
-    description: "Alertas nos dispositivos inscritos no EJC.",
+    description: "Alertas nos dispositivos inscritos no sistema.",
     icon: BellRing,
   },
   {

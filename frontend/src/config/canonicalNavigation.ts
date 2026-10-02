@@ -1,7 +1,7 @@
 import type { ModuleRoute } from "./moduleRegistry";
 
 /**
- * Fonte única do menu principal enxuto do EJC.
+ * Fonte única do menu principal enxuto do sistema.
  *
  * O registry continua sendo a fonte de verdade de rota, componente e RBAC.
  * Este arquivo define apenas quais domínios aparecem na navegação principal,
@@ -38,7 +38,7 @@ export const CANONICAL_MAIN_NAV = [
   { key: "configuracoes", label: "Configurações" },
 ] as const;
 
-/** Menu estrutural enxuto do EJC: domínios de trabalho, não módulos internos. */
+/** Menu estrutural enxuto do sistema: domínios de trabalho, não módulos internos. */
 export const CANONICAL_CORE_NAV = [
   { key: "dashboard", label: "Início" },
   { key: "casos", label: "Casos" },

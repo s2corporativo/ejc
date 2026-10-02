@@ -1,5 +1,5 @@
 // ── Desempacotamento de listas de API ────────────────────
-// Endpoints do EJC devolvem ora um array cru, ora um envelope { items: [] }
+// Endpoints do sistema devolvem ora um array cru, ora um envelope { items: [] }
 // (paginado) ou { data: [] } (portal). Este util normaliza os três formatos
 // em `T[]`, com guarda de Array.isArray para nunca quebrar a renderização
 // (uma resposta inesperada vira lista vazia, não tela branca).

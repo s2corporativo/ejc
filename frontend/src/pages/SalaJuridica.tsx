@@ -1,5 +1,5 @@
 /**
- * Sala Jurídica Conversacional (V1) — porta de entrada da IA no EJC.
+ * Sala Jurídica Conversacional (V1) — porta de entrada da IA no sistema.
  *
  * Layout chat-first (V1.1): a conversa domina a tela numa coluna ampla e
  * centralizada; sessões e estado jurídico são painéis recolhíveis.
@@ -637,7 +637,7 @@ export default function SalaJuridica() {
   // Último degrau do pré-preenchimento dos fatos: o que o próprio advogado
   // escreveu na sessão. `estado.resumo` vem de uma extração de IA declarada
   // fail-soft no backend (`_extrair_estado` devolve None se o provider estiver
-  // fora, e integração de IA no EJC nasce desligada); `workspace_texto` só
+  // fora, e integração de IA no sistema nasce desligada); `workspace_texto` só
   // existe se alguém digitou nele. Quando os dois faltam, a caixa abria VAZIA
   // e o caso nascia com `descricao_fatos = NULL` — enquanto o relato dos fatos
   // estava ali, nas mensagens. Perder os fatos é perder o insumo de
@@ -938,7 +938,7 @@ export default function SalaJuridica() {
     <div className="space-y-4">
       <PageHeader
         title="Sala Jurídica"
-        subtitle="Converse livremente — o EJC estrutura fatos, provas e estratégia por trás da tela. Conteúdo de IA é rascunho sujeito a revisão humana (OAB)."
+        subtitle="Converse livremente — o sistema estrutura fatos, provas e estratégia por trás da tela. Conteúdo de IA é rascunho sujeito a revisão humana (OAB)."
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -1370,7 +1370,7 @@ export default function SalaJuridica() {
             <EmptyState
               icon={Scale}
               title="Selecione ou crie uma análise"
-              message="A Sala Jurídica é a porta de entrada conversacional do EJC: converse sobre o caso, anexe documentos e converta em caso quando estiver madura. Tem só um lote de documentos para ler? Use o Raio-X."
+              message="A Sala Jurídica é a porta de entrada conversacional do sistema: converse sobre o caso, anexe documentos e converta em caso quando estiver madura. Tem só um lote de documentos para ler? Use o Raio-X."
               action={
                 <div className="flex flex-wrap justify-center gap-2">
                   <Button onClick={() => void novaSessao()}>

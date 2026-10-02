@@ -24,7 +24,7 @@ export default function ClienteNaoAcompanhado({
     <Empty
       icon={Building2}
       titulo="Cliente não acompanhado no DPT Empresarial 360"
-      descricao="O DPT 360 acompanha clientes pessoa jurídica ativos do EJC, dentro do seu escopo de acesso. Para enquadrar este cliente, confirme no cadastro canônico que ele é PJ e está ativo — nenhum cadastro paralelo é criado."
+      descricao="O DPT 360 acompanha clientes pessoa jurídica ativos do sistema, dentro do seu escopo de acesso. Para enquadrar este cliente, confirme no cadastro canônico que ele é PJ e está ativo — nenhum cadastro paralelo é criado."
       acao={
         clientId ? (
           <Link

@@ -237,7 +237,7 @@ export default function OnboardingTour() {
                 id="onboarding-title"
                 className="text-base font-medium text-zinc-800"
               >
-                Primeiros passos no EJC
+                Primeiros passos
               </h2>
               <p id="onboarding-sub" className="mt-0.5 text-xs text-zinc-500">
                 {tudoFeito

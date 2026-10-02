@@ -18,7 +18,7 @@ export const CHECKLIST_TRIBUTARIO = [
   "Consultar situação fiscal federal e dívida ativa nos canais oficiais (Receita/e-CAC e REGULARIZE/PGFN), quando aplicável.",
   "Para MG, conferir o RPTA vigente, o e-PTA/SIARE e o Conselho de Contribuintes antes de definir rito ou prazo.",
   "Para Município, identificar Código Tributário, decreto/regulamento processual, órgão julgador e regra de ciência vigentes.",
-  "Em recuperação de créditos, tratar o resultado do EJC como oportunidade potencial: validar escrituração, apuração, documentos, legitimidade, período, prescrição/decadência e via cabível.",
+  "Em recuperação de créditos, tratar o resultado do sistema como oportunidade potencial: validar escrituração, apuração, documentos, legitimidade, período, prescrição/decadência e via cabível.",
   "Antes de judicializar, definir ato coator/pretensão, competência, interesse processual, prazo próprio da ação e efeito pretendido.",
   "Registrar no caso a fonte oficial e a data-base usadas na conclusão jurídica.",
 ] as const;
@@ -152,7 +152,7 @@ export const REGRAS_MUNICIPAIS: RegraGuiaTributario[] = [
   {
     tema: "Betim, Contagem, Belo Horizonte e demais municípios",
     regra:
-      "Não existe prazo municipal genérico de 30 dias no EJC. Antes de orientar defesa ou recurso, identificar Município, tributo, norma processual vigente, órgão julgador, forma de ciência e eventual regra especial do lançamento.",
+      "Não existe prazo municipal genérico de 30 dias no sistema. Antes de orientar defesa ou recurso, identificar Município, tributo, norma processual vigente, órgão julgador, forma de ciência e eventual regra especial do lançamento.",
     fonte:
       "Código Tributário e regulamentos do Município competente, na versão vigente na data do ato; CTN arts. 211-A/211-B após LC 236/2026; publicação oficial municipal.",
     alerta:
@@ -201,7 +201,7 @@ export const REGRAS_CREDITOS: RegraGuiaTributario[] = [
   {
     tema: "Natureza da saída do motor fiscal",
     regra:
-      "XML/NF-e pode sustentar triagem e memória de cálculo preliminar, mas não prova, sozinho, crédito líquido, certo e recuperável. O EJC deve registrar hipótese/oportunidade potencial, documentos faltantes, período documental, risco e confiança.",
+      "XML/NF-e pode sustentar triagem e memória de cálculo preliminar, mas não prova, sozinho, crédito líquido, certo e recuperável. O sistema deve registrar hipótese/oportunidade potencial, documentos faltantes, período documental, risco e confiança.",
     fonte:
       "CTN na redação vigente e legislação específica de cada tributo/tese; escrituração e declarações fiscais/contábeis do contribuinte; precedentes aplicáveis.",
   },

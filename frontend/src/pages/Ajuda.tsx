@@ -17,7 +17,7 @@ import {
 } from "../content/guiaSistema";
 
 // Central de Ajuda — Guia Intuitivo do Sistema.
-// Manual navegável que ensina cada ferramenta REAL do EJC (fonte:
+// Manual navegável que ensina cada ferramenta REAL do sistema (fonte:
 // content/guiaSistema.ts, derivado de config/moduleRegistry.tsx). Busca por
 // título/conteúdo, navegação por grupo e "Abrir ferramenta" para a rota real.
 
@@ -195,7 +195,7 @@ export default function Ajuda() {
       <PageHeader
         eyebrow="Central de Ajuda"
         title="Guia do Sistema"
-        subtitle={`Aprenda para que serve e como usar cada uma das ${TOTAL_FERRAMENTAS} ferramentas do EJC. Busque um tema ou navegue pelos grupos, na ordem em que você trabalha.`}
+        subtitle={`Aprenda para que serve e como usar cada uma das ${TOTAL_FERRAMENTAS} ferramentas do sistema. Busque um tema ou navegue pelos grupos, na ordem em que você trabalha.`}
         actions={
           <span className="badge-info inline-flex items-center gap-1.5">
             <Sparkles className="h-3.5 w-3.5" />

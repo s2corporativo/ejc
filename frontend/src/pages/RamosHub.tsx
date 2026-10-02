@@ -389,7 +389,7 @@ export default function RamosHub() {
         </label>
         <p className="mt-2 text-xs text-slate-500">
           {filtradas.length} de {areas.length} áreas visíveis. Workspaces só são
-          oferecidos quando existe implementação correspondente no EJC.
+          oferecidos quando existe implementação correspondente no sistema.
         </p>
       </div>
 

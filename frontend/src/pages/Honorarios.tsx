@@ -705,7 +705,7 @@ export default function Honorarios({
           <div className="sm:col-span-2 -mt-1">
             <p className="text-xs text-slate-500 dark:text-slate-400">
               {TIPOS_COM_PERCENTUAL.includes(form.tipo)
-                ? "Informe o valor em reais ou o percentual de êxito. Se o contrato combinar os dois, o EJC registra ambos; a base econômica do percentual e o teto aplicável exigem conferência jurídica antes da quitação."
+                ? "Informe o valor em reais ou o percentual de êxito. Se o contrato combinar os dois, o sistema registra ambos; a base econômica do percentual e o teto aplicável exigem conferência jurídica antes da quitação."
                 : "Informe o valor em reais. O percentual de êxito só se aplica aos tipos Êxito e Misto."}
             </p>
           </div>

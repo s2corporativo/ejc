@@ -182,7 +182,7 @@ export default function DossieJuridico({ caseId, onNovo }: Props) {
     }
     if (!termoInicial || !termoConfirmado) {
       setGatePeca(
-        "Informe e confirme o termo inicial. O EJC não presume prazo fatal.",
+        "Informe e confirme o termo inicial. O sistema não presume prazo fatal.",
       );
       return;
     }

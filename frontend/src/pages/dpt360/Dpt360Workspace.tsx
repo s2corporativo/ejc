@@ -342,7 +342,7 @@ function CompaniesView({ data }: { data: DptDashboard }) {
     return (
       <Empty
         titulo="Nenhuma empresa na carteira visível"
-        descricao="O DPT 360 usa Clientes PJ canônicos do EJC; nenhum cadastro paralelo é criado."
+        descricao="O DPT 360 usa Clientes PJ canônicos do sistema; nenhum cadastro paralelo é criado."
       />
     );
   }
@@ -588,7 +588,7 @@ function CompanyDetailByIdFallback({
   }, [clientId, attempt]);
 
   if (notFound) {
-    // 404 aqui é estado de negócio: o cliente existe no EJC, mas está fora
+    // 404 aqui é estado de negócio: o cliente existe no sistema, mas está fora
     // do programa DPT 360 — comunica o enquadramento em vez de erro genérico.
     return <ClienteNaoAcompanhado clientId={clientId} />;
   }

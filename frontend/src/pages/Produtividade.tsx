@@ -181,7 +181,7 @@ export default function Produtividade() {
     const janela = window.open("", "_blank");
     if (!janela) {
       toast.error(
-        "O navegador bloqueou a janela do PDF. Autorize pop-ups para o EJC e tente novamente.",
+        "O navegador bloqueou a janela do PDF. Autorize pop-ups para o sistema e tente novamente.",
       );
       return;
     }

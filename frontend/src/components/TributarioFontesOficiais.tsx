@@ -17,7 +17,7 @@ const TIPO_LABEL: Record<TipoFonteTributaria, string> = {
 
 const STATUS_LABEL: Record<StatusFonteTributaria, string> = {
   verificada: "Verificada",
-  integracao_ejc: "Integração EJC",
+  integracao_ejc: "Integração do sistema",
   parcial: "Verificação parcial",
 };
 
@@ -102,7 +102,7 @@ export default function TributarioFontesOficiais() {
             Catálogo verificado em 06/09/2026. Portal, DTE, NFS-e ou sistema
             autenticado não é tratado como API pública. Integração automática só
             é indicada quando existe contrato técnico verificável e governança
-            própria no EJC.
+            própria no sistema.
           </p>
         </div>
       </div>
@@ -127,7 +127,7 @@ export default function TributarioFontesOficiais() {
 
       <p className="mt-3 text-[11px] leading-4 text-slate-500">
         São Joaquim de Bicas permanece sem atalho operacional porque a fonte
-        municipal atual não foi localizada com segurança. O EJC registra a
+        municipal atual não foi localizada com segurança. O sistema registra a
         existência oficial da área do contribuinte, mas mantém automação e link
         desabilitados até nova validação.
       </p>

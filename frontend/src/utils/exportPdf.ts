@@ -100,7 +100,7 @@ export function exportPdf(
          alt="" onerror="this.style.display='none'" />
     <div>
       <div class="brand">De Paula Teixeira Advogados Associados</div>
-      <div class="sub">Sistema EJC | Relatorio gerado em ${exportedAt}</div>
+      <div class="sub">Sistema jurídico | Relatorio gerado em ${exportedAt}</div>
     </div>
   </div>
   <section class="cover">

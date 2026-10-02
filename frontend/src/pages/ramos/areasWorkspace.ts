@@ -192,7 +192,7 @@ export function configWorkspaceDaArea(
     areaCaso: area.slug,
     titulo: area.nome,
     subtitulo:
-      "Workspace geral desta especialidade: casos canônicos, peças e referências centrais do EJC. Ferramentas próprias só aparecem quando existe implementação confirmada.",
+      "Workspace geral desta especialidade: casos canônicos, peças e referências centrais do sistema. Ferramentas próprias só aparecem quando existe implementação confirmada.",
     icone: "Folder",
     cor: "slate",
     campoTitulo: "tipo",

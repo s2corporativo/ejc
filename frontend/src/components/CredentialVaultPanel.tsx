@@ -782,7 +782,7 @@ export default function CredentialVaultPanel() {
     <div className="space-y-5">
       <SectionCard
         title="Cofre de credenciais"
-        subtitle="Segredos que o EJC USA para falar com serviços externos (DataJud, Groq, SMTP, Z-API…). Não confundir com API Keys, que são as chaves que o EJC EMITE para integradores externos consumirem esta API."
+        subtitle="Segredos que o sistema USA para falar com serviços externos (DataJud, Groq, SMTP, Z-API…). Não confundir com API Keys, que são as chaves que o sistema EMITE para integradores externos consumirem esta API."
         actions={
           <>
             <Button

@@ -1,7 +1,7 @@
 // Guia Intuitivo do Sistema — conteúdo do manual navegável da Central de Ajuda.
 //
 // FONTE DE VERDADE: frontend/src/config/moduleRegistry.tsx. Cada ferramenta
-// aqui aponta para uma rota REAL do EJC. Rotas contextuais (que abrem dentro
+// aqui aponta para uma rota REAL do sistema. Rotas contextuais (que abrem dentro
 // de um caso/cliente específico) usam o padrão dinâmico do registry
 // (ex.: "/casos/:id/jornada"); a Ajuda resolve o ponto de entrada navegável
 // (a base, ex.: "/casos") e sinaliza que a ferramenta abre em contexto.
@@ -202,7 +202,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         titulo: "Sala Jurídica",
         rota: "/sala-juridica",
         oQueE:
-          "A porta de entrada conversacional do EJC: área de trabalho livre, chat jurídico e estado probatório versionado, sem exigir cadastro prévio de caso.",
+          "A porta de entrada conversacional do sistema: área de trabalho livre, chat jurídico e estado probatório versionado, sem exigir cadastro prévio de caso.",
         paraQueServe:
           "Permite colar fatos e documentos, conversar com a IA em modos de atuação (organizar fatos, analisar provas, simular defesa) e só depois decidir se a análise vira caso, consulta ou arquivo.",
         comoUsar: [
@@ -500,7 +500,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
     id: "monitoramento",
     titulo: "Monitoramento e Dados Públicos",
     descricao:
-      "As integrações que trazem informação oficial de fora para dentro do EJC.",
+      "As integrações que trazem informação oficial de fora para dentro do sistema.",
     ferramentas: [
       {
         id: "datajud",
@@ -680,14 +680,14 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
       },
       {
         id: "administracao-configuracoes",
-        titulo: "Administração do EJC",
+        titulo: "Administração do sistema",
         rota: "/configuracoes?tab=administracao",
         oQueE:
           "O painel de governança institucional e acesso aos painéis administrativos.",
         paraQueServe:
           "Reúne as configurações institucionais e os acessos administrativos para quem gere o escritório no sistema.",
         comoUsar: [
-          "Abra Administração do EJC (perfis administradores).",
+          "Abra Administração do sistema (perfis administradores).",
           "Ajuste as configurações institucionais.",
           "Acesse os painéis administrativos a partir daqui.",
         ],
@@ -776,7 +776,8 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         id: "mapa-modulos",
         titulo: "Mapa de Módulos",
         rota: "/mapa-modulos",
-        oQueE: "O inventário técnico e funcional de todos os módulos do EJC.",
+        oQueE:
+          "O inventário técnico e funcional de todos os módulos do sistema.",
         paraQueServe:
           "Dá uma visão de conjunto do que existe no sistema e como se relaciona, útil para gestão e para entender a cobertura funcional.",
         comoUsar: [

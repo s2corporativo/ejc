@@ -84,7 +84,7 @@ const toneClasses: Record<Tone, string> = {
 };
 
 // Barra SUPERIOR de 3px do KPI card (idioma Verdelimp) na cor do
-// indicador — mapeada nos tokens de cor EXISTENTES do EJC. Desenhada via
+// indicador — mapeada nos tokens de cor EXISTENTES do sistema. Desenhada via
 // ::before (mesmo padrão dos KPI cards do dashboard em site-system.css)
 // em vez de border-top: as regras globais de `.card` fora de @layer
 // (site-system.css `border: 1px solid`, `.ejc-modern-scope :where(.card)`
@@ -242,7 +242,7 @@ function normalizeStatus(value: string): string {
     .trim();
 }
 
-// Vocabulário canônico de status do EJC Command Center (cor + ÍCONE + texto —
+// Vocabulário canônico de status do sistema Command Center (cor + ÍCONE + texto —
 // nunca só cor, cumprindo WCAG 2.2). Sinônimos legados apontam para a mesma
 // entrada para não quebrar as telas que já emitem esses valores.
 const STATUS_REGISTRY: Record<
@@ -1429,7 +1429,7 @@ export function VisualLawDocument({
 export { fmtMoney, fmtDate, fmtDateTime } from "../utils/formato";
 
 /* ══════════════════════════════════════════════════════════════════════════
-   DESIGN SYSTEM CANÔNICO EJC — primitivos da identidade DPT
+   DESIGN SYSTEM CANÔNICO sistema — primitivos da identidade DPT
    (PROMPT MESTRE, seção 11: nenhum módulo inventa novamente estes componentes.)
    Cores/raio/sombra via tokens de src/styles/ejc-tokens.css (grupo tailwind
    `ejc-*`); tipografia display via font-serif (Playfair Display). Tudo com

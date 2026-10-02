@@ -1,6 +1,7 @@
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
-const DEFAULT_OFFICE_NAME = "EJC DePaula Teixeira Adv";
+const DEFAULT_OFFICE_NAME = "De Paula Teixeira Sociedade de Advogados";
 const LEGACY_DEFAULT_OFFICE_NAME = "EJC — Ecossistema Jurídico Clóvis";
+const LEGACY_DEFAULT_OFFICE_NAME_SHORT = "EJC DePaula Teixeira Adv";
 const DEFAULT_DAILY_MESSAGE =
   "Organização, clareza e responsabilidade em cada decisão.";
 const DEFAULT_DAILY_SOURCE = "Mensagem institucional";
@@ -17,7 +18,11 @@ function normalizePhone(value: string): string {
 }
 
 export function resolveOfficeName(value: string): string {
-  if (!value || value === LEGACY_DEFAULT_OFFICE_NAME)
+  if (
+    !value ||
+    value === LEGACY_DEFAULT_OFFICE_NAME ||
+    value === LEGACY_DEFAULT_OFFICE_NAME_SHORT
+  )
     return DEFAULT_OFFICE_NAME;
   return value;
 }

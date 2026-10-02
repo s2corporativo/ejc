@@ -1,6 +1,6 @@
 import React from "react";
 
-// Renderizador de Markdown leve e SEGURO para respostas de IA do EJC.
+// Renderizador de Markdown leve e SEGURO para respostas de IA do sistema.
 // Constrói elementos React (NÃO usa dangerouslySetInnerHTML → imune a XSS).
 // Cobre: títulos (#..######), negrito (**/__), itálico (*/_), negrito-itálico
 // (***), código inline (`), listas (- * + e 1.), citações (>), réguas (---),

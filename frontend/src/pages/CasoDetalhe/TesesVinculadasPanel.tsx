@@ -65,9 +65,9 @@ export default function TesesVinculadasPanel({ caseId }: { caseId: string }) {
             Teses já vinculadas ao caso
           </h3>
           <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-500">
-            Referência somente leitura para o advogado durante a produção. O EJC
-            não injeta automaticamente estas teses na peça e não presume que a
-            fundamentação ou jurisprudência estejam atuais.
+            Referência somente leitura para o advogado durante a produção. O
+            sistema não injeta automaticamente estas teses na peça e não presume
+            que a fundamentação ou jurisprudência estejam atuais.
           </p>
         </div>
         <Link
@@ -107,7 +107,7 @@ export default function TesesVinculadasPanel({ caseId }: { caseId: string }) {
         <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
           Nenhuma tese está vinculada a este caso. Consulte o Banco de Teses
           para localizar conteúdo institucional. Esta tela não oferece ação de
-          vínculo; o EJC não cria vínculo automático.
+          vínculo; o sistema não cria vínculo automático.
         </div>
       ) : (
         <div className="mt-4 grid gap-3 lg:grid-cols-2">

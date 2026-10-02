@@ -1,6 +1,6 @@
 // Service worker mínimo — cache de shell para PWA instalável.
 // API nunca é cacheada (dados jurídicos sempre frescos).
-const CACHE = "ejc-v4";
+const CACHE = "ejc-v5";
 self.addEventListener("install", (e) => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(
   caches.keys()
@@ -26,12 +26,12 @@ self.addEventListener("fetch", (e) => {
 
 // ── Web Push (v3.x) ──────────────────────────────────────
 self.addEventListener("push", (event) => {
-  let data = { title: "EJC", body: "", url: "/" };
+  let data = { title: "De Paula Teixeira", body: "", url: "/" };
   try { data = { ...data, ...event.data.json() }; } catch {}
   event.waitUntil(
     self.registration.showNotification(data.title, {
       body: data.body,
-      icon: "/icon-192.png",
+      icon: "/brand/de-paula-teixeira-dt.png",
       badge: "/icon-192.png",
       data: { url: data.url },
     })

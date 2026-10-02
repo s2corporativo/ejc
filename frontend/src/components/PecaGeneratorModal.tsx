@@ -461,7 +461,7 @@ export default function PecaGeneratorModal({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${tipoLabel(tipoPeca)}_EJC.txt`;
+    a.download = `${tipoLabel(tipoPeca)}_DPT.txt`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -475,7 +475,7 @@ export default function PecaGeneratorModal({
               <Sparkles size={16} /> Fluxo recomendado
             </div>
             <p className="mt-1 text-xs text-slate-500">
-              Informe o tipo e os dados do caso. O EJC organiza a estrutura,
+              Informe o tipo e os dados do caso. O sistema organiza a estrutura,
               pesquisa fundamentos e gera a minuta para revisão humana.
             </p>
           </div>

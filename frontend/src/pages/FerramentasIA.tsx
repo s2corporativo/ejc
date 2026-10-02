@@ -205,7 +205,7 @@ export default function FerramentasIA() {
       <PageHeader
         eyebrow="Ferramentas"
         title="Ferramentas de IA"
-        subtitle={`${skills.length} fluxos especializados no catálogo existente. Dentro de cada caso, o EJC recomenda apenas as ações adequadas à aba e ao contexto.`}
+        subtitle={`${skills.length} fluxos especializados no catálogo existente. Dentro de cada caso, o sistema recomenda apenas as ações adequadas à aba e ao contexto.`}
       />
 
       {casoFiltro && (

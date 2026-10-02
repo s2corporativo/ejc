@@ -183,7 +183,7 @@ export const SISTEMAS: { valor: string; rotulo: string; nota: string }[] = [
   {
     valor: "manual",
     rotulo: "Protocolo manual no portal",
-    nota: "O EJC prepara, valida, revisa e registra o protocolo feito no portal.",
+    nota: "O sistema prepara, valida, revisa e registra o protocolo feito no portal.",
   },
 ];
 

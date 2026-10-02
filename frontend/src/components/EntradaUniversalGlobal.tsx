@@ -82,7 +82,7 @@ export default function EntradaUniversalGlobal() {
               <div>
                 <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-primary-700">
                   <ShieldCheck className="h-4 w-4" /> Infraestrutura transversal
-                  do EJC
+                  do sistema
                 </div>
                 <h2 className="mt-1 text-xl font-semibold text-slate-950 dark:text-white">
                   Entrada Universal de Documentos

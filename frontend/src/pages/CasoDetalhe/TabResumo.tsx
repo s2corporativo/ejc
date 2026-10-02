@@ -1014,7 +1014,7 @@ export default function TabResumo({
         <Modal
           open={iaModal}
           onClose={() => setIaModal(false)}
-          title="Análise de IA — EJC Núcleo Cognitivo"
+          title="Análise de IA — Núcleo Cognitivo"
         >
           {iaLoading ? (
             <div className="flex justify-center py-8">
@@ -1069,7 +1069,7 @@ export default function TabResumo({
         >
           <div className="space-y-4">
             <p className="text-sm text-slate-600">
-              Encerramento direto. O EJC preservará documentos, prazos,
+              Encerramento direto. O sistema preservará documentos, prazos,
               histórico e pendências existentes; nenhuma etapa será apagada.
             </p>
             <div>
@@ -1104,9 +1104,9 @@ export default function TabResumo({
               />
               <p className="mt-1 text-xs text-slate-500">
                 Informe o total de honorários efetivamente recebidos pelo
-                escritório neste caso. O EJC lançará apenas a diferença ainda
-                não registrada. Não inclua valores do principal pertencentes ao
-                cliente.
+                escritório neste caso. O sistema lançará apenas a diferença
+                ainda não registrada. Não inclua valores do principal
+                pertencentes ao cliente.
               </p>
             </div>
             <button

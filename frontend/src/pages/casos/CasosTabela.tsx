@@ -74,7 +74,7 @@ export default function CasosTabela({
     ) : (
       <Empty
         titulo="Nenhum caso por aqui ainda"
-        descricao="Os casos são o centro do EJC: cada um reúne prazos, documentos, peças e honorários. Comece abrindo o primeiro pelo cadastro guiado."
+        descricao="Os casos são o centro do sistema: cada um reúne prazos, documentos, peças e honorários. Comece abrindo o primeiro pelo cadastro guiado."
         acao={
           <Link to="/casos/novo">
             <Button variant="primary" icon={<Plus className="h-4 w-4" />}>

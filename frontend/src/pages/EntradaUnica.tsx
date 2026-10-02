@@ -3,7 +3,7 @@
 //   A) relato + documentos → análise preliminar;
 //   B) confirmação editável → criação do caso;
 //   C) dossiê jurídico profundo → aprovação HITL → Motor de Peça.
-// A complexidade fica no EJC; a superfície inicial continua simples.
+// A complexidade fica no sistema; a superfície inicial continua simples.
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import api from "../lib/api";
@@ -391,7 +391,7 @@ export function EntradaInteligente({
           subtitle={
             clienteContexto
               ? `Novo caso para ${clienteContexto.nome}: cole o relato, arraste os documentos, ou os dois.`
-              : "Conte o caso, cole o conteúdo ou envie os documentos. O EJC organiza o restante."
+              : "Conte o caso, cole o conteúdo ou envie os documentos. O sistema organiza o restante."
           }
         />
       )}

@@ -211,7 +211,7 @@ export default function GuiaTributario() {
         <Sec icon={Scale} titulo="4. CARF — voto de qualidade e recursos">
           <Regras regras={REGRAS_CARF} />
           <p className="rounded-lg border border-warn-200 bg-warn-50 p-3 text-[11px] leading-5 text-warn-900">
-            O antigo texto do EJC dizia que o empate era automaticamente
+            O antigo texto do sistema dizia que o empate era automaticamente
             favorável ao contribuinte. Essa formulação foi removida por ser
             incompatível com a Lei 14.689/2023. Para recurso especial,
             competência, admissibilidade e rito, consultar o RICARF vigente na
@@ -237,11 +237,11 @@ export default function GuiaTributario() {
         >
           <Regras regras={REGRAS_MUNICIPAIS} />
           <p className="rounded-lg border border-warn-200 bg-warn-50 p-3 text-[11px] leading-5 text-warn-900">
-            O EJC não deve exibir “geralmente 30 dias” para defesa municipal. O
-            prazo deve vir do Código Tributário/regulamento vigente do Município
-            e do ato de ciência do caso concreto. A LC 236/2026 cria parâmetros
-            nacionais mínimos e dever de atualização, mas não torna o rito local
-            idêntico ao federal.
+            O sistema não deve exibir “geralmente 30 dias” para defesa
+            municipal. O prazo deve vir do Código Tributário/regulamento vigente
+            do Município e do ato de ciência do caso concreto. A LC 236/2026
+            cria parâmetros nacionais mínimos e dever de atualização, mas não
+            torna o rito local idêntico ao federal.
           </p>
         </Sec>
 

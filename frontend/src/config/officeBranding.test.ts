@@ -24,9 +24,14 @@ describe("officeBranding", () => {
   });
 
   it("normaliza nome institucional legado e preserva customização válida", () => {
-    expect(resolveOfficeName("")).toBe("EJC DePaula Teixeira Adv");
+    expect(resolveOfficeName("")).toBe(
+      "De Paula Teixeira Sociedade de Advogados",
+    );
     expect(resolveOfficeName("EJC — Ecossistema Jurídico Clóvis")).toBe(
-      "EJC DePaula Teixeira Adv",
+      "De Paula Teixeira Sociedade de Advogados",
+    );
+    expect(resolveOfficeName("EJC DePaula Teixeira Adv")).toBe(
+      "De Paula Teixeira Sociedade de Advogados",
     );
     expect(resolveOfficeName("Minha Marca Jurídica")).toBe(
       "Minha Marca Jurídica",

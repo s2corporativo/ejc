@@ -78,7 +78,7 @@ export default function ModuleLifecycleGate({
         </h1>
         <p className="mt-2 text-sm leading-6 text-slate-500">
           {lifecycle.reason ||
-            "Este módulo foi desabilitado pela administração do EJC."}
+            "Este módulo foi desabilitado pela administração do sistema."}
         </p>
         {lifecycle.removal_date && (
           <p className="mt-2 text-xs text-slate-400">

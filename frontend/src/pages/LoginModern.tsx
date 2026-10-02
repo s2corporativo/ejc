@@ -19,8 +19,8 @@ function BrandIntro({ className }: { className?: string }) {
   return (
     <div className={`flex items-center gap-3 ${className || ""}`}>
       <img
-        src="/brand/ejc-wordmark.svg"
-        alt="EJC — Inteligência Jurídica"
+        src={officeBranding.logoPath}
+        alt={officeBranding.officeName}
         className="brand-logo-img h-10 w-auto max-w-[190px]"
       />
       <span className="hidden border-l border-slate-200 pl-3 text-[11px] font-medium leading-4 text-slate-500 xl:block">
@@ -171,8 +171,8 @@ export default function LoginModern() {
           <div className="w-full max-w-md animate-rise">
             <div className="mb-8 flex items-center justify-center lg:hidden">
               <img
-                src="/brand/ejc-wordmark.svg"
-                alt="EJC — Inteligência Jurídica"
+                src={officeBranding.logoPath}
+                alt={officeBranding.officeName}
                 className="brand-logo-img h-12 w-auto max-w-[210px]"
               />
             </div>
@@ -191,7 +191,9 @@ export default function LoginModern() {
                   {requiresTotp ? "Segunda etapa" : "Área restrita"}
                 </p>
                 <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
-                  {requiresTotp ? "Confirmar autenticação" : "Entrar no EJC"}
+                  {requiresTotp
+                    ? "Confirmar autenticação"
+                    : "Acessar escritório digital"}
                 </h1>
                 <p className="mt-2 text-sm text-slate-500">
                   {requiresTotp

@@ -443,8 +443,8 @@ export default function Jurimetria() {
             </div>
           </div>
           <p className="text-xs text-gray-400 mb-4">
-            Fonte: casos cadastrados no EJC. Estes números não são DataJud/STJ e
-            não representam benchmark externo.
+            Fonte: casos cadastrados no sistema. Estes números não são
+            DataJud/STJ e não representam benchmark externo.
           </p>
 
           {loadingExt ? (

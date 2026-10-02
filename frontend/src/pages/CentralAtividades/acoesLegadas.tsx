@@ -447,8 +447,8 @@ export function SimularPrazoModal({
     <Modal open={open} onClose={onClose} title="Simular vencimento de prazo">
       <div className="space-y-3">
         <p className="text-xs text-slate-500">
-          Usa o motor canônico CPC/CLT/CPP e o calendário disponível no EJC. É
-          uma simulação de apoio: o resultado não cria prazo e deve sempre ser
+          Usa o motor canônico CPC/CLT/CPP e o calendário disponível no sistema.
+          É uma simulação de apoio: o resultado não cria prazo e deve sempre ser
           conferido por profissional antes de qualquer cadastro ou uso
           processual.
         </p>
@@ -537,7 +537,7 @@ export function SimularPrazoModal({
               <strong>Aplicar exceção ao recesso do CPP art. 798-A.</strong> Use
               somente após conferir se o ato envolve réu preso, procedimento da
               Lei Maria da Penha ou medida urgente reconhecida por despacho
-              fundamentado. O EJC não presume essa exceção.
+              fundamentado. O sistema não presume essa exceção.
             </span>
           </label>
         )}

@@ -247,7 +247,7 @@ export default function CentralDiagnostico() {
       <PageHeader
         eyebrow="Operação"
         title="Central de Diagnóstico"
-        subtitle="Saúde dos subsistemas do EJC em tempo real. Somente leitura — não revela segredos."
+        subtitle="Saúde dos subsistemas do sistema em tempo real. Somente leitura — não revela segredos."
         actions={
           <>
             <label className="flex cursor-pointer select-none items-center gap-2 text-xs text-slate-500">
@@ -420,7 +420,10 @@ function SubsistemaExtras({ sub }: { sub: Subsistema }) {
             <Chip tone="slate" label={`commit: ${sub.commit.slice(0, 8)}`} />
           )}
           {sub.deployed_at && (
-            <Chip tone="slate" label={`deploy: ${fmtDataHora(sub.deployed_at)}`} />
+            <Chip
+              tone="slate"
+              label={`deploy: ${fmtDataHora(sub.deployed_at)}`}
+            />
           )}
         </div>
         {sub.feature_flags && (
@@ -468,7 +471,10 @@ function SubsistemaExtras({ sub }: { sub: Subsistema }) {
           />
         )}
         {sub.last_run_at && (
-          <Chip tone="slate" label={`último backup: ${fmtDataHora(sub.last_run_at)}`} />
+          <Chip
+            tone="slate"
+            label={`último backup: ${fmtDataHora(sub.last_run_at)}`}
+          />
         )}
         {sub.last_status && (
           <Chip

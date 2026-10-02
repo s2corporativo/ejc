@@ -147,7 +147,7 @@ export default function TributarioWorkspace() {
             icon: Briefcase,
             descricao: truncado
               ? "Amostra limitada ao teto de 500 registros da consulta."
-              : "Fonte única: cadastro central de Casos do EJC.",
+              : "Fonte única: cadastro central de Casos do sistema.",
           },
           {
             label: "Em andamento",
@@ -204,7 +204,7 @@ export default function TributarioWorkspace() {
           {
             title: "Pesquisa e jurisprudência",
             descricao:
-              "Use a pesquisa jurídica canônica, com fontes e contexto do EJC.",
+              "Use a pesquisa jurídica canônica, com fontes e contexto do sistema.",
             icon: Landmark,
             to: "/inteligencia",
           },

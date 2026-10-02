@@ -136,8 +136,8 @@ export default function DptIntelligence({
               Motor Jurídico DPT
             </h2>
             <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
-              Executa pelo núcleo único do EJC, com RAG, validação de citações e
-              HITL. Não altera caso nem comunica cliente.
+              Executa pelo núcleo único do sistema, com RAG, validação de
+              citações e HITL. Não altera caso nem comunica cliente.
             </p>
           </div>
         </div>

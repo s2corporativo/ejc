@@ -94,14 +94,14 @@ function notificationActionLabel(notification: any): string {
 }
 
 /**
- * AppShell canônico do EJC.
+ * AppShell canônico do sistema.
  *
  * A barra lateral segue a referência visual premium DPT aprovada pelo
  * Titular (18/09/2026): marca institucional, domínios canônicos e rodapé
  * institucional (citação + cidade). Rotas, RBAC, lifecycle e funcionalidade
  * continuam vindo do moduleRegistry e dos gates existentes.
  */
-/** Shell canônico do EJC com navegação, marca institucional e controles globais. */
+/** Shell canônico do sistema com navegação, marca institucional e controles globais. */
 export default function LayoutReference() {
   const user = useAuth((state) => state.user);
   const { disponivel: iaDisponivel } = useIaStatus();
@@ -301,11 +301,11 @@ export default function LayoutReference() {
           <Link
             to="/"
             className="flex shrink-0 items-center md:hidden"
-            aria-label="Ir para o início do EJC"
+            aria-label="Ir para o início"
           >
             <img
-              src="/brand/ejc-wordmark.svg"
-              alt="EJC — Inteligência Jurídica"
+              src={officeBranding.logoPath}
+              alt={officeBranding.officeName}
               className="brand-logo-img h-9 w-auto max-w-[150px] object-contain"
             />
           </Link>
@@ -526,17 +526,17 @@ export default function LayoutReference() {
             to="/"
             onClick={() => setMobileOpen(false)}
             className="ejc-sidebar-brand__link"
-            aria-label="Ir para o início do EJC"
+            aria-label="Ir para o início"
           >
             <img
-              src="/brand/ejc-wordmark.svg"
-              alt="EJC — Inteligência Jurídica"
+              src={officeBranding.logoPath}
+              alt={officeBranding.officeName}
               className="ejc-sidebar-brand__logo"
             />
             {!navCollapsed && (
               <span className="ejc-sidebar-brand__copy">
                 <strong>{officeBranding.officeName}</strong>
-                <small>Ecossistema Jurídico Clóvis</small>
+                <small>Sociedade de Advogados</small>
               </span>
             )}
           </Link>

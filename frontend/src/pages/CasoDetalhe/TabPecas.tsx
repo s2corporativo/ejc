@@ -41,9 +41,10 @@ export default function TabPecas({ caseId }: { caseId: string }) {
               Produzir peça a partir deste caso
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              O EJC mantém o contexto do caso durante a redação. Tipo, fatos,
-              documentos, teses, fontes e validações continuam sujeitos aos
-              mesmos gates de revisão humana, RBAC e auditoria do módulo Peças.
+              O sistema mantém o contexto do caso durante a redação. Tipo,
+              fatos, documentos, teses, fontes e validações continuam sujeitos
+              aos mesmos gates de revisão humana, RBAC e auditoria do módulo
+              Peças.
             </p>
           </div>
           <button

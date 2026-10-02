@@ -143,7 +143,9 @@ export default function Configuracoes() {
     <div className="max-w-6xl space-y-5">
       <PageHeader
         eyebrow={isAdministrationPath ? "Administração" : "Preferências"}
-        title={isAdministrationPath ? "Administração do EJC" : "Configurações"}
+        title={
+          isAdministrationPath ? "Administração do sistema" : "Configurações"
+        }
         subtitle={
           isAdministrationPath
             ? "Governança dos módulos e acesso aos painéis institucionais, sem exposição de segredos operacionais."
@@ -327,7 +329,7 @@ export default function Configuracoes() {
             },
             {
               title: "Mapa de módulos",
-              description: "Inventário técnico e funcional do EJC.",
+              description: "Inventário técnico e funcional do sistema.",
               to: "/mapa-modulos",
               icon: Route,
             },

@@ -1,6 +1,6 @@
 // ── Radar — uma porta, dois modos (Onda 2 da refatoração) ────────────────────
 //
-// O EJC tinha duas telas sobre a MESMA matéria: "Radar de Compliance"
+// O sistema tinha duas telas sobre a MESMA matéria: "Radar de Compliance"
 // (`/compliance/radar`) e "Radar Regulatório" (`/radar-regulatorio`). Não eram
 // assuntos diferentes — o feed de compliance já consolida Diário Oficial,
 // monitoramento regulatório e autos ambientais, e o regulatório é o DIGEST

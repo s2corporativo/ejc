@@ -122,7 +122,7 @@ export default function FichaEspecializada({
         <div className="mb-4 rounded-xl border border-primary-100 bg-primary-50/60 p-3 text-xs leading-5 text-primary-800">
           Este formulário cria apenas um registro auxiliar do núcleo. O caso
           selecionado abaixo continua sendo a fonte de verdade jurídica e
-          operacional no EJC.
+          operacional no sistema.
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">

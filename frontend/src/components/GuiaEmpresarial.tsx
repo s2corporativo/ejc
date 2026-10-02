@@ -181,7 +181,8 @@ export default function GuiaEmpresarial() {
             </strong>
             <span className="mt-1 block text-xs leading-5 text-slate-500">
               Cockpit transversal para empresas: diagnóstico, radar, obrigações,
-              inteligência e relatórios, reutilizando os dados canônicos do EJC.
+              inteligência e relatórios, reutilizando os dados canônicos do
+              sistema.
             </span>
           </span>
         </Link>

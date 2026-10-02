@@ -27,7 +27,7 @@ function readStored(): ThemeMode {
   } catch {
     /* ignore */
   }
-  // Primeira experiência do EJC: fundo branco. Preferências salvas prevalecem.
+  // Primeira experiência do sistema: fundo branco. Preferências salvas prevalecem.
   return "light";
 }
 

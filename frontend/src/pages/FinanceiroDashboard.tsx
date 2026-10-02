@@ -979,7 +979,7 @@ export default function FinanceiroDashboard({
           <section className="border-t border-slate-100 pt-4 dark:border-slate-800">
             <h3 className="font-semibold">Conciliação bancária</h3>
             <p className="mt-1 text-xs text-slate-400">
-              Importe OFX ou CSV. O EJC sugere correspondências por valor e
+              Importe OFX ou CSV. O sistema sugere correspondências por valor e
               data; a confirmação continua humana.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">

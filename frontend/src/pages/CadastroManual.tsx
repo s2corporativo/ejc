@@ -552,8 +552,7 @@ export default function CadastroManual() {
       client_id: clienteNovo ? "" : formCaso.client_id,
       prioridade: formCaso.prioridade,
       case_type: formCaso.case_type,
-      proxima_acao:
-        formCaso.proxima_acao.trim() || PROXIMA_ACAO_MANUAL_DEFAULT,
+      proxima_acao: formCaso.proxima_acao.trim() || PROXIMA_ACAO_MANUAL_DEFAULT,
       numero_processo: formCaso.numero_processo,
       tribunal: formCaso.tribunal,
       comarca: formCaso.comarca,
@@ -1114,7 +1113,8 @@ export default function CadastroManual() {
 
             <details className="sm:col-span-2 lg:col-span-3 rounded-xl border border-slate-200 bg-slate-50/60">
               <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-700">
-                Mais detalhes <span className="font-normal text-slate-400">(opcional)</span>
+                Mais detalhes{" "}
+                <span className="font-normal text-slate-400">(opcional)</span>
               </summary>
               <div className="grid grid-cols-1 gap-3 border-t border-slate-200 p-4 sm:grid-cols-2 lg:grid-cols-3">
                 <div>
@@ -1200,8 +1200,8 @@ export default function CadastroManual() {
                     }
                   />
                   <p className="mt-1 text-xs text-slate-400">
-                    Se ficar em branco, o EJC registrará automaticamente:{" "}
-                    “{PROXIMA_ACAO_MANUAL_DEFAULT}”.
+                    Se ficar em branco, o sistema registrará automaticamente: “
+                    {PROXIMA_ACAO_MANUAL_DEFAULT}”.
                   </p>
                 </div>
               </div>

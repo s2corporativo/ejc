@@ -1,7 +1,7 @@
 import { STAFF_ROUTES } from "./moduleRegistry";
 
 /**
- * Rotas canônicas do EJC — DERIVADAS do moduleRegistry (auditoria §2.6 #6).
+ * Rotas canônicas do sistema — DERIVADAS do moduleRegistry (auditoria §2.6 #6).
  *
  * Antes este mapa duplicava os paths do registry à mão e a paridade era
  * garantida por teste. Agora os valores são lookup direto em STAFF_ROUTES:

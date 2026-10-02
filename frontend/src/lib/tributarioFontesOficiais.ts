@@ -49,7 +49,7 @@ export const FONTES_TRIBUTARIAS_OFICIAIS: readonly FonteTributariaOficial[] = [
     status: "verificada",
     url: "https://www.regularize.pgfn.gov.br/",
     observacao:
-      "Portal oficial para dívida ativa e negociações. Não confundir com a integração separada de PGFN Dados Abertos já existente no EJC.",
+      "Portal oficial para dívida ativa e negociações. Não confundir com a integração separada de PGFN Dados Abertos já existente no sistema.",
     apiPublica: false,
   },
   {
@@ -59,7 +59,7 @@ export const FONTES_TRIBUTARIAS_OFICIAIS: readonly FonteTributariaOficial[] = [
     tipo: "dados_abertos",
     status: "integracao_ejc",
     observacao:
-      "Integração real já implementada no gateway do EJC para descoberta de recursos bulk; não faz consulta individual autenticada de CPF/CNPJ.",
+      "Integração real já implementada no gateway do sistema para descoberta de recursos bulk; não faz consulta individual autenticada de CPF/CNPJ.",
     apiPublica: true,
   },
   {
@@ -241,7 +241,7 @@ export const FONTES_TRIBUTARIAS_OFICIAIS: readonly FonteTributariaOficial[] = [
     status: "verificada",
     url: "https://igarape.quasar.srv.br/",
     observacao:
-      "Sistema de NFS-e apontado pelo portal oficial do Município; serviço de terceiro referenciado oficialmente, não API pública do EJC.",
+      "Sistema de NFS-e apontado pelo portal oficial do Município; serviço de terceiro referenciado oficialmente, não API pública do sistema.",
     apiPublica: false,
   },
 

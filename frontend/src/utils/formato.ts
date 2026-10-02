@@ -1,4 +1,4 @@
-// Formatação pt-BR canônica de moeda e data/hora das telas do EJC.
+// Formatação pt-BR canônica de moeda e data/hora das telas do sistema.
 // Implementação única dos helpers que viviam duplicados em páginas e
 // componentes. `components/UI.tsx` re-exporta `fmtMoney`/`fmtDate`/`fmtDateTime`
 // daqui — importar de qualquer um dos dois é válido; NÃO recrie

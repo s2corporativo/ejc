@@ -260,7 +260,7 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
                   Áreas de atuação do caso
                 </h3>
                 <p className="mt-1 text-sm text-slate-500">
-                  Taxonomia canônica do EJC, alimentada por GET /areas.
+                  Taxonomia canônica do sistema, alimentada por GET /areas.
                 </p>
               </div>
               <Button

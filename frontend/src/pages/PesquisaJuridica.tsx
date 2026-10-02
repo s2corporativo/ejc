@@ -117,7 +117,7 @@ export default function PesquisaJuridica() {
       <PageHeader
         eyebrow="Conhecimento jurídico"
         title="Pesquisa e validação de fontes"
-        subtitle="Pesquise somente no corpus jurídico governado do EJC e confira citações antes do uso profissional."
+        subtitle="Pesquise somente no corpus jurídico governado do sistema e confira citações antes do uso profissional."
       />
 
       <div className="rounded-xl border border-ai-100 bg-ai-50/60 p-4 text-sm text-ai-900">

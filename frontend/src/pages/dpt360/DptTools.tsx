@@ -22,7 +22,7 @@ const TOOLS = [
       "Análise empresarial pelo Motor Jurídico",
     ],
     evidence:
-      "Ferramentas administrativas confirmadas no EJC; PNCP está desativado nesta base.",
+      "Ferramentas administrativas confirmadas no sistema; PNCP está desativado nesta base.",
     href: "/areas-de-atuacao/administrativo",
   },
   {
@@ -91,8 +91,8 @@ export default function DptTools() {
               Ferramentas Empresariais
             </h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-              Catálogo de capacidades já existentes no EJC. O DPT funciona como
-              cockpit e não cria calculadoras ou verticais duplicadas.
+              Catálogo de capacidades já existentes no sistema. O DPT funciona
+              como cockpit e não cria calculadoras ou verticais duplicadas.
             </p>
           </div>
           <Link

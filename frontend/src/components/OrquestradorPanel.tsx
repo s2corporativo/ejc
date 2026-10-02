@@ -322,9 +322,9 @@ export default function OrquestradorPanel({
   return (
     <div className="space-y-4">
       <IANotice>
-        O orquestrador apenas conduz os fluxos oficiais do EJC. Todo conteúdo
-        gerado é rascunho sujeito à revisão obrigatória do advogado — nenhuma
-        aprovação jurídica acontece automaticamente.
+        O orquestrador apenas conduz os fluxos oficiais do sistema. Todo
+        conteúdo gerado é rascunho sujeito à revisão obrigatória do advogado —
+        nenhuma aprovação jurídica acontece automaticamente.
       </IANotice>
 
       <div className="grid gap-4 lg:grid-cols-2">

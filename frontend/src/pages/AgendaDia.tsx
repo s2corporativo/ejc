@@ -201,7 +201,7 @@ export default function AgendaDia() {
       <PageHeader
         eyebrow="Agenda do dia"
         title={title}
-        subtitle="Prazos, tarefas, audiências e compromissos provenientes da agenda real do EJC."
+        subtitle="Prazos, tarefas, audiências e compromissos provenientes da agenda real do sistema."
         actions={
           <Link to="/atividades?view=calendario" className="btn-secondary">
             <ArrowLeft className="h-4 w-4" />
