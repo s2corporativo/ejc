@@ -168,3 +168,65 @@ async def test_client_nao_herda_connectors_ou_skills_da_conta(monkeypatch):
     assert message["enable_skills"] == []
     assert message["force_skills"] == []
     assert message["task_references"] == []
+
+
+class _FakeDB:
+    def __init__(self):
+        self.added = []
+        self.commits = 0
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    async def commit(self):
+        self.commits += 1
+
+    async def get(self, model, key):
+        return next((o for o in self.added if o.id == key), None)
+
+
+@pytest.mark.asyncio
+async def test_envio_ao_manus_grava_ailog_pseudonimizado_antes_do_envio(monkeypatch):
+    """Regressão LB1: Manus fora do gateway precisa deixar AILog."""
+    monkeypatch.setattr(service, "get_settings", _settings)
+    db = _FakeDB()
+    visto_no_envio = {}
+
+    async def fake_create(self, **kwargs):
+        visto_no_envio["logs"] = len(db.added)
+        return {"task_id": "abc123", "task_url": "https://example.invalid/t"}
+
+    monkeypatch.setattr(service.ManusClient, "create_task", fake_create)
+    user = SimpleNamespace(id="u1", role="advogado")
+    cpf = ".".join(("123", "456", "789")) + "-09"
+    await service.iniciar_raciocinio(
+        db, user=user,
+        texto=f"Analise profundamente o caso do cliente identificado por {cpf}.",
+    )
+
+    assert visto_no_envio["logs"] == 1  # log existia ANTES da chamada externa
+    log = db.added[0]
+    assert log.user_id == "u1"
+    assert log.modelo == "manus/max"
+    assert log.pii_removida is True
+    assert cpf not in log.prompt_sanitizado
+    assert "[manus_task] abc123" in log.fontes_rag
+    assert log.resposta.startswith("[enviado]")
+
+
+@pytest.mark.asyncio
+async def test_falha_no_envio_marca_ailog(monkeypatch):
+    monkeypatch.setattr(service, "get_settings", _settings)
+    db = _FakeDB()
+
+    async def fake_create(self, **kwargs):
+        raise service.ManusAPIError("boom")
+
+    monkeypatch.setattr(service.ManusClient, "create_task", fake_create)
+    with pytest.raises(HTTPException) as exc:
+        await service.iniciar_raciocinio(
+            db, user=SimpleNamespace(id="u1", role="advogado"),
+            texto="Analise profundamente o caso trabalhista do cliente informado aqui.",
+        )
+    assert exc.value.status_code == 502
+    assert db.added[0].resposta.startswith("[falha]")

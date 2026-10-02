@@ -149,6 +149,51 @@ def _prompt(*, texto_pseudo: str, area: str | None) -> str:
     )
 
 
+async def _registrar_log_envio(
+    db: AsyncSession | None,
+    *,
+    user: User,
+    prompt: str,
+    case_id: str | None,
+    modelo_agente: str,
+) -> str | None:
+    if db is None:
+        return None
+    from app.models.ai_log import AITipoUso
+    from app.services.ai_guard import registrar_ai_log
+
+    return await registrar_ai_log(
+        db,
+        user_id=str(user.id),
+        tipo_uso=AITipoUso.analise_caso,
+        case_id=case_id,
+        prompt_sanitizado=prompt,
+        pii_removida=True,
+        resposta="[aguardando envio ao Manus]",
+        modelo=f"manus/{modelo_agente}"[:50],
+    )
+
+
+async def _atualizar_log_envio(
+    db: AsyncSession | None,
+    log_id: str | None,
+    resposta: str,
+    *,
+    fontes_rag: str | None = None,
+) -> None:
+    if db is None or not log_id:
+        return
+    from app.models.ai_log import AILog
+
+    log = await db.get(AILog, log_id)
+    if log is None:
+        return
+    log.resposta = resposta
+    if fontes_rag:
+        log.fontes_rag = fontes_rag
+    await db.commit()
+
+
 async def iniciar_raciocinio(
     db: AsyncSession,
     *,
@@ -194,6 +239,15 @@ async def iniciar_raciocinio(
             "Conteúdo excede o limite do Raciocínio Profundo",
         )
 
+    # Auditoria ANTES do envio (LB1): o Manus não passa pelo ai_gateway, então
+    # o AILog é gravado aqui. Falha de gravação propaga e nada sai do EJC sem
+    # rastro (mesma política de ai_guard.registrar_ai_log). ``db`` ausente só
+    # ocorre em testes unitários de guarda.
+    log_id = await _registrar_log_envio(
+        db, user=user, prompt=prompt, case_id=case_id,
+        modelo_agente=settings.MANUS_AGENT_PROFILE,
+    )
+
     try:
         data = await ManusClient().create_task(
             content=prompt,
@@ -202,13 +256,20 @@ async def iniciar_raciocinio(
             agent_profile=settings.MANUS_AGENT_PROFILE,
         )
     except ManusDisabledError as exc:
+        await _atualizar_log_envio(db, log_id, "[falha] credencial Manus ausente")
         raise HTTPException(503, "Credencial Manus não configurada no runtime") from exc
     except ManusAPIError as exc:
+        await _atualizar_log_envio(db, log_id, "[falha] erro da API Manus no envio")
         raise HTTPException(502, str(exc)) from exc
 
     task_id = str(data.get("task_id") or "").strip()
     if not task_id:
+        await _atualizar_log_envio(db, log_id, "[falha] Manus sem task_id")
         raise HTTPException(502, "Manus não retornou task_id")
+    await _atualizar_log_envio(
+        db, log_id, "[enviado] tarefa assíncrona criada; resultado consultado por handle",
+        fontes_rag=f"[manus_task] {task_id}",
+    )
 
     return {
         "status": "running",
