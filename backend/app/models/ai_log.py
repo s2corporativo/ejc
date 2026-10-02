@@ -280,6 +280,9 @@ class AILog(Base):
     resposta = Column(Text, nullable=True)
     critica_adversarial = Column(Text, nullable=True)
     fontes_rag = Column(Text, nullable=True)
+    # Correlação com tarefa assíncrona de provedor externo (ex.: task_id do
+    # Manus). Nullable: logs síncronos/legados não têm. Migration 169.
+    external_task_id = Column(String(128), nullable=True, index=True)
     tokens_input = Column(Integer, nullable=True)
     tokens_output = Column(Integer, nullable=True)
     custo_estimado = Column(Numeric(12, 6), nullable=True)
