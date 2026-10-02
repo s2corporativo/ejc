@@ -271,6 +271,20 @@ class Settings(BaseSettings):
     AI_ACCEPT_EXTERNAL_WITHOUT_SANITIZATION: bool = False
     # True = toda saída de IA é rascunho com revisão humana obrigatória (OAB).
     AI_REQUIRE_HITL: bool = True
+
+    # ── Aprendizado jurídico supervisionado ───────────────────────────────
+    # Somente correções APROVADAS por humano entram como lições internas.
+    # Nenhuma correção substitui fonte oficial, fatos do caso ou HITL.
+    AI_SUPERVISED_LEARNING_ENABLED: bool = False
+    AI_SUPERVISED_LEARNING_MAX_LESSONS: int = 3
+
+    # Roteamento adaptativo nasce DESLIGADO. Só pode recomendar provider
+    # quando um artefato de benchmark declarar certificação humana + holdout,
+    # amostra mínima e zero falha crítica. A AIProviderPolicy é reaplicada após
+    # a recomendação, portanto qualidade nunca contorna LGPD/kill-switch.
+    AI_ADAPTIVE_ROUTING_ENABLED: bool = False
+    AI_ADAPTIVE_ROUTING_MIN_CASES: int = 15
+    AI_ADAPTIVE_ROUTING_ARTIFACT: str = ""
     # ── Piso do nível de raciocínio (decisão do titular, 18/08) ───────────
     # O gateway aplicava "padrao" quando o chamador não pedia nível — e a
     # maioria dos call sites não pedia. O protocolo de raciocínio sênior

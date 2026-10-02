@@ -2,9 +2,9 @@
 
 Este arquivo é o ledger canônico de **reservas futuras** e do trecho recente da cadeia Alembic. O histórico detalhado de reservas antigas permanece preservado no Git.
 
-**Head canônico atual da `main`:** `167_finance_fk_indexes`
-**Head esperado nesta árvore após as migrations do branch:** `168_finance_ged_links`
-**Próximo prefixo livre nesta árvore:** `169`
+**Head canônico atual da `main`:** `168_finance_ged_links`
+**Head esperado nesta árvore após as migrations do branch:** `169_ai_supervised_learning`
+**Próximo prefixo livre nesta árvore:** `170`
 
 > Estado da `main` após integração de `158_case_partes_trabalhista_pii_expand` e `159_user_cpf_secure`. A migration 159 parte diretamente de 158 e integra a cadeia canônica.
 
@@ -62,13 +62,14 @@ gh pr list --state open
 | `165_commission_operations` | `164_commission_rules` | **Mesclada** | Ajustes, lotes de pagamento e fechamento mensal de comissões. |
 | `166_finance_governance` | `165_commission_operations` | **Mesclada** | Fechamento financeiro, alçadas e conciliação. |
 | `167_finance_fk_indexes` | `166_finance_governance` | **Mesclada** | Índices aditivos para FKs de comprovantes em commission_payment_batches e partner_withdrawals. |
-| `168_finance_ged_links` | `167_finance_fk_indexes` | **Reservada** | Padroniza comprovantes/documentos do Financeiro no GED canônico (`documents`) para despesas gerais, extratos bancários e pagamentos de honorários. |
+| `168_finance_ged_links` | `167_finance_fk_indexes` | **Mesclada** | Padroniza comprovantes/documentos do Financeiro no GED canônico (`documents`) para despesas gerais, extratos bancários e pagamentos de honorários. |
+| `169_ai_supervised_learning` | `168_finance_ged_links` | **Em PR** | Aprendizado jurídico supervisionado da IA (eventos de correção/erro/desfecho/benchmark com curadoria humana). Renumerada de 168 para 169 ao ser reaplicada sobre a main. |
 
 ### Estado atual a partir do head 162 integrado
 
 - Os prefixos `158` e `159` fazem parte da cadeia canônica da `main` e nunca podem ser reutilizados.
 - `160_activity_alert_states`, `161_fee_estornos` e `162_case_financial_classification` já integram a `main`.
-- O head efetivo da `main` é `167_finance_fk_indexes`; o próximo prefixo livre é `168`.
+- O head efetivo da `main` é `168_finance_ged_links`; com esta árvore, `169_ai_supervised_learning` ocupa o 169 e o próximo prefixo livre é `170`.
 - Frentes de Documentos/Legal Hold/Outbox que ainda carreguem migrations históricas `156_*` são incompatíveis com a cadeia atual e devem ser reconstruídas somente depois do avanço efetivo do head, usando o próximo número então confirmado.
 
 ## Banco de Teses — decisão canônica
