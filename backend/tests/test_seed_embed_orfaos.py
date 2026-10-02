@@ -92,4 +92,9 @@ async def test_seed_all_encadeia_reembed_ao_final():
 async def test_reembedar_devolve_contagens_quando_indisponivel(monkeypatch):
     monkeypatch.setattr(reembed_mod, "emb_disponivel", lambda: False)
     out = await reembed_mod.reembedar(batch_size=5)
-    assert out == {"ok": 0, "erros": 0, "dry_run": 0, "disponivel": False}
+    # `processados`/`batches` entraram no contrato com os tetos operacionais
+    # (--max-docs/--max-batches); indisponível = nada processado.
+    assert out == {
+        "ok": 0, "erros": 0, "dry_run": 0, "disponivel": False,
+        "processados": 0, "batches": 0,
+    }

@@ -22,6 +22,8 @@ class SchedulerHeartbeat(Base):
     last_run_at = Column(DateTime(timezone=True), nullable=False)
     last_status = Column(String(20), nullable=False)   # ok | erro
     detail      = Column(Text, nullable=True)          # detalhe curto do erro
+    # Último sucesso real (migration 169); last_run_at avança também em "erro".
+    last_ok_at  = Column(DateTime(timezone=True), nullable=True)
     updated_at  = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

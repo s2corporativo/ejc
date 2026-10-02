@@ -62,9 +62,21 @@ interface PecaAdmissao {
   financeiro?: {
     fee_id: string;
     valor_contratual: number | null;
+    valor_pago?: number;
+    saldo_aberto?: number;
+    entrada?: number | null;
+    numero_parcelas?: number;
+    primeiro_vencimento?: string | null;
     percentual_exito: number | null;
     forma_pagamento: string | null;
     status: string;
+    cronograma?: Array<{
+      fee_id: string;
+      descricao: string;
+      valor: number;
+      vencimento: string | null;
+      status: string;
+    }>;
   } | null;
 }
 
@@ -119,6 +131,9 @@ export default function Clientes() {
   const podeVerAdmissao = ["superadmin", "admin", "socio", "advogado"].includes(
     role,
   );
+  const podeSincronizarFinanceiro = ["superadmin", "admin", "socio"].includes(
+    role,
+  );
   const [admissaoModal, setAdmissaoModal] = useState<Client | null>(null);
   const [admissaoPecas, setAdmissaoPecas] = useState<PecaAdmissao[] | null>(
     null,
@@ -132,8 +147,11 @@ export default function Clientes() {
   });
   const [admissaoHonorarios, setAdmissaoHonorarios] = useState({
     valor_contratual: "",
+    entrada: "",
+    numero_parcelas: "1",
     percentual_exito: "",
     forma_pagamento: "",
+    data_vencimento: "",
   });
   const [seletorDocumentos, setSeletorDocumentos] = useState(false);
   const [docPickerSearch, setDocPickerSearch] = useState("");
@@ -296,8 +314,11 @@ export default function Clientes() {
     setAdmissaoPecas(null);
     setAdmissaoHonorarios({
       valor_contratual: "",
+      entrada: "",
+      numero_parcelas: "1",
       percentual_exito: "",
       forma_pagamento: "",
+      data_vencimento: "",
     });
     setAdmissaoLoading(true);
     try {
@@ -315,12 +336,24 @@ export default function Clientes() {
           valor_contratual:
             financeiro.valor_contratual === null
               ? ""
-              : String(financeiro.valor_contratual),
+              : financeiro.valor_contratual.toLocaleString("pt-BR", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                }),
+          entrada:
+            financeiro.entrada === null || financeiro.entrada === undefined
+              ? ""
+              : financeiro.entrada.toLocaleString("pt-BR", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                }),
+          numero_parcelas: String(financeiro.numero_parcelas || 1),
           percentual_exito:
             financeiro.percentual_exito === null
               ? ""
               : String(financeiro.percentual_exito),
           forma_pagamento: financeiro.forma_pagamento || "",
+          data_vencimento: financeiro.primeiro_vencimento || "",
         });
       }
     } catch (e: any) {
@@ -338,15 +371,41 @@ export default function Clientes() {
   const regerarAdmissao = async () => {
     if (!admissaoModal) return;
     const alvo = admissaoModal;
-    const valor = admissaoHonorarios.valor_contratual.trim();
-    const exito = admissaoHonorarios.percentual_exito.trim();
-    const valorNumero = valor ? Number(valor.replace(",", ".")) : null;
-    const exitoNumero = exito ? Number(exito.replace(",", ".")) : null;
+    const parseDecimal = (texto: string) => {
+      const valor = texto.trim().replace(/\s/g, "");
+      if (!valor) return null;
+      const normalizado = valor.includes(",")
+        ? valor.replace(/\./g, "").replace(",", ".")
+        : /^\d{1,3}(\.\d{3})+$/.test(valor)
+          ? valor.replace(/\./g, "")
+          : valor;
+      const numero = Number(normalizado);
+      return Number.isFinite(numero) ? numero : Number.NaN;
+    };
+    const valorNumero = parseDecimal(admissaoHonorarios.valor_contratual);
+    const entradaNumero = parseDecimal(admissaoHonorarios.entrada);
+    const exitoNumero = parseDecimal(admissaoHonorarios.percentual_exito);
+    const numeroParcelas = Number(admissaoHonorarios.numero_parcelas || "1");
     if (
       valorNumero !== null &&
       (!Number.isFinite(valorNumero) || valorNumero < 0)
     ) {
       toast.error("Informe um valor contratual válido.");
+      return;
+    }
+    if (
+      entradaNumero !== null &&
+      (!Number.isFinite(entradaNumero) || entradaNumero < 0)
+    ) {
+      toast.error("Informe um valor de entrada válido.");
+      return;
+    }
+    if (
+      valorNumero !== null &&
+      entradaNumero !== null &&
+      entradaNumero > valorNumero
+    ) {
+      toast.error("A entrada não pode ser maior que o valor contratual.");
       return;
     }
     if (
@@ -366,9 +425,12 @@ export default function Clientes() {
           permite_substabelecimento: admissaoPoderes.permite_substabelecimento,
           poderes_especiais: admissaoPoderes.poderes_especiais.trim() || null,
           valor_contratual: valorNumero,
+          entrada: entradaNumero,
+          numero_parcelas: numeroParcelas,
           percentual_exito: exitoNumero,
           forma_pagamento: admissaoHonorarios.forma_pagamento.trim() || null,
-          sincronizar_financeiro: true,
+          data_vencimento: admissaoHonorarios.data_vencimento || null,
+          sincronizar_financeiro: podeSincronizarFinanceiro,
         },
       );
       if (resultado?.financeiro?.status === "sincronizado") {
@@ -1164,10 +1226,44 @@ export default function Clientes() {
                 Honorários do contrato
               </p>
               <p className="mt-1 text-xs text-slate-500">
-                Os valores informados entram na minuta. Perfis fiduciários
-                também sincronizam o honorário pendente com o Financeiro, sem
-                duplicar lançamentos.
+                Os valores entram na minuta. Para superadmin, admin e sócio, o
+                sistema cria entrada e parcelas individuais no Financeiro,
+                preservando recebimentos já registrados.
               </p>
+              {!podeSincronizarFinanceiro && (
+                <Alert variant="info" className="mt-2">
+                  Seu perfil pode preencher o contrato, mas a sincronização do
+                  Financeiro exige perfil fiduciário.
+                </Alert>
+              )}
+              {(() => {
+                const financeiro = admissaoPecas?.find(
+                  (peca) => peca.admission_kind === "contrato_honorarios",
+                )?.financeiro;
+                if (!financeiro || !podeSincronizarFinanceiro) return null;
+                return (
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-md bg-slate-50 px-2.5 py-2 text-slate-600">
+                      Já recebido
+                      <strong className="mt-0.5 block text-slate-900">
+                        {(financeiro.valor_pago || 0).toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL",
+                        })}
+                      </strong>
+                    </div>
+                    <div className="rounded-md bg-slate-50 px-2.5 py-2 text-slate-600">
+                      Saldo em aberto
+                      <strong className="mt-0.5 block text-slate-900">
+                        {(financeiro.saldo_aberto || 0).toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL",
+                        })}
+                      </strong>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
@@ -1180,6 +1276,51 @@ export default function Clientes() {
                     setAdmissaoHonorarios({
                       ...admissaoHonorarios,
                       valor_contratual: e.target.value,
+                    })
+                  }
+                />
+              </div>
+              <div>
+                <FieldLabel>Entrada (R$)</FieldLabel>
+                <Input
+                  inputMode="decimal"
+                  placeholder="Opcional"
+                  value={admissaoHonorarios.entrada}
+                  onChange={(e) =>
+                    setAdmissaoHonorarios({
+                      ...admissaoHonorarios,
+                      entrada: e.target.value,
+                    })
+                  }
+                />
+              </div>
+              <div>
+                <FieldLabel>Número de parcelas após a entrada</FieldLabel>
+                <Select
+                  value={admissaoHonorarios.numero_parcelas}
+                  onChange={(e) =>
+                    setAdmissaoHonorarios({
+                      ...admissaoHonorarios,
+                      numero_parcelas: e.target.value,
+                    })
+                  }
+                >
+                  {Array.from({ length: 24 }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n}>
+                      {n}x
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div>
+                <FieldLabel>Primeiro vencimento</FieldLabel>
+                <Input
+                  type="date"
+                  value={admissaoHonorarios.data_vencimento}
+                  onChange={(e) =>
+                    setAdmissaoHonorarios({
+                      ...admissaoHonorarios,
+                      data_vencimento: e.target.value,
                     })
                   }
                 />
@@ -1199,9 +1340,9 @@ export default function Clientes() {
                 />
               </div>
               <div className="sm:col-span-2">
-                <FieldLabel>Forma de pagamento</FieldLabel>
+                <FieldLabel>Condição adicional</FieldLabel>
                 <Input
-                  placeholder="Ex.: entrada de R$ 1.000 + 5 parcelas"
+                  placeholder="Ex.: PIX, boleto ou ajuste específico"
                   value={admissaoHonorarios.forma_pagamento}
                   onChange={(e) =>
                     setAdmissaoHonorarios({

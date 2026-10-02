@@ -152,10 +152,19 @@ def montar_documento(it: dict) -> dict | None:
 
 
 def _extrair_itens(payload) -> list[dict]:
+    """Coleção de itens do payload; contrato inesperado NÃO vira "sem resultados".
+
+    Um 200 sem a chave ``items`` (página de erro, mudança de contrato) era lido
+    como janela vazia e a OAB contava como coletada com sucesso.
+    """
     if isinstance(payload, dict):
         items = payload.get("items")
-        return items if isinstance(items, list) else []
-    return payload if isinstance(payload, list) else []
+        if not isinstance(items, list):
+            raise DjenContratoError("DJEN: resposta sem coleção 'items' no contrato esperado")
+        return items
+    if isinstance(payload, list):
+        return payload
+    raise DjenContratoError("DJEN: payload fora do contrato esperado (nem objeto nem lista)")
 
 
 class DjenContratoError(RuntimeError):
@@ -196,12 +205,12 @@ async def _coletar_oab(numero: str, uf: str, ini: str, fim: str) -> list[dict]:
             lote = _extrair_itens(payload)
         except ValueError:
             logger.warning(f"DJEN OAB {numero}/{uf} p.{pagina}: JSON inválido")
-            if pagina == 1:
-                raise DjenContratoError(
-                    f"DJEN OAB {numero}/{uf}: resposta sem JSON válido na "
-                    "primeira página — consulta não foi respondida."
-                )
-            break
+            # Fail-closed em QUALQUER página: devolver o parcial como sucesso
+            # marcaria a OAB como coletada com a janela incompleta.
+            raise DjenContratoError(
+                f"DJEN OAB {numero}/{uf}: resposta sem JSON válido na "
+                f"página {pagina} — janela não foi lida por completo."
+            )
 
         reportado = extrair_total_djen(payload)
         if reportado is not None:

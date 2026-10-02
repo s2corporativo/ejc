@@ -31,6 +31,7 @@ VARIAVEIS = [
     "valor_causa", "area", "data_hoje",
     "advogado_nome", "advogado_oab",
     "valor_honorarios", "percentual_exito", "forma_pagamento",
+    "entrada", "numero_parcelas", "primeiro_vencimento", "data_documento",
     # Dados institucionais (settings ESCRITORIO_*): mesma fonte do timbre
     # PDF/DOCX — o modelo nunca precisa repetir CNPJ/OAB/endereço à mão.
     "escritorio_nome", "escritorio_cnpj", "escritorio_oab", "escritorio_endereco",

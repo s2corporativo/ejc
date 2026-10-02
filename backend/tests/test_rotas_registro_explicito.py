@@ -383,6 +383,14 @@ ADICOES_INTENCIONAIS |= {
 # São superfícies autenticadas que substituem fan-out/amostragem do frontend,
 # sem remover rotas legadas.
 ADICOES_INTENCIONAIS |= {
+    # Auditoria do módulo DJEN (2026-10): detalhe com evidência oficial
+    # (texto íntegro + link) e vínculo manual comunicação→caso (inclusive caso
+    # encerrado/arquivado). Ambas autenticadas, com ownership por advogado/caso
+    # idêntico ao das demais rotas de /intimacoes.
+    ("/api/intimacoes/{com_id}", "GET"),
+    ("/api/intimacoes/{com_id}/vincular-caso", "POST"),
+}
+ADICOES_INTENCIONAIS |= {
     ("/api/atividades/resumo", "GET"),
     ("/api/dashboard/hoje", "GET"),
 }
@@ -475,6 +483,10 @@ def test_paridade_openapi_com_snapshot_anterior():
     assert not ressuscitadas, f"rota(s) removida(s) por decisão do escritório voltaram: {ressuscitadas}"
 
     AUTH_ALTERACOES_INTENCIONAIS = (
+        # Auditoria DJEN (2026-10): rate limit (`_dep`) na captura manual, que
+        # varre até centenas de páginas do CNJ por chamada. Só ACRESCENTA
+        # throttling; identidade (get_current_user) e demais gates permanecem.
+        (("/api/intimacoes/capturar-agora", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
         # PRs #1348/#1349 (auditoria E2E de clientes, set/2026): rate limit
         # (`rate_limit(...)` → dependência `_dep`) adicionado à análise de IA
         # do cliente e ao export CSV de clientes. Só ACRESCENTA uma

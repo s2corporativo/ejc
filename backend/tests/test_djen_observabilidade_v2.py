@@ -121,11 +121,13 @@ async def test_captura_manual_preserva_novas_numerico_e_envia_pos_commit(monkeyp
 
     db = _DBSavepoint()
     usuario = SimpleNamespace(
+        id="adv-manual",
+        role=SimpleNamespace(value="advogado"),
         djen_oab_numero="123456",
         djen_oab_uf="MG",
     )
 
-    resposta = await intimacoes.capturar_agora(db=db, cu=usuario)
+    resposta = await intimacoes.capturar_agora(dias=7, db=db, cu=usuario)
 
     assert resposta["novas"] == 2
     assert isinstance(resposta["novas"], int)
@@ -158,12 +160,14 @@ async def test_captura_manual_falha_com_503_e_rollback(monkeypatch):
 
     db = _DBSavepoint()
     usuario = SimpleNamespace(
+        id="adv-manual",
+        role=SimpleNamespace(value="advogado"),
         djen_oab_numero="123456",
         djen_oab_uf="MG",
     )
 
     with pytest.raises(HTTPException) as exc:
-        await intimacoes.capturar_agora(db=db, cu=usuario)
+        await intimacoes.capturar_agora(dias=7, db=db, cu=usuario)
 
     assert exc.value.status_code == 503
     assert "timeout" in str(exc.value.detail)
