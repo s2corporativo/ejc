@@ -423,20 +423,28 @@ export default function Clientes() {
                     {c.documento_exibicao || "—"}
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
-                    <button
+                    <Button
+                      type="button"
                       title="Dossiê Digital"
-                      className="text-bronze hover:text-bronze-dark inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5 font-medium text-xs"
+                      aria-label="Abrir dossiê digital"
+                      variant="ghost"
+                      size="icon"
+                      className="text-bronze hover:text-bronze-dark"
                       onClick={(e) => {
                         e.stopPropagation();
                         window.location.href = `/clientes/${c.id}`;
                       }}
                     >
                       📋
-                    </button>
+                    </Button>
                     {podeCriarAcesso && (
-                      <button
+                      <Button
+                        type="button"
                         title="Acesso ao Portal"
-                        className="text-navy hover:text-gold inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5"
+                        aria-label="Configurar acesso ao Portal"
+                        variant="ghost"
+                        size="icon"
+                        className="text-navy hover:text-gold"
                         onClick={(e) => {
                           e.stopPropagation();
                           setAcessoModal(c);
@@ -447,24 +455,32 @@ export default function Clientes() {
                         }}
                       >
                         <KeyRound size={14} />
-                      </button>
+                      </Button>
                     )}
                     {podeVerAdmissao && (
-                      <button
+                      <Button
+                        type="button"
                         title="Gerar procuração, contrato e sincronizar Financeiro"
-                        className="text-navy hover:text-gold inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5"
+                        aria-label="Gerar procuração, contrato e sincronizar Financeiro"
+                        variant="ghost"
+                        size="icon"
+                        className="text-navy hover:text-gold"
                         onClick={(e) => {
                           e.stopPropagation();
                           carregarAdmissao(c);
                         }}
                       >
                         <FileSignature size={14} />
-                      </button>
+                      </Button>
                     )}
                     {podeRelatorioLgpd && (
-                      <button
+                      <Button
+                        type="button"
                         title="Relatório LGPD"
-                        className="text-navy hover:text-gold inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5"
+                        aria-label="Gerar relatório LGPD"
+                        variant="ghost"
+                        size="icon"
+                        className="text-navy hover:text-gold"
                         onClick={async (e) => {
                           e.stopPropagation();
                           try {
@@ -489,12 +505,16 @@ export default function Clientes() {
                         }}
                       >
                         📄
-                      </button>
+                      </Button>
                     )}
                     {podeExcluir && (
-                      <button
+                      <Button
+                        type="button"
                         title="Excluir cliente"
-                        className="inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5 text-red-500/70 hover:text-red-600"
+                        aria-label="Excluir cliente"
+                        variant="ghost"
+                        size="icon"
+                        className="text-red-500/70 hover:text-red-600"
                         onClick={(e) => {
                           e.stopPropagation();
                           setExcluirBloqueios([]);
@@ -503,7 +523,7 @@ export default function Clientes() {
                         }}
                       >
                         <Trash2 size={14} />
-                      </button>
+                      </Button>
                     )}
                   </td>
                   <td className="px-4 py-3 text-slate-500">
@@ -519,8 +539,9 @@ export default function Clientes() {
                               c.nome || "",
                             )
                           }
-                          className="inline-flex min-h-[24px] min-w-[24px] items-center justify-center rounded-full bg-green-100 p-1 text-green-600 transition-colors hover:bg-green-200"
+                          className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-full bg-green-100 p-1 text-green-600 transition-colors hover:bg-green-200"
                           title="Abrir WhatsApp"
+                          aria-label="Abrir WhatsApp"
                         >
                           <svg
                             className="w-3.5 h-3.5"
