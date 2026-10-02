@@ -39,3 +39,18 @@ describe("RBAC das suspensões na Central", () => {
     expect(assinatura).not.toContain("require_roles");
   });
 });
+
+import { linkOficialSeguro } from "./acoesLegadas";
+
+describe("link oficial da comunicação DJEN", () => {
+  it("aceita apenas http(s) e recusa esquemas executáveis", () => {
+    expect(linkOficialSeguro("https://comunica.pje.jus.br/x")).toBe(
+      "https://comunica.pje.jus.br/x",
+    );
+    expect(linkOficialSeguro("  http://x.jus.br/a ")).toBe("http://x.jus.br/a");
+    expect(linkOficialSeguro("javascript:alert(1)")).toBeNull();
+    expect(linkOficialSeguro("data:text/html;base64,AAAA")).toBeNull();
+    expect(linkOficialSeguro(null)).toBeNull();
+    expect(linkOficialSeguro("")).toBeNull();
+  });
+});

@@ -48,6 +48,186 @@ type PrazoSugerido = {
   prazo_deadline_id?: string | null;
 };
 
+type DetalheIntimacao = {
+  orgao?: string | null;
+  texto?: string;
+  texto_completo?: boolean;
+  link_oficial?: string | null;
+  case_id?: string | null;
+  aviso_escopo?: string;
+};
+
+type CasoBusca = { id: string; titulo: string; numero_processo?: string | null };
+
+/** Só links http(s) viram âncora — nunca `javascript:` vindo da fonte externa. */
+export function linkOficialSeguro(link?: string | null): string | null {
+  return link && /^https?:\/\//i.test(link.trim()) ? link.trim() : null;
+}
+
+/**
+ * Evidência oficial da comunicação (texto íntegro em texto puro + PDF) e
+ * vínculo manual a caso — inclusive encerrado/arquivado, que o auto-vínculo
+ * não cobre. Sem caso vinculado o prazo não pode ser aceito.
+ */
+function EvidenciaEVinculo({
+  comunicacaoId,
+  onVinculado,
+  onCaso,
+}: {
+  comunicacaoId: string;
+  onVinculado: () => void;
+  onCaso: (temCaso: boolean) => void;
+}) {
+  const [det, setDet] = useState<DetalheIntimacao | null>(null);
+  const [erro, setErro] = useState("");
+  const [busca, setBusca] = useState("");
+  const [casos, setCasos] = useState<CasoBusca[]>([]);
+  const [vinculando, setVinculando] = useState(false);
+  const [divergente, setDivergente] = useState<string | null>(null);
+
+  const carregar = () =>
+    api
+      .get(`/intimacoes/${comunicacaoId}`)
+      .then((r) => {
+        setDet(r.data);
+        setErro("");
+        onCaso(!!r.data?.case_id);
+      })
+      .catch((e) => {
+        setErro(erroDetalhe(e, "Não foi possível carregar o texto oficial."));
+        onCaso(true); // falha de leitura não deve travar o fluxo existente
+      });
+
+  useEffect(() => {
+    setDet(null);
+    setCasos([]);
+    setBusca("");
+    setDivergente(null);
+    carregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [comunicacaoId]);
+
+  const buscar = async () => {
+    if (busca.trim().length < 3) return;
+    try {
+      const { data } = await api.get("/cases/", {
+        params: { search: busca.trim(), arquivo: "todos", page_size: 8 },
+      });
+      setCasos(Array.isArray(data?.data) ? data.data : []);
+    } catch (e) {
+      toast.error(erroDetalhe(e, "Falha ao buscar casos."));
+    }
+  };
+
+  const vincular = async (caseId: string, confirmar = false) => {
+    setVinculando(true);
+    try {
+      await api.post(`/intimacoes/${comunicacaoId}/vincular-caso`, {
+        case_id: caseId,
+        confirmar_divergencia: confirmar,
+      });
+      toast.success("Intimação vinculada ao caso.");
+      setDivergente(null);
+      await carregar();
+      onVinculado();
+    } catch (e: any) {
+      const msg = erroDetalhe(e, "Não foi possível vincular ao caso.");
+      if (e?.response?.status === 422 && /difere/i.test(msg)) {
+        setDivergente(caseId);
+      }
+      toast.error(msg);
+    } finally {
+      setVinculando(false);
+    }
+  };
+
+  const link = linkOficialSeguro(det?.link_oficial);
+
+  return (
+    <div className="space-y-2">
+      {erro && <p className="text-xs text-danger-700">{erro}</p>}
+      {det && (
+        <div className="rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-700">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-medium text-slate-700 dark:text-slate-200">
+              Texto oficial{det.orgao ? ` — ${det.orgao}` : ""}
+            </span>
+            {link && (
+              <a
+                href={link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-brand-600 underline"
+              >
+                Abrir PDF oficial
+              </a>
+            )}
+          </div>
+          <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap font-sans text-slate-600 dark:text-slate-300">
+            {det.texto || "—"}
+          </pre>
+          {det.texto_completo === false && (
+            <p className="mt-1 text-[11px] text-warn-700">
+              Comunicação anterior à preservação do texto íntegro: confira o
+              original na fonte oficial.
+            </p>
+          )}
+        </div>
+      )}
+      {det && !det.case_id && (
+        <div className="rounded-lg border border-warn-200 bg-warn-50 p-3 text-xs text-warn-800">
+          <p className="font-medium">Sem caso vinculado</p>
+          <p className="mt-1">
+            O prazo só pode ser criado com um caso. Busque o caso pelo título ou
+            número do processo (inclui encerrados e arquivados).
+          </p>
+          <div className="mt-2 flex gap-2">
+            <input
+              className="input"
+              value={busca}
+              placeholder="Título ou nº do processo"
+              onChange={(e) => setBusca(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && buscar()}
+            />
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={buscar}
+              disabled={busca.trim().length < 3}
+            >
+              Buscar
+            </button>
+          </div>
+          <ul className="mt-2 space-y-1">
+            {casos.map((c) => (
+              <li
+                key={c.id}
+                className="flex items-center justify-between gap-2 rounded border border-warn-200 bg-white px-2 py-1 dark:bg-slate-900"
+              >
+                <span className="truncate">
+                  {c.titulo}
+                  {c.numero_processo ? ` · ${c.numero_processo}` : ""}
+                </span>
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  disabled={vinculando}
+                  onClick={() => vincular(c.id, divergente === c.id)}
+                >
+                  {divergente === c.id ? "Confirmar divergência" : "Vincular"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {det?.aviso_escopo && (
+        <p className="text-[11px] italic text-slate-500">{det.aviso_escopo}</p>
+      )}
+    </div>
+  );
+}
+
 export type SugestaoAberta = {
   id: string;
   titulo: string;
@@ -71,6 +251,7 @@ export function PrazoSugeridoModal({
 }) {
   const [salvando, setSalvando] = useState<"aceitar" | "recusar" | null>(null);
   const [dataPrazo, setDataPrazo] = useState("");
+  const [temCaso, setTemCaso] = useState(true);
   const dados = sugestao?.dados;
   const status = dados?.prazo_sugerido_status ?? "nenhum";
   const jaResolvido = status === "aceito" || status === "recusado";
@@ -171,6 +352,12 @@ export function PrazoSugeridoModal({
             </div>
           )}
 
+          <EvidenciaEVinculo
+            comunicacaoId={sugestao.id}
+            onCaso={setTemCaso}
+            onVinculado={onResolvido}
+          />
+
           <div>
             <label className="label text-xs">Vencimento conferido *</label>
             <input
@@ -211,7 +398,12 @@ export function PrazoSugeridoModal({
             </button>
             <button
               onClick={aceitar}
-              disabled={salvando !== null || !dataPrazo || status === "aceito"}
+              disabled={
+                salvando !== null ||
+                !dataPrazo ||
+                status === "aceito" ||
+                !temCaso
+              }
               className="px-4 py-2 bg-success-600 text-white text-sm rounded-lg hover:bg-success-700 disabled:opacity-60"
             >
               {salvando === "aceitar"

@@ -121,6 +121,7 @@ async def test_captura_manual_preserva_novas_numerico_e_envia_pos_commit(monkeyp
 
     db = _DBSavepoint()
     usuario = SimpleNamespace(
+        id="adv-manual",
         djen_oab_numero="123456",
         djen_oab_uf="MG",
     )
@@ -158,6 +159,7 @@ async def test_captura_manual_falha_com_503_e_rollback(monkeypatch):
 
     db = _DBSavepoint()
     usuario = SimpleNamespace(
+        id="adv-manual",
         djen_oab_numero="123456",
         djen_oab_uf="MG",
     )

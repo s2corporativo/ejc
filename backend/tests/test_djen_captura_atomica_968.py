@@ -121,7 +121,7 @@ def test_insert_comunicacoes_usa_on_conflict_do_nothing_e_returning():
         )
     ).upper()
 
-    assert "ON CONFLICT (COMUNICACAO_ID_EXTERNO) DO NOTHING" in sql
+    assert "ON CONFLICT (COMUNICACAO_ID_EXTERNO, ADVOGADO_ID) DO NOTHING" in sql
     assert "RETURNING DJEN_COMUNICACOES.ID" in sql
     # O RETURNING traz o id externo junto — é o que separa nova de duplicata
     # sem uma segunda viagem ao banco.

@@ -3,8 +3,8 @@
 Este arquivo é o ledger canônico de **reservas futuras** e do trecho recente da cadeia Alembic. O histórico detalhado de reservas antigas permanece preservado no Git.
 
 **Head canônico atual da `main`:** `167_finance_fk_indexes`
-**Head esperado nesta árvore após as migrations do branch:** `168_finance_ged_links`
-**Próximo prefixo livre nesta árvore:** `169`
+**Head esperado nesta árvore após as migrations do branch:** `169_djen_multi_advogado`
+**Próximo prefixo livre nesta árvore:** `170`
 
 > Estado da `main` após integração de `158_case_partes_trabalhista_pii_expand` e `159_user_cpf_secure`. A migration 159 parte diretamente de 158 e integra a cadeia canônica.
 

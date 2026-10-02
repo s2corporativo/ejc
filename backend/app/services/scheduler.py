@@ -1808,7 +1808,11 @@ async def job_djen_intimacoes():
     somente para OABs adicionais presentes em DJEN_OABS_MONITORADAS.
     """
     from app.models.user import User as _U
-    from app.services.djen_service import capturar_para_advogado, oab_para_captura
+    from app.services.djen_service import (
+        capturar_para_advogado,
+        janela_reconciliacao_dias,
+        oab_para_captura,
+    )
     from app.services.heartbeat_service import JOB_DJEN
 
     _hb_status, _hb_detail = "ok", None
@@ -1824,11 +1828,13 @@ async def job_djen_intimacoes():
                 ),
             ))).scalars().all()
             advs = [a for a in candidatos if djen_entra_no_job(a)]
+            # Amplia a janela após parada/falha prolongada (backfill automático).
+            dias_janela = await janela_reconciliacao_dias(db)
             total = 0
             for a in advs:
                 numero, uf = oab_para_captura(a)
                 try:
-                    resultado = await capturar_para_advogado(db, a)
+                    resultado = await capturar_para_advogado(db, a, dias=dias_janela)
                     # OAB só é excluída do ingestor RAG quando a fonte realmente
                     # respondeu (fonte_ok=True). Erro HTTP/timeout/credenciais inválidas
                     # não marcam a OAB como capturada — ela tenta novamente no ciclo

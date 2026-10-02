@@ -17,12 +17,12 @@ async def test_json_invalido_na_primeira_pagina_falha_alto(monkeypatch):
 
     monkeypatch.setattr(djen, "fetch", _fetch_html)
 
-    with pytest.raises(djen.DjenContratoError, match="primeira página"):
+    with pytest.raises(djen.DjenContratoError, match="página 1"):
         await djen._coletar_oab("123456", "MG", "2026-09-01", "2026-09-04")
 
 
-async def test_json_invalido_apos_primeira_pagina_preserva_itens_colhidos(monkeypatch):
-    """Falha posterior não apaga comunicações reais já recebidas."""
+async def test_json_invalido_apos_primeira_pagina_falha_alto(monkeypatch):
+    """Janela lida pela metade não pode ser devolvida como coleta bem-sucedida."""
     chamadas = {"n": 0}
     cheia = [{"id": i} for i in range(djen.ITENS_POR_PAGINA)]
 
@@ -41,8 +41,16 @@ async def test_json_invalido_apos_primeira_pagina_preserva_itens_colhidos(monkey
     monkeypatch.setattr(djen, "fetch", _fetch)
     monkeypatch.setattr(djen, "PAUSA_ENTRE_PAGINAS", 0)
 
-    itens = await djen._coletar_oab("123456", "MG", "2026-09-01", "2026-09-04")
-    assert len(itens) == djen.ITENS_POR_PAGINA
+    with pytest.raises(djen.DjenContratoError, match="página 2"):
+        await djen._coletar_oab("123456", "MG", "2026-09-01", "2026-09-04")
+
+
+async def test_payload_sem_colecao_items_falha_alto():
+    with pytest.raises(djen.DjenContratoError, match="items"):
+        djen._extrair_itens({"status": "error"})
+    with pytest.raises(djen.DjenContratoError):
+        djen._extrair_itens("<html>erro</html>")
+    assert djen._extrair_itens({"items": []}) == []
 
 
 async def test_pagina_vazia_com_count_pendente_nao_vira_fim_legitimo(monkeypatch):

@@ -66,6 +66,14 @@ def _user(role: UserRole = UserRole.advogado, uid: str = "adv-1") -> User:
     return u
 
 
+@pytest.fixture(autouse=True)
+def _hoje_fixo(monkeypatch):
+    """Datas do arquivo são fixas (2026); congela 'hoje' para a regra de data passada."""
+    from app.routers import intimacoes
+
+    monkeypatch.setattr(intimacoes, "hoje_operacional", lambda: date(2026, 3, 1))
+
+
 def _com(**kw):
     from app.models.djen import DjenComunicacao
 

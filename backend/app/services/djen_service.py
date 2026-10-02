@@ -14,13 +14,14 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import logging
 import re
 from collections import Counter, defaultdict
 from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 
 import httpx
@@ -35,6 +36,7 @@ from tenacity import (
 )
 
 from app.models.case import Case, CaseMovimento, CaseStatus
+from app.core.clock import hoje_operacional
 from app.models.djen import DjenComunicacao
 from app.models.user import User
 from app.services.djen_http import (
@@ -500,7 +502,7 @@ async def consultar_oab(
 ) -> DjenConsultaResultado:
     """Consulta paginada, count-aware e fail-closed para páginas incompletas."""
     dias = max(1, min(int(dias), 90))
-    fim = date.today()
+    fim = hoje_operacional()
     inicio = fim - timedelta(days=dias)
     base_params = {
         "numeroOab": re.sub(r"\D", "", numero),
@@ -595,14 +597,20 @@ def _stmt_inserir_comunicacoes_lote(valores: list[dict]):
     """INSERT em LOTE idempotente (gargalo G5 — Auditoria 2026-09-20).
 
     Uma única viagem ao banco para todas as comunicações da captura; o
-    ``ON CONFLICT DO NOTHING`` preserva a semântica anterior (somente o
-    vencedor da corrida cria efeitos derivados) e o ``RETURNING`` devolve
+    ``ON CONFLICT DO NOTHING`` (chave: comunicação + advogado, migration 169)
+    preserva a semântica anterior (somente o vencedor da corrida cria efeitos
+    derivados) e o ``RETURNING`` devolve
     APENAS as linhas realmente inseridas — quem não voltar é duplicata.
     """
     return (
         pg_insert(DjenComunicacao)
         .values(valores)
-        .on_conflict_do_nothing(index_elements=[DjenComunicacao.comunicacao_id_externo])
+        .on_conflict_do_nothing(
+            index_elements=[
+                DjenComunicacao.comunicacao_id_externo,
+                DjenComunicacao.advogado_id,
+            ]
+        )
         .returning(
             DjenComunicacao.id,
             DjenComunicacao.comunicacao_id_externo,
@@ -662,6 +670,128 @@ async def _ingerir_rag_do_caso(db: AsyncSession, item: dict, caso: Case) -> str 
         return None
 
 
+_TAG_RE = re.compile(r"<[^>]+>")
+_TEXTO_INTEGRAL_MAX = 200_000
+_STATUS_INATIVOS = (CaseStatus.encerrado, CaseStatus.arquivado)
+
+
+def _texto_integral(item: dict) -> str | None:
+    """Texto íntegro da comunicação em texto puro (sem tags nem entidades).
+
+    O HTML da fonte nunca é persistido nem exposto: evita XSS armazenado e
+    mantém a evidência completa que ``texto_resumo`` (2000 caracteres) perde.
+    """
+    bruto = item.get("texto") or ""
+    if not isinstance(bruto, str) or not bruto.strip():
+        return None
+    limpo = html.unescape(_TAG_RE.sub(" ", bruto))
+    limpo = re.sub(r"[ \t\r\f\v]+", " ", limpo)
+    limpo = re.sub(r"\n\s*\n+", "\n\n", limpo).strip()
+    return limpo[:_TEXTO_INTEGRAL_MAX] or None
+
+
+def _link_oficial(item: dict) -> str | None:
+    """Link do PDF oficial; só aceita http(s) para nunca expor ``javascript:``."""
+    link = item.get("link")
+    if not isinstance(link, str):
+        return None
+    link = link.strip()
+    return link if link.lower().startswith(("https://", "http://")) else None
+
+
+def _orgao(item: dict) -> str | None:
+    valor = item.get("nomeOrgao") or item.get("nome_orgao") or item.get("orgao")
+    return str(valor).strip()[:255] if valor else None
+
+
+async def buscar_numeros_com_caso_inativo(
+    db: AsyncSession,
+    numeros: set[str],
+) -> set[str]:
+    """Números CNJ que só existem em caso encerrado/arquivado.
+
+    Não há auto-vinculação (o caso está fora da carteira ativa), mas a
+    notificação avisa que é preciso reabrir/vincular manualmente — antes a
+    comunicação ficava sem qualquer indício de que o processo já era conhecido.
+    """
+    alvos = {normalizar_processo(numero) for numero in numeros}
+    alvos.discard("")
+    if not alvos:
+        return set()
+    numero_normalizado = func.regexp_replace(Case.numero_processo, r"\D", "", "g")
+    rows = (
+        await db.execute(
+            select(numero_normalizado).where(
+                Case.deleted_at.is_(None),
+                Case.numero_processo.isnot(None),
+                Case.status.in_(_STATUS_INATIVOS),
+                numero_normalizado.in_(alvos),
+            )
+        )
+    ).scalars().all()
+    return {str(numero) for numero in rows}
+
+
+async def _ids_ja_capturados_por_outros(
+    db: AsyncSession,
+    externos: set[str],
+    advogado_id: str,
+) -> set[str]:
+    """Comunicações já capturadas para OUTRO advogado do escritório."""
+    if not externos:
+        return set()
+    rows = (
+        await db.execute(
+            select(DjenComunicacao.comunicacao_id_externo).where(
+                DjenComunicacao.comunicacao_id_externo.in_(externos),
+                DjenComunicacao.advogado_id != advogado_id,
+            )
+        )
+    ).scalars().all()
+    return {str(externo) for externo in rows}
+
+
+async def janela_reconciliacao_dias(db: AsyncSession) -> int:
+    """Janela do job: 7 dias normalmente; amplia após parada/falha prolongada.
+
+    Sem isto, um job parado por mais de ``JANELA_RECONCILIACAO_DIAS`` perdia
+    comunicações sem recuperação automática. Quando o último heartbeat não é
+    "ok" ou está defasado, a janela cobre o intervalo desde a última
+    comunicação capturada (+2 dias de folga), limitado a 90 dias — o
+    deduplicador torna a repetição inofensiva.
+    """
+    from app.models.scheduler_heartbeat import SchedulerHeartbeat
+    from app.services.heartbeat_service import JOB_DJEN
+
+    try:
+        hb = (
+            await db.execute(
+                select(SchedulerHeartbeat).where(SchedulerHeartbeat.job_name == JOB_DJEN)
+            )
+        ).scalar_one_or_none()
+        agora = datetime.now(timezone.utc)
+        saudavel = (
+            hb is not None
+            and hb.last_status == "ok"
+            and hb.last_run_at is not None
+            and (agora - hb.last_run_at) <= timedelta(hours=36)
+        )
+        if saudavel:
+            return JANELA_RECONCILIACAO_DIAS
+        ultima = (
+            await db.execute(select(func.max(DjenComunicacao.created_at)))
+        ).scalar()
+        if ultima is None:
+            return JANELA_RECONCILIACAO_DIAS
+        if ultima.tzinfo is None:
+            ultima = ultima.replace(tzinfo=timezone.utc)
+        defasagem = (agora - ultima).days + 2
+        return max(JANELA_RECONCILIACAO_DIAS, min(defasagem, 90))
+    except Exception:  # noqa: BLE001 — a janela nunca pode impedir a captura
+        logger.warning("DJEN: cálculo da janela de reconciliação falhou; usando padrão")
+        return JANELA_RECONCILIACAO_DIAS
+
+
 async def _capturar_configurado(
     db: AsyncSession,
     adv: User,
@@ -680,6 +810,14 @@ async def _capturar_configurado(
         if caso.advogado_responsavel_id and str(caso.advogado_responsavel_id) != str(adv.id)
     }
     emails_por_usuario = await _emails_usuarios(db, responsaveis)
+    sem_caso = processos - set(casos_por_processo)
+    inativos = await buscar_numeros_com_caso_inativo(db, sem_caso)
+    externos_itens = {
+        str(item.get("id") or item.get("hash") or "")
+        for item in consulta.items
+        if item.get("id") or item.get("hash")
+    }
+    ja_conhecidas = await _ids_ja_capturados_por_outros(db, externos_itens, str(adv.id))
 
     from app.services.notification_service import criar_notificacao_interna
 
@@ -718,6 +856,9 @@ async def _capturar_configurado(
                     item.get("data_disponibilizacao") or item.get("dataDisponibilizacao")
                 ),
                 "texto_resumo": texto,
+                "texto_integral": _texto_integral(item),
+                "link_oficial": _link_oficial(item),
+                "orgao": _orgao(item),
                 "case_id": caso.id if caso else None,
             }
         )
@@ -741,6 +882,12 @@ async def _capturar_configurado(
         tipo_comunicacao = (item.get("tipoComunicacao") or item.get("tipo_comunicacao") or "")[:60]
         numero_fonte = item.get("numero_processo") or item.get("numeroProcesso") or _numero_processo_item(item) or None
 
+        replica = external_id in ja_conhecidas
+        if caso and replica:
+            # Mesma comunicação já capturada para outro advogado: o caso (RAG,
+            # movimento e responsável) já foi atualizado/notificado — só a linha
+            # do advogado é criada, para que ele a enxergue na sua lista.
+            continue
         if caso:
             # Intimação de processo vinculado a caso ativo também vira
             # conhecimento DO CASO no RAG (comunicacao_processual, pendente).
@@ -763,6 +910,13 @@ async def _capturar_configurado(
         mensagem = f"{tribunal or 'Tribunal'} · proc. " f"{numero_fonte or '—'} · {tipo_comunicacao}" + (
             " · vinculada automaticamente ao caso (conferir)" if caso else ""
         )
+        if not caso and _numero_processo_item(item) in inativos:
+            mensagem += (
+                " · processo de caso ENCERRADO/ARQUIVADO — reabra e vincule "
+                "manualmente na tela Intimações"
+            )
+        elif not caso:
+            mensagem += " · sem caso vinculado — vincule manualmente na tela Intimações"
         await criar_notificacao_interna(
             db,
             destinatario_id,
