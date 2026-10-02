@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, or_, func as sqlfunc
 from sqlalchemy.exc import IntegrityError, DataError
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel  # noqa: E402 (module-level p/ _ResolverClienteReq)
+from pydantic import BaseModel, Field  # noqa: E402 (module-level p/ _ResolverClienteReq)
 
 from app.core.client_ownership import (
     ids_clientes_visiveis,
@@ -642,6 +642,10 @@ class GerarDocsClienteIn(BaseModel):
     permite_substabelecimento: bool = True
     poderes_especiais: Optional[str] = None
     forcar_novo: bool = False
+    valor_contratual: Optional[float] = None
+    percentual_exito: Optional[float] = None
+    forma_pagamento: Optional[str] = Field(default=None, max_length=500)
+    sincronizar_financeiro: bool = True
 
 
 @router.post(
@@ -674,6 +678,10 @@ async def gerar_documentos_cliente(
         permite_substabelecimento=p.permite_substabelecimento,
         poderes_especiais=p.poderes_especiais,
         forcar_novo=p.forcar_novo,
+        valor_contratual=p.valor_contratual,
+        percentual_exito=p.percentual_exito,
+        forma_pagamento=p.forma_pagamento,
+        sincronizar_financeiro=p.sincronizar_financeiro,
     )
     # A idempotência devolve o rascunho ANTERIOR quando já existe kit. Se o
     # advogado pediu poderes específicos (art. 105 do CPC, substabelecimento),
