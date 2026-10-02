@@ -648,7 +648,7 @@ export default function DashboardUltra() {
           <div className="ejc-dash__entry-compact">
             <div>
               <span className="ejc-dash__entry-kicker">
-                EJC · Legal Intelligence Workspace
+                De Paula Teixeira · Legal Intelligence Workspace
               </span>
               <strong>Começar novo trabalho</strong>
               <small>
@@ -730,7 +730,7 @@ export default function DashboardUltra() {
                 </span>
                 <div className="ejc-dash__entry-copy">
                   <span className="ejc-dash__entry-kicker">
-                    EJC · Inteligência Jurídica
+                    De Paula Teixeira · Inteligência Jurídica
                   </span>
                   <h1>Leitura e análise do caso com IA</h1>
                   <p>

@@ -26,7 +26,7 @@ self.addEventListener("fetch", (e) => {
 
 // ── Web Push (v3.x) ──────────────────────────────────────
 self.addEventListener("push", (event) => {
-  let data = { title: "EJC", body: "", url: "/" };
+  let data = { title: "De Paula Teixeira", body: "", url: "/" };
   try { data = { ...data, ...event.data.json() }; } catch {}
   event.waitUntil(
     self.registration.showNotification(data.title, {
