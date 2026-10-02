@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "release": "homologacao-final-20260930",
+  "release": "integracoes-api-20261002",
   "require_full_ci": true,
-  "purpose": "Gate integral antes de merge/deploy/homologacao; remover/atualizar somente em nova release.",
-  "freeze_main": true,
-  "allowed_source_branch": "fix/homologacao-final-20260930"
+  "purpose": "Gate integral de CI/deploy; freeze específico da homologação 20260930 encerrado após merge e homologação.",
+  "freeze_main": false,
+  "allowed_source_branch": ""
 }
