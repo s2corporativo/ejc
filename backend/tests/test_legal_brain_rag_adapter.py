@@ -126,3 +126,29 @@ async def test_saneamento_inicial_nao_consulta_rag(monkeypatch):
     assert result["records"] == []
     assert result["executed_steps"][0]["skipped"] is True
     assert result["next_gap"] == "clarificar_fatos"
+
+
+@pytest.mark.asyncio
+async def test_plano_real_de_esclarecimento_nao_consulta_rag(monkeypatch):
+    """Regressão LB3: build_clarification_plan emite 'saneamento_fatico'."""
+    from app.services import ai_service
+    from app.services.legal_brain.contracts import LegalIssue
+    from app.services.legal_brain.research_loop import build_clarification_plan
+
+    retrieve = AsyncMock(return_value=[])
+    monkeypatch.setattr(ai_service, "buscar_contexto_rag", retrieve)
+    issue = LegalIssue(
+        key="saneamento_inicial",
+        title="Saneamento inicial",
+        area="nao_definida",
+        question="confirmar fatos e documentos",
+    )
+
+    result = await execute_research_plan_with_rag(
+        object(), build_clarification_plan(issue)
+    )
+
+    retrieve.assert_not_awaited()
+    assert result["records"] == []
+    assert result["executed_steps"][0]["skipped"] is True
+    assert result["next_gap"] == "clarificar_fatos"
