@@ -254,6 +254,14 @@ _DDL_KEYWORDS_SAFE = {
 }
 
 
+_ADD_COLUMN_SAFE_RE = re.compile(
+    r"ALTER TABLE \w+ ADD COLUMN IF NOT EXISTS \w+ "
+    r"(?:VARCHAR\(\d+\)|TEXT|INTEGER|INT|BIGINT|BOOLEAN|UUID|JSONB|"
+    r"TIMESTAMPTZ|TIMESTAMP(?: WITH(?:OUT)? TIME ZONE)?|NUMERIC\(\d+, ?\d+\))"
+    r"(?: NULL)?"
+)
+
+
 def _is_safe_expand_ddl(sql: str) -> bool:
     """Return True if SQL is a known-safe DDL pattern for expand_only."""
     upper = sql.upper().strip()
@@ -266,12 +274,11 @@ def _is_safe_expand_ddl(sql: str) -> bool:
     # CREATE INDEX IF NOT EXISTS
     if re.match(r"\s*CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\b", upper):
         return True
-    # ALTER TABLE <t> ADD COLUMN IF NOT EXISTS <c> <tipo>  — aditivo e
-    # idempotente; NOT NULL exige revisão (sem default quebraria dado legado).
-    if re.fullmatch(
-        r"ALTER\s+TABLE\s+\w+\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+\w+\s+[\w() ,]+",
-        upper,
-    ) and "NOT NULL" not in upper:
+    # ALTER TABLE <t> ADD COLUMN IF NOT EXISTS <c> <tipo> [NULL] — aditivo,
+    # idempotente e SEM default/constraint: tipo em allowlist, uma única
+    # cláusula (sem vírgula), espaços normalizados antes de casar.
+    normalizado = re.sub(r"\s+", " ", upper)
+    if _ADD_COLUMN_SAFE_RE.fullmatch(normalizado):
         return True
     return False
 

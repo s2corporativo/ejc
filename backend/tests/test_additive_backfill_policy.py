@@ -131,3 +131,21 @@ def test_add_column_if_not_exists_nullable_e_expand_safe():
         "ALTER TABLE ai_logs ADD COLUMN IF NOT EXISTS x VARCHAR(8) NOT NULL"
     )
     assert not module._is_safe_expand_ddl("ALTER TABLE ai_logs DROP COLUMN x")
+
+
+def test_add_column_gate_rejeita_ddl_perigoso():
+    base = "ALTER TABLE ai_logs ADD COLUMN IF NOT EXISTS c "
+    for tail in (
+        "INT NOT  NULL",
+        "INT DEFAULT GEN_RANDOM_UUID()",
+        "INT DEFAULT (RANDOM())",
+        "INT DEFAULT CLOCK_TIMESTAMP()",
+        "INT UNIQUE",
+        "INT PRIMARY KEY",
+        "INT REFERENCES users(id)",
+        "INT GENERATED ALWAYS AS (1) STORED",
+        "INT, DROP COLUMN d",
+    ):
+        assert not module._is_safe_expand_ddl(base + tail), tail
+    assert module._is_safe_expand_ddl(base + "INT NULL")
+    assert module._is_safe_expand_ddl(base.lower() + "varchar(64)")

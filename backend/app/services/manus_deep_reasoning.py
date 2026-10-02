@@ -366,6 +366,7 @@ async def _persistir_resultado(
                 AILog.external_task_id == task_id,
                 AILog.user_id == str(user.id),
             )
+            .order_by(AILog.created_at.desc())
             .with_for_update()
         )
         log = result.scalars().first()
@@ -377,6 +378,7 @@ async def _persistir_resultado(
                     AILog.fontes_rag == f"[manus_task] {task_id}",
                     AILog.user_id == str(user.id),
                 )
+                .order_by(AILog.created_at.desc())
                 .with_for_update()
             )
             log = result.scalars().first()
@@ -391,8 +393,12 @@ async def _persistir_resultado(
         if not log.external_task_id:
             log.external_task_id = task_id[:128]
         await db.commit()
-    except Exception:  # noqa: BLE001 — auditoria pós-resultado não bloqueia a leitura
-        logger.exception("Falha ao persistir resultado Manus no AILog")
+    except Exception as exc:  # noqa: BLE001 — auditoria pós-resultado não bloqueia a leitura
+        # Sem traceback: a mensagem do DBAPI pode trazer [parameters: ...] com
+        # trecho da resposta. Só o tipo da exceção e o id do log.
+        logger.warning(
+            "Falha ao persistir resultado Manus no AILog (%s)", type(exc).__name__
+        )
         try:
             await db.rollback()
         except Exception:  # noqa: BLE001
