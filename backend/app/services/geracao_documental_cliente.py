@@ -873,6 +873,18 @@ async def gerar_documentos_cliente(
                 data_vencimento is not None,
             )
         )
+    if sincronizar_financeiro and _role_str(cu) not in {
+        "superadmin",
+        "admin",
+        "socio",
+    }:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Sincronização financeira do contrato é restrita a "
+                "superadmin, admin ou sócio."
+            ),
+        )
     if sincronizar_financeiro:
         financeiro = await _sincronizar_financeiro_contrato(
             db,
