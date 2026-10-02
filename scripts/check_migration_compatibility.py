@@ -266,6 +266,13 @@ def _is_safe_expand_ddl(sql: str) -> bool:
     # CREATE INDEX IF NOT EXISTS
     if re.match(r"\s*CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\b", upper):
         return True
+    # ALTER TABLE <t> ADD COLUMN IF NOT EXISTS <c> <tipo>  — aditivo e
+    # idempotente; NOT NULL exige revisão (sem default quebraria dado legado).
+    if re.fullmatch(
+        r"ALTER\s+TABLE\s+\w+\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+\w+\s+[\w() ,]+",
+        upper,
+    ) and "NOT NULL" not in upper:
+        return True
     return False
 
 

@@ -3,11 +3,13 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import logging
 import re
 import time
 from typing import Any
 
 from fastapi import HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -19,6 +21,7 @@ from app.services.ai.pseudonymizer import (
 )
 from app.services.manus_client import ManusAPIError, ManusClient, ManusDisabledError
 
+logger = logging.getLogger(__name__)
 
 _SIGILO_LOCAL_TEXTO = re.compile(
     r"\b(?:"
@@ -180,6 +183,7 @@ async def _atualizar_log_envio(
     resposta: str,
     *,
     fontes_rag: str | None = None,
+    external_task_id: str | None = None,
 ) -> None:
     if db is None or not log_id:
         return
@@ -191,6 +195,8 @@ async def _atualizar_log_envio(
     log.resposta = resposta
     if fontes_rag:
         log.fontes_rag = fontes_rag
+    if external_task_id:
+        log.external_task_id = external_task_id[:128]
     await db.commit()
 
 
@@ -268,7 +274,8 @@ async def iniciar_raciocinio(
         raise HTTPException(502, "Manus não retornou task_id")
     await _atualizar_log_envio(
         db, log_id, "[enviado] tarefa assíncrona criada; resultado consultado por handle",
-        fontes_rag=f"[manus_task] {task_id}",
+        fontes_rag=f"[manus_task] {task_id}",  # legado, mantido por compatibilidade
+        external_task_id=task_id,
     )
 
     return {
@@ -314,7 +321,87 @@ def _formatar_resultado(value: dict[str, Any]) -> str:
     return "\n\n".join(blocos)
 
 
-async def consultar_raciocinio(*, user: User, handle: str) -> dict[str, Any]:
+# Marcadores de resposta ainda sem resultado (gravados por iniciar_raciocinio).
+# O resultado só é gravado sobre eles: é o que torna a persistência idempotente.
+_RESPOSTA_PENDENTE = ("[enviado]", "[aguardando")
+
+
+def _texto_para_auditoria(conteudo: str, fontes: list[dict[str, str]]) -> str:
+    partes = [
+        "[resultado Manus — rascunho; revisão humana obrigatória]",
+        conteudo,
+    ]
+    if fontes:
+        itens = "\n".join(f"- {f['titulo']} [NÃO VERIFICADA]" for f in fontes)
+        partes.append(f"## Fontes mencionadas (não verificadas)\n{itens}")
+    return "\n\n".join(partes)
+
+
+async def _persistir_resultado(
+    db: AsyncSession | None,
+    *,
+    user: User,
+    task_id: str,
+    conteudo: str,
+    fontes: list[dict[str, str]],
+) -> None:
+    """Grava UMA vez o resultado Manus no AILog do envio.
+
+    Só atualiza o log do próprio usuário do handle e só se ele ainda estiver com
+    o marcador de envio (polls repetidos não regravam). Passa pelo ORM para
+    manter o ``@validates("resposta")`` (pseudonimização). Falha de gravação
+    não derruba a consulta: o resultado volta ao usuário e o próximo poll
+    tenta de novo.
+    """
+    if db is None or not conteudo.strip():
+        return
+    from app.models.ai_log import AILog
+
+    try:
+        # FOR UPDATE serializa polls concorrentes: o segundo vê o resultado
+        # já gravado e não sobrescreve.
+        result = await db.execute(
+            select(AILog)
+            .where(
+                AILog.external_task_id == task_id,
+                AILog.user_id == str(user.id),
+            )
+            .with_for_update()
+        )
+        log = result.scalars().first()
+        if log is None:
+            # Logs anteriores à coluna: correlação legada via fontes_rag.
+            result = await db.execute(
+                select(AILog)
+                .where(
+                    AILog.fontes_rag == f"[manus_task] {task_id}",
+                    AILog.user_id == str(user.id),
+                )
+                .with_for_update()
+            )
+            log = result.scalars().first()
+        if log is None:
+            await db.rollback()
+            return
+        atual = str(log.resposta or "")
+        if not atual.startswith(_RESPOSTA_PENDENTE):
+            await db.rollback()  # já gravado: libera o lock sem alterar
+            return
+        log.resposta = _texto_para_auditoria(conteudo, fontes)
+        if not log.external_task_id:
+            log.external_task_id = task_id[:128]
+        await db.commit()
+    except Exception:  # noqa: BLE001 — auditoria pós-resultado não bloqueia a leitura
+        logger.exception("Falha ao persistir resultado Manus no AILog")
+        try:
+            await db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+async def consultar_raciocinio(
+    *, user: User, handle: str, db: AsyncSession | None = None
+) -> dict[str, Any]:
     _settings_guard()
     settings = get_settings()
     task_id = _task_from_handle(handle, str(user.id))
@@ -384,12 +471,18 @@ async def consultar_raciocinio(*, user: User, handle: str) -> dict[str, Any]:
     if error_message:
         alertas.append(error_message)
 
+    conteudo = _formatar_resultado(structured or {})
+    if status == "completed" and structured is not None:
+        await _persistir_resultado(
+            db, user=user, task_id=task_id, conteudo=conteudo, fontes=fontes
+        )
+
     return {
         "status": status,
         "handle": handle,
         "provider": "manus",
         "modelo": f"agent-profile:{settings.MANUS_AGENT_PROFILE}",
-        "conteudo": _formatar_resultado(structured or {}),
+        "conteudo": conteudo,
         "resultado_estruturado": structured,
         "fontes": fontes,
         "alertas": alertas,

@@ -45,7 +45,8 @@ async def criar(
 )
 async def consultar(
     handle: str,
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     requer_equipe_juridica(user, "Raciocínio Profundo é restrito à equipe jurídica.")
-    return await consultar_raciocinio(user=user, handle=handle)
+    return await consultar_raciocinio(user=user, handle=handle, db=db)

@@ -121,3 +121,13 @@ def test_insert_without_static_idempotency_is_blocked(tmp_path: Path):
     result = module.evaluate(tmp_path, "001")
     assert result["compatible"] is False
     assert any("sem prova estática de idempotência" in reason for reason in result["migrations"][0]["reasons"])
+
+
+def test_add_column_if_not_exists_nullable_e_expand_safe():
+    assert module._is_safe_expand_ddl(
+        "ALTER TABLE ai_logs ADD COLUMN IF NOT EXISTS external_task_id VARCHAR(128)"
+    )
+    assert not module._is_safe_expand_ddl(
+        "ALTER TABLE ai_logs ADD COLUMN IF NOT EXISTS x VARCHAR(8) NOT NULL"
+    )
+    assert not module._is_safe_expand_ddl("ALTER TABLE ai_logs DROP COLUMN x")
