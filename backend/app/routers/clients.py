@@ -685,7 +685,17 @@ async def gerar_documentos_cliente(
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
     p = payload or GerarDocsClienteIn()
     campos_recebidos = payload.model_fields_set if payload else set()
-    pediu_financeiro = bool(_CAMPOS_FINANCEIROS & campos_recebidos)
+    pediu_financeiro = any(
+        (
+            "valor_contratual" in campos_recebidos and p.valor_contratual is not None,
+            "entrada" in campos_recebidos and p.entrada is not None,
+            "numero_parcelas" in campos_recebidos and p.numero_parcelas != 1,
+            "percentual_exito" in campos_recebidos and p.percentual_exito is not None,
+            "forma_pagamento" in campos_recebidos
+            and bool((p.forma_pagamento or "").strip()),
+            "data_vencimento" in campos_recebidos and p.data_vencimento is not None,
+        )
+    )
     if pediu_financeiro and cu.role.value not in {"superadmin", "admin", "socio"}:
         raise HTTPException(
             status_code=403,
