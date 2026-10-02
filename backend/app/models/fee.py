@@ -2,7 +2,7 @@
 from __future__ import annotations
 from sqlalchemy import (
     Column, String, DateTime, Date, Enum as SAEnum, func, Text, Numeric,
-    ForeignKey, UniqueConstraint, Boolean, Integer,
+    ForeignKey, UniqueConstraint, Boolean, Integer, CheckConstraint, Index,
 )
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -51,6 +51,112 @@ class Fee(Base):
     case     = relationship("Case",   back_populates="fees")
     client   = relationship("Client", back_populates="fees")
     payments = relationship("FeePayment", back_populates="fee")
+    installments = relationship(
+        "FeeInstallment",
+        back_populates="fee",
+        order_by="FeeInstallment.installment_number",
+        cascade="save-update, merge",
+    )
+
+
+class FeeInstallment(Base):
+    """Parcela individual de um contrato de honorários.
+
+    Fee permanece o recebível mestre e FeePayment continua sendo a
+    fonte soberana de entrada de caixa. Esta tabela representa somente o
+    cronograma financeiro do contrato.
+    """
+
+    __tablename__ = "fee_installments"
+    __table_args__ = (
+        CheckConstraint(
+            "amount > 0",
+            name="ck_fee_installments_amount_positive",
+        ),
+        CheckConstraint(
+            "installment_number >= 1",
+            name="ck_fee_installments_number_positive",
+        ),
+        CheckConstraint(
+            "installment_count >= 1",
+            name="ck_fee_installments_count_positive",
+        ),
+        CheckConstraint(
+            "installment_number <= installment_count",
+            name="ck_fee_installments_number_lte_count",
+        ),
+        CheckConstraint(
+            "kind IN ('entrada', 'parcela')",
+            name="ck_fee_installments_kind",
+        ),
+        UniqueConstraint(
+            "contract_document_id",
+            "installment_number",
+            name="uq_fee_installments_contract_number",
+        ),
+        Index(
+            "ix_fee_installments_client_due",
+            "client_id",
+            "due_date",
+        ),
+        Index(
+            "ix_fee_installments_status_due",
+            "status",
+            "due_date",
+        ),
+    )
+
+    id = Column(String(36), primary_key=True)
+    fee_id = Column(
+        String(36),
+        ForeignKey("fees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    contract_document_id = Column(
+        String(36),
+        ForeignKey("legal_docs.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    client_id = Column(
+        String(36),
+        ForeignKey("clients.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+
+    installment_number = Column(Integer, nullable=False)
+    installment_count = Column(Integer, nullable=False)
+    kind = Column(String(20), nullable=False, default="parcela")
+
+    amount = Column(Numeric(14, 2), nullable=False)
+    due_date = Column(Date, nullable=False)
+    status = Column(
+        SAEnum(FeeStatus, name="feestatus"),
+        nullable=False,
+        default=FeeStatus.pendente,
+    )
+
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    fee = relationship("Fee", back_populates="installments")
+    contract_document = relationship("LegalDoc")
+    client = relationship("Client")
+    payments = relationship(
+        "FeePayment",
+        back_populates="installment",
+        cascade="save-update, merge",
+    )
 
 
 class FeePayment(Base):
@@ -59,6 +165,13 @@ class FeePayment(Base):
 
     id     = Column(String(36), primary_key=True)
     fee_id = Column(String(36), ForeignKey("fees.id"), nullable=False, index=True)
+    # NULL = pagamento legado ou ainda não alocado a uma parcela específica.
+    installment_id = Column(
+        String(36),
+        ForeignKey("fee_installments.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     valor  = Column(Numeric(14, 2), nullable=False)
     data_pagamento = Column(Date, nullable=False)
     forma  = Column(String(30), nullable=True)   # pix|transferencia|dinheiro|cartao
@@ -66,6 +179,10 @@ class FeePayment(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     fee = relationship("Fee", back_populates="payments")
+    installment = relationship(
+        "FeeInstallment",
+        back_populates="payments",
+    )
     estornos = relationship(
         "FeeEstorno",
         back_populates="pagamento",
