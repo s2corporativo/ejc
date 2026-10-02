@@ -206,28 +206,40 @@ describe("Clientes — documentos de admissão", () => {
         permite_substabelecimento: true,
         poderes_especiais: null,
         valor_contratual: null,
+        entrada: null,
+        numero_parcelas: 1,
         percentual_exito: null,
         forma_pagamento: null,
-        sincronizar_financeiro: true,
+        data_vencimento: null,
+        sincronizar_financeiro: false,
       }),
     );
   });
 
-  it("envia honorários estruturados do contrato para sincronização financeira", async () => {
+  it("envia entrada, parcelas e vencimento para sincronização financeira", async () => {
+    estado.role = "socio";
     montar();
     await screen.findByText("Maria Souza");
     fireEvent.click(screen.getByTitle("Procuração e contrato de honorários"));
     await screen.findByText("Procuracao - Maria Souza");
 
     fireEvent.change(screen.getByPlaceholderText("Ex.: 3500,00"), {
-      target: { value: "3500,00" },
+      target: { value: "5.000,00" },
     });
+    fireEvent.change(screen.getByPlaceholderText("Opcional"), {
+      target: { value: "1.000,00" },
+    });
+    fireEvent.change(screen.getByDisplayValue("1x"), {
+      target: { value: "3" },
+    });
+    const data = document.querySelector('input[type="date"]') as HTMLInputElement;
+    fireEvent.change(data, { target: { value: "2026-11-10" } });
     fireEvent.change(screen.getByPlaceholderText("Ex.: 20"), {
       target: { value: "20" },
     });
     fireEvent.change(
-      screen.getByPlaceholderText("Ex.: entrada de R$ 1.000 + 5 parcelas"),
-      { target: { value: "entrada + 5 parcelas" } },
+      screen.getByPlaceholderText("Ex.: PIX, boleto ou ajuste específico"),
+      { target: { value: "PIX ou boleto" } },
     );
     fireEvent.click(screen.getByText("Gerar nova versão"));
 
@@ -235,13 +247,57 @@ describe("Clientes — documentos de admissão", () => {
       expect(postMock).toHaveBeenCalledWith(
         "/clients/cli-1/gerar-documentos",
         expect.objectContaining({
-          valor_contratual: 3500,
+          valor_contratual: 5000,
+          entrada: 1000,
+          numero_parcelas: 3,
           percentual_exito: 20,
-          forma_pagamento: "entrada + 5 parcelas",
+          forma_pagamento: "PIX ou boleto",
+          data_vencimento: "2026-11-10",
           sincronizar_financeiro: true,
         }),
       ),
     );
+  });
+
+  it("pré-preenche o cronograma financeiro já existente", async () => {
+    estado.role = "socio";
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/pecas-geradas")) {
+        return Promise.resolve({
+          data: [
+            PECAS[0],
+            {
+              ...PECAS[1],
+              financeiro: {
+                fee_id: "fee-1",
+                valor_contratual: 5000,
+                valor_pago: 1000,
+                saldo_aberto: 4000,
+                entrada: null,
+                numero_parcelas: 3,
+                primeiro_vencimento: "2026-11-10",
+                percentual_exito: 20,
+                forma_pagamento: "PIX",
+                status: "sincronizado",
+              },
+            },
+          ],
+        });
+      }
+      return Promise.resolve({
+        data: { data: [CLIENTE], total: 1, page: 1, page_size: 20 },
+      });
+    });
+
+    montar();
+    await screen.findByText("Maria Souza");
+    fireEvent.click(screen.getByTitle("Procuração e contrato de honorários"));
+
+    expect(await screen.findByDisplayValue("5.000,00")).toBeTruthy();
+    expect(screen.getByDisplayValue("3x")).toBeTruthy();
+    expect(screen.getByDisplayValue("2026-11-10")).toBeTruthy();
+    expect(screen.getByText(/R\$\s*1\.000,00/)).toBeTruthy();
+    expect(screen.getByText(/R\$\s*4\.000,00/)).toBeTruthy();
   });
 
   it("resposta obsoleta não vaza documentos de outro cliente", async () => {
