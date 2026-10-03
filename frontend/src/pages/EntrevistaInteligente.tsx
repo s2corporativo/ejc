@@ -215,7 +215,7 @@ export default function EntrevistaInteligente() {
         subtitle="Conte o ocorrido em texto livre e receba a triagem preliminar da IA com nível de confiança por item."
         actions={
           id && (
-            <Link to={`/casos/${id}/jornada`}>
+            <Link to={`/casos/${id}?tab=resumo`}>
               <Button
                 variant="secondary"
                 icon={<ArrowLeft className="h-4 w-4" />}
