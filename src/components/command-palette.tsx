@@ -25,6 +25,7 @@ import {
   Github,
   HelpCircle,
   Printer,
+  Settings,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useTheme } from "next-themes";
@@ -43,7 +44,7 @@ export function CommandPalette() {
   const { setView, setAppTab, setAuthOpen } = useAppStore();
   const { setTheme, resolvedTheme } = useTheme();
 
-  const go = useCallback((view: "landing" | "app", tab?: "dashboard" | "generator" | "editor" | "jurisprudence" | "batch" | "documents") => {
+  const go = useCallback((view: "landing" | "app", tab?: "dashboard" | "generator" | "editor" | "jurisprudence" | "batch" | "documents" | "settings") => {
     setView(view);
     if (tab) setAppTab(tab);
     setOpen(false);
@@ -70,6 +71,7 @@ export function CommandPalette() {
     { icon: Search, label: "Pesquisar jurisprudência", shortcut: "J", group: "Plataforma", onSelect: () => go("app", "jurisprudence") },
     { icon: Layers, label: "Geração em lote", shortcut: "B", group: "Plataforma", onSelect: () => go("app", "batch") },
     { icon: FolderOpen, label: "Minutas salvas", shortcut: "D", group: "Plataforma", onSelect: () => go("app", "documents") },
+    { icon: Settings, label: "Configurações do perfil", shortcut: ",", group: "Plataforma", onSelect: () => go("app", "settings") },
     { icon: Sparkles, label: "Login / Criar conta", group: "Conta", onSelect: () => { setAuthOpen(true); setOpen(false); } },
     resolvedTheme === "dark"
       ? { icon: Sun, label: "Mudar para tema claro", group: "Aparência", onSelect: () => { setTheme("light"); setOpen(false); } }

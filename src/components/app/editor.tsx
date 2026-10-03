@@ -35,7 +35,7 @@ import { toast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 
 export function Editor() {
-  const { currentDocId, setAppTab } = useAppStore();
+  const { currentDocId, setAppTab, writingStyle } = useAppStore();
   const [doc, setDoc] = useState<DocumentDTO | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -238,25 +238,42 @@ export function Editor() {
   async function askSuggestion(instruction: string) {
     setSuggLoading(true);
     setSuggestion(null);
-    // Simulação local: pequenas transformações
-    await new Promise((r) => setTimeout(r, 900));
-    let s = "";
-    if (/fundament|fundamentar/i.test(instruction)) {
-      s = `### Fundamentação\nO art. 927 do Código Civil estabelece que aquele que, por ato ilícito, causar dano a outrem, fica obrigado a repará-lo. Verifica-se, no caso, a presença dos pressupostos da responsabilidade civil: conduta antijurídica, nexo de causalidade, dano e culpa (ou obrigação objetiva, conforme o caso).`;
-    } else if (/pedido/i.test(instruction)) {
-      s = `### Pedidos\n1. A procedência dos pedidos para condenar o réu nos termos acima;\n2. Verba honorária de 20% sobre o valor atualizado da condenação;\n3. Procedência da ação com julgamento antecipado da lide (art. 355, I, CPC).\nDá-se à causa o valor de R$ [VALOR_0001].`;
-    } else {
-      s = `### ${instruction}\nTexto a complementar conforme o caso concreto, observando a legislação aplicável e a jurisprudência pertinente dos tribunais superiores.`;
+    try {
+      const res = await fetch("/api/suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instruction,
+          currentContent: content,
+          templateName: doc?.templateName,
+          style: writingStyle,
+        }),
+      });
+      const data = await res.json();
+      if (data.suggestion) {
+        setSuggestion(data.suggestion);
+        if (data.offline) {
+          toast({
+            title: "Modo offline",
+            description: "IA indisponível, usando sugestão estruturada.",
+          });
+        }
+      } else {
+        toast({ title: "Sem sugestão disponível", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Erro ao gerar sugestão", variant: "destructive" });
+    } finally {
+      setSuggLoading(false);
     }
-    setSuggestion(s);
-    setSuggLoading(false);
   }
 
   function acceptSuggestion() {
     if (!suggestion) return;
     setContent((c) => c + "\n\n" + suggestion);
     setSuggestion(null);
-    toast({ title: "Sugestão aceita" });
+    setDirty(true);
+    toast({ title: "Sugestão aceita", description: "Adicionada ao documento" });
   }
 
   if (loading) {

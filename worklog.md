@@ -135,3 +135,33 @@ Stage Summary:
 - 6 novas skills (17 total) cobrindo previdenciário, financeiro, ética OAB.
 - 0 erros de console, 0 erros ESLint, dev server saudável.
 - Próxima fase sugerida: autenticação real (NextAuth), persistência de versões no DB, perfil de estilo do advogado, mais templates empresariais, integração com e-SAJ/PJe real.
+
+---
+Task ID: 10 (cron webDevReview #3)
+Agent: cron webDevReview (15min)
+Task: Continuar QA e adicionar features (styling + funcionalidade). Priorizar Settings/perfil, sugestão IA real, Testimonials, skeleton loading.
+
+Work Log:
+- Lido worklog anterior (review #2): command palette, FAQ, histórico de versões, dirty state, atalhos de teclado, 17 skills implementados.
+- Dev server confirmado ativo (PID 4517, HTTP 200, 0 erros no dev.log, todas as 5 APIs HTTP 200).
+- QA via agent-browser (após limpar localStorage): landing renderiza 11 seções, H1 correto, 0 erros de console.
+- BUG ENCONTRADO: nav do header não incluía link para "FAQ" e "Como funciona" (seções existentes na landing).
+- BUG CORRIGIDO em site-header.tsx: adicionados "Como funciona" (#como-funciona) e "FAQ" (#faq) ao array NAV. Agora 7 itens de navegação.
+- NOVA TAB "Configurações" criada (src/components/app/settings.tsx): perfil do advogado (nome, OAB, UF, escritório, email, telefone, endereço), 4 estilos de redação (formal/sintético/acadêmico/direto) com exemplos prévios, skills padrão (auto-aplicadas em todas as minutas), preview de assinatura profissional em tempo real. Store expandida com `profile`, `writingStyle`, `defaultSkills`. 7 tabs agora no app.
+- NOVA API /api/suggest criada (LLM real): recebe instruction + currentContent + templateName + style, gera trecho jurídico em português brasileiro. System prompt inclui conformidade CPC/CC/CNJ 615/2025. Fallback offline com trechos pré-formatados (fundamentação, pedidos, fatos). Respeita o estilo de redação selecionado (formal/sintético/acadêmico/direto).
+- EDITOR atualizado: askSuggestion() agora chama /api/suggest (real LLM) em vez de simulação local. Aceitar sugestão marca dirty state. Verificado: pediu "fundamentar com responsabilidade civil" → IA gerou parágrafo citando art. 927 do CC em ~12s.
+- NOVA SEÇÃO "Depoimentos" (Testimonials) na landing (src/components/landing/testimonials.tsx): 6 depoimentos de advogados (sócia, defensor público, procurador, etc.) com rating 5 estrelas, avatar com iniciais, layout masonry (columns CSS). Landing agora tem 12 seções.
+- SKELETON LOADING adicionado à lista de minutas: 6 cards placeholder com animação pulse durante o carregamento (em vez de spinner simples).
+- COMMAND PALETTE atualizado: adicionado comando "Configurações do perfil" (atalho ",") navegando para tab Settings.
+- ESLint limpo (0 erros, 0 warnings).
+- Verificação final: landing 12 seções, nav com 7 links (incluindo "Como funciona" e "FAQ"), Settings tab funcional com 4 estilos e preview de assinatura, suggest API real retorna trecho jurídico em ~12s, testimonials com 6 depoimentos, skeleton loading em documents.
+
+Stage Summary:
+- Bug corrigido: nav agora inclui "Como funciona" e "FAQ".
+- Tab Settings nova com perfil profissional, 4 estilos de redação, skills padrão, preview de assinatura.
+- API /api/suggest real (LLM) substituiu simulação local no editor.
+- Seção Depoimentos na landing (6 testimonials em masonry).
+- Skeleton loading nos documentos.
+- Command palette com comando de configurações.
+- 0 erros console, 0 ESLint, dev server saudável.
+- Próxima fase sugerida: autenticação NextAuth real, persistência de versões no DB, favoritos/marcadores em minutas, export DOCX, busca full-text nos documentos, painel admin de templates.

@@ -16,9 +16,11 @@ import { useAppStore } from "@/lib/store";
 
 const NAV = [
   { label: "Recursos", href: "#recursos" },
+  { label: "Como funciona", href: "#como-funciona" },
   { label: "Tarja-1", href: "#anonimizacao" },
   { label: "Novidades", href: "#novidades" },
   { label: "Planos", href: "#planos" },
+  { label: "FAQ", href: "#faq" },
   { label: "Na mídia", href: "#midia" },
 ];
 

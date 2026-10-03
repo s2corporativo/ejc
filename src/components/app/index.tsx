@@ -7,6 +7,7 @@ import {
   Layers,
   FolderOpen,
   LayoutDashboard,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppStore } from "@/lib/store";
@@ -16,6 +17,7 @@ import { Jurisprudence } from "./jurisprudence";
 import { Batch } from "./batch";
 import { DocumentsList } from "./documents-list";
 import { Dashboard } from "./dashboard";
+import { Settings } from "./settings";
 
 const TABS = [
   { id: "dashboard" as const, label: "Dashboard", icon: LayoutDashboard },
@@ -24,6 +26,7 @@ const TABS = [
   { id: "jurisprudence" as const, label: "JurisprudênciaIA", icon: Search },
   { id: "batch" as const, label: "Geração em lote", icon: Layers },
   { id: "documents" as const, label: "Minutas salvas", icon: FolderOpen },
+  { id: "settings" as const, label: "Configurações", icon: SettingsIcon },
 ];
 
 export function AppShell() {
@@ -62,6 +65,7 @@ export function AppShell() {
         {appTab === "jurisprudence" && <Jurisprudence />}
         {appTab === "batch" && <Batch />}
         {appTab === "documents" && <DocumentsList />}
+        {appTab === "settings" && <Settings />}
       </div>
     </div>
   );

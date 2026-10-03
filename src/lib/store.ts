@@ -3,10 +3,33 @@ import { persist } from "zustand/middleware";
 
 export type View = "landing" | "app";
 
+export type WritingStyle =
+  | "formal"      // formal técnico (padrão)
+  | "sintetico"   // conciso e direto
+  | "academic"    // acadêmico/doutrinário
+  | "direto";     // linguagem simples
+
+export interface LawyerProfile {
+  name: string;
+  oab: string;
+  oabUf: string;
+  office: string;
+  email: string;
+  phone: string;
+  address: string;
+}
+
 interface AppState {
   view: View;
   setView: (v: View) => void;
-  appTab: "dashboard" | "generator" | "editor" | "jurisprudence" | "batch" | "documents";
+  appTab:
+    | "dashboard"
+    | "generator"
+    | "editor"
+    | "jurisprudence"
+    | "batch"
+    | "documents"
+    | "settings";
   setAppTab: (t: AppState["appTab"]) => void;
   currentDocId: string | null;
   setCurrentDocId: (id: string | null) => void;
@@ -19,7 +42,24 @@ interface AppState {
   setAuthOpen: (b: boolean) => void;
   user: { email: string; name: string | null } | null;
   setUser: (u: { email: string; name: string | null } | null) => void;
+  // Perfil e estilo
+  profile: LawyerProfile;
+  setProfile: (p: Partial<LawyerProfile>) => void;
+  writingStyle: WritingStyle;
+  setWritingStyle: (s: WritingStyle) => void;
+  defaultSkills: string[];
+  toggleDefaultSkill: (slug: string) => void;
 }
+
+const DEFAULT_PROFILE: LawyerProfile = {
+  name: "Advogado Demo",
+  oab: "123456",
+  oabUf: "SP",
+  office: "Escritório JuridIA Advocacia",
+  email: "demo@juridia.com.br",
+  phone: "(11) 99999-0000",
+  address: "Av. Paulista, 1000 — São Paulo/SP",
+};
 
 export const useAppStore = create<AppState>()(
   persist(
@@ -46,6 +86,20 @@ export const useAppStore = create<AppState>()(
       setAuthOpen: (authOpen) => set({ authOpen }),
       user: { email: "demo@juridia.com.br", name: "Advogado Demo" },
       setUser: (user) => set({ user }),
+      // Perfil e estilo
+      profile: DEFAULT_PROFILE,
+      setProfile: (p) => set({ profile: { ...get().profile, ...p } }),
+      writingStyle: "formal",
+      setWritingStyle: (writingStyle) => set({ writingStyle }),
+      defaultSkills: ["cpc-estrutura-peticao", "cnj-615-2025"],
+      toggleDefaultSkill: (slug) => {
+        const cur = get().defaultSkills;
+        if (cur.includes(slug)) {
+          set({ defaultSkills: cur.filter((s) => s !== slug) });
+        } else {
+          set({ defaultSkills: [...cur, slug] });
+        }
+      },
     }),
     {
       name: "juridia-store",
@@ -54,6 +108,9 @@ export const useAppStore = create<AppState>()(
         appTab: s.appTab,
         user: s.user,
         selectedSkillSlugs: s.selectedSkillSlugs,
+        profile: s.profile,
+        writingStyle: s.writingStyle,
+        defaultSkills: s.defaultSkills,
       }),
     }
   )

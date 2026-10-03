@@ -7,10 +7,11 @@ import { Features } from "./features";
 import { Anonymization } from "./anonymization";
 import { Privacy } from "./privacy";
 import { Integrations } from "./integrations";
+import { Testimonials } from "./testimonials";
 import { News } from "./news";
 import { Pricing } from "./pricing";
-import { Media } from "./media";
 import { Faq } from "./faq";
+import { Media } from "./media";
 
 export function Landing() {
   return (
@@ -22,6 +23,7 @@ export function Landing() {
       <Anonymization />
       <Privacy />
       <Integrations />
+      <Testimonials />
       <News />
       <Pricing />
       <Faq />

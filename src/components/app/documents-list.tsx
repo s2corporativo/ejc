@@ -82,8 +82,25 @@ export function DocumentsList() {
       </div>
 
       {loading ? (
-        <div className="flex h-48 items-center justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="rounded-xl border border-border bg-card p-4">
+              <div className="mb-2 flex justify-between">
+                <div className="h-5 w-20 animate-pulse rounded bg-muted" />
+                <div className="h-5 w-16 animate-pulse rounded bg-muted" />
+              </div>
+              <div className="mb-2 h-5 w-3/4 animate-pulse rounded bg-muted" />
+              <div className="space-y-1.5">
+                <div className="h-3 w-full animate-pulse rounded bg-muted" />
+                <div className="h-3 w-5/6 animate-pulse rounded bg-muted" />
+                <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
+              </div>
+              <div className="mt-4 flex justify-between">
+                <div className="h-3 w-16 animate-pulse rounded bg-muted" />
+                <div className="h-6 w-16 animate-pulse rounded bg-muted" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : filtered.length === 0 ? (
         <Card>
