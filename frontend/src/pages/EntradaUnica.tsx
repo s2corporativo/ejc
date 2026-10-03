@@ -83,8 +83,14 @@ export default function EntradaUnica() {
 
   const selecionarModo = (modo: "ia" | "manual") => {
     const next = new URLSearchParams(searchParams);
-    if (modo === "manual") next.set("modo", "manual");
-    else next.delete("modo");
+    // "Cadastro rápido" é cadastro de CASO: abre direto na aba do caso.
+    if (modo === "manual") {
+      next.set("modo", "manual");
+      next.set("aba", "caso");
+    } else {
+      next.delete("modo");
+      next.delete("aba");
+    }
     setSearchParams(next, { replace: true });
   };
 

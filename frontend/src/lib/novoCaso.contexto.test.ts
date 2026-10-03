@@ -9,7 +9,7 @@ import {
 describe("novoCaso — porta única", () => {
   it("faz os novos atalhos apontarem para a Entrada Jurídica", () => {
     expect(NOVO_CASO_DOCUMENTO_PATH).toBe("/entrada?modo=documento");
-    expect(NOVO_CASO_MANUAL_PATH).toBe("/entrada?modo=manual");
+    expect(NOVO_CASO_MANUAL_PATH).toBe("/entrada?modo=manual&aba=caso");
   });
 
   it("gera entrada vinculada ao cliente com encoding seguro", () => {

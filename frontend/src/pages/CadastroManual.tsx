@@ -299,16 +299,6 @@ export default function CadastroManual({
   } = useCadastroManualStore();
   const usuarioId = useAuth((s) => s.user?.id);
 
-  useEffect(() => {
-    if (!usuarioId) return;
-    const descartados = vincularUsuario(usuarioId);
-    if (descartados > 0) {
-      toast.error(
-        `${descartados} cadastro(s) pendente(s) de outro usuário foram descartados da fila offline desta estação.`,
-      );
-    }
-  }, [usuarioId, vincularUsuario]);
-
   const [aba, setAba] = useState<"cliente" | "caso">(
     clientIdContexto || abrirCasoDireto ? "caso" : "cliente",
   );
@@ -322,6 +312,37 @@ export default function CadastroManual({
     ...(rascunhoCaso as Partial<CasoForm>),
     ...(clientIdContexto ? { client_id: "", criar_cliente: false } : {}),
   });
+  // Os formulários acima nascem do rascunho persistido ANTES de o store ser
+  // vinculado ao usuário logado. Se o rascunho era de outro usuário,
+  // `vincularUsuario` o descarta — e os formulários locais precisam ser
+  // realinhados ao estado já vinculado, senão a persistência abaixo regravaria
+  // a PII do dono anterior sob o novo usuário. Até o vínculo, nada é gravado.
+  const [rascunhoVinculado, setRascunhoVinculado] = useState(false);
+  useEffect(() => {
+    if (!usuarioId) return;
+    const descartados = vincularUsuario(usuarioId);
+    const vinculado = useCadastroManualStore.getState();
+    setFormCliente({
+      ...CLIENTE_VAZIO,
+      ...(vinculado.rascunhoCliente as Partial<ClienteForm>),
+    });
+    setFormCaso((atual) => ({
+      ...CASO_VAZIO,
+      ...(vinculado.rascunhoCaso as Partial<CasoForm>),
+      ...(clientIdContexto
+        ? { client_id: atual.client_id, criar_cliente: false }
+        : {}),
+    }));
+    setRascunhoVinculado(true);
+    if (descartados > 0) {
+      toast.error(
+        `${descartados} cadastro(s) pendente(s) de outro usuário foram descartados da fila offline desta estação.`,
+      );
+    }
+    // clientIdContexto só preserva o id já validado; não deve revincular.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usuarioId, vincularUsuario]);
+
   const [erroCliente, setErroCliente] = useState<string | null>(null);
   const [erroCaso, setErroCaso] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
@@ -441,12 +462,14 @@ export default function CadastroManual({
   }, [rodarSync, atualizarCacheClientes]);
 
   useEffect(() => {
+    if (!rascunhoVinculado) return;
     setRascunhoCliente(formCliente);
-  }, [formCliente, setRascunhoCliente]);
+  }, [rascunhoVinculado, formCliente, setRascunhoCliente]);
 
   useEffect(() => {
+    if (!rascunhoVinculado) return;
     setRascunhoCaso(formCaso);
-  }, [formCaso, setRascunhoCaso]);
+  }, [rascunhoVinculado, formCaso, setRascunhoCaso]);
 
   const mudarCliente = (patch: Partial<ClienteForm>) => {
     setFormCliente((f) => ({ ...f, ...patch }));

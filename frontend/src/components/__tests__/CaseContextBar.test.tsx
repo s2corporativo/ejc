@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, Route, Routes } from "react-router";
 
 const mocks = vi.hoisted(() => ({
   ativar: vi.fn().mockResolvedValue(undefined),
@@ -47,7 +47,13 @@ describe("CaseContextBar — navegação simplificada do caso", () => {
       within(nav)
         .getAllByRole("link")
         .map((link) => link.textContent),
-    ).toEqual(["Visão", "Atividades", "Documentos", "Estratégia", "Financeiro"]);
+    ).toEqual([
+      "Visão",
+      "Atividades",
+      "Documentos",
+      "Estratégia",
+      "Financeiro",
+    ]);
 
     expect(
       screen.getByRole("link", { name: "Visão" }).getAttribute("href"),
@@ -90,5 +96,37 @@ describe("CaseContextBar — navegação simplificada do caso", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Sair do modo caso" }));
     expect(mocks.sair).toHaveBeenCalledTimes(1);
+  });
+
+  it("sair do modo caso dentro de /casos/:id volta à lista (sem workspace órfão de áreas)", () => {
+    render(
+      <MemoryRouter initialEntries={["/casos/case-1?tab=timeline"]}>
+        <CaseContextBar />
+        <Routes>
+          <Route path="/casos" element={<p>lista de casos</p>} />
+          <Route path="/casos/:id" element={<p>workspace do caso</p>} />
+          <Route path="/ajuizamento" element={<p>ajuizamento</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Sair do modo caso" }));
+    expect(screen.getByText("lista de casos")).toBeTruthy();
+  });
+
+  it("sair do modo caso fora de /casos/:id não navega", () => {
+    render(
+      <MemoryRouter initialEntries={["/ajuizamento?caso=case-1"]}>
+        <CaseContextBar />
+        <Routes>
+          <Route path="/casos" element={<p>lista de casos</p>} />
+          <Route path="/ajuizamento" element={<p>ajuizamento</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Sair do modo caso" }));
+    expect(mocks.sair).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("ajuizamento")).toBeTruthy();
   });
 });

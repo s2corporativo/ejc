@@ -40,6 +40,7 @@ import api from "../lib/api";
 import { asList } from "../lib/list";
 import { useAuth } from "../stores/auth";
 import { getUltimoCasoId } from "../stores/caseContext";
+import { NOVO_CASO_MANUAL_PATH } from "../lib/novoCaso";
 import { EntradaInteligente } from "./EntradaUnica";
 import { IdentidadeAssistente } from "./EntradaUnica/IdentidadeAssistente";
 
@@ -663,7 +664,7 @@ export default function DashboardUltra() {
                 </Link>
               )}
               {canUseEntry && (
-                <Link to="/entrada?modo=manual">
+                <Link to={NOVO_CASO_MANUAL_PATH}>
                   <Briefcase aria-hidden="true" />+ Novo Caso
                 </Link>
               )}
@@ -683,7 +684,7 @@ export default function DashboardUltra() {
             >
               {canUseEntry && (
                 <Link
-                  to="/entrada?modo=manual"
+                  to={NOVO_CASO_MANUAL_PATH}
                   className="ejc-dash__entry-option is-manual"
                 >
                   <span
@@ -756,7 +757,7 @@ export default function DashboardUltra() {
                     IA.
                   </p>
                   <Link
-                    to="/entrada?modo=manual"
+                    to={NOVO_CASO_MANUAL_PATH}
                     className="ejc-dash__entry-cta"
                   >
                     Cadastrar caso manualmente
@@ -951,7 +952,9 @@ export default function DashboardUltra() {
               ) : casosEmDestaque.length === 0 ? (
                 <li className="ejc-dash__empty ejc-dash__empty--action">
                   <span>Nenhum caso cadastrado ainda.</span>
-                  <Link to="/entrada?modo=manual">Cadastrar primeiro caso</Link>
+                  <Link to={NOVO_CASO_MANUAL_PATH}>
+                    Cadastrar primeiro caso
+                  </Link>
                 </li>
               ) : (
                 casosEmDestaque.map((c) => {

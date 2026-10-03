@@ -674,42 +674,65 @@ function DadosDoCasoRecolhivel({
   );
 }
 
-function DossieIntegradoCaso({ caseId }: { caseId: string }) {
+// Espelha `exigir_advogado` (routers/entrada.py): /entrada/analisar responde
+// 403 abaixo de advogado — o atalho nem aparece para quem seria recusado.
+const PAPEIS_DOSSIE_JURIDICO = new Set([
+  "superadmin",
+  "admin",
+  "socio",
+  "advogado",
+]);
+
+export function DossieIntegradoCaso({ caseId }: { caseId: string }) {
+  const role = useAuth((s) => s.user?.role) ?? "";
+  const podeDossieJuridico = PAPEIS_DOSSIE_JURIDICO.has(role);
   const [mostrarJuridico, setMostrarJuridico] = useState(false);
+  // Montar DossieJuridico dispara análise de IA e grava snapshot versionado:
+  // depois da primeira abertura o painel só é ocultado, nunca desmontado, para
+  // que alternar a visibilidade não repita custo de IA nem trilha de auditoria.
+  const [juridicoCarregado, setJuridicoCarregado] = useState(false);
 
   return (
     <div className="space-y-4">
       <DossieEstrategicoCaso caseId={caseId} />
 
-      <div className="card p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-semibold text-slate-900">
-              Análise jurídica completa
-            </h3>
-            <p className="mt-1 text-xs text-slate-500">
-              Gera o Dossiê Jurídico profundo sob demanda, com matriz
-              fato-prova-tese, lacunas, leitura adversarial e plano jurídico.
-            </p>
+      {podeDossieJuridico && (
+        <div className="card p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">
+                Análise jurídica completa
+              </h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Gera o Dossiê Jurídico profundo sob demanda, com matriz
+                fato-prova-tese, lacunas, leitura adversarial e plano jurídico.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn-secondary text-xs"
+              onClick={() => {
+                setJuridicoCarregado(true);
+                setMostrarJuridico((valor) => !valor);
+              }}
+              aria-expanded={mostrarJuridico}
+            >
+              {mostrarJuridico
+                ? "Ocultar Dossiê Jurídico"
+                : "Abrir Dossiê Jurídico"}
+            </button>
           </div>
-          <button
-            type="button"
-            className="btn-secondary text-xs"
-            onClick={() => setMostrarJuridico((valor) => !valor)}
-            aria-expanded={mostrarJuridico}
-          >
-            {mostrarJuridico
-              ? "Ocultar Dossiê Jurídico"
-              : "Abrir Dossiê Jurídico"}
-          </button>
-        </div>
 
-        {mostrarJuridico && (
-          <div className="mt-4 border-t border-slate-100 pt-4">
-            <DossieJuridico caseId={caseId} embedded />
-          </div>
-        )}
-      </div>
+          {juridicoCarregado && (
+            <div
+              className="mt-4 border-t border-slate-100 pt-4"
+              hidden={!mostrarJuridico}
+            >
+              <DossieJuridico caseId={caseId} embedded />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

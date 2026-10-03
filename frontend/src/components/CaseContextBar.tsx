@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { Link, useLocation } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { ArrowRight, CalendarClock, FolderOpen, X } from "lucide-react";
 import { CASE_NAV_SECTIONS } from "../config/caseNav";
 import { useCaseContext } from "../stores/caseContext";
@@ -31,6 +31,7 @@ export default function CaseContextBar() {
   const caso = useCaseContext((state) => state.caso);
   const ativar = useCaseContext((state) => state.ativar);
   const sair = useCaseContext((state) => state.sair);
+  const navigate = useNavigate();
 
   const idContextual = useMemo(() => {
     const match = CASE_ROUTE.exec(pathname);
@@ -108,7 +109,13 @@ export default function CaseContextBar() {
           </div>
           <button
             type="button"
-            onClick={sair}
+            onClick={() => {
+              sair();
+              // Esta faixa é a única navegação entre as cinco áreas: sair do
+              // modo caso sem sair da rota /casos/:id deixaria o workspace sem
+              // seletor de área (a reativação só ocorre quando o id muda).
+              if (CASE_ROUTE.test(pathname)) navigate("/casos");
+            }}
             className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-primary-600 transition-colors hover:bg-primary-100 hover:text-primary-900"
             title="Sair do modo caso"
             aria-label="Sair do modo caso"

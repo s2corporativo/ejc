@@ -147,6 +147,30 @@ describe("OrquestradorPanel — próxima ação simplificada", () => {
     expect(visaoOrquestrador).toHaveBeenCalledWith("caso-1");
   });
 
+  it("distingue etapa em andamento de etapa pendente na jornada detalhada", async () => {
+    visaoOrquestrador.mockResolvedValue({
+      ...visao,
+      jornada: [
+        ...visao.jornada,
+        {
+          etapa: "area_sugerida",
+          rotulo: "Área sugerida",
+          status: "em_andamento",
+        },
+        {
+          etapa: "area_confirmada",
+          rotulo: "Área confirmada pelo advogado",
+          status: "pendente",
+        },
+      ],
+    });
+    renderPanel();
+
+    expect(await screen.findByText("Área sugerida")).toBeTruthy();
+    expect(screen.getByText("Em andamento")).toBeTruthy();
+    expect(screen.getAllByText("Pendente")).toHaveLength(1);
+  });
+
   it("ato de aprovação humana aponta direto para a superfície canônica", async () => {
     renderPanel();
     await screen.findByText("Próxima ação");

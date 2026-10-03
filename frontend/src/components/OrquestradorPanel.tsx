@@ -434,14 +434,18 @@ export default function OrquestradorPanel({
                         ? "green"
                         : etapa.status === "bloqueada"
                           ? "amber"
-                          : "slate"
+                          : etapa.status === "em_andamento"
+                            ? "blue"
+                            : "slate"
                     }
                   >
                     {etapa.status === "concluida"
                       ? "Concluída"
                       : etapa.status === "bloqueada"
                         ? "Bloqueada"
-                        : "Pendente"}
+                        : etapa.status === "em_andamento"
+                          ? "Em andamento"
+                          : "Pendente"}
                   </Badge>
                 </li>
               ))}
