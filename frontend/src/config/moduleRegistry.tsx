@@ -1352,7 +1352,7 @@ export function getModuleCatalog() {
  * absoluto para links é produzido por `portalNavHref`, fonte única do
  * prefixo.
  */
-export const PORTAL_ROOT = "/portal";
+const PORTAL_ROOT = "/portal";
 
 export const PORTAL_ROUTES: PortalModuleRoute[] = [
   {

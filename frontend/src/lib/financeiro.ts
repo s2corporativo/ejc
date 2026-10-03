@@ -28,24 +28,6 @@ export const COMMISSION_STATUS_LABELS: Record<CommissionStatus, string> = {
   estornada: "Estornada",
 };
 
-export const COMMISSION_STATUS_FLOW: Readonly<
-  Record<CommissionStatus, readonly CommissionStatus[]>
-> = {
-  calculada: ["a_aprovar", "estornada"],
-  a_aprovar: ["a_pagar", "rejeitada", "estornada"],
-  a_pagar: ["paga", "estornada"],
-  paga: [],
-  rejeitada: [],
-  estornada: [],
-};
-
-export const FINANCE_STATUS = {
-  pendente: "Pendente",
-  atrasado: "Em atraso",
-  pago: "Pago",
-  cancelado: "Cancelado",
-} as const;
-
 export const FINANCE_CATEGORIES = [
   "infraestrutura",
   "tecnologia",
